@@ -920,6 +920,12 @@ static int64_t pending_since;
 
 static void activate_game(SceUID pid, const char *tid, int mode)
 {
+    if (!vjo_game_enabled(tid, &scratch)) {
+        title_id[0] = '\0';
+        vjoSetGameActive(pid, VJO_GAME_NONE);
+        vjo_log("%s: JP Overlay disabled; game input passes through", tid);
+        return;
+    }
     sceClibSnprintf(title_id, sizeof(title_id), "%s", tid);
     if (!has_result_memory())
         mem_alloc();

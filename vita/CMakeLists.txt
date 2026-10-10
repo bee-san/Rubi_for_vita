@@ -86,7 +86,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
   ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
-  ${ROOT}/core/ocr_lines.c)
+  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -111,6 +111,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/worker.c
   ${ROOT}/shell/capture.c
   ${ROOT}/shell/game.c
+  ${ROOT}/vita/games_storage.c
   ${ROOT}/shell/anki.c
   ${ROOT}/shell/anki_queue.c
   ${ROOT}/shell/platform_vita.c
@@ -174,6 +175,28 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco)
 
+# ---------------- standalone game settings VPK ----------------
+add_executable(VitaJPOverlay_Settings
+  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c
+  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
+  ${ROOT}/vita/games_storage.c)
+target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra)
+target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q)
+target_link_libraries(VitaJPOverlay_Settings
+  vita2d png jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
+  ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
+  SceAppMgr_stub)
+# Plugin CONFIG exports must not leak into the standalone application's ELF.
+set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
+set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
+vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE)
+vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
+  VERSION "01.00" NAME "JP Overlay Settings"
+  FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png
+       ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
+       ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png
+       ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml)
+
 # ---------------- release zip ----------------
 # config.ini sits at the zip's top level (the user edits it and copies it to
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites
@@ -193,6 +216,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
-  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 config.ini README.md LICENSE tools docs third_party
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self vjo_rco vjo_syscall_abi
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
+  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self vjo_rco vjo_syscall_abi JPOverlaySettings.vpk-vpk
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")
