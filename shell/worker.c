@@ -87,6 +87,7 @@ static uint32_t job_generation;
 enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
 static int subtitles; /* written by set_subtitles only */
+static int input_block_error;
 static int stable_pending;
 /* The overlay waits for the running job ("Recognizing…"), or shows its
  * sentence before the lookup: job_text_list, in the job's arena, which
@@ -633,11 +634,31 @@ static int claim_cache_for(const VjoState *st)
     return 1;
 }
 
+static void clear_input_block_error(void)
+{
+    if (input_block_error) {
+        input_block_error = 0;
+        strip_publish("", VJO_STRIP_STATUS, 0);
+    }
+}
+
 static void open_overlay(void)
 {
     VjoState st;
+    int block_rc = vjoSetInputBlock(1);
+    vjo_log("input block on rc=%d (%08X)", block_rc, block_rc);
+    if (block_rc < 0) {
+        input_block_error = 1;
+        ov = OV_CLOSED;
+        view_publish(0, NULL, NULL, 0);
+        strip_publish("Overlay unavailable: cannot block game controls.", VJO_STRIP_ERROR, 0);
+        vjo_view_lock();
+        __atomic_store_n(&g_view.strip_on, 1, __ATOMIC_RELEASE);
+        vjo_view_unlock();
+        return;
+    }
+    clear_input_block_error();
     ov = OV_OPEN;
-    vjoSetInputBlock(1);
     if (!has_result_memory() && mem_alloc() < 0) {
         view_publish(1, NULL, "Not enough memory for the overlay", 1);
         return;
@@ -980,6 +1001,7 @@ static void on_game_exit(void)
     close_overlay();
     if (subtitles)
         set_subtitles(0);
+    clear_input_block_error();
     /* Free memory unless the network thread still uses it. */
     if (!net_busy())
         mem_free();
@@ -994,6 +1016,7 @@ static void on_game_start(void)
     close_overlay();
     if (subtitles) /* over a game, without its exit: the strip goes */
         set_subtitles(0);
+    clear_input_block_error();
     st.size = sizeof(st);
     vjoGetState(&st);
     title_id[0] = '\0';
