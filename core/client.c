@@ -299,6 +299,7 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         break;
     case VJO_E_OOM:
         vjo_buf_printf(&b, "%s failed: not enough memory", what);
+        if (err->detail) vjo_buf_printf(&b, ". %s", err->detail);
         break;
     case VJO_E_SOURCE:
         vjo_buf_puts(&b, "Cannot capture the game screen. Close the overlay and try again on a dialogue line.");

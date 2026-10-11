@@ -8,16 +8,18 @@
 #include <psp2/power.h>
 
 #include "../core/regions.h"
+#include "../core/textfilter.h"
+#include "../core/utf.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
 #include "game_ocr_client.h"
 #endif
 #include "shell.h"
 
-/* Memory: two result arenas (the overlay shows one while the network thread
- * fills the other) and the network thread's kept connections (Lens and the
- * dictionary) in one memblock allocated while a game runs, plus a small
- * static scratch arena (control thread only) for config/region/messages. */
+/* Network memory: two result arenas (the overlay shows one while the worker
+ * fills the other) and kept connections. Local lookup retires its prior view
+ * before OCR, so it needs only one arena. OCR-only local jobs use bounded
+ * static text. Control-thread config/region/messages use separate scratch. */
 #define RESULT_ARENA_SIZE (256 * 1024)
 #define LOCAL_RESULT_ARENA_SIZE (128 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
@@ -198,14 +200,14 @@ static int mem_alloc_for(const VjoConfig *c)
     uint8_t *p;
     int local = local_pipeline(c);
     size_t arena_size = local ? LOCAL_RESULT_ARENA_SIZE : RESULT_ARENA_SIZE;
-    size_t bytes = local ? 2 * arena_size : MEM_SIZE;
+    size_t bytes = local ? arena_size : MEM_SIZE;
     if (has_result_memory() && mem_local != local)
         mem_free();
     if (has_result_memory())
         return 0;
 #ifdef VJO_PAF_ALLOC
     /* Games can exhaust USER while SceShell still has reserved heap pages.
-     * Both result arenas and kept TLS sessions have one bounded owner. */
+     * Result arenas and kept TLS sessions have one bounded owner. */
     mem_heap = vjo_shell_heap_alloc(bytes);
     if (!mem_heap) {
         vjo_log("result workspace Paf allocation failed (%u KiB)", (unsigned)(bytes >> 10));
@@ -225,13 +227,13 @@ static int mem_alloc_for(const VjoConfig *c)
 #endif
     p = (uint8_t *)base;
     vjo_arena_init(&results[0], p, arena_size);
-    vjo_arena_init(&results[1], p + arena_size, arena_size);
+    vjo_arena_init(&results[1], local ? NULL : p + arena_size, local ? 0 : arena_size);
     vjo_net_pool_init(&pool, local ? NULL : p + 2 * arena_size,
                       local ? 0 : POOL_SIZE, NET_IDLE_US);
     mem_local = local;
-    vjo_log("%s workspace: %u bytes, two %u-byte results, %u-byte connection pool",
+    vjo_log("%s workspace: %u bytes, %u %u-byte results, %u-byte connection pool",
             local ? "local dictionary" : "network", (unsigned)bytes,
-            (unsigned)arena_size, (unsigned)(local ? 0 : POOL_SIZE));
+            (unsigned)(local ? 1 : 2), (unsigned)arena_size, (unsigned)(local ? 0 : POOL_SIZE));
     active = -1;
     cache_ok = 0;
     return 0;
@@ -368,6 +370,10 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
     VjoState st;
     static VjoGameOcrResult result;
+    /* Text-only publication must survive refused dictionary/display memory.
+     * Local start_job unpublishes the old view before this buffer is reused;
+     * subtitles copy their sentence into g_view rather than borrowing it. */
+    static uint8_t text_only[VJO_GAME_OCR_TEXT_BYTES];
     int local = local_pipeline(&job_cfg);
     st.capture_scene = 0;
     sceClibMemset(&result, 0, sizeof(result));
@@ -382,8 +388,21 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         }
         return out->err.rc;
     }
-    if (local && mem_alloc_for(&job_cfg) < 0)
+    if (local && (!job_lookup || mem_alloc_for(&job_cfg) < 0)) {
+        VjoArena text_arena;
+        vjo_arena_init(&text_arena, text_only, sizeof(text_only));
+        out->ocr_text = result.text;
+        out->filtered = vjo_filter_lines(&text_arena, result.text, job_cfg.non_japanese_filter);
+        /* Filtering only removes bytes, so one complete worker text fits. */
+        out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
+        out->list.header = out->sentence ? out->sentence : "";
+        if (!job_lookup)
+            return VJO_OK;
+        out->failed_stage = VJO_STAGE_DICT;
+        out->err.dict = VJO_DICT_LOCAL;
+        out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
         return out->err.rc = VJO_E_OOM;
+    }
     return vjo_overlay_ocr_text(a, &job_cfg, result.text, out);
 }
 #else
@@ -417,10 +436,11 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     if (job_cfg.ocr_backend == VJO_OCR_VOCR) {
         /* On the console only: no image or connection leaves it. */
         if (run_vocr(a, out) != VJO_OK) {
-            out->failed_stage = VJO_STAGE_OCR;
+            if (!out->failed_stage)
+                out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
                 out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
-            if (out->err.rc == VJO_E_OOM)
+            if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR)
                 out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
@@ -505,7 +525,7 @@ static void start_job(const char *why, int lookup)
     }
     vjo_log("job start (%s)%s", why, lookup ? "" : ", OCR only");
     job_lookup = lookup;
-    job_idx = active == 0 ? 1 : 0;
+    job_idx = local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
     job_generation = game_generation;
     job_cached_text = !local_pipeline(&cfg) && cache_ok && cache_dictionary == cfg.dictionary

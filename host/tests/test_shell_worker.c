@@ -1,6 +1,7 @@
 /* Actual Lens control policy with only Vita scheduling and memory stubbed. */
 #include "acutest.h"
 #include "client.h"
+#include "textfilter.h"
 #define VJO_TEST_MEMORY_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
 #include <psp2/host_stubs.h>
@@ -33,7 +34,7 @@ int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; ret
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
     TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
-    if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
+    if (phases_checked) TEST_CHECK(!vocr_live && size == 128 * 1024);
     user_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? -1 : 7;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -53,7 +54,7 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 #include "../../shell/worker.c"
 
 void *vjo_shell_heap_alloc(size_t size)
-{ if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
+{ if (phases_checked) TEST_CHECK(!vocr_live && size == 128 * 1024);
   heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
 void *vjo_shell_heap_alloc_for(const char *what, size_t size)
 {
@@ -100,6 +101,7 @@ int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
+static const char *fake_recognized_text;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -129,6 +131,9 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         vocr_live = 0; vocr_frees++;
     }
     if (fake_game_result.rc == VJO_E_OCR_MODEL) fake_game_result.io_error = fake_model_io_error;
+    /* A supplied successful worker response tests Shell publication, not OCR accuracy. */
+    if (fake_game_result.rc == VJO_OK && fake_recognized_text)
+        snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
     *out = fake_game_result;
     return 0;
 }
@@ -160,6 +165,7 @@ static void reset(void)
     fail_vocr_user = fail_vocr_paf = 0;
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
+    fake_recognized_text = NULL;
 #endif
     phases_checked = vocr_live = fail_join = 0;
     memset(&raw_state, 0, sizeof(raw_state));
@@ -542,19 +548,89 @@ static void test_disabled_game_retires_work(void)
 
 static void test_failed_join_keeps_allocations(void)
 {
-    reset();
-    TEST_ASSERT(mem_alloc() == 0);
-    uint8_t *base = results[0].base;
-    threads_started = 1;
-    fail_join = 1;
-    TEST_CHECK(vjo_worker_stop() < 0);
-    TEST_CHECK(has_result_memory() && results[0].base == base && threads_started == 1);
-    fail_join = 0;
-    TEST_CHECK(vjo_worker_stop() == 0);
-    TEST_CHECK(!has_result_memory() && threads_started == 0);
+    for (int local = 0; local < 2; local++) {
+        reset();
+        if (local) cfg.ocr_backend = VJO_OCR_VOCR;
+        TEST_ASSERT(mem_alloc() == 0);
+        uint8_t *base = results[0].base;
+        size_t bytes = results[0].size;
+        threads_started = 1;
+        fail_join = 1;
+        TEST_CHECK(vjo_worker_stop() < 0);
+        TEST_CHECK(has_result_memory() && results[0].base == base && results[0].size == bytes && threads_started == 1);
+        fail_join = 0;
+        TEST_CHECK(vjo_worker_stop() == 0);
+        TEST_CHECK(!has_result_memory() && threads_started == 0);
+    }
 }
 
 #ifdef VJO_WITH_VOCR
+static void test_shell_result_oom_preserves_recognition(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    cfg.non_japanese_filter = VJO_FILTER_LINES;
+    fake_recognized_text = "HUD only\r\n  日本語です  \r\nEnglish only";
+    subtitles = 1;
+    ov = OV_OPEN;
+    fail_alloc = 1;
+    backoff_note(&ocr_backoff, 1); /* previous OCR failure must be cleared */
+    start_job("Shell result refusal after recognition", 1);
+    int idx = job_idx;
+    TEST_CHECK(run_job(&results[idx], &cache_data[idx]) == VJO_E_OOM);
+    VjoOverlayData *d = &cache_data[idx];
+    TEST_CHECK(d->failed_stage == VJO_STAGE_DICT && d->err.dict == VJO_DICT_LOCAL);
+    TEST_CHECK(d->ocr_text && !strcmp(d->ocr_text, fake_recognized_text));
+    TEST_CHECK(d->sentence && !strcmp(d->sentence, "日本語です"));
+    TEST_CHECK(d->list.header && !strcmp(d->list.header, "日本語です"));
+    TEST_CHECK(!d->list.n_entries && !d->list.entries);
+    TEST_CHECK(!has_result_memory() && !vocr_live && vocr_allocs == vocr_frees);
+    on_job_done();
+    TEST_CHECK(!ocr_backoff.until && !ocr_backoff.us);
+    TEST_CHECK(dict_backoff.until > now_us() && dict_backoff.us == BACKOFF_MIN_US);
+    TEST_CHECK(g_view.status_is_error && strstr(g_view.status, "Shell UI memory"));
+    TEST_CHECK(!strstr(g_view.status, "Text recognition failed") && !strstr(g_view.status, "region"));
+    TEST_CHECK(g_view.list == &d->list && !strcmp(g_view.list->header, "日本語です"));
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "日本語です"));
+    TEST_CHECK(!g_view.strip_busy && !job_running && !cache_ok);
+
+    /* A new job removes every published fallback pointer before reuse. */
+    close_overlay(); /* background OCR-only jobs run with the overlay closed */
+    fail_alloc = 0;
+    fake_recognized_text = "次の文";
+    start_job("Shell memory recovered", 0);
+    TEST_CHECK(!g_view.list && !has_result_memory());
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    on_job_done();
+    TEST_CHECK(!strcmp(g_view.strip_text, "次の文") && !ocr_backoff.until);
+    TEST_CHECK(!has_result_memory() && vocr_allocs == vocr_frees);
+    mem_free();
+    TEST_CHECK(!has_result_memory());
+}
+
+static void test_shell_result_oom_keeps_max_worker_text(void)
+{
+    char longest[VJO_GAME_OCR_TEXT_BYTES];
+    for (size_t i = 0; i < sizeof(longest) - 1; i += 3)
+        memcpy(longest + i, "語", 3);
+    longest[sizeof(longest) - 1] = 0;
+    for (int mode = VJO_FILTER_NONE; mode <= VJO_FILTER_LINES; mode++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.non_japanese_filter = mode;
+        fake_recognized_text = longest;
+        fail_alloc = 1;
+        start_job("maximum recognized text under Shell pressure", 1);
+        TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+        VjoOverlayData *d = &cache_data[job_idx];
+        TEST_CHECK(d->failed_stage == VJO_STAGE_DICT);
+        TEST_CHECK(d->sentence && !strcmp(d->sentence, longest));
+        TEST_CHECK(d->list.header && !strcmp(d->list.header, longest));
+        TEST_CHECK(!has_result_memory() && !vocr_live && vocr_allocs == vocr_frees);
+        job_running = 0;
+    }
+}
+
 static void test_local_phases_and_recovery(void)
 {
     reset();
@@ -564,7 +640,8 @@ static void test_local_phases_and_recovery(void)
         start_job("local phase check", 0);
         TEST_CHECK(!has_result_memory() && pool.n == 0 && g_view.list == NULL);
         TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-        TEST_CHECK(has_result_memory() && results[0].size == 128 * 1024 && pool.n == 0);
+        TEST_CHECK(!has_result_memory() && !results[0].size && !results[1].size && pool.n == 0);
+        TEST_CHECK(!user_allocs && !heap_allocs);
         TEST_CHECK(vocr_allocs == vocr_frees && !vocr_live);
         job_running = 0;
     }
@@ -582,6 +659,37 @@ static void test_local_phases_and_recovery(void)
     phases_checked = 0;
 }
 
+static void test_local_lookup_single_arena_and_network_double_buffers(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    phases_checked = 1;
+    ov = OV_OPEN;
+    start_job("local lookup", 1);
+    TEST_CHECK(job_idx == 0 && !g_view.list);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(has_result_memory() && results[0].size == 128 * 1024);
+    TEST_CHECK(!results[1].base && !results[1].size && !pool.n);
+    on_job_done();
+    TEST_CHECK(cache_ok && active == 0 && g_view.list == &cache_data[0].list);
+    start_job("local OCR only replaces cached lookup", 0);
+    TEST_CHECK(job_idx == 0 && !has_result_memory() && !g_view.list && !cache_ok);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(!has_result_memory());
+    job_running = 0;
+
+    phases_checked = 0;
+    cfg.ocr_backend = VJO_OCR_LENS;
+    TEST_CHECK(mem_alloc() == 0 && !mem_local);
+    TEST_CHECK(results[0].size == RESULT_ARENA_SIZE && results[1].size == RESULT_ARENA_SIZE);
+    TEST_CHECK(results[1].base == results[0].base + RESULT_ARENA_SIZE && pool.n == POOL_SLOTS);
+    active = 0;
+    start_job("network keeps double buffering", 0);
+    TEST_CHECK(job_idx == 1);
+    job_running = 0;
+    mem_free();
+}
+
 static void test_local_switch_drains_warm_pool(void)
 {
     reset();
@@ -589,14 +697,16 @@ static void test_local_switch_drains_warm_pool(void)
     uint8_t *base = results[0].base;
     warm_running = 1;
     cfg.ocr_backend = VJO_OCR_VOCR;
+    active = 0; /* old network result must not select local result1 */
     start_job("switch from warm Lens to local OCR", 0);
+    TEST_CHECK(job_idx == 0);
     /* The control thread must not free a pool still used by the worker. */
     TEST_CHECK(has_result_memory() && results[0].base == base && pool.n > 0);
     TEST_CHECK(job_cached_text == NULL);
     warm_running = 0;
     phases_checked = 1;
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-    TEST_CHECK(mem_local && pool.n == 0 && results[0].size == 128 * 1024);
+    TEST_CHECK(!has_result_memory() && pool.n == 0 && !results[0].size && !results[1].size);
     phases_checked = 0;
     job_running = 0;
     cfg.ocr_backend = VJO_OCR_LENS;
@@ -613,6 +723,9 @@ TEST_LIST = {
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
 #ifdef VJO_WITH_VOCR
+    {"Shell_result_OOM_preserves_OCR_sentence_and_dictionary_backoff", test_shell_result_oom_preserves_recognition},
+    {"Shell_result_OOM_preserves_maximum_filtered_worker_text", test_shell_result_oom_keeps_max_worker_text},
+    {"local_lookup_uses_one_arena_and_network_keeps_two", test_local_lookup_single_arena_and_network_double_buffers},
     {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
     {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif

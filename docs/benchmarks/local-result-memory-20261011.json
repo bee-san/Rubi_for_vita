@@ -1,0 +1,91 @@
+{
+  "source_commit": "3f7ae81971db7ca4913d881be9750cfaada4799f",
+  "binary_tested_head": "da861f06e9ed3ee6430018be47d8db9b70df67b8",
+  "environment": "Linux x86_64 host, ASAN+UBSAN benchmark; host lookup only, no Vita speed or OCR accuracy claim",
+  "dictionary_size": 77457235,
+  "dictionary_sha256": "11c9af9b6d1cc4607bce1018d88ed716a0ab89f7ae45c86cc746082b7e6639b0",
+  "samples": [
+    {
+      "text": "日本語を勉強しています。",
+      "runs": 5,
+      "arena_peak": 111008,
+      "entries": 5,
+      "read_bytes": 252559,
+      "read_calls": 67,
+      "median_host_lookup_us": 376.61,
+      "digest": "27dae2936e19d42a",
+      "digests_equal": true
+    },
+    {
+      "text": "今日は学校に行きました。",
+      "runs": 5,
+      "arena_peak": 111008,
+      "entries": 16,
+      "read_bytes": 254384,
+      "read_calls": 77,
+      "median_host_lookup_us": 162.953,
+      "digest": "8cdf621418a4773e",
+      "digests_equal": true
+    },
+    {
+      "text": "猫は食べました。行った。",
+      "runs": 5,
+      "arena_peak": 111008,
+      "entries": 17,
+      "read_bytes": 178466,
+      "read_calls": 59,
+      "median_host_lookup_us": 204.043,
+      "digest": "30a4eb03f6ecbd3a",
+      "digests_equal": true
+    },
+    {
+      "text": "彼女は僕のことを何も知らなかった。",
+      "runs": 5,
+      "arena_peak": 111040,
+      "entries": 28,
+      "read_bytes": 601111,
+      "read_calls": 174,
+      "median_host_lookup_us": 513.287,
+      "digest": "f7a9f4aa859dbe58",
+      "digests_equal": true
+    },
+    {
+      "text": "私たちは明日、東京で友達に会う予定です。",
+      "runs": 5,
+      "arena_peak": 111056,
+      "entries": 39,
+      "read_bytes": 338561,
+      "read_calls": 120,
+      "median_host_lookup_us": 340.71,
+      "digest": "b2297849c8c3fd9b",
+      "digests_equal": true
+    },
+    {
+      "text": "ありがとう。",
+      "runs": 5,
+      "arena_peak": 110976,
+      "entries": 3,
+      "read_bytes": 12625,
+      "read_calls": 7,
+      "median_host_lookup_us": 12.808,
+      "digest": "443f75f0d87f0390",
+      "digests_equal": true
+    },
+    {
+      "text": "これはとても長い説明ですが、同じ言葉を何度も繰り返しても辞書全部がメモリに読み込まれるわけではありません。",
+      "runs": 5,
+      "arena_peak": 111248,
+      "entries": 45,
+      "read_bytes": 2324664,
+      "read_calls": 611,
+      "median_host_lookup_us": 2071.493,
+      "digest": "d97a3c650c2b9e99",
+      "digests_equal": true
+    }
+  ],
+  "largest_arena_peak": 111248,
+  "note": "Arena peak includes fixed 64KiB dictionary output capacity and temporary deinflection/page workspace, not actual retained output and not total process peak.",
+  "command_template": "vjo-local-bench DICTIONARY_DIR jmdict.vjdict TEXT 5",
+  "queries_kind": "Illustrative manually supplied Japanese strings; no screenshot or OCR accuracy claim.",
+  "allocation_change": "Local lookup keeps its 128 KiB arena limit, retires the previous view, and allocates one arena instead of two. OCR-only local jobs use a static 4096-byte text buffer and no dynamic result arena."
+}
