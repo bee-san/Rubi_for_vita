@@ -370,9 +370,18 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     static VjoGameOcrResult result;
     int local = local_pipeline(&job_cfg);
     st.capture_scene = 0;
+    sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
-    if (out->err.rc != VJO_OK)
+    if (out->err.rc != VJO_OK) {
+        if (out->err.rc == VJO_E_OCR_MODEL) {
+            /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
+            if ((uint32_t)result.io_error == 0x80010013u)
+                out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
+            else if ((uint32_t)result.io_error == 0x8001000Du)
+                out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
+        }
         return out->err.rc;
+    }
     if (local && mem_alloc_for(&job_cfg) < 0)
         return out->err.rc = VJO_E_OOM;
     return vjo_overlay_ocr_text(a, &job_cfg, result.text, out);
