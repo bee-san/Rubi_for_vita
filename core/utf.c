@@ -63,6 +63,44 @@ int vjo_utf8_encode(uint32_t cp, char *out)
     return 4;
 }
 
+size_t vjo_utf8_cursor_step(const char *s, size_t len, size_t offset, int direction)
+{
+    size_t current = 0, previous = 0, next = 0;
+    if (!s || !len)
+        return 0;
+    for (;;) {
+        next = current;
+        vjo_utf8_next(s, len, &next);
+        if (offset < next || next == len)
+            break;
+        previous = current;
+        current = next;
+    }
+    if (direction < 0)
+        return previous;
+    return direction > 0 && next < len ? next : current;
+}
+
+int vjo_utf8_cursor_range(const char *s, size_t len, size_t offset, uint32_t *start, uint32_t *units)
+{
+    size_t i = 0, selected;
+    uint32_t cp;
+    *start = *units = 0;
+    if (!s || !len)
+        return 0;
+    selected = vjo_utf8_cursor_step(s, len, offset, 0);
+    while (i < selected) {
+        cp = vjo_utf8_next(s, len, &i);
+        if (cp != '\r')
+            *start += (uint32_t)vjo_utf16_units(cp);
+    }
+    cp = vjo_utf8_next(s, len, &i);
+    if (cp == '\r')
+        return 0;
+    *units = (uint32_t)vjo_utf16_units(cp);
+    return 1;
+}
+
 char *vjo_java_trim(char *s)
 {
     size_t n = strlen(s);

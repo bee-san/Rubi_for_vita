@@ -63,8 +63,15 @@ int main(int argc, char **argv)
     PosixPlatform pp = {0};
     VjoPlatform p;
     int runs;
-    if (argc != 5 || (runs = atoi(argv[4])) < 1 || runs > 10000) {
-        fprintf(stderr, "usage: vjo-local-bench DIR FILENAMES TEXT RUNS\n"); return 2;
+    size_t cursor = 0;
+    if ((argc != 5 && argc != 6) || (runs = atoi(argv[4])) < 1 || runs > 10000) {
+        fprintf(stderr, "usage: vjo-local-bench DIR FILENAMES TEXT RUNS [CURSOR_BYTE]\n"); return 2;
+    }
+    if (argc == 6) {
+        char *end;
+        unsigned long value = strtoul(argv[5], &end, 10);
+        if (!argv[5][0] || argv[5][0] == '-' || *end || value > strlen(argv[3])) return 2;
+        cursor = (size_t)value;
     }
     vjo_config_defaults(&cfg); cfg.dictionary = VJO_DICT_LOCAL;
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries)) return 2;
@@ -78,7 +85,13 @@ int main(int argc, char **argv)
         calls = bytes = seeks = 0; opened = closed = 0;
         vjo_arena_init(&a, mem, sizeof(mem));
         start = nanoseconds();
-        int rc = vjo_overlay_from_text(&a, &p, &cfg, argv[3], &d);
+        int rc;
+        if (argc == 6) {
+            rc = vjo_overlay_ocr_text(&a, &cfg, argv[3], &d);
+            if (!rc) rc = vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d);
+        } else {
+            rc = vjo_overlay_from_text(&a, &p, &cfg, argv[3], &d);
+        }
         elapsed = nanoseconds() - start;
         if (rc || opened != closed) {
             fprintf(stderr, "%s (handles %d/%d)\n", vjo_err_text(&a, d.failed_stage, &d.err), opened, closed); return 1;

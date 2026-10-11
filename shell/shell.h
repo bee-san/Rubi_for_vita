@@ -38,6 +38,9 @@ typedef struct {
     const VjoEntryList *list; /* NULL while recognizing / on error */
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
+    int local_cursor_mode;    /* local dictionary: navigate UTF-8 characters */
+    uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */
+    uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
@@ -61,8 +64,11 @@ enum {
     VJO_CMD_CLOSED,          /* overlay closed by ○ */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
+    VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
 };
 void vjo_post_command(int cmd, const VjoRect *rect);
+/* Call without holding the view lock. Stale/closed requests are ignored. */
+void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation);
 
 /* worker.c */
 int vjo_worker_start(void);

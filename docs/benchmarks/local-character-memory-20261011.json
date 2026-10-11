@@ -1,0 +1,191 @@
+{
+  "environment": "Linux-7.2.6-1-cachyos-x86_64-with-glibc2.44",
+  "scope": "Linux x86_64 host lookup only; no Vita timing, OCR accuracy or total-process memory claim",
+  "dictionary_bytes": 77457235,
+  "dictionary_sha256": "11c9af9b6d1cc4607bce1018d88ed716a0ab89f7ae45c86cc746082b7e6639b0",
+  "command": [
+    "vjo-local-bench",
+    "DICTIONARY_DIR",
+    "jmdict.vjdict",
+    "TEXT",
+    "6",
+    "CURSOR_BYTE"
+  ],
+  "samples": [
+    {
+      "text": "日本語を勉強しています。",
+      "cursor_character_index": 0,
+      "cursor_byte": 0,
+      "measured_runs": 5,
+      "arena_peak": 53880,
+      "entries": 1,
+      "read_bytes": 82075,
+      "read_calls": 22,
+      "median_host_lookup_us": 16.934,
+      "digest": "0e0f073be996088b",
+      "digests_equal": true
+    },
+    {
+      "text": "今日は学校に行きました。",
+      "cursor_character_index": 3,
+      "cursor_byte": 9,
+      "measured_runs": 5,
+      "arena_peak": 53880,
+      "entries": 1,
+      "read_bytes": 69771,
+      "read_calls": 19,
+      "median_host_lookup_us": 12.667,
+      "digest": "3dea5c69b5813f81",
+      "digests_equal": true
+    },
+    {
+      "text": "猫は食べました。行った。",
+      "cursor_character_index": 2,
+      "cursor_byte": 6,
+      "measured_runs": 5,
+      "arena_peak": 53880,
+      "entries": 1,
+      "read_bytes": 24803,
+      "read_calls": 8,
+      "median_host_lookup_us": 7.14,
+      "digest": "75ce5b35044f3be0",
+      "digests_equal": true
+    },
+    {
+      "text": "彼女は僕のことを何も知らなかった。",
+      "cursor_character_index": 3,
+      "cursor_byte": 9,
+      "measured_runs": 5,
+      "arena_peak": 53896,
+      "entries": 1,
+      "read_bytes": 86212,
+      "read_calls": 23,
+      "median_host_lookup_us": 14.62,
+      "digest": "20741c14f63495b4",
+      "digests_equal": true
+    },
+    {
+      "text": "私たちは明日、東京で友達に会う予定です。",
+      "cursor_character_index": 7,
+      "cursor_byte": 21,
+      "measured_runs": 5,
+      "arena_peak": 53904,
+      "entries": 1,
+      "read_bytes": 65677,
+      "read_calls": 18,
+      "median_host_lookup_us": 12.469,
+      "digest": "650246581b99c56c",
+      "digests_equal": true
+    },
+    {
+      "text": "ありがとう。",
+      "cursor_character_index": 0,
+      "cursor_byte": 0,
+      "measured_runs": 5,
+      "arena_peak": 53864,
+      "entries": 1,
+      "read_bytes": 8344,
+      "read_calls": 4,
+      "median_host_lookup_us": 4.677,
+      "digest": "049449c3b044a59b",
+      "digests_equal": true
+    },
+    {
+      "text": "これはとても長い説明ですが、同じ言葉を何度も繰り返しても辞書全部がメモリに読み込まれるわけではありません。",
+      "cursor_character_index": 12,
+      "cursor_byte": 36,
+      "measured_runs": 5,
+      "arena_peak": 54000,
+      "entries": 1,
+      "read_bytes": 8317,
+      "read_calls": 4,
+      "median_host_lookup_us": 4.149,
+      "digest": "01fe02f5f4924517",
+      "digests_equal": true
+    },
+    {
+      "text": "猫。",
+      "cursor_character_index": 1,
+      "cursor_byte": 3,
+      "measured_runs": 5,
+      "arena_peak": 263,
+      "entries": 0,
+      "read_bytes": 0,
+      "read_calls": 0,
+      "median_host_lookup_us": 0.079,
+      "digest": "cbf29ce484222325",
+      "digests_equal": true
+    },
+    {
+      "text": "猫\n猫は食べました。",
+      "cursor_character_index": 2,
+      "cursor_byte": 4,
+      "measured_runs": 5,
+      "arena_peak": 53872,
+      "entries": 1,
+      "read_bytes": 53676,
+      "read_calls": 15,
+      "median_host_lookup_us": 10.095,
+      "digest": "16d824b28a8d40d0",
+      "digests_equal": true
+    }
+  ],
+  "max_arena_peak": 54000,
+  "note": "Peak includes two benchmark text copies, fixed 8,448-byte selected output capacity and temporary page/deinflection workspace; Shell uses static text. Warm host file cache; 1 warmup and 5 measured repetitions, fixed byte cursor for each query.",
+  "source": "v0.7.5 development host selected-position implementation; synthetic query strings against the full release JMdict, not screenshot OCR",
+  "generated_limit_tests": {
+    "static_header_peak_bytes": 53584,
+    "two_full_4095_byte_text_copies_peak_bytes": 61776,
+    "arena_bytes": 65536,
+    "entry_payload_bytes": 8192,
+    "source": "host/tests/test_local_cursor.c"
+  },
+  "native_shell_sections": {
+    "environment": "VitaSDK GCC 15.2.0 Release cross-build; ELF sections, not measured runtime residency",
+    "command": "arm-vita-eabi-size -A VitaJPOverlay_Shell",
+    "baseline_source": "da861f06e9ed3ee6430018be47d8db9b70df67b8; Shell/core/build inputs identical to v0.7.4 tag 3f7ae81971db7ca4913d881be9750cfaada4799f",
+    "baseline_elf_sha256": "45954f581ecf10f5268205c122616cce65f8d2e349c7bb7d9dd41e278b34737c",
+    "baseline_bytes": {
+      "text": 118424,
+      "rodata": 47688,
+      "data": 132,
+      "bss": 159476
+    },
+    "selected_character_elf_sha256": "fb528ff1c4f3b16f22278aca6c7e312d5472b324828630e6747c0764497fa863",
+    "selected_character_bytes": {
+      "text": 123472,
+      "rodata": 48000,
+      "data": 132,
+      "bss": 167768
+    },
+    "bss_increase_bytes": 8292,
+    "dynamic_local_result_request_reduction_bytes": 196608,
+    "note": "Added static text/UI copies and cursor state occupy Shell memory. Heap request reduction is not a measured free-memory gain; segment alignment, code, stacks and other users also matter."
+  },
+  "validation": {
+    "host_environment": "Linux x86_64 GCC 16.2.1; pinned FL10/H15 release models",
+    "commands": [
+      "cmake --build build/host -j8",
+      "ctest --test-dir build/host --output-on-failure",
+      "cmake --build build/vita --target release -j8",
+      "python3 tools/check_kernel_instructions.py --objdump arm-vita-eabi-objdump build/vita/VitaJPOverlay_Kernel",
+      "python3 tools/check_settings_assets.py build/vita/JPOverlaySettings.vpk",
+      "python3 tools/test_jpegsw.py"
+    ],
+    "host_suites_passed": 19,
+    "selected_backend_cases_passed": 9,
+    "actual_shell_cursor_cases_passed_per_allocator": 5,
+    "kernel_arm_instructions": 7720,
+    "kernel_fpu_neon_instructions": 0,
+    "packaged_abi": {
+      "api": 13,
+      "exports": 22,
+      "shell_imports": 14,
+      "game_worker_imports": 9
+    },
+    "jpeg_round_trips": 3,
+    "jpeg_failure_paths": 5,
+    "settings_indexed_pngs": 3,
+    "physical_v075_cursor_test": "pending"
+  }
+}

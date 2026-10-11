@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.4 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.5 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -14,8 +14,8 @@ Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.4.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.4) and
+Download `VitaJPOverlay-0.7.5.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.5) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, and the complete converted JMdict snapshot. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
@@ -52,14 +52,17 @@ then reboot. Keep unrelated plugins and configuration intact.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| D-pad | Navigate words and definitions |
+| Left / Right | Move one Unicode character; local lookup shows one best matching entry |
+| Up / Down | Navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
 | Circle | Close the overlay |
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
 recognition errors. Regions are saved per game. Automatic mode recognizes
-settled dialogue in the background. Set `ocr_mode = on_press` to recognize only
+settled dialogue in the background without opening local dictionaries. Opening
+the overlay looks up the saved text at the selected character; character moves
+never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. Cross and Triangle do not save or send Anki cards.
 
 ## Per-game settings
@@ -98,8 +101,10 @@ ocr_mode = auto
 ```
 
 FL10 is the smaller default for lower game memory use. The included
-`H15_w8.vocr` trades a larger workspace for better host accuracy. A memory error
-asks you to select a tighter region. The complete settings template is
+`H15_w8.vocr` trades a larger workspace for better host accuracy. A game OCR
+memory error asks you to select a tighter region. A Shell UI memory error
+keeps recognized text and identifies the unavailable dictionary results.
+The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
 JMdict is disk-backed: its approximately 74 MiB file is never loaded into RAM.
@@ -152,9 +157,16 @@ that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three API 13 plugins together
 and reboot; older plugin versions cannot use this transport.
 
-The `*main` plugin handles UI and disk-backed dictionary lookup with two
-128 KiB result arenas and no TLS pool for local jobs. Its Paf fallback preserves
-a 1.5 MiB UI reserve. Failed joins/frees keep ownership for a safe stop retry.
+The `*main` plugin handles UI and disk-backed dictionary lookup with one
+64 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
+jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
+The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
+reads only the selected position and returns zero or one entry.
+The previous local result is retired before either is reused; network jobs
+retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
+local result allocation is refused after OCR succeeds, the recognized text
+stays visible and only dictionary lookup backs off. Failed joins/frees keep
+ownership for a safe stop retry.
 The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
@@ -197,7 +209,9 @@ after validation.
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell
 worker with platform stubs. It checks cancelled jobs, denied input blocking,
-OOM recovery, failed joins, 50 local OCR/lookup lifetimes, 100 game-worker
+OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
+close/reopen during lookup, scene/region invalidation, Unicode navigation and
+100 game-worker
 allocation/free cycles, bounded model reads and stale-job isolation. Real
 model tests also run the actual game worker through the actual kernel broker
 with FL10/H15, unavailable game storage, short reads, corrupt weights and

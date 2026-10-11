@@ -6,7 +6,7 @@ recognizer made for visual-novel dialogue, and its line finder, both plain C99
 with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
 and no cloud fallback. With `dictionary = local` the whole lookup is offline.
 
-**Status: default in v0.7.4; physical recognition validation is still pending.** It builds with VitaSDK and
+**Status: default in v0.7.5; physical recognition validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
@@ -74,8 +74,18 @@ retains ownership until cleanup succeeds; a new job cannot replace it.
 The existing kernel worker performs file I/O outside the shared lock, with one
 static 8 KiB buffer and no additional thread or full-model allocation. The log
 records the game worker's OCR timings, workspace, I/O error and cleanup status.
-The model and workspace are freed before results return to the Shell, which
-uses two 128 KiB result arenas and no Lens connection pool for local jobs.
+The model and workspace are freed before results return to the Shell. Local
+lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
+view/cache is retired before a local job begins, so a second arena is unnecessary;
+network jobs retain their two arenas. Local OCR-only/subtitle jobs use a static
+4 KiB filtered-text buffer and allocate no dictionary arena. The UI owns a
+separate 4 KiB copy for character navigation. Left/right moves one Unicode
+character and requests zero or one best entry at that position; it does not
+recapture or recognize text. Scene, region and foreground changes invalidate
+saved text, while rapid cursor moves supersede earlier lookup results. If Shell refuses
+lookup memory after successful OCR, this buffer preserves the recognized
+sentence/header; the error names Shell UI memory and applies dictionary backoff
+without marking recognition failed. The 1.5 MiB Shell UI reserve is unchanged.
 
 Physical logs from the previous direct game-file implementation show
 `rc=-115`, one found line and `io=0x80010013` (ENODEV): the game did not expose
@@ -116,7 +126,7 @@ needs access to it):
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
 
-# Vita plugins and release zip (VitaJPOverlay-0.7.4.zip)
+# Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/vita --target release
 
@@ -135,7 +145,7 @@ then reports that the backend is missing instead of uploading anything.
 
 ## Install
 
-The complete v0.7.4 ZIP already includes both int8 models and the local
+The complete v0.7.5 ZIP already includes both int8 models and the local
 configuration; use its `install-vita.sh` as described in the README. The
 steps below cover a source build or adding another model.
 
@@ -172,9 +182,21 @@ The v0.7.0 rebuild reproduced both int8 models' region CER on 2026-10-11:
 [release measurements](benchmarks/vocr-release-20261011.json). FL10 scored
 217/2,506 character errors (8.66%) on 84 Vita regions and 443/2,510 (17.65%)
 on 93 PSP regions. H15 scored 170/2,506 (6.78%) and 369/2,510 (14.70%). Neither
-model refused or failed a region. A full-JMdict sentence smoke test repeated
-ten times used 111,072 arena bytes with identical lookup results; the worker's
-local result arenas are each 128 KiB. These remain host measurements.
+model refused or failed a region. Historical whole-sentence lookup used
+110,976–111,248 peak arena bytes across seven illustrative full-JMdict queries,
+five runs each ([commands and results](benchmarks/local-result-memory-20261011.json)).
+v0.7.5 instead requests one entry at the selected character. Nine illustrative
+positions in the same full JMdict, one warmup plus five measured runs each,
+used at most 54,000 arena bytes; unmatched punctuation used 263 bytes and no
+file I/O ([commands and results](benchmarks/local-character-memory-20261011.json)).
+Generated limit tests also fit an 8,192-byte entry and a 4,095-byte input in the
+64 KiB arena: 53,584 peak bytes with static text, or 61,776 with two full text
+copies. These bounds include selected output metadata and temporary
+page/deinflection workspace; they are neither total-process peaks nor a
+worst-case guarantee for every dictionary. Dynamic local result allocation
+falls from two 128 KiB arenas to one 64 KiB arena (192 KiB less requested heap).
+New static text/UI buffers and code also occupy Shell memory, so that reduction
+is not a claim of 192 KiB more total free memory. These remain host measurements.
 
 `tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
 finder, workspace and model checks as the game worker) once per region, in a fresh
@@ -226,7 +248,10 @@ copied, and the settings above. Close other apps first.
    find=X ms load=Y ms recognize=Z ms io=0x... cleanup=...`.
    Success requires `rc=0` and `cleanup=0`. Record the shown text and a photo
    beside this log; host tests alone cannot prove recognition on the Vita.
-5. **Errors.** For memory errors, select FL10 and a tighter dialogue region.
+5. **Errors.** For game OCR memory errors, select FL10 and a tighter dialogue
+   region. A Shell UI memory error after successful recognition preserves text
+   while dictionary results are unavailable; restart the Vita and retry. A
+   smaller OCR region does not reclaim another Shell plugin's retained heap.
    For an unavailable worker, check its `*ALL` registration and restart the
    game. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.

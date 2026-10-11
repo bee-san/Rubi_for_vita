@@ -66,6 +66,12 @@ int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, con
 int vjo_overlay_ocr(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                     const VjoJpegSource *src, VjoOverlayData *out);
 int vjo_overlay_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, VjoOverlayData *out);
+/* Local-only lookup at a raw UTF-8 byte cursor in the existing trimmed
+ * sentence. Preserves OCR text/header and returns at most one entry, with
+ * highlight bytes relative to sentence (including its remaining newlines).
+ * The caller releases the preceding lookup's arena before another cursor. */
+int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                          size_t cursor_byte, VjoOverlayData *out);
 /* Already recognized text -> filter/sentence, without a dictionary request.
  * text must remain valid for the lifetime of out (normally in a). */
 int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, VjoOverlayData *out);

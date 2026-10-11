@@ -245,6 +245,47 @@ static void test_utf(void)
     TEST_CHECK(vjo_utf8_next("\xe3\x81", 2, &(size_t){0}) == 0xFFFD);
 }
 
+static void test_utf_character_cursor(void)
+{
+    const char *text = "猫😀\n文\r?";
+    const size_t positions[] = {0, 3, 7, 8, 11, 12};
+    const uint32_t starts[] = {0, 1, 3, 4, 5, 5};
+    const uint32_t units[] = {1, 2, 1, 1, 0, 1};
+    size_t len = strlen(text), cursor = 0;
+    uint32_t start, count;
+    for (size_t i = 0; i < sizeof(positions) / sizeof(*positions); i++) {
+        TEST_CHECK(cursor == positions[i]);
+        TEST_CHECK(vjo_utf8_cursor_range(text, len, cursor, &start, &count) == (units[i] != 0));
+        TEST_CHECK(start == starts[i] && count == units[i]);
+        cursor = vjo_utf8_cursor_step(text, len, cursor, 1);
+    }
+    TEST_CHECK(cursor == 12); /* End clamps to the last selectable character. */
+    for (size_t i = sizeof(positions) / sizeof(*positions); i--;) {
+        TEST_CHECK(cursor == positions[i]);
+        cursor = vjo_utf8_cursor_step(text, len, cursor, -1);
+    }
+    TEST_CHECK(cursor == 0);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 1, 0) == 0);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 4, 0) == 3);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 999, 0) == 12);
+    TEST_CHECK(vjo_utf8_cursor_range(text, len, 4, &start, &count) && start == 1 && count == 2);
+    TEST_CHECK(vjo_utf8_cursor_step("", 0, 999, 1) == 0);
+    TEST_CHECK(!vjo_utf8_cursor_range("", 0, 0, &start, &count) && start == 0 && count == 0);
+
+    /* Malformed leading and truncated bytes remain individual U+FFFD
+     * characters in both navigation and the actual styled header. */
+    text = "\xff\xe3\x81";
+    len = 3;
+    cursor = 0;
+    for (size_t i = 0; i < len; i++) {
+        TEST_CHECK(cursor == i);
+        TEST_CHECK(vjo_utf8_cursor_range(text, len, cursor, &start, &count) && start == i && count == 1);
+        cursor = vjo_utf8_cursor_step(text, len, cursor, 1);
+    }
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 2, -1) == 1);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 1, -1) == 0);
+}
+
 /* ---------- json / jpdb ---------- */
 
 static void test_jpdb_request(void)
@@ -2090,6 +2131,7 @@ TEST_LIST = {
     {"lens_response_parse", test_lens_response_parse},
     {"filter_lines", test_filter_lines},
     {"utf", test_utf},
+    {"utf_character_cursor", test_utf_character_cursor},
     {"jpdb_request", test_jpdb_request},
     {"jpdb_parse", test_jpdb_parse},
     {"jiten_ruby", test_jiten_ruby},

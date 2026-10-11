@@ -89,6 +89,13 @@ static int s_selected;
  * paf call runs while the lock is held. */
 static int s_n_entries;
 static uint32_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES]; /* len 0 = no highlight */
+/* Local lookups select a source character, including one with no entry.
+ * This owned copy survives lookup-result arena resets and never borrows
+ * a worker pointer outside the view lock. */
+static char s_cursor_text[VJO_STRIP_MAX];
+static size_t s_cursor_text_len;
+static int s_local_cursor_mode, s_header_has_text;
+static uint32_t s_cursor_byte, s_text_generation;
 
 /* logged when the overlay closes */
 static int64_t s_frame_max_us;
@@ -166,7 +173,7 @@ static void pane_size(Pane *p, float h, float top)
     p->applied = NOT_PLACED;
 }
 
-/* Recolors the highlighted word: the old range back to white, the new one
+/* Recolors the selected character/word: the old range back to white, the new one
  * yellow. No relayout. */
 static void header_highlight(void)
 {
@@ -175,9 +182,13 @@ static void header_highlight(void)
     if (s_hl_len)
         s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_TEXT));
     s_hl_len = 0;
-    if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
+    if (s_local_cursor_mode) {
+        vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &s_hl_start, &s_hl_len);
+    } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
         s_hl_start = s_rng_start[s_selected];
         s_hl_len = s_rng_len[s_selected];
+    }
+    if (s_hl_len) {
         s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_HIGHLIGHT));
     }
     s_follow_frames = LAYOUT_RETRY_FRAMES;
@@ -220,41 +231,81 @@ static int header_follow(void)
 static void render(int new_content)
 {
     VjoStyled hdr, body;
-    int ja, en, have_hdr = 0, have_body = 0;
+    int ja, en, have_hdr = 0, have_body = 0, rebuild_header, cursor_matches = 1;
     const VjoEntryList *l;
-
-    set_rich(s_hint, "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
 
     font_px(&ja, &en);
     vjo_view_lock();
     l = g_view.list;
+    rebuild_header = new_content || !s_header_has_text;
+    if (g_view.local_cursor_mode) {
+        int new_text = !s_local_cursor_mode || s_text_generation != g_view.text_generation;
+        int copy_text = new_text || (!s_cursor_text_len && l && l->header && l->header[0]);
+        /* A lookup publication changes list_seq/version, not the sentence
+         * or requested cursor. Keep header scroll and selection in place. */
+        rebuild_header = new_text || copy_text || !s_header_has_text;
+        s_local_cursor_mode = 1;
+        if (copy_text) {
+            size_t n = 0;
+            if (l && l->header) {
+                while (n + 1 < sizeof(s_cursor_text) && l->header[n]) {
+                    s_cursor_text[n] = l->header[n];
+                    n++;
+                }
+            }
+            s_cursor_text[n] = 0;
+            s_cursor_text_len = n;
+        }
+        if (new_text || copy_text) {
+            s_text_generation = g_view.text_generation;
+            s_cursor_byte = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len,
+                                                        g_view.cursor_byte, 0);
+        }
+        cursor_matches = g_view.cursor_byte == s_cursor_byte;
+    } else {
+        rebuild_header |= s_local_cursor_mode;
+        s_local_cursor_mode = 0;
+        s_cursor_text_len = 0;
+        s_cursor_text[0] = 0;
+    }
     s_n_entries = l ? l->n_entries : 0;
+    if (s_local_cursor_mode) {
+        s_n_entries = cursor_matches && s_n_entries ? 1 : 0;
+        s_selected = 0;
+    }
     s_list_seq = g_view.list_seq;
     if (s_selected >= s_n_entries)
         s_selected = s_n_entries ? s_n_entries - 1 : 0;
     vjo_arena_reset(&s_ui);
 
-    if (new_content) {
+    if (rebuild_header) {
         if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, 1) == 0) {
-            vjo_styled_header(&hdr, l, ja);
+            if (s_local_cursor_mode)
+                vjo_styled_puts(&hdr, s_cursor_text, VJO_RGB_TEXT, ja);
+            else
+                vjo_styled_header(&hdr, l, ja);
             have_hdr = 1;
         }
-        for (int i = 0; i < s_n_entries && i < MAX_RANGES; i++)
-            if (!vjo_entry_header_range(l, i, &s_rng_start[i], &s_rng_len[i]))
-                s_rng_len[i] = 0;
+        if (!s_local_cursor_mode)
+            for (int i = 0; i < s_n_entries && i < MAX_RANGES; i++)
+                if (!vjo_entry_header_range(l, i, &s_rng_start[i], &s_rng_len[i]))
+                    s_rng_len[i] = 0;
     }
 
     /* body: status, the selected entry (or "no entries"), config warnings */
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
-        if (g_view.status[0])
+        if (!cursor_matches)
+            vjo_styled_puts(&body, "Looking up words…", VJO_RGB_DIM, en);
+        else if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
         if (s_n_entries) {
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
             vjo_styled_entry(&body, l, s_selected, ja, en, 0);
-        } else if (l && !g_view.status[0]) {
-            vjo_styled_puts(&body, "No dictionary entries for this text.", VJO_RGB_DIM, en);
+        } else if (l && !g_view.status[0] && cursor_matches) {
+            vjo_styled_puts(&body, s_local_cursor_mode ? "No dictionary entry starts at this character."
+                                                     : "No dictionary entries for this text.", VJO_RGB_DIM, en);
         }
         for (int i = 0; i < g_view.n_warnings; i++) {
             if (body.len)
@@ -265,9 +316,14 @@ static void render(int new_content)
     }
     vjo_view_unlock();
 
-    if (new_content) {
-        if (have_hdr)
+    set_rich(s_hint, s_local_cursor_mode
+                        ? "<font color=\"#8a94a6\">◀ ▶ character · one entry · stick scroll · □ region · ○ close</font>"
+                        : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
+    if (rebuild_header) {
+        if (have_hdr) {
             text_set(s_header.text, &hdr);
+            s_header_has_text = 1;
+        }
         pane_reset(&s_header);
         s_hl_len = 0;
     }
@@ -421,6 +477,7 @@ static void open_page(void)
     s_selected = 0;
     s_hl_len = 0;
     s_n_entries = 0;
+    s_header_has_text = 0;
     s_frames = s_moves = 0;
     s_frame_max_us = 0;
     s_stick_max = 0;
@@ -444,6 +501,7 @@ static void close_page(void)
     s_separator = s_band_mid = NULL;
     s_hint = s_region_hint = NULL;
     s_n_entries = 0;
+    s_header_has_text = 0;
 }
 
 /* ▲/▼: the word on the nearest line above/below that has one, closest in x
@@ -483,18 +541,34 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     int n = s_n_entries;
     int next = s_selected;
     int dy;
-    if ((pressed & SCE_CTRL_RIGHT) && s_selected + 1 < n)
-        next = s_selected + 1;
-    if ((pressed & SCE_CTRL_LEFT) && s_selected > 0)
-        next = s_selected - 1;
-    if (pressed & SCE_CTRL_UP)
-        next = entry_vertical(1);
-    if (pressed & SCE_CTRL_DOWN)
-        next = entry_vertical(0);
-    if (next != s_selected) {
-        s_selected = next;
-        s_moves++;
-        render(0);
+    if (s_local_cursor_mode) {
+        uint32_t cursor = s_cursor_byte;
+        if (pressed & SCE_CTRL_RIGHT)
+            cursor = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1);
+        if (pressed & SCE_CTRL_LEFT)
+            cursor = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1);
+        if (cursor != s_cursor_byte) {
+            s_cursor_byte = cursor;
+            s_moves++;
+            /* The command detaches the previous definition immediately;
+             * only its asynchronous lookup touches dictionary storage. */
+            vjo_post_cursor(cursor, s_text_generation);
+            render(0);
+        }
+    } else {
+        if ((pressed & SCE_CTRL_RIGHT) && s_selected + 1 < n)
+            next = s_selected + 1;
+        if ((pressed & SCE_CTRL_LEFT) && s_selected > 0)
+            next = s_selected - 1;
+        if (pressed & SCE_CTRL_UP)
+            next = entry_vertical(1);
+        if (pressed & SCE_CTRL_DOWN)
+            next = entry_vertical(0);
+        if (next != s_selected) {
+            s_selected = next;
+            s_moves++;
+            render(0);
+        }
     }
     /* either stick scrolls a long definition */
     dy = (int)in->ly - 128;

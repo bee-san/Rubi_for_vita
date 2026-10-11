@@ -1,8 +1,10 @@
 /* Actual Lens control policy with only Vita scheduling and memory stubbed. */
 #include "acutest.h"
 #include "client.h"
+#include "textfilter.h"
 #define VJO_TEST_MEMORY_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
+#define VJO_TEST_MUTEX_STUBS 1
 #include <psp2/host_stubs.h>
 
 static VjoState state;
@@ -19,6 +21,7 @@ static int phases_checked, vocr_live, fail_join;
 static unsigned char raw_region[200 * 60 * 4];
 static VjoState raw_state;
 static int has_result_memory(void);
+static int held_cmd, held_view, retirement_checks;
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
 int sceKernelSetEventFlag(SceUID id, unsigned bits) { posted |= bits; return 0; }
@@ -33,7 +36,7 @@ int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; ret
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
     TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
-    if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
+    if (phases_checked) TEST_CHECK(!vocr_live && size == 64 * 1024);
     user_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? -1 : 7;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -52,8 +55,25 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 
 #include "../../shell/worker.c"
 
+int sceKernelLockMutex(SceUID uid, int count, void *timeout)
+{
+    if (uid == 81) { TEST_CHECK(!held_view); held_view++; }
+    if (uid == 82) { TEST_CHECK(!held_cmd && !held_view); held_cmd++; }
+    return 0;
+}
+int sceKernelUnlockMutex(SceUID uid, int count)
+{
+    if (uid == 81) { TEST_CHECK(held_view == 1); held_view--; }
+    if (uid == 82) {
+        TEST_CHECK(held_cmd == 1 && !held_view);
+        if (!local_text_valid && !g_view.list && !g_view.local_cursor_mode) retirement_checks++;
+        held_cmd--;
+    }
+    return 0;
+}
+
 void *vjo_shell_heap_alloc(size_t size)
-{ if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
+{ if (phases_checked) TEST_CHECK(!vocr_live && size == 64 * 1024);
   heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
 void *vjo_shell_heap_alloc_for(const char *what, size_t size)
 {
@@ -100,6 +120,7 @@ int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
+static const char *fake_recognized_text;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -129,6 +150,9 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         vocr_live = 0; vocr_frees++;
     }
     if (fake_game_result.rc == VJO_E_OCR_MODEL) fake_game_result.io_error = fake_model_io_error;
+    /* A supplied successful worker response tests Shell publication, not OCR accuracy. */
+    if (fake_game_result.rc == VJO_OK && fake_recognized_text)
+        snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
     *out = fake_game_result;
     return 0;
 }
@@ -139,6 +163,16 @@ static void reset(void)
 {
     if (has_result_memory()) mem_free();
     memset(&g_view, 0, sizeof(g_view));
+    view_lock = 81;
+    cmd_lock = 82;
+    held_cmd = held_view = retirement_checks = 0;
+    local_text[0] = 0;
+    local_text_valid = cursor_waiting = job_cursor_only = 0;
+    local_text_generation = local_text_game_generation = 0;
+    local_cursor_seq = local_cursor_byte = 0;
+    job_cursor_byte = job_cursor_seq = job_text_generation = 0;
+    pending_cmd = VJO_CMD_NONE;
+    pending_cursor_byte = pending_cursor_generation = 0;
     memset(&state, 0, sizeof(state));
     memset(&plat, 0, sizeof(plat));
     plat.pool = &pool;
@@ -160,6 +194,7 @@ static void reset(void)
     fail_vocr_user = fail_vocr_paf = 0;
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
+    fake_recognized_text = NULL;
 #endif
     phases_checked = vocr_live = fail_join = 0;
     memset(&raw_state, 0, sizeof(raw_state));
@@ -542,19 +577,307 @@ static void test_disabled_game_retires_work(void)
 
 static void test_failed_join_keeps_allocations(void)
 {
-    reset();
-    TEST_ASSERT(mem_alloc() == 0);
-    uint8_t *base = results[0].base;
-    threads_started = 1;
-    fail_join = 1;
-    TEST_CHECK(vjo_worker_stop() < 0);
-    TEST_CHECK(has_result_memory() && results[0].base == base && threads_started == 1);
-    fail_join = 0;
-    TEST_CHECK(vjo_worker_stop() == 0);
-    TEST_CHECK(!has_result_memory() && threads_started == 0);
+    for (int local = 0; local < 2; local++) {
+        reset();
+        if (local) cfg.ocr_backend = VJO_OCR_VOCR;
+        TEST_ASSERT(mem_alloc() == 0);
+        uint8_t *base = results[0].base;
+        size_t bytes = results[0].size;
+        threads_started = 1;
+        fail_join = 1;
+        TEST_CHECK(vjo_worker_stop() < 0);
+        TEST_CHECK(has_result_memory() && results[0].base == base && results[0].size == bytes && threads_started == 1);
+        fail_join = 0;
+        TEST_CHECK(vjo_worker_stop() == 0);
+        TEST_CHECK(!has_result_memory() && threads_started == 0);
+    }
 }
 
 #ifdef VJO_WITH_VOCR
+
+/* Tiny generated dictionary exercises actual point-lookup file callbacks.
+ * All text below is a hand-written fixture, not game or dictionary data. */
+static unsigned char cursor_dict[1024];
+static size_t cursor_dict_size;
+static unsigned cursor_opens, cursor_reads, cursor_closes;
+static int cursor_handle_live, read_action;
+static void cursor_u16(unsigned char *p, uint16_t x) { p[0] = x; p[1] = x >> 8; }
+static void cursor_u32(unsigned char *p, uint32_t x) { cursor_u16(p, x); cursor_u16(p + 2, x >> 16); }
+static void cursor_u64(unsigned char *p, uint64_t x) { cursor_u32(p, x); cursor_u32(p + 4, x >> 32); }
+static void cursor_build_dict(void)
+{
+    const char *keys[] = {"犬", "猫", "鳥"};
+    const char *meanings[] = {"dog", "cat", "bird"};
+    size_t off = 64 + 3 * 24;
+    memset(cursor_dict, 0, sizeof(cursor_dict));
+    memcpy(cursor_dict, "VJDICT1\0", 8);
+    cursor_u32(cursor_dict + 8, 1); cursor_u32(cursor_dict + 12, 64);
+    cursor_u32(cursor_dict + 16, 3); cursor_u32(cursor_dict + 20, 24);
+    cursor_u64(cursor_dict + 24, 64); cursor_u64(cursor_dict + 32, off);
+    for (int i = 0; i < 3; i++) {
+        unsigned char *record = cursor_dict + 64 + 24 * i;
+        cursor_u64(record, off); cursor_u16(record + 16, 3);
+        memcpy(cursor_dict + off, keys[i], 3); off += 3;
+        size_t payload = off;
+        const char *parts[] = {keys[i], keys[i], meanings[i]};
+        for (int j = 0; j < 3; j++) {
+            size_t n = strlen(parts[j]) + 1;
+            memcpy(cursor_dict + off, parts[j], n); off += n;
+        }
+        cursor_u64(record + 8, payload); cursor_u32(record + 20, off - payload);
+    }
+    cursor_dict_size = off; cursor_u64(cursor_dict + 40, off);
+}
+static int cursor_file_read(void *ud, uint64_t off, void *dst, size_t n)
+{
+    (void)ud;
+    cursor_reads++;
+    TEST_CHECK(cursor_handle_live == 1);
+    if (read_action) {
+        int action = read_action; read_action = 0;
+        if (action == 1) { vjo_post_cursor(6, local_text_generation); on_command(); }
+        if (action == 2) close_overlay();
+        if (action == 3) { close_overlay(); open_overlay(); }
+        if (action == 4) invalidate_game_work();
+        if (action == 5) { state.scene = state.region_scene = 8; state.region_seq++; }
+    }
+    if (off > cursor_dict_size || n > cursor_dict_size - off) return -1;
+    memcpy(dst, cursor_dict + off, n); return 0;
+}
+static void cursor_file_close(void *ud)
+{ (void)ud; TEST_CHECK(cursor_handle_live == 1); cursor_handle_live = 0; cursor_closes++; }
+static int cursor_file_open(void *ud, const char *path, VjoFile *out)
+{
+    (void)ud;
+    TEST_CHECK(strstr(path, "main.vjdict") != NULL && !cursor_handle_live);
+    cursor_handle_live = 1; cursor_opens++;
+    *out = (VjoFile){NULL, cursor_dict_size, cursor_file_read, cursor_file_close}; return 0;
+}
+static void cursor_setup(void)
+{
+    reset(); cursor_build_dict();
+    cursor_opens = cursor_reads = cursor_closes = 0;
+    cursor_handle_live = read_action = 0;
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    cfg.non_japanese_filter = loaded.non_japanese_filter = VJO_FILTER_NONE;
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
+    strcpy(cfg.local_dictionaries, "main.vjdict");
+    strcpy(loaded.local_dictionaries, "main.vjdict");
+    plat.file_open = cursor_file_open;
+    fake_recognized_text = "猫犬鳥";
+}
+static void finish_current_job(void)
+{
+    TEST_ASSERT(job_running);
+    int idx = job_idx;
+    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
+                            : run_job(&results[idx], &cache_data[idx]);
+    job_done = 1; on_job_done();
+}
+static void cursor_saved_text(void)
+{
+    cursor_setup();
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && !job_lookup && !job_cursor_only);
+    finish_current_job();
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥"));
+    TEST_CHECK(!has_result_memory() && !cursor_opens && !user_allocs && !heap_allocs);
+    TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && !jpeg_captures);
+}
+static void check_current_definition(const char *meaning, uint32_t cursor)
+{
+    TEST_ASSERT(g_view.list != NULL);
+    TEST_CHECK(g_view.local_cursor_mode && g_view.cursor_byte == cursor);
+    TEST_CHECK(!strcmp(g_view.list->header, "猫犬鳥"));
+    TEST_ASSERT(g_view.list->n_entries == 1);
+    TEST_CHECK(strstr(g_view.list->entries[0].text, meaning) != NULL);
+    TEST_CHECK(g_view.list->entries[0].hl_start == (int)cursor);
+    TEST_CHECK(cursor_opens == cursor_closes && !cursor_handle_live);
+    TEST_CHECK(!held_cmd && !held_view);
+}
+static void test_character_open_reuses_background_text(void)
+{
+    cursor_saved_text();
+    uint32_t generation = local_text_generation;
+    open_overlay();
+    TEST_ASSERT(job_running && job_cursor_only);
+    TEST_CHECK(!cursor_opens && vocr_allocs == 1);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1);
+    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size);
+
+    /* Opening between recognition and completion starts only point lookup.
+     * The real mutex stubs reject recursively reacquiring cmd_lock. */
+    cursor_setup(); start_job("background still finishing", 0);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    open_overlay(); TEST_CHECK(cursor_waiting && job_running && !job_cursor_only);
+    on_job_done(); TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job(); check_current_definition("cat", 0);
+    TEST_CHECK(vocr_allocs == 1);
+}
+static void test_character_coalesces_and_drops_inflight_definition(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    uint32_t generation = local_text_generation;
+    unsigned reads_before = cursor_reads;
+    vjo_post_cursor(3, generation); vjo_post_cursor(6, generation); vjo_post_cursor(0, generation);
+    TEST_CHECK(cursor_reads == reads_before && pending_cmd == VJO_CMD_CURSOR);
+    TEST_CHECK(g_view.cursor_byte == 0 && !g_view.list->n_entries);
+    on_command(); TEST_ASSERT(job_running && job_cursor_byte == 0);
+    finish_current_job(); check_current_definition("cat", 0);
+
+    vjo_post_cursor(3, generation); on_command();
+    read_action = 1; /* a later move arrives at an actual file-read boundary */
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 6);
+    TEST_CHECK(g_view.cursor_byte == 6 && !g_view.list->n_entries);
+    finish_current_job(); check_current_definition("bird", 6);
+    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1 && !jpeg_captures);
+}
+static void test_character_close_reopen_and_retirement(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    uint32_t generation = local_text_generation;
+    vjo_post_cursor(3, generation); on_command(); read_action = 3;
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && !job_cancelled && ov == OV_OPEN);
+    TEST_CHECK(!g_view.list->n_entries);
+    finish_current_job(); check_current_definition("dog", 3);
+    TEST_CHECK(vocr_allocs == 1 && local_text_generation == generation);
+
+    vjo_post_cursor(6, generation); on_command(); read_action = 2;
+    finish_current_job();
+    TEST_CHECK(ov == OV_CLOSED && !job_running && !g_view.list);
+    unsigned n = cursor_opens;
+    vjo_post_cursor(0, generation); on_command();
+    TEST_CHECK(!job_running && cursor_opens == n && !g_view.list);
+    open_overlay(); finish_current_job();
+    vjo_post_cursor(3, generation); on_command(); read_action = 4;
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.list && !job_running);
+    TEST_CHECK(game_generation != job_generation && local_text_generation != generation);
+    TEST_CHECK(vocr_allocs == 1 && retirement_checks > 0);
+}
+static void test_character_scene_and_region_invalidate_saved_text(void)
+{
+    for (int during_read = 0; during_read < 2; during_read++) {
+        cursor_saved_text(); open_overlay(); finish_current_job();
+        uint32_t generation = local_text_generation;
+        vjo_post_cursor(3, generation);
+        if (!during_read) { state.scene = state.region_scene = 8; state.region_seq++; }
+        on_command();
+        if (during_read) { read_action = 5; finish_current_job(); }
+        TEST_CHECK(!local_text_valid && !job_running && !g_view.list);
+        TEST_CHECK(local_text_generation != generation && g_view.status_is_error);
+        TEST_CHECK(strstr(g_view.status, "dialogue changed") != NULL && vocr_allocs == 1);
+        close_overlay(); open_overlay();
+        TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
+        job_running = 0;
+    }
+    for (int cmd = VJO_CMD_SET_REGION; cmd <= VJO_CMD_CLEAR_REGION; cmd++) {
+        cursor_saved_text(); open_overlay(); finish_current_job();
+        uint32_t generation = local_text_generation;
+        VjoRect r = {2, 4, 100, 50};
+        vjo_post_command(cmd, &r); on_command();
+        /* Kernel may retain scene ID after a region reset. */
+        TEST_CHECK(state.scene == 2 && !local_text_valid && ov == OV_CLOSED);
+        TEST_CHECK(local_text_generation != generation && !g_view.list);
+        open_overlay(); TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
+        job_running = 0;
+    }
+}
+static void test_character_command_priority_and_generation_boundaries(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    uint32_t generation = local_text_generation;
+    unsigned n = cursor_opens;
+    vjo_post_cursor(1, generation); vjo_post_cursor(9, generation);
+    vjo_post_cursor(0, generation + 1);
+    TEST_CHECK(pending_cmd == VJO_CMD_NONE && !job_running && cursor_opens == n);
+    const int commands[] = {VJO_CMD_CLOSED, VJO_CMD_SET_REGION, VJO_CMD_CLEAR_REGION};
+    for (size_t i = 0; i < sizeof(commands)/sizeof(commands[0]); i++) {
+        vjo_post_command(commands[i], NULL);
+        vjo_post_cursor(3, generation);
+        TEST_CHECK(pending_cmd == commands[i] && g_view.cursor_byte == 0);
+        pending_cmd = VJO_CMD_NONE;
+    }
+    local_cursor_seq = UINT32_MAX;
+    vjo_post_cursor(3, generation); TEST_CHECK(local_cursor_seq == 1);
+    on_command(); finish_current_job(); check_current_definition("dog", 3);
+    local_text_generation = UINT32_MAX;
+    retire_local_text(1);
+    TEST_CHECK(local_text_generation == 1 && !local_text_valid && !g_view.list);
+    vjo_post_cursor(0, generation); TEST_CHECK(pending_cmd == VJO_CMD_NONE);
+    TEST_CHECK(retirement_checks > 0 && !held_cmd && !held_view);
+}
+
+static void test_shell_result_oom_preserves_recognition(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    cfg.non_japanese_filter = VJO_FILTER_LINES;
+    fake_recognized_text = "HUD only\r\n  日本語です  \r\nEnglish only";
+    subtitles = 1;
+    ov = OV_OPEN;
+    fail_alloc = 1;
+    backoff_note(&ocr_backoff, 1); /* previous OCR failure must be cleared */
+    start_job("Shell result refusal after recognition", 1);
+    int idx = job_idx;
+    TEST_CHECK(run_job(&results[idx], &cache_data[idx]) == VJO_E_OOM);
+    VjoOverlayData *d = &cache_data[idx];
+    TEST_CHECK(d->failed_stage == VJO_STAGE_DICT && d->err.dict == VJO_DICT_LOCAL);
+    TEST_CHECK(d->ocr_text && !strcmp(d->ocr_text, fake_recognized_text));
+    TEST_CHECK(d->sentence && !strcmp(d->sentence, "日本語です"));
+    TEST_CHECK(d->list.header && !strcmp(d->list.header, "日本語です"));
+    TEST_CHECK(!d->list.n_entries && !d->list.entries);
+    TEST_CHECK(!has_result_memory() && !vocr_live && vocr_allocs == vocr_frees);
+    on_job_done();
+    TEST_CHECK(!ocr_backoff.until && !ocr_backoff.us);
+    TEST_CHECK(dict_backoff.until > now_us() && dict_backoff.us == BACKOFF_MIN_US);
+    TEST_CHECK(g_view.status_is_error && strstr(g_view.status, "Shell UI memory"));
+    TEST_CHECK(!strstr(g_view.status, "Text recognition failed") && !strstr(g_view.status, "region"));
+    TEST_CHECK(g_view.list == &d->list && !strcmp(g_view.list->header, "日本語です"));
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "日本語です"));
+    TEST_CHECK(!g_view.strip_busy && !job_running && !cache_ok);
+
+    /* A new job removes every published fallback pointer before reuse. */
+    close_overlay(); /* background OCR-only jobs run with the overlay closed */
+    fail_alloc = 0;
+    fake_recognized_text = "次の文";
+    start_job("Shell memory recovered", 0);
+    TEST_CHECK(!g_view.list && !has_result_memory());
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    on_job_done();
+    TEST_CHECK(!strcmp(g_view.strip_text, "次の文") && !ocr_backoff.until);
+    TEST_CHECK(!has_result_memory() && vocr_allocs == vocr_frees);
+    mem_free();
+    TEST_CHECK(!has_result_memory());
+}
+
+static void test_shell_result_oom_keeps_max_worker_text(void)
+{
+    char longest[VJO_GAME_OCR_TEXT_BYTES];
+    for (size_t i = 0; i < sizeof(longest) - 1; i += 3)
+        memcpy(longest + i, "語", 3);
+    longest[sizeof(longest) - 1] = 0;
+    for (int mode = VJO_FILTER_NONE; mode <= VJO_FILTER_LINES; mode++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.non_japanese_filter = mode;
+        fake_recognized_text = longest;
+        fail_alloc = 1;
+        start_job("maximum recognized text under Shell pressure", 1);
+        TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+        VjoOverlayData *d = &cache_data[job_idx];
+        TEST_CHECK(d->failed_stage == VJO_STAGE_DICT);
+        TEST_CHECK(d->sentence && !strcmp(d->sentence, longest));
+        TEST_CHECK(d->list.header && !strcmp(d->list.header, longest));
+        TEST_CHECK(!has_result_memory() && !vocr_live && vocr_allocs == vocr_frees);
+        job_running = 0;
+    }
+}
+
 static void test_local_phases_and_recovery(void)
 {
     reset();
@@ -564,7 +887,8 @@ static void test_local_phases_and_recovery(void)
         start_job("local phase check", 0);
         TEST_CHECK(!has_result_memory() && pool.n == 0 && g_view.list == NULL);
         TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-        TEST_CHECK(has_result_memory() && results[0].size == 128 * 1024 && pool.n == 0);
+        TEST_CHECK(!has_result_memory() && !results[0].size && !results[1].size && pool.n == 0);
+        TEST_CHECK(!user_allocs && !heap_allocs);
         TEST_CHECK(vocr_allocs == vocr_frees && !vocr_live);
         job_running = 0;
     }
@@ -582,6 +906,37 @@ static void test_local_phases_and_recovery(void)
     phases_checked = 0;
 }
 
+static void test_local_lookup_single_arena_and_network_double_buffers(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    phases_checked = 1;
+    ov = OV_OPEN;
+    start_job("local lookup", 1);
+    TEST_CHECK(job_idx == 0 && !g_view.list);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(has_result_memory() && results[0].size == 64 * 1024);
+    TEST_CHECK(!results[1].base && !results[1].size && !pool.n);
+    on_job_done();
+    TEST_CHECK(cache_ok && active == 0 && g_view.list == &cache_data[0].list);
+    start_job("local OCR only replaces cached lookup", 0);
+    TEST_CHECK(job_idx == 0 && !has_result_memory() && !g_view.list && !cache_ok);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(!has_result_memory());
+    job_running = 0;
+
+    phases_checked = 0;
+    cfg.ocr_backend = VJO_OCR_LENS;
+    TEST_CHECK(mem_alloc() == 0 && !mem_local);
+    TEST_CHECK(results[0].size == RESULT_ARENA_SIZE && results[1].size == RESULT_ARENA_SIZE);
+    TEST_CHECK(results[1].base == results[0].base + RESULT_ARENA_SIZE && pool.n == POOL_SLOTS);
+    active = 0;
+    start_job("network keeps double buffering", 0);
+    TEST_CHECK(job_idx == 1);
+    job_running = 0;
+    mem_free();
+}
+
 static void test_local_switch_drains_warm_pool(void)
 {
     reset();
@@ -589,14 +944,16 @@ static void test_local_switch_drains_warm_pool(void)
     uint8_t *base = results[0].base;
     warm_running = 1;
     cfg.ocr_backend = VJO_OCR_VOCR;
+    active = 0; /* old network result must not select local result1 */
     start_job("switch from warm Lens to local OCR", 0);
+    TEST_CHECK(job_idx == 0);
     /* The control thread must not free a pool still used by the worker. */
     TEST_CHECK(has_result_memory() && results[0].base == base && pool.n > 0);
     TEST_CHECK(job_cached_text == NULL);
     warm_running = 0;
     phases_checked = 1;
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-    TEST_CHECK(mem_local && pool.n == 0 && results[0].size == 128 * 1024);
+    TEST_CHECK(!has_result_memory() && pool.n == 0 && !results[0].size && !results[1].size);
     phases_checked = 0;
     job_running = 0;
     cfg.ocr_backend = VJO_OCR_LENS;
@@ -613,6 +970,14 @@ TEST_LIST = {
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
 #ifdef VJO_WITH_VOCR
+    {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
+    {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
+    {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
+    {"character_scene_and_region_changes_retire_saved_text", test_character_scene_and_region_invalidate_saved_text},
+    {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
+    {"Shell_result_OOM_preserves_OCR_sentence_and_dictionary_backoff", test_shell_result_oom_preserves_recognition},
+    {"Shell_result_OOM_preserves_maximum_filtered_worker_text", test_shell_result_oom_keeps_max_worker_text},
+    {"local_lookup_uses_one_arena_and_network_keeps_two", test_local_lookup_single_arena_and_network_double_buffers},
     {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
     {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif

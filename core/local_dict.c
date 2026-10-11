@@ -204,7 +204,7 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
     return VJO_OK;
 }
 
-static int find_matches_v1(Workspace *w, int di, const Candidate *c)
+static int find_matches_v1(Workspace *w, int di, const Candidate *c, int limit)
 {
     Dictionary *d = &w->dicts[di];
     uint32_t lo = 0, hi = d->count;
@@ -225,9 +225,10 @@ static int find_matches_v1(Workspace *w, int di, const Candidate *c)
         for (int j = 0; j < w->n_matches; j++)
             if (w->matches[j].dict == di && w->matches[j].record.entry_off == r.entry_off) duplicate = 1;
         if (duplicate) continue;
-        if (w->n_matches >= VJO_LOCAL_MAX_MATCHES) break;
+        if (w->n_matches >= limit) break;
         w->matches[w->n_matches].dict = di;
         w->matches[w->n_matches++].record = r;
+        if (limit == 1) break; /* Selected lookup never reads later homonyms. */
     }
     return VJO_OK;
 }
@@ -243,7 +244,7 @@ static uint64_t key_hash(const char *key)
     return h ^ (h >> 33);
 }
 
-static int find_matches_v2(Workspace *w, int di, const Candidate *c)
+static int find_matches_v2(Workspace *w, int di, const Candidate *c, int limit)
 {
     Dictionary *d = &w->dicts[di];
     uint64_t hash = key_hash(c->key), page = PAGE_SIZE + (hash & (d->buckets - 1)) * PAGE_SIZE;
@@ -284,7 +285,7 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c)
             if ((rc = cached_read(w, d, group, key, key_len))) return rc;
             if (memcmp(key, c->key, key_len)) continue;
             if (n > MAX_HOMONYMS) n = MAX_HOMONYMS;
-            for (uint32_t j = 0; j < n && w->n_matches < VJO_LOCAL_MAX_MATCHES; j++) {
+            for (uint32_t j = 0; j < n && w->n_matches < limit; j++) {
                 uint8_t post[16];
                 Record r;
                 int duplicate = 0;
@@ -312,9 +313,9 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c)
     return VJO_OK;
 }
 
-static int find_matches(Workspace *w, int di, const Candidate *c)
+static int find_matches(Workspace *w, int di, const Candidate *c, int limit)
 {
-    return w->dicts[di].version == 2 ? find_matches_v2(w, di, c) : find_matches_v1(w, di, c);
+    return w->dicts[di].version == 2 ? find_matches_v2(w, di, c, limit) : find_matches_v1(w, di, c, limit);
 }
 
 static int deinflect(Candidate *c, const char *key)
@@ -435,7 +436,7 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             /* Exact matches in all dictionaries precede deinflected matches. */
             for (int c = 0; c < candidates && w->n_matches < VJO_LOCAL_MAX_MATCHES; c++)
                 for (int d = 0; d < w->n_dicts && w->n_matches < VJO_LOCAL_MAX_MATCHES; d++)
-                    if ((rc = find_matches(w, d, &w->candidates[c]))) goto done;
+                    if ((rc = find_matches(w, d, &w->candidates[c], VJO_LOCAL_MAX_MATCHES))) goto done;
             if (!w->n_matches) continue;
             for (int j = 0; j < w->n_matches; j++)
                 if ((rc = append_match(&output, w, &w->matches[j], pos16, units[k], res))) goto done;
@@ -451,6 +452,82 @@ done:
         vjo_arena_release(a, mark);
     } else {
         /* The scratch workspace and unused result capacity do not stay resident. */
+        vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
+    }
+    return err->rc = rc;
+}
+
+int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                        const char *text, size_t cursor_byte,
+                        VjoDictResult *res, VjoErr *err)
+{
+    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0;
+    size_t lengths[MAX_SCAN_CHARS + 1];
+    int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0;
+    char key[VJO_LOCAL_MAX_KEY + 1];
+    VjoArena output;
+    Workspace *w;
+    void *outmem;
+    int rc = VJO_OK;
+
+    memset(res, 0, sizeof(*res));
+    memset(err, 0, sizeof(*err));
+    err->dict = VJO_DICT_LOCAL;
+    if (len > VJO_LOCAL_MAX_TEXT) return err->rc = VJO_E_TOO_LARGE;
+    if (cursor_byte > len) return err->rc = VJO_E_PARSE;
+    while (off < cursor_byte)
+        pos16 += vjo_utf16_units(vjo_utf8_next(text, len, &off));
+    if (off != cursor_byte) return err->rc = VJO_E_PARSE;
+
+    /* Only inspect the prefix at the selected character. Source UTF-16
+     * lengths remain unchanged by kana/fullwidth search normalization. */
+    while (off < len && count < MAX_SCAN_CHARS) {
+        uint32_t cp = vjo_utf8_next(text, len, &off);
+        char enc[4];
+        int n;
+        if (boundary(cp)) break;
+        source_units += vjo_utf16_units(cp);
+        if (cp >= 0x30a1 && cp <= 0x30f6) cp -= 0x60;
+        if (cp >= 0xff01 && cp <= 0xff5e) cp -= 0xfee0;
+        n = vjo_utf8_encode(cp, enc);
+        if (bytes + (size_t)n > VJO_LOCAL_MAX_KEY) break;
+        memcpy(key + bytes, enc, (size_t)n); bytes += (size_t)n;
+        count++; lengths[count] = bytes; units[count] = source_units;
+    }
+    if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
+
+    outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
+    w = vjo_arena_zalloc(a, sizeof(*w));
+    if (!outmem || !w) {
+        vjo_arena_release(a, mark);
+        return err->rc = VJO_E_OOM;
+    }
+    vjo_arena_init(&output, outmem, VJO_LOCAL_SELECTED_BUDGET);
+    res->vocab = vjo_arena_zalloc(&output, sizeof(VjoVocab));
+    res->tokens = vjo_arena_zalloc(&output, sizeof(VjoToken));
+    if ((rc = open_dictionaries(w, p, cfg, err))) goto done;
+    for (int k = count; k > 0; k--) {
+        int candidates;
+        key[lengths[k]] = 0;
+        candidates = deinflect(w->candidates, key);
+        w->n_matches = 0;
+        /* An exact hit in a later dictionary beats an inflected hit in an
+         * earlier dictionary. Within the same candidate, first dictionary
+         * and first posting win; only that payload is read. */
+        for (int c = 0; c < candidates && !w->n_matches; c++)
+            for (int d = 0; d < w->n_dicts && !w->n_matches; d++)
+                if ((rc = find_matches(w, d, &w->candidates[c], 1))) goto done;
+        if (!w->n_matches) continue;
+        rc = append_match(&output, w, &w->matches[0], pos16, units[k], res);
+        break;
+    }
+done:
+    for (int i = 0; i < w->n_dicts; i++)
+        if (w->dicts[i].file.close) w->dicts[i].file.close(w->dicts[i].file.ctx);
+    if (rc || !res->n_vocab) {
+        memset(res, 0, sizeof(*res));
+        vjo_arena_release(a, mark);
+    } else {
         vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
     }
     return err->rc = rc;

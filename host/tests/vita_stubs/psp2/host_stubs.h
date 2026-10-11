@@ -13,6 +13,7 @@ typedef unsigned int SceSize;
 #define SCE_EVENT_WAITOR 1
 #define SCE_EVENT_WAITCLEAR_PAT 2
 #define sceClibMemcpy memcpy
+#define sceClibMemmove memmove
 #define sceClibMemset memset
 #define sceClibSnprintf snprintf
 #define sceClibStrnlen strnlen
@@ -22,8 +23,13 @@ uint64_t sceKernelGetProcessTimeWide(void);
 int sceKernelDelayThread(unsigned us);
 static inline int sceKernelPowerTick(int type) { return 0; }
 int sceKernelSetEventFlag(SceUID uid, unsigned int bits);
+#ifdef VJO_TEST_MUTEX_STUBS
+int sceKernelLockMutex(SceUID uid, int count, void *timeout);
+int sceKernelUnlockMutex(SceUID uid, int count);
+#else
 static inline int sceKernelLockMutex(SceUID uid, int count, void *timeout) { return 0; }
 static inline int sceKernelUnlockMutex(SceUID uid, int count) { return 0; }
+#endif
 #ifdef VJO_TEST_MEMORY_STUBS
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned int size, void *opt);
 int sceKernelGetMemBlockBase(SceUID uid, void **base);
