@@ -3,6 +3,14 @@ Vendored sources:
 - jsmn     https://github.com/zserge/jsmn       25647e692c7906b96ffd2b05ca54c097948e879c (MIT)
 - acutest  https://github.com/mity/acutest      31751b4089c93b46a9fd8a8183a695f772de66de (MIT)
 
+The standalone Settings app builds libpng 1.6.58 from
+https://codeload.github.com/pnggroup/libpng/tar.gz/refs/tags/v1.6.58,
+SHA-256 `a9d4df463d36a6e5f9c29bd6f4967312d17e996c1854f3511f833924eb1993cf`.
+This project-private static target uses the same VitaSDK compiler and headers
+as the app; the SDK installation is not modified. Source is fetched into the
+build directory. [Libpng notice](licenses/libpng.txt),
+[native runtime compatibility check](../docs/settings-png-runtime.md).
+
 Fetched for the optional/default-enabled local OCR build:
 
 - ncnn: https://github.com/Tencent/ncnn at
