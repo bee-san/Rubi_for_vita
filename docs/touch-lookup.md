@@ -59,6 +59,6 @@ downloaded public release assets match their audited candidates and checksums.
 
 Settings-card taps are separate from recognized-header taps in a game.
 Fresh native inventory confirms the installed Shell plugin loaded. In-game
-touch/highlight tests remain pending; no native finger-accuracy, glyph-bound, word-span or game-routing
-result is claimed from the host checks or Settings saves. See
+touch/highlight tests remain pending; no native finger-accuracy, glyph-bound,
+word-span or game-routing result is claimed from the host checks or Settings saves. See
 [the complete install checkpoint](todo-20261011.md#v079-touchhighlight-installation-checkpoint).
