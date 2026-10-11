@@ -51,7 +51,7 @@ def package(base, output, models, dictionary, license_file):
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-    manifest = {"version": "0.7.3", "files": {}, "dictionary": conversion,
+    manifest = {"version": "0.7.4", "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
                              "ocr_mode": "auto", "anki": False}}

@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.3 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.4 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -14,8 +14,8 @@ Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.3.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.3) and
+Download `VitaJPOverlay-0.7.4.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.4) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, and the complete converted JMdict snapshot. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
@@ -207,6 +207,18 @@ Timeout and ownership tests run without release weights. Real
 accuracy is measured separately against vita-vn-ocr's hand-checked shared
 `eval/` screenshots. Experimental Meiki and text-extraction branches remain
 separate from this release.
+
+Controller regressions exercise all 12 hooked read/peek variants, including
+negative logic and 64-sample batches. The [pinned VitaSDK headers](https://github.com/vitasdk/vita-headers/blob/e66ebe90b73d1fa4cce005a5b2072cec27322544/include/psp2/ctrl.h)
+map Vita shoulders to L1/R1 in `*2`/`Ext2` calls. A physical v0.7.3 trace
+confirmed a game `ReadPositive2` sample of `0xC00` alongside raw L+R `0x300`;
+the older filter allowed that opening chord to reach the game. The repaired
+filter uses shared canonical chord/replay state, preserves genuine L2/R2
+in the mapped calls, and clears hidden buttons' pressure values. Full overlay
+blocking clears all 12 pressure fields while preserving timestamps and the
+SDK's four reserved bytes. Only a replayed short tap receives a fabricated
+pressure of 255. Host checks cover mixed APIs, held suppression and contended
+reads; physical validation of this input repair remains required.
 
 ## Credits and license
 

@@ -6,7 +6,7 @@ recognizer made for visual-novel dialogue, and its line finder, both plain C99
 with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
 and no cloud fallback. With `dictionary = local` the whole lookup is offline.
 
-**Status: default in v0.7.3; physical recognition validation is still pending.** It builds with VitaSDK and
+**Status: default in v0.7.4; physical recognition validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
@@ -116,7 +116,7 @@ needs access to it):
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
 
-# Vita plugins and release zip (VitaJPOverlay-0.7.3.zip)
+# Vita plugins and release zip (VitaJPOverlay-0.7.4.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/vita --target release
 
@@ -135,7 +135,7 @@ then reports that the backend is missing instead of uploading anything.
 
 ## Install
 
-The complete v0.7.3 ZIP already includes both int8 models and the local
+The complete v0.7.4 ZIP already includes both int8 models and the local
 configuration; use its `install-vita.sh` as described in the README. The
 steps below cover a source build or adding another model.
 

@@ -8,6 +8,7 @@
 #include <psp2kern/kernel/sysmem.h>
 #include <psp2kern/kernel/threadmgr.h>
 #include <taihen.h>
+#include <stddef.h>
 
 #include "vjo_kernel.h"
 
@@ -219,9 +220,8 @@ static uint32_t touch_state(const KTouchData *t)
 
 /* Combo delay state (triggers.h), per pad port: a game may also read empty
  * ports, which must not end a press. Pad calls can come from several game
- * threads: one at a time uses it, the others skip the delay (so a combo's
- * first button can reach such a thread for a frame, and count as an input
- * edge in change detection). Reset when the triggers change
+ * threads: one at a time uses it, the others reserve the configured trigger
+ * buttons for that sample without spinning. Reset when the triggers change
  * (g.trigger_gen). */
 #define COMBO_DELAY_US 300000 /* covers the gap between a combo's two presses */
 
@@ -232,7 +232,7 @@ static uint32_t hold_gen;
 /* At most one line per condition during each overlay opening. */
 static volatile uint32_t input_trace;
 enum { INPUT_TRACE_FIRST = 1, INPUT_TRACE_CROSS = 2, INPUT_TRACE_COPY = 4,
-       INPUT_TRACE_FOREIGN = 8, INPUT_TRACE_EMPTY = 16 };
+       INPUT_TRACE_FOREIGN = 8, INPUT_TRACE_EMPTY = 16, INPUT_TRACE_TRIGGER = 32 };
 
 void input_trace_reset(void)
 {
@@ -254,12 +254,43 @@ static void trig_config(TrigConfig *c)
     c->delay_us = COMBO_DELAY_US;
 }
 
+/* *2 and Ext2 exports encode the Vita's L/R shoulders as L1/R1. Keep shared
+ * hold/replay state and the worker's suppression in the legacy L/R domain;
+ * genuine external-controller L2/R2 stay outside that translation. */
+static int ctrl_second_encoding(int hook)
+{
+    return hook == H_PEEK_NEG2 || hook == H_PEEK_POS2 ||
+           hook == H_READ_NEG2 || hook == H_READ_POS2 ||
+           hook == H_PEEK_POS_EXT2 || hook == H_READ_POS_EXT2;
+}
+
+static void filter_pressure(SceCtrlData *d, uint32_t before, uint32_t after)
+{
+    static const uint32_t masks[12] = {
+        SCE_CTRL_UP, SCE_CTRL_RIGHT, SCE_CTRL_DOWN, SCE_CTRL_LEFT,
+        SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER, SCE_CTRL_L1, SCE_CTRL_R1,
+        SCE_CTRL_TRIANGLE, SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_SQUARE
+    };
+    uint8_t *pressure = (uint8_t *)d + offsetof(SceCtrlData, up);
+    for (unsigned i = 0; i < 12; i++) {
+        if ((before & masks[i]) && !(after & masks[i]))
+            pressure[i] = 0;
+        else if (!(before & masks[i]) && (after & masks[i]))
+            pressure[i] = 255; /* only a replayed press is fabricated */
+    }
+}
+
 /* Rewrites the game's pad data (user memory) in place. */
 static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int negative)
 {
     TrigConfig c;
     TrigHold *holds = NULL;
     int64_t now;
+    const uint32_t legacy_lr = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
+    const uint32_t second_lr = SCE_CTRL_L1 | SCE_CTRL_R1;
+    const int second = ctrl_second_encoding(hook);
+    /* Leave the timestamp and the SDK's final four reserved bytes intact. */
+    const size_t state_bytes = offsetof(SceCtrlData, reserved) - offsetof(SceCtrlData, buttons);
     SceUID caller = ksceKernelGetProcessId();
     if (n <= 0 || g.game_pid <= 0 || !g.game_active)
         return n;
@@ -276,7 +307,8 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
     /* One time for the call's samples: games read one at a time. */
     now = ksceKernelGetSystemTimeWide();
     trig_config(&c);
-    if (c.delay_us && port >= 0 && port < HOLD_PORTS && __sync_bool_compare_and_swap(&hold_busy, 0, 1)) {
+    const int delay_port = c.delay_us && port >= 0 && port < HOLD_PORTS;
+    if (delay_port && __sync_bool_compare_and_swap(&hold_busy, 0, 1)) {
         if (hold_gen != g.trigger_gen) {
             memset(hold, 0, sizeof(hold));
             hold_gen = g.trigger_gen;
@@ -284,10 +316,7 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
         holds = hold[port];
     }
     for (int i = 0; i < n; i++) {
-        struct {
-            uint32_t buttons;
-            uint8_t lx, ly, rx, ry;
-        } d;
+        SceCtrlData d;
         uint32_t pos = 0;
         int copy_rc;
         uintptr_t u = (uintptr_t)&pad_data[i].buttons;
@@ -299,25 +328,44 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
             uint32_t before = 0;
             int read_rc = 0;
             if (trace) {
-                read_rc = ksceKernelMemcpyUserToKernel(&d, (const void *)u, sizeof(d));
+                read_rc = ksceKernelMemcpyUserToKernel(&d.buttons, (const void *)u, state_bytes);
                 if (read_rc >= 0) before = negative ? ~d.buttons : d.buttons;
             }
             d.buttons = negative ? ~0u : 0;
             d.lx = d.ly = d.rx = d.ry = 0x80;
-            copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d, sizeof(d));
+            memset((uint8_t *)&d + offsetof(SceCtrlData, up), 0, 12);
+            copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d.buttons, state_bytes);
             if (trace || (copy_rc < 0 && input_trace_claim(INPUT_TRACE_COPY)))
-                klog("input blocked hook=%d pid=%X game=%X read=%08X write=%08X buttons=%08X raw=%08X",
-                     hook, caller, g.game_pid, read_rc, copy_rc, before, g.raw_buttons);
+                klog("input blocked hook=%d pid=%X game=%X read=%08X write=%08X buttons=%08X out=%08X LR=%u/%u L1R1=%u/%u raw=%08X",
+                     hook, caller, g.game_pid, read_rc, copy_rc, before, d.buttons,
+                     d.lt, d.rt, d.l1, d.r1, g.raw_buttons);
         } else {
-            copy_rc = ksceKernelMemcpyUserToKernel(&d, (const void *)u, sizeof(d));
+            copy_rc = ksceKernelMemcpyUserToKernel(&d.buttons, (const void *)u, state_bytes);
             if (copy_rc < 0) {
                 returned = copy_rc;
                 break;
             }
             pos = negative ? ~d.buttons : d.buttons;
+            const uint32_t before = pos;
+            if (second)
+                pos = (pos & ~(legacy_lr | second_lr)) | ((pos & second_lr) >> 2);
+            const uint32_t canonical_before = pos;
             pos = trig_filter(&c, holds, pos, now) & ~g.suppress_mask;
+            if (delay_port && !holds)
+                pos &= ~(c.mask[TRIG_TOGGLE] | c.mask[TRIG_SUBTITLE]);
+            int completed = 0;
+            for (int k = 0; k < TRIG_COUNT; k++)
+                if (c.mask[k] && (canonical_before & c.mask[k]) == c.mask[k] &&
+                    (pos & c.mask[k]) != c.mask[k])
+                    completed = 1;
+            if (second)
+                pos = (pos & ~(legacy_lr | second_lr)) | ((pos & legacy_lr) << 2) | (before & legacy_lr);
+            filter_pressure(&d, before, pos);
             d.buttons = negative ? ~pos : pos;
-            copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d, sizeof(d));
+            copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d.buttons, state_bytes);
+            if (copy_rc >= 0 && completed && input_trace_claim(INPUT_TRACE_TRIGGER))
+                klog("input trigger hook=%d pid=%X in=%08X out=%08X LR=%u/%u L1R1=%u/%u write=%08X raw=%08X",
+                     hook, caller, before, pos, d.lt, d.rt, d.l1, d.r1, copy_rc, g.raw_buttons);
         }
         if (copy_rc < 0) {
             returned = copy_rc;
