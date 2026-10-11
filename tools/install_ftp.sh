@@ -30,6 +30,7 @@ DUMPS=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
+PACKAGE_DIR=
 while [ $# -gt 1 ]; do
   case $1 in
     --uninstall) UNINSTALL=1 ;;
@@ -39,6 +40,7 @@ while [ $# -gt 1 ]; do
     --set) SETS+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
     --vocr-model) VOCR_MODELS+=("$2"); shift ;;
+    --package-dir) PACKAGE_DIR=$(cd "$2" && pwd); shift ;;
     *) break ;;
   esac
   shift
@@ -47,14 +49,38 @@ HOST=${1:?usage: tools/install_ftp.sh [--set key=value]... [--uninstall|--status
 [[ $HOST == *:* ]] || HOST=$HOST:1337
 FTP=ftp://$HOST
 B=build/vita
+RCO=$B/vitajpoverlay.rco
+if [ -n "$PACKAGE_DIR" ]; then
+  python3 tools/package_release.py --verify "$PACKAGE_DIR"
+  B=$PACKAGE_DIR/ur0/tai
+  RCO=$PACKAGE_DIR/ur0/data/VitaJPOverlay/vitajpoverlay.rco
+  for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr; do
+    [ -f "$model" ] && VOCR_MODELS+=("$model")
+  done
+fi
 PATCH_ARGS=()
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-c() { curl -s --show-error --max-time 60 "$@"; }
+c() { curl --fail -s --show-error --max-time 300 "$@"; }
 exists() { c -o /dev/null "$FTP/$1" 2>/dev/null; }
 get() { c -o "$2" "$FTP/$1"; }
-put() { c --ftp-create-dirs -T "$1" "$FTP/$2"; }
+put() {
+  c --ftp-create-dirs -T "$1" "$FTP/$2"
+  get "$2" "$TMP/readback"
+  python3 - "$1" "$TMP/readback" "$2" <<'PY'
+import hashlib, sys
+def digest(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.digest()
+if digest(sys.argv[1]) != digest(sys.argv[2]):
+    raise SystemExit("FTP readback checksum failed: " + sys.argv[3])
+print("verified " + sys.argv[3])
+PY
+}
 
 python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5).close()' \
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
@@ -104,8 +130,8 @@ fi
 # patched too, since taiHEN prefers it when ux0 is available at boot.
 CFGS=(ur0:/tai/config.txt)
 exists "ux0:/tai/config.txt" && CFGS+=(ux0:/tai/config.txt)
-BK=build/device/backup/$(date +%Y%m%d-%H%M%S)
-mkdir -p "$BK"
+mkdir -p build/device/backup
+BK=$(mktemp -d "build/device/backup/$(date +%Y%m%d-%H%M%S)-XXXXXX")
 for CFG in "${CFGS[@]}"; do
   n=${CFG%%:*}
   get "$CFG" "$TMP/$n.txt" || { echo "cannot read $CFG"; exit 1; }
@@ -168,7 +194,7 @@ PY
   exit 0
 fi
 
-for f in "$B/VitaJPOverlay_Kernel.skprx" "$B/VitaJPOverlay_Shell.suprx" "$B/vitajpoverlay.rco" \
+for f in "$B/VitaJPOverlay_Kernel.skprx" "$B/VitaJPOverlay_Shell.suprx" "$RCO" \
          ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   [ -f "$f" ] || { echo "missing $f: run cmake --build build/vita first"; exit 1; }
 done
@@ -187,11 +213,19 @@ done
 
 put "$B/VitaJPOverlay_Kernel.skprx" "ur0:/tai/VitaJPOverlay_Kernel.skprx"
 put "$B/VitaJPOverlay_Shell.suprx" "ur0:/tai/VitaJPOverlay_Shell.suprx"
-put "$B/vitajpoverlay.rco" "ur0:/data/VitaJPOverlay/vitajpoverlay.rco"
+put "$RCO" "ur0:/data/VitaJPOverlay/vitajpoverlay.rco"
 for f in ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   put "$f" "ur0:/tai/$(basename "$f")"
   echo "uploaded ur0:tai/$(basename "$f")"
 done
+if [ -n "$PACKAGE_DIR" ]; then
+  for f in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/dictionaries/*.vjdict; do
+    [ -f "$f" ] || continue
+    put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
+  done
+  put "$PACKAGE_DIR/JPOverlaySettings.vpk" "ux0:/data/JPOverlaySettings.vpk"
+  echo "In VitaShell install ux0:data/JPOverlaySettings.vpk to add the settings app."
+fi
 for f in ${VOCR_MODELS[@]+"${VOCR_MODELS[@]}"}; do
   # The plugin checks the file's size and SHA-256 before it parses it.
   put "$f" "ux0:/data/VitaJPOverlay/ocr/$(basename "$f")"

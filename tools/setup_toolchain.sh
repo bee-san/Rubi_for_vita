@@ -9,6 +9,7 @@
 # The cloned sources are pinned to known commits.
 # Host tools: cmake, ninja, git, python3 (Pillow for tools/make_test_screens.py).
 set -euo pipefail
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 export VITASDK=${VITASDK:-$HOME/vitasdk}
 export PATH=$VITASDK/bin:$PATH
 WORK=${WORK:-$(cd "$(dirname "$0")/.." && pwd)/.refs/toolchain}
@@ -20,6 +21,8 @@ if [ ! -x "$VITASDK/bin/arm-vita-eabi-gcc" ]; then
   yes | bash "$WORK/bootstrap-vitasdk.sh" --install-dir "$VITASDK"
 fi
 [ -f "$VITASDK/arm-vita-eabi/include/taihen.h" ] || yes | vdpm install taihen
+# Standalone per-game settings app (the plugins themselves do not use vita2d).
+python3 "$SCRIPT_DIR/setup_settings_deps.py" --sdk "$VITASDK" --cache "$WORK/settings-packages"
 
 # The August 2026 SDK image predates the stable ForDriver memblock-info
 # declaration and import. Pin the official headers and regenerate its Sysmem

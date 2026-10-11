@@ -19,6 +19,7 @@ typedef unsigned int SceSize;
 #define sceClibStrcmp strcmp
 #define sceClibStrncmp strncmp
 uint64_t sceKernelGetProcessTimeWide(void);
+static inline int sceKernelPowerTick(int type) { return 0; }
 int sceKernelSetEventFlag(SceUID uid, unsigned int bits);
 static inline int sceKernelLockMutex(SceUID uid, int count, void *timeout) { return 0; }
 static inline int sceKernelUnlockMutex(SceUID uid, int count) { return 0; }
@@ -38,7 +39,11 @@ static inline SceUID sceKernelCreateEventFlag(const char *name, unsigned int att
 static inline SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int priority,
                                           unsigned int stack, unsigned int attr, int affinity, void *opt) { return -1; }
 static inline int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return -1; }
+#ifdef VJO_TEST_THREAD_STUBS
+int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout);
+#else
 static inline int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return -1; }
+#endif
 static inline int sceKernelDeleteThread(SceUID uid) { return 0; }
 static inline int sceKernelDeleteEventFlag(SceUID uid) { return 0; }
 static inline int sceKernelDeleteMutex(SceUID uid) { return 0; }

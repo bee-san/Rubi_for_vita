@@ -44,7 +44,7 @@ extern "C" void *vjo_shell_heap_alloc_for(const char *what, size_t bytes)
 
 extern "C" void *vjo_shell_heap_alloc(size_t bytes)
 {
-    return vjo_shell_heap_alloc_for("Lens", bytes);
+    return vjo_shell_heap_alloc_for("results", bytes);
 }
 
 extern "C" void vjo_shell_heap_free(void *p)

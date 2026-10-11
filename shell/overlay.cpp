@@ -81,9 +81,8 @@ static ui::Widget *s_separator, *s_band_mid;
 static ui::RichText *s_hint, *s_region_hint;
 static ui::Widget *s_panel, *s_region_layer, *s_region_rect;
 
-static unsigned s_seen_version, s_seen_anki_version;
-static unsigned s_list_seq; /* the shown list (Anki requests name it) */
-static int s_anki_enabled, s_anki_syncing;
+static unsigned s_seen_version;
+static unsigned s_list_seq; /* the shown list */
 static int s_selected;
 /* Copied from the view under its lock, so nothing outside render() reads
  * the result memory (the control thread frees it when a game exits) and no
@@ -224,15 +223,13 @@ static void render(int new_content)
     int ja, en, have_hdr = 0, have_body = 0;
     const VjoEntryList *l;
 
-    set_rich(s_hint, "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · × queue · △ send · stick scroll · □ region · ○ close</font>");
+    set_rich(s_hint, "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
 
     font_px(&ja, &en);
     vjo_view_lock();
     l = g_view.list;
     s_n_entries = l ? l->n_entries : 0;
     s_list_seq = g_view.list_seq;
-    s_anki_enabled = g_view.anki_enabled;
-    s_anki_syncing = g_view.anki_syncing;
     if (s_selected >= s_n_entries)
         s_selected = s_n_entries ? s_n_entries - 1 : 0;
     vjo_arena_reset(&s_ui);
@@ -252,36 +249,10 @@ static void render(int new_content)
         have_body = 1;
         if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
-        if (s_anki_enabled) {
-            char queue[80];
-            if (g_view.anki_pending < 0)
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
-            else
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · %s", g_view.anki_pending,
-                                g_view.anki_syncing ? "syncing…" : "△ send");
-            if (body.len)
-                vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            vjo_styled_puts(&body, queue, VJO_RGB_DIM, en);
-        }
-        if (g_view.anki_status[0]) {
-            /* by VJO_ANKI_STATUS_* */
-            static const uint32_t rgb[] = {VJO_RGB_DIM, VJO_RGB_ERROR};
-            int k = g_view.anki_status_kind;
-            if (k < 0 || k >= (int)(sizeof(rgb) / sizeof(rgb[0])))
-                k = VJO_ANKI_STATUS_DIM;
-            if (body.len)
-                vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            vjo_styled_puts(&body, g_view.anki_status, rgb[k], en);
-        }
         if (s_n_entries) {
-            int marked = g_view.anki_marks_seq == s_list_seq && s_selected < VJO_MAX_ENTRIES &&
-                         g_view.anki_mark[s_selected] == 1;
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            if (g_view.anki_marks_seq == s_list_seq && s_selected < VJO_MAX_ENTRIES &&
-                g_view.anki_mark[s_selected] == 2)
-                vjo_styled_puts(&body, "Queued offline\n", VJO_RGB_DIM, en);
-            vjo_styled_entry(&body, l, s_selected, ja, en, marked);
+            vjo_styled_entry(&body, l, s_selected, ja, en, 0);
         } else if (l && !g_view.status[0]) {
             vjo_styled_puts(&body, "No dictionary entries for this text.", VJO_RGB_DIM, en);
         }
@@ -444,15 +415,7 @@ static void open_page(void)
         }
     }
     {
-        char hint[160];
-        int anki;
-        vjo_view_lock();
-        anki = g_view.anki_enabled;
-        vjo_view_unlock();
-        sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · %sstick scroll · □ region · ○ close</font>",
-                        anki ? "× queue · △ send · " : "");
-        set_rich(s_hint, hint);
+        set_rich(s_hint, "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
     }
     s_mode = MODE_OVERLAY;
     s_selected = 0;
@@ -541,14 +504,7 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         s_stick_max = dy < 0 ? -dy : dy;
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
-    if ((pressed & SCE_CTRL_CROSS) && s_anki_enabled && !s_anki_syncing && s_selected < n)
-        vjo_anki_post_add(s_list_seq, s_selected);
-    if ((pressed & SCE_CTRL_TRIANGLE) && s_anki_enabled)
-        vjo_anki_post_sync();
-    if (pressed & SCE_CTRL_CIRCLE)
-        vjo_post_command(VJO_CMD_CLOSED, NULL);
-    if (pressed & SCE_CTRL_SQUARE)
-        enter_region_mode();
+
 }
 
 static void input_region(uint32_t held, uint32_t pressed)
@@ -623,12 +579,12 @@ static void input_region(uint32_t held, uint32_t pressed)
 
 /* ---- frame ---- */
 
-static void frame_body(unsigned version, unsigned anki_version);
+static void frame_body(unsigned version);
 
 static void frame(void *arg)
 {
     int want_open, want_strip;
-    unsigned version, anki_version, strip_version;
+    unsigned version, strip_version;
     (void)arg;
 
     /* Runs on SceShell's paf main thread every frame: while closed, skip the
@@ -640,7 +596,6 @@ static void frame(void *arg)
     vjo_view_lock();
     want_open = g_view.open;
     version = g_view.version;
-    anki_version = g_view.anki_version;
     want_strip = g_view.strip_on && g_view.strip_text[0] && !want_open;
     strip_version = g_view.strip_version;
     vjo_view_unlock();
@@ -651,7 +606,6 @@ static void frame(void *arg)
     if (want_open && !s_page) {
         open_page();
         s_seen_version = version - 1;
-        s_seen_anki_version = anki_version;
     } else if (!want_open && s_page) {
         close_page();
         return;
@@ -660,7 +614,7 @@ static void frame(void *arg)
         return;
     {
         int64_t t0 = sceKernelGetProcessTimeWide();
-        frame_body(version, anki_version);
+        frame_body(version);
         t0 = sceKernelGetProcessTimeWide() - t0;
         if (t0 > s_frame_max_us)
             s_frame_max_us = t0;
@@ -669,19 +623,11 @@ static void frame(void *arg)
 }
 
 /* One frame with the overlay page open. */
-static void frame_body(unsigned version, unsigned anki_version)
+static void frame_body(unsigned version)
 {
     if (version != s_seen_version) {
         s_seen_version = version;
-        s_seen_anki_version = anki_version;
         render(1);
-    } else if (anki_version != s_seen_anki_version) {
-        /* Anki status or marks: the body only, keeping the selection and
-         * the definition's scroll */
-        float scroll = s_body.scroll;
-        s_seen_anki_version = anki_version;
-        render(0);
-        s_body.scroll = scroll;
     }
     if (s_follow_frames > 0 && (header_follow() || --s_follow_frames == 0))
         s_follow_frames = 0;

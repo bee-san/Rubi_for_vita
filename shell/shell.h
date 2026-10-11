@@ -23,7 +23,7 @@ extern "C" {
 #define VJO_ANKI_HOST_PATH VJO_DATA_DIR "/anki_host.txt" /* found by anki_host = auto */
 #define VJO_RCO_PATH    "ur0:data/VitaJPOverlay/vitajpoverlay.rco"
 
-#define VJO_MAX_ENTRIES 512 /* entries the overlay navigates (and Anki marks) */
+#define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
 
 enum { VJO_ANKI_STATUS_DIM = 0, VJO_ANKI_STATUS_ERROR = 1 };
 /* VjoView.strip_kind */
@@ -34,7 +34,7 @@ enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 typedef struct {
     int open;                 /* overlay should be visible (stored atomically) */
     unsigned version;         /* bumps whenever content changes */
-    unsigned list_seq;        /* bumps with every published list (Anki requests name it) */
+    unsigned list_seq;        /* bumps with every published list */
     const VjoEntryList *list; /* NULL while recognizing / on error */
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
@@ -42,16 +42,6 @@ typedef struct {
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
-    /* Anki (anki.c); changes bump anki_version only, so the overlay keeps the
-     * header and the selection */
-    int anki_enabled;         /* queue worker is available, even without anki_host */
-    int anki_pending;         /* number of durable queue records; -1 on I/O error */
-    int anki_syncing;         /* disables × while the worker is sending cards */
-    unsigned anki_version;
-    char anki_status[128];    /* "Adding…", "Anki offline", an error, or "" */
-    int anki_status_kind;     /* VJO_ANKI_STATUS_* */
-    unsigned anki_marks_seq;  /* list_seq the marks are for */
-    uint8_t anki_mark[VJO_MAX_ENTRIES]; /* 1 = in Anki, 2 = queued locally */
     /* subtitles: a strip at the top while the overlay is closed; changes
      * bump strip_version */
     int strip_on;             /* subtitles are on (stored atomically) */
@@ -76,7 +66,7 @@ void vjo_post_command(int cmd, const VjoRect *rect);
 
 /* worker.c */
 int vjo_worker_start(void);
-void vjo_worker_stop(void);
+int vjo_worker_stop(void);
 
 /* capture.c */
 int vjo_capture_init(void);
@@ -96,18 +86,8 @@ int vjo_capture_raw(uint32_t flags, int (*consume)(void *ud, const VjoState *st)
 int vjo_title_id(SceUID pid, char *tid, int size);
 /* vjoSetGameActive's mode (enum VjoGameMode) for a title ID. */
 int vjo_title_game_mode(const char *tid);
-
-/* anki.c: AnkiConnect thread */
-int vjo_anki_start(void);
-void vjo_anki_stop(void);
-/* Settings for the next request (control thread, after each config load). */
-void vjo_anki_configure(const VjoConfig *cfg);
-/* Refresh the on-disk queue count (control thread, no network). */
-void vjo_anki_post_check(unsigned list_seq);
-/* Queue entry `entry` of list list_seq (overlay, × pressed). */
-void vjo_anki_post_add(unsigned list_seq, int entry);
-/* Explicitly send queued notes (overlay, △ pressed). */
-void vjo_anki_post_sync(void);
+/* Reloaded on game start/resume before capture or input filtering activates. */
+int vjo_game_enabled(const char *tid, VjoArena *scratch);
 
 /* overlay.cpp (paf main thread) */
 void vjo_overlay_init(void *plugin);

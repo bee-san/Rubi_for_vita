@@ -2,37 +2,44 @@
 #include "acutest.h"
 #include "client.h"
 #define VJO_TEST_MEMORY_STUBS 1
+#define VJO_TEST_THREAD_STUBS 1
 #include <psp2/host_stubs.h>
 
 static VjoState state;
 static VjoConfig loaded;
 static uint64_t test_now;
 static unsigned posted, user_allocs, user_frees, heap_allocs, heap_frees, cancels;
-static int fail_alloc, fail_base, input_blocked;
+static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled = 1;
 static uint8_t storage[2 * 1024 * 1024];
 /* The vita-vn-ocr job's own workspace (its memblock or Paf block). */
 static uint8_t vocr_storage[2 * 1024 * 1024] __attribute__((aligned(64)));
 static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs, jpeg_captures;
 static int fail_vocr_user, fail_vocr_paf;
+static int phases_checked, vocr_live, fail_join;
 static unsigned char raw_region[200 * 60 * 4];
 static VjoState raw_state;
+static int has_result_memory(void);
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
+int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
 int sceKernelSetEventFlag(SceUID id, unsigned bits) { posted |= bits; return 0; }
 int vjoGetState(VjoState *out) { *out = state; return 0; }
 int vjoSetRegion(const VjoRect *r) { return 0; }
 int vjoSetTriggers(int a, int b) { return 0; }
 int vjoSetGameActive(int pid, int mode) { return 0; }
-int vjoSetInputBlock(int on) { input_blocked = on; return 0; }
+int vjoSetInputBlock(int on) { if (on && fail_input_block) return -123; input_blocked = on; return 0; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
 int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; return -1; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
     if (!strcmp(name, "VjoVocr")) {
+        if (phases_checked) TEST_CHECK(!has_result_memory());
+        vocr_live = !fail_vocr_user;
         vocr_allocs++;
         TEST_CHECK(size <= sizeof(vocr_storage) && !(size & 0xFFF));
         return fail_vocr_user ? -1 : 9;
     }
+    if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
     user_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? -1 : 7;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -40,7 +47,7 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
     if (uid == 9) { *base = vocr_storage; return 0; }
     *base = fail_base ? NULL : storage; return fail_base ? -1 : 0;
 }
-int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) vocr_frees++; else user_frees++; return 0; }
+int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) { vocr_frees++; vocr_live = 0; } else user_frees++; return 0; }
 int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 {
     if (row >= raw_state.height) return -1;
@@ -52,17 +59,19 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 #include "../../shell/worker.c"
 
 void *vjo_shell_heap_alloc(size_t size)
-{ heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
+{ if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
+  heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
 void *vjo_shell_heap_alloc_for(const char *what, size_t size)
 {
     TEST_CHECK(!strcmp(what, "vocr") && size <= sizeof(vocr_storage));
     vocr_paf_allocs++;
+    vocr_live = !fail_vocr_paf;
     return fail_vocr_paf ? NULL : vocr_storage;
 }
 void vjo_shell_heap_free(void *p)
 {
     TEST_CHECK(p == storage || p == vocr_storage);
-    if (p == vocr_storage) vocr_frees++; else heap_frees++;
+    if (p == vocr_storage) { vocr_frees++; vocr_live = 0; } else heap_frees++;
 }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { *out = loaded; }
 void vjo_log_configure(const VjoConfig *c) {}
@@ -89,6 +98,7 @@ int vjo_capture_raw(uint32_t f, int (*consume)(void *ud, const VjoState *st), vo
 }
 int vjo_title_id(SceUID pid, char *out, int cap) { return -1; }
 int vjo_title_game_mode(const char *id) { return VJO_GAME; }
+int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
 
 static void reset(void)
 {
@@ -99,6 +109,7 @@ static void reset(void)
     plat.pool = &pool;
     vjo_config_defaults(&loaded);
     loaded.dictionary = VJO_DICT_LOCAL;
+    loaded.ocr_backend = VJO_OCR_LENS; /* existing Lens policy regression matrix */
     cfg = loaded;
     memcpy(title_id, "PCSG00415", 10);
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
@@ -107,9 +118,12 @@ static void reset(void)
     state.stable = 1;
     test_now = 10000000;
     posted = user_allocs = user_frees = heap_allocs = heap_frees = cancels = 0;
-    fail_alloc = fail_base = input_blocked = 0;
+    fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
+    game_enabled = 1;
+    running = 1; threads_started = 0;
     vocr_allocs = vocr_frees = vocr_paf_allocs = jpeg_captures = 0;
     fail_vocr_user = fail_vocr_paf = 0;
+    phases_checked = vocr_live = fail_join = 0;
     memset(&raw_state, 0, sizeof(raw_state));
     raw_state.width = 200;
     raw_state.height = 60;
@@ -229,7 +243,7 @@ static void test_ocr_config_migration(void)
     const char old[] = "text_source = hooks\nocr_backend = meiki\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, old, sizeof(old)-1);
-    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.ocr_backend == VJO_OCR_LENS);
+    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.ocr_backend == VJO_OCR_VOCR);
     TEST_CHECK(c.n_warnings == 2);
 }
 
@@ -359,12 +373,12 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && !strcmp(c.vocr_model, "H15_w8.vocr"));
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "FL10_w8.vocr"));
     vjo_config_parse(&c, ini, sizeof(ini) - 1);
     TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 0);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
-    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr") && c.n_warnings == 3); /* each kept the default */
+    TEST_CHECK(!strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 3); /* each kept the default */
 }
 
 static void test_vocr_warms_no_lens_connection(void)
@@ -388,7 +402,7 @@ static void test_vocr_model_change_invalidates_cache(void)
     loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     cache_ok = 1;
-    strcpy(loaded.vocr_model, "FL10_w8.vocr");
+    strcpy(loaded.vocr_model, "H15_w8.vocr");
     apply_config();
     TEST_CHECK(!cache_ok);
 }
@@ -430,7 +444,109 @@ static void test_vocr_allocation_fallback_and_failure(void)
 }
 #endif
 
+static void test_input_block_denied(void)
+{
+    reset();
+    fail_input_block = 1;
+    open_overlay();
+    TEST_CHECK(ov == OV_CLOSED && !job_running && !input_blocked && !g_view.open);
+    TEST_CHECK(g_view.strip_on && g_view.strip_kind == VJO_STRIP_ERROR);
+    fail_input_block = 0;
+    open_overlay();
+    TEST_CHECK(input_blocked && job_running && !input_block_error);
+    job_running = 0;
+    mem_free();
+}
+
+static void test_disabled_game_retires_work(void)
+{
+    reset();
+    open_overlay();
+    TEST_ASSERT(job_running && input_blocked);
+    game_enabled = 0;
+    on_game_start();
+    activate_game(123, "PCSA00029", VJO_GAME);
+    TEST_CHECK(!game_active() && !input_blocked && job_cancelled && !g_view.open);
+    job_running = 0;
+    mem_free();
+}
+
+static void test_failed_join_keeps_allocations(void)
+{
+    reset();
+    TEST_ASSERT(mem_alloc() == 0);
+    uint8_t *base = results[0].base;
+    threads_started = 1;
+    fail_join = 1;
+    TEST_CHECK(vjo_worker_stop() < 0);
+    TEST_CHECK(has_result_memory() && results[0].base == base && threads_started == 1);
+    fail_join = 0;
+    TEST_CHECK(vjo_worker_stop() == 0);
+    TEST_CHECK(!has_result_memory() && threads_started == 0);
+}
+
+#ifdef VJO_WITH_VOCR
+static void test_local_phases_and_recovery(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    phases_checked = 1;
+    for (int i = 0; i < 50; i++) {
+        start_job("local phase check", 0);
+        TEST_CHECK(!has_result_memory() && pool.n == 0 && g_view.list == NULL);
+        TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+        TEST_CHECK(has_result_memory() && results[0].size == 128 * 1024 && pool.n == 0);
+        TEST_CHECK(vocr_allocs == vocr_frees && !vocr_live);
+        job_running = 0;
+    }
+    fail_vocr_user = fail_vocr_paf = 1;
+    start_job("local allocation refusal", 0);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+    TEST_CHECK(!has_result_memory() && !vocr_live);
+    job_running = 0;
+    fail_vocr_user = fail_vocr_paf = 0;
+    start_job("local recovered", 0);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    job_running = 0;
+    mem_free();
+    TEST_CHECK(!has_result_memory() && user_allocs == user_frees && heap_allocs == heap_frees);
+    phases_checked = 0;
+}
+
+static void test_local_switch_drains_warm_pool(void)
+{
+    reset();
+    TEST_ASSERT(mem_alloc() == 0 && pool.n > 0);
+    uint8_t *base = results[0].base;
+    warm_running = 1;
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    start_job("switch from warm Lens to local OCR", 0);
+    /* The control thread must not free a pool still used by the worker. */
+    TEST_CHECK(has_result_memory() && results[0].base == base && pool.n > 0);
+    TEST_CHECK(job_cached_text == NULL);
+    warm_running = 0;
+    phases_checked = 1;
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(mem_local && pool.n == 0 && results[0].size == 128 * 1024);
+    phases_checked = 0;
+    job_running = 0;
+    cfg.ocr_backend = VJO_OCR_LENS;
+    start_job("switch from local OCR to Lens", 0);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_SOURCE);
+    TEST_CHECK(!mem_local && pool.n > 0 && results[0].size == RESULT_ARENA_SIZE);
+    job_running = 0;
+    mem_free();
+}
+#endif
+
 TEST_LIST = {
+    {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
+    {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
+    {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
+#ifdef VJO_WITH_VOCR
+    {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
+    {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
+#endif
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
     {"vocr_config_parses_and_validates", test_vocr_config},
     {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},

@@ -72,8 +72,8 @@ function args(apiPort, text) {
 }
 
 // RED on upstream: the CLI has no relay backend or --hachidori switch.
-test("the fork defaults to Hachidori and explains a missing relay address", async () => {
-  const result = await run(["--text", "猫"]);
+test("an explicit Hachidori selection explains a missing relay address", async () => {
+  const result = await run(["--dict", "hachidori", "--text", "猫"]);
   assert.equal(result.code, 1);
   assert.match(result.stdout, /hachidori_host/iu);
   assert.doesNotMatch(result.stdout, /API key is not set/iu);

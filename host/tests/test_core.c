@@ -584,7 +584,7 @@ static void test_config(void)
                       "log_file = on\n"
                       "bogus = 1\n";
     vjo_config_defaults(&c);
-    TEST_CHECK(c.dictionary == VJO_DICT_HACHIDORI && c.font_size_ja == 18 && c.font_size_en == 14 &&
+    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
                c.toggle_button == VJO_TRIGGER_L_R);
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.dictionary == VJO_DICT_JPDB);
@@ -611,7 +611,7 @@ static void test_config(void)
         vjo_config_defaults(&d);
         vjo_config_parse(&d, t, strlen(t));
         TEST_CHECK(d.n_warnings == 0);
-        TEST_CHECK(d.dictionary == VJO_DICT_HACHIDORI && d.ocr_mode == VJO_OCR_AUTO && d.api_key[VJO_DICT_JPDB][0] == 0 &&
+        TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO && d.api_key[VJO_DICT_JPDB][0] == 0 &&
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
     }
@@ -1127,6 +1127,7 @@ static void test_fixtures(void)
             continue;
         /* same config as tools/record_fixtures.sh's vjo-cli --replay */
         vjo_config_defaults(&cfg);
+        cfg.ocr_backend = VJO_OCR_LENS; /* these fixtures replay Lens responses */
         vjo_replay_config(&cfg, dir);
         vjo_arena_init(&files, fmem, sizeof(fmem));
         TEST_CASE(e->d_name);
