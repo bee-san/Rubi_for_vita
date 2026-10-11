@@ -6,14 +6,14 @@ recognizer made for visual-novel dialogue, and its line finder, both plain C99
 with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
 and no cloud fallback. With `dictionary = local` the whole lookup is offline.
 
-**Status: default in v0.7.0; physical Vita validation is still pending.** It builds with VitaSDK and
+**Status: default in v0.7.1; physical Vita validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
 
 ## What a recognition does
 
-1. The kernel captures the selected region (single pass). The Shell reads each
+1. The kernel captures the selected region (single pass). The game worker reads each
    row once, converting it to grey (`(77 R + 150 G + 29 B) >> 8`, the luma both
    the finder and the recognizer use), so the kernel frees its capture buffer
    before recognition starts.
@@ -43,19 +43,30 @@ weights + max(line finder arena, recognizer arena) + region width × height
 | `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 2,325,072 B (2.22 MiB) | 1,929,552 B (1.84 MiB) |
 
 The line finder's arena (83,323 B at 960×544) is smaller than every
-recognizer arena, so it costs nothing extra. The job first asks for a USER
-memblock and, when SceShell has no free pages for it, falls back to ScePaf's
-heap behind the same 1.5 MiB reserve guard the Lens workspace uses. If neither
-succeeds the job reports "not enough memory"; the log records both attempts.
+recognizer arena, so it costs nothing extra. In v0.7.1 inference runs in
+`VitaJPOverlay_OCR.suprx`, registered under `*ALL`. The `*main` plugin handles
+UI/dictionary results and has no vocr inference code. The game worker checks
+its process title and only accepts jobs for the foreground game after the
+Shell has confirmed its per-game policy.
 
-**Expect memory to be tight inside a game.** Physical tests on the
-experimental branches found ScePaf's whole heap is 5 MiB with about 2.4 MiB
-free while CLANNAD runs, and a 768 KiB USER memblock failed there with
-`0x80024302` (no free physical page). The default local pipeline frees its prior result arenas before OCR and
-allocates two 128 KiB result arenas only after the OCR workspace is freed. It
-does not allocate the Lens connection pool. The 1.5 MiB Paf reserve still
-applies; FL10 with a tight dialogue box needs 0.87 MiB. A physical run is
-required to establish fit, speed and stability beside a game.
+The workspace is one private `USER_RW` memblock in that game's process.
+The worker requires enough reported free USER memory for the page-rounded
+workspace plus a 4 MiB game reserve; there is no Paf fallback for OCR.
+It does not borrow the game's heap. Spare bytes inside a game-owned memblock
+remain owned by the game and are not available through this allocator. Free
+USER memory, the process budget and available physical pages all affect fit.
+A 333 MiB game allocation mode is not enabled or required by this release.
+
+Rows travel through a role-restricted kernel syscall tied to the job's game,
+capture sequence and foreground generation. A cancelled/suspended worker
+cannot read a newer capture or publish old results. Model reads finish short
+reads in at most 8 KiB calls and check cancellation between calls. The log
+records the game worker's OCR timings, workspace, I/O error and cleanup status.
+The model and workspace are freed before results return to the Shell, which
+uses two 128 KiB result arenas and no Lens connection pool for local jobs.
+
+These bounds and the host tests do not establish real Vita memory availability,
+I/O permissions, speed or stability. A physical in-game run remains required.
 
 ## Models
 
@@ -87,7 +98,7 @@ needs access to it):
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
 
-# Vita plugins and release zip (VitaJPOverlay-0.7.0.zip)
+# Vita plugins and release zip (VitaJPOverlay-0.7.1.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/vita --target release
 
@@ -106,11 +117,11 @@ then reports that the backend is missing instead of uploading anything.
 
 ## Install
 
-The complete v0.7.0 ZIP already includes both int8 models and the local
+The complete v0.7.1 ZIP already includes both int8 models and the local
 configuration; use its `install-vita.sh` as described in the README. The
 steps below cover a source build or adding another model.
 
-1. Install the vocr build's plugins as in the [README](../README.md#installing).
+1. Install the vocr build's plugins as in the [README](../README.md#install).
 2. Download and check the weights on a computer:
 
    ```sh
@@ -148,7 +159,7 @@ ten times used 111,072 arena bytes with identical lookup results; the worker's
 local result arenas are each 128 KiB. These remain host measurements.
 
 `tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
-finder, workspace and model checks as the Shell) once per region, in a fresh
+finder, workspace and model checks as the game worker) once per region, in a fresh
 process, on vita-vn-ocr's hand-checked regions: vita-test (84 regions from 16
 Vita games, 960×544 screenshots) and psp-test (93 regions from 14 PSP games, at
 the PSP's native 480×272). Accuracy is eval's region-level concat CER: all
@@ -191,21 +202,16 @@ copied, and the settings above. Close other apps first.
    and press ×.
 3. **One recognition.** Reopen the overlay on a dialogue line. Note what it
    shows: the text, or an error message.
-4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` (`tools/install_ftp.sh
-   --status VITA_IP` prints the logs) and find, in order:
-   - `vocr: USER memblock (N KiB) failed 0x...`, or nothing if it succeeded;
-   - `vocr Paf allocation: free=... requested=... reserve=... success=...` or
-     `vocr Paf reserve guard: ...` when the memblock failed;
-   - `vocr rc=... FL10_w8.vocr: WxH region, N lines (D dark), F frames,
-     workspace B bytes (USER memblock | Paf heap | none), find X ms, load Y ms,
-     recognize Z ms, total T ms`.
-   Please post these lines, the shown text and a photo of the screen on
-   vita-vn-ocr issue #6.
-5. **If it says "not enough memory".** Set `vocr_model = FL10_w8.vocr` (copy
-   that file too), draw the tightest box around the text, and retry. Report the
-   `free=` figures either way: they decide whether the workspace needs a
-   smaller reserve, smaller result arenas or the game-process worker the Meiki
-   branch uses.
+4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` with
+   `tools/install_ftp.sh --status VITA_IP`. A completed job logs
+   `game vocr rc=... FL10_w8.vocr: WxH, lines=N USER workspace=B,
+   find=X ms load=Y ms recognize=Z ms io=0x... cleanup=...`.
+   Success requires `rc=0` and `cleanup=0`. Record the shown text and a photo
+   beside this log; host tests alone cannot prove recognition on the Vita.
+5. **Errors.** For memory errors, select FL10 and a tighter dialogue region.
+   For an unavailable worker, check its `*ALL` registration and restart the
+   game. A model error with nonzero `io=` identifies game-process file access
+   or a read failure; check the installed model against the package manifest.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load` and
    `recognize` ms. The estimate for H15 is 166-302 ms per 640-px line at
    444 MHz and about 1.33× that at the default 333 MHz.
@@ -221,7 +227,7 @@ copied, and the settings above. Close other apps first.
 - Horizontal text only; vertical text is not read.
 - Adjacent lines 1-2 px apart can merge on PSP-sized text, and decorated
   frames can add a stray line; tight regions read best.
-- Recognition runs on the Shell's network thread, on whichever core SceShell
-  runs, at the game's clock. The overlay does not change the CPU clock.
+- Recognition runs on a low-priority thread in the enabled game process at
+  the game's clock. The overlay does not change the CPU clock or memory mode.
 - The pinned table accepts only the three v0.2.0 int8 files; a new release
   needs its sizes and hashes added (`core/vocr_ocr.c`, `tools/prepare_ocr.py`).

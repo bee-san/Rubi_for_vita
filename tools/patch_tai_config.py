@@ -33,10 +33,19 @@ def patch(raw: bytes, extra_kernel=(), uninstall=False) -> bytes:
         for plugin in extra_kernel:
             add("*KERNEL", plugin)
         add("*main", SHELL)
-        # These experiments have dedicated branches and must not load beside vocr.
-        # Keep the old registrations as comments so switching back is reversible.
-        lines = [("# Mainline OCR: " + line) if line.strip() in (TEXT, OCR) else line
-                 for line in lines]
+        # Comment old Text and worker registrations (including per-title duplicates),
+        # then install one current worker under *ALL. Repeating an update is stable.
+        current = None
+        kept_ocr = False
+        for index, line in enumerate(lines):
+            item = line.strip()
+            if item.startswith("*"):
+                current = item
+            elif item == TEXT or (item == OCR and (current != "*ALL" or kept_ocr)):
+                lines[index] = "# Mainline OCR: " + line
+            elif item == OCR:
+                kept_ocr = True
+        add("*ALL", OCR)
     return (newline.join(lines) + newline).encode("utf-8")
 
 

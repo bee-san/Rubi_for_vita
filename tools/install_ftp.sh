@@ -169,7 +169,7 @@ def rm(path):
     except ftplib.all_errors:
         return
     print("deleted", path)
-for name in ("VitaJPOverlay_Kernel.skprx", "VitaJPOverlay_Shell.suprx", "VitaJPOverlay_Text.suprx", "config.txt.vjo-bak"):
+for name in ("VitaJPOverlay_Kernel.skprx", "VitaJPOverlay_Shell.suprx", "VitaJPOverlay_Text.suprx", "VitaJPOverlay_OCR.suprx", "config.txt.vjo-bak"):
     rm("/ur0:/tai/" + name)
 rm("/ux0:/tai/config.txt.vjo-bak")
 for d in ("/ur0:/data/VitaJPOverlay", "/ux0:/data/VitaJPOverlay"):
@@ -194,7 +194,7 @@ PY
   exit 0
 fi
 
-for f in "$B/VitaJPOverlay_Kernel.skprx" "$B/VitaJPOverlay_Shell.suprx" "$RCO" \
+for f in "$B/VitaJPOverlay_Kernel.skprx" "$B/VitaJPOverlay_Shell.suprx" "$B/VitaJPOverlay_OCR.suprx" "$RCO" \
          ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   [ -f "$f" ] || { echo "missing $f: run cmake --build build/vita first"; exit 1; }
 done
@@ -213,6 +213,7 @@ done
 
 put "$B/VitaJPOverlay_Kernel.skprx" "ur0:/tai/VitaJPOverlay_Kernel.skprx"
 put "$B/VitaJPOverlay_Shell.suprx" "ur0:/tai/VitaJPOverlay_Shell.suprx"
+put "$B/VitaJPOverlay_OCR.suprx" "ur0:/tai/VitaJPOverlay_OCR.suprx"
 put "$RCO" "ur0:/data/VitaJPOverlay/vitajpoverlay.rco"
 for f in ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   put "$f" "ur0:/tai/$(basename "$f")"

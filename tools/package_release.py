@@ -51,7 +51,7 @@ def package(base, output, models, dictionary, license_file):
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-    manifest = {"version": "0.7.0", "files": {}, "dictionary": conversion,
+    manifest = {"version": "0.7.1", "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
                              "ocr_mode": "auto", "anki": False}}
@@ -60,7 +60,8 @@ def package(base, output, models, dictionary, license_file):
         if original.testzip() is not None:
             raise ValueError("Base archive is corrupt")
         required = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-                    "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk"}
+                    "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
+                    "ur0/tai/VitaJPOverlay_OCR.suprx"}
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
         for info in original.infolist():

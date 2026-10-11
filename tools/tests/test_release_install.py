@@ -30,6 +30,7 @@ class ReleaseInstall(unittest.TestCase):
         shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
         for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
+                     "ur0/tai/VitaJPOverlay_OCR.suprx",
                      "ux0/data/VitaJPOverlay/ocr/FL10_w8.vocr", "ux0/data/VitaJPOverlay/ocr/H15_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/jmdict.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
@@ -89,7 +90,8 @@ elif '-o' in a:
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Kernel.skprx"), 1)
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Shell.suprx"), 1)
             self.assertIn(b"ur0:tai/Other.skprx\r\n", tai)
-            self.assertIn(b"# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx", tai)
+            self.assertIn(b"*ALL\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
+            self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_OCR.suprx"), 1)
             self.assertNotIn(b"\n", tai.replace(b"\r\n", b""))
         config = (self.data / "config.ini").read_text()
         for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = FL10_w8.vocr",
@@ -98,6 +100,8 @@ elif '-o' in a:
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
         self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())
+        self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
+                         (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
         for name in ("dictionaries/jmdict.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
