@@ -21,12 +21,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 72cf4af0905091a0ee329d336889ccf0a8cd38c8
+          ref: 39a3a9ae069180675c145f6df74c843dc2061967
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
       - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
-      - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
+      - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr -DVJO_WITH_MEIKI=ON -DVJO_MEIKI_SOURCE_DIR=$PWD/.refs/vita-vn-ocr/ports/meiki && cmake --build build/host -j4
       - run: ctest --test-dir build/host --output-on-failure
       - run: python3 tools/test_jpegsw.py
       - uses: actions/setup-node@v4
@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 72cf4af0905091a0ee329d336889ccf0a8cd38c8
+          ref: 39a3a9ae069180675c145f6df74c843dc2061967
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

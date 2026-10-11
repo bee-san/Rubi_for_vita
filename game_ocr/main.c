@@ -1,8 +1,15 @@
-/* vocr runs in the enabled game's process. No Paf, newlib startup, hooks,
+/* Local OCR runs in the enabled game's process. No Paf, newlib startup, hooks,
  * network, or borrowed game allocations. Capture rows and bounded model chunks
  * cross the kernel transport; weights and inference use a private memblock. */
 #include "main.h"
 #include "../core/vocr_ocr.h"
+#include "../include/vjo_vocr_sizes.h"
+#ifdef VJO_WITH_MEIKI
+#include "meiki.h"
+#define WORKER_STACK_BYTES (64u*1024u)
+#else
+#define WORKER_STACK_BYTES (32u*1024u)
+#endif
 #include "../core/games.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
@@ -116,6 +123,9 @@ static uint64_t now_us(void *ud)
 static int cleanup(void)
 {
     int rc = 0;
+#ifdef VJO_WITH_MEIKI
+    if (vjo_meiki_game_cleanup()) return VJO_E_OCR_UNAVAILABLE;
+#endif
     if (workspace_uid >= 0) {
         if (sceKernelFreeMemBlock(workspace_uid) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else workspace_uid = -1;
@@ -131,14 +141,29 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
     active_seq = r->seq; io_error = 0;
-    int rc = VJO_E_SOURCE;
+    int rc = VJO_E_SOURCE, is_meiki = 0;
     VjoVocrStats stats = {0};
-    if (blocked || workspace_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if (blocked || workspace_uid >= 0 || model_owned
+#ifdef VJO_WITH_MEIKI
+        || vjo_meiki_game_owned()
+#endif
+        ) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->done_seq ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         r->stride != r->width*4u || !r->model_dir[0] || !r->model[0] ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1]) goto done;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
+    is_meiki = !sceClibStrcmp(r->model, VJO_MEIKI_MODEL_NAME);
+    if (is_meiki) {
+#ifdef VJO_WITH_MEIKI
+        VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
+        VjoOcrImage image = {(void *)r, r->width, r->height, rows, cancelled};
+        rc = vjo_meiki_game_run(&platform, r->model_dir, &image, out);
+#else
+        rc = VJO_E_OCR_UNAVAILABLE;
+#endif
+        goto done;
+    }
     size_t bytes = vjo_vocr_workspace_bytes(r->model, r->width, r->height);
     if (!bytes) { rc = vjo_vocr_model(r->model) ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
     uint32_t rounded = ((uint32_t)bytes+4095u)&~4095u;
@@ -157,9 +182,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     rc = vjo_vocr_ocr(&platform, r->model_dir, r->model, &image, base, bytes,
                       out->text, sizeof(out->text), &stats);
 done:
-    out->workspace_bytes = (uint32_t)stats.workspace;
-    out->lines = stats.lines; out->find_us = stats.find_us;
-    out->load_us = stats.load_us; out->recognize_us = stats.recognize_us;
+    if (!is_meiki) {
+        out->workspace_bytes = (uint32_t)stats.workspace;
+        out->lines = stats.lines; out->find_us = stats.find_us;
+        out->load_us = stats.load_us; out->recognize_us = stats.recognize_us;
+    }
     out->cleanup_status = cleanup();
     out->io_error = io_error;
     if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
@@ -197,7 +224,7 @@ int vjo_game_ocr_worker_start(void)
         !IMPORT_READY(sceKernelAllocMemBlock) || !IMPORT_READY(sceKernelGetMemBlockBase) ||
         !IMPORT_READY(sceKernelFreeMemBlock) || vjoGetVersion() != VJO_API_VERSION) return VJO_E_OCR_UNAVAILABLE;
     __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
-    worker = sceKernelCreateThread("VjoGameVocr", worker_main, 0x10000100, 32u*1024u, 0, 0, NULL);
+    worker = sceKernelCreateThread("VjoGameVocr", worker_main, 0x10000100, WORKER_STACK_BYTES, 0, 0, NULL);
     if (worker < 0) return VJO_E_OCR_UNAVAILABLE;
     if (sceKernelStartThread(worker, 0, NULL) < 0) {
         if (sceKernelDeleteThread(worker) >= 0) worker = -1;

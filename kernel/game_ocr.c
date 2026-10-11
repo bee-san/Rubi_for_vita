@@ -347,6 +347,7 @@ int vjoOcrCancel(uint32_t seq)
 
 static uint32_t model_size(const char *name)
 {
+    if (!strcmp(name, VJO_MEIKI_MODEL_NAME)) return VJO_MEIKI_MODEL_BYTES;
     if (!strcmp(name, "FL10_w8.vocr")) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;

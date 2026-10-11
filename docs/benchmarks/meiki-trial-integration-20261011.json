@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "date": "2026-10-11",
+  "candidate": "v0.7.6-meiki.1",
+  "base_overlay": "89be9e761042419191cf8af1dfd0c6e44d1f18b9",
+  "runtime_source": "39a3a9ae069180675c145f6df74c843dc2061967",
+  "scope": "integration/lifetime/build/package; no current retail Meiki recognition or console speed claim",
+  "environment": {
+    "host": "Linux x86_64, GCC 16.2.1, system Python with Pillow",
+    "native": "VitaSDK GCC 15.2.0, pinned Cortex-A9 MNN archive"
+  },
+  "commands": [
+    "cmake -S . -B build/host-meiki -DVJO_WITH_MEIKI=ON -DVJO_VOCR_SOURCE_DIR=OCR -DVJO_MEIKI_SOURCE_DIR=OCR/ports/meiki -DVJO_MEIKI_MODEL_DIR=MODELS -DVJO_VOCR_MODEL_DIR=MODELS",
+    "cmake --build build/host-meiki -j8",
+    "ctest --test-dir build/host-meiki --output-on-failure",
+    "VJO_JPEGSW=build/host-meiki/vjo-jpegsw python3 tools/test_jpegsw.py",
+    "cmake -S vita -B build/vita-meiki -DVJO_WITH_MEIKI=ON -DVJO_VOCR_SOURCE_DIR=OCR -DVJO_MEIKI_SOURCE_DIR=OCR/ports/meiki -DMNN_SOURCE=MNN -DMNN_LIBRARY=libMNN.a",
+    "cmake --build build/vita-meiki -j8 --target release"
+  ],
+  "host": {
+    "full_suites_passed": 21,
+    "focused_game_worker_cases": 8,
+    "model_asset_bytes": 5392856,
+    "engine_boundary": "inference injected; actual worker, SHA, preprocessing, model reader and cleanup tested",
+    "without_asset": "CTest registers only game_meiki_preflight; directly running full worker tests without model fails 7 of 8 cases",
+    "jpeg_round_trips": 3,
+    "jpeg_failure_cases": 5
+  },
+  "native": {
+    "API": 13,
+    "kernel_exports": 22,
+    "Shell_imports": 14,
+    "worker_imports": 9,
+    "kernel_instructions": 7730,
+    "kernel_FPU_NEON_instructions": 0,
+    "worker_text_data_bss": 44976,
+    "engine_text_data_bss": 1778912,
+    "engine_thread_stack": 131072,
+    "optional_worker_stack": 65536
+  },
+  "memory": {
+    "neural_workspace": 16777216,
+    "metadata": 4194304,
+    "preprocessing_rounded": 385024,
+    "owned_USER_bytes": 21356544,
+    "module_allowance": 2097152,
+    "game_reserve": 4194304,
+    "required_free_USER": 27648000,
+    "kernel_model_stage": 8192,
+    "Shell_local_lookup_arena": 65536
+  },
+  "package": {
+    "files_verified": 51,
+    "defaults": "vocr/local JMdict/auto/no Anki",
+    "required_extra_members": [
+      "ABI3 engine",
+      "Meiki model",
+      "dependency manifest",
+      "trial docs",
+      "MNN/Meiki/resize licenses",
+      "Meiki model LGPL-3.0 notice",
+      "MNN Flatbuffers Apache-2.0 notice",
+      "MNN Half MIT notice"
+    ],
+    "negative_checks": [
+      "bad model SHA rejected",
+      "engine-less base rejected",
+      "license-less model bundle rejected"
+    ]
+  },
+  "retail_boundaries": [
+    "app0 engine visibility",
+    "module load and game free memory",
+    "single-line OCR quality/timing",
+    "post-inference cleanup on hardware"
+  ],
+  "host_reader_matrix": {
+    "source": "https://github.com/bee-san/vita-vn-ocr/blob/39a3a9ae069180675c145f6df74c843dc2061967/ports/meiki/results-reader-matrix.json",
+    "scope": "Host shared hand-checked crop benchmark; native ABI3 engine built but unexecuted",
+    "crops": 451,
+    "file_loader_calls": 902,
+    "reader_calls": 902,
+    "Vita_size_CER": 0.01404,
+    "PSP_size_CER": 0.03546,
+    "pool_peak": 13235648,
+    "retained_bytes": 0,
+    "raw_differences": 0,
+    "decoded_differences": 0
+  }
+}

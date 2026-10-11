@@ -9,7 +9,7 @@
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
 /* ocr_backend. VJO_OCR_VOCR: bee-san/vita-vn-ocr on the Vita CPU (builds with
  * VJO_WITH_VOCR); VJO_OCR_NCNN: PP-OCRv5 mobile, host experiments only. */
-enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2 };
+enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_MEIKI = 3 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
 

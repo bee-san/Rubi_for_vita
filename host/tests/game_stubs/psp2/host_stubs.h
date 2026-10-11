@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 typedef int SceUID;
 typedef unsigned SceSize, SceUInt;
@@ -16,6 +17,21 @@ typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKe
 #define SCE_KERNEL_STOP_SUCCESS 0
 #define SCE_KERNEL_STOP_FAIL 1
 #define sceClibMemset memset
+#define sceClibStrcmp strcmp
+#define sceClibMemcpy memcpy
+#define sceClibMemcmp memcmp
+#define sceClibSnprintf snprintf
+#define sceClibVsnprintf vsnprintf
+#define SCE_KERNEL_ERROR_INVALID_UID ((int)0x80024501u)
+#define SCE_KERNEL_ERROR_UNKNOWN_UID ((int)0x80028001u)
+#define SCE_KERNEL_MEMORY_TYPE_NORMAL 0xD0
+#define SCE_KERNEL_MEMORY_ACCESS_W 2
+#define SCE_KERNEL_MEMORY_ACCESS_R 4
+typedef struct { unsigned size; void *mappedBase; unsigned mappedSize; int memoryType; unsigned access, type; } SceKernelMemBlockInfo;
+int sceClibPrintf(const char *, ...);
+int sceKernelGetMemBlockInfoByRange(void *, unsigned, SceKernelMemBlockInfo *);
+SceUID sceKernelLoadStartModule(const char *, unsigned, const void *, unsigned, void *, int *);
+int sceKernelStopUnloadModule(SceUID, unsigned, const void *, unsigned, void *, int *);
 uint64_t sceKernelGetProcessTimeWide(void);
 SceUID sceKernelGetProcessId(void);
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *);

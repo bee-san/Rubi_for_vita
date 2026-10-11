@@ -22,9 +22,11 @@ set(VJO_SELF_FLAGS "${VITA_MAKE_FSELF_FLAGS}")
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(VJO_ROOT ${ROOT})
 set(VJO_BUILD_VITA ON)
+option(VJO_WITH_MEIKI "Build the optional game-process single-line Meiki trial" OFF)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.5")
+set(VJO_VERSION "0.7.6")
+set(VJO_MEIKI_TRIAL_VERSION "0.7.6-meiki.1")
 
 
 # ---------------- kernel ----------------
@@ -100,6 +102,21 @@ if(VJO_WITH_VOCR)
   target_include_directories(vjo_vocr PUBLIC ${ROOT}/core ${ROOT}/include ${ROOT}/third_party/bearssl/inc)
 endif()
 
+if(VJO_WITH_MEIKI)
+  if(NOT VJO_WITH_VOCR)
+    message(FATAL_ERROR "The optional Meiki trial requires the existing vocr transport")
+  endif()
+  include(${ROOT}/cmake/MeikiOCR.cmake)
+  if(NOT EXISTS "${MNN_LIBRARY}")
+    message(FATAL_ERROR "The Meiki trial needs its checksum-pinned Vita MNN archive")
+  endif()
+  file(SHA256 "${MNN_LIBRARY}" _meiki_mnn_hash)
+  if(NOT _meiki_mnn_hash STREQUAL "c83546bf53f7d90f147e34efb9f59159b5c30f8be44388fdb82c3fa5b52b5b68")
+    message(FATAL_ERROR "Meiki MNN archive differs from docs/meiki-dependencies.json")
+  endif()
+  add_subdirectory(${VJO_MEIKI_SOURCE_DIR}/module ${CMAKE_CURRENT_BINARY_DIR}/meiki-module)
+endif()
+
 add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/boot.c
   ${ROOT}/shell/main.cpp
@@ -168,6 +185,11 @@ if(VJO_WITH_VOCR)
   add_executable(VitaJPOverlay_OCR
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/shell/libc_shim.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  if(VJO_WITH_MEIKI)
+    target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/game_ocr/meiki.c ${ROOT}/game_ocr/meiki_bridge.c ${ROOT}/game_ocr/libc_math.c)
+    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_WITH_MEIKI=1 VJO_GAME_OCR_WORKER=1)
+    target_link_libraries(VitaJPOverlay_OCR vjo_meiki SceKernelModulemgr_stub)
+  endif()
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
@@ -223,6 +245,11 @@ add_custom_target(vjo_settings_assets ALL
   DEPENDS JPOverlaySettings.vpk-vpk)
 
 # ---------------- release zip ----------------
+set(VJO_MEIKI_RELEASE_COPY)
+if(VJO_WITH_MEIKI)
+  set(VJO_MEIKI_RELEASE_COPY COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/release/meiki
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/meiki-module/meiki-engine.suprx ${CMAKE_CURRENT_BINARY_DIR}/release/meiki/)
+endif()
 set(VJO_WORKER_RELEASE_COPY)
 set(VJO_WORKER_RELEASE_DEPS)
 if(VJO_WITH_VOCR)
@@ -240,16 +267,23 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx ${STAGE}/ur0/tai/
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${STAGE}/ur0/tai/
   ${VJO_WORKER_RELEASE_COPY}
+  ${VJO_MEIKI_RELEASE_COPY}
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco ${STAGE}/ur0/data/VitaJPOverlay/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${STAGE}/tools/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/meiki-trial.md ${ROOT}/docs/meiki-dependencies.json ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${ROOT}/docs/benchmarks/meiki-trial-integration-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")
+
+if(VJO_WITH_MEIKI)
+  add_dependencies(release meiki-engine.suprx-self)
+  add_custom_command(TARGET release POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_MEIKI_TRIAL_VERSION}.zip --format=zip ur0 meiki config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk)
+endif()

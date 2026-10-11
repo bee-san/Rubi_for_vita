@@ -7,6 +7,11 @@ Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
 card queue are disabled; no cards or screenshots are queued.
 
+An optional [v0.7.6-meiki.1 trial](docs/meiki-trial.md) adds manual single-line
+Meiki OCR in the game process while preserving this UI. It requires substantially
+more game memory and a separate ABI3 engine; vocr remains the default, and
+v0.7.5 remains the stable rollback.
+
 Local OCR is cross-built and tested on real VN screenshots on a host. This
 release still needs an in-game run on physical hardware; host timings are not
 Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
