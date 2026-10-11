@@ -69,6 +69,14 @@ def package(base, output, models, dictionary, license_file, version="0.7.6", mei
                     "ur0/tai/VitaJPOverlay_OCR.suprx"}
         if meiki_model and "meiki/meiki-engine.suprx" not in original.namelist():
             raise ValueError("Meiki trial archive is missing its isolated engine")
+        if meiki_model:
+            notices = {"LICENSE", "third_party/licenses/Meiki.txt",
+                       "third_party/licenses/Meiki-model-LGPL-3.0.txt",
+                       "third_party/licenses/Meiki-resize.txt", "third_party/licenses/MNN.txt",
+                       "third_party/licenses/MNN-Flatbuffers-Apache-2.0.txt",
+                       "third_party/licenses/MNN-Half-MIT.txt"}
+            if not notices.issubset(original.namelist()):
+                raise ValueError("Meiki trial archive is missing its license notices")
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
         for info in original.infolist():

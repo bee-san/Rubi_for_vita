@@ -50,18 +50,22 @@
     "Shell_local_lookup_arena": 65536
   },
   "package": {
-    "files_verified": 48,
+    "files_verified": 51,
     "defaults": "vocr/local JMdict/auto/no Anki",
     "required_extra_members": [
       "ABI3 engine",
       "Meiki model",
       "dependency manifest",
       "trial docs",
-      "MNN/Meiki/resize licenses"
+      "MNN/Meiki/resize licenses",
+      "Meiki model LGPL-3.0 notice",
+      "MNN Flatbuffers Apache-2.0 notice",
+      "MNN Half MIT notice"
     ],
     "negative_checks": [
       "bad model SHA rejected",
-      "engine-less base rejected"
+      "engine-less base rejected",
+      "license-less model bundle rejected"
     ]
   },
   "retail_boundaries": [

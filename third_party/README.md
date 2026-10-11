@@ -45,3 +45,10 @@ at `ebdada82634300956e08bd4056ecfeb1e4f23b32` (Apache-2.0) runs only inside
 the isolated game-process engine. See [Meiki dependencies](../docs/meiki-dependencies.json),
 [Meiki notices](licenses/Meiki.txt), [resize notices](licenses/Meiki-resize.txt)
 and [MNN notices](licenses/MNN.txt). Weights are release assets, never source files.
+
+The distributed Meiki recognizer's exact model license is
+[LGPL-3.0](licenses/Meiki-model-LGPL-3.0.txt), with the complete GPL-3.0
+text at the repository/package [LICENSE](../LICENSE). MNN's embedded
+[Flatbuffers Apache-2.0](licenses/MNN-Flatbuffers-Apache-2.0.txt) and
+[Half MIT](licenses/MNN-Half-MIT.txt) notices are included separately.
+`Meiki.txt` describes Apache-2.0 code, not the model's LGPL license.

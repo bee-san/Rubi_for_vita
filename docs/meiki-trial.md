@@ -40,6 +40,11 @@ The recognizer belongs at
 asset: **5,392,856 bytes**, SHA-256
 `b7ba3219cd1bfeef5cb6b42ef6686683b991c6561b7ad3b1c41d32817deba21e`.
 Weights are distributed as release assets and are never committed to this repo.
+The trial carries the model's [LGPL-3.0 text](../third_party/licenses/Meiki-model-LGPL-3.0.txt),
+the full [GPL-3.0 text](../LICENSE), Meiki/MNN code licenses and MNN's embedded
+[Flatbuffers](../third_party/licenses/MNN-Flatbuffers-Apache-2.0.txt) and
+[Half](../third_party/licenses/MNN-Half-MIT.txt) notices. The code's Apache
+license does not replace the model's LGPL license.
 The SHA is validated before allocating inference buffers. Both validation and
 MNN model loading read through the existing kernel model broker in chunks of
 at most 8 KiB. The game never reopens a weight path with its own file imports.

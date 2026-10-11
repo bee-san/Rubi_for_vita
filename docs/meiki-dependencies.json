@@ -106,5 +106,31 @@
     "required_free_USER": 27648000,
     "kernel_model_stage": 8192,
     "Shell_local_lookup_arena": 65536
+  },
+  "license_notices": {
+    "Meiki.txt": {
+      "path": "third_party/licenses/Meiki.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "Meiki-model-LGPL-3.0.txt": {
+      "path": "third_party/licenses/Meiki-model-LGPL-3.0.txt",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    },
+    "Meiki-resize.txt": {
+      "path": "third_party/licenses/Meiki-resize.txt",
+      "sha256": "899730de792e0edec3d0ece008c648b3b3322cb89bf86671d37400ef6cd18db6"
+    },
+    "MNN.txt": {
+      "path": "third_party/licenses/MNN.txt",
+      "sha256": "a830d59c4f98d110e0540d0581efada06192ba6e798434307d1794b07a290302"
+    },
+    "MNN-Flatbuffers-Apache-2.0.txt": {
+      "path": "third_party/licenses/MNN-Flatbuffers-Apache-2.0.txt",
+      "sha256": "7ec9661a8afafab1eee3523d6f1a193eff76314a5ab10b4ce96aefd87621b0c3"
+    },
+    "MNN-Half-MIT.txt": {
+      "path": "third_party/licenses/MNN-Half-MIT.txt",
+      "sha256": "1269110471a5506d5cc9c115c57b855206f69a90cc57bbbf27860907067ed946"
+    }
   }
 }
