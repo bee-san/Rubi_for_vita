@@ -21,6 +21,7 @@ static unsigned model_events;
 static int file_live, open_error, seek_error, read_error, close_error, eof, short_read, bad_size;
 static int during_io;
 static uint64_t model_clock;
+static uint32_t expected_model_size;
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
@@ -45,17 +46,18 @@ static void interrupt_io(void)
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
-    TEST_CHECK(!strcmp(path, VJO_VOCR_MODEL_ROOT "/FL10_w8.vocr") && flags == SCE_O_RDONLY);
+    char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,request.model);
+    TEST_CHECK(!strcmp(path, expected) && flags == SCE_O_RDONLY);
     model_opens++; interrupt_io();
     if (open_error) return open_error;
     file_live = 1; return 31;
 }
 SceOff ksceIoLseek(SceUID fd, SceOff offset, int whence)
-{ TEST_CHECK(fd == 31 && file_live && !locks && !syscall_depth); return seek_error ? (SceOff)seek_error : (SceOff)VJO_VOCR_FL10_BYTES + bad_size; }
+{ TEST_CHECK(fd == 31 && file_live && !locks && !syscall_depth); return seek_error ? (SceOff)seek_error : (SceOff)expected_model_size + bad_size; }
 int ksceIoPread(SceUID fd, void *out, SceSize bytes, SceOff offset)
 {
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && file_live && fd == 31);
-    TEST_CHECK(bytes <= 8192 && offset >= 0 && offset + bytes <= VJO_VOCR_FL10_BYTES);
+    TEST_CHECK(bytes <= 8192 && offset >= 0 && offset + bytes <= expected_model_size);
     model_reads++; interrupt_io();
     if (read_error) return read_error;
     if (eof) return 0;
@@ -126,7 +128,7 @@ static void setup(void)
     module_missing = copy_in_fail = copy_out_fail = 0;
     locks = allocations = frees = syscall_depth = 0;
     memset(&message, 0, sizeof(message));
-    model_clock = 1000000;
+    model_clock = 1000000; expected_model_size = VJO_VOCR_FL10_BYTES;
     model_opens = model_reads = model_closes = model_events = 0;
     file_live = open_error = seek_error = read_error = close_error = eof = short_read = bad_size = during_io = 0;
     TEST_ASSERT(vjoOcrRegister() == 0);
@@ -400,6 +402,22 @@ static void model_permissions_paths_and_bounds(void)
     TEST_CHECK(vjoOcrModelOpen(seq) == VJO_ERR_ARG && !model_opens);
     TEST_CHECK(!vjoOcrModelClose(seq));
 }
+static void meiki_model_fixed_pin_and_final_chunk(void)
+{
+    TEST_CHECK(sizeof(model_stage)==8192);
+    TEST_CHECK(model_size(VJO_MEIKI_MODEL_NAME)==5392856u);
+    TEST_CHECK(!model_size("meiki-detect-int8.mnn") && !model_size("../meiki-stream-int8.mnn"));
+    setup(); uint32_t seq=submit(); take(seq);
+    strcpy(request.model,VJO_MEIKI_MODEL_NAME); expected_model_size=VJO_MEIKI_MODEL_BYTES;
+    TEST_CHECK(vjoOcrModelOpen(seq)==VJO_ERR_BUSY); model_tick();
+    TEST_CHECK(vjoOcrModelOpen(seq)==5392856 && file_live);
+    unsigned char tail[9]; memset(tail,0xCC,sizeof(tail));
+    TEST_CHECK(vjoOcrModelRead(seq,5392855,2,tail)==VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrModelRead(seq,5392855,1,tail)==VJO_ERR_BUSY); model_tick();
+    TEST_CHECK(vjoOcrModelRead(seq,5392855,1,tail)==1 && tail[1]==0xCC);
+    close_model(seq); TEST_CHECK(!vjoOcrComplete(&message));
+}
+
 static void model_short_read_copy_retry_and_errors(void)
 {
     setup(); uint32_t seq = submit(); take(seq); open_model(seq);
@@ -483,6 +501,7 @@ static void model_failed_close_and_orphan_recovery(void)
 }
 
 TEST_LIST = {
+    {"Meiki_exact_pinned_length_and_8KiB_broker_tail",meiki_model_fixed_pin_and_final_chunk},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
     {"model broker short reads copy retry EOF and native errors", model_short_read_copy_retry_and_errors},
     {"model broker late I/O cancellation exit Shell restart and pending close", model_cancel_exit_restart_and_late_io},

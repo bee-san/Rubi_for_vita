@@ -136,6 +136,7 @@ const char *vjo_config_default_text(void)
            "\n"
            "; OCR: lens (online) | vocr (on the Vita: vita-vn-ocr, needs a build with it\n"
            "; and its model file; see docs/vita-vn-ocr.md) | ncnn (PP-OCRv5, host tests only)\n"
+           "; meiki: optional manual single-line trial; see docs/meiki-trial.md.\n"
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -465,6 +466,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->ocr_backend = VJO_OCR_NCNN;
         else if (vjo_ieq(val, "vocr"))
             c->ocr_backend = VJO_OCR_VOCR;
+        else if (vjo_ieq(val, "meiki"))
+            c->ocr_backend = VJO_OCR_MEIKI;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "vocr_model")) {

@@ -37,3 +37,11 @@ Optional vita-vn-ocr backend (`-DVJO_WITH_VOCR=ON`, not vendored):
   `69696a1cc543ef3a0f8e9892a89c17293e915263`), © NVIDIA Corporation, licensed
   under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); the release
   notes carry the full attribution.
+
+The optional single-line Meiki trial uses MeikiOCR 0.3.5 at
+`52aa607ecdc1038c7bf390f37cd9a8b306e8a08a` (Apache-2.0) and the existing
+streamed-head int8 conversion of its recognition model (LGPL-3.0). MNN 3.2.0
+at `ebdada82634300956e08bd4056ecfeb1e4f23b32` (Apache-2.0) runs only inside
+the isolated game-process engine. See [Meiki dependencies](../docs/meiki-dependencies.json),
+[Meiki notices](licenses/Meiki.txt), [resize notices](licenses/Meiki-resize.txt)
+and [MNN notices](licenses/MNN.txt). Weights are release assets, never source files.
