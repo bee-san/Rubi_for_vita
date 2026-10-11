@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.1 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.2 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -14,8 +14,8 @@ Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.1.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.1) and
+Download `VitaJPOverlay-0.7.2.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.2) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, and the complete converted JMdict snapshot. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
