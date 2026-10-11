@@ -190,4 +190,12 @@ if(VJO_WITH_VOCR)
   target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-vocr-tests vjo_vocr)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
+  add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c kernel/game_ocr.c)
+  target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
+    host/tests/game_stubs host/tests/vita_stubs)
+  target_compile_options(vjo-game-model-broker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-model-broker-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
+    VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
+  add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
 endif()

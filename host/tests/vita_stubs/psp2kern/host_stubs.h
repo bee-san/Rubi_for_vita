@@ -6,6 +6,7 @@
 #include <string.h>
 typedef int SceUID;
 typedef unsigned int SceSize;
+typedef int64_t SceOff;
 /* Preserve the Vita structure's size and type offset on a 64-bit host. */
 typedef struct {
     SceSize size;
@@ -37,4 +38,5 @@ int ksceKernelFreeMemBlock(SceUID);
 int ksceKernelMemcpyUserToKernel(void *, const void *, SceSize);
 int ksceKernelMemcpyKernelToUser(void *, const void *, SceSize);
 int ksceKernelStrncpyUserToKernel(char *, const char *, SceSize);
+int ksceKernelSetEventFlag(SceUID, unsigned);
 #endif

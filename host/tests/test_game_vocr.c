@@ -11,6 +11,9 @@ static int memory_live, alloc_failure, base_failure, free_failure, close_failure
 static int join_failure, start_failure, delete_failure, budget_failure, cancel_reads;
 static int available, cancel_job, short_reads, open_failure, bad_read;
 static FILE *model;
+static char model_path[512];
+static unsigned user_open_calls;
+static int virtual_file, open_busy, read_busy, close_busy, read_eof;
 static char own_title[12];
 static uint64_t clock_value;
 
@@ -47,30 +50,44 @@ int vjoOcrComplete(const VjoGameOcrResult *out) { TEST_CHECK(!memory_live && !mo
 int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t n, void *dst)
 { TEST_CHECK(seq == 12 && row < 60 && n <= 60-row); memcpy(dst, pixels+row*200*4, n*200*4); return (int)n; }
 SceUID sceIoOpen(const char *path, int flags, unsigned mode)
+{ user_open_calls++; return (int)0x80010013u; /* Physical game's ux0 is unavailable. */ }
+int vjoOcrModelOpen(uint32_t seq)
 {
+    if (open_busy) return VJO_ERR_BUSY;
     if (open_failure) return -123;
-    TEST_ASSERT(!model && flags == SCE_O_RDONLY);
-    model = fopen(path, "rb"); return model ? 30 : -123;
+    TEST_ASSERT(!model && seq == 12);
+    model = virtual_file ? tmpfile() : fopen(model_path, "rb");
+    if (!model) return -123;
+    if (virtual_file) {
+        const unsigned char bytes[16] = {1,2,3,4};
+        TEST_ASSERT(fwrite(bytes, 1, sizeof(bytes), model) == sizeof(bytes));
+    }
+    TEST_ASSERT(!fseek(model, 0, SEEK_END));
+    return (int)ftell(model);
 }
-SceOff sceIoLseek(SceUID uid, SceOff off, int whence)
-{ TEST_CHECK(uid == 30 && model); return fseek(model, (long)off, whence) ? -1 : ftell(model); }
-int sceIoRead(SceUID uid, void *out, SceSize n)
+int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t n, void *out)
 {
-    TEST_CHECK(uid == 30 && model && n <= 8192);
+    TEST_CHECK(seq == 12 && model && n <= 8192);
+    if (read_busy) return VJO_ERR_BUSY;
+    TEST_ASSERT(!fseek(model, (long)offset, SEEK_SET));
     reads_count++;
     if (bad_read) return -456;
+    if (read_eof) return 0;
     if (short_reads && n > 37) n = 37;
     int got = (int)fread(out, 1, n, model); bytes_read += (unsigned)got; return got;
 }
-int sceIoClose(SceUID uid)
-{ TEST_CHECK(uid == 30 && model); if (close_failure) return -789; int rc = fclose(model); model = NULL; return rc; }
+int vjoOcrModelClose(uint32_t seq)
+{ TEST_CHECK(seq == 12); if (close_busy) return VJO_ERR_BUSY; if (!model) return 0; if (close_failure) return -789; int rc = fclose(model); model = NULL; return rc; }
 
 static VjoGameOcrRequest setup(void)
 {
     if (model) { fclose(model); model = NULL; }
-    worker = workspace_uid = model_fd = -1;
+    worker = workspace_uid = -1;
+    model_owned = 0; model_seq = 0;
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     allocations = frees = reads_count = bytes_read = thread_creates = 0;
+    user_open_calls = 0;
+    virtual_file = open_busy = read_busy = close_busy = read_eof = 0; clock_value = 0;
     memory_live = alloc_failure = base_failure = free_failure = close_failure = 0;
     join_failure = start_failure = delete_failure = budget_failure = cancel_reads = 0;
     cancel_job = short_reads = open_failure = bad_read = 0;
@@ -82,6 +99,7 @@ static VjoGameOcrRequest setup(void)
      * CI intentionally has no private release assets in its source checkout. */
     snprintf(r.model_dir, sizeof(r.model_dir), "%s",
              VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : "unused-model-dir");
+    snprintf(model_path, sizeof(model_path), "%s/%s", r.model_dir, r.model);
     return r;
 }
 static void line(void)
@@ -140,6 +158,7 @@ static void real_model_io_and_cancellation(void)
     TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
     TEST_CHECK(bytes_read == 657664 && reads_count > 1000 && out.lines == 1);
     TEST_CHECK(!memory_live && !model && !out.cleanup_status);
+    TEST_CHECK(!user_open_calls); /* Model access never uses the game's unavailable ux0. */
     open_failure = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_MODEL && out.io_error == -123);
     open_failure = 0; bad_read = 1;
@@ -149,6 +168,38 @@ static void real_model_io_and_cancellation(void)
     close_failure = 0; TEST_CHECK(!vjo_game_ocr_worker_stop() && !model);
     reads_count = 0; cancel_reads = 4;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !model && !memory_live);
+}
+/* These are always run in CI, including checkouts without release weights. */
+static void model_callbacks_timeouts_errors_and_cleanup(void)
+{
+    setup(); active_seq = 12; virtual_file = 1;
+    VjoFile file; unsigned char bytes[16];
+    open_failure = 1;
+    TEST_CHECK(file_open(NULL, "ignored", &file) == -1 && io_error == -123);
+    TEST_CHECK(model_owned && model_seq == 12);
+    file_close(NULL); TEST_CHECK(!model_owned && !model_seq);
+    open_failure = 0; open_busy = close_busy = 1;
+    TEST_CHECK(file_open(NULL, "ignored", &file) == -1 && io_error == VJO_ERR_TIMEOUT);
+    TEST_CHECK(model_owned && model_seq == 12 && !model);
+    active_seq = 0; file_close(NULL);
+    TEST_CHECK(model_owned && model_seq == 12 && io_error == VJO_ERR_TIMEOUT);
+    close_busy = 0; TEST_CHECK(!vjo_game_ocr_worker_stop() && !model_owned && !model_seq);
+    quitting = 0; active_seq = 12; open_busy = 0;
+    TEST_CHECK(!file_open(NULL, "ignored", &file) && file.size == sizeof(bytes));
+    TEST_CHECK(!file.read(NULL, 0, bytes, sizeof(bytes)) && bytes[0] == 1 && bytes[3] == 4);
+    read_busy = 1;
+    TEST_CHECK(file.read(NULL, 0, bytes, sizeof(bytes)) == -1 && io_error == VJO_ERR_TIMEOUT);
+    read_busy = 0; bad_read = 1;
+    TEST_CHECK(file.read(NULL, 0, bytes, sizeof(bytes)) == -1 && io_error == -456);
+    bad_read = 0; read_eof = 1;
+    TEST_CHECK(file.read(NULL, 0, bytes, sizeof(bytes)) == -1 && io_error == -1);
+    read_eof = 0;
+    TEST_CHECK(file.read(NULL, UINT32_MAX, bytes, sizeof(bytes)) == -1);
+    TEST_CHECK(file.read(NULL, 0, NULL, sizeof(bytes)) == -1);
+    cancel_job = 1; TEST_CHECK(file.read(NULL, 0, bytes, sizeof(bytes)) == -1);
+    active_seq = 0; close_failure = 1; file.close(NULL);
+    TEST_CHECK(model && model_owned && model_seq == 12 && io_error == -789);
+    close_failure = 0; TEST_CHECK(!vjo_game_ocr_worker_stop() && !model && !model_owned);
 }
 static void system_app_gate_and_failed_joins(void)
 {
@@ -171,6 +222,7 @@ TEST_LIST = {
     {"allocation base free failure and retry", memory_failure_and_retry},
     {"cancel before allocation and wire validation", cancel_and_wire},
     {"real model bounded short reads errors and cancellation", real_model_io_and_cancellation},
+    {"model callbacks without weights timeouts errors and saved cleanup sequence", model_callbacks_timeouts_errors_and_cleanup},
     {"ALL system gate and retained thread joins", system_app_gate_and_failed_joins},
     {NULL, NULL}
 };
