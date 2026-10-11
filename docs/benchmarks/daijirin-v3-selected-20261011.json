@@ -1,0 +1,355 @@
+{
+  "maximum_definition_bytes": 7000,
+  "maximum_payload_bytes": 7021,
+  "observed_truncated_entries": 53,
+  "payloads_validated": 334741,
+  "converter_limits": {
+    "definition_limit_bytes": 7000,
+    "entry_limit_bytes": 8192,
+    "key_limit_bytes": 192,
+    "candidate_codepoints": 32,
+    "json_row_limit_characters": 8388608,
+    "index_json_limit_bytes": 1048576
+  },
+  "tools_tests": {
+    "passed": 26,
+    "command": "VJO_CLI=build/daijirin-host/vjo-cli VJO_BENCH=build/daijirin-host/vjo-local-bench python -m unittest discover -s tools/tests -p test_local_dictionary.py"
+  },
+  "date": "2026-10-11",
+  "source": {
+    "archive": "daijirin4-gpt-6-luna-en-jp-v3.zip",
+    "bytes": 149094292,
+    "sha256": "12aa375ea45e4d147ca402460657553b4770bc179df0daaa68d4793ffa15c900",
+    "rows": 334751,
+    "redistribution_license": "No grant in index.json; dictionary remains private."
+  },
+  "converted": {
+    "format_version": 2,
+    "entries": 334741,
+    "index_records": 602634,
+    "truncated_definitions": 53,
+    "reading_only_entries": 2,
+    "skipped_empty_headwords": 1,
+    "skipped_long_headwords": 9,
+    "dictionaries": [
+      "daijirin4-gpt-6-luna en-jp"
+    ],
+    "bytes": 156827663,
+    "unique_keys": 438380,
+    "hash_buckets": 4096,
+    "index_pages": 4096,
+    "conversion_seconds": 60.46478528499938,
+    "host_maxrss_kib": 36336,
+    "sha256": "e767f405bcd8021f7fb226b8ca6da70ba0b6250782e8afc998bf924ab7c4fb53"
+  },
+  "lookup": [
+    {
+      "case": 0,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 10277,
+      "host_warm_median_us": 12.855
+    },
+    {
+      "case": 1,
+      "kind": "supplementary_prefix_newline",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 10277,
+      "host_warm_median_us": 11.144
+    },
+    {
+      "case": 2,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9577,
+      "host_warm_median_us": 11.555
+    },
+    {
+      "case": 3,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9053,
+      "host_warm_median_us": 12.038
+    },
+    {
+      "case": 4,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8559,
+      "host_warm_median_us": 10.683
+    },
+    {
+      "case": 5,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8487,
+      "host_warm_median_us": 13.062
+    },
+    {
+      "case": 6,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8495,
+      "host_warm_median_us": 10.323
+    },
+    {
+      "case": 7,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9282,
+      "host_warm_median_us": 15.055
+    },
+    {
+      "case": 8,
+      "kind": "reading_katakana",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9282,
+      "host_warm_median_us": 10.631
+    },
+    {
+      "case": 9,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8468,
+      "host_warm_median_us": 11.226
+    },
+    {
+      "case": 10,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 11221,
+      "host_warm_median_us": 22.521
+    },
+    {
+      "case": 11,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9164,
+      "host_warm_median_us": 11.905
+    },
+    {
+      "case": 12,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8464,
+      "host_warm_median_us": 11.105
+    },
+    {
+      "case": 13,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9850,
+      "host_warm_median_us": 13.587
+    },
+    {
+      "case": 14,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 9675,
+      "host_warm_median_us": 15.72
+    },
+    {
+      "case": 15,
+      "kind": "definition_truncated",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 15276,
+      "host_warm_median_us": 49.836
+    },
+    {
+      "case": 16,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 5,
+      "read_bytes": 9170,
+      "host_warm_median_us": 14.008
+    },
+    {
+      "case": 17,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8489,
+      "host_warm_median_us": 8.592
+    },
+    {
+      "case": 18,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8441,
+      "host_warm_median_us": 8.066
+    },
+    {
+      "case": 19,
+      "kind": "exact",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 4,
+      "read_bytes": 8422,
+      "host_warm_median_us": 12.909
+    },
+    {
+      "case": 20,
+      "kind": "punctuation_no_scan",
+      "samples": 6,
+      "entries": 0,
+      "full_definition_equal": false,
+      "arena_peak": 0,
+      "read_calls": 0,
+      "read_bytes": 0,
+      "host_warm_median_us": 0.078
+    },
+    {
+      "case": 21,
+      "kind": "unmatched_supplementary",
+      "samples": 6,
+      "entries": 0,
+      "full_definition_equal": false,
+      "arena_peak": 53584,
+      "read_calls": 2,
+      "read_bytes": 4160,
+      "host_warm_median_us": 8.854
+    },
+    {
+      "case": 22,
+      "kind": "inflected",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 8,
+      "read_bytes": 25666,
+      "host_warm_median_us": 22.22
+    },
+    {
+      "case": 23,
+      "kind": "ambiguous_inflection",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 6,
+      "read_bytes": 17788,
+      "host_warm_median_us": 20.665
+    },
+    {
+      "case": 24,
+      "kind": "inflected",
+      "samples": 6,
+      "entries": 1,
+      "full_definition_equal": true,
+      "arena_peak": 53584,
+      "read_calls": 10,
+      "read_bytes": 35797,
+      "host_warm_median_us": 26.369
+    }
+  ],
+  "runtime_limits": {
+    "caller_arena_bytes": 65536,
+    "selected_entries_max": 1,
+    "scratch_cap_bytes": 49152
+  },
+  "lookup_samples": 150,
+  "peak_bytes": 53584,
+  "environment": {
+    "python": "3.14.7",
+    "platform": "Linux-7.2.6-1-cachyos-x86_64-with-glibc2.44",
+    "scope": "Host production selected-position API, exact full definitions compared to source flattening; no OCR or native timing.",
+    "command": "python build/daijirin-private/verify_dictionary.py",
+    "conversion_command": "python tools/convert_dictionary.py daijirin4-gpt-6-luna-en-jp-v3.zip -o daijirin.vjdict --max-definition-bytes 7000",
+    "driver": "Private derivative of host/local_bench.c; 64 KiB arena with caller-owned static sentence; full entry checked against source flattening; first of six samples excluded from warm-host median.",
+    "public_comparison_command": "build/host/vjo-local-bench DIR daijirin.vjdict TEXT 6 CURSOR_BYTE (this includes OCR text-copy instrumentation in arena)",
+    "driver_sha256": "1130dc3a05eb84be83ccddd5e8967b18cc05147c59a5808ade11dcc7aab53747",
+    "converter_sha256": "043610e384aade8fb63940249f396c7895756094f60b11fa178191107223bc68"
+  },
+  "part_of_speech_rule_rows": {
+    "": 313203,
+    "v5": 13747,
+    "adj-i": 2301,
+    "vs": 612,
+    "v1": 4718,
+    "vz": 137,
+    "vk": 30,
+    "v5 vs": 3
+  },
+  "installer_header_valid": true,
+  "limitations": [
+    "Existing bounded suffix matching selects 行う for 行った and the きたる posting of 来る for 来ました; it does not establish the intended reading or perform morphological parsing.",
+    "Conversion and lookup run on host; no physical Vita storage latency, UI allocation, translation accuracy or OCR accuracy measurement."
+  ]
+}

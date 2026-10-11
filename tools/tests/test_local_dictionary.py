@@ -115,6 +115,27 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(output.count("[image omitted]"), 2)
         self.assertNotIn("unused title", output)
 
+    def test_nested_bilingual_revision_keeps_plain_text_without_markup(self):
+        # Invented content in the nested span/div/ruby/link shape of the
+        # bilingual format-3 export. No dictionary definitions are fixtures.
+        gloss = [{"type": "structured-content", "content": [
+            {"tag": "span", "data": {"name": "heading"}, "content": {
+                "tag": "span", "style": {"fontWeight": "bold"}, "content": "Synthetic heading"}},
+            {"tag": "div", "content": {"tag": "div", "content": {"tag": "div", "content": [
+                {"tag": "div", "content": ["English test: ", {"tag": "a", "href": "example.invalid", "content": "plain link"}]},
+                {"tag": "div", "content": ["日本語テスト：", {"tag": "ruby", "content": [
+                    "漢字", {"tag": "rt", "content": "suppressed reading"}]}]},
+                {"tag": "img", "path": "private.svg", "alt": "image label"},
+                {"tag": "style", "content": "hidden style"},
+            ]}}},
+        ]}]
+        self.build([term("猫", "ねこ", gloss)])
+        output = self.lookup("猫").stdout
+        for text in ("Synthetic heading", "English test: plain link", "日本語テスト：漢字", "image label"):
+            self.assertIn(text, output)
+        for absent in ("suppressed reading", "hidden style", "private.svg", "example.invalid", "<div", "fontWeight"):
+            self.assertNotIn(absent, output)
+
     def test_reading_only_term_uses_reading_as_display_headword(self):
         _, stats = self.build([term("", "あて", ["a target; 目標。"]),
                                term("猫", "ねこ", ["cat"])])

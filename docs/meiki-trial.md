@@ -1,6 +1,6 @@
 # Optional Meiki single-line trial
 
-`v0.7.6-meiki.1` adds an optional recognizer to the working v0.7.5 game-process
+`v0.7.6` includes an optional recognizer alongside VOCR in the game-process
 OCR architecture. The default remains `vocr`; v0.7.5 remains the stable rollback.
 Character navigation, one-entry local dictionary lookup and the 64 KiB Shell
 lookup arena are retained. No Anki queue or cloud fallback is introduced.
@@ -28,11 +28,12 @@ while recognition runs, close and reopen the overlay to request a fresh run;
 it does not automatically reload the 5.4 MB model. Moving the character cursor
 looks up saved OCR text and does not capture or run OCR again.
 
-The optional archive contains the current API13 kernel, Shell and game worker,
+The archive with both engines contains the current API13 kernel, Shell and game worker,
 plus `meiki/meiki-engine.suprx`. Install the engine at the fixed game-visible path
 `app0:/VitaJPOverlay/meiki/meiki-engine.suprx`, for example through an existing
-per-title rePatch mount. Retail app0 module visibility and successful engine
-loading require an actual hardware test. Do not install the earlier API9 worker
+per-title rePatch mount. This route loaded the ABI3 engine and completed two
+CLANNAD OCR jobs on the physical Vita on October 11. Other titles still require
+their own hardware check. Do not install the earlier API9 worker
 or ABI2 engine alongside this build; the engine requires ABI3.
 
 The recognizer belongs at
@@ -101,9 +102,8 @@ model directory. Without weights, hosted CI registers only the separately named
 `game_meiki_preflight` budget/region test plus the portable adapter tests; it
 does not claim the SHA/reader/inference-boundary cases ran. Real MNN path/reader equality and allocator peaks are
 measured separately in the pinned OCR source's reader verification report.
-Earlier ARM crop accuracy results belong to their earlier engine revision;
-this optional package's retail-game OCR quality and timing remain unmeasured
-until hardware validation. A blank successful capture is not recognition proof.
+Earlier ARM crop accuracy results belong to their earlier engine revision.
+A blank successful capture is not recognition proof.
 
 The pinned runtime's [full reader/path report](https://github.com/bee-san/vita-vn-ocr/blob/39a3a9ae069180675c145f6df74c843dc2061967/ports/meiki/results-reader-matrix.json)
 ran all 451 hand-checked real VN crops on the host, twice with each loader
@@ -113,4 +113,31 @@ ran all 451 hand-checked real VN crops on the host, twice with each loader
 The bounded neural pool peaked at 13,235,648 bytes and retained zero bytes.
 These are host crop results, not current retail-game accuracy, speed or total
 resident memory. The host used its system C++ metadata heap rather than the
-isolated Vita heap; the cross-built ABI3 engine has not yet run on hardware.
+isolated Vita heap; see the separate physical observations below.
+
+## Physical CLANNAD observations, October 11
+
+The `v0.7.6-meiki.2` Shell fix restored Square to select a region and Circle to
+cancel or close, including on error views. Tap and release Square, drag around
+one horizontal line, and press Cross to save; reopen with L+R to recognize it.
+Holding Square for one second resets the region to full screen, which is too
+tall for Meiki.
+
+Two actual Meiki jobs used an 864×44 crop and returned one line with
+`rc=0`, `io=0`, `cleanup=0`. End-to-end times were 7,904 and 8,043 ms; model
+loads were 2,153 and 2,149 ms and recognition 3,483 and 3,478 ms. The game
+reported 91,226,112 free USER bytes before the first job. Requested inference
+buffers were 21,356,544 bytes; observed neural and metadata peaks were
+13,090,176 and 2,764,800 bytes. The model reader returned 5,392,856 bytes without
+error. The separate Shell lookup arena peaked at 53,488 bytes.
+
+These are two varying-dialogue observations, not a controlled latency benchmark,
+an accuracy/CER measurement or total process residency. Physical Square/touch
+drags were logged, and the user subsequently confirmed the workflow works.
+The ten-case actual-input-function host harness separately covers drag/save,
+cancel, error views, held Square, Unicode cursor preservation and region bounds;
+ASan/UBSan found no errors. The previous handler implementation failed nine of
+those ten cases.
+
+See [project lessons](project-lessons.md) for process context, debugging and
+installation practices, and [the todo list](todo-20261011.md) for this update.

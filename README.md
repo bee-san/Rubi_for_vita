@@ -1,28 +1,32 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.5 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.6 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
 card queue are disabled; no cards or screenshots are queued.
 
-An optional [v0.7.6-meiki.1 trial](docs/meiki-trial.md) adds manual single-line
-Meiki OCR in the game process while preserving this UI. It requires substantially
-more game memory and a separate ABI3 engine; vocr remains the default, and
-v0.7.5 remains the stable rollback.
+The release stores both VOCR and [Meiki](docs/meiki-trial.md). Open **JP Overlay
+Settings**, press **Select**, and switch the OCR model with **Cross** or touch.
+VOCR is the default. Meiki runs manually on one horizontal line and uses more
+game memory; selecting it does not remove or load the other stored model.
 
-Local OCR is cross-built and tested on real VN screenshots on a host. This
-release still needs an in-game run on physical hardware; host timings are not
-Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
+Both engines have completed actual CLANNAD OCR jobs on the physical Vita.
+Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
+and broader game compatibility remain unmeasured; host crop results are separate.
+See [OCR measurements and limits](docs/vita-vn-ocr.md) and
+[project lessons](docs/project-lessons.md).
 
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.5.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.5) and
+Download `VitaJPOverlay-0.7.6.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.6) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
-int8 models, and the complete converted JMdict snapshot. Python 3.9+, bash,
+int8 models, the pinned Meiki recognizer/engine, and the complete converted
+JMdict snapshot. Meiki also needs its engine mounted for each enabled game;
+see [the setup guide](docs/meiki-trial.md). Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
 Close games, open VitaShell, press Select to start FTP, and run from the
@@ -57,7 +61,7 @@ then reboot. Keep unrelated plugins and configuration intact.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| Left / Right | Move one Unicode character; local lookup shows one best matching entry |
+| Left / Right | Move to the next Japanese character by default; local lookup shows one entry |
 | Up / Down | Navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
@@ -83,7 +87,22 @@ teal-accented interface. Choices save automatically to
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list |
+| Select | Switch between Games and OCR/lookup settings |
 | Circle | Exit |
+
+On the **OCR and character lookup** page, select a card with Up/Down. Cross
+or touch switches between VOCR/Meiki or toggles Japanese-only selection;
+Left/Right choose VOCR/Meiki on the model card or OFF/ON on the selection card.
+Choices save automatically to `config.ini` and apply when the overlay next opens.
+Both model files remain stored; only the selected engine runs. Start reloads
+the saved preferences. Other config values, including dictionary priority,
+paths, capture mode and API keys, are preserved.
+
+Japanese-only selection is **ON by default**. The initial cursor and Left/Right
+skip Latin text, digits, punctuation and Hangul while selecting kana and Han
+characters. It does not tokenize words or hide the recognized sentence. With
+it OFF, every Unicode character is selectable. No Japanese characters means
+no character lookup or dictionary allocation.
 
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. An unreadable or
@@ -103,6 +122,7 @@ ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_model = FL10_w8.vocr
 ocr_mode = auto
+japanese_only_selection = on
 ```
 
 FL10 is the smaller default for lower game memory use. The included
@@ -123,7 +143,10 @@ gzip snapshot is also attached to the release.
 
 You can add your own Yomitan dictionaries, including a legally obtained
 Daijirin export, with [the converter and installation guide](docs/local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order.
+Up to eight dictionary files can be enabled in priority order. The downloaded
+Daijirin v3 has been converted and measured separately; the commercial file is
+installed privately, while the public release includes the converter and JMdict.
+The dictionary stays on disk; it is never loaded whole into RAM.
 
 Optional network backends remain available: `ocr_backend = lens` uploads the
 selected image to Google Lens; `dictionary = hachidori` uses Hachidori Relay on
@@ -133,7 +156,7 @@ network requests and have no cloud fallback.
 
 ## Memory and troubleshooting
 
-The `*ALL` plugin runs vocr in the enabled game's process, allocating its
+The `*ALL` plugin runs the selected local OCR engine in the enabled game's process, allocating its
 region-sized workspace from that game's `USER_RW`. It checks the title at
 startup and starts no worker thread in SceShell, VitaShell, the settings app or
 other system titles. Candidate games keep only an idle worker until the Shell
@@ -150,7 +173,8 @@ still fail because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the three pinned vocr model names in `ux0:data/VitaJPOverlay/ocr`, checks
+only the three pinned VOCR model names and the pinned Meiki recognizer in
+`ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, and copies at most 8 KiB per request into game-owned memory.
 The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB
 staging buffer, no complete model, and no saved game pointers. Cancellation or
