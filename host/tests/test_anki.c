@@ -154,7 +154,7 @@ static void test_anki_requests(void)
                        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET ",\"fields\":{"
                        "\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\",\"ExpressionFurigana\":\"猫[ねこ]\","
                        "\"MainDefinition\":\"<ol><li>cat &quot;neko&quot;</li><li>a\\\\b &lt;&amp;&gt;\\nc</li></ol>\","
-                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"FreqSort\":\"1500\"},"
+                       "\"Sentence\":\"<b>猫</b>が<br>好き\"},"
                        "\"tags\":[\"vita\",\"jp-overlay\"]," OPTS ","
                        "\"picture\":[{\"filename\":\"vitajp_1.jpg\",\"fields\":[\"Picture\"],\"data\":\""));
     TEST_MSG("%s", b.prefix);
@@ -165,7 +165,7 @@ static void test_anki_requests(void)
     m.audio_url = "https://example.com/a \"b\".opus";
     m.audio_name = "vitajp_1.opus";
     TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &m, &b) == 0);
-    TEST_CHECK(strstr(b.prefix, "\"FreqSort\":\"1500\"},") && !strstr(b.prefix, "ExpressionAudio\":\""));
+    TEST_CHECK(!strstr(b.prefix, "FreqSort") && !strstr(b.prefix, "ExpressionAudio\":\""));
     TEST_CHECK(strstr(b.prefix, OPTS ",\"audio\":[{\"filename\":\"vitajp_1.opus\",\"fields\":[\"ExpressionAudio\"],"
                                 "\"url\":\"https://example.com/a \\\"b\\\".opus\"}],"
                                 "\"picture\":[{\"filename\":\"vitajp_1.jpg\"") != NULL);
@@ -570,7 +570,7 @@ static void test_anki_config(void)
     TEST_CHECK(!c.anki_host[0] && !strcmp(c.anki_deck, "Default") && !strcmp(c.anki_note_type, "Lapis") &&
                !strcmp(c.anki_tags, "vita-jp-overlay"));
     TEST_CHECK(!strcmp(c.anki_field[VJO_ANKI_WORD], "Expression") &&
-               !strcmp(c.anki_field[VJO_ANKI_FREQUENCY], "FreqSort") &&
+               !c.anki_field[VJO_ANKI_FREQUENCY][0] &&
                !strcmp(c.anki_field[VJO_ANKI_AUDIO], "ExpressionAudio") && !c.anki_audio_url[0]);
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.n_warnings == 0);

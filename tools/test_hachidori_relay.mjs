@@ -79,13 +79,14 @@ test("an explicit Hachidori selection explains a missing relay address", async (
   assert.doesNotMatch(result.stdout, /API key is not set/iu);
 });
 
-test("real relay lookups display words, conjugations, structured definitions and ranks without a key", async (t) => {
+test("real relay lookups display words, conjugations, structured definitions without frequency ranks", async (t) => {
   const { apiPort, host } = await hosting(t);
   const result = await run(args(apiPort, "猫を見た。犬も見た。"));
   assert.equal(result.code, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /猫 \(ねこ\) 456/u);
-  assert.match(result.stdout, /見る \(みる\) 123/u);
-  assert.match(result.stdout, /犬 \(いぬ\) 789/u);
+  assert.match(result.stdout, /猫 \(ねこ\)/u);
+  assert.match(result.stdout, /見る \(みる\)/u);
+  assert.match(result.stdout, /犬 \(いぬ\)/u);
+  assert.doesNotMatch(result.stdout, /456|123|789/u);
   assert.match(result.stdout, /to see/u);
   assert.match(result.stdout, /to look/u);
   assert.doesNotMatch(result.stdout, /structured-content|color|span|\[error\]/u);

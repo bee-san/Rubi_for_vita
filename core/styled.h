@@ -56,8 +56,8 @@ void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
 /* UTF-16 range of an entry's highlight in the header; 0 if it has none. */
 int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, uint32_t *len);
 
-/* Body: the selected entry — headword and reading at ja_px, rank and
- * meanings at en_px; a green VJO_ANKI_MARK after the rank when in_anki. */
+/* Body: the selected entry — headword and reading at ja_px,
+ * meanings at en_px; a green VJO_ANKI_MARK after the headword when in_anki. */
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki);
 
 #endif

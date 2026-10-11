@@ -317,3 +317,5 @@ jsmn, acutest, and Yomichan for its Japanese deinflection rules.
 Pinned sources and attribution are in `third_party/`.
 
 Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0.
+
+Frequency dictionaries and rank display are disabled in this fork. Term dictionary lookups remain available.

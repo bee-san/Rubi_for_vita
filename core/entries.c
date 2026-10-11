@@ -16,7 +16,6 @@ char *vjo_entry_format(VjoArena *a, const VjoVocab *v)
         vjo_buf_puts(&b, v->reading);
         vjo_buf_puts(&b, ")");
     }
-    vjo_buf_printf(&b, " %d", v->rank);
     for (int i = 0; i < v->n_meanings; i++) {
         vjo_buf_putc(&b, '\n');
         vjo_buf_puts(&b, v->meanings[i]);

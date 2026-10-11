@@ -137,7 +137,7 @@ static int glossary(VjoBuf *b, const VjoJson *j, int i, int depth)
 static int parse_term(VjoArena *a, const char *json, size_t len, Term *term)
 {
     VjoJson j;
-    int index, entries, entry, heads, head, spelling, reading, definitions, frequencies;
+    int index, entries, entry, heads, head, spelling, reading, definitions;
     int rc;
     if (vjo_json_parse(a, json, len, &j) < 0 || !vjo_json_is_type(&j, 0, JSMN_OBJECT) ||
         !valid_reply(&j, len))
@@ -157,7 +157,6 @@ static int parse_term(VjoArena *a, const char *json, size_t len, Term *term)
     spelling = vjo_json_obj_get(&j, head, "term");
     reading = vjo_json_obj_get(&j, head, "reading");
     definitions = vjo_json_obj_get(&j, entry, "definitions");
-    frequencies = vjo_json_obj_get(&j, entry, "frequencies");
     if (!vjo_json_is_type(&j, spelling, JSMN_STRING) || j.t[spelling].start == j.t[spelling].end ||
         !vjo_json_is_type(&j, reading, JSMN_STRING) || !vjo_json_is_type(&j, definitions, JSMN_ARRAY))
         return VJO_E_PARSE;
@@ -190,17 +189,6 @@ static int parse_term(VjoArena *a, const char *json, size_t len, Term *term)
         def = vjo_json_skip(&j, def);
     }
     term->rank = VJO_NO_RANK;
-    if (vjo_json_is_type(&j, frequencies, JSMN_ARRAY)) {
-        int freq = frequencies + 1;
-        for (int k = 0; k < j.t[frequencies].size; k++) {
-            int value;
-            if (!integer(&j, vjo_json_obj_get(&j, freq, "frequency"), &value) && value > 0) {
-                term->rank = value;
-                break;
-            }
-            freq = vjo_json_skip(&j, freq);
-        }
-    }
     return VJO_OK;
 }
 

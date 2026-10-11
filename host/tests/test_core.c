@@ -296,7 +296,7 @@ static void test_jpdb_request(void)
     TEST_CHECK(strstr(j, "\"text\":\"猫が\\\"好き\\\"\\\\\\n\"") != NULL);
     TEST_CHECK(strstr(j, "\"position_length_encoding\":\"utf16\"") != NULL);
     TEST_CHECK(strstr(j, "\"token_fields\":[\"vocabulary_index\",\"position\",\"length\",\"furigana\"]") != NULL);
-    TEST_CHECK(strstr(j, "\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\",\"frequency_rank\",\"meanings\"]") != NULL);
+    TEST_CHECK(strstr(j, "\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\",\"meanings\"]") != NULL);
 }
 
 static const char *JPDB_SAMPLE =
@@ -313,7 +313,7 @@ static void test_jpdb_parse(void)
     setup();
     TEST_ASSERT(vjo_jpdb_parse_response(&A, JPDB_SAMPLE, strlen(JPDB_SAMPLE), &r) == 0);
     TEST_CHECK(r.n_vocab == 3 && r.n_tokens == 4);
-    TEST_CHECK(r.vocab[0].rank == 50);
+    TEST_CHECK(r.vocab[0].rank == VJO_NO_RANK);
     TEST_CHECK(r.vocab[2].rank == VJO_NO_RANK);
     TEST_CHECK(!strcmp(r.vocab[1].spelling, "猫") && !strcmp(r.vocab[1].reading, "ねこ"));
     TEST_CHECK(r.vocab[1].n_meanings == 2 && !strcmp(r.vocab[1].meanings[1], "猫 😀"));
@@ -397,7 +397,7 @@ static void test_jiten_parse(void)
     setup();
     TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
     TEST_CHECK(r.n_vocab == 3); /* を deduplicated */
-    TEST_CHECK(!strcmp(r.vocab[0].reading, "おちゃ") && r.vocab[0].rank == 1199);
+    TEST_CHECK(!strcmp(r.vocab[0].reading, "おちゃ") && r.vocab[0].rank == VJO_NO_RANK);
     TEST_CHECK(r.vocab[0].n_meanings == 2 && !strcmp(r.vocab[0].meanings[1], "tea ceremony; chanoyu"));
     TEST_CHECK(r.vocab[2].n_meanings == 1 && !strcmp(r.vocab[2].meanings[0], "to drink; to gulp"));
     TEST_CHECK(r.n_tokens == 5);
@@ -410,7 +410,7 @@ static void test_jiten_parse(void)
     TEST_CHECK(l.n_entries == 4);
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "𠮟る。【お茶】を飲み、茶を"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "𠮟る。お茶【を】飲み、茶を"));
-    TEST_CHECK(!strcmp(l.entries[2].text, "飲む (のむ) 299\nto drink; to gulp"));
+    TEST_CHECK(!strcmp(l.entries[2].text, "飲む (のむ)\nto drink; to gulp"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 3), "𠮟る。お茶を飲み、【茶】を"));
     TEST_CHECK(l.entries[3].vocab == l.entries[1].vocab && l.entries[3].text == l.entries[1].text);
 
@@ -435,14 +435,14 @@ static void test_entries(void)
     TEST_CHECK(!strcmp(l.header, "猫が\n好き"));
     /* every word gets an entry, in text order */
     TEST_CHECK(l.n_entries == 3);
-    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) 1500\ncat\nfeline"));
-    TEST_CHECK(!strcmp(l.entries[1].text, "が 50\nindicates subject"));
-    TEST_CHECK(!strcmp(l.entries[2].text, "好き 99999\nliked"));
+    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ)\ncat\nfeline"));
+    TEST_CHECK(!strcmp(l.entries[1].text, "が\nindicates subject"));
+    TEST_CHECK(!strcmp(l.entries[2].text, "好き\nliked"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "【猫】が\n好き"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "猫【が】\n好き"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 2), "猫が\n【好き】"));
     TEST_CHECK(!strcmp(vjo_entries_body(&A, &l),
-                       "猫 (ねこ) 1500\ncat\nfeline\n\nが 50\nindicates subject\n\n好き 99999\nliked"));
+                       "猫 (ねこ)\ncat\nfeline\n\nが\nindicates subject\n\n好き\nliked"));
 
     /* a word used twice: an entry for each, in text order; a word without
      * a token comes last */
@@ -457,7 +457,7 @@ static void test_entries(void)
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "猫【と】猫"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 2), "猫と【猫】"));
     TEST_CHECK(l.entries[2].vocab == l.entries[0].vocab);
-    TEST_CHECK(!strcmp(l.entries[3].text, "犬 (いぬ) 900\ndog") && l.entries[3].hl_start == -1);
+    TEST_CHECK(!strcmp(l.entries[3].text, "犬 (いぬ)\ndog") && l.entries[3].hl_start == -1);
 }
 
 static void test_entries_surrogates_and_trim(void)
@@ -478,7 +478,7 @@ static void test_entries_surrogates_and_trim(void)
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     TEST_CHECK(!strcmp(l.header, "😀猫"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "😀【猫】"));
-    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) 900"));
+    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ)"));
 
     /* server positions past the text or huge lengths are clamped */
     jp = "{\"tokens\":[[0,4,999999999,null],[1,999999999,5,null]],\"vocabulary\":"
@@ -1118,19 +1118,18 @@ static void test_styled(void)
     TEST_CHECK(vjo_entry_header_range(&l, 1, &a, &n) && a == 3 && n == 2);
     TEST_CHECK(!vjo_entry_header_range(&l, 2, &a, &n));
 
-    /* body: headword+reading at ja px, rank+meanings at en px */
+    /* body: headword+reading at ja px, meanings at en px */
     TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
     vjo_styled_entry(&st, &l, 0, 21, 18, 0);
-    TEST_CHECK(st.n_spans == 9); /* 猫 ( ねこ ) rank \n meaning \n meaning */
+    TEST_CHECK(st.n_spans == 8); /* 猫 ( ねこ ) \n meaning \n meaning */
     TEST_CHECK(st.spans[0].len == 1 && st.spans[0].px == 21 && st.spans[0].rgb == VJO_RGB_HIGHLIGHT);
     TEST_CHECK(st.spans[2].rgb == VJO_RGB_READING && st.spans[2].px == 21);
-    TEST_CHECK(st.spans[4].px == 18 && st.spans[4].rgb == VJO_RGB_RANK); /* " 1500" */
-    TEST_CHECK(st.spans[6].px == 18 && st.spans[6].len == 9);           /* "cat <pet>" unescaped */
-    /* in Anki: a green √ after the rank */
+    TEST_CHECK(st.spans[5].px == 18 && st.spans[5].len == 9);           /* "cat <pet>" unescaped */
+    /* in Anki: a green √ after the headword */
     TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
     vjo_styled_entry(&st, &l, 0, 21, 18, 1);
-    TEST_CHECK(st.n_spans == 10 && st.spans[5].rgb == VJO_RGB_OK && st.spans[5].len == 2 &&
-               st.text[st.spans[5].start + 1] == 0x221A);
+    TEST_CHECK(st.n_spans == 9 && st.spans[4].rgb == VJO_RGB_OK && st.spans[4].len == 2 &&
+               st.text[st.spans[4].start + 1] == 0x221A);
 
     /* surrogate pairs and truncation */
     TEST_ASSERT(vjo_styled_init(&st, &A, 3, 4) == 0);

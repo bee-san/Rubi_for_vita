@@ -13,7 +13,7 @@ char *vjo_jpdb_build_request(VjoArena *a, const char *text)
     vjo_buf_puts(&b, ",\"token_fields\":[\"vocabulary_index\",\"position\",\"length\",\"furigana\"]"
                      ",\"position_length_encoding\":\"utf16\""
                      ",\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\","
-                     "\"frequency_rank\",\"meanings\"]}");
+                     "\"meanings\"]}");
     return vjo_buf_cstr(&b);
 }
 
@@ -27,8 +27,7 @@ static long get_long(const VjoJson *j, int arr, int k, long dflt)
 
 static int parse_vocab(VjoArena *a, const VjoJson *j, int arr, VjoVocab *v)
 {
-    int t, m;
-    long rank;
+    int m;
     if (!vjo_json_is_type(j, arr, JSMN_ARRAY))
         return -1;
     /* 0-2: vid, sid, rid (requested, unused) */
@@ -36,13 +35,10 @@ static int parse_vocab(VjoArena *a, const VjoJson *j, int arr, VjoVocab *v)
     v->reading = vjo_json_str(a, j, vjo_json_arr_get(j, arr, 4));
     if (!v->spelling || !v->reading)
         return -1;
-    t = vjo_json_arr_get(j, arr, 5);
-    /* Java: isNull(5) or non-Number -> 99999, else intValue() */
-    if (vjo_json_is_null(j, t) || vjo_json_int(j, t, &rank) < 0)
-        v->rank = VJO_NO_RANK;
-    else
-        v->rank = (int)rank;
-    m = vjo_json_arr_get(j, arr, 6);
+    /* Retain the legacy slot only when reading old recorded responses. New
+     * requests exclude frequency_rank and place meanings at index 5. */
+    v->rank = VJO_NO_RANK;
+    m = vjo_json_arr_get(j, arr, j->t[arr].size >= 7 ? 6 : 5);
     v->meanings = NULL;
     v->n_meanings = 0;
     if (vjo_json_is_type(j, m, JSMN_ARRAY) && j->t[m].size > 0) {

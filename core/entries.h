@@ -11,7 +11,7 @@ typedef struct {
     const VjoVocab *vocab;
     int pos16;              /* token position in the lookup text, -1 if none */
     int hl_start, hl_end;   /* byte range in VjoEntryList.header, -1 if none */
-    const char *text;       /* "spelling (reading) rank\nmeaning..." (shared by a word's entries) */
+    const char *text;       /* "spelling (reading)\nmeaning..." (shared by a word's entries) */
 } VjoEntry;
 
 typedef struct {
@@ -26,7 +26,7 @@ typedef struct {
  * the dictionary's order). */
 int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r, VjoEntryList *out);
 
-/* Entry format: spelling + " (reading)" if different + " rank",
+/* Entry format: spelling + " (reading)" if different,
  * then "\n" + each meaning. */
 char *vjo_entry_format(VjoArena *a, const VjoVocab *v);
 

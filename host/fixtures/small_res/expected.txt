@@ -1,12 +1,12 @@
 どうぐをつかいますか? 
 はいいいえ
 ────────────────────────
-どうぐ 65070
+どうぐ
 tool; implement; instrument; utensil; apparatus; device
 means
 furniture
 
-を 4
+を
 indicates direct object of action
 indicates subject of causative expression
 indicates an area traversed
@@ -14,13 +14,13 @@ indicates time (period) over which action takes place
 indicates point of departure or separation of action
 indicates object of desire, like, hate, etc.
 
-つかう 8550
+つかう
 to use (a tool, method, etc.); to make use of; to put to use
 to use (a person, animal, puppet, etc.); to employ; to handle; to manage; to manipulate
 to use (time, money, etc.); to spend; to consume
 to use (language); to speak
 
-か 12
+か
 indicates a question
 indicates an embedded question; indicates an indirect question
 or; whether or not; either ... or ...
@@ -37,18 +37,18 @@ very
 -al; -ial; -ic; -ical; -ish; -y
 in that way
 
-は 2
+は
 indicates sentence topic
 indicates contrast with another option (stated or unstated)
 adds emphasis
 
-いい 33
+いい
 good; excellent; fine; nice; pleasant; agreeable
 sufficient; enough; ready; prepared
 profitable (deal, business offer, etc.); beneficial
 OK; all right; fine; no problem
 
-いえ 21940
+いえ
 house; residence; dwelling; home
 family; household
 lineage; family name

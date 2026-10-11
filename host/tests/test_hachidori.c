@@ -140,7 +140,7 @@ static void test_relay_glossary(void)
     TEST_ASSERT(r.n_vocab == 1 && r.vocab[0].n_meanings == 2);
     TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat"));
     TEST_CHECK(!strcmp(r.vocab[0].meanings[1], "feline animal\npet"));
-    TEST_CHECK(r.vocab[0].rank == 123);
+    TEST_CHECK(r.vocab[0].rank == VJO_NO_RANK);
 }
 static void test_relay_newline_positions(void)
 {

@@ -241,10 +241,6 @@ static char *value(VjoArena *a, int field, const VjoAnkiNote *n)
     case VJO_ANKI_FURIGANA: vjo_anki_furigana(&b, n->spelling, n->reading); break;
     case VJO_ANKI_DEFINITION: vjo_anki_definition(&b, n->meanings, n->n_meanings); break;
     case VJO_ANKI_SENTENCE: vjo_anki_sentence(&b, n->sentence, n->hl_start, n->hl_end); break;
-    case VJO_ANKI_FREQUENCY:
-        if (n->rank != VJO_NO_RANK)
-            vjo_buf_printf(&b, "%d", n->rank);
-        break;
     default: break;
     }
     return vjo_buf_cstr(&b);

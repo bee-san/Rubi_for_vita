@@ -43,7 +43,7 @@ typedef struct {
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
     int font_size_ja;         /* 8..40: header, headwords, readings */
-    int font_size_en;         /* 8..40: meanings, rank, messages */
+    int font_size_en;         /* 8..40: meanings, messages */
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */

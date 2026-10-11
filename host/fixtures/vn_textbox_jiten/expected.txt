@@ -2,41 +2,41 @@
 「朝ごはん、もう冷めちゃったよ。 
 早く起きないと学校に遅刻するってば!」
 ────────────────────────
-名雪 (なせつ) 173955
+名雪 (なせつ)
 Nasetsu
 Nayuki
 
-朝ごはん (あさごはん) 8895
+朝ごはん (あさごはん)
 breakfast
 
-もう 42
+もう
 already; yet; by now; now; (not) any more; (not) any longer
 soon; shortly; before long; presently
 further; more; again; another; the other
 jeez; geez; gee; boy; come on; damn; seriously
 truly; really; extremely
 
-冷める (さめる) 2794
+冷める (さめる)
 to cool down; to get cold
 to cool off (excitement, temper, etc.); to subside; to dampen; to fade; to wane
 to be cold (eyes, expression, etc.); to be composed
 
-よ 13
+よ
 hey; you
 hey
 hey; hold on
 yo; hey
 
-早く (はやく) 139
+早く (はやく)
 early; soon
 quickly; swiftly; rapidly; fast
 
-起きる (おきる) 316
+起きる (おきる)
 to get up; to rise; to blaze up (fire)
 to wake up; to be awake; to stay awake
 to occur (usu. of unfavourable incidents); to happen; to take place
 
-と 6
+と
 if; when
 and; as well as
 with; together with; accompanied by
@@ -58,10 +58,10 @@ like; as
 (and) then; and; thereupon; whereupon
 indicates a question
 
-学校 (がっこう) 658
+学校 (がっこう)
 school
 
-に 3
+に
 at; in; on
 to; toward; into; for
 to; for; in order to
@@ -88,10 +88,10 @@ when; if; on (e.g. reflection)
 although; despite; even though; and yet
 because; as; since; so
 
-遅刻 (ちこく) 2688
+遅刻 (ちこく)
 lateness; tardiness; arriving late
 
-する 10
+する
 to do; to carry out; to perform
 to cause to become; to make (into); to turn (into)
 to serve as; to act as; to work as

@@ -2,26 +2,26 @@
 名前はまだ無い。 
 どこで生れたかとんと見当がつかぬ。
 ────────────────────────
-吾輩は猫である (わがはいはねこである) 92308
+吾輩は猫である (わがはいはねこである)
 I Am a Cat (1906 novel by Natsume Soseki)
 
-名前 (なまえ) 250
+名前 (なまえ)
 name
 given name; first name
 
-は 2
+は
 indicates sentence topic
 indicates contrast with another option (stated or unstated)
 adds emphasis
 
-まだ 78
+まだ
 still; as yet; only
 (not) yet
 more; (more) still
 at least; comparatively; relatively
 unfinished; incomplete; not yet done
 
-無い (ない) 2722
+無い (ない)
 nonexistent; not being (there)
 unowned; not had; unpossessed
 unique
@@ -29,21 +29,21 @@ not; impossible; won't happen
 not
 to not be; to have not
 
-どこ 107
+どこ
 where; what place
 how much (long, far); what extent
 
-で 7
+で
 at; in
 at; when
 by; with
 so; therefore; (and) then; accordingly
 by the way; incidentally; now then; well
 
-生れる (うまれる) 48864
+生れる (うまれる)
 to be born
 
-か 12
+か
 indicates a question
 indicates an embedded question; indicates an indirect question
 or; whether or not; either ... or ...
@@ -60,7 +60,7 @@ very
 -al; -ial; -ic; -ical; -ish; -y
 in that way
 
-と 6
+と
 if; when
 and; as well as
 with; together with; accompanied by
@@ -82,5 +82,5 @@ like; as
 (and) then; and; thereupon; whereupon
 indicates a question
 
-見当がつく (けんとうがつく) 12942
+見当がつく (けんとうがつく)
 to have a (rough) idea (of what the situation is)

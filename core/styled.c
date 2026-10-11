@@ -99,7 +99,6 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki)
 {
     const VjoVocab *v;
-    char rank[16];
     if (!l || selected < 0 || selected >= l->n_entries)
         return;
     v = l->entries[selected].vocab;
@@ -109,8 +108,6 @@ void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_
         vjo_styled_puts(s, v->reading, VJO_RGB_READING, ja_px);
         vjo_styled_puts(s, ")", VJO_RGB_READING, ja_px);
     }
-    vjo_snprintf(rank, sizeof(rank), " %d", v->rank);
-    vjo_styled_puts(s, rank, VJO_RGB_RANK, en_px);
     if (in_anki)
         vjo_styled_puts(s, " " VJO_ANKI_MARK, VJO_RGB_OK, en_px);
     for (int i = 0; i < v->n_meanings; i++) {

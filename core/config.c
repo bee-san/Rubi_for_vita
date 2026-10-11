@@ -63,7 +63,7 @@ static const struct {
     [VJO_ANKI_DEFINITION] = {"anki_field_definition", "MainDefinition"},
     [VJO_ANKI_SENTENCE] = {"anki_field_sentence", "Sentence"},
     [VJO_ANKI_PICTURE] = {"anki_field_picture", "Picture"},
-    [VJO_ANKI_FREQUENCY] = {"anki_field_frequency", "FreqSort"},
+    [VJO_ANKI_FREQUENCY] = {"anki_field_frequency", ""},
     [VJO_ANKI_AUDIO] = {"anki_field_audio", "ExpressionAudio"},
 };
 

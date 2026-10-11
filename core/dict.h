@@ -7,7 +7,7 @@
 typedef struct {
     const char *spelling;
     const char *reading;  /* kana */
-    int rank;             /* VJO_NO_RANK if unknown */
+    int rank;             /* Legacy queue compatibility; always VJO_NO_RANK. */
     const char **meanings;
     int n_meanings;
 } VjoVocab;

@@ -109,7 +109,6 @@ static int parse_meanings(VjoArena *a, const VjoJson *j, int chunks, VjoVocab *v
 
 static int parse_vocab(VjoArena *a, const VjoJson *j, int obj, VjoVocab *v)
 {
-    long rank;
     const char *ruby;
     if (!vjo_json_is_type(j, obj, JSMN_OBJECT))
         return -1;
@@ -120,8 +119,7 @@ static int parse_vocab(VjoArena *a, const VjoJson *j, int obj, VjoVocab *v)
     v->reading = vjo_jiten_ruby_to_kana(a, ruby);
     if (!v->reading)
         return -1;
-    rank = obj_long(j, obj, "frequencyRank", 0);
-    v->rank = rank > 0 ? (int)rank : VJO_NO_RANK;
+    v->rank = VJO_NO_RANK;
     return parse_meanings(a, j, vjo_json_obj_get(j, obj, "meaningsChunks"), v);
 }
 
