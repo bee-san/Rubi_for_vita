@@ -578,7 +578,10 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         s_stick_max = dy < 0 ? -dy : dy;
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
-
+    if (pressed & SCE_CTRL_CIRCLE)
+        vjo_post_command(VJO_CMD_CLOSED, NULL);
+    if (pressed & SCE_CTRL_SQUARE)
+        enter_region_mode();
 }
 
 static void input_region(uint32_t held, uint32_t pressed)
