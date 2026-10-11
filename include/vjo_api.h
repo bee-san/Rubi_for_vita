@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#define VJO_API_VERSION 10
+#define VJO_API_VERSION 11
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
@@ -78,6 +78,7 @@ typedef struct {
 #define VJO_ERR_FORMAT       (-5)
 #define VJO_ERR_ARG          (-6) /* bad argument */
 #define VJO_ERR_COPY         (-7)
+#define VJO_ERR_CANCELLED    (-9)
 #define VJO_ERR_PERM         (-8) /* caller is not (or may not be) the registered shell */
 
 /* vjoSetGameActive's mode for the foreground process. */

@@ -9,6 +9,7 @@
 #include <taihen.h>
 
 #include "vjo_kernel.h"
+#include "game_ocr.h"
 
 VjoKernelState g;
 
@@ -67,7 +68,9 @@ static void change_detection(void)
 static void finish_capture(void)
 {
     VJO_LOCK();
-    if (g.alloc_status != VJO_ALLOC_OK || !g.raw) {
+    if (g.alloc_status != VJO_ALLOC_OK || !g.raw || !g.game_active ||
+        g.capture_game_pid != g.game_pid ||
+        g.capture_epoch != __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE)) {
         /* The game exited (buffers freed) between the copy and now. */
         if (g.capture_result == 0)
             g.capture_result = VJO_ERR_NO_GAME;
@@ -242,7 +245,10 @@ int vjoRegisterShell(void)
         ret = VJO_ERR_PERM;
     } else if (g.shell_pid != pid) {
         klog("shell registered: pid 0x%X (was 0x%X)", pid, g.shell_pid);
+        VJO_LOCK();
         g.shell_pid = pid;
+        game_ocr_shell_changed_locked();
+        VJO_UNLOCK();
         g.input_block = 0;
         if (g.game_pid > 0)
             ksceKernelSetEventFlag(g.evf, VJO_EV_GAME_START); /* re-classify the foreground app */
@@ -409,7 +415,7 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
     int ret;
     ENTER_SYSCALL(state);
     VJO_LOCK();
-    if (g.capture_state != CAPTURE_IDLE || !g.raw_valid || !g.raw || row >= g.crop_h) {
+    if (game_ocr_capture_busy_locked() || g.capture_state != CAPTURE_IDLE || !g.raw_valid || !g.raw || row >= g.crop_h) {
         ret = -1;
     } else {
         uint32_t stride = g.raw_stride;
@@ -451,6 +457,7 @@ int module_start(SceSize argc, const void *args)
     (void)argc;
     (void)args;
     memset(&g, 0, sizeof(g));
+    game_ocr_init();
     g.trigger[TRIG_TOGGLE] = VJO_TRIGGER_L_R;
     g.trigger[TRIG_SUBTITLE] = VJO_TRIGGER_SELECT_R;
     g.input_us32 = g.input_edge_us32 = (uint32_t)(ksceKernelGetSystemTimeWide() - 3600000000LL); /* none yet */
@@ -486,6 +493,10 @@ int module_stop(SceSize argc, const void *args)
 {
     (void)argc;
     (void)args;
+    VJO_LOCK();
+    int busy = game_ocr_shutdown_locked();
+    VJO_UNLOCK();
+    if (busy) return SCE_KERNEL_STOP_FAIL;
     worker_run = 0;
     if (worker_uid >= 0) {
         ksceKernelSetEventFlag(g.ievf, IEV_QUIT);

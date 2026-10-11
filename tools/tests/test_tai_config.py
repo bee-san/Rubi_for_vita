@@ -12,7 +12,8 @@ class TaiConfigTests(unittest.TestCase):
         self.assertEqual(result, patch(result, ["ur0:tai/Extra.skprx"]))
         active = [line.strip() for line in result.decode().splitlines() if not line.startswith("#")]
         self.assertNotIn(TEXT, active)
-        self.assertNotIn(OCR, active)
+        self.assertEqual(active.count(OCR), 1)
+        self.assertIn(("*ALL\r\n" + OCR).encode(), result)
         self.assertIn("ur0:tai/Game.suprx", active)
         self.assertIn("ur0:tai/Other.skprx", active)
         self.assertNotIn(b"\n", result.replace(b"\r\n", b""))
@@ -37,7 +38,8 @@ class TaiConfigTests(unittest.TestCase):
                "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n"
                "*PCSG00415\n" + OCR + "\n").encode()
         expected = raw.replace((OCR + "\n").encode(), ("# Mainline OCR: " + OCR + "\n").encode())
-        self.assertEqual(patch(raw), expected)
+        self.assertEqual(patch(raw), patch(expected))
+        expected = patch(expected)
         self.assertEqual(patch(expected), expected)
 
 if __name__ == "__main__":

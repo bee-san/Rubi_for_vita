@@ -31,6 +31,7 @@ typedef struct {
 
     /* foreground game (VjoForeground in foreground.h) */
     volatile SceUID game_pid;
+    volatile uint32_t ocr_epoch; /* invalidates game jobs on foreground/policy changes */
     volatile int game_active;  /* the shell confirmed game_pid is a game: its VJO_GAME* mode */
     SceUID prev_game_pid;      /* confirmed game behind game_pid, still running */
 
@@ -62,6 +63,8 @@ typedef struct {
     uint32_t capture_seq;      /* bumped per request */
     uint32_t done_seq;         /* seq of the last finished capture */
     int capture_full;          /* the pending capture is the whole frame (VJO_CAPTURE_FULL) */
+    SceUID capture_game_pid;
+    uint32_t capture_epoch;
     int capture_once;          /* protect then release a single-pass JPEG capture */
 
     /* change detection: the display hook writes hook_sig[(seq + 1) & 1],

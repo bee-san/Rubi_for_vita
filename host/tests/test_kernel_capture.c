@@ -6,6 +6,7 @@
 #include "../../kernel/capture.c"
 #include "../../kernel/capture_request.c"
 
+int game_ocr_capture_busy_locked(void) { return 0; }
 VjoKernelState g;
 unsigned syscall_depth;
 static unsigned capture_allocations, capture_frees, capture_bytes, capture_copies;

@@ -11,7 +11,7 @@ static uint64_t test_now;
 static unsigned posted, user_allocs, user_frees, heap_allocs, heap_frees, cancels;
 static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled = 1;
 static uint8_t storage[2 * 1024 * 1024];
-/* The vita-vn-ocr job's own workspace (its memblock or Paf block). */
+/* Separate simulated game process workspace. Shell allocator must never own it. */
 static uint8_t vocr_storage[2 * 1024 * 1024] __attribute__((aligned(64)));
 static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs, jpeg_captures;
 static int fail_vocr_user, fail_vocr_paf;
@@ -32,13 +32,7 @@ int vjoRegisterShell(void) { return 0; }
 int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; return -1; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
-    if (!strcmp(name, "VjoVocr")) {
-        if (phases_checked) TEST_CHECK(!has_result_memory());
-        vocr_live = !fail_vocr_user;
-        vocr_allocs++;
-        TEST_CHECK(size <= sizeof(vocr_storage) && !(size & 0xFFF));
-        return fail_vocr_user ? -1 : 9;
-    }
+    TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
     if (phases_checked) TEST_CHECK(!vocr_live && size == 256 * 1024);
     user_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? -1 : 7;
 }
@@ -63,10 +57,10 @@ void *vjo_shell_heap_alloc(size_t size)
   heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
 void *vjo_shell_heap_alloc_for(const char *what, size_t size)
 {
-    TEST_CHECK(!strcmp(what, "vocr") && size <= sizeof(vocr_storage));
+    (void)what; (void)size;
     vocr_paf_allocs++;
-    vocr_live = !fail_vocr_paf;
-    return fail_vocr_paf ? NULL : vocr_storage;
+    TEST_CHECK(0); /* game vocr must never borrow the Shell Paf heap */
+    return NULL;
 }
 void vjo_shell_heap_free(void *p)
 {
@@ -100,6 +94,45 @@ int vjo_title_id(SceUID pid, char *out, int cap) { return -1; }
 int vjo_title_game_mode(const char *id) { return VJO_GAME; }
 int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
 
+int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
+#ifdef VJO_WITH_VOCR
+#include "../../core/vocr_ocr.h"
+static VjoGameOcrRequest fake_game_request;
+static VjoGameOcrResult fake_game_result;
+static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
+{ (void)ud; return vjoReadRaw(y, n, dst); }
+int vjoOcrSubmit(const VjoGameOcrRequest *r)
+{
+    fake_game_request = *r;
+    TEST_CHECK(r->done_seq == raw_state.done_seq && !vocr_live);
+    fake_game_request.seq = 12;
+    fake_game_request.width = raw_state.width; fake_game_request.height = raw_state.height;
+    memset(&fake_game_result, 0, sizeof(fake_game_result));
+    fake_game_result.size = sizeof(fake_game_result); fake_game_result.seq = 12;
+    return 12;
+}
+int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
+{
+    TEST_CHECK(seq == 12);
+    vocr_allocs++;
+    if (phases_checked) TEST_CHECK(!has_result_memory());
+    if (fail_vocr_user) fake_game_result.rc = VJO_E_OOM;
+    else {
+        size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
+        VjoPlatform game_platform = {0}; VjoVocrStats stats;
+        VjoOcrImage im = {NULL, raw_state.width, raw_state.height, fake_game_rows, NULL};
+        vocr_live = 1;
+        fake_game_result.rc = vjo_vocr_ocr(&game_platform, fake_game_request.model_dir,
+            fake_game_request.model, &im, vocr_storage, bytes,
+            fake_game_result.text, sizeof(fake_game_result.text), &stats);
+        vocr_live = 0; vocr_frees++;
+    }
+    *out = fake_game_result;
+    return 0;
+}
+int vjoOcrCancel(uint32_t seq) { return 0; }
+#endif
+
 static void reset(void)
 {
     if (has_result_memory()) mem_free();
@@ -125,6 +158,7 @@ static void reset(void)
     fail_vocr_user = fail_vocr_paf = 0;
     phases_checked = vocr_live = fail_join = 0;
     memset(&raw_state, 0, sizeof(raw_state));
+    raw_state.done_seq = 11;
     raw_state.width = 200;
     raw_state.height = 60;
     raw_state.raw_stride = 200 * 4;
@@ -339,6 +373,7 @@ static void test_game_start_rejects_previous_generation(void)
 
 static int run_vocr_job(void)
 {
+    raw_state.done_seq = 11;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg;
     job_cancelled = 0;
@@ -432,16 +467,11 @@ static void test_vocr_allocation_fallback_and_failure(void)
     cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1;
     int rc = run_vocr_job();
-#ifdef VJO_PAF_ALLOC
-    /* No free USER pages: the guarded Paf heap is the fallback. */
-    TEST_CHECK(rc == VJO_OK && vocr_paf_allocs == 1 && vocr_frees == 1);
-    fail_vocr_paf = 1;
-    rc = run_job(&results[0], &cache_data[0]);
-    TEST_CHECK(vocr_paf_allocs == 2 && vocr_frees == 1);
-#endif
     TEST_CHECK(rc == VJO_E_OOM && cache_data[0].failed_stage == VJO_STAGE_OCR);
+    TEST_CHECK(vocr_paf_allocs == 0 && vocr_frees == 0);
     mem_free();
 }
+
 #endif
 
 static void test_input_block_denied(void)
@@ -553,7 +583,7 @@ TEST_LIST = {
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
-    {"vocr_allocation_fallback_and_failure", test_vocr_allocation_fallback_and_failure},
+    {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
     {"local_dictionary_opens_without_key", test_local_open},
     {"ordered_dictionary_config_invalidates_cache", test_config_cache},

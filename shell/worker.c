@@ -9,7 +9,8 @@
 
 #include "../core/regions.h"
 #ifdef VJO_WITH_VOCR
-#include "../core/vocr_ocr.h"
+#include "../core/local_ocr.h"
+#include "game_ocr_client.h"
 #endif
 #include "shell.h"
 
@@ -330,122 +331,51 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 /* ---- local OCR: vita-vn-ocr (ocr_backend = vocr) ---- */
 
 #ifdef VJO_WITH_VOCR
-typedef struct {
-    char *text; /* VJO_OCR_TEXT_CAP bytes owned by this job */
-} VocrJob;
-
-static int vocr_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
-{
-    (void)ud;
-    return vjoReadRaw(y, n, dst);
-}
-
 static int vocr_cancelled(void *ud)
 {
     (void)ud;
-    __sync_synchronize(); /* job_cancelled is set by the control thread */
+    __sync_synchronize();
     return !running || job_cancelled;
 }
+static int ocr_submit(void *ud, const VjoGameOcrRequest *r) { (void)ud; return vjoOcrSubmit(r); }
+static int ocr_read(void *ud, uint32_t seq, VjoGameOcrResult *r) { (void)ud; return vjoOcrRead(seq, r); }
+static int ocr_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(seq); }
+static int64_t ocr_clock(void *ud) { (void)ud; return now_us(); }
+static void ocr_delay(void *ud, uint32_t us) { (void)ud; sceKernelDelayThread(us); }
 
-/* One job's workspace, sized for its region: a USER memblock when SceShell
- * has free pages, else ScePaf's heap behind its reserve guard. Released
- * before the lookup and before anything is published. */
-static void *vocr_alloc(size_t bytes, SceUID *uid, const char **where)
-{
-    void *base = NULL;
-    *where = "none";
-    *uid = sceKernelAllocMemBlock("VjoVocr", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
-                                  (bytes + 0xFFF) & ~(size_t)0xFFF, NULL);
-    if (*uid >= 0) {
-        if (sceKernelGetMemBlockBase(*uid, &base) >= 0 && base) {
-            *where = "USER memblock";
-            return base;
-        }
-        sceKernelFreeMemBlock(*uid);
-    } else {
-        vjo_log("vocr: USER memblock (%u KiB) failed 0x%08X", (unsigned)(bytes >> 10), (unsigned)*uid);
-    }
-    *uid = -1;
-#ifdef VJO_PAF_ALLOC
-    base = vjo_shell_heap_alloc_for("vocr", bytes);
-    if (base) *where = "Paf heap";
-#endif
-    return base;
-}
-
-static void vocr_free(void *base, SceUID uid)
-{
-    if (uid >= 0)
-        sceKernelFreeMemBlock(uid);
-#ifdef VJO_PAF_ALLOC
-    else if (base)
-        vjo_shell_heap_free(base);
-#endif
-    (void)base;
-}
-
-/* Runs while capture.c holds the capture: the job reads each row once, so
- * the kernel frees its buffer before recognition starts. */
 static int vocr_consume(void *ud, const VjoState *st)
 {
-    VocrJob *job = ud;
-    VjoOcrImage image = {NULL, st->width, st->height, vocr_rows, vocr_cancelled};
-    VjoVocrStats stats;
-    const char *where;
-    SceUID uid;
-    size_t need;
-    void *ws;
-    int64_t t0 = now_us();
-    int rc;
-
+    VjoGameOcrResult *result = ud;
+    VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
+    VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
+    sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
+    size_t model_len = sceClibStrnlen(job_cfg.vocr_model, sizeof(job_cfg.vocr_model));
+    if (model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
+    sceClibMemcpy(request.model, job_cfg.vocr_model, model_len+1);
     job_capture_scene = st->capture_scene;
     job_capture_seq = st->region_seq;
-    __sync_synchronize(); /* the scene is visible before job_captured */
+    __sync_synchronize();
     job_captured = 1;
-    if (st->raw_stride != st->width * 4)
-        return VJO_E_SOURCE;
-    need = vjo_vocr_workspace_bytes(job_cfg.vocr_model, st->width, st->height);
-    if (!need) {
-        vjo_log("vocr: no workspace for model %s, region %ux%u", job_cfg.vocr_model, st->width, st->height);
-        return vjo_vocr_model(job_cfg.vocr_model) ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL;
-    }
-    ws = vocr_alloc(need, &uid, &where);
-    if (!ws) {
-        vjo_log("vocr: no memory for the %u-byte workspace (%ux%u region, %s)", (unsigned)need,
-                st->width, st->height, job_cfg.vocr_model);
-        return VJO_E_OOM;
-    }
-    rc = vjo_vocr_ocr(&plat, job_cfg.ocr_model_dir, job_cfg.vocr_model, &image, ws, need, job->text,
-                      VJO_OCR_TEXT_CAP, &stats);
-    vocr_free(ws, uid);
-    vjo_log("vocr rc=%d %s: %ux%u region, %u lines (%u dark%s), %u frames, workspace %u bytes (%s), "
-            "find %u ms, load %u ms, recognize %u ms, total %d ms",
-            rc, job_cfg.vocr_model, st->width, st->height, stats.lines, stats.dark,
-            stats.truncated ? ", truncated" : "", stats.frames, (unsigned)need, where,
-            (unsigned)(stats.find_us / 1000), (unsigned)(stats.load_us / 1000),
-            (unsigned)(stats.recognize_us / 1000), (int)((now_us() - t0) / 1000));
+    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_cancelled, NULL, 60000000);
+    vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u, find=%u ms load=%u ms recognize=%u ms io=0x%08X cleanup=%d",
+            rc, job_cfg.vocr_model, st->width, st->height, result->lines, result->workspace_bytes,
+            result->find_us/1000, result->load_us/1000, result->recognize_us/1000,
+            (unsigned)result->io_error, result->cleanup_status);
     return rc;
 }
 
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
     VjoState st;
-    VocrJob job;
-    /* The worker owns this text copy while model and dictionary allocations
-     * have disjoint lifetimes. No UI pointer refers to this buffer. */
-    static char local_text[VJO_OCR_TEXT_CAP];
+    static VjoGameOcrResult result;
     int local = local_pipeline(&job_cfg);
-    job.text = local ? local_text : vjo_arena_alloc(a, VJO_OCR_TEXT_CAP);
-    if (!job.text)
-        return out->err.rc = VJO_E_OOM;
-    job.text[0] = '\0';
     st.capture_scene = 0;
-    out->err.rc = vjo_capture_raw(0, vocr_consume, &job, &st);
+    out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
     if (out->err.rc != VJO_OK)
         return out->err.rc;
     if (local && mem_alloc_for(&job_cfg) < 0)
         return out->err.rc = VJO_E_OOM;
-    return vjo_overlay_ocr_text(a, &job_cfg, job.text, out);
+    return vjo_overlay_ocr_text(a, &job_cfg, result.text, out);
 }
 #else
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
@@ -479,8 +409,10 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
         /* On the console only: no image or connection leaves it. */
         if (run_vocr(a, out) != VJO_OK) {
             out->failed_stage = VJO_STAGE_OCR;
+            if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
+                out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
             if (out->err.rc == VJO_E_OOM)
-                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least memory.";
+                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
         goto recognized;

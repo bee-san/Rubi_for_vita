@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.0 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.1 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -14,9 +14,9 @@ Vita speed measurements. See [OCR measurements and limits](docs/vita-vn-ocr.md).
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.0.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.0) and
-extract it. It includes both plugins, their RCO, the settings VPK, FL10/H15
+Download `VitaJPOverlay-0.7.1.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.1) and
+extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, and the complete converted JMdict snapshot. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
@@ -29,9 +29,9 @@ bash install-vita.sh VITA_IP:1337
 
 The installer checks the package manifest, backs up both taiHEN configurations
 and your existing overlay settings, uploads and checksum-reads back each file,
-and registers the two plugins without duplicating entries. It selects the new
+and registers the three plugins without duplicating entries. It selects the new
 local defaults while preserving other settings and per-game choices. Older
-experimental Text/Meiki plugin registrations are commented out. The backup is
+experimental Text registrations and duplicate worker entries are commented out. The backup is
 in `build/device/backup/` in the extracted folder.
 
 In VitaShell, install `ux0:data/JPOverlaySettings.vpk`, then reboot the Vita.
@@ -41,9 +41,10 @@ The settings app itself is always excluded from the overlay.
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
 and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
 copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`
-and `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` in the active taiHEN config.
-Disable old `VitaJPOverlay_Text.suprx` and `VitaJPOverlay_OCR.suprx` entries, then
-reboot. Keep unrelated plugins and configuration intact.
+`ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
+`ur0:tai/VitaJPOverlay_OCR.suprx` under `*ALL` in the active taiHEN config.
+Disable old `VitaJPOverlay_Text.suprx` entries and duplicate worker registrations,
+then reboot. Keep unrelated plugins and configuration intact.
 
 ## Use in a game
 
@@ -96,7 +97,7 @@ vocr_model = FL10_w8.vocr
 ocr_mode = auto
 ```
 
-FL10 is the smaller default for tight SceShell memory. The included
+FL10 is the smaller default for lower game memory use. The included
 `H15_w8.vocr` trades a larger workspace for better host accuracy. A memory error
 asks you to select a tighter region. The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
@@ -122,14 +123,25 @@ network requests and have no cloud fallback.
 
 ## Memory and troubleshooting
 
-The kernel keeps region-sized capture buffers and releases the single-pass raw
-capture as its rows are consumed. The local worker retires previous results
-before inference, frees the model/workspace before lookup, and uses two 128 KiB
-result arenas with no TLS connection pool. Dictionary scratch/results fit
-within the existing 112 KiB lookup budget. ScePaf allocation preserves its
-1.5 MiB reserve and checks allocator readiness/fragmentation. Failed worker
-joins retain allocations for retry instead of freeing memory beneath threads.
-Kernel startup is audited for floating-point instructions and syscall imports.
+The `*ALL` plugin runs vocr in the enabled game's process, allocating its
+region-sized workspace from that game's `USER_RW`. It checks the title at
+startup and starts no worker thread in SceShell, VitaShell, the settings app or
+other system titles. Candidate games keep only an idle worker until the Shell
+confirms their per-game policy; disabled games load no weights and allocate no
+OCR workspace. Adrenaline's PSP titles share its Vita process.
+
+The kernel transports bounded jobs, copied pixels and text. Game workers cannot
+submit jobs or control input. A job is tied to its game, capture sequence and
+foreground generation; suspend, game changes, cancellation and Shell restarts
+invalidate old work. The single-pass raw capture is freed when the game worker
+reads its final row. The worker frees its model/workspace before returning text.
+It leaves a 4 MiB free USER memory reserve before allocating; allocation can
+still fail because the game or system uses memory concurrently.
+
+The `*main` plugin handles UI and disk-backed dictionary lookup with two
+128 KiB result arenas and no TLS pool for local jobs. Its Paf fallback preserves
+a 1.5 MiB UI reserve. Failed joins/frees keep ownership for a safe stop retry.
+The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
 peak or a guarantee that every full-screen region fits in every game.
@@ -158,13 +170,15 @@ cmake --build build/vita --target release
 
 The cross-build produces a base ZIP. `tools/package_release.py` combines it with
 the checksum-pinned models, JMdict conversion and license to create the complete
-installable release and its per-file manifest. CI builds the actual vocr Shell
-using a read-only private-source key; publication happens after validation.
+installable release and its per-file manifest. CI builds the kernel, Shell UI
+and game vocr worker using a read-only private-source key; publication happens
+after validation.
 
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell
 worker with platform stubs. It checks cancelled jobs, denied input blocking,
-OOM recovery, failed joins, and 50 successive local OCR/lookup lifetimes. Real
+OOM recovery, failed joins, 50 local OCR/lookup lifetimes, 100 game-worker
+allocation/free cycles, bounded model reads and stale-job isolation. Real
 accuracy is measured separately against vita-vn-ocr's hand-checked shared
 `eval/` screenshots. Experimental Meiki and text-extraction branches remain
 separate from this release.
