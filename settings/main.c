@@ -22,7 +22,12 @@
 #define GAME_H 80
 #define GAME_PITCH 88
 #define OCR_Y 112
-#define OCR_H 140
+#define OCR_H 146
+#define OCR_CHOICE_X 42
+#define OCR_CHOICE_Y (OCR_Y + 42)
+#define OCR_CHOICE_W 282
+#define OCR_CHOICE_H 48
+#define OCR_CHOICE_PITCH 298
 #define SELECTION_Y 262
 #define SELECTION_H 78
 #define HIGHLIGHT_Y 350
@@ -53,6 +58,30 @@ static int page, preference_selected, preferences_writable;
 static int model_found[2];
 static char preference_status[160];
 static int status_error, preference_error;
+static const struct {
+    int backend;
+    const char *name;
+    const char *description;
+} ocr_choices[] = {
+    {VJO_OCR_VOCR, "VOCR", "Local OCR: dialogue region, automatic or manual."},
+    {VJO_OCR_MEIKI, "Meiki", "Local OCR: one tight horizontal line, manual."},
+    {VJO_OCR_LENS, "Google Lens", "Wi-Fi required. Sends the selected image to Google."}
+};
+#define OCR_CHOICES ((int)(sizeof(ocr_choices) / sizeof(ocr_choices[0])))
+
+static int ocr_choice_index(int backend)
+{
+    for (int i = 0; i < OCR_CHOICES; i++)
+        if (ocr_choices[i].backend == backend) return i;
+    return -1;
+}
+
+static int next_ocr_choice(int direction)
+{
+    int index = ocr_choice_index(preferences.ocr_backend);
+    if (index < 0) return VJO_OCR_VOCR;
+    return ocr_choices[(index + direction + OCR_CHOICES) % OCR_CHOICES].backend;
+}
 
 static float text_scale(float pixels) { return pixels / font_em; }
 
@@ -283,7 +312,7 @@ static void change_preference(int backend, int japanese_only, int highlight_mode
 static void toggle_preference(void)
 {
     change_preference(preference_selected == 0
-        ? (preferences.ocr_backend == VJO_OCR_MEIKI ? VJO_OCR_VOCR : VJO_OCR_MEIKI)
+        ? next_ocr_choice(1)
         : preferences.ocr_backend,
         preference_selected == 1 ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == 2 ? !preferences.highlight_mode : preferences.highlight_mode);
@@ -291,7 +320,7 @@ static void toggle_preference(void)
 
 static void set_preference(int right)
 {
-    change_preference(preference_selected == 0 ? (right ? VJO_OCR_MEIKI : VJO_OCR_VOCR)
+    change_preference(preference_selected == 0 ? next_ocr_choice(right ? 1 : -1)
                                                : preferences.ocr_backend,
         preference_selected == 1 ? right : preferences.japanese_only_selection,
         preference_selected == 2 ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -300,26 +329,39 @@ static void set_preference(int right)
 
 static void draw_preferences(void)
 {
-    int known = preferences.ocr_backend == VJO_OCR_MEIKI || preferences.ocr_backend == VJO_OCR_VOCR;
+    int choice = ocr_choice_index(preferences.ocr_backend);
     vita2d_start_drawing();
     vita2d_clear_screen();
     header();
     focus_card(OCR_Y, OCR_H, preference_selected == 0);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, OCR_Y + 2, 932, OCR_Y + OCR_H - 2);
-    text(42, OCR_Y + 35, WHITE, 28, "OCR engine");
-    badge(644, OCR_Y + 14, 132, 48, "VOCR", preferences_writable && preferences.ocr_backend == VJO_OCR_VOCR);
-    badge(792, OCR_Y + 14, 128, 48, "Meiki", preferences_writable && preferences.ocr_backend == VJO_OCR_MEIKI);
-    text(42, OCR_Y + 70, DIM, 24, "VOCR: dialogue region, automatic or manual.");
-    text(42, OCR_Y + 100, DIM, 24, "Meiki: one tight line, manual. Game engine required.");
+    text(42, OCR_Y + 31, WHITE, 28, "OCR engine");
+    for (int i = 0; i < OCR_CHOICES; i++)
+        badge(OCR_CHOICE_X + i * OCR_CHOICE_PITCH, OCR_CHOICE_Y,
+              OCR_CHOICE_W, OCR_CHOICE_H, ocr_choices[i].name,
+              preferences_writable && choice == i);
+    text(42, OCR_Y + 111, DIM, 24, !preferences_writable
+         ? "Cannot read the saved OCR choice."
+         : choice < 0 ? "Custom engine configured. Select an engine above."
+                      : ocr_choices[choice].description);
     char label[120];
-    if (!preferences_writable) snprintf(label, sizeof(label), "Cannot read the saved OCR choice.");
-    else if (!known) snprintf(label, sizeof(label), "Other engine configured. Left/Right chooses VOCR/Meiki.");
-    else snprintf(label, sizeof(label), "Model files: VOCR %s / Meiki %s",
-                  model_found[0] ? "found" : "missing", model_found[1] ? "found" : "missing");
-    wrapped_text(42, OCR_Y + 129, 870,
-                 preferences_writable && model_found[0] && model_found[1] ? DIM : OFF,
-                 24, 26, 1, label);
+    unsigned color = DIM;
+    if (!preferences_writable) {
+        snprintf(label, sizeof(label), "Repair config.ini before changing settings.");
+        color = OFF;
+    } else if (choice < 0) {
+        snprintf(label, sizeof(label), "Left/Right or X chooses VOCR first.");
+    } else if (preferences.ocr_backend == VJO_OCR_LENS) {
+        snprintf(label, sizeof(label), "No model file needed. Uses your chosen dictionary.");
+    } else {
+        int model = preferences.ocr_backend == VJO_OCR_MEIKI;
+        snprintf(label, sizeof(label), "%s model %s. %s", ocr_choices[choice].name,
+                 model_found[model] ? "found" : "missing",
+                 model ? "Meiki game engine required." : "Game OCR worker required.");
+        if (!model_found[model]) color = OFF;
+    }
+    wrapped_text(42, OCR_Y + 137, 870, color, 24, 26, 1, label);
     vita2d_disable_clipping();
     focus_card(SELECTION_Y, SELECTION_H, preference_selected == 1);
     vita2d_enable_clipping();
@@ -341,7 +383,7 @@ static void draw_preferences(void)
     text(42, HIGHLIGHT_Y + 67, DIM, 24, "Word skips matched text. Character moves one character.");
     vita2d_disable_clipping();
     footer(preference_status, preference_error,
-           "D-pad: choose   X: change   Left/Right: set   O: exit");
+           "Up/Down: setting   Left/Right or X: choose   O: exit");
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -464,11 +506,14 @@ int main(void)
             else if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 486 && x < 936) page = 1;
             else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 preference_selected = 0;
-                if (x >= 644 && x < 776 && y >= OCR_Y + 14 && y < OCR_Y + 62)
-                    change_preference(VJO_OCR_VOCR, preferences.japanese_only_selection, preferences.highlight_mode);
-                else if (x >= 792 && x < 920 && y >= OCR_Y + 14 && y < OCR_Y + 62)
-                    change_preference(VJO_OCR_MEIKI, preferences.japanese_only_selection, preferences.highlight_mode);
-                else toggle_preference();
+                if (y >= OCR_CHOICE_Y && y < OCR_CHOICE_Y + OCR_CHOICE_H) {
+                    for (int i = 0; i < OCR_CHOICES; i++) {
+                        int left = OCR_CHOICE_X + i * OCR_CHOICE_PITCH;
+                        if (x >= left && x < left + OCR_CHOICE_W)
+                            change_preference(ocr_choices[i].backend,
+                                              preferences.japanese_only_selection, preferences.highlight_mode);
+                    }
+                }
             }
             else if (page && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
                 preference_selected = 1; toggle_preference();

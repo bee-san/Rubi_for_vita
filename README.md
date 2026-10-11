@@ -1,18 +1,23 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **The v0.7.10 release defaults to
+text and shows Japanese dictionary entries over your game. **The v0.7.11 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
 card queue are disabled; no cards or screenshots are queued.
 
-The release stores both VOCR and [Meiki](docs/meiki-trial.md). Open **JP Overlay
-Settings**, press **Select**, and switch the OCR model with **Cross** or touch.
-VOCR is the default. Meiki runs manually on one horizontal line and uses more
-game memory; selecting it does not remove or load the other stored model.
+Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
+**[Meiki](docs/meiki-trial.md)**, or **Google Lens** in the OCR engine row.
+Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
+VOCR is the default and supports automatic or manual local OCR. Meiki runs
+manually on one horizontal line and uses more game memory. Google Lens requires
+Wi-Fi and sends the selected image to Google, using the original
+[upstream implementation](https://github.com/Dartv/vita-jp-overlay).
+The release stores both local models; choosing an engine keeps them installed
+and applies when you next open the overlay.
 
-Both engines have completed actual CLANNAD OCR jobs on the physical Vita.
+Both local engines have completed actual CLANNAD OCR jobs on the physical Vita.
 Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
 and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](docs/vita-vn-ocr.md) and
@@ -38,8 +43,8 @@ for the measured results and remaining hardware checks.
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.10.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.10) and
+Download `VitaJPOverlay-0.7.11.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.11) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, the pinned Meiki recognizer/engine, and the complete converted
 JMdict snapshot. Meiki also needs its engine mounted for each enabled game;
@@ -182,8 +187,10 @@ Daijirin v3 has been converted and measured separately; the commercial file is
 installed privately, while the public release includes the converter and JMdict.
 The dictionary stays on disk; it is never loaded whole into RAM.
 
-Optional network backends remain available: `ocr_backend = lens` uploads the
-selected image to Google Lens; `dictionary = hachidori` uses Hachidori Relay on
+Google Lens can also be selected with `ocr_backend = lens`; it uploads the
+selected image to Google and works with the configured dictionary, including
+local JMdict. Selecting an OCR engine preserves the dictionary, OCR mode and
+other settings. `dictionary = hachidori` uses Hachidori Relay on
 your trusted LAN (`hachidori_host = COMPUTER_IP`, port 19633). Jiten and JPDB
 require their respective API keys. Local defaults make no OCR or dictionary
 network requests and have no cloud fallback.
