@@ -154,6 +154,12 @@ powering on to skip plugins, start VitaShell FTP, and run
 
 ## Build and validation
 
+The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
+ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed
+color; RGBA PNGs can fail installation with `0x8010113D`. To recreate the
+committed artwork, install `tools/requirements-assets.txt` and run
+`python3 tools/make_settings_assets.py`. Palette encoding preserves every pixel.
+
 The default build enables vocr. Its runtime is external to this repository and
 checksum-pinned; see [the build guide](docs/vita-vn-ocr.md#build). The OCR source
 repository currently requires access. Set up VitaSDK/Paf with

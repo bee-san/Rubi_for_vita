@@ -217,6 +217,10 @@ vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
        ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
        ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png
        ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml)
+add_custom_target(vjo_settings_assets ALL
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_assets.py
+    ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk
+  DEPENDS JPOverlaySettings.vpk-vpk)
 
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)
@@ -247,5 +251,5 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi JPOverlaySettings.vpk-vpk
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")

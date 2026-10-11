@@ -1,0 +1,2 @@
+# Only needed to regenerate the committed bubble/LiveArea art.
+Pillow==12.3.0
