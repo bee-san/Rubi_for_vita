@@ -21,7 +21,7 @@
  * before OCR, so it needs only one arena. OCR-only local jobs use bounded
  * static text. Control-thread config/region/messages use separate scratch. */
 #define RESULT_ARENA_SIZE (256 * 1024)
-#define LOCAL_RESULT_ARENA_SIZE (128 * 1024)
+#define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 #define POOL_SLOTS        2 /* Lens and the dictionary */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
@@ -64,6 +64,17 @@ static uint32_t cache_seq;   /* VjoState.region_seq of its capture */
 static int cache_ok;
 static int cache_dictionary; /* the cached lookup's VJO_DICT_* */
 static VjoOverlayData cache_data[2];
+/* Local text outlives the single dictionary arena. Only an OCR job rewrites it,
+ * after start_job has detached its prior view. Cursor jobs only read it. */
+static char local_text[VJO_STRIP_MAX];
+static VjoEntryList local_header;
+static volatile int local_text_valid;
+static uint32_t local_text_generation, local_text_game_generation;
+static uint32_t local_text_scene, local_text_capture_seq;
+static uint32_t local_cursor_byte, local_cursor_seq;
+static int cursor_waiting;
+static int job_cursor_only;
+static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 
 static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
@@ -139,6 +150,28 @@ static volatile int job_text_ready;
 
 static volatile int pending_cmd;
 static VjoRect pending_rect;
+static uint32_t pending_cursor_byte, pending_cursor_generation;
+static void start_cursor_job(void);
+
+static uint32_t advance_generation(uint32_t *value)
+{
+    if (++*value == 0) *value = 1;
+    return *value;
+}
+
+static void retire_local_text(int new_generation)
+{
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    vjo_view_lock();
+    local_text_valid = 0;
+    cursor_waiting = 0;
+    if (new_generation) advance_generation(&local_text_generation);
+    g_view.list = NULL;
+    g_view.local_cursor_mode = 0;
+    g_view.version++;
+    vjo_view_unlock();
+    sceKernelUnlockMutex(cmd_lock, 1);
+}
 
 void vjo_view_lock(void)
 {
@@ -156,6 +189,45 @@ void vjo_post_command(int cmd, const VjoRect *rect)
     pending_cmd = cmd;
     if (rect)
         pending_rect = *rect;
+    sceKernelUnlockMutex(cmd_lock, 1);
+}
+
+void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
+{
+    /* This order is also used by cursor completion: a newer request cannot
+     * race past the stale-result check and republish the old definition. */
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (pending_cmd != VJO_CMD_NONE && pending_cmd != VJO_CMD_CURSOR) {
+        sceKernelUnlockMutex(cmd_lock, 1);
+        return;
+    }
+    vjo_view_lock();
+    if (!g_view.open || !g_view.local_cursor_mode || !local_text_valid ||
+        !text_generation || text_generation != local_text_generation) {
+        vjo_view_unlock();
+        sceKernelUnlockMutex(cmd_lock, 1);
+        return;
+    }
+    size_t len = sceClibStrnlen(local_text, sizeof(local_text));
+    if ((len ? byte_offset >= len : byte_offset != 0) ||
+        vjo_utf8_cursor_step(local_text, len, byte_offset, 0) != byte_offset) {
+        vjo_view_unlock();
+        sceKernelUnlockMutex(cmd_lock, 1);
+        return;
+    }
+    local_cursor_byte = byte_offset;
+    advance_generation(&local_cursor_seq);
+    pending_cursor_byte = byte_offset;
+    pending_cursor_generation = text_generation;
+    pending_cmd = VJO_CMD_CURSOR;
+    local_header = (VjoEntryList){local_text, NULL, 0};
+    g_view.list = &local_header; /* detach entries before their arena is reset */
+    g_view.cursor_byte = byte_offset;
+    g_view.list_seq++;
+    sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
+    g_view.status_is_error = 0;
+    g_view.version++;
+    vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
 }
 
@@ -273,6 +345,10 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.list_seq++;
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "%s", status ? status : "");
     g_view.status_is_error = is_error;
+    g_view.local_cursor_mode = local_pipeline(&cfg) && local_text_valid && list &&
+                               list->header == local_text;
+    g_view.cursor_byte = local_cursor_byte;
+    g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;
     g_view.n_warnings = cfg.n_warnings;
@@ -370,10 +446,6 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
     VjoState st;
     static VjoGameOcrResult result;
-    /* Text-only publication must survive refused dictionary/display memory.
-     * Local start_job unpublishes the old view before this buffer is reused;
-     * subtitles copy their sentence into g_view rather than borrowing it. */
-    static uint8_t text_only[VJO_GAME_OCR_TEXT_BYTES];
     int local = local_pipeline(&job_cfg);
     st.capture_scene = 0;
     sceClibMemset(&result, 0, sizeof(result));
@@ -388,15 +460,33 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         }
         return out->err.rc;
     }
-    if (local && (!job_lookup || mem_alloc_for(&job_cfg) < 0)) {
+    if (local) {
         VjoArena text_arena;
-        vjo_arena_init(&text_arena, text_only, sizeof(text_only));
+        vjo_arena_init(&text_arena, local_text, sizeof(local_text));
         out->ocr_text = result.text;
         out->filtered = vjo_filter_lines(&text_arena, result.text, job_cfg.non_japanese_filter);
         /* Filtering only removes bytes, so one complete worker text fits. */
         out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
+        if (!out->sentence) {
+            out->failed_stage = VJO_STAGE_OCR;
+            return out->err.rc = VJO_E_OOM;
+        }
+        /* Cursor byte0 is the trimmed sentence, not discarded whitespace. */
+        size_t len = sceClibStrnlen(out->sentence, sizeof(local_text) - 1);
+        sceClibMemmove(local_text, out->sentence, len + 1);
+        out->filtered = out->sentence = local_text;
         out->list.header = out->sentence ? out->sentence : "";
-        if (!job_lookup)
+        sceKernelLockMutex(cmd_lock, 1, NULL);
+        job_text_generation = advance_generation(&local_text_generation);
+        job_cursor_seq = advance_generation(&local_cursor_seq);
+        local_cursor_byte = job_cursor_byte = 0;
+        local_text_game_generation = job_generation;
+        local_text_scene = job_capture_scene;
+        local_text_capture_seq = job_capture_seq;
+        __sync_synchronize();
+        local_text_valid = 1;
+        sceKernelUnlockMutex(cmd_lock, 1);
+        if (!job_lookup || mem_alloc_for(&job_cfg) == 0)
             return VJO_OK;
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
@@ -471,7 +561,27 @@ recognized:
     job_same_text = job_cached_text && out->filtered && !sceClibStrcmp(out->filtered, job_cached_text);
     __sync_synchronize(); /* the sentence is visible before job_text_ready */
     job_text_ready = 1;
-    return job_lookup && !job_same_text ? vjo_overlay_lookup(a, &plat, &job_cfg, out) : VJO_OK;
+    if (!job_lookup || job_same_text) return VJO_OK;
+    return local_pipeline(&job_cfg) ? vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out)
+                                   : vjo_overlay_lookup(a, &plat, &job_cfg, out);
+}
+
+/* No capture, model, inference or sentence tokenization for cursor moves. */
+static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
+{
+    sceClibMemset(out, 0, sizeof(*out));
+    out->ocr_text = out->filtered = out->sentence = local_text;
+    out->list.header = local_text;
+    if (mem_alloc_for(&job_cfg) < 0) {
+        out->failed_stage = VJO_STAGE_DICT;
+        out->err.dict = VJO_DICT_LOCAL;
+        out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+        return out->err.rc = VJO_E_OOM;
+    }
+    vjo_view_lock(); /* the published list is the static header, never old entries */
+    vjo_arena_reset(a);
+    vjo_view_unlock();
+    return vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
 }
 
 static int net_main(SceSize args, void *argp)
@@ -493,7 +603,8 @@ static int net_main(SceSize args, void *argp)
         if (bits & NET_EV_JOB) {
             int idx = job_idx;
             int64_t t0 = now_us();
-            job_rc = run_job(&results[idx], &cache_data[idx]);
+            job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
+                                     : run_job(&results[idx], &cache_data[idx]);
             vjo_log("job %d done rc=%d in %d ms, arena peak %u", idx, job_rc,
                     (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak);
             __sync_synchronize(); /* results are visible before job_done */
@@ -518,6 +629,7 @@ static void start_job(const char *why, int lookup)
     if (local_pipeline(&cfg)) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
+        retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
             view_publish(1, NULL, "Recognizing…", 0);
         if (!warm_running)
@@ -525,6 +637,8 @@ static void start_job(const char *why, int lookup)
     }
     vjo_log("job start (%s)%s", why, lookup ? "" : ", OCR only");
     job_lookup = lookup;
+    job_cursor_only = 0;
+    job_text_generation = 0;
     job_idx = local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
     job_generation = game_generation;
@@ -548,6 +662,45 @@ static void start_job(const char *why, int lookup)
     sceKernelSetEventFlag(net_evf, NET_EV_JOB);
     if (subtitles)
         strip_publish(NULL, 0, 1);
+}
+
+static void start_cursor_job(void)
+{
+    VjoState st = {.size = sizeof(st)};
+    if (job_running) { cursor_waiting = 1; return; }
+    if (ov == OV_CLOSED || !title_id[0] || !local_pipeline(&cfg) || !local_text_valid ||
+        local_text_game_generation != game_generation) {
+        cursor_waiting = 0;
+        return;
+    }
+    if (vjoGetState(&st) < 0 || !shows_screen(local_text_scene, local_text_capture_seq, &st)) {
+        retire_local_text(1);
+        view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
+        return;
+    }
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    job_cursor_only = 1;
+    job_lookup = 1;
+    job_idx = 0;
+    job_cfg = cfg;
+    job_generation = game_generation;
+    job_text_generation = local_text_generation;
+    job_cursor_byte = local_cursor_byte;
+    job_cursor_seq = local_cursor_seq;
+    cursor_waiting = 0;
+    job_cached_text = NULL;
+    job_same_text = job_cancelled = job_done = job_text_ready = 0;
+    job_captured = 1;
+    job_capture_scene = local_text_scene;
+    job_capture_seq = local_text_capture_seq;
+    vjo_net_cancel_clear(&net_cancel);
+    local_header = (VjoEntryList){local_text, NULL, 0};
+    view_publish(1, &local_header, "Looking up words…", 0);
+    job_running = 1;
+    job_started_us = now_us();
+    __sync_synchronize();
+    sceKernelSetEventFlag(net_evf, NET_EV_JOB);
+    sceKernelUnlockMutex(cmd_lock, 1);
 }
 
 /* ---------------- control thread ---------------- */
@@ -574,6 +727,7 @@ static void apply_config(void)
     vjo_config_load(&cfg, &scratch);
     if (!same_pipeline(&previous, &cfg)) {
         cache_ok = 0;
+        retire_local_text(1);
         if (job_running && !same_pipeline(&job_cfg, &cfg)) {
             job_cancelled = 1;
             vjo_net_cancel(&net_cancel);
@@ -669,6 +823,14 @@ static void open_overlay(void)
     }
     st.size = sizeof(st);
     vjoGetState(&st);
+    if (local_pipeline(&cfg) && local_text_valid &&
+        local_text_game_generation == game_generation &&
+        shows_screen(local_text_scene, local_text_capture_seq, &st)) {
+        local_header = (VjoEntryList){local_text, NULL, 0};
+        view_publish(1, &local_header, "Looking up words…", 0);
+        start_cursor_job();
+        return;
+    }
     if (st.alloc_status == VJO_ALLOC_FAIL) {
         view_publish(1, NULL, "Not enough memory to capture the screen", 1);
         return;
@@ -700,12 +862,15 @@ static void close_overlay(void)
     if (ov == OV_CLOSED)
         return;
     ov = OV_CLOSED;
+    cursor_waiting = 0;
+    if (job_running && job_cursor_only) job_cancelled = 1;
     view_waiting = view_job_text = 0;
     vjoSetInputBlock(0);
     vjo_view_lock();
     __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE);
     /* The next job may reuse the shown arena; an open republishes it. */
     g_view.list = NULL;
+    g_view.local_cursor_mode = 0;
     g_view.version++;
     vjo_view_unlock();
 }
@@ -746,13 +911,53 @@ static int restart_old_job(int has_lookup)
     vjoGetState(&st);
     if (shows_screen(job_capture_scene, job_capture_seq, &st) && has_lookup)
         return 0;
+    if (local_pipeline(&cfg) && local_text_valid &&
+        local_text_game_generation == game_generation &&
+        shows_screen(local_text_scene, local_text_capture_seq, &st)) {
+        start_cursor_job();
+        return 1;
+    }
     start_job(has_lookup ? "result was for an earlier screen" : "the running job was OCR only", 1);
     return 1;
 }
 
 /* The network thread finished the job. */
+static void on_cursor_done(void)
+{
+    VjoState st = {.size = sizeof(st)};
+    int same_screen = vjoGetState(&st) >= 0 && shows_screen(job_capture_scene, job_capture_seq, &st);
+    job_running = job_done = job_text_ready = 0;
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    int current = job_generation == game_generation &&
+                local_text_valid && job_text_generation == local_text_generation &&
+                same_pipeline(&job_cfg, &cfg) && same_screen && ov != OV_CLOSED;
+    int valid = current && !job_cancelled;
+    int newer = valid && job_cursor_seq != local_cursor_seq;
+    if (valid && !newer) {
+        active = 0;
+        cache_ok = cache_data[0].err.rc == VJO_OK;
+        cache_dictionary = job_cfg.dictionary;
+        cache_scene = job_capture_scene;
+        cache_seq = job_capture_seq;
+        backoff_note(&dict_backoff, cache_data[0].err.rc != VJO_OK);
+        view_show_cache();
+    }
+    job_cancelled = 0;
+    sceKernelUnlockMutex(cmd_lock, 1);
+    if (!same_screen && local_text_valid) {
+        retire_local_text(1);
+        if (ov != OV_CLOSED)
+            view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
+    }
+    /* A close cancels the old result; a reopen may already be waiting for
+     * another lookup of this still-current saved text. */
+    if (newer || (current && cursor_waiting)) start_cursor_job();
+    else cursor_waiting = 0;
+}
+
 static void on_job_done(void)
 {
+    if (job_cursor_only) { on_cursor_done(); return; }
     int idx = job_idx, ocr_failed;
     VjoOverlayData *d = &cache_data[idx];
     __sync_synchronize(); /* pairs with the network thread's barrier */
@@ -794,12 +999,26 @@ static void on_job_done(void)
     }
     if (!ocr_failed && job_lookup)
         backoff_note(&dict_backoff, d->err.rc != VJO_OK);
+    /* Character moves received while initial lookup was working supersede
+     * that definition; the saved OCR sentence is already immutable. */
+    if (local_pipeline(&job_cfg) && local_text_valid && ov != OV_CLOSED &&
+        (cursor_waiting || (job_lookup && job_cursor_seq != local_cursor_seq))) {
+        start_cursor_job();
+        return;
+    }
     if (!job_lookup && ov == OV_OPEN) {
         /* OCR only, while the overlay shows a result or an error: that stays
          * (and its arena stays active); the strip took the sentence */
         return;
     }
     /* Publish the new arena; the old one becomes the next job's target. */
+    int local = local_pipeline(&job_cfg);
+    if (local) sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (local && ov != OV_CLOSED && job_lookup && job_cursor_seq != local_cursor_seq) {
+        sceKernelUnlockMutex(cmd_lock, 1);
+        start_cursor_job();
+        return;
+    }
     vjo_view_lock();
     active = idx;
     cache_ok = d->err.rc == VJO_OK && job_lookup; /* the overlay needs the lookup */
@@ -807,15 +1026,26 @@ static void on_job_done(void)
     cache_scene = job_capture_scene;
     cache_seq = job_capture_seq;
     vjo_view_unlock();
-    if (!restart_old_job(job_lookup) && ov != OV_CLOSED)
+    int needs_restart = ov == OV_OPEN_OLD_JOB;
+    if (!needs_restart && ov != OV_CLOSED)
         view_show_cache();
+    if (local) sceKernelUnlockMutex(cmd_lock, 1);
+    /* Restart helpers may take cmd_lock; never call them while holding it. */
+    if (needs_restart && !restart_old_job(job_lookup) && ov != OV_CLOSED) {
+        if (local) sceKernelLockMutex(cmd_lock, 1, NULL);
+        int newer = local && job_lookup && job_cursor_seq != local_cursor_seq;
+        if (!newer) view_show_cache();
+        if (local) sceKernelUnlockMutex(cmd_lock, 1);
+        if (newer) start_cursor_job();
+    }
 }
 
 /* Does a job started now look the words up? Yes when the overlay can show
  * them: it is open, or opens from the background result (auto). */
 static int want_lookup(void)
 {
-    return vjo_config_dict_ready(&cfg) && (ov != OV_CLOSED || cfg.ocr_mode == VJO_OCR_AUTO) &&
+    return vjo_config_dict_ready(&cfg) &&
+           (local_pipeline(&cfg) ? ov != OV_CLOSED : ov != OV_CLOSED || cfg.ocr_mode == VJO_OCR_AUTO) &&
            now_us() >= dict_backoff.until;
 }
 
@@ -895,13 +1125,23 @@ static void on_command(void)
 {
     int cmd;
     VjoRect r;
+    uint32_t cursor_byte, cursor_generation;
     sceKernelLockMutex(cmd_lock, 1, NULL);
     cmd = pending_cmd;
     r = pending_rect;
+    cursor_byte = pending_cursor_byte;
+    cursor_generation = pending_cursor_generation;
     pending_cmd = VJO_CMD_NONE;
     sceKernelUnlockMutex(cmd_lock, 1);
 
     switch (cmd) {
+    case VJO_CMD_CURSOR:
+        if (ov == OV_CLOSED || !local_pipeline(&cfg) || !local_text_valid ||
+            cursor_generation != local_text_generation || cursor_byte != local_cursor_byte)
+            break;
+        if (!job_running || !job_cursor_only || job_cursor_seq != local_cursor_seq)
+            start_cursor_job();
+        break;
     case VJO_CMD_CLOSED:
         close_overlay();
         break;
@@ -919,6 +1159,7 @@ static void on_command(void)
             vjo_log("region.ini: write failed");
         push_region();
         cache_ok = 0;
+        retire_local_text(1);
         close_overlay();
         if (subtitles)
             start_job("region changed", want_lookup());
@@ -982,6 +1223,7 @@ static void invalidate_game_work(void)
     if (++game_generation == 0)
         game_generation = 1;
     cache_ok = 0;
+    retire_local_text(1);
     stable_pending = 0;
     if (job_running)
         job_cancelled = 1;
@@ -1031,7 +1273,7 @@ static void on_trigger(void)
  * overlay) and the subtitles' refresh (whatever ocr_mode says). */
 static int background_wanted(void)
 {
-    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && want_lookup());
+    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup()));
 }
 
 static int background_throttled(void)
@@ -1114,12 +1356,12 @@ static int ctl_main(SceSize args, void *argp)
             on_trigger();
         if (bits & VJO_EV_SUBTITLE)
             on_subtitle();
+        if (pending_cmd != VJO_CMD_NONE)
+            on_command();
         if (job_running && job_text_ready)
             on_job_text();
         if (job_running && job_done)
             on_job_done();
-        if (pending_cmd != VJO_CMD_NONE)
-            on_command();
         if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
             stable_pending = 1;
             if (job_running) {

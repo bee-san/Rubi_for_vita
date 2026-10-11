@@ -75,10 +75,14 @@ The existing kernel worker performs file I/O outside the shared lock, with one
 static 8 KiB buffer and no additional thread or full-model allocation. The log
 records the game worker's OCR timings, workspace, I/O error and cleanup status.
 The model and workspace are freed before results return to the Shell. Local
-lookup uses one 128 KiB result arena, with no Lens connection pool. The prior
+lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
 view/cache is retired before a local job begins, so a second arena is unnecessary;
 network jobs retain their two arenas. Local OCR-only/subtitle jobs use a static
-4 KiB filtered-text buffer and allocate no dictionary arena. If Shell refuses
+4 KiB filtered-text buffer and allocate no dictionary arena. The UI owns a
+separate 4 KiB copy for character navigation. Left/right moves one Unicode
+character and requests zero or one best entry at that position; it does not
+recapture or recognize text. Scene, region and foreground changes invalidate
+saved text, while rapid cursor moves supersede earlier lookup results. If Shell refuses
 lookup memory after successful OCR, this buffer preserves the recognized
 sentence/header; the error names Shell UI memory and applies dictionary backoff
 without marking recognition failed. The 1.5 MiB Shell UI reserve is unchanged.
@@ -178,15 +182,21 @@ The v0.7.0 rebuild reproduced both int8 models' region CER on 2026-10-11:
 [release measurements](benchmarks/vocr-release-20261011.json). FL10 scored
 217/2,506 character errors (8.66%) on 84 Vita regions and 443/2,510 (17.65%)
 on 93 PSP regions. H15 scored 170/2,506 (6.78%) and 369/2,510 (14.70%). Neither
-model refused or failed a region. A full-JMdict sentence smoke test repeated
-ten times used 111,072 arena bytes with identical lookup results; the worker's
-local result arena remains 128 KiB. Seven illustrative full-JMdict queries,
-five runs each, used 110,976–111,248 peak arena bytes with stable result digests
-([commands and results](benchmarks/local-result-memory-20261011.json)). This
-peak includes the 64 KiB output budget and temporary deinflection/page workspace;
-it is neither a worst-case guarantee nor a total process peak. v0.7.5 removes
-the redundant second local arena, saving 128 KiB of requested Shell heap per
-lookup, while preserving the per-lookup bound. These remain host measurements.
+model refused or failed a region. Historical whole-sentence lookup used
+110,976–111,248 peak arena bytes across seven illustrative full-JMdict queries,
+five runs each ([commands and results](benchmarks/local-result-memory-20261011.json)).
+v0.7.5 instead requests one entry at the selected character. Nine illustrative
+positions in the same full JMdict, one warmup plus five measured runs each,
+used at most 54,000 arena bytes; unmatched punctuation used 263 bytes and no
+file I/O ([commands and results](benchmarks/local-character-memory-20261011.json)).
+Generated limit tests also fit an 8,192-byte entry and a 4,095-byte input in the
+64 KiB arena: 53,584 peak bytes with static text, or 61,776 with two full text
+copies. These bounds include selected output metadata and temporary
+page/deinflection workspace; they are neither total-process peaks nor a
+worst-case guarantee for every dictionary. Dynamic local result allocation
+falls from two 128 KiB arenas to one 64 KiB arena (192 KiB less requested heap).
+New static text/UI buffers and code also occupy Shell memory, so that reduction
+is not a claim of 192 KiB more total free memory. These remain host measurements.
 
 `tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
 finder, workspace and model checks as the game worker) once per region, in a fresh

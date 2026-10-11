@@ -87,5 +87,5 @@
   "note": "Arena peak includes fixed 64KiB dictionary output capacity and temporary deinflection/page workspace, not actual retained output and not total process peak.",
   "command_template": "vjo-local-bench DICTIONARY_DIR jmdict.vjdict TEXT 5",
   "queries_kind": "Illustrative manually supplied Japanese strings; no screenshot or OCR accuracy claim.",
-  "allocation_change": "Local lookup keeps its 128 KiB arena limit, retires the previous view, and allocates one arena instead of two. OCR-only local jobs use a static 4096-byte text buffer and no dynamic result arena."
+  "allocation_change": "Historical intermediate measurement: one 128 KiB arena rather than two, with static 4096-byte OCR-only text. Superseded by the selected-character 64 KiB implementation; see local-character-memory-20261011.json."
 }

@@ -224,6 +224,53 @@ int vjo_overlay_from_text(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     return vjo_overlay_lookup(a, p, cfg, out);
 }
 
+int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                          size_t cursor_byte, VjoOverlayData *out)
+{
+    size_t mark = vjo_arena_mark(a), end, len;
+    VjoDictResult result;
+    VjoEntry *entry;
+    int units = 0, rc;
+
+    memset(&out->err, 0, sizeof(out->err));
+    out->err.dict = VJO_DICT_LOCAL;
+    out->failed_stage = VJO_STAGE_NONE;
+    out->list = (VjoEntryList){out->sentence ? out->sentence : "", NULL, 0};
+    if (!out->sentence || cfg->dictionary != VJO_DICT_LOCAL) {
+        rc = VJO_E_PARSE;
+        goto failed;
+    }
+    rc = vjo_local_lookup_at(a, p, cfg, out->sentence, cursor_byte, &result, &out->err);
+    if (rc) goto failed;
+    if (!result.n_tokens) return VJO_OK;
+    /* Point tokens refer to the raw sentence, rather than the newline-
+     * stripped text expected by vjo_entries_build. Convert only the matched
+     * span so CR/newlines and supplementary codepoints keep correct bytes. */
+    len = strlen(out->sentence);
+    end = cursor_byte;
+    while (end < len && units < result.tokens[0].len16)
+        units += vjo_utf16_units(vjo_utf8_next(out->sentence, len, &end));
+    if (units != result.tokens[0].len16) {
+        rc = VJO_E_PARSE;
+        goto failed;
+    }
+    entry = vjo_arena_zalloc(a, sizeof(*entry));
+    if (!entry) { rc = VJO_E_OOM; goto failed; }
+    entry->vocab = &result.vocab[0];
+    entry->pos16 = result.tokens[0].pos16;
+    entry->hl_start = (int)cursor_byte;
+    entry->hl_end = (int)end;
+    entry->text = vjo_entry_format(a, entry->vocab);
+    if (!entry->text) { rc = VJO_E_OOM; goto failed; }
+    out->list.entries = entry;
+    out->list.n_entries = 1;
+    return VJO_OK;
+failed:
+    vjo_arena_release(a, mark);
+    out->failed_stage = VJO_STAGE_DICT;
+    return out->err.rc = rc;
+}
+
 int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, VjoOverlayData *out)
 {
     memset(out, 0, sizeof(*out));

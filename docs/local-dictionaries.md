@@ -106,30 +106,34 @@ no dictionary-sized persistent allocation is added.
 
 | Resource | Bound |
 | --- | --- |
-| Lookup result arena | 64 KiB |
+| Selected-entry output budget, including metadata | 8,192 + 256 bytes |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
-| Temporary lookup arena total | At most 112 KiB, taken from the existing result arena |
-| Worker result arenas | Two 128 KiB arenas for local vocr; two 256 KiB for network pipelines |
+| Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
+| Network worker result arenas | Two 256 KiB arenas, plus connection pool |
+| Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
-| Input text | 4,096 UTF-8 bytes |
-| Longest scanned term | 32 Unicode code points |
+| Input text | Up to 4,095 UTF-8 bytes plus NUL |
+| Longest candidate term at the cursor | 32 Unicode code points |
 | Deinflection candidates per substring | 128 |
-| Results per matched position | First 8 |
+| Selected entry | Zero or one; first posting of the best match |
 | Same-key index rows examined per candidate/file | First 64 |
-| Total vocabulary entries / tokens per request | 128 each |
 
-Unused result capacity and the entire scratch allocation are released after
-lookup; only the actual returned vocabulary/tokens remain for the overlay.
-These numbers describe dictionary lookup, not total process memory: the plugin
-also needs code, stacks, OCR/JPEG buffers, formatted overlay text and optional
-Anki buffers. If the existing arena has insufficient space, lookup fails with an
-explicit memory error; it never grows the worker allocation.
+Local lookup starts only at the selected Unicode character. Left/right moves
+one character, including supplementary characters; it reuses saved OCR text
+without capture, inference or whole-sentence tokenization. Background local
+OCR and subtitles do not open dictionaries or allocate a result arena.
+The prior entry is detached before the single arena is reset, and rapid moves
+publish only the latest requested position. Closing, changing regions or
+switching games cannot publish an old lookup result.
 
-The two worker arenas and the two-connection runtime pool share one Paf
-allocation. Before allocating, the worker checks that the current free heap
-can supply the block with a 1.5 MiB reserve. A failed check or allocation reports
-a memory error. Later UI allocations also use this heap, so this check cannot
-guarantee the total free memory while an overlay is open.
+Unused selected-output capacity and scratch are released after lookup. The
+1.5 MiB Paf UI reserve remains unchanged. A refused result allocation preserves
+the recognized header and reports a Shell UI memory error. These bounds describe
+lookup allocations, not total process memory or guaranteed available memory.
+The [selected-position measurements](benchmarks/local-character-memory-20261011.json)
+used at most 54,000 arena bytes over nine illustrative full-JMdict positions;
+generated maximum-entry/full-text tests used 53,584 bytes with static text and
+61,776 with two full text copies in the 64 KiB arena.
 
 The [Daijirin import measurement](benchmarks/daijirin-import-20261010.json)
 records conversion of the bilingual v2 archive: 334,741 entries, two reading-only
@@ -142,16 +146,20 @@ require manual testing.
 Longer phrases take precedence. Katakana and hiragana readings share a search
 key; full-width ASCII is folded to ASCII. Yomichan's Japanese suffix rules handle
 inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`.
-The matched original text length is retained for highlighting and Anki mining.
+The matched original text length is retained in the entry, while the UI
+highlights the selected character. Anki mining is disabled in this release.
 Part-of-speech rules from the dictionary filter deinflected candidates.
-This is bounded greedy term matching, not a full Japanese morphological parser.
+At the selected position, the longest exact term takes precedence, followed
+by deinflected candidates and configured dictionary order. This is bounded
+matching, not a full Japanese morphological parser.
 The caps above can omit lower-priority matches or unusually complex inflections.
 Missing or corrupt enabled files fail the lookup with an actionable error;
 there is no automatic relay/cloud fallback.
 
-The 64 KiB result budget includes text. If a screen exceeds that budget or the
-128-token limit, select a smaller OCR region or enable fewer dictionaries. This
-avoids hiding an incomplete screen behind an apparently successful result.
+A selected-entry allocation or file error is reported explicitly. Lookup does
+not grow the worker arena or silently display a partial definition. The older
+whole-sentence host API remains available for benchmark compatibility; its
+64 KiB output/128-token limits are not the local overlay cursor path.
 
 ## Supported content and tradeoffs
 

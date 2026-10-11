@@ -52,14 +52,17 @@ then reboot. Keep unrelated plugins and configuration intact.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| D-pad | Navigate words and definitions |
+| Left / Right | Move one Unicode character; local lookup shows one best matching entry |
+| Up / Down | Navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
 | Circle | Close the overlay |
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
 recognition errors. Regions are saved per game. Automatic mode recognizes
-settled dialogue in the background. Set `ocr_mode = on_press` to recognize only
+settled dialogue in the background without opening local dictionaries. Opening
+the overlay looks up the saved text at the selected character; character moves
+never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. Cross and Triangle do not save or send Anki cards.
 
 ## Per-game settings
@@ -155,8 +158,10 @@ Native SDK file errors are unchanged. Install all three API 13 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-128 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
+64 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
+The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
+reads only the selected position and returns zero or one entry.
 The previous local result is retired before either is reused; network jobs
 retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
@@ -204,7 +209,9 @@ after validation.
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell
 worker with platform stubs. It checks cancelled jobs, denied input blocking,
-OOM recovery, failed joins, 50 local OCR/lookup lifetimes, 100 game-worker
+OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
+close/reopen during lookup, scene/region invalidation, Unicode navigation and
+100 game-worker
 allocation/free cycles, bounded model reads and stale-job isolation. Real
 model tests also run the actual game worker through the actual kernel broker
 with FL10/H15, unavailable game storage, short reads, corrupt weights and
