@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.9 defaults to
+text and shows Japanese dictionary entries over your game. **The v0.7.9 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -17,6 +17,14 @@ Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
 and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](docs/vita-vn-ocr.md) and
 [project lessons](docs/project-lessons.md).
+
+All six published v0.7.9 assets match the audited bundle. Its installed
+Shell/Settings bytes and native Settings registration/launch are verified, and
+four actual Settings touch/controller actions saved both highlight modes while
+preserving VOCR and Japanese-only ON. In-game header taps and highlight geometry
+still require hardware checks. See the
+[installation checkpoint](docs/todo-20261011.md#v079-touchhighlight-installation-checkpoint)
+for the measured results and remaining hardware checks.
 
 ## Install
 

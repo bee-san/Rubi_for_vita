@@ -40,3 +40,25 @@ unrelated config bytes and exercise save/restore failures.
 These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
+
+## Installation checkpoint
+
+[PR #38](https://github.com/bee-san/vita-jp-overlay/pull/38) merged after checks
+at `ee796f1ea683d84a668bbc52961bf146a9f9986c`: 22 host suites, native build/gates
+and a separate ASan/UBSan run of the actual `text_hit` helper's three scenarios.
+The audited v0.7.9 release bundle has 60 manifested payloads plus one manifest.
+Installed Shell and Settings executable readbacks match that candidate, and
+Settings is registered and confirmed in the native foreground. The uncertain
+promotion status is preserved separately from that reconciliation.
+
+Four actual native Settings actions passed complete config readbacks: touch
+**Character** → Left to **Whole word** → Right to **Character** → touch
+**Whole word**. VOCR, Japanese-only ON and all unrelated bytes were retained;
+the final configuration selects whole-word highlighting. All six independently
+downloaded public release assets match their audited candidates and checksums.
+
+Settings-card taps are separate from recognized-header taps in a game.
+Fresh Shell loaded-module proof and in-game touch/highlight tests remain
+pending; no native finger-accuracy, glyph-bound, word-span or game-routing
+result is claimed from the host checks or Settings saves. See
+[the complete install checkpoint](todo-20261011.md#v079-touchhighlight-installation-checkpoint).
