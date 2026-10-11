@@ -23,9 +23,10 @@ int main(int argc, char **argv)
     VjoArena a;
     VjoBuf out;
     Src s;
-    FILE *f;
+    FILE *f = NULL;
     long n;
-    uint8_t *px;
+    uint8_t *px = NULL;
+    int rc = 1;
     uint32_t w, h;
     if (argc < 5) {
         fprintf(stderr, "usage: vjo-jpegsw IN.rgba W H OUT.jpg [QUALITY]\n");
@@ -36,24 +37,38 @@ int main(int argc, char **argv)
     f = fopen(argv[1], "rb");
     if (!f)
         return 1;
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0)
+        goto cleanup;
     n = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (n < 0 || fseek(f, 0, SEEK_SET) != 0)
+        goto cleanup;
     px = malloc((size_t)n);
-    if (fread(px, 1, (size_t)n, f) != (size_t)n || (uint32_t)n < w * h * 4)
-        return 1;
-    fclose(f);
+    if (!px || fread(px, 1, (size_t)n, f) != (size_t)n || (uint32_t)n < w * h * 4)
+        goto cleanup;
+    int closed = fclose(f);
+    f = NULL;
+    if (closed != 0)
+        goto cleanup;
     s.px = px;
     s.stride = w * 4;
     vjo_arena_init(&a, mem, sizeof(mem));
     vjo_buf_init(&out, &a);
     if (vjo_jpeg_encode(&a, w, h, w * 4, rows, &s, argc > 5 ? atoi(argv[5]) : 90, &out) < 0) {
         fprintf(stderr, "encode failed\n");
-        return 1;
+        goto cleanup;
     }
     f = fopen(argv[4], "wb");
-    fwrite(out.data, 1, out.len, f);
-    fclose(f);
+    if (!f || fwrite(out.data, 1, out.len, f) != out.len)
+        goto cleanup;
+    closed = fclose(f);
+    f = NULL;
+    if (closed != 0)
+        goto cleanup;
     fprintf(stderr, "%u x %u -> %zu bytes (arena peak %zu)\n", w, h, out.len, a.peak);
-    return 0;
+    rc = 0;
+cleanup:
+    if (f)
+        fclose(f);
+    free(px);
+    return rc;
 }
