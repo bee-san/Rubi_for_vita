@@ -11,6 +11,8 @@ int game_ocr_raw_caller_locked(SceUID pid);
 int game_ocr_shutdown_locked(void);
 void game_ocr_shell_changed_locked(void);
 void game_ocr_foreground_changed_locked(void);
+/* Called only by the existing kernel worker; disk I/O runs without g.lock. */
+void game_ocr_model_tick(void);
 /* Called with g.game_lock held; takes g.lock in this fixed order. */
 void game_ocr_process_gone(SceUID pid);
 

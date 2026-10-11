@@ -1,13 +1,12 @@
 /* vocr runs in the enabled game's process. No Paf, newlib startup, hooks,
- * network, or game-owned allocations. Only copied capture rows cross the
- * kernel transport; all weights and inference storage are a private memblock. */
+ * network, or borrowed game allocations. Capture rows and bounded model chunks
+ * cross the kernel transport; weights and inference use a private memblock. */
 #include "main.h"
 #include "../core/vocr_ocr.h"
 #include "../core/games.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
 #include <psp2/appmgr.h>
-#include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/processmgr.h>
@@ -16,14 +15,17 @@
 
 #define GAME_RESERVE (4u * 1024u * 1024u)
 #define JOIN_US 2000000u
-#define READ_BYTES 8192u
+#define MODEL_WAIT_US 2000000u
+#define MODEL_POLL_US 1000u
 #ifdef VJO_HOST
 #define IMPORT_READY(fn) 1
 #else
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
 
-static SceUID worker = -1, workspace_uid = -1, model_fd = -1;
+static SceUID worker = -1, workspace_uid = -1;
+static uint32_t model_seq;
+static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error;
 static VjoGameOcrResult pending_result; /* never put 4 KiB results on thread stacks */
@@ -46,13 +48,19 @@ static int rows(void *ud, unsigned row, unsigned count, unsigned char *dst)
 static int file_read(void *ud, uint64_t off, void *dst, size_t bytes)
 {
     (void)ud;
-    if (model_fd < 0 || !dst || off > INT64_MAX || cancelled(NULL)) return -1;
-    SceOff pos = sceIoLseek(model_fd, (SceOff)off, SCE_SEEK_SET);
-    if (pos != (SceOff)off) { io_error = pos < 0 ? (int)pos : -1; return -1; }
+    if (!model_owned || !dst || off > UINT32_MAX || bytes > UINT32_MAX-off || cancelled(NULL)) return -1;
     for (size_t used = 0; used < bytes;) {
         if (cancelled(NULL)) return -1;
-        size_t n = bytes-used < READ_BYTES ? bytes-used : READ_BYTES;
-        int got = sceIoRead(model_fd, (unsigned char *)dst+used, (SceSize)n);
+        size_t n = bytes-used < VJO_GAME_OCR_MODEL_CHUNK ? bytes-used : VJO_GAME_OCR_MODEL_CHUNK;
+        uint64_t started = sceKernelGetProcessTimeWide();
+        int got;
+        do {
+            if (cancelled(NULL)) return -1;
+            got = vjoOcrModelRead(model_seq, (uint32_t)(off+used), (uint32_t)n, (unsigned char *)dst+used);
+            if (got != VJO_ERR_BUSY) break;
+            if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { got = VJO_ERR_TIMEOUT; break; }
+            sceKernelDelayThread(MODEL_POLL_US);
+        } while (1);
         if (got <= 0 || (size_t)got > n) { io_error = got < 0 ? got : -1; return -1; }
         used += (size_t)got;
     }
@@ -62,9 +70,17 @@ static int file_read(void *ud, uint64_t off, void *dst, size_t bytes)
 static void file_close(void *ud)
 {
     (void)ud;
-    if (model_fd >= 0) {
-        int rc = sceIoClose(model_fd);
-        if (rc >= 0) model_fd = -1;
+    if (model_owned) {
+        uint64_t started = sceKernelGetProcessTimeWide();
+        int rc;
+        do {
+            /* Cleanup must drain even after cancellation or active_seq reset. */
+            rc = vjoOcrModelClose(model_seq);
+            if (rc != VJO_ERR_BUSY) break;
+            if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { rc = VJO_ERR_TIMEOUT; break; }
+            sceKernelDelayThread(MODEL_POLL_US);
+        } while (1);
+        if (rc >= 0) { model_owned = 0; model_seq = 0; }
         else io_error = rc; /* cleanup retries; never acknowledge a leaked descriptor */
     }
 }
@@ -72,11 +88,21 @@ static void file_close(void *ud)
 static int file_open(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
-    if (model_fd >= 0 || !path || !out || cancelled(NULL)) return -1;
-    model_fd = sceIoOpen(path, SCE_O_RDONLY, 0);
-    if (model_fd < 0) { io_error = model_fd; return -1; }
-    SceOff size = sceIoLseek(model_fd, 0, SCE_SEEK_END);
-    if (size < 0) { io_error = (int)size; file_close(NULL); return -1; }
+    if (model_owned || !path || !out || cancelled(NULL)) return -1;
+    /* Reserve ownership before enqueue: a timed-out Open may still finish.
+     * The kernel resolves only this claimed job's pinned model path. */
+    model_seq = active_seq;
+    model_owned = 1;
+    uint64_t started = sceKernelGetProcessTimeWide();
+    int size;
+    do {
+        if (cancelled(NULL)) return -1;
+        size = vjoOcrModelOpen(model_seq);
+        if (size != VJO_ERR_BUSY) break;
+        if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { size = VJO_ERR_TIMEOUT; break; }
+        sceKernelDelayThread(MODEL_POLL_US);
+    } while (1);
+    if (size <= 0) { io_error = size; return -1; }
     *out = (VjoFile){NULL, (uint64_t)size, file_read, file_close};
     return 0;
 }
@@ -95,7 +121,7 @@ static int cleanup(void)
         else workspace_uid = -1;
     }
     file_close(NULL);
-    if (model_fd >= 0) rc = VJO_E_OCR_UNAVAILABLE;
+    if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     return rc;
 }
 
@@ -107,7 +133,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     active_seq = r->seq; io_error = 0;
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    if (blocked || workspace_uid >= 0 || model_fd >= 0) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if (blocked || workspace_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->done_seq ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         r->stride != r->width*4u || !r->model_dir[0] || !r->model[0] ||
@@ -167,6 +193,7 @@ int vjo_game_ocr_worker_start(void)
     if (worker >= 0 || blocked) return VJO_E_OCR_UNAVAILABLE;
     if (!IMPORT_READY(vjoGetVersion) || !IMPORT_READY(vjoOcrRegister) || !IMPORT_READY(vjoOcrTake) ||
         !IMPORT_READY(vjoOcrCancelled) || !IMPORT_READY(vjoOcrReadRaw) || !IMPORT_READY(vjoOcrComplete) ||
+        !IMPORT_READY(vjoOcrModelOpen) || !IMPORT_READY(vjoOcrModelRead) || !IMPORT_READY(vjoOcrModelClose) ||
         !IMPORT_READY(sceKernelAllocMemBlock) || !IMPORT_READY(sceKernelGetMemBlockBase) ||
         !IMPORT_READY(sceKernelFreeMemBlock) || vjoGetVersion() != VJO_API_VERSION) return VJO_E_OCR_UNAVAILABLE;
     __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);

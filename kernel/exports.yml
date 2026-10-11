@@ -29,3 +29,6 @@ VitaJPOverlay_Kernel:
         - vjoOcrSubmit
         - vjoOcrRead
         - vjoOcrCancel
+        - vjoOcrModelOpen
+        - vjoOcrModelRead
+        - vjoOcrModelClose
