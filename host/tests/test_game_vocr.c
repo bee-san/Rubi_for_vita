@@ -78,7 +78,10 @@ static VjoGameOcrRequest setup(void)
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .done_seq=11, .width=200, .height=60, .stride=800};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
-    snprintf(r.model_dir, sizeof(r.model_dir), "%s", VJO_VOCR_MODEL_DIR);
+    /* Blank images never open weights, but requests still need a valid directory.
+     * CI intentionally has no private release assets in its source checkout. */
+    snprintf(r.model_dir, sizeof(r.model_dir), "%s",
+             VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : "unused-model-dir");
     return r;
 }
 static void line(void)
