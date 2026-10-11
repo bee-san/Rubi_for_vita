@@ -24,6 +24,7 @@
 #define RESULT_ARENA_SIZE (256 * 1024)
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
+typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
 #define POOL_SLOTS        2 /* Lens and the dictionary */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
 #define MEM_SIZE          (2 * RESULT_ARENA_SIZE + POOL_SIZE)
@@ -211,7 +212,9 @@ void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
     }
     size_t len = sceClibStrnlen(local_text, sizeof(local_text));
     if ((len ? byte_offset >= len : byte_offset != 0) ||
-        vjo_utf8_cursor_step(local_text, len, byte_offset, 0) != byte_offset) {
+        vjo_utf8_cursor_step(local_text, len, byte_offset, 0) != byte_offset ||
+        (cfg.japanese_only_selection &&
+         (byte_offset >= len || vjo_utf8_japanese_cursor_step(local_text, len, byte_offset, 0) != byte_offset))) {
         vjo_view_unlock();
         sceKernelUnlockMutex(cmd_lock, 1);
         return;
@@ -350,6 +353,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.local_cursor_mode = local_pipeline(&cfg) && local_text_valid && list &&
                                list->header == local_text;
     g_view.cursor_byte = local_cursor_byte;
+    g_view.japanese_only_selection = cfg.japanese_only_selection;
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;
@@ -486,14 +490,15 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         sceKernelLockMutex(cmd_lock, 1, NULL);
         job_text_generation = advance_generation(&local_text_generation);
         job_cursor_seq = advance_generation(&local_cursor_seq);
-        local_cursor_byte = job_cursor_byte = 0;
+        local_cursor_byte = job_cursor_byte = job_cfg.japanese_only_selection
+            ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
         local_text_game_generation = job_generation;
         local_text_scene = job_capture_scene;
         local_text_capture_seq = job_capture_seq;
         __sync_synchronize();
         local_text_valid = 1;
         sceKernelUnlockMutex(cmd_lock, 1);
-        if (!job_lookup || mem_alloc_for(&job_cfg) == 0)
+        if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc_for(&job_cfg) == 0)
             return VJO_OK;
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
@@ -573,6 +578,8 @@ recognized:
     __sync_synchronize(); /* the sentence is visible before job_text_ready */
     job_text_ready = 1;
     if (!job_lookup || job_same_text) return VJO_OK;
+    if (local_pipeline(&job_cfg) &&
+        job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     return local_pipeline(&job_cfg) ? vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out)
                                    : vjo_overlay_lookup(a, &plat, &job_cfg, out);
 }
@@ -583,6 +590,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(out, 0, sizeof(*out));
     out->ocr_text = out->filtered = out->sentence = local_text;
     out->list.header = local_text;
+    if (job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     if (mem_alloc_for(&job_cfg) < 0) {
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
@@ -719,7 +727,8 @@ static void start_cursor_job(void)
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
 {
     if (a->dictionary != b->dictionary || a->ocr_backend != b->ocr_backend ||
-        a->non_japanese_filter != b->non_japanese_filter)
+        a->non_japanese_filter != b->non_japanese_filter ||
+        a->japanese_only_selection != b->japanese_only_selection)
         return 0;
     if ((a->ocr_backend == VJO_OCR_VOCR || a->ocr_backend == VJO_OCR_MEIKI) &&
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) ||

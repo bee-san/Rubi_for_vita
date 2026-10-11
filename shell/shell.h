@@ -39,6 +39,7 @@ typedef struct {
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
     int local_cursor_mode;    /* local dictionary: navigate UTF-8 characters */
+    int japanese_only_selection; /* restrict local navigation to Han/kana */
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */
     uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];

@@ -101,6 +101,86 @@ int vjo_utf8_cursor_range(const char *s, size_t len, size_t offset, uint32_t *st
     return 1;
 }
 
+/* Unicode 17.0.0 Scripts/ScriptExtensions Han, Hiragana and Katakana,
+ * intersected with letter/letter-number categories; Japanese combining
+ * dakuten/handakuten are also retained. Punctuation is deliberately excluded.
+ * Inspiration: ikatyang-collab/cjk-regex@3703c1322ad52ba20f9706752f3098181ef3e15b
+ * uses script/category intersections; its Hangul/Bopomofo are not included.
+ * https://www.unicode.org/Public/17.0.0/ucd/{Scripts,ScriptExtensions,UnicodeData}.txt
+ * SHA256: 9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf
+ *         ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6
+ *         2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c */
+static const struct { uint32_t first, last; } japanese_letters[] = {
+    {0x3005u, 0x3007u},
+    {0x3021u, 0x3029u},
+    {0x3031u, 0x3035u},
+    {0x3038u, 0x303Cu},
+    {0x3041u, 0x3096u},
+    {0x3099u, 0x309Au},
+    {0x309Du, 0x309Fu},
+    {0x30A1u, 0x30FAu},
+    {0x30FCu, 0x30FFu},
+    {0x31F0u, 0x31FFu},
+    {0x3400u, 0x4DBFu},
+    {0x4E00u, 0x9FFFu},
+    {0xF900u, 0xFA6Du},
+    {0xFA70u, 0xFAD9u},
+    {0xFF66u, 0xFF9Fu},
+    {0x16FE3u, 0x16FE3u},
+    {0x16FF2u, 0x16FF6u},
+    {0x1AFF0u, 0x1AFF3u},
+    {0x1AFF5u, 0x1AFFBu},
+    {0x1AFFDu, 0x1AFFEu},
+    {0x1B000u, 0x1B122u},
+    {0x1B132u, 0x1B132u},
+    {0x1B150u, 0x1B152u},
+    {0x1B155u, 0x1B155u},
+    {0x1B164u, 0x1B167u},
+    {0x20000u, 0x2A6DFu},
+    {0x2A700u, 0x2B81Du},
+    {0x2B820u, 0x2CEADu},
+    {0x2CEB0u, 0x2EBE0u},
+    {0x2EBF0u, 0x2EE5Du},
+    {0x2F800u, 0x2FA1Du},
+    {0x30000u, 0x3134Au},
+    {0x31350u, 0x33479u}
+};
+
+int vjo_is_japanese_letter(uint32_t cp)
+{
+    size_t lo = 0, hi = sizeof(japanese_letters) / sizeof(japanese_letters[0]);
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (cp < japanese_letters[mid].first) hi = mid;
+        else if (cp > japanese_letters[mid].last) lo = mid + 1;
+        else return 1;
+    }
+    return 0;
+}
+
+size_t vjo_utf8_japanese_cursor_step(const char *s, size_t len, size_t offset, int direction)
+{
+    size_t previous = len, current = len, next = len, i = 0;
+    if (!s || !len) return len;
+    size_t selected = vjo_utf8_cursor_step(s, len, offset, 0);
+    while (i < len) {
+        size_t begin = i;
+        uint32_t cp = vjo_utf8_next(s, len, &i);
+        if (!vjo_is_japanese_letter(cp)) continue;
+        /* The compatibility decoder also accepts overlong sequences. This
+         * opt-in selector must not turn malformed bytes into Japanese. */
+        size_t canonical = cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+        if (i - begin != canonical) continue;
+        if (begin < selected) previous = begin;
+        else if (begin == selected) current = begin;
+        else if (next == len) next = begin;
+    }
+    if (direction < 0 && previous < len) return previous;
+    if (direction > 0 && next < len) return next;
+    if (current < len) return current;
+    return next < len ? next : previous;
+}
+
 char *vjo_java_trim(char *s)
 {
     size_t n = strlen(s);

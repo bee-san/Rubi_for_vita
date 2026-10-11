@@ -607,6 +607,52 @@ static void test_foreground(void)
 
 /* ---------- config / regions ---------- */
 
+static void test_japanese_character_cursor(void)
+{
+    const char *text = "「ABC 123 한글、猫。ひｶー𠮷！犬」";
+    const char *letters[] = {"猫", "ひ", "ｶ", "ー", "𠮷", "犬"};
+    size_t len = strlen(text), positions[6];
+    for (size_t i = 0; i < 6; i++) positions[i] = (size_t)(strstr(text, letters[i]) - text);
+    size_t cursor = vjo_utf8_japanese_cursor_step(text, len, 0, 0);
+    for (size_t i = 0; i < 6; i++) {
+        TEST_CHECK(cursor == positions[i]);
+        cursor = vjo_utf8_japanese_cursor_step(text, len, cursor, 1);
+    }
+    TEST_CHECK(cursor == positions[5]);
+    for (size_t i = 6; i-- > 0;) {
+        TEST_CHECK(cursor == positions[i]);
+        cursor = vjo_utf8_japanese_cursor_step(text, len, cursor, -1);
+    }
+    TEST_CHECK(cursor == positions[0]);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, positions[4] + 1, 0) == positions[4]);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, len + 99, 0) == positions[5]);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 0, 0) == 0); /* OFF retains punctuation selection. */
+    TEST_CHECK(vjo_is_japanese_letter(0x3005) && vjo_is_japanese_letter(0x3099));
+    TEST_CHECK(vjo_is_japanese_letter(0x3400) && vjo_is_japanese_letter(0x9FFF));
+    TEST_CHECK(vjo_is_japanese_letter(0x1B000) && vjo_is_japanese_letter(0x20000));
+    const uint32_t excluded[] = {'A', '5', 0xFF15, 0x3001, 0x300C, 0x30FB, 0xFF65,
+                                  0xAC00, 0x1100, 0x3105, 0x1F600, 0xFFFD, 0x110000};
+    for (size_t i = 0; i < sizeof(excluded) / sizeof(excluded[0]); i++)
+        TEST_CHECK(!vjo_is_japanese_letter(excluded[i]));
+    text = "ABC 123 한글・「」😀"; len = strlen(text);
+    for (int direction = -1; direction <= 1; direction++)
+        TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 0, direction) == len);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step("", 0, 99, 1) == 0);
+    text = "\x80" "猫\xE3\x81"; len = strlen(text);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 0, 0) == 1);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 1, 1) == 1);
+    text = "\xF0\x83\x81\x82" "A"; len = strlen(text); /* Overlong U+3042. */
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 0, 0) == len);
+    TEST_CHECK(vjo_utf8_cursor_step(text, len, 0, 1) == 4); /* Legacy behavior stays unchanged. */
+    text = "\xF0\x83\x81\x82" "猫"; len = strlen(text);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 0, 0) == 4);
+    TEST_CHECK(vjo_utf8_japanese_cursor_step(text, len, 4, -1) == 4);
+    uint32_t start, units;
+    text = "ABC𠮷"; len = strlen(text);
+    cursor = vjo_utf8_japanese_cursor_step(text, len, 0, 0);
+    TEST_CHECK(vjo_utf8_cursor_range(text, len, cursor, &start, &units) && start == 3 && units == 2);
+}
+
 static void test_config(void)
 {
     VjoConfig c;
@@ -626,7 +672,7 @@ static void test_config(void)
                       "bogus = 1\n";
     vjo_config_defaults(&c);
     TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
-               c.toggle_button == VJO_TRIGGER_L_R);
+               c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 1);
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.dictionary == VJO_DICT_JPDB);
     TEST_CHECK(!strcmp(c.api_key[VJO_DICT_JPDB], "abc123") && !strcmp(c.api_key[VJO_DICT_JITEN], "ak_xyz"));
@@ -644,6 +690,14 @@ static void test_config(void)
     /* font_size_ja and bogus; the removed frequency_filter is silent */
     TEST_CHECK(c.n_warnings == 2);
     TEST_MSG("warnings: %d", c.n_warnings);
+    vjo_config_defaults(&c);
+    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = meiki\n";
+    vjo_config_parse(&c, selection_off, strlen(selection_off));
+    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_MEIKI);
+    vjo_config_defaults(&c);
+    const char *invalid_selection = "japanese_only_selection = maybe\n";
+    vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
+    TEST_CHECK(c.japanese_only_selection && c.n_warnings == 1);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -2132,6 +2186,7 @@ TEST_LIST = {
     {"filter_lines", test_filter_lines},
     {"utf", test_utf},
     {"utf_character_cursor", test_utf_character_cursor},
+    {"japanese_character_cursor", test_japanese_character_cursor},
     {"jpdb_request", test_jpdb_request},
     {"jpdb_parse", test_jpdb_parse},
     {"jiten_ruby", test_jiten_ruby},

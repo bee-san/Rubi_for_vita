@@ -9,17 +9,15 @@
 
 #define MAX_FILE (64 * 1024)
 
-char *vjo_file_read(VjoArena *a, const char *path, size_t *len)
+static char *file_read_limit(VjoArena *a, const char *path, size_t *len, size_t max)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     SceOff size;
     char *buf;
-    int n;
     if (fd < 0)
         return NULL;
     size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    sceIoLseek(fd, 0, SCE_SEEK_SET);
-    if (size < 0 || size > MAX_FILE) {
+    if (size < 0 || (uint64_t)size > max || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0) {
         sceIoClose(fd);
         return NULL;
     }
@@ -28,14 +26,24 @@ char *vjo_file_read(VjoArena *a, const char *path, size_t *len)
         sceIoClose(fd);
         return NULL;
     }
-    n = sceIoRead(fd, buf, (SceSize)size);
-    sceIoClose(fd);
-    if (n < 0)
+    size_t used = 0;
+    while (used < (size_t)size) {
+        int n = sceIoRead(fd, buf + used, (SceSize)((size_t)size - used));
+        if (n <= 0 || (size_t)n > (size_t)size - used) break;
+        used += (size_t)n;
+    }
+    int close_rc = sceIoClose(fd);
+    if (used != (size_t)size || close_rc < 0)
         return NULL;
-    buf[n] = '\0';
+    buf[used] = '\0';
     if (len)
-        *len = (size_t)n;
+        *len = used;
     return buf;
+}
+
+char *vjo_file_read(VjoArena *a, const char *path, size_t *len)
+{
+    return file_read_limit(a, path, len, MAX_FILE);
 }
 
 int vjo_file_write(const char *path, const void *data, size_t len)
@@ -66,14 +74,23 @@ static int file_exists(const char *path)
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch), len = 0;
-    char *text = vjo_file_read(scratch, VJO_CONFIG_PATH, &len);
+    char *text = file_read_limit(scratch, VJO_CONFIG_PATH, &len, VJO_CONFIG_TEXT_MAX);
     vjo_config_defaults(cfg);
-    if (text) {
+    if (text && !memchr(text, 0, len)) {
         vjo_config_parse(cfg, text, len);
-    } else if (!file_exists(VJO_CONFIG_PATH)) {
-        /* First run only: never overwrite a file we merely failed to read. */
-        const char *def = vjo_config_default_text();
-        vjo_file_write(VJO_CONFIG_PATH, def, strlen(def));
+    } else {
+        SceIoStat st;
+        if (sceIoGetstat(VJO_CONFIG_PATH, &st) == (int)0x80010002u) {
+            /* Interrupted settings publication may leave only the backup.
+             * Never alter it or create defaults over an unreadable backup. */
+            vjo_arena_release(scratch, mark);
+            text = file_read_limit(scratch, VJO_CONFIG_PATH ".bak", &len, VJO_CONFIG_TEXT_MAX);
+            if (text && !memchr(text, 0, len)) vjo_config_parse(cfg, text, len);
+            else if (sceIoGetstat(VJO_CONFIG_PATH ".bak", &st) == (int)0x80010002u) {
+                const char *def = vjo_config_default_text();
+                vjo_file_write(VJO_CONFIG_PATH, def, strlen(def));
+            }
+        }
     }
     vjo_arena_release(scratch, mark);
 }
