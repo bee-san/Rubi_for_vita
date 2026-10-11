@@ -101,6 +101,12 @@ actions; the final 2,951-byte config was again byte-identical to the intended
 file. These establish native control/persistence behavior; they do not provide
 screenshots or firmware glyph measurements.
 
+A subsequent agent-runtime replacement and fresh reboot also confirmed Settings
+relaunched in the foreground with no reported system UI overlay and the intended
+config byte-identical. That new boot is separate from the earlier measured
+survival interval. Native keep-awake worker initialization and its first DEFAULT
+tick returned 0; quiet-interval/display behavior remains under verification.
+
 Firmware font bounds, sharpness and physical readability remain pending. The
 broader installation and private-dictionary recovery state is tracked in
 [the deployment checklist](todo-20261011.md).
