@@ -354,6 +354,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
                                list->header == local_text;
     g_view.cursor_byte = local_cursor_byte;
     g_view.japanese_only_selection = cfg.japanese_only_selection;
+    g_view.highlight_mode = cfg.highlight_mode;
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;

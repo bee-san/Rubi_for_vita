@@ -179,7 +179,10 @@ Longer phrases take precedence. Katakana and hiragana readings share a search
 key; full-width ASCII is folded to ASCII. Yomichan's Japanese suffix rules handle
 inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`.
 The matched original text length is retained in the entry, while the UI
-highlights the selected character. Anki mining is disabled in this release.
+highlights the complete match by default. Settings → OCR & lookup → Highlight
+can instead highlight the selected character. Tapping the recognized header
+selects a character and uses the same bounded lookup as the arrows. Neither
+option introduces sentence tokenization. Anki mining is disabled in this release.
 Part-of-speech rules from the dictionary filter deinflected candidates.
 At the selected position, the longest exact term takes precedence, followed
 by deinflected candidates and configured dictionary order. This is bounded

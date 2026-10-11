@@ -8,5 +8,6 @@
 int vjo_preferences_load(VjoConfig *cfg, VjoArena *scratch);
 /* Re-read the file, preserve unrelated keys, checked temp write + sync +
  * backup + rename. A failed final publication restores the old primary. */
-int vjo_preferences_save(int backend, int japanese_only, VjoArena *scratch);
+int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
+                         VjoArena *scratch);
 #endif

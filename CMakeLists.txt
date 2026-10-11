@@ -21,7 +21,7 @@ target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_
 target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
-  core/arena.c core/pb.c core/utf.c core/lens.c core/json.c core/jpdb.c
+  core/arena.c core/pb.c core/utf.c core/text_hit.c core/lens.c core/json.c core/jpdb.c
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
@@ -110,6 +110,12 @@ target_include_directories(vjo-local-cursor-tests PRIVATE third_party/acutest/in
 target_link_libraries(vjo-local-cursor-tests vjo_host)
 target_compile_options(vjo-local-cursor-tests PRIVATE -Wall -Wextra)
 add_test(NAME local_cursor COMMAND vjo-local-cursor-tests)
+
+add_executable(vjo-text-hit-tests host/tests/test_text_hit.c)
+target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-text-hit-tests vjo_host)
+target_compile_options(vjo-text-hit-tests PRIVATE -Wall -Wextra)
+add_test(NAME text_hit COMMAND vjo-text-hit-tests)
 add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)

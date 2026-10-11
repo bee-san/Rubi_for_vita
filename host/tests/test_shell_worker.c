@@ -736,6 +736,22 @@ static void test_japanese_only_selection_and_config_reload(void)
     TEST_CHECK(g_view.cursor_byte == second && vocr_allocs == inferences);
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
     TEST_CHECK(strstr(g_view.list->entries[0].text, "dog") != NULL);
+    /* Presentation changes reuse the immutable recognition and lookup.
+     * They must not recapture or allocate a second inference workspace. */
+    TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_WORD);
+    close_overlay(); loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    open_overlay();
+    TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
+    TEST_CHECK(local_text_valid && job_running && job_cursor_only);
+    finish_current_job();
+    TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
+    TEST_CHECK(g_view.cursor_byte == second);
+    close_overlay(); loaded.highlight_mode = VJO_HIGHLIGHT_WORD;
+    open_overlay();
+    TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_WORD);
+    TEST_CHECK(local_text_valid && job_running && job_cursor_only);
+    finish_current_job();
+    TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
     close_overlay(); loaded.japanese_only_selection = 0;
     open_overlay();
     TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);

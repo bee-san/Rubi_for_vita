@@ -25,8 +25,8 @@ set(VJO_BUILD_VITA ON)
 option(VJO_WITH_MEIKI "Build the optional game-process single-line Meiki trial" OFF)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.8")
-set(VJO_MEIKI_TRIAL_VERSION "0.7.8-with-meiki")
+set(VJO_VERSION "0.7.9")
+set(VJO_MEIKI_TRIAL_VERSION "0.7.9-with-meiki")
 
 
 # ---------------- kernel ----------------
@@ -81,7 +81,7 @@ target_compile_definitions(vjo_bearssl PRIVATE BR_USE_URANDOM=0 BR_USE_GETENTROP
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
-  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/lens.c ${ROOT}/core/json.c
+  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/lens.c ${ROOT}/core/json.c
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
@@ -283,7 +283,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${STAGE}/tools/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/meiki-trial.md ${ROOT}/docs/meiki-dependencies.json ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/meiki-trial.md ${ROOT}/docs/meiki-dependencies.json ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${ROOT}/docs/benchmarks/meiki-trial-integration-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses

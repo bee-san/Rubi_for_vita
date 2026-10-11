@@ -748,6 +748,28 @@ static void test_config(void)
     }
 }
 
+static void test_highlight_config(void)
+{
+    VjoConfig c;
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD);
+    /* Existing saved configs gain word highlighting without changing choices. */
+    const char old[] = "ocr_backend = meiki\njapanese_only_selection = off\n";
+    vjo_config_parse(&c, old, sizeof(old) - 1);
+    TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_MEIKI && !c.japanese_only_selection);
+    const char character[] = "HIGHLIGHT_MODE = CHARACTER\n";
+    vjo_config_parse(&c, character, sizeof(character) - 1);
+    TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_CHARACTER && c.n_warnings == 0);
+    const char word[] = "highlight_mode = Word\n";
+    vjo_config_parse(&c, word, sizeof(word) - 1);
+    TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
+    const char invalid[] = "highlight_mode = sentence\n";
+    vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
+    TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 1);
+    TEST_CHECK(strstr(c.warnings[0], "highlight_mode") != NULL);
+}
+
 static void test_regions(void)
 {
 #define P(s, t, g) vjo_region_parse(s, strlen(s), t, g)
@@ -2221,6 +2243,7 @@ TEST_LIST = {
     {"scene_content_in_icon", test_scene_content_in_icon},
     {"scene_many_frames", test_scene_many_frames},
     {"config", test_config},
+    {"highlight_config", test_highlight_config},
     {"regions", test_regions},
     {"http", test_http},
     {"net_pool", test_net_pool},
