@@ -111,6 +111,13 @@ target_link_libraries(vjo-local-cursor-tests vjo_host)
 target_compile_options(vjo-local-cursor-tests PRIVATE -Wall -Wextra)
 add_test(NAME local_cursor COMMAND vjo-local-cursor-tests)
 
+add_executable(vjo-header-highlight-tests host/tests/test_header_highlight.cpp)
+target_include_directories(vjo-header-highlight-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-header-highlight-tests vjo_host)
+target_compile_features(vjo-header-highlight-tests PRIVATE cxx_std_11)
+target_compile_options(vjo-header-highlight-tests PRIVATE -Wall -Wextra)
+add_test(NAME header_highlight COMMAND vjo-header-highlight-tests)
+
 add_executable(vjo-text-hit-tests host/tests/test_text_hit.c)
 target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-hit-tests vjo_host)

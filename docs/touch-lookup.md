@@ -8,6 +8,13 @@ than the dictionary's normalized spelling. While a lookup runs or has no result,
 it highlights the selected character instead. Changing the preference preserves
 the recognized text; opening again performs only the normal selected lookup.
 
+In v0.7.10, a highlight change explicitly invalidates the header drawing after
+updating its color styles. The applied range is committed only after the native
+calls succeed; unavailable layout or failed updates get at most six frame
+retries. A partial failure clears the header's color styles before retrying, so
+a newer cursor or mode cannot leave an old word yellow. The header string and
+scroll position are retained.
+
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there. This selects the overlay's recognized header,
 not an unrecognized glyph in the game's framebuffer. Japanese-only selection
@@ -37,11 +44,23 @@ and that rapid selected lookups cannot publish stale definitions. Config tests
 cover both modes and invalid values; transactional preference tests preserve
 unrelated config bytes and exercise save/restore failures.
 
+The header recoloring tests exercise the actual update helper against a text
+double with cached drawing. They cover character-to-word expansion, character
+mode, stale-color cleanup, failed layout/style/invalidation calls, invalid
+ranges, and inflected source spans after CR and a UTF-16 surrogate pair.
+These tests establish the explicit refresh contract, not native PAF behavior.
+
 These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
 
 ## Installation checkpoint
+
+After the v0.7.9 checkpoint, the user reported that Whole word still showed one
+highlighted character while a definition was displayed
+([issue #41](https://github.com/bee-san/vita-jp-overlay/issues/41)). The v0.7.10
+refresh change addresses that path; it has not been deployed to or visually
+verified on the physical Vita.
 
 [PR #38](https://github.com/bee-san/vita-jp-overlay/pull/38) merged after checks
 at `ee796f1ea683d84a668bbc52961bf146a9f9986c`: 22 host suites, native build/gates

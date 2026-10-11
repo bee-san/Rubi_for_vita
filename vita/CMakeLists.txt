@@ -25,8 +25,8 @@ set(VJO_BUILD_VITA ON)
 option(VJO_WITH_MEIKI "Build the optional game-process single-line Meiki trial" OFF)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.9")
-set(VJO_MEIKI_TRIAL_VERSION "0.7.9-with-meiki")
+set(VJO_VERSION "0.7.10")
+set(VJO_MEIKI_TRIAL_VERSION "0.7.10-with-meiki")
 
 
 # ---------------- kernel ----------------

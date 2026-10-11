@@ -28,6 +28,7 @@
 #include <psp2/kernel/processmgr.h>
 
 #include "paf_ui.h"
+#include "header_highlight.h"
 extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
@@ -109,7 +110,9 @@ static int s_prev_touch;
 
 /* header state */
 static uint32_t s_hl_start, s_hl_len; /* highlighted range now drawn */
+static bool s_hl_dirty;              /* style writes awaiting a successful refresh */
 static int s_follow_frames;           /* frames left to scroll the header to the word */
+static int s_highlight_retry_frames;  /* bounded retries while text layout catches up */
 
 /* region selection (screen pixels) */
 static int s_touch_region_on; /* SceShell's default front touch region activated by us */
@@ -177,28 +180,31 @@ static void pane_size(Pane *p, float h, float top)
 }
 
 /* Recolors the selected character/word: the old range back to white, the new one
- * yellow. No relayout. */
-static void header_highlight(void)
+ * yellow. Preserve the string and scroll position, but refresh the drawing. */
+static bool header_highlight(void)
 {
-    if (!s_header.text)
-        return;
-    if (s_hl_len)
-        s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_TEXT));
-    s_hl_len = 0;
+    uint32_t start = 0, len = 0;
     if (s_local_cursor_mode) {
         if (s_highlight_mode == VJO_HIGHLIGHT_WORD && s_n_entries && s_rng_len[0]) {
-            s_hl_start = s_rng_start[0];
-            s_hl_len = s_rng_len[0];
+            start = s_rng_start[0];
+            len = s_rng_len[0];
         } else if (s_cursor_byte < s_cursor_text_len)
-            vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &s_hl_start, &s_hl_len);
+            vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &start, &len);
     } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
-        s_hl_start = s_rng_start[s_selected];
-        s_hl_len = s_rng_len[s_selected];
+        start = s_rng_start[s_selected];
+        len = s_rng_len[s_selected];
     }
-    if (s_hl_len) {
-        s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_HIGHLIGHT));
-    }
+    if (!vjo_header_recolor(s_header.text, graph::TextStyleAttribute_Color,
+                            s_hl_start, s_hl_len, s_hl_dirty, start, len,
+                            rgba(VJO_RGB_TEXT), rgba(VJO_RGB_HIGHLIGHT)))
+        return false;
     s_follow_frames = LAYOUT_RETRY_FRAMES;
+    return true;
+}
+
+static void update_header_highlight(void)
+{
+    s_highlight_retry_frames = header_highlight() ? 0 : LAYOUT_RETRY_FRAMES;
 }
 
 /* Scrolls the header just enough to show the highlighted word's whole line.
@@ -345,8 +351,9 @@ static void render(int new_content)
         }
         pane_reset(&s_header);
         s_hl_len = 0;
+        s_hl_dirty = false;
     }
-    header_highlight();
+    update_header_highlight();
     if (have_body)
         text_set(s_body.text, &body);
     pane_reset(&s_body);
@@ -495,6 +502,8 @@ static void open_page(void)
     s_mode = MODE_OVERLAY;
     s_selected = 0;
     s_hl_len = 0;
+    s_hl_dirty = false;
+    s_highlight_retry_frames = 0;
     s_n_entries = 0;
     s_header_has_text = 0;
     s_frames = s_moves = 0;
@@ -772,6 +781,11 @@ static void frame_body(unsigned version)
     if (version != s_seen_version) {
         s_seen_version = version;
         render(1);
+    } else if (s_highlight_retry_frames > 0) {
+        if (header_highlight())
+            s_highlight_retry_frames = 0;
+        else if (--s_highlight_retry_frames == 0)
+            vjo_log("header highlight update failed after layout retries");
     }
     if (s_follow_frames > 0 && (header_follow() || --s_follow_frames == 0))
         s_follow_frames = 0;
