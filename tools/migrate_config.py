@@ -6,7 +6,7 @@ file and applying key=value overrides.
 
 OLD may be missing (first install). Renamed settings are carried over, removed
 ones are dropped. Prints what changed (API keys only as set/empty). Exit
-status 0 = OUT should be uploaded, 1 = OLD is already identical.
+status 0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
 import os
 import re
@@ -81,4 +81,11 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        status = main()
+    except Exception as error:
+        # Exit 1 is reserved for an unchanged config. Do not print file contents
+        # or exception values: the existing config can contain API keys.
+        print("config.ini migration failed (" + type(error).__name__ + ")", file=sys.stderr)
+        status = 2
+    sys.exit(status)
