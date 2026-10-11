@@ -38,7 +38,7 @@ typedef struct {
     const VjoEntryList *list; /* NULL while recognizing / on error */
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
-    int local_cursor_mode;    /* local dictionary: navigate UTF-8 characters */
+    int local_cursor_mode;    /* local dictionary: select UTF-8 positions for point lookups */
     int japanese_only_selection; /* restrict local navigation to Han/kana */
     int highlight_mode;       /* whole matched word or selected source character */
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */

@@ -29,6 +29,7 @@
 
 #include "paf_ui.h"
 #include "header_highlight.h"
+#include "word_navigation.h"
 extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
@@ -100,6 +101,8 @@ static int s_local_cursor_mode, s_header_has_text;
 static int s_japanese_only_selection;
 static int s_highlight_mode;
 static uint32_t s_cursor_byte, s_text_generation;
+static uint32_t s_match_end; /* raw UTF-8 end of the current matched source word */
+static VjoWordNavigation s_word_navigation;
 
 /* logged when the overlay closes */
 static int64_t s_frame_max_us;
@@ -251,6 +254,9 @@ static void render(int new_content)
     vjo_view_lock();
     l = g_view.list;
     s_highlight_mode = g_view.highlight_mode;
+    if (s_highlight_mode != VJO_HIGHLIGHT_WORD)
+        s_word_navigation.count = 0;
+    s_match_end = 0;
     rebuild_header = new_content || !s_header_has_text;
     if (g_view.local_cursor_mode) {
         int new_text = !s_local_cursor_mode || s_text_generation != g_view.text_generation;
@@ -271,6 +277,7 @@ static void render(int new_content)
             s_cursor_text_len = n;
         }
         if (new_text || copy_text) {
+            s_word_navigation.count = 0;
             s_text_generation = g_view.text_generation;
             s_cursor_byte = (uint32_t)(g_view.japanese_only_selection
                 ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, g_view.cursor_byte, 0)
@@ -292,6 +299,10 @@ static void render(int new_content)
          * An in-flight or unsuccessful lookup falls back to the character. */
         if (!s_n_entries || !vjo_entry_header_range(l, 0, &s_rng_start[0], &s_rng_len[0]))
             s_rng_len[0] = 0;
+        if (s_n_entries && l->entries[0].hl_start == (int)s_cursor_byte &&
+            l->entries[0].hl_end > (int)s_cursor_byte &&
+            l->entries[0].hl_end <= (int)s_cursor_text_len)
+            s_match_end = (uint32_t)l->entries[0].hl_end;
     }
     s_list_seq = g_view.list_seq;
     if (s_selected >= s_n_entries)
@@ -340,7 +351,9 @@ static void render(int new_content)
     vjo_view_unlock();
 
     set_rich(s_hint, s_local_cursor_mode
-                        ? (s_japanese_only_selection
+                        ? (s_highlight_mode == VJO_HIGHLIGHT_WORD
+                            ? "<font color=\"#8a94a6\">Tap character / ◀ ▶ word · stick scroll · □ region · ○ close</font>"
+                            : s_japanese_only_selection
                             ? "<font color=\"#8a94a6\">Tap / ◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
                             : "<font color=\"#8a94a6\">Tap / ◀ ▶ character · stick scroll · □ region · ○ close</font>")
                         : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
@@ -601,6 +614,7 @@ static void input_header_touch(void)
                       s_japanese_only_selection, &byte)) return;
     if (byte == s_cursor_byte) return;
     s_cursor_byte = (uint32_t)byte;
+    s_word_navigation.count = 0; /* a tap starts a new navigation path */
     s_moves++;
     vjo_log("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
     vjo_post_cursor(s_cursor_byte, s_text_generation);
@@ -615,14 +629,14 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     int dy;
     if (s_local_cursor_mode) {
         uint32_t cursor = s_cursor_byte;
-        if (pressed & SCE_CTRL_RIGHT)
+        int direction = pressed & SCE_CTRL_LEFT ? -1 : pressed & SCE_CTRL_RIGHT ? 1 : 0;
+        if (direction && s_highlight_mode == VJO_HIGHLIGHT_WORD)
+            cursor = (uint32_t)vjo_word_cursor_step(s_word_navigation, s_cursor_text,
+                s_cursor_text_len, s_cursor_byte, s_match_end, direction, s_japanese_only_selection);
+        else if (direction)
             cursor = (uint32_t)(s_japanese_only_selection
-                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1)
-                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1));
-        if (pressed & SCE_CTRL_LEFT)
-            cursor = (uint32_t)(s_japanese_only_selection
-                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1)
-                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1));
+                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, direction)
+                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, direction));
         if (cursor != s_cursor_byte) {
             s_cursor_byte = cursor;
             s_moves++;

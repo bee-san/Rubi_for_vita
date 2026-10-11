@@ -338,7 +338,7 @@ static void draw_preferences(void)
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_WORD);
     badge(724, HIGHLIGHT_Y + 8, 196, 38, "Character",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
-    text(42, HIGHLIGHT_Y + 67, DIM, 24, "Word uses the dictionary match. Cursor moves by character.");
+    text(42, HIGHLIGHT_Y + 67, DIM, 24, "Word skips matched text. Character moves one character.");
     vita2d_disable_clipping();
     footer(preference_status, preference_error,
            "D-pad: choose   X: change   Left/Right: set   O: exit");

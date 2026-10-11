@@ -18,10 +18,12 @@ and broader game compatibility remain unmeasured; host crop results are separate
 See [OCR measurements and limits](docs/vita-vn-ocr.md) and
 [project lessons](docs/project-lessons.md).
 
-The v0.7.10 header explicitly refreshes its drawing when a character highlight
-expands to a dictionary match, with bounded retries if native text layout is
-not ready. The host regression tests cover this update sequence; the visual
-result on a physical Vita remains unverified. This release does not include
+The v0.7.10 release prepares the first local match during automatic OCR and
+reuses completed results when reopening unchanged dialogue. In Whole word
+mode, Right skips the matched source word and Left retraces recent selections.
+The header also explicitly refreshes its highlight, with bounded layout retries.
+Host tests cover these paths; the physical Vita result remains unverified.
+This release does not include
 the experimental local-dictionary memory reservation from
 [issue #42](https://github.com/bee-san/vita-jp-overlay/issues/42).
 
@@ -76,7 +78,7 @@ then reboot. Keep unrelated plugins and configuration intact.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| Left / Right | Move to the next Japanese character by default; local lookup shows one entry |
+| Left / Right | Skip matched words in Whole word mode; step one character in Character mode |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
@@ -85,9 +87,10 @@ then reboot. Keep unrelated plugins and configuration intact.
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
 recognition errors. Regions are saved per game. Automatic mode recognizes
-settled dialogue in the background without opening local dictionaries. Opening
-the overlay looks up the saved text at the selected character; character moves
-never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
+settled dialogue in the background and prepares its first local match in Whole
+word mode. A completed lookup appears immediately when opening unchanged
+dialogue. Character mode defers dictionary lookup until opening the overlay.
+Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. Cross and Triangle do not save or send Anki cards.
 
 ## Per-game settings
@@ -127,7 +130,10 @@ no character lookup or dictionary allocation.
 **Whole word** highlighting is the default. It highlights the actual dictionary
 match, including the original inflected text, when lookup finishes. **Character**
 highlights only the selected character. A pending or unsuccessful word lookup
-keeps the character highlighted. Both choices keep character navigation.
+keeps the character highlighted. In Whole word mode, Right advances past the
+matched source span and Left retraces up to 16 recent forward selections. With
+no match or previous selection, movement falls back to one character.
+Character mode always moves one character; Japanese-only applies to both modes.
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there; Japanese-only selection also applies to taps.
 [Touch selection details and validation](docs/touch-lookup.md).
