@@ -24,7 +24,7 @@ set(VJO_ROOT ${ROOT})
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.1")
+set(VJO_VERSION "0.7.2")
 
 
 # ---------------- kernel ----------------

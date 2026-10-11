@@ -50,10 +50,12 @@ HOST=${1:?usage: tools/install_ftp.sh [--set key=value]... [--uninstall|--status
 FTP=ftp://$HOST
 B=build/vita
 RCO=$B/vitajpoverlay.rco
+CONFIG_TEMPLATE=docs/config.example.ini
 if [ -n "$PACKAGE_DIR" ]; then
   python3 tools/package_release.py --verify "$PACKAGE_DIR"
   B=$PACKAGE_DIR/ur0/tai
   RCO=$PACKAGE_DIR/ur0/data/VitaJPOverlay/vitajpoverlay.rco
+  CONFIG_TEMPLATE=$PACKAGE_DIR/config.ini
   for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
@@ -194,6 +196,9 @@ PY
   exit 0
 fi
 
+if [ ! -f "$CONFIG_TEMPLATE" ]; then
+  echo "missing configuration template: $CONFIG_TEMPLATE"; exit 1
+fi
 for f in "$B/VitaJPOverlay_Kernel.skprx" "$B/VitaJPOverlay_Shell.suprx" "$B/VitaJPOverlay_OCR.suprx" "$RCO" \
          ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   [ -f "$f" ] || { echo "missing $f: run cmake --build build/vita first"; exit 1; }
@@ -233,7 +238,7 @@ for f in ${VOCR_MODELS[@]+"${VOCR_MODELS[@]}"}; do
   echo "uploaded ux0:data/VitaJPOverlay/ocr/$(basename "$f")"
 done
 
-# config.ini: rebuilt from docs/config.example.ini with the values of the
+# config.ini: rebuilt from the source or package template with the values of the
 # existing file (renamed/removed settings migrated), then any --set values.
 # API keys are never printed.
 INI=ux0:/data/VitaJPOverlay/config.ini
@@ -241,10 +246,15 @@ if exists "$INI"; then
   get "$INI" "$TMP/config.old"
   cp "$TMP/config.old" "$BK/config.ini"
 fi
-if python3 tools/migrate_config.py "$TMP/config.old" docs/config.example.ini "$TMP/config.ini" ${SETS[@]+"${SETS[@]}"}; then
+if python3 tools/migrate_config.py "$TMP/config.old" "$CONFIG_TEMPLATE" "$TMP/config.ini" ${SETS[@]+"${SETS[@]}"}; then
   put "$TMP/config.ini" "$INI"
   [ -f "$TMP/config.old" ] && echo "config.ini updated (previous copy in $BK)" || echo "config.ini created"
 else
+  migration_status=$?
+  if [ "$migration_status" -ne 1 ]; then
+    echo "config.ini migration failed; plugin configuration was not activated"
+    exit "$migration_status"
+  fi
   echo "config.ini is up to date"
 fi
 for CFG in "${CFGS[@]}"; do put "$TMP/${CFG%%:*}.new" "$CFG"; done

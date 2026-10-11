@@ -20,14 +20,15 @@ class ReleaseInstall(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.package = self.root / "package"
         self.device = self.root / "device"
-        for folder in ("tools", "docs", "ur0/tai", "ur0/data/VitaJPOverlay",
+        for folder in ("tools", "ur0/tai", "ur0/data/VitaJPOverlay",
                        "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries"):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
         for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py",
                      "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
-        shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
+        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
+            shutil.copyfile(ROOT / "docs/config.example.ini", self.package / name)
         for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
                      "ur0/tai/VitaJPOverlay_OCR.suprx",
@@ -75,16 +76,18 @@ elif '-o' in a:
         self.listener.listen(10)
         self.addCleanup(self.listener.close)
 
-    def install(self):
-        return subprocess.run(["bash", str(self.package / "install-vita.sh"),
+    def install(self, script="install-vita.sh"):
+        return subprocess.run(["bash", str(self.package / script),
                                "127.0.0.1:" + str(self.listener.getsockname()[1])],
                               env=self.environment, capture_output=True, text=True, timeout=30)
 
     def test_update_is_verified_idempotent_and_preserves_unrelated_state(self):
+        self.assertFalse((self.package / "docs/config.example.ini").exists())
         for _ in range(2):
             result = self.install()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn("test-key", result.stdout)
+            self.assertNotIn("migration failed", result.stdout + result.stderr)
         for partition in ("ur0", "ux0"):
             tai = (self.device / partition / "tai/config.txt").read_bytes()
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Kernel.skprx"), 1)
@@ -105,6 +108,52 @@ elif '-o' in a:
         for name in ("dictionaries/jmdict.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
+
+    def test_source_install_uses_the_checkout_template(self):
+        # A source checkout has its template under docs, not at the package root.
+        (self.package / "config.ini").unlink()
+        (self.package / "docs").mkdir()
+        shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
+        build = self.package / "build/vita"
+        build.mkdir(parents=True)
+        for plugin in (self.package / "ur0/tai").iterdir():
+            shutil.copyfile(plugin, build / plugin.name)
+        shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco",
+                        build / "vitajpoverlay.rco")
+        result = self.install("tools/install_ftp.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = (self.data / "config.ini").read_text()
+        for setting in ("ocr_backend = lens", "vocr_model = FL10_w8.vocr", "font_size_ja = 24"):
+            self.assertIn(setting, config)
+        self.assertNotIn("test-key", result.stdout)
+
+    def test_missing_source_template_stops_before_uploading_plugins(self):
+        result = self.install("tools/install_ftp.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing configuration template", result.stdout + result.stderr)
+        self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists())
+        self.assertEqual((self.device / "ur0/tai/config.txt").read_bytes(), self.original_tai)
+        self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
+
+    def test_migration_error_stops_before_publishing_configuration(self):
+        template = self.package / "config.ini"
+        template.write_bytes(b"invalid utf-8: \xff")
+        # A checksum-valid package can still contain a template migration cannot read.
+        manifest_path = self.package / "package-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["files"]["config.ini"] = {
+            "bytes": template.stat().st_size,
+            "sha256": hashlib.sha256(template.read_bytes()).hexdigest(),
+        }
+        manifest_path.write_text(json.dumps(manifest))
+        result = self.install()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("config.ini migration failed", result.stdout + result.stderr)
+        self.assertNotIn("config.ini is up to date", result.stdout)
+        self.assertNotIn("test-key", result.stdout + result.stderr)
+        for partition in ("ur0", "ux0"):
+            self.assertEqual((self.device / partition / "tai/config.txt").read_bytes(), self.original_tai)
+        self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
 
     def test_bad_readback_stops_before_publishing_configuration(self):
         self.environment["CORRUPT_READBACK"] = "ux0/data/VitaJPOverlay/dictionaries/jmdict.vjdict"
