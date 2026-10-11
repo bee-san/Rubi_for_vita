@@ -22,6 +22,10 @@ HOOKS = {
     "vjoTextReference": 0x2B6DDFAB,
     "vjoTextRead": 0x834C749E,
 }
+GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrReadRaw",
+                  "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel")
+GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
+        for name in GAME_FUNCTIONS}
 WEAK_STUB = (0xE3E00000, 0xE12FFF1E, 0xE1A00000, 0)
 # Sysmem's ForKernel library was renumbered in 3.63. A direct strong import
 # makes an otherwise valid plugin fail before module_start on the other ABI.
@@ -167,7 +171,7 @@ class SelfFile:
             offset += size
 
 
-def audit(kernel, shell, require_hooks=False):
+def audit(kernel, shell, require_hooks=False, worker=None):
     require(kernel.name == "VitaJPOverlay_Kernel", "Wrong kernel module name")
     require(shell.name == "VitaJPOverlay_Shell", "Wrong shell module name")
     kernel.check_firmware_imports()
@@ -194,6 +198,22 @@ def audit(kernel, shell, require_hooks=False):
         words = unpack("<4I", shell.read(segment, offset, 16), 0)
         require(words == WEAK_STUB,
                 f"Unexpected unbound weak stub for syscall 0x{nid:08x}")
+    if worker:
+        require(worker.name == "VitaJPOverlay_OCR", "Wrong game worker module name")
+        worker_version, worker_attributes, worker_imports = worker.library(False)
+        require(worker_version == version and worker_attributes == 8, "Worker must use matching weak custom imports")
+        for name, nid in GAME.items():
+            require(nid in exports, f"Kernel does not export {name}")
+            owner = imports if name in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel") else worker_imports
+            require(nid in owner, f"Missing role-specific import {name}")
+        shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell")
+        for name in shell_only:
+            nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
+            require(nid not in worker_imports, f"Worker imports Shell-only syscall {name}")
+        for nid, (segment, offset) in worker_imports.items():
+            require(nid in exports, f"Worker imports missing syscall 0x{nid:08x}")
+            require(worker.segments[segment][2] & 1 and offset % 4 == 0, "Bad worker import location")
+            require(unpack("<4I", worker.read(segment, offset, 16), 0) == WEAK_STUB, "Bad worker weak stub")
     return {
         "result": "pass",
         "scope": "packaged metadata and relocations; runtime binding and boot unverified",
@@ -202,6 +222,8 @@ def audit(kernel, shell, require_hooks=False):
         "kernel_exports": len(exports),
         "shell_imports": len(imports),
         "hooks_required": require_hooks,
+        "worker_imports": len(worker_imports) if worker else 0,
+        "worker_sha256": worker.sha256 if worker else None,
         "kernel_sha256": kernel.sha256,
         "shell_sha256": shell.sha256,
     }
@@ -211,10 +233,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", required=True, type=Path)
     parser.add_argument("--shell", required=True, type=Path)
+    parser.add_argument("--worker", type=Path)
     parser.add_argument("--require-hooks", action="store_true")
     args = parser.parse_args()
     try:
-        report = audit(SelfFile(args.kernel), SelfFile(args.shell), args.require_hooks)
+        report = audit(SelfFile(args.kernel), SelfFile(args.shell), args.require_hooks,
+                       SelfFile(args.worker) if args.worker else None)
     except (InvalidABI, OSError, UnicodeError, zlib.error) as error:
         parser.exit(1, f"Syscall ABI verification failed: {error}\n")
     json.dump(report, sys.stdout, indent=2)

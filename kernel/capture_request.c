@@ -1,11 +1,13 @@
 /* Shared capture request path: OCR/calibration and optional Anki screenshots. */
 #include "vjo_kernel.h"
+#include "game_ocr.h"
 
 int capture_request(uint32_t flags)
 {
     int ret;
     uint32_t fw, fh, x, y, w, h;
     VJO_LOCK();
+    if (game_ocr_capture_busy_locked()) { ret = VJO_ERR_BUSY; goto out; }
     if (flags == VJO_CAPTURE_DISCARD) {
         /* A copying display hook still owns its buffer. JPEG discard is used
          * only after completion; never free a pending or multi-pass image. */
@@ -35,6 +37,8 @@ int capture_request(uint32_t flags)
             ret = VJO_ERR_NO_MEMORY;
             goto out;
         }
+        g.capture_game_pid = g.game_pid;
+        g.capture_epoch = __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE);
         g.capture_x = x;
         g.capture_y = y;
         g.capture_fb_w = fw;

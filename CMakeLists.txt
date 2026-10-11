@@ -23,7 +23,7 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c)
+  core/games.c core/sfo.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -171,3 +171,23 @@ target_include_directories(vjo-game-input-tests PRIVATE third_party/acutest/incl
 target_link_libraries(vjo-game-input-tests vjo_host)
 target_compile_options(vjo-game-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME game_input COMMAND vjo-game-input-tests)
+
+# Real role-restricted job transport; no simulated inference/accuracy claims.
+add_executable(vjo-kernel-game-ocr-tests host/tests/test_kernel_game_ocr.c kernel/scene.c)
+target_include_directories(vjo-kernel-game-ocr-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-game-ocr-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-game-ocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_game_ocr COMMAND vjo-kernel-game-ocr-tests)
+add_executable(vjo-game-ocr-client-tests host/tests/test_game_ocr_client.c)
+target_include_directories(vjo-game-ocr-client-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-game-ocr-client-tests vjo_host)
+add_test(NAME game_ocr_client COMMAND vjo-game-ocr-client-tests)
+
+if(VJO_WITH_VOCR)
+  add_executable(vjo-game-vocr-tests host/tests/test_game_vocr.c)
+  target_include_directories(vjo-game-vocr-tests PRIVATE third_party/acutest/include host/tests/game_stubs)
+  target_compile_options(vjo-game-vocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_link_libraries(vjo-game-vocr-tests vjo_vocr)
+  add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
+endif()

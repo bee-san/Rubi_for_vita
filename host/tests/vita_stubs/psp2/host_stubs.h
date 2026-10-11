@@ -19,6 +19,7 @@ typedef unsigned int SceSize;
 #define sceClibStrcmp strcmp
 #define sceClibStrncmp strncmp
 uint64_t sceKernelGetProcessTimeWide(void);
+int sceKernelDelayThread(unsigned us);
 static inline int sceKernelPowerTick(int type) { return 0; }
 int sceKernelSetEventFlag(SceUID uid, unsigned int bits);
 static inline int sceKernelLockMutex(SceUID uid, int count, void *timeout) { return 0; }

@@ -24,7 +24,7 @@ set(VJO_ROOT ${ROOT})
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.0")
+set(VJO_VERSION "0.7.1")
 
 
 # ---------------- kernel ----------------
@@ -34,6 +34,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/buffers.c
   ${ROOT}/kernel/capture.c
   ${ROOT}/kernel/capture_request.c
+  ${ROOT}/kernel/game_ocr.c
   ${ROOT}/kernel/display.c
   ${ROOT}/kernel/input.c
   ${ROOT}/kernel/lifecycle.c
@@ -96,7 +97,7 @@ endif()
 if(VJO_WITH_VOCR)
   include(${ROOT}/cmake/VocrOCR.cmake)
   target_compile_definitions(vjo_core_vita PUBLIC VJO_WITH_VOCR=1)
-  target_link_libraries(vjo_vocr PUBLIC vjo_core_vita)
+  target_include_directories(vjo_vocr PUBLIC ${ROOT}/core ${ROOT}/include ${ROOT}/third_party/bearssl/inc)
 endif()
 
 add_executable(VitaJPOverlay_Shell
@@ -107,6 +108,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/strip.cpp
   ${ROOT}/shell/worker.c
   ${ROOT}/shell/capture.c
+  ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/shell/platform_vita.c
@@ -123,9 +125,8 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/log_vita.c
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()
-if(VJO_WITH_VOCR)
-  target_link_libraries(VitaJPOverlay_Shell vjo_vocr)
-endif()
+# The Shell imports only the bounded job transport. No vocr inference is linked here.
+
 target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-parameter -fno-builtin -fshort-wchar
   "$<$<COMPILE_LANGUAGE:CXX>:-fno-rtti;-fno-exceptions;-Wno-sign-compare;-Wno-unused-function>"
   "-D__declspec(x)=")
@@ -162,6 +163,30 @@ add_custom_target(vjo_syscall_abi ALL
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self
   COMMENT "Checking packaged syscall ABI and firmware-independent kernel imports")
 
+# ---------------- game-process vocr worker ----------------
+if(VJO_WITH_VOCR)
+  add_executable(VitaJPOverlay_OCR
+    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/shell/libc_shim.c)
+  add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
+    -ffunction-sections -fdata-sections)
+  target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
+    -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
+  target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
+  target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
+    SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak
+    SceIofilemgr_stub SceAppMgr_stub_weak gcc)
+  set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
+  set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
+  vita_create_self(VitaJPOverlay_OCR.suprx VitaJPOverlay_OCR UNSAFE CONFIG ${ROOT}/game_ocr/exports.yml)
+  add_custom_target(vjo_game_syscall_abi ALL
+    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_vita_syscall_abi.py
+      --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
+      --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
+      --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
+    DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self)
+endif()
+
 # ---------------- RCO ----------------
 find_program(PSP2CXML psp2cxml-tool HINTS ${ROOT}/.refs/toolchain/psp2cxml-tool/mbuild ${ROOT}/.refs/psp2cxml-tool/mbuild ENV PATH REQUIRED)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco
@@ -194,6 +219,13 @@ vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
        ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml)
 
 # ---------------- release zip ----------------
+set(VJO_WORKER_RELEASE_COPY)
+set(VJO_WORKER_RELEASE_DEPS)
+if(VJO_WITH_VOCR)
+  set(VJO_WORKER_RELEASE_COPY COMMAND ${CMAKE_COMMAND} -E copy
+    ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx ${CMAKE_CURRENT_BINARY_DIR}/release/ur0/tai/)
+  set(VJO_WORKER_RELEASE_DEPS VitaJPOverlay_OCR.suprx-self vjo_game_syscall_abi)
+endif()
 # config.ini sits at the zip's top level (the user edits it and copies it to
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites
 # the user's API key.
@@ -203,6 +235,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ur0/tai ${STAGE}/ur0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx ${STAGE}/ur0/tai/
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${STAGE}/ur0/tai/
+  ${VJO_WORKER_RELEASE_COPY}
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco ${STAGE}/ur0/data/VitaJPOverlay/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
@@ -214,5 +247,5 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self vjo_rco vjo_syscall_abi JPOverlaySettings.vpk-vpk
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi JPOverlaySettings.vpk-vpk
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")
