@@ -23,7 +23,8 @@ HOOKS = {
     "vjoTextRead": 0x834C749E,
 }
 GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrReadRaw",
-                  "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel")
+                  "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel",
+                  "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose")
 GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
         for name in GAME_FUNCTIONS}
 WEAK_STUB = (0xE3E00000, 0xE12FFF1E, 0xE1A00000, 0)

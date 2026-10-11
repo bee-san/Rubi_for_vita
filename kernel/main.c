@@ -164,10 +164,11 @@ static int worker(SceSize args, void *argp)
     while (worker_run) {
         unsigned int bits = 0;
         SceUInt timeout = POLL_US;
-        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_CAPTURED | IEV_ACTIVATE | IEV_QUIT,
+        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_CAPTURED | IEV_ACTIVATE | IEV_MODEL | IEV_QUIT,
                                 SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
         if (bits & IEV_QUIT)
             break;
+        game_ocr_model_tick();
         if (bits & IEV_CAPTURED)
             finish_capture();
         if (bits & IEV_GAME_EXIT) {

@@ -138,6 +138,16 @@ reads its final row. The worker frees its model/workspace before returning text.
 It leaves a 4 MiB free USER memory reserve before allocating; allocation can
 still fail because the game or system uses memory concurrently.
 
+Model files are opened by the existing kernel worker because some games cannot
+access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
+only the three pinned vocr model names in `ux0:data/VitaJPOverlay/ocr`, checks
+their lengths, and copies at most 8 KiB per request into game-owned memory.
+The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB
+staging buffer, no complete model, and no saved game pointers. Cancellation or
+process exit drains any file operation before the next job can reuse its slot.
+Install all three API 12 plugins together and reboot; older plugin versions
+cannot use this transport.
+
 The `*main` plugin handles UI and disk-backed dictionary lookup with two
 128 KiB result arenas and no TLS pool for local jobs. Its Paf fallback preserves
 a 1.5 MiB UI reserve. Failed joins/frees keep ownership for a safe stop retry.
@@ -185,6 +195,9 @@ deinflection, kernel/input ownership, per-game policies, and the actual Shell
 worker with platform stubs. It checks cancelled jobs, denied input blocking,
 OOM recovery, failed joins, 50 local OCR/lookup lifetimes, 100 game-worker
 allocation/free cycles, bounded model reads and stale-job isolation. Real
+model tests also run the actual game worker through the actual kernel broker
+with FL10/H15, unavailable game storage, short reads, corrupt weights and
+failed cleanup. Timeout and ownership tests run without release weights. Real
 accuracy is measured separately against vita-vn-ocr's hand-checked shared
 `eval/` screenshots. Experimental Meiki and text-extraction branches remain
 separate from this release.

@@ -1,4 +1,8 @@
 #include <psp2kern/host_stubs.h>
+#ifdef VJO_TEST_MODEL_BROKER
+typedef struct { size_t size; SceUID modid; } tai_module_info_t;
+int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
+#endif
 #if defined(VJO_TEST_INPUT_HOOKS) && !defined(VJO_TEST_TAIHEN_H)
 #define VJO_TEST_TAIHEN_H
 typedef uintptr_t tai_hook_ref_t;

@@ -6,7 +6,7 @@ recognizer made for visual-novel dialogue, and its line finder, both plain C99
 with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
 and no cloud fallback. With `dictionary = local` the whole lookup is offline.
 
-**Status: default in v0.7.1; physical Vita validation is still pending.** It builds with VitaSDK and
+**Status: default in v0.7.2; physical recognition validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
@@ -22,8 +22,10 @@ measured on a PC. On-console memory, speed and stability are what the
    finder it reads dark text on light boxes, outlined text and coloured names,
    and never rejects a region. A region with no line ends here: the weights
    file is not read.
-3. The weights file is read from `ocr_model_dir`, its size and SHA-256 are
-   checked against the pinned release asset, and the runtime validates it.
+3. The existing kernel worker opens the pinned model from
+   `ux0:data/VitaJPOverlay/ocr` and stages at most 8 KiB per read. The game
+   copies those chunks into its workspace, checks size and SHA-256 against
+   the pinned release asset, and validates the runtime model.
 4. Each line is recognized (int8 weights, int32 sums, NEON); lines of dark
    text are inverted first, as the model was trained.
 5. The workspace is freed before the dictionary lookup and before anything is
@@ -60,13 +62,29 @@ A 333 MiB game allocation mode is not enabled or required by this release.
 Rows travel through a role-restricted kernel syscall tied to the job's game,
 capture sequence and foreground generation. A cancelled/suspended worker
 cannot read a newer capture or publish old results. Model reads finish short
-reads in at most 8 KiB calls and check cancellation between calls. The log
+reads in at most 8 KiB calls and check cancellation between calls. The kernel
+allows only FL10, H15 or F20 under the exact directory above, with their pinned
+file lengths; it does not accept a caller-supplied file path. Each async Open,
+Read or Close is tied to the claimed job's PID and sequence. Reads also require
+the current foreground epoch, and completion copies use the current syscall's
+destination pointer. No pointer is retained across a file operation. Close
+remains available after cancellation or Shell restart, and process exit makes
+the kernel close an orphaned descriptor itself. A timeout or failed Close
+retains ownership until cleanup succeeds; a new job cannot replace it.
+The existing kernel worker performs file I/O outside the shared lock, with one
+static 8 KiB buffer and no additional thread or full-model allocation. The log
 records the game worker's OCR timings, workspace, I/O error and cleanup status.
 The model and workspace are freed before results return to the Shell, which
 uses two 128 KiB result arenas and no Lens connection pool for local jobs.
 
-These bounds and the host tests do not establish real Vita memory availability,
-I/O permissions, speed or stability. A physical in-game run remains required.
+Physical logs from the previous direct game-file implementation show
+`rc=-115`, one found line and `io=0x80010013` (ENODEV): the game did not expose
+the installed `ux0:` model file. The kernel broker addresses that process
+namespace boundary. The host integration reproduces the unavailable game
+namespace and exercises both pinned models through the actual broker and
+worker, with injected short reads, corruption, cancellation and failed Close.
+These tests and bounds do not establish real Vita memory availability, speed
+or stability. A physical in-game recognition remains required.
 
 ## Models
 
@@ -98,7 +116,7 @@ needs access to it):
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
 
-# Vita plugins and release zip (VitaJPOverlay-0.7.1.zip)
+# Vita plugins and release zip (VitaJPOverlay-0.7.2.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/vita --target release
 
@@ -117,7 +135,7 @@ then reports that the backend is missing instead of uploading anything.
 
 ## Install
 
-The complete v0.7.1 ZIP already includes both int8 models and the local
+The complete v0.7.2 ZIP already includes both int8 models and the local
 configuration; use its `install-vita.sh` as described in the README. The
 steps below cover a source build or adding another model.
 
@@ -211,7 +229,8 @@ copied, and the settings above. Close other apps first.
 5. **Errors.** For memory errors, select FL10 and a tighter dialogue region.
    For an unavailable worker, check its `*ALL` registration and restart the
    game. A model error with nonzero `io=` identifies game-process file access
-   or a read failure; check the installed model against the package manifest.
+   or a kernel read failure; check the installed model against the package manifest.
+   Install all three API 12 plugins together and reboot before testing.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load` and
    `recognize` ms. The estimate for H15 is 166-302 ms per 640-px line at
    444 MHz and about 1.33× that at the default 333 MHz.

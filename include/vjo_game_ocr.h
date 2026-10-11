@@ -8,6 +8,7 @@
 #define VJO_GAME_OCR_MODEL_DIR_BYTES 256u
 #define VJO_GAME_OCR_TEXT_BYTES 4096u
 #define VJO_GAME_OCR_MODEL_BYTES 32u
+#define VJO_GAME_OCR_MODEL_CHUNK 8192u
 
 typedef struct {
     uint32_t size;
@@ -39,6 +40,13 @@ int vjoOcrComplete(const VjoGameOcrResult *result); /* Worker: publish or drain.
 int vjoOcrSubmit(const VjoGameOcrRequest *request); /* Shell: sequence >0. */
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out); /* Shell: 0 done, 1 pending. */
 int vjoOcrCancel(uint32_t seq); /* Signals cancellation; worker must acknowledge cleanup. */
+/* Model-only broker: VJO_ERR_BUSY means queued/in flight; repeat the exact
+ * operation after yielding. Open returns the verified file length. Read returns
+ * copied bytes (possibly short or EOF). Close drains even a cancelled job.
+ * The kernel never stores a user pointer, accepts paths, or exports a file FD. */
+int vjoOcrModelOpen(uint32_t seq);
+int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t bytes, void *dst);
+int vjoOcrModelClose(uint32_t seq);
 #ifdef __cplusplus
 }
 #endif
