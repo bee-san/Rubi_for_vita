@@ -70,19 +70,19 @@ static const struct {
 void vjo_config_defaults(VjoConfig *c)
 {
     memset(c, 0, sizeof(*c));
-    c->dictionary = VJO_DICT_HACHIDORI;
+    c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
-    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "main.vjdict");
+    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "jmdict.vjdict");
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->font_size_ja = 18;
     c->font_size_en = 14;
     c->toggle_button = VJO_TRIGGER_L_R;
     c->subtitle_button = VJO_TRIGGER_SELECT_R;
     c->ocr_mode = VJO_OCR_AUTO;
-    c->ocr_backend = VJO_OCR_LENS;
+    c->ocr_backend = VJO_OCR_VOCR;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
-    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "H15_w8.vocr");
+    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "FL10_w8.vocr");
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
     vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
     vjo_snprintf(c->anki_tags, sizeof(c->anki_tags), "vita-jp-overlay");
@@ -95,7 +95,7 @@ const char *vjo_config_default_text(void)
     return "; Vita JP Overlay settings. Changes apply the next time the overlay opens.\n"
            "\n"
            "; Dictionary used for word lookups: hachidori | local | jpdb | jiten\n"
-           "dictionary = hachidori\n"
+           "dictionary = local\n"
            "\n"
            "; Hachidori relay computer: host[:port], default port 19633 (no API key)\n"
            "; Plain HTTP: use only on a trusted LAN. Anki and a sharing Hachidori host\n"
@@ -105,7 +105,7 @@ const char *vjo_config_default_text(void)
            "; Local Yomitan dictionaries: convert on a computer, then copy .vjdict files here.\n"
            "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
-           "local_dictionaries = main.vjdict\n"
+           "local_dictionaries = jmdict.vjdict\n"
            "\n"
            "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings -> API key\n"
            "jpdb_api_key =\n"
@@ -137,11 +137,11 @@ const char *vjo_config_default_text(void)
            "; OCR: lens (online) | vocr (on the Vita: vita-vn-ocr, needs a build with it\n"
            "; and its model file; see docs/vita-vn-ocr.md) | ncnn (PP-OCRv5, host tests only)\n"
            "; Local OCR never falls back to uploading the screen.\n"
-           "ocr_backend = lens\n"
+           "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
-           "; vocr weights in ocr_model_dir: H15_w8.vocr (recommended) | FL10_w8.vocr (smaller)\n"
+           "; vocr weights in ocr_model_dir: FL10_w8.vocr (small default) | H15_w8.vocr (more accurate)\n"
            "; | F20_w8.vocr (larger)\n"
-           "vocr_model = H15_w8.vocr\n"
+           "vocr_model = FL10_w8.vocr\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -153,29 +153,7 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 256 KB + one rotated file): on | off\n"
            "log_file = off\n"
            "\n"
-           "; ---- Anki (optional, see README) ----\n"
-           "; × saves a card offline; △ sends the saved queue to AnkiConnect on a computer.\n"
-           "\n"
-           "; The computer running Anki: empty = queue only, auto = search when syncing,\n"
-           "; or its IP address (optionally with :port, default 8765)\n"
-           "anki_host =\n"
-           "\n"
-           "; Deck (created if missing), note type, and tags separated by spaces\n"
-           "anki_deck = Default\n"
-           "anki_note_type = Lapis\n"
-           "anki_tags = vita-jp-overlay\n"
-           "\n"
-           "anki_field_word = Expression\n"
-           "anki_field_reading = ExpressionReading\n"
-           "anki_field_furigana = ExpressionFurigana\n"
-           "anki_field_definition = MainDefinition\n"
-           "anki_field_sentence = Sentence\n"
-           "anki_field_picture = Picture\n"
-           "anki_field_frequency = FreqSort\n"
-           "anki_field_audio = ExpressionAudio\n"
-           "\n"
-           "; Word audio (looked up on sync): Yomitan URL with {term} and {reading} (empty = off)\n"
-           "anki_audio_url =\n";
+           "; Anki is disabled in this release; no offline queue is created.\n";
 }
 
 /* host[:port], the n bytes at s: a name or IP address, and a port

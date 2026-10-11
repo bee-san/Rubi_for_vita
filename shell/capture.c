@@ -10,7 +10,7 @@
 
 #define CAPTURE_TIMEOUT_US 3000000
 
-static SceUID capture_lock = -1; /* the kernel's one raw buffer: OCR job vs Anki screenshot */
+static SceUID capture_lock = -1; /* serialize readers of the kernel's raw buffer */
 
 static int64_t now_us(void)
 {

@@ -29,14 +29,14 @@ class TaiConfigTests(unittest.TestCase):
 
     def test_existing_global_registration_is_disabled(self):
         result = patch(("*ALL\n" + TEXT + "\n").encode())
-        self.assertIn(("# Lens-only: " + TEXT).encode(), result)
+        self.assertIn(("# Mainline OCR: " + TEXT).encode(), result)
         self.assertEqual(result.count(TEXT.encode()), 1)
 
     def test_repeated_sections_preserve_existing_registrations(self):
         raw = ("*KERNEL\nur0:tai/Other.skprx\n*main\nur0:tai/Other.suprx\n"
                "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n"
                "*PCSG00415\n" + OCR + "\n").encode()
-        expected = raw.replace((OCR + "\n").encode(), ("# Lens-only: " + OCR + "\n").encode())
+        expected = raw.replace((OCR + "\n").encode(), ("# Mainline OCR: " + OCR + "\n").encode())
         self.assertEqual(patch(raw), expected)
         self.assertEqual(patch(expected), expected)
 

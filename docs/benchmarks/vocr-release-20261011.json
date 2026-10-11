@@ -1,0 +1,91 @@
+{
+  "backends": [
+    "vocr:FL10_w8.vocr",
+    "vocr:H15_w8.vocr"
+  ],
+  "sets": {
+    "vita-test": {
+      "vocr:FL10_w8.vocr": {
+        "regions": 84,
+        "refused": 0,
+        "failed": 0,
+        "concat_cer": 0.08659,
+        "concat_errors": 217,
+        "concat_chars": 2506,
+        "lines_read": 207,
+        "workspace_peak_max": 914000,
+        "workspace_peak_median": 837056,
+        "rss_max": 4186112,
+        "rss_median": 3807232,
+        "ms_median": 40.2
+      },
+      "vocr:H15_w8.vocr": {
+        "regions": 84,
+        "refused": 0,
+        "failed": 0,
+        "concat_cer": 0.06784,
+        "concat_errors": 170,
+        "concat_chars": 2506,
+        "lines_read": 207,
+        "workspace_peak_max": 1470416,
+        "workspace_peak_median": 1393472,
+        "rss_max": 4763648,
+        "rss_median": 4360192,
+        "ms_median": 62.7
+      }
+    },
+    "psp-test": {
+      "vocr:FL10_w8.vocr": {
+        "regions": 93,
+        "refused": 0,
+        "failed": 0,
+        "concat_cer": 0.17649,
+        "concat_errors": 443,
+        "concat_chars": 2510,
+        "lines_read": 233,
+        "workspace_peak_max": 827216,
+        "workspace_peak_median": 805440,
+        "rss_max": 3788800,
+        "rss_median": 3633152,
+        "ms_median": 31.2
+      },
+      "vocr:H15_w8.vocr": {
+        "regions": 93,
+        "refused": 0,
+        "failed": 0,
+        "concat_cer": 0.14701,
+        "concat_errors": 369,
+        "concat_chars": 2510,
+        "lines_read": 233,
+        "workspace_peak_max": 1383632,
+        "workspace_peak_median": 1361856,
+        "rss_max": 4321280,
+        "rss_median": 4198400,
+        "ms_median": 52.5
+      }
+    }
+  },
+  "environment": {
+    "date": "2026-10-11",
+    "platform": "Linux-7.2.6-1-cachyos-x86_64-with-glibc2.44",
+    "compiler": "cc (GCC) 16.2.1 20260810",
+    "python": "3.14.7",
+    "kind": "host; not measured on Vita"
+  },
+  "command": "python3 tools/benchmark_local_ocr.py --vjo-ocr build/host/vjo-ocr --vocr-repo ../ps-vita-ocr --eval-data ../ps-vita-ocr/data/eval --run vocr=ocr:FL10_w8.vocr --run vocr=ocr:H15_w8.vocr --out results.json",
+  "data": "shared eval hand-checked vita-test (84 regions) and psp-test (93 regions), excluded from training/calibration; one fresh process per region/model",
+  "jmdict_smoke": {
+    "text": "昨日は学校で日本語を勉強しました。猫を見た。",
+    "command": "build/host/vjo-local-bench DATA jmdict.vjdict '昨日は学校で日本語を勉強しました。猫を見た。' 10",
+    "samples": 10,
+    "lookup_us_min": 272.583,
+    "lookup_us_median": 298.82,
+    "lookup_us_max": 667.324,
+    "arena_peak": 111072,
+    "entries": 28,
+    "read_calls": 177,
+    "digest": "79afe00f35be2197",
+    "stable_across_samples": true,
+    "dictionary_sha256": "11c9af9b6d1cc4607bce1018d88ed716a0ab89f7ae45c86cc746082b7e6639b0"
+  }
+}

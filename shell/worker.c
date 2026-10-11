@@ -5,6 +5,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 
 #include "../core/regions.h"
 #ifdef VJO_WITH_VOCR
@@ -17,6 +18,7 @@
  * dictionary) in one memblock allocated while a game runs, plus a small
  * static scratch arena (control thread only) for config/region/messages. */
 #define RESULT_ARENA_SIZE (256 * 1024)
+#define LOCAL_RESULT_ARENA_SIZE (128 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 #define POOL_SLOTS        2 /* Lens and the dictionary */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
@@ -43,13 +45,13 @@ VjoView g_view;
 static SceUID view_lock = -1;
 static SceUID cmd_lock = -1;
 static SceUID ctl_thread = -1, net_thread = -1;
-static int threads_started;
-static int anki_started; /* optional: the overlay runs without it */
+static int threads_started; /* bits: network=1, control=2 */
 static SceUID net_evf = -1;
 static volatile int running = 1;
 
 static SceUID mem_uid = -1;
 static void *mem_heap; /* bounded allocation from ScePaf's existing heap */
+static int mem_local;
 static VjoArena results[2];
 static VjoArena scratch; /* static; control thread only */
 static uint8_t scratch_mem[SCRATCH_SIZE];
@@ -177,29 +179,41 @@ static int shows_screen(uint32_t scene, uint32_t seq, const VjoState *st)
 
 /* ---------------- memory ---------------- */
 
+static void mem_free(void);
+
 static int has_result_memory(void)
 {
     return mem_heap != NULL || mem_uid >= 0;
 }
 
-static int mem_alloc(void)
+static int local_pipeline(const VjoConfig *c)
+{
+    return c->ocr_backend == VJO_OCR_VOCR && c->dictionary == VJO_DICT_LOCAL;
+}
+
+static int mem_alloc_for(const VjoConfig *c)
 {
     void *base = NULL;
     uint8_t *p;
+    int local = local_pipeline(c);
+    size_t arena_size = local ? LOCAL_RESULT_ARENA_SIZE : RESULT_ARENA_SIZE;
+    size_t bytes = local ? 2 * arena_size : MEM_SIZE;
+    if (has_result_memory() && mem_local != local)
+        mem_free();
     if (has_result_memory())
         return 0;
 #ifdef VJO_PAF_ALLOC
     /* Games can exhaust USER while SceShell still has reserved heap pages.
      * Both result arenas and kept TLS sessions have one bounded owner. */
-    mem_heap = vjo_shell_heap_alloc(MEM_SIZE);
+    mem_heap = vjo_shell_heap_alloc(bytes);
     if (!mem_heap) {
-        vjo_log("Lens workspace Paf allocation failed (%u KiB)", (unsigned)(MEM_SIZE >> 10));
+        vjo_log("result workspace Paf allocation failed (%u KiB)", (unsigned)(bytes >> 10));
         return -1;
     }
     base = mem_heap;
 #else
     mem_uid = sceKernelAllocMemBlock("VjoShellMem", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
-                                     (MEM_SIZE + 0xFFF) & ~0xFFF, NULL);
+                                     (bytes + 0xFFF) & ~0xFFF, NULL);
     if (mem_uid < 0)
         return mem_uid;
     if (sceKernelGetMemBlockBase(mem_uid, &base) < 0 || !base) {
@@ -209,17 +223,22 @@ static int mem_alloc(void)
     }
 #endif
     p = (uint8_t *)base;
-    vjo_arena_init(&results[0], p, RESULT_ARENA_SIZE);
-    vjo_arena_init(&results[1], p + RESULT_ARENA_SIZE, RESULT_ARENA_SIZE);
-    vjo_net_pool_init(&pool, p + 2 * RESULT_ARENA_SIZE, POOL_SIZE, NET_IDLE_US);
-    vjo_log("Lens workspace: %u bytes, two %u-byte results, %u-byte connection pool",
-            (unsigned)MEM_SIZE, (unsigned)RESULT_ARENA_SIZE, (unsigned)POOL_SIZE);
+    vjo_arena_init(&results[0], p, arena_size);
+    vjo_arena_init(&results[1], p + arena_size, arena_size);
+    vjo_net_pool_init(&pool, local ? NULL : p + 2 * arena_size,
+                      local ? 0 : POOL_SIZE, NET_IDLE_US);
+    mem_local = local;
+    vjo_log("%s workspace: %u bytes, two %u-byte results, %u-byte connection pool",
+            local ? "local dictionary" : "network", (unsigned)bytes,
+            (unsigned)arena_size, (unsigned)(local ? 0 : POOL_SIZE));
     active = -1;
     cache_ok = 0;
     return 0;
 }
 
-/* Not while the network thread works (net_busy). */
+static int mem_alloc(void) { return mem_alloc_for(&cfg); }
+
+/* Called by the idle control thread or by the network thread owning its job. */
 static void mem_free(void)
 {
     if (has_result_memory()) {
@@ -249,8 +268,6 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     __atomic_store_n(&g_view.open, open, __ATOMIC_RELEASE); /* also read unlocked (overlay frame) */
     g_view.list = list;
     g_view.list_seq++;
-    g_view.anki_enabled = anki_started; /* offline queue works without a sync host */
-    g_view.anki_status[0] = '\0'; /* the pre-check of a new list reports again */
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "%s", status ? status : "");
     g_view.status_is_error = is_error;
     g_view.font_size_ja = cfg.font_size_ja;
@@ -269,13 +286,6 @@ static void view_show_cache(void)
     const char *err = d->err.rc ? vjo_err_text(&scratch, d->failed_stage, &d->err) : NULL;
     view_publish(1, &d->list, err, err != NULL);
     vjo_arena_release(&scratch, mark);
-    if (anki_started && d->list.n_entries > 0) {
-        unsigned seq;
-        vjo_view_lock();
-        seq = g_view.list_seq;
-        vjo_view_unlock();
-        vjo_anki_post_check(seq);
-    }
 }
 
 /* Copies UTF-8 text, cut at a character boundary to fit. */
@@ -321,7 +331,7 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 
 #ifdef VJO_WITH_VOCR
 typedef struct {
-    char *text; /* VJO_OCR_TEXT_CAP bytes in the job's arena */
+    char *text; /* VJO_OCR_TEXT_CAP bytes owned by this job */
 } VocrJob;
 
 static int vocr_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
@@ -421,7 +431,11 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
     VjoState st;
     VocrJob job;
-    job.text = vjo_arena_alloc(a, VJO_OCR_TEXT_CAP);
+    /* The worker owns this text copy while model and dictionary allocations
+     * have disjoint lifetimes. No UI pointer refers to this buffer. */
+    static char local_text[VJO_OCR_TEXT_CAP];
+    int local = local_pipeline(&job_cfg);
+    job.text = local ? local_text : vjo_arena_alloc(a, VJO_OCR_TEXT_CAP);
     if (!job.text)
         return out->err.rc = VJO_E_OOM;
     job.text[0] = '\0';
@@ -429,6 +443,8 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     out->err.rc = vjo_capture_raw(0, vocr_consume, &job, &st);
     if (out->err.rc != VJO_OK)
         return out->err.rc;
+    if (local && mem_alloc_for(&job_cfg) < 0)
+        return out->err.rc = VJO_E_OOM;
     return vjo_overlay_ocr_text(a, &job_cfg, job.text, out);
 }
 #else
@@ -450,10 +466,21 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
 
     sceClibMemset(out, 0, sizeof(*out));
     out->list.header = "";
+    /* Warm connections may still own the old pool when a configuration change
+     * requests a job. Only this thread can retire it once that work finishes. */
+    if (local_pipeline(&job_cfg)) {
+        mem_free();
+    } else if (mem_alloc_for(&job_cfg) < 0) {
+        out->failed_stage = VJO_STAGE_OCR;
+        return out->err.rc = VJO_E_OOM;
+    }
+    vjo_arena_reset(a);
     if (job_cfg.ocr_backend == VJO_OCR_VOCR) {
         /* On the console only: no image or connection leaves it. */
         if (run_vocr(a, out) != VJO_OK) {
             out->failed_stage = VJO_STAGE_OCR;
+            if (out->err.rc == VJO_E_OOM)
+                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least memory.";
             return out->err.rc;
         }
         goto recognized;
@@ -505,7 +532,6 @@ static int net_main(SceSize args, void *argp)
         if (bits & NET_EV_JOB) {
             int idx = job_idx;
             int64_t t0 = now_us();
-            vjo_arena_reset(&results[idx]);
             job_rc = run_job(&results[idx], &cache_data[idx]);
             vjo_log("job %d done rc=%d in %d ms, arena peak %u", idx, job_rc,
                     (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak);
@@ -526,14 +552,23 @@ static int net_busy(void)
 /* lookup = 0: OCR only (the subtitles' sentence). */
 static void start_job(const char *why, int lookup)
 {
-    if (job_running || !has_result_memory())
+    if (job_running)
         return;
+    if (local_pipeline(&cfg)) {
+        /* Retire the previous lookup before OCR, then recreate result arenas
+         * after all capture/model/inference allocations have been freed. */
+        if (ov != OV_CLOSED)
+            view_publish(1, NULL, "Recognizing…", 0);
+        if (!warm_running)
+            mem_free();
+    }
     vjo_log("job start (%s)%s", why, lookup ? "" : ", OCR only");
     job_lookup = lookup;
     job_idx = active == 0 ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
     job_generation = game_generation;
-    job_cached_text = cache_ok && cache_dictionary == cfg.dictionary ? cache_data[active].filtered : NULL;
+    job_cached_text = !local_pipeline(&cfg) && cache_ok && cache_dictionary == cfg.dictionary
+                      ? cache_data[active].filtered : NULL;
     job_same_text = 0;
     job_captured = 0;
     job_capture_scene = 0;
@@ -584,7 +619,6 @@ static void apply_config(void)
         }
     }
     vjo_log_configure(&cfg);
-    vjo_anki_configure(&cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
     for (int i = 0; i < cfg.n_warnings; i++)
@@ -659,11 +693,11 @@ static void open_overlay(void)
     }
     clear_input_block_error();
     ov = OV_OPEN;
-    if (!has_result_memory() && mem_alloc() < 0) {
+    apply_config(); /* settings are re-read on every open */
+    if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
         view_publish(1, NULL, "Not enough memory for the overlay", 1);
         return;
     }
-    apply_config(); /* settings are re-read on every open */
     if (!vjo_config_dict_ready(&cfg)) {
         VjoErr e = {cfg.dictionary == VJO_DICT_HACHIDORI ? VJO_E_NO_HOST : VJO_E_NO_KEY,
                     0, 0, NULL, cfg.dictionary};
@@ -862,7 +896,7 @@ static void set_subtitles(int on)
         strip_publish("", VJO_STRIP_SENTENCE, 0);
         return;
     }
-    if (!has_result_memory() && mem_alloc() < 0) {
+    if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
         strip_publish("Not enough memory for subtitles", VJO_STRIP_ERROR, 0);
         return;
     }
@@ -948,9 +982,9 @@ static void activate_game(SceUID pid, const char *tid, int mode)
         return;
     }
     sceClibSnprintf(title_id, sizeof(title_id), "%s", tid);
-    if (!has_result_memory())
-        mem_alloc();
     apply_config();
+    if (!net_busy() && !local_pipeline(&cfg))
+        mem_alloc();
     push_region();
     backoff_note(&ocr_backoff, 0);
     backoff_note(&dict_backoff, 0);
@@ -1108,6 +1142,7 @@ static int ctl_main(SceSize args, void *argp)
                          VJO_EV_GAME_START | VJO_EV_GAME_EXIT,
                      &bits, POLL_TIMEOUT_US);
 
+        if (job_running) sceKernelPowerTick(0);
         if (bits & VJO_EV_GAME_EXIT)
             on_game_exit();
         if (bits & VJO_EV_GAME_START)
@@ -1160,15 +1195,12 @@ int vjo_worker_start(void)
         vjo_worker_stop();
         return -1;
     }
-    anki_started = vjo_anki_start() == 0;
-    if (!anki_started)
-        vjo_log("anki: thread failed to start: Anki is off");
     vjo_platform_vita(&plat, &net_cancel);
     plat.pool = &pool; /* no slots until mem_alloc */
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
-    apply_config(); /* logging, the trigger and Anki are set up before the first game */
+    apply_config(); /* logging and triggers are set up before the first game */
     vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
 
     net_thread = sceKernelCreateThread("VjoNet", net_main, 0x10000100, 0x10000, 0, 0, NULL);
@@ -1177,14 +1209,21 @@ int vjo_worker_start(void)
         vjo_worker_stop();
         return -1;
     }
-    sceKernelStartThread(net_thread, 0, NULL);
-    sceKernelStartThread(ctl_thread, 0, NULL);
+    if (sceKernelStartThread(net_thread, 0, NULL) < 0) {
+        vjo_worker_stop();
+        return -1;
+    }
     threads_started = 1;
+    if (sceKernelStartThread(ctl_thread, 0, NULL) < 0) {
+        vjo_worker_stop();
+        return -1;
+    }
+    threads_started |= 2;
     return 0;
 }
 
 /* Also undoes a partial vjo_worker_start. */
-void vjo_worker_stop(void)
+int vjo_worker_stop(void)
 {
     running = 0;
     if (net_cancel.lock >= 0)
@@ -1192,8 +1231,11 @@ void vjo_worker_stop(void)
     if (net_evf >= 0)
         sceKernelSetEventFlag(net_evf, NET_EV_QUIT);
     if (threads_started) {
-        sceKernelWaitThreadEnd(net_thread, NULL, NULL);
-        sceKernelWaitThreadEnd(ctl_thread, NULL, NULL);
+        if (((threads_started & 1) && sceKernelWaitThreadEnd(net_thread, NULL, NULL) < 0) ||
+            ((threads_started & 2) && sceKernelWaitThreadEnd(ctl_thread, NULL, NULL) < 0)) {
+            vjo_log("worker join failed; keeping allocations until stop can be retried");
+            return -1;
+        }
         threads_started = 0;
     }
     if (net_thread >= 0)
@@ -1201,8 +1243,6 @@ void vjo_worker_stop(void)
     if (ctl_thread >= 0)
         sceKernelDeleteThread(ctl_thread);
     net_thread = ctl_thread = -1;
-    vjo_anki_stop();
-    anki_started = 0;
     mem_free();
     if (net_evf >= 0)
         sceKernelDeleteEventFlag(net_evf);
@@ -1214,4 +1254,5 @@ void vjo_worker_stop(void)
     if (net_cancel.lock >= 0)
         sceKernelDeleteMutex(net_cancel.lock);
     net_evf = cmd_lock = view_lock = net_cancel.lock = -1;
+    return 0;
 }

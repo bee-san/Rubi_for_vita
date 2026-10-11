@@ -33,9 +33,9 @@ def patch(raw: bytes, extra_kernel=(), uninstall=False) -> bytes:
         for plugin in extra_kernel:
             add("*KERNEL", plugin)
         add("*main", SHELL)
-        # These experiments have dedicated branches and must not load beside Lens.
+        # These experiments have dedicated branches and must not load beside vocr.
         # Keep the old registrations as comments so switching back is reversible.
-        lines = [("# Lens-only: " + line) if line.strip() in (TEXT, OCR) else line
+        lines = [("# Mainline OCR: " + line) if line.strip() in (TEXT, OCR) else line
                  for line in lines]
     return (newline.join(lines) + newline).encode("utf-8")
 

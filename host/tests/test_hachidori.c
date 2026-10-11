@@ -16,13 +16,13 @@ static void test_relay_config(void)
     const char *ini = "dictionary = hachidori\nhachidori_host = anki.local:19634 ; LAN\n";
     TEST_ASSERT(relay >= 0);
     vjo_config_defaults(&c);
-    TEST_CHECK(c.dictionary == relay);
+    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(!*vjo_config_api_key(&c));
     TEST_CHECK(vjo_dict_info(relay)->key_env == NULL);
     TEST_CHECK(vjo_dict_info(relay)->key_setting == NULL);
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.dictionary == relay && c.n_warnings == 0);
-    TEST_CHECK(strstr(vjo_config_default_text(), "dictionary = hachidori\n") != NULL);
+    TEST_CHECK(strstr(vjo_config_default_text(), "dictionary = local\n") != NULL);
     TEST_CHECK(strstr(vjo_config_default_text(), "hachidori_host =\n") != NULL);
 }
 

@@ -2,20 +2,29 @@
 #include "acutest.h"
 #include "games.h"
 #include <psp2kern/ctrl.h>
+#define VJO_TEST_INPUT_HOOKS 1
+#include <taihen.h>
 #include "../../include/vjo_api.h"
 #include "../../kernel/triggers.h"
 #define VJO_KERNEL_H
 static struct {
     SceUID game_pid, shell_pid, evf;
     int game_active, input_block, trigger[TRIG_COUNT];
-    uint32_t trigger_gen, suppress_mask, raw_buttons, input_us32, input_edge_us32;
+    uint32_t trigger_gen, input_trace_gen, suppress_mask, raw_buttons, input_us32, input_edge_us32;
     VjoInput last_input;
 } g;
 void klog(const char *fmt, ...) {}
 void display_static_fb_sample(void) {}
+SceUID ksceKernelGetThreadId(void);
+int ksceKernelSetEventFlag(SceUID id, unsigned bits);
 #include "../../kernel/input.c"
 static SceCtrlData physical;
 static unsigned events, copies, rear_peeks;
+unsigned syscall_depth;
+int test_tai_continue(tai_hook_ref_t ref, int port, void *out, unsigned n, ...) { return 0; }
+SceUID taiHookFunctionExportForKernel(SceUID pid, tai_hook_ref_t *ref,
+    const char *module, uint32_t lib, uint32_t nid, void *fn) { return 0; }
+int taiHookReleaseForKernel(SceUID uid, tai_hook_ref_t ref) { return 0; }
 SceUID ksceKernelGetProcessId(void) { return 7; }
 SceUID ksceKernelGetThreadId(void) { return 8; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return 1000000; }
@@ -46,13 +55,13 @@ static void test_disabled_game_passes_all_input(void)
     g.suppress_mask = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
     physical.buttons = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CROSS;
     SceCtrlData pad = physical;
-    filter_ctrl(0, &pad, 1, 0);
+    filter_ctrl(0, 0, &pad, 1, 0);
     TEST_CHECK(!memcmp(&pad, &physical, sizeof(pad)) && copies == 0);
     input_poll();
     TEST_CHECK(events == 0 && g.last_input.buttons == physical.buttons);
     pad.buttons = ~physical.buttons;
     SceCtrlData negative = pad;
-    filter_ctrl(0, &pad, 1, 1);
+    filter_ctrl(0, 0, &pad, 1, 1);
     TEST_CHECK(!memcmp(&pad, &negative, sizeof(pad)));
     g.trigger[TRIG_TOGGLE] = VJO_TRIGGER_REAR_DOUBLE_TAP;
     rear_sample();
@@ -75,7 +84,7 @@ static void test_enabled_game_still_triggers(void)
     input_poll();
     TEST_CHECK(events & VJO_EV_TRIGGER);
     SceCtrlData pad = physical;
-    filter_ctrl(0, &pad, 1, 0);
+    filter_ctrl(0, 0, &pad, 1, 0);
     TEST_CHECK(!(pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER)));
     TEST_CHECK(copies == 2);
 }

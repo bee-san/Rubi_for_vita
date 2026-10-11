@@ -52,7 +52,8 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
             if (found) continue;
             if (count >= capacity) { *truncated = 1; continue; }
             VjoInstalledGame *g = &out[count++];
-            snprintf(g->id, sizeof(g->id), "%s", e.d_name);
+            /* Candidate validation has already bounded the complete title ID. */
+            memcpy(g->id, e.d_name, strlen(e.d_name) + 1);
             snprintf(g->title, sizeof(g->title), "%s", g->id);
             snprintf(g->icon, sizeof(g->icon), "%s/%s/sce_sys/icon0.png", roots[r], g->id);
             char path[160];

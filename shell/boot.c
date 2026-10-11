@@ -77,6 +77,5 @@ int module_stop(SceSize args, const void *argp)
     if (s_hook_id >= 0)
         taiHookRelease(s_hook_id, s_hook_ref);
     s_hook_id = -1;
-    vjo_worker_stop();
-    return SCE_KERNEL_STOP_SUCCESS;
+    return vjo_worker_stop() < 0 ? SCE_KERNEL_STOP_FAIL : SCE_KERNEL_STOP_SUCCESS;
 }
