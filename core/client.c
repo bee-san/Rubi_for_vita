@@ -312,7 +312,8 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         vjo_buf_puts(&b, "Invalid or incomplete local dictionary. Reconvert the Yomitan ZIP and copy the complete .vjdict file again.");
         break;
     case VJO_E_OCR_MODEL:
-        vjo_buf_puts(&b, "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.");
+        vjo_buf_puts(&b, err->detail ? err->detail :
+                     "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.");
         break;
     case VJO_E_OCR_REGION:
         vjo_buf_puts(&b, "Local OCR needs a tight dialogue region with horizontal white text. Select a region, excluding portraits and menus.");

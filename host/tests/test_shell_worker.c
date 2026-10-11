@@ -99,6 +99,7 @@ int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 #include "../../core/vocr_ocr.h"
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
+static int32_t fake_model_io_error;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -127,6 +128,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
             fake_game_result.text, sizeof(fake_game_result.text), &stats);
         vocr_live = 0; vocr_frees++;
     }
+    if (fake_game_result.rc == VJO_E_OCR_MODEL) fake_game_result.io_error = fake_model_io_error;
     *out = fake_game_result;
     return 0;
 }
@@ -156,6 +158,9 @@ static void reset(void)
     running = 1; threads_started = 0;
     vocr_allocs = vocr_frees = vocr_paf_allocs = jpeg_captures = 0;
     fail_vocr_user = fail_vocr_paf = 0;
+#ifdef VJO_WITH_VOCR
+    fake_model_io_error = 0;
+#endif
     phases_checked = vocr_live = fail_join = 0;
     memset(&raw_state, 0, sizeof(raw_state));
     raw_state.done_seq = 11;
@@ -472,6 +477,40 @@ static void test_vocr_allocation_fallback_and_failure(void)
     mem_free();
 }
 
+static void test_vocr_storage_errors_are_specific(void)
+{
+    const struct { uint32_t io; const char *message; int specific; } cases[] = {
+        {0x80010013u, "storage is unavailable to this game", 1}, /* ENODEV */
+        {0x8001000Du, "Access to the local OCR model was denied", 1}, /* EACCES */
+        {0x80010002u, "Local OCR model is missing or invalid", 0}, /* ENOENT */
+        {0, "Local OCR model is missing or invalid", 0}, /* size/hash/format rejection */
+    };
+    for (unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        fake_model_io_error = (int32_t)cases[i].io;
+        strokes(15, 39);
+        TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL);
+        TEST_CHECK(!!cache_data[0].err.detail == cases[i].specific);
+        char memory[256]; VjoArena arena;
+        vjo_arena_init(&arena, memory, sizeof(memory));
+        const char *message = vjo_err_text(&arena, VJO_STAGE_OCR, &cache_data[0].err);
+        TEST_CHECK(strstr(message, cases[i].message) != NULL);
+        if (cases[i].specific) TEST_CHECK(strstr(message, "prepare_ocr.py") == NULL);
+        TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 1 && vocr_frees == 1);
+        mem_free();
+    }
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_model_io_error = (int32_t)0x80010013u;
+    strokes(15, 39);
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].err.detail);
+    /* Rejecting a name before submitting must not reuse the previous job's I/O error. */
+    strcpy(cfg.vocr_model, "unsupported-model-name-longer-than-the-wire.vocr");
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && !cache_data[0].err.detail);
+    mem_free();
+}
+
 #endif
 
 static void test_input_block_denied(void)
@@ -583,6 +622,7 @@ TEST_LIST = {
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
+    {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
     {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
     {"local_dictionary_opens_without_key", test_local_open},
