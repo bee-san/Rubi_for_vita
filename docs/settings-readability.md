@@ -63,3 +63,44 @@ viewport overflow in those previews. They validate the proposed layout under
 those substitute metrics; they are not Vita screenshots, firmware glyph
 measurements, or physical readability proof. Existing persistence tests and
 the native Settings VPK build remain separate checks.
+
+## Native installation and controls checkpoint
+
+Native promotion of the v0.7.7 VPK completed with result 0. Full native readbacks
+of the installed 277,084-byte executable and 788-byte `param.sfo` match the
+published release members. The SFO's `APP_VER` remains `01.00`; exact executable
+bytes and release provenance identify this build. A fresh boot and foreground
+launch were confirmed; a snapshot reported `system_ui_overlaid = true`, so
+controller tests waited. The user subsequently opened the app and encountered
+`C2-12828-1`. Its completed native dump identified an incompatible libpng jump
+buffer during icon loading, rather than a PVF measurement failure. The
+[PNG runtime repair](settings-png-runtime.md) keeps the readable layout and icons.
+
+The v0.7.8 repair passed exact-head host/Vita CI and merged through
+[PR #36](https://github.com/bee-san/vita-jp-overlay/pull/36). Full readback of
+the installed 277,212-byte executable matched the repaired candidate. Promotion
+status had become uncertain after screen sleep; installed registry/readback and
+subsequent native execution reconciled the outcome. No terminal promoter
+response is inferred from that uncertain status.
+
+The same Settings process remained in the foreground over 100.106 seconds,
+with the final snapshot reporting `system_ui_overlaid = false`. The sampled
+native event window contained no crashes and reported zero lost events.
+An additional snapshot extended observed survival to 336.637 seconds with the
+same foreground Settings process and no reported system UI overlay. No
+screenshot was taken.
+After an initial Select/readback discrepancy was caught, two completed
+front-touch actions normalized OCR-tab/engine-row focus. Five subsequent
+controller actions, each followed by a complete config readback, checked Meiki,
+VOCR, the already-off Japanese-only state and restoration to on. The final
+config exactly matched the intended VOCR/Japanese-only-on configuration, with
+unrelated settings preserved. A later native check measured Japanese-only
+on-to-off-to-on: the OCR-tab touch retained on, the Japanese-only-card touch
+saved off, and Right saved on. Complete config readbacks followed all three
+actions; the final 2,951-byte config was again byte-identical to the intended
+file. These establish native control/persistence behavior; they do not provide
+screenshots or firmware glyph measurements.
+
+Firmware font bounds, sharpness and physical readability remain pending. The
+broader installation and private-dictionary recovery state is tracked in
+[the deployment checklist](todo-20261011.md).
