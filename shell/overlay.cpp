@@ -95,6 +95,7 @@ static uint32_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES]; /* len 0 = no hi
 static char s_cursor_text[VJO_STRIP_MAX];
 static size_t s_cursor_text_len;
 static int s_local_cursor_mode, s_header_has_text;
+static int s_japanese_only_selection;
 static uint32_t s_cursor_byte, s_text_generation;
 
 /* logged when the overlay closes */
@@ -183,7 +184,8 @@ static void header_highlight(void)
         s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_TEXT));
     s_hl_len = 0;
     if (s_local_cursor_mode) {
-        vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &s_hl_start, &s_hl_len);
+        if (s_cursor_byte < s_cursor_text_len)
+            vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &s_hl_start, &s_hl_len);
     } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
         s_hl_start = s_rng_start[s_selected];
         s_hl_len = s_rng_len[s_selected];
@@ -258,9 +260,11 @@ static void render(int new_content)
         }
         if (new_text || copy_text) {
             s_text_generation = g_view.text_generation;
-            s_cursor_byte = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len,
-                                                        g_view.cursor_byte, 0);
+            s_cursor_byte = (uint32_t)(g_view.japanese_only_selection
+                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, g_view.cursor_byte, 0)
+                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, g_view.cursor_byte, 0));
         }
+        s_japanese_only_selection = g_view.japanese_only_selection;
         cursor_matches = g_view.cursor_byte == s_cursor_byte;
     } else {
         rebuild_header |= s_local_cursor_mode;
@@ -304,8 +308,11 @@ static void render(int new_content)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
             vjo_styled_entry(&body, l, s_selected, ja, en, 0);
         } else if (l && !g_view.status[0] && cursor_matches) {
-            vjo_styled_puts(&body, s_local_cursor_mode ? "No dictionary entry starts at this character."
-                                                     : "No dictionary entries for this text.", VJO_RGB_DIM, en);
+            vjo_styled_puts(&body, s_local_cursor_mode
+                ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len
+                    ? "No Japanese characters in this text."
+                    : "No dictionary entry starts at this character.")
+                : "No dictionary entries for this text.", VJO_RGB_DIM, en);
         }
         for (int i = 0; i < g_view.n_warnings; i++) {
             if (body.len)
@@ -317,7 +324,9 @@ static void render(int new_content)
     vjo_view_unlock();
 
     set_rich(s_hint, s_local_cursor_mode
-                        ? "<font color=\"#8a94a6\">◀ ▶ character · one entry · stick scroll · □ region · ○ close</font>"
+                        ? (s_japanese_only_selection
+                            ? "<font color=\"#8a94a6\">◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
+                            : "<font color=\"#8a94a6\">◀ ▶ character · one entry · stick scroll · □ region · ○ close</font>")
                         : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
     if (rebuild_header) {
         if (have_hdr) {
@@ -544,9 +553,13 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     if (s_local_cursor_mode) {
         uint32_t cursor = s_cursor_byte;
         if (pressed & SCE_CTRL_RIGHT)
-            cursor = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1);
+            cursor = (uint32_t)(s_japanese_only_selection
+                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1)
+                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, 1));
         if (pressed & SCE_CTRL_LEFT)
-            cursor = (uint32_t)vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1);
+            cursor = (uint32_t)(s_japanese_only_selection
+                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1)
+                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, -1));
         if (cursor != s_cursor_byte) {
             s_cursor_byte = cursor;
             s_moves++;

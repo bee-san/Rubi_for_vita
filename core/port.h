@@ -8,7 +8,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#if defined(__vita__) && !defined(VJO_HOST)
+#if defined(__vita__) && !defined(VJO_HOST) && !defined(VJO_STANDALONE)
 int sceClibVsnprintf(char *dst, size_t dst_max_size, const char *fmt, va_list args);
 int sceClibSnprintf(char *dst, size_t dst_max_size, const char *fmt, ...);
 #define vjo_vsnprintf sceClibVsnprintf

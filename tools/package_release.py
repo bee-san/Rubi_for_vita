@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import zipfile
@@ -31,8 +32,10 @@ def verify(root):
     print(f"Verified {len(manifest['files'])} package files")
 
 
-def package(base, output, models, dictionary, license_file, version="0.7.6", meiki_model=None):
+def package(base, output, models, dictionary, license_file, version="0.7.6", meiki_model=None, source_revision=None):
     source = Path(__file__).resolve().parents[1]
+    if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
+        raise ValueError("Expected an exact 40-character source revision")
     conversion = json.loads(dictionary.with_suffix(".json").read_text())
     snapshot = json.loads((source / "docs/jmdict-source.json").read_text())
     if conversion["source_sha256"] != snapshot["sha256"] or digest(dictionary) != conversion["sha256"]:
@@ -59,7 +62,10 @@ def package(base, output, models, dictionary, license_file, version="0.7.6", mei
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
+                             "japanese_only_selection": True,
                              "ocr_mode": "auto", "anki": False}}
+    if source_revision:
+        manifest["source_revision"] = source_revision
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if original.testzip() is not None:
@@ -80,7 +86,7 @@ def package(base, output, models, dictionary, license_file, version="0.7.6", mei
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
         for info in original.infolist():
-            if info.is_dir() or info.filename in assets:
+            if info.is_dir() or info.filename in assets or info.filename == "package-manifest.json":
                 continue
             data = original.read(info)
             archive.writestr(info, data)
@@ -106,11 +112,12 @@ def main():
     parser.add_argument("--verify", type=Path)
     parser.add_argument("--version", default="0.7.6")
     parser.add_argument("--meiki-model", type=Path, help="Pinned recognizer; requires an optional-engine base archive")
+    parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)
     elif all((args.base, args.output, args.models, args.dictionary, args.license_file)):
-        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.meiki_model)
+        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.meiki_model, args.source_revision)
     else:
         parser.error("Provide --verify DIRECTORY, or base, --output, --models, --dictionary and --license-file")
 

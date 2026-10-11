@@ -22,6 +22,15 @@ size_t vjo_utf8_cursor_step(const char *s, size_t len, size_t offset, int direct
  * Returns 0 for empty text or an omitted CR. */
 int vjo_utf8_cursor_range(const char *s, size_t len, size_t offset, uint32_t *start, uint32_t *units);
 
+/* Han and kana letters (including half-width/supplementary kana and the
+ * prolonged sound mark), excluding punctuation, Latin, decimal digits and
+ * Hangul. Independent of the older whole-line OCR filter below. */
+int vjo_is_japanese_letter(uint32_t cp);
+/* As cursor_step, restricted to Japanese letters. Returns len when none
+ * exists, so callers can omit both highlight and dictionary lookup.
+ * Direction 0 chooses the letter at/after offset, or the last before it. */
+size_t vjo_utf8_japanese_cursor_step(const char *s, size_t len, size_t offset, int direction);
+
 /* ASCII case-insensitive equality, and whether s starts with prefix. */
 int vjo_ieq(const char *a, const char *b);
 int vjo_ieq_prefix(const char *s, const char *prefix);

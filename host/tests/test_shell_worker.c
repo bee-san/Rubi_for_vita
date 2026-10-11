@@ -718,6 +718,56 @@ static void check_current_definition(const char *meaning, uint32_t cursor)
     TEST_CHECK(cursor_opens == cursor_closes && !cursor_handle_live);
     TEST_CHECK(!held_cmd && !held_view);
 }
+static void test_japanese_only_selection_and_config_reload(void)
+{
+    cursor_setup();
+    fake_recognized_text = "ABC「猫」 123 한글。犬!";
+    open_overlay(); finish_current_job();
+    uint32_t first = (uint32_t)(strstr(local_text, "猫") - local_text);
+    uint32_t second = (uint32_t)(strstr(local_text, "犬") - local_text);
+    TEST_CHECK(g_view.japanese_only_selection && g_view.cursor_byte == first);
+    TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
+    TEST_CHECK(strstr(g_view.list->entries[0].text, "cat") != NULL);
+    unsigned inferences = vocr_allocs;
+    uint32_t generation = local_text_generation;
+    vjo_post_cursor(0, generation);
+    TEST_CHECK(pending_cmd == VJO_CMD_NONE && g_view.cursor_byte == first);
+    vjo_post_cursor(second, generation); on_command(); finish_current_job();
+    TEST_CHECK(g_view.cursor_byte == second && vocr_allocs == inferences);
+    TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
+    TEST_CHECK(strstr(g_view.list->entries[0].text, "dog") != NULL);
+    close_overlay(); loaded.japanese_only_selection = 0;
+    open_overlay();
+    TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);
+    finish_current_job();
+    TEST_CHECK(!g_view.japanese_only_selection && g_view.cursor_byte == 0);
+    generation = local_text_generation;
+    vjo_post_cursor(1, generation); on_command(); finish_current_job();
+    TEST_CHECK(g_view.cursor_byte == 1);
+    close_overlay(); loaded.ocr_backend = VJO_OCR_MEIKI;
+    open_overlay();
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_MEIKI && job_cfg.ocr_backend == VJO_OCR_MEIKI);
+    TEST_CHECK(!background_wanted());
+    close_overlay(); finish_current_job(); mem_free();
+}
+
+static void test_no_japanese_selection_skips_dictionary_memory_and_io(void)
+{
+    cursor_setup();
+    fake_recognized_text = "\xF0\x83\x81\x82" "ABC 123 한글・「」😀";
+    open_overlay(); finish_current_job();
+    TEST_CHECK(g_view.local_cursor_mode && g_view.japanese_only_selection);
+    TEST_ASSERT(g_view.list != NULL);
+    TEST_CHECK(g_view.list->n_entries == 0 && !strcmp(g_view.list->header, fake_recognized_text));
+    TEST_CHECK(g_view.cursor_byte == strlen(local_text));
+    TEST_CHECK(!cursor_opens && !has_result_memory() && !user_allocs && !heap_allocs);
+    vjo_post_cursor(0, local_text_generation);
+    TEST_CHECK(pending_cmd == VJO_CMD_NONE && !job_running);
+    close_overlay(); open_overlay(); finish_current_job();
+    TEST_CHECK(!cursor_opens && !has_result_memory() && vocr_allocs == 1);
+    close_overlay(); mem_free();
+}
+
 static void test_character_open_reuses_background_text(void)
 {
     cursor_saved_text();
@@ -931,7 +981,7 @@ static void test_local_phases_and_recovery(void)
 
 static void test_local_lookup_single_arena_and_network_double_buffers(void)
 {
-    reset();
+    cursor_setup(); /* This allocation gate needs an actual selectable sentence. */
     cfg.ocr_backend = VJO_OCR_VOCR;
     phases_checked = 1;
     ov = OV_OPEN;
@@ -993,6 +1043,8 @@ TEST_LIST = {
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
 #ifdef VJO_WITH_VOCR
+    {"japanese_only_selects_first_letter_rejects_other_scripts_and_reloads_choices", test_japanese_only_selection_and_config_reload},
+    {"no_Japanese_text_allocates_no_results_and_performs_no_dictionary_IO", test_no_japanese_selection_skips_dictionary_memory_and_io},
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},

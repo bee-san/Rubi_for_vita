@@ -74,6 +74,7 @@ void vjo_config_defaults(VjoConfig *c)
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "jmdict.vjdict");
     c->non_japanese_filter = VJO_FILTER_LINES;
+    c->japanese_only_selection = 1;
     c->font_size_ja = 18;
     c->font_size_en = 14;
     c->toggle_button = VJO_TRIGGER_L_R;
@@ -115,6 +116,10 @@ const char *vjo_config_default_text(void)
            "\n"
            "; Drop OCR lines without Japanese characters: none | lines\n"
            "non_japanese_filter = lines\n"
+           "\n"
+           "; Left/right character lookup skips Latin text, numbers and punctuation: on | off.\n"
+           "; Select Japanese kana and Han characters; this does not tokenize words.\n"
+           "japanese_only_selection = on\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
@@ -443,6 +448,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->non_japanese_filter = VJO_FILTER_NONE;
         else
             warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "japanese_only_selection")) {
+        if (vjo_ieq(val, "on")) c->japanese_only_selection = 1;
+        else if (vjo_ieq(val, "off")) c->japanese_only_selection = 0;
+        else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "font_size_ja")) {
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {
@@ -510,6 +519,73 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else {
         warn(c, "unknown setting '%s'%s", key, "");
     }
+}
+
+static int preference_key(const char *line, size_t n)
+{
+    size_t begin = 0, end;
+    char key[40];
+    while (begin < n && is_space(line[begin])) begin++;
+    end = begin;
+    while (end < n && line[end] != '=' && !is_space(line[end])) end++;
+    size_t key_len = end - begin;
+    if (!key_len || key_len >= sizeof(key)) return -1;
+    while (end < n && is_space(line[end])) end++;
+    if (end == n || line[end] != '=') return -1;
+    memcpy(key, line + begin, key_len);
+    key[key_len] = 0;
+    return vjo_ieq(key, "ocr_backend") ? 0 :
+           vjo_ieq(key, "japanese_only_selection") ? 1 : -1;
+}
+
+int vjo_config_patch_preferences(const char *text, size_t len, int backend,
+                                 int japanese_only, char *out, size_t cap)
+{
+    const char *values[2];
+    size_t i = 0, used = 0;
+    unsigned seen = 0;
+    if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
+        (backend < VJO_OCR_LENS || backend > VJO_OCR_MEIKI) ||
+        (japanese_only != 0 && japanese_only != 1) || (len && memchr(text, 0, len)))
+        return -1;
+    static const char *const backend_values[] = {
+        "ocr_backend = lens\n", "ocr_backend = ncnn\n", "ocr_backend = vocr\n", "ocr_backend = meiki\n"
+    };
+    values[0] = backend_values[backend];
+    values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
+    /* Keep a BOM even when the first line is an owned preference. */
+    if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
+        if (cap <= 3) return -1;
+        memcpy(out, text, 3); used = i = 3;
+    }
+    while (i < len) {
+        size_t begin = i;
+        while (i < len && text[i] != '\n') i++;
+        int key = preference_key(text + begin, i - begin);
+        if (i < len) i++;
+        const char *line = text + begin;
+        size_t bytes = i - begin;
+        if (key >= 0) {
+            if (seen & (1u << key)) continue;
+            seen |= 1u << key;
+            line = values[key]; bytes = strlen(line);
+        }
+        if (bytes >= cap - used) return -1;
+        memcpy(out + used, line, bytes); used += bytes;
+    }
+    for (int key = 0; key < 2; key++) {
+        if (seen & (1u << key)) continue;
+        if (used && out[used - 1] != '\n') {
+            if (used + 1 >= cap) return -1;
+            out[used++] = '\n';
+        }
+        size_t bytes = strlen(values[key]);
+        if (bytes >= cap - used) return -1;
+        memcpy(out + used, values[key], bytes); used += bytes;
+    }
+    if (used > VJO_CONFIG_TEXT_MAX) return -1;
+    out[used] = 0;
+    return (int)used;
 }
 
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len)

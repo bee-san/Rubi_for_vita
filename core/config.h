@@ -28,6 +28,9 @@ enum {
 };
 
 #define VJO_CONFIG_MAX_WARNINGS 4
+/* The Shell reads the text plus NUL into its existing 24 KiB scratch arena.
+ * Settings must never publish a file larger than that reader can load. */
+#define VJO_CONFIG_TEXT_MAX (24 * 1024 - 1)
 
 typedef struct {
     int dictionary;           /* VJO_DICT_* */
@@ -36,6 +39,7 @@ typedef struct {
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
+    int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int font_size_ja;         /* 8..40: header, headwords, readings */
     int font_size_en;         /* 8..40: meanings, rank, messages */
     int toggle_button;        /* enum VjoTrigger */
@@ -63,6 +67,13 @@ void vjo_config_defaults(VjoConfig *c);
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* Default file written on first run (with comments). */
 const char *vjo_config_default_text(void);
+
+/* Changes only the app's two OCR preferences, retaining every other INI
+ * line verbatim. Duplicate owned keys are collapsed. Input/output must not
+ * overlap. Returns output bytes (not including NUL), or -1 for invalid
+ * choices, embedded NUL, or insufficient capacity. */
+int vjo_config_patch_preferences(const char *text, size_t len, int backend,
+                                 int japanese_only, char *out, size_t cap);
 
 const char *vjo_trigger_name(int trigger);
 

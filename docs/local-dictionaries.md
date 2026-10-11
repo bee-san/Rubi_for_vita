@@ -59,6 +59,38 @@ Older dictionary versions remain available; remove unused files in VitaShell
 when you no longer need them. Remove a name from `local_dictionaries` to disable
 that dictionary before deleting its file.
 
+### Your own bilingual Daijirin archive
+
+The bilingual v3 archive uses the same format 3 term banks as v2. Convert your
+own copy on the computer; the Vita reads the resulting file directly:
+
+```sh
+python3 tools/convert_dictionary.py daijirin4-gpt-6-luna-en-jp-v3.zip \
+  -o daijirin.vjdict --max-definition-bytes 7000
+```
+
+Enable `daijirin.vjdict` alone to prefer its bilingual definitions, or put it
+before `jmdict.vjdict` in `local_dictionaries` to retain plain JMdict as a
+fallback. Use the actual installed filenames. This changes dictionary lookup
+without changing the OCR engine. The local overlay still performs one lookup
+at the selected character and displays at most one entry.
+
+Nested English and Japanese text becomes plain text. Ruby annotation text,
+styles and link destinations are omitted; the base characters and visible link
+text remain. Images use labels when supplied. Unusually long definitions receive
+the explicit truncation notice at the chosen limit.
+
+The archive attributes the dictionary to Sanseido and supplies no redistribution
+license in `index.json` or a separate license file. Keep your archive and converted
+file private. The public plugin release continues to ship plain JMdict; it does
+not include Daijirin data. The conversion and selected-position host measurements
+are recorded in [the v3 report](benchmarks/daijirin-v3-selected-20261011.json).
+The converted file has 334,741 entries; 53 definitions receive truncation notices
+at 7,000 bytes. All payloads stay within 7,021 bytes. Twenty-five selected-position
+cases with six repeats each use at most 53,584 arena bytes in a 64 KiB arena.
+The report records ambiguous suffix matches separately; it does not establish
+the intended reading, translation quality or physical Vita timing.
+
 ### Upgrading from the first local build
 
 Install the updated plugin binaries and reboot, then reconvert your original
