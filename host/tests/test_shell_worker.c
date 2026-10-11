@@ -92,10 +92,6 @@ void vjo_log_configure(const VjoConfig *c) {}
 void vjo_log(const char *fmt, ...) {}
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { return 0; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
-int vjo_anki_start(void) { return -1; }
-void vjo_anki_stop(void) {}
-void vjo_anki_configure(const VjoConfig *c) {}
-void vjo_anki_post_check(unsigned seq) {}
 void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *c) {}
 int vjo_net_cancel_init(VjoNetCancel *c) { return 0; }
 void vjo_net_cancel(VjoNetCancel *c) { c->cancelled = 1; cancels++; }
@@ -161,6 +157,12 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 int vjoOcrCancel(uint32_t seq) { return 0; }
 #endif
 
+static int saved_notes, save_rc;
+int vjo_queue_count(void) { return saved_notes; }
+int vjo_queue_save(VjoArena *a, const VjoAnkiNote *n, const VjoConfig *c, const char *id)
+{ (void)a; TEST_CHECK(c->anki_mining); TEST_CHECK(!strcmp(id, "PCSG00415"));
+  TEST_CHECK(n->spelling && *n->spelling); if (save_rc >= 0) saved_notes++; return save_rc; }
+
 static void reset(void)
 {
     if (has_result_memory()) mem_free();
@@ -169,7 +171,9 @@ static void reset(void)
     cmd_lock = 82;
     held_cmd = held_view = retirement_checks = 0;
     local_text[0] = 0;
-    local_text_valid = cursor_waiting = job_cursor_only = 0;
+    local_text_valid = cursor_waiting = job_cursor_only = job_save_only = 0;
+    job_save_list = NULL;
+    saved_notes = save_rc = 0;
     local_text_generation = local_text_game_generation = 0;
     local_cursor_seq = local_cursor_byte = 0;
     job_cursor_byte = job_cursor_seq = job_text_generation = 0;
@@ -693,7 +697,8 @@ static void finish_current_job(void)
 {
     TEST_ASSERT(job_running);
     int idx = job_idx;
-    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
+    job_rc = job_save_only ? run_save_job(&results[idx])
+           : job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                             : run_job(&results[idx], &cache_data[idx]);
     job_done = 1; on_job_done();
 }
@@ -718,6 +723,60 @@ static void check_current_definition(const char *meaning, uint32_t cursor)
     TEST_CHECK(g_view.list->entries[0].hl_start == (int)cursor);
     TEST_CHECK(cursor_opens == cursor_closes && !cursor_handle_live);
     TEST_CHECK(!held_cmd && !held_view);
+}
+static void test_text_save_uses_existing_worker_and_survives_exit(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    cfg.anki_mining = 1;
+    const VjoEntryList *list = g_view.list;
+    unsigned allocations = user_allocs + heap_allocs, captures = vocr_allocs;
+    size_t used = results[active].used;
+    vjo_post_save(g_view.list_seq, 0); on_command();
+    TEST_ASSERT(job_running && job_save_only && job_save_list == list);
+    on_game_exit();
+    TEST_CHECK(job_running && has_result_memory() && job_save_list == list);
+    TEST_CHECK(!title_id[0] && !g_view.list);
+    finish_current_job();
+    TEST_CHECK(saved_notes == 1 && !job_running && !job_save_list);
+    TEST_CHECK(!g_view.queue_error && strstr(g_view.queue_status, "Saved locally"));
+    TEST_CHECK(user_allocs + heap_allocs == allocations && vocr_allocs == captures);
+    TEST_CHECK(results[job_idx].used == used && !held_view && !held_cmd);
+    mem_free();
+}
+static void test_text_save_rejects_disabled_stale_busy_requests(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    uint32_t seq = g_view.list_seq;
+    vjo_post_save(seq, 0); on_command();
+    TEST_CHECK(!job_running && !saved_notes && g_view.queue_error);
+    cfg.anki_mining = 1;
+    vjo_post_save(seq - 1, 0); on_command();
+    TEST_CHECK(!job_running && !saved_notes && strstr(g_view.queue_status, "changed"));
+    vjo_post_save(seq, 9); on_command();
+    TEST_CHECK(!job_running && !saved_notes);
+    warm_running = 1; vjo_post_save(seq, 0); on_command();
+    TEST_CHECK(!job_running && !saved_notes && strstr(g_view.queue_status, "busy"));
+    warm_running = 0;
+    vjo_post_command(VJO_CMD_CLOSED, NULL); vjo_post_save(seq, 0);
+    TEST_CHECK(pending_cmd == VJO_CMD_CLOSED); on_command();
+    TEST_CHECK(ov == OV_CLOSED && !saved_notes);
+    mem_free();
+}
+static void test_text_save_failure_keeps_definition_and_retry(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job(); cfg.anki_mining = 1;
+    const VjoEntryList *list = g_view.list;
+    unsigned allocations = user_allocs + heap_allocs;
+    save_rc = -3;
+    vjo_post_save(g_view.list_seq, 0); on_command(); finish_current_job();
+    TEST_CHECK(!saved_notes && g_view.list == list && g_view.queue_error);
+    TEST_CHECK(strstr(g_view.queue_status, "memory") && !job_running);
+    check_current_definition("cat", 0);
+    save_rc = 0;
+    vjo_post_save(g_view.list_seq, 0); on_command(); finish_current_job();
+    TEST_CHECK(saved_notes == 1 && !g_view.queue_error && g_view.list == list);
+    TEST_CHECK(user_allocs + heap_allocs == allocations);
+    close_overlay(); mem_free();
 }
 static void test_japanese_only_selection_and_config_reload(void)
 {
@@ -1108,6 +1167,9 @@ TEST_LIST = {
     {"japanese_only_selects_first_letter_rejects_other_scripts_and_reloads_choices", test_japanese_only_selection_and_config_reload},
     {"no_Japanese_text_allocates_no_results_and_performs_no_dictionary_IO", test_no_japanese_selection_skips_dictionary_memory_and_io},
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
+    {"text_save_uses_existing_worker_and_preserves_note_across_game_exit", test_text_save_uses_existing_worker_and_survives_exit},
+    {"text_save_rejects_disabled_stale_busy_requests_and_preserves_close_priority", test_text_save_rejects_disabled_stale_busy_requests},
+    {"text_save_failure_preserves_definition_and_allows_retry_without_new_memory", test_text_save_failure_keeps_definition_and_retry},
     {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},

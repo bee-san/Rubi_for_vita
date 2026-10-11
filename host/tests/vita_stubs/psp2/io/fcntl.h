@@ -5,8 +5,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 typedef off_t SceOff;
-typedef struct { mode_t st_mode; } SceIoStat;
+typedef struct { mode_t st_mode; SceOff st_size; } SceIoStat;
 typedef struct { SceIoStat d_stat; char d_name[256]; } SceIoDirent;
+#define SCE_O_RDWR O_RDWR
+#define SCE_CST_SIZE 0x0004
 #define SCE_O_RDONLY O_RDONLY
 #define SCE_O_WRONLY O_WRONLY
 #define SCE_O_CREAT O_CREAT
@@ -22,6 +24,7 @@ int sceIoWrite(int fd, const void *data, size_t len);
 SceOff sceIoLseek(int fd, SceOff off, int whence);
 int sceIoMkdir(const char *path, unsigned mode);
 int sceIoGetstat(const char *path, SceIoStat *st);
+int sceIoChstatByFd(int fd, const SceIoStat *st, unsigned bits);
 int sceIoRename(const char *from, const char *to);
 int sceIoRemove(const char *path);
 int sceIoSyncByFd(int fd, int flag);

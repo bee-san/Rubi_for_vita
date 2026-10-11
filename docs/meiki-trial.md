@@ -3,7 +3,8 @@
 `v0.7.6` includes an optional recognizer alongside VOCR in the game-process
 OCR architecture. The default remains `vocr`; v0.7.5 remains the stable rollback.
 Character navigation, one-entry local dictionary lookup and the 64 KiB Shell
-lookup arena are retained. No Anki queue or cloud fallback is introduced.
+lookup arena are retained. Anki mining uses the existing worker and lookup arena; it adds no OCR allocation.
+No cloud fallback is introduced.
 
 Select **one horizontal dialogue line**, including its ruby if needed, and
 exclude adjacent lines. The game worker rejects regions taller than 96 pixels

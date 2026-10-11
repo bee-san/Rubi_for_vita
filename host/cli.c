@@ -5,13 +5,6 @@
  *   vjo-cli --text "日本語" --api-key KEY ...
  *   vjo-cli --replay DIR [--dict jpdb|jiten] [--filter lines|none] [--nav]
  *   vjo-cli --print-default-config
- *   ... --anki HOST[:PORT] [--anki-deck DECK] [--anki-add N [--picture FILE.jpg]]
- *
- * --anki checks every entry against AnkiConnect (duplicates in the deck)
- * and --anki-add adds entry N (1-based, as --nav numbers them), with the
- * picture if given and the word's audio (anki_audio_url); the other anki_*
- * settings come from --config.
- *
  * The API key may also come from $VJO_JPDB_KEY / $VJO_JITEN_KEY. --replay runs
  * the same pipeline on a fixture dir's recorded responses (see replay.h). */
 #include <stdio.h>
@@ -19,7 +12,6 @@
 #include <string.h>
 #include <sys/time.h>
 
-#include "anki.h"
 #include "client.h"
 #include "net_posix.h"
 #include "render.h"
@@ -62,66 +54,6 @@ static int jpeg_size(const uint8_t *p, size_t n, uint32_t *w, uint32_t *h)
     return -1;
 }
 
-/* --anki: duplicate check of every entry, then --anki-add's entry. */
-static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoConfig *cfg, const char *endpoint,
-                    const VjoEntryList *l, int add, const char *picture)
-{
-    char host[64];
-    int port, rc = 0;
-    uint8_t *marks;
-    const char *request;
-    VjoErr err;
-    if (vjo_anki_endpoint(endpoint, host, sizeof(host), &port) != VJO_ANKI_MANUAL) {
-        fprintf(stderr, "--anki: expected HOST[:PORT]\n");
-        return 1;
-    }
-    if (vjo_anki_probe(a, p, host, port, &err)) {
-        printf("\n[anki] %s:%d: %s\n", host, port, vjo_anki_err_text(a, &err));
-        return 1;
-    }
-    printf("\n[anki] AnkiConnect at %s:%d, deck \"%s\", note type \"%s\"\n", host, port, cfg->anki_deck,
-           cfg->anki_note_type);
-    marks = (uint8_t *)vjo_arena_zalloc(a, (size_t)l->n_entries + 1);
-    request = vjo_anki_can_add_request(a, cfg, l, l->n_entries);
-    if (request && (rc = vjo_anki_check(a, p, host, port, request, marks, l->n_entries, &err)) != VJO_OK)
-        printf("check: %s\n", vjo_anki_err_text(a, &err));
-    for (int i = 0; i < l->n_entries; i++)
-        printf("%d: %s%s\n", i + 1, l->entries[i].vocab->spelling, marks[i] ? " ✓ in Anki" : "");
-    if (add) {
-        VjoAnkiNote n;
-        VjoAnkiMedia m;
-        struct timeval tv;
-        uint64_t now;
-        char name[40];
-        memset(&m, 0, sizeof(m));
-        gettimeofday(&tv, NULL);
-        now = (uint64_t)tv.tv_sec * 1000u + (uint64_t)(tv.tv_usec / 1000);
-        if (vjo_anki_note_from_entry(a, l, add - 1, &n) < 0) {
-            fprintf(stderr, "--anki-add: no entry %d\n", add);
-            return 1;
-        }
-        if (picture) {
-            if (!(m.picture = (const uint8_t *)vjo_read_file(fa, picture, &m.picture_len))) {
-                fprintf(stderr, "cannot read %s\n", picture);
-                return 1;
-            }
-            vjo_anki_media_name(name, sizeof(name), now, "jpg");
-            m.picture_name = name;
-        }
-        if (vjo_anki_audio_enabled(cfg)) {
-            vjo_anki_find_audio(a, p, cfg, &n, now, &m, &err);
-            printf("audio: %s\n", m.audio_url ? m.audio_url : vjo_anki_audio_err_text(a, &err));
-        }
-        if (vjo_anki_add(a, p, host, port, cfg, &n, &m, &err)) {
-            printf("add %s: %s\n", n.spelling, vjo_anki_err_text(a, &err));
-            return 1;
-        }
-        printf("Added: %s%s%s%s%s\n", n.spelling, m.picture_name ? " with " : "", m.picture_name ? m.picture_name : "",
-               m.audio_name ? " and " : "", m.audio_name ? m.audio_name : "");
-    }
-    return rc ? 1 : 0;
-}
-
 static void usage(void)
 {
     fprintf(stderr,
@@ -130,8 +62,7 @@ static void usage(void)
             "               [--hachidori HOST[:PORT]] (plain HTTP, trusted LAN; no key)\n"
             "               [--filter lines|none] [--record DIR] [--nav] [--stats] [-v]\n"
             "       vjo-cli --text TEXT [options]\n"
-            "       vjo-cli --replay DIR [options]\n"
-            "       ... --anki HOST[:PORT] [--anki-deck DECK] [--anki-add N [--picture FILE.jpg]]\n");
+            "       vjo-cli --replay DIR [options]\n");
     exit(2);
 }
 
@@ -144,9 +75,8 @@ int main(int argc, char **argv)
     VjoPlatform plat;
     VjoOverlayData d;
     const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *key = NULL, *dict = NULL;
-    const char *anki = NULL, *anki_deck = NULL, *picture = NULL;
     const char *hachidori = NULL, *local_dir = NULL, *local_dicts = NULL;
-    int nav = 0, stats = 0, anki_add = 0, rc;
+    int nav = 0, stats = 0, rc;
 
     memset(mem, 0xA5, sizeof(mem)); /* like a reused arena on the Vita */
     vjo_arena_init(&a, mem, sizeof(mem));
@@ -175,17 +105,6 @@ int main(int argc, char **argv)
             text = argv[++i];
         else if (!strcmp(s, "--replay") && more)
             replay = argv[++i];
-        else if (!strcmp(s, "--anki") && more)
-            anki = argv[++i];
-        else if (!strcmp(s, "--anki-deck") && more)
-            anki_deck = argv[++i];
-        else if (!strcmp(s, "--anki-add") && more) {
-            anki_add = atoi(argv[++i]);
-            if (anki_add < 1)
-                usage();
-        }
-        else if (!strcmp(s, "--picture") && more)
-            picture = argv[++i];
         else if (!strcmp(s, "--nav"))
             nav = 1;
         else if (!strcmp(s, "--stats"))
@@ -214,10 +133,6 @@ int main(int argc, char **argv)
     }
     if (replay)
         vjo_replay_config(&cfg, replay);
-    if (anki_deck)
-        snprintf(cfg.anki_deck, sizeof(cfg.anki_deck), "%s", anki_deck);
-    if ((anki_add || picture) && !anki)
-        usage();
     if (dict) {
         cfg.dictionary = vjo_dict_find(dict);
         if (cfg.dictionary < 0)
@@ -284,8 +199,6 @@ int main(int argc, char **argv)
         for (int i = 0; i < d.list.n_entries; i++)
             printf("%d: %s\n", i + 1, vjo_render_highlight(&a, &d.list, i));
     }
-    if (anki && run_anki(&a, &fa, &plat, &cfg, anki, &d.list, anki_add, picture))
-        rc = 1;
     if (stats)
         fprintf(stderr, "arena peak: %lu bytes\n", (unsigned long)a.peak);
     return rc;

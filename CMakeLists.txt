@@ -24,7 +24,7 @@ set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/lens.c core/json.c core/jpdb.c
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
-  core/base64.c core/anki.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
+  core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
@@ -133,6 +133,14 @@ add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)
 add_test(NAME anki COMMAND vjo-anki-tests)
+add_executable(vjo-anki-queue-tests host/tests/test_anki_queue.c shell/anki_queue.c)
+target_include_directories(vjo-anki-queue-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-anki-queue-tests vjo_host)
+add_test(NAME anki_file_queue COMMAND vjo-anki-queue-tests)
+add_executable(vjo-anki-account-tests host/tests/test_anki_account.c settings/anki_account.c)
+target_include_directories(vjo-anki-account-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-anki-account-tests vjo_host)
+add_test(NAME anki_account COMMAND vjo-anki-account-tests)
 add_executable(vjo-hachidori-tests host/tests/test_hachidori.c)
 target_include_directories(vjo-hachidori-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-hachidori-tests vjo_host)

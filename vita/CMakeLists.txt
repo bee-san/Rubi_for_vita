@@ -85,7 +85,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
-  ${ROOT}/core/base64.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
@@ -124,6 +124,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/overlay.cpp
   ${ROOT}/shell/strip.cpp
   ${ROOT}/shell/worker.c
+  ${ROOT}/shell/anki_queue.c
   ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
@@ -221,7 +222,8 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 # ---------------- standalone game settings VPK ----------------
 include(${ROOT}/cmake/SettingsPNG.cmake)
 add_executable(VitaJPOverlay_Settings
-  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c
+  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c ${ROOT}/settings/anki_account.c
+  ${ROOT}/core/json.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/shell/anki_queue.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c
   ${ROOT}/vita/games_storage.c)
@@ -231,7 +233,7 @@ target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections)
 target_link_libraries(VitaJPOverlay_Settings
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
-  SceAppMgr_stub)
+  SceAppMgr_stub SceIme_stub vjo_bearssl)
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_png_abi.py

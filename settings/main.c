@@ -1,5 +1,7 @@
-/* Standalone LiveArea settings app: no network, no plugin imports. */
+/* Standalone LiveArea settings app: owns login storage, no plugin imports. */
 #include <psp2/ctrl.h>
+#include <psp2/ime_dialog.h>
+#include <psp2/sysmodule.h>
 #include <psp2/display.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
@@ -9,6 +11,8 @@
 #include <string.h>
 #include "catalog.h"
 #include "preferences.h"
+#include "anki_account.h"
+#include "../shell/anki_queue.h"
 #include "../core/utf.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../vita/games_storage.h"
@@ -58,6 +62,9 @@ static int page, preference_selected, preferences_writable;
 static int model_found[2];
 static char preference_status[160];
 static int status_error, preference_error;
+static VjoAnkiAccount account;
+static int anki_selected, account_writable, account_error, saved_records;
+static char anki_status[160];
 static const struct {
     int backend;
     const char *name;
@@ -158,11 +165,11 @@ static void header(void)
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "JP Overlay Settings");
     text(744, 34, DIM, 24, "Select: page");
-    for (int i = 0; i < 2; i++) {
-        int x = i ? 486 : 24, width = i ? 450 : 446;
+    static const char *const tabs[] = {"Games", "OCR & lookup", "Anki"};
+    for (int i = 0; i < 3; i++) {
+        int x = 24 + i * 306, width = 300;
         vita2d_draw_rectangle(x, TAB_Y, width, TAB_H, page == i ? ACCENT : CARD);
-        centered_text(x, TAB_Y + 33, width, page == i ? BG : WHITE, 28,
-                      i ? "OCR & lookup" : "Games");
+        centered_text(x, TAB_Y + 33, width, page == i ? BG : WHITE, 28, tabs[i]);
     }
 }
 
@@ -388,6 +395,122 @@ static void draw_preferences(void)
     vita2d_swap_buffers();
 }
 
+static void load_anki(void)
+{
+    int rc = vjo_anki_account_load(&account, &scratch);
+    account_writable = rc >= 0;
+    saved_records = vjo_queue_count();
+    account_error = rc < 0 || saved_records < 0;
+    snprintf(anki_status, sizeof(anki_status), "%s", rc < 0
+        ? "Cannot read anki_account.json. Login has not been changed."
+        : saved_records < 0 ? "Queue cannot be read. Existing records were kept."
+        : "Login saves on this Vita. Text mining works offline.");
+}
+
+static void save_account(void)
+{
+    int rc = vjo_anki_account_save(&account, &scratch);
+    int loaded = vjo_anki_account_load(&account, &scratch);
+    account_writable = loaded >= 0;
+    account_error = rc < 0 || loaded < 0;
+    snprintf(anki_status, sizeof(anki_status), "%s", account_error
+        ? "Login save not confirmed. Check the fields, then retry."
+        : "Login saved on this Vita, separate from the queue and config.");
+}
+
+/* Native keyboard uses UTF-16; the stored account fields use bounded UTF-8.
+ * Cancel leaves the saved value intact. Passwords use the masked IME mode. */
+static void edit_account(int password)
+{
+    if (!account_writable) return;
+    uint16_t initial[256] = {0}, input[256] = {0}, title[64] = {0};
+    char *current = password ? account.password : account.username;
+    const char *label = password ? "AnkiWeb password" : "AnkiWeb username / email";
+    for (size_t i = 0; label[i] && i < 63; i++) title[i] = (uint16_t)label[i];
+    size_t len = strlen(current), units = 0;
+    for (size_t i = 0; i < len && units < 254;) {
+        uint32_t cp = vjo_utf8_next(current, len, &i);
+        if (cp > 0xffff) { cp -= 0x10000; initial[units++] = 0xd800 + (cp >> 10); initial[units++] = 0xdc00 + (cp & 1023); }
+        else initial[units++] = (uint16_t)cp;
+    }
+    int module = sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
+    SceImeDialogParam param; sceImeDialogParamInit(&param);
+    param.supportedLanguages = SCE_IME_LANGUAGE_ENGLISH | SCE_IME_LANGUAGE_JAPANESE;
+    param.type = password ? SCE_IME_TYPE_DEFAULT : SCE_IME_TYPE_MAIL;
+    param.option = SCE_IME_OPTION_NO_AUTO_CAPITALIZATION | SCE_IME_OPTION_NO_ASSISTANCE;
+    param.dialogMode = SCE_IME_DIALOG_DIALOG_MODE_WITH_CANCEL;
+    param.textBoxMode = password ? SCE_IME_DIALOG_TEXTBOX_MODE_PASSWORD : SCE_IME_DIALOG_TEXTBOX_MODE_DEFAULT;
+    param.title = title; param.maxTextLength = 255; param.initialText = initial; param.inputTextBuffer = input;
+    if (sceImeDialogInit(&param) < 0) {
+        account_error = 1; snprintf(anki_status, sizeof(anki_status), "Cannot open the keyboard. Login kept.");
+    } else {
+        while (sceImeDialogGetStatus() == SCE_COMMON_DIALOG_STATUS_RUNNING) {
+            vita2d_start_drawing(); vita2d_clear_screen();
+            vita2d_end_drawing(); vita2d_common_dialog_update(); vita2d_swap_buffers();
+            sceDisplayWaitVblankStart();
+        }
+        SceImeDialogResult result; memset(&result, 0, sizeof(result));
+        int ok = sceImeDialogGetResult(&result) == 0 && result.result == 0 && result.button == SCE_IME_DIALOG_BUTTON_ENTER;
+        sceImeDialogTerm();
+        if (ok) {
+            char next[256] = {0}; size_t bytes = 0;
+            for (size_t i = 0; i < 255 && input[i]; i++) {
+                uint32_t cp = input[i];
+                if (cp >= 0xd800 && cp <= 0xdbff && i + 1 < 255 && input[i + 1] >= 0xdc00 && input[i + 1] <= 0xdfff)
+                    cp = 0x10000 + ((cp - 0xd800) << 10) + (input[++i] - 0xdc00);
+                else if (cp >= 0xd800 && cp <= 0xdfff) { bytes = sizeof(next); break; }
+                char encoded[4]; int n = vjo_utf8_encode(cp, encoded);
+                if (bytes + (size_t)n >= sizeof(next)) { bytes = sizeof(next); break; }
+                memcpy(next + bytes, encoded, (size_t)n); bytes += (size_t)n;
+            }
+            if (bytes >= sizeof(next)) {
+                account_error = 1; snprintf(anki_status, sizeof(anki_status), "Login field exceeds 255 UTF-8 bytes. Value kept.");
+            } else { memcpy(current, next, bytes + 1); save_account(); }
+            memset(next, 0, sizeof(next));
+        }
+    }
+    memset(initial, 0, sizeof(initial)); memset(input, 0, sizeof(input));
+    if (module == 0) sceSysmoduleUnloadModule(SCE_SYSMODULE_IME);
+}
+
+static void anki_action(void)
+{
+    if (anki_selected == 0) {
+        int rc = preferences_writable ? vjo_preferences_save_mining(!preferences.anki_mining, &scratch) : -1;
+        load_preferences(); account_error = rc < 0;
+        snprintf(anki_status, sizeof(anki_status), "%s", rc < 0 ? "Mining setting was not saved. Retry."
+            : preferences.anki_mining ? "Mining enabled. Reopen the overlay and press Cross on a word."
+                                     : "Mining disabled. Your saved queue is kept.");
+    } else if (anki_selected < 3) edit_account(anki_selected == 2);
+    else {
+        account_error = 0;
+        snprintf(anki_status, sizeof(anki_status), "AnkiWeb sync is not available yet. Your saved words are kept.");
+    }
+}
+
+static void draw_anki(void)
+{
+    vita2d_start_drawing(); vita2d_clear_screen(); header();
+    focus_card(112, 70, anki_selected == 0);
+    text(42, 142, WHITE, 28, "Mine selected words");
+    badge(812, 122, 108, 38, preferences_writable ? (preferences.anki_mining ? "ON" : "OFF") : "--",
+          preferences_writable && preferences.anki_mining);
+    text(42, 170, DIM, 22, "Cross saves word, reading, definitions, sentence and game ID.");
+    focus_card(190, 70, anki_selected == 1);
+    text(42, 220, WHITE, 26, "AnkiWeb username / email");
+    wrapped_text(42, 248, 864, DIM, 22, 26, 1,
+                 account_writable ? (account.username[0] ? account.username : "Select to enter your username") : "Cannot read saved login");
+    focus_card(268, 70, anki_selected == 2);
+    text(42, 298, WHITE, 26, "AnkiWeb password");
+    text(42, 326, DIM, 22, account_writable ? (account.password[0] ? "********  (stored on this Vita)" : "Select to enter your password") : "Cannot read saved login");
+    focus_card(346, 84, anki_selected == 3);
+    char queue[96]; snprintf(queue, sizeof(queue), saved_records >= 0 ? "Local queue: %d saved records" : "Local queue: cannot read", saved_records);
+    text(42, 377, WHITE, 26, queue);
+    text(42, 407, DIM, 22, "AnkiWeb sync is not available yet. Saved words stay on this Vita.");
+    footer(anki_status, account_error, "Up/Down: setting   X: choose   Start: refresh   Square: forget login   O: exit");
+    vita2d_end_drawing(); vita2d_swap_buffers();
+}
+
 static void draw(void)
 {
     const char *filters[] = {"All games", "Enabled", "Disabled"};
@@ -447,6 +570,7 @@ int main(void)
     writable = load >= 0;
     saved = policy;
     load_preferences();
+    load_anki();
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
@@ -476,8 +600,20 @@ int main(void)
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN);
         uint64_t now = sceKernelGetProcessTimeWide();
         if (pressed & SCE_CTRL_CIRCLE) break;
-        if (pressed & SCE_CTRL_SELECT) { page = !page; repeat_at = now + 350000; }
-        if (page) {
+        if (pressed & SCE_CTRL_SELECT) { page = (page + 1) % 3; repeat_at = now + 350000; }
+        if (page == 2) {
+            if (pressed & SCE_CTRL_UP) anki_selected = (anki_selected + 3) % 4;
+            if (pressed & SCE_CTRL_DOWN) anki_selected = (anki_selected + 1) % 4;
+            if (pressed & SCE_CTRL_CROSS) anki_action();
+            if (pressed & SCE_CTRL_START) { load_preferences(); load_anki(); }
+            if (pressed & SCE_CTRL_SQUARE) {
+                int rc = vjo_anki_account_forget(); load_anki();
+                account_error = rc < 0;
+                snprintf(anki_status, sizeof(anki_status), "%s", rc < 0
+                    ? "Login removal not confirmed. Retry to remove all copies."
+                    : "Login removed, including backups. Your queue is kept.");
+            }
+        } else if (page == 1) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
             if (pressed & SCE_CTRL_CROSS) toggle_preference();
@@ -502,9 +638,20 @@ int main(void)
         sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 470) page = 0;
-            else if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 486 && x < 936) page = 1;
-            else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
+            if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 936) {
+                int tab = (x - 24) / 306;
+                if (tab < 3 && (x - 24) % 306 < 300) page = tab;
+            }
+            else if (page == 2 && x >= 24 && x < 936 && y >= 112 && y < 430) {
+                if (y < 182) anki_selected = 0;
+                else if (y >= 190 && y < 260) anki_selected = 1;
+                else if (y >= 268 && y < 338) anki_selected = 2;
+                else if (y >= 346) anki_selected = 3;
+                else anki_selected = -1;
+                if (anki_selected >= 0) anki_action();
+                else anki_selected = 0;
+            }
+            else if (page == 1 && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 preference_selected = 0;
                 if (y >= OCR_CHOICE_Y && y < OCR_CHOICE_Y + OCR_CHOICE_H) {
                     for (int i = 0; i < OCR_CHOICES; i++) {
@@ -515,10 +662,10 @@ int main(void)
                     }
                 }
             }
-            else if (page && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
+            else if (page == 1 && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
                 preference_selected = 1; toggle_preference();
             }
-            else if (page && x >= 24 && x < 936 && y >= HIGHLIGHT_Y && y < HIGHLIGHT_Y + HIGHLIGHT_H) {
+            else if (page == 1 && x >= 24 && x < 936 && y >= HIGHLIGHT_Y && y < HIGHLIGHT_Y + HIGHLIGHT_H) {
                 preference_selected = 2;
                 if (x >= 532 && x < 708 && y >= HIGHLIGHT_Y + 8 && y < HIGHLIGHT_Y + 46)
                     set_preference(0);
@@ -526,7 +673,7 @@ int main(void)
                     set_preference(1);
                 else toggle_preference();
             }
-            else if (page) { /* no game actions on the OCR page */ }
+            else if (page) { /* Game controls belong only to the Games page. */ }
             else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();
             else if (x >= 572 && x < 936 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) change_filter();
             else if (x >= 24 && x < 936 && y >= GAMES_Y && y < GAMES_Y + ROWS * GAME_PITCH) {
@@ -538,7 +685,7 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page) draw_preferences(); else draw();
+        if (page == 2) draw_anki(); else if (page == 1) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }
     vita2d_wait_rendering_done();

@@ -54,8 +54,8 @@ int vjo_preferences_load(VjoConfig *cfg, VjoArena *a)
     return rc;
 }
 
-int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
-                         VjoArena *a)
+static int save_choices(int backend, int japanese_only, int highlight_mode,
+                         int mining, VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
@@ -63,8 +63,9 @@ int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
     if (current_text(a, &old, &bytes, &primary) < 0) goto done;
     size_t cap = bytes + 128;
     char *next = vjo_arena_alloc(a, cap);
-    int len = next ? vjo_config_patch_preferences(old, bytes, backend, japanese_only,
-                                                 highlight_mode, next, cap) : -1;
+    int len = !next ? -1 : mining >= 0
+        ? vjo_config_patch_mining(old, bytes, mining, next, cap)
+        : vjo_config_patch_preferences(old, bytes, backend, japanese_only, highlight_mode, next, cap);
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     sceIoMkdir("ux0:data", 0777);
     sceIoMkdir("ux0:data/VitaJPOverlay", 0777);
@@ -96,3 +97,8 @@ done:
     vjo_arena_release(a, mark);
     return rc;
 }
+
+int vjo_preferences_save(int backend, int japanese_only, int highlight_mode, VjoArena *a)
+{ return save_choices(backend, japanese_only, highlight_mode, -1, a); }
+int vjo_preferences_save_mining(int enabled, VjoArena *a)
+{ return enabled == 0 || enabled == 1 ? save_choices(0, 0, 0, enabled, a) : -1; }

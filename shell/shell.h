@@ -20,12 +20,10 @@ extern "C" {
 #define VJO_LOG_PATH    VJO_DATA_DIR "/log.txt"
 #define VJO_LOG_OLD_PATH VJO_DATA_DIR "/log.old.txt"
 #define VJO_STATUS_PATH VJO_DATA_DIR "/status.txt"
-#define VJO_ANKI_HOST_PATH VJO_DATA_DIR "/anki_host.txt" /* found by anki_host = auto */
 #define VJO_RCO_PATH    "ur0:data/VitaJPOverlay/vitajpoverlay.rco"
 
 #define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
 
-enum { VJO_ANKI_STATUS_DIM = 0, VJO_ANKI_STATUS_ERROR = 1 };
 /* VjoView.strip_kind */
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 #define VJO_STRIP_MAX 4096 /* bytes of UTF-8 */
@@ -38,6 +36,9 @@ typedef struct {
     const VjoEntryList *list; /* NULL while recognizing / on error */
     char status[256];         /* "Recognizing…", an error, or "" */
     int status_is_error;
+    int anki_mining;
+    char queue_status[128];
+    int queue_error;
     int local_cursor_mode;    /* local dictionary: select UTF-8 positions for point lookups */
     int japanese_only_selection; /* restrict local navigation to Han/kana */
     int highlight_mode;       /* whole matched word or selected source character */
@@ -66,11 +67,13 @@ enum {
     VJO_CMD_CLOSED,          /* overlay closed by ○ */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
+    VJO_CMD_SAVE,            /* durable text save; selection identified by list_seq */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
 };
 void vjo_post_command(int cmd, const VjoRect *rect);
 /* Call without holding the view lock. Stale/closed requests are ignored. */
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation);
+void vjo_post_save(uint32_t list_seq, int entry);
 
 /* worker.c */
 int vjo_worker_start(void);
@@ -119,14 +122,6 @@ void *vjo_shell_heap_alloc(size_t bytes);
 /* The same, for `what` (named in the log). */
 void *vjo_shell_heap_alloc_for(const char *what, size_t bytes);
 void vjo_shell_heap_free(void *ptr);
-
-/* This console's IPv4 address and netmask (host byte order); -1 if none. */
-int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask);
-/* Connects to port of up to VJO_NET_PROBE_MAX hosts (host byte order) at
- * once; open[i] = 1 for those that accept within window_us. Returns the
- * number of hosts tried. */
-#define VJO_NET_PROBE_MAX 32
-int vjo_net_probe_port(const uint32_t *ips, int n, int port, int window_us, uint8_t *open);
 
 /* log_vita.c */
 void vjo_log_configure(const VjoConfig *cfg);

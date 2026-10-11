@@ -4,8 +4,10 @@ This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-nov
 text and shows Japanese dictionary entries over your game. **The v0.7.11 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
-The release includes a standalone per-game settings app. Anki and the offline
-card queue are disabled; no cards or screenshots are queued.
+Development builds add opt-in Anki mining and login fields to the standalone
+Settings app. Cross saves text to one local JSONL queue. **AnkiWeb sync is not
+available yet**; see [Anki mining](docs/anki-mining.md). These additions are not
+included in the published v0.7.11 assets.
 
 Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
 **[Meiki](docs/meiki-trial.md)**, or **Google Lens** in the OCR engine row.
@@ -96,7 +98,8 @@ settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. Cross and Triangle do not save or send Anki cards.
+when opening the overlay. Enable Anki mining in Settings, then press Cross to
+save the selected word locally. Saving does not make a network request.
 
 ## Per-game settings
 

@@ -16,6 +16,7 @@
 #include "../include/vjo_vocr_sizes.h"
 #endif
 #include "shell.h"
+#include "anki_queue.h"
 
 /* Network memory: two result arenas (the overlay shows one while the worker
  * fills the other) and kept connections. Local lookup retires its prior view
@@ -76,6 +77,10 @@ static uint32_t local_text_scene, local_text_capture_seq;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
 static int job_cursor_only;
+static int job_save_only;
+static const VjoEntryList *job_save_list;
+static int job_save_entry, job_save_count;
+static char job_save_source[12];
 static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 
 static VjoConfig cfg;      /* control thread */
@@ -153,6 +158,8 @@ static volatile int job_text_ready;
 static volatile int pending_cmd;
 static VjoRect pending_rect;
 static uint32_t pending_cursor_byte, pending_cursor_generation;
+static uint32_t pending_save_seq;
+static int pending_save_entry;
 static void start_cursor_job(void);
 
 static uint32_t advance_generation(uint32_t *value)
@@ -191,6 +198,16 @@ void vjo_post_command(int cmd, const VjoRect *rect)
     pending_cmd = cmd;
     if (rect)
         pending_rect = *rect;
+    sceKernelUnlockMutex(cmd_lock, 1);
+}
+
+void vjo_post_save(uint32_t list_seq, int entry)
+{
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (pending_cmd == VJO_CMD_NONE) {
+        pending_save_seq = list_seq; pending_save_entry = entry;
+        pending_cmd = VJO_CMD_SAVE;
+    }
     sceKernelUnlockMutex(cmd_lock, 1);
 }
 
@@ -350,6 +367,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.list_seq++;
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "%s", status ? status : "");
     g_view.status_is_error = is_error;
+    g_view.anki_mining = cfg.anki_mining;
     g_view.local_cursor_mode = local_pipeline(&cfg) && local_text_valid && list &&
                                list->header == local_text;
     g_view.cursor_byte = local_cursor_byte;
@@ -604,6 +622,19 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     return vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
 }
 
+static int run_save_job(VjoArena *a)
+{
+    const VjoEntry *e = &job_save_list->entries[job_save_entry];
+    const VjoVocab *v = e->vocab;
+    /* The job pins this arena until completion. No copy, capture, additional
+     * thread, or persistent Shell allocation is needed for a text save. */
+    VjoAnkiNote n = {v->spelling, v->reading, v->meanings, v->n_meanings,
+                     job_save_list->header, e->hl_start, e->hl_end};
+    int rc = vjo_queue_save(a, &n, &job_cfg, job_save_source);
+    job_save_count = rc >= 0 ? vjo_queue_count() : -1;
+    return rc;
+}
+
 static int net_main(SceSize args, void *argp)
 {
     (void)args;
@@ -623,7 +654,8 @@ static int net_main(SceSize args, void *argp)
         if (bits & NET_EV_JOB) {
             int idx = job_idx;
             int64_t t0 = now_us();
-            job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
+            job_rc = job_save_only ? run_save_job(&results[idx])
+                     : job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                                      : run_job(&results[idx], &cache_data[idx]);
             vjo_log("job %d done rc=%d in %d ms, arena peak %u", idx, job_rc,
                     (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak);
@@ -657,7 +689,7 @@ static void start_job(const char *why, int lookup)
     }
     vjo_log("job start (%s)%s", why, lookup ? "" : ", OCR only");
     job_lookup = lookup;
-    job_cursor_only = 0;
+    job_cursor_only = job_save_only = 0;
     job_text_generation = 0;
     job_idx = local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
@@ -699,6 +731,7 @@ static void start_cursor_job(void)
         return;
     }
     sceKernelLockMutex(cmd_lock, 1, NULL);
+    job_save_only = 0;
     job_cursor_only = 1;
     cache_ok = 0; /* this job will overwrite the single result arena */
     job_lookup = 1;
@@ -722,6 +755,35 @@ static void start_cursor_job(void)
     __sync_synchronize();
     sceKernelSetEventFlag(net_evf, NET_EV_JOB);
     sceKernelUnlockMutex(cmd_lock, 1);
+}
+
+/* The control thread reserves the existing job slot before the worker can
+ * borrow a selected result. UI requests carry identity, never a raw pointer. */
+static void start_save_job(uint32_t seq, int entry)
+{
+    vjo_view_lock();
+    const char *error = NULL;
+    if (!cfg.anki_mining) error = "Enable Anki mining in JP Overlay Settings first.";
+    else if (job_running || warm_running) error = "Lookup is busy. Wait for the word, then press Cross.";
+    else if (ov == OV_CLOSED || !title_id[0] || active < 0 || seq != g_view.list_seq ||
+             g_view.list != &cache_data[active].list || !g_view.list->entries ||
+             entry < 0 || entry >= g_view.list->n_entries || !g_view.list->entries[entry].vocab)
+        error = "The selected word changed. Select it again before saving.";
+    if (error) {
+        sceClibSnprintf(g_view.queue_status, sizeof(g_view.queue_status), "%s", error);
+        g_view.queue_error = 1; g_view.version++;
+        vjo_view_unlock(); return;
+    }
+    job_save_list = g_view.list; job_save_entry = entry;
+    job_idx = active; job_cfg = cfg; job_generation = game_generation;
+    sceClibSnprintf(job_save_source, sizeof(job_save_source), "%s", title_id);
+    job_cursor_only = 0; job_save_only = 1;
+    job_done = job_text_ready = job_cancelled = job_captured = 0;
+    sceClibSnprintf(g_view.queue_status, sizeof(g_view.queue_status), "Saving locally…");
+    g_view.queue_error = 0; g_view.version++;
+    job_running = 1;
+    vjo_view_unlock();
+    __sync_synchronize(); sceKernelSetEventFlag(net_evf, NET_EV_JOB);
 }
 
 /* ---------------- control thread ---------------- */
@@ -783,7 +845,7 @@ static int game_active(void)
 static int cancel_outdated_job(const VjoState *st)
 {
     __sync_synchronize(); /* pairs with the network thread's barrier */
-    if (!job_running || job_cancelled || !job_captured || !(st->stable || st->quiet) ||
+    if (!job_running || job_save_only || job_cancelled || !job_captured || !(st->stable || st->quiet) ||
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
     job_cancelled = 1;
@@ -998,6 +1060,27 @@ static void on_cursor_done(void)
 
 static void on_job_done(void)
 {
+    if (job_save_only) {
+        __sync_synchronize();
+        job_running = job_done = job_save_only = job_cancelled = 0;
+        vjo_view_lock();
+        g_view.queue_error = job_rc < 0;
+        if (job_rc >= 0)
+            sceClibSnprintf(g_view.queue_status, sizeof(g_view.queue_status),
+                job_save_count >= 0 ? (job_rc ? "Already saved locally (%d records)." : "Saved locally (%d records).")
+                                   : "Saved locally. Queue count unavailable.", job_save_count);
+        else
+            sceClibSnprintf(g_view.queue_status, sizeof(g_view.queue_status), "%s",
+                job_rc == -2 ? "Queue full (16 MiB). Export it before saving more."
+                : job_rc == -3 ? "Not enough result memory for this note. Nothing was saved."
+                : "Queue write failed or file damaged. Retry; existing records were kept.");
+        g_view.version++;
+        vjo_view_unlock();
+        job_save_list = NULL;
+        if (cursor_waiting) start_cursor_job();
+        else if (view_waiting && ov != OV_CLOSED && game_active()) start_job("save finished; overlay waiting", 1);
+        return;
+    }
     if (job_cursor_only) { on_cursor_done(); return; }
     int idx = job_idx, ocr_failed;
     VjoOverlayData *d = &cache_data[idx];
@@ -1176,16 +1259,21 @@ static void on_command(void)
 {
     int cmd;
     VjoRect r;
-    uint32_t cursor_byte, cursor_generation;
+    uint32_t cursor_byte, cursor_generation, save_seq;
+    int save_entry;
     sceKernelLockMutex(cmd_lock, 1, NULL);
     cmd = pending_cmd;
     r = pending_rect;
     cursor_byte = pending_cursor_byte;
     cursor_generation = pending_cursor_generation;
+    save_seq = pending_save_seq; save_entry = pending_save_entry;
     pending_cmd = VJO_CMD_NONE;
     sceKernelUnlockMutex(cmd_lock, 1);
 
     switch (cmd) {
+    case VJO_CMD_SAVE:
+        start_save_job(save_seq, save_entry);
+        break;
     case VJO_CMD_CURSOR:
         if (ov == OV_CLOSED || !local_pipeline(&cfg) || !local_text_valid ||
             cursor_generation != local_text_generation || cursor_byte != local_cursor_byte)

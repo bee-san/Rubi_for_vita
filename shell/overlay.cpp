@@ -247,12 +247,13 @@ static int header_follow(void)
 static void render(int new_content)
 {
     VjoStyled hdr, body;
-    int ja, en, have_hdr = 0, have_body = 0, rebuild_header, cursor_matches = 1;
+    int ja, en, have_hdr = 0, have_body = 0, rebuild_header, cursor_matches = 1, mining;
     const VjoEntryList *l;
 
     font_px(&ja, &en);
     vjo_view_lock();
     l = g_view.list;
+    mining = g_view.anki_mining;
     s_highlight_mode = g_view.highlight_mode;
     if (s_highlight_mode != VJO_HIGHLIGHT_WORD)
         s_word_navigation.count = 0;
@@ -341,6 +342,10 @@ static void render(int new_content)
                     : "No dictionary entry starts at this character.")
                 : "No dictionary entries for this text.", VJO_RGB_DIM, en);
         }
+        if (g_view.queue_status[0]) {
+            if (body.len) vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
+            vjo_styled_puts(&body, g_view.queue_status, g_view.queue_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
+        }
         for (int i = 0; i < g_view.n_warnings; i++) {
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
@@ -350,13 +355,14 @@ static void render(int new_content)
     }
     vjo_view_unlock();
 
-    set_rich(s_hint, s_local_cursor_mode
-                        ? (s_highlight_mode == VJO_HIGHLIGHT_WORD
-                            ? "<font color=\"#8a94a6\">Tap character / ◀ ▶ word · stick scroll · □ region · ○ close</font>"
-                            : s_japanese_only_selection
-                            ? "<font color=\"#8a94a6\">Tap / ◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
-                            : "<font color=\"#8a94a6\">Tap / ◀ ▶ character · stick scroll · □ region · ○ close</font>")
-                        : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
+    char hint[512];
+    const char *navigation = s_local_cursor_mode
+        ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap character / ◀ ▶ word"
+           : s_japanese_only_selection ? "Tap / ◀ ▶ Japanese character" : "Tap / ◀ ▶ character")
+        : "◀ ▶ ▲ ▼ word";
+    sceClibSnprintf(hint, sizeof(hint), "<font color=\"#8a94a6\">%s%s · stick scroll · □ region · ○ close</font>",
+                    navigation, mining ? " · × save" : "");
+    set_rich(s_hint, hint);
     if (rebuild_header) {
         if (have_hdr) {
             text_set(s_header.text, &hdr);
@@ -660,6 +666,8 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
             render(0);
         }
     }
+    if (pressed & SCE_CTRL_CROSS)
+        vjo_post_save(s_list_seq, s_selected);
     /* either stick scrolls a long definition */
     dy = (int)in->ly - 128;
     if (dy > -STICK_DEADZONE && dy < STICK_DEADZONE)

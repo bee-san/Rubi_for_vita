@@ -63,7 +63,7 @@ def package(base, output, models, dictionary, license_file, version="0.7.11", me
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
                              "japanese_only_selection": True,
-                             "ocr_mode": "auto", "anki": False}}
+                             "ocr_mode": "auto", "anki_mining": False, "anki_queue": "text-jsonl"}}
     if source_revision:
         manifest["source_revision"] = source_revision
     output.parent.mkdir(parents=True, exist_ok=True)

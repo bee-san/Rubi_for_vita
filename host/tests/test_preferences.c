@@ -263,7 +263,33 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
     vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_MEIKI && cfg.japanese_only_selection == 1);
 }
+static void test_mining_switch_preserves_ocr_and_other_bytes(void)
+{
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    for (int i = 1; i >= 0; i--) {
+        TEST_ASSERT(vjo_preferences_save_mining(i, &arena) == 0);
+        check_choices(VJO_OCR_MEIKI, 1, VJO_HIGHLIGHT_WORD);
+        VjoConfig cfg; TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.anki_mining == i);
+        char out[sizeof(original)+128]; int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
+        ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
+        TEST_CHECK(!memcmp(out, original, sizeof(original)-1));
+    }
+    written = 0; write_fail = 1;
+    TEST_CHECK(vjo_preferences_save_mining(1, &arena) < 0);
+    write_fail = 0; VjoConfig cfg; TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(!cfg.anki_mining);
+    char out[256]; const char input[] = "anki_mining=off\nfuture=keep\nANKI_MINING=on\n";
+    TEST_ASSERT(vjo_config_patch_mining(input, sizeof(input)-1, 1, out, sizeof(out)) > 0);
+    TEST_CHECK(!strcmp(out, "anki_mining = on\nfuture=keep\n"));
+    TEST_CHECK(vjo_config_patch_mining(input, sizeof(input)-1, 2, out, sizeof(out)) < 0);
+    written = 0; renames = 0;
+    TEST_CHECK(vjo_preferences_save_mining(-1, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save_mining(2, &arena) < 0);
+    TEST_CHECK(written == 0 && renames == 0);
+}
 TEST_LIST = {
+    {"mining_toggle_preserves_OCR_dictionary_and_other_config_bytes", test_mining_switch_preserves_ocr_and_other_bytes},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"saved_backend_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},
     {"lens_choice_loads_shell_and_retains_other_preferences", test_lens_choice_loads_shell_and_retains_other_preferences},

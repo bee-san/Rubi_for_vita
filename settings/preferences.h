@@ -10,4 +10,5 @@ int vjo_preferences_load(VjoConfig *cfg, VjoArena *scratch);
  * backup + rename. A failed final publication restores the old primary. */
 int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
                          VjoArena *scratch);
+int vjo_preferences_save_mining(int enabled, VjoArena *scratch);
 #endif

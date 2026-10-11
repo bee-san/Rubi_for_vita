@@ -62,9 +62,7 @@ static const struct {
     [VJO_ANKI_FURIGANA] = {"anki_field_furigana", "ExpressionFurigana"},
     [VJO_ANKI_DEFINITION] = {"anki_field_definition", "MainDefinition"},
     [VJO_ANKI_SENTENCE] = {"anki_field_sentence", "Sentence"},
-    [VJO_ANKI_PICTURE] = {"anki_field_picture", "Picture"},
-    [VJO_ANKI_FREQUENCY] = {"anki_field_frequency", ""},
-    [VJO_ANKI_AUDIO] = {"anki_field_audio", "ExpressionAudio"},
+    [VJO_ANKI_SOURCE] = {"anki_field_source", "Source"},
 };
 
 void vjo_config_defaults(VjoConfig *c)
@@ -86,7 +84,7 @@ void vjo_config_defaults(VjoConfig *c)
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
     vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "FL10_w8.vocr");
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
-    vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
+    vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "VitaJPOverlay");
     vjo_snprintf(c->anki_tags, sizeof(c->anki_tags), "vita-jp-overlay");
     for (int i = 0; i < VJO_ANKI_FIELD_COUNT; i++)
         vjo_snprintf(c->anki_field[i], sizeof(c->anki_field[i]), "%s", anki_fields[i].def);
@@ -164,7 +162,11 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 256 KB + one rotated file): on | off\n"
            "log_file = off\n"
            "\n"
-           "; Anki is disabled in this release; no offline queue is created.\n";
+           "; Enable Cross to save text notes to anki_queue.jsonl (no network in Shell).\n"
+           "anki_mining = off\n"
+           "anki_deck = Default\n"
+           "anki_note_type = VitaJPOverlay\n"
+           "anki_tags = vita-jp-overlay\n";
 }
 
 /* host[:port], the n bytes at s: a name or IP address, and a port
@@ -202,25 +204,14 @@ static int host_port(const char *s, size_t n, char *host, size_t cap, int defaul
     return 0;
 }
 
-int vjo_anki_endpoint(const char *setting, char *host, size_t cap, int *port)
-{
-    if (!*setting)
-        return VJO_ANKI_OFF;
-    if (vjo_ieq(setting, "auto"))
-        return VJO_ANKI_AUTO;
-    if (host_port(setting, strlen(setting), host, cap, VJO_ANKI_PORT, port) < 0)
-        return -1;
-    return VJO_ANKI_MANUAL;
-}
-
 int vjo_hachidori_endpoint(const char *setting, char *host, size_t cap, int *port)
 {
     int rc;
     size_t label = 0;
     if (!setting || vjo_ieq(setting, "auto"))
         return -1;
-    rc = vjo_anki_endpoint(setting, host, cap, port);
-    if (rc != VJO_ANKI_MANUAL)
+    rc = host_port(setting, strlen(setting), host, cap, VJO_HACHIDORI_PORT, port);
+    if (rc < 0)
         return -1;
     /* DNS labels must not be empty or start/end with a hyphen. */
     for (size_t i = 0; ; i++) {
@@ -242,31 +233,6 @@ int vjo_hachidori_endpoint(const char *setting, char *host, size_t cap, int *por
     return 0;
 }
 
-int vjo_anki_audio_endpoint(const char *url, char *host, int *port, int *tls, const char **path)
-{
-    size_t n = 0;
-    int term = 0;
-    if (!strncmp(url, "https://", 8)) {
-        *tls = 1;
-        url += 8;
-    } else if (!strncmp(url, "http://", 7)) {
-        *tls = 0;
-        url += 7;
-    } else {
-        return -1;
-    }
-    while (url[n] && url[n] != '/' && url[n] != '?')
-        n++;
-    for (const char *s = url + n; *s; s++) {
-        if ((unsigned char)*s <= ' ' || (unsigned char)*s >= 0x7F || *s == '#')
-            return -1; /* not one URL (a space, a fragment), or not ASCII */
-        term |= !strncmp(s, "{term}", 6);
-    }
-    if (!term || host_port(url, n, host, VJO_HOST_MAX, *tls ? 443 : 80, port) < 0)
-        return -1;
-    *path = url + n;
-    return 0;
-}
 
 static void warn(VjoConfig *c, const char *fmt, const char *a, const char *b)
 {
@@ -320,21 +286,6 @@ static int valid_hachidori_host(const char *v)
     return !*v || vjo_hachidori_endpoint(v, host, sizeof(host), &port) == 0;
 }
 
-static int valid_anki_host(const char *v)
-{
-    char host[64];
-    int port;
-    return vjo_anki_endpoint(v, host, sizeof(host), &port) >= 0;
-}
-
-static int valid_audio_url(const char *v)
-{
-    char host[VJO_HOST_MAX];
-    const char *path;
-    int port, tls;
-    return !*v || vjo_anki_audio_endpoint(v, host, &port, &tls, &path) == 0;
-}
-
 /* vocr_model: a plain file name in ocr_model_dir, ending in .vocr (which
  * models a build accepts is checked when it loads one). */
 static int valid_vocr_model(const char *v)
@@ -373,11 +324,9 @@ static const StrSetting str_settings[] = {
     STR_SETTING(ocr_model_dir, 1, 1),
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
     STR_SETTING(log_host, 0, 0),
-    CHECKED_SETTING(anki_host, 0, valid_anki_host, "empty, auto, or IP[:port]", 0),
     STR_SETTING(anki_deck, 1, 1),
     STR_SETTING(anki_note_type, 1, 1),
     STR_SETTING(anki_tags, 0, 1),
-    CHECKED_SETTING(anki_audio_url, 1, valid_audio_url, "empty, or http(s)://host[:port]/path with {term}", 1),
 };
 #define N_STR_SETTINGS ((int)(sizeof(str_settings) / sizeof(str_settings[0])))
 
@@ -444,8 +393,14 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if ((d = api_key_dict(key)) >= 0) {
         set_str(c, key, val, c->api_key[d], sizeof(c->api_key[d]));
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms")) {
+               vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "anki_host") ||
+               vjo_ieq(key, "anki_audio_url") || vjo_ieq(key, "anki_field_audio") ||
+               vjo_ieq(key, "anki_field_picture") || vjo_ieq(key, "anki_field_frequency")) {
         /* removed settings (tools/migrate_config.py REMOVED): no warning */
+    } else if (vjo_ieq(key, "anki_mining")) {
+        if (vjo_ieq(val, "on")) c->anki_mining = 1;
+        else if (vjo_ieq(val, "off")) c->anki_mining = 0;
+        else warn(c, "%s: expected on or off%s", "anki_mining", "");
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
             c->non_japanese_filter = VJO_FILTER_LINES;
@@ -530,7 +485,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     }
 }
 
-static int preference_key(const char *line, size_t n)
+static int preference_key(const char *line, size_t n, const char *const *keys, int count)
 {
     size_t begin = 0, end;
     char key[40];
@@ -543,9 +498,50 @@ static int preference_key(const char *line, size_t n)
     if (end == n || line[end] != '=') return -1;
     memcpy(key, line + begin, key_len);
     key[key_len] = 0;
-    return vjo_ieq(key, "ocr_backend") ? 0 :
-           vjo_ieq(key, "japanese_only_selection") ? 1 :
-           vjo_ieq(key, "highlight_mode") ? 2 : -1;
+    for (int i = 0; i < count; i++) if (vjo_ieq(key, keys[i])) return i;
+    return -1;
+}
+
+static int patch_values(const char *text, size_t len, const char *const *keys,
+                         const char *const *values, int count, char *out, size_t cap)
+{
+    size_t i = 0, used = 0;
+    unsigned seen = 0;
+    if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
+        (len && memchr(text, 0, len))) return -1;
+    /* Keep a BOM even when the first line is an owned preference. */
+    if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
+        if (cap <= 3) return -1;
+        memcpy(out, text, 3); used = i = 3;
+    }
+    while (i < len) {
+        size_t begin = i;
+        while (i < len && text[i] != '\n') i++;
+        int key = preference_key(text + begin, i - begin, keys, count);
+        if (i < len) i++;
+        const char *line = text + begin;
+        size_t bytes = i - begin;
+        if (key >= 0) {
+            if (seen & (1u << key)) continue;
+            seen |= 1u << key;
+            line = values[key]; bytes = strlen(line);
+        }
+        if (bytes >= cap - used) return -1;
+        memcpy(out + used, line, bytes); used += bytes;
+    }
+    for (int key = 0; key < count; key++) {
+        if (seen & (1u << key)) continue;
+        if (used && out[used - 1] != '\n') {
+            if (used + 1 >= cap) return -1;
+            out[used++] = '\n';
+        }
+        size_t bytes = strlen(values[key]);
+        if (bytes >= cap - used) return -1;
+        memcpy(out + used, values[key], bytes); used += bytes;
+    }
+    if (used > VJO_CONFIG_TEXT_MAX) return -1;
+    out[used] = 0;
+    return (int)used;
 }
 
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
@@ -553,8 +549,6 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
                                  char *out, size_t cap)
 {
     const char *values[3];
-    size_t i = 0, used = 0;
-    unsigned seen = 0;
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
         (backend < VJO_OCR_LENS || backend > VJO_OCR_MEIKI) ||
         (japanese_only != 0 && japanese_only != 1) ||
@@ -568,39 +562,16 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
     values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
     values[2] = highlight_mode == VJO_HIGHLIGHT_WORD
         ? "highlight_mode = word\n" : "highlight_mode = character\n";
-    /* Keep a BOM even when the first line is an owned preference. */
-    if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
-        if (cap <= 3) return -1;
-        memcpy(out, text, 3); used = i = 3;
-    }
-    while (i < len) {
-        size_t begin = i;
-        while (i < len && text[i] != '\n') i++;
-        int key = preference_key(text + begin, i - begin);
-        if (i < len) i++;
-        const char *line = text + begin;
-        size_t bytes = i - begin;
-        if (key >= 0) {
-            if (seen & (1u << key)) continue;
-            seen |= 1u << key;
-            line = values[key]; bytes = strlen(line);
-        }
-        if (bytes >= cap - used) return -1;
-        memcpy(out + used, line, bytes); used += bytes;
-    }
-    for (int key = 0; key < 3; key++) {
-        if (seen & (1u << key)) continue;
-        if (used && out[used - 1] != '\n') {
-            if (used + 1 >= cap) return -1;
-            out[used++] = '\n';
-        }
-        size_t bytes = strlen(values[key]);
-        if (bytes >= cap - used) return -1;
-        memcpy(out + used, values[key], bytes); used += bytes;
-    }
-    if (used > VJO_CONFIG_TEXT_MAX) return -1;
-    out[used] = 0;
-    return (int)used;
+    static const char *const keys[] = {"ocr_backend", "japanese_only_selection", "highlight_mode"};
+    return patch_values(text, len, keys, values, 3, out, cap);
+}
+
+int vjo_config_patch_mining(const char *text, size_t len, int enabled, char *out, size_t cap)
+{
+    const char *keys[] = {"anki_mining"};
+    const char *values[] = {enabled ? "anki_mining = on\n" : "anki_mining = off\n"};
+    if (enabled != 0 && enabled != 1) return -1;
+    return patch_values(text, len, keys, values, 1, out, cap);
 }
 
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
