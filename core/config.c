@@ -75,6 +75,7 @@ void vjo_config_defaults(VjoConfig *c)
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "jmdict.vjdict");
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 1;
+    c->highlight_mode = VJO_HIGHLIGHT_WORD;
     c->font_size_ja = 18;
     c->font_size_en = 14;
     c->toggle_button = VJO_TRIGGER_L_R;
@@ -120,6 +121,10 @@ const char *vjo_config_default_text(void)
            "; Left/right character lookup skips Latin text, numbers and punctuation: on | off.\n"
            "; Select Japanese kana and Han characters; this does not tokenize words.\n"
            "japanese_only_selection = on\n"
+           "\n"
+           "; Highlight the dictionary match or only the cursor character: word | character.\n"
+           "; Both modes keep character navigation; unmatched text highlights one character.\n"
+           "highlight_mode = word\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
@@ -452,6 +457,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "on")) c->japanese_only_selection = 1;
         else if (vjo_ieq(val, "off")) c->japanese_only_selection = 0;
         else warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "highlight_mode")) {
+        if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
+        else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+        else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "font_size_ja")) {
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {
@@ -535,24 +544,30 @@ static int preference_key(const char *line, size_t n)
     memcpy(key, line + begin, key_len);
     key[key_len] = 0;
     return vjo_ieq(key, "ocr_backend") ? 0 :
-           vjo_ieq(key, "japanese_only_selection") ? 1 : -1;
+           vjo_ieq(key, "japanese_only_selection") ? 1 :
+           vjo_ieq(key, "highlight_mode") ? 2 : -1;
 }
 
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
-                                 int japanese_only, char *out, size_t cap)
+                                 int japanese_only, int highlight_mode,
+                                 char *out, size_t cap)
 {
-    const char *values[2];
+    const char *values[3];
     size_t i = 0, used = 0;
     unsigned seen = 0;
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
         (backend < VJO_OCR_LENS || backend > VJO_OCR_MEIKI) ||
-        (japanese_only != 0 && japanese_only != 1) || (len && memchr(text, 0, len)))
+        (japanese_only != 0 && japanese_only != 1) ||
+        (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
+        (len && memchr(text, 0, len)))
         return -1;
     static const char *const backend_values[] = {
         "ocr_backend = lens\n", "ocr_backend = ncnn\n", "ocr_backend = vocr\n", "ocr_backend = meiki\n"
     };
     values[0] = backend_values[backend];
     values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
+    values[2] = highlight_mode == VJO_HIGHLIGHT_WORD
+        ? "highlight_mode = word\n" : "highlight_mode = character\n";
     /* Keep a BOM even when the first line is an owned preference. */
     if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
         if (cap <= 3) return -1;
@@ -573,7 +588,7 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
         if (bytes >= cap - used) return -1;
         memcpy(out + used, line, bytes); used += bytes;
     }
-    for (int key = 0; key < 2; key++) {
+    for (int key = 0; key < 3; key++) {
         if (seen & (1u << key)) continue;
         if (used && out[used - 1] != '\n') {
             if (used + 1 >= cap) return -1;

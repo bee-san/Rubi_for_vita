@@ -11,6 +11,7 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
  * VJO_WITH_VOCR); VJO_OCR_NCNN: PP-OCRv5 mobile, host experiments only. */
 enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_MEIKI = 3 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
+enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
 
 /* Data put on an Anki note, each into the field named by its
@@ -40,6 +41,7 @@ typedef struct {
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
+    int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
     int font_size_ja;         /* 8..40: header, headwords, readings */
     int font_size_en;         /* 8..40: meanings, rank, messages */
     int toggle_button;        /* enum VjoTrigger */
@@ -68,12 +70,13 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* Default file written on first run (with comments). */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's two OCR preferences, retaining every other INI
+/* Changes only the app's three OCR/lookup preferences, retaining every other INI
  * line verbatim. Duplicate owned keys are collapsed. Input/output must not
  * overlap. Returns output bytes (not including NUL), or -1 for invalid
  * choices, embedded NUL, or insufficient capacity. */
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
-                                 int japanese_only, char *out, size_t cap);
+                                 int japanese_only, int highlight_mode,
+                                 char *out, size_t cap);
 
 const char *vjo_trigger_name(int trigger);
 

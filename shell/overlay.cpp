@@ -30,6 +30,7 @@
 #include "paf_ui.h"
 extern "C" {
 #include "../core/utf.h"
+#include "../core/text_hit.h"
 }
 
 using namespace paf;
@@ -96,6 +97,7 @@ static char s_cursor_text[VJO_STRIP_MAX];
 static size_t s_cursor_text_len;
 static int s_local_cursor_mode, s_header_has_text;
 static int s_japanese_only_selection;
+static int s_highlight_mode;
 static uint32_t s_cursor_byte, s_text_generation;
 
 /* logged when the overlay closes */
@@ -184,7 +186,10 @@ static void header_highlight(void)
         s_header.text->SetStyleAttribute(graph::TextStyleAttribute_Color, s_hl_start, s_hl_len, rgba(VJO_RGB_TEXT));
     s_hl_len = 0;
     if (s_local_cursor_mode) {
-        if (s_cursor_byte < s_cursor_text_len)
+        if (s_highlight_mode == VJO_HIGHLIGHT_WORD && s_n_entries && s_rng_len[0]) {
+            s_hl_start = s_rng_start[0];
+            s_hl_len = s_rng_len[0];
+        } else if (s_cursor_byte < s_cursor_text_len)
             vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &s_hl_start, &s_hl_len);
     } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
         s_hl_start = s_rng_start[s_selected];
@@ -239,6 +244,7 @@ static void render(int new_content)
     font_px(&ja, &en);
     vjo_view_lock();
     l = g_view.list;
+    s_highlight_mode = g_view.highlight_mode;
     rebuild_header = new_content || !s_header_has_text;
     if (g_view.local_cursor_mode) {
         int new_text = !s_local_cursor_mode || s_text_generation != g_view.text_generation;
@@ -276,6 +282,10 @@ static void render(int new_content)
     if (s_local_cursor_mode) {
         s_n_entries = cursor_matches && s_n_entries ? 1 : 0;
         s_selected = 0;
+        /* Copy only the current result's range while its arena is locked.
+         * An in-flight or unsuccessful lookup falls back to the character. */
+        if (!s_n_entries || !vjo_entry_header_range(l, 0, &s_rng_start[0], &s_rng_len[0]))
+            s_rng_len[0] = 0;
     }
     s_list_seq = g_view.list_seq;
     if (s_selected >= s_n_entries)
@@ -325,8 +335,8 @@ static void render(int new_content)
 
     set_rich(s_hint, s_local_cursor_mode
                         ? (s_japanese_only_selection
-                            ? "<font color=\"#8a94a6\">◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
-                            : "<font color=\"#8a94a6\">◀ ▶ character · one entry · stick scroll · □ region · ○ close</font>")
+                            ? "<font color=\"#8a94a6\">Tap / ◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
+                            : "<font color=\"#8a94a6\">Tap / ◀ ▶ character · stick scroll · □ region · ○ close</font>")
                         : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
     if (rebuild_header) {
         if (have_hdr) {
@@ -398,7 +408,8 @@ static void touch_region(int on)
     if (on == s_touch_region_on)
         return;
     rc = inputdevice::touchscreen::ActivateDefaultRegion(inputdevice::touchscreen::PORT_FRONT, on != 0);
-    s_touch_region_on = on;
+    if (rc >= 0)
+        s_touch_region_on = on;
     vjo_log("touch region %s: 0x%X", on ? "on" : "off", rc);
 }
 
@@ -422,7 +433,6 @@ static void enter_region_mode(void)
 
 static void leave_region_mode(void)
 {
-    touch_region(0);
     s_mode = MODE_OVERLAY;
     if (s_region_layer)
         s_region_layer->Hide();
@@ -492,6 +502,7 @@ static void open_page(void)
     s_stick_max = 0;
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_prev_touch = 1;
+    touch_region(1); /* own front input throughout the overlay, not just crops */
 }
 
 static void close_page(void)
@@ -499,6 +510,7 @@ static void close_page(void)
     Plugin::PageCloseParam param;
     if (s_mode == MODE_REGION)
         leave_region_mode();
+    touch_region(0);
     param.fade = false;
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
@@ -545,8 +557,50 @@ static int entry_vertical(int up)
     return best;
 }
 
+static int header_char_position(void *ctx, uint32_t unit, float *x, uint32_t *line)
+{
+    graph::TextLayoutCharInfo info;
+    int rc = ((ui::Text *)ctx)->GetCharInfo(unit, info);
+    if (rc >= 0) { *x = info.x; *line = info.line; }
+    return rc;
+}
+
+static void input_header_touch(void)
+{
+    const inputdevice::touchscreen::Data *pd = NULL;
+    inputdevice::touchscreen::GetData(inputdevice::touchscreen::PORT_FRONT, 0, &pd);
+    int down = pd && pd->state != inputdevice::touchscreen::Data::STATE_NONE &&
+                    pd->state != inputdevice::touchscreen::Data::STATE_RELEASE;
+    int pressed = down && !s_prev_touch;
+    s_prev_touch = down;
+    if (!pressed || !s_touch_region_on || !s_local_cursor_mode || !s_header.text || !s_header_has_text)
+        return;
+    float x = 0, y = 0;
+    uint32_t lines = 0;
+    if (inputdevice::touchscreen::GetPointFromTopleft(inputdevice::touchscreen::PORT_FRONT, 0, x, y) < 0 ||
+        s_header.text->GetLineCount(lines) < 0 || !lines) return;
+    int ja, en;
+    font_px(&ja, &en);
+    /* The header has one font size, so its measured line count and bounds
+     * give the same pitch used by header_follow. Never query the undocumented
+     * LineInfo frame fields or the crashing GetNextDownHit helper. */
+    VjoTextHitLayout layout = {(SCREEN_W - BOX_W) / 2.0f, SCREEN_H / 2.0f - HEADER_TOP,
+        BOX_W, s_header.h, text_height(s_header.text), s_header.scroll, (float)ja,
+        lines, header_char_position, s_header.text};
+    size_t byte = 0;
+    if (!vjo_text_hit(s_cursor_text, s_cursor_text_len, &layout, x, y,
+                      s_japanese_only_selection, &byte)) return;
+    if (byte == s_cursor_byte) return;
+    s_cursor_byte = (uint32_t)byte;
+    s_moves++;
+    vjo_log("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
+    vjo_post_cursor(s_cursor_byte, s_text_generation);
+    render(0);
+}
+
 static void input_overlay(const VjoInput *in, uint32_t pressed)
 {
+    input_header_touch();
     int n = s_n_entries;
     int next = s_selected;
     int dy;

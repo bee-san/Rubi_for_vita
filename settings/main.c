@@ -22,9 +22,12 @@
 #define GAME_H 80
 #define GAME_PITCH 88
 #define OCR_Y 112
-#define OCR_H 172
-#define SELECTION_Y 296
-#define SELECTION_H 134
+#define OCR_H 140
+#define SELECTION_Y 262
+#define SELECTION_H 78
+#define HIGHLIGHT_Y 350
+#define HIGHLIGHT_H 80
+#define PREFERENCES 3
 #define BG RGBA8(9, 15, 23, 255)
 #define CARD RGBA8(21, 31, 44, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
@@ -259,14 +262,14 @@ static void load_preferences(void)
     check_models();
 }
 
-static void change_preference(int backend, int japanese_only)
+static void change_preference(int backend, int japanese_only, int highlight_mode)
 {
     if (!preferences_writable) {
         preference_error = 1;
         snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
         return;
     }
-    int rc = vjo_preferences_save(backend, japanese_only, &scratch);
+    int rc = vjo_preferences_save(backend, japanese_only, highlight_mode, &scratch);
     /* Re-read even on failure: final sync can fail after publication. */
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;
@@ -282,7 +285,17 @@ static void toggle_preference(void)
     change_preference(preference_selected == 0
         ? (preferences.ocr_backend == VJO_OCR_MEIKI ? VJO_OCR_VOCR : VJO_OCR_MEIKI)
         : preferences.ocr_backend,
-        preference_selected == 1 ? !preferences.japanese_only_selection : preferences.japanese_only_selection);
+        preference_selected == 1 ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
+        preference_selected == 2 ? !preferences.highlight_mode : preferences.highlight_mode);
+}
+
+static void set_preference(int right)
+{
+    change_preference(preference_selected == 0 ? (right ? VJO_OCR_MEIKI : VJO_OCR_VOCR)
+                                               : preferences.ocr_backend,
+        preference_selected == 1 ? right : preferences.japanese_only_selection,
+        preference_selected == 2 ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
+                                : preferences.highlight_mode);
 }
 
 static void draw_preferences(void)
@@ -297,26 +310,35 @@ static void draw_preferences(void)
     text(42, OCR_Y + 35, WHITE, 28, "OCR engine");
     badge(644, OCR_Y + 14, 132, 48, "VOCR", preferences_writable && preferences.ocr_backend == VJO_OCR_VOCR);
     badge(792, OCR_Y + 14, 128, 48, "Meiki", preferences_writable && preferences.ocr_backend == VJO_OCR_MEIKI);
-    text(42, OCR_Y + 76, DIM, 24, "VOCR: dialogue region, automatic or manual.");
-    text(42, OCR_Y + 109, DIM, 24, "Meiki: one tight line, manual. Game engine required.");
+    text(42, OCR_Y + 70, DIM, 24, "VOCR: dialogue region, automatic or manual.");
+    text(42, OCR_Y + 100, DIM, 24, "Meiki: one tight line, manual. Game engine required.");
     char label[120];
     if (!preferences_writable) snprintf(label, sizeof(label), "Cannot read the saved OCR choice.");
     else if (!known) snprintf(label, sizeof(label), "Other engine configured. Left/Right chooses VOCR/Meiki.");
     else snprintf(label, sizeof(label), "Model files: VOCR %s / Meiki %s",
                   model_found[0] ? "found" : "missing", model_found[1] ? "found" : "missing");
-    wrapped_text(42, OCR_Y + 149, 870,
+    wrapped_text(42, OCR_Y + 129, 870,
                  preferences_writable && model_found[0] && model_found[1] ? DIM : OFF,
                  24, 26, 1, label);
     vita2d_disable_clipping();
     focus_card(SELECTION_Y, SELECTION_H, preference_selected == 1);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, SELECTION_Y + 2, 932, SELECTION_Y + SELECTION_H - 2);
-    text(42, SELECTION_Y + 35, WHITE, 28, "Japanese characters only");
-    badge(812, SELECTION_Y + 14, 108, 38, !preferences_writable ? "--" :
+    text(42, SELECTION_Y + 32, WHITE, 28, "Japanese characters only");
+    badge(812, SELECTION_Y + 8, 108, 38, !preferences_writable ? "--" :
           preferences.japanese_only_selection ? "ON" : "OFF",
           preferences_writable && preferences.japanese_only_selection);
-    text(42, SELECTION_Y + 76, DIM, 24, "Cursor skips Latin, numbers, punctuation and Hangul.");
-    text(42, SELECTION_Y + 109, DIM, 24, "OFF lets you select every character. OCR text stays visible.");
+    text(42, SELECTION_Y + 65, DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
+    vita2d_disable_clipping();
+    focus_card(HIGHLIGHT_Y, HIGHLIGHT_H, preference_selected == 2);
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(28, HIGHLIGHT_Y + 2, 932, HIGHLIGHT_Y + HIGHLIGHT_H - 2);
+    text(42, HIGHLIGHT_Y + 32, WHITE, 28, "Highlight");
+    badge(532, HIGHLIGHT_Y + 8, 176, 38, "Whole word",
+          preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_WORD);
+    badge(724, HIGHLIGHT_Y + 8, 196, 38, "Character",
+          preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
+    text(42, HIGHLIGHT_Y + 67, DIM, 24, "Word uses the dictionary match. Cursor moves by character.");
     vita2d_disable_clipping();
     footer(preference_status, preference_error,
            "D-pad: choose   X: change   Left/Right: set   O: exit");
@@ -414,12 +436,11 @@ int main(void)
         if (pressed & SCE_CTRL_CIRCLE) break;
         if (pressed & SCE_CTRL_SELECT) { page = !page; repeat_at = now + 350000; }
         if (page) {
-            if (pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)) preference_selected = !preference_selected;
+            if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
+            if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
             if (pressed & SCE_CTRL_CROSS) toggle_preference();
-            if (pressed & SCE_CTRL_LEFT) change_preference(preference_selected == 0 ? VJO_OCR_VOCR : preferences.ocr_backend,
-                preference_selected == 1 ? 0 : preferences.japanese_only_selection);
-            if (pressed & SCE_CTRL_RIGHT) change_preference(preference_selected == 0 ? VJO_OCR_MEIKI : preferences.ocr_backend,
-                preference_selected == 1 ? 1 : preferences.japanese_only_selection);
+            if (pressed & SCE_CTRL_LEFT) set_preference(0);
+            if (pressed & SCE_CTRL_RIGHT) set_preference(1);
             if (pressed & SCE_CTRL_START) load_preferences();
         } else {
             if (pressed & SCE_CTRL_CROSS) toggle();
@@ -444,13 +465,21 @@ int main(void)
             else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 preference_selected = 0;
                 if (x >= 644 && x < 776 && y >= OCR_Y + 14 && y < OCR_Y + 62)
-                    change_preference(VJO_OCR_VOCR, preferences.japanese_only_selection);
+                    change_preference(VJO_OCR_VOCR, preferences.japanese_only_selection, preferences.highlight_mode);
                 else if (x >= 792 && x < 920 && y >= OCR_Y + 14 && y < OCR_Y + 62)
-                    change_preference(VJO_OCR_MEIKI, preferences.japanese_only_selection);
+                    change_preference(VJO_OCR_MEIKI, preferences.japanese_only_selection, preferences.highlight_mode);
                 else toggle_preference();
             }
             else if (page && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
                 preference_selected = 1; toggle_preference();
+            }
+            else if (page && x >= 24 && x < 936 && y >= HIGHLIGHT_Y && y < HIGHLIGHT_Y + HIGHLIGHT_H) {
+                preference_selected = 2;
+                if (x >= 532 && x < 708 && y >= HIGHLIGHT_Y + 8 && y < HIGHLIGHT_Y + 46)
+                    set_preference(0);
+                else if (x >= 724 && x < 920 && y >= HIGHLIGHT_Y + 8 && y < HIGHLIGHT_Y + 46)
+                    set_preference(1);
+                else toggle_preference();
             }
             else if (page) { /* no game actions on the OCR page */ }
             else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();

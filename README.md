@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **v0.7.8 defaults to
+text and shows Japanese dictionary entries over your game. **v0.7.9 defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -21,8 +21,8 @@ See [OCR measurements and limits](docs/vita-vn-ocr.md) and
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.8.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.8) and
+Download `VitaJPOverlay-0.7.9.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.9) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models, the pinned Meiki recognizer/engine, and the complete converted
 JMdict snapshot. Meiki also needs its engine mounted for each enabled game;
@@ -62,6 +62,7 @@ then reboot. Keep unrelated plugins and configuration intact.
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Move to the next Japanese character by default; local lookup shows one entry |
+| Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
@@ -92,9 +93,11 @@ tab, or press Select, to change pages. Choices save automatically to
 | Circle | Exit |
 
 On the **OCR & lookup** page, select a card with Up/Down. Cross
-or touch a card switches between VOCR/Meiki or toggles Japanese-only selection.
+or touch a card changes its choice: OCR engine, Japanese-only selection, or
+whole-word/character highlighting.
 Touch the VOCR or Meiki button to choose that engine directly;
-Left/Right choose VOCR/Meiki on the model card or OFF/ON on the selection card.
+Left/Right choose VOCR/Meiki on the model card, OFF/ON on the selection card,
+or Whole word/Character on the Highlight card.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Both model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -105,6 +108,14 @@ skip Latin text, digits, punctuation and Hangul while selecting kana and Han
 characters. It does not tokenize words or hide the recognized sentence. With
 it OFF, every Unicode character is selectable. No Japanese characters means
 no character lookup or dictionary allocation.
+
+**Whole word** highlighting is the default. It highlights the actual dictionary
+match, including the original inflected text, when lookup finishes. **Character**
+highlights only the selected character. A pending or unsuccessful word lookup
+keeps the character highlighted. Both choices keep character navigation.
+Tap a character in the recognized sentence at the top of the open overlay to
+look up the word starting there; Japanese-only selection also applies to taps.
+[Touch selection details and validation](docs/touch-lookup.md).
 
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. An unreadable or
