@@ -5,7 +5,7 @@
 
 #include <stdint.h>
 
-#define VJO_API_VERSION 12
+#define VJO_API_VERSION 13
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
@@ -70,16 +70,19 @@ typedef struct {
 #define VJO_CAPTURE_ONCE 0x2u /* JPEG reader: release after copying the final row */
 #define VJO_CAPTURE_DISCARD 0x4u /* release an idle single-pass capture after an encoder error */
 
-/* Kernel capture error codes (VjoState.capture_result) */
-#define VJO_ERR_NO_GAME      (-1)
-#define VJO_ERR_NO_MEMORY    (-2)
-#define VJO_ERR_BUSY         (-3)
-#define VJO_ERR_TIMEOUT      (-4)
-#define VJO_ERR_FORMAT       (-5)
-#define VJO_ERR_ARG          (-6) /* bad argument */
-#define VJO_ERR_COPY         (-7)
-#define VJO_ERR_CANCELLED    (-9)
-#define VJO_ERR_PERM         (-8) /* caller is not (or may not be) the registered shell */
+/* Shared syscall and copied-payload statuses. Physical retail hardware returned
+ * queued -3 as 0xBFFFFFFD. Keep every custom status negative with bit 30 clear,
+ * so that observed return transformation leaves the API 13 contract unchanged.
+ * Native SDK/file errors are returned untouched in their own namespaces. */
+#define VJO_ERR_NO_GAME      ((int32_t)0xBFFFFFFFu)
+#define VJO_ERR_NO_MEMORY    ((int32_t)0xBFFFFFFEu)
+#define VJO_ERR_BUSY         ((int32_t)0xBFFFFFFDu)
+#define VJO_ERR_TIMEOUT      ((int32_t)0xBFFFFFFCu)
+#define VJO_ERR_FORMAT       ((int32_t)0xBFFFFFFBu)
+#define VJO_ERR_ARG          ((int32_t)0xBFFFFFFAu) /* bad argument */
+#define VJO_ERR_COPY         ((int32_t)0xBFFFFFF9u)
+#define VJO_ERR_CANCELLED    ((int32_t)0xBFFFFFF7u)
+#define VJO_ERR_PERM         ((int32_t)0xBFFFFFF8u) /* caller is not the registered role */
 
 /* vjoSetGameActive's mode for the foreground process. */
 enum VjoGameMode {
