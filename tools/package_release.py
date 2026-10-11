@@ -32,7 +32,7 @@ def verify(root):
     print(f"Verified {len(manifest['files'])} package files")
 
 
-def package(base, output, models, dictionary, license_file, version="0.7.10", meiki_model=None, source_revision=None):
+def package(base, output, models, dictionary, license_file, version="0.7.11", meiki_model=None, source_revision=None):
     source = Path(__file__).resolve().parents[1]
     if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
         raise ValueError("Expected an exact 40-character source revision")
@@ -110,7 +110,7 @@ def main():
     parser.add_argument("--dictionary", type=Path)
     parser.add_argument("--license-file", type=Path)
     parser.add_argument("--verify", type=Path)
-    parser.add_argument("--version", default="0.7.10")
+    parser.add_argument("--version", default="0.7.11")
     parser.add_argument("--meiki-model", type=Path, help="Pinned recognizer; requires an optional-engine base archive")
     parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
     args = parser.parse_args()

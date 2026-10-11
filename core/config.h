@@ -47,7 +47,7 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_NCNN */
+    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_MEIKI | VJO_OCR_NCNN */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
     char vocr_model[64];      /* vita-vn-ocr weights file in ocr_model_dir */

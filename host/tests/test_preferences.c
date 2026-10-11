@@ -144,6 +144,34 @@ static void test_save_failure_preserves_or_recovers_actual_choices(void)
     VjoConfig cfg; TEST_CHECK(vjo_preferences_load(&cfg, &arena) == 1);
     TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
 }
+static void test_lens_choice_loads_shell_and_retains_other_preferences(void)
+{
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    unsigned char shell_mem[24 * 1024]; VjoArena shell;
+    vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+    const int backends[] = {VJO_OCR_LENS, VJO_OCR_MEIKI, VJO_OCR_VOCR, VJO_OCR_LENS};
+    for (unsigned i = 0; i < sizeof(backends)/sizeof(backends[0]); i++) {
+        TEST_ASSERT(vjo_preferences_save(backends[i], 1, VJO_HIGHLIGHT_WORD, &arena) == 0);
+        check_choices(backends[i], 1, VJO_HIGHLIGHT_WORD);
+        VjoConfig cfg; vjo_config_load(&cfg, &shell);
+        TEST_CHECK(cfg.ocr_backend == backends[i] && cfg.dictionary == VJO_DICT_LOCAL);
+        TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
+        TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
+        TEST_CHECK(shell.used == 0 && handles == 0);
+    }
+    /* Changing the other controls must keep Lens selected. */
+    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, 0, VJO_HIGHLIGHT_CHARACTER, &arena) == 0);
+    check_choices(VJO_OCR_LENS, 0, VJO_HIGHLIGHT_CHARACTER);
+    VjoConfig cfg; vjo_config_load(&cfg, &shell);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.dictionary == VJO_DICT_LOCAL);
+    TEST_CHECK(!cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
+    /* A failed online choice never replaces the last saved local choice. */
+    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, &arena) == 0);
+    write_fail = 1; written = 0;
+    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, 1, VJO_HIGHLIGHT_WORD, &arena) < 0);
+    write_fail = 0;
+    check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
+}
 static void test_unreadable_or_invalid_config_never_overwritten(void)
 {
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1); read_fail = 1;
@@ -238,6 +266,7 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
 TEST_LIST = {
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"saved_backend_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},
+    {"lens_choice_loads_shell_and_retains_other_preferences", test_lens_choice_loads_shell_and_retains_other_preferences},
     {"highlight_only_changes_reload_in_actual_Shell_and_preserve_other_choices", test_highlight_only_switch_loads_actual_shell_without_other_changes},
     {"partial_write_close_sync_and_rename_failures_retain_confirmable_choices", test_save_failure_preserves_or_recovers_actual_choices},
     {"unreadable_embedded_NUL_and_oversize_config_are_not_overwritten", test_unreadable_or_invalid_config_never_overwritten},

@@ -7,15 +7,20 @@ unchanged.
 
 The 960 × 544 layout now shows three 80-pixel game cards. Game titles have two
 measured-width lines; their IDs occupy a separate right column below a clear
-ON/OFF badge. The page tabs and direct VOCR/Meiki buttons have 48-pixel touch
-heights. The focused card has a bright border. Save failures have a distinct
+ON/OFF badge. The page tabs and direct VOCR/Meiki/Google Lens buttons have
+48-pixel touch heights. The focused card has a bright border. Save failures have a distinct
 error color, and status messages have two lines above the control hints.
 Only three icon textures are held at once, retaining the existing unload-on-scroll
 ownership.
 
-D-pad, L/R, Cross, Triangle, Square, Start, Select and Circle keep their existing
-actions. Touch can select either page, toggle a game or setting, or choose
-VOCR/Meiki directly. Game policy and preference loading/saving are unchanged.
+Games-page controls keep their existing actions. Touch can select either page,
+toggle a game or setting, or choose
+VOCR, Meiki or Google Lens directly. Left/Right cycles backward/forward through
+the engines; Cross selects the next engine. Touching the OCR heading, help text
+or gaps only focuses that row, so it cannot accidentally enable online OCR.
+The selected engine's description identifies local/manual behavior or Lens's
+Wi-Fi requirement and image upload. Model availability is shown only for the
+selected local engine. Game policy and preference loading/saving are unchanged.
 The app still re-reads after a save failure to display the actual saved choices;
 a failure is never presented as a successful save.
 
@@ -65,6 +70,18 @@ measurements, or physical readability proof. Existing persistence tests and
 the native Settings VPK build remain separate checks.
 
 ## Native installation and controls checkpoint
+
+The v0.7.11 OCR selector was checked with 22 scenarios through the actual
+Settings input/draw loop under AddressSanitizer and UndefinedBehaviorSanitizer.
+These include all three direct engine choices, forward/backward cycling and
+wraparound, selection/highlight changes retaining Lens, existing custom-engine
+settings, failed/unreadable saves, and row gaps/help text making no changes.
+Lens remains selectable without local model files, and its help identifies the
+Wi-Fi requirement and image upload without reporting missing local weights.
+Approximate host previews of all three choices fit the card and viewport;
+firmware rendering and live Google Lens recognition remain unverified.
+The native Settings build, PNG ABI/assets checks and existing Lens transport
+tests are separate checks. This change does not deploy anything to a Vita.
 
 Native promotion of the v0.7.7 VPK completed with result 0. Full native readbacks
 of the installed 277,084-byte executable and 788-byte `param.sfo` match the
