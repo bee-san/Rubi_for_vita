@@ -700,6 +700,7 @@ static void finish_current_job(void)
 static void cursor_saved_text(void)
 {
     cursor_setup();
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
     stable_pending = 1; auto_prefetch();
     TEST_ASSERT(job_running && !job_lookup && !job_cursor_only);
     finish_current_job();
@@ -740,17 +741,16 @@ static void test_japanese_only_selection_and_config_reload(void)
      * They must not recapture or allocate a second inference workspace. */
     TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_WORD);
     close_overlay(); loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    unsigned reads_before = cursor_reads;
     open_overlay();
     TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
-    TEST_CHECK(local_text_valid && job_running && job_cursor_only);
-    finish_current_job();
+    TEST_CHECK(local_text_valid && !job_running && cursor_reads == reads_before);
     TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
     TEST_CHECK(g_view.cursor_byte == second);
     close_overlay(); loaded.highlight_mode = VJO_HIGHLIGHT_WORD;
     open_overlay();
     TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_WORD);
-    TEST_CHECK(local_text_valid && job_running && job_cursor_only);
-    finish_current_job();
+    TEST_CHECK(local_text_valid && !job_running && cursor_reads == reads_before);
     TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
     close_overlay(); loaded.japanese_only_selection = 0;
     open_overlay();
@@ -779,7 +779,8 @@ static void test_no_japanese_selection_skips_dictionary_memory_and_io(void)
     TEST_CHECK(!cursor_opens && !has_result_memory() && !user_allocs && !heap_allocs);
     vjo_post_cursor(0, local_text_generation);
     TEST_CHECK(pending_cmd == VJO_CMD_NONE && !job_running);
-    close_overlay(); open_overlay(); finish_current_job();
+    close_overlay(); open_overlay();
+    TEST_CHECK(!job_running && g_view.list && !g_view.list->n_entries);
     TEST_CHECK(!cursor_opens && !has_result_memory() && vocr_allocs == 1);
     close_overlay(); mem_free();
 }
@@ -804,6 +805,51 @@ static void test_character_open_reuses_background_text(void)
     on_job_done(); TEST_ASSERT(job_running && job_cursor_only);
     finish_current_job(); check_current_definition("cat", 0);
     TEST_CHECK(vocr_allocs == 1);
+}
+
+static void test_word_background_lookup_and_reopen_cache(void)
+{
+    cursor_setup();
+    TEST_CHECK(want_lookup());
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
+    TEST_CHECK(!want_lookup());
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only && ov == OV_CLOSED);
+    finish_current_job();
+    TEST_CHECK(cache_ok && active == 0 && !g_view.open && !g_view.list);
+    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size);
+    unsigned reads_before = cursor_reads, inferences = vocr_allocs;
+    uint32_t generation = local_text_generation;
+    open_overlay();
+    TEST_CHECK(!job_running && cursor_reads == reads_before && vocr_allocs == inferences);
+    check_current_definition("cat", 0);
+    close_overlay(); open_overlay();
+    TEST_CHECK(!job_running && cursor_reads == reads_before && local_text_generation == generation);
+    check_current_definition("cat", 0);
+    /* A cursor posted before its job starts must exclude the old cache. */
+    vjo_post_cursor(3, generation);
+    close_overlay(); open_overlay();
+    TEST_ASSERT(job_running && job_cursor_only && !g_view.list->n_entries);
+    finish_current_job(); check_current_definition("dog", 3);
+    close_overlay();
+    state.scene = state.region_scene = 8; state.region_seq++;
+    open_overlay();
+    TEST_ASSERT(job_running && !job_cursor_only && !g_view.list);
+    finish_current_job(); check_current_definition("cat", 0);
+    TEST_CHECK(local_text_generation != generation && vocr_allocs == inferences + 1);
+    close_overlay(); mem_free();
+
+    cursor_setup(); stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    reads_before = cursor_reads;
+    open_overlay(); /* lookup finished, completion has not been processed */
+    TEST_CHECK(job_running && !cursor_waiting && !job_cursor_only);
+    job_done = 1; on_job_done();
+    TEST_CHECK(!job_running && cursor_reads == reads_before && vocr_allocs == 1);
+    check_current_definition("cat", 0);
+    close_overlay(); mem_free();
 }
 static void test_character_coalesces_and_drops_inflight_definition(void)
 {
@@ -1062,6 +1108,7 @@ TEST_LIST = {
     {"japanese_only_selects_first_letter_rejects_other_scripts_and_reloads_choices", test_japanese_only_selection_and_config_reload},
     {"no_Japanese_text_allocates_no_results_and_performs_no_dictionary_IO", test_no_japanese_selection_skips_dictionary_memory_and_io},
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
+    {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_and_region_changes_retire_saved_text", test_character_scene_and_region_invalidate_saved_text},

@@ -1,12 +1,30 @@
 # Touch selection and highlighting
 
 Settings → OCR & lookup → Highlight chooses **Whole word** (default) or
-**Character**. This is a presentation choice: navigation still advances one
-Unicode character and local dictionaries still return at most one result.
+**Character**. Local dictionaries still return at most one result. In Whole
+word mode, Right skips the current matched source span and Left retraces up to
+16 recent forward selections. Without a match or previous selection, movement
+falls back to one Unicode character. Character mode always steps one character.
 Whole word uses the matched source span, including an inflected ending, rather
 than the dictionary's normalized spelling. While a lookup runs or has no result,
 it highlights the selected character instead. Changing the preference preserves
-the recognized text; opening again performs only the normal selected lookup.
+the recognized text; a completed selected lookup is reused when opening again.
+
+Automatic OCR prepares the first local match before the popup is opened.
+Reopening unchanged dialogue reuses a completed, current result without more
+dictionary reads. Changed text, scene, region, dictionary or cursor excludes
+that cache. On-press OCR still requires recognition and an initial lookup when
+opening; new selections perform one asynchronous lookup each. The existing
+single dynamic 64 KiB result workspace is retained; there is no sentence-wide
+definition cache or static workspace reservation. Navigation stores only 16
+byte offsets, and a tap or a new sentence clears that history.
+
+In v0.7.10, a highlight change explicitly invalidates the header drawing after
+updating its color styles. The applied range is committed only after the native
+calls succeed; unavailable layout or failed updates get at most six frame
+retries. A partial failure clears the header's color styles before retrying, so
+a newer cursor or mode cannot leave an old word yellow. The header string and
+scroll position are retained.
 
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there. This selects the overlay's recognized header,
@@ -37,11 +55,25 @@ and that rapid selected lookups cannot publish stale definitions. Config tests
 cover both modes and invalid values; transactional preference tests preserve
 unrelated config bytes and exercise save/restore failures.
 
+The header recoloring tests exercise the actual update helper against a text
+double with cached drawing. They cover character-to-word expansion, character
+mode, stale-color cleanup, failed layout/style/invalidation calls, invalid
+ranges, and inflected source spans after CR and a UTF-16 surrogate pair.
+These tests establish the explicit refresh contract, not native PAF behavior.
+
 These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
 
 ## Installation checkpoint
+
+After the v0.7.9 checkpoint, the user reported that Whole word still showed one
+highlighted character while a definition was displayed
+([issue #41](https://github.com/bee-san/vita-jp-overlay/issues/41)). They later
+clarified that the word appears when lookup finishes and requested word jumps.
+The v0.7.10 changes prepare/reuse the first result and navigate matched spans;
+they have not been deployed to or visually
+verified on the physical Vita.
 
 [PR #38](https://github.com/bee-san/vita-jp-overlay/pull/38) merged after checks
 at `ee796f1ea683d84a668bbc52961bf146a9f9986c`: 22 host suites, native build/gates

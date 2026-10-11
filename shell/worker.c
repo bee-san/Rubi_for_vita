@@ -700,6 +700,7 @@ static void start_cursor_job(void)
     }
     sceKernelLockMutex(cmd_lock, 1, NULL);
     job_cursor_only = 1;
+    cache_ok = 0; /* this job will overwrite the single result arena */
     job_lookup = 1;
     job_idx = 0;
     job_cfg = cfg;
@@ -848,8 +849,22 @@ static void open_overlay(void)
     if (local_pipeline(&cfg) && local_text_valid &&
         local_text_game_generation == game_generation &&
         shows_screen(local_text_scene, local_text_capture_seq, &st)) {
+        /* Reopening a completed lookup must not replace its word with the
+         * pending character and repeat disk I/O. Cursor/text generations
+         * exclude a result superseded before its next job has started. */
+        if (!job_running && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
+            job_text_generation == local_text_generation && claim_cache_for(&st)) {
+            vjo_log("open: saved local word");
+            view_show_cache();
+            return;
+        }
         local_header = (VjoEntryList){local_text, NULL, 0};
         view_publish(1, &local_header, "Looking up words…", 0);
+        /* Opening while the prepared first lookup is still finishing can
+         * show that result directly; don't queue the same lookup again. */
+        if (job_running && job_lookup && !job_cancelled &&
+            job_text_generation == local_text_generation && job_cursor_seq == local_cursor_seq)
+            return;
         start_cursor_job();
         return;
     }
@@ -1074,7 +1089,8 @@ static void on_job_done(void)
 static int want_lookup(void)
 {
     return vjo_config_dict_ready(&cfg) &&
-           (local_pipeline(&cfg) ? ov != OV_CLOSED : ov != OV_CLOSED || cfg.ocr_mode == VJO_OCR_AUTO) &&
+           (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
+              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD))) &&
            now_us() >= dict_backoff.until;
 }
 

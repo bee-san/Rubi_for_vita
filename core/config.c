@@ -123,7 +123,7 @@ const char *vjo_config_default_text(void)
            "japanese_only_selection = on\n"
            "\n"
            "; Highlight the dictionary match or only the cursor character: word | character.\n"
-           "; Both modes keep character navigation; unmatched text highlights one character.\n"
+           "; Word skips the matched source span; character steps one character.\n"
            "highlight_mode = word\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
