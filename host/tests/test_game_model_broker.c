@@ -17,11 +17,42 @@ static SceUID caller;
 static unsigned locks, user_opens, kernel_opens, kernel_reads, kernel_closes;
 static unsigned allocated, released, received;
 static unsigned char arena[2*1024*1024] __attribute__((aligned(64)));
-static unsigned char pixels[200*60*4];
+static unsigned char pixels[49152]; /* page-rounded 200x60 capture */
 static int live, open_error, read_error, close_error, bad_length, early_eof, corrupt, short_read;
 static int schedule_kernel, cancel_after;
 static uint64_t clock_us;
 static FILE *file;
+static unsigned boundary_busy, capture_allocations, capture_releases;
+static int capture_live;
+
+int test_kernel_register(void);
+int test_kernel_submit(const VjoGameOcrRequest *request);
+int test_kernel_take(VjoGameOcrRequest *out);
+int test_kernel_read_raw(uint32_t seq, uint32_t row, uint32_t count, void *dst);
+int test_kernel_cancelled(uint32_t seq);
+int test_kernel_complete(const VjoGameOcrResult *result);
+int test_kernel_read(uint32_t seq, VjoGameOcrResult *out);
+int test_kernel_cancel(uint32_t seq);
+int test_kernel_model_open(uint32_t seq);
+int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst);
+int test_kernel_model_close(uint32_t seq);
+static int retail_return(int rc)
+{ return rc < 0 ? (int32_t)((uint32_t)rc & ~0x40000000u) : rc; }
+int vjoOcrRegister(void) { return retail_return(test_kernel_register()); }
+int vjoOcrSubmit(const VjoGameOcrRequest *r) { return retail_return(test_kernel_submit(r)); }
+int vjoOcrTake(VjoGameOcrRequest *out) { return retail_return(test_kernel_take(out)); }
+int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t count, void *dst)
+{ return retail_return(test_kernel_read_raw(seq, row, count, dst)); }
+int vjoOcrCancelled(uint32_t seq) { return retail_return(test_kernel_cancelled(seq)); }
+int vjoOcrComplete(const VjoGameOcrResult *r) { return retail_return(test_kernel_complete(r)); }
+int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out) { return retail_return(test_kernel_read(seq, out)); }
+int vjoOcrCancel(uint32_t seq) { return retail_return(test_kernel_cancel(seq)); }
+int vjoOcrModelOpen(uint32_t seq)
+{ int rc = retail_return(test_kernel_model_open(seq)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
+int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t bytes, void *dst)
+{ int rc = retail_return(test_kernel_model_read(seq, off, bytes, dst)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
+int vjoOcrModelClose(uint32_t seq)
+{ int rc = retail_return(test_kernel_model_close(seq)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
@@ -38,8 +69,14 @@ int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize n)
 { TEST_CHECK(syscall_depth == 1); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize n)
 { TEST_CHECK(syscall_depth == 1 && locks == 1); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
-void buffers_read_done(uint32_t row, uint32_t count)
-{ TEST_CHECK(locks == 1); if (row+count == g.crop_h) { g.raw_valid = 0; g.raw = NULL; } }
+SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, SceSize bytes, void *opt)
+{ TEST_CHECK(!capture_live && type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(pixels)); capture_live = 1; capture_allocations++; return 27; }
+int ksceKernelGetMemBlockBase(SceUID uid, void **base)
+{ TEST_CHECK(uid == 27 && capture_live); *base = pixels; return 0; }
+int ksceKernelFreeMemBlock(SceUID uid)
+{ TEST_CHECK(uid == 27 && capture_live); capture_live = 0; capture_releases++; return 0; }
+void capture_compute_crop(uint32_t width, uint32_t height, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h)
+{ *x = *y = 0; *w = 200; *h = 60; }
 
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
@@ -110,11 +147,13 @@ static VjoGameOcrRequest setup(const char *name)
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     locks = syscall_depth = user_opens = kernel_opens = kernel_reads = kernel_closes = 0;
     allocated = released = received = 0;
+    boundary_busy = capture_allocations = capture_releases = 0; capture_live = 1;
     open_error = read_error = close_error = bad_length = early_eof = corrupt = short_read = cancel_after = 0;
     schedule_kernel = 1; clock_us = 1000000;
     g.lock = g.ievf = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
     g.capture_state = CAPTURE_IDLE; g.capture_once = g.raw_valid = 1;
     g.raw = pixels; g.raw_capacity = sizeof(pixels); g.raw_stride = 800;
+    g.mem_uid = 27; g.fb_w = 200; g.fb_h = 60;
     g.crop_w = 200; g.crop_h = 60; g.done_seq = g.capture_seq = 11;
     g.capture_game_pid = 7; g.capture_epoch = 1;
     memset(pixels, 0, sizeof(pixels));
@@ -134,6 +173,15 @@ static void finish(const VjoGameOcrResult *out)
     int rc = vjoOcrRead(out->seq, &received_result);
     if (out->rc == VJO_E_CANCELLED) TEST_CHECK(rc == VJO_ERR_CANCELLED);
     else TEST_CHECK(!rc && !memcmp(out, &received_result, sizeof(*out)));
+    TEST_CHECK(!capture_live && !game_ocr_capture_busy_locked());
+    if (g.game_active) {
+        /* The first hardware failure pinned ownership and blocked this next
+         * real capture request even though all previous pixel copies worked. */
+        TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
+        TEST_CHECK(capture_live && g.capture_state == CAPTURE_PENDING);
+        g.capture_state = CAPTURE_IDLE; buffers_free();
+        TEST_CHECK(!capture_live && capture_allocations == 1 && capture_releases == 2);
+    }
 }
 static void real_models_cross_namespace(void)
 {
@@ -144,10 +192,14 @@ static void real_models_cross_namespace(void)
         /* Demonstrate the physical failing boundary before using the broker. */
         TEST_CHECK(sceIoOpen("ux0:data/VitaJPOverlay/ocr/FL10_w8.vocr", 0, 0) == (int)0x80010013u); user_opens = 0;
         short_read = i == 1;
-        TEST_CHECK(!vjo_game_ocr_run_request(&request, &out));
+        int run_rc = vjo_game_ocr_run_request(&request, &out);
+        TEST_CHECK(!run_rc);
+        TEST_MSG("%s rc=%d io=0x%08X cleanup=%d owned=%d boundary_busy=%u",
+                 names[i], run_rc, (unsigned)out.io_error, out.cleanup_status, model_owned, boundary_busy);
         TEST_CHECK(out.lines == 1 && out.workspace_bytes <= sizeof(arena));
         TEST_CHECK(received == (i ? VJO_VOCR_H15_BYTES : VJO_VOCR_FL10_BYTES));
         TEST_CHECK(kernel_opens == 1 && kernel_closes == 1 && kernel_reads > 1);
+        TEST_CHECK(boundary_busy > 2); /* Open, Read and Close traverse real-return wrappers. */
         finish(&out);
     }
 }
@@ -174,6 +226,9 @@ static void real_model_failure_recovery(void)
             TEST_CHECK(!vjoOcrComplete(&out)); /* Failure retains the claimed job. */
             pending_result = out; claim_outstanding = 1; close_error = 0;
             TEST_CHECK(!vjo_game_ocr_worker_stop() && !file && !model_owned);
+            caller = 3;
+            TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
+            g.capture_state = CAPTURE_IDLE; buffers_free();
             continue;
         }
         finish(&out);
@@ -192,8 +247,25 @@ static void queued_open_timeout_and_drain(void)
     TEST_CHECK(!model_owned && !kernel_opens && !file && !locks);
     VjoGameOcrResult result = {.size=sizeof(result), .seq=request.seq, .rc=VJO_E_CANCELLED};
     TEST_CHECK(!vjoOcrComplete(&result));
+    caller = 3; TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
+    g.capture_state = CAPTURE_IDLE; buffers_free();
+}
+static void native_status_contract(void)
+{
+    const int errors[] = {VJO_ERR_NO_GAME, VJO_ERR_NO_MEMORY, VJO_ERR_BUSY, VJO_ERR_TIMEOUT,
+        VJO_ERR_FORMAT, VJO_ERR_ARG, VJO_ERR_COPY, VJO_ERR_PERM, VJO_ERR_CANCELLED};
+    for (unsigned i=0; i<sizeof(errors)/sizeof(errors[0]); i++) {
+        TEST_CHECK(errors[i] < 0 && ((uint32_t)errors[i] & 0xC0000000u) == 0x80000000u);
+        TEST_CHECK(retail_return(errors[i]) == errors[i]);
+        TEST_CHECK((uint32_t)errors[i] == 0xBFFFFFFFu-i);
+        for (unsigned j=0; j<i; j++) TEST_CHECK(errors[i] != errors[j]);
+    }
+    TEST_CHECK(retail_return(-3) == (int32_t)0xBFFFFFFDu && retail_return(-3) != -3);
+    const int unchanged[] = {0,1,13,657664, (int32_t)0x80010013u, (int32_t)0x8001000Du, (int32_t)0x80010005u};
+    for (unsigned i=0; i<sizeof(unchanged)/sizeof(unchanged[0]); i++) TEST_CHECK(retail_return(unchanged[i]) == unchanged[i]);
 }
 TEST_LIST = {
+    {"API13 stable statuses survive retail return encoding; native errno unchanged", native_status_contract},
     {"actual game worker and kernel broker load pinned FL10 and H15 despite game ENODEV", real_models_cross_namespace},
     {"actual broker model I/O corruption cancellation close failure and recovery", real_model_failure_recovery},
     {"actual queued Open timeout and later Close drain without weights", queued_open_timeout_and_drain},

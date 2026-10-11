@@ -12,7 +12,7 @@ void vjo_log(const char *fmt, ...) {}
 int vjoGetState(VjoState *out) { *out = state; return state_rc; }
 int vjoRequestCapture(uint32_t flags)
 { if (flags == VJO_CAPTURE_DISCARD) { discarded++; return 0; }
-  flags_seen = flags; return request_rc; }
+  flags_seen = flags; return request_rc < 0 ? (int32_t)((uint32_t)request_rc & ~0x40000000u) : request_rc; }
 int vjoWaitEvent(uint32_t mask, uint32_t *bits, uint32_t timeout)
 { time_us += timeout; *bits = 0; return -1; }
 int vjoReadRaw(uint32_t row, uint32_t count, void *dst)
@@ -46,6 +46,12 @@ static void test_timeout(void)
 static void test_kernel_memory_failure(void)
 { VjoArena a; VjoBuf b; VjoState out; reset(&a, &b); request_rc = VJO_ERR_NO_MEMORY;
   TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_OOM);
+  TEST_CHECK(!rows_read && !discarded);
+  reset(&a, &b); state.capture_result = VJO_ERR_NO_MEMORY;
+  TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_OOM);
+  TEST_CHECK(!rows_read && discarded == 1); /* Copied field shares the same code. */
+  reset(&a, &b); request_rc = (int32_t)0x80010013u;
+  TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_SOURCE);
   TEST_CHECK(!rows_read && !discarded); }
 TEST_LIST = {
   {"jpeg_releases_capture", test_capture_lifecycle},
