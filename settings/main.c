@@ -9,15 +9,27 @@
 #include <string.h>
 #include "catalog.h"
 #include "preferences.h"
+#include "../core/utf.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../vita/games_storage.h"
 
-#define ROWS 5
-#define BG RGBA8(13, 18, 31, 255)
-#define CARD RGBA8(24, 33, 52, 255)
-#define SELECTED RGBA8(32, 51, 77, 255)
+#define ROWS 3
+#define TAB_Y 52
+#define TAB_H 48
+#define DEFAULT_Y 112
+#define DEFAULT_H 54
+#define GAMES_Y 174
+#define GAME_H 80
+#define GAME_PITCH 88
+#define OCR_Y 112
+#define OCR_H 172
+#define SELECTION_Y 296
+#define SELECTION_H 134
+#define BG RGBA8(9, 15, 23, 255)
+#define CARD RGBA8(21, 31, 44, 255)
+#define SELECTED RGBA8(35, 56, 70, 255)
 #define WHITE RGBA8(238, 244, 255, 255)
-#define DIM RGBA8(149, 169, 194, 255)
+#define DIM RGBA8(193, 207, 222, 255)
 #define ACCENT RGBA8(91, 220, 207, 255)
 #define OFF RGBA8(244, 160, 167, 255)
 static VjoInstalledGame library[VJO_GAMES_MAX];
@@ -26,6 +38,9 @@ static VjoGames policy, saved;
 static unsigned char scratch_mem[64 * 1024];
 static VjoArena scratch;
 static vita2d_pvf *font;
+/* Calibrated from full-width glyph advances, not PVF's nominal line height.
+ * This is an em target; firmware glyph bearings/bitmap bounds can differ. */
+static float font_em = 18.0f;
 static vita2d_texture *icons[ROWS];
 static int visible[VJO_GAMES_MAX], total, count, selected, offset, filter, truncated;
 static int icons_offset = -1, writable = 1;
@@ -34,9 +49,100 @@ static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
 static int model_found[2];
 static char preference_status[160];
+static int status_error, preference_error;
 
-static void text(int x, int y, unsigned color, float size, const char *s)
-{ vita2d_pvf_draw_text(font, x, y, color, size, s); }
+static float text_scale(float pixels) { return pixels / font_em; }
+
+static void text(int x, int y, unsigned color, float pixels, const char *s)
+{ vita2d_pvf_draw_text(font, x, y, color, text_scale(pixels), s); }
+
+static int text_width(float pixels, const char *s)
+{ return vita2d_pvf_text_width(font, text_scale(pixels), s); }
+
+/* A line ends only at a decoded UTF-8 boundary. PVF advances, rather than
+ * byte counts, decide how many Japanese/Latin glyphs fit in the card. */
+static size_t fit_line(const char *s, float pixels, int width, char out[512])
+{
+    size_t len = strlen(s), end = 0, space = 0;
+    for (size_t i = 0; i < len;) {
+        size_t begin = i;
+        uint32_t cp = vjo_utf8_next(s, len, &i);
+        if (cp == '\n' || i > 508) break; /* Reserve the final "..." and NUL. */
+        memcpy(out, s, i);
+        out[i] = 0;
+        if (text_width(pixels, out) > width) break;
+        end = i;
+        if (cp == ' ') space = begin;
+    }
+    if (s[end] && s[end] != '\n' && space) end = space;
+    memcpy(out, s, end);
+    out[end] = 0;
+    return end;
+}
+
+static void wrapped_text(int x, int y, int width, unsigned color,
+                         float pixels, int line_height, int lines, const char *s)
+{
+    char line[512];
+    for (int row = 0; row < lines && *s; row++) {
+        while (*s == ' ' || *s == '\r') s++;
+        size_t end = fit_line(s, pixels, width, line);
+        const char *remaining = s + end;
+        while (*remaining == ' ' || *remaining == '\r' || *remaining == '\n') remaining++;
+        if (row == lines - 1 && *remaining) {
+            end = fit_line(s, pixels, width - text_width(pixels, "..."), line);
+            strcat(line, "...");
+        }
+        text(x, y + row * line_height, color, pixels, line);
+        if (!end && *s != '\n') break; /* Even one glyph can exceed a tiny region. */
+        s += end;
+        if (*s == '\n') s++;
+    }
+}
+
+static void centered_text(int x, int y, int width, unsigned color,
+                          float pixels, const char *s)
+{ text(x + (width - text_width(pixels, s)) / 2, y, color, pixels, s); }
+
+static void focus_card(int y, int height, int focus)
+{
+    vita2d_draw_rectangle(24, y, 912, height, focus ? SELECTED : CARD);
+    if (focus) {
+        vita2d_draw_rectangle(24, y, 4, height, ACCENT);
+        vita2d_draw_rectangle(24, y, 912, 2, ACCENT);
+        vita2d_draw_rectangle(24, y + height - 2, 912, 2, ACCENT);
+        vita2d_draw_rectangle(932, y, 4, height, ACCENT);
+    }
+}
+
+static void badge(int x, int y, int width, int height, const char *label, int active)
+{
+    vita2d_draw_rectangle(x, y, width, height, active ? ACCENT : SELECTED);
+    centered_text(x, y + height / 2 + 9, width, active ? BG : WHITE, 26, label);
+}
+
+static void header(void)
+{
+    vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
+    wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "JP Overlay Settings");
+    text(744, 34, DIM, 24, "Select: page");
+    for (int i = 0; i < 2; i++) {
+        int x = i ? 486 : 24, width = i ? 450 : 446;
+        vita2d_draw_rectangle(x, TAB_Y, width, TAB_H, page == i ? ACCENT : CARD);
+        centered_text(x, TAB_Y + 33, width, page == i ? BG : WHITE, 28,
+                      i ? "OCR & lookup" : "Games");
+    }
+}
+
+static void footer(const char *message, int error, const char *controls)
+{
+    vita2d_draw_rectangle(24, 440, 912, 64, CARD);
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(24, 442, 936, 504);
+    wrapped_text(40, 467, 880, error ? OFF : WHITE, 24, 28, 2, message);
+    vita2d_disable_clipping();
+    wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls);
+}
 
 static void free_icons(void)
 {
@@ -64,16 +170,19 @@ static void rebuild(void)
 static void save(void)
 {
     if (!writable) {
+        status_error = 1;
         policy = saved;
         snprintf(status, sizeof(status), "Cannot read settings. Repair games.ini first.");
     } else if (vjo_games_file_save(&policy, &scratch) < 0) {
+        status_error = 1;
         policy = saved;
         /* A final sync can fail after publication; show the actual disk state. */
         if (vjo_games_file_load(&policy, &scratch) >= 0) saved = policy;
-        snprintf(status, sizeof(status), "Save could not be confirmed. Check your choices and retry.");
+        snprintf(status, sizeof(status), "Save not confirmed. Check your choices, then retry.");
     } else {
+        status_error = 0;
         saved = policy;
-        snprintf(status, sizeof(status), "Saved. Close this app, then restart or resume your game.");
+        snprintf(status, sizeof(status), "Saved. Resume or restart your game to apply.");
     }
     rebuild();
 }
@@ -83,6 +192,7 @@ static void toggle(void)
     if (!count) return;
     const char *id = library[visible[selected]].id;
     if (vjo_games_set(&policy, id, !vjo_games_enabled(&policy, id)) < 0) {
+        status_error = 1;
         snprintf(status, sizeof(status), "Settings are full (512 title overrides). No change saved.");
         return;
     }
@@ -106,7 +216,7 @@ static void scan(void)
 {
     total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated);
     rebuild();
-    if (truncated) snprintf(status, sizeof(status), "Showing the first 512 installed titles.");
+    if (truncated) { status_error = 0; snprintf(status, sizeof(status), "Showing the first 512 installed titles."); }
 }
 
 static void move(int delta)
@@ -141,16 +251,18 @@ static void load_preferences(void)
 {
     int rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = rc >= 0;
+    preference_error = rc < 0;
     snprintf(preference_status, sizeof(preference_status), "%s", rc < 0
         ? "Cannot read config.ini. Choices have not been changed."
-        : rc > 0 ? "Recovered config backup. Changes save automatically."
-                 : "Changes apply the next time the overlay opens.");
+        : rc > 0 ? "Backup recovered. Changes save automatically."
+                 : "Changes apply when you next open the overlay.");
     check_models();
 }
 
 static void change_preference(int backend, int japanese_only)
 {
     if (!preferences_writable) {
+        preference_error = 1;
         snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
         return;
     }
@@ -158,10 +270,11 @@ static void change_preference(int backend, int japanese_only)
     /* Re-read even on failure: final sync can fail after publication. */
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;
+    preference_error = rc < 0 || read_rc < 0;
     check_models();
     snprintf(preference_status, sizeof(preference_status), "%s", rc < 0 || read_rc < 0
-        ? "Save could not be confirmed. Check the displayed choices and retry."
-        : "Saved. Close this app, resume your game, then reopen the overlay.");
+        ? "Save not confirmed. Check the displayed choices, then retry."
+        : "Saved. Resume your game, then reopen the overlay.");
 }
 
 static void toggle_preference(void)
@@ -174,35 +287,39 @@ static void toggle_preference(void)
 
 static void draw_preferences(void)
 {
-    const char *backend = !preferences_writable ? "Unavailable" : preferences.ocr_backend == VJO_OCR_MEIKI ? "Meiki" :
-                          preferences.ocr_backend == VJO_OCR_VOCR ? "VOCR" : "Other (config.ini)";
+    int known = preferences.ocr_backend == VJO_OCR_MEIKI || preferences.ocr_backend == VJO_OCR_VOCR;
     vita2d_start_drawing();
     vita2d_clear_screen();
-    vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
-    text(30, 46, WHITE, 1.45f, "JP Overlay Settings");
-    text(30, 74, DIM, 0.85f, "OCR and character lookup");
-    text(747, 45, ACCENT, 0.85f, "[Select] Games");
-    for (int i = 0; i < 2; i++) {
-        int y = 106 + i * 112;
-        vita2d_draw_rectangle(24, y, 912, 96, preference_selected == i ? SELECTED : CARD);
-        if (preference_selected == i) vita2d_draw_rectangle(24, y, 4, 96, ACCENT);
-    }
-    text(42, 140, WHITE, 1.05f, "OCR model");
-    text(760, 140, ACCENT, 1.0f, backend);
-    text(42, 168, DIM, 0.83f, "Left: VOCR (default)    Right: Meiki    X / Touch: Switch");
-    text(42, 192, DIM, 0.72f, "VOCR: dialogue region. Meiki: one horizontal line, manual capture only.");
-    text(42, 252, WHITE, 1.05f, "Japanese-only character selection");
-    text(810, 252, preferences.japanese_only_selection ? ACCENT : OFF, 1.0f,
-         !preferences_writable ? "--" : preferences.japanese_only_selection ? "ON" : "OFF");
-    text(42, 282, DIM, 0.83f, "Left / Right skips Latin text, numbers, punctuation and Hangul.");
-    text(42, 304, DIM, 0.72f, "Turn OFF to select every character. OCR text stays visible.");
+    header();
+    focus_card(OCR_Y, OCR_H, preference_selected == 0);
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(28, OCR_Y + 2, 932, OCR_Y + OCR_H - 2);
+    text(42, OCR_Y + 35, WHITE, 28, "OCR engine");
+    badge(644, OCR_Y + 14, 132, 48, "VOCR", preferences_writable && preferences.ocr_backend == VJO_OCR_VOCR);
+    badge(792, OCR_Y + 14, 128, 48, "Meiki", preferences_writable && preferences.ocr_backend == VJO_OCR_MEIKI);
+    text(42, OCR_Y + 76, DIM, 24, "VOCR: dialogue region, automatic or manual.");
+    text(42, OCR_Y + 109, DIM, 24, "Meiki: one tight line, manual. Game engine required.");
     char label[120];
-    snprintf(label, sizeof(label), "VOCR model file: %s    Meiki model file: %s",
-             model_found[0] ? "found" : "missing", model_found[1] ? "found" : "missing");
-    text(42, 358, model_found[0] && model_found[1] ? DIM : OFF, 0.82f, label);
-    text(42, 386, DIM, 0.75f, "Meiki also needs its engine installed for the game. File checks do not run OCR.");
-    text(30, 483, preferences_writable ? DIM : OFF, 0.78f, preference_status);
-    text(30, 519, WHITE, 0.78f, "Up / Down: Navigate    X / Touch: Change    Select: Games    Circle: Exit");
+    if (!preferences_writable) snprintf(label, sizeof(label), "Cannot read the saved OCR choice.");
+    else if (!known) snprintf(label, sizeof(label), "Other engine configured. Left/Right chooses VOCR/Meiki.");
+    else snprintf(label, sizeof(label), "Model files: VOCR %s / Meiki %s",
+                  model_found[0] ? "found" : "missing", model_found[1] ? "found" : "missing");
+    wrapped_text(42, OCR_Y + 149, 870,
+                 preferences_writable && model_found[0] && model_found[1] ? DIM : OFF,
+                 24, 26, 1, label);
+    vita2d_disable_clipping();
+    focus_card(SELECTION_Y, SELECTION_H, preference_selected == 1);
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(28, SELECTION_Y + 2, 932, SELECTION_Y + SELECTION_H - 2);
+    text(42, SELECTION_Y + 35, WHITE, 28, "Japanese characters only");
+    badge(812, SELECTION_Y + 14, 108, 38, !preferences_writable ? "--" :
+          preferences.japanese_only_selection ? "ON" : "OFF",
+          preferences_writable && preferences.japanese_only_selection);
+    text(42, SELECTION_Y + 76, DIM, 24, "Cursor skips Latin, numbers, punctuation and Hangul.");
+    text(42, SELECTION_Y + 109, DIM, 24, "OFF lets you select every character. OCR text stays visible.");
+    vita2d_disable_clipping();
+    footer(preference_status, preference_error,
+           "D-pad: choose   X: change   Left/Right: set   O: exit");
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -220,46 +337,41 @@ static void draw(void)
     }
     vita2d_start_drawing();
     vita2d_clear_screen();
-    vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
-    text(30, 46, WHITE, 1.45f, "JP Overlay Settings");
-    char label[80];
-    snprintf(label, sizeof(label), "%d installed titles  /  %s", total, filters[filter]);
-    text(30, 74, DIM, 0.85f, label);
-    text(757, 45, ACCENT, 0.85f, "[Square] Filter");
-    text(610, 74, ACCENT, 0.82f, "[Select] OCR and lookup");
-    vita2d_draw_rectangle(24, 91, 912, 61, CARD);
-    text(42, 117, WHITE, 1.0f, policy.default_enabled ? "All games by default" : "Selected games only");
-    text(42, 140, DIM, 0.75f, "Per-game choices override this default. [Triangle] Change");
-    text(790, 125, ACCENT, 0.9f, policy.default_enabled ? "DEFAULT ON" : "DEFAULT OFF");
+    header();
+    vita2d_draw_rectangle(24, DEFAULT_Y, 536, DEFAULT_H, CARD);
+    text(42, DEFAULT_Y + 35, WHITE, 24, "Default:");
+    badge(174, DEFAULT_Y + 8, 108, 38, !writable ? "--" : policy.default_enabled ? "ON" : "OFF",
+          writable && policy.default_enabled);
+    text(394, DEFAULT_Y + 35, DIM, 24, "Triangle");
+    vita2d_draw_rectangle(572, DEFAULT_Y, 364, DEFAULT_H, CARD);
+    text(590, DEFAULT_Y + 35, WHITE, 24, filters[filter]);
+    text(824, DEFAULT_Y + 35, DIM, 24, "Square");
     for (int r = 0; r < ROWS && offset + r < count; r++) {
-        int index = offset + r, y = 162 + r * 60;
+        int index = offset + r, y = GAMES_Y + r * GAME_PITCH;
         const VjoInstalledGame *g = &library[visible[index]];
         int on = vjo_games_enabled(&policy, g->id);
-        vita2d_draw_rectangle(24, y, 912, 56, index == selected ? SELECTED : CARD);
-        if (index == selected) vita2d_draw_rectangle(24, y, 4, 56, ACCENT);
-        if (icons[r]) vita2d_draw_texture_scale(icons[r], 38, y + 6,
-            44.0f / vita2d_texture_get_width(icons[r]), 44.0f / vita2d_texture_get_height(icons[r]));
+        focus_card(y, GAME_H, index == selected);
+        if (icons[r]) vita2d_draw_texture_scale(icons[r], 38, y + 8,
+            64.0f / vita2d_texture_get_width(icons[r]), 64.0f / vita2d_texture_get_height(icons[r]));
         else {
-            vita2d_draw_rectangle(38, y + 6, 44, 44, SELECTED);
-            text(49, y + 33, ACCENT, 0.9f, "JP");
+            vita2d_draw_rectangle(38, y + 8, 64, 64, SELECTED);
+            centered_text(38, y + 47, 64, ACCENT, 26, "JP");
         }
-        /* Scissor long/Japanese names without cutting their UTF-8 bytes. */
+        /* Titles and IDs have separate columns, including on two-line titles. */
         vita2d_enable_clipping();
-        vita2d_set_clip_rectangle(98, y, 767, y + 56);
-        text(98, y + 24, WHITE, 0.98f, g->title);
-        text(98, y + 45, DIM, 0.72f, g->id);
+        vita2d_set_clip_rectangle(120, y + 4, 748, y + GAME_H - 4);
+        wrapped_text(120, y + 30, 620, WHITE, 26, 32, 2, g->title);
         vita2d_disable_clipping();
-        text(783, y + 33, on ? ACCENT : OFF, 0.9f, on ? "ON" : "OFF");
-        vita2d_draw_rectangle(841, y + 18, 68, 22, on ? ACCENT : DIM);
-        vita2d_draw_fill_circle(on ? 895 : 855, y + 29, 8, BG);
+        badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
+        text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }
-    if (!count) text(42, 211, DIM, 1.0f, "No games in this filter. Press Square to show all.");
-    text(30, 483, writable ? DIM : OFF, 0.78f, status);
-    text(30, 519, WHITE, 0.78f, "D-pad / L-R: Navigate    X / Touch: Toggle    Start: Refresh    Circle: Exit");
+    if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
+                             "No games in this filter. Press Square to change it.");
+    char controls[120];
     if (count) {
-        snprintf(label, sizeof(label), "%d/%d", selected + 1, count);
-        text(851, 483, ACCENT, 0.8f, label);
-    }
+        snprintf(controls, sizeof(controls), "%d/%d   D-pad: move   X: toggle   L/R: page   O: exit", selected + 1, count);
+    } else snprintf(controls, sizeof(controls), "Square: filter   Start: refresh   Select: page   O: exit");
+    footer(status, status_error, controls);
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -271,12 +383,20 @@ int main(void)
     writable = load >= 0;
     saved = policy;
     load_preferences();
+    status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
-        "Turn OFF Uncharted to keep L+R free. Changes save automatically.");
+        "Choices save automatically. Turn OFF games that need L+R.");
     if (vita2d_init() < 0) { sceKernelExitProcess(1); return 1; }
     font = vita2d_load_default_pvf();
     if (!font) { vita2d_fini(); sceKernelExitProcess(1); return 1; }
+    const char *em_samples[] = {"あ", "漢", "Ｗ"};
+    int em_width = 0;
+    for (int i = 0; i < 3; i++) {
+        int width = vita2d_pvf_text_width(font, 1.0f, em_samples[i]);
+        if (width > em_width) em_width = width;
+    }
+    if (em_width > 0) font_em = (float)em_width;
     vita2d_set_clear_color(BG);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
@@ -319,18 +439,25 @@ int main(void)
         sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            if ((page && x >= 740 && y >= 28 && y < 60) ||
-                (!page && x >= 600 && y >= 60 && y < 85)) page = !page;
-            else if (page && x >= 24 && x <= 936 && y >= 106 && y < 314) {
-                int row = (y - 106) / 112;
-                if ((y - 106) % 112 < 96) { preference_selected = row; toggle_preference(); }
+            if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 470) page = 0;
+            else if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 486 && x < 936) page = 1;
+            else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
+                preference_selected = 0;
+                if (x >= 644 && x < 776 && y >= OCR_Y + 14 && y < OCR_Y + 62)
+                    change_preference(VJO_OCR_VOCR, preferences.japanese_only_selection);
+                else if (x >= 792 && x < 920 && y >= OCR_Y + 14 && y < OCR_Y + 62)
+                    change_preference(VJO_OCR_MEIKI, preferences.japanese_only_selection);
+                else toggle_preference();
+            }
+            else if (page && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
+                preference_selected = 1; toggle_preference();
             }
             else if (page) { /* no game actions on the OCR page */ }
-            else if (x >= 24 && x <= 936 && y >= 91 && y < 152) toggle_default();
-            else if (x >= 750 && y < 80) change_filter();
-            else if (x >= 24 && x <= 936 && y >= 162 && y < 462) {
-                int row = (y - 162) / 60;
-                if ((y - 162) % 60 < 56 && offset + row < count) {
+            else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();
+            else if (x >= 572 && x < 936 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) change_filter();
+            else if (x >= 24 && x < 936 && y >= GAMES_Y && y < GAMES_Y + ROWS * GAME_PITCH) {
+                int row = (y - GAMES_Y) / GAME_PITCH;
+                if ((y - GAMES_Y) % GAME_PITCH < GAME_H && offset + row < count) {
                     selected = offset + row;
                     toggle();
                 }
