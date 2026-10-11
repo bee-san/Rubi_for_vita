@@ -76,8 +76,9 @@ when opening the overlay. Cross and Triangle do not save or send Anki cards.
 
 ## Per-game settings
 
-**JP Overlay Settings** lists installed game names, IDs and icons in a dark,
-teal-accented interface. Choices save automatically to
+**JP Overlay Settings** shows three large game cards at a time, with wrapped
+titles, visible IDs and clear ON/OFF badges. Tap the **Games** or **OCR & lookup**
+tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 
 | Control | Action |
@@ -87,11 +88,12 @@ teal-accented interface. Choices save automatically to
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list |
-| Select | Switch between Games and OCR/lookup settings |
+| Select or touch a page tab | Switch between Games and OCR/lookup settings |
 | Circle | Exit |
 
-On the **OCR and character lookup** page, select a card with Up/Down. Cross
-or touch switches between VOCR/Meiki or toggles Japanese-only selection;
+On the **OCR & lookup** page, select a card with Up/Down. Cross
+or touch a card switches between VOCR/Meiki or toggles Japanese-only selection.
+Touch the VOCR or Meiki button to choose that engine directly;
 Left/Right choose VOCR/Meiki on the model card or OFF/ON on the selection card.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Both model files remain stored; only the selected engine runs. Start reloads
