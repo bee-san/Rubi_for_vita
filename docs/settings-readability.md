@@ -79,7 +79,7 @@ buffer during icon loading, rather than a PVF measurement failure. The
 The v0.7.8 repair passed exact-head host/Vita CI and merged through
 [PR #36](https://github.com/bee-san/vita-jp-overlay/pull/36). Full readback of
 the installed 277,212-byte executable matched the repaired candidate. Promotion
-status had become uncertain after screen sleep; installed registry/readback and
+status had become uncertain after a disconnect; installed registry/readback and
 subsequent native execution reconciled the outcome. No terminal promoter
 response is inferred from that uncertain status.
 
