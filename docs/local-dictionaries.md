@@ -2,9 +2,10 @@
 
 Local lookup reads dictionaries from the Vita's storage. It needs no running
 computer, dictionary API key, Hachidori Relay, or dictionary network request.
-Screen recognition defaults to Google Lens and requires internet. Select the
-experimental [local ncnn OCR](local-ocr.md) for offline recognition. Anki and
-optional Anki audio retain their existing network requirements.
+The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
+JMdict already converted and enabled. Recognition and lookup are offline. Anki
+and its queue are disabled in this release. The instructions below add your
+own dictionaries.
 
 ## Convert and install
 
@@ -49,7 +50,7 @@ python3 tools/install_dictionary.py 192.168.1.30 main.vjdict --enable
 Replace the IP with your Vita's. The port defaults to 1337; `--port` changes it.
 The installer uploads under a new versioned filename, first as `.part`, and
 renames it only after the upload succeeds. `--enable` backs up your configuration
-and selects the uploaded dictionaries, preserving API keys and Anki settings.
+and selects the uploaded dictionaries, preserving other settings.
 It refuses to overwrite a configuration it cannot read. If the connection drops
 during configuration replacement, restore a `config.ini.before-local-*` backup
 as `config.ini` in VitaShell. Keep games closed while
@@ -108,7 +109,7 @@ no dictionary-sized persistent allocation is added.
 | Lookup result arena | 64 KiB |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Temporary lookup arena total | At most 112 KiB, taken from the existing result arena |
-| Worker result arenas | Two 256 KiB arenas |
+| Worker result arenas | Two 128 KiB arenas for local vocr; two 256 KiB for network pipelines |
 | Enabled dictionary files | 8 |
 | Input text | 4,096 UTF-8 bytes |
 | Longest scanned term | 32 Unicode code points |

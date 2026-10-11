@@ -6,7 +6,7 @@ recognizer made for visual-novel dialogue, and its line finder, both plain C99
 with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
 and no cloud fallback. With `dictionary = local` the whole lookup is offline.
 
-**Status: experimental, not yet run on a PS Vita.** It builds with VitaSDK and
+**Status: default in v0.7.0; physical Vita validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
@@ -38,8 +38,8 @@ weights + max(line finder arena, recognizer arena) + region width × height
 
 | model (`vocr_model`) | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
 |---|---|---|---|---|
-| `H15_w8.vocr` (default, recommended) | 1,155,968 B | 182,944 B | 1,864,912 B (1.78 MiB) | 1,469,392 B (1.40 MiB) |
-| `FL10_w8.vocr` (smaller, less accurate) | 657,664 B | 124,832 B | 1,308,496 B (1.25 MiB) | 912,976 B (0.87 MiB) |
+| `H15_w8.vocr` (larger, more accurate) | 1,155,968 B | 182,944 B | 1,864,912 B (1.78 MiB) | 1,469,392 B (1.40 MiB) |
+| `FL10_w8.vocr` (small default) | 657,664 B | 124,832 B | 1,308,496 B (1.25 MiB) | 912,976 B (0.87 MiB) |
 | `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 2,325,072 B (2.22 MiB) | 1,929,552 B (1.84 MiB) |
 
 The line finder's arena (83,323 B at 960×544) is smaller than every
@@ -51,15 +51,17 @@ succeeds the job reports "not enough memory"; the log records both attempts.
 **Expect memory to be tight inside a game.** Physical tests on the
 experimental branches found ScePaf's whole heap is 5 MiB with about 2.4 MiB
 free while CLANNAD runs, and a 768 KiB USER memblock failed there with
-`0x80024302` (no free physical page). After the Lens workspace and the 1.5 MiB
-reserve, the H15 workspace probably does not fit beside that game; FL10 for a
-tight dialogue box comes closest. The first on-console run answers this.
+`0x80024302` (no free physical page). The default local pipeline frees its prior result arenas before OCR and
+allocates two 128 KiB result arenas only after the OCR workspace is freed. It
+does not allocate the Lens connection pool. The 1.5 MiB Paf reserve still
+applies; FL10 with a tight dialogue box needs 0.87 MiB. A physical run is
+required to establish fit, speed and stability beside a game.
 
 ## Models
 
 The weights are the int8 assets of the vita-vn-ocr
-[v0.2.0 release](https://github.com/bee-san/vita-vn-ocr/releases) (draft at the
-time of writing). On its hand-checked real screenshots (int8, C runtime, its
+[v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
+(unchanged from v0.2.0). On its hand-checked real screenshots (int8, C runtime, its
 `eval/run.py`, with hand-drawn line boxes):
 
 | model | vita-test CER / exact lines | psp-test CER / exact lines | est. Cortex-A9 time, 640-px line at 444 MHz |
@@ -85,7 +87,7 @@ needs access to it):
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
 
-# Vita plugins and release zip (VitaJPOverlay-0.6-lens-vocr.zip)
+# Vita plugins and release zip (VitaJPOverlay-0.7.0.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/vita --target release
 
@@ -104,6 +106,10 @@ then reports that the backend is missing instead of uploading anything.
 
 ## Install
 
+The complete v0.7.0 ZIP already includes both int8 models and the local
+configuration; use its `install-vita.sh` as described in the README. The
+steps below cover a source build or adding another model.
+
 1. Install the vocr build's plugins as in the [README](../README.md#installing).
 2. Download and check the weights on a computer:
 
@@ -121,8 +127,8 @@ then reports that the backend is missing instead of uploading anything.
    ```ini
    ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-   vocr_model = H15_w8.vocr
-   ocr_mode = on_press
+   vocr_model = FL10_w8.vocr
+   ocr_mode = auto
    log_file = on
    ```
 
@@ -132,6 +138,14 @@ then reports that the backend is missing instead of uploading anything.
    text (the whole text box is fine, name plate included), then × to keep it.
 
 ## Host measurements
+
+The v0.7.0 rebuild reproduced both int8 models' region CER on 2026-10-11:
+[release measurements](benchmarks/vocr-release-20261011.json). FL10 scored
+217/2,506 character errors (8.66%) on 84 Vita regions and 443/2,510 (17.65%)
+on 93 PSP regions. H15 scored 170/2,506 (6.78%) and 369/2,510 (14.70%). Neither
+model refused or failed a region. A full-JMdict sentence smoke test repeated
+ten times used 111,072 arena bytes with identical lookup results; the worker's
+local result arenas are each 128 KiB. These remain host measurements.
 
 `tools/benchmark_local_ocr.py` runs the host `vjo-ocr` tool (the same
 finder, workspace and model checks as the Shell) once per region, in a fresh
@@ -182,7 +196,7 @@ copied, and the settings above. Close other apps first.
    - `vocr: USER memblock (N KiB) failed 0x...`, or nothing if it succeeded;
    - `vocr Paf allocation: free=... requested=... reserve=... success=...` or
      `vocr Paf reserve guard: ...` when the memblock failed;
-   - `vocr rc=... H15_w8.vocr: WxH region, N lines (D dark), F frames,
+   - `vocr rc=... FL10_w8.vocr: WxH region, N lines (D dark), F frames,
      workspace B bytes (USER memblock | Paf heap | none), find X ms, load Y ms,
      recognize Z ms, total T ms`.
    Please post these lines, the shown text and a photo of the screen on
