@@ -105,7 +105,10 @@ A subsequent agent-runtime replacement and fresh reboot also confirmed Settings
 relaunched in the foreground with no reported system UI overlay and the intended
 config byte-identical. That new boot is separate from the earlier measured
 survival interval. Native keep-awake worker initialization and its first DEFAULT
-tick returned 0; quiet-interval/display behavior remains under verification.
+tick returned 0. A subsequent 374.066-second command-free interval ended with a
+healthy native response on the same boot and the same foreground Settings
+process. The ordinary endpoint snapshot turns the screen on, so it does not
+prove physical display visibility during the interval.
 
 Firmware font bounds, sharpness and physical readability remain pending. The
 broader installation and private-dictionary recovery state is tracked in
