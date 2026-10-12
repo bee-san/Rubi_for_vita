@@ -112,3 +112,19 @@ another set. `--before-dicts` and `--after-dicts` accept comma-separated files
 for multi-dictionary comparisons. `tools/benchmark_local_dictionary.py` remains
 a reproducible synthetic size/memory stress test and now uses the timed driver
 instead of timing CLI process startup.
+
+## Dictionary pages
+
+`tools/benchmark_dictionary_pages.py` measures the selected-character lookup
+and each **Dictionaries shown** page against a baseline build, interleaving the
+builds in rounds. It fails unless the first entry is identical and a single
+result reads exactly as before. `vjo-local-bench DIR FILES TEXT RUNS CURSOR
+RESULTS` prints the first lookup's residency and every other page's time, reads,
+files opened and arena peak. Results:
+[dictionary-pages-20261012.json](benchmarks/dictionary-pages-20261012.json).
+
+```sh
+python3 tools/benchmark_dictionary_pages.py --before .refs/main/build/host/vjo-local-bench \
+  --after build/host/vjo-local-bench --directory DIR \
+  --dicts jitendex.vjdict,jmdict.vjdict --runs 20 --rounds 5
+```

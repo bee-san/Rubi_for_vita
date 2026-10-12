@@ -73,6 +73,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "jmdict.vjdict");
+    c->local_dictionary_results = 1;
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 1;
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
@@ -108,6 +109,9 @@ const char *vjo_config_default_text(void)
            "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
            "local_dictionaries = jmdict.vjdict\n"
+           "; Dictionaries shown per selected word, 1-8: the best match first, then each\n"
+           "; other dictionary's entry in the order above. Up/Down pages; one is in memory.\n"
+           "local_dictionary_results = 1\n"
            "\n"
            "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings -> API key\n"
            "jpdb_api_key =\n"
@@ -460,6 +464,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
         else warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "local_dictionary_results")) {
+        int v;
+        if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
+            c->local_dictionary_results = v;
+        else
+            warn(c, "%s: invalid value '%s' (1-8)", key, val);
     } else if (vjo_ieq(key, "font_size_ja")) {
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {
@@ -549,14 +559,18 @@ static int preference_key(const char *line, size_t n)
     key[key_len] = 0;
     return vjo_ieq(key, "ocr_backend") ? 0 :
            vjo_ieq(key, "japanese_only_selection") ? 1 :
-           vjo_ieq(key, "highlight_mode") ? 2 : -1;
+           vjo_ieq(key, "highlight_mode") ? 2 :
+           vjo_ieq(key, "local_dictionary_results") ? 3 : -1;
 }
+
+#define OWNED_PREFERENCES 4
 
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
                                  int japanese_only, int highlight_mode,
-                                 char *out, size_t cap)
+                                 int dictionary_results, char *out, size_t cap)
 {
-    const char *values[3];
+    const char *values[OWNED_PREFERENCES];
+    char results_line[40];
     size_t i = 0, used = 0;
     unsigned seen = 0;
     static const char *const backend_values[] = {
@@ -567,12 +581,15 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
         (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2 || !backend_values[backend]) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
+        dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||
         (len && memchr(text, 0, len)))
         return -1;
     values[0] = backend_values[backend];
     values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
     values[2] = highlight_mode == VJO_HIGHLIGHT_WORD
         ? "highlight_mode = word\n" : "highlight_mode = character\n";
+    vjo_snprintf(results_line, sizeof(results_line), "local_dictionary_results = %d\n", dictionary_results);
+    values[3] = results_line;
     /* Keep a BOM even when the first line is an owned preference. */
     if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
         if (cap <= 3) return -1;
@@ -593,7 +610,7 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
         if (bytes >= cap - used) return -1;
         memcpy(out + used, line, bytes); used += bytes;
     }
-    for (int key = 0; key < 3; key++) {
+    for (int key = 0; key < OWNED_PREFERENCES; key++) {
         if (seen & (1u << key)) continue;
         if (used && out[used - 1] != '\n') {
             if (used + 1 >= cap) return -1;

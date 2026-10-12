@@ -101,7 +101,7 @@ then reboot. Keep unrelated plugins and configuration intact.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Skip matched words in Whole word mode; step one character in Character mode |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Navigate words with a network dictionary |
+| Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
 | Circle | Close the overlay |
@@ -132,11 +132,11 @@ tab, or press Select, to change pages. Choices save automatically to
 | Circle | Exit |
 
 On the **OCR & lookup** page, select a card with Up/Down. Cross
-or touch a card changes its choice: OCR engine, Japanese-only selection, or
-whole-word/character highlighting.
-Touch an engine button to choose it directly;
+or touch a card changes its choice: OCR engine, Japanese-only selection,
+whole-word/character highlighting, or how many dictionaries are shown.
+Touch an engine button or a number to choose it directly;
 Left/Right cycle the three engine choices on the model card, OFF/ON on the selection card,
-or Whole word/Character on the Highlight card.
+Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -172,6 +172,7 @@ game. Adrenaline uses one shared policy for its PSP titles.
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = jmdict.vjdict
+local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
@@ -198,7 +199,12 @@ gzip snapshot is also attached to the release.
 
 You can add your own Yomitan dictionaries, including a legally obtained
 Daijirin export, with [the converter and installation guide](docs/local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order. The downloaded
+Up to eight dictionary files can be enabled in priority order. Settings →
+**Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages through
+them for the selected word: the first page is the usual best match, and Down
+shows the next enabled dictionary that has an entry there. Only the page on
+screen is held in memory; definitions are always stored and shown as plain
+text. See [several dictionaries](docs/local-dictionaries.md#several-dictionaries). The downloaded
 Daijirin v3 has been converted and measured separately; the commercial file is
 installed privately, while the public release includes the converter and JMdict.
 The dictionary stays on disk; it is never loaded whole into RAM.
@@ -247,7 +253,10 @@ The `*main` plugin handles UI and disk-backed dictionary lookup with one
 64 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
-reads only the selected position and returns zero or one entry.
+reads only the selected position and shows zero or one entry. With Dictionaries
+shown above 1 it also keeps a 208-byte table locating the other dictionaries'
+entries in the same arena; Up/Down releases the shown entry and reads one other
+payload, so several definitions are never resident together.
 The previous local result is retired before either is reused; network jobs
 retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text

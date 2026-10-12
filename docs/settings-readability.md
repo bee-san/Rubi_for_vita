@@ -24,6 +24,16 @@ selected local engine. Game policy and preference loading/saving are unchanged.
 The app still re-reads after a save failure to display the actual saved choices;
 a failure is never presented as a successful save.
 
+The OCR & lookup page has a fourth card, **Dictionaries shown**, with eight
+number badges (44 × 34 pixels, 4 pixels apart). To fit it, the three smaller
+cards are 68 pixels tall, their badges 34 pixels, and the page's status is one
+line. The OCR engine card and the Games page are unchanged. Touching a number
+chooses it; the card's title and help only focus it.
+[A Vita3K render](settings-dictionaries-vita3k.png) shows the page with three
+enabled dictionaries and 2 selected. It used the official 3.74 firmware fonts
+and a build that opens on this page, because injected keys did not reach the
+emulated app; it is not a physical-device check.
+
 ## Font measurement
 
 The public `vita2d_pvf_text_width` API measures wrapping, centering and ellipsis.

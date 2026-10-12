@@ -224,51 +224,109 @@ int vjo_overlay_from_text(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     return vjo_overlay_lookup(a, p, cfg, out);
 }
 
-int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
-                          size_t cursor_byte, VjoOverlayData *out)
+/* One selected local entry, from a raw-sentence point token: highlight bytes
+ * are converted only over the matched span so CR/newlines and supplementary
+ * codepoints keep correct bytes. */
+static int show_local_entry(VjoArena *a, VjoOverlayData *out, const VjoDictResult *result, size_t cursor_byte)
 {
-    size_t mark = vjo_arena_mark(a), end, len;
-    VjoDictResult result;
+    size_t end = cursor_byte, len = strlen(out->sentence);
     VjoEntry *entry;
-    int units = 0, rc;
+    int units = 0;
+    while (end < len && units < result->tokens[0].len16)
+        units += vjo_utf16_units(vjo_utf8_next(out->sentence, len, &end));
+    if (units != result->tokens[0].len16) return VJO_E_PARSE;
+    entry = vjo_arena_zalloc(a, sizeof(*entry));
+    if (!entry) return VJO_E_OOM;
+    entry->vocab = &result->vocab[0];
+    entry->pos16 = result->tokens[0].pos16;
+    entry->hl_start = (int)cursor_byte;
+    entry->hl_end = (int)end;
+    entry->text = vjo_entry_format(a, entry->vocab);
+    if (!entry->text) return VJO_E_OOM;
+    out->list.entries = entry;
+    out->list.n_entries = 1;
+    return VJO_OK;
+}
 
+static void local_lookup_begin(VjoOverlayData *out)
+{
     memset(&out->err, 0, sizeof(out->err));
     out->err.dict = VJO_DICT_LOCAL;
     out->failed_stage = VJO_STAGE_NONE;
     out->list = (VjoEntryList){out->sentence ? out->sentence : "", NULL, 0};
+}
+
+int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                          size_t cursor_byte, VjoOverlayData *out)
+{
+    size_t mark = vjo_arena_mark(a);
+    VjoDictResult result;
+    VjoLocalPages *pages = NULL;
+    int limit = cfg->local_dictionary_results, rc;
+
+    local_lookup_begin(out);
+    out->pages = NULL;
+    out->page = 0;
     if (!out->sentence || cfg->dictionary != VJO_DICT_LOCAL) {
         rc = VJO_E_PARSE;
         goto failed;
     }
-    rc = vjo_local_lookup_at(a, p, cfg, out->sentence, cursor_byte, &result, &out->err);
-    if (rc) goto failed;
-    if (!result.n_tokens) return VJO_OK;
-    /* Point tokens refer to the raw sentence, rather than the newline-
-     * stripped text expected by vjo_entries_build. Convert only the matched
-     * span so CR/newlines and supplementary codepoints keep correct bytes. */
-    len = strlen(out->sentence);
-    end = cursor_byte;
-    while (end < len && units < result.tokens[0].len16)
-        units += vjo_utf16_units(vjo_utf8_next(out->sentence, len, &end));
-    if (units != result.tokens[0].len16) {
-        rc = VJO_E_PARSE;
+    /* Paging keeps only these locators ahead of the shown entry, so a page
+     * change releases one entry and reads one payload. */
+    if (limit > 1 && !(pages = vjo_arena_zalloc(a, sizeof(*pages)))) {
+        rc = VJO_E_OOM;
         goto failed;
     }
-    entry = vjo_arena_zalloc(a, sizeof(*entry));
-    if (!entry) { rc = VJO_E_OOM; goto failed; }
-    entry->vocab = &result.vocab[0];
-    entry->pos16 = result.tokens[0].pos16;
-    entry->hl_start = (int)cursor_byte;
-    entry->hl_end = (int)end;
-    entry->text = vjo_entry_format(a, entry->vocab);
-    if (!entry->text) { rc = VJO_E_OOM; goto failed; }
-    out->list.entries = entry;
-    out->list.n_entries = 1;
+    rc = vjo_local_lookup_pages(a, p, cfg, out->sentence, cursor_byte, limit, pages, &result, &out->err);
+    if (rc) goto failed;
+    if (!result.n_tokens) { /* no match: nothing stays allocated */
+        vjo_arena_release(a, mark);
+        return VJO_OK;
+    }
+    if ((rc = show_local_entry(a, out, &result, cursor_byte))) goto failed;
+    if (limit > 1) out->pages = pages;
     return VJO_OK;
 failed:
     vjo_arena_release(a, mark);
+    out->list.entries = NULL;
+    out->list.n_entries = 0;
     out->failed_stage = VJO_STAGE_DICT;
     return out->err.rc = rc;
+}
+
+int vjo_overlay_lookup_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                            int page, VjoOverlayData *out)
+{
+    VjoLocalPages *pages = out->pages;
+    VjoDictResult result;
+    size_t keep;
+    int rc;
+
+    local_lookup_begin(out);
+    if (!pages || !out->sentence || cfg->dictionary != VJO_DICT_LOCAL ||
+        (uint8_t *)pages < a->base || (size_t)((uint8_t *)(pages + 1) - a->base) > a->used ||
+        page < 0 || page >= pages->count) {
+        out->failed_stage = VJO_STAGE_DICT;
+        return out->err.rc = VJO_E_PARSE;
+    }
+    keep = (size_t)((uint8_t *)(pages + 1) - a->base);
+    vjo_arena_release(a, keep); /* the previous page's entry */
+    out->page = page;
+    rc = vjo_local_read_page(a, p, cfg, pages, page, &result, &out->err);
+    if (!rc) rc = show_local_entry(a, out, &result, pages->cursor_byte);
+    if (rc) {
+        vjo_arena_release(a, keep);
+        out->list.entries = NULL;
+        out->list.n_entries = 0;
+        out->failed_stage = VJO_STAGE_DICT;
+        out->err.rc = rc;
+    }
+    return rc;
+}
+
+int vjo_overlay_page_count(const VjoOverlayData *out)
+{
+    return out->pages ? out->pages->count : out->list.n_entries > 0;
 }
 
 int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, VjoOverlayData *out)
