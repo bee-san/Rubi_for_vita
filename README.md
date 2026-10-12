@@ -261,11 +261,13 @@ foreground generation; suspend, game changes, cancellation and Shell restarts
 invalidate old work. The single-pass raw capture is freed when the game worker
 reads its final row. The worker frees each job's workspace before returning
 text. The verified weights stay in their own `USER_RW` block between jobs
-(657,664 B for FL10, 1,155,968 B for H15, page-rounded) and are read and
+(657,664 B for FL10 and 1,155,968 B for H15, held as 659,456 and
+1,159,168 B page-rounded blocks) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. They are released when a job's memory check
-fails, when the file is missing or wrong, when the game is no longer the
-active one (suspend, another app in front, title disabled) and on exit. A job
+fails, when the file is missing or wrong, when the worker finds the game is
+no longer the active one (suspend, another app in front, title disabled) and
+on exit. A job
 then needs only its region-sized workspace. The worker leaves a 4 MiB free
 USER memory reserve before allocating either block; allocation can still fail
 because the game or system uses memory concurrently.
