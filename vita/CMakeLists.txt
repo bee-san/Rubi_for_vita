@@ -83,7 +83,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
-  ${ROOT}/core/base64.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
@@ -111,6 +111,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
+  ${ROOT}/shell/anki.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/log_vita.c

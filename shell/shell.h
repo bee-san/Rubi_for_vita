@@ -50,6 +50,15 @@ typedef struct {
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
+    /* Anki (anki.c): changes bump anki_version only, so the overlay keeps
+     * the header, the selection and the definition's scroll */
+    int anki_enabled;         /* anki_host is set: × sends the shown word */
+    unsigned anki_version;
+    char anki_status[128];    /* "Adding to Anki…", "Anki offline", an error, or "" */
+    int anki_status_kind;     /* VJO_ANKI_STATUS_* */
+    unsigned anki_status_seq; /* list_seq the status is for */
+    unsigned anki_marks_seq;  /* list_seq the marks are for */
+    uint8_t anki_mark[VJO_MAX_ENTRIES]; /* 1 = in Anki */
     /* subtitles: a strip at the top while the overlay is closed; changes
      * bump strip_version, and those of the text or its readings their seq */
     int strip_on;             /* subtitles are on (stored atomically) */
@@ -118,6 +127,23 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size);
 int vjo_title_game_mode(const char *tid);
 /* Reloaded on game start/resume before capture or input filtering activates. */
 int vjo_game_enabled(const char *tid, VjoArena *scratch);
+
+/* anki.c: AnkiConnect card mining, one card at a time */
+/* The mailbox lock only: no thread and no memory until × is pressed. */
+int vjo_anki_start(void);
+/* Cancels a card being sent and joins its thread; -1 (keeping its memory)
+ * if the join fails, so stop can be retried. */
+int vjo_anki_stop(void);
+/* Settings for the next card (control thread, after each config load).
+ * Returns 1 when × sends cards (anki_host is set). */
+int vjo_anki_configure(const VjoConfig *cfg);
+/* The running game's name for MiscInfo ("" = none; control thread). */
+void vjo_anki_set_game(const char *name);
+/* Sends entry `entry` of list list_seq (overlay, × pressed). Ignored while
+ * anki_host is empty or a card is being sent. */
+void vjo_anki_post_add(unsigned list_seq, int entry);
+/* Joins the thread of a card that is done (control thread, each wakeup). */
+void vjo_anki_reap(void);
 
 /* overlay.cpp (paf main thread) */
 void vjo_overlay_init(void *plugin);

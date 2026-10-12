@@ -14,6 +14,9 @@
 #include "net.h"
 
 #define VJO_ANKI_MAX_RESPONSE (64u * 1024u)
+/* The largest screenshot JPEG sent with a note (it is streamed as base64,
+ * never encoded whole); a larger one is left out. */
+#define VJO_ANKI_PICTURE_MAX (192u * 1024u)
 
 /* ---- field values (HTML, as Anki stores fields) ---- */
 

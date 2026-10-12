@@ -88,6 +88,7 @@ static int pages_limit;
 
 static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
+static int anki_on;        /* vjo_anki_configure(&cfg): × sends cards */
 static VjoPlatform plat;
 static VjoNetPool pool; /* plat's; network thread only, except mem_free while it idles */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
@@ -415,6 +416,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;
+    g_view.anki_enabled = anki_on;
     g_view.n_warnings = cfg.n_warnings;
     sceClibMemcpy(g_view.warnings, cfg.warnings, sizeof(g_view.warnings));
     g_view.version++;
@@ -825,6 +827,7 @@ static void apply_config(void)
     }
     vjo_log_configure(&cfg);
     vjo_strip_configure(subtitles, &cfg);
+    anki_on = vjo_anki_configure(&cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
     for (int i = 0; i < cfg.n_warnings; i++)
@@ -1318,6 +1321,11 @@ static void activate_game(SceUID pid, const char *tid, int mode)
         return;
     }
     sceClibSnprintf(title_id, sizeof(title_id), "%s", tid);
+    {
+        char name[128];
+        vjo_title_name(pid, tid, name, sizeof(name)); /* "" for an unreadable title */
+        vjo_anki_set_game(name);                      /* Anki's MiscInfo */
+    }
     apply_config();
     if (!net_busy() && !local_pipeline(&cfg))
         mem_alloc();
@@ -1377,6 +1385,7 @@ static void on_game_exit(void)
     if (!net_busy())
         mem_free();
     title_id[0] = '\0';
+    vjo_anki_set_game("");
 }
 
 /* A new foreground process: classified by classify_pending. */
@@ -1507,6 +1516,7 @@ static int ctl_main(SceSize args, void *argp)
         }
         auto_prefetch();
         warm_connections();
+        vjo_anki_reap(); /* a card's thread and stack go once it is done */
         if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
             mem_free();
     }
@@ -1537,7 +1547,9 @@ int vjo_worker_start(void)
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
-    apply_config(); /* logging and triggers are set up before the first game */
+    if (vjo_anki_start() < 0)
+        vjo_log("anki: mailbox unavailable: × sends no cards");
+    apply_config(); /* logging, triggers and Anki are set up before the first game */
     vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
 
     net_thread = sceKernelCreateThread("VjoNet", net_main, 0x10000100, 0x10000, 0, 0, NULL);
@@ -1567,6 +1579,10 @@ int vjo_worker_stop(void)
         vjo_net_cancel(&net_cancel); /* a request in progress ends now */
     if (net_evf >= 0)
         sceKernelSetEventFlag(net_evf, NET_EV_QUIT);
+    /* A card uses the view and capture locks: it ends first (an OCR job
+     * holding the capture was just cancelled). */
+    if (vjo_anki_stop() < 0)
+        return -1;
     if (threads_started) {
         if (((threads_started & 1) && sceKernelWaitThreadEnd(net_thread, NULL, NULL) < 0) ||
             ((threads_started & 2) && sceKernelWaitThreadEnd(ctl_thread, NULL, NULL) < 0)) {
