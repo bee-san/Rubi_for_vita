@@ -5,7 +5,8 @@ file and applying key=value overrides.
     migrate_config.py OLD TEMPLATE OUT [key=value ...]
 
 OLD may be missing (first install). Renamed settings are carried over, removed
-ones are dropped. Prints what changed (API keys only as set/empty). Exit
+ones are dropped, and values of removed features (ocr_backend = meiki) are
+replaced. Prints what changed (API keys only as set/empty). Exit
 status 0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
 import os
@@ -14,6 +15,8 @@ import sys
 
 RENAMED = {"api_key": "jpdb_api_key"}
 REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms"}
+# Values whose feature was removed, with their replacement.
+REPLACED_VALUES = {"ocr_backend": {"meiki": "vocr"}}
 
 
 def parse(text):
@@ -45,7 +48,7 @@ def main():
     for k, v in (old or {}).items():
         k = RENAMED.get(k, k)
         if k not in REMOVED:
-            vals[k] = v
+            vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
     explicit = set()
     for s in sets:
         k, _, v = s.partition("=")

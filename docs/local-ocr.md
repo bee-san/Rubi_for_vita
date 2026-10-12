@@ -13,8 +13,9 @@ back to uploading an image.
 
 The earlier CPU-only ncnn adapter is available for host experiments with
 `-DVJO_WITH_NCNN=ON` (`vjo-ocr --backend ncnn`). This does not enable ncnn in
-the Shell worker. Meiki and native text extraction have separate experiment
-branches; their native-text and Meiki inference code are not part of this release. The FTP installer
+the Shell worker. Native text extraction has a separate experiment branch; its
+code is not part of this release. The Meiki single-line trial was removed after
+v0.7.12. The FTP installer
 comments out their old registrations when installing the mainline release.
 
 [Local dictionary memory limits](local-dictionaries.md) and the historic

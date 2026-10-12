@@ -402,20 +402,15 @@ static void model_permissions_paths_and_bounds(void)
     TEST_CHECK(vjoOcrModelOpen(seq) == VJO_ERR_ARG && !model_opens);
     TEST_CHECK(!vjoOcrModelClose(seq));
 }
-static void meiki_model_fixed_pin_and_final_chunk(void)
+static void removed_meiki_model_is_refused(void)
 {
     TEST_CHECK(sizeof(model_stage)==8192);
-    TEST_CHECK(model_size(VJO_MEIKI_MODEL_NAME)==5392856u);
-    TEST_CHECK(!model_size("meiki-detect-int8.mnn") && !model_size("../meiki-stream-int8.mnn"));
+    /* The broker opens only the VOCR/VOCR2 pins; the removed recognizer is unlisted. */
+    TEST_CHECK(!model_size("meiki-stream-int8.mnn") && !model_size("meiki-detect-int8.mnn"));
     setup(); uint32_t seq=submit(); take(seq);
-    strcpy(request.model,VJO_MEIKI_MODEL_NAME); expected_model_size=VJO_MEIKI_MODEL_BYTES;
-    TEST_CHECK(vjoOcrModelOpen(seq)==VJO_ERR_BUSY); model_tick();
-    TEST_CHECK(vjoOcrModelOpen(seq)==5392856 && file_live);
-    unsigned char tail[9]; memset(tail,0xCC,sizeof(tail));
-    TEST_CHECK(vjoOcrModelRead(seq,5392855,2,tail)==VJO_ERR_ARG);
-    TEST_CHECK(vjoOcrModelRead(seq,5392855,1,tail)==VJO_ERR_BUSY); model_tick();
-    TEST_CHECK(vjoOcrModelRead(seq,5392855,1,tail)==1 && tail[1]==0xCC);
-    close_model(seq); TEST_CHECK(!vjoOcrComplete(&message));
+    strcpy(request.model,"meiki-stream-int8.mnn");
+    TEST_CHECK(vjoOcrModelOpen(seq)==VJO_ERR_ARG && !model_opens && !file_live);
+    TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
 }
 
 static void vocr2_fixed_pin_preserves_paths_and_bounds(void)
@@ -523,7 +518,7 @@ static void model_failed_close_and_orphan_recovery(void)
 }
 
 TEST_LIST = {
-    {"Meiki_exact_pinned_length_and_8KiB_broker_tail",meiki_model_fixed_pin_and_final_chunk},
+    {"removed_Meiki_recognizer_is_not_in_the_broker_allowlist",removed_meiki_model_is_refused},
     {"VOCR2_exact_pin_keeps_canonical_path_and_final_chunk_bounds",vocr2_fixed_pin_preserves_paths_and_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
     {"model broker short reads copy retry EOF and native errors", model_short_read_copy_retry_and_errors},

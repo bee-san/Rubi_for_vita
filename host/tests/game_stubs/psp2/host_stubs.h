@@ -30,8 +30,6 @@ typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKe
 typedef struct { unsigned size; void *mappedBase; unsigned mappedSize; int memoryType; unsigned access, type; } SceKernelMemBlockInfo;
 int sceClibPrintf(const char *, ...);
 int sceKernelGetMemBlockInfoByRange(void *, unsigned, SceKernelMemBlockInfo *);
-SceUID sceKernelLoadStartModule(const char *, unsigned, const void *, unsigned, void *, int *);
-int sceKernelStopUnloadModule(SceUID, unsigned, const void *, unsigned, void *, int *);
 uint64_t sceKernelGetProcessTimeWide(void);
 SceUID sceKernelGetProcessId(void);
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *);

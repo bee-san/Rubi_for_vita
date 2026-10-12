@@ -32,7 +32,7 @@ def verify(root):
     print(f"Verified {len(manifest['files'])} package files")
 
 
-def package(base, output, models, dictionary, license_file, version="0.7.12", meiki_model=None, source_revision=None):
+def package(base, output, models, dictionary, license_file, version="0.7.12", source_revision=None):
     source = Path(__file__).resolve().parents[1]
     if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
         raise ValueError("Expected an exact 40-character source revision")
@@ -59,11 +59,6 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", me
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-    if meiki_model:
-        pin = json.loads((source / "docs/meiki-dependencies.json").read_text())["dependencies"]["converted"]
-        if meiki_model.stat().st_size != pin["bytes"] or digest(meiki_model) != pin["sha256"]:
-            raise ValueError("Meiki model checksum failed")
-        assets[DATA + "ocr/" + pin["filename"]] = meiki_model
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
@@ -91,16 +86,6 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", me
         required = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                     "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
                     "ur0/tai/VitaJPOverlay_OCR.suprx"}
-        if meiki_model and "meiki/meiki-engine.suprx" not in original.namelist():
-            raise ValueError("Meiki trial archive is missing its isolated engine")
-        if meiki_model:
-            notices = {"LICENSE", "third_party/licenses/Meiki.txt",
-                       "third_party/licenses/Meiki-model-LGPL-3.0.txt",
-                       "third_party/licenses/Meiki-resize.txt", "third_party/licenses/MNN.txt",
-                       "third_party/licenses/MNN-Flatbuffers-Apache-2.0.txt",
-                       "third_party/licenses/MNN-Half-MIT.txt"}
-            if not notices.issubset(original.namelist()):
-                raise ValueError("Meiki trial archive is missing its license notices")
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
         for info in original.infolist():
@@ -129,13 +114,12 @@ def main():
     parser.add_argument("--license-file", type=Path)
     parser.add_argument("--verify", type=Path)
     parser.add_argument("--version", default="0.7.12")
-    parser.add_argument("--meiki-model", type=Path, help="Pinned recognizer; requires an optional-engine base archive")
     parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)
     elif all((args.base, args.output, args.models, args.dictionary, args.license_file)):
-        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.meiki_model, args.source_revision)
+        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision)
     else:
         parser.error("Provide --verify DIRECTORY, or base, --output, --models, --dictionary and --license-file")
 
