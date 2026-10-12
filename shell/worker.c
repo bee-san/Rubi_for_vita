@@ -8,6 +8,7 @@
 #include <psp2/power.h>
 
 #include "../core/regions.h"
+#include "../core/local_dict.h"
 #include "../core/textfilter.h"
 #include "../core/utf.h"
 #ifdef VJO_WITH_VOCR
@@ -77,6 +78,13 @@ static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
 static int job_cursor_only;
 static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
+/* Dictionary paging at the cursor (local_dictionary_results > 1): the
+ * requested page shares the cursor sequence. Page locators live at the start
+ * of the single result arena (cache_data[0].pages); they are reused only for
+ * the text generation and result limit that built them (network thread). */
+static int local_page, job_page;
+static uint32_t pages_generation;
+static int pages_limit;
 
 static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
@@ -154,6 +162,7 @@ static volatile int pending_cmd;
 static VjoRect pending_rect;
 static uint32_t pending_cursor_byte, pending_cursor_generation;
 static void start_cursor_job(void);
+static void note_pages(int rc, const VjoOverlayData *out);
 
 static uint32_t advance_generation(uint32_t *value)
 {
@@ -167,9 +176,11 @@ static void retire_local_text(int new_generation)
     vjo_view_lock();
     local_text_valid = 0;
     cursor_waiting = 0;
+    local_page = 0;
     if (new_generation) advance_generation(&local_text_generation);
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
+    g_view.dict_page = g_view.dict_pages = 0;
     g_view.version++;
     vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
@@ -192,6 +203,25 @@ void vjo_post_command(int cmd, const VjoRect *rect)
     if (rect)
         pending_rect = *rect;
     sceKernelUnlockMutex(cmd_lock, 1);
+}
+
+/* Under cmd_lock and the view lock: queues the cursor job for the current
+ * local_cursor_byte/local_page and detaches the shown entry before its arena
+ * is reused. */
+static void post_local_lookup(uint32_t text_generation)
+{
+    advance_generation(&local_cursor_seq);
+    pending_cursor_byte = local_cursor_byte;
+    pending_cursor_generation = text_generation;
+    pending_cmd = VJO_CMD_CURSOR;
+    local_header = (VjoEntryList){.header = local_text};
+    g_view.list = &local_header; /* detach entries before their arena is reset */
+    g_view.cursor_byte = local_cursor_byte;
+    g_view.dict_page = local_page;
+    g_view.list_seq++;
+    sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
+    g_view.status_is_error = 0;
+    g_view.version++;
 }
 
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
@@ -220,19 +250,32 @@ void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
         return;
     }
     local_cursor_byte = byte_offset;
-    advance_generation(&local_cursor_seq);
-    pending_cursor_byte = byte_offset;
-    pending_cursor_generation = text_generation;
-    pending_cmd = VJO_CMD_CURSOR;
-    local_header = (VjoEntryList){.header = local_text};
-    g_view.list = &local_header; /* detach entries before their arena is reset */
-    g_view.cursor_byte = byte_offset;
-    g_view.list_seq++;
-    sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
-    g_view.status_is_error = 0;
-    g_view.version++;
+    local_page = 0; /* a new word starts at its best match */
+    g_view.dict_pages = 0;
+    post_local_lookup(text_generation);
     vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
+}
+
+int vjo_post_page(int page, uint32_t text_generation)
+{
+    int accepted = 0;
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (pending_cmd == VJO_CMD_NONE || pending_cmd == VJO_CMD_CURSOR) {
+        vjo_view_lock();
+        /* Only pages of the published (or already pending) result for this
+         * text and cursor; dict_pages is reset whenever either changes. */
+        if (g_view.open && g_view.local_cursor_mode && local_text_valid && text_generation &&
+            text_generation == local_text_generation && page >= 0 && page < g_view.dict_pages &&
+            page != g_view.dict_page) {
+            local_page = page;
+            post_local_lookup(text_generation);
+            accepted = 1;
+        }
+        vjo_view_unlock();
+    }
+    sceKernelUnlockMutex(cmd_lock, 1);
+    return accepted;
 }
 
 static int64_t now_us(void)
@@ -267,7 +310,7 @@ static int has_result_memory(void)
 
 static int game_ocr_backend(int backend)
 {
-    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2 || backend == VJO_OCR_MEIKI;
+    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2;
 }
 
 static int local_pipeline(const VjoConfig *c)
@@ -341,6 +384,7 @@ static void mem_free(void)
     mem_uid = -1;
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
+    cache_data[0].pages = cache_data[1].pages = NULL; /* their locators were in the arena */
     active = -1;
     cache_ok = 0;
 }
@@ -358,6 +402,14 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.local_cursor_mode = local_pipeline(&cfg) && local_text_valid && list &&
                                list->header == local_text;
     g_view.cursor_byte = local_cursor_byte;
+    /* The static header placeholder keeps the requested page while its
+     * lookup runs; a published result carries its own page count. */
+    if (list != &local_header) {
+        const VjoOverlayData *shown = list && active >= 0 && list == &cache_data[active].list
+                                      ? &cache_data[active] : NULL;
+        g_view.dict_page = shown && g_view.local_cursor_mode ? shown->page : 0;
+        g_view.dict_pages = shown && g_view.local_cursor_mode ? vjo_overlay_page_count(shown) : 0;
+    }
     g_view.japanese_only_selection = cfg.japanese_only_selection;
     g_view.highlight_mode = cfg.highlight_mode;
     g_view.text_generation = local_text_generation;
@@ -412,8 +464,7 @@ static int vocr_consume(void *ud, const VjoState *st)
     VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.ocr_backend == VJO_OCR_MEIKI ? VJO_MEIKI_MODEL_NAME :
-                        job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
+    const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
     size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
     if (!model_len || model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
     sceClibMemcpy(request.model, model, model_len+1);
@@ -442,11 +493,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
     if (out->err.rc != VJO_OK) {
-        if (out->err.rc == VJO_E_OCR_REGION && job_cfg.ocr_backend == VJO_OCR_MEIKI)
-            out->err.detail = "Select one horizontal dialogue line, at most 96 pixels high, for the Meiki trial.";
         if (out->err.rc == VJO_E_OCR_MODEL) {
-            if (job_cfg.ocr_backend == VJO_OCR_MEIKI)
-                out->err.detail = "Meiki weights are missing or invalid. Install the pinned meiki-stream-int8.mnn under ux0:data/VitaJPOverlay/ocr.";
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)result.io_error == 0x80010013u)
                 out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
@@ -474,6 +521,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         sceKernelLockMutex(cmd_lock, 1, NULL);
         job_text_generation = advance_generation(&local_text_generation);
         job_cursor_seq = advance_generation(&local_cursor_seq);
+        local_page = job_page = 0;
         local_cursor_byte = job_cursor_byte = job_cfg.japanese_only_selection
             ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
         local_text_game_generation = job_generation;
@@ -525,13 +573,9 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
             if (!out->failed_stage)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
-                out->err.detail = job_cfg.ocr_backend == VJO_OCR_MEIKI
-                    ? "Meiki is unavailable. Install the trial worker and its ABI3 engine at app0:/VitaJPOverlay/meiki/meiki-engine.suprx, then restart the game."
-                    : "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
+                out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
             if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR)
-                out->err.detail = job_cfg.ocr_backend == VJO_OCR_MEIKI
-                    ? "Meiki needs about 27 MiB of free game memory. Try vocr for this game."
-                    : "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
+                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
         goto recognized;
@@ -564,13 +608,36 @@ recognized:
     if (!job_lookup || job_same_text) return VJO_OK;
     if (local_pipeline(&job_cfg) &&
         job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
-    return local_pipeline(&job_cfg) ? vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out)
-                                   : vjo_overlay_lookup(a, &plat, &job_cfg, out);
+    if (!local_pipeline(&job_cfg))
+        return vjo_overlay_lookup(a, &plat, &job_cfg, out);
+    int rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
+    note_pages(rc, out);
+    return rc;
 }
 
-/* No capture, model, inference or sentence tokenization for cursor moves. */
+/* Records which text/limit the locators in this arena belong to. */
+static void note_pages(int rc, const VjoOverlayData *out)
+{
+    pages_generation = !rc && out->pages ? job_text_generation : 0;
+    pages_limit = job_cfg.local_dictionary_results;
+}
+
+/* No capture, model, inference or sentence tokenization for cursor moves.
+ * Another dictionary page at the same cursor reads only that page's entry
+ * into the same arena, after the locators (no probing, no new allocation). */
 static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 {
+    const VjoLocalPages *pages = out->pages;
+    int rc;
+    if (pages && has_result_memory() && pages_generation == job_text_generation &&
+        pages_limit == job_cfg.local_dictionary_results &&
+        pages->cursor_byte == job_cursor_byte && job_page < pages->count) {
+        /* post_local_lookup already published the static header, so the
+         * shown entry can be released without the view lock. */
+        rc = vjo_overlay_lookup_page(a, &plat, &job_cfg, job_page, out);
+        if (rc) pages_generation = 0; /* e.g. a replaced file: locate again next time */
+        return rc;
+    }
     sceClibMemset(out, 0, sizeof(*out));
     out->ocr_text = out->filtered = out->sentence = local_text;
     out->list.header = local_text;
@@ -584,7 +651,12 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     vjo_view_lock(); /* the published list is the static header, never old entries */
     vjo_arena_reset(a);
     vjo_view_unlock();
-    return vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
+    rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
+    note_pages(rc, out);
+    /* Locators were stale (another limit): show the requested page if it exists. */
+    if (!rc && job_page > 0 && out->pages && job_page < out->pages->count)
+        rc = vjo_overlay_lookup_page(a, &plat, &job_cfg, job_page, out);
+    return rc;
 }
 
 static int net_main(SceSize args, void *argp)
@@ -608,8 +680,9 @@ static int net_main(SceSize args, void *argp)
             int64_t t0 = now_us();
             job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                                      : run_job(&results[idx], &cache_data[idx]);
-            vjo_log("job %d done rc=%d in %d ms, arena peak %u", idx, job_rc,
-                    (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak);
+            vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", idx, job_rc,
+                    (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
+                    cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]));
             __sync_synchronize(); /* results are visible before job_done */
             job_done = 1;
         }
@@ -691,6 +764,7 @@ static void start_cursor_job(void)
     job_text_generation = local_text_generation;
     job_cursor_byte = local_cursor_byte;
     job_cursor_seq = local_cursor_seq;
+    job_page = local_page;
     cursor_waiting = 0;
     job_cached_text = NULL;
     job_same_text = job_cancelled = job_done = job_text_ready = 0;
@@ -738,6 +812,16 @@ static void apply_config(void)
             job_cancelled = 1;
             vjo_net_cancel(&net_cancel);
         }
+    } else if (previous.local_dictionary_results != cfg.local_dictionary_results) {
+        /* A presentation of the same recognized text: look the word up again
+         * (from its best match) without recapturing or rerunning OCR. */
+        cache_ok = 0;
+        sceKernelLockMutex(cmd_lock, 1, NULL);
+        vjo_view_lock();
+        local_page = 0;
+        g_view.dict_page = g_view.dict_pages = 0;
+        vjo_view_unlock();
+        sceKernelUnlockMutex(cmd_lock, 1);
     }
     vjo_log_configure(&cfg);
     vjo_strip_configure(subtitles, &cfg);
@@ -952,10 +1036,6 @@ static int restart_old_job(int has_lookup)
         start_cursor_job();
         return 1;
     }
-    if (cfg.ocr_backend == VJO_OCR_MEIKI) {
-        view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
-        return 1; /* a manual trial never reloads 5.4 MB automatically */
-    }
     start_job(has_lookup ? "result was for an earlier screen" : "the running job was OCR only", 1);
     return 1;
 }
@@ -971,13 +1051,15 @@ static void on_cursor_done(void)
                 local_text_valid && job_text_generation == local_text_generation &&
                 same_pipeline(&job_cfg, &cfg) && same_screen && ov != OV_CLOSED;
     int valid = current && !job_cancelled;
-    int newer = valid && job_cursor_seq != local_cursor_seq;
+    int newer = valid && (job_cursor_seq != local_cursor_seq ||
+                          job_cfg.local_dictionary_results != cfg.local_dictionary_results);
     if (valid && !newer) {
         active = 0;
         cache_ok = cache_data[0].err.rc == VJO_OK;
         cache_dictionary = job_cfg.dictionary;
         cache_scene = job_capture_scene;
         cache_seq = job_capture_seq;
+        local_page = cache_data[0].page; /* a missing page falls back to the best match */
         backoff_note(&dict_backoff, cache_data[0].err.rc != VJO_OK);
         view_show_cache();
     }
@@ -1008,10 +1090,7 @@ static void on_job_done(void)
         job_cancelled = 0;
         if (ov != OV_CLOSED && game_active()) { /* the overlay waits for this screen's */
             ov = OV_OPEN;
-            if (cfg.ocr_backend == VJO_OCR_MEIKI)
-                view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
-            else
-                start_job("the screen changed during the last one", 1);
+            start_job("the screen changed during the last one", 1);
         } else {
             stable_pending = game_active(); /* only the current game's next screen */
             if (subtitles)
@@ -1042,9 +1121,11 @@ static void on_job_done(void)
     if (!ocr_failed && job_lookup)
         backoff_note(&dict_backoff, d->err.rc != VJO_OK);
     /* Character moves received while initial lookup was working supersede
-     * that definition; the saved OCR sentence is already immutable. */
+     * that definition; the saved OCR sentence is already immutable. So does
+     * a local_dictionary_results change loaded by the overlay's opening. */
     if (local_pipeline(&job_cfg) && local_text_valid && ov != OV_CLOSED &&
-        (cursor_waiting || (job_lookup && job_cursor_seq != local_cursor_seq))) {
+        (cursor_waiting || (job_lookup && (job_cursor_seq != local_cursor_seq ||
+                                           job_cfg.local_dictionary_results != cfg.local_dictionary_results)))) {
         start_cursor_job();
         return;
     }
@@ -1063,7 +1144,9 @@ static void on_job_done(void)
     }
     vjo_view_lock();
     active = idx;
-    cache_ok = d->err.rc == VJO_OK && job_lookup; /* the overlay needs the lookup */
+    /* The overlay needs the lookup, made with the current page count. */
+    cache_ok = d->err.rc == VJO_OK && job_lookup &&
+               (!local || job_cfg.local_dictionary_results == cfg.local_dictionary_results);
     cache_dictionary = job_cfg.dictionary;
     cache_scene = job_capture_scene;
     cache_seq = job_capture_seq;
@@ -1127,12 +1210,6 @@ static void on_job_text(void)
 static void set_subtitles(int on)
 {
     if (on) apply_config();
-    if (on && cfg.ocr_backend == VJO_OCR_MEIKI) {
-        subtitles = 0;
-        vjo_strip_configure(0, &cfg);
-        vjo_strip_show("Meiki is manual only. Select one dialogue line and open the overlay.", VJO_STRIP_ERROR, 0);
-        return;
-    }
     VjoState st;
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
     subtitles = on;
@@ -1330,8 +1407,7 @@ static void on_trigger(void)
  * overlay) and the subtitles' refresh (whatever ocr_mode says). */
 static int background_wanted(void)
 {
-    return cfg.ocr_backend != VJO_OCR_MEIKI &&
-           (subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup())));
+    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup()));
 }
 
 static int background_throttled(void)

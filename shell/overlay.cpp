@@ -102,6 +102,7 @@ static int s_japanese_only_selection;
 static int s_highlight_mode;
 static uint32_t s_cursor_byte, s_text_generation;
 static uint32_t s_match_end; /* raw UTF-8 end of the current matched source word */
+static int s_dict_page, s_dict_pages; /* local: shown/requested dictionary page, pages at the cursor */
 static VjoWordNavigation s_word_navigation;
 
 /* logged when the overlay closes */
@@ -285,11 +286,14 @@ static void render(int new_content)
         }
         s_japanese_only_selection = g_view.japanese_only_selection;
         cursor_matches = g_view.cursor_byte == s_cursor_byte;
+        s_dict_page = g_view.dict_page;
+        s_dict_pages = cursor_matches ? g_view.dict_pages : 0;
     } else {
         rebuild_header |= s_local_cursor_mode;
         s_local_cursor_mode = 0;
         s_cursor_text_len = 0;
         s_cursor_text[0] = 0;
+        s_dict_page = s_dict_pages = 0;
     }
     s_n_entries = l ? l->n_entries : 0;
     if (s_local_cursor_mode) {
@@ -323,9 +327,12 @@ static void render(int new_content)
                     s_rng_len[i] = 0;
     }
 
-    /* body: status, the selected entry (or "no entries"), config warnings */
+    /* body: page, status, the selected entry (or "no entries"), config warnings */
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
+        vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
+        if ((!cursor_matches || g_view.status[0]) && body.len)
+            vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
         if (!cursor_matches)
             vjo_styled_puts(&body, "Looking up words…", VJO_RGB_DIM, en);
         else if (g_view.status[0])
@@ -350,6 +357,8 @@ static void render(int new_content)
     }
     vjo_view_unlock();
 
+    /* Dictionary paging is taught by the body's "▲▼ Dictionary 2 of 3" line,
+     * shown only while paging is available; the hint keeps its width. */
     set_rich(s_hint, s_local_cursor_mode
                         ? (s_highlight_mode == VJO_HIGHLIGHT_WORD
                             ? "<font color=\"#8a94a6\">Tap character / ◀ ▶ word · stick scroll · □ region · ○ close</font>"
@@ -644,6 +653,14 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * only its asynchronous lookup touches dictionary storage. */
             vjo_post_cursor(cursor, s_text_generation);
             render(0);
+        } else if (s_dict_pages > 1 && (pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN))) {
+            /* Another dictionary's entry at this cursor: the worker reads
+             * only that page's definition into the same result arena. */
+            int page = s_dict_page + (pressed & SCE_CTRL_DOWN ? 1 : -1);
+            if (page >= 0 && page < s_dict_pages && vjo_post_page(page, s_text_generation)) {
+                s_moves++;
+                render(0);
+            }
         }
     } else {
         if ((pressed & SCE_CTRL_RIGHT) && s_selected + 1 < n)

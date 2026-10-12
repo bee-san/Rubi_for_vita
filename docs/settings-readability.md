@@ -7,7 +7,7 @@ unchanged.
 
 The 960 × 544 layout now shows three 80-pixel game cards. Game titles have two
 measured-width lines; their IDs occupy a separate right column below a clear
-ON/OFF badge. The page tabs and direct VOCR/Meiki/Google Lens buttons have
+ON/OFF badge. The page tabs and direct VOCR/VOCR2/Google Lens buttons have
 48-pixel touch heights. The focused card has a bright border. Save failures have a distinct
 error color, and status messages have two lines above the control hints.
 Only three icon textures are held at once, retaining the existing unload-on-scroll
@@ -15,7 +15,7 @@ ownership.
 
 Games-page controls keep their existing actions. Touch can select either page,
 toggle a game or setting, or choose
-VOCR, Meiki or Google Lens directly. Left/Right cycles backward/forward through
+VOCR, VOCR2 or Google Lens directly. Left/Right cycles backward/forward through
 the engines; Cross selects the next engine. Touching the OCR heading, help text
 or gaps only focuses that row, so it cannot accidentally enable online OCR.
 The selected engine's description identifies local/manual behavior or Lens's
@@ -23,6 +23,16 @@ Wi-Fi requirement and image upload. Model availability is shown only for the
 selected local engine. Game policy and preference loading/saving are unchanged.
 The app still re-reads after a save failure to display the actual saved choices;
 a failure is never presented as a successful save.
+
+The OCR & lookup page has a fourth card, **Dictionaries shown**, with eight
+number badges (44 × 34 pixels, 4 pixels apart). To fit it, the three smaller
+cards are 68 pixels tall, their badges 34 pixels, and the page's status is one
+line. The OCR engine card and the Games page are unchanged. Touching a number
+chooses it; the card's title and help only focus it.
+[A Vita3K render](settings-dictionaries-vita3k.png) shows the page with three
+enabled dictionaries and 2 selected. It used the official 3.74 firmware fonts
+and a build that opens on this page, because injected keys did not reach the
+emulated app; it is not a physical-device check.
 
 ## Font measurement
 
@@ -80,6 +90,10 @@ Lens remains selectable without local model files, and its help identifies the
 Wi-Fi requirement and image upload without reporting missing local weights.
 Approximate host previews of all three choices fit the card and viewport;
 firmware rendering and live Google Lens recognition remain unverified.
+After v0.7.12 the Meiki choice was removed. The row now has three
+284-pixel buttons, VOCR, VOCR2 and Google Lens, with the same left and right
+edges; a saved `ocr_backend = meiki` loads as VOCR with a config warning.
+These scenarios, previews and the native checks below predate that change.
 The native Settings build, PNG ABI/assets checks and existing Lens transport
 tests are separate checks. This change does not deploy anything to a Vita.
 

@@ -9,6 +9,7 @@
 #include <string.h>
 #include "catalog.h"
 #include "preferences.h"
+#include "../core/local_dict.h"
 #include "../core/utf.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../vita/games_storage.h"
@@ -25,14 +26,29 @@
 #define OCR_H 146
 #define OCR_CHOICE_X 42
 #define OCR_CHOICE_Y (OCR_Y + 42)
-#define OCR_CHOICE_W 210
+#define OCR_CHOICE_W 284
 #define OCR_CHOICE_H 48
-#define OCR_CHOICE_PITCH 222
+#define OCR_CHOICE_PITCH 296
+/* The three compact preference cards share one layout: title and choices on
+ * the first row, help on the second. */
+#define CARD_H 68
+#define CARD_TITLE_Y 30
+#define CARD_HELP_Y 60
+#define CARD_BADGE_Y 6
+#define CARD_BADGE_H 34
 #define SELECTION_Y 262
-#define SELECTION_H 78
-#define HIGHLIGHT_Y 350
-#define HIGHLIGHT_H 80
-#define PREFERENCES 3
+#define SELECTION_H CARD_H
+#define HIGHLIGHT_Y 334
+#define HIGHLIGHT_H CARD_H
+#define RESULTS_Y 406
+#define RESULTS_H CARD_H
+#define RESULT_BADGE_X 540
+#define RESULT_BADGE_W 44
+#define RESULT_BADGE_PITCH 48
+/* The OCR page's one-line status sits below the fourth card. */
+#define PREFERENCE_FOOTER_Y 478
+#define PREFERENCE_FOOTER_H 30
+#define PREFERENCES 4
 #define BG RGBA8(9, 15, 23, 255)
 #define CARD RGBA8(21, 31, 44, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
@@ -55,7 +71,7 @@ static int icons_offset = -1, writable = 1;
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
-static int model_found[3];
+static int model_found[2];
 static char preference_status[160];
 static int status_error, preference_error;
 static const struct {
@@ -65,7 +81,6 @@ static const struct {
 } ocr_choices[] = {
     {VJO_OCR_VOCR, "VOCR", "Local OCR: dialogue region, automatic or manual."},
     {VJO_OCR_VOCR2, "VOCR2", "Experimental local OCR. Trial results vary by game."},
-    {VJO_OCR_MEIKI, "Meiki", "Local OCR: one tight horizontal line, manual."},
     {VJO_OCR_LENS, "Google Lens", "Wi-Fi required. Sends the selected image to Google."}
 };
 #define OCR_CHOICES ((int)(sizeof(ocr_choices) / sizeof(ocr_choices[0])))
@@ -167,14 +182,21 @@ static void header(void)
     }
 }
 
-static void footer(const char *message, int error, const char *controls)
+/* Status box (first baseline text_y, lines of 28 px) and the control hints. */
+static void footer_at(int y, int height, int text_y, int lines, const char *message, int error,
+                      const char *controls)
 {
-    vita2d_draw_rectangle(24, 440, 912, 64, CARD);
+    vita2d_draw_rectangle(24, y, 912, height, CARD);
     vita2d_enable_clipping();
-    vita2d_set_clip_rectangle(24, 442, 936, 504);
-    wrapped_text(40, 467, 880, error ? OFF : WHITE, 24, 28, 2, message);
+    vita2d_set_clip_rectangle(24, y + 2, 936, y + height);
+    wrapped_text(40, text_y, 880, error ? OFF : WHITE, 24, 28, lines, message);
     vita2d_disable_clipping();
     wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls);
+}
+
+static void footer(const char *message, int error, const char *controls)
+{
+    footer_at(440, 64, 467, 2, message, error, controls);
 }
 
 static void free_icons(void)
@@ -266,8 +288,8 @@ static void move(int delta)
 
 static void check_models(void)
 {
-    const char *names[] = {preferences.vocr_model, VJO_MEIKI_MODEL_NAME, VJO_VOCR2_MODEL_NAME};
-    for (int i = 0; i < 3; i++) {
+    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME};
+    for (int i = 0; i < 2; i++) {
         char path[256];
         model_found[i] = 0;
         if (!names[i][0]) continue;
@@ -293,14 +315,14 @@ static void load_preferences(void)
     check_models();
 }
 
-static void change_preference(int backend, int japanese_only, int highlight_mode)
+static void change_preference(int backend, int japanese_only, int highlight_mode, int dictionary_results)
 {
     if (!preferences_writable) {
         preference_error = 1;
         snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
         return;
     }
-    int rc = vjo_preferences_save(backend, japanese_only, highlight_mode, &scratch);
+    int rc = vjo_preferences_save(backend, japanese_only, highlight_mode, dictionary_results, &scratch);
     /* Re-read even on failure: final sync can fail after publication. */
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;
@@ -311,22 +333,40 @@ static void change_preference(int backend, int japanese_only, int highlight_mode
         : "Saved. Resume your game, then reopen the overlay.");
 }
 
+/* Dictionaries shown: Cross cycles 1..8; Left/Right step within it. */
+static void set_dictionary_results(int results)
+{
+    if (results < 1 || results > VJO_LOCAL_MAX_DICTS || results == preferences.local_dictionary_results) return;
+    change_preference(preferences.ocr_backend, preferences.japanese_only_selection,
+                      preferences.highlight_mode, results);
+}
+
 static void toggle_preference(void)
 {
+    if (preference_selected == 3) {
+        set_dictionary_results(preferences.local_dictionary_results % VJO_LOCAL_MAX_DICTS + 1);
+        return;
+    }
     change_preference(preference_selected == 0
         ? next_ocr_choice(1)
         : preferences.ocr_backend,
         preference_selected == 1 ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
-        preference_selected == 2 ? !preferences.highlight_mode : preferences.highlight_mode);
+        preference_selected == 2 ? !preferences.highlight_mode : preferences.highlight_mode,
+        preferences.local_dictionary_results);
 }
 
 static void set_preference(int right)
 {
+    if (preference_selected == 3) {
+        set_dictionary_results(preferences.local_dictionary_results + (right ? 1 : -1));
+        return;
+    }
     change_preference(preference_selected == 0 ? next_ocr_choice(right ? 1 : -1)
                                                : preferences.ocr_backend,
         preference_selected == 1 ? right : preferences.japanese_only_selection,
         preference_selected == 2 ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
-                                : preferences.highlight_mode);
+                                : preferences.highlight_mode,
+        preferences.local_dictionary_results);
 }
 
 static void draw_preferences(void)
@@ -357,11 +397,9 @@ static void draw_preferences(void)
     } else if (preferences.ocr_backend == VJO_OCR_LENS) {
         snprintf(label, sizeof(label), "No model file needed. Uses your chosen dictionary.");
     } else {
-        int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 2 :
-                    preferences.ocr_backend == VJO_OCR_MEIKI ? 1 : 0;
-        snprintf(label, sizeof(label), "%s model %s. %s", ocr_choices[choice].name,
-                 model_found[model] ? "found" : "missing",
-                 model == 1 ? "Meiki game engine required." : "Game OCR worker required.");
+        int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 1 : 0;
+        snprintf(label, sizeof(label), "%s model %s. Game OCR worker required.",
+                 ocr_choices[choice].name, model_found[model] ? "found" : "missing");
         if (!model_found[model]) color = OFF;
     }
     wrapped_text(42, OCR_Y + 137, 870, color, 24, 26, 1, label);
@@ -369,24 +407,47 @@ static void draw_preferences(void)
     focus_card(SELECTION_Y, SELECTION_H, preference_selected == 1);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, SELECTION_Y + 2, 932, SELECTION_Y + SELECTION_H - 2);
-    text(42, SELECTION_Y + 32, WHITE, 28, "Japanese characters only");
-    badge(812, SELECTION_Y + 8, 108, 38, !preferences_writable ? "--" :
+    text(42, SELECTION_Y + CARD_TITLE_Y, WHITE, 28, "Japanese characters only");
+    badge(812, SELECTION_Y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
           preferences.japanese_only_selection ? "ON" : "OFF",
           preferences_writable && preferences.japanese_only_selection);
-    text(42, SELECTION_Y + 65, DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
+    text(42, SELECTION_Y + CARD_HELP_Y, DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
     vita2d_disable_clipping();
     focus_card(HIGHLIGHT_Y, HIGHLIGHT_H, preference_selected == 2);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, HIGHLIGHT_Y + 2, 932, HIGHLIGHT_Y + HIGHLIGHT_H - 2);
-    text(42, HIGHLIGHT_Y + 32, WHITE, 28, "Highlight");
-    badge(532, HIGHLIGHT_Y + 8, 176, 38, "Whole word",
+    text(42, HIGHLIGHT_Y + CARD_TITLE_Y, WHITE, 28, "Highlight");
+    badge(532, HIGHLIGHT_Y + CARD_BADGE_Y, 176, CARD_BADGE_H, "Whole word",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_WORD);
-    badge(724, HIGHLIGHT_Y + 8, 196, 38, "Character",
+    badge(724, HIGHLIGHT_Y + CARD_BADGE_Y, 196, CARD_BADGE_H, "Character",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
-    text(42, HIGHLIGHT_Y + 67, DIM, 24, "Word skips matched text. Character moves one character.");
+    text(42, HIGHLIGHT_Y + CARD_HELP_Y, DIM, 24, "Word skips matched text. Character moves one character.");
     vita2d_disable_clipping();
-    footer(preference_status, preference_error,
-           "Up/Down: setting   Left/Right or X: choose   O: exit");
+    focus_card(RESULTS_Y, RESULTS_H, preference_selected == 3);
+    vita2d_enable_clipping();
+    vita2d_set_clip_rectangle(28, RESULTS_Y + 2, 932, RESULTS_Y + RESULTS_H - 2);
+    text(42, RESULTS_Y + CARD_TITLE_Y, WHITE, 28, "Dictionaries shown");
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
+        char number[4];
+        snprintf(number, sizeof(number), "%d", i + 1);
+        badge(RESULT_BADGE_X + i * RESULT_BADGE_PITCH, RESULTS_Y + CARD_BADGE_Y, RESULT_BADGE_W, CARD_BADGE_H,
+              number, preferences_writable && preferences.local_dictionary_results == i + 1);
+    }
+    char results_help[120];
+    int enabled = vjo_local_names_count(preferences.local_dictionaries);
+    if (!preferences_writable)
+        snprintf(results_help, sizeof(results_help), "Cannot read the saved choice.");
+    else if (!enabled)
+        snprintf(results_help, sizeof(results_help), "Set local_dictionaries in config.ini first.");
+    else if (preferences.local_dictionary_results == 1)
+        snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
+                 enabled, enabled == 1 ? "dictionary" : "dictionaries");
+    else
+        snprintf(results_help, sizeof(results_help), "Best match, then others with Up/Down. %d enabled.", enabled);
+    text(42, RESULTS_Y + CARD_HELP_Y, DIM, 24, results_help);
+    vita2d_disable_clipping();
+    footer_at(PREFERENCE_FOOTER_Y, PREFERENCE_FOOTER_H, PREFERENCE_FOOTER_Y + 22, 1,
+              preference_status, preference_error, "Up/Down: setting   Left/Right or X: choose   O: exit");
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -514,7 +575,8 @@ int main(void)
                         int left = OCR_CHOICE_X + i * OCR_CHOICE_PITCH;
                         if (x >= left && x < left + OCR_CHOICE_W)
                             change_preference(ocr_choices[i].backend,
-                                              preferences.japanese_only_selection, preferences.highlight_mode);
+                                              preferences.japanese_only_selection, preferences.highlight_mode,
+                                              preferences.local_dictionary_results);
                     }
                 }
             }
@@ -523,11 +585,20 @@ int main(void)
             }
             else if (page && x >= 24 && x < 936 && y >= HIGHLIGHT_Y && y < HIGHLIGHT_Y + HIGHLIGHT_H) {
                 preference_selected = 2;
-                if (x >= 532 && x < 708 && y >= HIGHLIGHT_Y + 8 && y < HIGHLIGHT_Y + 46)
+                int on_badges = y >= HIGHLIGHT_Y + CARD_BADGE_Y && y < HIGHLIGHT_Y + CARD_BADGE_Y + CARD_BADGE_H;
+                if (on_badges && x >= 532 && x < 708)
                     set_preference(0);
-                else if (x >= 724 && x < 920 && y >= HIGHLIGHT_Y + 8 && y < HIGHLIGHT_Y + 46)
+                else if (on_badges && x >= 724 && x < 920)
                     set_preference(1);
                 else toggle_preference();
+            }
+            else if (page && x >= 24 && x < 936 && y >= RESULTS_Y && y < RESULTS_Y + RESULTS_H) {
+                /* Touch a number to choose it; the rest of the card only focuses. */
+                preference_selected = 3;
+                if (y >= RESULTS_Y + CARD_BADGE_Y && y < RESULTS_Y + CARD_BADGE_Y + CARD_BADGE_H &&
+                    x >= RESULT_BADGE_X && (x - RESULT_BADGE_X) % RESULT_BADGE_PITCH < RESULT_BADGE_W &&
+                    (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
+                    set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
             }
             else if (page) { /* no game actions on the OCR page */ }
             else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();

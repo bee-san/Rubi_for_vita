@@ -861,9 +861,16 @@ static void test_config(void)
     TEST_CHECK(c.n_warnings == 2);
     TEST_MSG("warnings: %d", c.n_warnings);
     vjo_config_defaults(&c);
-    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = meiki\n";
+    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = vocr2\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
-    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_MEIKI);
+    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_VOCR2);
+    /* A choice saved by the removed Meiki trial falls back to vocr and says so. */
+    vjo_config_defaults(&c);
+    c.ocr_backend = VJO_OCR_LENS;
+    const char *removed_meiki = "ocr_backend = Meiki\n";
+    vjo_config_parse(&c, removed_meiki, strlen(removed_meiki));
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
+    TEST_CHECK(strstr(c.warnings[0], "Meiki was removed") != NULL);
     vjo_config_defaults(&c);
     const char *invalid_selection = "japanese_only_selection = maybe\n";
     vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
@@ -924,10 +931,10 @@ static void test_highlight_config(void)
     vjo_config_defaults(&c);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD);
     /* Existing saved configs gain word highlighting without changing choices. */
-    const char old[] = "ocr_backend = meiki\njapanese_only_selection = off\n";
+    const char old[] = "ocr_backend = vocr2\njapanese_only_selection = off\n";
     vjo_config_parse(&c, old, sizeof(old) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_MEIKI && !c.japanese_only_selection);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR2 && !c.japanese_only_selection);
     const char character[] = "HIGHLIGHT_MODE = CHARACTER\n";
     vjo_config_parse(&c, character, sizeof(character) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_CHARACTER && c.n_warnings == 0);

@@ -46,17 +46,8 @@ Optional vita-vn-ocr backend (`-DVJO_WITH_VOCR=ON`, not vendored):
   under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); the release
   notes carry the full attribution.
 
-The optional single-line Meiki trial uses MeikiOCR 0.3.5 at
-`52aa607ecdc1038c7bf390f37cd9a8b306e8a08a` (Apache-2.0) and the existing
-streamed-head int8 conversion of its recognition model (LGPL-3.0). MNN 3.2.0
-at `ebdada82634300956e08bd4056ecfeb1e4f23b32` (Apache-2.0) runs only inside
-the isolated game-process engine. See [Meiki dependencies](../docs/meiki-dependencies.json),
-[Meiki notices](licenses/Meiki.txt), [resize notices](licenses/Meiki-resize.txt)
-and [MNN notices](licenses/MNN.txt). Weights are release assets, never source files.
-
-The distributed Meiki recognizer's exact model license is
-[LGPL-3.0](licenses/Meiki-model-LGPL-3.0.txt), with the complete GPL-3.0
-text at the repository/package [LICENSE](../LICENSE). MNN's embedded
-[Flatbuffers Apache-2.0](licenses/MNN-Flatbuffers-Apache-2.0.txt) and
-[Half MIT](licenses/MNN-Half-MIT.txt) notices are included separately.
-`Meiki.txt` describes Apache-2.0 code, not the model's LGPL license.
+The Meiki single-line trial (MeikiOCR, its LGPL-3.0 converted model and MNN)
+was removed after v0.7.12; this tree no longer builds or ships it. Its pinned
+dependencies and notices remain in the
+[v0.7.12 tree](https://github.com/bee-san/vita-jp-overlay/tree/aff03cbb559a7eccdcfbd27b9c873ea7543f1deb/third_party)
+and that release.

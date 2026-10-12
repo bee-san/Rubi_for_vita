@@ -8,11 +8,10 @@ The release includes a standalone per-game settings app. Anki and the offline
 card queue are disabled; no cards or screenshots are queued.
 
 Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
-**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**,
-**[Meiki](docs/meiki-trial.md)**, or **Google Lens** in the OCR engine row.
+**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
+in the OCR engine row.
 Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
-VOCR is the default and supports automatic or manual local OCR. Meiki runs
-manually on one horizontal line and uses more game memory. Google Lens requires
+VOCR is the default and supports automatic or manual local OCR. Google Lens requires
 Wi-Fi and sends the selected image to Google, using the original
 [upstream implementation](https://github.com/Dartv/vita-jp-overlay).
 The release stores the local models; choosing an engine keeps them installed
@@ -24,12 +23,19 @@ games regressed by one or two characters and its strict promotion guard failed.
 It is experimental, has no physical-device validation, and must be selected
 explicitly in Settings; VOCR remains the default. The
 [`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
-contains the three plugins, Settings, FL10/H15/VOCR2, JMdict and the optional
-Meiki engine. Earlier releases remain available.
+contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
+carried the optional Meiki engine. Earlier releases remain available.
 
-VOCR and Meiki have completed actual CLANNAD OCR jobs on the physical Vita.
-Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
-and broader game compatibility remain unmeasured; host crop results are separate.
+Meiki, a manual single-line recognizer, has been removed from the source after
+0.7.12. Its MNN engine had to be copied into each game's own `app0:` folder
+through a per-title rePatch mount, and two observed jobs took about eight
+seconds each. A saved `ocr_backend = meiki` now loads as VOCR with a config
+warning, and the installer rewrites it to `vocr`. Files copied for it,
+`ux0:data/VitaJPOverlay/ocr/meiki-stream-int8.mnn` and any
+`ux0:rePatch/TITLEID/VitaJPOverlay/meiki/` folders, are no longer used and can be deleted.
+
+VOCR has completed actual CLANNAD OCR jobs on the physical Vita.
+Hardware accuracy/CER and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](docs/vita-vn-ocr.md) and
 [project lessons](docs/project-lessons.md).
 
@@ -56,9 +62,9 @@ Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
 Download `VitaJPOverlay-0.7.12.zip` from this fork's
 [release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
-int8 models including the opt-in VOCR2 model, the pinned Meiki recognizer/engine, and the complete converted
-JMdict snapshot. Meiki also needs its engine mounted for each enabled game;
-see [the setup guide](docs/meiki-trial.md). Python 3.9+, bash,
+int8 models including the opt-in VOCR2 model, and the complete converted
+JMdict snapshot. The 0.7.12 archive also still carries the Meiki recognizer and
+engine, which have since been removed. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
 Close games, open VitaShell, press Select to start FTP, and run from the
@@ -95,7 +101,7 @@ then reboot. Keep unrelated plugins and configuration intact.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Skip matched words in Whole word mode; step one character in Character mode |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Navigate words with a network dictionary |
+| Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
 | Circle | Close the overlay |
@@ -126,11 +132,11 @@ tab, or press Select, to change pages. Choices save automatically to
 | Circle | Exit |
 
 On the **OCR & lookup** page, select a card with Up/Down. Cross
-or touch a card changes its choice: OCR engine, Japanese-only selection, or
-whole-word/character highlighting.
-Touch an engine button to choose it directly;
-Left/Right cycle the four engine choices on the model card, OFF/ON on the selection card,
-or Whole word/Character on the Highlight card.
+or touch a card changes its choice: OCR engine, Japanese-only selection,
+whole-word/character highlighting, or how many dictionaries are shown.
+Touch an engine button or a number to choose it directly;
+Left/Right cycle the three engine choices on the model card, OFF/ON on the selection card,
+Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -166,6 +172,7 @@ game. Adrenaline uses one shared policy for its PSP titles.
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = jmdict.vjdict
+local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
@@ -192,7 +199,12 @@ gzip snapshot is also attached to the release.
 
 You can add your own Yomitan dictionaries, including a legally obtained
 Daijirin export, with [the converter and installation guide](docs/local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order. The downloaded
+Up to eight dictionary files can be enabled in priority order. Settings →
+**Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages through
+them for the selected word: the first page is the usual best match, and Down
+shows the next enabled dictionary that has an entry there. Only the page on
+screen is held in memory; definitions are always stored and shown as plain
+text. See [several dictionaries](docs/local-dictionaries.md#several-dictionaries). The downloaded
 Daijirin v3 has been converted and measured separately; the commercial file is
 installed privately, while the public release includes the converter and JMdict.
 The dictionary stays on disk; it is never loaded whole into RAM.
@@ -228,9 +240,8 @@ still fail because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the three original VOCR model names, the separate pinned VOCR2 trial
-model, and the pinned Meiki recognizer in
-`ux0:data/VitaJPOverlay/ocr`, checks
+only the three original VOCR model names and the separate pinned VOCR2 trial
+model in `ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, and copies at most 8 KiB per request into game-owned memory.
 The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB
 staging buffer, no complete model, and no saved game pointers. Cancellation or
@@ -246,7 +257,10 @@ The `*main` plugin handles UI and disk-backed dictionary lookup with one
 64 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
-reads only the selected position and returns zero or one entry.
+reads only the selected position and shows zero or one entry. With Dictionaries
+shown above 1 it also keeps a 208-byte table locating the other dictionaries'
+entries in the same arena; Up/Down releases the shown entry and reads one other
+payload, so several definitions are never resident together.
 The previous local result is retired before either is reused; network jobs
 retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
@@ -304,7 +318,7 @@ failed cleanup. The integration tests model the observed syscall return
 encoding and require a subsequent real capture request after each completed job.
 Timeout and ownership tests run without release weights. Real
 accuracy is measured separately against vita-vn-ocr's hand-checked shared
-`eval/` screenshots. Experimental Meiki and text-extraction branches remain
+`eval/` screenshots. The experimental text-extraction branch remains
 separate from this release.
 
 Controller regressions exercise all 12 hooked read/peek variants, including

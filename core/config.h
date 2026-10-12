@@ -9,9 +9,9 @@
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
 /* ocr_backend. VJO_OCR_VOCR and VJO_OCR_VOCR2 share bee-san/vita-vn-ocr on
  * the Vita CPU (VJO_WITH_VOCR); VJO_OCR_NCNN is for host experiments only.
- * Values are persisted by the settings app; keep existing IDs unchanged. */
-enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_MEIKI = 3,
-       VJO_OCR_VOCR2 = 4 };
+ * Values are persisted by the settings app; keep existing IDs unchanged.
+ * 3 belonged to the removed Meiki trial and stays unused. */
+enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_VOCR2 = 4 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
@@ -46,6 +46,7 @@ typedef struct {
     char hachidori_host[64];   /* required host[:port], default port 19633 */
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
+    int local_dictionary_results; /* 1..8: dictionaries paged with Up/Down per selected word */
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
@@ -54,7 +55,7 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_VOCR2 | VJO_OCR_MEIKI | VJO_OCR_NCNN */
+    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_VOCR2 | VJO_OCR_NCNN */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
     char vocr_model[64];      /* old VOCR weights in ocr_model_dir; VOCR2 uses its build pin */
@@ -77,13 +78,13 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* Default file written on first run (with comments). */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's three OCR/lookup preferences, retaining every other INI
+/* Changes only the app's four OCR/lookup preferences, retaining every other INI
  * line verbatim. Duplicate owned keys are collapsed. Input/output must not
  * overlap. Returns output bytes (not including NUL), or -1 for invalid
  * choices, embedded NUL, or insufficient capacity. */
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
                                  int japanese_only, int highlight_mode,
-                                 char *out, size_t cap);
+                                 int dictionary_results, char *out, size_t cap);
 
 const char *vjo_trigger_name(int trigger);
 

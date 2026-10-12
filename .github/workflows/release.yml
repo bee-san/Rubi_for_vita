@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
           path: .refs/vita-vn-ocr
       - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
-      - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr -DVJO_WITH_MEIKI=ON -DVJO_MEIKI_SOURCE_DIR=$PWD/.refs/vita-vn-ocr/ports/meiki && cmake --build build/host -j4
+      - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
       - run: ctest --test-dir build/host --output-on-failure
       - run: python3 tools/test_jpegsw.py
       - uses: actions/setup-node@v4

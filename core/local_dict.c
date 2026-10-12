@@ -50,6 +50,7 @@ typedef struct {
 
 typedef struct {
     int dict;
+    uint16_t units; /* selected lookups: matched source span (in former padding) */
     Record record;
 } Match;
 
@@ -66,6 +67,7 @@ typedef struct {
 } Workspace;
 
 typedef char WorkspaceFits[(sizeof(Workspace) <= VJO_LOCAL_SCRATCH_BUDGET) ? 1 : -1];
+typedef char MatchKeepsItsSize[(sizeof(Match) == 8 + sizeof(Record)) ? 1 : -1];
 
 static uint16_t u16(const uint8_t *p) { return (uint16_t)(p[0] | (uint16_t)p[1] << 8); }
 static uint32_t u32(const uint8_t *p) { return (uint32_t)u16(p) | (uint32_t)u16(p + 2) << 16; }
@@ -100,14 +102,28 @@ static int next_name(const char **cursor, char name[64])
     return 1;
 }
 
-int vjo_local_names_valid(const char *names)
+int vjo_local_names_count(const char *names)
 {
     char name[64];
     int n = 0, rc;
     if (!names) return 0;
     while ((rc = next_name(&names, name)) > 0)
         if (++n > VJO_LOCAL_MAX_DICTS) return 0;
-    return rc == 0 && n > 0;
+    return rc == 0 ? n : 0;
+}
+
+int vjo_local_names_valid(const char *names)
+{
+    return vjo_local_names_count(names) > 0;
+}
+
+/* The index-th configured name; 0 when absent or the list is invalid. */
+static int nth_name(const char *names, int index, char name[64])
+{
+    if (index < 0 || index >= vjo_local_names_count(names)) return 0;
+    for (int i = 0; i <= index; i++)
+        if (next_name(&names, name) <= 0) return 0;
+    return 1;
 }
 
 static int range_ok(Dictionary *d, uint64_t off, size_t n)
@@ -146,43 +162,58 @@ static int cached_read(Workspace *w, Dictionary *d, uint64_t off, void *dst, siz
     return VJO_OK;
 }
 
+static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *name, Dictionary *d, VjoErr *err)
+{
+    char path[256];
+    int n = vjo_snprintf(path, sizeof(path), "%s/%s", cfg->local_dictionary_dir, name);
+    if (n < 0 || (size_t)n >= sizeof(path) || p->file_open(p->ud, path, &d->file)) {
+        err->detail = "Cannot open a configured dictionary; check local_dictionary_dir and local_dictionaries";
+        return VJO_E_LOCAL_IO;
+    }
+    return VJO_OK;
+}
+
+/* Reads and validates only the 64-byte header of an opened file. */
+static int check_header(Dictionary *d)
+{
+    uint8_t h[HEADER_SIZE];
+    if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
+    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
+    d->version = u32(h + 8);
+    d->count = u32(h + 16);
+    d->data = u64(h + 32);
+    if (u32(h + 12) != HEADER_SIZE || u32(h + 20) != INDEX_SIZE ||
+        d->data > d->file.size || u64(h + 40) != d->file.size || !d->count ||
+        d->file.size > INT64_MAX) return VJO_E_LOCAL_FORMAT;
+    if (d->version == 1) {
+        if (memcmp(h, "VJDICT1\0", 8) || u64(h + 24) != HEADER_SIZE ||
+            d->data != HEADER_SIZE + (uint64_t)d->count * INDEX_SIZE ||
+            u64(h + 48) || u64(h + 56)) return VJO_E_LOCAL_FORMAT;
+    } else if (d->version == 2) {
+        uint64_t buckets = u64(h + 48), pages = u64(h + 56);
+        if (memcmp(h, "VJDICT2\0", 8) || u64(h + 24) != PAGE_SIZE ||
+            !buckets || buckets > UINT32_MAX || (buckets & (buckets - 1)) ||
+            pages < buckets || pages > UINT32_MAX || d->data != PAGE_SIZE + pages * PAGE_SIZE)
+            return VJO_E_LOCAL_FORMAT;
+        d->buckets = (uint32_t)buckets;
+    } else return VJO_E_LOCAL_FORMAT;
+    return VJO_OK;
+}
+
 static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig *cfg, VjoErr *err)
 {
     const char *names = cfg->local_dictionaries;
-    char name[64], path[256];
+    char name[64];
     if (!p->file_open || !vjo_local_names_valid(names) || !cfg->local_dictionary_dir[0]) {
         err->detail = "Set local_dictionaries to up to 8 .vjdict filenames in config.ini";
         return VJO_E_LOCAL_IO;
     }
     while (next_name(&names, name) > 0) {
-        uint8_t h[HEADER_SIZE];
         Dictionary *d = &w->dicts[w->n_dicts];
-        int n = vjo_snprintf(path, sizeof(path), "%s/%s", cfg->local_dictionary_dir, name);
-        if (n < 0 || (size_t)n >= sizeof(path) || p->file_open(p->ud, path, &d->file)) {
-            err->detail = "Cannot open a configured dictionary; check local_dictionary_dir and local_dictionaries";
-            return VJO_E_LOCAL_IO;
-        }
+        int rc = open_file(p, cfg, name, d, err);
+        if (rc) return rc;
         w->n_dicts++; /* close even if header validation fails */
-        if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
-        if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
-        d->version = u32(h + 8);
-        d->count = u32(h + 16);
-        d->data = u64(h + 32);
-        if (u32(h + 12) != HEADER_SIZE || u32(h + 20) != INDEX_SIZE ||
-            d->data > d->file.size || u64(h + 40) != d->file.size || !d->count ||
-            d->file.size > INT64_MAX) return VJO_E_LOCAL_FORMAT;
-        if (d->version == 1) {
-            if (memcmp(h, "VJDICT1\0", 8) || u64(h + 24) != HEADER_SIZE ||
-                d->data != HEADER_SIZE + (uint64_t)d->count * INDEX_SIZE ||
-                u64(h + 48) || u64(h + 56)) return VJO_E_LOCAL_FORMAT;
-        } else if (d->version == 2) {
-            uint64_t buckets = u64(h + 48), pages = u64(h + 56);
-            if (memcmp(h, "VJDICT2\0", 8) || u64(h + 24) != PAGE_SIZE ||
-                !buckets || buckets > UINT32_MAX || (buckets & (buckets - 1)) ||
-                pages < buckets || pages > UINT32_MAX || d->data != PAGE_SIZE + pages * PAGE_SIZE)
-                return VJO_E_LOCAL_FORMAT;
-            d->buckets = (uint32_t)buckets;
-        } else return VJO_E_LOCAL_FORMAT;
+        if ((rc = check_header(d))) return rc;
     }
     return VJO_OK;
 }
@@ -228,7 +259,7 @@ static int find_matches_v1(Workspace *w, int di, const Candidate *c, int limit)
         if (w->n_matches >= limit) break;
         w->matches[w->n_matches].dict = di;
         w->matches[w->n_matches++].record = r;
-        if (limit == 1) break; /* Selected lookup never reads later homonyms. */
+        if (w->n_matches >= limit) break; /* never read a row that cannot be kept */
     }
     return VJO_OK;
 }
@@ -354,12 +385,33 @@ static int boundary(uint32_t cp)
            cp == '!' || cp == '?' || cp == ',' || cp == '.';
 }
 
+/* Reads one payload, three NUL-terminated strings (spelling, reading and
+ * plain-text definition), into out. The definition is displayed verbatim. */
+static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t len, VjoVocab *v)
+{
+    char *payload = vjo_arena_alloc(out, len), *reading, *meaning;
+    size_t left;
+    if (!payload) return VJO_E_TOO_LARGE;
+    if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
+    if (!payload[0] || payload[len - 1]) return VJO_E_LOCAL_FORMAT;
+    reading = memchr(payload, 0, len);
+    if (!reading) return VJO_E_LOCAL_FORMAT;
+    reading++;
+    left = len - (size_t)(reading - payload);
+    meaning = memchr(reading, 0, left);
+    if (!meaning || meaning + 1 >= payload + len) return VJO_E_LOCAL_FORMAT;
+    meaning++;
+    if (memchr(meaning, 0, len - (size_t)(meaning - payload) - 1)) return VJO_E_LOCAL_FORMAT;
+    v->spelling = payload; v->reading = *reading ? reading : payload; v->rank = VJO_NO_RANK;
+    v->meanings = vjo_arena_alloc(out, sizeof(char *));
+    if (!v->meanings) return VJO_E_TOO_LARGE;
+    v->meanings[0] = meaning; v->n_meanings = 1;
+    return VJO_OK;
+}
+
 static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, int len16, VjoDictResult *res)
 {
     int n = res->n_vocab, rc;
-    VjoVocab *v;
-    char *payload, *reading, *meaning;
-    size_t left;
     /* Repeated words reuse vocabulary, but keep every token. */
     for (int i = 0; i < n; i++) {
         if (w->seen_dict[i] == m->dict && w->seen_off[i] == m->record.entry_off) {
@@ -369,24 +421,8 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
         }
     }
     if (n >= VJO_LOCAL_MAX_RESULTS || res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-    payload = vjo_arena_alloc(a, m->record.entry_len);
-    if (!payload) return VJO_E_TOO_LARGE;
-    rc = w->dicts[m->dict].file.read(w->dicts[m->dict].file.ctx, m->record.entry_off, payload, m->record.entry_len);
-    if (rc) return VJO_E_LOCAL_IO;
-    if (!payload[0] || payload[m->record.entry_len - 1]) return VJO_E_LOCAL_FORMAT;
-    reading = memchr(payload, 0, m->record.entry_len);
-    if (!reading) return VJO_E_LOCAL_FORMAT;
-    reading++;
-    left = m->record.entry_len - (size_t)(reading - payload);
-    meaning = memchr(reading, 0, left);
-    if (!meaning || meaning + 1 >= payload + m->record.entry_len) return VJO_E_LOCAL_FORMAT;
-    meaning++;
-    if (memchr(meaning, 0, m->record.entry_len - (size_t)(meaning - payload) - 1)) return VJO_E_LOCAL_FORMAT;
-    v = &res->vocab[n];
-    v->spelling = payload; v->reading = *reading ? reading : payload; v->rank = VJO_NO_RANK;
-    v->meanings = vjo_arena_alloc(a, sizeof(char *));
-    if (!v->meanings) return VJO_E_TOO_LARGE;
-    v->meanings[0] = meaning; v->n_meanings = 1;
+    if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n])))
+        return rc;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
     res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16};
     res->n_vocab++;
@@ -457,13 +493,44 @@ done:
     return err->rc = rc;
 }
 
-int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
-                        const char *text, size_t cursor_byte,
-                        VjoDictResult *res, VjoErr *err)
+/* Pages are final when the overall best match is known and every dictionary
+ * that may take one of the remaining limit - 1 places (configured order) is
+ * resolved. limit 1 stops at the first match, exactly as a single lookup. */
+static int pages_complete(const Workspace *w, unsigned resolved, int limit)
+{
+    int best, shown = 1;
+    if (!w->n_matches) return 0;
+    best = w->matches[0].dict;
+    for (int d = 0; d < w->n_dicts && shown < limit; d++) {
+        if (d == best) continue;
+        if (!(resolved & (1u << d))) return 0; /* may still match a shorter span */
+        shown++;
+    }
+    return 1;
+}
+
+static void add_page(VjoLocalPages *pages, const Workspace *w, int match)
+{
+    const Match *m = &w->matches[match];
+    VjoLocalPage *pg;
+    if (!pages) return; /* one result: nothing to locate */
+    pg = &pages->page[pages->count++];
+    pg->entry_off = m->record.entry_off;
+    pg->entry_len = m->record.entry_len;
+    pg->file_size = w->dicts[m->dict].file.size;
+    pg->len16 = m->units;
+    pg->dict = (uint8_t)m->dict;
+    pg->reserved = 0;
+}
+
+int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                           const char *text, size_t cursor_byte, int limit,
+                           VjoLocalPages *pages, VjoDictResult *res, VjoErr *err)
 {
     size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0;
     size_t lengths[MAX_SCAN_CHARS + 1];
-    int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0;
+    int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
+    unsigned resolved = 0;
     char key[VJO_LOCAL_MAX_KEY + 1];
     VjoArena output;
     Workspace *w;
@@ -473,11 +540,18 @@ int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     memset(res, 0, sizeof(*res));
     memset(err, 0, sizeof(*err));
     err->dict = VJO_DICT_LOCAL;
+    if (limit < 1 || !pages) limit = 1;
+    if (limit > VJO_LOCAL_MAX_DICTS) limit = VJO_LOCAL_MAX_DICTS;
+    if (pages) memset(pages, 0, sizeof(*pages));
     if (len > VJO_LOCAL_MAX_TEXT) return err->rc = VJO_E_TOO_LARGE;
     if (cursor_byte > len) return err->rc = VJO_E_PARSE;
     while (off < cursor_byte)
         pos16 += vjo_utf16_units(vjo_utf8_next(text, len, &off));
     if (off != cursor_byte) return err->rc = VJO_E_PARSE;
+    if (pages) {
+        pages->cursor_byte = (uint32_t)cursor_byte;
+        pages->pos16 = pos16;
+    }
 
     /* Only inspect the prefix at the selected character. Source UTF-16
      * lengths remain unchanged by kana/fullwidth search normalization. */
@@ -506,29 +580,103 @@ int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     res->vocab = vjo_arena_zalloc(&output, sizeof(VjoVocab));
     res->tokens = vjo_arena_zalloc(&output, sizeof(VjoToken));
     if ((rc = open_dictionaries(w, p, cfg, err))) goto done;
-    for (int k = count; k > 0; k--) {
+    /* An exact hit in a later dictionary beats an inflected hit in an earlier
+     * dictionary. Within the same candidate, first dictionary and first
+     * posting win. Each dictionary keeps only its first (best) match; the
+     * first one found overall is the single result. Only page 0's payload is
+     * read: other pages are located, never loaded. */
+    for (int k = count; k > 0 && !complete; k--) {
         int candidates;
         key[lengths[k]] = 0;
         candidates = deinflect(w->candidates, key);
-        w->n_matches = 0;
-        /* An exact hit in a later dictionary beats an inflected hit in an
-         * earlier dictionary. Within the same candidate, first dictionary
-         * and first posting win; only that payload is read. */
-        for (int c = 0; c < candidates && !w->n_matches; c++)
-            for (int d = 0; d < w->n_dicts && !w->n_matches; d++)
-                if ((rc = find_matches(w, d, &w->candidates[c], 1))) goto done;
-        if (!w->n_matches) continue;
-        rc = append_match(&output, w, &w->matches[0], pos16, units[k], res);
-        break;
+        for (int c = 0; c < candidates && !complete; c++)
+            for (int d = 0; d < w->n_dicts && !complete; d++) {
+                int before = w->n_matches;
+                if (resolved & (1u << d)) continue;
+                if ((rc = find_matches(w, d, &w->candidates[c], before + 1))) goto done;
+                if (w->n_matches == before) continue;
+                resolved |= 1u << d;
+                w->matches[before].units = (uint16_t)units[k];
+                complete = pages_complete(w, resolved, limit);
+            }
+    }
+    if (w->n_matches) {
+        int shown = 1;
+        add_page(pages, w, 0);
+        for (int d = 0; d < w->n_dicts && shown < limit; d++) {
+            if (d == w->matches[0].dict) continue;
+            for (int i = 1; i < w->n_matches; i++)
+                if (w->matches[i].dict == d) { add_page(pages, w, i); shown++; break; }
+        }
+        rc = append_match(&output, w, &w->matches[0], pos16, w->matches[0].units, res);
     }
 done:
     for (int i = 0; i < w->n_dicts; i++)
         if (w->dicts[i].file.close) w->dicts[i].file.close(w->dicts[i].file.ctx);
     if (rc || !res->n_vocab) {
         memset(res, 0, sizeof(*res));
+        if (pages) pages->count = 0;
         vjo_arena_release(a, mark);
     } else {
         vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
     }
     return err->rc = rc;
+}
+
+int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                        const char *text, size_t cursor_byte,
+                        VjoDictResult *res, VjoErr *err)
+{
+    return vjo_local_lookup_pages(a, p, cfg, text, cursor_byte, 1, NULL, res, err);
+}
+
+int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                        const VjoLocalPages *pages, int page,
+                        VjoDictResult *res, VjoErr *err)
+{
+    size_t mark = vjo_arena_mark(a);
+    const VjoLocalPage *pg;
+    Dictionary d;
+    VjoArena output;
+    char name[64];
+    void *outmem;
+    int rc, opened = 0;
+
+    memset(res, 0, sizeof(*res));
+    memset(err, 0, sizeof(*err));
+    err->dict = VJO_DICT_LOCAL;
+    if (!pages || page < 0 || page >= pages->count || pages->count > VJO_LOCAL_MAX_DICTS)
+        return err->rc = VJO_E_PARSE;
+    pg = &pages->page[page];
+    if (!p->file_open || !cfg->local_dictionary_dir[0] || !nth_name(cfg->local_dictionaries, pg->dict, name)) {
+        err->detail = "Set local_dictionaries to up to 8 .vjdict filenames in config.ini";
+        return err->rc = VJO_E_LOCAL_IO;
+    }
+    outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
+    if (!outmem) return err->rc = VJO_E_OOM;
+    vjo_arena_init(&output, outmem, VJO_LOCAL_SELECTED_BUDGET);
+    res->vocab = vjo_arena_zalloc(&output, sizeof(VjoVocab));
+    res->tokens = vjo_arena_zalloc(&output, sizeof(VjoToken));
+    memset(&d, 0, sizeof(d));
+    rc = open_file(p, cfg, name, &d, err);
+    opened = rc == VJO_OK;
+    if (!rc) rc = check_header(&d);
+    if (!rc && d.file.size != pg->file_size) {
+        err->detail = "A dictionary file changed. Close and reopen the overlay.";
+        rc = VJO_E_LOCAL_IO;
+    }
+    if (!rc && (pg->entry_off < d.data || pg->entry_len < 4 || pg->entry_len > VJO_LOCAL_MAX_ENTRY ||
+                !range_ok(&d, pg->entry_off, pg->entry_len)))
+        rc = VJO_E_LOCAL_FORMAT;
+    if (!rc) rc = read_entry(&output, &d, pg->entry_off, pg->entry_len, &res->vocab[0]);
+    if (opened && d.file.close) d.file.close(d.file.ctx);
+    if (rc) {
+        memset(res, 0, sizeof(*res));
+        vjo_arena_release(a, mark);
+        return err->rc = rc;
+    }
+    res->tokens[0] = (VjoToken){.vocab = 0, .pos16 = pages->pos16, .len16 = pg->len16};
+    res->n_vocab = res->n_tokens = 1;
+    vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
+    return VJO_OK;
 }
