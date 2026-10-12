@@ -379,33 +379,6 @@ static void view_show_cache(void)
     vjo_arena_release(&scratch, mark);
 }
 
-/* Copies UTF-8 text, cut at a character boundary to fit. */
-static void copy_utf8(char *dst, size_t cap, const char *src)
-{
-    size_t n = sceClibStrnlen(src, cap - 1);
-    if (n == cap - 1)
-        while (n && ((uint8_t)src[n] & 0xC0) == 0x80)
-            n--;
-    sceClibMemcpy(dst, src, n);
-    dst[n] = '\0';
-}
-
-/* The strip: text (NULL keeps it) of kind VJO_STRIP_*, and the busy mark. */
-static void strip_publish(const char *text, int kind, int busy)
-{
-    vjo_view_lock();
-    __atomic_store_n(&g_view.strip_on, subtitles, __ATOMIC_RELEASE); /* also read unlocked */
-    if (text) {
-        copy_utf8(g_view.strip_text, sizeof(g_view.strip_text), text);
-        g_view.strip_kind = kind;
-    }
-    g_view.strip_busy = busy;
-    g_view.font_size_ja = cfg.font_size_ja;
-    g_view.font_size_en = cfg.font_size_en;
-    g_view.strip_version++;
-    vjo_view_unlock();
-}
-
 /* ---------------- network thread ---------------- */
 
 typedef struct {
@@ -691,7 +664,7 @@ static void start_job(const char *why, int lookup)
     __sync_synchronize();
     sceKernelSetEventFlag(net_evf, NET_EV_JOB);
     if (subtitles)
-        strip_publish(NULL, 0, 1);
+        vjo_strip_set_busy(1);
 }
 
 static void start_cursor_job(void)
@@ -767,6 +740,7 @@ static void apply_config(void)
         }
     }
     vjo_log_configure(&cfg);
+    vjo_strip_configure(subtitles, &cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
     for (int i = 0; i < cfg.n_warnings; i++)
@@ -820,7 +794,7 @@ static void clear_input_block_error(void)
 {
     if (input_block_error) {
         input_block_error = 0;
-        strip_publish("", VJO_STRIP_STATUS, 0);
+        vjo_strip_show("", VJO_STRIP_STATUS, 0);
     }
 }
 
@@ -833,7 +807,7 @@ static void open_overlay(void)
         input_block_error = 1;
         ov = OV_CLOSED;
         view_publish(0, NULL, NULL, 0);
-        strip_publish("Overlay unavailable: cannot block game controls.", VJO_STRIP_ERROR, 0);
+        vjo_strip_show("Overlay unavailable: cannot block game controls.", VJO_STRIP_ERROR, 0);
         vjo_view_lock();
         __atomic_store_n(&g_view.strip_on, 1, __ATOMIC_RELEASE);
         vjo_view_unlock();
@@ -882,18 +856,17 @@ static void open_overlay(void)
         view_publish(1, NULL, "Not enough memory to capture the screen", 1);
         return;
     }
-    if (cfg.ocr_mode == VJO_OCR_AUTO && claim_cache_for(&st)) {
+    if (claim_cache_for(&st)) { /* a background job's, or the subtitles' */
         vjo_log("open: background result");
         view_show_cache();
         return;
     }
-    /* Why the background result can't be used (auto mode tuning). */
-    if (cfg.ocr_mode == VJO_OCR_AUTO)
-        vjo_log("open: %s (stable %u, quiet %u)",
-                job_running ? "background job still running"
-                : !cache_ok || active < 0 ? "no background result"
-                                          : "screen changed since the background result",
-                st.stable, st.quiet);
+    /* Why the background result can't be used (tuning). */
+    vjo_log("open: %s (stable %u, quiet %u)",
+            job_running ? "background job still running"
+            : !cache_ok || active < 0 ? "no background result"
+                                      : "screen changed since the background result",
+            st.stable, st.quiet);
     view_publish(1, NULL, "Recognizing…", 0);
     view_waiting = 1;
     if (job_running) {
@@ -935,14 +908,29 @@ static void backoff_note(Backoff *b, int failed)
     b->until = now_us() + b->us;
 }
 
-/* The strip for a finished job: its sentence, else its error. */
+/* The lookup of the finished job's text: the cached result's when it was
+ * the same text (which needs a usable cache: active is set), else its own
+ * if it made one. NULL if none. */
+static const VjoEntryList *job_words(const VjoOverlayData *d)
+{
+    if (job_same_text)
+        return &cache_data[active].list;
+    return job_lookup && d->err.rc == VJO_OK ? &d->list : NULL;
+}
+
+/* The strip for a finished job: its sentence with its readings, else its
+ * error. */
 static void strip_show_result(const VjoOverlayData *d)
 {
     size_t mark = vjo_arena_mark(&scratch);
-    if (d->sentence)
-        strip_publish(d->sentence, VJO_STRIP_SENTENCE, 0);
-    else
-        strip_publish(vjo_err_text(&scratch, d->failed_stage, &d->err), VJO_STRIP_ERROR, 0);
+    if (d->sentence) {
+        const VjoEntryList *words = job_words(d);
+        vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
+        if (words)
+            vjo_strip_show_readings(&scratch, words);
+    } else {
+        vjo_strip_show(vjo_err_text(&scratch, d->failed_stage, &d->err), VJO_STRIP_ERROR, 0);
+    }
     vjo_arena_release(&scratch, mark);
 }
 
@@ -1027,7 +1015,7 @@ static void on_job_done(void)
         } else {
             stable_pending = game_active(); /* only the current game's next screen */
             if (subtitles)
-                strip_publish(NULL, 0, 0);
+                vjo_strip_set_busy(0);
         }
         return;
     }
@@ -1094,13 +1082,17 @@ static void on_job_done(void)
     }
 }
 
-/* Does a job started now look the words up? Yes when the overlay can show
- * them: it is open, or opens from the background result (auto). */
+/* Does a job started now look the words up? Yes when they are shown: the
+ * overlay is open, or opens from the background result (auto: a local
+ * dictionary prepares only the first whole-word match), or the subtitles
+ * show their readings. Only jpdb and jiten (an API key) give readings: local
+ * and Hachidori subtitle jobs stay OCR-only and allocate no result arena. */
 static int want_lookup(void)
 {
     return vjo_config_dict_ready(&cfg) &&
            (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
-              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD))) &&
+              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD)) ||
+            (subtitles && vjo_config_api_key(&cfg)[0])) &&
            now_us() >= dict_backoff.until;
 }
 
@@ -1115,7 +1107,7 @@ static void on_job_text(void)
         return; /* for an earlier screen */
     vjo_log("subtitle text ready in %d ms", (int)((now_us() - job_started_us) / 1000));
     if (subtitles && sentence)
-        strip_publish(sentence, VJO_STRIP_SENTENCE, 1);
+        vjo_strip_show(sentence, VJO_STRIP_SENTENCE, 1);
     /* The overlay waits for this job: the sentence now, the words after
      * the lookup (if the job is for the screen shown). */
     if (ov != OV_CLOSED && view_waiting && job_lookup && !job_same_text && sentence) {
@@ -1137,33 +1129,37 @@ static void set_subtitles(int on)
     if (on) apply_config();
     if (on && cfg.ocr_backend == VJO_OCR_MEIKI) {
         subtitles = 0;
-        strip_publish("Meiki is manual only. Select one dialogue line and open the overlay.", VJO_STRIP_ERROR, 0);
+        vjo_strip_configure(0, &cfg);
+        vjo_strip_show("Meiki is manual only. Select one dialogue line and open the overlay.", VJO_STRIP_ERROR, 0);
         return;
     }
     VjoState st;
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
     subtitles = on;
+    vjo_strip_configure(on, &cfg);
     vjo_log("subtitles %s", on ? "on" : "off");
     if (!on) {
-        strip_publish("", VJO_STRIP_SENTENCE, 0);
+        vjo_strip_show("", VJO_STRIP_SENTENCE, 0);
         return;
     }
     if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
-        strip_publish("Not enough memory for subtitles", VJO_STRIP_ERROR, 0);
+        vjo_strip_show("Not enough memory for subtitles", VJO_STRIP_ERROR, 0);
         return;
     }
     /* settings were re-read before choosing the backend */
     st.size = sizeof(st);
     vjoGetState(&st);
     if (st.alloc_status == VJO_ALLOC_FAIL) {
-        strip_publish("Not enough memory to capture the screen", VJO_STRIP_ERROR, 0);
+        vjo_strip_show("Not enough memory to capture the screen", VJO_STRIP_ERROR, 0);
         return;
     }
     if (!job_running && d && d->sentence && shows_screen(cache_scene, cache_seq, &st)) {
-        strip_publish(d->sentence, VJO_STRIP_SENTENCE, 0);
+        vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
+        if (cache_ok)
+            vjo_strip_show_readings(&scratch, &d->list);
         return;
     }
-    strip_publish("Recognizing…", VJO_STRIP_STATUS, 1);
+    vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
     start_job("subtitles on", want_lookup()); /* if one runs, its result comes */
 }
 

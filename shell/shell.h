@@ -8,6 +8,7 @@
 
 #include "../core/client.h"
 #include "../core/config.h"
+#include "../core/styled.h"
 #include "../include/vjo_api.h"
 
 #ifdef __cplusplus
@@ -48,12 +49,16 @@ typedef struct {
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
     /* subtitles: a strip at the top while the overlay is closed; changes
-     * bump strip_version */
+     * bump strip_version, and those of the text or its readings their seq */
     int strip_on;             /* subtitles are on (stored atomically) */
     unsigned strip_version;
+    unsigned strip_text_seq, strip_ruby_seq;
     char strip_text[VJO_STRIP_MAX]; /* "" = no strip drawn */
     int strip_kind;           /* VJO_STRIP_* */
     int strip_busy;           /* a recognition is running */
+    int strip_ruby_room;      /* a sentence keeps room for readings (they can come: an API key is set) */
+    VjoStripRuby strip_ruby[VJO_STRIP_RUBY_MAX]; /* the sentence's readings, once looked up */
+    int strip_n_ruby;
 } VjoView;
 
 extern VjoView g_view;
@@ -76,6 +81,16 @@ void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation);
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
 
+/* strip_view.c: the strip's view model (control thread) */
+/* Subtitles on/off and the settings the strip shows with (cfg loaded). */
+void vjo_strip_configure(int on, const VjoConfig *cfg);
+/* The strip's text, of kind VJO_STRIP_* (cut at a character boundary to
+ * fit), and its busy mark. A new text has no readings. */
+void vjo_strip_show(const char *text, int kind, int busy);
+void vjo_strip_set_busy(int busy);
+/* The readings of the strip's sentence from words, a lookup of it. */
+void vjo_strip_show_readings(VjoArena *scratch, const VjoEntryList *words);
+
 /* capture.c */
 int vjo_capture_init(void);
 void vjo_capture_fini(void);
@@ -92,6 +107,8 @@ int vjo_capture_raw(uint32_t flags, int (*consume)(void *ud, const VjoState *st)
 /* game.c */
 /* The process's title ID; 0, or < 0 when not readable (yet). */
 int vjo_title_id(SceUID pid, char *tid, int size);
+/* The game's name for Anki's MiscInfo ("" if unknown). */
+void vjo_title_name(SceUID pid, const char *tid, char *name, int size);
 /* vjoSetGameActive's mode (enum VjoGameMode) for a title ID. */
 int vjo_title_game_mode(const char *tid);
 /* Reloaded on game start/resume before capture or input filtering activates. */

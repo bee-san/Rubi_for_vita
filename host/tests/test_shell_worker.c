@@ -54,6 +54,7 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 }
 
 #include "../../shell/worker.c"
+#include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
 
 int sceKernelLockMutex(SceUID uid, int count, void *timeout)
 {
