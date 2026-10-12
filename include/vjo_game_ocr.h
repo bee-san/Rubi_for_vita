@@ -26,6 +26,14 @@ typedef struct {
 #define VJO_GAME_OCR_WEIGHTS_READ 1u     /* read from the card and SHA-256 checked */
 #define VJO_GAME_OCR_WEIGHTS_RESIDENT 2u /* kept from an earlier job; the file is unchanged */
 
+#define VJO_GAME_OCR_LINES 16u /* the line finder's maximum (vocr_lines.h) */
+
+/* One recognized line: crop size, CTC frames and recognition time. */
+typedef struct {
+    uint16_t width, height, frames, reserved;
+    uint32_t us;
+} VjoGameOcrLine;
+
 typedef struct {
     uint32_t size, seq;
     int32_t rc;
@@ -37,6 +45,16 @@ typedef struct {
     /* The model file's modification time could not be read (native error):
      * every job then reads and checks the weights again. */
     int32_t stat_error;
+    /* The memory check, also when it refused the job: the game's free USER
+     * bytes (or a negative native error, or -1 when unavailable), what the
+     * job had to allocate (page-rounded workspace, plus weights unless they
+     * were resident) and the reserve always left to the game. 0/0/0 when the
+     * job ended before the check. */
+    int32_t free_user;
+    uint32_t need_workspace, need_weights, reserve_bytes;
+    /* Recognition: CTC frames over all lines, and each recognized line. */
+    uint32_t frames, recognized;
+    VjoGameOcrLine line[VJO_GAME_OCR_LINES];
     /* UTF-8 OCR text on success; every failed result carries empty text. */
     char text[VJO_GAME_OCR_TEXT_BYTES];
 } VjoGameOcrResult;

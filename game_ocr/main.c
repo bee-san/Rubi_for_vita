@@ -129,13 +129,22 @@ static uint64_t now_us(void *ud)
     return sceKernelGetProcessTimeWide();
 }
 
+/* The game's free USER bytes, or a negative native error (-1: unavailable). */
+static int32_t free_user(void)
+{
+    SceKernelFreeMemorySizeInfo free_mem = {.size=sizeof(free_mem)};
+    int rc;
+    if (!IMPORT_READY(sceKernelGetFreeMemorySize)) return -1;
+    rc = sceKernelGetFreeMemorySize(&free_mem);
+    if (rc < 0) return rc;
+    return free_mem.size_user < 0 ? -1 : free_mem.size_user;
+}
+
 /* USER bytes free after keeping the game reserve, or -1 if unknown. */
 static int64_t free_user_after_reserve(void)
 {
-    SceKernelFreeMemorySizeInfo free_mem = {.size=sizeof(free_mem)};
-    if (!IMPORT_READY(sceKernelGetFreeMemorySize) ||
-        sceKernelGetFreeMemorySize(&free_mem) < 0 || free_mem.size_user < 0) return -1;
-    return (int64_t)free_mem.size_user - (int64_t)GAME_RESERVE;
+    int32_t free_bytes = free_user();
+    return free_bytes < 0 ? -1 : (int64_t)free_bytes - (int64_t)GAME_RESERVE;
 }
 
 /* VjoVocrResident.alloc: one page-rounded block for the weights, under the
@@ -214,8 +223,14 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* The job workspace, plus the weights unless they are already resident. */
     uint32_t rounded = PAGE_ROUND(bytes);
     uint32_t weights = resident.model == model ? 0 : PAGE_ROUND(model->bytes);
-    int64_t available = free_user_after_reserve();
-    if (available < (int64_t)rounded + (int64_t)weights) {
+    /* Reported also when refused: each title's real free memory. */
+    out->free_user = free_user();
+    out->need_workspace = rounded;
+    out->need_weights = weights;
+    out->reserve_bytes = GAME_RESERVE;
+    stats.workspace = bytes;
+    if (out->free_user < 0 ||
+        (int64_t)out->free_user - (int64_t)GAME_RESERVE < (int64_t)rounded + (int64_t)weights) {
         /* Too little memory: give the game back the resident weights too. */
         if (drop_weights()) rc = VJO_E_OCR_UNAVAILABLE;
         else rc = VJO_E_OOM;
@@ -237,6 +252,14 @@ done:
     out->load_us = stats.load_us; out->recognize_us = stats.recognize_us;
     out->weights = stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ :
                    stats.model_cached ? VJO_GAME_OCR_WEIGHTS_RESIDENT : VJO_GAME_OCR_WEIGHTS_NONE;
+    out->frames = stats.frames;
+    out->recognized = stats.recognized < VJO_GAME_OCR_LINES ? stats.recognized : VJO_GAME_OCR_LINES;
+    for (uint32_t i = 0; i < out->recognized; i++) {
+        out->line[i].width = stats.line[i].width;
+        out->line[i].height = stats.line[i].height;
+        out->line[i].frames = stats.line[i].frames;
+        out->line[i].us = stats.line[i].us;
+    }
     out->cleanup_status = cleanup();
     out->resident_bytes = resident_bytes();
     out->io_error = io_error;

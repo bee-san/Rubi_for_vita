@@ -258,6 +258,11 @@ static void real_models_cross_namespace(void)
                  names[i], run_rc, (unsigned)out.io_error, out.cleanup_status, model_owned, boundary_busy);
         TEST_CHECK(out.lines == 1 && out.workspace_bytes <= sizeof(arena));
         TEST_CHECK(received == vjo_vocr_model(names[i])->bytes);
+        /* The real runtime's frames for the one line, and the memory check. */
+        TEST_CHECK(out.recognized == 1 && out.frames == out.line[0].frames && out.frames > 0);
+        TEST_CHECK(out.line[0].width > 0 && out.line[0].height > 0 && out.frames <= out.line[0].width);
+        TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == 4u*1024u*1024u && out.need_weights);
+        printf("  %s: line %ux%u, %u frames\n", names[i], out.line[0].width, out.line[0].height, out.frames);
         TEST_CHECK(kernel_opens == 1 && kernel_closes == 1 && kernel_reads > 1);
         TEST_CHECK(boundary_busy > 2); /* Open, Read and Close traverse real-return wrappers. */
         finish(&out);

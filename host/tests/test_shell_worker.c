@@ -1,5 +1,7 @@
 /* Actual Lens control policy with only Vita scheduling and memory stubbed. */
 #include "acutest.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include "client.h"
 #include "jpdb.h"
 #include "textfilter.h"
@@ -91,7 +93,21 @@ void vjo_shell_heap_free(void *p)
 }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { *out = loaded; }
 void vjo_log_configure(const VjoConfig *c) {}
-void vjo_log(const char *fmt, ...) {}
+/* The last log lines, for the game OCR measurement tests. */
+static char log_lines[32][256];
+static unsigned log_count;
+void vjo_log(const char *fmt, ...)
+{
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(log_lines[log_count % 32], sizeof(log_lines[0]), fmt, ap);
+    va_end(ap); log_count++;
+}
+static const char *logged(const char *needle)
+{
+    for (unsigned i = log_count > 32 ? log_count - 32 : 0; i < log_count; i++)
+        if (strstr(log_lines[i % 32], needle)) return log_lines[i % 32];
+    return NULL;
+}
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { return 0; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
@@ -128,6 +144,8 @@ static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
+static unsigned fake_lines;
+static int32_t fake_free_user;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -145,7 +163,14 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     TEST_CHECK(seq == 12);
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
-    if (fail_vocr_user) fake_game_result.rc = VJO_E_OOM;
+    if (fail_vocr_user) {
+        /* The real worker reports its refused check (game_ocr/main.c). */
+        fake_game_result.rc = VJO_E_OOM;
+        fake_game_result.free_user = fake_free_user;
+        fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 659456;
+        fake_game_result.reserve_bytes = 4194304;
+        fake_game_result.workspace_bytes = 244896;
+    }
     else {
         size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
@@ -158,8 +183,16 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     }
     if (fake_game_result.rc == VJO_E_OCR_MODEL) fake_game_result.io_error = fake_model_io_error;
     /* A supplied successful worker response tests Shell publication, not OCR accuracy. */
-    if (fake_game_result.rc == VJO_OK && fake_recognized_text)
+    if (fake_game_result.rc == VJO_OK && fake_recognized_text) {
         snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
+        /* A supplied measurement, as the real worker copies VjoVocrStats. */
+        fake_game_result.free_user = 91226112; fake_game_result.reserve_bytes = 4194304;
+        fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 0;
+        fake_game_result.recognize_us = 92345; fake_game_result.frames = 205;
+        fake_game_result.recognized = fake_lines;
+        for (unsigned i = 0; i < fake_lines; i++)
+            fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i), 0, 52100u + i};
+    }
     *out = fake_game_result;
     return 0;
 }
@@ -204,6 +237,9 @@ static void reset(void)
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
     fake_recognized_text = NULL;
+    fake_lines = 2;
+    fake_free_user = 5000000;
+    log_count = 0;
 #endif
     phases_checked = vocr_live = fail_join = 0;
     anki_configured = anki_reaps = anki_stop_rc = anki_counts = anki_on = 0;
@@ -575,6 +611,56 @@ static void test_vocr_allocation_fallback_and_failure(void)
     mem_free();
 }
 
+static void test_vocr_logs_memory_check_and_frames(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; /* refused: the numbers are logged, not workspace=0 */
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    const char *line = logged("game vocr rc=");
+    TEST_CHECK(line && strstr(line, "USER workspace=244896"));
+    line = logged("game vocr memory:");
+    TEST_CHECK(line && !strcmp(line, "game vocr memory: free USER=5000000, needs workspace 245760 + "
+                                      "weights 659456 + reserve 4194304: check refused"));
+    TEST_MSG("%s", line ? line : "(no memory line)");
+    TEST_CHECK(!logged("game vocr speed:") && !logged("game vocr lines"));
+    mem_free();
+
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; fake_free_user = (int32_t)0x80020001u; /* the query itself failed */
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    line = logged("game vocr memory:");
+    TEST_CHECK(line && !strcmp(line, "game vocr memory: free USER unknown (error 0x80020001), needs "
+                                      "workspace 245760 + weights 659456 + reserve 4194304: check refused"));
+    TEST_MSG("%s", line ? line : "(no memory line)");
+    mem_free();
+
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_lines = 14; /* three log lines of at most six */
+    TEST_CHECK(run_vocr_job() == VJO_OK); /* blank region: the fake result is published */
+    line = logged("game vocr rc=0");
+    TEST_CHECK(line && strstr(line, "recognize=92 ms frames=205 "));
+    line = logged("game vocr memory:");
+    TEST_CHECK(line && strstr(line, "free USER=91226112") && strstr(line, "check passed"));
+    line = logged("game vocr speed:");
+    TEST_CHECK(line && !strcmp(line, "game vocr speed: 205 frames in 92345 us, 450 us per frame"));
+    line = logged("game vocr lines:");
+    TEST_CHECK(line && !strncmp(line, "game vocr lines: 917x30 114f 52.1ms 916x30 113f 52.1ms", 54));
+    TEST_MSG("%s", line ? line : "(no lines)");
+    unsigned chunks = 0, entries = 0;
+    for (unsigned i = 0; i < log_count && i < 32; i++)
+        if (!strncmp(log_lines[i], "game vocr lines", 15)) {
+            chunks++;
+            for (const char *c = log_lines[i]; (c = strstr(c, "ms")); c += 2) entries++;
+            TEST_CHECK(strlen(log_lines[i]) < 254); /* vjo_log's line limit */
+        }
+    TEST_CHECK(chunks == 3 && entries == 14);
+    mem_free();
+}
+
 static void test_vocr_storage_errors_are_specific(void)
 {
     const struct { uint32_t io; const char *message; int specific; } cases[] = {
@@ -814,7 +900,7 @@ static int cursor_file_open(void *ud, const char *path, VjoFile *out)
     (void)ud;
     TEST_CHECK(strstr(path, "main.vjdict") != NULL && !cursor_handle_live);
     cursor_handle_live = 1; cursor_opens++;
-    *out = (VjoFile){NULL, cursor_dict_size, cursor_file_read, cursor_file_close}; return 0;
+    *out = (VjoFile){NULL, cursor_dict_size, cursor_file_read, cursor_file_close, 0}; return 0;
 }
 static void cursor_setup(void)
 {
@@ -1144,7 +1230,7 @@ static int paged_open(void *ud, const char *path, VjoFile *out)
         if (!strstr(path, paged_names[i])) continue;
         TEST_CHECK(!(paged_live & (1u << i)));
         paged_live |= 1u << i; paged_opens[i]++;
-        *out = (VjoFile){&paged_index[i], paged_size[i], paged_read, paged_close};
+        *out = (VjoFile){&paged_index[i], paged_size[i], paged_read, paged_close, 0};
         return 0;
     }
     return -1;
@@ -1518,6 +1604,7 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
+    {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
     {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
     {"local_dictionary_opens_without_key", test_local_open},

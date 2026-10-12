@@ -6,8 +6,10 @@
 #include <stdint.h>
 
 /* 14: 32 KiB model reads that wait for the kernel worker, Open reports the
- * file's modification time, results report resident weights. */
-#define VJO_API_VERSION 14
+ * file's modification time, results report resident weights.
+ * 15: results carry the memory check (free USER, needed bytes, reserve) and
+ * each recognized line's crop, CTC frames and time. */
+#define VJO_API_VERSION 15
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
