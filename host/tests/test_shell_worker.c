@@ -125,11 +125,20 @@ void vjo_net_cancel(VjoNetCancel *c) { c->cancelled = 1; cancels++; }
 void vjo_net_cancel_clear(VjoNetCancel *c) { c->cancelled = 0; }
 int vjo_capture_init(void) { return 0; }
 void vjo_capture_fini(void) {}
+/* capture.c's contract: a failed capture leaves the kernel's error in
+ * s->capture_result; VJO_ERR_NO_MEMORY means its buffer was refused. */
+static int capture_kernel_oom, jpeg_encoder_oom;
 int vjo_capture_jpeg(VjoArena *a, uint32_t f, int q, VjoBuf *b, VjoState *s)
-{ jpeg_captures++; return VJO_E_SOURCE; }
+{
+    jpeg_captures++;
+    if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
+    if (jpeg_encoder_oom) { s->capture_result = 0; return VJO_E_OOM; }
+    return VJO_E_SOURCE;
+}
 /* A finished region capture of raw_region, read through vjoReadRaw. */
 int vjo_capture_raw(uint32_t f, int (*consume)(void *ud, const VjoState *st), void *ud, VjoState *s)
 {
+    if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
     *s = raw_state;
     return consume(ud, s);
 }
@@ -146,6 +155,7 @@ static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
 static unsigned fake_lines;
 static int32_t fake_free_user;
+static uint32_t fake_need_weights, fake_reserve;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -167,8 +177,8 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         /* The real worker reports its refused check (game_ocr/main.c). */
         fake_game_result.rc = VJO_E_OOM;
         fake_game_result.free_user = fake_free_user;
-        fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 659456;
-        fake_game_result.reserve_bytes = 4194304;
+        fake_game_result.need_workspace = 245760; fake_game_result.need_weights = fake_need_weights;
+        fake_game_result.reserve_bytes = fake_reserve;
         fake_game_result.workspace_bytes = 244896;
     }
     else {
@@ -239,7 +249,10 @@ static void reset(void)
     fake_recognized_text = NULL;
     fake_lines = 2;
     fake_free_user = 5000000;
+    fake_need_weights = 659456;
+    fake_reserve = 4194304;
     log_count = 0;
+    capture_kernel_oom = jpeg_encoder_oom = 0;
 #endif
     phases_checked = vocr_live = fail_join = 0;
     anki_configured = anki_reaps = anki_stop_rc = anki_counts = anki_on = 0;
@@ -658,6 +671,91 @@ static void test_vocr_logs_memory_check_and_frames(void)
             TEST_CHECK(strlen(log_lines[i]) < 254); /* vjo_log's line limit */
         }
     TEST_CHECK(chunks == 3 && entries == 14);
+    mem_free();
+}
+
+/* The whole status line the user sees for an OCR-stage error. */
+static const char *ocr_error_text(void)
+{
+    static char memory[512]; VjoArena arena;
+    vjo_arena_init(&arena, memory, sizeof(memory));
+    return vjo_err_text(&arena, cache_data[0].failed_stage, &cache_data[0].err);
+}
+static void check_oom_message(const char *advice, const char *must, const char *must_not)
+{
+    const char *text = ocr_error_text();
+    TEST_CHECK(cache_data[0].err.rc == VJO_E_OOM && cache_data[0].failed_stage == VJO_STAGE_OCR);
+    TEST_CHECK(cache_data[0].err.detail == advice || (advice && cache_data[0].err.detail &&
+                                                      !strcmp(cache_data[0].err.detail, advice)));
+    TEST_CHECK(!strncmp(text, "Text recognition failed: not enough memory", 42));
+    if (advice) TEST_CHECK(!strncmp(text + 42, ". ", 2) && !strcmp(text + 44, advice));
+    TEST_CHECK(strlen(text) < sizeof(g_view.status)); /* shown whole in the status line */
+    if (must) TEST_CHECK(strstr(text, must) != NULL);
+    if (must_not) TEST_CHECK(strstr(text, must_not) == NULL);
+    TEST_MSG("%s", text);
+}
+
+static void test_vocr_oom_advice_names_the_stage(void)
+{
+    /* The game worker's memory check, from its reported numbers (game_ocr/main.c):
+     * job = reserve 4194304 + workspace 245760 = 4440064. */
+    /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. */
+    const struct { int32_t free_user; uint32_t weights; const char *advice, *must, *must_not; } cases[] = {
+        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "tighter"},        /* below the reserve */
+        {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
+        {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
+        {5200000, 1159168, OOM_GAME_MODEL_FITS, "would fit this region", "tighter"}, /* H15; FL10 fits */
+        {5000000, 1159168, OOM_GAME_MODEL, "FL10_w8.vocr, the smallest model, and a tighter", NULL},
+        {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
+        {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
+        {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},
+        {(int32_t)0x80020001u, 659456, OOM_GAME_UNKNOWN, "could not be checked", "FL10"},
+    };
+    for (unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        fail_vocr_user = 1; fake_free_user = cases[i].free_user; fake_need_weights = cases[i].weights;
+        TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+        TEST_CASE_("memory check %u", i);
+        check_oom_message(cases[i].advice, cases[i].must, cases[i].must_not);
+        mem_free();
+    }
+    /* A game OOM without the check's numbers gets no specific advice. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; fake_reserve = 0;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    check_oom_message(NULL, "not enough memory", "FL10");
+    TEST_CHECK(!strcmp(ocr_error_text(), "Text recognition failed: not enough memory"));
+    mem_free();
+    /* The kernel's capture buffer: the model is irrelevant, the job never reached the game. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    capture_kernel_oom = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM && !vocr_allocs);
+    check_oom_message(OOM_KERNEL_CAPTURE, "screen capture", "FL10");
+    TEST_CHECK(strstr(ocr_error_text(), "does not affect it") != NULL);
+    mem_free();
+    /* Lens shares the kernel capture; its own JPEG encoding uses Shell memory. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_LENS;
+    capture_kernel_oom = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM && jpeg_captures == 1);
+    check_oom_message(OOM_KERNEL_CAPTURE, "screen capture", "FL10");
+    mem_free();
+    reset();
+    cfg.ocr_backend = VJO_OCR_LENS;
+    jpeg_encoder_oom = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    check_oom_message(OOM_SCREENSHOT, "screenshot did not fit", "FL10");
+    mem_free();
+    /* A network dictionary's result memory in the Shell, before any capture. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.dictionary = VJO_DICT_JPDB;
+    job_cfg = cfg; job_cancelled = 0; job_captured = 0; fail_alloc = 1;
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !jpeg_captures);
+    check_oom_message(OOM_SHELL_RESULTS, "Restart the Vita", "FL10");
+    fail_alloc = 0;
     mem_free();
 }
 
@@ -1605,6 +1703,7 @@ TEST_LIST = {
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
+    {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
     {"local_dictionary_opens_without_key", test_local_open},

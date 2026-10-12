@@ -189,9 +189,13 @@ japanese_only_selection = on
 ```
 
 FL10 is the smaller default for lower game memory use. The included
-`H15_w8.vocr` trades a larger workspace for better host accuracy. A game OCR
-memory error asks you to select a tighter region. A Shell UI memory error
-keeps recognized text and identifies the unavailable dictionary results.
+`H15_w8.vocr` trades a larger workspace for better host accuracy. A memory
+error names where the memory ran out: the kernel's screen capture (a tighter
+region helps; the model does not matter), the game's memory for this region
+(a tighter region helps) or for the model's weights (FL10 is the smallest),
+or the Shell's memory for results (restart the Vita). A Shell UI memory error
+after recognition keeps the recognized text and identifies the unavailable
+dictionary results.
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
