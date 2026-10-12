@@ -8,16 +8,26 @@ The release includes a standalone per-game settings app. Anki and the offline
 card queue are disabled; no cards or screenshots are queued.
 
 Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
+**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**,
 **[Meiki](docs/meiki-trial.md)**, or **Google Lens** in the OCR engine row.
 Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
 VOCR is the default and supports automatic or manual local OCR. Meiki runs
 manually on one horizontal line and uses more game memory. Google Lens requires
 Wi-Fi and sends the selected image to Google, using the original
 [upstream implementation](https://github.com/Dartv/vita-jp-overlay).
-The release stores both local models; choosing an engine keeps them installed
+The release stores the local models; choosing an engine keeps them installed
 and applies when you next open the overlay.
 
-Both local engines have completed actual CLANNAD OCR jobs on the physical Vita.
+The optional VOCR2 trial pairs a separately trained FL10-sized model with a
+textbox finder. Shared screenshot totals improved on PSP and Vita, but some
+games regressed by one or two characters and its strict promotion guard failed.
+It is experimental, has no physical-device validation, and must be selected
+explicitly in Settings; VOCR remains the default. The
+[`0.7.12-vocr2.1` trial](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12-vocr2.1)
+contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; its Vita build
+omits the optional Meiki engine. The stable `0.7.11` release remains available.
+
+VOCR and Meiki have completed actual CLANNAD OCR jobs on the physical Vita.
 Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
 and broader game compatibility remain unmeasured; host crop results are separate.
 See [OCR measurements and limits](docs/vita-vn-ocr.md) and
@@ -118,11 +128,11 @@ tab, or press Select, to change pages. Choices save automatically to
 On the **OCR & lookup** page, select a card with Up/Down. Cross
 or touch a card changes its choice: OCR engine, Japanese-only selection, or
 whole-word/character highlighting.
-Touch the VOCR or Meiki button to choose that engine directly;
-Left/Right choose VOCR/Meiki on the model card, OFF/ON on the selection card,
+Touch an engine button to choose it directly;
+Left/Right cycle the four engine choices on the model card, OFF/ON on the selection card,
 or Whole word/Character on the Highlight card.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
-Both model files remain stored; only the selected engine runs. Start reloads
+Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
 paths, capture mode and API keys, are preserved.
 
@@ -214,7 +224,8 @@ still fail because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the three pinned VOCR model names and the pinned Meiki recognizer in
+only the three original VOCR model names, the separate pinned VOCR2 trial
+model, and the pinned Meiki recognizer in
 `ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, and copies at most 8 KiB per request into game-owned memory.
 The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB

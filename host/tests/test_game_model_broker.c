@@ -19,7 +19,7 @@ static unsigned allocated, released, received;
 static unsigned char arena[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char pixels[49152]; /* page-rounded 200x60 capture */
 static int live, open_error, read_error, close_error, bad_length, early_eof, corrupt, short_read;
-static int schedule_kernel, cancel_after;
+static int schedule_kernel, cancel_after, substitute_legacy;
 static uint64_t clock_us;
 static FILE *file;
 static unsigned boundary_busy, capture_allocations, capture_releases;
@@ -83,10 +83,11 @@ SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file);
     TEST_CHECK(flags == SCE_O_RDONLY && !strncmp(path, VJO_VOCR_MODEL_ROOT "/", sizeof(VJO_VOCR_MODEL_ROOT)));
     const char *name = path + sizeof(VJO_VOCR_MODEL_ROOT);
-    TEST_ASSERT(!strcmp(name, "FL10_w8.vocr") || !strcmp(name, "H15_w8.vocr"));
+    TEST_ASSERT(vjo_vocr_model(name) != NULL);
     kernel_opens++;
     if (open_error) return open_error;
-    char local[1024]; snprintf(local, sizeof(local), "%s/%s", VJO_VOCR_MODEL_DIR, name);
+    char local[1024]; snprintf(local, sizeof(local), "%s/%s", VJO_VOCR_MODEL_DIR,
+                               substitute_legacy ? "FL10_w8.vocr" : name);
     file = fopen(local, "rb"); TEST_ASSERT(file != NULL); return 31;
 }
 SceOff ksceIoLseek(SceUID fd, SceOff off, int whence)
@@ -149,7 +150,7 @@ static VjoGameOcrRequest setup(const char *name)
     allocated = released = received = 0;
     boundary_busy = capture_allocations = capture_releases = 0; capture_live = 1;
     open_error = read_error = close_error = bad_length = early_eof = corrupt = short_read = cancel_after = 0;
-    schedule_kernel = 1; clock_us = 1000000;
+    schedule_kernel = 1; substitute_legacy = 0; clock_us = 1000000;
     g.lock = g.ievf = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
     g.capture_state = CAPTURE_IDLE; g.capture_once = g.raw_valid = 1;
     g.raw = pixels; g.raw_capacity = sizeof(pixels); g.raw_stride = 800;
@@ -186,8 +187,12 @@ static void finish(const VjoGameOcrResult *out)
 static void real_models_cross_namespace(void)
 {
     if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; real-model integration skipped"); return; }
-    const char *names[] = {"FL10_w8.vocr", "H15_w8.vocr"};
-    for (unsigned i=0; i<2; i++) {
+    const char *names[] = {"FL10_w8.vocr", "H15_w8.vocr",
+#if VJO_VOCR2_ENABLED
+                           VJO_VOCR2_ARTIFACT_NAME,
+#endif
+    };
+    for (unsigned i=0; i<sizeof(names)/sizeof(names[0]); i++) {
         VjoGameOcrRequest request = setup(names[i]); VjoGameOcrResult out;
         /* Demonstrate the physical failing boundary before using the broker. */
         TEST_CHECK(sceIoOpen("ux0:data/VitaJPOverlay/ocr/FL10_w8.vocr", 0, 0) == (int)0x80010013u); user_opens = 0;
@@ -197,11 +202,25 @@ static void real_models_cross_namespace(void)
         TEST_MSG("%s rc=%d io=0x%08X cleanup=%d owned=%d boundary_busy=%u",
                  names[i], run_rc, (unsigned)out.io_error, out.cleanup_status, model_owned, boundary_busy);
         TEST_CHECK(out.lines == 1 && out.workspace_bytes <= sizeof(arena));
-        TEST_CHECK(received == (i ? VJO_VOCR_H15_BYTES : VJO_VOCR_FL10_BYTES));
+        TEST_CHECK(received == vjo_vocr_model(names[i])->bytes);
         TEST_CHECK(kernel_opens == 1 && kernel_closes == 1 && kernel_reads > 1);
         TEST_CHECK(boundary_busy > 2); /* Open, Read and Close traverse real-return wrappers. */
         finish(&out);
     }
+}
+static void vocr2_rejects_legacy_model_through_real_broker(void)
+{
+#if VJO_VOCR2_ENABLED
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; VOCR2 hash test skipped"); return; }
+    VjoGameOcrRequest request = setup(VJO_VOCR2_ARTIFACT_NAME);
+    VjoGameOcrResult out;
+    /* Simulate an installation that renamed the old same-sized model. */
+    substitute_legacy = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&request, &out) == VJO_E_OCR_MODEL);
+    TEST_CHECK(!out.text[0] && out.lines == 1 && !out.io_error && !out.cleanup_status);
+    TEST_CHECK(received == VJO_VOCR2_BYTES && kernel_opens == 1 && kernel_closes == 1);
+    finish(&out);
+#endif
 }
 static void real_model_failure_recovery(void)
 {
@@ -266,7 +285,8 @@ static void native_status_contract(void)
 }
 TEST_LIST = {
     {"API13 stable statuses survive retail return encoding; native errno unchanged", native_status_contract},
-    {"actual game worker and kernel broker load pinned FL10 and H15 despite game ENODEV", real_models_cross_namespace},
+    {"actual game worker and kernel broker load every pinned trial model despite game ENODEV", real_models_cross_namespace},
+    {"VOCR2 rejects renamed old FL10 bytes through the real broker and releases ownership", vocr2_rejects_legacy_model_through_real_broker},
     {"actual broker model I/O corruption cancellation close failure and recovery", real_model_failure_recovery},
     {"actual queued Open timeout and later Close drain without weights", queued_open_timeout_and_drain},
     {NULL, NULL}

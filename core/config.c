@@ -486,6 +486,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->ocr_backend = VJO_OCR_VOCR;
         else if (vjo_ieq(val, "meiki"))
             c->ocr_backend = VJO_OCR_MEIKI;
+        else if (vjo_ieq(val, "vocr2"))
+            c->ocr_backend = VJO_OCR_VOCR2;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "vocr_model")) {
@@ -556,13 +558,14 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
     size_t i = 0, used = 0;
     unsigned seen = 0;
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend < VJO_OCR_LENS || backend > VJO_OCR_MEIKI) ||
+        (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         (len && memchr(text, 0, len)))
         return -1;
     static const char *const backend_values[] = {
-        "ocr_backend = lens\n", "ocr_backend = ncnn\n", "ocr_backend = vocr\n", "ocr_backend = meiki\n"
+        "ocr_backend = lens\n", "ocr_backend = ncnn\n", "ocr_backend = vocr\n", "ocr_backend = meiki\n",
+        "ocr_backend = vocr2\n"
     };
     values[0] = backend_values[backend];
     values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";

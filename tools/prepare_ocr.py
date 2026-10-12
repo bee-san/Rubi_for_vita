@@ -49,6 +49,15 @@ VOCR_ASSETS = {
         'f8c1abe4743a71a742e718523f4206f992d3bd4fb69de321997b2bd6f16779c0'),
 }
 
+# VOCR2 has its own trained FL10-sized recognizer and native textbox finder.
+# Experimental opt-in trial: the strict per-title promotion guard failed.
+VOCR2_ENABLED = True
+VOCR2_MODEL = 'VOCR2_FL10_w8.vocr'
+VOCR2_TAG = 'v0.2.3-vocr2.1'
+VOCR2_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR2_TAG}/'
+VOCR2_ASSETS = {VOCR2_MODEL: (VOCR2_BASE + VOCR2_MODEL, 657664,
+    'd3adc52e5cf62b548af04c5ab07a2f57cf0419386bbdf49ba19c9703be6e1766')}
+
 
 def store(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,10 +82,10 @@ def fetch(directory, name, assets=ASSETS):
     return store(path, data)
 
 
-def fetch_vocr(directory, name, source=None):
+def fetch_release_asset(directory, name, assets, tag, source=None):
     """A release asset: a local copy (--from), else the public download, else
     `gh release download` (private repository or draft release)."""
-    url, size, sha = VOCR_ASSETS[name]
+    url, size, sha = assets[name]
     path = directory / name
     def valid(data):
         return len(data) == size and hashlib.sha256(data).hexdigest() == sha
@@ -86,21 +95,32 @@ def fetch_vocr(directory, name, source=None):
         source = Path(source)
         data = (source / name if source.is_dir() else source).read_bytes()
         if not valid(data):
-            raise RuntimeError(f'{source} is not the {VOCR_TAG} {name} (size or SHA-256 differs)')
+            raise RuntimeError(f'{source} is not the {tag} {name} (size or SHA-256 differs)')
         return store(path, data)
     try:
-        return fetch(directory, name, VOCR_ASSETS)
+        return fetch(directory, name, assets)
     except (OSError, RuntimeError) as public_error:
         if not shutil.which('gh'):
             raise RuntimeError(f'{url}: {public_error}. Install the GitHub CLI and run `gh auth login` '
                                f'with access to {VOCR_REPO}, or pass --from.') from public_error
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(['gh', 'release', 'download', VOCR_TAG, '-R', VOCR_REPO, '-p', name, '-D', tmp],
+        subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', name, '-D', tmp],
                        check=True, stdin=subprocess.DEVNULL, timeout=300)
         data = (Path(tmp) / name).read_bytes()
     if not valid(data):
         raise RuntimeError('Incorrect or incomplete download: ' + name)
     return store(path, data)
+
+
+def fetch_vocr(directory, name, source=None):
+    return fetch_release_asset(directory, name, VOCR_ASSETS, VOCR_TAG, source)
+
+
+def fetch_vocr2(directory, source=None):
+    """Fetch the separately pinned trained VOCR2 asset, never legacy FL10."""
+    if not VOCR2_ENABLED:
+        raise RuntimeError('VOCR2 runtime integration is not enabled in this build')
+    return fetch_release_asset(directory, VOCR2_MODEL, VOCR2_ASSETS, VOCR2_TAG, source)
 
 
 def binary_param(text, layer_types):
@@ -163,17 +183,27 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr'), default='ncnn')
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr2'), default='ncnn')
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted(VOCR_ASSETS), default='H15_w8.vocr',
+    ap.add_argument('--model', choices=sorted(VOCR_ASSETS),
                     help='vocr: which v0.2.0 recognizer (default: H15_w8.vocr)')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()
+    if args.backend == 'vocr2' and not VOCR2_ENABLED:
+        ap.error('VOCR2 runtime integration is not enabled in this build')
+    if args.backend == 'vocr2' and args.model is not None:
+        ap.error('VOCR2 has one pinned recognizer; omit --model')
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.backend == 'vocr2':
+        model = fetch_vocr2(args.output, args.source)
+        print('Verified', model.name, '(trained FL10-sized recognizer; native textbox finder)')
+        print('Model ready in', args.output, '- copy', model.name, 'to ux0:data/VitaJPOverlay/ocr/')
+        return
     if args.backend == 'vocr':
-        fetch_vocr(args.output, args.model, args.source)
-        print('Verified', args.model)
-        print('Model ready in', args.output, '- copy', args.model, 'to ux0:data/VitaJPOverlay/ocr/')
+        model = args.model or 'H15_w8.vocr'
+        fetch_vocr(args.output, model, args.source)
+        print('Verified', model)
+        print('Model ready in', args.output, '- copy', model, 'to ux0:data/VitaJPOverlay/ocr/')
         return
     names = ASSETS if args.ncnn_source else ['PP_OCRv5_mobile_rec.ncnn.bin']
     for name in names:

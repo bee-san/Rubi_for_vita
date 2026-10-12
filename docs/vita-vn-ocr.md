@@ -11,6 +11,40 @@ passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
 
+## Experimental VOCR2 trial
+
+Select **VOCR2** on the Settings app's OCR & lookup page, or set
+`ocr_backend = vocr2` in `config.ini`. It uses the same selected dialogue crop,
+automatic/manual modes and game worker as VOCR. Select **VOCR** to return to the
+original backend. The saved `vocr_model` setting applies only to VOCR.
+
+VOCR2 pairs the native textbox finder with a separately trained
+`VOCR2_FL10_w8.vocr` recognizer. The model remains 657,664 bytes and its
+recognition arena remains 124,832 bytes. Workspace sizing and one-pass capture
+ownership are unchanged. The extra finder code and bounded stack use still
+occupy memory; unchanged workspace does not mean unchanged total plugin memory.
+Console speed, memory and compatibility require physical testing.
+
+**This is an opt-in experiment, rejected for promotion.** Shared screenshot
+aggregate errors improved on both platforms and with 4/8-pixel crop margins,
+but eleven title/margin groups had small regressions and the predeclared strict
+per-title guard failed. It is not the default or a qualified replacement for
+VOCR. The [measured results and exact candidate pins](benchmarks/vocr2-candidate-20261012.json)
+are also published with the [OCR research release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.3-vocr2.1).
+
+The trial bundle includes the separate model. For a source build:
+
+```sh
+python3 tools/prepare_ocr.py --backend vocr2 --output ocr
+```
+
+An authenticated GitHub CLI is needed while the OCR repository is private;
+`--from FILE` or `--from DIRECTORY` verifies a previously downloaded candidate.
+Copy `VOCR2_FL10_w8.vocr` to `ux0:data/VitaJPOverlay/ocr/`. Its SHA-256 is
+`d3adc52e5cf62b548af04c5ab07a2f57cf0419386bbdf49ba19c9703be6e1766`.
+Renaming old FL10 weights does not enable VOCR2: the worker rejects that hash.
+A missing or corrupt candidate reports an error without changing engines.
+
 ## What a recognition does
 
 1. The kernel captures the selected region (single pass). The game worker reads each
@@ -63,7 +97,7 @@ Rows travel through a role-restricted kernel syscall tied to the job's game,
 capture sequence and foreground generation. A cancelled/suspended worker
 cannot read a newer capture or publish old results. Model reads finish short
 reads in at most 8 KiB calls and check cancellation between calls. The kernel
-allows only FL10, H15 or F20 under the exact directory above, with their pinned
+allows only FL10, H15, F20 or the separate VOCR2 trial model under the exact directory above, with their pinned
 file lengths; it does not accept a caller-supplied file path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
 the current foreground epoch, and completion copies use the current syscall's
@@ -124,7 +158,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 72cf4af0905091a0ee329d336889ccf0a8cd38c8
+git -C /path/to/vita-vn-ocr checkout 49ff6f4d1c55804c600d098810574a49d382a009
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
@@ -273,5 +307,5 @@ copied, and the settings above. Close other apps first.
   frames can add a stray line; tight regions read best.
 - Recognition runs on a low-priority thread in the enabled game process at
   the game's clock. The overlay does not change the CPU clock or memory mode.
-- The pinned table accepts only the three v0.2.0 int8 files; a new release
+- The pinned table accepts the three v0.2.0 int8 files and the separate VOCR2 trial; a new release
   needs its sizes and hashes added (`core/vocr_ocr.c`, `tools/prepare_ocr.py`).
