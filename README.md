@@ -1,7 +1,7 @@
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
-text and shows Japanese dictionary entries over your game. **The v0.7.11 release defaults to
+text and shows Japanese dictionary entries over your game. **The v0.7.12 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes a standalone per-game settings app. Anki and the offline
@@ -23,9 +23,9 @@ textbox finder. Shared screenshot totals improved on PSP and Vita, but some
 games regressed by one or two characters and its strict promotion guard failed.
 It is experimental, has no physical-device validation, and must be selected
 explicitly in Settings; VOCR remains the default. The
-[`0.7.12-vocr2.1` trial](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12-vocr2.1)
-contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; its Vita build
-omits the optional Meiki engine. The stable `0.7.11` release remains available.
+[`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
+contains the three plugins, Settings, FL10/H15/VOCR2, JMdict and the optional
+Meiki engine. Earlier releases remain available.
 
 VOCR and Meiki have completed actual CLANNAD OCR jobs on the physical Vita.
 Two observed Meiki jobs took about eight seconds each. Hardware accuracy/CER
@@ -53,10 +53,10 @@ for the measured results and remaining hardware checks.
 ## Install
 
 Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.11.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.11) and
+Download `VitaJPOverlay-0.7.12.zip` from this fork's
+[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12) and
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
-int8 models, the pinned Meiki recognizer/engine, and the complete converted
+int8 models including the opt-in VOCR2 model, the pinned Meiki recognizer/engine, and the complete converted
 JMdict snapshot. Meiki also needs its engine mounted for each enabled game;
 see [the setup guide](docs/meiki-trial.md). Python 3.9+, bash,
 and curl are needed for the computer-side installer.
