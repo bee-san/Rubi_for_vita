@@ -1579,10 +1579,6 @@ int vjo_worker_stop(void)
         vjo_net_cancel(&net_cancel); /* a request in progress ends now */
     if (net_evf >= 0)
         sceKernelSetEventFlag(net_evf, NET_EV_QUIT);
-    /* A card uses the view and capture locks: it ends first (an OCR job
-     * holding the capture was just cancelled). */
-    if (vjo_anki_stop() < 0)
-        return -1;
     if (threads_started) {
         if (((threads_started & 1) && sceKernelWaitThreadEnd(net_thread, NULL, NULL) < 0) ||
             ((threads_started & 2) && sceKernelWaitThreadEnd(ctl_thread, NULL, NULL) < 0)) {
@@ -1596,6 +1592,10 @@ int vjo_worker_stop(void)
     if (ctl_thread >= 0)
         sceKernelDeleteThread(ctl_thread);
     net_thread = ctl_thread = -1;
+    /* A card uses the view and capture locks: it is cancelled and joined
+     * before they are deleted (the control thread no longer reaps it). */
+    if (vjo_anki_stop() < 0)
+        return -1;
     mem_free();
     if (net_evf >= 0)
         sceKernelDeleteEventFlag(net_evf);

@@ -28,6 +28,9 @@
  * encoded (VJO_ANKI_PICTURE_MAX). */
 #define ANKI_TEXT_MEM (128 * 1024)
 #define ANKI_PICTURE_MEM (384 * 1024)
+/* Left after the addNote request for its exchange: the 4 KiB base64 chunk,
+ * the 2 KiB reply reader, AnkiConnect's short replies and a createDeck. */
+#define ANKI_SEND_ROOM (16 * 1024)
 #define ANKI_STACK 0x10000 /* as VjoNet: BearSSL for an https audio source */
 #define PICTURE_QUALITY 75
 #define SCAN_WINDOW_US 350000 /* per batch of VJO_NET_PROBE_MAX hosts */
@@ -290,7 +293,8 @@ static int take_screenshot(VjoAnkiMedia *m, char *name, size_t cap)
     if (rc != VJO_OK || jb.len > VJO_ANKI_PICTURE_MAX) {
         vjo_log("anki: screenshot failed %d (%u bytes): adding without it", rc, (unsigned)jb.len);
         vjo_arena_release(&arena, mark);
-        return rc == VJO_OK || rc == VJO_E_OOM ? PICTURE_TOO_LARGE : PICTURE_CAPTURE_FAILED;
+        /* the JPEG outgrew the arena, or the cap; else no capture */
+        return rc == VJO_OK || jb.oom ? PICTURE_TOO_LARGE : PICTURE_CAPTURE_FAILED;
     }
     /* The JPEG is the arena's last allocation, after the encoder's state. */
     vjo_arena_release(&arena, mark);
@@ -315,6 +319,19 @@ static void find_audio(const VjoAnkiNote *note, VjoAnkiMedia *media, VjoErr *aud
             (int)((now_us() - ta) / 1000));
 }
 
+/* Can the addNote request be built here, leaving ANKI_SEND_ROOM for its
+ * exchange? A dry run: vjo_anki_add builds the same request at the same
+ * place, so nothing is sent for a note that cannot be. */
+static int request_fits(const VjoAnkiNote *note, const VjoAnkiMedia *media)
+{
+    size_t mark = vjo_arena_mark(&arena);
+    VjoAnkiBody body;
+    int fits = vjo_anki_add_request(&arena, acfg, note, media, &body) == 0 &&
+               vjo_arena_free(&arena) >= ANKI_SEND_ROOM;
+    vjo_arena_release(&arena, mark);
+    return fits;
+}
+
 static void do_add(unsigned seq, int entry)
 {
     VjoAnkiNote note;
@@ -324,7 +341,6 @@ static void do_add(unsigned seq, int entry)
     VjoConfig *c;
     char picture_name[40], misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
     int ok = 0, shown = 0, marked = 0, rc, want_picture, want_audio, picture = PICTURE_OK;
-    size_t before_picture;
     int64_t t0 = now_us();
 
     sceKernelLockMutex(box_lock, 1, NULL);
@@ -334,7 +350,7 @@ static void do_add(unsigned seq, int entry)
     if (mem_get(want_picture ? ANKI_PICTURE_MEM : ANKI_TEXT_MEM) < 0 ||
         !(c = (VjoConfig *)vjo_arena_alloc(&arena, sizeof(*c)))) {
         mem_put();
-        publish(seq, "Anki: not enough memory, card not sent. Close the overlay and try again.",
+        publish(seq, "Anki: not enough memory, card not sent",
                 VJO_ANKI_STATUS_ERROR, -1);
         return;
     }
@@ -367,24 +383,22 @@ static void do_add(unsigned seq, int entry)
     sceClibMemset(&media, 0, sizeof(media));
     sceClibMemset(&audio_err, 0, sizeof(audio_err));
     want_audio = vjo_anki_audio_enabled(acfg);
-    before_picture = vjo_arena_mark(&arena);
-    if (want_picture && !stopping()) /* first: the frame of the × press */
+    if (want_picture && !stopping()) { /* first: the frame of the × press */
+        size_t before_picture = vjo_arena_mark(&arena);
         picture = take_screenshot(&media, picture_name, sizeof(picture_name));
+        if (picture == PICTURE_OK && !request_fits(&note, &media)) {
+            /* A long note and its screenshot do not both fit: the note
+             * goes without it, and gets its arena space back. */
+            vjo_log("anki: no room for the note with a %u-byte screenshot: sending without it",
+                    (unsigned)media.picture_len);
+            vjo_arena_release(&arena, before_picture);
+            sceClibMemset(&media, 0, sizeof(media));
+            picture = PICTURE_NO_ROOM;
+        }
+    }
     if (want_audio && !stopping())
         find_audio(&note, &media, &audio_err);
     rc = stopping() ? VJO_E_CANCELLED : with_anki(1, op_add, &o, &err);
-    if (rc == VJO_E_OOM && media.picture_len && !stopping()) {
-        /* The note's request does not fit beside its screenshot (nothing
-         * was sent): without it, and its arena space back. */
-        vjo_log("anki: no room for the request with a %u-byte screenshot: sending without it",
-                (unsigned)media.picture_len);
-        vjo_arena_release(&arena, before_picture);
-        sceClibMemset(&media, 0, sizeof(media));
-        picture = PICTURE_NO_ROOM;
-        if (want_audio)
-            find_audio(&note, &media, &audio_err);
-        rc = with_anki(1, op_add, &o, &err);
-    }
     vjo_log("anki: add %s rc=%d %s in %d ms, %u-byte screenshot", note.spelling, rc,
             err.detail ? err.detail : "", (int)((now_us() - t0) / 1000), (unsigned)media.picture_len);
     if (rc == VJO_E_CANCELLED || stopping()) {
@@ -515,7 +529,7 @@ void vjo_anki_post_add(unsigned list_seq, int entry)
     if (busy)
         publish(list_seq, "Anki: still sending the previous card", VJO_ANKI_STATUS_DIM, -1);
     else if (failed)
-        publish(list_seq, "Anki: not enough memory, card not sent. Close the overlay and try again.",
+        publish(list_seq, "Anki: not enough memory, card not sent",
                 VJO_ANKI_STATUS_ERROR, -1);
 }
 

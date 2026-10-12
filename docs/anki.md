@@ -84,20 +84,23 @@ of them.
   allocation is freed before the thread ends; the control thread joins the
   thread on its next wakeup. Nothing Anki-related stays allocated between
   cards.
-- The screenshot is one single-pass full-frame kernel capture, the same as an
-  OCR capture: the kernel frees its raw frame when the encoder reads the last
-  row. The JPEG is at most 192 KiB (`VJO_ANKI_PICTURE_MAX`); a larger frame is
-  sent without its screenshot. It is streamed to AnkiConnect as base64 in 4 KiB
-  pieces, never encoded whole. A note whose text does not fit beside its
-  screenshot is sent without the screenshot.
+- The screenshot is one single-pass full-frame kernel capture, the same as a
+  full-screen OCR capture: the kernel allocates the raw frame (2 MiB of kernel
+  memory at 960×544, not game memory) and frees it when the encoder reads the
+  last row. The JPEG is at most 192 KiB (`VJO_ANKI_PICTURE_MAX`); a larger
+  frame is sent without its screenshot. It is streamed to AnkiConnect as
+  base64 in 4 KiB pieces, never encoded whole. Before anything is sent, the
+  request is built once as a dry run: a note whose text does not fit beside
+  its screenshot is sent without the screenshot.
 - The note is copied out of the shown lookup under the view lock before any
   request; the result memory is never read during the network calls.
 - AnkiConnect replies are limited to 64 KiB, audio source replies to 32 KiB.
   Connecting to Anki gives up after 3 seconds; an audio source has a 5-second
   read timeout.
-- If memory is refused, or a request fails, only the Anki status line
-  changes. The recognized text, its lookup and the overlay stay usable.
-- Closing the Shell plugin cancels a card in progress and waits for its
+- If memory is refused (`Anki: not enough memory, card not sent`), or a
+  request fails, only the Anki status line changes. The recognized text, its
+  lookup and the overlay stay usable, and × can be pressed again.
+- Stopping the Shell plugin cancels a card in progress and waits for its
   thread before freeing anything.
 
 Measured on the host with the actual `shell/anki.c` and `shell/capture.c`
@@ -114,6 +117,11 @@ network can use it while it listens on `0.0.0.0`. Use it only on a trusted
 home network, keep the firewall rule limited to your private network, and do
 not forward port 8765 to the Internet. The overlay does not send
 AnkiConnect's optional `apiKey`; leave it unset.
+
+Notes go only to `anki_host`. The optional `anki_audio_url` is the one other
+address contacted: the word and its reading are sent to whatever source you
+set there (a computer on your network, or an Internet service). It is empty,
+and so never contacted, by default.
 
 ## Not included
 

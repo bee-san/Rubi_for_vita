@@ -599,7 +599,7 @@ static void test_oom_keeps_recognized_text(void)
     snprintf(g_view.status, sizeof(g_view.status), "kept");
     vjo_anki_post_add(5, 0);
     TEST_CHECK(heap_attempts == 1 && heap_allocs == 0 && captures == 0 && net.next == 0);
-    TEST_CHECK(!strcmp(g_view.anki_status, "Anki: not enough memory, card not sent. Close the overlay and try again.") &&
+    TEST_CHECK(!strcmp(g_view.anki_status, "Anki: not enough memory, card not sent") &&
                g_view.anki_status_kind == VJO_ANKI_STATUS_ERROR);
     TEST_CHECK(g_view.list == &list && !strcmp(g_view.status, "kept") && !g_view.anki_mark[0] && !want_add);
     fail_heap = 0;
@@ -611,7 +611,7 @@ static void test_oom_keeps_recognized_text(void)
     reset();
     fail_create = 1;
     vjo_anki_post_add(5, 0);
-    TEST_CHECK(!strcmp(g_view.anki_status, "Anki: not enough memory, card not sent. Close the overlay and try again."));
+    TEST_CHECK(!strcmp(g_view.anki_status, "Anki: not enough memory, card not sent"));
     TEST_CHECK(heap_attempts == 0 && !want_add && thread < 0);
     fail_create = 0;
     fail_start = 1;
