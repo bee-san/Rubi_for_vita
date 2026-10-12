@@ -217,7 +217,7 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoConfig *cfg, const VjoEntryLi
     out->source = l->source;
     out->sentence_furigana = NULL;
     out->sf_hl_start = out->sf_hl_end = -1;
-    if (cfg->anki_field[VJO_ANKI_SENTENCE_FURIGANA][0] && sentence_furigana(a, l, entry, out) < 0) {
+    if ((!cfg || cfg->anki_field[VJO_ANKI_SENTENCE_FURIGANA][0]) && sentence_furigana(a, l, entry, out) < 0) {
         out->sentence_furigana = NULL; /* added without it */
         out->sf_hl_start = out->sf_hl_end = -1;
     }

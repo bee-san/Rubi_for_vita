@@ -180,7 +180,7 @@ static void test_save_switch_reload_retains_other_settings(void)
 static void test_settings_save_keeps_anki_settings(void)
 {
     static const char anki[] =
-        "ocr_backend = vocr\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+        "ocr_backend = vocr\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
         "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n";
     char out[sizeof(anki) + 128];
     VjoConfig cfg;
@@ -188,11 +188,11 @@ static void test_settings_save_keeps_anki_settings(void)
     TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR2, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
-    TEST_CHECK(strstr(out, "\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+    TEST_CHECK(strstr(out, "\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
                            "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n") != NULL);
     TEST_MSG("%s", out);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && cfg.local_dictionary_results == 3 &&
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && cfg.local_dictionary_results == 3 && cfg.anki_mining == 1 &&
                !strcmp(cfg.anki_host, "192.168.1.23:8766") &&
                !strcmp(cfg.anki_deck, "Mining #1 ; main") && !strcmp(cfg.anki_note_type, "Lapis;v2") &&
                !cfg.anki_field[VJO_ANKI_PICTURE][0] && !strcmp(cfg.anki_field[VJO_ANKI_WORD], "Word") &&

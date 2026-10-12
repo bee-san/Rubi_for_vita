@@ -62,8 +62,9 @@ typedef struct {
     const char *queue_tag; /* optional stable tag for retry-safe queued sends */
 } VjoAnkiNote;
 
-/* sentence_furigana only when cfg has a field for it; without memory for
- * it, none (the note is still made). */
+/* sentence_furigana only when cfg has a field for it, or always with cfg
+ * NULL (the offline queue applies the field mapping when it sends); without
+ * memory for it, none (the note is still made). */
 int vjo_anki_note_from_entry(VjoArena *a, const VjoConfig *cfg, const VjoEntryList *l, int entry, VjoAnkiNote *out);
 
 /* What × adds besides the entry's text (NULL / 0 = none): the screenshot,

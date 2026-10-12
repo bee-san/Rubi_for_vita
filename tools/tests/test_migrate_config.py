@@ -41,6 +41,16 @@ class MigrateConfig(unittest.TestCase):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
         self.assertIn("ocr_backend = lens\n", text)
 
+    def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):
+        # A config from the LAN-only release: anki_host alone used to send.
+        text, _ = self.migrate("anki_host = 192.168.1.23\nanki_deck = Mining #1 ; main\n")
+        self.assertIn("anki_mining = off\n", text)
+        self.assertIn("anki_host = 192.168.1.23\n", text)
+        self.assertIn("anki_deck = Mining #1 ; main\n", text)
+        text, _ = self.migrate("anki_mining = on\nanki_host = auto\n")
+        self.assertIn("anki_mining = on\n", text)
+        self.assertEqual(text.count("anki_mining"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -339,7 +339,21 @@ static void render(int new_content)
             vjo_styled_puts(&body, "Looking up words…", VJO_RGB_DIM, en);
         else if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
-        if (g_view.anki_status[0] && g_view.anki_status_seq == s_list_seq) {
+        if (s_anki_enabled) {
+            /* the offline queue: what △ sends */
+            char queue[80];
+            if (g_view.anki_pending == -1)
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
+            else if (g_view.anki_pending < 0)
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue · %s", g_view.anki_sending ? "sending…" : "△ send");
+            else
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · %s", g_view.anki_pending,
+                                g_view.anki_sending ? "sending…" : "△ send");
+            if (body.len)
+                vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
+            vjo_styled_puts(&body, queue, g_view.anki_pending == -1 ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
+        }
+        if (g_view.anki_status[0] && (g_view.anki_status_seq == 0 || g_view.anki_status_seq == s_list_seq)) {
             /* by VJO_ANKI_STATUS_* */
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
@@ -347,11 +361,13 @@ static void render(int new_content)
                             g_view.anki_status_kind == VJO_ANKI_STATUS_ERROR ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
         }
         if (s_n_entries) {
-            int in_anki = g_view.anki_marks_seq == s_list_seq && s_selected < VJO_MAX_ENTRIES &&
-                          g_view.anki_mark[s_selected];
+            int mark = g_view.anki_marks_seq == s_list_seq && s_selected < VJO_MAX_ENTRIES
+                       ? g_view.anki_mark[s_selected] : VJO_ANKI_MARK_NONE;
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            vjo_styled_entry(&body, l, s_selected, ja, en, in_anki);
+            if (mark == VJO_ANKI_MARK_QUEUED)
+                vjo_styled_puts(&body, "Queued for Anki\n", VJO_RGB_DIM, en);
+            vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED);
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode
                 ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len
@@ -378,7 +394,7 @@ static void render(int new_content)
             : "◀ ▶ ▲ ▼ word";
         sceClibSnprintf(hint, sizeof(hint),
                         "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · ○ close</font>", nav,
-                        s_anki_enabled ? "× Anki · " : "");
+                        s_anki_enabled ? "× queue · △ send · " : "");
         set_rich(s_hint, hint);
     }
     if (rebuild_header) {
@@ -700,9 +716,12 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         s_stick_max = dy < 0 ? -dy : dy;
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
-    /* The shown word; in a character lookup, the match at the cursor. */
+    /* × saves the shown word (in a character lookup, the match at the
+     * cursor) to the offline queue; △ sends the queue, also without one. */
     if ((pressed & SCE_CTRL_CROSS) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
+    if ((pressed & SCE_CTRL_TRIANGLE) && s_anki_enabled)
+        vjo_anki_post_send();
     if (pressed & SCE_CTRL_CIRCLE)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
     if (pressed & SCE_CTRL_SQUARE)

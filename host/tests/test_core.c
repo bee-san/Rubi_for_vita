@@ -864,6 +864,18 @@ static void test_config(void)
     const char *selection_off = "japanese_only_selection = OFF\nocr_backend = vocr2\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
     TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_VOCR2);
+    /* Anki mining is off unless anki_mining says on (an anki_host alone is not) */
+    vjo_config_defaults(&c);
+    TEST_CHECK(!c.anki_mining);
+    const char *mining = "anki_host = 192.168.1.23\nanki_mining = ON\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_mining == 1 && !strcmp(c.anki_host, "192.168.1.23") && c.n_warnings == 0);
+    mining = "anki_mining = off\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(!c.anki_mining && c.n_warnings == 0);
+    mining = "anki_mining = yes\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(!c.anki_mining && c.n_warnings == 1);
     /* A choice saved by the removed Meiki trial falls back to vocr and says so. */
     vjo_config_defaults(&c);
     c.ocr_backend = VJO_OCR_LENS;
@@ -886,6 +898,7 @@ static void test_config(void)
         TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO && d.api_key[VJO_DICT_JPDB][0] == 0 &&
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
+        TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
     }
 
     /* the same button for both: the toggle keeps it */

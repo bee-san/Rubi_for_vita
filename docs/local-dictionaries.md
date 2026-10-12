@@ -4,8 +4,9 @@ Local lookup reads dictionaries from the Vita's storage. It needs no running
 computer, dictionary API key, Hachidori Relay, or dictionary network request.
 The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
 JMdict already converted and enabled. Recognition and lookup are offline.
-Optional [Anki mining](anki.md) is off unless `anki_host` is set; it adds no
-offline queue. The instructions below add your own dictionaries.
+Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards
+wait in an offline queue on the memory card until you send them. The
+instructions below add your own dictionaries.
 
 ## Convert and install
 

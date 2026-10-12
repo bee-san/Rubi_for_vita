@@ -22,7 +22,7 @@ set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/lens.c core/json.c core/jpdb.c
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
-  core/base64.c core/anki.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
+  core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
@@ -124,7 +124,8 @@ add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)
 add_test(NAME anki COMMAND vjo-anki-tests)
-# Real Shell AnkiConnect sender and screenshot capture; Vita SDK substituted.
+# Real Shell Anki miner, offline file queue (real files) and screenshot capture;
+# Vita SDK substituted.
 add_executable(vjo-shell-anki-tests host/tests/test_shell_anki.c)
 target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -159,6 +160,9 @@ if(VJO_WITH_VOCR)
 endif()
 add_test(NAME shell_worker_paf COMMAND vjo-shell-worker-paf-tests)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# Each step is a fresh process; the AnkiConnect HTTP double survives client restarts.
+add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-tests>)
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)

@@ -61,6 +61,7 @@ typedef struct {
     char vocr_model[64];      /* old VOCR weights in ocr_model_dir; VOCR2 uses its build pin */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
+    int anki_mining;          /* 0/1: × saves cards to the offline queue, △ sends it */
     char anki_host[64];       /* see vjo_anki_endpoint */
     char anki_deck[128];
     char anki_note_type[64];
@@ -106,8 +107,9 @@ const char *vjo_config_api_key(const VjoConfig *c);
 /* Local lookup is always schedulable (worker checks files); relay/cloud need their settings. */
 int vjo_config_dict_ready(const VjoConfig *c);
 
-/* anki_host (or the saved anki_host.txt): "" = sync off (queue still works), "auto" = search the
- * network, or host[:port]. For VJO_ANKI_MANUAL, host (cap bytes) and port
+/* anki_host (or the saved anki_host.txt), where △ sends the queue: "" =
+ * nowhere (× still saves cards), "auto" = search the network, or
+ * host[:port]. For VJO_ANKI_MANUAL, host (cap bytes) and port
  * are set. Returns -1 for an invalid value. */
 #define VJO_ANKI_PORT 8765
 enum { VJO_ANKI_OFF = 0, VJO_ANKI_AUTO = 1, VJO_ANKI_MANUAL = 2 };

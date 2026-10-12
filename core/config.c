@@ -174,14 +174,18 @@ const char *vjo_config_default_text(void)
            "log_file = off\n"
            "\n"
            "; ---- Anki card mining (optional, see docs/anki.md) ----\n"
-           "; × in the overlay sends the shown word to AnkiConnect on a computer on your\n"
-           "; local network: plain HTTP, no AnkiWeb sync and no offline queue.\n"
+           "; on: × in the overlay saves the shown word as a card in a queue on the memory\n"
+           "; card (ux0:data/VitaJPOverlay/anki_queue), even with Wi-Fi off or Anki closed.\n"
+           "; △ sends the queue to AnkiConnect on a computer on your local network (plain\n"
+           "; HTTP). No AnkiWeb sync. off (the default): × and △ do nothing.\n"
+           "anki_mining = off\n"
            "\n"
-           "; The computer running Anki with AnkiConnect: empty = off (the default),\n"
-           "; auto = search the local network once, or its IP address[:port] (default 8765)\n"
+           "; The computer running Anki with AnkiConnect, for △: its IP address[:port]\n"
+           "; (default 8765), or auto = search the local network once. Empty: cards stay queued.\n"
            "anki_host =\n"
            "\n"
-           "; Deck (created if missing), note type, and tags separated by spaces\n"
+           "; Deck (created if missing), note type, and tags separated by spaces. These and\n"
+           "; the fields below are read when △ sends, so queued cards use the latest ones.\n"
            "anki_deck = Default\n"
            "anki_note_type = Lapis\n"
            "anki_tags = vita-jp-overlay\n"
@@ -201,7 +205,8 @@ const char *vjo_config_default_text(void)
            "anki_field_frequency_list = Frequency\n"
            "anki_field_misc_info = MiscInfo\n"
            "\n"
-           "; Word audio: a Yomitan audio source URL with {term} and {reading} (empty = off)\n"
+           "; Word audio, looked up when △ sends: a Yomitan audio source URL with {term}\n"
+           "; and {reading} (empty = off)\n"
            "anki_audio_url =\n";
 }
 
@@ -572,6 +577,13 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 1;
         else if (vjo_ieq(val, "off"))
             c->log_file = 0;
+        else
+            warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "anki_mining")) {
+        if (vjo_ieq(val, "on"))
+            c->anki_mining = 1;
+        else if (vjo_ieq(val, "off"))
+            c->anki_mining = 0;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else {

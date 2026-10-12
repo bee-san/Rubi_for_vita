@@ -94,11 +94,12 @@ void vjo_log_configure(const VjoConfig *c) {}
 void vjo_log(const char *fmt, ...) {}
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { return 0; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
-static int anki_configured, anki_reaps, anki_stop_rc;
+static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
 int vjo_anki_start(void) { return 0; }
 int vjo_anki_stop(void) { return anki_stop_rc; }
-int vjo_anki_configure(const VjoConfig *c) { anki_configured++; return c->anki_host[0] != '\0'; }
+int vjo_anki_configure(const VjoConfig *c) { anki_configured++; return c->anki_mining; }
 void vjo_anki_reap(void) { anki_reaps++; }
+void vjo_anki_post_count(void) { anki_counts++; }
 static char anki_game[128];
 void vjo_anki_set_game(const char *name) { snprintf(anki_game, sizeof(anki_game), "%s", name); }
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size) { snprintf(name, size, "Title of %s", tid); }
@@ -205,7 +206,7 @@ static void reset(void)
     fake_recognized_text = NULL;
 #endif
     phases_checked = vocr_live = fail_join = 0;
-    anki_configured = anki_reaps = anki_stop_rc = anki_on = 0;
+    anki_configured = anki_reaps = anki_stop_rc = anki_counts = anki_on = 0;
     memset(&raw_state, 0, sizeof(raw_state));
     raw_state.done_seq = 11;
     raw_state.width = 200;
@@ -710,9 +711,10 @@ static void test_failed_join_keeps_allocations(void)
     }
 }
 
-/* Anki is off by default; a configured anki_host reaches the overlay with
- * each config reload, and nothing about it changes the OCR pipeline. */
-static void test_anki_host_enables_cross_in_view(void)
+/* Anki is off by default; anki_mining reaches the overlay with each config
+ * reload, nothing about it changes the OCR pipeline, and only with it on
+ * does opening the overlay count the offline queue. */
+static void test_anki_mining_enables_cross_in_view(void)
 {
     reset();
     anki_configured = 0;
@@ -720,13 +722,22 @@ static void test_anki_host_enables_cross_in_view(void)
     TEST_CHECK(anki_configured == 1 && !anki_on);
     view_publish(1, NULL, NULL, 0);
     TEST_CHECK(!g_view.anki_enabled);
-    snprintf(loaded.anki_host, sizeof(loaded.anki_host), "192.168.1.20");
+    snprintf(loaded.anki_host, sizeof(loaded.anki_host), "192.168.1.20"); /* a host alone: still off */
+    apply_config();
+    TEST_CHECK(!anki_on);
+    open_overlay();
+    TEST_CHECK(anki_counts == 0);
+    close_overlay();
+    loaded.anki_mining = 1;
     cache_ok = 1;
     apply_config();
-    TEST_CHECK(anki_configured == 2 && anki_on && cache_ok); /* same pipeline: cache kept */
+    TEST_CHECK(anki_on && cache_ok); /* same pipeline: cache kept */
     view_publish(1, NULL, NULL, 0);
     TEST_CHECK(g_view.anki_enabled);
-    loaded.anki_host[0] = '\0';
+    open_overlay();
+    TEST_CHECK(anki_counts == 1);
+    close_overlay();
+    loaded.anki_mining = 0;
     apply_config();
     view_publish(1, NULL, NULL, 0);
     TEST_CHECK(!g_view.anki_enabled && !anki_on);
@@ -1477,7 +1488,7 @@ TEST_LIST = {
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
-    {"anki_host_enables_cross_and_keeps_the_pipeline", test_anki_host_enables_cross_in_view},
+    {"anki_mining_enables_cross_and_keeps_the_pipeline", test_anki_mining_enables_cross_in_view},
     {"anki_stop_failure_keeps_worker_memory_for_retry", test_anki_stop_failure_keeps_worker},
 #ifdef VJO_WITH_VOCR
     {"japanese_only_selects_first_letter_rejects_other_scripts_and_reloads_choices", test_japanese_only_selection_and_config_reload},
