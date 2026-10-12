@@ -89,6 +89,12 @@ static void test_models_and_sizes(void)
     size_t parts = 1155968 + 182944 + 960 * 544;
     TEST_CHECK(full >= parts && full - parts < sizeof(vocr_model) + sizeof(vocr_ctx) + 64);
     TEST_MSG("960x544 workspace %zu, parts %zu", full, parts);
+    /* Resident form: the job is the one-shot workspace without the weights. */
+    for (unsigned i = 0; i < n; i++) {
+        size_t job = vjo_vocr_job_bytes(all[i].name, 917, 125);
+        TEST_CHECK(job && job + ((all[i].bytes + 15u) & ~15u) == vjo_vocr_workspace_bytes(all[i].name, 917, 125));
+    }
+    TEST_CHECK(!vjo_vocr_job_bytes("other.vocr", 100, 10) && !vjo_vocr_job_bytes(VJO_VOCR_DEFAULT_MODEL, 961, 10));
     TEST_CHECK(vjo_vocr_workspace_bytes("FL10_w8.vocr", 960, 544) < full);
     TEST_CHECK(vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 880, 144) < full);
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 961, 10));

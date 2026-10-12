@@ -237,6 +237,18 @@ if(VJO_WITH_VOCR)
   target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-vocr-tests vjo_vocr)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
+  # The actual game worker and core adapter with synthetic pinned weights and a
+  # spy runtime: the resident-weights lifecycle runs without release files (CI).
+  add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c)
+  target_include_directories(vjo-game-resident-tests PRIVATE third_party/acutest/include
+    host/tests/game_stubs host/tests)
+  target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-resident-tests PRIVATE
+    VJO_VOCR_TEST_MODELS="test_resident_models.h"
+    vocr_find_lines=test_vocr_find_lines vocr_load=test_vocr_load
+    vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
+  target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
+  add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
     host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include

@@ -5,7 +5,9 @@
 
 #include <stdint.h>
 
-#define VJO_API_VERSION 13
+/* 14: 32 KiB model reads that wait for the kernel worker, Open reports the
+ * file's modification time, results report resident weights. */
+#define VJO_API_VERSION 14
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
@@ -72,7 +74,7 @@ typedef struct {
 
 /* Shared syscall and copied-payload statuses. Physical retail hardware returned
  * queued -3 as 0xBFFFFFFD. Keep every custom status negative with bit 30 clear,
- * so that observed return transformation leaves the API 13 contract unchanged.
+ * so that observed return transformation leaves the API 13+ contract unchanged.
  * Native SDK/file errors are returned untouched in their own namespaces. */
 #define VJO_ERR_NO_GAME      ((int32_t)0xBFFFFFFFu)
 #define VJO_ERR_NO_MEMORY    ((int32_t)0xBFFFFFFEu)

@@ -5,6 +5,7 @@
 #include <psp2/host_stubs.h>
 #include <psp2kern/host_stubs.h>
 #include <psp2kern/io/fcntl.h>
+#include <psp2kern/io/stat.h>
 #include <taihen.h>
 #include "../../kernel/vjo_kernel.h"
 #include "../../kernel/game_ocr.h"
@@ -14,9 +15,13 @@
 VjoKernelState g;
 unsigned syscall_depth;
 static SceUID caller;
-static unsigned locks, user_opens, kernel_opens, kernel_reads, kernel_closes;
-static unsigned allocated, released, received;
+static unsigned locks, user_opens, kernel_opens, kernel_reads, kernel_closes, kernel_stats;
+static unsigned allocated, released, received, weights_allocated, weights_released, game_delays;
 static unsigned char arena[2*1024*1024] __attribute__((aligned(64)));
+static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
+static int weights_live, kernel_waits, done_pending;
+static unsigned live_bytes, peak_bytes, job_block, weights_block, kernel_wait_calls;
+static SceDateTime file_mtime;
 static unsigned char pixels[49152]; /* page-rounded 200x60 capture */
 static int live, open_error, read_error, close_error, bad_length, early_eof, corrupt, short_read;
 static int schedule_kernel, cancel_after, substitute_legacy;
@@ -33,7 +38,7 @@ int test_kernel_cancelled(uint32_t seq);
 int test_kernel_complete(const VjoGameOcrResult *result);
 int test_kernel_read(uint32_t seq, VjoGameOcrResult *out);
 int test_kernel_cancel(uint32_t seq);
-int test_kernel_model_open(uint32_t seq);
+int test_kernel_model_open(uint32_t seq, VjoGameOcrModelInfo *info);
 int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst);
 int test_kernel_model_close(uint32_t seq);
 static int retail_return(int rc)
@@ -47,8 +52,8 @@ int vjoOcrCancelled(uint32_t seq) { return retail_return(test_kernel_cancelled(s
 int vjoOcrComplete(const VjoGameOcrResult *r) { return retail_return(test_kernel_complete(r)); }
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out) { return retail_return(test_kernel_read(seq, out)); }
 int vjoOcrCancel(uint32_t seq) { return retail_return(test_kernel_cancel(seq)); }
-int vjoOcrModelOpen(uint32_t seq)
-{ int rc = retail_return(test_kernel_model_open(seq)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
+int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
+{ int rc = retail_return(test_kernel_model_open(seq, info)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t bytes, void *dst)
 { int rc = retail_return(test_kernel_model_read(seq, off, bytes, dst)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 int vjoOcrModelClose(uint32_t seq)
@@ -58,7 +63,29 @@ void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return clock_us; }
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
-{ TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); return 0; }
+{
+    if (g.mevf > 0 && uid == g.mevf) { TEST_CHECK(bits == MEV_DONE); done_pending = 1; return 0; }
+    TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); return 0;
+}
+/* The game's model syscall waits in the kernel; with kernel_waits the kernel
+ * worker thread runs meanwhile and finishes the operation. */
+int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
+{
+    TEST_ASSERT(uid == g.mevf && bits == MEV_DONE && !locks && syscall_depth == 1 && timeout);
+    kernel_wait_calls++;
+    if (!done_pending && kernel_waits) {
+        SceUID saved = caller; unsigned depth = syscall_depth;
+        caller = 0; syscall_depth = 0; game_ocr_model_tick(); caller = saved; syscall_depth = depth;
+    }
+    if (done_pending) { done_pending = 0; return 0; }
+    clock_us += *timeout;
+    return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+}
+int ksceIoGetstatByFd(SceUID fd, SceIoStat *st)
+{
+    TEST_ASSERT(caller == 0 && !locks && !syscall_depth && fd == 31 && file);
+    kernel_stats++; memset(st, 0, sizeof(*st)); st->st_mtime = file_mtime; return 0;
+}
 int ksceKernelLockMutex(SceUID uid, int n, void *timeout)
 { TEST_CHECK(uid == g.lock && !locks); locks++; return 0; }
 int ksceKernelUnlockMutex(SceUID uid, int n)
@@ -112,6 +139,7 @@ SceUID sceKernelGetProcessId(void) { TEST_CHECK(caller == 7); return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_us++; }
 int sceKernelDelayThread(unsigned us)
 {
+    game_delays++;
     clock_us += us;
     if (schedule_kernel) {
         SceUID saved = caller; caller = 0; game_ocr_model_tick(); caller = saved;
@@ -124,11 +152,28 @@ int sceKernelDelayThread(unsigned us)
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 { out->size_user = 16*1024*1024; return 0; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
-{ TEST_CHECK(!live && type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && n <= sizeof(arena)); live = 1; allocated++; return 9; }
+{
+    TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(n & 4095));
+    if (!strcmp(name, "VjoGameVocrWeights")) {
+        TEST_CHECK(!weights_live && n <= sizeof(weights_memory));
+        weights_live = 1; weights_allocated++; weights_block = n;
+    } else {
+        TEST_CHECK(!strcmp(name, "VjoGameVocr") && !live && n <= sizeof(arena));
+        live = 1; allocated++; job_block = n;
+    }
+    live_bytes += n; if (live_bytes > peak_bytes) peak_bytes = live_bytes;
+    return weights_live && !strcmp(name, "VjoGameVocrWeights") ? 10 : 9;
+}
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
-{ TEST_CHECK(uid == 9 && live); *base = arena; return 0; }
+{
+    if (uid == 10) { TEST_CHECK(weights_live); *base = weights_memory; return 0; }
+    TEST_CHECK(uid == 9 && live); *base = arena; return 0;
+}
 int sceKernelFreeMemBlock(SceUID uid)
-{ TEST_CHECK(uid == 9 && live); live = 0; released++; return 0; }
+{
+    if (uid == 10) { TEST_CHECK(weights_live); weights_live = 0; weights_released++; live_bytes -= weights_block; return 0; }
+    TEST_CHECK(uid == 9 && live); live = 0; released++; live_bytes -= job_block; return 0;
+}
 SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt) { return 20; }
 int sceKernelStartThread(SceUID uid, SceSize n, void *args) { return 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return 0; }
@@ -140,11 +185,20 @@ int vjoGetVersion(void) { return VJO_API_VERSION; }
 SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 { user_opens++; return (int)0x80010013u; }
 
-static VjoGameOcrRequest setup(const char *name)
+/* A fresh kernel, capture and claimed job; keep_weights keeps the game
+ * worker's resident weights from the previous job, as one game process would. */
+static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
 {
     TEST_ASSERT(!file && !live);
     memset(&g, 0, sizeof(g)); game_ocr_init();
     worker = workspace_uid = -1; model_owned = 0; model_seq = 0;
+    if (!keep_weights) {
+        if (weights_live) { TEST_CHECK(!drop_weights()); }
+        weights_uid = -1; resident.model = NULL; resident.data = NULL; resident.capacity = 0;
+        weights_allocated = weights_released = 0; live_bytes = peak_bytes = 0;
+        file_mtime = (SceDateTime){2026, 10, 12, 21, 0, 0, 0};
+    }
+    game_delays = kernel_stats = kernel_wait_calls = 0; kernel_waits = done_pending = 0;
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     locks = syscall_depth = user_opens = kernel_opens = kernel_reads = kernel_closes = 0;
     allocated = released = received = 0;
@@ -166,6 +220,7 @@ static VjoGameOcrRequest setup(const char *name)
     caller = 7; TEST_ASSERT(!vjoOcrTake(&request)); TEST_CHECK(request.seq == (unsigned)seq);
     return request;
 }
+static VjoGameOcrRequest setup(const char *name) { return setup_job(name, 0); }
 static void finish(const VjoGameOcrResult *out)
 {
     TEST_CHECK(!file && !live && !model_owned && allocated == released && !locks && !syscall_depth);
@@ -205,6 +260,42 @@ static void real_models_cross_namespace(void)
         TEST_CHECK(received == vjo_vocr_model(names[i])->bytes);
         TEST_CHECK(kernel_opens == 1 && kernel_closes == 1 && kernel_reads > 1);
         TEST_CHECK(boundary_busy > 2); /* Open, Read and Close traverse real-return wrappers. */
+        finish(&out);
+    }
+}
+/* The kernel worker answers each model call while it waits: one 32 KiB read
+ * per piece, no BUSY reaching the game and no game sleep; the next job of the
+ * same game reuses the verified weights and reads nothing; a new file time
+ * makes it read and check them again. */
+static void real_models_resident_through_waiting_broker(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; resident integration skipped"); return; }
+    const char *names[] = {"FL10_w8.vocr", "H15_w8.vocr"};
+    for (unsigned i=0; i<2; i++) {
+        const uint32_t bytes = vjo_vocr_model(names[i])->bytes;
+        const unsigned pieces = (bytes + VJO_GAME_OCR_MODEL_CHUNK - 1) / VJO_GAME_OCR_MODEL_CHUNK;
+        VjoGameOcrRequest request = setup(names[i]); VjoGameOcrResult first, out;
+        g.mevf = 5; kernel_waits = 1;
+        TEST_CHECK(!vjo_game_ocr_run_request(&request, &first) && first.lines == 1);
+        TEST_CHECK(first.weights == VJO_GAME_OCR_WEIGHTS_READ && received == bytes && kernel_reads == pieces);
+        TEST_CHECK(!boundary_busy && !game_delays && kernel_opens == 1 && kernel_closes == 1);
+        TEST_CHECK(first.resident_bytes == PAGE_ROUND(bytes) && weights_live && weights_allocated == 1);
+        printf("  %s first job: %u kernel reads of <= %u B, %u in-kernel waits, %u BUSY at the game, %u game sleeps\n",
+               names[i], kernel_reads, VJO_GAME_OCR_MODEL_CHUNK, kernel_wait_calls, boundary_busy, game_delays);
+        finish(&first);
+        request = setup_job(names[i], 1); g.mevf = 5; kernel_waits = 1;
+        TEST_CHECK(!vjo_game_ocr_run_request(&request, &out) && !strcmp(out.text, first.text));
+        TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT && !received && !kernel_reads);
+        TEST_CHECK(kernel_opens == 1 && kernel_stats == 1 && kernel_closes == 1 && !game_delays);
+        TEST_CHECK(weights_allocated == 1 && !weights_released && out.resident_bytes == PAGE_ROUND(bytes));
+        printf("  %s next job: %u kernel reads, %u opens, %u stats, %u closes, %u game sleeps, weights=%u\n",
+               names[i], kernel_reads, kernel_opens, kernel_stats, kernel_closes, game_delays, out.weights);
+        finish(&out);
+        request = setup_job(names[i], 1); g.mevf = 5; kernel_waits = 1;
+        file_mtime.second++; /* replaced on the card: read and checked again, into the same block */
+        TEST_CHECK(!vjo_game_ocr_run_request(&request, &out) && !strcmp(out.text, first.text));
+        TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && received == bytes && kernel_reads == pieces);
+        TEST_CHECK(weights_allocated == 1 && !weights_released);
         finish(&out);
     }
 }
@@ -286,6 +377,7 @@ static void native_status_contract(void)
 TEST_LIST = {
     {"API13 stable statuses survive retail return encoding; native errno unchanged", native_status_contract},
     {"actual game worker and kernel broker load every pinned trial model despite game ENODEV", real_models_cross_namespace},
+    {"real weights: waited 32 KiB reads, no game sleeps, resident reuse and re-read on a new file time", real_models_resident_through_waiting_broker},
     {"VOCR2 rejects renamed old FL10 bytes through the real broker and releases ownership", vocr2_rejects_legacy_model_through_real_broker},
     {"actual broker model I/O corruption cancellation close failure and recovery", real_model_failure_recovery},
     {"actual queued Open timeout and later Close drain without weights", queued_open_timeout_and_drain},

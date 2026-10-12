@@ -183,6 +183,13 @@ static int local_open(void *ud, const char *path, VjoFile *out)
     if (fstat(fd, &st) || st.st_size < 0 || !S_ISREG(st.st_mode)) { close(fd); return -1; }
     out->ctx = (void *)(intptr_t)fd; out->size = (uint64_t)st.st_size;
     out->read = local_read; out->close = local_close;
+    /* Modification time in ns; never 0 for a real file. */
+#ifdef __APPLE__
+    out->stamp = (uint64_t)st.st_mtimespec.tv_sec * 1000000000u + (uint64_t)st.st_mtimespec.tv_nsec;
+#else
+    out->stamp = (uint64_t)st.st_mtim.tv_sec * 1000000000u + (uint64_t)st.st_mtim.tv_nsec;
+#endif
+    if (!out->stamp) out->stamp = 1;
     return 0;
 }
 

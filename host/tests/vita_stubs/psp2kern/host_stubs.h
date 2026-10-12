@@ -39,4 +39,9 @@ int ksceKernelMemcpyUserToKernel(void *, const void *, SceSize);
 int ksceKernelMemcpyKernelToUser(void *, const void *, SceSize);
 int ksceKernelStrncpyUserToKernel(char *, const char *, SceSize);
 int ksceKernelSetEventFlag(SceUID, unsigned);
+typedef unsigned int SceUInt;
+#define SCE_EVENT_WAITOR 1
+#define SCE_EVENT_WAITCLEAR_PAT 4
+#define SCE_KERNEL_ERROR_WAIT_TIMEOUT ((int)0x80028005u)
+int ksceKernelWaitEventFlag(SceUID, unsigned int, unsigned int, unsigned int *, SceUInt *);
 #endif
