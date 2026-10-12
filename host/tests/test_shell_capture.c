@@ -53,7 +53,30 @@ static void test_kernel_memory_failure(void)
   reset(&a, &b); request_rc = (int32_t)0x80010013u;
   TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_SOURCE);
   TEST_CHECK(!rows_read && !discarded); }
+/* The caller tells the kernel's capture memory from the Shell's (#53). */
+static void test_kernel_and_encoder_memory_are_distinct(void)
+{ VjoArena a; VjoBuf b; VjoState out; reset(&a, &b); request_rc = VJO_ERR_NO_MEMORY;
+  memset(&out, 0x5A, sizeof(out));
+  TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_OOM && out.capture_result == VJO_ERR_NO_MEMORY);
+  reset(&a, &b); state.capture_result = VJO_ERR_NO_MEMORY;
+  TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_OOM && out.capture_result == VJO_ERR_NO_MEMORY);
+  reset(&a, &b); request_rc = (int32_t)0x80010013u; /* another request error is not memory */
+  TEST_CHECK(vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_SOURCE && out.capture_result != VJO_ERR_NO_MEMORY);
+  /* An arena that holds the encoder but not its output: VJO_E_OOM (out->oom),
+   * while the capture itself succeeded. */
+  int found = 0;
+  for (size_t size = 256; size <= sizeof(memory) && !found; size += 64) {
+    reset(&a, &b); vjo_arena_init(&a, memory, size); vjo_buf_init(&b, &a);
+    memset(&out, 0x5A, sizeof(out));
+    if (vjo_capture_jpeg(&a, 0, 80, &b, &out) == VJO_E_OOM) {
+      found = 1;
+      TEST_CHECK(out.capture_result == 0 && rows_read > 0);
+      TEST_MSG("encoder OOM with a %zu-byte arena", size);
+    }
+  }
+  TEST_CHECK(found); }
 TEST_LIST = {
+  {"kernel_and_encoder_memory_are_distinct", test_kernel_and_encoder_memory_are_distinct},
   {"jpeg_releases_capture", test_capture_lifecycle},
   {"failed_state_never_reads_rows", test_failed_state_cannot_authorize_rows},
   {"raw_error_and_short_read_release_capture", test_rows_failure},

@@ -115,12 +115,14 @@ int vjo_capture_init(void);
 void vjo_capture_fini(void);
 /* Captures the screen (flags: VJO_CAPTURE_*) and encodes it as a JPEG into
  * out; serialized with the OCR job's capture (one kernel buffer). Returns
- * VJO_OK or a VJO_E_* code. */
+ * VJO_OK or a VJO_E_* code. When the capture itself failed, st->capture_result
+ * holds the kernel's error: VJO_ERR_NO_MEMORY means its capture buffer could
+ * not be allocated (VJO_E_OOM); any other VJO_E_OOM is the encoder's (Shell). */
 int vjo_capture_jpeg(VjoArena *a, uint32_t flags, int quality, VjoBuf *out, VjoState *st);
 /* The same single-pass capture for a raw-pixel reader: consume(ud, st) runs
  * with the capture held and reads its rows with vjoReadRaw, each once (the
  * kernel frees its buffer after the last). Returns consume's result, or the
- * capture's VJO_E_* code. */
+ * capture's VJO_E_* code, with st->capture_result as for vjo_capture_jpeg. */
 int vjo_capture_raw(uint32_t flags, int (*consume)(void *ud, const VjoState *st), void *ud, VjoState *st);
 
 /* game.c */

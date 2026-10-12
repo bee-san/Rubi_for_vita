@@ -41,9 +41,12 @@ static int raw_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
 static int capture_wait(uint32_t flags, VjoState *st, int *seq)
 {
     int64_t deadline;
+    st->capture_result = 0;
     *seq = vjoRequestCapture(flags | VJO_CAPTURE_ONCE);
     if (*seq < 0) {
         vjo_log("capture request failed %d", *seq);
+        /* The caller tells the kernel's capture memory from its own (shell.h). */
+        st->capture_result = *seq;
         return *seq == VJO_ERR_NO_MEMORY ? VJO_E_OOM : VJO_E_SOURCE;
     }
     /* CAPTURE_DONE may be left over from an earlier capture: the sequence

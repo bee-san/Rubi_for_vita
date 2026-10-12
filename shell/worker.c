@@ -447,6 +447,42 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 
 /* ---- local OCR: vita-vn-ocr (ocr_backend = vocr) ---- */
 
+/* Out-of-memory advice, by where the memory ran out (#53). Each fits the
+ * status line after "Text recognition failed: not enough memory. ". */
+#define OOM_KERNEL_CAPTURE "The kernel could not allocate this region's screen capture (kernel memory " \
+    "shared by all plugins); the OCR model does not affect it. Select a tighter dialogue region with Square, " \
+    "or restart the Vita."
+#define OOM_SHELL_RESULTS "The Shell has too little memory for the overlay's results; the region and " \
+    "the OCR model do not affect it. Restart the Vita and try again."
+#define OOM_SCREENSHOT "The screenshot did not fit the overlay's result memory. Select a tighter " \
+    "dialogue region with Square."
+#define OOM_TEXT_BUFFER "The recognized text did not fit the overlay's text buffer. Select a tighter " \
+    "dialogue region with Square."
+#define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
+    "dialogue region with Square."
+#define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights; the region " \
+    "is not the limit. FL10_w8.vocr is the smallest model."
+#define OOM_GAME_SMALLEST "The game has too little free memory even for the smallest OCR model's " \
+    "weights. Try again later in the game, or restart it."
+#define OOM_GAME_RACE "The game used the memory OCR needed while the job started. Try again."
+#define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
+
+#ifdef VJO_WITH_VOCR
+/* Which part of the game worker's memory check failed: the region's job
+ * workspace, the model's weights (the smallest model's or a larger one's),
+ * an allocation after a passed check, or the check itself. */
+static const char *game_oom_detail(const VjoGameOcrResult *r)
+{
+    int64_t job, weights_limit = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
+    if (!r->reserve_bytes) return NULL; /* not from the memory check: no specific advice */
+    if (r->free_user < 0) return OOM_GAME_UNKNOWN;
+    job = (int64_t)r->reserve_bytes + r->need_workspace;
+    if ((int64_t)r->free_user >= job + r->need_weights) return OOM_GAME_RACE;
+    if ((int64_t)r->free_user < job) return OOM_GAME_REGION;
+    return r->need_weights > weights_limit ? OOM_GAME_MODEL : OOM_GAME_SMALLEST;
+}
+#endif
+
 #ifdef VJO_WITH_VOCR
 static int vocr_cancelled(void *ud)
 {
@@ -536,6 +572,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         return out->err.rc = VJO_E_OCR_MODEL;
     }
     st.capture_scene = 0;
+    st.capture_result = 0;
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
     if (out->err.rc != VJO_OK) {
@@ -546,6 +583,9 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
             else if ((uint32_t)result.io_error == 0x8001000Du)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }
+        if (out->err.rc == VJO_E_OOM)
+            out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE
+                                                                    : game_oom_detail(&result);
         return out->err.rc;
     }
     if (local) {
@@ -557,6 +597,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
         if (!out->sentence) {
             out->failed_stage = VJO_STAGE_OCR;
+            out->err.detail = OOM_TEXT_BUFFER;
             return out->err.rc = VJO_E_OOM;
         }
         /* Cursor byte0 is the trimmed sentence, not discarded whitespace. */
@@ -610,6 +651,7 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
         mem_free();
     } else if (mem_alloc_for(&job_cfg) < 0) {
         out->failed_stage = VJO_STAGE_OCR;
+        out->err.detail = OOM_SHELL_RESULTS;
         return out->err.rc = VJO_E_OOM;
     }
     vjo_arena_reset(a);
@@ -620,16 +662,17 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
                 out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
-            if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR)
-                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
         goto recognized;
     }
     vjo_buf_init(&jb, a);
     st.capture_scene = 0;
+    st.capture_result = 0;
     if ((out->err.rc = vjo_capture_jpeg(a, 0, JPEG_QUALITY, &jb, &st)) != VJO_OK) {
         out->failed_stage = VJO_STAGE_OCR;
+        if (out->err.rc == VJO_E_OOM)
+            out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE : OOM_SCREENSHOT;
         return out->err.rc;
     }
     job_capture_scene = st.capture_scene;

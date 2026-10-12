@@ -309,8 +309,18 @@ copied, and the settings above. Close other apps first.
    - `game vocr lines: 917x30 114f 52.1ms ...`: each recognized line's crop
      (pixels), CTC frames and recognition time, six per log line. Record the shown text and a photo
    beside this log; host tests alone cannot prove recognition on the Vita.
-5. **Errors.** For game OCR memory errors, select FL10 and a tighter dialogue
-   region. A Shell UI memory error after successful recognition preserves text
+5. **Errors.** A "not enough memory" message names its stage; record its
+   wording with the `game vocr memory:` log line:
+   - *the kernel could not allocate this region's screen capture*: kernel
+     memory; select a tighter region (the model does not matter) or restart;
+   - *the game has too little free memory for OCR of this region*: select a
+     tighter region;
+   - *... for this OCR model's weights*: select FL10 (the smallest);
+   - *... even for the smallest OCR model's weights* or *the game used the
+     memory ... while the job started*: try again later or restart the game;
+   - *the Shell has too little memory for the overlay's results*: restart the
+     Vita (region and model do not matter).
+   A Shell UI memory error after successful recognition preserves text
    while dictionary results are unavailable; restart the Vita and retry. A
    smaller OCR region does not reclaim another Shell plugin's retained heap.
    For an unavailable worker, check its `*ALL` registration and restart the
