@@ -19,9 +19,9 @@ typedef struct {
     uint32_t payload_size[16];
     int n_payload, active;
 } Fixture;
-static Fixture fixtures[2];
+static Fixture fixtures[VJO_LOCAL_MAX_DICTS];
 static uint8_t arena_mem[64 * 1024];
-static int opened, closed, reads, payload_reads, fail_read;
+static int opened, closed, reads, payload_reads, fail_read, opens_by[VJO_LOCAL_MAX_DICTS];
 
 static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
 static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
@@ -134,9 +134,9 @@ static int open_file(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
     const char *name = strrchr(path, '/'); name = name ? name + 1 : path;
-    for (int i = 0; i < 2; i++) if (fixtures[i].name && !strcmp(name, fixtures[i].name)) {
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) if (fixtures[i].name && !strcmp(name, fixtures[i].name)) {
         Fixture *f = &fixtures[i];
-        f->active++; opened++;
+        f->active++; opened++; opens_by[i]++;
         *out = (VjoFile){f, f->size, read_file, close_file}; return 0;
     }
     return -1;
@@ -144,6 +144,7 @@ static int open_file(void *ud, const char *path, VjoFile *out)
 static void setup(VjoArena *a, VjoPlatform *p, VjoConfig *cfg)
 {
     memset(fixtures, 0, sizeof(fixtures));
+    memset(opens_by, 0, sizeof(opens_by));
     opened = closed = reads = payload_reads = fail_read = 0;
     vjo_arena_init(a, arena_mem, sizeof(arena_mem));
     memset(p, 0, sizeof(*p)); p->file_open = open_file;
@@ -379,7 +380,262 @@ static void every_file_read_failure_closes_and_rolls_back(void)
     }
 }
 
+/* ---- several dictionaries: one entry resident, the others located ---- */
+
+static const char *const page_names[VJO_LOCAL_MAX_DICTS] = {
+    "d0.vjdict", "d1.vjdict", "d2.vjdict", "d3.vjdict", "d4.vjdict", "d5.vjdict", "d6.vjdict", "d7.vjdict"};
+
+static void set_names(VjoConfig *cfg, int n)
+{
+    cfg->local_dictionaries[0] = 0;
+    for (int i = 0; i < n; i++) {
+        if (i) strcat(cfg->local_dictionaries, ",");
+        strcat(cfg->local_dictionaries, page_names[i]);
+    }
+}
+
+static int pages_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
+                        size_t cursor, int limit, VjoLocalPages *pages, VjoDictResult *r, VjoErr *e)
+{
+    int rc = vjo_local_lookup_pages(a, p, cfg, text, cursor, limit, pages, r, e);
+    TEST_CHECK(opened == closed && e->rc == rc && e->dict == VJO_DICT_LOCAL);
+    TEST_CHECK(pages->count >= 0 && pages->count <= limit && (pages->count > 0) == (r->n_vocab == 1));
+    return rc;
+}
+
+static void pages_follow_best_match_then_priority(void)
+{
+    /* d2 has the longest span, so it is the single best result. d1 has only
+     * an inflected match and d3 has none; they keep configured order. */
+    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0}};
+    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0}, {"猫舌", "猫舌", "", "d1 other", 0}};
+    const Row d2[] = {{"猫舌", "猫舌", "ねこじた", "d2 long", 0}};
+    const Row d3[] = {{"犬", "犬", "いぬ", "d3 dog", 0}};
+    for (int version = 1; version <= 2; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, single; VjoErr e; VjoLocalPages pages;
+        setup(&a, &p, &cfg); set_names(&cfg, 4);
+        build(&fixtures[0], page_names[0], d0, 1, version);
+        build(&fixtures[1], page_names[1], d1, 2, version);
+        build(&fixtures[2], page_names[2], d2, 1, version);
+        build(&fixtures[3], page_names[3], d3, 1, version);
+        /* d1 also has 猫舌 and comes first: it is the best match, d2 second. */
+        TEST_ASSERT(!vjo_local_lookup_at(&a, &p, &cfg, "猫舌。", 0, &single, &e));
+        TEST_ASSERT(single.n_vocab == 1 && !strcmp(single.vocab[0].meanings[0], "d1 other"));
+        vjo_arena_reset(&a); payload_reads = 0;
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 8, &pages, &r, &e));
+        TEST_CHECK(payload_reads == 1); /* only the shown entry is read */
+        TEST_ASSERT(pages.count == 3 && r.n_vocab == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 other") && r.tokens[0].len16 == 2);
+        TEST_CHECK(pages.page[0].dict == 1 && pages.page[0].len16 == 2);
+        TEST_CHECK(pages.page[1].dict == 0 && pages.page[1].len16 == 1); /* only 猫 in d0 */
+        TEST_CHECK(pages.page[2].dict == 2 && pages.page[2].len16 == 2);
+        TEST_CHECK(pages.cursor_byte == 0 && pages.pos16 == 0);
+        /* A limit keeps the first pages only. */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 2, &pages, &r, &e));
+        TEST_CHECK(pages.count == 2 && pages.page[1].dict == 0);
+        /* Each page reads exactly its own payload. */
+        const char *expect[] = {"d1 other", "d0 cat"};
+        for (int page = 0; page < 2; page++) {
+            VjoDictResult one;
+            size_t used = a.used;
+            payload_reads = 0; memset(opens_by, 0, sizeof(opens_by));
+            TEST_ASSERT(!vjo_local_read_page(&a, &p, &cfg, &pages, page, &one, &e));
+            TEST_CHECK(one.n_vocab == 1 && !strcmp(one.vocab[0].meanings[0], expect[page]));
+            TEST_CHECK(one.tokens[0].len16 == pages.page[page].len16 && one.tokens[0].pos16 == 0);
+            TEST_CHECK(payload_reads == 1 && opens_by[pages.page[page].dict] == 1 && opened == closed);
+            int others = 0;
+            for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) if (i != pages.page[page].dict) others += opens_by[i];
+            TEST_CHECK(others == 0);
+            TEST_CHECK(a.used - used <= VJO_LOCAL_SELECTED_BUDGET);
+        }
+    }
+}
+
+static void exact_later_dictionary_precedes_inflected_page(void)
+{
+    const Row d0[] = {{"食べる", "食べる", "たべる", "d0 inflected", 1}};
+    const Row d1[] = {{"食べた", "食べた", "たべた", "d1 exact", 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
+    build(&fixtures[0], page_names[0], d0, 1, 2);
+    build(&fixtures[1], page_names[1], d1, 1, 2);
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "食べた", 0, 8, &pages, &r, &e));
+    TEST_ASSERT(pages.count == 2);
+    TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 exact"));
+    TEST_CHECK(pages.page[0].dict == 1 && pages.page[1].dict == 0);
+    TEST_CHECK(pages.page[0].len16 == 3 && pages.page[1].len16 == 3);
+}
+
+static void single_result_reads_are_unchanged(void)
+{
+    /* Limit 1 is the previous single lookup: once d0 matches, d1's index is
+     * never searched. Another limit searches d1 but never reads its payload. */
+    const Row row = {"猫", "猫", "ねこ", "cat", 0};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
+    build(&fixtures[0], page_names[0], &row, 1, 2);
+    build(&fixtures[1], page_names[1], &row, 1, 2);
+    TEST_ASSERT(!vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &r, &e));
+    int single_reads = reads;
+    size_t single_peak = a.peak, single_used = a.used;
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem)); reads = payload_reads = 0;
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 1, &pages, &r, &e));
+    TEST_CHECK(reads == single_reads && pages.count == 1 && a.peak == single_peak && a.used == single_used);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem)); reads = payload_reads = 0;
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 2, &pages, &r, &e));
+    TEST_CHECK(pages.count == 2 && reads > single_reads && payload_reads == 1);
+    TEST_CHECK(a.peak == single_peak && a.used == single_used); /* locators are the caller's */
+    printf("  two dictionaries, limit 1: %d reads; limit 2: %d reads; peak %zu both\n",
+           single_reads, reads, a.peak);
+}
+
+/* First byte of an entry's definition ("spelling rank\nmeaning"). */
+static char meaning_byte(const VjoOverlayData *out)
+{
+    const char *nl = strchr(out->list.entries[0].text, '\n');
+    return nl ? nl[1] : 0;
+}
+
+static void overlay_pages_stream_through_one_arena(void)
+{
+    /* Eight maximum-size definitions are never resident together: paging
+     * releases the shown entry and reads only the next page's payload. */
+    static char meanings[VJO_LOCAL_MAX_DICTS][8192];
+    Row rows[VJO_LOCAL_MAX_DICTS];
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
+    setup(&a, &p, &cfg); set_names(&cfg, 8);
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
+        memset(meanings[i], 'a' + i, 8186); meanings[i][8186] = 0;
+        rows[i] = (Row){"猫", "猫", "", meanings[i], 0};
+        build(&fixtures[i], page_names[i], &rows[i], 1, i % 2 ? 1 : 2);
+        TEST_ASSERT(fixtures[i].payload_size[0] == VJO_LOCAL_MAX_ENTRY);
+    }
+    const char *text = "猫が好き";
+    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+    cfg.local_dictionary_results = 1;
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(!out.pages && vjo_overlay_page_count(&out) == 1);
+    size_t single_peak = a.peak, single_used = a.used;
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 0, &out) == VJO_E_PARSE); /* nothing located */
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    cfg.local_dictionary_results = 8; payload_reads = 0;
+    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_ASSERT(out.pages && vjo_overlay_page_count(&out) == 8 && out.page == 0);
+    TEST_CHECK(payload_reads == 1 && out.list.n_entries == 1 && meaning_byte(&out) == 'a');
+    TEST_CHECK((uint8_t *)out.pages == a.base); /* locators first; the entry after them */
+    size_t resident = a.used, peak = a.peak;
+    TEST_CHECK(resident <= single_used + sizeof(VjoLocalPages) + 8);
+    TEST_CHECK(peak <= single_peak + sizeof(VjoLocalPages) + 8 && peak <= sizeof(arena_mem));
+    for (int round = 0; round < 25; round++) {
+        for (int page = 0; page < 8; page++) {
+            int target = round % 2 ? 7 - page : page;
+            payload_reads = 0; memset(opens_by, 0, sizeof(opens_by));
+            TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, target, &out));
+            TEST_CHECK(out.page == target && out.list.n_entries == 1 && out.list.header == text);
+            TEST_CHECK(meaning_byte(&out) == 'a' + target);
+            TEST_CHECK(out.list.entries[0].hl_start == 0 && out.list.entries[0].hl_end == 3);
+            TEST_CHECK(payload_reads == 1 && opens_by[target] == 1 && opened == closed);
+            TEST_CHECK(a.used <= resident); /* one entry resident, never more */
+        }
+    }
+    TEST_CHECK(a.peak <= peak); /* page reads need no lookup scratch */
+    printf("  8 x 8 KiB definitions: single peak %zu resident %zu; paged peak %zu resident %zu\n",
+           single_peak, single_used, a.peak, resident);
+}
+
+static void page_failures_keep_header_and_locators(void)
+{
+    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0}};
+    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
+    setup(&a, &p, &cfg); set_names(&cfg, 2); cfg.local_dictionary_results = 2;
+    build(&fixtures[0], page_names[0], d0, 1, 2);
+    build(&fixtures[1], page_names[1], d1, 1, 1);
+    TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。", &out));
+    const char *header = out.sentence;
+    size_t mark = a.used;
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_ASSERT(out.pages && out.pages->count == 2);
+    VjoLocalPages *pages = out.pages;
+    size_t keep = (size_t)((uint8_t *)(pages + 1) - a.base);
+    /* Every read of the page fails cleanly, then the page loads. */
+    reads = 0;
+    TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out));
+    int total = reads;
+    for (int i = 1; i <= total; i++) {
+        reads = 0; fail_read = i;
+        TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out) == VJO_E_LOCAL_IO);
+        TEST_CHECK(out.pages == pages && out.page == 1 && !out.list.n_entries && !out.list.entries);
+        TEST_CHECK(out.list.header == header && out.failed_stage == VJO_STAGE_DICT && a.used == keep);
+        TEST_CHECK(opened == closed && fixtures[1].active == 0);
+    }
+    fail_read = 0;
+    TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out));
+    TEST_CHECK(out.failed_stage == VJO_STAGE_NONE && strstr(out.list.entries[0].text, "d1 cat"));
+    /* A refused page allocation keeps the recognized header. */
+    size_t normal = a.size;
+    a.size = keep + 64;
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 0, &out) == VJO_E_OOM);
+    TEST_CHECK(out.list.header == header && !out.list.n_entries && a.used == keep && out.pages == pages);
+    a.size = normal;
+    TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(strstr(out.list.entries[0].text, "d0 cat") != NULL);
+    /* A replaced file (other size) is reported, never read at stale offsets. */
+    fixtures[1].size += 1; put64(fixtures[1].bytes + 40, fixtures[1].size);
+    payload_reads = 0;
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out) == VJO_E_LOCAL_IO);
+    TEST_CHECK(out.err.detail && strstr(out.err.detail, "changed") && !payload_reads && opened == closed);
+    /* Invalid pages and a shortened dictionary list never read. */
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 2, &out) == VJO_E_PARSE);
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, -1, &out) == VJO_E_PARSE);
+    strcpy(cfg.local_dictionaries, page_names[0]);
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out) == VJO_E_LOCAL_IO);
+    TEST_CHECK(out.list.header == header && a.used == keep && opened == closed);
+    /* An OOM while locating keeps nothing; the next cursor works. */
+    set_names(&cfg, 2); fixtures[1].size -= 1; put64(fixtures[1].bytes + 40, fixtures[1].size);
+    vjo_arena_release(&a, mark);
+    a.size = mark + sizeof(VjoLocalPages) + 64;
+    TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_OOM);
+    TEST_CHECK(!out.pages && a.used == mark && out.list.header == header && !out.list.n_entries);
+    a.size = mark + 32;
+    TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_OOM && !out.pages && a.used == mark);
+    a.size = normal;
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(out.pages && out.pages->count == 2);
+    /* No entry at the cursor: no locators stay allocated. */
+    vjo_arena_release(&a, mark);
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 3, &out));
+    TEST_CHECK(!out.pages && !out.list.n_entries && a.used == mark && vjo_overlay_page_count(&out) == 0);
+}
+
+static void eight_dictionaries_only_matching_pages(void)
+{
+    const Row cat = {"猫", "猫", "ねこ", "cat", 0}, dog = {"犬", "犬", "いぬ", "dog", 0};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    setup(&a, &p, &cfg); set_names(&cfg, 8);
+    for (int i = 0; i < 8; i++) build(&fixtures[i], page_names[i], i == 1 || i == 4 || i == 6 ? &cat : &dog, 1, 2);
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 8, &pages, &r, &e));
+    TEST_ASSERT(pages.count == 3);
+    TEST_CHECK(pages.page[0].dict == 1 && pages.page[1].dict == 4 && pages.page[2].dict == 6);
+    for (int i = 0; i < 8; i++) TEST_CHECK(opens_by[i] == 1); /* every enabled file, once */
+    vjo_arena_reset(&a);
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "犬", 0, 3, &pages, &r, &e));
+    TEST_CHECK(pages.count == 3 && pages.page[0].dict == 0 && pages.page[1].dict == 2 && pages.page[2].dict == 3);
+    vjo_arena_reset(&a);
+    int before = opened;
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "。", 0, 8, &pages, &r, &e));
+    TEST_CHECK(!pages.count && opened == before && !a.used);
+}
+
 TEST_LIST = {
+    {"pages_follow_best_match_then_priority", pages_follow_best_match_then_priority},
+    {"exact_later_dictionary_precedes_inflected_page", exact_later_dictionary_precedes_inflected_page},
+    {"single_result_reads_are_unchanged", single_result_reads_are_unchanged},
+    {"overlay_pages_stream_through_one_arena", overlay_pages_stream_through_one_arena},
+    {"page_failures_keep_header_and_locators", page_failures_keep_header_and_locators},
+    {"eight_dictionaries_only_matching_pages", eight_dictionaries_only_matching_pages},
     {"longest_and_first_posting", longest_and_first_posting},
     {"inflection_and_dictionary_priority", inflection_and_dictionary_priority},
     {"cursor_boundary_and_no_later_word", cursor_boundary_and_no_later_word},

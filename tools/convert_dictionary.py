@@ -59,29 +59,57 @@ def utf8_clip(text, size):
 
 
 class PlainHTML(HTMLParser):
+    """HTML glossary strings become plain text: markup, CSS, scripts and ruby
+    readings are dropped at conversion time, so the Vita never parses them."""
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts = []
         self.hidden = 0
+        self.annotation = False  # inside <rt>/<rp>; HTML may omit their end tags
 
     def handle_starttag(self, tag, attrs):
         if tag in ("script", "style"):
             self.hidden += 1
+        if tag in ("rt", "rp"):
+            self.annotation = True
         if not self.hidden and tag in ("br", "div", "p", "li", "tr"):
             self.parts.append("\n")
-        if tag == "img" and not self.hidden:
+        if tag == "img" and not self.hidden and not self.annotation:
             attributes = dict(attrs)
             self.parts.append(attributes.get("alt") or attributes.get("title") or "[image omitted]")
 
     def handle_endtag(self, tag):
         if tag in ("script", "style"):
             self.hidden = max(0, self.hidden - 1)
+        if tag in ("rt", "rp", "ruby"):
+            self.annotation = False
         if not self.hidden and tag in ("div", "p", "li", "tr"):
             self.parts.append("\n")
 
     def handle_data(self, data):
-        if not self.hidden:
+        if not self.hidden and not self.annotation:
             self.parts.append(data)
+
+
+def joins_words(left, right):
+    """Adjacent inline elements whose text would otherwise run together, such
+    as the labels "noun" + "kana" or "See also" + "ぽとり", get one space.
+    Japanese next to Japanese (ruby bases, split sentences) stays unspaced."""
+    if not left or not right:
+        return False
+    a, b = left[-1], right[0]
+    return a.isalnum() and b.isalnum() and (a.isascii() or b.isascii())
+
+
+def list_marker(style):
+    """A quoted CSS list marker (Jitendex senses use '"①"') as plain text."""
+    kind = style.get("listStyleType") if isinstance(style, dict) else None
+    if isinstance(kind, str):
+        kind = kind.strip()
+        if len(kind) >= 3 and kind[0] == kind[-1] and kind[0] in "\"'":
+            return clean(kind[1:-1]).strip()
+    return ""
 
 
 def glossary_text(value, depth=0):
@@ -91,10 +119,18 @@ def glossary_text(value, depth=0):
         if re.search(r"</?[A-Za-z][^>]*>", value):
             parser = PlainHTML()
             parser.feed(value)
+            parser.close()
             return "".join(parser.parts)
         return value
     if isinstance(value, list):
-        return "".join(glossary_text(v, depth + 1) for v in value)
+        text, after_element = "", False
+        for item in value:
+            part = glossary_text(item, depth + 1)
+            if after_element and isinstance(item, dict) and joins_words(text, part):
+                text += " "
+            text += part
+            after_element = isinstance(item, dict)
+        return text
     if isinstance(value, dict):
         kind, tag = value.get("type"), value.get("tag")
         if kind == "image" or tag == "img":
@@ -106,6 +142,10 @@ def glossary_text(value, depth=0):
         if tag == "br":
             return "\n"
         result = glossary_text(value.get("content", ""), depth + 1)
+        if tag == "li":
+            marker = list_marker(value.get("style"))
+            if marker and result.strip():
+                result = marker + " " + result.lstrip()
         if tag in ("div", "p", "li", "ul", "ol", "tr", "table"):
             return "\n" + result + "\n"
         if tag in ("td", "th"):

@@ -136,6 +136,49 @@ class LocalDictionaryTest(unittest.TestCase):
         for absent in ("suppressed reading", "hidden style", "private.svg", "example.invalid", "<div", "fontWeight"):
             self.assertNotIn(absent, output)
 
+    def payload_region(self, path):
+        """Bytes after the index: every stored spelling/reading/definition."""
+        header = convert.HEADER.unpack_from(path.read_bytes())
+        return path.read_bytes()[header[6]:]
+
+    def test_payloads_are_plain_text_without_markup_or_css(self):
+        # Jitendex-shaped structured content plus HTML strings with CSS,
+        # scripts, links and ruby. The Vita reads payloads verbatim, so the
+        # converter must leave no markup to parse or style to apply.
+        sense = lambda marker, gloss: {"tag": "li", "style": {"listStyleType": marker, "fontWeight": "bold"},
+                                       "data": {"content": "sense"}, "content": gloss}
+        structured = {"type": "structured-content", "content": [
+            {"tag": "span", "title": "noun", "data": {"class": "tag"}, "content": "noun"},
+            {"tag": "span", "title": "kana", "data": {"class": "tag"}, "content": "kana"},
+            {"tag": "ol", "content": [sense('"①"', "cat"), sense('"②"', "shamisen"), sense("disc", "unnumbered")]},
+            {"tag": "div", "content": [{"tag": "span", "content": "See also"},
+                                       {"tag": "a", "href": "?query=猫車", "content": "猫車"}]},
+            {"tag": "div", "content": [{"tag": "ruby", "content": ["興", {"tag": "rt", "content": "きょう"}]},
+                                       {"tag": "ruby", "content": ["味", {"tag": "rt", "content": "み"}]}, "がある"]},
+            {"tag": "img", "path": "assets/logo.png", "alt": "logo"},
+        ]}
+        html = ('<style>.x{color:red}</style><div style="font-size:2em" class="g"><b>bold</b> text '
+                '<a href="https://example.invalid/">link</a></div><ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby>'
+                '<script>alert(1)</script><img src="x.png" alt="pic">&lt;literal&gt;')
+        for version in (1, 2):
+            path, _ = self.build([term("猫", "ねこ", [structured, html])], format_version=version)
+            data = self.payload_region(path)
+            self.assertIsNone(re.search(rb"<(/?[A-Za-z][^>]*)>", data.replace(b"<literal>", b"")))
+            for absent in (b"style", b"color", b"fontWeight", b"listStyleType", b"font-size", b"href",
+                           b"example.invalid", b"assets/", b"x.png", b"alert", "きょう".encode(),
+                           "かんじ".encode(), b"(", b"{"):
+                self.assertNotIn(absent, data, absent)
+            output = self.lookup("猫").stdout
+            for expected in ("noun kana", "① cat", "② shamisen", "\nunnumbered", "See also 猫車",
+                             "興味がある", "logo", "bold text link", "漢字", "pic", "<literal>"):
+                self.assertIn(expected, output)
+
+    def test_existing_payload_format_is_unchanged(self):
+        # Plain payloads (spelling, reading, definition) are the same three
+        # NUL-terminated strings as earlier files: no reconversion is needed.
+        path, _ = self.build([term("猫", "ねこ", ["cat"])])
+        self.assertIn("猫\0ねこ\0[Test]\ncat\0".encode(), self.payload_region(path))
+
     def test_reading_only_term_uses_reading_as_display_headword(self):
         _, stats = self.build([term("", "あて", ["a target; 目標。"]),
                                term("猫", "ねこ", ["cat"])])

@@ -41,6 +41,7 @@ typedef struct {
     char hachidori_host[64];   /* required host[:port], default port 19633 */
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
+    int local_dictionary_results; /* 1..8: dictionaries paged with Up/Down per selected word */
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
@@ -72,13 +73,13 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* Default file written on first run (with comments). */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's three OCR/lookup preferences, retaining every other INI
+/* Changes only the app's four OCR/lookup preferences, retaining every other INI
  * line verbatim. Duplicate owned keys are collapsed. Input/output must not
  * overlap. Returns output bytes (not including NUL), or -1 for invalid
  * choices, embedded NUL, or insufficient capacity. */
 int vjo_config_patch_preferences(const char *text, size_t len, int backend,
                                  int japanese_only, int highlight_mode,
-                                 char *out, size_t cap);
+                                 int dictionary_results, char *out, size_t cap);
 
 const char *vjo_trigger_name(int trigger);
 

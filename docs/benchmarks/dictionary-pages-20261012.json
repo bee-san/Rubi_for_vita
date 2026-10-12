@@ -1,0 +1,1216 @@
+{
+ "date": "2026-10-12",
+ "scope": "Host lookup cost and lookup-arena use of local dictionary pages (Settings → Dictionaries shown); Vita ELF section sizes and stack frames from the cross-build. Not physical Vita or SD-card timing, and not total SceShell memory.",
+ "environment": {
+  "host": "Linux 6.12.110-135.202.amzn2023.x86_64 x86_64, Intel(R) Xeon(R) Platinum 8488C",
+  "compiler": "gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-5)",
+  "vita_toolchain": "vitasdk/vitasdk:2026.08 (CI container) + tools/setup_toolchain.sh"
+ },
+ "baseline": "origin/main aff03cb (v0.7.12)",
+ "command": "python3 tools/benchmark_dictionary_pages.py --before BASE/vjo-local-bench --after build/host/vjo-local-bench --directory DIR --dicts FILES --runs 20 --rounds 5",
+ "method": "host vjo-local-bench, cursor mode; empty application caches per request; warm host OS file cache; first request discarded; not Vita hardware; before, results=1 and results=N runs interleaved in 5 rounds of 20 timed requests",
+ "dictionaries": {
+  "files": {
+   "jitendex.vjdict": {
+    "bytes": 103490974,
+    "sha256": "a031fe632aa90eb4fd5d578197c248a245eac96a885591504c82761f7446dc96"
+   },
+   "jitendex0709.vjdict": {
+    "bytes": 103159175,
+    "sha256": "f42cd3ee39408545dc3457c5c8c5aed0fcd09975ca3381c55276b2d5f881dadb"
+   },
+   "jmdict.vjdict": {
+    "bytes": 77457235,
+    "sha256": "11c9af9b6d1cc4607bce1018d88ed716a0ab89f7ae45c86cc746082b7e6639b0"
+   },
+   "pixiv.vjdict": {
+    "bytes": 226972749,
+    "sha256": "cc113fcdfe8181e178a5cd8542dae4016639ac477ed12a7c7a39e266f6e5cfb8"
+   }
+  },
+  "sources": {
+   "jmdict.vjdict": "tools/prepare_jmdict.py, pinned release snapshot (byte-identical to the shipped file)",
+   "jitendex.vjdict": "Jitendex.org Yomitan 2026.08.11.0, this branch's converter",
+   "jitendex0709.vjdict": "Jitendex.org Yomitan 2026.07.09.0, this branch's converter",
+   "pixiv.vjdict": "Pixiv Light 2026-08-16 Yomitan; 4 headwords with a control character (U+0008) removed before conversion"
+  },
+  "eight_dictionary_set": [
+   "jitendex.vjdict",
+   "jmdict.vjdict",
+   "pixiv.vjdict",
+   "jitendex0709.vjdict",
+   "jitendex-b.vjdict",
+   "jmdict-b.vjdict",
+   "pixiv-b.vjdict",
+   "jitendex0709-b.vjdict"
+  ],
+  "note": "The -b files are hard links of the four distinct dictionaries, opened and read as separate files; every one of them has an entry for most cases, the worst case for paging."
+ },
+ "one_dictionary": {
+  "method": "host vjo-local-bench, cursor mode; empty application caches per request; warm host OS file cache; first request discarded; not Vita hardware",
+  "environment": "Linux x86_64 CPython",
+  "timed_requests_per_variant": 100,
+  "interleaved_rounds": 5,
+  "dictionaries": [
+   "jmdict.vjdict"
+  ],
+  "cases": [
+   {
+    "text": "日本語を勉強しています。",
+    "cursor_byte": 0,
+    "before": {
+     "median_us": 24.92,
+     "p95_us": 41.794,
+     "read_calls": 22,
+     "read_bytes": 82075,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "0e0f073be996088b"
+    },
+    "after_results_1": {
+     "median_us": 23.466,
+     "p95_us": 27.367,
+     "read_calls": 22,
+     "read_bytes": 82075,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "0e0f073be996088b",
+     "resident": 744,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "今日は学校に行きました。",
+    "cursor_byte": 9,
+    "before": {
+     "median_us": 20.251,
+     "p95_us": 31.562,
+     "read_calls": 19,
+     "read_bytes": 69771,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "3dea5c69b5813f81"
+    },
+    "after_results_1": {
+     "median_us": 20.349,
+     "p95_us": 24.016,
+     "read_calls": 19,
+     "read_bytes": 69771,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "3dea5c69b5813f81",
+     "resident": 728,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "猫は食べました。行った。",
+    "cursor_byte": 6,
+    "before": {
+     "median_us": 11.754,
+     "p95_us": 15.469,
+     "read_calls": 8,
+     "read_bytes": 24803,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "75ce5b35044f3be0"
+    },
+    "after_results_1": {
+     "median_us": 11.726,
+     "p95_us": 14.168,
+     "read_calls": 8,
+     "read_bytes": 24803,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "75ce5b35044f3be0",
+     "resident": 816,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "彼女は僕のことを何も知らなかった。",
+    "cursor_byte": 9,
+    "before": {
+     "median_us": 22.983,
+     "p95_us": 32.622,
+     "read_calls": 23,
+     "read_bytes": 86212,
+     "arena_peak": 53896,
+     "entries": 1,
+     "digest": "20741c14f63495b4"
+    },
+    "after_results_1": {
+     "median_us": 22.843,
+     "p95_us": 36.332,
+     "read_calls": 23,
+     "read_bytes": 86212,
+     "arena_peak": 53896,
+     "entries": 1,
+     "digest": "20741c14f63495b4",
+     "resident": 800,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "私たちは明日、東京で友達に会う予定です。",
+    "cursor_byte": 21,
+    "before": {
+     "median_us": 19.174,
+     "p95_us": 22.49,
+     "read_calls": 18,
+     "read_bytes": 65677,
+     "arena_peak": 53904,
+     "entries": 1,
+     "digest": "650246581b99c56c"
+    },
+    "after_results_1": {
+     "median_us": 19.126,
+     "p95_us": 30.501,
+     "read_calls": 18,
+     "read_bytes": 65677,
+     "arena_peak": 53904,
+     "entries": 1,
+     "digest": "650246581b99c56c",
+     "resident": 752,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "ありがとう。",
+    "cursor_byte": 0,
+    "before": {
+     "median_us": 8.764,
+     "p95_us": 13.779,
+     "read_calls": 4,
+     "read_bytes": 8344,
+     "arena_peak": 53864,
+     "entries": 1,
+     "digest": "049449c3b044a59b"
+    },
+    "after_results_1": {
+     "median_us": 8.518,
+     "p95_us": 13.033,
+     "read_calls": 4,
+     "read_bytes": 8344,
+     "arena_peak": 53864,
+     "entries": 1,
+     "digest": "049449c3b044a59b",
+     "resident": 720,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "これはとても長い説明ですが、同じ言葉を何度も繰り返しても辞書全部がメモリに読み込まれるわけではありません。",
+    "cursor_byte": 36,
+    "before": {
+     "median_us": 8.675,
+     "p95_us": 12.647,
+     "read_calls": 4,
+     "read_bytes": 8317,
+     "arena_peak": 54000,
+     "entries": 1,
+     "digest": "01fe02f5f4924517"
+    },
+    "after_results_1": {
+     "median_us": 8.069,
+     "p95_us": 9.287,
+     "read_calls": 4,
+     "read_bytes": 8317,
+     "arena_peak": 54000,
+     "entries": 1,
+     "digest": "01fe02f5f4924517",
+     "resident": 832,
+     "page_count": 1,
+     "pages": []
+    }
+   },
+   {
+    "text": "猫。",
+    "cursor_byte": 3,
+    "before": {
+     "median_us": 0.1,
+     "p95_us": 0.267,
+     "read_calls": 0,
+     "read_bytes": 0,
+     "arena_peak": 263,
+     "entries": 0,
+     "digest": "cbf29ce484222325"
+    },
+    "after_results_1": {
+     "median_us": 0.093,
+     "p95_us": 0.207,
+     "read_calls": 0,
+     "read_bytes": 0,
+     "arena_peak": 263,
+     "entries": 0,
+     "digest": "cbf29ce484222325",
+     "resident": 263,
+     "page_count": 0,
+     "pages": []
+    }
+   },
+   {
+    "text": "猫\n猫は食べました。",
+    "cursor_byte": 4,
+    "before": {
+     "median_us": 16.965,
+     "p95_us": 18.624,
+     "read_calls": 15,
+     "read_bytes": 53676,
+     "arena_peak": 53872,
+     "entries": 1,
+     "digest": "16d824b28a8d40d0"
+    },
+    "after_results_1": {
+     "median_us": 16.693,
+     "p95_us": 26.568,
+     "read_calls": 15,
+     "read_bytes": 53676,
+     "arena_peak": 53872,
+     "entries": 1,
+     "digest": "16d824b28a8d40d0",
+     "resident": 1264,
+     "page_count": 1,
+     "pages": []
+    }
+   }
+  ]
+ },
+ "eight_dictionaries": {
+  "method": "host vjo-local-bench, cursor mode; empty application caches per request; warm host OS file cache; first request discarded; not Vita hardware",
+  "environment": "Linux x86_64 CPython",
+  "timed_requests_per_variant": 100,
+  "interleaved_rounds": 5,
+  "dictionaries": [
+   "jitendex.vjdict",
+   "jmdict.vjdict",
+   "pixiv.vjdict",
+   "jitendex0709.vjdict",
+   "jitendex-b.vjdict",
+   "jmdict-b.vjdict",
+   "pixiv-b.vjdict",
+   "jitendex0709-b.vjdict"
+  ],
+  "cases": [
+   {
+    "text": "日本語を勉強しています。",
+    "cursor_byte": 0,
+    "before": {
+     "median_us": 183.737,
+     "p95_us": 256.778,
+     "read_calls": 227,
+     "read_bytes": 893655,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "f345b979e500a87d"
+    },
+    "after_results_1": {
+     "median_us": 182.786,
+     "p95_us": 212.4,
+     "read_calls": 227,
+     "read_bytes": 893655,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "f345b979e500a87d",
+     "resident": 864,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 190.9,
+     "p95_us": 214.478,
+     "read_calls": 241,
+     "read_bytes": 950999,
+     "arena_peak": 54088,
+     "entries": 1,
+     "digest": "f345b979e500a87d",
+     "resident": 1072,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.71,
+       "read_calls": 2,
+       "read_bytes": 155,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 952
+      },
+      {
+       "page": 2,
+       "median_us": 6.553,
+       "read_calls": 2,
+       "read_bytes": 212,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1008
+      },
+      {
+       "page": 3,
+       "median_us": 6.579,
+       "read_calls": 2,
+       "read_bytes": 279,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1072
+      },
+      {
+       "page": 4,
+       "median_us": 6.633,
+       "read_calls": 2,
+       "read_bytes": 279,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1072
+      },
+      {
+       "page": 5,
+       "median_us": 6.644,
+       "read_calls": 2,
+       "read_bytes": 155,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 952
+      },
+      {
+       "page": 6,
+       "median_us": 6.694,
+       "read_calls": 2,
+       "read_bytes": 212,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1008
+      },
+      {
+       "page": 7,
+       "median_us": 6.664,
+       "read_calls": 2,
+       "read_bytes": 279,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1072
+      }
+     ]
+    }
+   },
+   {
+    "text": "今日は学校に行きました。",
+    "cursor_byte": 9,
+    "before": {
+     "median_us": 141.918,
+     "p95_us": 158.557,
+     "read_calls": 164,
+     "read_bytes": 635552,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "fca1307a1a3a6564"
+    },
+    "after_results_1": {
+     "median_us": 142.087,
+     "p95_us": 166.8,
+     "read_calls": 164,
+     "read_bytes": 635552,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "fca1307a1a3a6564",
+     "resident": 808,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 150.649,
+     "p95_us": 222.88,
+     "read_calls": 179,
+     "read_bytes": 696992,
+     "arena_peak": 54088,
+     "entries": 1,
+     "digest": "fca1307a1a3a6564",
+     "resident": 1016,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.79,
+       "read_calls": 2,
+       "read_bytes": 139,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 936
+      },
+      {
+       "page": 2,
+       "median_us": 6.495,
+       "read_calls": 2,
+       "read_bytes": 236,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1032
+      },
+      {
+       "page": 3,
+       "median_us": 6.502,
+       "read_calls": 2,
+       "read_bytes": 224,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1016
+      },
+      {
+       "page": 4,
+       "median_us": 6.527,
+       "read_calls": 2,
+       "read_bytes": 224,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1016
+      },
+      {
+       "page": 5,
+       "median_us": 6.563,
+       "read_calls": 2,
+       "read_bytes": 139,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 936
+      },
+      {
+       "page": 6,
+       "median_us": 6.537,
+       "read_calls": 2,
+       "read_bytes": 236,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1032
+      },
+      {
+       "page": 7,
+       "median_us": 6.543,
+       "read_calls": 2,
+       "read_bytes": 224,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1016
+      }
+     ]
+    }
+   },
+   {
+    "text": "猫は食べました。行った。",
+    "cursor_byte": 6,
+    "before": {
+     "median_us": 65.339,
+     "p95_us": 72.166,
+     "read_calls": 43,
+     "read_bytes": 140111,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "2b20d201cf4df5a5"
+    },
+    "after_results_1": {
+     "median_us": 65.758,
+     "p95_us": 76.879,
+     "read_calls": 43,
+     "read_bytes": 140111,
+     "arena_peak": 53880,
+     "entries": 1,
+     "digest": "2b20d201cf4df5a5",
+     "resident": 1240,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 83.896,
+     "p95_us": 96.255,
+     "read_calls": 73,
+     "read_bytes": 262991,
+     "arena_peak": 54088,
+     "entries": 1,
+     "digest": "2b20d201cf4df5a5",
+     "resident": 1448,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.572,
+       "read_calls": 2,
+       "read_bytes": 227,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1024
+      },
+      {
+       "page": 2,
+       "median_us": 6.512,
+       "read_calls": 2,
+       "read_bytes": 245,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1040
+      },
+      {
+       "page": 3,
+       "median_us": 6.478,
+       "read_calls": 2,
+       "read_bytes": 399,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1448
+      },
+      {
+       "page": 4,
+       "median_us": 6.524,
+       "read_calls": 2,
+       "read_bytes": 399,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1448
+      },
+      {
+       "page": 5,
+       "median_us": 6.566,
+       "read_calls": 2,
+       "read_bytes": 227,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1024
+      },
+      {
+       "page": 6,
+       "median_us": 6.555,
+       "read_calls": 2,
+       "read_bytes": 245,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1040
+      },
+      {
+       "page": 7,
+       "median_us": 6.564,
+       "read_calls": 2,
+       "read_bytes": 399,
+       "files_opened": 1,
+       "arena_peak": 8952,
+       "resident": 1448
+      }
+     ]
+    }
+   },
+   {
+    "text": "彼女は僕のことを何も知らなかった。",
+    "cursor_byte": 9,
+    "before": {
+     "median_us": 134.395,
+     "p95_us": 142.764,
+     "read_calls": 149,
+     "read_bytes": 574115,
+     "arena_peak": 53896,
+     "entries": 1,
+     "digest": "e4a3c2ebdb4c2bbc"
+    },
+    "after_results_1": {
+     "median_us": 133.545,
+     "p95_us": 145.239,
+     "read_calls": 149,
+     "read_bytes": 574115,
+     "arena_peak": 53896,
+     "entries": 1,
+     "digest": "e4a3c2ebdb4c2bbc",
+     "resident": 832,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 152.48,
+     "p95_us": 165.216,
+     "read_calls": 179,
+     "read_bytes": 696995,
+     "arena_peak": 54104,
+     "entries": 1,
+     "digest": "e4a3c2ebdb4c2bbc",
+     "resident": 1040,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.752,
+       "read_calls": 2,
+       "read_bytes": 591,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 2168
+      },
+      {
+       "page": 2,
+       "median_us": 6.552,
+       "read_calls": 2,
+       "read_bytes": 196,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 1008
+      },
+      {
+       "page": 3,
+       "median_us": 6.629,
+       "read_calls": 2,
+       "read_bytes": 591,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 2168
+      },
+      {
+       "page": 4,
+       "median_us": 6.659,
+       "read_calls": 2,
+       "read_bytes": 591,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 2168
+      },
+      {
+       "page": 5,
+       "median_us": 6.643,
+       "read_calls": 2,
+       "read_bytes": 196,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 1008
+      },
+      {
+       "page": 6,
+       "median_us": 6.671,
+       "read_calls": 2,
+       "read_bytes": 227,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 1040
+      },
+      {
+       "page": 7,
+       "median_us": 6.686,
+       "read_calls": 2,
+       "read_bytes": 591,
+       "files_opened": 1,
+       "arena_peak": 8968,
+       "resident": 2168
+      }
+     ]
+    }
+   },
+   {
+    "text": "私たちは明日、東京で友達に会う予定です。",
+    "cursor_byte": 21,
+    "before": {
+     "median_us": 128.216,
+     "p95_us": 140.809,
+     "read_calls": 139,
+     "read_bytes": 533211,
+     "arena_peak": 53904,
+     "entries": 1,
+     "digest": "73c5a586f905d7d9"
+    },
+    "after_results_1": {
+     "median_us": 126.358,
+     "p95_us": 144.501,
+     "read_calls": 139,
+     "read_bytes": 533211,
+     "arena_peak": 53904,
+     "entries": 1,
+     "digest": "73c5a586f905d7d9",
+     "resident": 896,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 134.58,
+     "p95_us": 148.956,
+     "read_calls": 153,
+     "read_bytes": 590555,
+     "arena_peak": 54112,
+     "entries": 1,
+     "digest": "73c5a586f905d7d9",
+     "resident": 1104,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.691,
+       "read_calls": 2,
+       "read_bytes": 141,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 960
+      },
+      {
+       "page": 2,
+       "median_us": 6.459,
+       "read_calls": 2,
+       "read_bytes": 287,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 1104
+      },
+      {
+       "page": 3,
+       "median_us": 6.521,
+       "read_calls": 2,
+       "read_bytes": 283,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 1104
+      },
+      {
+       "page": 4,
+       "median_us": 6.576,
+       "read_calls": 2,
+       "read_bytes": 283,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 1104
+      },
+      {
+       "page": 5,
+       "median_us": 6.564,
+       "read_calls": 2,
+       "read_bytes": 141,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 960
+      },
+      {
+       "page": 6,
+       "median_us": 6.565,
+       "read_calls": 2,
+       "read_bytes": 287,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 1104
+      },
+      {
+       "page": 7,
+       "median_us": 6.583,
+       "read_calls": 2,
+       "read_bytes": 283,
+       "files_opened": 1,
+       "arena_peak": 8976,
+       "resident": 1104
+      }
+     ]
+    }
+   },
+   {
+    "text": "ありがとう。",
+    "cursor_byte": 0,
+    "before": {
+     "median_us": 46.785,
+     "p95_us": 54.035,
+     "read_calls": 11,
+     "read_bytes": 8959,
+     "arena_peak": 53864,
+     "entries": 1,
+     "digest": "32478593c30b5d97"
+    },
+    "after_results_1": {
+     "median_us": 45.856,
+     "p95_us": 71.229,
+     "read_calls": 11,
+     "read_bytes": 8959,
+     "arena_peak": 53864,
+     "entries": 1,
+     "digest": "32478593c30b5d97",
+     "resident": 888,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 54.046,
+     "p95_us": 56.26,
+     "read_calls": 25,
+     "read_bytes": 66303,
+     "arena_peak": 54072,
+     "entries": 1,
+     "digest": "32478593c30b5d97",
+     "resident": 1096,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.675,
+       "read_calls": 2,
+       "read_bytes": 152,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 928
+      },
+      {
+       "page": 2,
+       "median_us": 6.439,
+       "read_calls": 2,
+       "read_bytes": 191,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 968
+      },
+      {
+       "page": 3,
+       "median_us": 6.528,
+       "read_calls": 2,
+       "read_bytes": 319,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 1096
+      },
+      {
+       "page": 4,
+       "median_us": 6.537,
+       "read_calls": 2,
+       "read_bytes": 319,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 1096
+      },
+      {
+       "page": 5,
+       "median_us": 6.569,
+       "read_calls": 2,
+       "read_bytes": 152,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 928
+      },
+      {
+       "page": 6,
+       "median_us": 6.54,
+       "read_calls": 2,
+       "read_bytes": 191,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 968
+      },
+      {
+       "page": 7,
+       "median_us": 6.606,
+       "read_calls": 2,
+       "read_bytes": 319,
+       "files_opened": 1,
+       "arena_peak": 8936,
+       "resident": 1096
+      }
+     ]
+    }
+   },
+   {
+    "text": "これはとても長い説明ですが、同じ言葉を何度も繰り返しても辞書全部がメモリに読み込まれるわけではありません。",
+    "cursor_byte": 36,
+    "before": {
+     "median_us": 46.029,
+     "p95_us": 71.68,
+     "read_calls": 11,
+     "read_bytes": 9664,
+     "arena_peak": 54000,
+     "entries": 1,
+     "digest": "431a7ef58d66c854"
+    },
+    "after_results_1": {
+     "median_us": 46.272,
+     "p95_us": 73.401,
+     "read_calls": 11,
+     "read_bytes": 9664,
+     "arena_peak": 54000,
+     "entries": 1,
+     "digest": "431a7ef58d66c854",
+     "resident": 2496,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 53.422,
+     "p95_us": 63.033,
+     "read_calls": 25,
+     "read_bytes": 67008,
+     "arena_peak": 54208,
+     "entries": 1,
+     "digest": "431a7ef58d66c854",
+     "resident": 2704,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.367,
+       "read_calls": 2,
+       "read_bytes": 125,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 1040
+      },
+      {
+       "page": 2,
+       "median_us": 6.405,
+       "read_calls": 2,
+       "read_bytes": 218,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 1136
+      },
+      {
+       "page": 3,
+       "median_us": 6.455,
+       "read_calls": 2,
+       "read_bytes": 1024,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 2704
+      },
+      {
+       "page": 4,
+       "median_us": 6.524,
+       "read_calls": 2,
+       "read_bytes": 1024,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 2704
+      },
+      {
+       "page": 5,
+       "median_us": 6.472,
+       "read_calls": 2,
+       "read_bytes": 125,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 1040
+      },
+      {
+       "page": 6,
+       "median_us": 6.473,
+       "read_calls": 2,
+       "read_bytes": 218,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 1136
+      },
+      {
+       "page": 7,
+       "median_us": 6.518,
+       "read_calls": 2,
+       "read_bytes": 1024,
+       "files_opened": 1,
+       "arena_peak": 9072,
+       "resident": 2704
+      }
+     ]
+    }
+   },
+   {
+    "text": "猫。",
+    "cursor_byte": 3,
+    "before": {
+     "median_us": 0.095,
+     "p95_us": 0.223,
+     "read_calls": 0,
+     "read_bytes": 0,
+     "arena_peak": 263,
+     "entries": 0,
+     "digest": "cbf29ce484222325"
+    },
+    "after_results_1": {
+     "median_us": 0.093,
+     "p95_us": 0.211,
+     "read_calls": 0,
+     "read_bytes": 0,
+     "arena_peak": 263,
+     "entries": 0,
+     "digest": "cbf29ce484222325",
+     "resident": 263,
+     "page_count": 0,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 0.107,
+     "p95_us": 0.306,
+     "read_calls": 0,
+     "read_bytes": 0,
+     "arena_peak": 472,
+     "entries": 0,
+     "digest": "cbf29ce484222325",
+     "resident": 263,
+     "page_count": 0,
+     "pages": []
+    }
+   },
+   {
+    "text": "猫\n猫は食べました。",
+    "cursor_byte": 4,
+    "before": {
+     "median_us": 117.413,
+     "p95_us": 146.52,
+     "read_calls": 123,
+     "read_bytes": 468061,
+     "arena_peak": 53872,
+     "entries": 1,
+     "digest": "65051b0ac3dc5a3e"
+    },
+    "after_results_1": {
+     "median_us": 117.353,
+     "p95_us": 187.287,
+     "read_calls": 123,
+     "read_bytes": 468061,
+     "arena_peak": 53872,
+     "entries": 1,
+     "digest": "65051b0ac3dc5a3e",
+     "resident": 2016,
+     "page_count": 1,
+     "pages": []
+    },
+    "after_results_8": {
+     "median_us": 124.541,
+     "p95_us": 211.781,
+     "read_calls": 137,
+     "read_bytes": 525405,
+     "arena_peak": 54080,
+     "entries": 1,
+     "digest": "65051b0ac3dc5a3e",
+     "resident": 2224,
+     "page_count": 8,
+     "pages": [
+      {
+       "page": 1,
+       "median_us": 6.428,
+       "read_calls": 2,
+       "read_bytes": 428,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 1472
+      },
+      {
+       "page": 2,
+       "median_us": 6.503,
+       "read_calls": 2,
+       "read_bytes": 227,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 1016
+      },
+      {
+       "page": 3,
+       "median_us": 6.568,
+       "read_calls": 2,
+       "read_bytes": 669,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 2224
+      },
+      {
+       "page": 4,
+       "median_us": 6.585,
+       "read_calls": 2,
+       "read_bytes": 669,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 2224
+      },
+      {
+       "page": 5,
+       "median_us": 6.594,
+       "read_calls": 2,
+       "read_bytes": 428,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 1472
+      },
+      {
+       "page": 6,
+       "median_us": 6.611,
+       "read_calls": 2,
+       "read_bytes": 227,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 1016
+      },
+      {
+       "page": 7,
+       "median_us": 6.674,
+       "read_calls": 2,
+       "read_bytes": 669,
+       "files_opened": 1,
+       "arena_peak": 8944,
+       "resident": 2224
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "native_sections": {
+  "command": "arm-vita-eabi-size -A (VitaSDK 2026.08 Release cross-build of origin/main and this branch)",
+  "note": "ELF sections, not measured runtime residency; the result arena is dynamic (64 KiB, unchanged).",
+  "VitaJPOverlay_Shell": {
+   "before": {
+    "text": 127464,
+    "rodata": 50080,
+    "data": 132,
+    "bss": 167888
+   },
+   "after": {
+    "text": 130280,
+    "rodata": 50464,
+    "data": 132,
+    "bss": 167952
+   },
+   "suprx_bytes": {
+    "before": 151193,
+    "after": 153875
+   }
+  },
+  "VitaJPOverlay_Settings": {
+   "before": {
+    "text": 307788,
+    "rodata": 45800,
+    "data": 4476,
+    "bss": 657736
+   },
+   "after": {
+    "text": 308684,
+    "rodata": 46280,
+    "data": 4476,
+    "bss": 657736
+   },
+   "eboot_bytes": {
+    "before": 273910,
+    "after": 274907
+   }
+  },
+  "VitaJPOverlay_Kernel.skprx": "byte-identical (sha256 fa37466b17241778233594442d84661324cf8777e923069572b0f32f58e762b5)",
+  "VitaJPOverlay_OCR.suprx": "byte-identical (sha256 92d6a3874b67e1e4adbd1f70825f952d2cfa1a8326282e7b245fa523c8ee46f2)",
+  "bss_increase_detail": "page indices/limit/generation (16 B), two VjoView fields (8 B), two VjoOverlayData fields (16 B), one VjoConfig int in cfg and job_cfg (8 B), overlay page state (8 B), alignment"
+ },
+ "stack_frames": {
+  "command": "arm-vita-eabi-gcc -O2 -fstack-usage (Shell flags)",
+  "before_bytes": {
+   "vjo_overlay_lookup_at": 80,
+   "vjo_local_lookup_at": 560,
+   "open_dictionaries": 464
+  },
+  "after_bytes": {
+   "vjo_overlay_lookup_at": 88,
+   "vjo_local_lookup_at": 32,
+   "vjo_local_lookup_pages": 576,
+   "open_dictionaries": 384,
+   "check_header": 104,
+   "vjo_overlay_lookup_page": 72,
+   "vjo_local_read_page": 448,
+   "read_entry": 56
+  },
+  "note": "Deepest selected lookup chain: 1,104 -> 1,152 bytes on the 64 KiB network thread; a page read uses 576."
+ },
+ "vita3k": {
+  "version": "Vita3K v0.2.1 4169-69cbf542 (continuous AppImage, run in an Ubuntu 26.04 container: needs glibc 2.43)",
+  "firmware": "official 3.74 PSVUPDAT.PUP plus the preinstall and font PUPs linked from Vita3K's welcome dialog",
+  "settings_app": "JPOverlaySettings.vpk boots and draws the Games page; a build starting on OCR & lookup renders the new Dictionaries shown card with config.ini read from ux0 (screenshot in the PR). Injected X11 key/mouse events did not reach the app under Xvfb, so saving was not exercised there; the host preference tests cover it.",
+  "plugins": "Vita3K's taiHEN HLE loads ur0:tai/config.txt *KERNEL and per-title plugins. VitaJPOverlay_Kernel's module_start returned 0, but its SceCtrl/SceTouch/SceDisplay export hooks were not found and ksceKernelCreateEventFlag, ksceKernelCpuSuspendIntr and the ksceCtrl imports are unimplemented. VitaJPOverlay_Shell stopped at taiHookFunctionImport(SceShell, sceAVConfigRegisterCallback): there is no SceShell process, ScePaf heap or game foreground to overlay. The overlay, its lookups and its memory cannot run in Vita3K."
+ }
+}

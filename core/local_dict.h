@@ -16,6 +16,8 @@
 
 /* Validate comma-separated, relative .vjdict filenames (no directory traversal). */
 int vjo_local_names_valid(const char *names);
+/* Number of valid names (1..8), or 0 when the list is invalid. */
+int vjo_local_names_count(const char *names);
 int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                      const char *text, VjoDictResult *res, VjoErr *err);
 
@@ -27,5 +29,40 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
  * order. Token positions include raw newlines and use UTF-16 units. */
 int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const char *text, size_t cursor_byte,
+                        VjoDictResult *res, VjoErr *err);
+
+/* Where one dictionary's selected entry is on storage. Paging between
+ * dictionaries keeps these 24-byte locators, never several definitions. */
+typedef struct {
+    uint64_t entry_off; /* payload offset in its dictionary */
+    uint64_t file_size; /* that file's size when located: detects replacement */
+    uint32_t entry_len;
+    uint16_t len16;     /* matched source span from the cursor, UTF-16 units */
+    uint8_t dict;       /* index in local_dictionaries */
+    uint8_t reserved;
+} VjoLocalPage;
+
+struct VjoLocalPages { /* typedef in client.h */
+    VjoLocalPage page[VJO_LOCAL_MAX_DICTS];
+    uint32_t cursor_byte; /* the raw-text cursor every page starts at */
+    int pos16;            /* its UTF-16 position */
+    int count;
+};
+
+/* vjo_local_lookup_at for up to `limit` (1..8) dictionaries. Page 0 is exactly
+ * vjo_local_lookup_at's single result, also read into res. Later pages are the
+ * best match (longest span, then exact, then first posting) of each other
+ * dictionary that has one, in local_dictionaries order; only their locators
+ * are kept. limit 1 performs the same reads as vjo_local_lookup_at, and pages
+ * may then be NULL (nothing to locate). */
+int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                           const char *text, size_t cursor_byte, int limit,
+                           VjoLocalPages *pages, VjoDictResult *res, VjoErr *err);
+
+/* Reads one located page's entry into `a` (one vocabulary, one token), opening
+ * only that dictionary and checking its header and size again. Uses no page
+ * cache or deinflection scratch: at most VJO_LOCAL_SELECTED_BUDGET bytes. */
+int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                        const VjoLocalPages *pages, int page,
                         VjoDictResult *res, VjoErr *err);
 #endif

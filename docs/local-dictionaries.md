@@ -72,8 +72,9 @@ python3 tools/convert_dictionary.py daijirin4-gpt-6-luna-en-jp-v3.zip \
 Enable `daijirin.vjdict` alone to prefer its bilingual definitions, or put it
 before `jmdict.vjdict` in `local_dictionaries` to retain plain JMdict as a
 fallback. Use the actual installed filenames. This changes dictionary lookup
-without changing the OCR engine. The local overlay still performs one lookup
-at the selected character and displays at most one entry.
+without changing the OCR engine. The local overlay performs one lookup at the
+selected character and displays one entry at a time; set **Dictionaries shown**
+to 2 to page to JMdict's entry with Down (see below).
 
 Nested English and Japanese text becomes plain text. Ruby annotation text,
 styles and link destinations are omitted; the base characters and visible link
@@ -126,6 +127,43 @@ ZIPs to update a combined file. The converter writes to a temporary file and
 replaces the destination only after success, so a failed conversion preserves
 the previous dictionary.
 
+### Dictionaries shown
+
+By default the overlay shows only the best match at the selected character.
+Settings → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
+in `config.ini`, 1–8, default 1) shows the other enabled dictionaries' entries
+for the same word, one page at a time:
+
+```ini
+local_dictionaries = jitendex.vjdict,jmdict.vjdict,names.vjdict
+local_dictionary_results = 3
+```
+
+Page 1 is unchanged: the longest match, then an exact match, then dictionary
+order. Down shows the next enabled dictionary, in `local_dictionaries` order,
+that has an entry at the selected character; Up goes back. The body reads
+`▲▼ Dictionary 2 of 3` while paging is available; dictionaries with no entry
+are skipped. Each page highlights its own match, which can be shorter than
+page 1's, for example `猫` in one dictionary and `猫舌` in another; in Whole word
+mode, Right skips the highlighted match. Every new character, from the arrows
+or a tap, starts at page 1. Changing the count looks the word up again without capturing
+or recognizing the screen again. Separate files are paged; a combined file
+built from several ZIPs is one dictionary.
+
+Paging was chosen over a stacked view: one definition fills the existing body
+and scrolls with the stick, and only it is held in memory. A stacked view
+would keep several definitions resident and make each entry shorter.
+
+Only the entry on screen is in memory. When looking up a word, the worker
+records where each other dictionary's best entry is on disk: 24 bytes per
+dictionary, a 208-byte table at the start of the single result arena. Up/Down
+releases the shown entry, then opens only that page's dictionary and reads its
+header and one payload into the same arena. It needs no page cache,
+deinflection scratch or allocation, and is checked against the file's size
+when located; a replaced file reports an error and is located again next time.
+With 1, lookups perform exactly the same reads and arena use as before; no
+table is allocated.
+
 ## Memory and lookup behavior
 
 The plugin does **not** unzip banks, build an in-memory map, load a whole index,
@@ -139,6 +177,7 @@ no dictionary-sized persistent allocation is added.
 | Resource | Bound |
 | --- | --- |
 | Selected-entry output budget, including metadata | 8,192 + 256 bytes |
+| Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
 | Network worker result arenas | Two 256 KiB arenas, plus connection pool |
@@ -147,7 +186,7 @@ no dictionary-sized persistent allocation is added.
 | Input text | Up to 4,095 UTF-8 bytes plus NUL |
 | Longest candidate term at the cursor | 32 Unicode code points |
 | Deinflection candidates per substring | 128 |
-| Selected entry | Zero or one; first posting of the best match |
+| Selected entry | Zero or one resident; first posting of the best match per dictionary |
 | Same-key index rows examined per candidate/file | First 64 |
 
 Local lookup starts only at the selected Unicode character. Left/right moves
@@ -166,6 +205,18 @@ The [selected-position measurements](benchmarks/local-character-memory-20261011.
 used at most 54,000 arena bytes over nine illustrative full-JMdict positions;
 generated maximum-entry/full-text tests used 53,584 bytes with static text and
 61,776 with two full text copies in the 64 KiB arena.
+
+The [dictionary page measurements](benchmarks/dictionary-pages-20261012.json)
+compare the selected lookup before and after paging on the host, with JMdict
+alone and with eight enabled files (Jitendex, JMdict, Pixiv Light and a second
+Jitendex, each twice). With one result, read counts and arena peaks are
+identical to the previous release and times are within noise. With eight
+pages, locating the others adds 14–30 reads and 208 arena bytes to the first
+lookup; a later page is two reads (its header and payload) in one file,
+about 6.5 µs on the host, using at most 9,072 arena bytes. These are host
+measurements with a warm OS file cache: SD-card reads on the Vita are slower,
+and an assumed 0.2 ms per read would add about 3–6 ms to the first lookup and
+0.4 ms per page.
 
 The [Daijirin import measurement](benchmarks/daijirin-import-20261010.json)
 records conversion of the bilingual v2 archive: 334,741 entries, two reading-only
@@ -200,9 +251,15 @@ whole-sentence host API remains available for benchmark compatibility; its
 
 - Term dictionaries only. Frequency-only, pitch-accent-only and kanji-only ZIPs
   are rejected with an explanation. Frequency ranks/pitch data are not imported.
-- Plain text, HTML glossaries and Yomitan structured content are flattened to
-  readable text. Block boundaries are retained. Images use alt/title text or an
-  omitted-image label; CSS, media and interactive links are not rendered.
+- Definitions are plain text, decided once on the computer: HTML glossaries
+  and Yomitan structured content are flattened when converting, and the Vita
+  displays the stored text without parsing markup or applying CSS. Block
+  boundaries are retained; Jitendex-style sense markers (`①`) and inline labels
+  (`noun kana`, `See also 猫車`) keep their separators. Images use alt/title text
+  or an omitted-image label; ruby readings, styles, scripts, media and link
+  targets are omitted. Existing `.vjdict` files already store plain text and
+  keep working; reconvert to get the separators and ruby removal in HTML
+  glossaries. JMdict from `tools/prepare_jmdict.py` converts byte-identically.
 - The converter caps each definition at 4,096 UTF-8 bytes by default, appends
   `[definition truncated]`, and reports the count. Change this with
   `--max-definition-bytes 2048` (allowed range 256–7,000) to trade detail for

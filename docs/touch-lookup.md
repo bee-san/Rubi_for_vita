@@ -1,7 +1,10 @@
 # Touch selection and highlighting
 
 Settings → OCR & lookup → Highlight chooses **Whole word** (default) or
-**Character**. Local dictionaries still return at most one result. In Whole
+**Character**. Local dictionaries show one entry at a time; with
+**Dictionaries shown** above 1, Up/Down pages to other dictionaries' entries
+at the same character ([details](local-dictionaries.md#dictionaries-shown)).
+Each page highlights its own match, and Right skips the one shown. In Whole
 word mode, Right skips the current matched source span and Left retraces up to
 16 recent forward selections. Without a match or previous selection, movement
 falls back to one Unicode character. Character mode always steps one character.

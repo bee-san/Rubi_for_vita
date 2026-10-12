@@ -26,6 +26,9 @@ typedef struct {
 /* Stages for VjoOverlayData.failed_stage */
 enum { VJO_STAGE_NONE = 0, VJO_STAGE_OCR = 1, VJO_STAGE_DICT = 2 }; /* OCR, then dictionary */
 
+/* Disk locators of the local dictionaries' entries at one cursor (local_dict.h). */
+typedef struct VjoLocalPages VjoLocalPages;
+
 typedef struct {
     const char *ocr_text;   /* recognized UTF-8 text */
     const char *filtered;   /* after non_japanese_filter */
@@ -33,6 +36,11 @@ typedef struct {
     VjoEntryList list;      /* header + entries */
     int failed_stage;
     VjoErr err;
+    /* Local cursor lookups with local_dictionary_results > 1: the page
+     * locators, allocated first in the lookup's arena (NULL otherwise), and
+     * the page whose entry `list` holds. */
+    VjoLocalPages *pages;
+    int page;
 } VjoOverlayData;
 
 #define VJO_LENS_MAX_RESPONSE (256u * 1024u)
@@ -69,9 +77,20 @@ int vjo_overlay_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, 
 /* Local-only lookup at a raw UTF-8 byte cursor in the existing trimmed
  * sentence. Preserves OCR text/header and returns at most one entry, with
  * highlight bytes relative to sentence (including its remaining newlines).
- * The caller releases the preceding lookup's arena before another cursor. */
+ * The caller releases the preceding lookup's arena before another cursor.
+ * With cfg->local_dictionary_results > 1, out->pages also locates the other
+ * dictionaries' entries; the shown entry is page 0. */
 int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                           size_t cursor_byte, VjoOverlayData *out);
+/* Replaces the entry of a successful vjo_overlay_lookup_at in the same arena
+ * (out->pages set) with page `page`: releases the previous entry, keeps the
+ * locators, and reads only that dictionary's payload. On failure the page
+ * shows no entry and the locators remain for another page. */
+int vjo_overlay_lookup_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                            int page, VjoOverlayData *out);
+/* Dictionary pages available for out's shown local result (its entry count
+ * without locators). */
+int vjo_overlay_page_count(const VjoOverlayData *out);
 /* Already recognized text -> filter/sentence, without a dictionary request.
  * text must remain valid for the lifetime of out (normally in a). */
 int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, VjoOverlayData *out);

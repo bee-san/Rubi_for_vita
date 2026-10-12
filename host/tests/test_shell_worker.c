@@ -171,6 +171,8 @@ static void reset(void)
     local_text_generation = local_text_game_generation = 0;
     local_cursor_seq = local_cursor_byte = 0;
     job_cursor_byte = job_cursor_seq = job_text_generation = 0;
+    local_page = job_page = pages_limit = 0;
+    pages_generation = 0;
     pending_cmd = VJO_CMD_NONE;
     pending_cursor_byte = pending_cursor_generation = 0;
     memset(&state, 0, sizeof(state));
@@ -977,6 +979,249 @@ static void test_character_command_priority_and_generation_boundaries(void)
     TEST_CHECK(retirement_checks > 0 && !held_cmd && !held_view);
 }
 
+/* Three generated dictionaries for paging through the actual worker. The
+ * definitions name their dictionary; third.vjdict has no 犬. */
+#define PAGED_DICTS 3
+static unsigned char paged_dict[PAGED_DICTS][1024];
+static size_t paged_size[PAGED_DICTS];
+static int paged_index[PAGED_DICTS] = {0, 1, 2};
+static unsigned paged_opens[PAGED_DICTS], paged_reads, paged_live;
+static int paged_action; /* page + 1 to request during the next read */
+static const char *const paged_names[PAGED_DICTS] = {"main.vjdict", "extra.vjdict", "third.vjdict"};
+static void paged_build(int index)
+{
+    const char *keys[] = {"犬", "猫", "鳥"};
+    const char *animals[] = {"dog", "cat", "bird"};
+    unsigned char *d = paged_dict[index];
+    int first = index == 2 ? 1 : 0, n = 3 - first;
+    size_t off = 64 + (size_t)n * 24;
+    memset(d, 0, sizeof(paged_dict[index]));
+    memcpy(d, "VJDICT1\0", 8);
+    cursor_u32(d + 8, 1); cursor_u32(d + 12, 64); cursor_u32(d + 16, (uint32_t)n); cursor_u32(d + 20, 24);
+    cursor_u64(d + 24, 64); cursor_u64(d + 32, off);
+    for (int i = 0; i < n; i++) {
+        unsigned char *record = d + 64 + 24 * i;
+        char meaning[32];
+        snprintf(meaning, sizeof(meaning), "%.5s %s", paged_names[index], animals[first + i]);
+        cursor_u64(record, off); cursor_u16(record + 16, 3);
+        memcpy(d + off, keys[first + i], 3); off += 3;
+        size_t payload = off;
+        const char *parts[] = {keys[first + i], keys[first + i], meaning};
+        for (int j = 0; j < 3; j++) {
+            size_t len = strlen(parts[j]) + 1;
+            memcpy(d + off, parts[j], len); off += len;
+        }
+        cursor_u64(record + 8, payload); cursor_u32(record + 20, (uint32_t)(off - payload));
+    }
+    paged_size[index] = off; cursor_u64(d + 40, off);
+}
+static int paged_read(void *ud, uint64_t off, void *dst, size_t n)
+{
+    int i = *(int *)ud;
+    paged_reads++;
+    TEST_CHECK(paged_live & (1u << i));
+    if (paged_action) {
+        int page = paged_action - 1; paged_action = 0;
+        TEST_CHECK(vjo_post_page(page, local_text_generation)); on_command();
+    }
+    if (off > paged_size[i] || n > paged_size[i] - off) return -1;
+    memcpy(dst, paged_dict[i] + off, n); return 0;
+}
+static void paged_close(void *ud)
+{ int i = *(int *)ud; TEST_CHECK(paged_live & (1u << i)); paged_live &= ~(1u << i); }
+static int paged_open(void *ud, const char *path, VjoFile *out)
+{
+    (void)ud;
+    for (int i = 0; i < PAGED_DICTS; i++) {
+        if (!strstr(path, paged_names[i])) continue;
+        TEST_CHECK(!(paged_live & (1u << i)));
+        paged_live |= 1u << i; paged_opens[i]++;
+        *out = (VjoFile){&paged_index[i], paged_size[i], paged_read, paged_close};
+        return 0;
+    }
+    return -1;
+}
+static void paged_setup(int results)
+{
+    cursor_setup();
+    for (int i = 0; i < PAGED_DICTS; i++) paged_build(i);
+    memset(paged_opens, 0, sizeof(paged_opens));
+    paged_reads = paged_live = 0; paged_action = 0;
+    strcpy(cfg.local_dictionaries, "main.vjdict,extra.vjdict,third.vjdict");
+    strcpy(loaded.local_dictionaries, cfg.local_dictionaries);
+    cfg.local_dictionary_results = loaded.local_dictionary_results = results;
+    plat.file_open = paged_open;
+}
+static void check_page(const char *meaning, uint32_t cursor, int page, int pages)
+{
+    TEST_ASSERT(g_view.list != NULL && g_view.list->n_entries == 1);
+    TEST_CHECK(strstr(g_view.list->entries[0].text, meaning) != NULL);
+    TEST_MSG("shown: %s; expected %s", g_view.list->entries[0].text, meaning);
+    TEST_CHECK(g_view.local_cursor_mode && g_view.cursor_byte == cursor);
+    TEST_CHECK(g_view.dict_page == page && g_view.dict_pages == pages);
+    TEST_MSG("page %d/%d, expected %d/%d", g_view.dict_page, g_view.dict_pages, page, pages);
+    TEST_CHECK(!paged_live && !held_cmd && !held_view && !job_running);
+}
+static unsigned paged_total_opens(void) { return paged_opens[0] + paged_opens[1] + paged_opens[2]; }
+
+static void test_dictionary_pages_read_one_entry_each(void)
+{
+    paged_setup(3);
+    open_overlay(); finish_current_job();
+    check_page("main. cat", 0, 0, 3);
+    TEST_CHECK(paged_opens[0] == 1 && paged_opens[1] == 1 && paged_opens[2] == 1);
+    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size && vocr_allocs == 1);
+    unsigned arenas = user_allocs + heap_allocs;
+    size_t first_peak = results[0].peak;
+    uint32_t generation = local_text_generation;
+    /* Down: only extra.vjdict is opened, at its located payload. */
+    TEST_CHECK(vjo_post_page(1, generation));
+    TEST_CHECK(pending_cmd == VJO_CMD_CURSOR && g_view.list == &local_header);
+    TEST_CHECK(g_view.dict_page == 1 && g_view.dict_pages == 3 && !strcmp(g_view.status, "Looking up words…"));
+    on_command(); TEST_ASSERT(job_running && job_cursor_only && job_page == 1);
+    unsigned reads_before = paged_reads;
+    finish_current_job();
+    check_page("extra cat", 0, 1, 3);
+    TEST_CHECK(paged_opens[0] == 1 && paged_opens[1] == 2 && paged_opens[2] == 1);
+    TEST_CHECK(paged_reads - reads_before == 2); /* its header, then one payload */
+    /* Ignored: the current page, out of range, a stale text. */
+    TEST_CHECK(!vjo_post_page(1, generation) && !vjo_post_page(3, generation));
+    TEST_CHECK(!vjo_post_page(-1, generation) && !vjo_post_page(2, generation + 1));
+    TEST_CHECK(pending_cmd == VJO_CMD_NONE && !job_running);
+    /* Rapid presses coalesce into the newest page. */
+    TEST_CHECK(vjo_post_page(2, generation) && vjo_post_page(0, generation));
+    on_command(); TEST_ASSERT(job_page == 0); finish_current_job();
+    check_page("main. cat", 0, 0, 3);
+    TEST_CHECK(vjo_post_page(2, generation)); on_command(); finish_current_job();
+    check_page("third cat", 0, 2, 3);
+    /* A press during a page read supersedes that page. */
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    check_page("extra cat", 0, 1, 3);
+    TEST_CHECK(vjo_post_page(2, generation)); on_command();
+    paged_action = 0 + 1; /* while reading page 2, ask for page 0 */
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && job_page == 0);
+    finish_current_job(); check_page("main. cat", 0, 0, 3);
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    check_page("extra cat", 0, 1, 3);
+    /* Paging never reallocates, recaptures, or needs lookup scratch. */
+    TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(results[0].peak <= first_peak && results[0].size == 64 * 1024 && !results[1].size);
+    TEST_CHECK(local_text_generation == generation);
+
+    /* A new character starts at its best match; pages come with its result. */
+    vjo_post_cursor(3, generation);
+    TEST_CHECK(g_view.dict_page == 0 && g_view.dict_pages == 0 && !vjo_post_page(1, generation));
+    on_command(); finish_current_job();
+    check_page("main. dog", 3, 0, 2); /* third.vjdict has no 犬 */
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    check_page("extra dog", 3, 1, 2);
+    /* Reopening unchanged dialogue shows the same page without reads. */
+    close_overlay(); reads_before = paged_reads; unsigned opens_before = paged_total_opens();
+    open_overlay();
+    TEST_CHECK(!job_running && paged_reads == reads_before && paged_total_opens() == opens_before);
+    check_page("extra dog", 3, 1, 2);
+    /* Closing during a page read drops it; reopening reads that page again. */
+    TEST_CHECK(vjo_post_page(0, generation)); on_command();
+    TEST_ASSERT(job_running); close_overlay(); TEST_CHECK(job_cancelled);
+    job_rc = run_cursor_job(&results[0], &cache_data[0]); job_done = 1; on_job_done();
+    TEST_CHECK(!job_running && !g_view.list);
+    open_overlay(); TEST_ASSERT(job_running && job_cursor_only && job_page == 0);
+    finish_current_job(); check_page("main. dog", 3, 0, 2);
+    TEST_CHECK(vocr_allocs == 1 && user_allocs + heap_allocs == arenas);
+    close_overlay(); mem_free();
+}
+
+static void test_dictionary_count_change_relooks_up_without_ocr(void)
+{
+    paged_setup(3);
+    open_overlay(); finish_current_job();
+    check_page("main. cat", 0, 0, 3);
+    uint32_t generation = local_text_generation;
+    TEST_CHECK(vjo_post_page(2, generation)); on_command(); finish_current_job();
+    check_page("third cat", 0, 2, 3);
+    /* Settings → Dictionaries shown 1: the same text, looked up again. */
+    close_overlay(); loaded.local_dictionary_results = 1;
+    open_overlay();
+    TEST_CHECK(local_text_valid && local_text_generation == generation);
+    TEST_ASSERT(job_running && job_cursor_only && job_page == 0);
+    unsigned opens = paged_total_opens();
+    finish_current_job();
+    check_page("main. cat", 0, 0, 1);
+    TEST_CHECK(!cache_data[0].pages && paged_total_opens() - opens == 3);
+    TEST_CHECK(!vjo_post_page(1, generation) && pending_cmd == VJO_CMD_NONE);
+    /* Back to 2: two pages again, still without OCR or recapture. */
+    close_overlay(); loaded.local_dictionary_results = 2;
+    open_overlay(); finish_current_job();
+    check_page("main. cat", 0, 0, 2);
+    TEST_CHECK(vocr_allocs == 1 && !jpeg_captures && local_text_generation == generation);
+    /* An unchanged count keeps the cached page. */
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    close_overlay(); open_overlay();
+    TEST_CHECK(!job_running); check_page("extra cat", 0, 1, 2);
+    /* A prepared lookup made with the old count is replaced on opening. */
+    close_overlay(); retire_local_text(1); cache_ok = 0; /* as a region change */
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    loaded.local_dictionary_results = 3;
+    open_overlay(); /* reloads config while the prepared lookup finishes */
+    job_done = 1; on_job_done();
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job(); check_page("main. cat", 0, 0, 3);
+    /* One finishing after a reload (e.g. subtitles on) with another count is
+     * not cached for the next opening. */
+    close_overlay(); retire_local_text(1); cache_ok = 0;
+    stable_pending = 1; auto_prefetch();
+    TEST_ASSERT(job_running && job_lookup && job_cfg.local_dictionary_results == 3);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    loaded.local_dictionary_results = 2; apply_config();
+    job_done = 1; on_job_done();
+    TEST_CHECK(!job_running && !cache_ok);
+    open_overlay(); TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job(); check_page("main. cat", 0, 0, 2);
+    TEST_CHECK(vocr_allocs == 3 && !jpeg_captures);
+    close_overlay(); mem_free();
+}
+
+static void test_dictionary_page_after_replaced_file_locates_again(void)
+{
+    paged_setup(3);
+    open_overlay(); finish_current_job();
+    check_page("main. cat", 0, 0, 3);
+    uint32_t generation = local_text_generation;
+    /* extra.vjdict is replaced by a file of another size between pages. */
+    paged_size[1] += 1; cursor_u64(paged_dict[1] + 40, paged_size[1]);
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    TEST_ASSERT(g_view.list && !g_view.list->n_entries && !strcmp(g_view.list->header, "猫犬鳥"));
+    TEST_CHECK(g_view.status_is_error && strstr(g_view.status, "changed") != NULL);
+    TEST_CHECK(g_view.dict_page == 1 && g_view.dict_pages == 3 && !paged_live);
+    /* The next page locates every dictionary again instead of trusting old offsets. */
+    unsigned opens = paged_total_opens();
+    TEST_CHECK(vjo_post_page(2, generation)); on_command(); finish_current_job();
+    TEST_CHECK(paged_total_opens() - opens == 4); /* three to locate, then the page */
+    check_page("third cat", 0, 2, 3);
+    TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
+    check_page("extra cat", 0, 1, 3);
+    TEST_CHECK(vocr_allocs == 1 && local_text_generation == generation);
+    close_overlay(); mem_free();
+}
+
+static void test_dictionary_pages_oom_keeps_text_and_disables_paging(void)
+{
+    paged_setup(3);
+    fail_alloc = 1;
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(g_view.list && !g_view.list->n_entries && !strcmp(g_view.list->header, "猫犬鳥"));
+    TEST_CHECK(g_view.status_is_error && strstr(g_view.status, "Shell UI memory"));
+    TEST_CHECK(!g_view.dict_pages && !paged_total_opens() && !has_result_memory());
+    TEST_CHECK(!vjo_post_page(1, local_text_generation));
+    fail_alloc = 0;
+    vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
+    check_page("main. dog", 3, 0, 2);
+    close_overlay(); mem_free();
+}
+
 static void test_shell_result_oom_preserves_recognition(void)
 {
     reset();
@@ -1143,6 +1388,10 @@ TEST_LIST = {
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_and_region_changes_retire_saved_text", test_character_scene_and_region_invalidate_saved_text},
     {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
+    {"dictionary_pages_read_one_entry_each_in_the_single_arena", test_dictionary_pages_read_one_entry_each},
+    {"dictionary_count_change_looks_up_again_without_OCR", test_dictionary_count_change_relooks_up_without_ocr},
+    {"dictionary_page_after_a_replaced_file_locates_again", test_dictionary_page_after_replaced_file_locates_again},
+    {"dictionary_pages_OOM_keeps_text_and_disables_paging", test_dictionary_pages_oom_keeps_text_and_disables_paging},
     {"Shell_result_OOM_preserves_OCR_sentence_and_dictionary_backoff", test_shell_result_oom_preserves_recognition},
     {"Shell_result_OOM_preserves_maximum_filtered_worker_text", test_shell_result_oom_keeps_max_worker_text},
     {"local_lookup_uses_one_arena_and_network_keeps_two", test_local_lookup_single_arena_and_network_double_buffers},

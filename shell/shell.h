@@ -43,6 +43,8 @@ typedef struct {
     int highlight_mode;       /* whole matched word or selected source character */
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */
     uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
+    int dict_page;            /* local: dictionary page shown or requested at the cursor */
+    int dict_pages;           /* local: dictionaries with an entry there; 0 = unknown */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
@@ -71,6 +73,9 @@ enum {
 void vjo_post_command(int cmd, const VjoRect *rect);
 /* Call without holding the view lock. Stale/closed requests are ignored. */
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation);
+/* Another dictionary's entry at the current cursor (0 <= page < dict_pages).
+ * Call without holding the view lock; returns 0 for an ignored request. */
+int vjo_post_page(int page, uint32_t text_generation);
 
 /* worker.c */
 int vjo_worker_start(void);
