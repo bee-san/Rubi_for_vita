@@ -224,7 +224,7 @@ void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
     pending_cursor_byte = byte_offset;
     pending_cursor_generation = text_generation;
     pending_cmd = VJO_CMD_CURSOR;
-    local_header = (VjoEntryList){local_text, NULL, 0};
+    local_header = (VjoEntryList){.header = local_text};
     g_view.list = &local_header; /* detach entries before their arena is reset */
     g_view.cursor_byte = byte_offset;
     g_view.list_seq++;
@@ -698,7 +698,7 @@ static void start_cursor_job(void)
     job_capture_scene = local_text_scene;
     job_capture_seq = local_text_capture_seq;
     vjo_net_cancel_clear(&net_cancel);
-    local_header = (VjoEntryList){local_text, NULL, 0};
+    local_header = (VjoEntryList){.header = local_text};
     view_publish(1, &local_header, "Looking up words…", 0);
     job_running = 1;
     job_started_us = now_us();
@@ -842,7 +842,7 @@ static void open_overlay(void)
             view_show_cache();
             return;
         }
-        local_header = (VjoEntryList){local_text, NULL, 0};
+        local_header = (VjoEntryList){.header = local_text};
         view_publish(1, &local_header, "Looking up words…", 0);
         /* Opening while the prepared first lookup is still finishing can
          * show that result directly; don't queue the same lookup again. */

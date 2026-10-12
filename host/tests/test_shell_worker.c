@@ -1,6 +1,7 @@
 /* Actual Lens control policy with only Vita scheduling and memory stubbed. */
 #include "acutest.h"
 #include "client.h"
+#include "jpdb.h"
 #include "textfilter.h"
 #define VJO_TEST_MEMORY_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
@@ -625,6 +626,61 @@ static void test_vocr_storage_errors_are_specific(void)
 
 #endif
 
+/* Upstream's furigana strip: only jpdb/jiten lookups carry readings. Local and
+ * Hachidori subtitle jobs stay OCR-only (no result arena) and keep no readings
+ * to draw; a jiten key makes subtitle jobs look the words up for them. */
+static void test_subtitle_readings_need_a_reading_dictionary(void)
+{
+    const char *jp = "{\"tokens\":[[0,0,1,[[\"雨\",\"あめ\"]]]],"
+                     "\"vocabulary\":[[1,2,3,\"雨\",\"あめ\",1000,[\"rain\"],[\"n\"],[\"HLL\"]]]}";
+    VjoDictResult r;
+    VjoEntryList l;
+    reset();
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
+    subtitles = 1;
+    TEST_CHECK(!want_lookup()); /* local dictionary: OCR only while the overlay is closed */
+    cfg.dictionary = loaded.dictionary = VJO_DICT_HACHIDORI;
+    strcpy(cfg.hachidori_host, "192.168.1.2");
+    loaded = cfg;
+    TEST_CHECK(vjo_config_dict_ready(&cfg) && !want_lookup());
+
+    TEST_ASSERT(vjo_jpdb_parse_response(&scratch, jp, strlen(jp), &r) == 0);
+    TEST_ASSERT(vjo_entries_build(&scratch, "雨だ", &r, &l) == 0);
+    vjo_strip_configure(1, &cfg);
+    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
+    vjo_strip_show_readings(&scratch, &l);
+    TEST_CHECK(!g_view.strip_ruby_room && g_view.strip_n_ruby == 0);
+
+    cfg.dictionary = VJO_DICT_JITEN;
+    strcpy(cfg.api_key[VJO_DICT_JITEN], "test-key");
+    loaded = cfg;
+    TEST_CHECK(want_lookup()); /* subtitles show readings: their job looks words up */
+    vjo_strip_configure(1, &cfg);
+    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
+    vjo_strip_show_readings(&scratch, &l);
+    TEST_CHECK(g_view.strip_ruby_room && g_view.strip_n_ruby == 1);
+    TEST_CHECK(g_view.strip_ruby[0].start == 0 && g_view.strip_ruby[0].end == 1 &&
+               !strcmp(g_view.strip_ruby[0].reading, "あめ"));
+    vjo_strip_show("次", VJO_STRIP_SENTENCE, 0); /* a new sentence has no readings */
+    TEST_CHECK(g_view.strip_n_ruby == 0);
+
+    /* Readings are staged in scratch and released; without scratch the
+     * sentence stays and only its readings are left out. */
+    size_t used = scratch.used;
+    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
+    vjo_strip_show_readings(&scratch, &l);
+    TEST_CHECK(g_view.strip_n_ruby == 1 && scratch.used == used);
+    TEST_ASSERT(vjo_arena_alloc(&scratch, vjo_arena_free(&scratch) - 64) != NULL);
+    used = scratch.used;
+    vjo_strip_show("次", VJO_STRIP_SENTENCE, 0);
+    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
+    vjo_strip_show_readings(&scratch, &l);
+    TEST_CHECK(g_view.strip_n_ruby == 0 && !strcmp(g_view.strip_text, "雨だ") && scratch.used == used);
+    subtitles = 0;
+    TEST_CHECK(!want_lookup());
+    vjo_arena_reset(&scratch);
+}
+
 static void test_input_block_denied(void)
 {
     reset();
@@ -1155,6 +1211,7 @@ static void test_local_switch_drains_warm_pool(void)
 #endif
 
 TEST_LIST = {
+    {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},

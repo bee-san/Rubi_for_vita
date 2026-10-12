@@ -125,7 +125,7 @@ static void utf16_source_span(void)
     VjoEntry entry = {};
     entry.hl_start = 5; /* raw UTF-8 bytes, after emoji and CR */
     entry.hl_end = 20; /* all five source characters of the inflected verb */
-    VjoEntryList list = {source, &entry, 1};
+    VjoEntryList list = {source, &entry, 1, NULL};
     uint32_t start = 0, len = 0, cursor_start = 0, cursor_len = 0;
     TEST_ASSERT(vjo_entry_header_range(&list, 0, &start, &len));
     TEST_CHECK(start == 2 && len == 5); /* emoji uses two UTF-16 units; CR omitted */

@@ -364,7 +364,7 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     for (int i = 0; i < n; i++) {
         if (w->seen_dict[i] == m->dict && w->seen_off[i] == m->record.entry_off) {
             if (res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-            res->tokens[res->n_tokens++] = (VjoToken){i, pos16, len16};
+            res->tokens[res->n_tokens++] = (VjoToken){.vocab = i, .pos16 = pos16, .len16 = len16};
             return VJO_OK;
         }
     }
@@ -388,7 +388,7 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     if (!v->meanings) return VJO_E_TOO_LARGE;
     v->meanings[0] = meaning; v->n_meanings = 1;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
-    res->tokens[res->n_tokens++] = (VjoToken){n, pos16, len16};
+    res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16};
     res->n_vocab++;
     return VJO_OK;
 }
