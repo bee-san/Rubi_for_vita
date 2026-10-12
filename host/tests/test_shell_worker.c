@@ -139,9 +139,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
     if (fail_vocr_user) fake_game_result.rc = VJO_E_OOM;
-    else if (!strcmp(fake_game_request.model, VJO_MEIKI_MODEL_NAME)) {
-        fake_game_result.rc = VJO_OK; vocr_frees++;
-    } else {
+    else {
         size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
         VjoOcrImage im = {NULL, raw_state.width, raw_state.height, fake_game_rows, NULL};
@@ -318,9 +316,11 @@ static void test_ocr_config_migration(void)
     VjoConfig c;
     const char old[] = "text_source = hooks\nocr_backend = meiki\n";
     vjo_config_defaults(&c);
+    c.ocr_backend = VJO_OCR_LENS;
     vjo_config_parse(&c, old, sizeof(old)-1);
-    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.ocr_backend == VJO_OCR_MEIKI);
-    TEST_CHECK(c.n_warnings == 1);
+    /* Both removed features fall back to the local screenshot pipeline. */
+    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.ocr_backend == VJO_OCR_VOCR);
+    TEST_CHECK(c.n_warnings == 2);
 }
 
 static void test_changed_dictionary_drops_running_result(void)
@@ -488,29 +488,6 @@ static void test_vocr2_cache_uses_its_own_backend_and_storage(void)
     TEST_CHECK(!cache_ok);
 }
 
-#ifdef VJO_WITH_VOCR
-static void test_meiki_manual_local_policy(void)
-{
-    reset(); cfg.ocr_backend = VJO_OCR_MEIKI; cfg.ocr_mode = VJO_OCR_AUTO;
-    loaded = cfg; subtitles = 1;
-    TEST_CHECK(local_pipeline(&cfg) && !background_wanted());
-    subtitles = 0; set_subtitles(1);
-    TEST_CHECK(!subtitles && !job_running);
-    fake_recognized_text = "日本語";
-    start_job("explicit Meiki opening", 0);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-    TEST_CHECK(!strcmp(fake_game_request.model, VJO_MEIKI_MODEL_NAME));
-    TEST_CHECK(!has_result_memory() && !jpeg_captures && local_text_valid && !strcmp(local_text,"日本語"));
-    job_cancelled=1; ov=OV_OPEN_OLD_JOB;
-    unsigned before=vocr_allocs; on_job_done();
-    TEST_CHECK(!job_running && vocr_allocs==before && strstr(g_view.status,"Close and reopen"));
-    ov=OV_CLOSED; stable_pending=1; state.stable=1; auto_prefetch();
-    TEST_CHECK(!job_running && vocr_allocs==before);
-    fake_recognized_text=NULL;
-    cfg.ocr_backend=VJO_OCR_VOCR; TEST_CHECK(background_wanted());
-}
-#endif
-
 static void test_vocr_config(void)
 {
     VjoConfig c;
@@ -524,7 +501,7 @@ static void test_vocr_config(void)
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
     TEST_CHECK(!strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 3); /* each kept the default */
     TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_NCNN == 1 && VJO_OCR_VOCR == 2 &&
-               VJO_OCR_MEIKI == 3 && VJO_OCR_VOCR2 == 4);
+               VJO_OCR_VOCR2 == 4); /* 3 was Meiki; saved IDs never move */
     const char new_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, new_ini, sizeof(new_ini) - 1);
@@ -813,10 +790,10 @@ static void test_japanese_only_selection_and_config_reload(void)
     generation = local_text_generation;
     vjo_post_cursor(1, generation); on_command(); finish_current_job();
     TEST_CHECK(g_view.cursor_byte == 1);
-    close_overlay(); loaded.ocr_backend = VJO_OCR_MEIKI;
+    close_overlay(); loaded.ocr_backend = VJO_OCR_VOCR2;
     open_overlay();
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_MEIKI && job_cfg.ocr_backend == VJO_OCR_MEIKI);
-    TEST_CHECK(!background_wanted());
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && job_cfg.ocr_backend == VJO_OCR_VOCR2);
+    TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);
     close_overlay(); finish_current_job(); mem_free();
 }
 
@@ -1175,9 +1152,6 @@ TEST_LIST = {
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
-#ifdef VJO_WITH_VOCR
-    {"meiki_is_explicit_manual_local_character_pipeline", test_meiki_manual_local_policy},
-#endif
     {"vocr_config_parses_and_validates", test_vocr_config},
     {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},

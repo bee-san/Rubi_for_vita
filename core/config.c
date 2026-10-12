@@ -146,7 +146,6 @@ const char *vjo_config_default_text(void)
            "\n"
            "; OCR: lens (online) | vocr (on the Vita: vita-vn-ocr, needs a build with it\n"
            "; and its model file; see docs/vita-vn-ocr.md) | ncnn (PP-OCRv5, host tests only)\n"
-           "; meiki: optional manual single-line trial; see docs/meiki-trial.md.\n"
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -484,8 +483,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->ocr_backend = VJO_OCR_NCNN;
         else if (vjo_ieq(val, "vocr"))
             c->ocr_backend = VJO_OCR_VOCR;
-        else if (vjo_ieq(val, "meiki"))
-            c->ocr_backend = VJO_OCR_MEIKI;
+        else if (vjo_ieq(val, "meiki")) {
+            /* Saved by v0.7.6-v0.7.12; the trial engine has been removed. */
+            c->ocr_backend = VJO_OCR_VOCR;
+            warn(c, "%s: Meiki was removed; using %s", key, "vocr");
+        }
         else if (vjo_ieq(val, "vocr2"))
             c->ocr_backend = VJO_OCR_VOCR2;
         else
@@ -557,16 +559,16 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
     const char *values[3];
     size_t i = 0, used = 0;
     unsigned seen = 0;
+    static const char *const backend_values[] = {
+        [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_NCNN] = "ocr_backend = ncnn\n",
+        [VJO_OCR_VOCR] = "ocr_backend = vocr\n", [VJO_OCR_VOCR2] = "ocr_backend = vocr2\n"
+    };
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2) ||
+        (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2 || !backend_values[backend]) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         (len && memchr(text, 0, len)))
         return -1;
-    static const char *const backend_values[] = {
-        "ocr_backend = lens\n", "ocr_backend = ncnn\n", "ocr_backend = vocr\n", "ocr_backend = meiki\n",
-        "ocr_backend = vocr2\n"
-    };
     values[0] = backend_values[backend];
     values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
     values[2] = highlight_mode == VJO_HIGHLIGHT_WORD

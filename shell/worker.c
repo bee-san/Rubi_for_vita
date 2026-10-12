@@ -267,7 +267,7 @@ static int has_result_memory(void)
 
 static int game_ocr_backend(int backend)
 {
-    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2 || backend == VJO_OCR_MEIKI;
+    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2;
 }
 
 static int local_pipeline(const VjoConfig *c)
@@ -439,8 +439,7 @@ static int vocr_consume(void *ud, const VjoState *st)
     VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.ocr_backend == VJO_OCR_MEIKI ? VJO_MEIKI_MODEL_NAME :
-                        job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
+    const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
     size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
     if (!model_len || model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
     sceClibMemcpy(request.model, model, model_len+1);
@@ -469,11 +468,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
     if (out->err.rc != VJO_OK) {
-        if (out->err.rc == VJO_E_OCR_REGION && job_cfg.ocr_backend == VJO_OCR_MEIKI)
-            out->err.detail = "Select one horizontal dialogue line, at most 96 pixels high, for the Meiki trial.";
         if (out->err.rc == VJO_E_OCR_MODEL) {
-            if (job_cfg.ocr_backend == VJO_OCR_MEIKI)
-                out->err.detail = "Meiki weights are missing or invalid. Install the pinned meiki-stream-int8.mnn under ux0:data/VitaJPOverlay/ocr.";
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)result.io_error == 0x80010013u)
                 out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
@@ -552,13 +547,9 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
             if (!out->failed_stage)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
-                out->err.detail = job_cfg.ocr_backend == VJO_OCR_MEIKI
-                    ? "Meiki is unavailable. Install the trial worker and its ABI3 engine at app0:/VitaJPOverlay/meiki/meiki-engine.suprx, then restart the game."
-                    : "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
+                out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
             if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR)
-                out->err.detail = job_cfg.ocr_backend == VJO_OCR_MEIKI
-                    ? "Meiki needs about 27 MiB of free game memory. Try vocr for this game."
-                    : "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
+                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
         goto recognized;
@@ -964,10 +955,6 @@ static int restart_old_job(int has_lookup)
         start_cursor_job();
         return 1;
     }
-    if (cfg.ocr_backend == VJO_OCR_MEIKI) {
-        view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
-        return 1; /* a manual trial never reloads 5.4 MB automatically */
-    }
     start_job(has_lookup ? "result was for an earlier screen" : "the running job was OCR only", 1);
     return 1;
 }
@@ -1020,10 +1007,7 @@ static void on_job_done(void)
         job_cancelled = 0;
         if (ov != OV_CLOSED && game_active()) { /* the overlay waits for this screen's */
             ov = OV_OPEN;
-            if (cfg.ocr_backend == VJO_OCR_MEIKI)
-                view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
-            else
-                start_job("the screen changed during the last one", 1);
+            start_job("the screen changed during the last one", 1);
         } else {
             stable_pending = game_active(); /* only the current game's next screen */
             if (subtitles)
@@ -1135,11 +1119,6 @@ static void on_job_text(void)
 static void set_subtitles(int on)
 {
     if (on) apply_config();
-    if (on && cfg.ocr_backend == VJO_OCR_MEIKI) {
-        subtitles = 0;
-        strip_publish("Meiki is manual only. Select one dialogue line and open the overlay.", VJO_STRIP_ERROR, 0);
-        return;
-    }
     VjoState st;
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
     subtitles = on;
@@ -1334,8 +1313,7 @@ static void on_trigger(void)
  * overlay) and the subtitles' refresh (whatever ocr_mode says). */
 static int background_wanted(void)
 {
-    return cfg.ocr_backend != VJO_OCR_MEIKI &&
-           (subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup())));
+    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup()));
 }
 
 static int background_throttled(void)
