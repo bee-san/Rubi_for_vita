@@ -1189,11 +1189,12 @@
   "bss_increase_detail": "page indices/limit/generation (16 B), two VjoView fields (8 B), two VjoOverlayData fields (16 B), one VjoConfig int in cfg and job_cfg (8 B), overlay page state (8 B), alignment"
  },
  "stack_frames": {
-  "command": "arm-vita-eabi-gcc -O2 -fstack-usage (Shell flags)",
+  "command": "arm-vita-eabi-gcc -O2 -fstack-usage -fcallgraph-info=su (Shell flags)",
   "before_bytes": {
    "vjo_overlay_lookup_at": 80,
    "vjo_local_lookup_at": 560,
-   "open_dictionaries": 464
+   "open_dictionaries": 464,
+   "next_name": 24
   },
   "after_bytes": {
    "vjo_overlay_lookup_at": 88,
@@ -1205,7 +1206,12 @@
    "vjo_local_read_page": 448,
    "read_entry": 56
   },
-  "note": "Deepest selected lookup chain: 1,104 -> 1,152 bytes on the 64 KiB network thread; a page read uses 576."
+  "note": "Worst-case chains excluding the platform file callbacks (same in both): 1,128 -> 1,152 bytes for a lookup on the 64 KiB network thread; 624 bytes for a page change.",
+  "worst_chains": {
+   "before": "vjo_overlay_lookup_at 80 > vjo_local_lookup_at 560 > open_dictionaries 464 > next_name 24 = 1,128",
+   "after_lookup": "vjo_overlay_lookup_at 88 > vjo_local_lookup_pages 576 > open_dictionaries 384 > check_header 104 = 1,152",
+   "after_page": "vjo_overlay_lookup_page 72 > vjo_local_read_page 448 > check_header 104 = 624"
+  }
  },
  "vita3k": {
   "version": "Vita3K v0.2.1 4169-69cbf542 (continuous AppImage, run in an Ubuntu 26.04 container: needs glibc 2.43)",
