@@ -5,9 +5,11 @@
 #include "../../game_ocr/main.c"
 
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
+static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char pixels[200*60*4];
-static unsigned allocations, frees, reads_count, bytes_read, thread_creates;
-static int memory_live, alloc_failure, base_failure, free_failure, close_failure;
+static unsigned allocations, frees, reads_count, bytes_read, thread_creates, weight_allocations, weight_frees;
+static int memory_live, alloc_failure, base_failure, free_failure, close_failure, weights_live;
+static unsigned live_bytes, job_block, weights_block;
 static int join_failure, start_failure, delete_failure, budget_failure, cancel_reads;
 static int available, cancel_job, short_reads, open_failure, bad_read;
 static FILE *model;
@@ -19,20 +21,37 @@ static uint64_t clock_value;
 
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
+/* Free USER memory as the game sees it: what remains after the worker's blocks. */
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
-{ TEST_CHECK(out->size == sizeof(*out)); out->size_user = available; return budget_failure ? -1 : 0; }
+{ TEST_CHECK(out->size == sizeof(*out)); out->size_user = available < 0 ? available : available - (int)live_bytes; return budget_failure ? -1 : 0; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
-    TEST_CHECK(!strcmp(name, "VjoGameVocr") && type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
-    TEST_CHECK(!(size&4095) && size <= sizeof(workspace) && !memory_live);
+    TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(size&4095));
+    if (!strcmp(name, "VjoGameVocrWeights")) { /* resident verified weights, at most one block */
+        TEST_CHECK(!weights_live && size <= sizeof(weights_memory));
+        weight_allocations++;
+        if (alloc_failure) return -1;
+        weights_live = 1; weights_block = size; live_bytes += size; return 10;
+    }
+    TEST_CHECK(!strcmp(name, "VjoGameVocr") && size <= sizeof(workspace) && !memory_live);
     allocations++;
     if (alloc_failure) return -1;
-    memory_live = 1; return 9;
+    memory_live = 1; job_block = size; live_bytes += size; return 9;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
-{ TEST_CHECK(uid == 9 && memory_live); *base = base_failure ? NULL : workspace; return base_failure ? -1 : 0; }
+{
+    if (uid == 10) { TEST_CHECK(weights_live); *base = weights_memory; return 0; }
+    TEST_CHECK(uid == 9 && memory_live); *base = base_failure ? NULL : workspace; return base_failure ? -1 : 0;
+}
 int sceKernelFreeMemBlock(SceUID uid)
-{ TEST_CHECK(uid == 9 && memory_live); if (free_failure) return -1; memory_live = 0; frees++; return 0; }
+{
+    if (uid == 10) {
+        TEST_CHECK(weights_live); if (free_failure) return -1;
+        weights_live = 0; weight_frees++; live_bytes -= weights_block; return 0;
+    }
+    TEST_CHECK(uid == 9 && memory_live); if (free_failure) return -1;
+    memory_live = 0; frees++; live_bytes -= job_block; return 0;
+}
 SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
 { TEST_CHECK(stack == 32*1024 && entry == worker_main); thread_creates++; return 20; }
 int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return start_failure ? -1 : 0; }
@@ -51,7 +70,9 @@ int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t n, void *dst)
 { TEST_CHECK(seq == 12 && row < 60 && n <= 60-row); memcpy(dst, pixels+row*200*4, n*200*4); return (int)n; }
 SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 { user_open_calls++; return (int)0x80010013u; /* Physical game's ux0 is unavailable. */ }
-int vjoOcrModelOpen(uint32_t seq)
+static uint64_t model_mtime = 0x1234567;
+static int model_stat_error;
+int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
 {
     if (open_busy) return VJO_ERR_BUSY;
     if (open_failure) return -123;
@@ -63,11 +84,14 @@ int vjoOcrModelOpen(uint32_t seq)
         TEST_ASSERT(fwrite(bytes, 1, sizeof(bytes), model) == sizeof(bytes));
     }
     TEST_ASSERT(!fseek(model, 0, SEEK_END));
-    return (int)ftell(model);
+    int size = (int)ftell(model);
+    if (info) *info = (VjoGameOcrModelInfo){sizeof(*info), (uint32_t)size, model_stat_error, 0,
+                                            model_stat_error ? 0 : model_mtime};
+    return size;
 }
 int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t n, void *out)
 {
-    TEST_CHECK(seq == 12 && model && n <= 8192);
+    TEST_CHECK(seq == 12 && model && n <= VJO_GAME_OCR_MODEL_CHUNK);
     if (read_busy) return VJO_ERR_BUSY;
     TEST_ASSERT(!fseek(model, (long)offset, SEEK_SET));
     reads_count++;
@@ -82,7 +106,10 @@ int vjoOcrModelClose(uint32_t seq)
 static VjoGameOcrRequest setup(void)
 {
     if (model) { fclose(model); model = NULL; }
-    worker = workspace_uid = -1;
+    worker = workspace_uid = weights_uid = -1;
+    resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
+    weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
+    model_mtime = 0x1234567; model_stat_error = 0;
     model_owned = 0; model_seq = 0;
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     allocations = frees = reads_count = bytes_read = thread_creates = 0;

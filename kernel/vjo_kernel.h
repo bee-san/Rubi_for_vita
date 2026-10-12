@@ -26,6 +26,7 @@
 typedef struct {
     SceUID evf;    /* public events (VJO_EV_*) */
     SceUID ievf;   /* internal events (IEV_*) */
+    SceUID mevf;   /* MEV_DONE: a model operation finished (game_ocr.c); its syscalls wait on it */
     SceUID lock;   /* mutex: buffers and capture */
     SceUID game_lock; /* mutex: game_pid, game_active, prev_game_pid changes (lifecycle.c) */
 

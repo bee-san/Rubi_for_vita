@@ -440,9 +440,11 @@ static void delete_sync_objects(void)
         ksceKernelDeleteMutex(g.lock);
     if (g.ievf > 0)
         ksceKernelDeleteEventFlag(g.ievf);
+    if (g.mevf > 0)
+        ksceKernelDeleteEventFlag(g.mevf);
     if (g.evf > 0)
         ksceKernelDeleteEventFlag(g.evf);
-    g.game_lock = g.lock = g.ievf = g.evf = 0;
+    g.game_lock = g.lock = g.ievf = g.mevf = g.evf = 0;
 }
 
 static void release_hooks(void)
@@ -464,9 +466,11 @@ int module_start(SceSize argc, const void *args)
     g.input_us32 = g.input_edge_us32 = (uint32_t)(ksceKernelGetSystemTimeWide() - 3600000000LL); /* none yet */
     g.evf = ksceKernelCreateEventFlag("VjoEvents", SCE_EVENT_WAITMULTIPLE, 0, NULL);
     g.ievf = ksceKernelCreateEventFlag("VjoInternal", 0, 0, NULL);
+    /* The game worker's model syscalls wait here for the kernel worker. */
+    g.mevf = ksceKernelCreateEventFlag("VjoModelDone", SCE_EVENT_WAITMULTIPLE, 0, NULL);
     g.lock = ksceKernelCreateMutex("VjoLock", 0, 0, NULL);
     g.game_lock = ksceKernelCreateMutex("VjoGameLock", 0, 0, NULL);
-    if (g.evf < 0 || g.ievf < 0 || g.lock < 0 || g.game_lock < 0) {
+    if (g.evf < 0 || g.ievf < 0 || g.mevf < 0 || g.lock < 0 || g.game_lock < 0) {
         delete_sync_objects();
         return SCE_KERNEL_START_FAILED;
     }

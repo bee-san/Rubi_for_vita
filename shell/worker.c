@@ -475,10 +475,15 @@ static int vocr_consume(void *ud, const VjoState *st)
     __sync_synchronize();
     job_captured = 1;
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_cancelled, NULL, 60000000);
-    vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u, find=%u ms load=%u ms recognize=%u ms io=0x%08X cleanup=%d",
+    /* weights: read = from the card and SHA-256 checked, resident = kept from
+     * an earlier job (file unchanged); resident = bytes the game keeps after it. */
+    static const char *const weights[] = {"none", "read", "resident"};
+    vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
+            "find=%u ms load=%u ms recognize=%u ms io=0x%08X stat=0x%08X cleanup=%d",
             rc, model, st->width, st->height, result->lines, result->workspace_bytes,
+            result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
             result->find_us/1000, result->load_us/1000, result->recognize_us/1000,
-            (unsigned)result->io_error, result->cleanup_status);
+            (unsigned)result->io_error, (unsigned)result->stat_error, result->cleanup_status);
     return rc;
 }
 

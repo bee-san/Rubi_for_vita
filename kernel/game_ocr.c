@@ -4,6 +4,7 @@
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
 #include <psp2kern/io/fcntl.h>
+#include <psp2kern/io/stat.h>
 #include <taihen.h>
 #include "vjo_kernel.h"
 #include "game_ocr.h"
@@ -21,11 +22,16 @@ static struct {
     uint32_t seq, offset, bytes, size;
     SceUID pid, fd;
     int phase, operation, rc, closing, orphan;
+    int stat_rc;       /* Open: the modification-time query's native error, or 0 */
     uint64_t retry_us;
+    uint64_t mtime;    /* Open: packed modification time, 0 if unknown */
     char path[VJO_GAME_OCR_MODEL_DIR_BYTES];
 } model_io;
 /* One kernel staging buffer; weights and inference remain in game USER_RW. */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
+/* A model syscall waits this long for the kernel worker before answering
+ * BUSY; the game then yields and repeats it, as before. */
+#define MODEL_SYSCALL_WAIT_US 50000u
 
 static void model_reset_locked(void)
 {
@@ -365,111 +371,171 @@ static int model_caller_locked(SceUID pid, uint32_t seq, int cleanup)
     return 0;
 }
 
-int vjoOcrModelOpen(uint32_t seq)
+/* The kernel worker finished a model operation, or the time is up: waits
+ * without g.lock until deadline. 0: there is nothing to wait on. */
+static int model_wait(uint64_t deadline)
 {
-    uint32_t state;
-    SceUID pid = ksceKernelGetProcessId();
-    int rc;
-    ENTER_SYSCALL(state);
-    VJO_LOCK();
-    rc = model_caller_locked(pid, seq, 0);
-    if (rc) goto out;
+    uint64_t now = (uint64_t)ksceKernelGetSystemTimeWide();
+    unsigned int bits = 0;
+    SceUInt timeout;
+    if (g.mevf <= 0 || now >= deadline) return 0;
+    timeout = (SceUInt)(deadline - now);
+    return ksceKernelWaitEventFlag(g.mevf, MEV_DONE, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
+                                   &bits, &timeout) >= 0;
+}
+
+/* SceDateTime as one number, each field masked to its range. */
+static uint64_t pack_time(const SceDateTime *t)
+{
+    return ((uint64_t)(t->year & 0xFFFu) << 46) | ((uint64_t)(t->month & 0xFu) << 42) |
+           ((uint64_t)(t->day & 0x1Fu) << 37) | ((uint64_t)(t->hour & 0x1Fu) << 32) |
+           ((uint64_t)(t->minute & 0x3Fu) << 26) | ((uint64_t)(t->second & 0x3Fu) << 20) |
+           (uint64_t)(t->microsecond & 0xFFFFFu);
+}
+
+static int model_info_out_locked(VjoGameOcrModelInfo *info)
+{
+    VjoGameOcrModelInfo out;
+    if (!info) return 0;
+    memset(&out, 0, sizeof(out));
+    out.size = sizeof(out);
+    out.bytes = model_io.size;
+    out.stat_rc = model_io.stat_rc;
+    out.mtime = model_io.mtime;
+    return ksceKernelMemcpyKernelToUser(info, &out, sizeof(out)) < 0 ? VJO_ERR_COPY : 0;
+}
+
+static int model_open_locked(SceUID pid, uint32_t seq, VjoGameOcrModelInfo *info)
+{
+    int rc = model_caller_locked(pid, seq, 0);
+    if (rc) return rc;
     if (model_io.seq) {
-        if (model_io.seq != seq || model_io.pid != pid) rc = VJO_ERR_BUSY;
-        else if (model_io.closing) rc = VJO_ERR_CANCELLED;
-        else if (model_io.phase == MODEL_DONE && model_io.operation == MODEL_OPEN) {
+        if (model_io.seq != seq || model_io.pid != pid) return VJO_ERR_BUSY;
+        if (model_io.closing) return VJO_ERR_CANCELLED;
+        if (model_io.phase == MODEL_DONE && model_io.operation == MODEL_OPEN) {
             rc = model_io.rc;
             model_io.phase = MODEL_IDLE;
         } else if (model_io.phase == MODEL_IDLE && model_io.fd >= 0) rc = (int)model_io.size;
-        else rc = VJO_ERR_BUSY;
-    } else {
-        uint32_t size = model_size(request.model);
-        if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) { rc = VJO_ERR_ARG; goto out; }
-        model_io.seq = seq;
-        model_io.pid = pid;
-        model_io.size = size;
-        memcpy(model_io.path, VJO_VOCR_MODEL_ROOT "/", sizeof(VJO_VOCR_MODEL_ROOT));
-        /* Both strings are bounded and already NUL-validated by Submit. */
-        memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), request.model, sizeof(request.model));
-        model_io.operation = MODEL_OPEN;
-        model_io.phase = MODEL_QUEUED;
-        model_wake_locked();
-        rc = VJO_ERR_BUSY;
+        else return VJO_ERR_BUSY;
+        /* A failed copy can be repeated: the open file still reports itself. */
+        if (rc > 0 && model_info_out_locked(info)) rc = VJO_ERR_COPY;
+        return rc;
     }
-out:
-    VJO_UNLOCK();
+    uint32_t size = model_size(request.model);
+    if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
+    model_io.seq = seq;
+    model_io.pid = pid;
+    model_io.size = size;
+    memcpy(model_io.path, VJO_VOCR_MODEL_ROOT "/", sizeof(VJO_VOCR_MODEL_ROOT));
+    /* Both strings are bounded and already NUL-validated by Submit. */
+    memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), request.model, sizeof(request.model));
+    model_io.operation = MODEL_OPEN;
+    model_io.phase = MODEL_QUEUED;
+    model_wake_locked();
+    return VJO_ERR_BUSY;
+}
+
+int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
+{
+    uint32_t state;
+    SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
+    int rc;
+    ENTER_SYSCALL(state);
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = model_open_locked(pid, seq, info);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
     EXIT_SYSCALL(state);
     return rc;
+}
+
+static int model_read_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, void *dst)
+{
+    int rc = model_caller_locked(pid, seq, 0);
+    if (rc) return rc;
+    if (model_io.seq != seq || model_io.pid != pid || model_io.fd < 0 ||
+        !dst || !bytes || bytes > sizeof(model_stage) || offset > model_io.size ||
+        bytes > model_io.size - offset) return VJO_ERR_ARG;
+    if (model_io.closing) return VJO_ERR_CANCELLED;
+    if (model_io.phase != MODEL_IDLE) {
+        if (model_io.operation != MODEL_READ || offset != model_io.offset || bytes != model_io.bytes)
+            return VJO_ERR_ARG;
+        if (model_io.phase != MODEL_DONE) return VJO_ERR_BUSY;
+        if (model_io.rc > 0 &&
+            ksceKernelMemcpyKernelToUser(dst, model_stage, (SceSize)model_io.rc) < 0)
+            return VJO_ERR_COPY; /* The exact completed chunk remains retryable. */
+        model_io.phase = MODEL_IDLE;
+        return model_io.rc;
+    }
+    model_io.offset = offset;
+    model_io.bytes = bytes;
+    model_io.operation = MODEL_READ;
+    model_io.phase = MODEL_QUEUED;
+    model_wake_locked();
+    return VJO_ERR_BUSY;
 }
 
 int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t bytes, void *dst)
 {
     uint32_t state;
     SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
     int rc;
     ENTER_SYSCALL(state);
-    VJO_LOCK();
-    rc = model_caller_locked(pid, seq, 0);
-    if (rc) goto out;
-    if (model_io.seq != seq || model_io.pid != pid || model_io.fd < 0 ||
-        !dst || !bytes || bytes > sizeof(model_stage) || offset > model_io.size ||
-        bytes > model_io.size - offset) { rc = VJO_ERR_ARG; goto out; }
-    if (model_io.closing) { rc = VJO_ERR_CANCELLED; goto out; }
-    if (model_io.phase != MODEL_IDLE) {
-        if (model_io.operation != MODEL_READ || offset != model_io.offset || bytes != model_io.bytes)
-            rc = VJO_ERR_ARG;
-        else if (model_io.phase != MODEL_DONE) rc = VJO_ERR_BUSY;
-        else if (model_io.rc > 0 &&
-                 ksceKernelMemcpyKernelToUser(dst, model_stage, (SceSize)model_io.rc) < 0)
-            rc = VJO_ERR_COPY; /* The exact completed chunk remains retryable. */
-        else { rc = model_io.rc; model_io.phase = MODEL_IDLE; }
-    } else {
-        model_io.offset = offset;
-        model_io.bytes = bytes;
-        model_io.operation = MODEL_READ;
-        model_io.phase = MODEL_QUEUED;
-        model_wake_locked();
-        rc = VJO_ERR_BUSY;
-    }
-out:
-    VJO_UNLOCK();
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = model_read_locked(pid, seq, offset, bytes, dst);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
     EXIT_SYSCALL(state);
     return rc;
+}
+
+static int model_close_locked(SceUID pid, uint32_t seq)
+{
+    int rc = model_caller_locked(pid, seq, 1);
+    if (rc) return rc;
+    if (!model_io.seq) return 0;
+    if (model_io.seq != seq || model_io.pid != pid) return VJO_ERR_ARG;
+    if (model_io.phase == MODEL_DONE && model_io.operation == MODEL_CLOSE && model_io.rc < 0) {
+        model_io.phase = MODEL_IDLE; /* Retain FD; a subsequent Close retries. */
+        return model_io.rc;
+    }
+    if (!model_io.closing || model_io.phase == MODEL_IDLE) {
+        model_io.closing = 1;
+        model_io.retry_us = 0; /* Explicit cleanup retry need not wait for orphan backoff. */
+        model_wake_locked();
+    }
+    return VJO_ERR_BUSY;
 }
 
 int vjoOcrModelClose(uint32_t seq)
 {
     uint32_t state;
     SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
     int rc;
     ENTER_SYSCALL(state);
-    VJO_LOCK();
-    rc = model_caller_locked(pid, seq, 1);
-    if (rc) goto out;
-    if (!model_io.seq) rc = 0;
-    else if (model_io.seq != seq || model_io.pid != pid) rc = VJO_ERR_ARG;
-    else if (model_io.phase == MODEL_DONE && model_io.operation == MODEL_CLOSE && model_io.rc < 0) {
-        rc = model_io.rc;
-        model_io.phase = MODEL_IDLE; /* Retain FD; a subsequent Close retries. */
-    } else {
-        if (!model_io.closing || model_io.phase == MODEL_IDLE) {
-            model_io.closing = 1;
-            model_io.retry_us = 0; /* Explicit cleanup retry need not wait for orphan backoff. */
-            model_wake_locked();
-        }
-        rc = VJO_ERR_BUSY;
-    }
-out:
-    VJO_UNLOCK();
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = model_close_locked(pid, seq);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
     EXIT_SYSCALL(state);
     return rc;
 }
 
 void game_ocr_model_tick(void)
 {
-    int operation, rc;
+    int operation, rc, stat_rc = 0;
     SceUID fd;
     uint32_t offset, bytes, size;
+    uint64_t mtime = 0;
     char path[sizeof(model_io.path)];
     VJO_LOCK();
     sync_locked();
@@ -499,6 +565,15 @@ void game_ocr_model_tick(void)
         if (fd >= 0) {
             SceOff length = ksceIoLseek(fd, 0, SCE_SEEK_END);
             rc = length < 0 ? (int)length : length == size ? (int)size : VJO_ERR_FORMAT;
+            if (rc > 0) {
+                /* The game keys its resident weights on this. Without it they
+                 * are read and checked again for every job, as before. */
+                SceIoStat st;
+                memset(&st, 0, sizeof(st));
+                stat_rc = ksceIoGetstatByFd(fd, &st);
+                if (stat_rc < 0) mtime = 0;
+                else { stat_rc = 0; mtime = pack_time(&st.st_mtime); }
+            }
         }
     } else if (operation == MODEL_READ) {
         rc = ksceIoPread(fd, model_stage, bytes, (SceOff)offset);
@@ -513,6 +588,10 @@ void game_ocr_model_tick(void)
     model_io.fd = fd;
     model_io.rc = rc;
     model_io.phase = MODEL_DONE;
+    if (operation == MODEL_OPEN) {
+        model_io.stat_rc = stat_rc;
+        model_io.mtime = mtime;
+    }
     sync_locked();
     if (operation == MODEL_CLOSE && rc >= 0) model_reset_locked();
     else if (operation == MODEL_CLOSE) {
@@ -523,4 +602,6 @@ void game_ocr_model_tick(void)
         }
     } else if (model_io.closing || model_io.orphan) model_wake_locked();
     VJO_UNLOCK();
+    /* Wake a model syscall waiting for this result (none may be). */
+    if (g.mevf > 0) ksceKernelSetEventFlag(g.mevf, MEV_DONE);
 }

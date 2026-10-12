@@ -57,20 +57,29 @@ A missing or corrupt candidate reports an error without changing engines.
    and never rejects a region. A region with no line ends here: the weights
    file is not read.
 3. The existing kernel worker opens the pinned model from
-   `ux0:data/VitaJPOverlay/ocr` and stages at most 8 KiB per read. The game
-   copies those chunks into its workspace, checks size and SHA-256 against
-   the pinned release asset, and validates the runtime model.
+   `ux0:data/VitaJPOverlay/ocr` and reports its length and modification
+   time. The first job, and any job after the file changed, copies it in
+   32 KiB reads into its own weights block and checks size and SHA-256
+   against the pinned release asset. Later jobs of the same game reuse those
+   verified weights without reading the card again. The runtime validates the
+   model either way.
 4. Each line is recognized (int8 weights, int32 sums, NEON); lines of dark
    text are inverted first, as the model was trained.
-5. The workspace is freed before the dictionary lookup and before anything is
-   shown. A failed or cancelled job shows no partial text.
+5. The job workspace is freed before the dictionary lookup and before anything
+   is shown; the verified weights stay for the next job (see below). A failed
+   or cancelled job shows no partial text.
 
-All of a job's memory is one block sized exactly for its region:
+A job's memory is two blocks: the weights, kept between jobs, and a
+workspace sized exactly for its region and freed after the job:
 
 ```
-weights + max(line finder arena, recognizer arena) + region width × height
-+ the runtime's two structs (3,760 bytes on the Vita)
+weights (kept)
+max(line finder arena, recognizer arena) + region width × height
++ the runtime's two structs (3,760 bytes on the Vita)          (per job)
 ```
+
+The table's totals are the two together, the peak of a job; between jobs
+only the weights remain, page-rounded.
 
 | model (`vocr_model`) | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
 |---|---|---|---|---|
@@ -96,7 +105,9 @@ A 333 MiB game allocation mode is not enabled or required by this release.
 Rows travel through a role-restricted kernel syscall tied to the job's game,
 capture sequence and foreground generation. A cancelled/suspended worker
 cannot read a newer capture or publish old results. Model reads finish short
-reads in at most 8 KiB calls and check cancellation between calls. The kernel
+reads in at most 32 KiB calls and check cancellation between calls. Each call
+waits up to 50 ms in the kernel for the worker thread's result; only a slower
+read returns BUSY, which the game repeats after a 1 ms yield. The kernel
 allows only FL10, H15, F20 or the separate VOCR2 trial model under the exact directory above, with their pinned
 file lengths; it does not accept a caller-supplied file path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -106,9 +117,15 @@ remains available after cancellation or Shell restart, and process exit makes
 the kernel close an orphaned descriptor itself. A timeout or failed Close
 retains ownership until cleanup succeeds; a new job cannot replace it.
 The existing kernel worker performs file I/O outside the shared lock, with one
-static 8 KiB buffer and no additional thread or full-model allocation. The log
-records the game worker's OCR timings, workspace, I/O error and cleanup status.
-The model and workspace are freed before results return to the Shell. Local
+static 32 KiB buffer and no additional thread or full-model allocation. The log
+records the game worker's OCR timings, workspace, whether the weights were
+read or already resident, the resident bytes, I/O and stat errors and cleanup
+status. The workspace is freed before results return to the Shell. The
+verified weights are released when a job's memory check fails, when the file is
+missing, changed in size or corrupt, when another model is selected, when the
+game stops being the active one (suspend, another app, title disabled) and when
+the game exits. If the kernel cannot read the file's modification time, every
+job reads and checks the weights again, as before. Local
 lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
 view/cache is retired before a local job begins, so a second arena is unnecessary;
 network jobs retain their two arenas. Local OCR-only/subtitle jobs use a static
@@ -278,9 +295,11 @@ copied, and the settings above. Close other apps first.
    shows: the text, or an error message.
 4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` with
    `tools/install_ftp.sh --status VITA_IP`. A completed job logs
-   `game vocr rc=... FL10_w8.vocr: WxH, lines=N USER workspace=B,
-   find=X ms load=Y ms recognize=Z ms io=0x... cleanup=...`.
-   Success requires `rc=0` and `cleanup=0`. Record the shown text and a photo
+   `game vocr rc=... FL10_w8.vocr: WxH, lines=N USER workspace=B
+   weights=read|resident resident=R, find=X ms load=Y ms recognize=Z ms
+   io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and `cleanup=0`.
+   The first text-bearing job of a game logs `weights=read`; later ones log
+   `weights=resident` with a much smaller `load`. Record the shown text and a photo
    beside this log; host tests alone cannot prove recognition on the Vita.
 5. **Errors.** For game OCR memory errors, select FL10 and a tighter dialogue
    region. A Shell UI memory error after successful recognition preserves text
@@ -289,7 +308,7 @@ copied, and the settings above. Close other apps first.
    For an unavailable worker, check its `*ALL` registration and restart the
    game. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.
-   Install all three API 13 plugins together and reboot before testing.
+   Install all three API 14 plugins together and reboot before testing.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load` and
    `recognize` ms. The estimate for H15 is 166-302 ms per 640-px line at
    444 MHz and about 1.33× that at the default 333 MHz.

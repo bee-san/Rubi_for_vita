@@ -1,6 +1,7 @@
 /* vita-vn-ocr backend (vocr_ocr.h): region -> grey -> vocr_find_lines ->
- * vocr_run per line, in one workspace. The runtime (vocr.c, vocr_lines.c) is
- * bee-san/vita-vn-ocr's, at the commit cmake/VocrOCR.cmake pins. */
+ * verified weights (resident between jobs, or one-shot) -> vocr_run per line.
+ * The runtime (vocr.c, vocr_lines.c) is bee-san/vita-vn-ocr's, at the commit
+ * cmake/VocrOCR.cmake pins. */
 #include "vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
 
@@ -13,6 +14,10 @@
 /* The int8 assets of github.com/bee-san/vita-vn-ocr release v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
  * default 4-frame tiles and 16-frame head batches, any line width. */
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
+#include VJO_VOCR_TEST_MODELS
+#else
 static const VjoVocrModel models[] = {
     {"H15_w8.vocr", VJO_VOCR_H15_BYTES,
      {0x31,0x6e,0xbc,0x37,0x7e,0xc3,0x45,0x20,0x44,0x09,0x91,0xc5,0x08,0x51,0x99,0xd8,
@@ -35,9 +40,12 @@ static const VjoVocrModel models[] = {
      124832, VOCR_LINES_TEXTBOX},
 #endif
 };
+#endif /* VJO_VOCR_TEST_MODELS */
 #define N_MODELS (sizeof(models) / sizeof(models[0]))
 
 #define ALIGN16(x) (((x) + (size_t)15) & ~(size_t)15)
+/* Weights are read and hashed in pieces of this size: the game worker's kernel
+ * broker stages exactly one piece per request (VJO_GAME_OCR_MODEL_CHUNK). */
 #define READ_CHUNK 32768u
 
 const VjoVocrModel *vjo_vocr_models(unsigned *count)
@@ -54,10 +62,11 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
     return NULL;
 }
 
-/* Workspace: [weights | finder, then recognizer arena | vocr_model, vocr_ctx | grey region].
- * Before the weights are read, their space holds the RGBA rows being copied. */
+/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx | grey region].
+ * Before the finder runs, the arena holds the RGBA rows being copied. The
+ * one-shot form puts the weights in front of it. */
 typedef struct {
-    size_t model_off, scratch_off, structs_off, grey_off, total;
+    size_t scratch_off, structs_off, grey_off, total;
     size_t scratch, finder;
 } Layout;
 
@@ -66,18 +75,24 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     if (!m || !w || !h || w > VJO_OCR_MAX_WIDTH || h > VJO_OCR_MAX_HEIGHT) return -1;
     l->finder = vocr_lines_arena_bytes(w, h);
     l->scratch = ALIGN16(l->finder > m->arena_bytes ? l->finder : m->arena_bytes);
-    l->model_off = 0;
-    l->scratch_off = ALIGN16(m->bytes);
-    l->structs_off = l->scratch_off + l->scratch;
+    l->scratch_off = 0;
+    l->structs_off = l->scratch;
     l->grey_off = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
     l->total = l->grey_off + ALIGN16((size_t)w * h);
     return 0;
 }
 
-size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height)
+size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
 {
     Layout l;
     return layout(vjo_vocr_model(model), width, height, &l) < 0 ? 0 : l.total;
+}
+
+size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height)
+{
+    const VjoVocrModel *m = vjo_vocr_model(model);
+    Layout l;
+    return layout(m, width, height, &l) < 0 ? 0 : ALIGN16(m->bytes) + l.total;
 }
 
 static int cancelled(const VjoOcrImage *im)
@@ -120,39 +135,96 @@ static int read_grey(const VjoOcrImage *im, unsigned char *rgba, size_t cap, uns
     return VJO_OK;
 }
 
-/* Reads model_dir/<name> into dst after checking its size, and its SHA-256
- * while reading; cancellation is checked between chunks. */
-static int load_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
-                        unsigned char *dst, const VjoOcrImage *im)
+int vjo_vocr_resident_drop(VjoVocrResident *r)
+{
+    if (!r) return 0;
+    r->model = NULL;
+    r->size = r->stamp = 0;
+    if (!r->data) return 0;
+    if (r->release && r->release(r->ud)) return -1;
+    r->data = NULL;
+    r->capacity = 0;
+    return 0;
+}
+
+/* rc, after releasing the resident memory; VJO_E_OCR_UNAVAILABLE if that failed. */
+static int drop_with(VjoVocrResident *r, int rc)
+{
+    return vjo_vocr_resident_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
+}
+
+/* Reads the whole open file into dst and checks its SHA-256 while reading;
+ * cancellation is checked between pieces. */
+static int read_verified(const VjoFile *file, const VjoVocrModel *m, unsigned char *dst,
+                         const VjoOcrImage *im)
+{
+    br_sha256_context hash;
+    unsigned char digest[32];
+    br_sha256_init(&hash);
+    for (size_t off = 0; off < m->bytes;) {
+        size_t n = m->bytes - off < READ_CHUNK ? m->bytes - off : READ_CHUNK;
+        if (cancelled(im)) return VJO_E_CANCELLED;
+        if (file->read(file->ctx, off, dst + off, n) < 0)
+            return cancelled(im) ? VJO_E_CANCELLED : VJO_E_OCR_MODEL;
+        br_sha256_update(&hash, dst + off, n);
+        off += n;
+    }
+    br_sha256_out(&hash, digest);
+    return memcmp(digest, m->sha256, sizeof(digest)) ? VJO_E_OCR_MODEL : VJO_OK;
+}
+
+/* Verified weights of m in r->data. The file is always opened (its size and
+ * stamp decide); it is read and hashed again only if they changed, the stamp
+ * is unknown, or no verified copy is held. */
+static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
+                            VjoVocrResident *r, const VjoOcrImage *im, VjoVocrStats *st)
 {
     char path[256];
     size_t dn = strlen(dir), fn = strlen(m->name);
     VjoFile file;
-    br_sha256_context hash;
-    unsigned char digest[32];
-    int rc = VJO_OK;
-    if (!dn || dn + 1 + fn >= sizeof(path)) return VJO_E_OCR_MODEL;
+    int rc;
+    /* Another model's weights: never hold two. */
+    if (r->model != m && vjo_vocr_resident_drop(r)) return VJO_E_OCR_UNAVAILABLE;
+    if (!dn || dn + 1 + fn >= sizeof(path)) return drop_with(r, VJO_E_OCR_MODEL);
     memcpy(path, dir, dn);
     path[dn] = '/';
     memcpy(path + dn + 1, m->name, fn + 1);
     memset(&file, 0, sizeof(file));
-    if (!p->file_open || p->file_open(p->ud, path, &file) < 0) return VJO_E_OCR_MODEL;
+    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
+        /* A cancelled check proves nothing about the file: keep verified weights. */
+        return cancelled(im) ? VJO_E_CANCELLED : drop_with(r, VJO_E_OCR_MODEL);
     if (file.size != m->bytes || !file.read || !file.close) {
         if (file.close) file.close(file.ctx);
-        return VJO_E_OCR_MODEL;
+        return drop_with(r, VJO_E_OCR_MODEL);
     }
-    br_sha256_init(&hash);
-    for (size_t off = 0; off < m->bytes;) {
-        size_t n = m->bytes - off < READ_CHUNK ? m->bytes - off : READ_CHUNK;
-        if (cancelled(im)) { rc = VJO_E_CANCELLED; break; }
-        if (file.read(file.ctx, off, dst + off, n) < 0) { rc = VJO_E_OCR_MODEL; break; }
-        br_sha256_update(&hash, dst + off, n);
-        off += n;
+    if (r->model == m && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
+        file.close(file.ctx);
+        st->model_cached = 1;
+        return VJO_OK;
     }
+    /* From here until the hash matches, the memory holds no weights. */
+    r->model = NULL;
+    if (!r->data) {
+        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, m->bytes) : NULL;
+        if (!data) {
+            file.close(file.ctx);
+            return VJO_E_OOM;
+        }
+        r->data = data;
+        r->capacity = m->bytes;
+        if ((uintptr_t)data & 15u) {
+            file.close(file.ctx);
+            return drop_with(r, VJO_E_OOM);
+        }
+    }
+    rc = read_verified(&file, m, r->data, im);
     file.close(file.ctx);
-    if (rc) return rc;
-    br_sha256_out(&hash, digest);
-    return memcmp(digest, m->sha256, sizeof(digest)) ? VJO_E_OCR_MODEL : VJO_OK;
+    if (rc) return drop_with(r, rc);
+    r->model = m;
+    r->size = file.size;
+    r->stamp = file.stamp;
+    st->model_loaded = 1;
+    return VJO_OK;
 }
 
 static int run_error(int rc)
@@ -165,7 +237,7 @@ static int run_error(int rc)
 }
 
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
-                     const VjoOcrImage *im, unsigned char *ws, const Layout *l,
+                     const VjoOcrImage *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
                      char *text, size_t cap, VjoVocrStats *st)
 {
     unsigned char *grey = ws + l->grey_off;
@@ -180,7 +252,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     int rc;
 
     t0 = clock_us(p);
-    rc = read_grey(im, ws + l->model_off, l->scratch_off, grey);
+    rc = read_grey(im, ws + l->scratch_off, l->scratch, grey);
     if (rc) return rc;
     rc = vocr_find_lines(&region, mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
@@ -189,19 +261,19 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     st->truncated = set.truncated;
     for (unsigned i = 0; i < set.count; i++)
         st->dark += set.lines[i].dark ? 1u : 0u;
-    if (!set.count) return VJO_OK; /* nothing to read: the weights stay on the card */
+    if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
 
     t0 = clock_us(p);
-    rc = load_weights(p, dir, mi, ws + l->model_off, im);
+    rc = resident_weights(p, dir, mi, res, im, st);
     if (rc) return rc;
-    st->model_loaded = 1;
-    if (vocr_load(model, ws + l->model_off, mi->bytes) != VOCR_OK) return VJO_E_OCR_MODEL;
+    /* Verified bytes the runtime refuses would fail every job: release them. */
+    if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
     memset(&opts, 0, sizeof(opts));
     opts.mode = VOCR_MODE_W8I;
     {
         size_t need = vocr_arena_bytes(model, &opts);
-        if (!need || need > l->scratch) return VJO_E_OCR_MODEL;
+        if (!need || need > l->scratch) return drop_with(res, VJO_E_OCR_MODEL);
         if (vocr_init(ctx, model, &opts, ws + l->scratch_off, need) != VOCR_OK) return VJO_E_OCR_INFERENCE;
     }
     st->load_us = clock_us(p) - t0;
@@ -237,28 +309,61 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     return VJO_OK;
 }
 
-int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char *model,
-                 const VjoOcrImage *image, void *workspace, size_t workspace_size,
-                 char *text, size_t text_cap, VjoVocrStats *stats)
+/* one_shot: the weights occupy the front of workspace for this job only. */
+static int run_job(const VjoPlatform *platform, const char *model_dir, const char *model,
+                   const VjoOcrImage *image, VjoVocrResident *res, void *workspace,
+                   size_t workspace_size, int one_shot, char *text, size_t text_cap,
+                   VjoVocrStats *stats)
 {
     const VjoVocrModel *mi;
     Layout l;
+    size_t front;
     int rc;
-    if (!platform || !model_dir || !model || !image || !text || !text_cap || !stats) return VJO_E_SOURCE;
+    if (!platform || !model_dir || !model || !image || !res || !text || !text_cap || !stats)
+        return VJO_E_SOURCE;
     text[0] = '\0';
     memset(stats, 0, sizeof(*stats));
     mi = vjo_vocr_model(model);
     if (!mi) return VJO_E_OCR_MODEL;
     if (!image->rows || layout(mi, image->width, image->height, &l) < 0) return VJO_E_OCR_REGION;
-    stats->workspace = l.total;
+    front = one_shot ? ALIGN16(mi->bytes) : 0;
+    stats->workspace = front + l.total;
     stats->model_bytes = mi->bytes;
     stats->scratch_bytes = l.scratch;
     stats->region_bytes = (size_t)image->width * image->height;
     stats->width = image->width;
     stats->height = image->height;
     if (cancelled(image)) return VJO_E_CANCELLED;
-    if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < l.total) return VJO_E_OOM;
-    rc = recognize(platform, model_dir, mi, image, (unsigned char *)workspace, &l, text, text_cap, stats);
+    if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total) return VJO_E_OOM;
+    rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l,
+                   text, text_cap, stats);
     if (rc) text[0] = '\0'; /* never publish a partial recognition */
     return rc;
+}
+
+int vjo_vocr_ocr_resident(const VjoPlatform *platform, const char *model_dir, const char *model,
+                          const VjoOcrImage *image, VjoVocrResident *resident,
+                          void *workspace, size_t workspace_size,
+                          char *text, size_t text_cap, VjoVocrStats *stats)
+{
+    return run_job(platform, model_dir, model, image, resident, workspace, workspace_size, 0,
+                   text, text_cap, stats);
+}
+
+static void *one_shot_alloc(void *ud, size_t bytes)
+{
+    (void)bytes;
+    return ud; /* the front of the caller's workspace, sized by vjo_vocr_workspace_bytes */
+}
+
+int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char *model,
+                 const VjoOcrImage *image, void *workspace, size_t workspace_size,
+                 char *text, size_t text_cap, VjoVocrStats *stats)
+{
+    VjoVocrResident one;
+    memset(&one, 0, sizeof(one));
+    one.alloc = one_shot_alloc;
+    one.ud = workspace;
+    return run_job(platform, model_dir, model, image, &one, workspace, workspace_size, 1,
+                   text, text_cap, stats);
 }

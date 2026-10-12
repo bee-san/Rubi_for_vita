@@ -5,6 +5,8 @@
 #include <psp2kern/types.h>
 
 /* All *_locked helpers require g.lock. No helper takes g.game_lock. */
+/* g.mevf bit: the kernel worker finished a model operation. */
+#define MEV_DONE 0x1u
 void game_ocr_init(void);
 int game_ocr_capture_busy_locked(void);
 int game_ocr_raw_caller_locked(SceUID pid);

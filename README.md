@@ -259,23 +259,32 @@ The kernel transports bounded jobs, copied pixels and text. Game workers cannot
 submit jobs or control input. A job is tied to its game, capture sequence and
 foreground generation; suspend, game changes, cancellation and Shell restarts
 invalidate old work. The single-pass raw capture is freed when the game worker
-reads its final row. The worker frees its model/workspace before returning text.
-It leaves a 4 MiB free USER memory reserve before allocating; allocation can
-still fail because the game or system uses memory concurrently.
+reads its final row. The worker frees each job's workspace before returning
+text. The verified weights stay in their own `USER_RW` block between jobs
+(657,664 B for FL10, 1,155,968 B for H15, page-rounded) and are read and
+SHA-256 checked again only when the model file's size or modification time
+changes, or the model changes. They are released when a job's memory check
+fails, when the file is missing or wrong, when the game is no longer the
+active one (suspend, another app in front, title disabled) and on exit. A job
+then needs only its region-sized workspace. The worker leaves a 4 MiB free
+USER memory reserve before allocating either block; allocation can still fail
+because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only the three original VOCR model names and the separate pinned VOCR2 trial
 model in `ux0:data/VitaJPOverlay/ocr`, checks
-their lengths, and copies at most 8 KiB per request into game-owned memory.
-The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB
+their lengths, reports their modification time, and copies at most 32 KiB per
+request into game-owned memory. Each model call waits (at most 50 ms, without
+the kernel lock) for the kernel worker instead of polling with a 1 ms sleep.
+The game then checks SHA-256 and runs inference. The kernel holds one 32 KiB
 staging buffer, no complete model, and no saved game pointers. Cancellation or
 process exit drains any file operation before the next job can reuse its slot.
-The shared API 13 error codes keep bit 30 clear. On the physical Vita, the
+The shared API 13+ error codes keep bit 30 clear. On the physical Vita, the
 previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
-Native SDK file errors are unchanged. Install all three API 13 plugins together
+Native SDK file errors are unchanged. Install all three API 14 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
