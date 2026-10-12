@@ -467,12 +467,16 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
 {
     char buf[224];
     size_t n = 0;
-    if (r->reserve_bytes)
+    if (r->reserve_bytes && r->free_user < 0)
+        vjo_log("game vocr memory: free USER unknown (error 0x%08X), needs workspace %u + weights %u + "
+                "reserve %u: check refused", (unsigned)r->free_user, (unsigned)r->need_workspace,
+                (unsigned)r->need_weights, (unsigned)r->reserve_bytes);
+    else if (r->reserve_bytes)
         vjo_log("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s",
                 (int)r->free_user, (unsigned)r->need_workspace, (unsigned)r->need_weights,
                 (unsigned)r->reserve_bytes,
-                r->free_user >= 0 && (int64_t)r->free_user >=
-                    (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes ? "passed" : "refused");
+                (int64_t)r->free_user >= (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes
+                    ? "passed" : "refused");
     if (r->frames)
         vjo_log("game vocr speed: %u frames in %u us, %u us per frame", (unsigned)r->frames,
                 (unsigned)r->recognize_us, (unsigned)(r->recognize_us / r->frames));

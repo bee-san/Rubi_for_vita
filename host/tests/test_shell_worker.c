@@ -145,6 +145,7 @@ static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
 static unsigned fake_lines;
+static int32_t fake_free_user;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -165,7 +166,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     if (fail_vocr_user) {
         /* The real worker reports its refused check (game_ocr/main.c). */
         fake_game_result.rc = VJO_E_OOM;
-        fake_game_result.free_user = 5000000;
+        fake_game_result.free_user = fake_free_user;
         fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 659456;
         fake_game_result.reserve_bytes = 4194304;
         fake_game_result.workspace_bytes = 244896;
@@ -237,6 +238,7 @@ static void reset(void)
     fake_model_io_error = 0;
     fake_recognized_text = NULL;
     fake_lines = 2;
+    fake_free_user = 5000000;
     log_count = 0;
 #endif
     phases_checked = vocr_live = fail_join = 0;
@@ -622,6 +624,16 @@ static void test_vocr_logs_memory_check_and_frames(void)
                                       "weights 659456 + reserve 4194304: check refused"));
     TEST_MSG("%s", line ? line : "(no memory line)");
     TEST_CHECK(!logged("game vocr speed:") && !logged("game vocr lines"));
+    mem_free();
+
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; fake_free_user = (int32_t)0x80020001u; /* the query itself failed */
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    line = logged("game vocr memory:");
+    TEST_CHECK(line && !strcmp(line, "game vocr memory: free USER unknown (error 0x80020001), needs "
+                                      "workspace 245760 + weights 659456 + reserve 4194304: check refused"));
+    TEST_MSG("%s", line ? line : "(no memory line)");
     mem_free();
 
     reset();

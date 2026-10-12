@@ -286,7 +286,7 @@ The shared API 13+ error codes keep bit 30 clear. On the physical Vita, the
 previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
-Native SDK file errors are unchanged. Install all three API 14 plugins together
+Native SDK file errors are unchanged. Install all three API 15 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one

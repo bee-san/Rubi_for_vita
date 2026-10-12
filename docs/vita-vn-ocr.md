@@ -305,7 +305,7 @@ copied, and the settings above. Close other apps first.
      4194304: check passed|refused`: the game's free memory at that moment,
      also for a refused job (`rc=-103`), i.e. this title's real OCR budget.
    - `game vocr speed: F frames in T us, P us per frame`: the recognizer's
-     on-console time per CTC frame (a 640-px line is 80 frames).
+     on-console time per CTC frame (a 640-px line at the model height is about 80 frames).
    - `game vocr lines: 917x30 114f 52.1ms ...`: each recognized line's crop
      (pixels), CTC frames and recognition time, six per log line. Record the shown text and a photo
    beside this log; host tests alone cannot prove recognition on the Vita.
@@ -316,7 +316,7 @@ copied, and the settings above. Close other apps first.
    For an unavailable worker, check its `*ALL` registration and restart the
    game. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.
-   Install all three API 14 plugins together and reboot before testing.
+   Install all three API 15 plugins together and reboot before testing.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load`, the
    `speed` line's microseconds per frame and the `lines` entries. The estimate
    for H15 is 166-302 ms per 640-px (80-frame) line at 444 MHz, about
