@@ -42,6 +42,18 @@ const VjoVocrModel *vjo_vocr_model(const char *name);
 /* The supported models, for messages and tools; *count is set. */
 const VjoVocrModel *vjo_vocr_models(unsigned *count);
 
+/* The line finder returns at most this many lines (vocr_lines.h VOCR_LINES_MAX). */
+#define VJO_VOCR_MAX_LINES 16u
+
+/* One recognized line: its crop, the CTC frames the recognizer ran, and the
+ * time it took, so a console log gives ms per frame for each line. */
+typedef struct {
+    uint16_t width, height;  /* crop in region pixels */
+    uint16_t frames;         /* CTC frames (the resized width / 8) */
+    uint16_t reserved;
+    uint32_t us;             /* vocr_run time with VjoPlatform.now_us, else 0 */
+} VjoVocrLineStat;
+
 typedef struct {
     size_t workspace;        /* bytes of this job's workspace (see vjo_vocr_ocr*) */
     size_t model_bytes;      /* weights, used in place */
@@ -51,10 +63,12 @@ typedef struct {
     unsigned lines;          /* lines found */
     unsigned dark;           /* of those, dark text (inverted before recognition) */
     unsigned truncated;      /* more lines than the finder returns (16) */
-    unsigned frames;         /* CTC frames recognized */
+    unsigned frames;         /* CTC frames recognized, all lines */
     unsigned model_loaded;   /* 1: the weights were read and verified in this job */
     unsigned model_cached;   /* 1: resident verified weights were reused (file unchanged) */
     uint32_t find_us, load_us, recognize_us; /* with VjoPlatform.now_us, else 0 */
+    unsigned recognized;     /* entries of line[] filled: lines vocr_run finished */
+    VjoVocrLineStat line[VJO_VOCR_MAX_LINES];
 } VjoVocrStats;
 
 /* Weights kept between jobs. The caller supplies their memory: alloc returns

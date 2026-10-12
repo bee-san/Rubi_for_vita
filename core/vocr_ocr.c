@@ -11,6 +11,7 @@
 #include "vocr.h"
 #include "vocr_lines.h"
 
+typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr release v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
  * default 4-frame tiles and 16-frame head batches, any line width. */
@@ -284,6 +285,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         vocr_image img;
         vocr_extra extra;
         size_t start = used ? used + 1 : 0, n;
+        uint32_t line_t0;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
         img.pixels = grey + (size_t)ln->y * w + ln->x;
@@ -294,9 +296,17 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         memset(&extra, 0, sizeof(extra));
         extra.cancel = run_cancel;
         extra.user = (void *)im;
+        line_t0 = clock_us(p);
         rc = vocr_run(ctx, &img, text + start, cap - start, &extra);
         if (rc != VOCR_OK) return run_error(rc);
         st->frames += extra.frames;
+        if (st->recognized < VJO_VOCR_MAX_LINES) {
+            VjoVocrLineStat *ls = &st->line[st->recognized++];
+            ls->width = (uint16_t)ln->w;
+            ls->height = (uint16_t)ln->h;
+            ls->frames = (uint16_t)(extra.frames > 0xFFFFu ? 0xFFFFu : extra.frames);
+            ls->us = clock_us(p) - line_t0;
+        }
         n = strlen(text + start);
         if (!n) { /* nothing read on this line: no separator either */
             text[used] = '\0';

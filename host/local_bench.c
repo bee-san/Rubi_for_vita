@@ -42,7 +42,7 @@ static int tracked_open(void *ud, const char *path, VjoFile *out)
         TrackedFile *f = &files[i];
         if (inner_open(ud, path, &f->inner)) return -1;
         f->active = 1; f->last_end = 0; opened++;
-        *out = (VjoFile){f, f->inner.size, tracked_read, tracked_close};
+        *out = (VjoFile){f, f->inner.size, tracked_read, tracked_close, f->inner.stamp};
         return 0;
     }
     return -1;

@@ -315,7 +315,9 @@ peak or a guarantee that every full-screen region fits in every game.
 
 Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
-attempts are in `ux0:data/VitaJPOverlay/log.txt`. If boot fails, hold L while
+attempts are in `ux0:data/VitaJPOverlay/log.txt`. Each game OCR job logs the
+game's free USER memory against what the job needed (also when it refused the
+job) and, for each recognized line, its size, CTC frames and recognition time. If boot fails, hold L while
 powering on to skip plugins, start VitaShell FTP, and run
 `bash tools/install_ftp.sh --uninstall VITA_IP`. Uninstalling preserves data.
 

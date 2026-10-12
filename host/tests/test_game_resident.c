@@ -29,12 +29,14 @@ static uint64_t mtime;
 static unsigned opens, closes, reads, bytes_read, loads, delays;
 static int file_open_now;
 static uint64_t clock_value;
+static unsigned spy_lines = 1;
+static int free_query_error;
 
 /* ---- the Vita SDK and kernel transport, as the worker sees them ---- */
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
-{ out->size_user = (int)(available - live_bytes); return 0; }
+{ out->size_user = (int)(available - live_bytes); return free_query_error; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(size & 4095));
@@ -115,7 +117,8 @@ int vjoOcrModelClose(uint32_t seq) { TEST_CHECK(seq == 12); if (file_open_now) c
 int vocr_find_lines(const VocrLinesImage *im, int mode, void *arena, size_t bytes, VocrLineSet *out)
 {
     memset(out, 0, sizeof(*out));
-    out->count = 1; out->lines[0] = (VocrLine){10, 15, 180, 24, 0};
+    out->count = spy_lines;
+    for (unsigned i = 0; i < spy_lines; i++) out->lines[i] = (VocrLine){10, 2 + 3*i, 180 - 10*i, 3, 0};
     return VOCR_LINES_OK;
 }
 int vocr_load(vocr_model *m, const void *blob, size_t bytes)
@@ -130,8 +133,12 @@ int vocr_load(vocr_model *m, const void *blob, size_t bytes)
 }
 size_t vocr_arena_bytes(const vocr_model *m, const vocr_opts *o) { return served_model()->arena_bytes; }
 int vocr_init(vocr_ctx *c, const vocr_model *m, const vocr_opts *o, void *arena, size_t bytes) { return VOCR_OK; }
+/* Frames as the runtime counts them: resized width / 8; 1 ms per frame. */
 int vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t cap, vocr_extra *extra)
-{ snprintf(text, cap, "猫"); extra->frames = 22; extra->width = 176; return VOCR_OK; }
+{
+    snprintf(text, cap, "猫"); extra->width = img->width; extra->frames = img->width / 8;
+    clock_value += 1000u * extra->frames; return VOCR_OK;
+}
 
 /* ---- helpers ---- */
 static VjoGameOcrRequest request(const char *name)
@@ -155,6 +162,7 @@ static void reset(void)
     registered_rc = quit_after_delay = cancel_now = cancel_at_open = cancel_after_reads = 0;
     open_failure = size_delta = stat_failure = corrupt = 0; mtime = 0x12345678;
     opens = closes = reads = bytes_read = loads = delays = 0; file_open_now = 0;
+    spy_lines = 1; free_query_error = 0;
     clock_value = 0;
     memset(pixels, 0, sizeof(pixels));
 }
@@ -326,7 +334,47 @@ static void failed_release_blocks_until_stop_retries(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
 }
 
+static void memory_check_is_reported_also_when_refused(void)
+{
+    reset(); VjoGameOcrResult out;
+    const uint32_t job = PAGE_ROUND(vjo_vocr_job_bytes("FL10_w8.vocr", W, H)), weights = PAGE_ROUND(TEST_FL10_BYTES);
+    available = GAME_RESERVE + job + weights - 4096;
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_OOM && !job_allocs);
+    TEST_CHECK(out.free_user == (int32_t)available && out.reserve_bytes == GAME_RESERVE);
+    TEST_CHECK(out.need_workspace == job && out.need_weights == weights);
+    TEST_CHECK(out.workspace_bytes == vjo_vocr_job_bytes("FL10_w8.vocr", W, H)); /* was 0 */
+    available = 64*1024*1024;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.free_user == (int32_t)available && out.need_weights == weights);
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.need_weights == 0); /* resident: only the job */
+    TEST_CHECK(out.free_user == (int32_t)(available - weights));
+    free_query_error = (int)0x80020001u; /* the query itself failed: refused, its error reported */
+    TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_OOM && out.free_user == free_query_error && !weights_live);
+    free_query_error = 0;
+    VjoGameOcrRequest bad = request("FL10_w8.vocr"); bad.width = 961; /* ends before the check */
+    TEST_CHECK(vjo_game_ocr_run_request(&bad, &out) == VJO_E_SOURCE && !out.reserve_bytes && !out.free_user);
+}
+static void frames_and_lines_are_reported(void)
+{
+    reset(); VjoGameOcrResult out;
+    spy_lines = VJO_GAME_OCR_LINES;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && out.lines == VJO_GAME_OCR_LINES);
+    TEST_CHECK(out.recognized == VJO_GAME_OCR_LINES);
+    uint32_t frames = 0;
+    for (unsigned i = 0; i < out.recognized; i++) {
+        TEST_CHECK(out.line[i].width == 180 - 10*i && out.line[i].height == 3);
+        TEST_CHECK(out.line[i].frames == (180 - 10*i) / 8 && out.line[i].us >= 1000u * out.line[i].frames);
+        frames += out.line[i].frames;
+    }
+    TEST_CHECK(out.frames == frames && out.recognize_us >= 1000u * frames);
+    TEST_MSG("frames %u recognize_us %u", out.frames, out.recognize_us);
+    spy_lines = 0; /* nothing found: no frames, no lines, the file is not opened */
+    unsigned before = opens;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && !out.frames && !out.recognized && opens == before);
+}
+
 TEST_LIST = {
+    {"the memory check is reported, also when it refuses the job", memory_check_is_reported_also_when_refused},
+    {"CTC frames and each line's crop, frames and time are reported", frames_and_lines_are_reported},
     {"synthetic pins match their generated bytes", synthetic_pins_match_their_bytes},
     {"weights are read and hashed once, then kept for 50 jobs", weights_are_read_once_and_kept},
     {"a changed modification time is read again; a changed size is refused", changed_file_is_read_again},

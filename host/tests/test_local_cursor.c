@@ -137,7 +137,7 @@ static int open_file(void *ud, const char *path, VjoFile *out)
     for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) if (fixtures[i].name && !strcmp(name, fixtures[i].name)) {
         Fixture *f = &fixtures[i];
         f->active++; opened++; opens_by[i]++;
-        *out = (VjoFile){f, f->size, read_file, close_file}; return 0;
+        *out = (VjoFile){f, f->size, read_file, close_file, 0}; return 0;
     }
     return -1;
 }

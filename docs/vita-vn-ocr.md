@@ -297,9 +297,17 @@ copied, and the settings above. Close other apps first.
    `tools/install_ftp.sh --status VITA_IP`. A completed job logs
    `game vocr rc=... FL10_w8.vocr: WxH, lines=N USER workspace=B
    weights=read|resident resident=R, find=X ms load=Y ms recognize=Z ms
-   io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and `cleanup=0`.
-   The first text-bearing job of a game logs `weights=read`; later ones log
-   `weights=resident` with a much smaller `load`. Record the shown text and a photo
+   frames=F io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and
+   `cleanup=0`. The first text-bearing job of a game logs `weights=read`;
+   later ones log `weights=resident` with a much smaller `load`.
+   Three more lines follow:
+   - `game vocr memory: free USER=U, needs workspace J + weights W + reserve
+     4194304: check passed|refused`: the game's free memory at that moment,
+     also for a refused job (`rc=-103`), i.e. this title's real OCR budget.
+   - `game vocr speed: F frames in T us, P us per frame`: the recognizer's
+     on-console time per CTC frame (a 640-px line is 80 frames).
+   - `game vocr lines: 917x30 114f 52.1ms ...`: each recognized line's crop
+     (pixels), CTC frames and recognition time, six per log line. Record the shown text and a photo
    beside this log; host tests alone cannot prove recognition on the Vita.
 5. **Errors.** For game OCR memory errors, select FL10 and a tighter dialogue
    region. A Shell UI memory error after successful recognition preserves text
@@ -309,9 +317,10 @@ copied, and the settings above. Close other apps first.
    game. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.
    Install all three API 14 plugins together and reboot before testing.
-6. **Speed.** With `rc=0`, repeat on five lines and note `load` and
-   `recognize` ms. The estimate for H15 is 166-302 ms per 640-px line at
-   444 MHz and about 1.33× that at the default 333 MHz.
+6. **Speed.** With `rc=0`, repeat on five lines and note `load`, the
+   `speed` line's microseconds per frame and the `lines` entries. The estimate
+   for H15 is 166-302 ms per 640-px (80-frame) line at 444 MHz, about
+   2.1-3.8 ms per frame, and about 1.33× that at the default 333 MHz.
 7. **Polarity.** Try one game with dark text on a light box (for example
    VARIABLE BARRICADE or 偽りの仮面) and one with outlined text.
 8. **Stability.** Leave `ocr_mode = auto` with subtitles on (Select+R) for ten

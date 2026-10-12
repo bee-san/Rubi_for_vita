@@ -460,6 +460,40 @@ static int ocr_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(se
 static int64_t ocr_clock(void *ud) { (void)ud; return now_us(); }
 static void ocr_delay(void *ud, uint32_t us) { (void)ud; sceKernelDelayThread(us); }
 
+/* The game worker's memory check and per-line recognition, after the job
+ * line: free USER against what the job needed (also for a refused job), and
+ * each line's crop, CTC frames and time, i.e. ms per frame on this console. */
+static void log_vocr_measurements(const VjoGameOcrResult *r)
+{
+    char buf[224];
+    size_t n = 0;
+    if (r->reserve_bytes)
+        vjo_log("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s",
+                (int)r->free_user, (unsigned)r->need_workspace, (unsigned)r->need_weights,
+                (unsigned)r->reserve_bytes,
+                r->free_user >= 0 && (int64_t)r->free_user >=
+                    (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes ? "passed" : "refused");
+    if (r->frames)
+        vjo_log("game vocr speed: %u frames in %u us, %u us per frame", (unsigned)r->frames,
+                (unsigned)r->recognize_us, (unsigned)(r->recognize_us / r->frames));
+    /* Crop WxH, CTC frames and time of each line; 6 per log line (256 bytes each). */
+    for (uint32_t i = 0; i < r->recognized && i < VJO_GAME_OCR_LINES; i++) {
+        const VjoGameOcrLine *l = &r->line[i];
+        int w;
+        if (!n) {
+            w = sceClibSnprintf(buf, sizeof(buf), i ? "game vocr lines (cont):" : "game vocr lines:");
+            n = w > 0 && (size_t)w < sizeof(buf) ? (size_t)w : 0;
+        }
+        w = sceClibSnprintf(buf + n, sizeof(buf) - n, " %ux%u %uf %u.%ums", l->width, l->height,
+                            l->frames, (unsigned)(l->us / 1000), (unsigned)(l->us % 1000 / 100));
+        n = w > 0 && n + (size_t)w < sizeof(buf) ? n + (size_t)w : sizeof(buf) - 1;
+        if (i % 6 == 5 || i + 1 == r->recognized || i + 1 == VJO_GAME_OCR_LINES) {
+            vjo_log("%s", buf);
+            n = 0;
+        }
+    }
+}
+
 static int vocr_consume(void *ud, const VjoState *st)
 {
     VjoGameOcrResult *result = ud;
@@ -479,11 +513,12 @@ static int vocr_consume(void *ud, const VjoState *st)
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
     static const char *const weights[] = {"none", "read", "resident"};
     vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
-            "find=%u ms load=%u ms recognize=%u ms io=0x%08X stat=0x%08X cleanup=%d",
+            "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, model, st->width, st->height, result->lines, result->workspace_bytes,
             result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
-            result->find_us/1000, result->load_us/1000, result->recognize_us/1000,
+            result->find_us/1000, result->load_us/1000, result->recognize_us/1000, result->frames,
             (unsigned)result->io_error, (unsigned)result->stat_error, result->cleanup_status);
+    log_vocr_measurements(result);
     return rc;
 }
 
