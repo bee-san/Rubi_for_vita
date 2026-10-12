@@ -175,6 +175,29 @@ static void test_save_switch_reload_retains_other_settings(void)
     TEST_CHECK(strstr(out, "; Keep this comment\r\n") && strstr(out, "unknown_future_setting = unchanged\n"));
     TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
 }
+/* Anki is configured in config.ini only: a Settings save keeps every anki_*
+ * line verbatim, and the Shell still reads the same host, deck and fields. */
+static void test_settings_save_keeps_anki_settings(void)
+{
+    static const char anki[] =
+        "ocr_backend = vocr\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+        "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n";
+    char out[sizeof(anki) + 128];
+    VjoConfig cfg;
+    reset(); put_file(VJO_PREFERENCES_PATH, anki, sizeof(anki)-1);
+    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR2, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
+    int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
+    ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
+    TEST_CHECK(strstr(out, "\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+                           "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n") != NULL);
+    TEST_MSG("%s", out);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && cfg.local_dictionary_results == 3 &&
+               !strcmp(cfg.anki_host, "192.168.1.23:8766") &&
+               !strcmp(cfg.anki_deck, "Mining #1 ; main") && !strcmp(cfg.anki_note_type, "Lapis;v2") &&
+               !cfg.anki_field[VJO_ANKI_PICTURE][0] && !strcmp(cfg.anki_field[VJO_ANKI_WORD], "Word") &&
+               cfg.n_warnings == 0);
+}
 static void test_save_failure_preserves_or_recovers_actual_choices(void)
 {
     for (int fault = 0; fault < 6; fault++) {
@@ -362,6 +385,7 @@ static void test_removed_meiki_choice_loads_as_vocr_and_is_rewritten(void)
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0 && arena.used == 0);
 }
 TEST_LIST = {
+    {"settings_save_keeps_anki_settings_verbatim", test_settings_save_keeps_anki_settings},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"removed_Meiki_choice_loads_as_VOCR_and_next_save_rewrites_it", test_removed_meiki_choice_loads_as_vocr_and_is_rewritten},
     {"dictionary_results_is_an_owned_validated_preference", test_dictionary_results_patch_and_parse},
