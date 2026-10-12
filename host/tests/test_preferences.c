@@ -106,6 +106,7 @@ static void test_patch_preserves_unrelated_bytes(void)
     TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input)-1, VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, out, 5) < 0);
     TEST_CHECK(vjo_config_patch_preferences("bad\0key", 7, VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, out, sizeof(out)) < 0);
     TEST_CHECK(vjo_config_patch_preferences("", 0, -1, 1, VJO_HIGHLIGHT_WORD, out, sizeof(out)) < 0);
+    TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_OCR_VOCR2 + 1, 1, VJO_HIGHLIGHT_WORD, out, sizeof(out)) < 0);
     TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_OCR_VOCR, 2, VJO_HIGHLIGHT_WORD, out, sizeof(out)) < 0);
 }
 static void test_save_switch_reload_retains_other_settings(void)
@@ -149,7 +150,7 @@ static void test_lens_choice_loads_shell_and_retains_other_preferences(void)
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     unsigned char shell_mem[24 * 1024]; VjoArena shell;
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
-    const int backends[] = {VJO_OCR_LENS, VJO_OCR_MEIKI, VJO_OCR_VOCR, VJO_OCR_LENS};
+    const int backends[] = {VJO_OCR_LENS, VJO_OCR_NCNN, VJO_OCR_MEIKI, VJO_OCR_VOCR, VJO_OCR_VOCR2, VJO_OCR_LENS};
     for (unsigned i = 0; i < sizeof(backends)/sizeof(backends[0]); i++) {
         TEST_ASSERT(vjo_preferences_save(backends[i], 1, VJO_HIGHLIGHT_WORD, &arena) == 0);
         check_choices(backends[i], 1, VJO_HIGHLIGHT_WORD);

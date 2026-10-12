@@ -177,6 +177,14 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_unit COMMAND vjo-vocr-tests)
+  # Exercise the real adapter with only the finder call replaced by a spy.
+  # This verifies dispatch and capture ownership without weights or inference.
+  add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
+  target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines=vjo_test_find_lines)
+  target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
+  target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
+  add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)
   # The weights are a release asset, not part of this repository: run the
   # model checks when VJO_VOCR_MODEL_DIR holds them (tools/prepare_ocr.py --backend vocr).
   if(VJO_VOCR_MODEL_DIR)

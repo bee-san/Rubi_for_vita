@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 39a3a9ae069180675c145f6df74c843dc2061967
+          ref: 49ff6f4d1c55804c600d098810574a49d382a009
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 39a3a9ae069180675c145f6df74c843dc2061967
+          ref: 49ff6f4d1c55804c600d098810574a49d382a009
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

@@ -265,9 +265,14 @@ static int has_result_memory(void)
     return mem_heap != NULL || mem_uid >= 0;
 }
 
+static int game_ocr_backend(int backend)
+{
+    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2 || backend == VJO_OCR_MEIKI;
+}
+
 static int local_pipeline(const VjoConfig *c)
 {
-    return (c->ocr_backend == VJO_OCR_VOCR || c->ocr_backend == VJO_OCR_MEIKI) &&
+    return game_ocr_backend(c->ocr_backend) &&
            c->dictionary == VJO_DICT_LOCAL;
 }
 
@@ -434,9 +439,10 @@ static int vocr_consume(void *ud, const VjoState *st)
     VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.ocr_backend == VJO_OCR_MEIKI ? VJO_MEIKI_MODEL_NAME : job_cfg.vocr_model;
+    const char *model = job_cfg.ocr_backend == VJO_OCR_MEIKI ? VJO_MEIKI_MODEL_NAME :
+                        job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
     size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
-    if (model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
+    if (!model_len || model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
     sceClibMemcpy(request.model, model, model_len+1);
     job_capture_scene = st->capture_scene;
     job_capture_seq = st->region_seq;
@@ -455,6 +461,10 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     VjoState st;
     static VjoGameOcrResult result;
     int local = local_pipeline(&job_cfg);
+    if (job_cfg.ocr_backend == VJO_OCR_VOCR2 && !VJO_VOCR2_MODEL_NAME[0]) {
+        out->err.detail = "VOCR2 weights are unavailable in this build.";
+        return out->err.rc = VJO_E_OCR_MODEL;
+    }
     st.capture_scene = 0;
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
@@ -536,7 +546,7 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
         return out->err.rc = VJO_E_OOM;
     }
     vjo_arena_reset(a);
-    if (job_cfg.ocr_backend == VJO_OCR_VOCR || job_cfg.ocr_backend == VJO_OCR_MEIKI) {
+    if (game_ocr_backend(job_cfg.ocr_backend)) {
         /* On the console only: no image or connection leaves it. */
         if (run_vocr(a, out) != VJO_OK) {
             if (!out->failed_stage)
@@ -732,7 +742,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->non_japanese_filter != b->non_japanese_filter ||
         a->japanese_only_selection != b->japanese_only_selection)
         return 0;
-    if ((a->ocr_backend == VJO_OCR_VOCR || a->ocr_backend == VJO_OCR_MEIKI) &&
+    if (game_ocr_backend(a->ocr_backend) &&
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) ||
          (a->ocr_backend == VJO_OCR_VOCR && sceClibStrcmp(a->vocr_model, b->vocr_model))))
         return 0;

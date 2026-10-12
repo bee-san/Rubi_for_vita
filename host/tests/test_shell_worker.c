@@ -438,12 +438,57 @@ static void test_vocr_never_uses_lens(void)
     TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && vocr_paf_allocs == 0);
 #else
     TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "vita-vn-ocr"));
+    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "game OCR worker is unavailable"));
     TEST_CHECK(vocr_allocs == 0);
 #endif
     mem_free();
 }
 
+static void test_vocr2_selection_stays_local(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR2;
+    /* Selecting the new engine must never reuse the saved old-model choice. */
+    strcpy(cfg.vocr_model, "H15_w8.vocr");
+    TEST_CHECK(local_pipeline(&cfg) && background_wanted());
+    int rc = run_vocr_job();
+    TEST_CHECK(!jpeg_captures);
+#if defined(VJO_WITH_VOCR) && VJO_VOCR2_ENABLED
+    TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
+    TEST_CHECK(!strcmp(fake_game_request.model, VJO_VOCR2_ARTIFACT_NAME));
+    TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_NONE);
+#elif defined(VJO_WITH_VOCR)
+    TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
+    TEST_CHECK(rc == VJO_E_OCR_MODEL);
+    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "VOCR2 weights"));
+#else
+    TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
+    TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
+#endif
+    warm_connections();
+    TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
+    mem_free();
+}
+
+static void test_vocr2_cache_uses_its_own_backend_and_storage(void)
+{
+    reset();
+    loaded.ocr_backend = VJO_OCR_VOCR;
+    apply_config();
+    cache_ok = 1;
+    loaded.ocr_backend = VJO_OCR_VOCR2;
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    strcpy(loaded.vocr_model, "H15_w8.vocr");
+    apply_config();
+    TEST_CHECK(cache_ok); /* The legacy VOCR model setting does not select VOCR2 weights. */
+    strcpy(loaded.ocr_model_dir, "ux0:data/other-ocr");
+    apply_config();
+    TEST_CHECK(!cache_ok);
+}
+
+#ifdef VJO_WITH_VOCR
 static void test_meiki_manual_local_policy(void)
 {
     reset(); cfg.ocr_backend = VJO_OCR_MEIKI; cfg.ocr_mode = VJO_OCR_AUTO;
@@ -464,6 +509,7 @@ static void test_meiki_manual_local_policy(void)
     fake_recognized_text=NULL;
     cfg.ocr_backend=VJO_OCR_VOCR; TEST_CHECK(background_wanted());
 }
+#endif
 
 static void test_vocr_config(void)
 {
@@ -477,6 +523,13 @@ static void test_vocr_config(void)
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
     TEST_CHECK(!strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 3); /* each kept the default */
+    TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_NCNN == 1 && VJO_OCR_VOCR == 2 &&
+               VJO_OCR_MEIKI == 3 && VJO_OCR_VOCR2 == 4);
+    const char new_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, new_ini, sizeof(new_ini) - 1);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR2 && !c.n_warnings);
+    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
 }
 
 static void test_vocr_warms_no_lens_connection(void)
@@ -1120,7 +1173,11 @@ TEST_LIST = {
     {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
+    {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
+    {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
+#ifdef VJO_WITH_VOCR
     {"meiki_is_explicit_manual_local_character_pipeline", test_meiki_manual_local_policy},
+#endif
     {"vocr_config_parses_and_validates", test_vocr_config},
     {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 72cf4af0905091a0ee329d336889ccf0a8cd38c8)
+set(VJO_VOCR_COMMIT 49ff6f4d1c55804c600d098810574a49d382a009)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -21,8 +21,8 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 set(_vocr_pins
   vocr.c d1fe1f7be4b479ec96d5ca0c1c44c4c3cb7edcf66dcf7abced332601fdcdeb33
   vocr.h c4948a25be4063cd1e22c2011a24c21d95c6a06c2360348452876a24288e09dd
-  vocr_lines.c 2430531cf5d58e47676f165247f8400b819b5377b1f39669107d88a150f67d06
-  vocr_lines.h e54bd395e63d0f6968dd427749d7d949ac8cb9be058ab7c3bb37a30283e57630)
+  vocr_lines.c 0752584953d92efa1e7e8195eaae31048bc4b79694da832349c37e1da82fa348
+  vocr_lines.h 2a5ba01c129608b94b92c28b77057f4e4ddb64a6f58c9c88fb1f8dfa8442d8e6)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")

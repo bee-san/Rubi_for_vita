@@ -7,9 +7,11 @@
 #include "../include/vjo_api.h"
 
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
-/* ocr_backend. VJO_OCR_VOCR: bee-san/vita-vn-ocr on the Vita CPU (builds with
- * VJO_WITH_VOCR); VJO_OCR_NCNN: PP-OCRv5 mobile, host experiments only. */
-enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_MEIKI = 3 };
+/* ocr_backend. VJO_OCR_VOCR and VJO_OCR_VOCR2 share bee-san/vita-vn-ocr on
+ * the Vita CPU (VJO_WITH_VOCR); VJO_OCR_NCNN is for host experiments only.
+ * Values are persisted by the settings app; keep existing IDs unchanged. */
+enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_MEIKI = 3,
+       VJO_OCR_VOCR2 = 4 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
@@ -47,10 +49,10 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_MEIKI | VJO_OCR_NCNN */
+    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_VOCR2 | VJO_OCR_MEIKI | VJO_OCR_NCNN */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
-    char vocr_model[64];      /* vita-vn-ocr weights file in ocr_model_dir */
+    char vocr_model[64];      /* old VOCR weights in ocr_model_dir; VOCR2 uses its build pin */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     char anki_host[64];       /* see vjo_anki_endpoint */

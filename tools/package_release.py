@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import zipfile
 
-from prepare_ocr import VOCR_ASSETS
+from prepare_ocr import VOCR_ASSETS, VOCR2_ASSETS, VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG
 
 DATA = "ux0/data/VitaJPOverlay/"
 
@@ -48,9 +48,14 @@ def package(base, output, models, dictionary, license_file, version="0.7.11", me
               "docs/JMdict-LICENSE.html": license_file,
               DATA + "config.ini": source / "docs/config.example.ini",
               "install-vita.sh": source / "tools/install-vita.sh"}
-    for name in ("FL10_w8.vocr", "H15_w8.vocr"):
+    model_names = ["FL10_w8.vocr", "H15_w8.vocr"]
+    if VOCR2_ENABLED:
+        model_names.append(VOCR2_MODEL)
+    for name in model_names:
         path = models / name
-        _, size, sha = VOCR_ASSETS[name]
+        if not path.is_file():
+            raise ValueError("OCR model is missing: " + name)
+        _, size, sha = (VOCR2_ASSETS if name == VOCR2_MODEL else VOCR_ASSETS)[name]
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
@@ -66,6 +71,19 @@ def package(base, output, models, dictionary, license_file, version="0.7.11", me
                              "ocr_mode": "auto", "anki": False}}
     if source_revision:
         manifest["source_revision"] = source_revision
+    if VOCR2_ENABLED:
+        manifest["ocr_backends"] = {
+            "vocr2": {"model": VOCR2_MODEL, "finder_mode": "textbox",
+                      "model_release": VOCR2_TAG,
+                      "model_sha256": VOCR2_ASSETS[VOCR2_MODEL][2],
+                      "model_bytes": VOCR2_ASSETS[VOCR2_MODEL][1],
+                      "recognizer_arena_bytes": 124832,
+                      "experimental": True,
+                      "qualification": "rejected_for_promotion",
+                      "default": False,
+                      "protected_result_sha256": "3c2c873239e1bcbdf3858650d7b628853b0f4b1f4c324ecc9519a7348c8d09f7",
+                      "runtime_commit": "49ff6f4d1c55804c600d098810574a49d382a009"}
+        }
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if original.testzip() is not None:
