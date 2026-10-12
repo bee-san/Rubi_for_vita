@@ -253,7 +253,7 @@ static void local_lookup_begin(VjoOverlayData *out)
     memset(&out->err, 0, sizeof(out->err));
     out->err.dict = VJO_DICT_LOCAL;
     out->failed_stage = VJO_STAGE_NONE;
-    out->list = (VjoEntryList){out->sentence ? out->sentence : "", NULL, 0};
+    out->list = (VjoEntryList){.header = out->sentence ? out->sentence : ""};
 }
 
 int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,

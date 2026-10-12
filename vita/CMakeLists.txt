@@ -84,7 +84,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
   ${ROOT}/core/base64.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
-  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c)
+  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -106,6 +106,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
   ${ROOT}/shell/strip.cpp
+  ${ROOT}/shell/strip_view.c
   ${ROOT}/shell/worker.c
   ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c

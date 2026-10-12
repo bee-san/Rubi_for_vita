@@ -214,8 +214,12 @@ selected image to Google and works with the configured dictionary, including
 local JMdict. Selecting an OCR engine preserves the dictionary, OCR mode and
 other settings. `dictionary = hachidori` uses Hachidori Relay on
 your trusted LAN (`hachidori_host = COMPUTER_IP`, port 19633). Jiten and JPDB
-require their respective API keys. Local defaults make no OCR or dictionary
-network requests and have no cloud fallback.
+require their respective API keys. With either key set, the subtitle strip
+(Select + R) shows furigana over its kanji once the words are looked up, so
+each settled subtitle's recognized text is also sent to that service. Local
+dictionaries and Hachidori show the strip without readings and add no lookups
+for it. Local defaults make no OCR or dictionary network requests and have no
+cloud fallback.
 
 ## Memory and troubleshooting
 

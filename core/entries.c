@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include "furigana.h"
 #include "port.h"
 #include "utf.h"
 
@@ -58,6 +59,7 @@ static void add_entry(VjoEntryList *out, const VjoVocab *v, const char *text, co
     e->text = text;
     e->pos16 = -1;
     e->hl_start = e->hl_end = -1;
+    e->furigana = tok ? tok->furigana : NULL;
     if (tok && tok->pos16 >= 0) {
         /* Positions come from the server: saturate the end (no signed
          * overflow); u16_to_byte maps positions past the text to its end. */
@@ -95,6 +97,7 @@ int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r,
     out->header = header;
     out->entries = NULL;
     out->n_entries = 0;
+    out->source = r->source;
 
     if (!n)
         return 0;
@@ -150,4 +153,48 @@ char *vjo_entries_body(VjoArena *a, const VjoEntryList *l)
         vjo_buf_puts(&b, l->entries[i].text);
     }
     return vjo_buf_cstr(&b);
+}
+
+/* The entries the header's furigana takes, in text order: the next after
+ * entry i (-1: the first), -1 after the last. */
+static int next_in_text(const VjoEntryList *l, int i)
+{
+    int at = i < 0 ? 0 : l->entries[i].hl_end;
+    for (int j = i + 1; j < l->n_entries; j++) {
+        const VjoEntry *e = &l->entries[j];
+        if (e->hl_start >= at && e->hl_end > e->hl_start)
+            return j;
+    }
+    return -1;
+}
+
+int vjo_entry_in_text(const VjoEntryList *l, int i)
+{
+    int j = next_in_text(l, -1);
+    while (j >= 0 && j < i)
+        j = next_in_text(l, j);
+    return i >= 0 && j == i;
+}
+
+/* An entry's ruby markup: its token's (jpdb), else its word's dictionary
+ * form's (jiten). */
+static const char *entry_ruby(const VjoEntry *e)
+{
+    return e->furigana ? e->furigana : e->vocab->ruby;
+}
+
+int vjo_entries_rubies(const VjoEntryList *l, VjoRuby *out, int cap)
+{
+    int n = 0;
+    for (int i = next_in_text(l, -1); i >= 0 && n < cap; i = next_in_text(l, i)) {
+        const VjoEntry *e = &l->entries[i];
+        int k = n;
+        n += vjo_furigana_rubies(l->header + e->hl_start, (size_t)(e->hl_end - e->hl_start), entry_ruby(e), out + n,
+                                 cap - n);
+        for (; k < n; k++) {
+            out[k].start += (size_t)e->hl_start;
+            out[k].end += (size_t)e->hl_start;
+        }
+    }
+    return n;
 }

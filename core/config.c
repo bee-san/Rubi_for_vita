@@ -65,6 +65,11 @@ static const struct {
     [VJO_ANKI_PICTURE] = {"anki_field_picture", "Picture"},
     [VJO_ANKI_FREQUENCY] = {"anki_field_frequency", "FreqSort"},
     [VJO_ANKI_AUDIO] = {"anki_field_audio", "ExpressionAudio"},
+    [VJO_ANKI_SENTENCE_FURIGANA] = {"anki_field_sentence_furigana", "SentenceFurigana"},
+    [VJO_ANKI_PITCH_POSITION] = {"anki_field_pitch_position", "PitchPosition"},
+    [VJO_ANKI_PITCH_CATEGORIES] = {"anki_field_pitch_categories", "PitchCategories"},
+    [VJO_ANKI_FREQUENCY_LIST] = {"anki_field_frequency_list", "Frequency"},
+    [VJO_ANKI_MISC_INFO] = {"anki_field_misc_info", "MiscInfo"},
 };
 
 void vjo_config_defaults(VjoConfig *c)
@@ -140,9 +145,10 @@ const char *vjo_config_default_text(void)
            "toggle_button = l+r\n"
            "\n"
            "; Turns subtitles on/off: the recognized text in a strip at the top of the\n"
-           "; screen while the game runs. Same values as toggle_button, but not the same\n"
-           "; one. When one is part of the other (select and select+r), the shorter one\n"
-           "; acts on release.\n"
+           "; screen while the game runs, with furigana once its words are looked up\n"
+           "; (jpdb or jiten only). Same values as toggle_button, but not the same one.\n"
+           "; When one is part of the other (select and select+r), the shorter one acts\n"
+           "; on release.\n"
            "subtitle_button = select+r\n"
            "\n"
            "; Text is read from screenshots using OCR.\n"

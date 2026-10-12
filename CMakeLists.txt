@@ -23,7 +23,7 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c shell/game_ocr_client.c)
+  core/games.c core/sfo.c core/furigana.c core/pitch.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)

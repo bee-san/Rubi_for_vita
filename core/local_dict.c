@@ -416,7 +416,7 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     for (int i = 0; i < n; i++) {
         if (w->seen_dict[i] == m->dict && w->seen_off[i] == m->record.entry_off) {
             if (res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-            res->tokens[res->n_tokens++] = (VjoToken){i, pos16, len16};
+            res->tokens[res->n_tokens++] = (VjoToken){.vocab = i, .pos16 = pos16, .len16 = len16};
             return VJO_OK;
         }
     }
@@ -424,7 +424,7 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n])))
         return rc;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
-    res->tokens[res->n_tokens++] = (VjoToken){n, pos16, len16};
+    res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16};
     res->n_vocab++;
     return VJO_OK;
 }
@@ -675,7 +675,7 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         vjo_arena_release(a, mark);
         return err->rc = rc;
     }
-    res->tokens[0] = (VjoToken){0, pages->pos16, pg->len16};
+    res->tokens[0] = (VjoToken){.vocab = 0, .pos16 = pages->pos16, .len16 = pg->len16};
     res->n_vocab = res->n_tokens = 1;
     vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
     return VJO_OK;

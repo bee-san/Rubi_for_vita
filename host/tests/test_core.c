@@ -7,9 +7,11 @@
 #include "config.h"
 #include "entries.h"
 #include "foreground.h"
+#include "furigana.h"
 #include "http.h"
 #include "jiten.h"
 #include "jpdb.h"
+#include "pitch.h"
 #include "json.h"
 #include "jpegsw.h"
 #include "lens.h"
@@ -296,7 +298,7 @@ static void test_jpdb_request(void)
     TEST_CHECK(strstr(j, "\"text\":\"猫が\\\"好き\\\"\\\\\\n\"") != NULL);
     TEST_CHECK(strstr(j, "\"position_length_encoding\":\"utf16\"") != NULL);
     TEST_CHECK(strstr(j, "\"token_fields\":[\"vocabulary_index\",\"position\",\"length\",\"furigana\"]") != NULL);
-    TEST_CHECK(strstr(j, "\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\",\"frequency_rank\",\"meanings\"]") != NULL);
+    TEST_CHECK(strstr(j, "\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\",\"frequency_rank\",\"meanings\",\"part_of_speech\",\"pitch_accent\"]") != NULL);
 }
 
 static const char *JPDB_SAMPLE =
@@ -372,6 +374,171 @@ static void test_jiten_request(void)
     TEST_CHECK(!strcmp(j, "{\"text\":[\"猫が\\\"好き\\\"\"]}"));
 }
 
+static void test_jpdb_pitch(void)
+{
+    TEST_CHECK(vjo_pitch_from_pattern("LHLL", 4) == 2); /* 昨日 + particle */
+    TEST_CHECK(vjo_pitch_from_pattern("LHHH", 4) == 0); /* heiban */
+    TEST_CHECK(vjo_pitch_from_pattern("HLL", 3) == 1);
+    TEST_CHECK(vjo_pitch_from_pattern("LHHL", 4) == 3); /* odaka: the drop is on the particle */
+    TEST_CHECK(vjo_pitch_from_pattern("", 0) == 0);
+}
+
+/* Readings for a word as written, from the jiten dictionary form's ruby
+ * (cases from real /api/reader/parse responses). */
+static void test_furigana_align(void)
+{
+    static const char *const cases[][3] = {
+        {"雨が降っていた", "雨[あめ]が降[ふ]る", " 雨[あめ]が 降[ふ]っていた"},
+        {"読んでいました", "読[よ]む", " 読[よ]んでいました"},
+        {"学校", "学[がっ]校[こう]", " 学[がっ] 校[こう]"},
+        {"三日", "三日[みっか]", " 三日[みっか]"},
+        {"人々", "人々[ひとびと]", " 人々[ひとびと]"},
+        {"一人で", "一人[ひとり]で", " 一人[ひとり]で"},
+        {"お前", "お前[まえ]", "お 前[まえ]"},
+        {"大人しく", "大人[おとな]しい", " 大人[おとな]しく"},
+        {"旅立った", "旅[たび]立[だ]つ", " 旅[たび] 立[だ]った"},
+        {"来た", "来[く]る", " 来[き]た"},
+        {"来ます", "来[く]る", " 来[き]ます"},
+        {"来ない", "来[く]る", " 来[こ]ない"},
+        {"来られる", "来[く]る", " 来[こ]られる"},
+        {"来れば", "来[く]る", " 来[く]れば"},
+        {"来る", "来[く]る", " 来[く]る"},
+        {"来い", "来[こ]い", " 来[こ]い"},
+        {"来年", "来年[らいねん]", " 来年[らいねん]"},
+        {"良かった", "良[い]い", " 良[よ]かった"}, /* 良い read いい: only the plain form */
+        {"良い", "良[い]い", " 良[い]い"},
+        {"良く", "良[よ]い", " 良[よ]く"},
+        {"一人で", "一[ひと]人[り]で", " 一[ひと] 人[り]で"}, /* jpdb's token furigana */
+        /* one token for 来て下さい: 下 has no reading in the ruby, an
+         * auxiliary's is used */
+        {"来て下さい", "来[く]る", " 来[き]て 下[くだ]さい"},
+        {"待って下さい", "待[ま]つ", " 待[ま]って 下[くだ]さい"},
+        {"帰って来た", "帰[かえ]る", " 帰[かえ]って 来[き]た"},
+        {"走って行った", "走[はし]る", " 走[はし]って 行[い]った"},
+        {"食べて見て", "食[た]べる", " 食[た]べて 見[み]て"},
+        {"教えて頂けます", "教[おし]える", " 教[おし]えて 頂[いただ]けます"},
+        {"忘れて仕舞った", "忘[わす]れる", " 忘[わす]れて 仕舞[しま]った"},
+        {"食べ過ぎた", "食[た]べる", " 食[た]べ 過[す]ぎた"},
+        {"見る", "見[み]る", " 見[み]る"},
+        {"下を", "下[した]", " 下[した]を"},
+        {"行った", "行[ゆ]く", " 行[い]った"}, /* 行く read ゆく */
+        {"行く", "行[ゆ]く", " 行[ゆ]く"},
+        {"行った", "行[い]く", " 行[い]った"},
+        {"好かった", "好[い]い", " 好[よ]かった"},
+        {"好い", "好[い]い", " 好[い]い"},
+        {"上下", "上下[じょうげ]", " 上下[じょうげ]"},
+        {"下手", "下手[へた]", " 下手[へた]"},
+        {"下さる", "下[くだ]さる", " 下[くだ]さる"},
+        {"手下さえ", "手[て]", " 手[て]下さえ"}, /* an auxiliary only as one */
+        {"お待ち下さい", "お待[ま]ち", "お 待[ま]ち 下[くだ]さい"},
+        {"見て行く", "見[み]る", " 見[み]て 行[い]く"},
+        {"置いて見る", "置[お]く", " 置[お]いて 見[み]る"},
+        {"ので", "ので", "ので"},
+    };
+    setup();
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char *f = vjo_furigana_align(&A, cases[i][0], strlen(cases[i][0]), cases[i][1]);
+        TEST_CHECK(f && !strcmp(f, cases[i][2]));
+        TEST_MSG("%s %s: %s", cases[i][0], cases[i][1], f ? f : "(null)");
+    }
+    TEST_CHECK(!strcmp(vjo_furigana_align(&A, "猫", strlen("猫"), NULL), "猫"));
+    TEST_CHECK(!strcmp(vjo_furigana_align(&A, "降っ\nた", strlen("降っ\nた"), "降[ふ]る"), " 降[ふ]っ\nた"));
+    /* a line break of the OCR inside a base: read across it, after it in Anki's */
+    TEST_CHECK(!strcmp(vjo_furigana_align(&A, "今\n日は", strlen("今\n日は"), "今日[きょう]"), " 今日[きょう]\nは"));
+    TEST_CHECK(!strcmp(vjo_furigana_align(&A, "出\r\n来た", strlen("出\r\n来た"), "出来[でき]る"), " 出来[でき]\r\nた"));
+    TEST_CHECK(!strcmp(vjo_furigana_align(&A, "学\n校", strlen("学\n校"), "学[がっ]校[こう]"), " 学[がっ]\n 校[こう]"));
+}
+
+/* The readings as ranges of the word, a line break inside one included. */
+static void test_furigana_rubies(void)
+{
+    VjoRuby r[8];
+    const char *s = "雨が降\nっ\n今\n日";
+    int n = vjo_furigana_rubies(s, strlen(s), "雨[あめ]が降[ふ]る今日[きょう]", r, 8);
+    TEST_ASSERT(n == 3);
+    TEST_CHECK(r[0].start == 0 && r[0].end == 3 && r[0].reading_len == 6 && !memcmp(r[0].reading, "あめ", 6));
+    TEST_CHECK(r[1].start == 6 && r[1].end == 9 && !memcmp(r[1].reading, "ふ", 3));
+    TEST_CHECK(r[2].start == 14 && r[2].end == 21 && !memcmp(r[2].reading, "きょう", 9));
+    TEST_CHECK(vjo_furigana_rubies(s, strlen(s), "雨[あめ]が降[ふ]る今日[きょう]", r, 2) == 2);
+    TEST_CHECK(vjo_furigana_rubies("猫", strlen("猫"), NULL, r, 8) == 0);
+}
+
+/* jpdb's furigana comes from the text without line breaks: a word across
+ * one keeps it. */
+static void test_entry_furigana_line_break(void)
+{
+    const char *jp = "{\"tokens\":[[0,0,1,[[\"雨\",\"あめ\"]]],[1,2,3,[[\"降\",\"ふ\"],\"った\"]]],"
+                     "\"vocabulary\":[[1,2,3,\"雨\",\"あめ\",1000,[\"rain\"],[\"n\"],[\"HLL\"]],"
+                     "[4,5,6,\"降る\",\"ふる\",1300,[\"to fall\"],[\"v5r\"],[\"HLL\"]]]}";
+    VjoDictResult r;
+    VjoEntryList l;
+    VjoRuby rb[8];
+    VjoBuf b;
+    char *f;
+    setup();
+    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    TEST_CHECK(!strcmp(r.tokens[1].furigana, "降[ふ]った") && !strcmp(r.source, "jpdb"));
+    TEST_ASSERT(vjo_entries_build(&A, "雨が降\nった", &r, &l) == 0);
+    TEST_CHECK(!strcmp(l.source, "jpdb"));
+    TEST_ASSERT(vjo_entries_rubies(&l, rb, 8) == 2);
+    TEST_CHECK(rb[1].start == 6 && rb[1].end == 9 && !memcmp(rb[1].reading, "ふ", 3));
+    vjo_buf_init(&b, &A);
+    vjo_furigana_render(&b, l.header, 0, strlen(l.header), rb, 2, 0);
+    f = vjo_buf_cstr(&b);
+    TEST_CHECK(f && !strcmp(f, "雨[あめ]が 降[ふ]\nった"));
+    TEST_MSG("%s", f ? f : "(null)");
+}
+
+/* The strip's readings: UTF-16 ranges of its (maybe cut) text. */
+static void test_strip_rubies(void)
+{
+    const char *jp = "{\"tokens\":[[0,0,2,[[\"𠮟\",\"しか\"]]],[1,2,1,[[\"雨\",\"あめ\"]]],"
+                     "[2,3,4,[[\"大人\",\"おとなおとなおとなおとな\"],\"しい\"]]],"
+                     "\"vocabulary\":[[1,2,3,\"𠮟る\",\"しかる\",1,[\"scold\"],[\"v\"],[\"HL\"]],"
+                     "[4,5,6,\"雨\",\"あめ\",1,[\"rain\"],[\"n\"],[\"HL\"]],"
+                     "[7,8,9,\"大人しい\",\"おとなしい\",1,[\"quiet\"],[\"adj\"],[\"HL\"]]]}";
+    VjoDictResult r;
+    VjoEntryList l;
+    VjoStripRuby s[8];
+    setup();
+    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    TEST_ASSERT(vjo_entries_build(&A, "𠮟\r\n雨大人しい", &r, &l) == 0);
+    /* 𠮟 is two units, \r none; the long reading is left out */
+    TEST_ASSERT(vjo_strip_rubies(&A, l.header, &l, s, 8) == 2);
+    TEST_CHECK(s[0].start == 0 && s[0].end == 2 && !strcmp(s[0].reading, "しか"));
+    TEST_CHECK(s[1].start == 3 && s[1].end == 4 && !strcmp(s[1].reading, "あめ"));
+    /* cut text: only the readings inside it */
+    TEST_CHECK(vjo_strip_rubies(&A, "𠮟\r\n", &l, s, 8) == 1);
+    TEST_CHECK(vjo_strip_rubies(&A, "雨", &l, s, 8) == 0); /* another text */
+    TEST_CHECK(vjo_strip_rubies(&A, l.header, &l, s, 1) == 1);
+}
+
+/* The header's readings: from each word in text order, an overlapping
+ * token and a word without one skipped. */
+static void test_entries_rubies(void)
+{
+    const char *js =
+        "{\"tokens\":[[{\"wordId\":1,\"readingIndex\":0,\"start\":0,\"length\":1},"
+        "{\"wordId\":3,\"readingIndex\":0,\"start\":2,\"length\":5},"
+        "{\"wordId\":1,\"readingIndex\":0,\"start\":3,\"length\":1}]],"
+        "\"vocabulary\":["
+        "{\"wordId\":1,\"readingIndex\":0,\"spelling\":\"彼\",\"reading\":\"彼[かれ]\",\"meaningsChunks\":[[\"he\"]]},"
+        "{\"wordId\":3,\"readingIndex\":0,\"spelling\":\"来る\",\"reading\":\"来[く]る\",\"meaningsChunks\":[[\"to come\"]]},"
+        "{\"wordId\":5,\"readingIndex\":0,\"spelling\":\"雨\",\"reading\":\"雨[あめ]\",\"meaningsChunks\":[[\"rain\"]]}]}";
+    VjoDictResult r;
+    VjoEntryList l;
+    VjoRuby rb[8];
+    int n;
+    setup();
+    TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
+    TEST_ASSERT(vjo_entries_build(&A, "彼は\n来なかった。", &r, &l) == 0);
+    n = vjo_entries_rubies(&l, rb, 8);
+    TEST_ASSERT(n == 2);
+    TEST_CHECK(rb[0].start == 0 && rb[0].end == 3 && !memcmp(rb[0].reading, "かれ", 6));
+    TEST_CHECK(rb[1].start == 7 && rb[1].end == 10 && !memcmp(rb[1].reading, "こ", 3));
+    TEST_CHECK(vjo_entries_rubies(&l, rb, 1) == 1);
+}
+
 static void test_jiten_parse(void)
 {
     /* Shape of a real /api/reader/parse response (trimmed): "𠮟" is a
@@ -400,7 +567,10 @@ static void test_jiten_parse(void)
     TEST_CHECK(!strcmp(r.vocab[0].reading, "おちゃ") && r.vocab[0].rank == 1199);
     TEST_CHECK(r.vocab[0].n_meanings == 2 && !strcmp(r.vocab[0].meanings[1], "tea ceremony; chanoyu"));
     TEST_CHECK(r.vocab[2].n_meanings == 1 && !strcmp(r.vocab[2].meanings[0], "to drink; to gulp"));
-    TEST_CHECK(r.n_tokens == 5);
+    TEST_CHECK(!strcmp(r.vocab[0].ruby, "お茶[ちゃ]") && r.vocab[0].n_pitch == 1 && r.vocab[0].pitch[0] == 0);
+    TEST_CHECK(r.vocab[0].n_pos == 1 && !strcmp(r.vocab[0].pos[0], "n"));
+    TEST_CHECK(r.vocab[1].n_pitch == 0 && r.vocab[1].n_pos == 0);
+    TEST_CHECK(r.n_tokens == 5 && !r.tokens[0].furigana);
     TEST_CHECK(r.tokens[1].vocab == 1 && r.tokens[3].vocab == 1);
     TEST_CHECK(r.tokens[4].vocab == -1);
     TEST_CHECK(r.tokens[0].pos16 == 4 && r.tokens[0].len16 == 2);
@@ -2221,6 +2391,12 @@ TEST_LIST = {
     {"jiten_ruby", test_jiten_ruby},
     {"jiten_request", test_jiten_request},
     {"jiten_parse", test_jiten_parse},
+    {"jpdb_pitch", test_jpdb_pitch},
+    {"furigana_align", test_furigana_align},
+    {"furigana_rubies", test_furigana_rubies},
+    {"entries_rubies", test_entries_rubies},
+    {"strip_rubies", test_strip_rubies},
+    {"entry_furigana_line_break", test_entry_furigana_line_break},
     {"entries", test_entries},
     {"entries_surrogates_and_trim", test_entries_surrogates_and_trim},
     {"foreground", test_foreground},

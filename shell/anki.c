@@ -8,6 +8,7 @@
 #include <psp2/rtc.h>
 
 #include "../core/anki.h"
+#include "../core/utf.h"
 #include "shell.h"
 #include "anki_queue.h"
 
@@ -23,6 +24,7 @@ static volatile int running;
 
 /* mailbox (box_lock) */
 static VjoConfig next_cfg;
+static char game_name[128];
 static int want_check, want_add, want_sync;
 static unsigned add_seq;
 static int add_entry;
@@ -63,6 +65,16 @@ void vjo_anki_post_check(unsigned list_seq)
     (void)list_seq;
     sceKernelUnlockMutex(box_lock, 1);
     sceKernelSetEventFlag(evf, EV_WORK);
+}
+
+void vjo_anki_set_game(const char *name)
+{
+    if (box_lock < 0)
+        return;
+    sceKernelLockMutex(box_lock, 1, NULL);
+    sceClibSnprintf(game_name, sizeof(game_name), "%s", name);
+    vjo_utf8_trim_partial(game_name);
+    sceKernelUnlockMutex(box_lock, 1);
 }
 
 void vjo_anki_post_add(unsigned list_seq, int entry)
@@ -312,6 +324,22 @@ static uint64_t unix_ms(void)
     return t.tick / 1000ull - 62135596800000ull; /* microseconds since 0001-01-01 UTC */
 }
 
+/* MiscInfo: the game's name and the local time. */
+static void misc_info(char *out, size_t cap)
+{
+    char game[sizeof(game_name)];
+    SceDateTime t;
+    sceKernelLockMutex(box_lock, 1, NULL);
+    sceClibMemcpy(game, game_name, sizeof(game));
+    sceKernelUnlockMutex(box_lock, 1);
+    if (sceRtcGetCurrentClockLocalTime(&t) < 0) {
+        vjo_anki_misc_info(out, cap, game, NULL); /* no date rather than a wrong one */
+        return;
+    }
+    VjoAnkiDate when = {t.year, t.month, t.day, t.hour, t.minute};
+    vjo_anki_misc_info(out, cap, game, &when);
+}
+
 /* The game's frame when × was pressed, into m. */
 static void take_screenshot(VjoAnkiMedia *m, char *name, size_t cap)
 {
@@ -337,14 +365,14 @@ static void do_add(unsigned seq, int entry)
 {
     VjoAnkiNote note;
     VjoAnkiMedia media = {0};
-    char picture_name[40], msg[sizeof(g_view.anki_status)];
+    char picture_name[40], misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
     int ok = 0, marked = 0, rc, want_picture;
     int64_t t0 = now_us();
 
     vjo_view_lock();
     if (g_view.open && g_view.list_seq == seq && g_view.list && entry >= 0 && entry < g_view.list->n_entries) {
         marked = entry < VJO_MAX_ENTRIES && g_view.anki_marks_seq == seq && g_view.anki_mark[entry];
-        ok = marked || vjo_anki_note_from_entry(&arena, g_view.list, entry, &note) == 0;
+        ok = marked || vjo_anki_note_from_entry(&arena, &acfg, g_view.list, entry, &note) == 0;
     }
     vjo_view_unlock();
     if (marked)
@@ -354,6 +382,10 @@ static void do_add(unsigned seq, int entry)
         return;
     }
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1);
+    /* The game and time of the × press. The v1 queue record does not keep
+     * MiscInfo yet, so queued cards are sent without it. */
+    misc_info(misc, sizeof(misc));
+    note.misc = misc;
     want_picture = acfg.anki_field[VJO_ANKI_PICTURE][0] != '\0';
     if (want_picture) {
         size_t mark = vjo_arena_mark(&arena);
