@@ -22,11 +22,14 @@ extern "C" {
 #define VJO_LOG_OLD_PATH VJO_DATA_DIR "/log.old.txt"
 #define VJO_STATUS_PATH VJO_DATA_DIR "/status.txt"
 #define VJO_ANKI_HOST_PATH VJO_DATA_DIR "/anki_host.txt" /* found by anki_host = auto */
+#define VJO_ANKI_QUEUE_DIR VJO_DATA_DIR "/anki_queue"     /* offline cards, see anki_queue.h */
 #define VJO_RCO_PATH    "ur0:data/VitaJPOverlay/vitajpoverlay.rco"
 
 #define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
 
 enum { VJO_ANKI_STATUS_DIM = 0, VJO_ANKI_STATUS_ERROR = 1 };
+/* VjoView.anki_mark: the word is in Anki (√), or saved in the offline queue */
+enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2 };
 /* VjoView.strip_kind */
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 #define VJO_STRIP_MAX 4096 /* bytes of UTF-8 */
@@ -50,6 +53,17 @@ typedef struct {
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
+    /* Anki (anki.c): changes bump anki_version only, so the overlay keeps
+     * the header, the selection and the definition's scroll */
+    int anki_enabled;         /* anki_mining is on: × saves the shown word, △ sends the queue */
+    unsigned anki_version;
+    int anki_pending;         /* cards in the offline queue; -1 unreadable, -2 not counted yet */
+    int anki_sending;         /* △ is sending them */
+    char anki_status[128];    /* "Saved for Anki", "Sending to Anki…", an error, or "" */
+    int anki_status_kind;     /* VJO_ANKI_STATUS_* */
+    unsigned anki_status_seq; /* list_seq the status is for; 0 = any (a send's) */
+    unsigned anki_marks_seq;  /* list_seq the marks are for */
+    uint8_t anki_mark[VJO_MAX_ENTRIES]; /* VJO_ANKI_MARK_* */
     /* subtitles: a strip at the top while the overlay is closed; changes
      * bump strip_version, and those of the text or its readings their seq */
     int strip_on;             /* subtitles are on (stored atomically) */
@@ -118,6 +132,27 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size);
 int vjo_title_game_mode(const char *tid);
 /* Reloaded on game start/resume before capture or input filtering activates. */
 int vjo_game_enabled(const char *tid, VjoArena *scratch);
+
+/* anki.c: Anki card mining with an offline file queue, one job at a time */
+/* The mailbox lock only: no thread and no memory until a job is posted. */
+int vjo_anki_start(void);
+/* Cancels a job in progress and joins its thread; -1 (keeping its memory)
+ * if the join fails, so stop can be retried. */
+int vjo_anki_stop(void);
+/* Settings for the next job (control thread, after each config load).
+ * Returns 1 when × and △ work (anki_mining is on). */
+int vjo_anki_configure(const VjoConfig *cfg);
+/* The running game's name for MiscInfo ("" = none; control thread). */
+void vjo_anki_set_game(const char *name);
+/* Saves entry `entry` of list list_seq to the queue (overlay, × pressed).
+ * Ignored while anki_mining is off. */
+void vjo_anki_post_add(unsigned list_seq, int entry);
+/* Sends the queue to anki_host (overlay, △ pressed). */
+void vjo_anki_post_send(void);
+/* Counts the queue for the overlay (control thread, overlay opened). */
+void vjo_anki_post_count(void);
+/* Joins the thread of a job that is done (control thread, each wakeup). */
+void vjo_anki_reap(void);
 
 /* overlay.cpp (paf main thread) */
 void vjo_overlay_init(void *plugin);

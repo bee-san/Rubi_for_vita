@@ -83,7 +83,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
-  ${ROOT}/core/base64.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
@@ -111,6 +111,8 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
+  ${ROOT}/shell/anki.c
+  ${ROOT}/shell/anki_queue.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/log_vita.c
@@ -256,7 +258,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${STAGE}/tools/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses

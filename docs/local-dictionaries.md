@@ -3,9 +3,10 @@
 Local lookup reads dictionaries from the Vita's storage. It needs no running
 computer, dictionary API key, Hachidori Relay, or dictionary network request.
 The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
-JMdict already converted and enabled. Recognition and lookup are offline. Anki
-and its queue are disabled in this release. The instructions below add your
-own dictionaries.
+JMdict already converted and enabled. Recognition and lookup are offline.
+Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards
+wait in an offline queue on the memory card until you send them. The
+instructions below add your own dictionaries.
 
 ## Convert and install
 
@@ -233,7 +234,8 @@ The matched original text length is retained in the entry, while the UI
 highlights the complete match by default. Settings → OCR & lookup → Highlight
 can instead highlight the selected character. Tapping the recognized header
 selects a character and uses the same bounded lookup as the arrows. Neither
-option introduces sentence tokenization. Anki mining is disabled in this release.
+option introduces sentence tokenization. With `anki_host` set, × sends the
+match at the cursor to [Anki](anki.md).
 Part-of-speech rules from the dictionary filter deinflected candidates.
 At the selected position, the longest exact term takes precedence, followed
 by deinflected candidates and configured dictionary order. This is bounded

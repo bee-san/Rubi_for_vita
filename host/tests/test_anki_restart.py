@@ -1,9 +1,11 @@
-"""Restart/crash tests: every Vita-side action runs in a fresh OS process.
+"""Restart/crash tests of the offline Anki queue: every Vita-side action
+runs in a fresh OS process (vjo-shell-anki-tests --restart-step).
 
-The real queue/worker and HTTP client use host SDK adapters. An AnkiConnect
-HTTP double stays alive across client restarts, like Anki on the user's PC.
-These check process crashes and disk recovery, not electrical power loss on
-physical Vita/SD2Vita hardware.
+The real Shell Anki thread, queue storage, screenshot capture and HTTP client
+run with host SDK adapters. An AnkiConnect HTTP double stays alive across
+client restarts, like Anki on the user's computer. These check process
+crashes and disk recovery at each storage boundary, not electrical power
+loss on physical Vita/SD2Vita hardware.
 """
 import base64
 import hashlib
@@ -41,7 +43,7 @@ def anki_server():
                 tag = next(t for t in note["tags"] if t.startswith("vita_queue_"))
                 state["adds"] += 1
                 note_id = 1791436200000 + state["adds"]
-                state["notes"][tag] = {"id": note_id, "note": note}
+                state["notes"][tag] = {"id": note_id, "note": request["params"]["note"]}
                 if state["drop_reply"]:
                     state["drop_reply"] = False
                     self.connection.shutdown(socket.SHUT_RDWR)
@@ -83,7 +85,7 @@ class RestartTests(unittest.TestCase):
         args = [PROBE, "--restart-step", str(self.root), action, crash]
         if host is not None:
             args.append(host)
-        result = subprocess.run(args, text=True, capture_output=True, timeout=20)
+        result = subprocess.run(args, text=True, capture_output=True, timeout=60)
         self.assertEqual(result.returncode, 86 if crash else 0, result.stdout + result.stderr)
         return None if crash else json.loads(result.stdout)
 
@@ -91,23 +93,29 @@ class RestartTests(unittest.TestCase):
         return {p.name: p.read_bytes() for p in self.queue.iterdir() if p.is_file()}
 
     def test_confirmed_save_survives_fresh_processes_with_screenshot(self):
-        self.assertEqual(self.step("save"), {"result": 0, "count": 1})
-        expected_picture = b"\xcc" * (96 * 1024)
+        self.assertEqual(self.step("save"), {"status": "Saved for Anki", "count": 1})
+        first = self.step("inspect")
+        self.assertGreater(first["picture_len"], 1000)
         for _ in range(3):
             restored = self.step("inspect")
+            self.assertEqual(restored, first)
             self.assertEqual(restored["count"], 1)
             self.assertEqual(restored["note"]["spelling"], "猫")
             self.assertEqual(restored["note"]["reading"], "ねこ")
-            self.assertEqual(restored["note"]["sentence"], "猫が\n好き𠮷")
-            self.assertEqual(restored["note"]["meanings"][0], 'cat "quoted" & <tag>\nnext line')
-            self.assertEqual(restored["picture_len"], len(expected_picture))
-            self.assertEqual(restored["picture_hash"], hashlib.sha256(expected_picture).hexdigest()[:32])
+            self.assertEqual(restored["note"]["sentence"], "猫が好き猫")
+            self.assertEqual(restored["note"]["meanings"], ["cat", 'shamisen "neko"'])
+            self.assertEqual(restored["note"]["misc"], "CLANNAD (2026-10-12 09:30)")
+        # The same card again is recognized, in another process.
+        self.assertEqual(self.step("save"), {"status": "Already queued", "count": 1})
         with anki_server() as (state, host):
             self.step("inspect")
-            self.assertEqual(state["actions"], [])  # reopening does not auto-send
-            self.assertEqual(self.step("sync", host=host)["count"], 0)
+            self.assertEqual(state["actions"], [])  # reopening does not send
+            self.assertEqual(self.step("sync", host=host), {"count": 0, "status": "Sent 1 to Anki"})
             sent = next(iter(state["notes"].values()))["note"]
-            self.assertEqual(base64.b64decode(sent["picture"][0]["data"]), expected_picture)
+            picture = base64.b64decode(sent["picture"][0]["data"])
+            self.assertEqual(hashlib.sha256(picture).hexdigest()[:32], first["picture_hash"])
+            self.assertEqual(len(picture), first["picture_len"])
+            self.assertEqual(sent["fields"]["Expression"], "猫")
         self.assertEqual(self.step("inspect"), {"count": 0})
 
     def test_interrupted_save_never_damages_previously_saved_cards(self):
@@ -150,7 +158,7 @@ class RestartTests(unittest.TestCase):
             self.assertEqual(self.step("sync", host=host)["count"], 1)
             self.assertEqual(state["adds"], 1)
             self.assertEqual(self.step("inspect")["count"], 1)
-            self.assertEqual(self.step("sync", host=host)["count"], 0)
+            self.assertEqual(self.step("sync", host=host), {"count": 0, "status": "Sent 1 to Anki"})
             self.assertEqual(state["adds"], 1)
 
     def test_restart_during_cleanup_leaves_no_broken_pending_record(self):

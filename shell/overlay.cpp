@@ -84,8 +84,9 @@ static ui::Widget *s_separator, *s_band_mid;
 static ui::RichText *s_hint, *s_region_hint;
 static ui::Widget *s_panel, *s_region_layer, *s_region_rect;
 
-static unsigned s_seen_version;
-static unsigned s_list_seq; /* the shown list */
+static unsigned s_seen_version, s_seen_anki_version;
+static unsigned s_list_seq; /* the shown list (Anki requests name it) */
+static int s_anki_enabled;  /* × sends the shown word to Anki */
 static int s_selected;
 /* Copied from the view under its lock, so nothing outside render() reads
  * the result memory (the control thread frees it when a game exits) and no
@@ -309,6 +310,7 @@ static void render(int new_content)
             s_match_end = (uint32_t)l->entries[0].hl_end;
     }
     s_list_seq = g_view.list_seq;
+    s_anki_enabled = g_view.anki_enabled;
     if (s_selected >= s_n_entries)
         s_selected = s_n_entries ? s_n_entries - 1 : 0;
     vjo_arena_reset(&s_ui);
@@ -337,10 +339,35 @@ static void render(int new_content)
             vjo_styled_puts(&body, "Looking up words…", VJO_RGB_DIM, en);
         else if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
-        if (s_n_entries) {
+        if (s_anki_enabled) {
+            /* the offline queue: what △ sends */
+            char queue[80];
+            if (g_view.anki_pending == -1)
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
+            else if (g_view.anki_pending < 0)
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue · %s", g_view.anki_sending ? "sending…" : "△ send");
+            else
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · %s", g_view.anki_pending,
+                                g_view.anki_sending ? "sending…" : "△ send");
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            vjo_styled_entry(&body, l, s_selected, ja, en, 0);
+            vjo_styled_puts(&body, queue, g_view.anki_pending == -1 ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
+        }
+        if (g_view.anki_status[0] && (g_view.anki_status_seq == 0 || g_view.anki_status_seq == s_list_seq)) {
+            /* by VJO_ANKI_STATUS_* */
+            if (body.len)
+                vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
+            vjo_styled_puts(&body, g_view.anki_status,
+                            g_view.anki_status_kind == VJO_ANKI_STATUS_ERROR ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
+        }
+        if (s_n_entries) {
+            int mark = g_view.anki_marks_seq == s_list_seq && s_selected < VJO_MAX_ENTRIES
+                       ? g_view.anki_mark[s_selected] : VJO_ANKI_MARK_NONE;
+            if (body.len)
+                vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
+            if (mark == VJO_ANKI_MARK_QUEUED)
+                vjo_styled_puts(&body, "Queued for Anki\n", VJO_RGB_DIM, en);
+            vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED);
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode
                 ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len
@@ -359,13 +386,17 @@ static void render(int new_content)
 
     /* Dictionary paging is taught by the body's "▲▼ Dictionary 2 of 3" line,
      * shown only while paging is available; the hint keeps its width. */
-    set_rich(s_hint, s_local_cursor_mode
-                        ? (s_highlight_mode == VJO_HIGHLIGHT_WORD
-                            ? "<font color=\"#8a94a6\">Tap character / ◀ ▶ word · stick scroll · □ region · ○ close</font>"
-                            : s_japanese_only_selection
-                            ? "<font color=\"#8a94a6\">Tap / ◀ ▶ Japanese character · stick scroll · □ region · ○ close</font>"
-                            : "<font color=\"#8a94a6\">Tap / ◀ ▶ character · stick scroll · □ region · ○ close</font>")
-                        : "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
+    {
+        char hint[192];
+        const char *nav = s_local_cursor_mode
+            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap character / ◀ ▶ word"
+               : s_japanese_only_selection ? "Tap / ◀ ▶ Japanese character" : "Tap / ◀ ▶ character")
+            : "◀ ▶ ▲ ▼ word";
+        sceClibSnprintf(hint, sizeof(hint),
+                        "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · ○ close</font>", nav,
+                        s_anki_enabled ? "× queue · △ send · " : "");
+        set_rich(s_hint, hint);
+    }
     if (rebuild_header) {
         if (have_hdr) {
             text_set(s_header.text, &hdr);
@@ -685,6 +716,12 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         s_stick_max = dy < 0 ? -dy : dy;
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
+    /* × saves the shown word (in a character lookup, the match at the
+     * cursor) to the offline queue; △ sends the queue, also without one. */
+    if ((pressed & SCE_CTRL_CROSS) && s_anki_enabled && s_selected < s_n_entries)
+        vjo_anki_post_add(s_list_seq, s_selected);
+    if ((pressed & SCE_CTRL_TRIANGLE) && s_anki_enabled)
+        vjo_anki_post_send();
     if (pressed & SCE_CTRL_CIRCLE)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
     if (pressed & SCE_CTRL_SQUARE)
@@ -763,12 +800,12 @@ static void input_region(uint32_t held, uint32_t pressed)
 
 /* ---- frame ---- */
 
-static void frame_body(unsigned version);
+static void frame_body(unsigned version, unsigned anki_version);
 
 static void frame(void *arg)
 {
     int want_open, want_strip;
-    unsigned version, strip_version;
+    unsigned version, anki_version, strip_version;
     (void)arg;
 
     /* Runs on SceShell's paf main thread every frame: while closed, skip the
@@ -780,6 +817,7 @@ static void frame(void *arg)
     vjo_view_lock();
     want_open = g_view.open;
     version = g_view.version;
+    anki_version = g_view.anki_version;
     want_strip = g_view.strip_on && g_view.strip_text[0] && !want_open;
     strip_version = g_view.strip_version;
     vjo_view_unlock();
@@ -790,6 +828,7 @@ static void frame(void *arg)
     if (want_open && !s_page) {
         open_page();
         s_seen_version = version - 1;
+        s_seen_anki_version = anki_version;
     } else if (!want_open && s_page) {
         close_page();
         return;
@@ -798,7 +837,7 @@ static void frame(void *arg)
         return;
     {
         int64_t t0 = sceKernelGetProcessTimeWide();
-        frame_body(version);
+        frame_body(version, anki_version);
         t0 = sceKernelGetProcessTimeWide() - t0;
         if (t0 > s_frame_max_us)
             s_frame_max_us = t0;
@@ -807,11 +846,19 @@ static void frame(void *arg)
 }
 
 /* One frame with the overlay page open. */
-static void frame_body(unsigned version)
+static void frame_body(unsigned version, unsigned anki_version)
 {
     if (version != s_seen_version) {
         s_seen_version = version;
+        s_seen_anki_version = anki_version;
         render(1);
+    } else if (anki_version != s_seen_anki_version) {
+        /* Anki status or marks: the body only, keeping the selection and
+         * the definition's scroll */
+        float scroll = s_body.scroll;
+        s_seen_anki_version = anki_version;
+        render(0);
+        s_body.scroll = scroll;
     } else if (s_highlight_retry_frames > 0) {
         if (header_highlight())
             s_highlight_retry_frames = 0;

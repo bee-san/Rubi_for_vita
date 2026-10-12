@@ -41,18 +41,31 @@ static inline int sceKernelFreeMemBlock(SceUID uid) { return 0; }
 #endif
 static inline int sceKernelWaitEventFlag(SceUID uid, unsigned int bits, unsigned int mode,
                                         unsigned int *out, void *timeout) { return -1; }
+#ifdef VJO_TEST_CREATE_STUBS
+SceUID sceKernelCreateMutex(const char *name, unsigned int attr, int count, void *opt);
+SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int priority,
+                             unsigned int stack, unsigned int attr, int affinity, void *opt);
+int sceKernelStartThread(SceUID uid, SceSize size, void *args);
+int sceKernelDeleteThread(SceUID uid);
+int sceKernelDeleteMutex(SceUID uid);
+#else
 static inline SceUID sceKernelCreateMutex(const char *name, unsigned int attr, int count, void *opt) { return -1; }
+#endif
 static inline SceUID sceKernelCreateEventFlag(const char *name, unsigned int attr, unsigned int bits, void *opt) { return -1; }
+#ifndef VJO_TEST_CREATE_STUBS
 static inline SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int priority,
                                           unsigned int stack, unsigned int attr, int affinity, void *opt) { return -1; }
 static inline int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return -1; }
+#endif
 #ifdef VJO_TEST_THREAD_STUBS
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout);
 #else
 static inline int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return -1; }
 #endif
+#ifndef VJO_TEST_CREATE_STUBS
 static inline int sceKernelDeleteThread(SceUID uid) { return 0; }
-static inline int sceKernelDeleteEventFlag(SceUID uid) { return 0; }
 static inline int sceKernelDeleteMutex(SceUID uid) { return 0; }
+#endif
+static inline int sceKernelDeleteEventFlag(SceUID uid) { return 0; }
 static inline int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
 #endif

@@ -173,7 +173,41 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 256 KB + one rotated file): on | off\n"
            "log_file = off\n"
            "\n"
-           "; Anki is disabled in this release; no offline queue is created.\n";
+           "; ---- Anki card mining (optional, see docs/anki.md) ----\n"
+           "; on: × in the overlay saves the shown word as a card in a queue on the memory\n"
+           "; card (ux0:data/VitaJPOverlay/anki_queue), even with Wi-Fi off or Anki closed.\n"
+           "; △ sends the queue to AnkiConnect on a computer on your local network (plain\n"
+           "; HTTP). No AnkiWeb sync. off (the default): × and △ do nothing.\n"
+           "anki_mining = off\n"
+           "\n"
+           "; The computer running Anki with AnkiConnect, for △: its IP address[:port]\n"
+           "; (default 8765), or auto = search the local network once. Empty: cards stay queued.\n"
+           "anki_host =\n"
+           "\n"
+           "; Deck (created if missing), note type, and tags separated by spaces. These and\n"
+           "; the fields below are read when △ sends, so queued cards use the latest ones.\n"
+           "anki_deck = Default\n"
+           "anki_note_type = Lapis\n"
+           "anki_tags = vita-jp-overlay\n"
+           "\n"
+           "; The note type's field for each item; empty = leave it out\n"
+           "anki_field_word = Expression\n"
+           "anki_field_reading = ExpressionReading\n"
+           "anki_field_furigana = ExpressionFurigana\n"
+           "anki_field_definition = MainDefinition\n"
+           "anki_field_sentence = Sentence\n"
+           "anki_field_picture = Picture\n"
+           "anki_field_frequency = FreqSort\n"
+           "anki_field_audio = ExpressionAudio\n"
+           "anki_field_sentence_furigana = SentenceFurigana\n"
+           "anki_field_pitch_position = PitchPosition\n"
+           "anki_field_pitch_categories = PitchCategories\n"
+           "anki_field_frequency_list = Frequency\n"
+           "anki_field_misc_info = MiscInfo\n"
+           "\n"
+           "; Word audio, looked up when △ sends: a Yomitan audio source URL with {term}\n"
+           "; and {reading} (empty = off)\n"
+           "anki_audio_url =\n";
 }
 
 /* host[:port], the n bytes at s: a name or IP address, and a port
@@ -543,6 +577,13 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 1;
         else if (vjo_ieq(val, "off"))
             c->log_file = 0;
+        else
+            warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "anki_mining")) {
+        if (vjo_ieq(val, "on"))
+            c->anki_mining = 1;
+        else if (vjo_ieq(val, "off"))
+            c->anki_mining = 0;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else {

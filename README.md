@@ -4,8 +4,11 @@ This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-nov
 text and shows Japanese dictionary entries over your game. **The v0.7.12 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
-The release includes a standalone per-game settings app. Anki and the offline
-card queue are disabled; no cards or screenshots are queued.
+The release includes a standalone per-game settings app. Optional
+[Anki card mining](docs/anki.md) saves the shown word as a card in an offline
+queue on the memory card, with or without Wi-Fi, and sends the queue to
+AnkiConnect on a computer on your local network when you press Triangle. It is
+off until you set `anki_mining = on`. There is no AnkiWeb sync.
 
 Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
 **[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
@@ -104,6 +107,8 @@ then reboot. Keep unrelated plugins and configuration intact.
 | Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
 | Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
 | Hold Square | Restore the full-screen region |
+| Cross | Save the shown word as an Anki card in the offline queue, with `anki_mining = on` ([Anki mining](docs/anki.md)) |
+| Triangle | Send the queued cards to Anki at `anki_host` |
 | Circle | Close the overlay |
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
@@ -112,7 +117,9 @@ settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. Cross and Triangle do not save or send Anki cards.
+when opening the overlay. With `anki_mining = on`, Cross saves the shown word,
+its sentence and a screenshot of the game to the card queue on the memory card,
+even with Wi-Fi off or Anki closed; Triangle sends the queue to AnkiConnect.
 
 ## Per-game settings
 
@@ -221,6 +228,24 @@ dictionaries and Hachidori show the strip without readings and add no lookups
 for it. Local defaults make no OCR or dictionary network requests and have no
 cloud fallback.
 
+### Anki
+
+Card mining is off by default. With `anki_mining = on`, Cross saves cards as
+readable JSON files (plus a JPEG screenshot) in
+`ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts and need no network.
+To send them to Anki on your computer, install AnkiConnect, set its
+`webBindAddress` to `0.0.0.0`, set `anki_host = COMPUTER_IP` (or `IP:port`, or
+`auto` to search the local network once), and press Triangle. Cards go one at
+a time; a card leaves the queue only when Anki confirms it, so a failed or
+interrupted send can be repeated without duplicates. `anki_deck`,
+`anki_note_type`, `anki_tags` and the `anki_field_*` keys choose the deck,
+note type and field mapping when you send; the defaults fit the Lapis note
+type. An empty field key leaves that item out; `anki_audio_url` adds word
+audio from a Yomitan audio source. AnkiConnect is unauthenticated plain HTTP:
+use it only on a trusted network. These settings are edited in `config.ini`,
+not in the Settings app. See [docs/anki.md](docs/anki.md) for the queue,
+fields, messages and memory bounds.
+
 ## Memory and troubleshooting
 
 The `*ALL` plugin runs the selected local OCR engine in the enabled game's process, allocating its
@@ -266,6 +291,12 @@ retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
+With `anki_mining = on`, saving a card (×) or sending the queue (△) takes one
+bounded Paf allocation through the same reserve guard (128 KiB, or 384 KiB
+with a screenshot field; the JPEG is capped at 192 KiB) and a 64 KiB thread
+stack; both are released when the job is done. Counting the queue when the
+overlay opens takes only the thread's stack. Anki failures, storage errors
+and refused memory never touch the recognized text.
 The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
@@ -311,7 +342,12 @@ worker with platform stubs. It checks cancelled jobs, denied input blocking,
 OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
 close/reopen during lookup, scene/region invalidation, Unicode navigation and
 100 game-worker
-allocation/free cycles, bounded model reads and stale-job isolation. Real
+allocation/free cycles, bounded model reads and stale-job isolation. The Shell
+Anki miner is tested with its real capture path and its offline queue on real
+files: saves without a host or network, restarts, Japanese text and escaping,
+failed and short writes, temp and damaged files, AnkiConnect requests and field
+mapping, lost replies and retries, duplicates, refused memory, cancellation and
+50 card lifetimes; crash/restart tests run each step in a fresh process. Real
 model tests also run the actual game worker through the actual kernel broker
 with FL10/H15, unavailable game storage, short reads, corrupt weights and
 failed cleanup. The integration tests model the observed syscall return
