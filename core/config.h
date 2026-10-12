@@ -59,6 +59,9 @@ typedef struct {
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
     char vocr_model[64];      /* old VOCR weights in ocr_model_dir; VOCR2 uses its build pin */
+    /* Smaller weights run instead when the game's free memory has no room
+     * for vocr_model (the game worker decides per job); "" = none. */
+    char vocr_fallback_model[64];
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     int anki_mining;          /* 0/1: × saves cards to the offline queue, △ sends it */

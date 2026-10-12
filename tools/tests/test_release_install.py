@@ -97,7 +97,8 @@ elif '-o' in a:
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_OCR.suprx"), 1)
             self.assertNotIn(b"\n", tai.replace(b"\r\n", b""))
         config = (self.data / "config.ini").read_text()
-        for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = FL10_w8.vocr",
+        for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = H15_w8.vocr",
+                        "vocr_fallback_model = FL10_w8.vocr",
                         "local_dictionaries = jmdict.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key"):
             self.assertIn(setting, config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
@@ -123,7 +124,8 @@ elif '-o' in a:
         result = self.install("tools/install_ftp.sh")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = (self.data / "config.ini").read_text()
-        for setting in ("ocr_backend = lens", "vocr_model = FL10_w8.vocr", "font_size_ja = 24"):
+        for setting in ("ocr_backend = lens", "vocr_model = H15_w8.vocr",
+                        "vocr_fallback_model = FL10_w8.vocr", "font_size_ja = 24"):
             self.assertIn(setting, config)
         self.assertNotIn("test-key", result.stdout)
 

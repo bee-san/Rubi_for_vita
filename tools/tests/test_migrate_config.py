@@ -41,6 +41,27 @@ class MigrateConfig(unittest.TestCase):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
         self.assertIn("ocr_backend = lens\n", text)
 
+    def test_previous_release_config_gains_the_fl10_fallback(self):
+        # v0.7.12's installer wrote vocr_model = FL10_w8.vocr; a source install
+        # keeps that choice and adds the fallback key with its default.
+        text, _ = self.migrate("ocr_backend = vocr\nvocr_model = FL10_w8.vocr\n")
+        self.assertIn("vocr_model = FL10_w8.vocr\n", text)
+        self.assertIn("vocr_fallback_model = FL10_w8.vocr\n", text)
+        # The release installer selects the new default and keeps the fallback.
+        text, _ = self.migrate("vocr_model = FL10_w8.vocr\n", "vocr_model=H15_w8.vocr",
+                               "vocr_fallback_model=FL10_w8.vocr")
+        self.assertIn("vocr_model = H15_w8.vocr\n", text)
+        self.assertIn("vocr_fallback_model = FL10_w8.vocr\n", text)
+        text, _ = self.migrate("vocr_fallback_model = none\n")
+        self.assertIn("vocr_fallback_model = none\n", text)
+        self.assertEqual(text.count("vocr_fallback_model ="), 1)
+
+    def test_release_installer_sets_h15_with_fl10_fallback(self):
+        script = (ROOT / "tools/install-vita.sh").read_text()
+        self.assertIn("--set vocr_model=H15_w8.vocr", script)
+        self.assertIn("--set vocr_fallback_model=FL10_w8.vocr", script)
+        self.assertNotIn("vocr_model=FL10_w8.vocr", script)
+
     def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):
         # A config from the LAN-only release: anki_host alone used to send.
         text, _ = self.migrate("anki_host = 192.168.1.23\nanki_deck = Mining #1 ; main\n")

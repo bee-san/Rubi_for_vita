@@ -38,7 +38,7 @@ int test_kernel_cancelled(uint32_t seq);
 int test_kernel_complete(const VjoGameOcrResult *result);
 int test_kernel_read(uint32_t seq, VjoGameOcrResult *out);
 int test_kernel_cancel(uint32_t seq);
-int test_kernel_model_open(uint32_t seq, VjoGameOcrModelInfo *info);
+int test_kernel_model_open(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info);
 int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst);
 int test_kernel_model_close(uint32_t seq);
 static int retail_return(int rc)
@@ -52,8 +52,8 @@ int vjoOcrCancelled(uint32_t seq) { return retail_return(test_kernel_cancelled(s
 int vjoOcrComplete(const VjoGameOcrResult *r) { return retail_return(test_kernel_complete(r)); }
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out) { return retail_return(test_kernel_read(seq, out)); }
 int vjoOcrCancel(uint32_t seq) { return retail_return(test_kernel_cancel(seq)); }
-int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
-{ int rc = retail_return(test_kernel_model_open(seq, info)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
+int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
+{ int rc = retail_return(test_kernel_model_open(seq, which, info)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t bytes, void *dst)
 { int rc = retail_return(test_kernel_model_read(seq, off, bytes, dst)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 int vjoOcrModelClose(uint32_t seq)
@@ -149,8 +149,9 @@ int sceKernelDelayThread(unsigned us)
     }
     return 0;
 }
+static int64_t game_free = 16*1024*1024; /* the game's free USER without the worker's blocks */
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
-{ out->size_user = 16*1024*1024; return 0; }
+{ out->size_user = (int)(game_free - live_bytes); return 0; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
 {
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(n & 4095));
@@ -187,6 +188,7 @@ SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 
 /* A fresh kernel, capture and claimed job; keep_weights keeps the game
  * worker's resident weights from the previous job, as one game process would. */
+static const char *submit_fallback = "";
 static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
 {
     TEST_ASSERT(!file && !live);
@@ -216,6 +218,7 @@ static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
     caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
     VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=11};
     strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT); strcpy(request.model, name);
+    strcpy(request.fallback, submit_fallback);
     int seq = vjoOcrSubmit(&request); TEST_ASSERT(seq > 0);
     caller = 7; TEST_ASSERT(!vjoOcrTake(&request)); TEST_CHECK(request.seq == (unsigned)seq);
     return request;
@@ -304,6 +307,36 @@ static void real_models_resident_through_waiting_broker(void)
         finish(&out);
     }
 }
+/* H15 configured, FL10 fallback, real weights and runtime through the real
+ * kernel broker: with one byte too few for H15 the same job reads FL10 from
+ * the fallback name and recognizes the line as a direct FL10 job does. */
+static void real_fallback_runs_fl10_when_h15_does_not_fit(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; fallback integration skipped"); return; }
+    VjoGameOcrRequest request = setup("FL10_w8.vocr"); VjoGameOcrResult direct, out;
+    g.mevf = 5; kernel_waits = 1;
+    TEST_CHECK(!vjo_game_ocr_run_request(&request, &direct) && direct.lines == 1);
+    finish(&direct);
+    const uint32_t h15 = PAGE_ROUND(vjo_vocr_job_bytes("H15_w8.vocr", 200, 60)) + PAGE_ROUND(VJO_VOCR_H15_BYTES);
+    submit_fallback = "FL10_w8.vocr";
+    request = setup("H15_w8.vocr"); g.mevf = 5; kernel_waits = 1;
+    game_free = 4u*1024u*1024u + h15 - 1;
+    TEST_CHECK(!vjo_game_ocr_run_request(&request, &out) && out.fallback == 1 && out.lines == 1);
+    TEST_CHECK(!strcmp(out.text, direct.text) && out.frames == direct.frames);
+    TEST_CHECK(received == VJO_VOCR_FL10_BYTES && kernel_opens == 1 && out.resident_bytes == PAGE_ROUND(VJO_VOCR_FL10_BYTES));
+    TEST_CHECK(out.model_need_weights == PAGE_ROUND(VJO_VOCR_H15_BYTES) && out.need_weights == PAGE_ROUND(VJO_VOCR_FL10_BYTES));
+    TEST_CHECK(peak_bytes <= 4u*1024u*1024u + h15); /* never more than the H15 job would have used */
+    printf("  H15 needs %u B with its job, %lld free above the reserve: ran FL10 (%u B peak)\n",
+           h15, (long long)game_free - 4*1024*1024, peak_bytes);
+    finish(&out);
+    /* Enough memory again: H15 runs, FL10's block released first. */
+    request = setup_job("H15_w8.vocr", 1); g.mevf = 5; kernel_waits = 1;
+    game_free = 64*1024*1024;
+    TEST_CHECK(!vjo_game_ocr_run_request(&request, &out) && !out.fallback && out.lines == 1);
+    TEST_CHECK(received == VJO_VOCR_H15_BYTES && weights_released == 1 && out.resident_bytes == PAGE_ROUND(VJO_VOCR_H15_BYTES));
+    finish(&out);
+    submit_fallback = ""; game_free = 16*1024*1024;
+}
 static void vocr2_rejects_legacy_model_through_real_broker(void)
 {
 #if VJO_VOCR2_ENABLED
@@ -383,6 +416,7 @@ TEST_LIST = {
     {"API13 stable statuses survive retail return encoding; native errno unchanged", native_status_contract},
     {"actual game worker and kernel broker load every pinned trial model despite game ENODEV", real_models_cross_namespace},
     {"real weights: waited 32 KiB reads, no game sleeps, resident reuse and re-read on a new file time", real_models_resident_through_waiting_broker},
+    {"real weights: H15 with an FL10 fallback runs FL10 when H15 does not fit, then H15 again", real_fallback_runs_fl10_when_h15_does_not_fit},
     {"VOCR2 rejects renamed old FL10 bytes through the real broker and releases ownership", vocr2_rejects_legacy_model_through_real_broker},
     {"actual broker model I/O corruption cancellation close failure and recovery", real_model_failure_recovery},
     {"actual queued Open timeout and later Close drain without weights", queued_open_timeout_and_drain},

@@ -83,12 +83,25 @@ only the weights remain, page-rounded.
 
 | model (`vocr_model`) | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
 |---|---|---|---|---|
-| `H15_w8.vocr` (larger, more accurate) | 1,155,968 B | 182,944 B | 1,864,912 B (1.78 MiB) | 1,469,392 B (1.40 MiB) |
-| `FL10_w8.vocr` (small default) | 657,664 B | 124,832 B | 1,308,496 B (1.25 MiB) | 912,976 B (0.87 MiB) |
+| `H15_w8.vocr` (default, more accurate) | 1,155,968 B | 182,944 B | 1,864,912 B (1.78 MiB) | 1,469,392 B (1.40 MiB) |
+| `FL10_w8.vocr` (smallest; automatic fallback) | 657,664 B | 124,832 B | 1,308,496 B (1.25 MiB) | 912,976 B (0.87 MiB) |
 | `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 2,325,072 B (2.22 MiB) | 1,929,552 B (1.84 MiB) |
 
 The line finder's arena (83,323 B at 960×544) is smaller than every
-recognizer arena, so it costs nothing extra. In v0.7.1 inference runs in
+recognizer arena, so it costs nothing extra.
+
+**Default and fallback.** `vocr_model` (default `H15_w8.vocr`) is the model a
+job uses when the game has room for it. The game worker checks free `USER`
+memory before each job; if the reserve, H15's workspace and (unless already
+resident) H15's weights do not fit but the smaller `vocr_fallback_model`
+(default `FL10_w8.vocr`) does, that job runs FL10. Resident FL10 weights stay
+while H15 still does not fit, and are released for H15 once it does. A
+missing, wrong or corrupt `vocr_model` file also makes the game's later jobs
+use the fallback (until the game restarts). The kernel opens only the two
+pinned names the Shell submitted; the log names the model that ran and, after
+a memory fallback, what H15 would have needed. Every pinned model is inside
+the console budget ceiling (weights ≤ 1,600,000 B, recognizer arena ≤
+262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). In v0.7.1 inference runs in
 `VitaJPOverlay_OCR.suprx`, registered under `*ALL`. The `*main` plugin handles
 UI/dictionary results and has no vocr inference code. The game worker checks
 its process title and only accepts jobs for the foreground game after the
@@ -217,7 +230,8 @@ steps below cover a source build or adding another model.
    ```ini
    ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-   vocr_model = FL10_w8.vocr
+   vocr_model = H15_w8.vocr
+   vocr_fallback_model = FL10_w8.vocr
    ocr_mode = auto
    log_file = on
    ```
@@ -295,12 +309,13 @@ copied, and the settings above. Close other apps first.
    shows: the text, or an error message.
 4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` with
    `tools/install_ftp.sh --status VITA_IP`. A completed job logs
-   `game vocr rc=... FL10_w8.vocr: WxH, lines=N USER workspace=B
+   `game vocr rc=... H15_w8.vocr: WxH, lines=N USER workspace=B
    weights=read|resident resident=R, find=X ms load=Y ms recognize=Z ms
    frames=F io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and
    `cleanup=0`. The first text-bearing job of a game logs `weights=read`;
    later ones log `weights=resident` with a much smaller `load`.
-   Three more lines follow:
+   A job that fell back logs `FL10_w8.vocr (fallback)` and a `game vocr
+   fallback:` line with H15's needs. Three more lines follow:
    - `game vocr memory: free USER=U, needs workspace J + weights W + reserve
      4194304: check passed|refused`: the game's free memory at that moment,
      also for a refused job (`rc=-103`), i.e. this title's real OCR budget.

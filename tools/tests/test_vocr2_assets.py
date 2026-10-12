@@ -146,7 +146,8 @@ class Vocr2AssetPlumbing(unittest.TestCase):
                 "protected_result_sha256": "3c2c873239e1bcbdf3858650d7b628853b0f4b1f4c324ecc9519a7348c8d09f7",
                 "runtime_commit": "49ff6f4d1c55804c600d098810574a49d382a009"})
             self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
-            self.assertEqual(manifest["defaults"]["vocr_model"], "FL10_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_model"], "H15_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "FL10_w8.vocr")
 
     def test_enabled_bundle_refuses_missing_or_legacy_model_before_output(self):
         with self.assertRaisesRegex(ValueError, "OCR model is missing: " + prepare.VOCR2_MODEL):

@@ -23,6 +23,7 @@ static int during_io;
 static uint64_t model_clock;
 static uint32_t expected_model_size;
 static unsigned done_events, waits, stats;
+static int expect_fallback;
 static int done_pending, wait_runs_worker, stat_error;
 static SceIoStat file_stat;
 
@@ -74,7 +75,8 @@ static void interrupt_io(void)
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
-    char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,request.model);
+    char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
+                                 expect_fallback ? request.fallback : request.model);
     TEST_CHECK(!strcmp(path, expected) && flags == SCE_O_RDONLY);
     model_opens++; interrupt_io();
     if (open_error) return open_error;
@@ -159,7 +161,7 @@ static void setup(void)
     model_clock = 1000000; expected_model_size = VJO_VOCR_FL10_BYTES;
     model_opens = model_reads = model_closes = model_events = 0;
     file_live = open_error = seek_error = read_error = close_error = eof = short_read = bad_size = during_io = 0;
-    done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0;
+    done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0; expect_fallback = 0;
     memset(&file_stat, 0, sizeof(file_stat));
     file_stat.st_mtime = (SceDateTime){2026, 10, 11, 9, 43, 58, 123456};
     TEST_ASSERT(vjoOcrRegister() == 0);
@@ -395,11 +397,11 @@ static void single_pass_raw_and_stale_sequences(void)
 
 static void open_model(uint32_t seq)
 {
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY && !file_live);
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY && !model_opens);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY && !file_live);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY && !model_opens);
     model_tick();
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == (int)VJO_VOCR_FL10_BYTES && file_live);
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == (int)VJO_VOCR_FL10_BYTES && file_live);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1);
 }
 static void close_model(uint32_t seq)
 {
@@ -410,12 +412,12 @@ static void close_model(uint32_t seq)
 static void model_permissions_paths_and_bounds(void)
 {
     setup(); uint32_t seq = submit();
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_PERM);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_PERM);
     take(seq); caller = 8;
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_PERM);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_PERM);
     TEST_CHECK(vjoOcrModelClose(seq) == VJO_ERR_PERM);
     caller = 7;
-    TEST_CHECK(vjoOcrModelOpen(seq+1, NULL) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrModelOpen(seq+1, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG);
     open_model(seq);
     static unsigned char bytes[VJO_GAME_OCR_MODEL_CHUNK + 1];
     TEST_CHECK(vjoOcrModelRead(seq, 0, VJO_GAME_OCR_MODEL_CHUNK + 1, bytes) == VJO_ERR_ARG);
@@ -428,9 +430,9 @@ static void model_permissions_paths_and_bounds(void)
     TEST_CHECK(!vjoOcrComplete(&message));
     setup(); seq = submit(); take(seq);
     strcpy(request.model_dir, "ux0:data/../../tai");
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_ARG && !model_opens);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
     strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT); strcpy(request.model, "../secret");
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_ARG && !model_opens);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
     TEST_CHECK(!vjoOcrModelClose(seq));
 }
 static void removed_meiki_model_is_refused(void)
@@ -440,7 +442,7 @@ static void removed_meiki_model_is_refused(void)
     TEST_CHECK(!model_size("meiki-stream-int8.mnn") && !model_size("meiki-detect-int8.mnn"));
     setup(); uint32_t seq=submit(); take(seq);
     strcpy(request.model,"meiki-stream-int8.mnn");
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL)==VJO_ERR_ARG && !model_opens && !file_live);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL)==VJO_ERR_ARG && !model_opens && !file_live);
     TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
 }
 
@@ -461,7 +463,7 @@ static void vocr2_fixed_pin_preserves_paths_and_bounds(void)
     close_model(seq);
 #else
     TEST_CHECK(!model_size(VJO_VOCR2_ARTIFACT_NAME));
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_ARG && !model_opens);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
 #endif
     TEST_CHECK(!vjoOcrComplete(&message));
 }
@@ -490,8 +492,8 @@ static void model_short_read_copy_retry_and_errors(void)
         if (failure == 0) open_error = (int)0x80010013u;
         if (failure == 1) seek_error = (int)0x80010005u;
         if (failure == 2) bad_size = 1;
-        TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY); model_tick();
-        int rc = vjoOcrModelOpen(seq, NULL);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY); model_tick();
+        int rc = vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL);
         TEST_CHECK(rc == (failure == 0 ? open_error : failure == 1 ? seek_error : VJO_ERR_FORMAT));
         TEST_CHECK(file_live == (failure != 0));
         if (failure != 0) {
@@ -510,7 +512,7 @@ static void model_cancel_exit_restart_and_late_io(void)
         setup(); uint32_t seq = submit(); take(seq);
         unsigned char bytes[64]; memset(bytes, 0xCC, sizeof(bytes));
         if (at_read) { open_model(seq); TEST_CHECK(vjoOcrModelRead(seq, 0, sizeof(bytes), bytes) == VJO_ERR_BUSY); }
-        else TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY);
+        else TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY);
         during_io = action; model_tick();
         /* The operation completed after cancellation/exit/restart/Close;
          * ownership still pins the live descriptor until the kernel drains it. */
@@ -523,7 +525,7 @@ static void model_cancel_exit_restart_and_late_io(void)
         if (action == 2) TEST_CHECK(!game_ocr_capture_busy_locked() && !game_ocr_shutdown_locked());
     }
     setup(); uint32_t seq = submit(); take(seq);
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY);
     TEST_CHECK(vjoOcrModelClose(seq) == VJO_ERR_BUSY); model_tick();
     TEST_CHECK(!file_live && !model_opens && !vjoOcrModelClose(seq)); /* Cancel queued Open. */
 }
@@ -552,7 +554,7 @@ static void model_syscalls_wait_for_the_worker(void)
     setup(); g.mevf = 5; wait_runs_worker = 1;
     uint32_t seq = submit(); take(seq);
     VjoGameOcrModelInfo info; memset(&info, 0xCC, sizeof(info));
-    TEST_CHECK(vjoOcrModelOpen(seq, &info) == (int)VJO_VOCR_FL10_BYTES && file_live && model_opens == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, &info) == (int)VJO_VOCR_FL10_BYTES && file_live && model_opens == 1);
     TEST_CHECK(info.size == sizeof(info) && info.bytes == VJO_VOCR_FL10_BYTES && !info.stat_rc && stats == 1);
     TEST_CHECK(info.mtime && info.mtime == pack_time(&file_stat.st_mtime));
     static unsigned char chunk[VJO_GAME_OCR_MODEL_CHUNK];
@@ -569,11 +571,11 @@ static void model_wait_is_bounded(void)
     setup(); g.mevf = 5; /* the kernel worker does not run during the wait */
     uint32_t seq = submit(); take(seq);
     uint64_t before = model_clock;
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_BUSY && !model_opens && waits == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY && !model_opens && waits == 1);
     TEST_CHECK(model_clock - before == MODEL_SYSCALL_WAIT_US);
     model_tick(); /* the worker, later: its completion is left pending */
     TEST_CHECK(done_pending);
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == (int)VJO_VOCR_FL10_BYTES && waits == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == (int)VJO_VOCR_FL10_BYTES && waits == 1);
     /* The next wait consumes that stale completion, re-checks, then times out. */
     TEST_CHECK(vjoOcrModelClose(seq) == VJO_ERR_BUSY && file_live && waits == 3 && !done_pending);
     model_tick();
@@ -585,12 +587,12 @@ static void model_open_reports_modification_time(void)
     setup(); g.mevf = 5; wait_runs_worker = 1; stat_error = (int)0x80010016u;
     uint32_t seq = submit(); take(seq);
     VjoGameOcrModelInfo info; memset(&info, 0xCC, sizeof(info));
-    TEST_CHECK(vjoOcrModelOpen(seq, &info) == (int)VJO_VOCR_FL10_BYTES && file_live);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, &info) == (int)VJO_VOCR_FL10_BYTES && file_live);
     TEST_CHECK(info.stat_rc == stat_error && !info.mtime && info.bytes == VJO_VOCR_FL10_BYTES);
     copy_out_fail = 1; /* a failed copy of the report is retryable while the file stays open */
-    TEST_CHECK(vjoOcrModelOpen(seq, &info) == VJO_ERR_COPY);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, &info) == VJO_ERR_COPY);
     copy_out_fail = 0;
-    TEST_CHECK(vjoOcrModelOpen(seq, &info) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1 && stats == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, &info) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1 && stats == 1);
     TEST_CHECK(!vjoOcrModelClose(seq) && !file_live && !vjoOcrComplete(&message));
 }
 static void model_cancel_while_waiting(void)
@@ -598,11 +600,40 @@ static void model_cancel_while_waiting(void)
     setup(); g.mevf = 5; wait_runs_worker = 1;
     uint32_t seq = submit(); take(seq);
     during_io = 1; /* the foreground changes while the worker opens the file */
-    TEST_CHECK(vjoOcrModelOpen(seq, NULL) == VJO_ERR_CANCELLED);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_CANCELLED);
     TEST_CHECK(file_live && game_ocr_capture_busy_locked());
     TEST_CHECK(!vjoOcrModelClose(seq) && !file_live && model_closes == 1);
     TEST_CHECK(!vjoOcrComplete(&message) && !game_ocr_capture_busy_locked());
 }
+/* The fallback is a second pinned name the Shell submits; the game only
+ * picks which of the two to open, never a path or another name. */
+static void fallback_is_one_of_the_submitted_pinned_names(void)
+{
+    setup(); VjoGameOcrRequest r = make_request();
+    memset(r.fallback, 'x', sizeof(r.fallback)); /* unterminated */
+    caller = 3; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    setup(); r = make_request(); strcpy(r.model, "H15_w8.vocr"); strcpy(r.fallback, "FL10_w8.vocr");
+    caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+    TEST_CHECK(!strcmp(request.fallback, "FL10_w8.vocr"));
+    TEST_CHECK(vjoOcrModelOpen(seq, 2, NULL) == VJO_ERR_ARG && !model_opens);
+    expect_fallback = 1; expected_model_size = VJO_VOCR_FL10_BYTES;
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_FALLBACK, NULL) == VJO_ERR_BUSY);
+    model_tick();
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_FALLBACK, NULL) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1);
+    /* One file per open: the other name is refused while this one is open. */
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && model_opens == 1);
+    close_model(seq);
+    TEST_CHECK(!vjoOcrComplete(&message));
+    /* No fallback, or a name outside the pinned set: nothing is opened. */
+    const char *refused[] = {"", "../secret", "meiki-stream-int8.mnn", "FL10_w8.vocr/../x"};
+    for (unsigned i = 0; i < sizeof(refused)/sizeof(refused[0]); i++) {
+        setup(); r = make_request(); strcpy(r.fallback, refused[i]);
+        caller = 3; seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_FALLBACK, NULL) == VJO_ERR_ARG && !model_opens);
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    }
+}
+
 static void modification_times_pack_distinctly(void)
 {
     const SceDateTime a = {2026, 10, 11, 9, 43, 58, 123456};
@@ -627,6 +658,7 @@ TEST_LIST = {
     {"Open reports the file modification time; a failed stat leaves it unknown and retryable", model_open_reports_modification_time},
     {"cancellation during a waited Open is reported and Close drains in one call", model_cancel_while_waiting},
     {"packed modification times differ for every field", modification_times_pack_distinctly},
+    {"the fallback is one of the submitted pinned names; Open picks which", fallback_is_one_of_the_submitted_pinned_names},
     {"removed_Meiki_recognizer_is_not_in_the_broker_allowlist",removed_meiki_model_is_refused},
     {"VOCR2_exact_pin_keeps_canonical_path_and_final_chunk_bounds",vocr2_fixed_pin_preserves_paths_and_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},

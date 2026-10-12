@@ -8,8 +8,10 @@
 /* 14: 32 KiB model reads that wait for the kernel worker, Open reports the
  * file's modification time, results report resident weights.
  * 15: results carry the memory check (free USER, needed bytes, reserve) and
- * each recognized line's crop, CTC frames and time. */
-#define VJO_API_VERSION 15
+ * each recognized line's crop, CTC frames and time.
+ * 16: requests carry a fallback model, Open chooses the model or the fallback,
+ * results report when the fallback ran. */
+#define VJO_API_VERSION 16
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {

@@ -481,15 +481,17 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
  * allocation after a passed check; or the check itself. */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
-    int64_t job, fl10 = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
+    int64_t job, free_bytes, fl10 = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
     if (!r->reserve_bytes) return NULL; /* not from the memory check: no specific advice */
     if (r->free_user < 0) return OOM_GAME_UNKNOWN;
+    /* With a fallback, need_* are the fallback's: the last, smallest check. */
+    free_bytes = (int64_t)r->free_user + r->release_bytes;
     job = (int64_t)r->reserve_bytes + r->need_workspace;
-    if ((int64_t)r->free_user >= job + r->need_weights) return OOM_GAME_ALLOCATION;
-    if ((int64_t)r->free_user < (int64_t)r->reserve_bytes) return OOM_GAME_NONE;
-    if ((int64_t)r->free_user < job) return OOM_GAME_REGION;
+    if (free_bytes >= job + r->need_weights) return OOM_GAME_ALLOCATION;
+    if (free_bytes < (int64_t)r->reserve_bytes) return OOM_GAME_NONE;
+    if (free_bytes < job) return OOM_GAME_REGION;
     if (r->need_weights <= fl10) return OOM_GAME_SMALLEST;
-    return (int64_t)r->free_user >= job + fl10 ? OOM_GAME_MODEL_FITS : OOM_GAME_MODEL;
+    return free_bytes >= job + fl10 ? OOM_GAME_MODEL_FITS : OOM_GAME_MODEL;
 }
 #endif
 
@@ -517,6 +519,13 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
         vjo_log("game vocr memory: free USER unknown (error 0x%08X), needs workspace %u + weights %u + "
                 "reserve %u: check refused", (unsigned)r->free_user, (unsigned)r->need_workspace,
                 (unsigned)r->need_weights, (unsigned)r->reserve_bytes);
+    else if (r->reserve_bytes && r->release_bytes)
+        /* Another model's resident weights, released before this job's. */
+        vjo_log("game vocr memory: free USER=%d + own weights %u, needs workspace %u + weights %u + "
+                "reserve %u: check %s", (int)r->free_user, (unsigned)r->release_bytes,
+                (unsigned)r->need_workspace, (unsigned)r->need_weights, (unsigned)r->reserve_bytes,
+                (int64_t)r->free_user + r->release_bytes >=
+                    (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes ? "passed" : "refused");
     else if (r->reserve_bytes)
         vjo_log("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s",
                 (int)r->free_user, (unsigned)r->need_workspace, (unsigned)r->need_weights,
@@ -544,6 +553,12 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
     }
 }
 
+/* The configured VOCR model failed to open or verify in this game (missing,
+ * wrong or corrupt file): later jobs of the same game ask for the fallback. */
+static char vocr_unusable[VJO_GAME_OCR_MODEL_BYTES];
+static uint32_t vocr_unusable_generation;
+static int vocr_fallback_requested; /* the last request carried a fallback */
+
 static int vocr_consume(void *ud, const VjoState *st)
 {
     VjoGameOcrResult *result = ud;
@@ -551,9 +566,20 @@ static int vocr_consume(void *ud, const VjoState *st)
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
     const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
+    /* VOCR2's pinned model is already FL10-sized: no fallback. */
+    const char *fallback = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? "" : job_cfg.vocr_fallback_model;
+    if (fallback[0] && !sceClibStrcmp(fallback, model)) fallback = "";
+    if (fallback[0] && vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)) {
+        model = fallback;
+        fallback = "";
+    }
     size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
-    if (!model_len || model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
+    size_t fallback_len = sceClibStrnlen(fallback, sizeof(job_cfg.vocr_fallback_model));
+    if (!model_len || model_len >= sizeof(request.model) || fallback_len >= sizeof(request.fallback))
+        return VJO_E_OCR_MODEL;
     sceClibMemcpy(request.model, model, model_len+1);
+    sceClibMemcpy(request.fallback, fallback, fallback_len+1);
+    vocr_fallback_requested = fallback_len > 0;
     job_capture_scene = st->capture_scene;
     job_capture_seq = st->region_seq;
     __sync_synchronize();
@@ -562,12 +588,18 @@ static int vocr_consume(void *ud, const VjoState *st)
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
     static const char *const weights[] = {"none", "read", "resident"};
-    vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
+    vjo_log("game vocr rc=%d %s%s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-            rc, model, st->width, st->height, result->lines, result->workspace_bytes,
+            rc, result->fallback ? request.fallback : model, result->fallback ? " (fallback)" : "",
+            st->width, st->height, result->lines, result->workspace_bytes,
             result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
             result->find_us/1000, result->load_us/1000, result->recognize_us/1000, result->frames,
             (unsigned)result->io_error, (unsigned)result->stat_error, result->cleanup_status);
+    if (result->fallback)
+        vjo_log("game vocr fallback: %s needs workspace %u + weights %u + reserve %u, more than free "
+                "USER %d + own weights %u", model, (unsigned)result->model_need_workspace,
+                (unsigned)result->model_need_weights, (unsigned)result->reserve_bytes,
+                (int)result->free_user, (unsigned)result->model_release_bytes);
     log_vocr_measurements(result);
     return rc;
 }
@@ -585,6 +617,20 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     st.capture_result = 0;
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
+    /* The configured model's file is missing, wrong or corrupt in this game:
+     * keep OCR working with the fallback, now and for this game's later jobs. */
+    if (out->err.rc == VJO_E_OCR_MODEL && vocr_fallback_requested && !result.fallback &&
+        !vocr_cancelled(NULL)) {
+        vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s", job_cfg.vocr_model,
+                (unsigned)result.io_error, job_cfg.vocr_fallback_model);
+        sceClibSnprintf(vocr_unusable, sizeof(vocr_unusable), "%.*s", (int)sizeof(vocr_unusable) - 1,
+                        job_cfg.vocr_model);
+        vocr_unusable_generation = job_generation;
+        st.capture_scene = 0;
+        st.capture_result = 0;
+        sceClibMemset(&result, 0, sizeof(result));
+        out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
+    }
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
@@ -897,7 +943,8 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         return 0;
     if (game_ocr_backend(a->ocr_backend) &&
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) ||
-         (a->ocr_backend == VJO_OCR_VOCR && sceClibStrcmp(a->vocr_model, b->vocr_model))))
+         (a->ocr_backend == VJO_OCR_VOCR && (sceClibStrcmp(a->vocr_model, b->vocr_model) ||
+                                             sceClibStrcmp(a->vocr_fallback_model, b->vocr_fallback_model)))))
         return 0;
     if (a->dictionary == VJO_DICT_LOCAL)
         return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&

@@ -34,6 +34,8 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
+/* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens. */
+static uint32_t open_which;
 static VjoGameOcrResult pending_result; /* never put 4 KiB results on thread stacks */
 static void *weights_alloc(void *ud, size_t bytes);
 static int weights_release(void *ud);
@@ -109,7 +111,7 @@ static int file_open(void *ud, const char *path, VjoFile *out)
     do {
         if (cancelled(NULL)) return -1;
         sceClibMemset(&info, 0, sizeof(info));
-        size = vjoOcrModelOpen(model_seq, &info);
+        size = vjoOcrModelOpen(model_seq, open_which, &info);
         if (size != VJO_ERR_BUSY) break;
         if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { size = VJO_ERR_TIMEOUT; break; }
         sceKernelDelayThread(MODEL_POLL_US);
@@ -187,6 +189,20 @@ static uint32_t resident_bytes(void)
     return resident.model && weights_uid >= 0 ? PAGE_ROUND(resident.model->bytes) : 0;
 }
 
+/* The memory check for model m and a job of job_bytes: records what the job
+ * needs in out (its page-rounded workspace, the weights unless they are
+ * resident, and resident weights of another model it would release first)
+ * and returns whether that fits beside the reserve in out->free_user. */
+static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes)
+{
+    out->need_workspace = PAGE_ROUND(job_bytes);
+    out->need_weights = resident.model == m ? 0 : PAGE_ROUND(m->bytes);
+    out->release_bytes = resident.model && resident.model != m ? resident_bytes() : 0;
+    return out->free_user >= 0 &&
+           (int64_t)out->free_user + out->release_bytes - (int64_t)GAME_RESERVE >=
+               (int64_t)out->need_workspace + out->need_weights;
+}
+
 static int cleanup(void)
 {
     int rc = 0;
@@ -206,36 +222,55 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (!r || !out) return VJO_E_SOURCE;
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
-    active_seq = r->seq; io_error = 0; stat_error = 0;
+    active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL;
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
     if (blocked || workspace_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->done_seq ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         r->stride != r->width*4u || !r->model_dir[0] || !r->model[0] ||
-        r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1]) goto done;
+        r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
+        r->fallback[sizeof(r->fallback)-1]) goto done;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     const VjoVocrModel *model = vjo_vocr_model(r->model);
     size_t bytes = vjo_vocr_job_bytes(r->model, r->width, r->height);
     if (!bytes) { rc = model ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
-    /* Another model: its weights are useless now, and two are never held. */
-    if (resident.model && resident.model != model && drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-    /* The job workspace, plus the weights unless they are already resident. */
-    uint32_t rounded = PAGE_ROUND(bytes);
-    uint32_t weights = resident.model == model ? 0 : PAGE_ROUND(model->bytes);
+    /* A fallback is used only if it is another pinned model needing less memory. */
+    const VjoVocrModel *fallback = r->fallback[0] ? vjo_vocr_model(r->fallback) : NULL;
+    size_t fallback_bytes = fallback ? vjo_vocr_job_bytes(r->fallback, r->width, r->height) : 0;
+    if (!fallback_bytes || fallback == model ||
+        PAGE_ROUND(fallback_bytes) + PAGE_ROUND(fallback->bytes) >= PAGE_ROUND(bytes) + PAGE_ROUND(model->bytes))
+        fallback = NULL;
+    /* Weights of a model this job cannot use: useless now, and two are never held. */
+    if (resident.model && resident.model != model && resident.model != fallback && drop_weights()) {
+        rc = VJO_E_OCR_UNAVAILABLE; goto done;
+    }
     /* Reported also when refused: each title's real free memory. */
     out->free_user = free_user();
-    out->need_workspace = rounded;
-    out->need_weights = weights;
     out->reserve_bytes = GAME_RESERVE;
-    stats.workspace = bytes;
-    if (out->free_user < 0 ||
-        (int64_t)out->free_user - (int64_t)GAME_RESERVE < (int64_t)rounded + (int64_t)weights) {
+    const VjoVocrModel *use = model;
+    size_t use_bytes = bytes;
+    int fits = check_memory(out, model, bytes);
+    if (!fits && fallback) {
+        /* The configured model does not fit this game now; the smaller one may. */
+        out->fallback = 1;
+        out->model_need_workspace = out->need_workspace;
+        out->model_need_weights = out->need_weights;
+        out->model_release_bytes = out->release_bytes;
+        use = fallback;
+        use_bytes = fallback_bytes;
+        fits = check_memory(out, fallback, fallback_bytes);
+    }
+    stats.workspace = use_bytes;
+    if (!fits) {
         /* Too little memory: give the game back the resident weights too. */
         if (drop_weights()) rc = VJO_E_OCR_UNAVAILABLE;
         else rc = VJO_E_OOM;
         goto done;
     }
+    /* The check counted another model's resident weights as free: release them. */
+    if (resident.model && resident.model != use && drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    uint32_t rounded = PAGE_ROUND(use_bytes);
     workspace_uid = sceKernelAllocMemBlock("VjoGameVocr", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, rounded, NULL);
     if (workspace_uid < 0) { workspace_uid = -1; rc = VJO_E_OOM; goto done; }
     void *base = NULL;
@@ -244,7 +279,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     }
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
     VjoOcrImage image = {(void *)r, r->width, r->height, rows, cancelled};
-    rc = vjo_vocr_ocr_resident(&platform, r->model_dir, r->model, &image, &resident, base, bytes,
+    open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
+    rc = vjo_vocr_ocr_resident(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
                                out->text, sizeof(out->text), &stats);
 done:
     out->workspace_bytes = (uint32_t)stats.workspace;

@@ -31,6 +31,7 @@ static int file_open_now;
 static uint64_t clock_value;
 static unsigned spy_lines = 1;
 static int free_query_error;
+static uint32_t opened_which;
 
 /* ---- the Vita SDK and kernel transport, as the worker sees them ---- */
 SceUID sceKernelGetProcessId(void) { return 7; }
@@ -90,9 +91,15 @@ int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t n, void *dst)
 
 static const VjoVocrModel *served_model(void) { return vjo_vocr_model(served); }
 static uint32_t served_seed(void) { return !strcmp(served, "FL10_w8.vocr") ? TEST_FL10_SEED : TEST_H15_SEED; }
-int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
+static VjoGameOcrRequest current; /* the claimed request, as the kernel holds it */
+int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     TEST_CHECK(seq == 12 && !file_open_now);
+    /* The kernel opens one of the request's two pinned names, never a path. */
+    TEST_ASSERT(which == VJO_GAME_OCR_OPEN_MODEL || which == VJO_GAME_OCR_OPEN_FALLBACK);
+    served = which == VJO_GAME_OCR_OPEN_FALLBACK ? current.fallback : current.model;
+    TEST_ASSERT(served[0] && vjo_vocr_model(served));
+    opened_which = which;
     opens++;
     /* The Shell cancels while the kernel opens the file (it answers CANCELLED). */
     if (cancel_at_open) { cancel_now = 1; return VJO_ERR_CANCELLED; }
@@ -141,14 +148,17 @@ int vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t cap, vocr_ex
 }
 
 /* ---- helpers ---- */
-static VjoGameOcrRequest request(const char *name)
+static VjoGameOcrRequest request_with(const char *name, const char *fallback)
 {
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .done_seq=11, .width=W, .height=H, .stride=W*4};
     snprintf(r.model, sizeof(r.model), "%s", name);
+    snprintf(r.fallback, sizeof(r.fallback), "%s", fallback);
     snprintf(r.model_dir, sizeof(r.model_dir), "%s", VJO_VOCR_MODEL_ROOT);
     served = name;
+    current = r;
     return r;
 }
+static VjoGameOcrRequest request(const char *name) { return request_with(name, ""); }
 static void reset(void)
 {
     if (weights_live) { weights_free_failure = 0; TEST_CHECK(!drop_weights()); }
@@ -165,6 +175,15 @@ static void reset(void)
     spy_lines = 1; free_query_error = 0;
     clock_value = 0;
     memset(pixels, 0, sizeof(pixels));
+}
+static int run_with(const char *name, const char *fallback, VjoGameOcrResult *out)
+{
+    VjoGameOcrRequest r = request_with(name, fallback);
+    int rc = vjo_game_ocr_run_request(&r, out);
+    TEST_CHECK(!job_live && !file_open_now && !model_owned && !out->cleanup_status);
+    TEST_CHECK(weights_live == (resident.model != NULL));
+    TEST_CHECK(out->resident_bytes == (weights_live ? weights_block : 0));
+    return rc;
 }
 static int run(const char *name, VjoGameOcrResult *out)
 {
@@ -372,7 +391,107 @@ static void frames_and_lines_are_reported(void)
     TEST_CHECK(!run("FL10_w8.vocr", &out) && !out.frames && !out.recognized && opens == before);
 }
 
+/* Bytes the memory check counts for a model's job and weights (page-rounded). */
+static uint32_t job_of(const char *name) { return PAGE_ROUND(vjo_vocr_job_bytes(name, W, H)); }
+static uint32_t weights_of(const char *name) { return PAGE_ROUND(vjo_vocr_model(name)->bytes); }
+
+static void fallback_runs_only_when_the_model_does_not_fit(void)
+{
+    reset(); VjoGameOcrResult out;
+    const uint32_t h15 = job_of("H15_w8.vocr") + weights_of("H15_w8.vocr");
+    const uint32_t fl10 = job_of("FL10_w8.vocr") + weights_of("FL10_w8.vocr");
+    TEST_ASSERT(fl10 < h15);
+    /* Room for H15: it runs, the fallback is not used. */
+    available = GAME_RESERVE + h15;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !strcmp(out.text, "猫"));
+    TEST_CHECK(!out.fallback && opened_which == VJO_GAME_OCR_OPEN_MODEL && resident.model == vjo_vocr_model("H15_w8.vocr"));
+    TEST_CHECK(out.need_workspace == job_of("H15_w8.vocr") && out.need_weights == weights_of("H15_w8.vocr"));
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
+    /* One byte short for H15 but room for FL10: FL10 runs in the same job. */
+    reset(); available = GAME_RESERVE + h15 - 1;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !strcmp(out.text, "猫"));
+    TEST_CHECK(out.fallback == 1 && opened_which == VJO_GAME_OCR_OPEN_FALLBACK);
+    TEST_CHECK(out.model_need_workspace == job_of("H15_w8.vocr") && out.model_need_weights == weights_of("H15_w8.vocr"));
+    TEST_CHECK(out.need_workspace == job_of("FL10_w8.vocr") && out.need_weights == weights_of("FL10_w8.vocr"));
+    TEST_CHECK(out.workspace_bytes == vjo_vocr_job_bytes("FL10_w8.vocr", W, H));
+    TEST_CHECK(resident.model == vjo_vocr_model("FL10_w8.vocr") && weights_block == weights_of("FL10_w8.vocr"));
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && bytes_read == TEST_FL10_BYTES);
+    /* No room for FL10 either: refused, with FL10's numbers (the smallest check). */
+    reset(); available = GAME_RESERVE + fl10 - 1;
+    TEST_CHECK(run_with("H15_w8.vocr", "FL10_w8.vocr", &out) == VJO_E_OOM && !job_allocs && !weights_allocs);
+    TEST_CHECK(out.fallback == 1 && out.need_weights == weights_of("FL10_w8.vocr") && !out.text[0]);
+}
+static void resident_fallback_is_kept_and_upgraded_when_memory_returns(void)
+{
+    reset(); VjoGameOcrResult out;
+    const uint32_t h15 = job_of("H15_w8.vocr") + weights_of("H15_w8.vocr");
+    available = GAME_RESERVE + h15 - 1; /* the game's free memory without the worker's blocks */
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback);
+    /* Same memory: H15 still does not fit even counting FL10's block as
+     * released, so FL10 stays resident and is not read again. */
+    for (unsigned i = 0; i < 5; i++) {
+        TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback);
+        TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT && out.need_weights == 0);
+        TEST_CHECK(out.model_release_bytes == weights_of("FL10_w8.vocr"));
+    }
+    TEST_CHECK(bytes_read == TEST_FL10_BYTES && weights_allocs == 1 && !weights_frees);
+    /* The game frees memory: H15 now fits once FL10's block is released, so the
+     * job releases FL10 first (never two weight blocks) and reads H15. */
+    available += 1;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !out.fallback);
+    TEST_CHECK(out.release_bytes == weights_of("FL10_w8.vocr") && opened_which == VJO_GAME_OCR_OPEN_MODEL);
+    TEST_CHECK(weights_frees == 1 && weights_allocs == 2 && resident.model == vjo_vocr_model("H15_w8.vocr"));
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && bytes_read == TEST_FL10_BYTES + TEST_H15_BYTES);
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !out.fallback); /* stays on H15 */
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT);
+    /* Memory shrinks again: H15 resident no longer fits beside the job; FL10
+     * fits once H15's block is released: switch down within one job. */
+    available -= 1 + weights_of("FL10_w8.vocr");
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback);
+    TEST_CHECK(out.release_bytes == weights_of("H15_w8.vocr") && resident.model == vjo_vocr_model("FL10_w8.vocr"));
+    TEST_CHECK(weights_frees == 2 && weights_allocs == 3);
+}
+static void fallback_must_be_another_smaller_pinned_model(void)
+{
+    reset(); VjoGameOcrResult out;
+    available = GAME_RESERVE + job_of("FL10_w8.vocr") + weights_of("FL10_w8.vocr");
+    /* FL10 configured with a larger "fallback": ignored, FL10 runs. */
+    TEST_CHECK(!run_with("FL10_w8.vocr", "H15_w8.vocr", &out) && !out.fallback);
+    TEST_CHECK(opened_which == VJO_GAME_OCR_OPEN_MODEL && resident.model == vjo_vocr_model("FL10_w8.vocr"));
+    /* An unknown, the same or no fallback: the configured model only. */
+    const char *ignored[] = {"F99_w8.vocr", "H15_w8.vocr", ""};
+    for (unsigned i = 0; i < 3; i++) {
+        reset(); available = GAME_RESERVE + job_of("FL10_w8.vocr") + weights_of("FL10_w8.vocr");
+        TEST_CHECK(run_with("H15_w8.vocr", ignored[i], &out) == VJO_E_OOM && !out.fallback && !job_allocs);
+        TEST_CHECK(out.need_weights == weights_of("H15_w8.vocr"));
+    }
+    /* An unterminated fallback field is a wire error before anything else. */
+    reset();
+    VjoGameOcrRequest bad = request_with("H15_w8.vocr", "FL10_w8.vocr");
+    memset(bad.fallback, 'x', sizeof(bad.fallback));
+    TEST_CHECK(vjo_game_ocr_run_request(&bad, &out) == VJO_E_SOURCE && !out.reserve_bytes && !job_allocs);
+}
+static void fallback_file_failure_and_other_resident_model(void)
+{
+    reset(); VjoGameOcrResult out;
+    const uint32_t h15 = job_of("H15_w8.vocr") + weights_of("H15_w8.vocr");
+    available = GAME_RESERVE + h15 - 1;
+    open_failure = (int)0x80010002u; /* FL10 is missing too: the fallback's own file error */
+    TEST_CHECK(run_with("H15_w8.vocr", "FL10_w8.vocr", &out) == VJO_E_OCR_MODEL && out.fallback);
+    TEST_CHECK(opened_which == VJO_GAME_OCR_OPEN_FALLBACK && out.io_error == open_failure && !weights_live);
+    open_failure = 0;
+    /* Weights of a model this job can use neither as model nor fallback are released first. */
+    reset(); available = 64*1024*1024;
+    TEST_CHECK(!run("FL10_w8.vocr", &out) && resident.model == vjo_vocr_model("FL10_w8.vocr"));
+    TEST_CHECK(!run_with("H15_w8.vocr", "", &out) && resident.model == vjo_vocr_model("H15_w8.vocr"));
+    TEST_CHECK(weights_frees == 1 && weights_allocs == 2 && !out.release_bytes);
+}
+
 TEST_LIST = {
+    {"the fallback runs only when the configured model does not fit", fallback_runs_only_when_the_model_does_not_fit},
+    {"a resident fallback is kept, and upgraded or downgraded within one job", resident_fallback_is_kept_and_upgraded_when_memory_returns},
+    {"a fallback must be another, smaller pinned model", fallback_must_be_another_smaller_pinned_model},
+    {"the fallback's own file failure, and another resident model", fallback_file_failure_and_other_resident_model},
     {"the memory check is reported, also when it refuses the job", memory_check_is_reported_also_when_refused},
     {"CTC frames and each line's crop, frames and time are reported", frames_and_lines_are_reported},
     {"synthetic pins match their generated bytes", synthetic_pins_match_their_bytes},
