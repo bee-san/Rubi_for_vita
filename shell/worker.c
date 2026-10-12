@@ -460,26 +460,36 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
     "dialogue region with Square."
 #define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
     "dialogue region with Square."
-#define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights; the region " \
-    "is not the limit. FL10_w8.vocr is the smallest model."
-#define OOM_GAME_SMALLEST "The game has too little free memory even for the smallest OCR model's " \
-    "weights. Try again later in the game, or restart it."
-#define OOM_GAME_RACE "The game used the memory OCR needed while the job started. Try again."
+#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a 4 MiB " \
+    "reserve). Try again later in the game, or restart it."
+#define OOM_GAME_MODEL_FITS "The game has too little free memory for this OCR model's weights; " \
+    "FL10_w8.vocr, the smallest model, would fit this region."
+#define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights. Select " \
+    "FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
+#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights, already " \
+    "the smallest. Select a tighter dialogue region with Square, or try again later."
+#define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
+    "passed. Try again."
 #define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
+/* Any other OCR-stage shortage (Lens result arena, recognized text). */
+#define OOM_OCR_OTHER "Select a tighter dialogue region with Square."
 
 #ifdef VJO_WITH_VOCR
-/* Which part of the game worker's memory check failed: the region's job
- * workspace, the model's weights (the smallest model's or a larger one's),
- * an allocation after a passed check, or the check itself. */
+/* Which part of the game worker's memory check failed: no OCR can fit
+ * beside the reserve; the region's job workspace; the model's weights (the
+ * smallest model's, or a larger one's, and whether FL10's would fit); an
+ * allocation after a passed check; or the check itself. */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
-    int64_t job, weights_limit = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
+    int64_t job, fl10 = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
     if (!r->reserve_bytes) return NULL; /* not from the memory check: no specific advice */
     if (r->free_user < 0) return OOM_GAME_UNKNOWN;
     job = (int64_t)r->reserve_bytes + r->need_workspace;
-    if ((int64_t)r->free_user >= job + r->need_weights) return OOM_GAME_RACE;
+    if ((int64_t)r->free_user >= job + r->need_weights) return OOM_GAME_ALLOCATION;
+    if ((int64_t)r->free_user < (int64_t)r->reserve_bytes) return OOM_GAME_NONE;
     if ((int64_t)r->free_user < job) return OOM_GAME_REGION;
-    return r->need_weights > weights_limit ? OOM_GAME_MODEL : OOM_GAME_SMALLEST;
+    if (r->need_weights <= fl10) return OOM_GAME_SMALLEST;
+    return (int64_t)r->free_user >= job + fl10 ? OOM_GAME_MODEL_FITS : OOM_GAME_MODEL;
 }
 #endif
 
@@ -662,6 +672,10 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
                 out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
+            /* The text filter's arena (network dictionaries): the text was too long. */
+            if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail &&
+                out->ocr_text)
+                out->err.detail = OOM_TEXT_BUFFER;
             return out->err.rc;
         }
         goto recognized;
@@ -686,8 +700,11 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     src.ud = &mem;
     src.read = mem_jpeg_read;
     src.size = (uint32_t)jb.len;
-    if (vjo_overlay_ocr(a, &plat, &job_cfg, &src, out))
+    if (vjo_overlay_ocr(a, &plat, &job_cfg, &src, out)) {
+        if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail)
+            out->err.detail = OOM_OCR_OTHER;
         return out->err.rc;
+    }
 recognized:
     /* The screen changed only in pixels (a mark, a cursor, an effect):
      * the cached lookup is this text's. */

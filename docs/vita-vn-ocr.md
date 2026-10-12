@@ -313,11 +313,14 @@ copied, and the settings above. Close other apps first.
    wording with the `game vocr memory:` log line:
    - *the kernel could not allocate this region's screen capture*: kernel
      memory; select a tighter region (the model does not matter) or restart;
-   - *the game has too little free memory for OCR of this region*: select a
-     tighter region;
-   - *... for this OCR model's weights*: select FL10 (the smallest);
-   - *... even for the smallest OCR model's weights* or *the game used the
-     memory ... while the job started*: try again later or restart the game;
+   - *the game has too little free memory for any OCR right now*: below its
+     4 MiB reserve; try later or restart the game;
+   - *... for OCR of this region*: select a tighter region;
+   - *... for this OCR model's weights*: select FL10 (the smallest), also a
+     tighter region unless the message says FL10 would fit;
+   - *... the OCR model's weights, already the smallest*: a tighter region or
+     try again later;
+   - *could not be allocated although the memory check passed*: try again;
    - *the Shell has too little memory for the overlay's results*: restart the
      Vita (region and model do not matter).
    A Shell UI memory error after successful recognition preserves text

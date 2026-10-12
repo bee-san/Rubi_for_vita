@@ -155,7 +155,7 @@ static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
 static unsigned fake_lines;
 static int32_t fake_free_user;
-static uint32_t fake_need_weights;
+static uint32_t fake_need_weights, fake_reserve;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -178,7 +178,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.rc = VJO_E_OOM;
         fake_game_result.free_user = fake_free_user;
         fake_game_result.need_workspace = 245760; fake_game_result.need_weights = fake_need_weights;
-        fake_game_result.reserve_bytes = 4194304;
+        fake_game_result.reserve_bytes = fake_reserve;
         fake_game_result.workspace_bytes = 244896;
     }
     else {
@@ -250,6 +250,7 @@ static void reset(void)
     fake_lines = 2;
     fake_free_user = 5000000;
     fake_need_weights = 659456;
+    fake_reserve = 4194304;
     log_count = 0;
     capture_kernel_oom = jpeg_encoder_oom = 0;
 #endif
@@ -686,7 +687,8 @@ static void check_oom_message(const char *advice, const char *must, const char *
     TEST_CHECK(cache_data[0].err.rc == VJO_E_OOM && cache_data[0].failed_stage == VJO_STAGE_OCR);
     TEST_CHECK(cache_data[0].err.detail == advice || (advice && cache_data[0].err.detail &&
                                                       !strcmp(cache_data[0].err.detail, advice)));
-    TEST_CHECK(!strncmp(text, "Text recognition failed: not enough memory. ", 44));
+    TEST_CHECK(!strncmp(text, "Text recognition failed: not enough memory", 42));
+    if (advice) TEST_CHECK(!strncmp(text + 42, ". ", 2) && !strcmp(text + 44, advice));
     TEST_CHECK(strlen(text) < sizeof(g_view.status)); /* shown whole in the status line */
     if (must) TEST_CHECK(strstr(text, must) != NULL);
     if (must_not) TEST_CHECK(strstr(text, must_not) == NULL);
@@ -697,13 +699,16 @@ static void test_vocr_oom_advice_names_the_stage(void)
 {
     /* The game worker's memory check, from its reported numbers (game_ocr/main.c):
      * job = reserve 4194304 + workspace 245760 = 4440064. */
+    /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. */
     const struct { int32_t free_user; uint32_t weights; const char *advice, *must, *must_not; } cases[] = {
+        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "tighter"},        /* below the reserve */
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
-        {5000000, 1159168, OOM_GAME_MODEL, "FL10_w8.vocr is the smallest", "tighter"}, /* H15's weights */
-        {5000000, 659456, OOM_GAME_SMALLEST, "smallest OCR model", "tighter"},   /* FL10's weights */
-        {6000000, 659456, OOM_GAME_RACE, "Try again", "FL10"},                   /* passed, then refused */
-        {5000000, 0, OOM_GAME_RACE, "Try again", "FL10"},
+        {5200000, 1159168, OOM_GAME_MODEL_FITS, "would fit this region", "tighter"}, /* H15; FL10 fits */
+        {5000000, 1159168, OOM_GAME_MODEL, "FL10_w8.vocr, the smallest model, and a tighter", NULL},
+        {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
+        {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
+        {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},
         {(int32_t)0x80020001u, 659456, OOM_GAME_UNKNOWN, "could not be checked", "FL10"},
     };
     for (unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
@@ -715,6 +720,14 @@ static void test_vocr_oom_advice_names_the_stage(void)
         check_oom_message(cases[i].advice, cases[i].must, cases[i].must_not);
         mem_free();
     }
+    /* A game OOM without the check's numbers gets no specific advice. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; fake_reserve = 0;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    check_oom_message(NULL, "not enough memory", "FL10");
+    TEST_CHECK(!strcmp(ocr_error_text(), "Text recognition failed: not enough memory"));
+    mem_free();
     /* The kernel's capture buffer: the model is irrelevant, the job never reached the game. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
