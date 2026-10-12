@@ -128,6 +128,7 @@ static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
+static int fake_ppocr_rc; /* the game worker's PP-OCRv6 status (no inference in this harness) */
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -146,7 +147,12 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
     if (fail_vocr_user) fake_game_result.rc = VJO_E_OOM;
-    else {
+    else if (!strcmp(fake_game_request.model, VJO_PPOCRV6_MODEL_NAME)) {
+        /* The engine's own worker paths are tested in test_game_ppocrv6.c. */
+        fake_game_result.rc = fake_ppocr_rc;
+        fake_game_result.workspace_bytes = 19398656;
+        vocr_frees++;
+    } else {
         size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
         VjoOcrImage im = {NULL, raw_state.width, raw_state.height, fake_game_rows, NULL};
@@ -204,6 +210,7 @@ static void reset(void)
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
     fake_recognized_text = NULL;
+    fake_ppocr_rc = VJO_OK;
 #endif
     phases_checked = vocr_live = fail_join = 0;
     anki_configured = anki_reaps = anki_stop_rc = anki_counts = anki_on = 0;
@@ -480,6 +487,77 @@ static void test_vocr2_selection_stays_local(void)
     mem_free();
 }
 
+/* PP-OCRv6: same game worker transport, but manual only. VOCR is unchanged. */
+static void test_ppocrv6_manual_local_policy(void)
+{
+    reset(); cfg.ocr_backend = VJO_OCR_PPOCRV6; cfg.ocr_mode = VJO_OCR_AUTO;
+    loaded = cfg; subtitles = 1;
+    TEST_CHECK(local_pipeline(&cfg) && game_ocr_backend(cfg.ocr_backend) && !background_wanted());
+    subtitles = 0; set_subtitles(1);
+    TEST_CHECK(!subtitles && !job_running && strstr(g_view.strip_text, "manual only"));
+    TEST_CHECK(g_view.strip_on && g_view.strip_kind == VJO_STRIP_ERROR); /* visible, not a subtitle */
+    set_subtitles(1); /* the next press dismisses it */
+    TEST_CHECK(!subtitles && !job_running && !g_view.strip_on && !g_view.strip_text[0]);
+    set_subtitles(1); TEST_CHECK(g_view.strip_on);
+    on_game_exit(); /* never carried into the next application */
+    TEST_CHECK(!g_view.strip_on && !manual_notice);
+    memcpy(title_id, "PCSG00415", 10);
+#ifdef VJO_WITH_VOCR
+    fake_recognized_text = "日本語";
+    ov = OV_OPEN;
+    start_job("explicit PP-OCRv6 opening", 0);
+    TEST_CHECK(strstr(g_view.status, "PP-OCRv6") && strstr(g_view.status, "few seconds"));
+    raw_state.done_seq = 11;
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
+    TEST_CHECK(!strcmp(fake_game_request.model, VJO_PPOCRV6_MODEL_NAME));
+    TEST_CHECK(!jpeg_captures && local_text_valid && !strcmp(local_text, "日本語"));
+    job_cancelled = 1; ov = OV_OPEN_OLD_JOB;
+    unsigned before = vocr_allocs; on_job_done();
+    TEST_CHECK(!job_running && vocr_allocs == before && strstr(g_view.status, "Close and reopen"));
+    ov = OV_CLOSED; stable_pending = 1; state.stable = 1; auto_prefetch();
+    TEST_CHECK(!job_running && vocr_allocs == before); /* never in the background */
+    mem_free();
+#endif
+    /* config.ini switched to PP-OCRv6 while VOCR subtitles ran: they stop. */
+    loaded.ocr_backend = VJO_OCR_VOCR; cfg = loaded; subtitles = 1;
+    loaded.ocr_backend = VJO_OCR_PPOCRV6; apply_config();
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_PPOCRV6 && !subtitles && !g_view.strip_on && !job_running);
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    TEST_CHECK(background_wanted() && !strcmp(recognizing_text(&cfg), "Recognizing…"));
+}
+
+static void test_ppocrv6_missing_model_and_game_oom_fail_clearly(void)
+{
+#ifdef VJO_WITH_VOCR
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_PPOCRV6;
+    fake_ppocr_rc = VJO_E_OCR_MODEL;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL);
+    VjoOverlayData *d = &cache_data[0];
+    TEST_CHECK(d->failed_stage == VJO_STAGE_OCR && d->err.detail);
+    TEST_CHECK(strstr(d->err.detail, VJO_PPOCRV6_MODEL_NAME) && strstr(d->err.detail, "choose VOCR"));
+    TEST_CHECK(!local_text_valid && !has_result_memory());
+    /* The storage diagnosis still wins over the generic missing-model text. */
+    fake_model_io_error = (int32_t)0x80010013u;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && strstr(cache_data[0].err.detail, "storage is unavailable"));
+    fake_model_io_error = 0;
+    fake_ppocr_rc = VJO_E_OOM;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_OCR && strstr(cache_data[0].err.detail, "23 MiB"));
+    TEST_CHECK(!local_text_valid && !has_result_memory());
+    /* Shell memory refused after recognition: the recognized text is kept. */
+    fake_ppocr_rc = VJO_OK; fake_recognized_text = "猫が鳴く"; fail_alloc = 1; ov = OV_OPEN;
+    start_job("PP-OCRv6 Shell result refusal", 1);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_OOM);
+    d = &cache_data[job_idx];
+    TEST_CHECK(d->failed_stage == VJO_STAGE_DICT && d->sentence && !strcmp(d->sentence, "猫が鳴く"));
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "猫が鳴く") && strstr(d->err.detail, "Shell UI memory"));
+    on_job_done();
+    TEST_CHECK(g_view.list && !strcmp(g_view.list->header, "猫が鳴く") && strstr(g_view.status, "Shell UI memory"));
+    fail_alloc = 0; close_overlay(); mem_free();
+#endif
+}
+
 static void test_vocr2_cache_uses_its_own_backend_and_storage(void)
 {
     reset();
@@ -517,6 +595,17 @@ static void test_vocr_config(void)
     vjo_config_parse(&c, new_ini, sizeof(new_ini) - 1);
     TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR2 && !c.n_warnings);
     TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
+    /* PP-OCRv6 takes the next free ID; a saved choice survives and keeps vocr_model. */
+    TEST_CHECK(VJO_OCR_PPOCRV6 == 5);
+    const char v6_ini[] = "ocr_backend = PPOCRv6\nvocr_model = H15_w8.vocr\nocr_mode = auto\n";
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, v6_ini, sizeof(v6_ini) - 1);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_PPOCRV6 && !c.n_warnings && c.ocr_mode == VJO_OCR_AUTO);
+    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
+    const char bad_ini[] = "ocr_backend = ppocrv5\n";
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, bad_ini, sizeof(bad_ini) - 1);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1); /* unknown: default kept */
 }
 
 static void test_vocr_warms_no_lens_connection(void)
@@ -1512,6 +1601,8 @@ TEST_LIST = {
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
+    {"ppocrv6_is_manual_only_and_never_runs_in_the_background", test_ppocrv6_manual_local_policy},
+    {"ppocrv6_missing_model_game_oom_and_shell_oom_keep_text", test_ppocrv6_missing_model_and_game_oom_fail_clearly},
     {"vocr_config_parses_and_validates", test_vocr_config},
     {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},

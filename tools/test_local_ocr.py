@@ -4,6 +4,8 @@
 --backend ncnn (default): PP-OCRv5 mobile, model directory from prepare_ocr.py.
 --backend vocr: vita-vn-ocr, a directory holding the release's H15_w8.vocr
 (tools/prepare_ocr.py --backend vocr).
+--backend ppocrv6: PP-OCRv6 small int8, a directory holding the pinned
+PP-OCRv6_small_jis_int8.bin (tools/prepare_ppocrv6.py fetch).
 """
 import argparse
 from pathlib import Path
@@ -19,19 +21,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cli', required=True)
     ap.add_argument('--model', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr'), default='ncnn')
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'ppocrv6'), default='ncnn')
     args = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     image = Image.open(root/'host/samples/vn_textbox.jpg').crop((45, 375, 920, 475)).convert('RGBA')
-    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else 'H15_w8.vocr'
+    weights_name = {'ncnn': 'PP_OCRv5_mobile_rec.ncnn.bin', 'vocr': 'H15_w8.vocr',
+                    'ppocrv6': 'PP-OCRv6_small_jis_int8.bin'}[args.backend]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         pixels = tmp/'input.rgba'
         def run(im, model=args.model):
             pixels.write_bytes(im.tobytes())
-            cmd = [args.cli] + (['--backend', 'vocr'] if args.backend == 'vocr' else [])
+            cmd = [args.cli] + (['--backend', args.backend] if args.backend != 'ncnn' else [])
             return subprocess.run(cmd + [str(model), str(im.width), str(im.height), str(pixels)],
-                                  text=True, capture_output=True, timeout=60)
+                                  text=True, capture_output=True, timeout=300)
         result = run(image)
         assert result.returncode == 0, result.stderr
         for line in LINES:
@@ -56,7 +59,25 @@ def main():
         assert result.returncode == 0 and 'lines=8' in result.stderr, result.stderr
         if args.backend == 'vocr':
             check_vocr(run, image, many)
+        if args.backend == 'ppocrv6':
+            check_ppocrv6(run, image, many)
         print(f'Real-model OCR ({args.backend}), multiline bounds, blank input, and corrupt/missing model checks passed.')
+
+
+def check_ppocrv6(run, image, many):
+    """Polarity-agnostic finder, unread weights for an empty region, and the heap bound."""
+    result = run(Image.new('RGBA', (960, 100), (0,0,0,255)))
+    assert stat(result.stderr, 'loaded') == 0 and stat(result.stderr, 'lines') == 0, result.stderr
+    dark = Image.merge('RGBA', (*ImageOps.invert(image.convert('RGB')).split(), image.getchannel('A')))
+    result = run(dark)
+    assert result.returncode == 0 and 'lines=2' in result.stderr, result.stderr
+    for line in LINES:
+        assert line in result.stdout, result.stdout
+    # Eight full-width lines in one job stay inside the fixed ncnn heap.
+    result = run(many)
+    peak, heap = stat(result.stderr, 'tensor_heap_peak'), stat(result.stderr, 'heap')
+    assert result.returncode == 0 and 'lines=8' in result.stderr, result.stderr
+    assert 0 < peak <= heap, result.stderr
 
 
 def stat(stderr, key):

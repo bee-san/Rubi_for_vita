@@ -4,7 +4,14 @@
 #include "main.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
+#ifdef VJO_WITH_PPOCRV6
+#include "../core/ppocrv6_ocr.h"
+#endif
 #define WORKER_STACK_BYTES (32u*1024u)
+/* PP-OCRv6 runs on its own thread, created for one job only, so games that
+ * never select it keep the 32 KiB worker stack. The Vita build's code used
+ * 14,260 bytes of stack (docs/ppocrv6.md). */
+#define PPOCR_STACK_BYTES (64u*1024u)
 #include "../core/games.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
@@ -25,7 +32,7 @@
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
 
-static SceUID worker = -1, workspace_uid = -1;
+static SceUID worker = -1, workspace_uid = -1, ppocr_thread = -1;
 static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
@@ -115,9 +122,22 @@ static uint64_t now_us(void *ud)
     return sceKernelGetProcessTimeWide();
 }
 
+/* A PP-OCRv6 thread whose join failed may still use the workspace: wait for
+ * it again (bounded) before anything it uses is released. */
+static int ppocr_reap(void)
+{
+    if (ppocr_thread < 0) return 0;
+    SceUInt timeout = JOIN_US;
+    if (sceKernelWaitThreadEnd(ppocr_thread, NULL, &timeout) < 0) return -1;
+    if (sceKernelDeleteThread(ppocr_thread) < 0) return -1;
+    ppocr_thread = -1;
+    return 0;
+}
+
 static int cleanup(void)
 {
     int rc = 0;
+    if (ppocr_reap()) return VJO_E_OCR_UNAVAILABLE;
     if (workspace_uid >= 0) {
         if (sceKernelFreeMemBlock(workspace_uid) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else workspace_uid = -1;
@@ -125,6 +145,83 @@ static int cleanup(void)
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     return rc;
+}
+
+#ifdef VJO_WITH_PPOCRV6
+/* Everything the job thread touches lives in its own workspace block, after
+ * the engine's bytes: a copy of the request and its text. A thread that could
+ * not be joined therefore never reaches the worker's stack or the result that
+ * is later sent to the kernel; the block is freed only after a join. */
+typedef struct {
+    VjoGameOcrRequest request;
+    char text[VJO_GAME_OCR_TEXT_BYTES];
+} PpocrJobTail;
+static struct {
+    PpocrJobTail *tail;
+    void *workspace;
+    size_t bytes;
+    VjoPpocrStats stats;
+    int rc;
+} ppocr_job;
+
+static int ppocr_main(SceSize args, void *argp)
+{
+    (void)args; (void)argp;
+    PpocrJobTail *t = ppocr_job.tail;
+    VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
+    VjoOcrImage image = {&t->request, t->request.width, t->request.height, rows, cancelled};
+    ppocr_job.rc = vjo_ppocrv6_ocr(&platform, t->request.model_dir, &image, ppocr_job.workspace, ppocr_job.bytes,
+                                   t->text, sizeof(t->text), &ppocr_job.stats);
+    return 0;
+}
+#endif
+
+/* Same ownership as VOCR: one private USER_RW workspace, the broker's model
+ * reads and complete cleanup before a result returns. The job thread's stack
+ * exists only while it runs. */
+static int run_ppocrv6(const VjoGameOcrRequest *r, VjoGameOcrResult *out, VjoVocrStats *stats)
+{
+#ifdef VJO_WITH_PPOCRV6
+    size_t need = vjo_ppocrv6_workspace_bytes(r->width, r->height);
+    if (!need) return VJO_E_OCR_REGION;
+    size_t tail_at = (need + 63u) & ~(size_t)63u;
+    uint32_t rounded = ((uint32_t)(tail_at + sizeof(PpocrJobTail)) + 4095u) & ~4095u;
+    SceKernelFreeMemorySizeInfo free_mem = {.size=sizeof(free_mem)};
+    stats->workspace = rounded;
+    if (!IMPORT_READY(sceKernelGetFreeMemorySize) ||
+        sceKernelGetFreeMemorySize(&free_mem) < 0 || free_mem.size_user < 0 ||
+        (uint32_t)free_mem.size_user < rounded + PPOCR_STACK_BYTES + GAME_RESERVE) return VJO_E_OOM;
+    workspace_uid = sceKernelAllocMemBlock("VjoGamePpocr", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, rounded, NULL);
+    if (workspace_uid < 0) return VJO_E_OOM;
+    void *base = NULL;
+    if (sceKernelGetMemBlockBase(workspace_uid, &base) < 0 || !base || ((uintptr_t)base & 63u)) return VJO_E_OOM;
+    sceClibMemset(&ppocr_job, 0, sizeof(ppocr_job));
+    ppocr_job.tail = (PpocrJobTail *)((unsigned char *)base + tail_at);
+    sceClibMemcpy(&ppocr_job.tail->request, r, sizeof(*r));
+    ppocr_job.tail->text[0] = '\0';
+    ppocr_job.workspace = base; ppocr_job.bytes = need;
+    ppocr_job.rc = VJO_E_OCR_UNAVAILABLE;
+    ppocr_thread = sceKernelCreateThread("VjoGamePpocr", ppocr_main, 0x10000100, PPOCR_STACK_BYTES, 0, 0, NULL);
+    if (ppocr_thread < 0) { ppocr_thread = -1; return VJO_E_OOM; }
+    if (sceKernelStartThread(ppocr_thread, 0, NULL) < 0) {
+        if (sceKernelDeleteThread(ppocr_thread) >= 0) ppocr_thread = -1;
+        return VJO_E_OCR_UNAVAILABLE;
+    }
+    /* Cancellation is checked between model chunks and lines, never mid-line:
+     * the job ends on its own. A failed join keeps the thread and workspace. */
+    if (sceKernelWaitThreadEnd(ppocr_thread, NULL, NULL) < 0) return VJO_E_OCR_UNAVAILABLE;
+    if (sceKernelDeleteThread(ppocr_thread) < 0) return VJO_E_OCR_UNAVAILABLE;
+    ppocr_thread = -1;
+    if (!ppocr_job.rc) sceClibMemcpy(out->text, ppocr_job.tail->text, sizeof(out->text));
+    stats->lines = ppocr_job.stats.lines;
+    stats->find_us = ppocr_job.stats.find_us;
+    stats->load_us = ppocr_job.stats.load_us;
+    stats->recognize_us = ppocr_job.stats.recognize_us;
+    return ppocr_job.rc;
+#else
+    (void)r; (void)out; (void)stats;
+    return VJO_E_OCR_UNAVAILABLE;
+#endif
 }
 
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
@@ -135,12 +232,16 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     active_seq = r->seq; io_error = 0;
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    if (blocked || workspace_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if (blocked || workspace_uid >= 0 || model_owned || ppocr_thread >= 0) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->done_seq ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         r->stride != r->width*4u || !r->model_dir[0] || !r->model[0] ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1]) goto done;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
+    if (!sceClibStrcmp(r->model, VJO_PPOCRV6_MODEL_NAME)) {
+        rc = run_ppocrv6(r, out, &stats);
+        goto done;
+    }
     size_t bytes = vjo_vocr_workspace_bytes(r->model, r->width, r->height);
     if (!bytes) { rc = vjo_vocr_model(r->model) ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
     uint32_t rounded = ((uint32_t)bytes+4095u)&~4095u;

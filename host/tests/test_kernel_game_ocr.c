@@ -367,8 +367,8 @@ static void open_model(uint32_t seq)
     TEST_CHECK(vjoOcrModelOpen(seq) == VJO_ERR_BUSY && !file_live);
     TEST_CHECK(vjoOcrModelOpen(seq) == VJO_ERR_BUSY && !model_opens);
     model_tick();
-    TEST_CHECK(vjoOcrModelOpen(seq) == (int)VJO_VOCR_FL10_BYTES && file_live);
-    TEST_CHECK(vjoOcrModelOpen(seq) == (int)VJO_VOCR_FL10_BYTES && model_opens == 1);
+    TEST_CHECK(vjoOcrModelOpen(seq) == (int)expected_model_size && file_live);
+    TEST_CHECK(vjoOcrModelOpen(seq) == (int)expected_model_size && model_opens == 1);
 }
 static void close_model(uint32_t seq)
 {
@@ -432,6 +432,25 @@ static void vocr2_fixed_pin_preserves_paths_and_bounds(void)
     TEST_CHECK(!model_size(VJO_VOCR2_ARTIFACT_NAME));
     TEST_CHECK(vjoOcrModelOpen(seq) == VJO_ERR_ARG && !model_opens);
 #endif
+    TEST_CHECK(!vjoOcrComplete(&message));
+}
+
+/* PP-OCRv6's pinned int8 weights: exact length, canonical path, last chunk. */
+static void ppocrv6_fixed_pin_preserves_paths_and_bounds(void)
+{
+    TEST_CHECK(model_size(VJO_PPOCRV6_MODEL_NAME) == VJO_PPOCRV6_MODEL_BYTES);
+    TEST_CHECK(!model_size("../" VJO_PPOCRV6_MODEL_NAME) && !model_size("PP-OCRv6_small_jis_fp32.bin"));
+    TEST_CHECK(!model_size("PP-OCRv6_small_jis_int8.ncnn.param") && !model_size("PP-OCRv6_small_jis_int8.BIN"));
+    setup(); uint32_t seq = submit(); take(seq);
+    strcpy(request.model, VJO_PPOCRV6_MODEL_NAME);
+    expected_model_size = VJO_PPOCRV6_MODEL_BYTES;
+    open_model(seq);
+    unsigned char tail[2] = {0xCC, 0xCC};
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_PPOCRV6_MODEL_BYTES - 1, 2, tail) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_PPOCRV6_MODEL_BYTES - 1, 1, tail) == VJO_ERR_BUSY);
+    model_tick();
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_PPOCRV6_MODEL_BYTES - 1, 1, tail) == 1 && tail[1] == 0xCC);
+    close_model(seq);
     TEST_CHECK(!vjoOcrComplete(&message));
 }
 
@@ -520,6 +539,7 @@ static void model_failed_close_and_orphan_recovery(void)
 TEST_LIST = {
     {"removed_Meiki_recognizer_is_not_in_the_broker_allowlist",removed_meiki_model_is_refused},
     {"VOCR2_exact_pin_keeps_canonical_path_and_final_chunk_bounds",vocr2_fixed_pin_preserves_paths_and_bounds},
+    {"PPOCRv6_exact_pin_keeps_canonical_path_and_final_chunk_bounds",ppocrv6_fixed_pin_preserves_paths_and_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
     {"model broker short reads copy retry EOF and native errors", model_short_read_copy_retry_and_errors},
     {"model broker late I/O cancellation exit Shell restart and pending close", model_cancel_exit_restart_and_late_io},

@@ -353,6 +353,8 @@ static uint32_t model_size(const char *name)
 #if VJO_VOCR2_ENABLED
     if (!strcmp(name, VJO_VOCR2_ARTIFACT_NAME)) return VJO_VOCR2_BYTES;
 #endif
+    /* The pinned PP-OCRv6 int8 weights; the game worker checks their SHA-256. */
+    if (!strcmp(name, VJO_PPOCRV6_MODEL_NAME)) return VJO_PPOCRV6_MODEL_BYTES;
     return 0;
 }
 

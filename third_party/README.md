@@ -25,6 +25,24 @@ Fetched for the optional/default-enabled local OCR build:
 - PP-OCRv5 model originates in https://github.com/PaddlePaddle/PaddleOCR
   (Apache-2.0): [licenses/PaddleOCR.txt](licenses/PaddleOCR.txt).
 
+PP-OCRv6 small engine (`-DVJO_WITH_PPOCRV6=ON`, the default, linked into the
+game worker; [docs/ppocrv6.md](../docs/ppocrv6.md)):
+
+- Model: PaddleOCR PP-OCRv6 small rec (https://github.com/PaddlePaddle/PaddleOCR,
+  Apache-2.0: [licenses/PaddleOCR.txt](licenses/PaddleOCR.txt)), as the ONNX file
+  RapidOCR 3.10.0 publishes (https://www.modelscope.cn/models/RapidAI/RapidOCR,
+  Apache-2.0), SHA-256
+  `6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884`.
+- `third_party/ppocrv6/` holds the derived ncnn param and the kept part of its
+  character dictionary (Apache-2.0, from that model). The int8 weights derived from
+  it are a release asset, rebuilt reproducibly by `tools/prepare_ppocrv6.py build`
+  and never committed. Changes from the original: the CTC head pruned to JIS X 0208
+  classes, the final Softmax removed, the graph converted by pnnx 20260704
+  (https://github.com/pnnx/pnnx, a build tool, not shipped) and rewritten for ncnn,
+  and the weights quantised to int8 by ncnn's tools.
+- ncnn at the same revision as above, built with only the graph's layers and the
+  int8 kernels; global C++ allocation for the worker comes from `core/ncnn_new.cpp`.
+
 `tools/prepare_ocr.py` records expected asset sizes and SHA-256 hashes. The
 model weights are downloaded, not committed. The generated graph/vocabulary
 header is a build artifact. This port changes ncnn's build configuration,

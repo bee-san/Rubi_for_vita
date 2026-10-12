@@ -309,3 +309,4 @@ copied, and the settings above. Close other apps first.
   the game's clock. The overlay does not change the CPU clock or memory mode.
 - The pinned table accepts the three v0.2.0 int8 files and the separate VOCR2 trial; a new release
   needs its sizes and hashes added (`core/vocr_ocr.c`, `tools/prepare_ocr.py`).
+  The kernel broker also accepts the pinned PP-OCRv6 weights ([PP-OCRv6](ppocrv6.md)).

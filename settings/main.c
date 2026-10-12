@@ -26,9 +26,9 @@
 #define OCR_H 146
 #define OCR_CHOICE_X 42
 #define OCR_CHOICE_Y (OCR_Y + 42)
-#define OCR_CHOICE_W 284
+#define OCR_CHOICE_W 212
 #define OCR_CHOICE_H 48
-#define OCR_CHOICE_PITCH 296
+#define OCR_CHOICE_PITCH 222
 /* The three compact preference cards share one layout: title and choices on
  * the first row, help on the second. */
 #define CARD_H 68
@@ -71,7 +71,7 @@ static int icons_offset = -1, writable = 1;
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
-static int model_found[2];
+static int model_found[3];
 static char preference_status[160];
 static int status_error, preference_error;
 static const struct {
@@ -81,7 +81,8 @@ static const struct {
 } ocr_choices[] = {
     {VJO_OCR_VOCR, "VOCR", "Local OCR: dialogue region, automatic or manual."},
     {VJO_OCR_VOCR2, "VOCR2", "Experimental local OCR. Trial results vary by game."},
-    {VJO_OCR_LENS, "Google Lens", "Wi-Fi required. Sends the selected image to Google."}
+    {VJO_OCR_LENS, "Google Lens", "Wi-Fi required. Sends the selected image to Google."},
+    {VJO_OCR_PPOCRV6, "PP-OCRv6", "Most accurate local OCR. Manual only; each read takes seconds."}
 };
 #define OCR_CHOICES ((int)(sizeof(ocr_choices) / sizeof(ocr_choices[0])))
 
@@ -288,8 +289,8 @@ static void move(int delta)
 
 static void check_models(void)
 {
-    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME};
-    for (int i = 0; i < 2; i++) {
+    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME, VJO_PPOCRV6_MODEL_NAME};
+    for (int i = 0; i < 3; i++) {
         char path[256];
         model_found[i] = 0;
         if (!names[i][0]) continue;
@@ -397,7 +398,8 @@ static void draw_preferences(void)
     } else if (preferences.ocr_backend == VJO_OCR_LENS) {
         snprintf(label, sizeof(label), "No model file needed. Uses your chosen dictionary.");
     } else {
-        int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 1 : 0;
+        int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 1
+                  : preferences.ocr_backend == VJO_OCR_PPOCRV6 ? 2 : 0;
         snprintf(label, sizeof(label), "%s model %s. Game OCR worker required.",
                  ocr_choices[choice].name, model_found[model] ? "found" : "missing");
         if (!model_found[model]) color = OFF;

@@ -9,6 +9,7 @@ import shutil
 import zipfile
 
 from prepare_ocr import VOCR_ASSETS, VOCR2_ASSETS, VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG
+import prepare_ppocrv6
 
 DATA = "ux0/data/VitaJPOverlay/"
 
@@ -51,11 +52,15 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", so
     model_names = ["FL10_w8.vocr", "H15_w8.vocr"]
     if VOCR2_ENABLED:
         model_names.append(VOCR2_MODEL)
+    model_names.append(prepare_ppocrv6.MODEL_NAME)
     for name in model_names:
         path = models / name
         if not path.is_file():
             raise ValueError("OCR model is missing: " + name)
-        _, size, sha = (VOCR2_ASSETS if name == VOCR2_MODEL else VOCR_ASSETS)[name]
+        if name == prepare_ppocrv6.MODEL_NAME:
+            _, size, sha = prepare_ppocrv6.WEIGHTS
+        else:
+            _, size, sha = (VOCR2_ASSETS if name == VOCR2_MODEL else VOCR_ASSETS)[name]
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
@@ -66,6 +71,7 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", so
                              "ocr_mode": "auto", "anki": False}}
     if source_revision:
         manifest["source_revision"] = source_revision
+    manifest["ocr_backends"] = {}
     if VOCR2_ENABLED:
         manifest["ocr_backends"] = {
             "vocr2": {"model": VOCR2_MODEL, "finder_mode": "textbox",
@@ -79,6 +85,12 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", so
                       "protected_result_sha256": "3c2c873239e1bcbdf3858650d7b628853b0f4b1f4c324ecc9519a7348c8d09f7",
                       "runtime_commit": "49ff6f4d1c55804c600d098810574a49d382a009"}
         }
+    manifest["ocr_backends"]["ppocrv6"] = {
+        "model": prepare_ppocrv6.MODEL_NAME, "model_release": prepare_ppocrv6.RELEASE_TAG,
+        "model_bytes": prepare_ppocrv6.WEIGHTS[1], "model_sha256": prepare_ppocrv6.WEIGHTS[2],
+        "ncnn_heap_bytes": 18874368, "job_stack_bytes": 65536, "manual_only": True, "default": False,
+        "source": prepare_ppocrv6.ONNX[0], "source_sha256": prepare_ppocrv6.ONNX[2],
+        "ncnn_revision": prepare_ppocrv6.NCNN_REV, "license": "Apache-2.0 (PaddleOCR)"}
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if original.testzip() is not None:

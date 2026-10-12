@@ -11,9 +11,14 @@ host measurements, memory bounds and the physical-console validation limits.
 Google Lens remains opt-in with `ocr_backend = lens`. Local OCR never falls
 back to uploading an image.
 
-The earlier CPU-only ncnn adapter is available for host experiments with
-`-DVJO_WITH_NCNN=ON` (`vjo-ocr --backend ncnn`). This does not enable ncnn in
-the Shell worker. Native text extraction has a separate experiment branch; its
+`ocr_backend = ppocrv6` runs PaddleOCR's PP-OCRv6 small recognizer (int8, JIS
+head) in the same game worker, on the pinned ncnn linked statically into
+`VitaJPOverlay_OCR.suprx`. It is slower and more accurate than VOCR and runs only
+when the overlay is opened; see [PP-OCRv6](ppocrv6.md).
+
+The earlier CPU-only PP-OCRv5 ncnn adapter is available for host experiments with
+`-DVJO_WITH_NCNN=ON` (`vjo-ocr --backend ncnn`). Neither ncnn engine runs in
+the Shell. Native text extraction has a separate experiment branch; its
 code is not part of this release. The Meiki single-line trial was removed after
 v0.7.12. The FTP installer
 comments out their old registrations when installing the mainline release.

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import prepare_ocr as prepare
 import package_release as release
+import prepare_ppocrv6
 
 
 class Vocr2AssetPins(unittest.TestCase):
@@ -109,6 +110,11 @@ class Vocr2AssetPlumbing(unittest.TestCase):
     def package_fixture(self, enabled):
         for name in ("FL10_w8.vocr", "H15_w8.vocr"):
             (self.models / name).write_bytes(self.legacy)
+        # The PP-OCRv6 weights are bundled too (tools/tests/test_ppocrv6_assets.py).
+        v6 = b"tiny PP-OCRv6 fixture, not OCR weights"
+        (self.models / prepare_ppocrv6.MODEL_NAME).write_bytes(v6)
+        self.enterContext(mock.patch.object(prepare_ppocrv6, "WEIGHTS", (
+            "https://fixture.invalid/v6.bin", len(v6), hashlib.sha256(v6).hexdigest())))
         dictionary = self.root / "jmdict.vjdict"
         dictionary.write_bytes(b"VJDICT2\0synthetic dictionary fixture")
         source_pin = json.loads((ROOT / "docs/jmdict-source.json").read_text())["sha256"]
@@ -162,7 +168,7 @@ class Vocr2AssetPlumbing(unittest.TestCase):
         with zipfile.ZipFile(package) as archive:
             manifest = json.loads(archive.read("package-manifest.json"))
             self.assertNotIn(release.DATA + "ocr/" + prepare.VOCR2_MODEL, archive.namelist())
-            self.assertNotIn("ocr_backends", manifest)
+            self.assertNotIn("vocr2", manifest["ocr_backends"])
 
 
 if __name__ == "__main__":

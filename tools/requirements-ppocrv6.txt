@@ -1,0 +1,5 @@
+# Only needed to rebuild the PP-OCRv6 int8 weights (tools/prepare_ppocrv6.py build).
+numpy==2.0.2
+onnx==1.17.0
+protobuf==5.29.3
+Pillow==12.3.0

@@ -1,0 +1,502 @@
+{
+ "date": "2026-10-12",
+ "status": "host and emulator measurements only; nothing ran on a physical PS Vita",
+ "model": {
+  "file": "PP-OCRv6_small_jis_int8.bin",
+  "bytes": 3893668,
+  "sha256": "2555ebd7c7734032ad09a1ea5c63efaa690906af56947ed5203f19b9563b1320",
+  "param_sha256": "d2fdcab3e56f46e07b4d21a414be5072e4b7c9982aadb147eec120e6eb07b58b",
+  "classes": 6515,
+  "source_onnx_sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+  "calibration": "ncnn2table KL on 400 realdata training-split lines, every activation threshold >= 0.67 x max",
+  "rebuild": "tools/prepare_ppocrv6.py build (two independent builds byte-identical)"
+ },
+ "eval": {
+  "tool": "bee-san/vita-vn-ocr eval/run.py at 49ff6f4d1c55804c600d098810574a49d382a009",
+  "recognizer_lines": {
+   "FL10_w8": {
+    "model": "vocr:/home/skerraut/herd-vita-ocr/shared/artifacts/train2/release/FL10_w8.vocr",
+    "polarity": "console",
+    "finder": null,
+    "sets": {
+     "vita-test": {
+      "lines": 206,
+      "chars": 2564,
+      "errors": 61,
+      "cer": 0.02379,
+      "exact": 0.76699
+     },
+     "psp-test": {
+      "lines": 245,
+      "chars": 2510,
+      "errors": 133,
+      "cer": 0.05299,
+      "exact": 0.67347
+     }
+    }
+   },
+   "H15_w8": {
+    "model": "vocr:/home/skerraut/herd-vita-ocr/shared/artifacts/train2/release/H15_w8.vocr",
+    "polarity": "console",
+    "finder": null,
+    "sets": {
+     "vita-test": {
+      "lines": 206,
+      "chars": 2564,
+      "errors": 40,
+      "cer": 0.0156,
+      "exact": 0.83981
+     },
+     "psp-test": {
+      "lines": 245,
+      "chars": 2510,
+      "errors": 72,
+      "cer": 0.02869,
+      "exact": 0.81224
+     }
+    }
+   },
+   "ppocrv6_fp32_x86": {
+    "model": "cmd:/home/skerraut/herd-vita-oct12/clones/ppocrv6/build/host/vjo-ocr --backend ppocrv6 --ppocr-param /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/models/fp32.param.bin:0:181 --ppocr-weights PP-OCRv6_small_jis_fp32.bin --ppocr-heap 67108864 --lines /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/models",
+    "polarity": "native",
+    "finder": null,
+    "sets": {
+     "vita-test": {
+      "lines": 206,
+      "chars": 2564,
+      "errors": 29,
+      "cer": 0.01131,
+      "exact": 0.90291
+     },
+     "psp-test": {
+      "lines": 245,
+      "chars": 2510,
+      "errors": 29,
+      "cer": 0.01155,
+      "exact": 0.9102
+     }
+    }
+   },
+   "ppocrv6_int8_x86": {
+    "model": "cmd:/home/skerraut/herd-vita-oct12/clones/ppocrv6/build/host/vjo-ocr --backend ppocrv6 --lines /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/models",
+    "polarity": "native",
+    "finder": null,
+    "sets": {
+     "vita-test": {
+      "lines": 206,
+      "chars": 2564,
+      "errors": 34,
+      "cer": 0.01326,
+      "exact": 0.8835
+     },
+     "psp-test": {
+      "lines": 245,
+      "chars": 2510,
+      "errors": 39,
+      "cer": 0.01554,
+      "exact": 0.88163
+     }
+    }
+   },
+   "ppocrv6_int8_arm_vita_objects_qemu": {
+    "model": "cmd:/home/skerraut/herd-vita-ocr/shared/artifacts/vita/qemu/bin/qemu-arm /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/arm/arm_driver_final /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/models",
+    "polarity": "native",
+    "finder": null,
+    "sets": {
+     "vita-test": {
+      "lines": 206,
+      "chars": 2564,
+      "errors": 37,
+      "cer": 0.01443,
+      "exact": 0.87379
+     },
+     "psp-test": {
+      "lines": 245,
+      "chars": 2510,
+      "errors": 40,
+      "cer": 0.01594,
+      "exact": 0.87755
+     }
+    }
+   }
+  },
+  "console_finder_regions": {
+   "FL10_w8": {
+    "model": "vocr:/home/skerraut/herd-vita-ocr/shared/artifacts/train2/release/FL10_w8.vocr",
+    "polarity": "console",
+    "finder": "console",
+    "sets": {
+     "vita-test": {
+      "regions": 84,
+      "regions_rejected": 0,
+      "gt_lines": 206,
+      "line_recall": 0.95146,
+      "detections": 205,
+      "line_precision": 0.9561,
+      "pipeline_cer": 0.08541,
+      "concat_cer": 0.08659,
+      "concat_regions_chars": 2506
+     },
+     "psp-test": {
+      "regions": 93,
+      "regions_rejected": 0,
+      "gt_lines": 245,
+      "line_recall": 0.90204,
+      "detections": 233,
+      "line_precision": 0.9485,
+      "pipeline_cer": 0.17928,
+      "concat_cer": 0.17649,
+      "concat_regions_chars": 2510
+     }
+    }
+   },
+   "H15_w8": {
+    "model": "vocr:/home/skerraut/herd-vita-ocr/shared/artifacts/train2/release/H15_w8.vocr",
+    "polarity": "console",
+    "finder": "console",
+    "sets": {
+     "vita-test": {
+      "regions": 84,
+      "regions_rejected": 0,
+      "gt_lines": 206,
+      "line_recall": 0.95146,
+      "detections": 205,
+      "line_precision": 0.9561,
+      "pipeline_cer": 0.06825,
+      "concat_cer": 0.06784,
+      "concat_regions_chars": 2506
+     },
+     "psp-test": {
+      "regions": 93,
+      "regions_rejected": 0,
+      "gt_lines": 245,
+      "line_recall": 0.90204,
+      "detections": 233,
+      "line_precision": 0.9485,
+      "pipeline_cer": 0.14701,
+      "concat_cer": 0.14701,
+      "concat_regions_chars": 2510
+     }
+    }
+   },
+   "ppocrv6_int8_x86": {
+    "model": "cmd:/home/skerraut/herd-vita-oct12/clones/ppocrv6/build/host/vjo-ocr --backend ppocrv6 --lines /local/home/skerraut/herd-vita-oct12/tools/ppocrv6-work/models",
+    "polarity": "native",
+    "finder": "console",
+    "sets": {
+     "vita-test": {
+      "regions": 84,
+      "regions_rejected": 0,
+      "gt_lines": 206,
+      "line_recall": 0.95146,
+      "detections": 205,
+      "line_precision": 0.9561,
+      "pipeline_cer": 0.06006,
+      "concat_cer": 0.06026,
+      "concat_regions_chars": 2506
+     },
+     "psp-test": {
+      "regions": 93,
+      "regions_rejected": 0,
+      "gt_lines": 245,
+      "line_recall": 0.90204,
+      "detections": 233,
+      "line_precision": 0.9485,
+      "pipeline_cer": 0.13426,
+      "concat_cer": 0.11474,
+      "concat_regions_chars": 2510
+     }
+    }
+   }
+  },
+  "calibration_choice_on_realdata_val_errors_chars": {
+   "fp32": {
+    "vita": [
+     4,
+     1634
+    ],
+    "psp": [
+     16,
+     3031
+    ],
+    "all": [
+     20,
+     4665
+    ]
+   },
+   "kl": {
+    "vita": [
+     7,
+     1634
+    ],
+    "psp": [
+     29,
+     3031
+    ],
+    "all": [
+     36,
+     4665
+    ]
+   },
+   "e640aciq": {
+    "vita": [
+     11,
+     1634
+    ],
+    "psp": [
+     19,
+     3031
+    ],
+    "all": [
+     30,
+     4665
+    ]
+   },
+   "vfl025": {
+    "vita": [
+     6,
+     1634
+    ],
+    "psp": [
+     18,
+     3031
+    ],
+    "all": [
+     24,
+     4665
+    ]
+   },
+   "tfl33": {
+    "vita": [
+     2,
+     1634
+    ],
+    "psp": [
+     19,
+     3031
+    ],
+    "all": [
+     21,
+     4665
+    ]
+   },
+   "tfl50": {
+    "vita": [
+     6,
+     1634
+    ],
+    "psp": [
+     19,
+     3031
+    ],
+    "all": [
+     25,
+     4665
+    ]
+   },
+   "vfl067": {
+    "vita": [
+     4,
+     1634
+    ],
+    "psp": [
+     16,
+     3031
+    ],
+    "all": [
+     20,
+     4665
+    ]
+   },
+   "tmax": {
+    "vita": [
+     3,
+     1634
+    ],
+    "psp": [
+     25,
+     3031
+    ],
+    "all": [
+     28,
+     4665
+    ]
+   }
+  }
+ },
+ "memory": {
+  "ncnn_heap_bytes": 18874368,
+  "job_stack_bytes": 65536,
+  "game_reserve_bytes": 4194304,
+  "heap_extent_vita_objects_bytes": {
+   "640px_line": 11159488,
+   "1024px_line": 15331520,
+   "2_3_11_lines_at_clamp": 15331520
+  },
+  "heap_extent_x86_bytes": {
+   "1024px_line": 17172800
+  },
+  "stack_high_water_vita_objects_bytes": 14260,
+  "host_regions": {
+   "one line 960x44": {
+    "lines": 1.0,
+    "heap_peak": 15582208.0,
+    "workspace": 18916608.0,
+    "peak_rss": 22409216.0
+   },
+   "two lines 960x92": {
+    "lines": 2.0,
+    "heap_peak": 15582208.0,
+    "workspace": 18962688.0,
+    "peak_rss": 22614016.0
+   },
+   "dialogue box 880x144 (3 lines)": {
+    "lines": 3.0,
+    "heap_peak": 15582208.0,
+    "workspace": 19001088.0,
+    "peak_rss": 22806528.0
+   },
+   "full screen 960x544 (11 lines)": {
+    "lines": 11.0,
+    "heap_peak": 15582208.0,
+    "workspace": 19396608.0,
+    "peak_rss": 24784896.0
+   }
+  },
+  "worker_module_bytes": {
+   "origin_main_1a118ef": {
+    "text": 33224,
+    "data_bss": 4176,
+    "suprx": 32312
+   },
+   "this_branch": {
+    "text": 825672,
+    "data_bss": 4320,
+    "suprx": 554175
+   }
+  },
+  "shell_module_bytes": {
+   "origin_main_1a118ef": {
+    "text": 214880,
+    "data": 156,
+    "bss": 177972,
+    "suprx": 182551
+   },
+   "this_branch": {
+    "text": 216008,
+    "data": 156,
+    "bss": 177980,
+    "suprx": 183527
+   }
+  },
+  "kernel_module_bytes": {
+   "origin_main_1a118ef": {
+    "text": 24120,
+    "skprx": 24867
+   },
+   "this_branch": {
+    "text": 24172,
+    "skprx": 24928
+   }
+  }
+ },
+ "speed": {
+  "host_x86_ms_per_line_testsets": "vita 118, psp 102 (5-thread slot, one ncnn thread)",
+  "a9_estimate_vita_objects": {
+   "640px_line": {
+    "insns": 1104148530,
+    "neon_issue_cycles": 740916933,
+    "l1d_misses": 21415333,
+    "l2_misses": 5407978,
+    "cycles_low_high": [
+     809922164,
+     2634364950
+    ],
+    "ms_444mhz": [
+     1824,
+     5933
+    ],
+    "ms_333mhz": [
+     2432,
+     7713
+    ],
+    "driver": "crops=1 failed=0 heap_peak_max=11134656 heap_extent_max=11159488 widest=639 stack_peak=14260"
+   },
+   "1024px_line": {
+    "insns": 1639611997,
+    "neon_issue_cycles": 1186769800,
+    "l1d_misses": 32844290,
+    "l2_misses": 13296109,
+    "cycles_low_high": [
+     1295528318,
+     4407781655
+    ],
+    "ms_444mhz": [
+     2918,
+     9927
+    ],
+    "ms_333mhz": [
+     3890,
+     12749
+    ],
+    "driver": "crops=1 failed=0 heap_peak_max=15288192 heap_extent_max=15331520 widest=1024 stack_peak=14260"
+   },
+   "two_1024px_lines": {
+    "insns": 3084763377,
+    "neon_issue_cycles": 2370491393,
+    "l1d_misses": 63927536,
+    "l2_misses": 26348999,
+    "cycles_low_high": [
+     2585166176,
+     8541946528
+    ],
+    "ms_444mhz": [
+     5822,
+     19239
+    ],
+    "ms_333mhz": [
+     7763,
+     24685
+    ],
+    "driver": "crops=1 failed=0 heap_peak_max=15288192 heap_extent_max=15331520 widest=1024 stack_peak=14260"
+   }
+  },
+  "a9_direct_kernels_1024px_line": {
+   "insns": 2358526411,
+   "neon_issue_cycles": 1444775513,
+   "l1d_misses": 42669267,
+   "l2_misses": 12436615,
+   "cycles_low_high": [
+    1888859794,
+    6320868870
+   ],
+   "ms_444mhz": [
+    4254,
+    14236
+   ],
+   "ms_333mhz": [
+    5672,
+    18526
+   ],
+   "driver": "crops=1 failed=0 heap_peak_max=14269696 widest=1024 stack_peak=13948"
+  },
+  "method": "qemu-arm 10.0.13 with vita-vn-ocr vita/qemu/insn_mix.c and the cache plugin; vita/a9_cycles.py classify/model_mode cost model; ranges, not measurements"
+ },
+ "vita3k": {
+  "build": "4154 (v0.2.1, b75d5e62)",
+  "result": [
+   "worker load_start=0x00000007 status=0",
+   "worker stop_unload=0x00000000 status=0",
+   "ux0:data/vjo/line_640.ppm rc=0 lines=1 heap_peak=12840384 heap_extent=12872832 widest=798 load_ms=106 recognize_ms=15456 total_ms=15572",
+   "「それで、結局あの約束はどうなったんだろうね。",
+   "ux0:data/vjo/line_1024.ppm rc=0 lines=1 heap_peak=15288192 heap_extent=15331520 widest=1024 load_ms=104 recognize_ms=19816 total_ms=19935",
+   "「それで、結局あの約束はどうなったんだろうね。誰も覚えていないみたい",
+   "ux0:data/vjo/box3.ppm rc=0 lines=3 heap_peak=15288192 heap_extent=15331520 widest=1024 load_ms=103 recognize_ms=59711 total_ms=59833",
+   "「それで、結局あの約束はどうなったんだろうね。誰も覚えていないみたい",
+   "彼女はそう言って、窓の外に広がる夕焼けの空をしばらく黙って見つめてし",
+   "明日になれば、きっと何もかもが元通りになる。そう信じるしかなかったん",
+   "done"
+  ],
+  "limits": "homebrew test app; the kernel plugin (job transport, model broker) does not run in Vita3K"
+ }
+}

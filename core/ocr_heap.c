@@ -2,11 +2,15 @@
  * blocks satisfy its SIMD alignment, without touching SceShell's libc heap. */
 #include "ocr_heap.h"
 #include <stdint.h>
+#ifdef VJO_HOST
+#include <stdlib.h>
+#endif
 
 #define ALIGN 64u
 typedef struct Block { size_t size; struct Block *prev, *next; int free; } Block;
 static Block *head;
-static size_t used, peak;
+static unsigned char *heap_start, *heap_limit;
+static size_t used, peak, extent, last_extent;
 static int failed, busy;
 
 int vjo_ocr_heap_begin(void *memory, size_t size)
@@ -16,7 +20,9 @@ int vjo_ocr_heap_begin(void *memory, size_t size)
     head = (Block *)memory;
     head->size = (size & ~(size_t)(ALIGN - 1)) - ALIGN;
     head->prev = head->next = NULL; head->free = 1;
-    used = peak = 0; failed = 0;
+    heap_start = (unsigned char *)memory;
+    heap_limit = heap_start + (size & ~(size_t)(ALIGN - 1));
+    used = peak = extent = 0; failed = 0;
     return 0;
 }
 
@@ -35,6 +41,8 @@ void *vjo_ncnn_malloc(size_t n)
         }
         b->free = 0; used += b->size + ALIGN;
         if (used > peak) peak = used;
+        size_t end = (size_t)((unsigned char *)b + ALIGN + b->size - heap_start);
+        if (end > extent) extent = end; /* first fit: the bytes a heap must really have */
         return (unsigned char *)b + ALIGN;
     }
     failed = 1; return NULL;
@@ -62,11 +70,44 @@ int vjo_ncnn_posix_memalign(void **ptr, size_t alignment, size_t n)
     if (!p) return 12;
     *ptr = p; return 0;
 }
+
+int vjo_ocr_heap_owns(const void *ptr)
+{
+    const unsigned char *p = (const unsigned char *)ptr;
+    return head && p >= heap_start + ALIGN && p < heap_limit;
+}
+
+/* C++ objects (ncnn's layers, blob lists) share the job's heap while one is
+ * active. Outside a job the game worker has no allocator at all; host tools
+ * and tests keep their C++ runtime's for everything else. */
+void *vjo_ocr_new(size_t n)
+{
+    if (head) return vjo_ncnn_malloc(n);
+#ifdef VJO_HOST
+    return malloc(n ? n : 1);
+#else
+    failed = 1;
+    return NULL;
+#endif
+}
+
+void vjo_ocr_delete(void *ptr)
+{
+    if (!ptr) return;
+    if (vjo_ocr_heap_owns(ptr)) { vjo_ncnn_free(ptr); return; }
+#ifdef VJO_HOST
+    free(ptr);
+#endif
+}
+
 int vjo_ocr_heap_failed(void) { return failed; }
+size_t vjo_ocr_heap_extent(void) { return last_extent; }
 size_t vjo_ocr_heap_end(void)
 {
     size_t result = peak;
+    last_extent = extent;
     head = NULL;
+    heap_start = heap_limit = NULL;
     __atomic_store_n(&busy, 0, __ATOMIC_RELEASE);
     return result;
 }

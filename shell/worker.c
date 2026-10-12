@@ -115,6 +115,8 @@ enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
 static int subtitles; /* written by set_subtitles only */
 static int input_block_error;
+static int manual_notice; /* the strip shows the manual-only engine notice */
+static void show_manual_notice(int on);
 static int stable_pending;
 /* The overlay waits for the running job ("Recognizing…"), or shows its
  * sentence before the lookup: job_text_list, in the job's arena, which
@@ -311,7 +313,21 @@ static int has_result_memory(void)
 
 static int game_ocr_backend(int backend)
 {
-    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2;
+    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2 || backend == VJO_OCR_PPOCRV6;
+}
+
+/* PP-OCRv6 takes seconds per line and about 23 MiB of game memory: it runs
+ * only when the overlay is opened, never in the background or for subtitles,
+ * and is never restarted automatically. */
+static int manual_only_backend(int backend)
+{
+    return backend == VJO_OCR_PPOCRV6;
+}
+
+static const char *recognizing_text(const VjoConfig *c)
+{
+    return manual_only_backend(c->ocr_backend)
+        ? "Recognizing with PP-OCRv6… This takes a few seconds." : "Recognizing…";
 }
 
 static int local_pipeline(const VjoConfig *c)
@@ -466,7 +482,8 @@ static int vocr_consume(void *ud, const VjoState *st)
     VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
+    const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME :
+                        job_cfg.ocr_backend == VJO_OCR_PPOCRV6 ? VJO_PPOCRV6_MODEL_NAME : job_cfg.vocr_model;
     size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
     if (!model_len || model_len >= sizeof(request.model)) return VJO_E_OCR_MODEL;
     sceClibMemcpy(request.model, model, model_len+1);
@@ -474,7 +491,9 @@ static int vocr_consume(void *ud, const VjoState *st)
     job_capture_seq = st->region_seq;
     __sync_synchronize();
     job_captured = 1;
-    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_cancelled, NULL, 60000000);
+    /* PP-OCRv6 reads each line for seconds: a whole dialogue box can take minutes. */
+    int64_t timeout_us = manual_only_backend(job_cfg.ocr_backend) ? 300000000 : 60000000;
+    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_cancelled, NULL, timeout_us);
     vjo_log("game vocr rc=%d %s: %ux%u, lines=%u USER workspace=%u, find=%u ms load=%u ms recognize=%u ms io=0x%08X cleanup=%d",
             rc, model, st->width, st->height, result->lines, result->workspace_bytes,
             result->find_us/1000, result->load_us/1000, result->recognize_us/1000,
@@ -495,7 +514,12 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(&result, 0, sizeof(result));
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
     if (out->err.rc != VJO_OK) {
+        if (out->err.rc == VJO_E_SOURCE && manual_only_backend(job_cfg.ocr_backend))
+            out->err.detail = "A cancelled PP-OCRv6 job can take a few seconds to finish its line.";
         if (out->err.rc == VJO_E_OCR_MODEL) {
+            if (job_cfg.ocr_backend == VJO_OCR_PPOCRV6)
+                out->err.detail = "PP-OCRv6 weights are missing or invalid. Install the pinned "
+                                  VJO_PPOCRV6_MODEL_NAME " in ux0:data/VitaJPOverlay/ocr, or choose VOCR.";
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)result.io_error == 0x80010013u)
                 out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
@@ -577,7 +601,9 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
                 out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
             if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR)
-                out->err.detail = "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
+                out->err.detail = job_cfg.ocr_backend == VJO_OCR_PPOCRV6
+                    ? "PP-OCRv6 needs about 23 MiB of free game memory. Select a tighter dialogue region with Square, or choose VOCR for this game."
+                    : "Select a tighter dialogue region with Square. FL10_w8.vocr uses the least game memory.";
             return out->err.rc;
         }
         goto recognized;
@@ -709,7 +735,7 @@ static void start_job(const char *why, int lookup)
          * after all capture/model/inference allocations have been freed. */
         retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
-            view_publish(1, NULL, "Recognizing…", 0);
+            view_publish(1, NULL, recognizing_text(&cfg), 0);
         if (!warm_running)
             mem_free();
     }
@@ -730,7 +756,7 @@ static void start_job(const char *why, int lookup)
     vjo_net_cancel_clear(&net_cancel);
     if (view_job_text) { /* its arena may be the new job's */
         view_job_text = 0;
-        view_publish(1, NULL, "Recognizing…", 0);
+        view_publish(1, NULL, recognizing_text(&cfg), 0);
     }
     job_done = 0;
     job_text_ready = 0;
@@ -825,6 +851,12 @@ static void apply_config(void)
         vjo_view_unlock();
         sceKernelUnlockMutex(cmd_lock, 1);
     }
+    if (subtitles && manual_only_backend(cfg.ocr_backend)) {
+        /* config.ini was switched to a manual engine while subtitles ran. */
+        subtitles = 0;
+        vjo_strip_configure(0, &cfg);
+        vjo_strip_show("", VJO_STRIP_SENTENCE, 0);
+    }
     vjo_log_configure(&cfg);
     vjo_strip_configure(subtitles, &cfg);
     anki_on = vjo_anki_configure(&cfg);
@@ -888,6 +920,7 @@ static void clear_input_block_error(void)
 static void open_overlay(void)
 {
     VjoState st;
+    if (manual_notice) show_manual_notice(0);
     int block_rc = vjoSetInputBlock(1);
     vjo_log("input block on rc=%d (%08X)", block_rc, block_rc);
     if (block_rc < 0) {
@@ -956,7 +989,7 @@ static void open_overlay(void)
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
             st.stable, st.quiet);
-    view_publish(1, NULL, "Recognizing…", 0);
+    view_publish(1, NULL, recognizing_text(&cfg), 0);
     view_waiting = 1;
     if (job_running) {
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
@@ -1041,6 +1074,10 @@ static int restart_old_job(int has_lookup)
         start_cursor_job();
         return 1;
     }
+    if (manual_only_backend(cfg.ocr_backend)) {
+        view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
+        return 1; /* a manual engine never reruns a multi-second job by itself */
+    }
     start_job(has_lookup ? "result was for an earlier screen" : "the running job was OCR only", 1);
     return 1;
 }
@@ -1095,7 +1132,10 @@ static void on_job_done(void)
         job_cancelled = 0;
         if (ov != OV_CLOSED && game_active()) { /* the overlay waits for this screen's */
             ov = OV_OPEN;
-            start_job("the screen changed during the last one", 1);
+            if (manual_only_backend(cfg.ocr_backend))
+                view_publish(1, NULL, "The dialogue changed. Close and reopen the overlay.", 1);
+            else
+                start_job("the screen changed during the last one", 1);
         } else {
             stable_pending = game_active(); /* only the current game's next screen */
             if (subtitles)
@@ -1212,9 +1252,24 @@ static void on_job_text(void)
     }
 }
 
+/* The subtitle button shows, then hides, a notice instead of starting jobs. */
+static void show_manual_notice(int on)
+{
+    manual_notice = on;
+    vjo_strip_configure(on, &cfg);
+    vjo_strip_show(on ? "PP-OCRv6 is manual only. Open the overlay to recognize the dialogue." : "",
+                   on ? VJO_STRIP_ERROR : VJO_STRIP_SENTENCE, 0);
+}
+
 static void set_subtitles(int on)
 {
     if (on) apply_config();
+    if (on && manual_only_backend(cfg.ocr_backend)) {
+        subtitles = 0;
+        show_manual_notice(!manual_notice);
+        return;
+    }
+    if (manual_notice) show_manual_notice(0);
     VjoState st;
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
     subtitles = on;
@@ -1300,7 +1355,7 @@ static void on_command(void)
         cache_ok = 0;
         retire_local_text(1);
         close_overlay();
-        if (subtitles)
+        if (subtitles && !manual_only_backend(cfg.ocr_backend))
             start_job("region changed", want_lookup());
         break;
     }
@@ -1377,6 +1432,7 @@ static void invalidate_game_work(void)
 
 static void on_game_exit(void)
 {
+    if (manual_notice) show_manual_notice(0);
     invalidate_game_work();
     pending_pid = 0;
     close_overlay();
@@ -1418,7 +1474,8 @@ static void on_trigger(void)
  * overlay) and the subtitles' refresh (whatever ocr_mode says). */
 static int background_wanted(void)
 {
-    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup()));
+    return !manual_only_backend(cfg.ocr_backend) &&
+           (subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup())));
 }
 
 static int background_throttled(void)

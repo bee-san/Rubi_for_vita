@@ -11,8 +11,8 @@ AnkiConnect on a computer on your local network when you press Triangle. It is
 off until you set `anki_mining = on`. There is no AnkiWeb sync.
 
 Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
-**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
-in the OCR engine row.
+**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, **Google Lens** or
+**[PP-OCRv6](docs/ppocrv6.md)** in the OCR engine row.
 Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
 VOCR is the default and supports automatic or manual local OCR. Google Lens requires
 Wi-Fi and sends the selected image to Google, using the original
@@ -28,6 +28,16 @@ explicitly in Settings; VOCR remains the default. The
 [`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
 carried the optional Meiki engine. Earlier releases remain available.
+
+The optional PP-OCRv6 engine is PaddleOCR's PP-OCRv6 small recognizer, int8, with
+its head pruned to JIS X 0208. It reads vita-vn-ocr's hand-checked crops best
+(1.44% / 1.59% CER on vita-test / psp-test with the Vita build's code under an ARM
+emulator, against H15's 1.56% / 2.87%), but it is slow: an estimated 3–10 seconds
+for one line on a Cortex-A9, and it needs about 23 MiB of free game memory. It is manual only, so it never runs in the
+background. ncnn is linked into the existing `*ALL` game worker, and the weights load
+through the kernel model broker, so nothing is installed per game. Games pay about
+0.75 MiB for the larger worker even when another engine is selected. Nothing about it
+has run on a physical Vita yet; see [PP-OCRv6](docs/ppocrv6.md).
 
 Meiki, a manual single-line recognizer, has been removed from the source after
 0.7.12. Its MNN engine had to be copied into each game's own `app0:` folder
@@ -142,7 +152,7 @@ On the **OCR & lookup** page, select a card with Up/Down. Cross
 or touch a card changes its choice: OCR engine, Japanese-only selection,
 whole-word/character highlighting, or how many dictionaries are shown.
 Touch an engine button or a number to choose it directly;
-Left/Right cycle the three engine choices on the model card, OFF/ON on the selection card,
+Left/Right cycle the four engine choices on the model card, OFF/ON on the selection card,
 Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown.
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
@@ -265,8 +275,8 @@ still fail because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the three original VOCR model names and the separate pinned VOCR2 trial
-model in `ux0:data/VitaJPOverlay/ocr`, checks
+only the three original VOCR model names, the separate pinned VOCR2 trial
+model and the pinned PP-OCRv6 weights in `ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, and copies at most 8 KiB per request into game-owned memory.
 The game then checks SHA-256 and runs inference. The kernel holds one 8 KiB
 staging buffer, no complete model, and no saved game pointers. Cancellation or

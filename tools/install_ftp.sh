@@ -14,6 +14,9 @@
 #   tools/install_ftp.sh --vocr-model ocr/H15_w8.vocr --set ocr_backend=vocr 192.168.1.50
 #     (also uploads vita-vn-ocr weights to ux0:data/VitaJPOverlay/ocr/, for a
 #      build made with VJO_WITH_VOCR; see docs/vita-vn-ocr.md)
+#   tools/install_ftp.sh --vocr-model ocr/PP-OCRv6_small_jis_int8.bin 192.168.1.50
+#     (any pinned model file, e.g. PP-OCRv6 small from tools/prepare_ppocrv6.py
+#      fetch; select it in JP Overlay Settings; see docs/ppocrv6.md)
 #   tools/install_ftp.sh --uninstall 192.168.1.50
 #   tools/install_ftp.sh --purge 192.168.1.50     (uninstall, then delete the
 #     plugin files and both VitaJPOverlay data folders; config.ini and
@@ -56,7 +59,9 @@ if [ -n "$PACKAGE_DIR" ]; then
   B=$PACKAGE_DIR/ur0/tai
   RCO=$PACKAGE_DIR/ur0/data/VitaJPOverlay/vitajpoverlay.rco
   CONFIG_TEMPLATE=$PACKAGE_DIR/config.ini
-  for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr; do
+  # vita-vn-ocr weights and the optional PP-OCRv6 small weights.
+  for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/PP-OCRv6_small_jis_int8.bin; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
 fi

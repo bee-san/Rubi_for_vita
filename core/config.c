@@ -155,7 +155,9 @@ const char *vjo_config_default_text(void)
            "text_source = ocr\n"
            "\n"
            "; OCR: lens (online) | vocr (on the Vita: vita-vn-ocr, needs a build with it\n"
-           "; and its model file; see docs/vita-vn-ocr.md) | ncnn (PP-OCRv5, host tests only)\n"
+           "; and its model file; see docs/vita-vn-ocr.md) | vocr2 (experimental)\n"
+           "; | ppocrv6 (PP-OCRv6 small: slow and more accurate, manual only; see\n"
+           "; docs/ppocrv6.md) | ncnn (PP-OCRv5, host tests only)\n"
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -540,6 +542,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         }
         else if (vjo_ieq(val, "vocr2"))
             c->ocr_backend = VJO_OCR_VOCR2;
+        else if (vjo_ieq(val, "ppocrv6"))
+            c->ocr_backend = VJO_OCR_PPOCRV6;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "vocr_model")) {
@@ -622,10 +626,11 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
     unsigned seen = 0;
     static const char *const backend_values[] = {
         [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_NCNN] = "ocr_backend = ncnn\n",
-        [VJO_OCR_VOCR] = "ocr_backend = vocr\n", [VJO_OCR_VOCR2] = "ocr_backend = vocr2\n"
+        [VJO_OCR_VOCR] = "ocr_backend = vocr\n", [VJO_OCR_VOCR2] = "ocr_backend = vocr2\n",
+        [VJO_OCR_PPOCRV6] = "ocr_backend = ppocrv6\n"
     };
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2 || !backend_values[backend]) ||
+        (backend < VJO_OCR_LENS || backend > VJO_OCR_PPOCRV6 || !backend_values[backend]) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||
