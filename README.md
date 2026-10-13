@@ -323,6 +323,8 @@ The kernel startup instruction and all three plugins' syscall imports are audite
 
 These are bounded allocations and host checks, not a measured physical Vita
 peak or a guarantee that every full-screen region fits in every game.
+[docs/vita-memory.md](docs/vita-memory.md) is the reference for the Vita's memory
+pools, which process each plugin runs in, and the budgets each context can use.
 
 Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
