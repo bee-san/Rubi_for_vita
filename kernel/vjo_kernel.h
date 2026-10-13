@@ -135,6 +135,9 @@ extern VjoLedger g_kernel_ledger;
 void kledger_init(void);
 void kledger_log(const char *when); /* the pool and its items, to kernel.txt */
 
+/* meminfo.c: the self-test's memory sample (vjoMemInfo), kernel context */
+void meminfo_fill(SceUID caller_pid, const void *caller_addr, VjoMemInfo *out);
+
 /* boot.c: boot-safety guard (core/boot_guard.h has the record and values) */
 int boot_init(int api);        /* first in module_start; returns VJO_BOOT_NORMAL or VJO_BOOT_SAFE */
 int boot_mode(void);

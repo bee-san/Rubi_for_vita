@@ -333,7 +333,12 @@ pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
 
 Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
-attempts are in `ux0:data/VitaJPOverlay/log.txt`. Each game OCR job logs the
+attempts are in `ux0:data/VitaJPOverlay/log.txt`. For a decisive console test,
+arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
+start a game and reach a text screen: it recognizes the first settled screen at
+the full-screen region and writes one report with every pool's free memory at each
+step; `--status` fetches it and `python3 tools/analyse_selftest.py` names what
+failed. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
 game's free USER memory against what the job needed (also when it refused the
 job) and, for each recognized line, its size, CTC frames and recognition time.
 

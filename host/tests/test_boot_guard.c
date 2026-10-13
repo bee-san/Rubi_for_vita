@@ -253,7 +253,9 @@ static void test_first_boot_writes_the_record_before_anything_else(void)
     reset_world();
     TEST_CHECK(boot_init(VJO_API_VERSION) == VJO_BOOT_NORMAL);
     TEST_CHECK(opens == 2 && writes == 1 && mkdirs == 2); /* read (ENOENT), then write */
-    TEST_CHECK_(file_len > 0 && !strncmp(file, "vjoboot1 seq=1 mode=0 stage=1 inert=0 fault=0 failures=0 api=17 prev=0/0/0/0\n", (size_t)file_len), "%.*s", file_len, file);
+    char expected[VJO_BOOT_RECORD_MAX];
+    snprintf(expected, sizeof(expected), "vjoboot1 seq=1 mode=0 stage=1 inert=0 fault=0 failures=0 api=%d prev=0/0/0/0\n", VJO_API_VERSION);
+    TEST_CHECK_(file_len == (int)strlen(expected) && !strncmp(file, expected, (size_t)file_len), "%.*s", file_len, file);
     VjoBootInfo i = info();
     TEST_CHECK(i.size == sizeof(i) && i.seq == 1 && i.mode == VJO_BOOT_NORMAL && i.stage == VJO_BOOT_STAGE_KERNEL &&
                i.failures == 0 && i.write_status == 0);

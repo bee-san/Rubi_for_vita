@@ -120,21 +120,25 @@ class MemoryLedgerCheck(unittest.TestCase):
     def test_module_pages_over_the_declared_budget_fail(self):
         tmp = self.copy_tree()
         values = ledger.parse_budget(ROOT / "include/vjo_ledger_budget.h")
+        shell_budget = values["VJO_BUDGET_SHELL_MODULE_PAGES"]
+        rw = 180_224  # the data/bss segment's pages; the text segment takes the rest of the budget
+        text = shell_budget - rw
         fits = tmp / "shell.suprx"
-        fits.write_bytes(fake_self([(225_280 - 40, 5), (178_000, 6)]))
+        fits.write_bytes(fake_self([(text - 40, 5), (rw - 1_000, 6)]))
         result = run("--root", str(tmp), "--shell", str(fits))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"{values['VJO_BUDGET_SHELL_MODULE_PAGES']:,} B declared", result.stdout)
+        self.assertIn(f"{shell_budget:,} B declared", result.stdout)
         grown = tmp / "shell_grown.suprx"
-        grown.write_bytes(fake_self([(225_280 + 1, 5), (178_000, 6)]))  # one byte into the next page
+        grown.write_bytes(fake_self([(text + 1, 5), (rw - 1_000, 6)]))  # one byte into the next page
         result = run("--root", str(tmp), "--shell", str(grown))
         self.assertEqual(result.returncode, 1)
-        self.assertIn("VitaJPOverlay_Shell: 409,600 B of pages, budget VJO_BUDGET_SHELL_MODULE_PAGES is 405,504 B", result.stderr)
+        self.assertIn(f"VitaJPOverlay_Shell: {shell_budget + 4096:,} B of pages, budget VJO_BUDGET_SHELL_MODULE_PAGES is {shell_budget:,} B", result.stderr)
+        kernel_budget = values["VJO_BUDGET_KERNEL_MODULE_PAGES"]
         kernel = tmp / "kernel.skprx"
-        kernel.write_bytes(fake_self([(32_768, 5), (81_920 + 1, 6)]))
+        kernel.write_bytes(fake_self([(32_768, 5), (kernel_budget - 32_768 + 1, 6)]))
         result = run("--root", str(tmp), "--kernel", str(kernel))
         self.assertEqual(result.returncode, 1)
-        self.assertIn("VitaJPOverlay_Kernel: 118,784 B of pages", result.stderr)
+        self.assertIn(f"VitaJPOverlay_Kernel: {kernel_budget + 4096:,} B of pages", result.stderr)
         not_self = tmp / "junk.suprx"
         not_self.write_bytes(b"ELF junk")
         result = run("--root", str(tmp), "--worker", str(not_self))

@@ -21,7 +21,7 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 405504u      /* VitaJPOverlay_Shell.suprx: 225,280 text + 180,224 data/bss */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 397312u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 180,224 data/bss */
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 45056u    /* VitaJPOverlay_OCR.suprx, which *ALL also loads into SceShell */
 #define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */

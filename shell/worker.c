@@ -616,6 +616,7 @@ static int vocr_consume(void *ud, const VjoState *st)
                 (unsigned)result->model_need_weights, (unsigned)result->reserve_bytes,
                 (int)result->free_user, (unsigned)result->model_release_bytes);
     log_vocr_measurements(result);
+    vjo_selftest_ocr(st, result, rc, result->fallback ? request.fallback : model);
     return rc;
 }
 
@@ -667,6 +668,8 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         if (out->err.rc == VJO_E_OOM)
             out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE
                                                                     : game_oom_detail(&result);
+        if (st.capture_result)
+            vjo_selftest_fail("capture", st.capture_result); /* the game result's step was not reached */
         return out->err.rc;
     }
     if (local) {
@@ -983,6 +986,8 @@ static void apply_config(void)
 {
     VjoConfig previous = cfg;
     vjo_config_load(&cfg, &scratch);
+    if (vjo_selftest_armed())
+        cfg.ocr_mode = VJO_OCR_AUTO; /* the first settled screen is recognized unasked */
     if (!same_pipeline(&previous, &cfg)) {
         cache_ok = 0;
         retire_local_text(1);
@@ -1014,6 +1019,8 @@ static void push_region(void)
 {
     VjoRect r;
     int found = vjo_region_load(title_id, &r, &scratch);
+    if (vjo_selftest_armed()) /* the largest region a job can need */
+        found = 0;
     vjoSetRegion(found && r.w ? &r : NULL);
     vjo_log("region: %s%s", found == VJO_REGION_GAME ? "this game's" : found ? "all games'" : "none",
             found && r.w ? "" : ", full screen");
@@ -1496,6 +1503,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
         vjo_log("%s: JP Overlay disabled; game input passes through", tid);
+        vjo_selftest_game(tid, 0, mode);
         return;
     }
     sceClibSnprintf(title_id, sizeof(title_id), "%s", tid);
@@ -1516,6 +1524,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
             vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
+    vjo_selftest_game(tid, 1, mode);
 }
 
 static void classify_pending(void)
@@ -1566,6 +1575,7 @@ static void on_game_exit(void)
     title_id[0] = '\0';
     vjo_anki_set_game("");
     vjo_ledger_shell_log("exit");
+    vjo_selftest_step("exit");
 }
 
 /* A new foreground process: classified by classify_pending. */
@@ -1676,6 +1686,7 @@ static void boot_guard_ok(void)
     if (vjo_guard_mark(VJO_BOOT_STAGE_OK) == 0) {
         vjo_log("boot guard: ok after a stable minute");
         boot_ok_attempts = -1;
+        vjo_selftest_step("ok");
     } else if (++boot_ok_attempts >= BOOT_OK_ATTEMPTS) {
         vjo_log("boot guard: ok not recorded after %d attempts", BOOT_OK_ATTEMPTS);
         boot_ok_attempts = -1;
@@ -1763,6 +1774,9 @@ int vjo_worker_start(void)
     if (vjo_anki_start() < 0)
         vjo_log("anki: mailbox unavailable: × saves no cards");
     apply_config(); /* logging, triggers and Anki are set up before the first game */
+    vjo_selftest_init(&cfg);
+    if (vjo_selftest_armed())
+        apply_config(); /* the self-test's forced settings */
     vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
 
     net_thread = vjo_shell_thread_create(VJO_SL_NET_STACK, "VjoNet", net_main, VJO_STACK_SHELL_NET);
