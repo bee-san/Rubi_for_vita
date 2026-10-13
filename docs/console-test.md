@@ -30,7 +30,7 @@ unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_r
    at any time: `cd ../rel/x && bash install-vita.sh VITA_IP:1337`, then reboot.
 
 ## 3. Test in CLANNAD (PCSG00415, where FL10 OCR worked before)
-1. Start CLANNAD (it must be ON in JP Overlay Settings → Games). Keep its saved region; if none: L+R, Square, drag round the text, Cross.
+1. Start CLANNAD (it must be ON in JP Overlay Settings → Games). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
 2. Advance about 10 text pages, pausing ~3 s on each so automatic OCR runs. On 3 of them open the overlay (L+R) and photograph the
    screen with its recognized text (keep photos private: the game is copyrighted), then Circle. Note slowdown, stutter or crashes.
 3. Optional, 2 min: L+R, hold Square 1 s (full-screen region), Circle, read 2 pages (H15 should still fit), restore the tight region
@@ -46,15 +46,15 @@ bash tools/install_ftp.sh --dumps VITA_IP    # after a crash only: ux0:data/*.ps
   resident=1159168, find=… ms load=… ms recognize=… ms frames=F io=0x00000000 stat=0x00000000 cleanup=0`: load/recognition ms, CTC frames;
 - `game vocr memory: free USER=U, needs workspace J + weights W + reserve 4194304: check passed`: the memory check;
 - `game vocr speed: F frames in T us, P us per frame` and `game vocr lines: WxH Nf X.Yms …`, one entry per text line.
-- **Success:** every job `rc=0 … cleanup=0` (`rc=-118` after `job cancelled: the screen changed` is a fast page turn, fine); the first
-  text job `weights=read` (load est. 0.23-0.26 s), later ones `weights=resident` with `load=` a few ms (est.; FL10 took 213-359 ms per
-  job before); `speed` est. 2,700-5,000 us per frame at 333 MHz; no `(fallback)`; text roughly matches the screen; `lines=0` jobs are fine.
+- **Success:** every job `rc=0 … cleanup=0` (`rc=-118` after `job cancelled` = fast page turn, fine) and names `H15_w8.vocr` (no
+  `(fallback)`, no `unusable`); the first text job `weights=read` (load est. 0.23-0.26 s), later ones `weights=resident` with `load=`
+  a few ms (est.; FL10 took 213-359 ms per job before); `speed` est. 2,700-5,000 us per frame at 333 MHz; text roughly matches; `lines=0` ok.
 
 ## 5. If a job fails
 - `stat=0x8…` and `weights=read` on every job: the file-time query is unsupported; note the code (loads still skip the old sleeps).
 - `(fallback)` in CLANNAD: keep the `game vocr fallback:` line (short of memory). `H15_w8.vocr is unusable here … for this game`: H15
-  on the card is missing or damaged, install again; `… for this job`: a one-off failure, note `io=` (`0x80010013` = storage unreachable).
+  on the card is missing or damaged, install again; `… for this job`: that job used FL10 (can recur), note `io=` (`0x80010013`: storage unavailable).
 - "not enough memory" on screen: photograph it; it names the stage (kernel capture, the game's memory for the region or the weights,
-  the Shell), and the `game vocr memory:` line has the numbers. `PCSG00415: JP Overlay disabled`: CLANNAD is OFF in Settings → Games.
-- H15 too slow or worse than FL10: `curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`, set `vocr_model = FL10_w8.vocr`,
-  then `curl -T config.ini ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`; it applies at the next L+R.
+  the Shell); `game vocr memory:` has its numbers (none for the kernel capture). `PCSG00415: JP Overlay disabled` in the log: CLANNAD is OFF.
+- H15 too slow or worse than FL10: `curl -o vita-config.ini ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`, edit that copy to
+  `vocr_model = FL10_w8.vocr`, `curl -T vita-config.ini ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`; applies at the next L+R.
