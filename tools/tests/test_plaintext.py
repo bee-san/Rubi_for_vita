@@ -63,16 +63,18 @@ class FrozenPlaintext(unittest.TestCase):
 
     def test_private_fetch_uses_only_exact_commit_and_cache_needs_no_network(self):
         output = self.root / "output.vjdict"
-        def download(argv, **kwargs):
+        def metadata(argv, **kwargs):
             self.assertEqual(argv, ["gh", "api",
                 "repos/fixture/private/contents/processed/plaintext.vjdict.zip?ref=" + "a" * 40,
-                "-H", "Accept: application/vnd.github.raw+json"])
-            kwargs["stdout"].write(self.archive.read_bytes())
+                "-H", "Accept: application/vnd.github.object+json"])
+            return json.dumps({"download_url": "https://fixture.invalid/pinned-blob"})
         with mock.patch.object(prepare, "ROOT", self.root), \
-             mock.patch.object(prepare.subprocess, "run", side_effect=download) as fetch:
+             mock.patch.object(prepare.subprocess, "check_output", side_effect=metadata) as fetch, \
+             mock.patch.object(prepare.urllib.request, "urlopen", return_value=io.BytesIO(self.archive.read_bytes())) as download:
             prepare.prepare(output)
             prepare.prepare(output)
         fetch.assert_called_once()
+        download.assert_called_once_with("https://fixture.invalid/pinned-blob", timeout=60)
         prepare.validate(output, self.pin)
 
     def test_package_uses_staged_dictionary_without_external_data_and_rejects_wrong_one(self):

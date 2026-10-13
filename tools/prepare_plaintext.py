@@ -13,6 +13,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,9 +62,12 @@ def prepare(output, source=None):
             archive = tmp / "download.zip"
             endpoint = (f"repos/{manifest['repository']}/contents/{manifest['archive']}"
                         f"?ref={manifest['revision']}")
-            with archive.open("wb") as stream:
-                subprocess.run(["gh", "api", endpoint, "-H", "Accept: application/vnd.github.raw+json"],
-                               stdout=stream, check=True)
+            # gh's terminal renderer can corrupt arbitrary binary output. The
+            # object response supplies a short-lived URL for this exact blob.
+            metadata = json.loads(subprocess.check_output(
+                ["gh", "api", endpoint, "-H", "Accept: application/vnd.github.object+json"], text=True))
+            with urllib.request.urlopen(metadata["download_url"], timeout=60) as src, archive.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
         if archive.stat().st_size != manifest["archive_bytes"] or digest(archive) != manifest["archive_sha256"]:
             raise ValueError("Frozen plaintext archive checksum failed")
         with zipfile.ZipFile(archive) as zipped:
