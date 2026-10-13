@@ -157,7 +157,8 @@ static unsigned fake_lines;
 static int32_t fake_free_user;
 static uint32_t fake_need_weights, fake_reserve;
 static const char *fake_missing_model;
-static int fake_memory_fallback;
+static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_model_error;
+static int32_t fake_missing_io;
 static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
 { (void)ud; return vjoReadRaw(y, n, dst); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
@@ -177,7 +178,9 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     if (phases_checked) TEST_CHECK(!has_result_memory());
     if (fake_missing_model && !strcmp(fake_game_request.model, fake_missing_model)) {
         fake_game_result.rc = VJO_E_OCR_MODEL; /* as the worker reports an absent file */
-        fake_game_result.io_error = (int32_t)0x80010002u;
+        fake_game_result.io_error = fake_missing_io;
+        fake_game_result.fallback = fake_missing_with_fallback;
+        if (fake_cancel_on_model_error) job_cancelled = 1;
         *out = fake_game_result;
         return 0;
     }
@@ -267,8 +270,10 @@ static void reset(void)
     fake_need_weights = 659456;
     fake_reserve = 4194304;
     fake_missing_model = NULL;
-    fake_memory_fallback = 0;
+    fake_memory_fallback = fake_missing_with_fallback = fake_cancel_on_model_error = 0;
+    fake_missing_io = (int32_t)0x80010002u;
     vocr_unusable[0] = 0; vocr_unusable_generation = 0; vocr_fallback_requested = 0;
+    vocr_retry_with_fallback = 0;
     log_count = 0;
     capture_kernel_oom = jpeg_encoder_oom = 0;
 #endif
@@ -668,7 +673,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
     TEST_CHECK(vocr_allocs == 2 && !strcmp(fake_game_request.model, "FL10_w8.vocr"));
-    TEST_CHECK(logged("H15_w8.vocr is unusable here (io=0x80010002), using FL10_w8.vocr") != NULL);
+    TEST_CHECK(logged("H15_w8.vocr is unusable here (io=0x80010002), using FL10_w8.vocr for this game") != NULL);
     mem_free();
     unsigned before = vocr_allocs;
     TEST_ASSERT(mem_alloc() == 0);
@@ -688,6 +693,68 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR2;
     TEST_CHECK(run_vocr_job() == VJO_OK && !fake_game_request.fallback[0]);
+    mem_free();
+}
+
+/* A transient failure (an Open timeout, unavailable storage) retries this job
+ * with the fallback but does not stop later jobs from trying H15. */
+static void test_vocr_transient_model_failure_is_not_sticky(void)
+{
+    const int32_t transient[] = {VJO_ERR_TIMEOUT, (int32_t)0x80010013u, VJO_ERR_CANCELLED};
+    for (unsigned i = 0; i < 3; i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        fake_missing_model = "H15_w8.vocr"; fake_missing_io = transient[i];
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && !strcmp(fake_game_request.model, "FL10_w8.vocr"));
+        TEST_CHECK(logged("using FL10_w8.vocr for this job") != NULL && !vocr_unusable[0]);
+        mem_free();
+        fake_missing_model = NULL;
+        TEST_ASSERT(mem_alloc() == 0);
+        job_cfg = cfg; vjo_arena_reset(&results[0]);
+        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && vocr_allocs == 3);
+        TEST_CHECK(!strcmp(fake_game_request.model, "H15_w8.vocr") && !strcmp(fake_game_request.fallback, "FL10_w8.vocr"));
+        mem_free();
+    }
+    /* A hash/format rejection (io 0) is a bad file: sticky, like a missing one. */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_missing_model = "H15_w8.vocr"; fake_missing_io = 0; fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(vocr_unusable, "H15_w8.vocr"));
+    mem_free();
+}
+
+/* No retry when the worker's memory check already ran the fallback (its own
+ * file failed), when the job was cancelled, or without a fallback. */
+static void test_vocr_model_error_retry_limits(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_missing_model = "H15_w8.vocr"; fake_missing_with_fallback = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !vocr_unusable[0]);
+    mem_free();
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_missing_model = "H15_w8.vocr"; fake_cancel_on_model_error = 1;
+    run_vocr_job();
+    TEST_CHECK(vocr_allocs == 1 && !vocr_unusable[0]);
+    mem_free();
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_fallback_model[0] = 0;
+    fake_missing_model = "H15_w8.vocr";
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !fake_game_request.fallback[0]);
+    mem_free();
+}
+
+/* Neither H15 nor FL10 fitted: the job line says the fallback was refused too. */
+static void test_vocr_refused_fallback_is_labelled(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fail_vocr_user = 1; fake_memory_fallback = 1; fake_free_user = 4300000;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(logged("game vocr rc=-103 FL10_w8.vocr (fallback, refused too):") != NULL);
+    TEST_CHECK(cache_data[0].err.detail && !strcmp(cache_data[0].err.detail, OOM_GAME_REGION));
     mem_free();
 }
 
@@ -1807,6 +1874,9 @@ TEST_LIST = {
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
     {"vocr_memory_fallback_is_logged", test_vocr_memory_fallback_is_logged},
+    {"vocr_transient_model_failure_is_not_sticky", test_vocr_transient_model_failure_is_not_sticky},
+    {"vocr_model_error_retry_limits", test_vocr_model_error_retry_limits},
+    {"vocr_refused_fallback_is_labelled", test_vocr_refused_fallback_is_labelled},
     {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
     {"local_dictionary_opens_without_key", test_local_open},

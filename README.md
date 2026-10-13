@@ -190,8 +190,8 @@ japanese_only_selection = on
 ```
 
 H15 is the default recognizer: on the shared host test screenshots it makes
-about a fifth fewer character errors than FL10 (6.78% against 8.66% region
-CER on Vita games), for 0.5 MB more game memory per job. When a game has too
+about a fifth fewer character errors than FL10 (6.78% against 8.66% CER over
+84 Vita dialogue regions), for 0.5 MB more game memory per job. When a game has too
 little free memory for H15, that job runs FL10 instead, automatically; if
 `H15_w8.vocr` is missing or corrupt, the game's jobs use FL10 as well. Set
 `vocr_model = FL10_w8.vocr` to always use FL10, or `vocr_fallback_model = none`

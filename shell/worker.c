@@ -553,11 +553,21 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
     }
 }
 
+/* The game worker's memory check for the job it reported (with a fallback,
+ * the fallback's) refused it. */
+static int fallback_check_refused(const VjoGameOcrResult *r)
+{
+    return r->reserve_bytes && (r->free_user < 0 ||
+           (int64_t)r->free_user + r->release_bytes <
+               (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes);
+}
+
 /* The configured VOCR model failed to open or verify in this game (missing,
  * wrong or corrupt file): later jobs of the same game ask for the fallback. */
 static char vocr_unusable[VJO_GAME_OCR_MODEL_BYTES];
 static uint32_t vocr_unusable_generation;
-static int vocr_fallback_requested; /* the last request carried a fallback */
+static int vocr_fallback_requested;  /* the last request carried a fallback */
+static int vocr_retry_with_fallback; /* this job's retry: request the fallback itself */
 
 static int vocr_consume(void *ud, const VjoState *st)
 {
@@ -568,8 +578,10 @@ static int vocr_consume(void *ud, const VjoState *st)
     const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
     /* VOCR2's pinned model is already FL10-sized: no fallback. */
     const char *fallback = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? "" : job_cfg.vocr_fallback_model;
+    vocr_fallback_requested = 0;
     if (fallback[0] && !sceClibStrcmp(fallback, model)) fallback = "";
-    if (fallback[0] && vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)) {
+    if (fallback[0] && (vocr_retry_with_fallback ||
+                        (vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)))) {
         model = fallback;
         fallback = "";
     }
@@ -590,7 +602,8 @@ static int vocr_consume(void *ud, const VjoState *st)
     static const char *const weights[] = {"none", "read", "resident"};
     vjo_log("game vocr rc=%d %s%s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-            rc, result->fallback ? request.fallback : model, result->fallback ? " (fallback)" : "",
+            rc, result->fallback ? request.fallback : model,
+            !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
             st->width, st->height, result->lines, result->workspace_bytes,
             result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
             result->find_us/1000, result->load_us/1000, result->recognize_us/1000, result->frames,
@@ -616,20 +629,30 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     st.capture_scene = 0;
     st.capture_result = 0;
     sceClibMemset(&result, 0, sizeof(result));
+    vocr_fallback_requested = 0;
     out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
-    /* The configured model's file is missing, wrong or corrupt in this game:
-     * keep OCR working with the fallback, now and for this game's later jobs. */
+    /* The configured model failed to open or verify: keep OCR working with
+     * the fallback for this job. Only a file that is absent, the wrong
+     * length or fails its hash (io 0: rejected after reading) makes the
+     * switch stick for this game; a timeout or unavailable storage does not. */
     if (out->err.rc == VJO_E_OCR_MODEL && vocr_fallback_requested && !result.fallback &&
         !vocr_cancelled(NULL)) {
-        vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s", job_cfg.vocr_model,
-                (unsigned)result.io_error, job_cfg.vocr_fallback_model);
-        sceClibSnprintf(vocr_unusable, sizeof(vocr_unusable), "%.*s", (int)sizeof(vocr_unusable) - 1,
-                        job_cfg.vocr_model);
-        vocr_unusable_generation = job_generation;
+        int file_bad = !result.io_error || result.io_error == VJO_ERR_FORMAT ||
+                       (uint32_t)result.io_error == 0x80010002u; /* ENOENT */
+        vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s%s", job_cfg.vocr_model,
+                (unsigned)result.io_error, job_cfg.vocr_fallback_model,
+                file_bad ? " for this game" : " for this job");
+        if (file_bad) {
+            sceClibSnprintf(vocr_unusable, sizeof(vocr_unusable), "%.*s", (int)sizeof(vocr_unusable) - 1,
+                            job_cfg.vocr_model);
+            vocr_unusable_generation = job_generation;
+        }
+        vocr_retry_with_fallback = 1;
         st.capture_scene = 0;
         st.capture_result = 0;
         sceClibMemset(&result, 0, sizeof(result));
         out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
+        vocr_retry_with_fallback = 0;
     }
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {
