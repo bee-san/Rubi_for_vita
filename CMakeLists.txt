@@ -300,5 +300,15 @@ if(VJO_WITH_VOCR)
   target_compile_definitions(vjo-game-model-broker-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
     VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
+  # #74 preflight: the real worker and kernel under the console's measured pool limits.
+  add_executable(vjo-alloc-sim-tests host/tests/test_alloc_sim.c host/tests/kernel_model_broker_boundary.c
+    kernel/capture_request.c kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+  target_include_directories(vjo-alloc-sim-tests PRIVATE third_party/acutest/include host/tests/game_stubs
+    host/tests/vita_stubs)
+  target_compile_options(vjo-alloc-sim-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-alloc-sim-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
+    VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_link_libraries(vjo-alloc-sim-tests vjo_vocr)
+  add_test(NAME alloc_sim COMMAND vjo-alloc-sim-tests)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
 endif()
