@@ -149,7 +149,7 @@ def analyse(text):
 
     g = out["game"]
     if g is not None and g.get("enabled") == 0:
-        findings.append(f"The game {g.get('title')} is disabled in games.ini: no OCR ran. Enable it in JP Overlay Settings and run again.")
+        findings.append(f"The game {g.get('title')} is disabled in games.ini: no OCR ran. Enable it in the Overlay app (JP Overlay Settings in older builds) and run again.")
     for fl in out["fails"]:
         rc = fl.get("rc", 0) & 0xFFFFFFFF
         findings.append(f"{fl['what']} failed: {KERNEL_ERRORS.get(rc, hex(rc))}"

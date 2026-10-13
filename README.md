@@ -4,13 +4,13 @@ This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-nov
 text and shows Japanese dictionary entries over your game. **The v0.7.12 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
-The release includes a standalone per-game settings app. Optional
+The release includes **Overlay**, a standalone per-game settings app. Optional
 [Anki card mining](docs/anki.md) saves the shown word as a card in an offline
 queue on the memory card, with or without Wi-Fi, and sends the queue to
 AnkiConnect on a computer on your local network when you press Triangle. It is
 off until you set `anki_mining = on`. There is no AnkiWeb sync.
 
-Open **JP Overlay Settings**, press **Select**, and choose **VOCR**,
+Open the **Overlay** app, press **Select**, and choose **VOCR**,
 **[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
 in the OCR engine row.
 Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
@@ -24,7 +24,7 @@ The optional VOCR2 trial pairs a separately trained FL10-sized model with a
 textbox finder. Shared screenshot totals improved on PSP and Vita, but some
 games regressed by one or two characters and its strict promotion guard failed.
 It is experimental, has no physical-device validation, and must be selected
-explicitly in Settings; VOCR remains the default. The
+explicitly in the Overlay app; VOCR remains the default. The
 [`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
 carried the optional Meiki engine. Earlier releases remain available.
@@ -85,7 +85,9 @@ experimental Text registrations and duplicate worker entries are commented out. 
 in `build/device/backup/` in the extracted folder.
 
 In VitaShell, install `ux0:data/JPOverlaySettings.vpk`, then reboot the Vita.
-Open **JP Overlay Settings** from LiveArea to enable or disable individual games.
+Open **Overlay** from LiveArea to enable or disable individual games. Older
+builds, including 0.7.12, call it **JP Overlay Settings**; the title ID
+(`VJOSET001`) and VPK file name are unchanged, so the new VPK installs over it.
 The settings app itself is always excluded from the overlay.
 
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
@@ -123,7 +125,7 @@ even with Wi-Fi off or Anki closed; Triangle sends the queue to AnkiConnect.
 
 ## Per-game settings
 
-**JP Overlay Settings** shows three large game cards at a time, with wrapped
+The **Overlay** app shows three large game cards at a time, with wrapped
 titles, visible IDs and clear ON/OFF badges. Tap the **Games** or **OCR & lookup**
 tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
@@ -217,8 +219,8 @@ gzip snapshot is also attached to the release.
 
 You can add your own Yomitan dictionaries, including a legally obtained
 Daijirin export, with [the converter and installation guide](docs/local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order. Settings →
-**Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages through
+Up to eight dictionary files can be enabled in priority order. The Overlay
+app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages through
 them for the selected word: the first page is the usual best match, and Down
 shows the next enabled dictionary that has an entry there. Only the page on
 screen is held in memory; definitions are always stored and shown as plain
@@ -363,9 +365,13 @@ hold L while powering on to skip plugins, start VitaShell FTP, and run
 
 The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
 ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed
-color; RGBA PNGs can fail installation with `0x8010113D`. To recreate the
-committed artwork, install `tools/requirements-assets.txt` and run
-`python3 tools/make_settings_assets.py`. Palette encoding preserves every pixel.
+color, and the bubble icon may be at most 32 KiB; RGBA PNGs can fail installation
+with `0x8010113D`. The Overlay mascot was drawn by a pinned, Apache-2.0
+text-to-image model; [settings/assets/ICON-SOURCE.md](settings/assets/ICON-SOURCE.md)
+records the model, checksums, prompt and seed. To recreate the committed artwork
+from that image, install `tools/requirements-assets.txt` and run
+`python3 tools/make_settings_assets.py`; it writes each image with at most 256
+colours and checks that the palette PNG decodes to exactly that art.
 
 The default build enables vocr. Its runtime is external to this repository and
 checksum-pinned; see [the build guide](docs/vita-vn-ocr.md#build). The OCR source

@@ -13,7 +13,7 @@ measured on a PC. On-console memory, speed and stability are what the
 
 ## Experimental VOCR2 trial
 
-Select **VOCR2** on the Settings app's OCR & lookup page, or set
+Select **VOCR2** on the Overlay app's OCR & lookup page, or set
 `ocr_backend = vocr2` in `config.ini`. It uses the same selected dialogue crop,
 automatic/manual modes and game worker as VOCR. Select **VOCR** to return to the
 original backend. The saved `vocr_model` setting applies only to VOCR.

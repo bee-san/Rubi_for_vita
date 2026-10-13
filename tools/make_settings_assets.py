@@ -1,38 +1,223 @@
 #!/usr/bin/env python3
-"""Rebuild Vita-compatible indexed art with tools/requirements-assets.txt."""
+"""Rebuild the Overlay app's LiveArea art (settings/assets/{icon0,startup,bg}.png).
+
+Needs tools/requirements-assets.txt. The mascot is settings/assets/icon-source.png,
+a FLUX.1 [schnell] image whose model, licence, checksums, prompt and seed are
+recorded in settings/assets/ICON-SOURCE.md. The model drew an unreadable glyph in
+her speech bubble, so this script paints the bubble clean and draws a hiragana
+あ from hand-made strokes. The "Overlay" wordmark is drawn the same way, so no
+font is needed and the output depends only on the source image and Pillow.
+The Vita promoter rejects RGBA artwork (0x8010113D); every image is written as an
+opaque, non-interlaced, 8-bit palette PNG with at most 256 colours.
+"""
+import hashlib
+import math
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+
+from PIL import Image, ImageDraw
 
 DEST = Path(__file__).resolve().parents[1] / "settings" / "assets"
-DEST.mkdir(parents=True, exist_ok=True)
-BG, CARD, ACCENT, WHITE = "#0d121f", "#182134", "#5bdccf", "#eef4ff"
+SOURCE = DEST / "icon-source.png"
+SOURCE_SHA256 = "3bc8d4250b2ec35766e0b8ca4bf2431d8f199b699426a2d47ad49b7a4ea79991"
+SS = 4                      # supersampling for the hand-drawn strokes
+INK = (95, 25, 25)          # the mascot's outline colour
+PAPER = (255, 255, 255)
+LAVENDER = (241, 223, 238)  # the mascot's background
+BUBBLE = (408.5, 154.0, 47.0)  # speech-bubble interior in the source: centre x, y, radius
+# The Vita's file limit for icon0.png (Sony's content information specification).
+ICON0_MAX_BYTES = 32 * 1024
+
+# Hiragana あ: three strokes of cubic Bezier segments in a 100 x 100 box (y down);
+# the ink spans y 10..88.
+KANA_A = [
+    [((19, 31), (37, 30), (56, 28), (75, 25))],
+    [((42, 10), (41, 38), (43, 62), (52, 82))],
+    [((65, 40), (59, 56), (47, 72), (33, 80)),
+     ((33, 80), (22, 86), (12, 72), (28, 59)),
+     ((28, 59), (40, 50), (56, 46), (70, 47)),
+     ((70, 47), (88, 50), (92, 72), (64, 88))],
+]
 
 
-def create(name, width, height, size, title):
-    im = Image.new("RGB", (width, height), BG)
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle((4, 4, width - 5, height - 5), radius=width // 12, fill=CARD)
-    d.rectangle((width // 8, height // 6, width * 7 // 8, height // 6 + 3), fill=ACCENT)
-    font = ImageFont.load_default(size=size)
-    d.text((width / 2, height * .43), title, font=font, anchor="mm", fill=WHITE)
-    x, y, w, h = width * .32, height * .70, width * .36, height * .14
-    d.rounded_rectangle((x, y, x + w, y + h), radius=h / 2, fill=ACCENT)
-    d.ellipse((x + w - h + 3, y + 3, x + w - 3, y + h - 3), fill=BG)
-    # The Vita promoter rejects RGBA artwork (0x8010113D). These images
-    # have <=256 colors, so indexing keeps every displayed pixel unchanged.
-    colors = sorted(set(im.get_flattened_data()))
-    if len(colors) > 256:
-        raise ValueError(f"{name}: artwork needs more than 256 palette colors")
-    indexed = Image.new("P", im.size)
-    palette = [channel for color in colors for channel in color]
-    indexed.putpalette(palette + [0] * (768 - len(palette)))
-    indices = {color: index for index, color in enumerate(colors)}
-    indexed.putdata([indices[color] for color in im.get_flattened_data()])
-    if indexed.convert("RGB").tobytes() != im.tobytes():
-        raise ValueError(f"{name}: palette encoding changed the artwork")
-    indexed.save(DEST / name, optimize=True, bits=8)
+def bezier(p0, p1, p2, p3, steps=48):
+    return [((1 - t) ** 3 * p0[0] + 3 * (1 - t) ** 2 * t * p1[0] + 3 * (1 - t) * t * t * p2[0] + t ** 3 * p3[0],
+             (1 - t) ** 3 * p0[1] + 3 * (1 - t) ** 2 * t * p1[1] + 3 * (1 - t) * t * t * p2[1] + t ** 3 * p3[1])
+            for t in (i / steps for i in range(steps + 1))]
 
 
-create("icon0.png", 128, 128, 37, "JP")
-create("startup.png", 280, 158, 25, "JP Overlay")
-create("bg.png", 840, 500, 57, "JP Overlay Settings")
+def arc(cx, cy, rx, ry, start, end, steps=64):
+    """Points on an ellipse in y-up letter units, angles in degrees, counter-clockwise."""
+    return [(cx + rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a)))
+            for a in (start + (end - start) * i / steps for i in range(steps + 1))]
+
+
+def kana_paths(cx, cy, height):
+    """The あ strokes as polylines, ink `height` px tall, centred on (cx, cy)."""
+    scale = height / 78
+    paths = [[p for segment in stroke for p in bezier(*segment)] for stroke in KANA_A]
+    xs = [x for path in paths for x, _ in path]
+    ox, oy = cx - (min(xs) + max(xs)) / 2 * scale, cy - 49 * scale
+    return [[(ox + x * scale, oy + y * scale) for x, y in path] for path in paths]
+
+
+def wordmark_paths(x, baseline, xh):
+    """'Overlay' as round monoline strokes: x-height `xh` px, from `x` on `baseline`.
+
+    Returns (paths, width). Letters are designed in x-height units with y up.
+    """
+    gap = 0.44
+    letters = [
+        (1.28, [arc(0.66, 0.70, 0.62, 0.70, 0, 360)]),                                   # O
+        (0.84, [[(0, 1), (0.42, 0), (0.84, 1)]]),                                         # v
+        (0.98, [[(0.02, 0.5), (0.98, 0.5)] + arc(0.5, 0.5, 0.48, 0.48, 0, 315)]),        # e
+        (0.56, [[(0, 0), (0, 1)], bezier((0, 0.55), (0.02, 0.92), (0.28, 1.02), (0.56, 0.96))]),  # r
+        (0.00, [[(0, 0), (0, 1.45)]]),                                                    # l
+        (0.96, [arc(0.48, 0.5, 0.48, 0.5, 0, 360), [(0.96, 1), (0.96, 0)]]),            # a
+        (0.84, [[(0, 1), (0.42, 0.05)], [(0.84, 1), (0.20, -0.45)]]),                    # y
+    ]
+    paths, origin = [], 0.0
+    for advance, strokes in letters:
+        for stroke in strokes:
+            paths.append([(x + (origin + u) * xh, baseline - v * xh) for u, v in stroke])
+        origin += advance + gap
+    return paths, (origin - gap) * xh
+
+
+def stroke_mask(size, paths, width):
+    """Antialiased L mask of round-capped polylines (pixel coordinates of `size`)."""
+    mask = Image.new("L", (size[0] * SS, size[1] * SS), 0)
+    draw = ImageDraw.Draw(mask)
+    r = width * SS / 2
+    for path in paths:
+        points = [(x * SS, y * SS) for x, y in path]
+        draw.line(points, fill=255, width=round(width * SS), joint="curve")
+        for px, py in (points[0], points[-1]):
+            draw.ellipse((px - r, py - r, px + r, py + r), fill=255)
+    return mask.resize(size, Image.LANCZOS)
+
+
+def disc_mask(size, cx, cy, r):
+    mask = Image.new("L", (size[0] * SS, size[1] * SS), 0)
+    ImageDraw.Draw(mask).ellipse(((cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS), fill=255)
+    return mask.resize(size, Image.LANCZOS)
+
+
+def paint(image, mask, colour):
+    image.paste(Image.new("RGB", image.size, colour), (0, 0), mask)
+
+
+def sticker_text(image, paths, width, outline):
+    paint(image, stroke_mask(image.size, paths, width + 2 * outline), PAPER)
+    paint(image, stroke_mask(image.size, paths, width), INK)
+
+
+def mascot():
+    """The source image with a clean speech bubble holding a hand-drawn あ (512 x 512 RGB)."""
+    data = SOURCE.read_bytes()
+    if hashlib.sha256(data).hexdigest() != SOURCE_SHA256:
+        raise ValueError(f"{SOURCE.name} changed; update ICON-SOURCE.md and SOURCE_SHA256 together")
+    image = Image.open(SOURCE).convert("RGB")
+    cx, cy, r = BUBBLE
+    paint(image, disc_mask(image.size, cx, cy, r), PAPER)
+    paint(image, stroke_mask(image.size, kana_paths(cx, cy, 62), 10), INK)
+    return image
+
+
+def cutout(image):
+    """The mascot without her flat background: (RGB crop, L mask) of her bounding box."""
+    key = image.copy()
+    marker = (0, 255, 0)
+    w, h = key.size
+    for seed in [(x, y) for x in (0, w - 1) for y in range(0, h, 16)] + \
+                [(x, y) for y in (0, h - 1) for x in range(0, w, 16)]:
+        pixel = key.getpixel(seed)
+        if pixel != marker and sum(abs(a - b) for a, b in zip(pixel, LAVENDER)) <= 24:
+            ImageDraw.floodfill(key, seed, marker, thresh=24)
+    mask = Image.new("L", key.size, 0)
+    mask.putdata([0 if pixel == marker else 255 for pixel in key.get_flattened_data()])
+    box = mask.getbbox()
+    return image.crop(box), mask.crop(box)
+
+
+def place(canvas, sprite, mask, height, x, y):
+    width = round(sprite.width * height / sprite.height)
+    canvas.paste(sprite.resize((width, height), Image.LANCZOS), (x, y),
+                 mask.resize((width, height), Image.LANCZOS))
+
+
+def gradient(size, top, bottom):
+    w, h = size
+    column = Image.new("RGB", (1, h))
+    column.putdata([tuple(round(a + (b - a) * y / (h - 1)) for a, b in zip(top, bottom)) for y in range(h)])
+    return column.resize(size, Image.NEAREST)
+
+
+def sparkle(canvas, cx, cy, r, colour):
+    """A four-point star."""
+    k = r * 0.28
+    points = [(cx, cy - r), (cx + k, cy - k), (cx + r, cy), (cx + k, cy + k),
+              (cx, cy + r), (cx - k, cy + k), (cx - r, cy), (cx - k, cy - k)]
+    mask = Image.new("L", (canvas.width * SS, canvas.height * SS), 0)
+    ImageDraw.Draw(mask).polygon([(x * SS, y * SS) for x, y in points], fill=255)
+    paint(canvas, mask.resize(canvas.size, Image.LANCZOS), colour)
+
+
+def bubble(canvas, cx, cy, r, colour, ink):
+    """A small round speech bubble with a tail to the lower left, holding あ."""
+    mask = Image.new("L", (canvas.width * SS, canvas.height * SS), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.ellipse(((cx - r) * SS, (cy - r) * SS, (cx + r) * SS, (cy + r) * SS), fill=255)
+    draw.polygon([((cx - r * 0.75) * SS, (cy + r * 0.25) * SS), ((cx - r * 1.15) * SS, (cy + r * 1.05) * SS),
+                  ((cx - r * 0.15) * SS, (cy + r * 0.80) * SS)], fill=255)
+    paint(canvas, mask.resize(canvas.size, Image.LANCZOS), colour)
+    paint(canvas, stroke_mask(canvas.size, kana_paths(cx, cy, r * 1.25), max(1.5, r * 0.2)), ink)
+
+
+def save_indexed(image, name, max_bytes=None):
+    """Quantize to <= 256 colours and write an opaque 8-bit palette PNG with no extra chunks."""
+    quantized = image.quantize(colors=256, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    indexed = Image.new("P", quantized.size)
+    indexed.putpalette(quantized.getpalette())
+    indexed.putdata(list(quantized.get_flattened_data()))
+    path = DEST / name
+    indexed.save(path, optimize=True, bits=8)
+    with Image.open(path) as written:
+        if written.mode != "P" or written.size != image.size or "transparency" in written.info:
+            raise ValueError(f"{name}: not an opaque palette image")
+        if written.convert("RGB").tobytes() != indexed.convert("RGB").tobytes():
+            raise ValueError(f"{name}: palette encoding changed the artwork")
+    if max_bytes and path.stat().st_size > max_bytes:
+        raise ValueError(f"{name}: {path.stat().st_size} bytes, over the {max_bytes}-byte limit")
+    return path
+
+
+def main():
+    art = mascot()
+    save_indexed(art.resize((128, 128), Image.LANCZOS), "icon0.png", ICON0_MAX_BYTES)
+    sprite, mask = cutout(art)
+
+    # Gate image: the system draws its Start button over the bottom of it.
+    startup = gradient((280, 158), (248, 237, 248), (239, 222, 240))
+    for cx, cy, r in ((258, 22, 6), (150, 30, 4), (266, 118, 4.5)):
+        sparkle(startup, cx, cy, r, PAPER)
+    place(startup, sprite, mask, 150, 4, 6)
+    paths, _ = wordmark_paths(148, 80, 15)
+    sticker_text(startup, paths, 4, 2)
+    save_indexed(startup, "startup.png")
+
+    # LiveArea background; the gate sits in the middle of its upper part.
+    bg = gradient((840, 500), (247, 236, 248), (250, 226, 238))
+    for cx, cy, r in ((330, 52, 22), (782, 70, 26), (612, 300, 18), (340, 440, 15), (720, 196, 14)):
+        bubble(bg, cx, cy, r, (255, 248, 252), (226, 196, 222))
+    for cx, cy, r in ((240, 40, 9), (560, 34, 7), (812, 150, 8), (660, 120, 6), (480, 300, 8),
+                      (380, 452, 7), (34, 60, 8), (120, 120, 6), (806, 470, 6)):
+        sparkle(bg, cx, cy, r, PAPER)
+    place(bg, sprite, mask, 300, 24, 192)
+    _, width = wordmark_paths(0, 0, 34)
+    paths, _ = wordmark_paths(816 - width, 428, 34)   # right-aligned at x 816
+    sticker_text(bg, paths, 8, 4)
+    save_indexed(bg, "bg.png")
+
+
+if __name__ == "__main__":
+    main()

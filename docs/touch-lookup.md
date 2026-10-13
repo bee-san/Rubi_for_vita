@@ -1,6 +1,6 @@
 # Touch selection and highlighting
 
-Settings → OCR & lookup → Highlight chooses **Whole word** (default) or
+Overlay app → OCR & lookup → Highlight chooses **Whole word** (default) or
 **Character**. Local dictionaries show one entry at a time; with
 **Dictionaries shown** above 1, Up/Down pages to other dictionaries' entries
 at the same character ([details](local-dictionaries.md#dictionaries-shown)).
