@@ -22,13 +22,13 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
 
 ```
   pool            permanent   worst case        limit     headroom
-  shell pages       540,672      610,304    1,048,576      438,272
+  shell pages       532,480      602,112    1,048,576      446,464
   shell paf           8,192      973,296      985,088       11,792
   kernel            131,072    2,220,032    2,220,032            0
   game               81,920    2,330,624    2,392,064       61,440
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
-      VitaJPOverlay_Shell       405,504 B of    405,504 B declared
+      VitaJPOverlay_Shell       397,312 B of    397,312 B declared
       VitaJPOverlay_OCR          45,056 B of     45,056 B declared
 ```
 
@@ -39,7 +39,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 405,504 | `VitaJPOverlay_Shell.suprx`: 225,280 text + 180,224 data/bss, permanent | packaged SELF segments [measured] |
+| Shell module pages | 397,312 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 180,224 data/bss, permanent (405,504 B before the cold files were built with `-Os`) | packaged SELF segments [measured] |
 | OCR worker pages in SceShell | 45,056 | `VitaJPOverlay_OCR.suprx`, which `*ALL` also loads into SceShell, permanent | packaged SELF segments [measured] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
@@ -110,9 +110,9 @@ The Shell writes its ledger to `ux0:data/VitaJPOverlay/status.txt` at boot, at e
 at each game exit (`tools/install_ftp.sh --status VITA_IP` fetches it):
 
 ```
-ledger boot pages: current=540672 peak=540672 limit=1048576
+ledger boot pages: current=532480 peak=532480 limit=1048576
 ledger boot paf: current=8192 peak=8192 limit=985088 free=2557952
-ledger   Shell pages: current=405504 peak=405504
+ledger   Shell pages: current=397312 peak=397312
 ledger   OCR worker pages: current=45056 peak=45056
 ledger   VjoNet stack: current=69632 peak=69632
 ledger   VjoControl stack: current=20480 peak=20480

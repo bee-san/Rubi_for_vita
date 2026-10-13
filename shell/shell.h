@@ -101,6 +101,15 @@ int vjo_post_page(int page, uint32_t text_generation);
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
 
+/* selftest.c: the on-device self-test (docs/self-test.md). */
+#include "../include/vjo_game_ocr.h"
+int vjo_selftest_armed(void);                 /* the marker was found and the OCR step is not in yet */
+void vjo_selftest_init(const VjoConfig *cfg); /* control thread, once the config is loaded */
+void vjo_selftest_step(const char *step);     /* "ok" (boot guard), "exit" */
+void vjo_selftest_game(const char *title, int enabled, int mode);
+void vjo_selftest_ocr(const VjoState *st, const VjoGameOcrResult *r, int rc, const char *model);
+void vjo_selftest_fail(const char *what, int rc);
+
 /* guard.c: boot-safety guard (core/boot_guard.h). */
 /* 1 when the kernel decided this boot is a safe one: the note is written to
  * status.txt and the shell is marked inert; the caller returns NO_RESIDENT. */

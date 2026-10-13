@@ -32,6 +32,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/main.c
   ${ROOT}/kernel/boot.c
   ${ROOT}/kernel/ledger.c
+  ${ROOT}/kernel/meminfo.c
   ${ROOT}/core/boot_guard.c
   ${ROOT}/core/ledger.c
   ${ROOT}/kernel/log.c
@@ -52,6 +53,7 @@ target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
 target_link_libraries(VitaJPOverlay_Kernel
   gcc
   taihenForKernel_stub
+  taihenModuleUtils_stub
   SceThreadmgrForDriver_stub
   SceSysclibForDriver_stub
   SceSysmemForDriver_stub
@@ -94,6 +96,14 @@ target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
   -ffunction-sections -fdata-sections)
+# Cold core paths (configuration, requests, parsers, queue files): built for
+# size, since every page of the Shell module is SceShell's. Lookup, OCR text
+# handling, JPEG and TLS stay at -O2.
+set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
+  ${ROOT}/core/json.c ${ROOT}/core/hachidori.c ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/jiten.c
+  ${ROOT}/core/jpdb.c ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
+  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/base64.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
+  PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
   target_compile_definitions(vjo_core_vita PUBLIC VJO_WITH_NCNN=1)
@@ -109,6 +119,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/boot.c
   ${ROOT}/shell/guard.c
   ${ROOT}/shell/ledger.c
+  ${ROOT}/shell/selftest.c
   ${ROOT}/shell/main.cpp
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
@@ -134,7 +145,8 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/s
   PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only;-Os")
 # Cold paths (bootstrap, guard, ledger, logging, file access, queue files):
 # every page of this module is SceShell's, so they are built for size.
-set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/files.c ${ROOT}/shell/game.c
+set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
+  ${ROOT}/shell/files.c ${ROOT}/shell/game.c
   ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")

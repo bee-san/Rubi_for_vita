@@ -18,7 +18,9 @@
 #   tools/install_ftp.sh --purge 192.168.1.50     (uninstall, then delete the
 #     plugin files and both VitaJPOverlay data folders; config.ini and
 #     region.ini are copied to the local backup first)
-#   tools/install_ftp.sh --status 192.168.1.50   (prints the plugin logs)
+#   tools/install_ftp.sh --status 192.168.1.50   (prints the plugin logs and the self-test report)
+#   tools/install_ftp.sh --self-test 192.168.1.50 (arms the on-device self-test for the next
+#      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -27,6 +29,7 @@ UNINSTALL=0
 PURGE=0
 STATUS=0
 DUMPS=0
+SELFTEST=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
@@ -37,6 +40,7 @@ while [ $# -gt 1 ]; do
     --purge) UNINSTALL=1; PURGE=1 ;;
     --dumps) DUMPS=1 ;;
     --status) STATUS=1 ;;
+    --self-test) SELFTEST=1 ;;
     --set) SETS+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
     --vocr-model) VOCR_MODELS+=("$2"); shift ;;
@@ -45,7 +49,7 @@ while [ $# -gt 1 ]; do
   esac
   shift
 done
-HOST=${1:?usage: tools/install_ftp.sh [--set key=value]... [--uninstall|--status|--dumps] VITA_IP[:PORT]}
+HOST=${1:?usage: tools/install_ftp.sh [--set key=value]... [--uninstall|--status|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
 FTP=ftp://$HOST
 B=build/vita
@@ -124,8 +128,22 @@ PY
   exit 0
 fi
 
+if [ $SELFTEST = 1 ]; then
+  # One empty file arms the self-test (shell/selftest.c): the next boot and
+  # the first game started write ux0:data/VitaJPOverlay/selftest-report.txt.
+  : > "$TMP/selftest.txt"
+  put "$TMP/selftest.txt" "ux0:/data/VitaJPOverlay/selftest.txt"
+  echo "Self-test armed. Reboot the Vita, wait for the LiveArea, leave it for a minute, start the game to test,"
+  echo "reach a text screen and wait 30 s. Then start VitaShell's FTP again and run: tools/install_ftp.sh --status ${HOST%%:*}"
+  echo "Analyse build/device/status/selftest-report.txt with: python3 tools/analyse_selftest.py build/device/status/selftest-report.txt"
+  exit 0
+fi
+
 if [ $STATUS = 1 ]; then
   mkdir -p build/device/status
+  echo "=== selftest-report.txt"
+  get "ux0:/data/VitaJPOverlay/selftest-report.txt" "build/device/status/selftest-report.txt" 2>/dev/null \
+    && cat "build/device/status/selftest-report.txt" || echo "(none)"
   # The boot guard's record (docs/boot-safety.md) lives on ur0, which is
   # readable before ux0 is mounted.
   echo "=== boot.txt (ur0)"

@@ -29,7 +29,9 @@ uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
 int sceKernelSetEventFlag(SceUID id, unsigned bits) { posted |= bits; return 0; }
 int vjoGetState(VjoState *out) { *out = state; return 0; }
-int vjoSetRegion(const VjoRect *r) { return 0; }
+static VjoRect saved_region; /* w != 0: a saved region for every game */
+static int regions_set, last_region_full;
+int vjoSetRegion(const VjoRect *r) { regions_set++; last_region_full = r == NULL; return 0; }
 int vjoSetTriggers(int a, int b) { return 0; }
 int vjoSetGameActive(int pid, int mode) { return 0; }
 int vjoSetInputBlock(int on) { if (on && fail_input_block) return -123; input_blocked = on; return 0; }
@@ -115,9 +117,16 @@ static const char *logged(const char *needle)
         if (strstr(log_lines[i % 32], needle)) return log_lines[i % 32];
     return NULL;
 }
-int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { return 0; }
+int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
+static int selftest_armed, selftest_games, selftest_ocrs, selftest_fails, selftest_steps;
+int vjo_selftest_armed(void) { return selftest_armed; }
+void vjo_selftest_init(const VjoConfig *cfg) {}
+void vjo_selftest_step(const char *step) { selftest_steps++; }
+void vjo_selftest_game(const char *title, int enabled, int mode) { selftest_games++; }
+void vjo_selftest_ocr(const VjoState *st, const VjoGameOcrResult *r, int rc, const char *model) { selftest_ocrs++; }
+void vjo_selftest_fail(const char *what, int rc) { selftest_fails++; }
 static int guard_marks[8], guard_mark_rc;
 int vjo_guard_mark(int stage) { if (stage >= 0 && stage < 8) guard_marks[stage]++; return guard_mark_rc; }
 int vjo_anki_start(void) { return 0; }
@@ -1938,7 +1947,33 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     vjo_ledger_shell_log("test");
 }
 
+/* The self-test, while armed, recognizes the largest region a job can need
+ * without any input: the saved region is ignored for the full screen and
+ * OCR runs automatically whatever config.ini says. Disarmed, both are the
+ * user's. */
+static void test_selftest_forces_full_screen_and_auto_ocr(void)
+{
+    saved_region = (VjoRect){100, 200, 30000, 8000};
+    strcpy(title_id, "PCSG00415");
+    loaded.ocr_mode = VJO_OCR_ON_PRESS;
+    selftest_armed = 1;
+    apply_config();
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_AUTO);
+    regions_set = 0;
+    push_region();
+    TEST_CHECK(regions_set == 1 && last_region_full);
+    selftest_armed = 0;
+    apply_config();
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS);
+    push_region();
+    TEST_CHECK(regions_set == 2 && !last_region_full);
+    saved_region.w = 0;
+    loaded.ocr_mode = VJO_OCR_AUTO;
+    apply_config();
+}
+
 TEST_LIST = {
+    {"selftest_forces_full_screen_and_auto_ocr", test_selftest_forces_full_screen_and_auto_ocr},
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},

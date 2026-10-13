@@ -34,3 +34,4 @@ VitaJPOverlay_Kernel:
         - vjoOcrModelClose
         - vjoBootInfo
         - vjoBootMark
+        - vjoMemInfo

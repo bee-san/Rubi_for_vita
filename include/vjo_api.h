@@ -13,8 +13,10 @@
  * results report when the fallback ran.
  * 17: boot-safety guard: vjoBootInfo tells every plugin whether this boot is
  * a safe one (no hooks, the Shell and game plugins unload themselves),
- * vjoBootMark lets the Shell record the stages it reaches. */
-#define VJO_API_VERSION 17
+ * vjoBootMark lets the Shell record the stages it reaches.
+ * 18: vjoMemInfo, the self-test's kernel memory sample (exact free/total of
+ * the kernel's and the caller's partitions, the kernel ledger). */
+#define VJO_API_VERSION 18
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
@@ -115,6 +117,19 @@ typedef struct {
     int32_t write_status; /* the last boot.txt write: 0 ok, else the error */
 } VjoBootInfo;
 
+/* vjoMemInfo: what the kernel can read about memory for the self-test
+ * (docs/self-test.md). total/free are exact partition figures from the
+ * kernel; a negative rc means that figure is unavailable and why. */
+typedef struct {
+    uint32_t size;           /* sizeof(VjoMemInfo), set by the caller */
+    int32_t kernel_rc;       /* the partition our kernel module lives in (ScePhyMemPartKD when total is 36 MiB) */
+    uint32_t kernel_total, kernel_free;
+    int32_t caller_rc;       /* the caller's partition (SceShell's for the Shell plugin) */
+    uint32_t caller_total, caller_free;
+    uint32_t ledger_current, ledger_peak, ledger_limit; /* the kernel ledger's pool */
+    uint32_t capture_bytes;  /* the capture block held right now, 0 = none */
+} VjoMemInfo;
+
 /* Syscalls exported by VitaJPOverlay_Kernel (library VitaJPOverlayForUser).
  * All return < 0 on error. */
 #if !defined(VJO_HOST)
@@ -137,6 +152,7 @@ extern "C" {
 #endif
 int vjoBootInfo(VjoBootInfo *out);       /* any process; set out->size first */
 int vjoBootMark(int stage);              /* shell: VJO_BOOT_STAGE_SHELL..OK reached; 0 = the shell is inert */
+int vjoMemInfo(VjoMemInfo *out);         /* shell: set out->size first */
 #ifdef __cplusplus
 }
 #endif
