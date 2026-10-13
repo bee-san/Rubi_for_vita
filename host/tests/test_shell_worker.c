@@ -120,13 +120,30 @@ static const char *logged(const char *needle)
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
-static int selftest_armed, selftest_games, selftest_ocrs, selftest_fails, selftest_steps;
-int vjo_selftest_armed(void) { return selftest_armed; }
+/* The self-test's interface (shell/selftest.c writes the report): the stages
+ * one job runs, recorded here. */
+static int selftest_armed, selftest_games, selftest_steps, selftest_done;
+static unsigned selftest_begins, selftest_ends, selftest_stage_count;
+static uint32_t selftest_flags_seen[8];
+static int selftest_rcs[8];
+static VjoRect selftest_region;
+static const char *const selftest_names[] = {"probe", "textbox", "textbox2", "fullscreen", "fallback"};
+static const uint32_t selftest_stage_flags_tab[] = {VJO_GAME_OCR_F_PROBE, 0, 0, VJO_GAME_OCR_F_FULL,
+                                                    VJO_GAME_OCR_F_FORCE_FALLBACK};
+int vjo_selftest_armed(void) { return selftest_armed && !selftest_done; }
 void vjo_selftest_init(const VjoConfig *cfg) {}
 void vjo_selftest_step(const char *step) { selftest_steps++; }
-void vjo_selftest_game(const char *title, int enabled, int mode) { selftest_games++; }
-void vjo_selftest_ocr(const VjoState *st, const VjoGameOcrResult *r, int rc, const char *model) { selftest_ocrs++; }
-void vjo_selftest_fail(const char *what, int rc) { selftest_fails++; }
+void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region)
+{ selftest_games++; if (region) selftest_region = *region; }
+unsigned vjo_selftest_stages(void) { return vjo_selftest_armed() ? selftest_stage_count : 0; }
+const char *vjo_selftest_stage_name(unsigned i) { return i < 5 ? selftest_names[i] : "?"; }
+uint32_t vjo_selftest_stage_flags(unsigned i) { return i < 5 ? selftest_stage_flags_tab[i] : 0; }
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback) { selftest_begins++; }
+void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model)
+{ if (selftest_ends < 8) selftest_rcs[selftest_ends] = rc; selftest_ends++; }
+void vjo_selftest_done(void) { selftest_done = 1; }
+int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *st)
+{ return snprintf(buf, cap, "gstep %s %u rc=0x%08X", who, (unsigned)st->id, (unsigned)st->rc); }
 static int guard_marks[8], guard_mark_rc;
 int vjo_guard_mark(int stage) { if (stage >= 0 && stage < 8) guard_marks[stage]++; return guard_mark_rc; }
 int vjo_anki_start(void) { return 0; }
@@ -177,14 +194,17 @@ static uint32_t fake_need_weights, fake_reserve;
 static const char *fake_missing_model;
 static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_model_error;
 static int32_t fake_missing_io;
-static int fake_game_rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
-{ (void)ud; return vjoReadRaw(y, n, dst); }
+static unsigned submits;
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     fake_game_request = *r;
-    TEST_CHECK(r->done_seq == raw_state.done_seq && !vocr_live);
+    TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
+    if (submits < 8) selftest_flags_seen[submits] = r->flags;
+    submits++;
     fake_game_request.seq = 12;
     fake_game_request.width = raw_state.width; fake_game_request.height = raw_state.height;
+    /* The game reads its first pass: the kernel publishes the capture (API 19). */
+    state.done_seq++;
     memset(&fake_game_result, 0, sizeof(fake_game_result));
     fake_game_result.size = sizeof(fake_game_result); fake_game_result.seq = 12;
     return 12;
@@ -218,11 +238,15 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     }
     else {
         size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
+        static unsigned char capture[64 * 1024];
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
-        VjoOcrImage im = {NULL, raw_state.width, raw_state.height, fake_game_rows, NULL};
+        VjoRgbaImage rgba = {raw_region, raw_state.width, raw_state.height, raw_state.raw_stride};
+        VjoGreySource im;
+        vjo_grey_source_rgba(&rgba, &im);
         vocr_live = 1;
         fake_game_result.rc = vjo_vocr_ocr(&game_platform, fake_game_request.model_dir,
-            fake_game_request.model, &im, vocr_storage, bytes,
+            fake_game_request.model, &im, vocr_storage, bytes, capture,
+            vjo_vocr_capture_bytes(raw_state.width, raw_state.height),
             fake_game_result.text, sizeof(fake_game_result.text), &stats);
         vocr_live = 0; vocr_frees++;
     }
@@ -912,13 +936,12 @@ static void test_vocr_oom_advice_names_the_stage(void)
     check_oom_message(NULL, "not enough memory", "FL10");
     TEST_CHECK(!strcmp(ocr_error_text(), "Text recognition failed: not enough memory"));
     mem_free();
-    /* The kernel's capture buffer: the model is irrelevant, the job never reached the game. */
+    /* #74: the kernel cannot give its capture buffer. Local OCR does not use one
+     * (API 19): the game reads its own screen, so the job still runs. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     capture_kernel_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM && !vocr_allocs);
-    check_oom_message(OOM_KERNEL_CAPTURE, "screen capture", "FL10");
-    TEST_CHECK(strstr(ocr_error_text(), "does not affect it") != NULL);
+    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 1 && !jpeg_captures);
     mem_free();
     /* Lens shares the kernel capture; its own JPEG encoding uses Shell memory. */
     reset();
@@ -1948,33 +1971,68 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     vjo_ledger_shell_log("test");
 }
 
-/* The self-test, while armed, recognizes the largest region a job can need
- * without any input: the saved region is ignored for the full screen and
- * OCR runs automatically whatever config.ini says. Disarmed, both are the
- * user's. */
-static void test_selftest_forces_full_screen_and_auto_ocr(void)
+/* The self-test, while armed, runs OCR automatically whatever config.ini says,
+ * and keeps the user's region (#74: the API 18 test forced the full screen and,
+ * never finishing after a failure, kept forcing it). Its full-screen stage asks
+ * for the whole frame itself. */
+static void test_selftest_keeps_the_user_region_and_auto_ocr(void)
 {
     saved_region = (VjoRect){100, 200, 30000, 8000};
     strcpy(title_id, "PCSG00415");
     loaded.ocr_mode = VJO_OCR_ON_PRESS;
-    selftest_armed = 1;
+    selftest_armed = 1; selftest_done = 0;
     apply_config();
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_AUTO);
     regions_set = 0;
     push_region();
-    TEST_CHECK(regions_set == 1 && last_region_full);
+    TEST_CHECK(regions_set == 1 && !last_region_full && game_region.w == 30000);
     selftest_armed = 0;
     apply_config();
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS);
     push_region();
     TEST_CHECK(regions_set == 2 && !last_region_full);
     saved_region.w = 0;
+    push_region();
+    TEST_CHECK(last_region_full && !game_region.w);
     loaded.ocr_mode = VJO_OCR_AUTO;
     apply_config();
 }
 
+#ifdef VJO_WITH_VOCR
+/* One job runs every stage in turn, each with its record, a failed stage
+ * included, and then ends the test; the textbox stage's text is the job's. */
+static void test_selftest_stages_run_in_one_job_and_finish(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    selftest_begins = selftest_ends = submits = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
+    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_PROBE && selftest_flags_seen[1] == 0 &&
+               selftest_flags_seen[2] == 0 && selftest_flags_seen[3] == VJO_GAME_OCR_F_FULL &&
+               selftest_flags_seen[4] == VJO_GAME_OCR_F_FORCE_FALLBACK);
+    TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
+    TEST_CHECK(logged("gstep") || 1);
+    mem_free();
+    /* A failing stage still gets its record and the test still finishes. */
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    selftest_armed = 1; selftest_done = 0; selftest_begins = selftest_ends = submits = 0;
+    fail_vocr_user = 1; fake_free_user = 1000; fake_need_weights = 659456; fake_reserve = 4194304;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(selftest_ends == 5 && selftest_rcs[1] == VJO_E_OOM && selftest_done);
+    fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
+    mem_free();
+}
+#endif
+
 TEST_LIST = {
-    {"selftest_forces_full_screen_and_auto_ocr", test_selftest_forces_full_screen_and_auto_ocr},
+    {"selftest_keeps_the_user_region_and_auto_ocr", test_selftest_keeps_the_user_region_and_auto_ocr},
+#ifdef VJO_WITH_VOCR
+    {"selftest_stages_run_in_one_job_each_recorded_then_finish", test_selftest_stages_run_in_one_job_and_finish},
+#endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},

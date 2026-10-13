@@ -79,7 +79,15 @@
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u     /* VitaJPOverlay_Kernel.skprx: 32,768 text + 81,920 data/bss [measured] */
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
-#define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u) /* VjoCapture at a full frame, KERNEL_RW, per job */
+/* The Shell's JPEG capture (Lens, an Anki screenshot) at a full frame, KERNEL_RW,
+ * per request. Local OCR takes no kernel block since API 19 (#74: on the owner's
+ * 3.65 this 2,088,960 B request failed with 0x80024302 at every attempt). */
+#define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u)
+/* The OCR ladder's last rung (kernel/buffers.c buffers_kstrip_alloc): one strip of
+ * grey rows for one vjoOcrCaptureRows call, only after the display hook could not
+ * write into the game's own block; never held together with the JPEG capture
+ * (an OCR job and a capture exclude each other), so it adds nothing to the worst case. */
+#define VJO_BUDGET_KERNEL_OCR_STRIP (64u * 1024u)
 #define VJO_WORST_KERNEL_PERMANENT (VJO_BUDGET_KERNEL_MODULE_PAGES + VJO_BUDGET_KERNEL_STACK)
 #define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_CAPTURE)
 /* No cited safe size exists for this pool: its free space on a retail console
@@ -93,10 +101,20 @@
 #define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_WEIGHTS 1560576u           /* F20, the largest accepted model, page-rounded (core/vocr_ocr.c) */
-#define VJO_BUDGET_GAME_WORKSPACE 770048u          /* F20 at a 960x544 region, page-rounded (vjo_vocr_job_bytes) */
+/* F20 at a 960x544 region, page-rounded (vjo_vocr_job_bytes, host build: 245,808 B).
+ * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
+#define VJO_BUDGET_GAME_WORKSPACE 249856u
+/* The capture block: one strip of grey rows and a checksum and a bit per region
+ * row, at most 58,884 B (960x544, 59-row strips), page-rounded under 64 KiB
+ * (vjo_vocr_capture_bytes). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
+ * phycont instead, other partitions, only when USER_RW refused it. */
+#define VJO_BUDGET_GAME_CAPTURE 65536u
+/* A line taller than a strip, read whole (VJO_VOCR_LINE_MAX_ROWS = 128 rows of 960). */
+#define VJO_BUDGET_GAME_LINE (960u * 128u)
 #define VJO_GAME_RESERVE (4u * 1024u * 1024u)      /* kept free in the game before either block (game_ocr/main.c) */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
-#define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE)
+#define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
+                            VJO_BUDGET_GAME_LINE)
 /* The recognizer ceiling tier: weights <= 1,601,536 B and a full-screen
  * workspace <= 790,528 B, peak 2,392,064 B, which the preflight (free USER
  * minus the 4 MiB reserve) has to cover [vita-vn-ocr docs/vita-memory-budget.md]. */

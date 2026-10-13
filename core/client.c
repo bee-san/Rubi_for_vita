@@ -430,6 +430,9 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
     case VJO_E_CANCELLED:
         vjo_buf_puts(&b, "Text recognition cancelled.");
         break;
+    case VJO_E_SCREEN_CHANGED:
+        vjo_buf_puts(&b, "The screen kept changing while it was read. Wait until the text has settled, then try again.");
+        break;
     case VJO_E_OCR_INFERENCE:
         vjo_buf_puts(&b, "Local OCR failed. Try a smaller dialogue region; see log.txt for details.");
         break;

@@ -455,17 +455,22 @@ int vjoBootInfo(VjoBootInfo *out)
 }
 
 /* The self-test's memory sample: exact partition figures the user API cannot
- * give (kernel/meminfo.c). Shell only: it names the caller's partition. */
+ * give (kernel/meminfo.c). The Shell, or the registered game worker: the
+ * caller's partition is SceShell's or the game's. */
 int vjoMemInfo(VjoMemInfo *out)
 {
     uint32_t state;
     VjoMemInfo info;
     uint32_t size = 0;
-    if (!caller_ok())
+    SceUID pid = ksceKernelGetProcessId(), worker;
+    VJO_LOCK();
+    worker = game_ocr_worker_pid_locked();
+    VJO_UNLOCK();
+    if (!caller_ok() && (worker <= 0 || pid != worker))
         return VJO_ERR_PERM;
     ENTER_SYSCALL(state);
     ksceKernelMemcpyUserToKernel(&size, out, sizeof(size));
-    meminfo_fill(g.shell_pid, out, &info);
+    meminfo_fill(pid, out, &info);
     if (size > sizeof(info))
         size = sizeof(info);
     if (size >= sizeof(uint32_t))

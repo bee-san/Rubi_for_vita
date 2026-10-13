@@ -10,6 +10,8 @@ typedef unsigned SceSize, SceUInt;
 typedef int64_t SceOff;
 typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKernelFreeMemorySizeInfo;
 #define SCE_KERNEL_MEMBLOCK_TYPE_USER_RW 1
+#define SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW 0x09408060
+#define SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW 0x0D808060
 #define SCE_O_RDONLY 0
 #define SCE_SEEK_SET SEEK_SET
 #define SCE_SEEK_END SEEK_END
@@ -31,6 +33,12 @@ typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKe
 typedef struct { unsigned size; void *mappedBase; unsigned mappedSize; int memoryType; unsigned access, type; } SceKernelMemBlockInfo;
 int sceClibPrintf(const char *, ...);
 int sceKernelGetMemBlockInfoByRange(void *, unsigned, SceKernelMemBlockInfo *);
+int sceKernelGetMemBlockInfoByAddr(void *, SceKernelMemBlockInfo *);
+/* psp2/display.h */
+typedef struct { SceSize size; void *base; unsigned pitch, pixelformat, width, height; } SceDisplayFrameBuf;
+typedef struct { SceSize size; void *base; unsigned pitch, pixelformat, width, height, flags; } SceDisplayFrameBufExt;
+#define SCE_DISPLAY_SETBUF_NEXTFRAME 1
+int sceDisplayGetFrameBuf(SceDisplayFrameBuf *, int);
 uint64_t sceKernelGetProcessTimeWide(void);
 SceUID sceKernelGetProcessId(void);
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *);

@@ -39,6 +39,7 @@ enum {
     VJO_E_OCR_UNAVAILABLE = -117, /* build has no local OCR */
     VJO_E_CANCELLED = -118,
     VJO_E_OCR_INFERENCE = -119,
+    VJO_E_SCREEN_CHANGED = -120, /* the screen changed while the game read it, on every try */
 };
 
 #endif

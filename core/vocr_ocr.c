@@ -1,15 +1,18 @@
-/* vita-vn-ocr backend (vocr_ocr.h): region -> grey -> vocr_find_lines ->
- * verified weights (resident between jobs, or one-shot) -> vocr_run per line.
- * The runtime (vocr.c, vocr_lines.c) is bee-san/vita-vn-ocr's, at the commit
- * cmake/VocrOCR.cmake pins. */
+/* vita-vn-ocr backend (vocr_ocr.h): region strips -> vocr_find_lines_rows ->
+ * verified weights (resident between jobs, or one-shot) -> vocr_run per line,
+ * straight from the strip that holds it. No copy of the whole region is made.
+ * The runtime (vocr.c, vocr_lines.c, vocr_lines_rows.c) is bee-san/vita-vn-ocr's,
+ * at the commit cmake/VocrOCR.cmake pins. */
 #include "vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
 
 #include <bearssl_hash.h>
 #include <string.h>
 
+#include "fbgrey.h"
 #include "vocr.h"
 #include "vocr_lines.h"
+#include "vocr_lines_rows.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr release v0.2.0
@@ -63,23 +66,27 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
     return NULL;
 }
 
-/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx | grey region].
- * Before the finder runs, the arena holds the RGBA rows being copied. The
- * one-shot form puts the weights in front of it. */
+/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx]. The
+ * one-shot form puts the weights in front of it. The region's pixels are not in
+ * it: they live one strip at a time in the capture block. */
 typedef struct {
-    size_t scratch_off, structs_off, grey_off, total;
+    size_t scratch_off, structs_off, total;
     size_t scratch, finder;
 } Layout;
 
+static int region_ok(unsigned w, unsigned h)
+{
+    return w && h && w <= VJO_OCR_MAX_WIDTH && h <= VJO_OCR_MAX_HEIGHT;
+}
+
 static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
 {
-    if (!m || !w || !h || w > VJO_OCR_MAX_WIDTH || h > VJO_OCR_MAX_HEIGHT) return -1;
+    if (!m || !region_ok(w, h)) return -1;
     l->finder = vocr_lines_arena_bytes(w, h);
     l->scratch = ALIGN16(l->finder > m->arena_bytes ? l->finder : m->arena_bytes);
     l->scratch_off = 0;
     l->structs_off = l->scratch;
-    l->grey_off = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
-    l->total = l->grey_off + ALIGN16((size_t)w * h);
+    l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
     return 0;
 }
 
@@ -96,14 +103,34 @@ size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned heig
     return layout(m, width, height, &l) < 0 ? 0 : ALIGN16(m->bytes) + l.total;
 }
 
-static int cancelled(const VjoOcrImage *im)
+#define ALIGN4(x) (((x) + (size_t)3) & ~(size_t)3)
+
+unsigned vjo_vocr_strip_rows(unsigned width, unsigned height)
+{
+    unsigned rows;
+    if (!region_ok(width, height)) return 0;
+    rows = VJO_VOCR_STRIP_BYTES / width;
+    if (rows > VJO_VOCR_STRIP_MAX_ROWS) rows = VJO_VOCR_STRIP_MAX_ROWS;
+    if (rows > height) rows = height;
+    return rows ? rows : 1u;
+}
+
+/* Capture block: [strip: rows x width | row checksums: 4 x height | seen: 1 bit per row]. */
+size_t vjo_vocr_capture_bytes(unsigned width, unsigned height)
+{
+    unsigned rows = vjo_vocr_strip_rows(width, height);
+    if (!rows) return 0;
+    return ALIGN4((size_t)rows * width) + (size_t)height * 4u + ALIGN4(((size_t)height + 7u) / 8u);
+}
+
+static int cancelled(const VjoGreySource *im)
 {
     return im->cancelled && im->cancelled(im->ud);
 }
 
 static int run_cancel(void *user)
 {
-    return cancelled((const VjoOcrImage *)user);
+    return cancelled((const VjoGreySource *)user);
 }
 
 static uint32_t clock_us(const VjoPlatform *p)
@@ -111,29 +138,96 @@ static uint32_t clock_us(const VjoPlatform *p)
     return p->now_us ? (uint32_t)p->now_us(p->ud) : 0;
 }
 
-/* All rows, once each and in order (the kernel frees a single-pass capture
- * after its last row), as grey = (77 R + 150 G + 29 B) >> 8: the luma both
- * the finder and the recognizer compute from RGBA, so this copy changes no
- * result. rgba holds whole rows (cap bytes). */
-static int read_grey(const VjoOcrImage *im, unsigned char *rgba, size_t cap, unsigned char *grey)
+/* The region, a strip at a time, for the finder and the recognizer. Every row
+ * keeps the checksum it had when first read; a later read that differs means
+ * the screen changed under us (err = VJO_E_SCREEN_CHANGED). */
+typedef struct {
+    const VjoGreySource *src;
+    const VjoPlatform *p;
+    VjoVocrStats *st;
+    unsigned char *strip;   /* rows [y0, y0 + rows) of the region, width bytes each */
+    uint32_t *sums;         /* per region row, valid where seen */
+    unsigned char *seen;    /* 1 bit per region row */
+    unsigned w, h, strip_rows, y0, rows;
+    unsigned first_next;    /* the first pass's next row (h once it is in) */
+    int err;
+} Stream;
+
+/* Checks (or records) the checksum of region row y, whose grey bytes are at p. */
+static void stream_check(Stream *s, unsigned y, const unsigned char *p, int first)
 {
-    const unsigned w = im->width, batch = (unsigned)(cap / ((size_t)w * 4));
-    if (!batch) return VJO_E_OOM;
-    for (unsigned y = 0; y < im->height;) {
-        unsigned n = im->height - y < batch ? im->height - y : batch;
-        int got;
-        if (cancelled(im)) return VJO_E_CANCELLED;
-        got = im->rows(im->ud, y, n, rgba);
-        if (got <= 0 || (unsigned)got > n) return VJO_E_SOURCE;
-        for (unsigned r = 0; r < (unsigned)got; r++) {
-            const unsigned char *s = rgba + (size_t)r * w * 4;
-            unsigned char *d = grey + (size_t)(y + r) * w;
-            for (unsigned x = 0; x < w; x++, s += 4)
-                d[x] = (unsigned char)((77u * s[0] + 150u * s[1] + 29u * s[2]) >> 8);
+    uint32_t sum = vjo_fnv1a(VJO_FNV_INIT, p, s->w);
+    unsigned char bit = (unsigned char)(1u << (y & 7u));
+    if (s->seen[y >> 3] & bit) {
+        if (s->sums[y] != sum) {
+            s->st->tears++;
+            s->err = VJO_E_SCREEN_CHANGED;
         }
-        y += (unsigned)got;
+        return;
     }
-    return VJO_OK;
+    s->seen[y >> 3] |= bit;
+    s->sums[y] = sum;
+    if (first) s->st->region_sum = vjo_fnv1a(s->st->region_sum, (const unsigned char *)&sum, 4);
+}
+
+/* Rows [y, y + n) through the source into dst (stride w), checked. */
+static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
+{
+    unsigned flags = 0;
+    uint32_t t0;
+    int got;
+    if (s->err) return -1;
+    if (cancelled(s->src)) { s->err = VJO_E_CANCELLED; return -1; }
+    if (y == s->first_next) {
+        flags = VJO_STRIP_FIRST | (y + n == s->h ? VJO_STRIP_LAST : 0u);
+    }
+    t0 = clock_us(s->p);
+    got = s->src->strip(s->src->ud, y, n, dst, s->w, flags);
+    s->st->capture_us += clock_us(s->p) - t0;
+    s->st->strips++;
+    if (got != (int)n) {
+        s->err = got < 0 ? got : VJO_E_SOURCE;
+        return -1;
+    }
+    if (flags) s->first_next = y + n;
+    for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, flags != 0);
+    return s->err ? -1 : 0;
+}
+
+/* The strip from row y: during the first pass the strips follow each other
+ * from row 0 (the kernel builds the capture's scene signature from them, and
+ * the last one publishes it), otherwise it is moved up to stay inside the region. */
+static int stream_fetch(Stream *s, unsigned y)
+{
+    unsigned n = s->strip_rows;
+    if (y == s->first_next && s->first_next < s->h) {
+        if (n > s->h - y) n = s->h - y;
+    } else if (y + n > s->h) {
+        y = s->h - n;
+    }
+    s->rows = 0;
+    if (stream_read(s, y, n, s->strip) < 0) return -1;
+    s->y0 = y;
+    s->rows = n;
+    return 0;
+}
+
+static const unsigned char *stream_row(void *user, unsigned y)
+{
+    Stream *s = (Stream *)user;
+    if (s->err || y >= s->h) return NULL;
+    if (!s->rows || y < s->y0 || y >= s->y0 + s->rows) {
+        /* rows run in order within a pass: the strip starts at the row asked for,
+         * except during the first pass, whose strips must follow each other */
+        if (stream_fetch(s, y) < 0) return NULL;
+    }
+    return s->strip + (size_t)(y - s->y0) * s->w;
+}
+
+/* rc for a finder or row failure: the source's own error first. */
+static int stream_error(const Stream *s, int fallback)
+{
+    return s->err ? s->err : fallback;
 }
 
 int vjo_vocr_resident_drop(VjoVocrResident *r)
@@ -157,7 +251,7 @@ static int drop_with(VjoVocrResident *r, int rc)
 /* Reads the whole open file into dst and checks its SHA-256 while reading;
  * cancellation is checked between pieces. */
 static int read_verified(const VjoFile *file, const VjoVocrModel *m, unsigned char *dst,
-                         const VjoOcrImage *im)
+                         const VjoGreySource *im)
 {
     br_sha256_context hash;
     unsigned char digest[32];
@@ -178,7 +272,7 @@ static int read_verified(const VjoFile *file, const VjoVocrModel *m, unsigned ch
  * stamp decide); it is read and hashed again only if they changed, the stamp
  * is unknown, or no verified copy is held. */
 static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
-                            VjoVocrResident *r, const VjoOcrImage *im, VjoVocrStats *st)
+                            VjoVocrResident *r, const VjoGreySource *im, VjoVocrStats *st)
 {
     char path[256];
     size_t dn = strlen(dir), fn = strlen(m->name);
@@ -237,13 +331,42 @@ static int run_error(int rc)
     }
 }
 
-static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
-                     const VjoOcrImage *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
-                     char *text, size_t cap, VjoVocrStats *st)
+/* Line ln's grey pixels, stride s->w: from the strip, read again from its top row
+ * if the strip does not hold the whole line, or for a line taller than a strip
+ * from the source's line buffer. NULL: the line is left out (tall, no buffer) or
+ * the read failed (s->err). */
+static const unsigned char *line_pixels(Stream *s, const VocrLine *ln)
 {
-    unsigned char *grey = ws + l->grey_off;
+    if (ln->h <= s->strip_rows) {
+        if (!s->rows || ln->y < s->y0 || ln->y + ln->h > s->y0 + s->rows) {
+            if (stream_fetch(s, ln->y) < 0) return NULL;
+        }
+        return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
+    }
+    {
+        unsigned char *buf = ln->h <= VJO_VOCR_LINE_MAX_ROWS && s->src->line_buffer
+                             ? (unsigned char *)s->src->line_buffer(s->src->ud, (size_t)s->w * ln->h) : NULL;
+        s->st->tall++;
+        if (!buf) {
+            s->st->tall_skipped++;
+            return NULL;
+        }
+        for (unsigned y = 0; y < ln->h;) {
+            unsigned n = ln->h - y < s->strip_rows ? ln->h - y : s->strip_rows;
+            if (stream_read(s, ln->y + y, n, buf + (size_t)y * s->w) < 0) return NULL;
+            y += n;
+        }
+        return buf + ln->x;
+    }
+}
+
+/* One capture of the region: lines, then (weights) each line recognized. */
+static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
+                     const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
+                     Stream *s, char *text, size_t cap, VjoVocrStats *st)
+{
     const unsigned w = im->width;
-    VocrLinesImage region = {grey, w, im->height, w, VOCR_LINES_GREY};
+    VocrLinesRows region = {w, im->height, VOCR_LINES_GREY, stream_row, s};
     VocrLineSet set;
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
@@ -252,11 +375,16 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     uint32_t t0;
     int rc;
 
+    text[0] = '\0';
+    st->lines = st->truncated = st->dark = st->frames = st->recognized = 0;
     t0 = clock_us(p);
-    rc = read_grey(im, ws + l->scratch_off, l->scratch, grey);
-    if (rc) return rc;
-    rc = vocr_find_lines(&region, mi->finder_mode, ws + l->scratch_off, l->finder, &set);
+    rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
+    if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
+    /* A region inside one strip was read once: read it again, so that a screen
+     * that changed while it was read is seen (the strips of a taller region are
+     * all read twice by the finder's two passes already). */
+    if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;
     st->lines = set.count;
     st->truncated = set.truncated;
@@ -282,13 +410,17 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     t0 = clock_us(p);
     for (unsigned i = 0; i < set.count; i++) {
         const VocrLine *ln = &set.lines[i];
+        const unsigned char *pixels;
         vocr_image img;
         vocr_extra extra;
         size_t start = used ? used + 1 : 0, n;
         uint32_t line_t0;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
-        img.pixels = grey + (size_t)ln->y * w + ln->x;
+        pixels = line_pixels(s, ln);
+        if (s->err) return s->err;
+        if (!pixels) continue; /* taller than a strip and no line buffer: left out */
+        img.pixels = pixels;
         img.width = ln->w;
         img.height = ln->h;
         img.stride = w;
@@ -321,43 +453,69 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
 
 /* one_shot: the weights occupy the front of workspace for this job only. */
 static int run_job(const VjoPlatform *platform, const char *model_dir, const char *model,
-                   const VjoOcrImage *image, VjoVocrResident *res, void *workspace,
-                   size_t workspace_size, int one_shot, char *text, size_t text_cap,
-                   VjoVocrStats *stats)
+                   const VjoGreySource *image, VjoVocrResident *res, void *workspace,
+                   size_t workspace_size, void *capture, size_t capture_size, int one_shot,
+                   char *text, size_t text_cap, VjoVocrStats *stats)
 {
     const VjoVocrModel *mi;
     Layout l;
-    size_t front;
-    int rc;
+    Stream st;
+    size_t front, need_capture;
+    unsigned strip_rows;
+    int rc = VJO_OK;
     if (!platform || !model_dir || !model || !image || !res || !text || !text_cap || !stats)
         return VJO_E_SOURCE;
     text[0] = '\0';
     memset(stats, 0, sizeof(*stats));
     mi = vjo_vocr_model(model);
     if (!mi) return VJO_E_OCR_MODEL;
-    if (!image->rows || layout(mi, image->width, image->height, &l) < 0) return VJO_E_OCR_REGION;
+    if (!image->strip || layout(mi, image->width, image->height, &l) < 0) return VJO_E_OCR_REGION;
     front = one_shot ? ALIGN16(mi->bytes) : 0;
+    strip_rows = vjo_vocr_strip_rows(image->width, image->height);
+    need_capture = vjo_vocr_capture_bytes(image->width, image->height);
     stats->workspace = front + l.total;
+    stats->capture = need_capture;
     stats->model_bytes = mi->bytes;
     stats->scratch_bytes = l.scratch;
-    stats->region_bytes = (size_t)image->width * image->height;
     stats->width = image->width;
     stats->height = image->height;
+    stats->strip_rows = strip_rows;
     if (cancelled(image)) return VJO_E_CANCELLED;
-    if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total) return VJO_E_OOM;
-    rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l,
-                   text, text_cap, stats);
+    if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
+        !capture || capture_size < need_capture) return VJO_E_OOM;
+    memset(&st, 0, sizeof(st));
+    st.src = image;
+    st.p = platform;
+    st.st = stats;
+    st.w = image->width;
+    st.h = image->height;
+    st.strip_rows = strip_rows;
+    st.strip = (unsigned char *)capture;
+    st.sums = (uint32_t *)(void *)((unsigned char *)capture + ALIGN4((size_t)strip_rows * st.w));
+    st.seen = (unsigned char *)(st.sums + st.h);
+    /* The screen may change while it is read (the player advanced the text): then
+     * the region is captured again from scratch, up to VJO_VOCR_TRIES times. */
+    for (unsigned attempt = 1; attempt <= VJO_VOCR_TRIES; attempt++) {
+        memset(st.seen, 0, ((size_t)st.h + 7u) / 8u);
+        st.rows = st.y0 = st.first_next = 0;
+        st.err = 0;
+        stats->tries = attempt;
+        stats->region_sum = VJO_FNV_INIT;
+        rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st,
+                       text, text_cap, stats);
+        if (rc != VJO_E_SCREEN_CHANGED || cancelled(image)) break;
+    }
     if (rc) text[0] = '\0'; /* never publish a partial recognition */
     return rc;
 }
 
 int vjo_vocr_ocr_resident(const VjoPlatform *platform, const char *model_dir, const char *model,
-                          const VjoOcrImage *image, VjoVocrResident *resident,
-                          void *workspace, size_t workspace_size,
+                          const VjoGreySource *image, VjoVocrResident *resident,
+                          void *workspace, size_t workspace_size, void *capture, size_t capture_size,
                           char *text, size_t text_cap, VjoVocrStats *stats)
 {
-    return run_job(platform, model_dir, model, image, resident, workspace, workspace_size, 0,
-                   text, text_cap, stats);
+    return run_job(platform, model_dir, model, image, resident, workspace, workspace_size, capture,
+                   capture_size, 0, text, text_cap, stats);
 }
 
 static void *one_shot_alloc(void *ud, size_t bytes)
@@ -367,13 +525,37 @@ static void *one_shot_alloc(void *ud, size_t bytes)
 }
 
 int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char *model,
-                 const VjoOcrImage *image, void *workspace, size_t workspace_size,
-                 char *text, size_t text_cap, VjoVocrStats *stats)
+                 const VjoGreySource *image, void *workspace, size_t workspace_size,
+                 void *capture, size_t capture_size, char *text, size_t text_cap, VjoVocrStats *stats)
 {
     VjoVocrResident one;
     memset(&one, 0, sizeof(one));
     one.alloc = one_shot_alloc;
     one.ud = workspace;
-    return run_job(platform, model_dir, model, image, &one, workspace, workspace_size, 1,
-                   text, text_cap, stats);
+    return run_job(platform, model_dir, model, image, &one, workspace, workspace_size, capture,
+                   capture_size, 1, text, text_cap, stats);
+}
+
+/* ---- an RGBA image in memory as a grey source (host tools and tests) ---- */
+static int rgba_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
+{
+    const VjoRgbaImage *img = (const VjoRgbaImage *)ud;
+    (void)flags;
+    if (y >= img->height || n > img->height - y) return VJO_E_SOURCE;
+    for (unsigned r = 0; r < n; r++) {
+        const unsigned char *p = img->pixels + (size_t)(y + r) * img->stride;
+        unsigned char *d = dst + (size_t)r * stride;
+        for (unsigned x = 0; x < img->width; x++, p += 4)
+            d[x] = (unsigned char)vjo_grey(p[0], p[1], p[2]);
+    }
+    return (int)n;
+}
+
+void vjo_grey_source_rgba(const VjoRgbaImage *img, VjoGreySource *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->ud = (void *)img;
+    out->width = img->width;
+    out->height = img->height;
+    out->strip = rgba_strip;
 }

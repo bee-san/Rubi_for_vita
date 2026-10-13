@@ -103,12 +103,21 @@ int vjo_worker_stop(void);
 
 /* selftest.c: the on-device self-test (docs/self-test.md). */
 #include "../include/vjo_game_ocr.h"
-int vjo_selftest_armed(void);                 /* the marker was found and the OCR step is not in yet */
+int vjo_selftest_armed(void);                 /* the marker was found and the stages are not all done */
 void vjo_selftest_init(const VjoConfig *cfg); /* control thread, once the config is loaded */
 void vjo_selftest_step(const char *step);     /* "ok" (boot guard), "exit" */
-void vjo_selftest_game(const char *title, int enabled, int mode);
-void vjo_selftest_ocr(const VjoState *st, const VjoGameOcrResult *r, int rc, const char *model);
-void vjo_selftest_fail(const char *what, int rc);
+/* The first game: its title, policy, mode and the user's saved region (w == 0: none). */
+void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region);
+/* The stages one job runs in turn (network thread): how many (0 when not
+ * armed), each one's name and request flags, its records. */
+unsigned vjo_selftest_stages(void);
+const char *vjo_selftest_stage_name(unsigned i);
+uint32_t vjo_selftest_stage_flags(unsigned i);
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback);
+void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model);
+void vjo_selftest_done(void); /* every stage has its record: the test is complete, the marker removed */
+/* One step of a game worker's log as text (log.txt and the report). */
+int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *s);
 
 /* guard.c: boot-safety guard (core/boot_guard.h). */
 /* 1 when the kernel decided this boot is a safe one: the note is written to

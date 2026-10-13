@@ -1,4 +1,7 @@
-/* Real vocr + real game worker + real kernel model transport. File syscalls
+/* Real vocr + real game worker + real kernel transport: the model broker and,
+ * since API 19, the capture: the worker's strip requests are copied by the
+ * real kernel display-hook code (game_ocr_rows_hook, capture_grey_rows) from a
+ * simulated game frame straight into the worker's capture block. File syscalls
  * run only when the harness schedules the persistent kernel worker; the game
  * namespace reproduces physical ENODEV. Host execution is not device proof. */
 #include "acutest.h"
@@ -22,7 +25,10 @@ static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((al
 static int weights_live, kernel_waits, done_pending;
 static unsigned live_bytes, peak_bytes, job_block, weights_block, kernel_wait_calls;
 static SceDateTime file_mtime;
-static unsigned char pixels[49152]; /* page-rounded 200x60 capture */
+static uint32_t pixels[200 * 60]; /* the game's 200x60 frame, A8B8G8R8 */
+static unsigned char capture_mem_block[64 * 1024] __attribute__((aligned(64))); /* VjoGameVocrCapture */
+static int capture_block_live, in_hook;
+static unsigned hook_frames, capture_blocks;
 static int live, open_error, read_error, close_error, bad_length, early_eof, corrupt, short_read;
 static int schedule_kernel, cancel_after, substitute_legacy;
 static uint64_t clock_us;
@@ -33,7 +39,7 @@ static int capture_live;
 int test_kernel_register(void);
 int test_kernel_submit(const VjoGameOcrRequest *request);
 int test_kernel_take(VjoGameOcrRequest *out);
-int test_kernel_read_raw(uint32_t seq, uint32_t row, uint32_t count, void *dst);
+int test_kernel_capture_rows(const VjoGameOcrRows *request, void *dst, VjoGameOcrRowsInfo *info);
 int test_kernel_cancelled(uint32_t seq);
 int test_kernel_complete(const VjoGameOcrResult *result);
 int test_kernel_read(uint32_t seq, VjoGameOcrResult *out);
@@ -47,8 +53,8 @@ int vjoBootInfo(VjoBootInfo *out) { out->mode = VJO_BOOT_NORMAL; return 0; }
 int vjoOcrRegister(void) { return retail_return(test_kernel_register()); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r) { return retail_return(test_kernel_submit(r)); }
 int vjoOcrTake(VjoGameOcrRequest *out) { return retail_return(test_kernel_take(out)); }
-int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t count, void *dst)
-{ return retail_return(test_kernel_read_raw(seq, row, count, dst)); }
+int vjoOcrCaptureRows(const VjoGameOcrRows *request, void *dst, VjoGameOcrRowsInfo *info)
+{ return retail_return(test_kernel_capture_rows(request, dst, info)); }
 int vjoOcrCancelled(uint32_t seq) { return retail_return(test_kernel_cancelled(seq)); }
 int vjoOcrComplete(const VjoGameOcrResult *r) { return retail_return(test_kernel_complete(r)); }
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out) { return retail_return(test_kernel_read(seq, out)); }
@@ -65,13 +71,33 @@ SceUID ksceKernelGetProcessId(void) { return caller; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return clock_us; }
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
 {
+    if (g.mevf > 0 && uid == g.mevf && bits == MEV_ROWS) return 0;
     if (g.mevf > 0 && uid == g.mevf) { TEST_CHECK(bits == MEV_DONE); done_pending = 1; return 0; }
+    if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) return 0;
     TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); return 0;
+}
+int ksceKernelClearEventFlag(SceUID uid, unsigned bits) { TEST_CHECK(uid == g.mevf && bits == ~MEV_ROWS); return 0; }
+int ksceKernelDelayThread(SceUInt us) { clock_us += us; return 0; }
+SceUID ksceKernelFindMemBlockByAddr(const void *addr, SceSize size) { return 40; }
+/* Only the worker's capture block is memory of the game process 7. */
+SceUID ksceKernelFindProcMemBlockByAddr(SceUID pid, const void *addr, SceSize size)
+{
+    const unsigned char *p = addr;
+    TEST_CHECK(size == 0);
+    return pid == 7 && capture_block_live && p >= capture_mem_block && p < capture_mem_block + sizeof(capture_mem_block) ? 41 : -1;
 }
 /* The game's model syscall waits in the kernel; with kernel_waits the kernel
  * worker thread runs meanwhile and finishes the operation. */
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
+    if (bits == MEV_ROWS) {
+        /* The game shows its next frame: the display hook runs in its thread. */
+        TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout);
+        in_hook = 1; hook_frames++;
+        game_ocr_rows_hook(7, (uintptr_t)pixels, 200, 0x00000000u, 200, 60);
+        in_hook = 0;
+        return 0;
+    }
     TEST_ASSERT(uid == g.mevf && bits == MEV_DONE && !locks && syscall_depth == 1 && timeout);
     kernel_wait_calls++;
     if (!done_pending && kernel_waits) {
@@ -96,15 +122,14 @@ int taiGetModuleInfoForKernel(SceUID pid, const char *name, tai_module_info_t *i
 int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize n)
 { TEST_CHECK(syscall_depth == 1); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize n)
-{ TEST_CHECK(syscall_depth == 1 && locks == 1); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
+{ TEST_CHECK(syscall_depth == 1 && (in_hook ? !locks : locks == 1)); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
+static unsigned char jpeg_capture[200 * 60 * 4 + 4096];
 SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, SceSize bytes, void *opt)
-{ TEST_CHECK(!capture_live && type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(pixels)); capture_live = 1; capture_allocations++; return 27; }
+{ TEST_CHECK(!capture_live && type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(jpeg_capture)); capture_live = 1; capture_allocations++; return 27; }
 int ksceKernelGetMemBlockBase(SceUID uid, void **base)
-{ TEST_CHECK(uid == 27 && capture_live); *base = pixels; return 0; }
+{ TEST_CHECK(uid == 27 && capture_live); *base = jpeg_capture; return 0; }
 int ksceKernelFreeMemBlock(SceUID uid)
 { TEST_CHECK(uid == 27 && capture_live); capture_live = 0; capture_releases++; return 0; }
-void capture_compute_crop(uint32_t width, uint32_t height, uint32_t *x, uint32_t *y, uint32_t *w, uint32_t *h)
-{ *x = *y = 0; *w = 200; *h = 60; }
 
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
@@ -156,6 +181,11 @@ int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
 {
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(n & 4095));
+    if (!strcmp(name, "VjoGameVocrCapture")) {
+        TEST_CHECK(!capture_block_live && n <= sizeof(capture_mem_block) && n < 64 * 1024 + 1);
+        capture_block_live = 1; capture_blocks++; live_bytes += n; if (live_bytes > peak_bytes) peak_bytes = live_bytes;
+        return 11;
+    }
     if (!strcmp(name, "VjoGameVocrWeights")) {
         TEST_CHECK(!weights_live && n <= sizeof(weights_memory));
         weights_live = 1; weights_allocated++; weights_block = n;
@@ -166,13 +196,19 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned n, void *opt)
     live_bytes += n; if (live_bytes > peak_bytes) peak_bytes = live_bytes;
     return weights_live && !strcmp(name, "VjoGameVocrWeights") ? 10 : 9;
 }
+static unsigned capture_held(void) { return PAGE_ROUND(vjo_vocr_capture_bytes(200, 60)); }
+/* Only the probe's user-mode read uses these (not run here). */
+int sceDisplayGetFrameBuf(SceDisplayFrameBuf *fb, int sync) { (void)fb; (void)sync; return -1; }
+int sceKernelGetMemBlockInfoByAddr(void *base, SceKernelMemBlockInfo *info) { (void)base; (void)info; return -1; }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
+    if (uid == 11) { TEST_CHECK(capture_block_live); *base = capture_mem_block; return 0; }
     if (uid == 10) { TEST_CHECK(weights_live); *base = weights_memory; return 0; }
     TEST_CHECK(uid == 9 && live); *base = arena; return 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
+    if (uid == 11) { TEST_CHECK(capture_block_live); capture_block_live = 0; live_bytes -= capture_held(); return 0; }
     if (uid == 10) { TEST_CHECK(weights_live); weights_live = 0; weights_released++; live_bytes -= weights_block; return 0; }
     TEST_CHECK(uid == 9 && live); live = 0; released++; live_bytes -= job_block; return 0;
 }
@@ -205,19 +241,21 @@ static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     locks = syscall_depth = user_opens = kernel_opens = kernel_reads = kernel_closes = 0;
     allocated = released = received = 0;
-    boundary_busy = capture_allocations = capture_releases = 0; capture_live = 1;
+    boundary_busy = capture_allocations = capture_releases = 0; capture_live = 0;
+    hook_frames = capture_blocks = 0; capture_block_live = 0; capture_uid = line_uid = -1;
     open_error = read_error = close_error = bad_length = early_eof = corrupt = short_read = cancel_after = 0;
     schedule_kernel = 1; substitute_legacy = 0; clock_us = 1000000;
-    g.lock = g.ievf = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
-    g.capture_state = CAPTURE_IDLE; g.capture_once = g.raw_valid = 1;
-    g.raw = pixels; g.raw_capacity = sizeof(pixels); g.raw_stride = 800;
-    g.mem_uid = 27; g.fb_w = 200; g.fb_h = 60;
-    g.crop_w = 200; g.crop_h = 60; g.done_seq = g.capture_seq = 11;
-    g.capture_game_pid = 7; g.capture_epoch = 1;
-    memset(pixels, 0, sizeof(pixels));
-    for (unsigned y=15; y<39; y++) for (unsigned x=10; x<190; x+=6) memset(pixels+(y*200+x)*4, 235, 6);
+    g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
+    g.capture_state = CAPTURE_IDLE; g.fb_w = 200; g.fb_h = 60; g.done_seq = g.capture_seq = 11;
+    /* the game's frame: black, one line of strokes at rows 15-38, the same grey
+     * as the API 18 test's raw region (memset(.., 235, 6): one white pixel and
+     * one with red and green only, every 6 px) */
+    for (unsigned i = 0; i < 200 * 60; i++) pixels[i] = 0xFF000000u;
+    for (unsigned y=15; y<39; y++) for (unsigned x=10; x<190; x+=6) {
+        pixels[y*200+x] = 0xFFEBEBEBu; pixels[y*200+x+1] = 0xFF00EBEBu;
+    }
     caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
-    VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=11};
+    VjoGameOcrRequest request = {.size=sizeof(request)};
     strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT); strcpy(request.model, name);
     strcpy(request.fallback, submit_fallback);
     int seq = vjoOcrSubmit(&request); TEST_ASSERT(seq > 0);
@@ -233,14 +271,15 @@ static void finish(const VjoGameOcrResult *out)
     int rc = vjoOcrRead(out->seq, &received_result);
     if (out->rc == VJO_E_CANCELLED) TEST_CHECK(rc == VJO_ERR_CANCELLED);
     else TEST_CHECK(!rc && !memcmp(out, &received_result, sizeof(*out)));
-    TEST_CHECK(!capture_live && !game_ocr_capture_busy_locked());
+    /* No kernel block was taken for OCR, and the worker's capture block is gone. */
+    TEST_CHECK(!capture_live && !capture_allocations && !capture_block_live && !game_ocr_capture_busy_locked());
     if (g.game_active) {
         /* The first hardware failure pinned ownership and blocked this next
          * real capture request even though all previous pixel copies worked. */
         TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
         TEST_CHECK(capture_live && g.capture_state == CAPTURE_PENDING);
         g.capture_state = CAPTURE_IDLE; buffers_free();
-        TEST_CHECK(!capture_live && capture_allocations == 1 && capture_releases == 2);
+        TEST_CHECK(!capture_live && capture_allocations == 1 && capture_releases == 1);
     }
 }
 static void real_models_cross_namespace(void)
@@ -266,6 +305,16 @@ static void real_models_cross_namespace(void)
         TEST_CHECK(out.recognized == 1 && out.frames == out.line[0].frames && out.frames > 0);
         TEST_CHECK(out.line[0].width > 0 && out.line[0].height > 0 && out.frames <= out.line[0].width);
         TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == 4u*1024u*1024u && out.need_weights);
+        /* The capture: the region in strips through the display hook, into a
+         * capture block under 64 KiB; the first pass published the capture. */
+        TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && out.capture_memory == VJO_GAME_OCR_MEM_USER);
+        TEST_CHECK(out.capture_bytes == capture_held() && out.capture_bytes < 64u * 1024u && capture_blocks == 1);
+        TEST_CHECK(out.width == 200 && out.height == 60 && out.fb_width == 200 && out.fb_format == 0 && !out.tears);
+        /* 60 rows fit one strip: read once for the finder, once more to check it. */
+        TEST_CHECK(out.captures == hook_frames && hook_frames == 2 && out.strip_rows == 60 && g.done_seq == request.capture_seq);
+        TEST_CHECK(out.n_steps > 4 && out.step[0].id == VJO_GSTEP_MEM);
+        printf("  %s capture: %u strips of %u rows, %u B block, %u steps\n", names[i], out.captures,
+               out.strip_rows, out.capture_bytes, out.n_steps);
         printf("  %s: line %ux%u, %u frames\n", names[i], out.line[0].width, out.line[0].height, out.frames);
         TEST_CHECK(kernel_opens == 1 && kernel_closes == 1 && kernel_reads > 1);
         TEST_CHECK(boundary_busy > 2); /* Open, Read and Close traverse real-return wrappers. */

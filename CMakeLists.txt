@@ -201,7 +201,7 @@ if(VJO_WITH_VOCR)
   # This verifies dispatch and capture ownership without weights or inference.
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
-  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines=vjo_test_find_lines)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows)
   target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
   target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
   add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)
@@ -264,12 +264,13 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-resident-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines=test_vocr_find_lines vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
-    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/ledger.c core/ledger.c)
+    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/capture.c
+    kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests/vita_stubs)
   target_compile_options(vjo-game-model-broker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

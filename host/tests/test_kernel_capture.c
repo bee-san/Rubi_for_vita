@@ -95,7 +95,7 @@ static void capture_multi_pass(void)
     setup(); g.fb_w = g.fb_h = 32;
     for (unsigned i = 0; i < 32 * 32; i++) frame_pixels[i] = 0xFF000000u | i;
     TEST_ASSERT(capture_request(0) == 1 && !g.capture_once);
-    TEST_ASSERT(capture_copy((uintptr_t)frame_pixels, 32, FMT_A8B8G8R8, 32, 32) == 0);
+    TEST_ASSERT(capture_copy((uintptr_t)frame_pixels, 32, VJO_FB_A8B8G8R8, 32, 32) == 0);
     g.capture_state = CAPTURE_IDLE; g.raw_valid = 1;
     /* Local OCR finds lines by reading the entire image, then rereads each
      * detected line. The first final-row read must not invalidate that image. */
@@ -179,30 +179,30 @@ static void capture_geometry_bounds(void)
     uint32_t capacity = g.raw_capacity;
     uintptr_t base = (uintptr_t)frame_pixels;
     capture_copies = 0;
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 63, 64) == VJO_ERR_ARG);
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 64, 63) == VJO_ERR_ARG);
-    TEST_CHECK(capture_copy(base, 63, FMT_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 63, 64) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 63) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 63, VJO_FB_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
     g.raw_capacity = capacity - 1;
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
     g.raw_capacity = capacity;
     g.capture_x = 64;
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
     g.capture_x = 16;
     g.capture_y = 64;
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 64) == VJO_ERR_ARG);
     g.capture_y = 32;
     TEST_CHECK(capture_copy(base, 64, 12345, 64, 64) == VJO_ERR_FORMAT);
     TEST_CHECK(!capture_copies);
     capture_guards();
     for (unsigned i = 0; i < 64 * 64; i++) frame_pixels[i] = 0xFF000000u | i;
     g.region = (VjoRect){0}; /* a later region change must not grow this request */
-    TEST_ASSERT(capture_copy(base, 64, FMT_A8B8G8R8, 64, 64) == 0);
+    TEST_ASSERT(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 64) == 0);
     TEST_CHECK(g.raw_stride == 128 && capture_copies == 32);
     for (unsigned row = 0; row < 32; row++)
         TEST_CHECK(!memcmp(g.raw + row * 128, frame_pixels + (row + 32) * 64 + 16, 128));
     capture_guards();
     capture_copy_failure = 1; capture_copies = 0;
-    TEST_CHECK(capture_copy(base, 64, FMT_A8B8G8R8, 64, 64) == VJO_ERR_COPY && capture_copies == 1);
+    TEST_CHECK(capture_copy(base, 64, VJO_FB_A8B8G8R8, 64, 64) == VJO_ERR_COPY && capture_copies == 1);
     capture_guards();
 }
 
@@ -220,14 +220,67 @@ static void capture_format_conversion(void)
                 memcpy((uint8_t *)frame_pixels + i * 2, &pixel, sizeof(pixel));
         }
         TEST_ASSERT(capture_copy((uintptr_t)frame_pixels, 32,
-            ten_bit ? FMT_A2B10G10R10 : FMT_BGRA5551, 32, 32) == 0);
+            ten_bit ? VJO_FB_A2B10G10R10 : VJO_FB_A1B5G5R5, 32, 32) == 0);
         for (unsigned i = 0; i < 32 * 32; i++)
             TEST_CHECK(((uint32_t *)g.raw)[i] == (ten_bit ? 0xFF3F1F11u : 0xFF0000F8u));
         capture_guards();
     }
 }
 
+/* The OCR worker's grey rows (API 19): each format expanded to 8 bits as the
+ * JPEG capture expands it, then (77 R + 150 G + 29 B) >> 8; a frame of another
+ * size or format is refused; a failed copy into the worker is reported. */
+static unsigned char grey_out[64 * 32];
+static int user_copy_failure;
+int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize n)
+{ if (user_copy_failure) return -1; memcpy(dst, src, n); return 0; }
+static void ocr_grey_rows_every_format(void)
+{
+    static uint16_t fb16[40 * 32];
+    static uint32_t fb32[40 * 32];
+    for (unsigned i = 0; i < 40 * 32; i++) {
+        fb16[i] = (uint16_t)(i * 2654435761u >> 16);
+        fb32[i] = i * 2654435761u;
+    }
+    for (int f = 0; f < 3; f++) {
+        uint32_t fmt = f == 0 ? VJO_FB_A8B8G8R8 : f == 1 ? VJO_FB_A2B10G10R10 : VJO_FB_A1B5G5R5;
+        uintptr_t base = f == 2 ? (uintptr_t)fb16 : (uintptr_t)fb32;
+        OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0};
+        memset(grey_out, 0xEE, sizeof(grey_out));
+        TEST_CHECK(capture_grey_rows(base, 40, fmt, 40, 32, &job) == 20);
+        for (unsigned r = 0; r < 20; r++)
+            for (unsigned x = 0; x < 32; x++) {
+                unsigned idx = (2 + 3 + r) * 40 + 4 + x;
+                uint32_t abgr;
+                vjo_fb_to_abgr(&abgr, f == 2 ? (const void *)&fb16[idx] : (const void *)&fb32[idx], 1, fmt);
+                TEST_CHECK(grey_out[r * 64 + x] == vjo_grey(abgr & 0xFF, (abgr >> 8) & 0xFF, (abgr >> 16) & 0xFF));
+            }
+        TEST_CHECK(grey_out[32] == 0xEE); /* width bytes only */
+        if (f == 2) { /* 5-bit channels expand by << 3, as the JPEG capture does */
+            uint32_t abgr; uint16_t white = 0x7FFF;
+            vjo_fb_to_abgr(&abgr, &white, 1, fmt);
+            TEST_CHECK((abgr & 0xFFFFFF) == 0xF8F8F8);
+        }
+    }
+    OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0};
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, 0x12345678u, 40, 32, &job) == VJO_ERR_FORMAT);
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 48, 32, &job) == VJO_ERR_FORMAT);
+    TEST_CHECK(capture_grey_rows(0, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_COPY);
+    job.n = 30; /* past the region */
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_FORMAT);
+    job.n = 20; user_copy_failure = 1;
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_COPY);
+    user_copy_failure = 0;
+    unsigned char kstrip[32 * 20];
+    OcrRowsJob kjob = {4, 2, 32, 28, 40, 32, 3, 20, 32, 0, kstrip, 0};
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &kjob) == 20);
+    memset(grey_out, 0, sizeof(grey_out));
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == 20);
+    for (unsigned r = 0; r < 20; r++) TEST_CHECK(!memcmp(kstrip + r * 32, grey_out + r * 64, 32));
+}
+
 TEST_LIST = {
+    {"OCR grey rows: every format, refusals, worker copy and kernel strip", ocr_grey_rows_every_format},
     {"lazy JPEG capture and final-row release", capture_lazy_single_pass},
     {"region capture allocation and resizing", capture_region_allocation},
     {"multi-pass local OCR capture lifetime", capture_multi_pass},

@@ -44,4 +44,7 @@ typedef unsigned int SceUInt;
 #define SCE_EVENT_WAITCLEAR_PAT 4
 #define SCE_KERNEL_ERROR_WAIT_TIMEOUT ((int)0x80028005u)
 int ksceKernelWaitEventFlag(SceUID, unsigned int, unsigned int, unsigned int *, SceUInt *);
+int ksceKernelClearEventFlag(SceUID, unsigned int);
+int ksceKernelDelayThread(SceUInt);
+SceUID ksceKernelFindMemBlockByAddr(const void *, SceSize);
 #endif
