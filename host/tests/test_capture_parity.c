@@ -178,8 +178,8 @@ static int compare(const ParityFrame *f, const char *model, const char *what, To
     parity_api19(f, model, &b);
     int same = a.rc == b.rc && a.crop_x == b.crop_x && a.crop_y == b.crop_y && a.crop_w == b.crop_w &&
                a.crop_h == b.crop_h && a.lines == b.lines && a.lines <= PARITY_MAX_LINES && a.used == b.used &&
-               !memcmp(a.bytes, b.bytes, a.used) && a.tensor_used == b.tensor_used &&
-               !memcmp(a.tensor, b.tensor, a.tensor_used);
+               (!a.used || !memcmp(a.bytes, b.bytes, a.used)) && a.tensor_used == b.tensor_used &&
+               (!a.tensor_used || !memcmp(a.tensor, b.tensor, a.tensor_used));
     for (unsigned i = 0; same && i < a.lines; i++)
         same = a.line[i].w == b.line[i].w && a.line[i].h == b.line[i].h && a.line[i].format == b.line[i].format;
     t->regions++;
