@@ -37,7 +37,7 @@ unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_r
    registers its worker under `*ALL` again).
 
 ## 3. Test in CLANNAD (PCSG00415, where FL10 OCR worked before)
-1. Start CLANNAD (it must be ON in JP Overlay Settings → Games). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
+1. Start CLANNAD (it must be ON in the Overlay app → Games; JP Overlay Settings in older builds). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
 2. Advance about 10 text pages, pausing ~3 s on each so automatic OCR runs. On 3 of them open the overlay (L+R) and photograph the
    screen with its recognized text (keep photos private: the game is copyrighted), then Circle. Note slowdown, stutter or crashes.
 3. Optional, 2 min: L+R, hold Square 1 s (full-screen region), Circle, read 2 pages (H15 should still fit), restore the tight region

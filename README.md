@@ -91,7 +91,7 @@ in the extracted folder.
 Repeat `--title` for more games. Games registered by an earlier install are
 kept, so later updates need no `--title`; with none given and none registered
 yet, as after an install that used `*ALL`, the installer changes nothing and
-says so. A game added later needs `--title` and a reboot. JP Overlay Settings
+says so. A game added later needs `--title` and a reboot. The Overlay app
 shows each game's title ID. For Adrenaline's PSP games add both
 `--title NPXS10028`, the PSP emulator's ID that the overlay uses for them, and
 `--title PSPEMUCFW`, the title ID of the process Adrenaline's own kernel module

@@ -278,7 +278,7 @@ for CFG in "${CFGS[@]}"; do
         echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
       fi
       echo "  $INSTALL_CMD --title PCSG00415 ${HOST%%:*}"
-      echo "JP Overlay Settings shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
+      echo "The Overlay app (JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
     fi
     exit "$patch_status"
   fi
