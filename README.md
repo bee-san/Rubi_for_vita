@@ -256,7 +256,7 @@ note type and field mapping when you send; the defaults fit the Lapis note
 type. An empty field key leaves that item out; `anki_audio_url` adds word
 audio from a Yomitan audio source. AnkiConnect is unauthenticated plain HTTP:
 use it only on a trusted network. These settings are edited in `config.ini`,
-not in the Settings app. See [docs/anki.md](docs/anki.md) for the queue,
+not in the Overlay app. See [docs/anki.md](docs/anki.md) for the queue,
 fields, messages and memory bounds.
 
 ## Memory and troubleshooting
