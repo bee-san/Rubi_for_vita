@@ -8,6 +8,11 @@
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
 #define WORKER_STACK_BYTES VJO_STACK_GAME
+/* The lowest user priority (SDK: default 0x10000100 + 31) on every game core
+ * (SCE_KERNEL_CPU_MASK_USER_ALL, which the SDK says the default mask equals;
+ * named here so the intent is explicit). */
+#define WORKER_PRIORITY (0x10000100 + 31)
+#define WORKER_AFFINITY (0x00010000 | 0x00020000 | 0x00040000) /* SCE_KERNEL_CPU_MASK_USER_ALL (psp2/kernel/cpu.h) */
 #include "../core/boot_guard.h"
 #include "../core/games.h"
 #include "../include/vjo_api.h"
@@ -394,7 +399,13 @@ int vjo_game_ocr_worker_start(void)
         !IMPORT_READY(sceKernelFreeMemBlock) || vjoGetVersion() != VJO_API_VERSION) return VJO_E_OCR_UNAVAILABLE;
     __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
     if (!g_game_ledger.defs) ledger_init();
-    worker = sceKernelCreateThread("VjoGameVocr", worker_main, 0x10000100, WORKER_STACK_BYTES, 0, 0, NULL);
+    /* The scheduler is fixed-priority, not time-sharing: a recognition
+     * (hundreds of ms per line) at the default priority would make a game
+     * thread of the same priority wait for a core. At the lowest user
+     * priority every game thread preempts this one [SDK: Kernel-Overview,
+     * 'Notes on Priority and CPU Affinity Mask Combinations']. */
+    worker = sceKernelCreateThread("VjoGameVocr", worker_main, WORKER_PRIORITY, WORKER_STACK_BYTES, 0,
+                                   WORKER_AFFINITY, NULL);
     if (worker < 0) return VJO_E_OCR_UNAVAILABLE;
     vjo_ledger_add(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);
     if (sceKernelStartThread(worker, 0, NULL) < 0) {
@@ -452,9 +463,14 @@ int module_start(SceSize args, void *argp)
     if ((rc < 0 || !title[0]) && IMPORT_READY(sceAppMgrAppParamGetString))
         rc = sceAppMgrAppParamGetString(pid, 12, title, sizeof(title));
     title[sizeof(title)-1] = 0;
-    /* *ALL also reaches system apps. They keep no thread, weights or workspace.
-     * Candidate games remain idle until the Shell confirms their games.ini policy. */
-    if (rc >= 0 && vjo_game_is_candidate(title)) vjo_game_ocr_worker_start();
+    /* *ALL also reaches SceShell and the system apps: there the module gives
+     * its pages back at once (NO_RESIDENT unloads it without module_stop
+     * [SDK: Kernel-Overview]), instead of holding 45,056 B of SceShell's
+     * partition for code that never runs (#59). An unreadable title is
+     * treated the same way: nothing is started, nothing stays. Candidate
+     * games keep an idle worker until the Shell confirms their games.ini policy. */
+    if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
+    vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */
     return SCE_KERNEL_START_SUCCESS;

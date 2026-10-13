@@ -21,16 +21,22 @@ Printed by `tools/check_memory_ledger.py` (CI runs it in the host job against th
 the Vita job against the packaged modules; `ctest -R memory_ledger` runs it locally):
 
 ```
-  pool            permanent   worst case        limit     headroom
-  shell pages       532,480      602,112    1,048,576      446,464
-  shell paf           8,192      973,296      985,088       11,792
-  kernel            131,072    2,220,032    2,220,032            0
-  game               81,920    2,330,624    2,392,064       61,440
+  pool                              permanent   worst case        limit     headroom
+  shell pages                         389,120      458,752    1,048,576      589,824
+  shell paf                             8,192      487,424      985,088      497,664
+  kernel                              131,072    2,220,032    2,220,032            0
+  game                                 81,920    2,330,624    2,392,064       61,440
+  shell paf (network dictionary)     (opt-in)      993,776      985,088       -8,688
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
-      VitaJPOverlay_Shell       397,312 B of    397,312 B declared
+      VitaJPOverlay_Shell       299,008 B of    299,008 B declared
       VitaJPOverlay_OCR          45,056 B of     45,056 B declared
 ```
+
+The last row is the opt-in network dictionary with an Anki picture card and the overlay all at
+their peaks: 8,688 B over the best-case limit. The checker reports it as a **warning** with the
+bytes, not a failure, because the runtime reserve guard refuses the last of the three (the code
+survives a refusal, host tests); the shipped default (local JMdict) has 497,664 B of headroom.
 
 *Permanent* is held from boot (or from the game's start) until exit; *worst case* adds the largest
 transient set that can be live at once.
@@ -39,8 +45,8 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 397,312 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 180,224 data/bss, permanent (405,504 B before the cold files were built with `-Os`) | packaged SELF segments [measured] |
-| OCR worker pages in SceShell | 45,056 | `VitaJPOverlay_OCR.suprx`, which `*ALL` also loads into SceShell, permanent | packaged SELF segments [measured] |
+| Shell module pages | 299,008 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 81,920 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap) | packaged SELF segments [measured] |
+| OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is loaded into SceShell by `*ALL`, but its `module_start` returns `NO_RESIDENT` there, which unloads it at once (45,056 B before) | `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
 | VjoAnki stack+TLS | 69,632 | only while a card is saved or sent | `shell/anki.c` |
@@ -54,13 +60,15 @@ transient set that can be live at once.
 | Paf plugin+RCO | 8,192 | the RCO (5,632 B file) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (local dictionary) or 571,888 (network: 2 × 262,144 + 47,600 connection pool) | held while a game runs | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`, `MEM_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 393,216 (with a picture field; 131,072 without) | per job | `shell/anki.c` `ANKI_PICTURE_MEM`; asserted equal in `test_shell_anki.c` |
+| overlay text arena | 20,480 | the header and body texts and their spans (17,952 B needed, `test_ledger.c`), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
 
 Allocations here take no new pages from the partition; a failure is a `NULL`, never `0x80024302`
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
 refuse everything above; the code survives a refusal (host tests), so this limit is the best
-measured case, not a guarantee. The worst case (a network dictionary plus an Anki card with a
-picture) is 11,792 B under it: the fix PR moves work out of this pool.
+measured case, not a guarantee. The worst case of the shipped default (one 64 KiB arena, the
+overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary's is 993,776 B,
+8,688 B over the limit, reported as a warning.
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
@@ -110,10 +118,9 @@ The Shell writes its ledger to `ux0:data/VitaJPOverlay/status.txt` at boot, at e
 at each game exit (`tools/install_ftp.sh --status VITA_IP` fetches it):
 
 ```
-ledger boot pages: current=532480 peak=532480 limit=1048576
+ledger boot pages: current=389120 peak=389120 limit=1048576
 ledger boot paf: current=8192 peak=8192 limit=985088 free=2557952
-ledger   Shell pages: current=397312 peak=397312
-ledger   OCR worker pages: current=45056 peak=45056
+ledger   Shell pages: current=299008 peak=299008
 ledger   VjoNet stack: current=69632 peak=69632
 ledger   VjoControl stack: current=20480 peak=20480
 ledger   Paf plugin (est.): current=8192 peak=8192

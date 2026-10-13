@@ -261,10 +261,12 @@ fields, messages and memory bounds.
 
 The `*ALL` plugin runs the selected local OCR engine in the enabled game's process, allocating its
 region-sized workspace from that game's `USER_RW`. It checks the title at
-startup and starts no worker thread in SceShell, VitaShell, the settings app or
-other system titles. Candidate games keep only an idle worker until the Shell
-confirms their per-game policy; disabled games load no weights and allocate no
-OCR workspace. Adrenaline's PSP titles share its Vita process.
+startup and unloads itself at once (`SCE_KERNEL_START_NO_RESIDENT`) in SceShell,
+VitaShell, the settings app and other system titles, so it holds no pages there.
+Candidate games keep only an idle worker, at the lowest user priority so every
+game thread preempts a recognition, until the Shell confirms their per-game
+policy; disabled games load no weights and allocate no OCR workspace.
+Adrenaline's PSP titles share its Vita process.
 
 The kernel transports bounded jobs, copied pixels and text. Game workers cannot
 submit jobs or control input. A job is tied to its game, capture sequence and
@@ -301,7 +303,11 @@ Native SDK file errors are unchanged. Install all three API 15 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Local OCR-only/subtitle
+64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B
+of SceShell's partition (down from 405,504 B in 0.7.12's successor builds): the
+overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
+returned when it closes, never a static buffer; if it is refused, the overlay
+does not open that time and the game keeps its input. Local OCR-only/subtitle
 jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position and shows zero or one entry. With Dictionaries

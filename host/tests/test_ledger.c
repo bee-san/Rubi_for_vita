@@ -5,6 +5,7 @@
 #include "../../core/ledger.h"
 #include "../../include/vjo_ledger_budget.h"
 #include "../../include/vjo_vocr_sizes.h"
+#include "../../core/styled.h"
 #ifdef VJO_WITH_VOCR
 #include "../../core/vocr_ocr.h"
 #endif
@@ -72,6 +73,16 @@ static void test_budget_table_is_consistent(void)
                                                   VJO_BUDGET_SHELL_NET_STACK + VJO_BUDGET_SHELL_CTL_STACK);
     TEST_CHECK(VJO_WORST_SHELL_PAGES <= VJO_LIMIT_SHELL_PAGES);
     TEST_CHECK(VJO_WORST_SHELL_PAF <= VJO_LIMIT_SHELL_PAF);
+    /* the opt-in network configuration is allowed over the limit by the
+     * reserve guard's refusal, but never by more than one of its items */
+    TEST_CHECK(VJO_WORST_SHELL_PAF_NET - VJO_LIMIT_SHELL_PAF < VJO_BUDGET_PAF_UI);
+    /* the overlay's text arena holds what overlay.cpp allocates from it:
+     * header 4096 units + 1 span, body 4096 units + 96 spans, 8-byte aligned */
+    {
+        uint32_t text = (2u * (4096u + 1u) + 7u) & ~7u, span = (uint32_t)sizeof(VjoSpan);
+        uint32_t need = text + ((span * 1u + 7u) & ~7u) + text + ((span * 96u + 7u) & ~7u);
+        TEST_CHECK_(need == 17952u && need <= VJO_BUDGET_PAF_UI, "%u", need);
+    }
     TEST_CHECK(VJO_WORST_KERNEL <= VJO_LIMIT_KERNEL);
     TEST_CHECK(VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB);
     TEST_CHECK(VJO_BUDGET_GAME_WEIGHTS <= VJO_LIMIT_GAME_WEIGHTS && VJO_BUDGET_GAME_WORKSPACE <= VJO_LIMIT_GAME_WORKSPACE);

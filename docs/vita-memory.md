@@ -164,7 +164,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | `VjoNet` stack 65,536 B + 4,096 B TLS; `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 90,112 B permanent [measured] | same |
 | | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki job 128 or 384 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
 | | | Anki thread stack 64 KiB + TLS, only while a card is saved or sent | Shell partition | transient | [`shell/anki.c`] |
-| `VitaJPOverlay_OCR.suprx` | `*ALL` | module pages in **every** process, SceShell included: 45,056 B each | the host's budget | permanent per process [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
+| `VitaJPOverlay_OCR.suprx` | `*ALL` | module pages in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
 | | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10) or 1,159,168 B (H15); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); 4 MiB reserve kept free before either block | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
@@ -173,12 +173,43 @@ the 36,864 B growth coincides with the build that stopped booting (#59) [measure
 
 ### 4.3 What this means for `*ALL`
 
-`*ALL` was chosen so one registration covers every game. Its price: the worker's 45,056 B of pages
-sit in SceShell and in every system app, and the title check in `module_start` cannot give them
-back because it returns `SCE_KERNEL_START_SUCCESS` [`game_ocr/main.c`]. The expert's rule is a
-`*TITLEID` section per enabled game and never `*ALL` [expert]. Until the installer writes those
-sections, `module_start` must at least return `SCE_KERNEL_START_NO_RESIDENT` outside a candidate
-game [SDK: Kernel-Overview, 'module_start Function'].
+`*ALL` was chosen so one registration covers every game. Its price was the worker's 45,056 B of
+pages sitting in SceShell and in every system app, because the title check in `module_start`
+returned `SCE_KERNEL_START_SUCCESS` and kept the module resident. Since the #59 fix (PR #68)
+`module_start` returns `SCE_KERNEL_START_NO_RESIDENT` outside a candidate game, which unloads the
+module at once without `module_stop` [SDK: Kernel-Overview, 'module_start Function'], so `*ALL`
+costs SceShell and the system apps no pages. The expert's rule is still a `*TITLEID` section per
+enabled game and never `*ALL` [expert]: that removes the load itself (and the moment of it), and
+is the follow-up once the installer writes those sections.
+
+Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 299,008 B, the two
+thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at
+v0.7.4, the last build that ran beside a game [measured: `docs/memory-ledger.md`]. The ledger
+([memory-ledger.md](memory-ledger.md)) fails CI if any of these grow.
+
+### 4.4 How other plugins stay inside the budgets
+
+The 19-project audit ([plugin-audit.md](plugin-audit.md), per-project notes in
+`docs/plugin-audit/notes/`) read each plugin's allocations. The patterns that have shipped for
+years, by context [source: the audit notes, with file:line]:
+
+| Plugin | Context | What it holds, where | Pattern |
+|---|---|---|---|
+| PSVshell | `*KERNEL`; draws into the game's framebuffer from its display hook | one 308×344×4 = 416 KiB `KERNEL_RW` block allocated once in `module_start`, a 12 KiB kernel thread; nothing in SceShell or the game, nothing after boot | one fixed kernel block at boot; the game's budget is untouched |
+| VitaGrafix | `*ALL`, patches the game; inert in VitaShell and unsupported titles | about 8 KiB of statics, no dynamic allocation, no thread; its OSD hook releases itself after five seconds | zero allocation; the plugin gets out of the way |
+| pngshot | `*main`, replaces SceShell's screenshot encoder | PAF heap (`sce_paf_private_malloc`) only while a screenshot is encoded, freed at once; nothing between screenshots | transient PAF use, zero resident |
+| VitaTweaks | `*main` | 56 B of statics, offset hooks and injects | zero resident |
+| vitacompanion | `*main`, no hooks | a 1 MiB `taipool` heap and a 64 KiB thread from `module_start` (about 1.1 MiB resident), up to 3.4 MiB at peak during `install` | the largest `*main` resident footprint in the set: consistent with the expert's "well under 2 MiB" ceiling, and with that ceiling being nearly used up by one such plugin |
+| ds4vita | `*KERNEL`, the same SceCtrl/SceTouch hooks the overlay uses | a 256 B kernel heap and a 4 KiB thread; patches the caller's buffers in place | nothing in SceShell or games |
+| gpues4 profiler | `*KERNEL` + client library in the app | allocates nothing; state in static `.bss`; the client's rings are the app's own arrays; counts drops instead of allocating | zero allocation, fail-safe on full |
+
+The common rule: in-game overlays either own one kernel block from boot (PSVshell) or allocate
+nothing (VitaGrafix); `*main` plugins either hold nothing permanent (pngshot, VitaTweaks) or one
+fixed pool from start (vitacompanion), and none of them allocates in SceShell while a game runs.
+The overlay is the only one in the set that combined a resident SceShell footprint, PAF
+allocations during a game, dynamic kernel blocks and in-game allocations; the ledger and the fix
+move it toward the common pattern (zero worker pages in SceShell, the UI arena transient), and
+the follow-up (dictionary and Anki into the game process, `*TITLEID`) completes it.
 
 ## 5. Safe budgets per context
 

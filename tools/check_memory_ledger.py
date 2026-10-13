@@ -59,10 +59,18 @@ POOLS = (
     ("game", "VJO_WORST_GAME_PERMANENT", "VJO_WORST_GAME_JOB", "VJO_LIMIT_GAME_JOB",
      (("VJO_BUDGET_GAME_WEIGHTS", "VJO_LIMIT_GAME_WEIGHTS"), ("VJO_BUDGET_GAME_WORKSPACE", "VJO_LIMIT_GAME_WORKSPACE"))),
 )
+# Opt-in configurations whose worst case is checked against the same limit but
+# whose overshoot the runtime reserve guard turns into a survivable refusal
+# (shell/memory.cpp; host tests): reported as a warning with the exact bytes,
+# never hidden, never a build failure.
+SOFT = (
+    ("shell paf (network dictionary)", "VJO_WORST_SHELL_PAF_NET", "VJO_LIMIT_SHELL_PAF"),
+)
 ITEMS = {
     "shell pages": ("VJO_BUDGET_SHELL_MODULE_PAGES", "VJO_BUDGET_WORKER_IN_SHELL_PAGES", "VJO_BUDGET_SHELL_NET_STACK",
                     "VJO_BUDGET_SHELL_CTL_STACK", "VJO_BUDGET_SHELL_ANKI_STACK", "VJO_BUDGET_SHELL_USERRW_RESULTS"),
-    "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_RESULTS_NET", "VJO_BUDGET_PAF_ANKI"),
+    "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_RESULTS_NET", "VJO_BUDGET_PAF_ANKI",
+                  "VJO_BUDGET_PAF_UI"),
     "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE"),
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE"),
 }
@@ -70,7 +78,7 @@ ITEMS = {
 MODULE_BUDGETS = {
     "kernel": ("VitaJPOverlay_Kernel", "VJO_BUDGET_KERNEL_MODULE_PAGES"),
     "shell": ("VitaJPOverlay_Shell", "VJO_BUDGET_SHELL_MODULE_PAGES"),
-    "worker": ("VitaJPOverlay_OCR", "VJO_BUDGET_WORKER_IN_SHELL_PAGES"),
+    "worker": ("VitaJPOverlay_OCR", "VJO_BUDGET_WORKER_MODULE_PAGES"),
 }
 PAGE = 4096
 
@@ -180,7 +188,7 @@ def self_pages(path):
 
 
 def check_budget(values):
-    rows, problems = [], []
+    rows, problems, warnings = [], [], []
     for name, perm, worst, limit, extra in POOLS:
         p, w, lim = values[perm], values[worst], values[limit]
         rows.append({"pool": name, "permanent": p, "worst": w, "limit": lim, "headroom": lim - w,
@@ -190,7 +198,13 @@ def check_budget(values):
         for item, item_limit in extra:
             if values[item] > values[item_limit]:
                 problems.append(f"pool {name}: {item} {values[item]:,} B exceeds {item_limit} {values[item_limit]:,} B")
-    return rows, problems
+    for name, worst, limit in SOFT:
+        w, lim = values[worst], values[limit]
+        rows.append({"pool": name, "permanent": None, "worst": w, "limit": lim, "headroom": lim - w, "items": {}, "soft": True})
+        if w > lim:
+            warnings.append(f"{name}: worst case {w:,} B exceeds the limit {lim:,} B by {w - lim:,} B; the runtime reserve "
+                            "guard refuses the last allocation (survived, not a crash)")
+    return rows, problems, warnings
 
 
 def check_modules(values, modules):
@@ -210,9 +224,10 @@ def check_modules(values, modules):
 
 def print_table(budget_rows, module_rows, sites):
     print("memory ledger (include/vjo_ledger_budget.h)")
-    print(f"  {'pool':12} {'permanent':>12} {'worst case':>12} {'limit':>12} {'headroom':>12}")
+    print(f"  {'pool':30} {'permanent':>12} {'worst case':>12} {'limit':>12} {'headroom':>12}")
     for r in budget_rows:
-        print(f"  {r['pool']:12} {r['permanent']:>12,} {r['worst']:>12,} {r['limit']:>12,} {r['headroom']:>12,}")
+        perm = f"{r['permanent']:,}" if r["permanent"] is not None else "(opt-in)"
+        print(f"  {r['pool']:30} {perm:>12} {r['worst']:>12,} {r['limit']:>12,} {r['headroom']:>12,}")
         for k, v in r["items"].items():
             print(f"      {k:36} {v:>12,}")
     if module_rows:
@@ -237,7 +252,7 @@ def main():
     try:
         values = parse_budget(args.root / "include/vjo_ledger_budget.h")
         sites, scan_problems = scan_sources(args.root)
-        budget_rows, budget_problems = check_budget(values)
+        budget_rows, budget_problems, warnings = check_budget(values)
         module_rows, module_problems = check_modules(values, {"kernel": args.kernel, "shell": args.shell, "worker": args.worker})
         problems = scan_problems + budget_problems + module_problems
     except (CheckError, KeyError, OSError) as e:
@@ -245,9 +260,12 @@ def main():
         return 2
     if args.json:
         print(json.dumps({"result": "fail" if problems else "pass", "pools": budget_rows, "modules": module_rows,
-                          "sites": [{"file": r, "line": l, "call": c} for r, l, c in sites], "problems": problems}, indent=2))
+                          "sites": [{"file": r, "line": l, "call": c} for r, l, c in sites], "problems": problems,
+                          "warnings": warnings}, indent=2))
     else:
         print_table(budget_rows, module_rows, sites)
+    for w in warnings:
+        print(f"memory ledger: WARNING: {w}", file=sys.stderr)
     for p in problems:
         print(f"memory ledger: FAIL: {p}", file=sys.stderr)
     if not problems and not args.json:
