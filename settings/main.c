@@ -71,7 +71,7 @@ static int icons_offset = -1, writable = 1;
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
-static int model_found[2];
+static int model_found[3];
 static char preference_status[160];
 static int status_error, preference_error;
 static const struct {
@@ -288,8 +288,10 @@ static void move(int delta)
 
 static void check_models(void)
 {
-    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME};
-    for (int i = 0; i < 2; i++) {
+    /* VOCR, VOCR2, and VOCR's fallback (used when the game has too little
+     * memory for vocr_model, or vocr_model is unusable). */
+    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME, preferences.vocr_fallback_model};
+    for (int i = 0; i < 3; i++) {
         char path[256];
         model_found[i] = 0;
         if (!names[i][0]) continue;
@@ -398,9 +400,14 @@ static void draw_preferences(void)
         snprintf(label, sizeof(label), "No model file needed. Uses your chosen dictionary.");
     } else {
         int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 1 : 0;
-        snprintf(label, sizeof(label), "%s model %s. Game OCR worker required.",
-                 ocr_choices[choice].name, model_found[model] ? "found" : "missing");
-        if (!model_found[model]) color = OFF;
+        if (!model && !model_found[0] && model_found[2])
+            snprintf(label, sizeof(label), "%s model missing; uses %s. Game OCR worker required.",
+                     ocr_choices[choice].name, preferences.vocr_fallback_model);
+        else {
+            snprintf(label, sizeof(label), "%s model %s. Game OCR worker required.",
+                     ocr_choices[choice].name, model_found[model] ? "found" : "missing");
+            if (!model_found[model]) color = OFF;
+        }
     }
     wrapped_text(42, OCR_Y + 137, 870, color, 24, 26, 1, label);
     vita2d_disable_clipping();

@@ -72,7 +72,7 @@ SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 { user_open_calls++; return (int)0x80010013u; /* Physical game's ux0 is unavailable. */ }
 static uint64_t model_mtime = 0x1234567;
 static int model_stat_error;
-int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
+int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     if (open_busy) return VJO_ERR_BUSY;
     if (open_failure) return -123;

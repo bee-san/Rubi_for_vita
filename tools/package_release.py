@@ -60,7 +60,8 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", so
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
     manifest = {"version": version, "files": {}, "dictionary": conversion,
-                "defaults": {"ocr_backend": "vocr", "vocr_model": "FL10_w8.vocr",
+                "defaults": {"ocr_backend": "vocr", "vocr_model": "H15_w8.vocr",
+                             "vocr_fallback_model": "FL10_w8.vocr",
                              "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
                              "japanese_only_selection": True,
                              "ocr_mode": "auto", "anki": False}}

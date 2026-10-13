@@ -268,7 +268,35 @@ static void test_release_files(void)
     TEST_MSG("no release file in %s", dir);
 }
 
+/* The device default is H15 (bee-san/vita-vn-ocr v0.2.0 H15_w8.vocr, its
+ * published sha256), FL10 its automatic fallback, and nothing pinned exceeds
+ * the console budget ceiling (docs/vita-memory-budget.md in vita-vn-ocr). */
+static void test_default_model_and_ceiling(void)
+{
+    static const unsigned char h15_v020[32] = {
+        0x31,0x6e,0xbc,0x37,0x7e,0xc3,0x45,0x20,0x44,0x09,0x91,0xc5,0x08,0x51,0x99,0xd8,
+        0xe7,0x40,0x31,0xf0,0x1a,0x86,0x79,0x38,0xbe,0x90,0xa6,0x0c,0x1e,0x3f,0x03,0xcd};
+    VjoConfig c;
+    unsigned n = 0;
+    const VjoVocrModel *all = vjo_vocr_models(&n), *h15, *fl10;
+    vjo_config_defaults(&c);
+    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr") && !strcmp(c.vocr_fallback_model, "FL10_w8.vocr"));
+    TEST_CHECK(!strcmp(VJO_VOCR_DEFAULT_MODEL, c.vocr_model));
+    h15 = vjo_vocr_model(c.vocr_model);
+    fl10 = vjo_vocr_model(c.vocr_fallback_model);
+    TEST_ASSERT(h15 && fl10);
+    TEST_CHECK(!memcmp(h15->sha256, h15_v020, 32) && h15->bytes == 1155968 && h15->arena_bytes == 182944);
+    /* The fallback needs less game memory than the default for every region. */
+    TEST_CHECK(vjo_vocr_workspace_bytes(fl10->name, 960, 544) < vjo_vocr_workspace_bytes(h15->name, 960, 544));
+    TEST_CHECK(vjo_vocr_workspace_bytes(fl10->name, 1, 1) < vjo_vocr_workspace_bytes(h15->name, 1, 1));
+    for (unsigned i = 0; i < n; i++) {
+        TEST_CHECK(all[i].bytes <= 1600000u && all[i].arena_bytes <= 262144u);
+        TEST_MSG("%s: %u B weights, %u B arena", all[i].name, all[i].bytes, all[i].arena_bytes);
+    }
+}
+
 TEST_LIST = {
+    {"default_is_h15_with_fl10_fallback_within_the_budget_ceiling", test_default_model_and_ceiling},
     {"models_and_workspace_sizes", test_models_and_sizes},
     {"empty_region_reads_rows_once_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},

@@ -20,6 +20,7 @@ enum { MODEL_IDLE, MODEL_QUEUED, MODEL_RUNNING, MODEL_DONE };
 enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE };
 static struct {
     uint32_t seq, offset, bytes, size;
+    uint32_t which;    /* VJO_GAME_OCR_OPEN_*: the request's model or its fallback */
     SceUID pid, fd;
     int phase, operation, rc, closing, orphan;
     int stat_rc;       /* Open: the modification-time query's native error, or 0 */
@@ -190,7 +191,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         rc = VJO_ERR_COPY; goto out;
     }
     if (next.size != sizeof(next) || !next.model[0] || next.model[sizeof(next.model)-1] != 0 ||
-        !next.model_dir[0] || next.model_dir[sizeof(next.model_dir)-1] != 0) {
+        !next.model_dir[0] || next.model_dir[sizeof(next.model_dir)-1] != 0 ||
+        next.fallback[sizeof(next.fallback)-1] != 0) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -405,13 +407,15 @@ static int model_info_out_locked(VjoGameOcrModelInfo *info)
     return ksceKernelMemcpyKernelToUser(info, &out, sizeof(out)) < 0 ? VJO_ERR_COPY : 0;
 }
 
-static int model_open_locked(SceUID pid, uint32_t seq, VjoGameOcrModelInfo *info)
+static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     int rc = model_caller_locked(pid, seq, 0);
+    const char *name;
     if (rc) return rc;
     if (model_io.seq) {
         if (model_io.seq != seq || model_io.pid != pid) return VJO_ERR_BUSY;
         if (model_io.closing) return VJO_ERR_CANCELLED;
+        if (model_io.which != which) return VJO_ERR_ARG; /* one file per open */
         if (model_io.phase == MODEL_DONE && model_io.operation == MODEL_OPEN) {
             rc = model_io.rc;
             model_io.phase = MODEL_IDLE;
@@ -421,21 +425,26 @@ static int model_open_locked(SceUID pid, uint32_t seq, VjoGameOcrModelInfo *info
         if (rc > 0 && model_info_out_locked(info)) rc = VJO_ERR_COPY;
         return rc;
     }
-    uint32_t size = model_size(request.model);
+    /* Only the two names the Shell submitted for this job, each a pinned model. */
+    if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
+    else if (which == VJO_GAME_OCR_OPEN_FALLBACK) name = request.fallback;
+    else return VJO_ERR_ARG;
+    uint32_t size = model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;
+    model_io.which = which;
     model_io.size = size;
     memcpy(model_io.path, VJO_VOCR_MODEL_ROOT "/", sizeof(VJO_VOCR_MODEL_ROOT));
     /* Both strings are bounded and already NUL-validated by Submit. */
-    memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), request.model, sizeof(request.model));
+    memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), name, VJO_GAME_OCR_MODEL_BYTES);
     model_io.operation = MODEL_OPEN;
     model_io.phase = MODEL_QUEUED;
     model_wake_locked();
     return VJO_ERR_BUSY;
 }
 
-int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
+int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     uint32_t state;
     SceUID pid = ksceKernelGetProcessId();
@@ -445,7 +454,7 @@ int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info)
     deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
     do {
         VJO_LOCK();
-        rc = model_open_locked(pid, seq, info);
+        rc = model_open_locked(pid, seq, which, info);
         VJO_UNLOCK();
     } while (rc == VJO_ERR_BUSY && model_wait(deadline));
     EXIT_SYSCALL(state);

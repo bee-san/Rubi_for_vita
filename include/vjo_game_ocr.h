@@ -19,7 +19,14 @@ typedef struct {
     uint32_t width, height, stride;
     char model[VJO_GAME_OCR_MODEL_BYTES];
     char model_dir[VJO_GAME_OCR_MODEL_DIR_BYTES];
+    /* A smaller pinned model the worker runs instead when the game's free
+     * memory has room for it but not for `model`; "" for none. */
+    char fallback[VJO_GAME_OCR_MODEL_BYTES];
 } VjoGameOcrRequest;
+
+/* vjoOcrModelOpen's `which`: the request's model or its fallback. */
+#define VJO_GAME_OCR_OPEN_MODEL 0u
+#define VJO_GAME_OCR_OPEN_FALLBACK 1u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -52,6 +59,13 @@ typedef struct {
      * job ended before the check. */
     int32_t free_user;
     uint32_t need_workspace, need_weights, reserve_bytes;
+    /* 1: the request's model did not fit the memory check, so the check (and
+     * the job, if it passed) used the fallback; need_* above are then the
+     * fallback's and these the model's. */
+    uint32_t fallback, model_need_workspace, model_need_weights, model_release_bytes;
+    /* The worker's own resident weights of another model, which the check
+     * counted as free because the job releases them first (else 0). */
+    uint32_t release_bytes;
     /* Recognition: CTC frames over all lines, and each recognized line. */
     uint32_t frames, recognized;
     VjoGameOcrLine line[VJO_GAME_OCR_LINES];
@@ -83,12 +97,13 @@ int vjoOcrCancel(uint32_t seq); /* Signals cancellation; worker must acknowledge
 /* Model-only broker. The kernel worker thread does the file I/O; each call
  * waits (bounded, without the kernel lock) for that thread to finish the
  * operation. VJO_ERR_BUSY means it is still queued/in flight: repeat the exact
- * operation after yielding. Open returns the verified file length and, when
- * info is non-NULL, copies a VjoGameOcrModelInfo there. Read returns copied
- * bytes (possibly short or EOF), at most VJO_GAME_OCR_MODEL_CHUNK. Close
- * drains even a cancelled job. The kernel never stores a user pointer,
- * accepts paths, or exports a file FD. */
-int vjoOcrModelOpen(uint32_t seq, VjoGameOcrModelInfo *info);
+ * operation after yielding. Open opens the claimed request's model or its
+ * fallback (which: VJO_GAME_OCR_OPEN_*; never a caller path), returns the
+ * verified file length and, when info is non-NULL, copies a
+ * VjoGameOcrModelInfo there. Read returns copied bytes (possibly short or
+ * EOF), at most VJO_GAME_OCR_MODEL_CHUNK. Close drains even a cancelled job.
+ * The kernel never stores a user pointer, accepts paths, or exports a file FD. */
+int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info);
 int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t bytes, void *dst);
 int vjoOcrModelClose(uint32_t seq);
 #ifdef __cplusplus

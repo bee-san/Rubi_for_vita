@@ -90,7 +90,9 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_backend = VJO_OCR_VOCR;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
-    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "FL10_w8.vocr");
+    /* H15 is the default where the game's memory allows; FL10 runs otherwise. */
+    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "H15_w8.vocr");
+    vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "FL10_w8.vocr");
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
     vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
     vjo_snprintf(c->anki_tags, sizeof(c->anki_tags), "vita-jp-overlay");
@@ -159,9 +161,12 @@ const char *vjo_config_default_text(void)
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
-           "; vocr weights in ocr_model_dir: FL10_w8.vocr (small default) | H15_w8.vocr (more accurate)\n"
-           "; | F20_w8.vocr (larger)\n"
-           "vocr_model = FL10_w8.vocr\n"
+           "; vocr weights in ocr_model_dir: H15_w8.vocr (default, more accurate) | FL10_w8.vocr\n"
+           "; (smallest) | F20_w8.vocr (larger)\n"
+           "vocr_model = H15_w8.vocr\n"
+           "; Smaller weights used automatically for a job when the game has too little free\n"
+           "; memory for vocr_model: FL10_w8.vocr | none\n"
+           "vocr_fallback_model = FL10_w8.vocr\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -547,6 +552,13 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             set_str(c, key, val, c->vocr_model, sizeof(c->vocr_model));
         else
             warn(c, "%s: invalid value '%s' (a .vocr file name in ocr_model_dir)", key, val);
+    } else if (vjo_ieq(key, "vocr_fallback_model")) {
+        if (!val[0] || vjo_ieq(val, "none"))
+            c->vocr_fallback_model[0] = '\0';
+        else if (valid_vocr_model(val))
+            set_str(c, key, val, c->vocr_fallback_model, sizeof(c->vocr_fallback_model));
+        else
+            warn(c, "%s: invalid value '%s' (a .vocr file name in ocr_model_dir, or none)", key, val);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

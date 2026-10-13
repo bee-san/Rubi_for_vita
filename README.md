@@ -183,13 +183,20 @@ local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-vocr_model = FL10_w8.vocr
+vocr_model = H15_w8.vocr
+vocr_fallback_model = FL10_w8.vocr
 ocr_mode = auto
 japanese_only_selection = on
 ```
 
-FL10 is the smaller default for lower game memory use. The included
-`H15_w8.vocr` trades a larger workspace for better host accuracy. A memory
+H15 is the default recognizer: on the shared host test screenshots it makes
+about a fifth fewer character errors than FL10 (6.78% against 8.66% CER over
+84 Vita dialogue regions), for 0.5 MB more game memory per job. When a game has too
+little free memory for H15, that job runs FL10 instead, automatically; if
+`H15_w8.vocr` is missing or corrupt, the game's jobs use FL10 as well. Set
+`vocr_model = FL10_w8.vocr` to always use FL10, or `vocr_fallback_model = none`
+to never fall back. Console speed and accuracy of H15 are not measured yet
+(see [the checklist](docs/vita-vn-ocr.md#on-console-checklist)). A memory
 error names where the memory ran out: the kernel's screen capture (a tighter
 region helps; the model does not matter), the game's memory for this region
 (a tighter region helps) or for the model's weights (FL10 is the smallest),
