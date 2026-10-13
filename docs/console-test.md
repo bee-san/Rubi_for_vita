@@ -1,7 +1,7 @@
 # Console test of a main build on a PS Vita PCH-1000, about 15 minutes
 
 Builds after v0.7.12 are not released, so they are tested from main: the plugins come from the build's `Release` CI run, the
-models and JMdict from v0.7.12. The READY comment on the console-test issue (#70) names the build (`REV`) and its run (`RUN`).
+models from v0.7.12 and the frozen dictionary from the build itself. The READY comment on the console-test issue (#70) names the build (`REV`) and its run (`RUN`).
 From that build on, the installer registers the OCR worker only for the games named with `--title` (here CLANNAD, `PCSG00415`),
 never under `*ALL`. This guide was first written for main `e759187` (PRs #54-#57: resident weights, memory-check logs, stage
 names in memory errors, H15 by default with an FL10 fallback). The READY build has not run on a console yet; "est." marks an estimate.
@@ -11,11 +11,11 @@ names in memory errors, H15 by default with an FL10 fallback). The READY build h
 REV=...; RUN=...   # the build hash and its Release run id, from the READY comment
 git clone https://github.com/bee-san/vita-jp-overlay && cd vita-jp-overlay && git checkout $REV
 gh run download $RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D build/ci                       # the build's plugins
-gh release download v0.7.12 -R bee-san/vita-jp-overlay -p VitaJPOverlay-0.7.12.zip -D build/rel   # models, JMdict
-R=build/rel/x; D=$R/ux0/data/VitaJPOverlay; unzip -qo build/rel/*.zip -d $R && cp $R/docs/jmdict-conversion.json $D/dictionaries/jmdict.json
-python3 tools/package_release.py build/ci/*.zip -o build/test.zip --models $D/ocr --dictionary $D/dictionaries/jmdict.vjdict \
-  --license-file $R/docs/JMdict-LICENSE.html --source-revision "$(git rev-parse HEAD)"
-unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_release.py --verify .   # Verified 53 package files
+gh release download v0.7.12 -R bee-san/vita-jp-overlay -p VitaJPOverlay-0.7.12.zip -D build/rel   # models
+R=build/rel/x; D=$R/ux0/data/VitaJPOverlay; unzip -qo build/rel/*.zip -d $R
+python3 tools/package_release.py build/ci/*.zip -o build/test.zip --models $D/ocr \
+  --source-revision "$(git rev-parse HEAD)"
+unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_release.py --verify .
 ```
 - If a command fails, fix what it names (often `gh auth login`) and rerun it; `checksum failed` means a bad download: delete, rerun.
 - The installer copies the weights (bee-san/vita-vn-ocr v0.2.0) to `ux0:data/VitaJPOverlay/ocr/`; the plugin refuses other bytes:
@@ -26,9 +26,9 @@ unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_r
 1. Close the game, open VitaShell and press Select (FTP), then in `build/pkg` run
    `bash install-vita.sh --title PCSG00415 VITA_IP:1337` (it registers the OCR worker for CLANNAD only, `*PCSG00415`, never
    `*ALL`; an existing `*ALL` worker line is commented out). Keep the
-   screen on (it uploads the 77 MB JMdict, reading every file back) until `Installed. Reboot the Vita.` `Cannot reach` = FTP off;
+   screen on (it uploads the 134 MiB combined dictionary, reading every file back) until `Installed. Reboot the Vita.` `Cannot reach` = FTP off;
    `Nothing was changed on the Vita` = `--title` is missing; else rerun.
-2. It sets H15 + FL10 fallback, `ocr_mode = auto`, `log_file = on`, `local_dictionaries = jmdict.vjdict` (drops Daijirin); old config in `backup:`.
+2. It sets H15 + FL10 fallback, `ocr_mode = auto`, `log_file = on`, `local_dictionaries = plaintext.vjdict` (Daijirin4 → Sankoku8 → JMdict); old config in `backup:`.
 3. Reboot normally, start FTP, run `bash tools/install_ftp.sh --status VITA_IP`: `status.txt` needs `shell API 18 entered` and
    `worker started`; if not (e.g. `kernel API version N, expected 18` or `kernel plugin not loaded`), install again and reboot.
 4. Boot hangs or crashes: hold L while powering on (skips plugins), start FTP, `bash tools/install_ftp.sh --uninstall VITA_IP`,

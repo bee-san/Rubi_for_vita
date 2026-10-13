@@ -312,7 +312,8 @@ def write_v2(db, data, final, count):
     return {"bytes": size, "unique_keys": unique, "hash_buckets": buckets, "index_pages": pages}
 
 
-def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=2):
+def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=2,
+            deduplicate=False):
     if format_version not in (1, 2):
         raise ValueError("format-version must be 1 or 2")
     output = Path(output)
@@ -326,6 +327,9 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
     stats = {"format_version": format_version, "entries": 0, "index_records": 0, "truncated_definitions": 0,
              "reading_only_entries": 0,
              "skipped_empty_headwords": 0, "skipped_long_headwords": 0, "dictionaries": []}
+    if deduplicate:
+        stats.update(deduplication="first dictionary per spelling and normalized reading",
+                     deduplicated_rows=0, source_entries=[])
     # The final temporary file is beside the destination, for atomic replacement.
     final_name = None
     try:
@@ -337,9 +341,12 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                     PRAGMA temp_store=FILE; PRAGMA cache_size=-4096;
                     CREATE TABLE lookups (key BLOB, priority INTEGER, score REAL,
                         seq INTEGER, key_off INTEGER, entry_off INTEGER, rules INTEGER, size INTEGER);
+                    CREATE TABLE selected_pairs (spelling TEXT, reading BLOB, priority INTEGER,
+                        PRIMARY KEY (spelling, reading));
                 """)
                 with (Path(tmp) / "payload.bin").open("w+b") as data:
                     for priority, source in enumerate(inputs):
+                        before = stats["entries"]
                         try:
                             with zipfile.ZipFile(source) as archive:
                                 names = archive.namelist()
@@ -381,6 +388,18 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                                 continue
                                             text = "\n".join(glossary_text(g).strip() for g in gloss)
                                             text = re.sub(r"\n[ \t]*\n+", "\n", clean(text)).strip()
+                                            if deduplicate:
+                                                # Preserve distinct spellings and all senses from the
+                                                # winning source. Empty kana readings match explicit ones.
+                                                pair = (spelling, normalize(reading or spelling))
+                                                db.execute("INSERT OR IGNORE INTO selected_pairs VALUES (?,?,?)",
+                                                           (*pair, priority))
+                                                winner = db.execute(
+                                                    "SELECT priority FROM selected_pairs WHERE spelling=? AND reading=?",
+                                                    pair).fetchone()[0]
+                                                if winner != priority:
+                                                    stats["deduplicated_rows"] += 1
+                                                    continue
                                             definition = f"[{title}]\n{text or '(No text definition)'}"
                                             if len(definition.encode()) > max_definition_bytes:
                                                 suffix = "\n[definition truncated]"
@@ -401,6 +420,8 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                                 stats["index_records"] += 1
                                             stats["entries"] += 1
                                     db.commit()
+                                if deduplicate:
+                                    stats["source_entries"].append(stats["entries"] - before)
                         except (ValueError, KeyError, UnicodeError, zipfile.BadZipFile, RecursionError, OverflowError) as exc:
                             raise ValueError(f"{source}: {exc}") from exc
                     count = stats["index_records"]
@@ -447,9 +468,12 @@ def main():
     parser.add_argument("--format-version", type=int, choices=(1, 2), default=2,
                         help="2: page hash index (default); 1: legacy binary-search format")
     parser.add_argument("--temp-dir", type=Path, help="scratch disk for sorting large dictionaries")
+    parser.add_argument("--deduplicate", action="store_true",
+                        help="keep each spelling/reading pair only from its first input dictionary; preserve its senses")
     args = parser.parse_args()
     try:
-        stats = convert(args.inputs, args.output, args.max_definition_bytes, args.temp_dir, args.format_version)
+        stats = convert(args.inputs, args.output, args.max_definition_bytes, args.temp_dir,
+                        args.format_version, args.deduplicate)
     except (ValueError, OSError, sqlite3.Error, RuntimeError) as exc:
         parser.exit(1, f"Conversion failed: {exc}\n")
     print(json.dumps(stats, ensure_ascii=False, indent=2))

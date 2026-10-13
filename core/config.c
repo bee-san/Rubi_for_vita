@@ -77,7 +77,7 @@ void vjo_config_defaults(VjoConfig *c)
     memset(c, 0, sizeof(*c));
     c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
-    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "jmdict.vjdict");
+    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict");
     c->local_dictionary_results = 1;
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 1;
@@ -115,7 +115,7 @@ const char *vjo_config_default_text(void)
            "; Local Yomitan dictionaries: convert on a computer, then copy .vjdict files here.\n"
            "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
-           "local_dictionaries = jmdict.vjdict\n"
+           "local_dictionaries = plaintext.vjdict\n"
            "; Dictionaries shown per selected word, 1-8: the best match first, then each\n"
            "; other dictionary's entry in the order above. Up/Down pages; one is in memory.\n"
            "local_dictionary_results = 1\n"

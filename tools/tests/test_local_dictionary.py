@@ -101,6 +101,31 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertNotIn("hidden()", output)
         self.assertIn("[Two]", output)
 
+    def test_deduplication_prefers_source_and_preserves_readings_senses_and_rules(self):
+        first = self.archive([term("食べる", "たべる", ["preferred verb"], "v1"),
+                              term("食べる", "たべる", ["another preferred sense"], "v1"),
+                              term("仮", "かり", ["first reading"]),
+                              term("かな", gloss=["preferred kana"])], "first.zip", "First")
+        second = self.archive([term("食べる", "タベル", ["discarded fallback"], "v1", 100),
+                               term("仮", "かり", ["discarded same reading"]),
+                               term("仮", "け", ["distinct reading"]),
+                               term("かな", "カナ", ["discarded explicit reading"]),
+                               term("猫", "ねこ", ["second source fallback"])], "second.zip", "Second")
+        third = self.archive([term("猫", "ねこ", ["discarded third source"]),
+                              term("犬", "いぬ", ["third source fallback"])], "third.zip", "Third")
+        for version in (1, 2):
+            stats = convert.convert([first, second, third], self.directory / "main.vjdict",
+                                    format_version=version, deduplicate=True)
+            self.assertEqual(stats["source_entries"], [4, 2, 1])
+            self.assertEqual(stats["deduplicated_rows"], 4)
+            payload = self.payload_region(self.directory / "main.vjdict")
+            self.assertNotIn(b"discarded", payload)
+            self.assertIn(b"another preferred sense", payload)
+            self.assertIn(b"distinct reading", payload)
+            self.assertIn("preferred verb", self.lookup("食べました").stdout)
+            self.assertIn("[Second]", self.lookup("猫").stdout)
+            self.assertIn("[Third]", self.lookup("犬").stdout)
+
     def test_bilingual_structured_content_and_empty_image_labels(self):
         self.build([term("猫", "ねこ", [{"type": "structured-content", "content": [
             {"tag": "div", "content": ["cat; a feline", {"tag": "br"}, "猫科の動物。"]},

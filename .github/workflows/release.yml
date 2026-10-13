@@ -70,6 +70,15 @@ jobs:
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
+      - name: Check out the frozen private dictionaries
+        uses: actions/checkout@v4
+        with:
+          repository: bee-san/plaintext-dicts
+          ref: 8d3d80ace15001500e88709c4981baf664732de4
+          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
+          persist-credentials: false
+          path: .refs/plaintext-dicts
+          sparse-checkout: processed
       - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
       - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
       - run: ctest --test-dir build/host --output-on-failure
@@ -108,6 +117,15 @@ jobs:
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
+      - name: Check out the frozen private dictionaries
+        uses: actions/checkout@v4
+        with:
+          repository: bee-san/plaintext-dicts
+          ref: 8d3d80ace15001500e88709c4981baf664732de4
+          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
+          persist-credentials: false
+          path: .refs/plaintext-dicts
+          sparse-checkout: processed
       - run: WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
       - run: |
           export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
@@ -118,5 +136,5 @@ jobs:
           path: build/vita/VitaJPOverlay-*.zip
 
 # A release is published explicitly after these gates. tools/package_release.py
-# combines the built binaries with checksum-pinned models and the JMdict snapshot.
+# combines the built binaries with checksum-pinned models and the frozen Daijirin4 -> Sankoku8 -> JMdict bundle.
 # CI never publishes an incomplete archive lacking local OCR/dictionary data.
