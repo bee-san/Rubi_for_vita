@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Host preflight for the next console run (#74): every check that can run off the console,
+# then GO or NO-GO, with the assumptions the console still has to confirm.
+#
+#   VJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr VJO_VOCR_MODEL_DIR=/path/to/models tools/preflight.sh
+#
+# Required: VJO_VOCR_SOURCE_DIR (the pinned runtime). Each optional input adds checks:
+#   VJO_VOCR_MODEL_DIR   the release weights: the simulator's and the parity test's real runs
+#   VJO_EVAL_MANIFESTS   vita-vn-ocr eval/linefind/manifests, with VJO_EVAL_SHOTS (dirs, colon-separated):
+#                        the capture parity test on the dev eval crops
+#   VITASDK              the Vita build: module pages, memory ledger, syscall ABI, kernel FPU check
+#   ARM_CC, QEMU         the ARMv7 lane under qemu-arm
+#   VITA3K               the Vita3K smoke (tools/vita3k_smoke.sh)
+#   BUILD                host build directory (default build/preflight)
+# A check whose input is missing prints SKIP; GO needs every check that ran to pass and the
+# required ones (host suites, #74 replay, simulator, parity, Vita build) to have run.
+set -uo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+BUILD=${BUILD:-build/preflight}
+PY=${PYTHON:-python3}
+log=$BUILD/preflight-logs
+mkdir -p "$log"
+fails=() ; skipped=() ; required_missing=()
+pass() { printf '  [PASS] %-28s %s\n' "$1" "$2"; }
+fail() { printf '  [FAIL] %-28s %s\n' "$1" "$2"; fails+=("$1"); }
+skip() { printf '  [SKIP] %-28s %s\n' "$1" "$2"; skipped+=("$1"); [ "${3:-}" = required ] && required_missing+=("$1"); }
+
+echo "preflight $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet 2>/dev/null || echo '+local changes') at $(date -u +%FT%TZ)"
+[ -f "${VJO_VOCR_SOURCE_DIR:-}/runtime/vocr_lines_rows.c" ] || {
+  echo "  VJO_VOCR_SOURCE_DIR must name the pinned vita-vn-ocr checkout (runtime/vocr_lines_rows.c)"; echo "PREFLIGHT: NO-GO"; exit 1; }
+
+# 1. host build and every host suite (the real kernel, Shell and game worker with SDK stubs)
+if cmake -S . -B "$BUILD" -G Ninja -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+     ${VJO_VOCR_MODEL_DIR:+-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR"} -DPython3_EXECUTABLE="$(command -v "$PY")" \
+     > "$log/configure.log" 2>&1 && cmake --build "$BUILD" -j"${JOBS:-8}" > "$log/build.log" 2>&1; then
+  if ctest --test-dir "$BUILD" -j"${JOBS:-8}" --output-on-failure > "$log/ctest.log" 2>&1; then
+    pass "host suites" "$(grep -o '[0-9]*% tests passed, [0-9]* tests failed out of [0-9]*' "$log/ctest.log" | tail -1) (kernel, Shell, worker, core, tools)"
+  else
+    fail "host suites" "$(grep -E 'tests passed|\*\*\*' "$log/ctest.log" | tr '\n' ' ' | cut -c1-160) ($log/ctest.log)"
+  fi
+else
+  fail "host build" "$log/build.log"
+fi
+
+# 2. #74 replayed: its report and logs through the analyser and the tests built on them
+r74=$("$PY" tools/analyse_selftest.py tools/tests/fixtures/selftest-74-report.txt 2>&1)
+if [ $? -eq 1 ] && grep -q "never reached: the capture failed 5 time(s)" <<<"$r74" && grep -q "2,088,960 B capture buffer" <<<"$r74"; then
+  pass "#74 replay (API 18)" "report: boot/ok/game PASS, ocr FAIL: 5 kernel capture refusals of 2,088,960 B; KD/SceShell queries 0x80020001"
+else
+  fail "#74 replay (API 18)" "the analyser no longer reproduces #74's failure"
+fi
+if "$PY" -m unittest tools.tests.test_analyse_selftest > "$log/analyser.log" 2>&1; then
+  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log"): v1 (#74 fixture) and v2 PASS/FAIL/INCOMPLETE tables"
+else
+  fail "self-test analyser" "$log/analyser.log"
+fi
+
+# 3. the allocation simulator: the real worker and kernel under #74's measured pools
+sim=$BUILD/vjo-alloc-sim-tests
+if [ -x "$sim" ]; then
+  "$sim" > "$log/alloc-sim.log" 2>&1; rc=$?
+  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
+    pass "allocation simulator" "API 18 full screen refused (0x80024302) as on the console; API 19 0 B of KD at every region and model, every ladder rung works"
+    grep -o "alloc-sim: .*" "$log/alloc-sim.log" | sed 's/^alloc-sim: /           /'
+  elif [ $rc -eq 0 ]; then
+    skip "allocation simulator" "release weights absent (VJO_VOCR_MODEL_DIR): only the API 18 refusal ran" required
+  else
+    fail "allocation simulator" "$log/alloc-sim.log"
+  fi
+else
+  fail "allocation simulator" "not built"
+fi
+
+# 4. capture parity: API 18's copy + grey plane against API 19's strips, byte for byte
+par=$BUILD/vjo-capture-parity-tests
+if [ -x "$par" ]; then
+  if "$par" procedural_frames_give_identical_recognizer_input > "$log/parity.log" 2>&1; then
+    pass "capture parity (procedural)" "$(grep -o 'parity procedural: .*' "$log/parity.log")"
+  else
+    fail "capture parity (procedural)" "$log/parity.log"
+  fi
+  if [ -n "${VJO_EVAL_MANIFESTS:-}" ] && [ -n "${VJO_EVAL_SHOTS:-}" ]; then
+    shots=(); IFS=: read -ra dirs <<<"$VJO_EVAL_SHOTS"; for d in "${dirs[@]}"; do shots+=(--shots "$d"); done
+    if "$PY" tools/capture_parity.py --binary "$par" --manifests "$VJO_EVAL_MANIFESTS" "${shots[@]}" > "$log/parity-eval.log" 2>&1; then
+      pass "capture parity (eval crops)" "$(head -1 "$log/parity-eval.log" | sed 's/^capture parity: //')"
+      grep -o 'parity eval .*' "$log/parity-eval.log" | sed 's/^/           /'
+    else
+      fail "capture parity (eval crops)" "$log/parity-eval.log"
+    fi
+  else
+    skip "capture parity (eval crops)" "VJO_EVAL_MANIFESTS/VJO_EVAL_SHOTS unset" required
+  fi
+else
+  fail "capture parity" "not built"
+fi
+
+# 5. the Vita build: module pages, the memory ledger, the syscall ABI, the kernel's FPU check
+if [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ]; then
+  vb=$BUILD-vita
+  if cmake -S vita -B "$vb" -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+       -DPython3_EXECUTABLE="$(command -v "$PY")" > "$log/vita-configure.log" 2>&1 \
+     && cmake --build "$vb" -j"${JOBS:-8}" > "$log/vita-build.log" 2>&1; then
+    pages=$(grep -E "VitaJPOverlay_(Kernel|Shell|OCR) +[0-9,]+ B of" "$log/vita-build.log" | sort -u | sed -E 's/ +/ /g; s/^ //' | tr '\n' ';')
+    if grep -q "memory ledger: pass" "$log/vita-build.log" && grep -q '"result": "pass"' "$log/vita-build.log" \
+       && grep -q "no FPU/NEON instructions" "$log/vita-build.log"; then
+      pass "Vita build" "ledger pass, syscall ABI pass, kernel without FPU/NEON"
+      echo "$pages" | tr ';' '\n' | sed '/^$/d; s/^/           /'
+    else
+      fail "Vita build" "ledger/ABI/FPU check did not pass ($log/vita-build.log)"
+    fi
+  else
+    fail "Vita build" "$log/vita-build.log"
+  fi
+else
+  skip "Vita build" "VITASDK unset" required
+fi
+
+# 6. the ARMv7 lane (32-bit, LDREX/STREX) and the Vita3K smoke
+if [ -n "${ARM_CC:-}" ] && [ -n "${QEMU:-}" ]; then
+  if ARM_CC=$ARM_CC QEMU=$QEMU VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR bash tools/arm_host_tests.sh "$BUILD-arm" > "$log/arm.log" 2>&1; then
+    pass "ARM lane (qemu-arm)" "$(grep '^arm ' "$log/arm.log" | sed 's/^arm //; s/ cases pass//' | tr '\n' ' ')"
+  else
+    fail "ARM lane (qemu-arm)" "$log/arm.log"
+  fi
+else
+  skip "ARM lane (qemu-arm)" "ARM_CC/QEMU unset"
+fi
+if [ -n "${VITA3K:-}" ]; then
+  v3=$(VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR bash tools/vita3k_smoke.sh "$BUILD-vita3k" 2>&1 | tail -1)
+  case $v3 in
+    *": PASS"*) pass "Vita3K smoke (not evidence)" "${v3#vita3k smoke: PASS }" ;;
+    *": SKIPPED"*) skip "Vita3K smoke (not evidence)" "${v3#vita3k smoke: SKIPPED }" ;;
+    *) fail "Vita3K smoke (not evidence)" "${v3#vita3k smoke: }" ;;
+  esac
+else
+  skip "Vita3K smoke (not evidence)" "VITA3K unset"
+fi
+
+cat <<'EOF'
+
+assumptions the console still has to confirm (none of these is measured yet):
+  - ScePhyMemPartKD's free size on 3.65 is unknown: both exact queries returned 0x80020001 in #74.
+    API 19's OCR asks it for 0 B; only the ladder's last rung (the hook cannot write the game's
+    memory) takes a kernel strip of at most 64 KiB, for one call.
+  - The display hook writes the region's grey rows into the game's own memory with
+    ksceKernelMemcpyKernelToUser in the game's thread (as PSVshell/reVita copy in this hook).
+    That this works for every game, and how long a strip takes there, is unmeasured: the
+    self-test's probe and capture_ms lines answer it.
+  - Pixel formats: A8B8G8R8 (0x0), A2B10G10R10 (0x60800000) and A1B5G5R5 (0x50000000) are read;
+    any other is refused (format error) and logged with its value. SceDisplay documents no
+    RGB565 value, so none is handled.
+  - The game's free USER memory: 91,226,112 B was measured in CLANNAD in an earlier session
+    (docs/vita-memory.md); a job is refused below its need plus the 4 MiB reserve, and the
+    memory ladder (USER -> CDRAM -> PHYCONT) logs each refusal.
+  - The three memory-query routes (block, PSVshell's address-space block, faps-coredump's
+    process route) are untested on 3.65; each reports its own result.
+  - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
+    and relocations only.
+  - CPU3 load and the hook's cost per frame: unmeasured (AGENTS.md rule 8).
+  - Vita3K is not evidence: it cannot load the kernel plugin and has no KD, SceShell or taiHEN.
+EOF
+echo
+if [ ${#fails[@]} -eq 0 ] && [ ${#required_missing[@]} -eq 0 ]; then
+  echo "PREFLIGHT: GO (${#skipped[@]} optional check(s) skipped${skipped:+: ${skipped[*]}})"
+  exit 0
+fi
+echo "PREFLIGHT: NO-GO (failed: ${fails[*]:-none}; required but not run: ${required_missing[*]:-none})"
+exit 1
