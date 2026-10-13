@@ -325,6 +325,11 @@ These are bounded allocations and host checks, not a measured physical Vita
 peak or a guarantee that every full-screen region fits in every game.
 [docs/vita-memory.md](docs/vita-memory.md) is the reference for the Vita's memory
 pools, which process each plugin runs in, and the budgets each context can use.
+[docs/memory-ledger.md](docs/memory-ledger.md) is the ledger of every byte the
+three plugins take from those pools: a budget table checked in CI (an allocation
+outside the wrappers, a worst case over a pool's limit, or a module that grew by a
+page fails the build), printed in the build log and, with current and peak per
+pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
 
 Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory

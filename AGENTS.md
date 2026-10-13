@@ -76,3 +76,8 @@ thread, static buffer or taiHEN registration.
    as unmeasured until PSVshell readings with matched clocks, plugin set and workload exist.
 9. **Cite or mark.** Every memory number in docs and PR bodies is either measured on the console
    (say where), cited to a source, or marked as an estimate.
+10. **Every allocation goes through the ledger.** New memory (a block, a thread, a PAF
+   allocation) is taken only through the wrappers in [docs/memory-ledger.md](docs/memory-ledger.md),
+   with its worst case added to `include/vjo_ledger_budget.h`; `tools/check_memory_ledger.py`
+   fails CI otherwise, and when a pool's worst case exceeds its limit or a packaged module has
+   more pages than declared. Raising a budget number is a deliberate act that the PR must justify.

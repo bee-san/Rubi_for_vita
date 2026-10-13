@@ -170,24 +170,27 @@ int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
 static uint8_t heap[512 * 1024] __attribute__((aligned(16)));
 static int heap_live, heap_attempts, heap_allocs, heap_frees, fail_heap;
 static size_t heap_last;
-void *vjo_shell_heap_alloc_for(const char *what, size_t bytes)
+void *vjo_shell_heap_alloc_for(int item, size_t bytes)
 {
-    TEST_CHECK(!strcmp(what, "Anki") && !heap_live);
+    TEST_CHECK(item == VJO_SL_PAF_ANKI && !heap_live);
     heap_attempts++;
     heap_last = bytes;
     if (fail_heap || bytes > sizeof(heap))
         return NULL;
     heap_allocs++;
     heap_live = 1;
+    vjo_ledger_add(&g_shell_ledger, item, (uint32_t)bytes);
     memset(heap, 0xA5, bytes); /* reused memory is never zeroed */
     return heap;
 }
-void vjo_shell_heap_free(void *p)
+void vjo_shell_heap_free(int item, void *p, size_t bytes)
 {
-    TEST_CHECK(p == heap && heap_live);
+    TEST_CHECK(p == heap && heap_live && item == VJO_SL_PAF_ANKI && bytes == heap_last);
     heap_live = 0;
     heap_frees++;
+    vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
+uint32_t vjo_shell_heap_free_size(void) { return 0; }
 
 /* ---------------- the memory card: real files ---------------- */
 
@@ -545,6 +548,7 @@ void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel)
 
 #include "../../shell/anki.c"
 #include "../../shell/anki_queue.c"
+#include "../../shell/ledger.c" /* the thread wrappers anki.c uses */
 
 /* What vjo_anki_stop does on another thread before it joins the job. */
 static void simulate_stop_begins(void)
@@ -700,6 +704,7 @@ static char *queue_file(const char *id, const char *ext, size_t *len)
 
 static void reset(void)
 {
+    vjo_ledger_shell_init();
     clear_files();
     memset(&g_view, 0, sizeof(g_view));
     memset(&cap_state, 0, sizeof(cap_state));
@@ -815,6 +820,14 @@ static void test_cross_saves_offline_without_host(void)
     TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 1 && files_ending(".tmp") == 0);
     TEST_CHECK(captures == 1 && capture_flags == (VJO_CAPTURE_FULL | VJO_CAPTURE_ONCE) && rows_read == FRAME_H);
     TEST_CHECK(heap_allocs == 1 && heap_frees == 1 && !heap_live && heap_last == ANKI_PICTURE_MEM);
+    /* the ledger: the budget's Anki figure is this code's, the arena and the
+     * thread's stack were counted in and are out again */
+    TEST_CHECK(ANKI_PICTURE_MEM == VJO_BUDGET_PAF_ANKI && ANKI_STACK == VJO_STACK_SHELL_ANKI);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == VJO_BUDGET_PAF_ANKI);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_ANKI_STACK) == VJO_BUDGET_SHELL_ANKI_STACK);
+    vjo_anki_reap();
+    TEST_CHECK_(vjo_ledger_current(&g_shell_ledger, VJO_SL_ANKI_STACK) == 0, "%u", vjo_ledger_current(&g_shell_ledger, VJO_SL_ANKI_STACK));
     printf("measure: offline save with screenshot: arena %u bytes, peak %u\n", (unsigned)heap_last,
            (unsigned)last_peak);
     TEST_CHECK(last_peak > 0 && last_peak <= ANKI_PICTURE_MEM);

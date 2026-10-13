@@ -11,6 +11,7 @@
 #include "vjo_kernel.h"
 #include "game_ocr.h"
 #include "../core/boot_guard.h"
+#include "../include/vjo_ledger_budget.h"
 
 VjoKernelState g;
 
@@ -512,6 +513,7 @@ int module_start(SceSize argc, const void *args)
     /* Before anything else exists: a crash later in this boot leaves the
      * record at "kernel", and the next boot runs in safe mode. */
     safe = boot_init(VJO_API_VERSION) == VJO_BOOT_SAFE;
+    kledger_init();
     game_ocr_init();
     g.trigger[TRIG_TOGGLE] = VJO_TRIGGER_L_R;
     g.trigger[TRIG_SUBTITLE] = VJO_TRIGGER_SELECT_R;
@@ -544,7 +546,9 @@ int module_start(SceSize argc, const void *args)
     }
 
     /* Without the worker nothing would ever be polled or finished. */
-    worker_uid = ksceKernelCreateThread("VjoWorker", worker, 0x3C, 0x4000, 0, 0x10000, NULL);
+    worker_uid = ksceKernelCreateThread("VjoWorker", worker, 0x3C, VJO_STACK_KERNEL, 0, 0x10000, NULL);
+    if (worker_uid >= 0)
+        vjo_ledger_add(&g_kernel_ledger, VJO_KL_STACK, VJO_BUDGET_KERNEL_STACK);
     if (worker_uid < 0 || ksceKernelStartThread(worker_uid, 0, NULL) < 0) {
         if (worker_uid >= 0)
             ksceKernelDeleteThread(worker_uid);
@@ -554,6 +558,7 @@ int module_start(SceSize argc, const void *args)
         return SCE_KERNEL_START_FAILED;
     }
     klog("Vita JP Overlay kernel %d started (%s mode)", VJO_API_VERSION, vjo_boot_mode_name(boot_mode()));
+    kledger_log("start");
     return SCE_KERNEL_START_SUCCESS;
 }
 

@@ -31,7 +31,9 @@ set(VJO_VERSION "0.7.12" CACHE STRING "Release archive version")
 add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/main.c
   ${ROOT}/kernel/boot.c
+  ${ROOT}/kernel/ledger.c
   ${ROOT}/core/boot_guard.c
+  ${ROOT}/core/ledger.c
   ${ROOT}/kernel/log.c
   ${ROOT}/kernel/buffers.c
   ${ROOT}/kernel/capture.c
@@ -86,7 +88,8 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
   ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
-  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+  ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
+  ${ROOT}/core/ledger.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -105,6 +108,7 @@ endif()
 add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/boot.c
   ${ROOT}/shell/guard.c
+  ${ROOT}/shell/ledger.c
   ${ROOT}/shell/main.cpp
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
@@ -127,7 +131,13 @@ target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # Startup runs before Paf is ready; it only needs integer operations. Avoid
 # compiler-generated VFP/NEON copies in the early bootstrap and status logger.
 set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/shell/log_vita.c
-  PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only")
+  PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only;-Os")
+# Cold paths (bootstrap, guard, ledger, logging, file access, queue files):
+# every page of this module is SceShell's, so they are built for size.
+set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/files.c ${ROOT}/shell/game.c
+  ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
+  ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
+  PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()
@@ -172,7 +182,7 @@ add_custom_target(vjo_syscall_abi ALL
 # ---------------- game-process vocr worker ----------------
 if(VJO_WITH_VOCR)
   add_executable(VitaJPOverlay_OCR
-    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/shell/libc_shim.c)
+    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
@@ -191,6 +201,17 @@ if(VJO_WITH_VOCR)
       --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
       --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
     DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self)
+  # The memory ledger (docs/memory-ledger.md): allocation sites, worst cases
+  # against the cited limits, and the packaged modules' pages against the
+  # declared budget. Its table is this build's record of what we hold.
+  add_custom_target(vjo_memory_ledger ALL
+    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_memory_ledger.py
+      --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
+      --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
+      --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
+    DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self
+    COMMENT "Checking the memory ledger against the packaged modules"
+    USES_TERMINAL)
 endif()
 
 # ---------------- RCO ----------------
