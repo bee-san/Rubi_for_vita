@@ -64,22 +64,21 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        397,312       163,840
-OCR worker loaded into SceShell (*ALL)   442,368       118,784
-VjoNet thread                            512,000        49,152  <-- within one change
-VjoControl thread (boot complete)        532,480        28,672  <-- within one change
-game start: result memory (local)        532,480        28,672
-Anki card saved: job thread              602,112       -40,960  <-- out of pages
+Shell module loaded into SceShell        299,008       262,144
+OCR worker loaded into SceShell (*ALL)   299,008       262,144   (NO_RESIDENT: 0 pages)
+VjoNet thread                            368,640       192,512
+VjoControl thread (boot complete)        389,120       172,032
+game start: result memory (local)        389,120       172,032
+Anki card saved: job thread              458,752       102,400
 ```
 
 What this says, and what it does not:
 
-- The current build is 69,632 B heavier in SceShell than the last build known to run beside a
-  game, and in that session's conditions it would have left 28,672 B at the end of boot: seven
-  pages, less than the 65,544 B change that broke the boot in #42. An Anki save would have
-  found no pages for its thread (the code survives that: `POST_FAILED`, no card). This is the
-  number the fix PR has to move: the worker's `NO_RESIDENT` (−45,056 B) and the UI arena out of
-  `.bss` (−98,304 B) take the boot footprint to 389,120 B, 73,728 B below v0.7.4's.
+- Before the fix (main at `ae94879`) the build held 532,480 B at the end of boot and would have
+  left 28,672 B in that session: seven pages, less than the 65,544 B change that broke the boot
+  in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
+  the overlay's text arena out of `.bss`) holds 389,120 B, 73,728 B below the v0.7.4 build that
+  ran beside a game, and leaves 172,032 B at the end of boot in the same session.
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily
@@ -91,8 +90,8 @@ What this says, and what it does not:
   them fitting after a reboot, which is what the console showed.
 
 `tools/tests/test_shell_budget_model.py` checks the arithmetic on a synthetic budget, that the
-real tree's boot completes in the v0.7.4 scenario (the regression this guards), and that the fix
-PR's planned footprint ranks better.
+real tree's boot completes in the v0.7.4 scenario (the regression this guards), and that the
+pre-fix footprint (`--shell-pages 397312 --worker-pages 45056`) ranks worse than the tree's.
 
 ## 5. Vita3K, precisely
 

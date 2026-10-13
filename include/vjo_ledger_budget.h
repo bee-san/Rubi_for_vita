@@ -21,8 +21,12 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 397312u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 180,224 data/bss */
-#define VJO_BUDGET_WORKER_IN_SHELL_PAGES 45056u    /* VitaJPOverlay_OCR.suprx, which *ALL also loads into SceShell */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 299008u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 45056u      /* VitaJPOverlay_OCR.suprx: 36,864 text + 8,192 data/bss [measured] */
+/* *ALL loads the worker into SceShell too, but its module_start returns
+ * SCE_KERNEL_START_NO_RESIDENT outside a candidate game, so the pages are
+ * given back at once [SDK: Kernel-Overview, module_start]. */
+#define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u
 #define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
 #define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, only while a card is saved or sent */
@@ -52,8 +56,17 @@
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
 #define VJO_BUDGET_PAF_RESULTS_NET 571888u         /* 2 x 262,144 arenas + 47,600 connection pool (worker.c MEM_SIZE) */
 #define VJO_BUDGET_PAF_ANKI 393216u                /* an Anki job with a picture field (anki.c ANKI_PICTURE_MEM) */
+#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
-#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_NET + VJO_BUDGET_PAF_ANKI)
+/* The shipped default (local JMdict): one 64 KiB arena, the overlay open, an
+ * Anki picture card being saved. */
+#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
+/* The opt-in network dictionary (two arenas and a connection pool) with the
+ * same overlay and Anki card: over the best-case limit by a few KiB. The
+ * runtime reserve guard then refuses the last of the three (the Anki card
+ * or the overlay's text), which the code survives (host tests); it is
+ * reported by the checker as a warning, not hidden. */
+#define VJO_WORST_SHELL_PAF_NET (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_NET + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code
@@ -74,7 +87,7 @@
 #define VJO_LIMIT_KERNEL VJO_WORST_KERNEL
 
 /* ---- the game's partition (ScePhyMemPartGame, 256 MiB minus the game's own use; pool "game") ---- */
-#define VJO_BUDGET_GAME_MODULE_PAGES VJO_BUDGET_WORKER_IN_SHELL_PAGES
+#define VJO_BUDGET_GAME_MODULE_PAGES VJO_BUDGET_WORKER_MODULE_PAGES
 #define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_WEIGHTS 1560576u           /* F20, the largest accepted model, page-rounded (core/vocr_ocr.c) */

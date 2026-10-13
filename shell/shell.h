@@ -212,6 +212,7 @@ enum VjoShellLedgerItem {
     VJO_SL_PAF_PLUGIN,      /* the RCO and the Paf plugin object (estimate) */
     VJO_SL_PAF_RESULTS,
     VJO_SL_PAF_ANKI,
+    VJO_SL_PAF_UI,          /* the overlay's text arena while its page is open */
     VJO_SL_COUNT
 };
 extern VjoLedger g_shell_ledger;

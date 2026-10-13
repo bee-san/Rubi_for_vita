@@ -53,9 +53,14 @@ class MemoryLedgerCheck(unittest.TestCase):
         self.assertIn("allocation sites: 7, all in ledger wrappers", result.stdout)
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")
-        self.assertEqual({p["pool"] for p in as_json["pools"]}, {"shell pages", "shell paf", "kernel", "game"})
+        self.assertEqual({p["pool"] for p in as_json["pools"]},
+                         {"shell pages", "shell paf", "shell paf (network dictionary)", "kernel", "game"})
         for pool in as_json["pools"]:
-            self.assertLessEqual(pool["worst"], pool["limit"])
+            if not pool.get("soft"):
+                self.assertLessEqual(pool["worst"], pool["limit"])
+        # the opt-in network configuration's overshoot is a warning with the bytes, never hidden
+        self.assertTrue(any("network dictionary" in w for w in as_json["warnings"]))
+        self.assertIn("WARNING: shell paf (network dictionary)", result.stderr)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()
@@ -96,11 +101,11 @@ class MemoryLedgerCheck(unittest.TestCase):
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"
         text = budget.read_text()
-        text = re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 524288u", text)
+        text = re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 1048576u", text)
         budget.write_text(text)
         result = run("--root", str(tmp))
         self.assertEqual(result.returncode, 1)
-        self.assertRegex(result.stderr, r"pool shell paf: worst case 1,104,368 B exceeds its limit 985,088 B by 119,280 B")
+        self.assertRegex(result.stderr, r"pool shell paf: worst case 1,142,784 B exceeds its limit 985,088 B by 157,696 B")
         # a per-item limit too
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"

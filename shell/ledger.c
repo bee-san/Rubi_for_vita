@@ -20,6 +20,7 @@ static const VjoLedgerItemDef defs[VJO_SL_COUNT] = {
     [VJO_SL_PAF_PLUGIN] = {"Paf plugin (est.)", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_RESULTS] = {"result arenas", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_ANKI] = {"Anki arena", VJO_LEDGER_POOL_SHELL_PAF},
+    [VJO_SL_PAF_UI] = {"overlay text arena", VJO_LEDGER_POOL_SHELL_PAF},
 };
 
 VjoLedger g_shell_ledger;
@@ -30,7 +31,7 @@ void vjo_ledger_shell_init(void)
     /* The permanent items, as declared in the budget (CI checks the packaged
      * modules against the declared pages). */
     vjo_ledger_add(&g_shell_ledger, VJO_SL_MODULE, VJO_BUDGET_SHELL_MODULE_PAGES);
-    vjo_ledger_add(&g_shell_ledger, VJO_SL_WORKER_MODULE, VJO_BUDGET_WORKER_IN_SHELL_PAGES);
+    vjo_ledger_add(&g_shell_ledger, VJO_SL_WORKER_MODULE, VJO_BUDGET_WORKER_IN_SHELL_PAGES); /* 0: NO_RESIDENT */
     vjo_ledger_add(&g_shell_ledger, VJO_SL_PAF_PLUGIN, VJO_BUDGET_PAF_PLUGIN);
 }
 

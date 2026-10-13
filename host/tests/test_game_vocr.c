@@ -53,7 +53,7 @@ int sceKernelFreeMemBlock(SceUID uid)
     memory_live = 0; frees++; live_bytes -= job_block; return 0;
 }
 SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
-{ TEST_CHECK(stack == 32*1024 && entry == worker_main); thread_creates++; return 20; }
+{ TEST_CHECK(stack == 32*1024 && entry == worker_main && p == 0x10000100 + 31 && cpu == 0x70000); thread_creates++; return 20; }
 int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return start_failure ? -1 : 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return join_failure ? -1 : 0; }
 int sceKernelDeleteThread(SceUID uid) { return delete_failure ? -1 : 0; }
@@ -237,9 +237,12 @@ static void model_callbacks_timeouts_errors_and_cleanup(void)
 static void system_app_gate_and_failed_joins(void)
 {
     setup();
+    /* SceShell ("main") and the system apps: the module unloads itself at
+     * once (NO_RESIDENT), so *ALL costs them no pages; so does an unreadable title. */
     const char *excluded[] = {"main", "NPXS10015", "VITASHELL", "VJOSET001", ""};
     for (unsigned i=0; i<sizeof(excluded)/sizeof(excluded[0]); i++) {
-        strcpy(own_title, excluded[i]); TEST_CHECK(!module_start(0, NULL) && !thread_creates && !allocations);
+        strcpy(own_title, excluded[i]);
+        TEST_CHECK_(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !thread_creates && !allocations, "%s", excluded[i]);
     }
     /* A safe boot (the previous one failed): the module unloads itself in
      * every process, a candidate game included, before reading any title. */

@@ -192,9 +192,12 @@ restoring a plugin set that differs by exactly those pages. It is not a proof.
   hold nothing in SceShell, so a bad build never needs recovery again.
 - The ledger (item 3): the Shell module's page count, its stacks and every allocation become
   a budget checked in CI, printed in the build log and in `status.txt`.
-- The fix (item 7): move memory out of SceShell. Immediately: `NO_RESIDENT` for the worker in
-  non-game processes (−45,056 B), `--gc-sections` for the Shell, the 96 KiB UI arena and the
-  strip buffers allocated from PAF only while their pages are open (−114,688 B of permanent
-  pages). Then, as the expert's rule requires, the dictionary lookup and the Anki queue leave
-  SceShell for the game process through the kernel broker, and the worker moves from `*ALL` to
-  `*TITLEID`; the Shell keeps only the PAF UI.
+- The fix (item 7, done): `NO_RESIDENT` for the worker outside a candidate game (−45,056 B in
+  SceShell and every system app), the overlay's 96 KiB text arena out of `.bss` into a 20 KiB
+  PAF allocation held only while the page is open (−98,304 B of pages), the cold files built
+  for size (−8,192 B). Permanent pages in SceShell's partition: 540,672 → 389,120 B, 73,728 B
+  below the v0.7.4 build that ran beside a game. `--gc-sections` was tried and grew the Shell's
+  text (section alignment under `-Wl,-q`); not applied. Still to come, as the expert's rule
+  requires: the dictionary lookup and the Anki queue leave SceShell for the game process through
+  the kernel broker, and the worker moves from `*ALL` to `*TITLEID`; the Shell keeps only the PAF
+  UI.

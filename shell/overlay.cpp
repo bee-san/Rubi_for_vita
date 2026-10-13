@@ -33,6 +33,7 @@
 extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
+#include "../include/vjo_ledger_budget.h"
 }
 
 using namespace paf;
@@ -126,7 +127,15 @@ static int s_x0, s_y0, s_x1, s_y1;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
 
-static uint8_t s_ui_mem[96 * 1024];
+/* The text-building arena, taken from the PAF heap while the overlay page is
+ * open and given back when it closes, so no page of SceShell's partition is
+ * held for a page that is closed almost all the time (#59; it was a 96 KiB
+ * static buffer). Its size is what render() allocates from it: two styled
+ * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 17,968 B,
+ * rounded up to 24 KiB (host test: test_overlay_ui_arena_fits). A refused
+ * allocation means the page does not open this time (fail closed). */
+#define UI_MEM_BYTES VJO_BUDGET_PAF_UI
+static uint8_t *s_ui_mem;
 static VjoArena s_ui;
 
 static void set_rich(ui::RichText *w, const char *s)
@@ -503,10 +512,21 @@ static void leave_region_mode(void)
 static void open_page(void)
 {
     Plugin::PageOpenParam param;
+    if (!s_ui_mem) {
+        s_ui_mem = (uint8_t *)vjo_shell_heap_alloc_for(VJO_SL_PAF_UI, UI_MEM_BYTES);
+        if (!s_ui_mem) {
+            vjo_log("overlay not opened: no Paf memory for its text (%u KiB)", UI_MEM_BYTES >> 10);
+            return;
+        }
+    }
+    vjo_arena_init(&s_ui, s_ui_mem, UI_MEM_BYTES);
     param.overwrite_draw_priority = 6; /* above the game, like PSVshellPlus' HUD */
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
         vjo_log("overlay page failed to open");
+        vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
+        s_ui_mem = NULL;
+        vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
     s_panel = s_page->FindChild("vjo_panel");
@@ -585,6 +605,9 @@ static void close_page(void)
     s_hint = s_region_hint = NULL;
     s_n_entries = 0;
     s_header_has_text = 0;
+    vjo_arena_init(&s_ui, NULL, 0);
+    vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
+    s_ui_mem = NULL;
 }
 
 /* ▲/▼: the word on the nearest line above/below that has one, closest in x
@@ -827,6 +850,13 @@ static void frame(void *arg)
 
     if (want_open && !s_page) {
         open_page();
+        if (!s_page) {
+            /* No memory for the page: tell the control thread the overlay is
+             * closed (it releases the game's input), instead of retrying
+             * every frame. The next L+R tries again. */
+            vjo_post_command(VJO_CMD_CLOSED, NULL);
+            return;
+        }
         s_seen_version = version - 1;
         s_seen_anki_version = anki_version;
     } else if (!want_open && s_page) {
@@ -890,6 +920,6 @@ static void frame_body(unsigned version, unsigned anki_version)
 extern "C" void vjo_overlay_init(void *plugin)
 {
     s_plugin = (Plugin *)plugin;
-    vjo_arena_init(&s_ui, s_ui_mem, sizeof(s_ui_mem));
+    vjo_arena_init(&s_ui, NULL, 0); /* allocated when the page opens */
     common::MainThreadCallList::Register(frame, NULL);
 }

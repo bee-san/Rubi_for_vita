@@ -90,12 +90,13 @@ class ShellBudgetModel(unittest.TestCase):
         boot = next(s for s in v074["steps"] if s["step"].startswith("VjoControl"))
         self.assertGreaterEqual(boot["headroom"], 0, "the boot would run out of SceShell pages in the v0.7.4 session")
         self.assertEqual(boot["held"], as_json["peak_pages"])
-        # the fix PR's planned footprint (worker NO_RESIDENT, UI arena out of .bss) is modelled with overrides
-        planned = subprocess.run([sys.executable, str(SCRIPT), "--json", "--worker-pages", "0", "--shell-pages",
-                                  str(397_312 - 98_304)], capture_output=True, text=True)
-        planned_json = json.loads(planned.stdout)
-        planned_v074 = next(s for s in planned_json["scenarios"] if s["id"] == "notes26-v074")
-        self.assertGreater(planned_v074["worst_headroom"], v074["worst_headroom"])
+        # the pre-fix footprint (the *ALL worker resident in SceShell, the overlay arena in .bss),
+        # modelled with overrides, ranks worse than the tree's
+        before = subprocess.run([sys.executable, str(SCRIPT), "--json", "--worker-pages", "45056", "--shell-pages", "397312"],
+                                capture_output=True, text=True)
+        before_v074 = next(s for s in json.loads(before.stdout)["scenarios"] if s["id"] == "notes26-v074")
+        self.assertLess(before_v074["worst_headroom"], v074["worst_headroom"])
+        self.assertGreaterEqual(v074["worst_headroom"], 65536, "the tree is within one #42-sized change of the v0.7.4 session")
 
     def test_bad_inputs(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
