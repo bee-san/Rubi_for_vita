@@ -6,7 +6,15 @@
 # set of settings. Local copies (backups, logs, dumps) go to build/device/.
 # Needs bash, curl and python3.
 #
-#   tools/install_ftp.sh 192.168.1.50[:1337]
+# The game OCR worker is registered per game, one *TITLEID section each, never
+# under *ALL (which would load it into SceShell and every app as well): name
+# each game with --title. Games registered by an earlier install are kept, and
+# an *ALL worker line is commented out. With no --title and no game registered
+# yet, nothing is changed.
+#
+#   tools/install_ftp.sh --title PCSG00415 192.168.1.50[:1337]
+#   tools/install_ftp.sh --title PCSG00415 --title NPXS10028 --title PSPEMUCFW 192.168.1.50
+#     (NPXS10028 and PSPEMUCFW: Adrenaline's PSP games, README 'Install')
 #   tools/install_ftp.sh --set dictionary=jiten --set jiten_api_key=KEY 192.168.1.50
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;
@@ -33,6 +41,7 @@ SELFTEST=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
+TITLES=()
 PACKAGE_DIR=
 while [ $# -gt 1 ]; do
   case $1 in
@@ -42,6 +51,7 @@ while [ $# -gt 1 ]; do
     --status) STATUS=1 ;;
     --self-test) SELFTEST=1 ;;
     --set) SETS+=("$2"); shift ;;
+    --title) TITLES+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
     --vocr-model) VOCR_MODELS+=("$2"); shift ;;
     --package-dir) PACKAGE_DIR=$(cd "$2" && pwd); shift ;;
@@ -49,8 +59,15 @@ while [ $# -gt 1 ]; do
   esac
   shift
 done
-HOST=${1:?usage: tools/install_ftp.sh [--set key=value]... [--uninstall|--status|--dumps|--self-test] VITA_IP[:PORT]}
+HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
+# How to install from here: the release package has install-vita.sh at its root.
+INSTALL_CMD="bash tools/install_ftp.sh"
+[ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
+if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST)) -gt 0 ]; then
+  echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
+  echo "this command does not change which games the OCR worker is registered for."
+fi
 FTP=ftp://$HOST
 B=build/vita
 RCO=$B/vitajpoverlay.rco
@@ -65,6 +82,7 @@ if [ -n "$PACKAGE_DIR" ]; then
   done
 fi
 PATCH_ARGS=()
+for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -239,11 +257,38 @@ for f in ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   PATCH_ARGS+=(--kernel-plugin "ur0:tai/$(basename "$f")")
 done
 
-# Patch each config (CRLF-safe): kernel line after *KERNEL, shell after *main.
+# Patch every config before anything is written to the Vita (CRLF-safe): the
+# kernel line after *KERNEL, the shell after *main, and the OCR worker under
+# *TITLEID for each --title and for each game already registered in either
+# config, so both list the same games. Never *ALL: an *ALL worker line is
+# commented out. With no game at all the patch is refused.
+KEEP=()
+for CFG in "${CFGS[@]}"; do KEEP+=(--keep-titles-from "$TMP/${CFG%%:*}.txt"); done
+SUMMARY=()
 for CFG in "${CFGS[@]}"; do
   n=${CFG%%:*}
-  python3 tools/patch_tai_config.py "$TMP/$n.txt" "$TMP/$n.new" ${PATCH_ARGS[@]+"${PATCH_ARGS[@]}"}
-  echo "--- $CFG changes:"; diff "$TMP/$n.txt" "$TMP/$n.new" || true
+  patch_status=0
+  summary=$(python3 tools/patch_tai_config.py "$TMP/$n.txt" "$TMP/$n.new" ${PATCH_ARGS[@]+"${PATCH_ARGS[@]}"} \
+    "${KEEP[@]}") || patch_status=$?
+  if [ "$patch_status" -ne 0 ]; then
+    if [ "$patch_status" -eq 3 ]; then
+      if [ -n "${TITLES[*]+x}" ]; then
+        echo "Nothing was changed on the Vita. Correct the --title value named above and run again, for example:"
+      else
+        echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
+      fi
+      echo "  $INSTALL_CMD --title PCSG00415 ${HOST%%:*}"
+      echo "The Overlay app (JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
+    fi
+    exit "$patch_status"
+  fi
+  SUMMARY+=("$summary")
+done
+i=0
+for CFG in "${CFGS[@]}"; do
+  n=${CFG%%:*}
+  echo "--- $CFG changes (${SUMMARY[$i]}):"; diff "$TMP/$n.txt" "$TMP/$n.new" || true
+  i=$((i + 1))
   put "$TMP/$n.txt" "${CFG}.vjo-bak"
 done
 

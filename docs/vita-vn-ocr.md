@@ -101,8 +101,9 @@ use the fallback (until the game restarts). The kernel opens only the two
 pinned names the Shell submitted; the log names the model that ran and, after
 a memory fallback, what H15 would have needed. Every pinned model is inside
 the console budget ceiling (weights ≤ 1,600,000 B, recognizer arena ≤
-262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). In v0.7.1 inference runs in
-`VitaJPOverlay_OCR.suprx`, registered under `*ALL`. The `*main` plugin handles
+262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). Since v0.7.1 inference runs in
+`VitaJPOverlay_OCR.suprx`, now registered per game in its own `*TITLEID` section
+(the installer's `--title`; releases up to v0.7.12 used `*ALL`). The `*main` plugin handles
 UI/dictionary results and has no vocr inference code. The game worker checks
 its process title and only accepts jobs for the foreground game after the
 Shell has confirmed its per-game policy.
@@ -341,8 +342,8 @@ copied, and the settings above. Close other apps first.
    A Shell UI memory error after successful recognition preserves text
    while dictionary results are unavailable; restart the Vita and retry. A
    smaller OCR region does not reclaim another Shell plugin's retained heap.
-   For an unavailable worker, check its `*ALL` registration and restart the
-   game. A model error with nonzero `io=` identifies game-process file access
+   For an unavailable worker, check that the game has its own `*TITLEID` section with
+   the worker (install with `--title TITLEID`) and reboot. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.
    Install all three API 15 plugins together and reboot before testing.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load`, the

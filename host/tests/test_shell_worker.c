@@ -1919,7 +1919,7 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     vjo_ledger_shell_init();
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAGES) ==
                VJO_BUDGET_SHELL_MODULE_PAGES + VJO_BUDGET_WORKER_IN_SHELL_PAGES);
-    TEST_CHECK(VJO_BUDGET_WORKER_IN_SHELL_PAGES == 0); /* the *ALL worker unloads itself in SceShell */
+    TEST_CHECK(VJO_BUDGET_WORKER_IN_SHELL_PAGES == 0); /* the worker is registered per game, not loaded in SceShell */
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
     mem_free();
     fail_alloc = 0;

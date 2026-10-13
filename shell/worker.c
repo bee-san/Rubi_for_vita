@@ -745,7 +745,7 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
             if (!out->failed_stage)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
-                out->err.detail = "The game OCR worker is unavailable. Enable VitaJPOverlay_OCR under *ALL and restart this game.";
+                out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
             /* The text filter's arena (network dictionaries): the text was too long. */
             if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail &&
                 out->ocr_text)

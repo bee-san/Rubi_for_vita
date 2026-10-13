@@ -11,7 +11,9 @@ fleet exactly which step failed and with how much free memory in which pool.
 2. Reboot. Wait for the LiveArea and leave the Vita alone for a minute (the boot guard's `ok`).
 3. Start the game to test. Reach a screen with dialogue text and wait about 30 seconds: the
    self-test recognizes the first settled screen at the **full-screen region** (the largest a job
-   can need) with the configured model, whatever `ocr_mode` and the saved region say.
+   can need) with the configured model, whatever `ocr_mode` and the saved region say. The game
+   needs the OCR worker registered for it (installed with `--title TITLEID`, README 'Install');
+   otherwise its `ocr` step reports `rc=-117` (`ocr unavailable`).
 4. Back in VitaShell: `bash tools/install_ftp.sh --status VITA_IP` fetches
    `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
 5. `python3 tools/analyse_selftest.py build/device/status/selftest-report.txt` prints the steps

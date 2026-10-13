@@ -71,18 +71,37 @@ engine, which have since been removed. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
 Close games, open VitaShell, press Select to start FTP, and run from the
-extracted folder:
+extracted folder, naming each game that should have OCR (here CLANNAD):
 
 ```sh
-bash install-vita.sh VITA_IP:1337
+bash install-vita.sh --title PCSG00415 VITA_IP:1337
 ```
 
 The installer checks the package manifest, backs up both taiHEN configurations
 and your existing overlay settings, uploads and checksum-reads back each file,
-and registers the three plugins without duplicating entries. It selects the new
-local defaults while preserving other settings and per-game choices. Older
-experimental Text registrations and duplicate worker entries are commented out. The backup is
-in `build/device/backup/` in the extracted folder.
+and registers the three plugins without duplicating entries: the kernel plugin
+under `*KERNEL`, the Shell plugin under `*main`, and the game OCR worker in one
+section per game (`*PCSG00415`), never under `*ALL`, which would load it into
+SceShell and every app as well ([why](docs/vita-memory.md#43-what-this-means-for-all)).
+It selects the new local defaults while preserving other settings and per-game
+choices. Older experimental Text registrations, duplicate worker entries and an
+`*ALL` worker line are commented out. The backup is in `build/device/backup/`
+in the extracted folder.
+
+Repeat `--title` for more games. Games registered by an earlier install are
+kept, so later updates need no `--title`; with none given and none registered
+yet, as after an install that used `*ALL`, the installer changes nothing and
+says so. A game added later needs `--title` and a reboot. The Overlay app
+shows each game's title ID. For Adrenaline's PSP games add both
+`--title NPXS10028`, the PSP emulator's ID that the overlay uses for them, and
+`--title PSPEMUCFW`, the title ID of the process Adrenaline's own kernel module
+patches; which one taiHEN matches is not checked on a console yet, and a section
+that matches no process loads nothing. A PSP game started from its own bubble
+(Adrenaline Bubble Manager) may run under that bubble's ID instead; with
+`log_file = on` (the installer's default), `log.txt` names each enabled game as
+it starts (`game … started`), and that ID is the one to add. The 0.7.12 archive's own `install-vita.sh` predates `--title`
+and registers the worker under `*ALL`; use the installer from `main` or a
+later release.
 
 In VitaShell, install `ux0:data/JPOverlaySettings.vpk`, then reboot the Vita.
 Open **Overlay** from LiveArea to enable or disable individual games. Older
@@ -92,11 +111,19 @@ The settings app itself is always excluded from the overlay.
 
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
 and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
-copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`
+copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
-`ur0:tai/VitaJPOverlay_OCR.suprx` under `*ALL` in the active taiHEN config.
-Disable old `VitaJPOverlay_Text.suprx` entries and duplicate worker registrations,
-then reboot. Keep unrelated plugins and configuration intact.
+`ur0:tai/VitaJPOverlay_OCR.suprx` under a section for each game, such as
+`*PCSG00415` (for Adrenaline `*NPXS10028` and `*PSPEMUCFW`), never under `*ALL`, in the active
+taiHEN config (`ux0:tai/config.txt` if it exists, else `ur0:tai/config.txt`).
+Disable old `VitaJPOverlay_Text.suprx` entries, an `*ALL` worker line and
+duplicate worker registrations, then reboot. Keep unrelated plugins and
+configuration intact. For CLANNAD the worker's part is:
+
+```ini
+*PCSG00415
+ur0:tai/VitaJPOverlay_OCR.suprx
+```
 
 ## Use in a game
 
@@ -171,7 +198,9 @@ look up the word starting there; Japanese-only selection also applies to taps.
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. An unreadable or
 corrupt policy fails closed and reports the problem rather than enabling every
-game. Adrenaline uses one shared policy for its PSP titles.
+game. Adrenaline uses one shared policy for its PSP titles. Local OCR also needs
+the game to be registered for the OCR worker at install time (`--title`, see
+[Install](#install)); the settings app does not change the taiHEN configuration.
 
 ## Settings and dictionaries
 
@@ -261,10 +290,12 @@ fields, messages and memory bounds.
 
 ## Memory and troubleshooting
 
-The `*ALL` plugin runs the selected local OCR engine in the enabled game's process, allocating its
-region-sized workspace from that game's `USER_RW`. It checks the title at
-startup and unloads itself at once (`SCE_KERNEL_START_NO_RESIDENT`) in SceShell,
-VitaShell, the settings app and other system titles, so it holds no pages there.
+The game OCR worker runs the selected local OCR engine in the enabled game's process, allocating its
+region-sized workspace from that game's `USER_RW`. taiHEN loads it only into the
+games it is registered for (one `*TITLEID` section each), never into SceShell or
+the system apps. It still checks the title at startup and unloads itself at once
+(`SCE_KERNEL_START_NO_RESIDENT`) in SceShell, VitaShell, the settings app and
+other system titles, should a hand-edited configuration load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace.

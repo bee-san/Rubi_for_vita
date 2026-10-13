@@ -1,18 +1,21 @@
-# Console test of main `e759187` (PRs #54-#57) on a PS Vita PCH-1000, about 15 minutes
+# Console test of a main build on a PS Vita PCH-1000, about 15 minutes
 
-PRs #54-#57 keep verified weights resident, log memory checks and CTC frames, name the stage in memory errors and make H15 the
-default with an FL10 fallback. **No release has them yet** (v0.7.12 is older), so test main `e759187`: its plugins come from CI
-run 38326458989, the models and JMdict from v0.7.12. Nothing here has run on a console yet; "est." marks an estimate.
+Builds after v0.7.12 are not released, so they are tested from main: the plugins come from the build's `Release` CI run, the
+models and JMdict from v0.7.12. The READY comment on the console-test issue (#70) names the build (`REV`) and its run (`RUN`).
+From that build on, the installer registers the OCR worker only for the games named with `--title` (here CLANNAD, `PCSG00415`),
+never under `*ALL`. This guide was first written for main `e759187` (PRs #54-#57: resident weights, memory-check logs, stage
+names in memory errors, H15 by default with an FL10 fallback). The READY build has not run on a console yet; "est." marks an estimate.
 
 ## 1. Build the package (a PC on the Vita's network with git, bash, Python 3.9+, curl, unzip and a logged-in `gh`)
 ```sh
-git clone https://github.com/bee-san/vita-jp-overlay && cd vita-jp-overlay && git checkout e759187
-gh run download 38326458989 -R bee-san/vita-jp-overlay -n VitaJPOverlay -D build/ci                 # e759187's plugins
+REV=...; RUN=...   # the build hash and its Release run id, from the READY comment
+git clone https://github.com/bee-san/vita-jp-overlay && cd vita-jp-overlay && git checkout $REV
+gh run download $RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D build/ci                       # the build's plugins
 gh release download v0.7.12 -R bee-san/vita-jp-overlay -p VitaJPOverlay-0.7.12.zip -D build/rel   # models, JMdict
 R=build/rel/x; D=$R/ux0/data/VitaJPOverlay; unzip -qo build/rel/*.zip -d $R && cp $R/docs/jmdict-conversion.json $D/dictionaries/jmdict.json
 python3 tools/package_release.py build/ci/*.zip -o build/test.zip --models $D/ocr --dictionary $D/dictionaries/jmdict.vjdict \
-  --license-file $R/docs/JMdict-LICENSE.html --source-revision e759187637e9155f61b4404d673fab6199fe9863
-unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_release.py --verify .   # Verified 52 package files
+  --license-file $R/docs/JMdict-LICENSE.html --source-revision "$(git rev-parse HEAD)"
+unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_release.py --verify .   # Verified 53 package files
 ```
 - If a command fails, fix what it names (often `gh auth login`) and rerun it; `checksum failed` means a bad download: delete, rerun.
 - The installer copies the weights (bee-san/vita-vn-ocr v0.2.0) to `ux0:data/VitaJPOverlay/ocr/`; the plugin refuses other bytes:
@@ -20,17 +23,21 @@ unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_r
   `FL10_w8.vocr` (fallback) 657,664 B, sha256 `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84`.
 
 ## 2. Install and boot (firmware 3.60-3.74 with HENkaku/Ensō or h-encore, and VitaShell)
-1. Close the game, open VitaShell and press Select (FTP), then in `build/pkg` run `bash install-vita.sh VITA_IP:1337`. Keep the
-   screen on (it uploads the 77 MB JMdict, reading every file back) until `Installed. Reboot the Vita.` `Cannot reach` = FTP off; else rerun.
+1. Close the game, open VitaShell and press Select (FTP), then in `build/pkg` run
+   `bash install-vita.sh --title PCSG00415 VITA_IP:1337` (it registers the OCR worker for CLANNAD only, `*PCSG00415`, never
+   `*ALL`; an existing `*ALL` worker line is commented out). Keep the
+   screen on (it uploads the 77 MB JMdict, reading every file back) until `Installed. Reboot the Vita.` `Cannot reach` = FTP off;
+   `Nothing was changed on the Vita` = `--title` is missing; else rerun.
 2. It sets H15 + FL10 fallback, `ocr_mode = auto`, `log_file = on`, `local_dictionaries = jmdict.vjdict` (drops Daijirin); old config in `backup:`.
-3. Reboot normally, start FTP, run `bash tools/install_ftp.sh --status VITA_IP`: `status.txt` needs `shell API 16 entered` and
-   `worker started`; if not (e.g. `kernel API version N, expected 16` or `kernel plugin not loaded`), install again and reboot.
+3. Reboot normally, start FTP, run `bash tools/install_ftp.sh --status VITA_IP`: `status.txt` needs `shell API 18 entered` and
+   `worker started`; if not (e.g. `kernel API version N, expected 18` or `kernel plugin not loaded`), install again and reboot.
 4. Boot hangs or crashes: hold L while powering on (skips plugins), start FTP, `bash tools/install_ftp.sh --uninstall VITA_IP`,
    reboot, run `--status` and keep its four files (the new kernel imports `ksceIoGetstatByFd`: suspect that first). Back to v0.7.12
-   at any time: `cd ../rel/x && bash install-vita.sh VITA_IP:1337`, then reboot.
+   at any time: `cd ../rel/x && bash install-vita.sh VITA_IP:1337`, then reboot (v0.7.12's installer predates `--title` and
+   registers its worker under `*ALL` again).
 
 ## 3. Test in CLANNAD (PCSG00415, where FL10 OCR worked before)
-1. Start CLANNAD (it must be ON in JP Overlay Settings → Games). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
+1. Start CLANNAD (it must be ON in the Overlay app → Games; JP Overlay Settings in older builds). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
 2. Advance about 10 text pages, pausing ~3 s on each so automatic OCR runs. On 3 of them open the overlay (L+R) and photograph the
    screen with its recognized text (keep photos private: the game is copyrighted), then Circle. Note slowdown, stutter or crashes.
 3. Optional, 2 min: L+R, hold Square 1 s (full-screen region), Circle, read 2 pages (H15 should still fit), restore the tight region
@@ -51,6 +58,7 @@ bash tools/install_ftp.sh --dumps VITA_IP    # after a crash only: ux0:data/*.ps
   a few ms (est.; FL10 took 213-359 ms per job before); `speed` est. 2,700-5,000 us per frame at 333 MHz; text roughly matches; `lines=0` ok.
 
 ## 5. If a job fails
+- "The game OCR worker is unavailable" on screen: the game has no worker section; install again with `--title PCSG00415` and reboot.
 - `stat=0x8…` and `weights=read` on every job: the file-time query is unsupported; note the code (loads still skip the old sleeps).
 - `(fallback)` in CLANNAD: keep the `game vocr fallback:` line (short of memory). `H15_w8.vocr is unusable here … for this game`: H15
   on the card is missing or damaged, install again; `… for this job`: that job used FL10 (can recur), note `io=` (`0x80010013`: storage unavailable).
