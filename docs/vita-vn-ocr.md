@@ -190,7 +190,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout f41aaa9517dd676d2b634e75e71dc03bcfd3646b
+git -C /path/to/vita-vn-ocr checkout 5d42bdeab92b9309b11276af4e9f5940afa77d63
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
