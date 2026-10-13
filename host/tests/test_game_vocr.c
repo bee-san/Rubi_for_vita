@@ -62,6 +62,8 @@ int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size)
 { TEST_CHECK(pid == 7); snprintf(out, size, "%s", own_title); return 0; }
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
+static int safe_boot_mode, boot_info_calls;
+int vjoBootInfo(VjoBootInfo *out) { boot_info_calls++; TEST_CHECK(out->size == sizeof(*out)); out->mode = safe_boot_mode; return 0; }
 int vjoOcrRegister(void) { return VJO_ERR_NO_GAME; }
 int vjoOcrTake(VjoGameOcrRequest *out) { return 1; }
 int vjoOcrCancelled(uint32_t seq) { return cancel_job || (cancel_reads && reads_count >= (unsigned)cancel_reads); }
@@ -235,6 +237,12 @@ static void system_app_gate_and_failed_joins(void)
     for (unsigned i=0; i<sizeof(excluded)/sizeof(excluded[0]); i++) {
         strcpy(own_title, excluded[i]); TEST_CHECK(!module_start(0, NULL) && !thread_creates && !allocations);
     }
+    /* A safe boot (the previous one failed): the module unloads itself in
+     * every process, a candidate game included, before reading any title. */
+    safe_boot_mode = VJO_BOOT_SAFE; boot_info_calls = 0;
+    strcpy(own_title, "PCSG00415");
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && boot_info_calls == 1 && !thread_creates && !allocations);
+    safe_boot_mode = VJO_BOOT_NORMAL;
     strcpy(own_title, "PCSG00415"); TEST_CHECK(!module_start(0, NULL) && thread_creates == 1);
     join_failure = 1;
     TEST_CHECK(module_stop(0, NULL) == SCE_KERNEL_STOP_FAIL && worker == 20 && worker_started);

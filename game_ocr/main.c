@@ -6,6 +6,7 @@
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
 #define WORKER_STACK_BYTES (32u*1024u)
+#include "../core/boot_guard.h"
 #include "../core/games.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
@@ -376,6 +377,16 @@ int vjo_game_ocr_worker_stop(void)
 }
 
 #ifndef VJO_GAME_OCR_NO_MODULE_ENTRY
+/* The boot guard's verdict for this boot (core/boot_guard.h): in a safe boot
+ * the kernel has no hooks and nothing of ours may stay in any process. An
+ * older kernel without the syscall means a normal boot. */
+static int safe_boot(void)
+{
+    VjoBootInfo info = {.size=sizeof(info)};
+    if (!IMPORT_READY(vjoBootInfo)) return 0;
+    return vjoBootInfo(&info) == 0 && info.size == sizeof(info) && info.mode == VJO_BOOT_SAFE;
+}
+
 int _start(SceSize args, void *argp) __attribute__((weak, alias("module_start")));
 int module_start(SceSize args, void *argp)
 {
@@ -383,6 +394,7 @@ int module_start(SceSize args, void *argp)
     char title[VJO_TITLE_ID_SIZE] = {0};
     SceUID pid = sceKernelGetProcessId();
     int rc = -1;
+    if (safe_boot()) return SCE_KERNEL_START_NO_RESIDENT;
     if (IMPORT_READY(sceKernelGetProcessTitleId)) rc = sceKernelGetProcessTitleId(pid, title, sizeof(title));
     if ((rc < 0 || !title[0]) && IMPORT_READY(sceAppMgrAppParamGetString))
         rc = sceAppMgrAppParamGetString(pid, 12, title, sizeof(title));

@@ -89,6 +89,13 @@ target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/in
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_input COMMAND vjo-kernel-input-tests)
+# Boot-safety guard: the record (core) and the real kernel-side code with the
+# ur0 file and the clock replaced, boot after simulated boot.
+add_executable(vjo-boot-guard-tests host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c)
+target_include_directories(vjo-boot-guard-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-boot-guard-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-boot-guard-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME boot_guard COMMAND vjo-boot-guard-tests)
 # kernel/foreground.c, scene.c, triggers.c: kernel logic without psp2kern.
 add_executable(vjo-tests host/tests/test_core.c kernel/foreground.c kernel/scene.c kernel/triggers.c)
 

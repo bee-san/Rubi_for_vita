@@ -32,3 +32,5 @@ VitaJPOverlay_Kernel:
         - vjoOcrModelOpen
         - vjoOcrModelRead
         - vjoOcrModelClose
+        - vjoBootInfo
+        - vjoBootMark

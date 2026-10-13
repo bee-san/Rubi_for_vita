@@ -10,6 +10,7 @@
 
 #include "vjo_kernel.h"
 #include "game_ocr.h"
+#include "../core/boot_guard.h"
 
 VjoKernelState g;
 
@@ -117,7 +118,8 @@ static void free_game_buffers(void)
  * as kernel.prev.txt. Capped at 64 KB per boot. The file is first opened once
  * SceShell has registered: earlier in boot ux0: can still be another device
  * (SD2Vita remaps it), and the rotation would happen there. Lines logged
- * before that wait in the ring. */
+ * before that wait in the ring. In safe mode the Shell never registers; its
+ * boot mark serves the same purpose. */
 #define KFILE "ux0:data/VitaJPOverlay/kernel.txt"
 #define KFILE_PREV "ux0:data/VitaJPOverlay/kernel.prev.txt"
 #define KFILE_CAP (64 * 1024)
@@ -131,7 +133,7 @@ static void kernel_file_flush(void)
     if (kfile_size > KFILE_CAP)
         return;
     if (kfile_size < 0) {
-        if (g.shell_pid <= 0)
+        if (g.shell_pid <= 0 && !boot_shell_seen())
             return;
         ksceIoMkdir("ux0:data", 0777);
         ksceIoMkdir("ux0:data/VitaJPOverlay", 0777);
@@ -203,9 +205,12 @@ static int worker(SceSize args, void *argp)
             finish_capture();
         }
 
-        input_poll();
-        if (++tick % CHECK_EVERY == 0)
-            change_detection();
+        if (boot_mode() == VJO_BOOT_NORMAL) {
+            input_poll();
+            if (++tick % CHECK_EVERY == 0)
+                change_detection();
+        }
+        boot_tick();
         kernel_file_flush();
     }
     return 0;
@@ -430,6 +435,49 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
     return ret;
 }
 
+/* The boot-safety guard's record of this boot, for any process: the Shell
+ * and the game worker unload themselves when mode is VJO_BOOT_SAFE. */
+int vjoBootInfo(VjoBootInfo *out)
+{
+    uint32_t state;
+    VjoBootInfo info;
+    uint32_t size = 0;
+    ENTER_SYSCALL(state);
+    ksceKernelMemcpyUserToKernel(&size, out, sizeof(size));
+    boot_info(&info);
+    if (size > sizeof(info))
+        size = sizeof(info);
+    if (size >= sizeof(uint32_t))
+        ksceKernelMemcpyKernelToUser(out, &info, size);
+    EXIT_SYSCALL(state);
+    return 0;
+}
+
+/* The Shell plugin reports a stage it reached (VJO_BOOT_STAGE_SHELL..OK), or
+ * 0 when it unloads itself on purpose. Accepted from a process that has the
+ * Shell module loaded, which is how the Shell registers too; the Shell is
+ * not registered yet when it marks its first stages. */
+int vjoBootMark(int stage)
+{
+    uint32_t state;
+    tai_module_info_t info;
+    SceUID pid;
+    int ret;
+    ENTER_SYSCALL(state);
+    pid = ksceKernelGetProcessId();
+    info.size = sizeof(info);
+    if (pid != g.shell_pid && taiGetModuleInfoForKernel(pid, SHELL_MODULE, &info) < 0) {
+        ret = VJO_ERR_PERM;
+    } else if (stage == 0) {
+        boot_mark_inert();
+        ret = 0;
+    } else {
+        ret = boot_mark(stage);
+    }
+    EXIT_SYSCALL(state);
+    return ret;
+}
+
 /* ---------------- module ---------------- */
 
 static void delete_sync_objects(void)
@@ -457,9 +505,13 @@ static void release_hooks(void)
 void _start() __attribute__((weak, alias("module_start")));
 int module_start(SceSize argc, const void *args)
 {
+    int safe;
     (void)argc;
     (void)args;
     memset(&g, 0, sizeof(g));
+    /* Before anything else exists: a crash later in this boot leaves the
+     * record at "kernel", and the next boot runs in safe mode. */
+    safe = boot_init(VJO_API_VERSION) == VJO_BOOT_SAFE;
     game_ocr_init();
     g.trigger[TRIG_TOGGLE] = VJO_TRIGGER_L_R;
     g.trigger[TRIG_SUBTITLE] = VJO_TRIGGER_SELECT_R;
@@ -475,9 +527,20 @@ int module_start(SceSize argc, const void *args)
         return SCE_KERNEL_START_FAILED;
     }
 
-    {
+    if (safe) {
+        /* Safe mode: no hook touches a game or SceShell. The worker still
+         * runs, to write the boot record and the kernel log; the Shell and
+         * game plugins see the mode through vjoBootInfo and unload. */
+        klog("hooks: none (safe mode)");
+    } else {
         int d = display_hook_install(), i = input_hooks_install(), l = lifecycle_hooks_install();
         klog("hooks: display %d, input %d, procevent %d (0 = ok)", d, i, l);
+        if (d < 0 || i < 0 || l < 0) {
+            /* A half-hooked kernel would block input it cannot see or
+             * capture frames nobody asked for: run with no hooks instead. */
+            release_hooks();
+            klog("hooks: partial install released; running without hooks");
+        }
     }
 
     /* Without the worker nothing would ever be polled or finished. */
@@ -490,7 +553,7 @@ int module_start(SceSize argc, const void *args)
         delete_sync_objects();
         return SCE_KERNEL_START_FAILED;
     }
-    klog("Vita JP Overlay kernel %d started", VJO_API_VERSION);
+    klog("Vita JP Overlay kernel %d started (%s mode)", VJO_API_VERSION, vjo_boot_mode_name(boot_mode()));
     return SCE_KERNEL_START_SUCCESS;
 }
 

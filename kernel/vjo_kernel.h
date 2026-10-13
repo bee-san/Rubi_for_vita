@@ -128,6 +128,16 @@ int display_hook_install(void);
 void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
 
+/* boot.c: boot-safety guard (core/boot_guard.h has the record and values) */
+int boot_init(int api);        /* first in module_start; returns VJO_BOOT_NORMAL or VJO_BOOT_SAFE */
+int boot_mode(void);
+int boot_shell_seen(void);     /* the Shell plugin reported in this boot */
+int boot_mark(int stage);      /* the Shell reached stage (vjoBootMark) */
+void boot_mark_inert(void);    /* the Shell unloaded itself on purpose */
+void boot_fault(int fault);    /* VJO_BOOT_FAULT_* observed */
+void boot_info(VjoBootInfo *out);
+void boot_tick(void);          /* worker thread: writes pending changes */
+
 #define VJO_LOCK() ksceKernelLockMutex(g.lock, 1, NULL)
 #define VJO_UNLOCK() ksceKernelUnlockMutex(g.lock, 1)
 

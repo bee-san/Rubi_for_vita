@@ -10,8 +10,11 @@
  * 15: results carry the memory check (free USER, needed bytes, reserve) and
  * each recognized line's crop, CTC frames and time.
  * 16: requests carry a fallback model, Open chooses the model or the fallback,
- * results report when the fallback ran. */
-#define VJO_API_VERSION 16
+ * results report when the fallback ran.
+ * 17: boot-safety guard: vjoBootInfo tells every plugin whether this boot is
+ * a safe one (no hooks, the Shell and game plugins unload themselves),
+ * vjoBootMark lets the Shell record the stages it reaches. */
+#define VJO_API_VERSION 17
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
@@ -98,6 +101,20 @@ enum VjoGameMode {
                              * frames (the PSP emulator): sampled from its pad calls */
 };
 
+/* The boot-safety guard's view of this boot (core/boot_guard.h has the
+ * values: VJO_BOOT_NORMAL/SAFE, VJO_BOOT_STAGE_*, VJO_BOOT_FAULT_*). */
+typedef struct {
+    uint32_t size;        /* sizeof(VjoBootInfo), set by the caller */
+    uint32_t seq;         /* this boot's number */
+    int32_t mode;         /* VJO_BOOT_NORMAL or VJO_BOOT_SAFE */
+    int32_t stage;        /* furthest VJO_BOOT_STAGE_* reached so far */
+    int32_t inert;        /* the Shell plugin unloaded itself this boot */
+    int32_t fault;        /* VJO_BOOT_FAULT_* seen this boot */
+    int32_t failures;     /* normal boots in a row that did not complete */
+    int32_t prev_mode, prev_stage, prev_inert, prev_fault; /* the previous boot */
+    int32_t write_status; /* the last boot.txt write: 0 ok, else the error */
+} VjoBootInfo;
+
 /* Syscalls exported by VitaJPOverlay_Kernel (library VitaJPOverlayForUser).
  * All return < 0 on error. */
 #if !defined(VJO_HOST)
@@ -113,6 +130,15 @@ int vjoSetInputBlock(int on);            /* block all game input (not the shell)
 int vjoPollInput(VjoInput *out);         /* raw pad, unfiltered */
 int vjoRequestCapture(uint32_t flags);   /* VJO_CAPTURE_*; returns seq > 0; raw rows, the shell encodes the JPEG */
 int vjoReadRaw(uint32_t row, uint32_t n, void *dst);      /* returns rows copied */
+#endif
+/* Boot-safety guard (core/boot_guard.h); declared for the host tests too. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int vjoBootInfo(VjoBootInfo *out);       /* any process; set out->size first */
+int vjoBootMark(int stage);              /* shell: VJO_BOOT_STAGE_SHELL..OK reached; 0 = the shell is inert */
+#ifdef __cplusplus
+}
 #endif
 
 #endif

@@ -81,6 +81,7 @@ int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size) { snprintf(o
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
 SceUID sceIoOpen(const char *path, int flags, unsigned mode) { return (int)0x80010013u; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
+int vjoBootInfo(VjoBootInfo *out) { out->mode = VJO_BOOT_NORMAL; return 0; }
 int vjoOcrRegister(void) { return registered_rc; }
 int vjoOcrTake(VjoGameOcrRequest *out) { return 1; }
 int vjoOcrCancelled(uint32_t seq)

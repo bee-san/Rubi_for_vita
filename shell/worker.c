@@ -7,6 +7,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
 
+#include "../core/boot_guard.h"
 #include "../core/regions.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
@@ -1651,10 +1652,41 @@ static void warm_connections(void)
     sceKernelSetEventFlag(net_evf, NET_EV_WARM);
 }
 
+/* Boot guard: this boot counts as complete once the control thread has run
+ * for a minute (core/boot_guard.h). The kernel may answer BUSY while its
+ * own uptime is shorter; a few spaced retries cover that. */
+#define BOOT_OK_US        (60LL * 1000 * 1000)
+#define BOOT_OK_RETRY_US  (5LL * 1000 * 1000)
+#define BOOT_OK_ATTEMPTS  12
+static int64_t ctl_started_us;
+static int boot_ok_attempts; /* -1 once marked (or given up) */
+
+static void boot_guard_ok(void)
+{
+    static int64_t next_us;
+    int64_t now;
+    if (boot_ok_attempts < 0)
+        return;
+    now = now_us();
+    if (now - ctl_started_us < BOOT_OK_US || now < next_us)
+        return;
+    if (vjo_guard_mark(VJO_BOOT_STAGE_OK) == 0) {
+        vjo_log("boot guard: ok after a stable minute");
+        boot_ok_attempts = -1;
+    } else if (++boot_ok_attempts >= BOOT_OK_ATTEMPTS) {
+        vjo_log("boot guard: ok not recorded after %d attempts", BOOT_OK_ATTEMPTS);
+        boot_ok_attempts = -1;
+    } else {
+        next_us = now + BOOT_OK_RETRY_US;
+    }
+}
+
 static int ctl_main(SceSize args, void *argp)
 {
     (void)args;
     (void)argp;
+    ctl_started_us = now_us();
+    boot_ok_attempts = 0;
 
     /* The order of the handlers within one wakeup is part of the policy
      * (e.g. a trigger and a game start in the same wakeup). */
@@ -1664,6 +1696,7 @@ static int ctl_main(SceSize args, void *argp)
                          VJO_EV_GAME_START | VJO_EV_GAME_EXIT,
                      &bits, POLL_TIMEOUT_US);
 
+        boot_guard_ok();
         if (job_running) sceKernelPowerTick(0);
         if (bits & VJO_EV_GAME_EXIT)
             on_game_exit();

@@ -30,6 +30,8 @@ set(VJO_VERSION "0.7.12" CACHE STRING "Release archive version")
 # ---------------- kernel ----------------
 add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/main.c
+  ${ROOT}/kernel/boot.c
+  ${ROOT}/core/boot_guard.c
   ${ROOT}/kernel/log.c
   ${ROOT}/kernel/buffers.c
   ${ROOT}/kernel/capture.c
@@ -102,6 +104,7 @@ endif()
 
 add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/boot.c
+  ${ROOT}/shell/guard.c
   ${ROOT}/shell/main.cpp
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
@@ -123,7 +126,7 @@ add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # Startup runs before Paf is ready; it only needs integer operations. Avoid
 # compiler-generated VFP/NEON copies in the early bootstrap and status logger.
-set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/log_vita.c
+set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/shell/log_vita.c
   PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)

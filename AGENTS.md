@@ -58,10 +58,14 @@ thread, static buffer or taiHEN registration.
 5. **Vita3K is not evidence.** A Vita3K pass says nothing about plugin boot or memory safety on a
    console: it does not model the budgets, SceShell or taiHEN. Only a console run counts, and
    every unmeasured console number is marked as an estimate.
-6. **Recovery path.** If a plugin stops the Vita from booting: hold L while powering on to skip
-   plugins, start VitaShell, and comment the plugin out of the taiHEN configuration
-   (`tools/install_ftp.sh --uninstall VITA_IP` restores the backed-up configuration). Never
-   automate repeated reboots after a failed boot.
+6. **Recovery path.** The boot-safety guard ([docs/boot-safety.md](docs/boot-safety.md)) turns
+   the boot after an incomplete one into a safe boot: no kernel hooks, the Shell and game
+   plugins unload themselves, a note in `status.txt`. If a plugin still stops the Vita from
+   booting: hold L while powering on to skip plugins, start VitaShell, and comment the plugin
+   out of the taiHEN configuration (`tools/install_ftp.sh --uninstall VITA_IP` restores the
+   backed-up configuration). Never automate repeated reboots after a failed boot. Keep
+   `boot_init` the first call in the kernel's `module_start`, and keep the safe-mode paths
+   free of allocations.
 7. **One change at a time.** Build and inspect the plugin first (ELF, imports, module metadata).
    Before installing, show the exact files and taiHEN configuration edits, back up both
    configurations, state the recovery steps, and get the owner's explicit OK. Install one change,
