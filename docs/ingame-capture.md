@@ -44,9 +44,10 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    published: they are not the user's region.
 6. The finder (`vocr_find_lines_rows`, vita-vn-ocr's row-callback form of the frozen finder) reads
    rows through the strip; each line is recognized from the strip, read again from the line's top
-   row when the strip does not hold it. A line taller than a strip is read whole into its own
-   block (region width × line height, at most 516,096 B, only when one occurs), so the recognizer
-   gets exactly the bytes a copy of the whole region gave it.
+   row when the strip does not hold it. A line taller than a strip (a band the finder could not
+   split, up to the whole region) goes through the strip too and is kept whole, its own columns
+   only, in a block of its size (at most 516,096 B, only when one occurs), so the recognizer gets
+   exactly the bytes a copy of the whole region gave it.
 7. Every row keeps the checksum of its first read; a later read that differs means the screen
    changed under the job (`VJO_E_SCREEN_CHANGED`, -120): the job reads the region again, up to
    three times, and logs the rows that changed. A region inside one strip is read a second time
@@ -82,10 +83,14 @@ game's process rather than free memory the hook might write.
 | kernel (`ScePhyMemPartKD`) | w×h×4, 2,088,960 B at 960×544 | 0 B (rung 4 only: ≤ 64 KiB for one call) |
 | game: capture | the grey plane, w×h in the workspace (522,240 B at 960×544) | ≤ 61,440 B at any region |
 | game: workspace with the grey plane (H15) | 712,704 B at 960×544, 303,104 B at 917×125 | 188,416 B at any region (no plane) |
-| game: a line taller than a strip | — | its own size, only then (eval: 42 of 896 lines, the largest 533×148 = 78,884 B) |
+| game: a line taller than a strip | — | its own width × height, only then (41 of 372 linefind dev regions; the largest 533×148 = 78,884 B) |
 | game: weights (resident) | H15 1,159,168 B, FL10 659,456 B | unchanged |
 
-Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
+So a textbox takes at most 61,440 B of capture memory whenever its lines fit a strip (64 rows):
+349 of the 372 linefind dev regions. The other 23 contain a band taller than a strip, which the
+recognizer needs whole for byte-identical input, as API 18's grey plane held it; a strict 64 KiB
+bound for those would need a row-callback form of `vocr_run` in vita-vn-ocr (not done:
+`vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
 ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
 The Lens and Anki JPEG captures still use the kernel's region-sized buffer; #74's refusal would

@@ -39,13 +39,15 @@ extern "C" {
 #define VJO_VOCR_STRIP_BYTES (56u * 1024u)
 #define VJO_VOCR_STRIP_MAX_ROWS 64u /* the kernel copies at most this many rows per call */
 #define VJO_VOCR_TRIES 3u           /* captures of one job before VJO_E_SCREEN_CHANGED */
-/* A line taller than a strip is read whole into VjoGreySource.line_buffer: region
- * width x line height bytes, up to this many (include/vjo_ledger_budget.h
- * VJO_BUDGET_GAME_LINE), so the recognizer gets the same input as from a copy of
- * the whole region. Dialogue lines are 20-53 px on the shared eval screenshots,
- * inside one strip; the finder can report a far taller band (several lines it
- * could not separate, a picture), up to the region's height. A larger one (only
- * a full-width band of more than 537 rows) is left out and counted. */
+/* A line taller than a strip is read through the strip and kept whole, its own
+ * columns only, in VjoGreySource.line_buffer: line width x line height bytes, up
+ * to this many (include/vjo_ledger_budget.h VJO_BUDGET_GAME_LINE), so the
+ * recognizer gets the same input as from a copy of the whole region. Dialogue
+ * lines are 20-53 px on the shared eval screenshots, inside one strip; the
+ * finder can report a far taller band (lines it could not separate, a picture),
+ * up to the region: 41 of 372 linefind dev regions have one, the largest
+ * 533 x 148 = 78,884 B. A band of more than this many bytes is left out and
+ * counted (tall_skipped). */
 #define VJO_VOCR_LINE_MAX_BYTES 516096u
 
 /* A region read in strips of grey rows: strip(ud, y, n, dst, stride, flags)
@@ -105,6 +107,7 @@ typedef struct {
     unsigned tries;          /* captures of the region (1 unless the screen changed) */
     unsigned tall;           /* lines taller than a strip read into line_buffer (or left out: tall_skipped) */
     unsigned tall_skipped;
+    size_t line_bytes;       /* the largest line_buffer asked for (a tall line's width x height), 0 none */
     uint32_t region_sum;     /* FNV-1a of the region's grey rows, first pass of the last try */
     uint32_t capture_us;     /* time inside strip() */
     unsigned lines;          /* lines found */

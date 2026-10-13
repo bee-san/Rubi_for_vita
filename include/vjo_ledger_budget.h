@@ -112,12 +112,12 @@
  * (vjo_vocr_capture_bytes). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
  * phycont instead, other partitions, only when USER_RW refused it. */
 #define VJO_BUDGET_GAME_CAPTURE 65536u
-/* A line taller than a strip, read whole (core/vocr_ocr.h VJO_VOCR_LINE_MAX_BYTES): region
+/* A line taller than a strip, kept whole (core/vocr_ocr.h VJO_VOCR_LINE_MAX_BYTES): line
  * width x line height, so the recognizer gets exactly API 18's input for any line the finder
- * reports (host/tests/test_capture_parity.c). Only when such a line occurs, freed with the
- * job. The most that fits the ceiling below with F20's weights, the workspace and the
- * capture block: 2,392,064 - 1,560,576 - 249,856 - 65,536 = 516,096 B (a 960-wide line of
- * up to 537 rows; a taller full-width one is left out and counted). */
+ * reports (host/tests/test_capture_parity.c; 78,884 B at most on the linefind dev regions).
+ * Only when such a line occurs, freed with the job. The most that fits the ceiling below
+ * with F20's weights, the workspace and the capture block:
+ * 2,392,064 - 1,560,576 - 249,856 - 65,536 = 516,096 B; a larger band is left out and counted. */
 #define VJO_BUDGET_GAME_LINE 516096u
 #define VJO_GAME_RESERVE (4u * 1024u * 1024u)      /* kept free in the game before either block (game_ocr/main.c) */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)

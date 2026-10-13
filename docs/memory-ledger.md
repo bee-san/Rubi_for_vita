@@ -89,7 +89,7 @@ overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary'
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
 | VjoGameVocr workspace | 249,856 at most | F20, page-rounded, per job, at any region: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544) | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |
 | VjoGameVocrCapture | 65,536 at most | one strip of grey rows and a checksum and a bit per region row (58,884 B at 960 × 544, 61,440 page-rounded), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
-| VjoGameVocrLine | 516,096 at most | a line taller than a strip, read whole (region width × line height), only when one occurs; what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |
+| VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |
 | **limits** | weights 1,601,536; workspace 790,528; job 2,392,064 | the recognizer's ceiling tier, which the preflight (free `USER` minus the 4 MiB reserve) has to cover before anything is allocated | vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md) |
 
 ## The CI check

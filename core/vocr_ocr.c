@@ -331,32 +331,43 @@ static int run_error(int rc)
     }
 }
 
-/* Line ln's grey pixels, stride s->w: from the strip, read again from its top row
- * if the strip does not hold the whole line, or for a line taller than a strip
- * from the source's line buffer. NULL: the line is left out (tall, no buffer) or
- * the read failed (s->err). */
-static const unsigned char *line_pixels(Stream *s, const VocrLine *ln)
+/* Line ln's grey pixels and their stride: from the strip (stride s->w), read
+ * again from its top row if the strip does not hold the whole line; a line
+ * taller than a strip goes through the strip a strip at a time (each row checked
+ * as always) and only its own columns are kept, in the source's line buffer
+ * (stride ln->w: ln->w x ln->h bytes). NULL: the line is left out (tall, no
+ * buffer) or the read failed (s->err). */
+static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *stride)
 {
     if (ln->h <= s->strip_rows) {
         if (!s->rows || ln->y < s->y0 || ln->y + ln->h > s->y0 + s->rows) {
             if (stream_fetch(s, ln->y) < 0) return NULL;
         }
+        *stride = s->w;
         return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
     }
     {
-        unsigned char *buf = (size_t)s->w * ln->h <= VJO_VOCR_LINE_MAX_BYTES && s->src->line_buffer
-                             ? (unsigned char *)s->src->line_buffer(s->src->ud, (size_t)s->w * ln->h) : NULL;
+        size_t bytes = (size_t)ln->w * ln->h;
+        unsigned char *buf = bytes <= VJO_VOCR_LINE_MAX_BYTES && s->src->line_buffer
+                             ? (unsigned char *)s->src->line_buffer(s->src->ud, bytes) : NULL;
         s->st->tall++;
         if (!buf) {
             s->st->tall_skipped++;
             return NULL;
         }
+        if (bytes > s->st->line_bytes) s->st->line_bytes = bytes;
         for (unsigned y = 0; y < ln->h;) {
             unsigned n = ln->h - y < s->strip_rows ? ln->h - y : s->strip_rows;
-            if (stream_read(s, ln->y + y, n, buf + (size_t)y * s->w) < 0) return NULL;
+            s->rows = 0;
+            if (stream_read(s, ln->y + y, n, s->strip) < 0) return NULL;
+            for (unsigned r = 0; r < n; r++)
+                memcpy(buf + (size_t)(y + r) * ln->w, s->strip + (size_t)r * s->w + ln->x, ln->w);
+            s->y0 = ln->y + y; /* the strip now holds these rows */
+            s->rows = n;
             y += n;
         }
-        return buf + ln->x;
+        *stride = ln->w;
+        return buf;
     }
 }
 
@@ -411,19 +422,20 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     for (unsigned i = 0; i < set.count; i++) {
         const VocrLine *ln = &set.lines[i];
         const unsigned char *pixels;
+        size_t stride = w;
         vocr_image img;
         vocr_extra extra;
         size_t start = used ? used + 1 : 0, n;
         uint32_t line_t0;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
-        pixels = line_pixels(s, ln);
+        pixels = line_pixels(s, ln, &stride);
         if (s->err) return s->err;
         if (!pixels) continue; /* taller than a strip and no line buffer: left out */
         img.pixels = pixels;
         img.width = ln->w;
         img.height = ln->h;
-        img.stride = w;
+        img.stride = stride;
         img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
         memset(&extra, 0, sizeof(extra));
         extra.cancel = run_cancel;

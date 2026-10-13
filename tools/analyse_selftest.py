@@ -228,8 +228,12 @@ def analyse_v2(records):
                and s32(stages[n]["end"].get("rc", 0)) == 0]
     if regions:
         caps = [s.get("result", {}).get("capture", 0) for _, s in regions]
+        tall = [(n, gs.get("bytes", 0)) for n, s in regions for gs in s["gsteps"]
+                if gs["step"] == "alloc" and gs.get("arg") == "line" and s32(gs.get("rc", 0)) >= 0]
         row("capture<64KiB", "PASS" if max(caps) <= CAPTURE_LIMIT else "FAIL",
-            f"largest capture block {max(caps):,} B (limit {CAPTURE_LIMIT:,} B)")
+            f"largest capture block {max(caps):,} B (limit {CAPTURE_LIMIT:,} B)"
+            + (f"; plus a line taller than a strip, kept whole: {', '.join(f'{b:,} B in {n}' for n, b in tall)}"
+               if tall else ""))
         kstrip = [n for n, s in regions if s.get("result", {}).get("source") == "kstrip"]
         row("kernel-pool", "PASS" if not kstrip else "WARN",
             "every capture was written by the display hook into the game's memory" if not kstrip else
