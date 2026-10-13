@@ -21,7 +21,8 @@ Companion documents: [issue #59's root cause](https://github.com/bee-san/vita-jp
 (`docs/issue-59-root-cause.md`, PR #60: the measured SceShell footprint), [the OCR
 architecture](vita-vn-ocr.md), the budget doc in vita-vn-ocr
 ([`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md))
-and the memory ledger that vita-memory-deep adds for CI.
+and [the memory ledger](memory-ledger.md) (`docs/memory-ledger.md`: every allocation site, the budget per pool,
+the CI check that enforces it).
 
 ## 1. The short version
 

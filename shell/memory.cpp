@@ -1,13 +1,16 @@
-/* Borrow reserved Shell pages while leaving room for the LiveArea and UI. */
+/* Borrow reserved Shell pages while leaving room for the LiveArea and UI.
+ * The only PAF allocation site of the plugin: every request is checked
+ * against the reserve, named by its ledger item, and counted. */
 #include <paf/memory/heap_allocator.h>
 #include <paf/std/stdlib.h>
 #include <psp2/kernel/clib.h>
 #include "../include/vjo_import.h"
+#include "../include/vjo_ledger_budget.h"
 extern "C" {
 #include "shell.h"
 }
 
-static const size_t RESERVE = 1536u * 1024u;
+static const size_t RESERVE = VJO_PAF_RESERVE;
 
 template <typename Function> static bool ready(Function fn)
 {
@@ -19,7 +22,7 @@ template <typename Function> static bool ready(Function fn)
 #endif
 }
 
-extern "C" void *vjo_shell_heap_alloc_for(const char *what, size_t bytes)
+static paf::memory::HeapAllocator *heap_ready(void)
 {
     if (!ready(::GetGlobalHeapAllocator) ||
         !ready(sce_paf_memalign) || !ready(sce_paf_free))
@@ -30,6 +33,20 @@ extern "C" void *vjo_shell_heap_alloc_for(const char *what, size_t bytes)
     sceClibMemcpy(&vtable, heap, sizeof(vtable));
     if (!vtable || !reinterpret_cast<const volatile uintptr_t *>(vtable)[4])
         return nullptr;
+    return heap;
+}
+
+extern "C" uint32_t vjo_shell_heap_free_size(void)
+{
+    auto *heap = heap_ready();
+    return heap ? (uint32_t)heap->GetFreeSize() : 0;
+}
+
+extern "C" void *vjo_shell_heap_alloc_for(int item, size_t bytes)
+{
+    auto *heap = heap_ready();
+    if (!heap) return nullptr;
+    const char *what = item >= 0 && item < VJO_SL_COUNT ? g_shell_ledger.defs[item].name : "?";
     const size_t available = heap->GetFreeSize();
     if (available < RESERVE || bytes > available - RESERVE) {
         vjo_log("%s Paf reserve guard: free=%u requested=%u reserve=%u",
@@ -39,15 +56,18 @@ extern "C" void *vjo_shell_heap_alloc_for(const char *what, size_t bytes)
     void *p = sce_paf_memalign(16, bytes);
     vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d",
             what, (unsigned)available, (unsigned)bytes, (unsigned)RESERVE, p != nullptr);
+    if (p) vjo_ledger_add(&g_shell_ledger, item, (uint32_t)bytes);
     return p;
 }
 
 extern "C" void *vjo_shell_heap_alloc(size_t bytes)
 {
-    return vjo_shell_heap_alloc_for("results", bytes);
+    return vjo_shell_heap_alloc_for(VJO_SL_PAF_RESULTS, bytes);
 }
 
-extern "C" void vjo_shell_heap_free(void *p)
+extern "C" void vjo_shell_heap_free(int item, void *p, size_t bytes)
 {
-    if (p) sce_paf_free(p);
+    if (!p) return;
+    sce_paf_free(p);
+    vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }

@@ -5,7 +5,9 @@
 #include "main.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
-#define WORKER_STACK_BYTES (32u*1024u)
+#include "../include/vjo_ledger_budget.h"
+#include "../core/ledger.h"
+#define WORKER_STACK_BYTES VJO_STACK_GAME
 #include "../core/boot_guard.h"
 #include "../core/games.h"
 #include "../include/vjo_api.h"
@@ -17,7 +19,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 
-#define GAME_RESERVE (4u * 1024u * 1024u)
+#define GAME_RESERVE VJO_GAME_RESERVE
 #define JOIN_US 2000000u
 #define MODEL_WAIT_US 2000000u
 /* Only when a model syscall still answers BUSY after its own bounded wait
@@ -31,6 +33,52 @@
 #endif
 
 static SceUID worker = -1, workspace_uid = -1, weights_uid = -1;
+static uint32_t workspace_bytes_held, weights_bytes_held; /* for the ledger */
+
+/* The game worker's memory ledger (core/ledger.h): what we hold in the game's
+ * partition. The game has no file access, so it is read through the result
+ * fields (workspace_bytes, resident_bytes) rather than printed here. */
+enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_COUNT };
+static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
+    [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
+    [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
+    [GL_WEIGHTS] = {"VjoGameVocrWeights", VJO_LEDGER_POOL_GAME},
+    [GL_WORKSPACE] = {"VjoGameVocr workspace", VJO_LEDGER_POOL_GAME},
+};
+VjoLedger g_game_ledger;
+
+static void ledger_init(void)
+{
+    vjo_ledger_init(&g_game_ledger, ledger_defs, GL_COUNT);
+    vjo_ledger_add(&g_game_ledger, GL_MODULE, VJO_BUDGET_GAME_MODULE_PAGES);
+}
+
+/* The only USER_RW allocation site of the worker: one page-rounded block
+ * for ledger item `item`, with its base, or < 0. A block whose base cannot
+ * be read is freed again; if even that fails its uid is returned in *leaked
+ * so the caller keeps it recorded for cleanup. */
+static SceUID game_memblock_alloc(int item, const char *name, uint32_t bytes, void **base, SceUID *leaked)
+{
+    SceUID uid;
+    *base = NULL;
+    *leaked = -1;
+    uid = sceKernelAllocMemBlock(name, SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, bytes, NULL);
+    if (uid < 0) return -1;
+    if (sceKernelGetMemBlockBase(uid, base) < 0 || !*base || ((uintptr_t)*base & 15u)) {
+        *base = NULL;
+        if (sceKernelFreeMemBlock(uid) < 0) *leaked = uid;
+        return -1;
+    }
+    vjo_ledger_add(&g_game_ledger, item, bytes);
+    return uid;
+}
+
+static int game_memblock_free(int item, SceUID uid, uint32_t bytes)
+{
+    if (sceKernelFreeMemBlock(uid) < 0) return -1;
+    vjo_ledger_sub(&g_game_ledger, item, bytes);
+    return 0;
+}
 static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
@@ -157,15 +205,16 @@ static void *weights_alloc(void *ud, size_t bytes)
     (void)ud;
     uint32_t rounded = PAGE_ROUND(bytes);
     void *base = NULL;
+    SceUID leaked;
     if (weights_uid >= 0 || !bytes || bytes > VJO_VOCR_F20_BYTES) return NULL; /* never two blocks */
     if (free_user_after_reserve() < (int64_t)rounded) return NULL;
-    weights_uid = sceKernelAllocMemBlock("VjoGameVocrWeights", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, rounded, NULL);
-    if (weights_uid < 0) { weights_uid = -1; return NULL; }
-    if (sceKernelGetMemBlockBase(weights_uid, &base) < 0 || !base || ((uintptr_t)base & 15u)) {
+    weights_uid = game_memblock_alloc(GL_WEIGHTS, "VjoGameVocrWeights", rounded, &base, &leaked);
+    if (weights_uid < 0) {
         /* A block that cannot be released stays recorded; cleanup retries it. */
-        if (sceKernelFreeMemBlock(weights_uid) >= 0) weights_uid = -1;
+        weights_uid = leaked;
         return NULL;
     }
+    weights_bytes_held = rounded;
     return base;
 }
 
@@ -173,8 +222,9 @@ static int weights_release(void *ud)
 {
     (void)ud;
     if (weights_uid < 0) return 0;
-    if (sceKernelFreeMemBlock(weights_uid) < 0) return -1;
+    if (game_memblock_free(GL_WEIGHTS, weights_uid, weights_bytes_held) < 0) return -1;
     weights_uid = -1;
+    weights_bytes_held = 0;
     return 0;
 }
 
@@ -208,8 +258,8 @@ static int cleanup(void)
 {
     int rc = 0;
     if (workspace_uid >= 0) {
-        if (sceKernelFreeMemBlock(workspace_uid) < 0) rc = VJO_E_OCR_UNAVAILABLE;
-        else workspace_uid = -1;
+        if (game_memblock_free(GL_WORKSPACE, workspace_uid, workspace_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
+        else { workspace_uid = -1; workspace_bytes_held = 0; }
     }
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
@@ -221,6 +271,7 @@ static int cleanup(void)
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
+    if (!g_game_ledger.defs) ledger_init();
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
     active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL;
@@ -272,12 +323,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* The check counted another model's resident weights as free: release them. */
     if (resident.model && resident.model != use && drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     uint32_t rounded = PAGE_ROUND(use_bytes);
-    workspace_uid = sceKernelAllocMemBlock("VjoGameVocr", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, rounded, NULL);
-    if (workspace_uid < 0) { workspace_uid = -1; rc = VJO_E_OOM; goto done; }
     void *base = NULL;
-    if (sceKernelGetMemBlockBase(workspace_uid, &base) < 0 || !base || ((uintptr_t)base & 15u)) {
-        rc = VJO_E_OOM; goto done;
-    }
+    SceUID leaked;
+    workspace_uid = game_memblock_alloc(GL_WORKSPACE, "VjoGameVocr", rounded, &base, &leaked);
+    if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
+    workspace_bytes_held = rounded;
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
     VjoOcrImage image = {(void *)r, r->width, r->height, rows, cancelled};
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
@@ -343,10 +393,12 @@ int vjo_game_ocr_worker_start(void)
         !IMPORT_READY(sceKernelAllocMemBlock) || !IMPORT_READY(sceKernelGetMemBlockBase) ||
         !IMPORT_READY(sceKernelFreeMemBlock) || vjoGetVersion() != VJO_API_VERSION) return VJO_E_OCR_UNAVAILABLE;
     __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
+    if (!g_game_ledger.defs) ledger_init();
     worker = sceKernelCreateThread("VjoGameVocr", worker_main, 0x10000100, WORKER_STACK_BYTES, 0, 0, NULL);
     if (worker < 0) return VJO_E_OCR_UNAVAILABLE;
+    vjo_ledger_add(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);
     if (sceKernelStartThread(worker, 0, NULL) < 0) {
-        if (sceKernelDeleteThread(worker) >= 0) worker = -1;
+        if (sceKernelDeleteThread(worker) >= 0) { worker = -1; vjo_ledger_sub(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK); }
         return VJO_E_OCR_UNAVAILABLE;
     }
     worker_started = 1;
@@ -362,6 +414,7 @@ int vjo_game_ocr_worker_stop(void)
         worker_started = 0;
         if (sceKernelDeleteThread(worker) < 0) return VJO_E_OCR_UNAVAILABLE;
         worker = -1;
+        vjo_ledger_sub(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);
     }
     if (cleanup()) return VJO_E_OCR_UNAVAILABLE;
     /* The game is exiting or the plugin stops: no weights stay behind. */

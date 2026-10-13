@@ -8,6 +8,7 @@
 
 #include "../core/client.h"
 #include "../core/config.h"
+#include "../core/ledger.h"
 #include "../core/styled.h"
 #include "../include/vjo_api.h"
 
@@ -184,9 +185,37 @@ void vjo_net_cancel_clear(VjoNetCancel *c);
 void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel);
 /* Reuses ScePaf's existing heap. Returns NULL when its bounded allocation fails. */
 void *vjo_shell_heap_alloc(size_t bytes);
-/* The same, for `what` (named in the log). */
-void *vjo_shell_heap_alloc_for(const char *what, size_t bytes);
-void vjo_shell_heap_free(void *ptr);
+/* The same, for ledger item `item` (VJO_SL_PAF_*, named in the log). */
+void *vjo_shell_heap_alloc_for(int item, size_t bytes);
+/* Gives back what vjo_shell_heap_alloc_for(item, bytes) returned. */
+void vjo_shell_heap_free(int item, void *ptr, size_t bytes);
+/* The PAF heap's free size, or 0 when Paf is not ready. */
+uint32_t vjo_shell_heap_free_size(void);
+
+/* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
+enum VjoShellLedgerItem {
+    VJO_SL_MODULE = 0,      /* our module's pages (declared) */
+    VJO_SL_WORKER_MODULE,   /* the *ALL OCR worker's pages in SceShell (declared) */
+    VJO_SL_NET_STACK,
+    VJO_SL_CTL_STACK,
+    VJO_SL_ANKI_STACK,
+    VJO_SL_USERRW_RESULTS,  /* host tests only: the Vita build uses PAF */
+    VJO_SL_PAF_PLUGIN,      /* the RCO and the Paf plugin object (estimate) */
+    VJO_SL_PAF_RESULTS,
+    VJO_SL_PAF_ANKI,
+    VJO_SL_COUNT
+};
+extern VjoLedger g_shell_ledger;
+void vjo_ledger_shell_init(void);
+/* The only way the Shell creates a thread: priority 0x10000100, stack bytes
+ * (plus 4 KiB of TLS) charged to item. */
+SceUID vjo_shell_thread_create(int item, const char *name, int (*entry)(SceSize, void *), unsigned stack);
+int vjo_shell_thread_delete(int item, SceUID uid, unsigned stack);
+/* A USER_RW block charged to item (host tests; the Vita build uses PAF). */
+SceUID vjo_shell_memblock_alloc(int item, const char *name, size_t bytes, void **base);
+void vjo_shell_memblock_free(int item, SceUID uid, size_t bytes);
+/* Writes the pools, the items in use and the PAF free size to status.txt. */
+void vjo_ledger_shell_log(const char *when);
 
 /* This console's IPv4 address and netmask (host byte order); -1 if none. */
 int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask);

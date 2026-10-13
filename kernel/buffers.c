@@ -3,6 +3,7 @@
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
 
+#include "../include/vjo_ledger_budget.h"
 #include "vjo_kernel.h"
 
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
@@ -10,7 +11,7 @@
 /* Raw A8B8G8R8 rows of the requested region. Plain kernel main memory: only
  * the CPU touches it (the display hook writes it, vjoReadRaw copies it out),
  * so it needs neither physical contiguity nor cache maintenance. */
-#define RAW_SIZE ALIGN(VJO_MAX_W * VJO_MAX_H * 4, 0x1000)
+#define RAW_SIZE ALIGN(VJO_BUDGET_KERNEL_CAPTURE, 0x1000) /* 960 x 544 x 4 */
 
 int buffers_alloc(uint32_t bytes)
 {
@@ -40,7 +41,9 @@ int buffers_alloc(uint32_t bytes)
     g.raw = (uint8_t *)base;
     g.raw_capacity = bytes;
     g.alloc_status = VJO_ALLOC_OK;
+    vjo_ledger_add(&g_kernel_ledger, VJO_KL_CAPTURE, bytes);
     klog("capture buffer: %u KiB at %p", bytes >> 10, base);
+    kledger_log("capture");
     return 0;
 }
 
@@ -48,6 +51,7 @@ void buffers_free(void)
 {
     if (g.mem_uid > 0) {
         ksceKernelFreeMemBlock(g.mem_uid);
+        vjo_ledger_sub(&g_kernel_ledger, VJO_KL_CAPTURE, g.raw_capacity);
         klog("capture buffer freed");
     }
     g.mem_uid = 0;

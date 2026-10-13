@@ -144,6 +144,10 @@ static void repeated_jobs_and_reserve(void)
         TEST_CHECK(!memory_live && !out.cleanup_status && !out.text[0] && !model);
     }
     TEST_CHECK(allocations == 100 && frees == 100);
+    /* the ledger saw every block in and out, and its peak fits the budget */
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_WORKSPACE) == 0 && vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == 0);
+    TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) > 0 && vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) <= VJO_BUDGET_GAME_WORKSPACE);
+    TEST_CHECK(vjo_ledger_pool_peak(&g_game_ledger, VJO_LEDGER_POOL_GAME) <= VJO_WORST_GAME_PERMANENT + VJO_WORST_GAME_JOB);
     available = 4*1024*1024;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && allocations == 100);
     available = -1;

@@ -8,6 +8,7 @@
 #include <psp2/power.h>
 
 #include "../core/boot_guard.h"
+#include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
@@ -58,6 +59,7 @@ static volatile int running = 1;
 
 static SceUID mem_uid = -1;
 static void *mem_heap; /* bounded allocation from ScePaf's existing heap */
+static size_t mem_bytes; /* what either holds, for the ledger */
 static int mem_local;
 static VjoArena results[2];
 static VjoArena scratch; /* static; control thread only */
@@ -335,22 +337,20 @@ static int mem_alloc_for(const VjoConfig *c)
 #ifdef VJO_PAF_ALLOC
     /* Games can exhaust USER while SceShell still has reserved heap pages.
      * Result arenas and kept TLS sessions have one bounded owner. */
-    mem_heap = vjo_shell_heap_alloc(bytes);
+    mem_heap = vjo_shell_heap_alloc_for(VJO_SL_PAF_RESULTS, bytes);
     if (!mem_heap) {
         vjo_log("result workspace Paf allocation failed (%u KiB)", (unsigned)(bytes >> 10));
         return -1;
     }
     base = mem_heap;
+    mem_bytes = bytes;
 #else
-    mem_uid = sceKernelAllocMemBlock("VjoShellMem", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW,
-                                     (bytes + 0xFFF) & ~0xFFF, NULL);
+    /* Host tests only: the Vita build never takes partition pages here. */
+    bytes = (bytes + 0xFFF) & ~(size_t)0xFFF;
+    mem_uid = vjo_shell_memblock_alloc(VJO_SL_USERRW_RESULTS, "VjoShellMem", bytes, &base);
     if (mem_uid < 0)
         return mem_uid;
-    if (sceKernelGetMemBlockBase(mem_uid, &base) < 0 || !base) {
-        sceKernelFreeMemBlock(mem_uid);
-        mem_uid = -1;
-        return -1;
-    }
+    mem_bytes = bytes;
 #endif
     p = (uint8_t *)base;
     vjo_arena_init(&results[0], p, arena_size);
@@ -378,12 +378,13 @@ static void mem_free(void)
         vjo_net_pool_close(&plat);
         vjo_net_pool_init(&pool, NULL, 0, NET_IDLE_US);
         if (mem_heap)
-            vjo_shell_heap_free(mem_heap);
+            vjo_shell_heap_free(VJO_SL_PAF_RESULTS, mem_heap, mem_bytes);
         else
-            sceKernelFreeMemBlock(mem_uid);
+            vjo_shell_memblock_free(VJO_SL_USERRW_RESULTS, mem_uid, mem_bytes);
     }
     mem_heap = NULL;
     mem_uid = -1;
+    mem_bytes = 0;
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
     cache_data[0].pages = cache_data[1].pages = NULL; /* their locators were in the arena */
@@ -1514,6 +1515,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
             vjo_dict_name(cfg.dictionary), vjo_config_api_key(&cfg)[0] ? "set" : "MISSING",
             vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+    vjo_ledger_shell_log("start");
 }
 
 static void classify_pending(void)
@@ -1563,6 +1565,7 @@ static void on_game_exit(void)
         mem_free();
     title_id[0] = '\0';
     vjo_anki_set_game("");
+    vjo_ledger_shell_log("exit");
 }
 
 /* A new foreground process: classified by classify_pending. */
@@ -1735,6 +1738,7 @@ static int ctl_main(SceSize args, void *argp)
 int vjo_worker_start(void)
 {
     int ver = vjoGetVersion(), rc;
+    vjo_ledger_shell_init();
     if (ver != VJO_API_VERSION) {
         vjo_log("kernel API version %d, expected %d: not starting", ver, VJO_API_VERSION);
         return -1;
@@ -1761,8 +1765,8 @@ int vjo_worker_start(void)
     apply_config(); /* logging, triggers and Anki are set up before the first game */
     vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
 
-    net_thread = sceKernelCreateThread("VjoNet", net_main, 0x10000100, 0x10000, 0, 0, NULL);
-    ctl_thread = sceKernelCreateThread("VjoControl", ctl_main, 0x10000100, 0x4000, 0, 0, NULL);
+    net_thread = vjo_shell_thread_create(VJO_SL_NET_STACK, "VjoNet", net_main, VJO_STACK_SHELL_NET);
+    ctl_thread = vjo_shell_thread_create(VJO_SL_CTL_STACK, "VjoControl", ctl_main, VJO_STACK_SHELL_CTL);
     if (net_thread < 0 || ctl_thread < 0) {
         vjo_worker_stop();
         return -1;
@@ -1777,6 +1781,7 @@ int vjo_worker_start(void)
         return -1;
     }
     threads_started |= 2;
+    vjo_ledger_shell_log("boot");
     return 0;
 }
 
@@ -1797,9 +1802,9 @@ int vjo_worker_stop(void)
         threads_started = 0;
     }
     if (net_thread >= 0)
-        sceKernelDeleteThread(net_thread);
+        vjo_shell_thread_delete(VJO_SL_NET_STACK, net_thread, VJO_STACK_SHELL_NET);
     if (ctl_thread >= 0)
-        sceKernelDeleteThread(ctl_thread);
+        vjo_shell_thread_delete(VJO_SL_CTL_STACK, ctl_thread, VJO_STACK_SHELL_CTL);
     net_thread = ctl_thread = -1;
     /* An Anki job uses the view and capture locks: it is cancelled and
      * joined before they are deleted (the control thread no longer reaps it). */

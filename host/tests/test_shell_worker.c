@@ -57,6 +57,7 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 }
 
 #include "../../shell/worker.c"
+#include "../../shell/ledger.c" /* the ledger worker.c counts in */
 #include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
 
 int sceKernelLockMutex(SceUID uid, int count, void *timeout)
@@ -79,18 +80,24 @@ int sceKernelUnlockMutex(SceUID uid, int count)
 void *vjo_shell_heap_alloc(size_t size)
 { if (phases_checked) TEST_CHECK(!vocr_live && size == 64 * 1024);
   heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
-void *vjo_shell_heap_alloc_for(const char *what, size_t size)
+void *vjo_shell_heap_alloc_for(int item, size_t size)
 {
-    (void)what; (void)size;
+    if (item == VJO_SL_PAF_RESULTS) {
+        void *p = vjo_shell_heap_alloc(size);
+        if (p) vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
+        return p;
+    }
     vocr_paf_allocs++;
     TEST_CHECK(0); /* game vocr must never borrow the Shell Paf heap */
     return NULL;
 }
-void vjo_shell_heap_free(void *p)
+void vjo_shell_heap_free(int item, void *p, size_t bytes)
 {
     TEST_CHECK(p == storage || p == vocr_storage);
     if (p == vocr_storage) { vocr_frees++; vocr_live = 0; } else heap_frees++;
+    vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
+uint32_t vjo_shell_heap_free_size(void) { return 2557952; }
 void vjo_config_load(VjoConfig *out, VjoArena *a) { *out = loaded; }
 void vjo_log_configure(const VjoConfig *c) {}
 /* The last log lines, for the game OCR measurement tests. */
@@ -1891,7 +1898,48 @@ static void test_boot_guard_ok_after_a_stable_minute(void)
     TEST_CHECK(boot_ok_attempts == -1);
 }
 
+/* The ledger's static table must describe this code: the network result
+ * memory is MEM_SIZE, the local arena LOCAL_RESULT_ARENA_SIZE, and every
+ * allocation is counted in and out of the pool it comes from. */
+static void test_ledger_counts_result_memory_against_the_budget(void)
+{
+    TEST_CHECK_(MEM_SIZE == VJO_BUDGET_PAF_RESULTS_NET, "MEM_SIZE %u", (unsigned)MEM_SIZE);
+    TEST_CHECK(LOCAL_RESULT_ARENA_SIZE == VJO_BUDGET_PAF_RESULTS_LOCAL);
+    TEST_CHECK(VJO_WORST_SHELL_PAF <= VJO_LIMIT_SHELL_PAF);
+    TEST_CHECK(VJO_WORST_SHELL_PAGES <= VJO_LIMIT_SHELL_PAGES);
+    vjo_ledger_shell_init();
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAGES) ==
+               VJO_BUDGET_SHELL_MODULE_PAGES + VJO_BUDGET_WORKER_IN_SHELL_PAGES);
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
+    mem_free();
+    fail_alloc = 0;
+    loaded.dictionary = VJO_DICT_JITEN; loaded.ocr_backend = VJO_OCR_LENS;
+    cfg = loaded;
+#ifdef VJO_PAF_ALLOC
+    TEST_CHECK(mem_alloc() == 0);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN + VJO_BUDGET_PAF_RESULTS_NET);
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAGES) ==
+               VJO_BUDGET_SHELL_MODULE_PAGES + VJO_BUDGET_WORKER_IN_SHELL_PAGES);
+    mem_free();
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == 0);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 8192 &&
+               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 580080);
+#else
+    TEST_CHECK(mem_alloc() == 0);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == ((VJO_BUDGET_PAF_RESULTS_NET + 0xFFF) & ~0xFFFu));
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
+    mem_free();
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == 0);
+#endif
+    loaded.dictionary = VJO_DICT_LOCAL; loaded.ocr_backend = VJO_OCR_VOCR;
+    cfg = loaded;
+    vjo_ledger_shell_log("test");
+}
+
 TEST_LIST = {
+    {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},

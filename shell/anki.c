@@ -27,6 +27,7 @@
 #include <psp2/rtc.h>
 
 #include "../core/anki.h"
+#include "../include/vjo_ledger_budget.h"
 #include "../core/utf.h"
 #include "anki_queue.h"
 #include "shell.h"
@@ -41,7 +42,7 @@
 /* Left after the addNote request for its exchange: the 4 KiB base64 chunk,
  * the 2 KiB reply reader, AnkiConnect's short replies and a createDeck. */
 #define ANKI_SEND_ROOM (16 * 1024)
-#define ANKI_STACK 0x10000 /* as VjoNet: BearSSL for an https audio source */
+#define ANKI_STACK VJO_STACK_SHELL_ANKI /* as VjoNet: BearSSL for an https audio source */
 #define PICTURE_QUALITY 75
 #define SCAN_WINDOW_US 350000 /* per batch of VJO_NET_PROBE_MAX hosts */
 
@@ -144,7 +145,7 @@ static int refresh_count(void)
 
 static int mem_get(size_t bytes)
 {
-    mem = vjo_shell_heap_alloc_for("Anki", bytes);
+    mem = vjo_shell_heap_alloc_for(VJO_SL_PAF_ANKI, bytes);
     if (!mem) {
         vjo_arena_init(&arena, NULL, 0);
         return -1;
@@ -159,7 +160,7 @@ static void mem_put(void)
     if (mem) {
         last_peak = arena.peak;
         vjo_log("anki: arena peak %u of %u", (unsigned)arena.peak, (unsigned)mem_size);
-        vjo_shell_heap_free(mem);
+        vjo_shell_heap_free(VJO_SL_PAF_ANKI, mem, mem_size);
     }
     mem = NULL;
     mem_size = 0;
@@ -671,7 +672,7 @@ static void join_done_locked(void)
 {
     if (thread >= 0 && thread_done) {
         sceKernelWaitThreadEnd(thread, NULL, NULL);
-        sceKernelDeleteThread(thread);
+        vjo_shell_thread_delete(VJO_SL_ANKI_STACK, thread, ANKI_STACK);
         thread = -1;
         thread_done = 0;
     }
@@ -705,7 +706,7 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
         }
     } else {
         join_done_locked();
-        t = sceKernelCreateThread("VjoAnki", job_main, 0x10000100, ANKI_STACK, 0, 0, NULL);
+        t = vjo_shell_thread_create(VJO_SL_ANKI_STACK, "VjoAnki", job_main, ANKI_STACK);
         if (t >= 0) {
             job = what;
             next_job = JOB_NONE;
@@ -720,7 +721,7 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
     sceKernelUnlockMutex(box_lock, 1);
     if (t >= 0 && sceKernelStartThread(t, 0, NULL) < 0) {
         sceKernelLockMutex(box_lock, 1, NULL);
-        sceKernelDeleteThread(t);
+        vjo_shell_thread_delete(VJO_SL_ANKI_STACK, t, ANKI_STACK);
         thread = -1;
         job = next_job = JOB_NONE;
         sceKernelUnlockMutex(box_lock, 1);
@@ -833,7 +834,7 @@ int vjo_anki_stop(void)
             vjo_log("anki: job thread join failed; keeping its memory until stop is retried");
             return -1;
         }
-        sceKernelDeleteThread(t);
+        vjo_shell_thread_delete(VJO_SL_ANKI_STACK, t, ANKI_STACK);
     }
     thread = -1;
     thread_done = 0;

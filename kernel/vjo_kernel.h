@@ -9,6 +9,7 @@
 #include <psp2kern/types.h>
 #include <stdint.h>
 
+#include "../core/ledger.h"
 #include "../include/vjo_api.h"
 #include "foreground.h" /* IEV_* */
 #include "scene.h"
@@ -127,6 +128,12 @@ int lifecycle_set_game_active(SceUID pid, int mode);
 int display_hook_install(void);
 void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
+
+/* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
+enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_COUNT };
+extern VjoLedger g_kernel_ledger;
+void kledger_init(void);
+void kledger_log(const char *when); /* the pool and its items, to kernel.txt */
 
 /* boot.c: boot-safety guard (core/boot_guard.h has the record and values) */
 int boot_init(int api);        /* first in module_start; returns VJO_BOOT_NORMAL or VJO_BOOT_SAFE */

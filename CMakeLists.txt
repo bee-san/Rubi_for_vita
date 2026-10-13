@@ -23,7 +23,7 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c core/furigana.c core/pitch.c shell/game_ocr_client.c)
+  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -79,7 +79,7 @@ target_include_directories(vjo-lens-transport-tests PRIVATE third_party/acutest/
 target_link_libraries(vjo-lens-transport-tests vjo_host)
 target_compile_options(vjo-lens-transport-tests PRIVATE -Wall -Wextra)
 add_test(NAME lens_transport COMMAND vjo-lens-transport-tests)
-add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c)
+add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -89,6 +89,16 @@ target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/in
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_input COMMAND vjo-kernel-input-tests)
+# Memory ledger: the counters, the budget table against the real sizing code,
+# and the CI check (allocation sites, worst cases against limits).
+add_executable(vjo-ledger-tests host/tests/test_ledger.c)
+target_include_directories(vjo-ledger-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-ledger-tests PRIVATE -Wall -Wextra)
+target_link_libraries(vjo-ledger-tests vjo_host)
+if(VJO_WITH_VOCR)
+  target_link_libraries(vjo-ledger-tests vjo_vocr)
+endif()
+add_test(NAME ledger COMMAND vjo-ledger-tests)
 # Boot-safety guard: the record (core) and the real kernel-side code with the
 # ur0 file and the clock replaced, boot after simulated boot.
 add_executable(vjo-boot-guard-tests host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c)
@@ -167,6 +177,8 @@ if(VJO_WITH_VOCR)
 endif()
 add_test(NAME shell_worker_paf COMMAND vjo-shell-worker-paf-tests)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md).
+add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py)
 # Each step is a fresh process; the AnkiConnect HTTP double survives client restarts.
 add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-tests>)
@@ -227,7 +239,7 @@ target_compile_options(vjo-game-input-tests PRIVATE -Wall -Wextra -Wno-unused-pa
 add_test(NAME game_input COMMAND vjo-game-input-tests)
 
 # Real role-restricted job transport; no simulated inference/accuracy claims.
-add_executable(vjo-kernel-game-ocr-tests host/tests/test_kernel_game_ocr.c kernel/scene.c)
+add_executable(vjo-kernel-game-ocr-tests host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c)
 target_include_directories(vjo-kernel-game-ocr-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-game-ocr-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-game-ocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -257,7 +269,7 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
-    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c)
+    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests/vita_stubs)
   target_compile_options(vjo-game-model-broker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
