@@ -74,6 +74,10 @@ jobs:
       - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
       - run: ctest --test-dir build/host --output-on-failure
       - run: python3 tools/test_jpegsw.py
+      # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
+      # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).
+      - run: sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static
+      - run: ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static bash tools/arm_host_tests.sh build/arm-tests
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
