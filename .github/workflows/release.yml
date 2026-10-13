@@ -1,18 +1,63 @@
 name: Release
 # Test changes in the fork; publishing still requires an explicit v* tag.
+#
+# Cost (GitHub Actions audit, 2026-10-13): 163 runs / ~760 minutes in 30 days, every job every
+# time. Superseded runs of a pull request are now cancelled, draft pull requests wait until they
+# are marked ready, and a change that only touches Markdown skips the builds (the `changes` job
+# still reports, so `gh pr checks` has a result). Tag pushes and manual runs build everything.
 on:
   push:
     branches: [main]
     tags: ['v*']
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: what changed
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: diff
+        name: Does anything but Markdown change?
+        env:
+          # Base branch tip for a pull request, previous tip for a push to main; empty or all
+          # zeros (tag, new branch, manual run) means "build everything".
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          code=true
+          if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ] && [ "$REF_TYPE" != "tag" ]; then
+            if git fetch --no-tags --depth=1 origin "$BASE"; then
+              changed=$(git diff --name-only "$BASE" HEAD)
+              printf '%s\n' "$changed" | sed 's/^/  /'
+              if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '\.md$'; then
+                code=false
+                echo "::notice title=builds skipped::only Markdown changed"
+              fi
+            else
+              echo "::warning::could not fetch $BASE; building everything"
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "code=$code"
+
   host:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -43,6 +88,8 @@ jobs:
         run: node --test tools/test_hachidori_relay.mjs
 
   vita:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container: vitasdk/vitasdk:2026.08
