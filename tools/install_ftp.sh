@@ -264,7 +264,7 @@ if [ -n "$PACKAGE_DIR" ]; then
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done
   put "$PACKAGE_DIR/JPOverlaySettings.vpk" "ux0:/data/JPOverlaySettings.vpk"
-  echo "In VitaShell install ux0:data/JPOverlaySettings.vpk to add the settings app."
+  echo "In VitaShell install ux0:data/JPOverlaySettings.vpk to add or update the Overlay settings app."
 fi
 for f in ${VOCR_MODELS[@]+"${VOCR_MODELS[@]}"}; do
   # The plugin checks the file's size and SHA-256 before it parses it.

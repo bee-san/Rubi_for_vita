@@ -59,6 +59,28 @@ class SettingsAssets(unittest.TestCase):
             with self.assertRaises(ValueError):
                 assets.check_png(data, "icon0.png", (128, 128))
 
+    def test_reject_icon_over_the_vita_size_limit(self):
+        original = (ROOT / "settings/assets/icon0.png").read_bytes()
+        limit = assets.MAX_BYTES["sce_sys/icon0.png"]
+        self.assertLessEqual(len(original), limit)
+        # Pad the real icon with a valid private chunk after IHDR until it is one byte too large.
+        payload = b"\0" * (limit + 1 - len(original) - 12)
+        chunk = b"prVt" + payload
+        padded = (original[:33] + struct.pack(">I", len(payload)) + chunk +
+                  struct.pack(">I", binascii.crc32(chunk) & 0xFFFFFFFF) + original[33:])
+        self.assertEqual(len(padded), limit + 1)
+        assets.check_png(padded, "icon0.png", (128, 128))
+        with self.assertRaisesRegex(ValueError, "at most 32768"):
+            assets.check_png(padded, "icon0.png", (128, 128), limit)
+        with tempfile.TemporaryDirectory() as temporary:
+            vpk = Path(temporary) / "settings.vpk"
+            with zipfile.ZipFile(vpk, "w") as archive:
+                for name in assets.ASSETS:
+                    data = (ROOT / "settings/assets" / Path(name).name).read_bytes()
+                    archive.writestr(name, padded if name.endswith("icon0.png") else data)
+            with self.assertRaisesRegex(ValueError, "at most 32768"):
+                assets.check(vpk)
+
     def test_reject_transparent_icon(self):
         original = (ROOT / "settings/assets/icon0.png").read_bytes()
         # Add a valid palette transparency chunk before the first IDAT.

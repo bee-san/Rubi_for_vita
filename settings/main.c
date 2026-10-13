@@ -172,7 +172,7 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 static void header(void)
 {
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
-    wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "JP Overlay Settings");
+    wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
     text(744, 34, DIM, 24, "Select: page");
     for (int i = 0; i < 2; i++) {
         int x = i ? 486 : 24, width = i ? 450 : 446;

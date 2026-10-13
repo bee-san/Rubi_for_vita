@@ -260,8 +260,10 @@ add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
 vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE)
+# LiveArea title (param.sfo TITLE/STITLE) is "Overlay". The title ID, the VPK file name and every
+# plugin, path and config name keep their old names, so installing over JP Overlay Settings is an update.
 vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
-  VERSION "01.00" NAME "JP Overlay Settings"
+  VERSION "01.00" NAME "Overlay"
   FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png
        ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
        ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png

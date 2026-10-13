@@ -3,6 +3,7 @@
 
 The Vita promoter requires 8-bit indexed, non-interlaced PNGs. See
 https://github.com/hammerill/livearea-specs for the native asset constraints.
+Sony's content information specification also limits icon0.png to 32 KiB.
 Pass the assets directory to check committed artwork before a Vita build.
 """
 import argparse
@@ -18,11 +19,14 @@ ASSETS = {
     "sce_sys/livearea/contents/bg.png": (840, 500),
     "sce_sys/livearea/contents/startup.png": (280, 158),
 }
+MAX_BYTES = {"sce_sys/icon0.png": 32 * 1024}
 
 
-def check_png(data, name, dimensions):
+def check_png(data, name, dimensions, max_bytes=None):
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError(f"{name}: invalid PNG signature")
+    if max_bytes is not None and len(data) > max_bytes:
+        raise ValueError(f"{name}: {len(data)} bytes; the Vita allows at most {max_bytes}")
     position, chunks = 8, []
     while position < len(data):
         if len(data) - position < 12:
@@ -59,19 +63,20 @@ def check_png(data, name, dimensions):
     if chunks[-1][0] != b"IEND" or not any(kind == b"IDAT" for kind, _ in chunks):
         raise ValueError(f"{name}: incomplete PNG")
     return {"width": width, "height": height, "bit_depth": depth,
-            "color_type": color, "interlaced": False, "opaque": True}
+            "color_type": color, "interlaced": False, "opaque": True, "bytes": len(data)}
 
 
 def check(source):
     if source.is_dir():
-        return {name: check_png((source / Path(name).name).read_bytes(), name, size)
+        return {name: check_png((source / Path(name).name).read_bytes(), name, size, MAX_BYTES.get(name))
                 for name, size in ASSETS.items()}
     with zipfile.ZipFile(source) as archive:
         names = archive.namelist()
         for name in ASSETS:
             if names.count(name) != 1:
                 raise ValueError(f"{name}: expected exactly one asset in settings VPK")
-        return {name: check_png(archive.read(name), name, size) for name, size in ASSETS.items()}
+        return {name: check_png(archive.read(name), name, size, MAX_BYTES.get(name))
+                for name, size in ASSETS.items()}
 
 
 def main():

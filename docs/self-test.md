@@ -23,9 +23,9 @@ get that far leaves the marker: the next boot runs the test again, and the repor
 the previous one got (the report is truncated at each boot, `status.txt` keeps the previous
 boot's copy as `status.prev.txt`).
 
-If the game is disabled in **JP Overlay Settings**, the report says so and no OCR runs. If the
-boot is a safe one (the previous boot did not complete), the report has the boot sample only
-and says so; reboot once more.
+If the game is disabled in the **Overlay** app (**JP Overlay Settings** in older builds), the
+report says so and no OCR runs. If the boot is a safe one (the previous boot did not complete),
+the report has the boot sample only and says so; reboot once more.
 
 ## What it writes
 

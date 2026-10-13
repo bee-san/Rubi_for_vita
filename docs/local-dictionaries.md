@@ -131,7 +131,7 @@ the previous dictionary.
 ### Dictionaries shown
 
 By default the overlay shows only the best match at the selected character.
-Settings → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
+Overlay app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
 in `config.ini`, 1–8, default 1) shows the other enabled dictionaries' entries
 for the same word, one page at a time:
 
@@ -231,7 +231,7 @@ Longer phrases take precedence. Katakana and hiragana readings share a search
 key; full-width ASCII is folded to ASCII. Yomichan's Japanese suffix rules handle
 inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`.
 The matched original text length is retained in the entry, while the UI
-highlights the complete match by default. Settings → OCR & lookup → Highlight
+highlights the complete match by default. Overlay app → OCR & lookup → Highlight
 can instead highlight the selected character. Tapping the recognized header
 selects a character and uses the same bounded lookup as the arrows. Neither
 option introduces sentence tokenization. With `anki_host` set, × sends the

@@ -36,7 +36,7 @@ queue directory.
 
 Settings are reloaded each time the overlay opens. Deck, note type, fields,
 tags and audio are applied when △ sends, so you can fix them in `config.ini`
-and send again; queued cards are not affected. The JP Overlay Settings app
+and send again; queued cards are not affected. The Overlay settings app
 does not edit these settings: they are free-form text (address, deck, field
 names), and the app has no text entry yet.
 
