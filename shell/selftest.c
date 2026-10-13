@@ -8,11 +8,12 @@
  *
  * v2 (API 19): on the first settled screen of the game, one job runs every
  * stage in turn: the capture probe (each capture path and memory type, one
- * strip each), the user's own region with the configured model (its weights
- * read from the card), the same again (weights kept), the full screen through
- * the strips, and the user's region with the fallback model. Each stage ends
- * with its own record, passed or not, then the next one starts; after the last
- * the test is done and the marker removed, so a failure never leaves it armed
+ * strip each), the user's region with the fallback model forced (FL10 read
+ * from the card), the user's region with the configured model (H15 read), the
+ * full screen through the strips (weights kept), and the user's region again
+ * (the warm time; its text is the job's). Each stage ends with its own record,
+ * passed or not, then the next one starts; after the last the test is done and
+ * the marker removed, so a failure never leaves it armed
  * (#74: the API 18 test stayed armed after a failed capture and kept forcing
  * the full-screen region). It changes one thing while armed: OCR runs
  * automatically. The region is the user's. */
@@ -211,7 +212,7 @@ static const char *const step_names[VJO_GSTEP_COUNT] = {
     "fb", "probe"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
-static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe"};
+static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line"};
 
 /* One step of the game worker's log as `step/rc/bytes/free` text: what the
  * step was, its native result, its bytes, the game's free memory after it. */
@@ -222,7 +223,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
     char argbuf[16];
     if (s->id == VJO_GSTEP_ALLOC || s->id == VJO_GSTEP_FREE) {
         kind = s->kind < 5 ? mem_names[s->kind] : "?";
-        arg = s->arg < 5 ? item_names[s->arg] : "?";
+        arg = s->arg < 6 ? item_names[s->arg] : "?";
     } else if (s->id == VJO_GSTEP_PROBE) {
         kind = s->kind < 4 ? src_names[s->kind] : "?";
         arg = s->arg < 5 ? mem_names[s->arg] : "?";

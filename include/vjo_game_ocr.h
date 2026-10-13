@@ -99,6 +99,7 @@ enum {
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */
 #define VJO_GITEM_WEIGHTS 3u   /* "VjoGameVocrWeights" */
 #define VJO_GITEM_PROBE 4u     /* a probe's strip */
+#define VJO_GITEM_LINE 5u      /* "VjoGameVocrLine": a line taller than a strip, read whole */
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */

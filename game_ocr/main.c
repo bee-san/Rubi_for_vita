@@ -281,13 +281,13 @@ static void *line_buffer(void *ud, size_t bytes)
     (void)ud;
     if (line_uid >= 0 && line_bytes_held >= bytes) return line_base;
     if (line_uid >= 0) {
-        if (game_memblock_free(GL_LINE, VJO_GITEM_CAPTURE, line_uid, line_bytes_held) < 0) return NULL;
+        if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, line_bytes_held) < 0) return NULL;
         line_uid = -1;
         line_bytes_held = 0;
         line_base = NULL;
     }
     if (bytes > VJO_VOCR_LINE_MAX_BYTES) return NULL;
-    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_CAPTURE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
+    line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {
         line_uid = leaked;
@@ -465,7 +465,7 @@ static int cleanup(void)
         else { capture_uid = -1; capture_bytes_held = 0; capture_memory = 0; }
     }
     if (line_uid >= 0 && !hook_owns_capture) { /* rows calls write tall lines here too */
-        if (game_memblock_free(GL_LINE, VJO_GITEM_CAPTURE, line_uid, line_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
+        if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, line_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { line_uid = -1; line_bytes_held = 0; line_base = NULL; }
     }
     file_close(NULL);
