@@ -269,6 +269,9 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     return rc;
 }
 
+/* The core never asks for more than the ledger counts. */
+typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
+
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
 {
@@ -283,7 +286,7 @@ static void *line_buffer(void *ud, size_t bytes)
         line_bytes_held = 0;
         line_base = NULL;
     }
-    if (bytes > (size_t)VJO_OCR_MAX_WIDTH * VJO_VOCR_LINE_MAX_ROWS) return NULL;
+    if (bytes > VJO_VOCR_LINE_MAX_BYTES) return NULL;
     line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_CAPTURE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {

@@ -39,10 +39,14 @@ extern "C" {
 #define VJO_VOCR_STRIP_BYTES (56u * 1024u)
 #define VJO_VOCR_STRIP_MAX_ROWS 64u /* the kernel copies at most this many rows per call */
 #define VJO_VOCR_TRIES 3u           /* captures of one job before VJO_E_SCREEN_CHANGED */
-/* A line taller than a strip is read whole into VjoGreySource.line_buffer, up to
- * this many rows (dialogue lines are 20-53 px on the shared eval screenshots);
- * a taller "line" (a picture, a title card) is left out. */
-#define VJO_VOCR_LINE_MAX_ROWS 128u
+/* A line taller than a strip is read whole into VjoGreySource.line_buffer: region
+ * width x line height bytes, up to this many (include/vjo_ledger_budget.h
+ * VJO_BUDGET_GAME_LINE), so the recognizer gets the same input as from a copy of
+ * the whole region. Dialogue lines are 20-53 px on the shared eval screenshots,
+ * inside one strip; the finder can report a far taller band (several lines it
+ * could not separate, a picture), up to the region's height. A larger one (only
+ * a full-width band of more than 537 rows) is left out and counted. */
+#define VJO_VOCR_LINE_MAX_BYTES 516096u
 
 /* A region read in strips of grey rows: strip(ud, y, n, dst, stride, flags)
  * fills region rows [y, y + n) as (77 R + 150 G + 29 B) >> 8, width bytes each,

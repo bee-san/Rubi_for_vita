@@ -344,7 +344,7 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln)
         return s->strip + (size_t)(ln->y - s->y0) * s->w + ln->x;
     }
     {
-        unsigned char *buf = ln->h <= VJO_VOCR_LINE_MAX_ROWS && s->src->line_buffer
+        unsigned char *buf = (size_t)s->w * ln->h <= VJO_VOCR_LINE_MAX_BYTES && s->src->line_buffer
                              ? (unsigned char *)s->src->line_buffer(s->src->ud, (size_t)s->w * ln->h) : NULL;
         s->st->tall++;
         if (!buf) {

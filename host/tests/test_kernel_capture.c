@@ -257,8 +257,8 @@ static void ocr_grey_rows_every_format(void)
             }
         TEST_CHECK(grey_out[32] == 0xEE); /* width bytes only */
         if (f == 2) { /* 5-bit channels expand by << 3, as the JPEG capture does */
-            uint32_t abgr; uint16_t white = 0x7FFF;
-            vjo_fb_to_abgr(&abgr, &white, 1, fmt);
+            uint32_t abgr; static const uint16_t white[2] = {0x7FFF, 0x7FFF}; /* 4 bytes: any format's pixel */
+            vjo_fb_to_abgr(&abgr, white, 1, fmt);
             TEST_CHECK((abgr & 0xFFFFFF) == 0xF8F8F8);
         }
     }

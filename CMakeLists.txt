@@ -197,6 +197,20 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_unit COMMAND vjo-vocr-tests)
+  # #74: API 18's capture (the kernel's A8B8G8R8 copy of the region, the worker's
+  # grey plane; 8228c3c, verbatim in host/tests/api18) against API 19's (the
+  # display hook's grey rows in the worker's strip): the recognizer gets
+  # byte-identical input. tools/capture_parity.py adds the eval crops.
+  add_library(vjo_parity_kernel OBJECT host/tests/parity_kernel.c kernel/capture.c kernel/scene.c)
+  target_include_directories(vjo_parity_kernel PRIVATE host/tests/vita_stubs)
+  target_compile_definitions(vjo_parity_kernel PRIVATE VJO_HOST=1)
+  add_executable(vjo-capture-parity-tests host/tests/test_capture_parity.c host/tests/parity_api18.c
+    host/tests/parity_api19.c $<TARGET_OBJECTS:vjo_parity_kernel>)
+  target_include_directories(vjo-capture-parity-tests PRIVATE third_party/acutest/include)
+  target_link_libraries(vjo-capture-parity-tests vjo_vocr_rt vjo_core)
+  target_compile_options(vjo-capture-parity-tests PRIVATE -Wall -Wextra)
+  target_compile_definitions(vjo-capture-parity-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  add_test(NAME capture_parity COMMAND vjo-capture-parity-tests)
   # Exercise the real adapter with only the finder call replaced by a spy.
   # This verifies dispatch and capture ownership without weights or inference.
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
@@ -214,8 +228,11 @@ if(VJO_WITH_VOCR)
 endif()
 add_test(NAME local_dictionary COMMAND ${Python3_EXECUTABLE} -m unittest discover
   -s ${CMAKE_SOURCE_DIR}/tools/tests -v)
-set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT
-  "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
+set(_vjo_tool_env "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
+if(VJO_WITH_VOCR)
+  string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
+endif()
+set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
 
 
 # Counts production file reads and times lookup only (no OCR or process startup).
