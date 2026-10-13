@@ -159,7 +159,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | Component | Context | What | Pool | Size | Source |
 |---|---|---|---|---|---|
 | `VitaJPOverlay_Kernel.skprx` | `*KERNEL` | module pages (`.bss` 78,128 B at API 16, up from 53,008 B at API 13) | KD | about 0.1 MiB [measured] | [PR #60, `docs/issue-59-root-cause.md` section 4] |
-| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB, allocated per job and freed when the game worker has read the last row; at most 960×544×4 = 2,088,960 B | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
+| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens/Anki JPEG (OCR takes none: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
 | | | `VjoNet` stack 65,536 B + 4,096 B TLS; `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 90,112 B permanent [measured] | same |
@@ -171,6 +171,14 @@ SceShell is a user-mode system application spawned with the system-application b
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
 `docs/issue-59-root-cause.md` section 3.1].
+
+**API 19 (#74).** OCR's capture moved into the game: the kernel's `VjoCapture` serves only the
+Lens/Anki JPEG, and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
+CDRAM, else phycont) instead of a region-sized grey plane in its workspace. The H15 workspace is
+188,416 B at any region (712,704 B at 960×544 and 303,104 B at 917×125 before); a line taller
+than a strip takes its own block only when it occurs. The worker's module is 53,248 B
+[measured, packaged SELF]. Figures from the host build's `vjo_vocr_job_bytes` and
+`vjo_vocr_capture_bytes`; [ingame-capture.md](ingame-capture.md) has the table.
 
 ### 4.3 What this means for `*ALL`
 
@@ -321,7 +329,10 @@ Facts:
   drivers together [wiki: Memory_budget; wiki: SceSysmem_Types]. How much is free on a retail
   3.65 console is unmeasured.
 - Our 2,088,960 B full-frame capture buffer failed there once with `0x80024302` (fixed by the
-  region-sized capture, #14) [measured: vita-vn-ocr `docs/vita-memory-budget.md` section 2].
+  region-sized capture, #14) [measured: vita-vn-ocr `docs/vita-memory-budget.md` section 2], and
+  again five times on the owner's PCH-1001 on 3.65 (#74) [measured]. Since API 19 OCR takes no
+  kernel buffer: the display hook writes the region's grey rows into the game worker's own
+  `USER_RW` block, at most 64 KiB, a strip at a time ([ingame-capture.md](ingame-capture.md)).
 - PSVshell reads the foreground process's budget (main, CDRAM, phycont: free and total) from the
   kernel's address-space information of the current context [source: PSVshell `src/perf.c`,
   `psvs_perf_poll_memory`]. Its numbers are the game's or the Shell's, whichever is in front;

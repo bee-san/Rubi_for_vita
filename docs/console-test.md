@@ -1,68 +1,83 @@
-# Console test of a main build on a PS Vita PCH-1000, about 15 minutes
+# Console test of a main build on a PS Vita, one run, about 20 minutes
 
-Builds after v0.7.12 are not released, so they are tested from main: the plugins come from the build's `Release` CI run, the
-models from v0.7.12 and the frozen dictionary from the build itself. The READY comment on the console-test issue (#70) names the build (`REV`) and its run (`RUN`).
-From that build on, the installer registers the OCR worker only for the games named with `--title` (here CLANNAD, `PCSG00415`),
-never under `*ALL`. This guide was first written for main `e759187` (PRs #54-#57: resident weights, memory-check logs, stage
-names in memory errors, H15 by default with an FL10 fallback). The READY build has not run on a console yet; "est." marks an estimate.
+Builds after v0.7.12 are not released, so they are tested from main: the plugins come from the
+build's `Release` CI run, the models from v0.7.12 and the frozen dictionary from the build itself.
+The console-test comment (#74 for API 19) names the build (`REV`) and its run (`RUN`). The
+installer registers the OCR worker only for the games named with `--title` (here CLANNAD,
+`PCSG00415`), never under `*ALL`. API 19 reads the screen inside the game: the kernel gives OCR no
+capture buffer ([ingame-capture.md](ingame-capture.md)). Nothing of it has run on a console yet;
+"est." marks an estimate.
 
-## 1. Build the package (a PC on the Vita's network with git, bash, Python 3.9+, curl, unzip and a logged-in `gh`)
+## What you need
+- A PCH-1000/1001 on 3.60–3.74 with HENkaku/Ensō or h-encore, and VitaShell.
+- CLANNAD (PCSG00415), ON in the Overlay app → Games.
+- A PC on the same Wi-Fi with git, bash, Python 3.9+, curl, unzip and a logged-in `gh`.
+
+## 1. Build the package on your PC
 ```sh
-REV=...; RUN=...   # the build hash and its Release run id, from the READY comment
+REV=...; RUN=...   # the build hash and its Release run id, from the console-test comment
 git clone https://github.com/bee-san/vita-jp-overlay && cd vita-jp-overlay && git checkout $REV
-gh run download $RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D build/ci                       # the build's plugins
-gh release download v0.7.12 -R bee-san/vita-jp-overlay -p VitaJPOverlay-0.7.12.zip -D build/rel   # models
+gh run download $RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D build/ci
+gh release download v0.7.12 -R bee-san/vita-jp-overlay -p VitaJPOverlay-0.7.12.zip -D build/rel
 R=build/rel/x; D=$R/ux0/data/VitaJPOverlay; unzip -qo build/rel/*.zip -d $R
-python3 tools/package_release.py build/ci/*.zip -o build/test.zip --models $D/ocr \
-  --source-revision "$(git rev-parse HEAD)"
+python3 tools/package_release.py build/ci/*.zip -o build/test.zip --models $D/ocr --source-revision "$(git rev-parse HEAD)"
 unzip -qo build/test.zip -d build/pkg && cd build/pkg && python3 tools/package_release.py --verify .
 ```
-- If a command fails, fix what it names (often `gh auth login`) and rerun it; `checksum failed` means a bad download: delete, rerun.
-- The installer copies the weights (bee-san/vita-vn-ocr v0.2.0) to `ux0:data/VitaJPOverlay/ocr/`; the plugin refuses other bytes:
-  `H15_w8.vocr` (default) 1,155,968 B, sha256 `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd`;
-  `FL10_w8.vocr` (fallback) 657,664 B, sha256 `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84`.
+If a command fails, fix what it names (usually `gh auth login`) and run it again. `checksum failed`
+means a bad download: delete the file and rerun. The weights the plugin accepts (vita-vn-ocr
+v0.2.0): `H15_w8.vocr` 1,155,968 B, sha256 `316ebc37…3f03cd`; `FL10_w8.vocr` 657,664 B, sha256
+`500e0b84…825e84`.
 
-## 2. Install and boot (firmware 3.60-3.74 with HENkaku/Ensō or h-encore, and VitaShell)
-1. Close the game, open VitaShell and press Select (FTP), then in `build/pkg` run
-   `bash install-vita.sh --title PCSG00415 VITA_IP:1337` (it registers the OCR worker for CLANNAD only, `*PCSG00415`, never
-   `*ALL`; an existing `*ALL` worker line is commented out). Keep the
-   screen on (it uploads the 134 MiB combined dictionary, reading every file back) until `Installed. Reboot the Vita.` `Cannot reach` = FTP off;
-   `Nothing was changed on the Vita` = `--title` is missing; else rerun.
-2. It sets H15 + FL10 fallback, `ocr_mode = auto`, `log_file = on`, `local_dictionaries = plaintext.vjdict` (Daijirin4 → Sankoku8 → JMdict); old config in `backup:`.
-3. Reboot normally, start FTP, run `bash tools/install_ftp.sh --status VITA_IP`: `status.txt` needs `shell API 18 entered` and
-   `worker started`; if not (e.g. `kernel API version N, expected 18` or `kernel plugin not loaded`), install again and reboot.
-4. Boot hangs or crashes: hold L while powering on (skips plugins), start FTP, `bash tools/install_ftp.sh --uninstall VITA_IP`,
-   reboot, run `--status` and keep its four files (the new kernel imports `ksceIoGetstatByFd`: suspect that first). Back to v0.7.12
-   at any time: `cd ../rel/x && bash install-vita.sh VITA_IP:1337`, then reboot (v0.7.12's installer predates `--title` and
-   registers its worker under `*ALL` again).
-
-## 3. Test in CLANNAD (PCSG00415, where FL10 OCR worked before)
-1. Start CLANNAD (it must be ON in the Overlay app → Games; JP Overlay Settings in older builds). Keep its saved region; if none: L+R, Square, drag round the text, Cross, Circle.
-2. Advance about 10 text pages, pausing ~3 s on each so automatic OCR runs. On 3 of them open the overlay (L+R) and photograph the
-   screen with its recognized text (keep photos private: the game is copyrighted), then Circle. Note slowdown, stutter or crashes.
-3. Optional, 2 min: L+R, hold Square 1 s (full-screen region), Circle, read 2 pages (H15 should still fit), restore the tight region
-   (L+R, Square, drag, Cross, Circle); press PS, wait 5 s, resume, read 1 page (its job usually logs `weights=read` again).
-
-## 4. Copy back (close the game, start FTP; in `build/pkg`); give the fleet these files and the photos in one folder
+## 2. Install
+On the Vita, close any game, open VitaShell and press **Select** to start FTP. Then, in `build/pkg`:
 ```sh
-curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/log.txt      # job log; also log.old.txt if it exists
-bash tools/install_ftp.sh --status VITA_IP   # from that Vita folder: status.txt, kernel.txt (+ .prev) -> build/device/status/
-bash tools/install_ftp.sh --dumps VITA_IP    # after a crash only: ux0:data/*.psp2dmp -> build/device/dumps/
+bash install-vita.sh --title PCSG00415 VITA_IP:1337
+bash tools/install_ftp.sh --self-test VITA_IP
 ```
-- Per text job (in `log.txt` and `status.txt`): `game vocr rc=0 H15_w8.vocr: WxH, lines=N USER workspace=B weights=read|resident
-  resident=1159168, find=… ms load=… ms recognize=… ms frames=F io=0x00000000 stat=0x00000000 cleanup=0`: load/recognition ms, CTC frames;
-- `game vocr memory: free USER=U, needs workspace J + weights W + reserve 4194304: check passed`: the memory check;
-- `game vocr speed: F frames in T us, P us per frame` and `game vocr lines: WxH Nf X.Yms …`, one entry per text line.
-- **Success:** every job `rc=0 … cleanup=0` (`rc=-118` after `job cancelled` = fast page turn, fine) and names `H15_w8.vocr` (no
-  `(fallback)`, no `unusable`); the first text job `weights=read` (load est. 0.23-0.26 s), later ones `weights=resident` with `load=`
-  a few ms (est.; FL10 took 213-359 ms per job before); `speed` est. 2,700-5,000 us per frame at 333 MHz; text roughly matches; `lines=0` ok.
+- The installer backs up `ur0:tai/config.txt` first, on your PC and as `config.txt.vjo-bak` on
+  the Vita, and registers the OCR worker for CLANNAD only.
+- Keep the screen on until it prints `Installed. Reboot the Vita.`
+- `Nothing was changed on the Vita` means you left out `--title`.
 
-## 5. If a job fails
-- "The game OCR worker is unavailable" on screen: the game has no worker section; install again with `--title PCSG00415` and reboot.
-- `stat=0x8…` and `weights=read` on every job: the file-time query is unsupported; note the code (loads still skip the old sleeps).
-- `(fallback)` in CLANNAD: keep the `game vocr fallback:` line (short of memory). `H15_w8.vocr is unusable here … for this game`: H15
-  on the card is missing or damaged, install again; `… for this job`: that job used FL10 (can recur), note `io=` (`0x80010013`: storage unavailable).
-- "not enough memory" on screen: photograph it; it names the stage (kernel capture, the game's memory for the region or the weights,
-  the Shell); `game vocr memory:` has its numbers (none for the kernel capture). `PCSG00415: JP Overlay disabled` in the log: CLANNAD is OFF.
-- H15 too slow or worse than FL10: `curl -o vita-config.ini ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`, edit that copy to
-  `vocr_model = FL10_w8.vocr`, `curl -T vita-config.ini ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/config.ini`; applies at the next L+R.
+## 3. Run it
+1. Reboot. Wait for the LiveArea, then leave the Vita alone for 1 minute.
+2. Start CLANNAD and get to a dialogue screen. The self-test uses **CLANNAD's saved region**
+   (your textbox; with none saved, the full screen). Wait 30 s without pressing anything: on the
+   first settled screen it runs its five stages (capture probe, FL10, H15, full screen, H15
+   again), each with its own record, then finishes by itself.
+3. Read about 10 pages, pausing about 3 s on each. On 3 of them, open the overlay (L+R), take a
+   phone photo of the screen, then press Circle. Note any slowdown, stutter or crash.
+4. Close CLANNAD, go back to the LiveArea and wait 30 s.
+
+## 4. Send back the results
+Start FTP again, then in `build/pkg`:
+```sh
+bash tools/install_ftp.sh --status VITA_IP
+python3 tools/analyse_selftest.py build/device/status/selftest-report.txt
+curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/log.txt
+```
+Attach `selftest-report.txt`, `status.txt`, `kernel.txt` and `boot.txt` (from
+`build/device/status/`), plus `log.txt` and the analyser's output, and one line per step saying
+what you saw ("overlay showed", "no OCR", "crash at step 3"...). Keep the photos private (the game
+is copyrighted): send them directly, not on the issue.
+
+## If something goes wrong
+- **No overlay or no OCR:** look at the top of `status.txt`. It needs `shell API 19 entered` and
+  `worker started`. `BOOT GUARD: SAFE MODE` means the previous boot didn't finish: reboot once
+  (one normal retry is allowed), then do step 4 anyway.
+- **Crash:** also run `bash tools/install_ftp.sh --dumps VITA_IP` and attach `build/device/dumps/`.
+- **Won't boot:** hold **L** while powering on (taiHEN skips every plugin), start VitaShell FTP,
+  run `bash tools/install_ftp.sh --uninstall VITA_IP`, reboot. If that fails, comment out the
+  `VitaJPOverlay` lines in `ur0:tai/config.txt` with VitaShell.
+- **Back to v0.7.12:** `cd ../rel/x && bash install-vita.sh VITA_IP:1337`, then reboot.
+- Run it **once**. Don't keep rebooting to retry; post what you have.
+
+## What it tells us
+- **The capture in the game:** whether the display hook can write the game's own memory, per
+  memory type (the `probe` stage), the strip capture's time (`capture_ms`), and that the kernel
+  pool gave OCR nothing (`kernel-pool`).
+- **Memory:** the game's free USER/CDRAM/phycont before and after each block (`gstep` lines),
+  SceShell's and the kernel pool's free memory by each of three query routes (`kmem` lines), from
+  boot into the game and back.
+- **Speed:** H15's and FL10's load and recognition times on a console (est. until measured), and
+  the warm second recognition.
