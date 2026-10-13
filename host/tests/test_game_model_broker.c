@@ -43,6 +43,7 @@ int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst
 int test_kernel_model_close(uint32_t seq);
 static int retail_return(int rc)
 { return rc < 0 ? (int32_t)((uint32_t)rc & ~0x40000000u) : rc; }
+int vjoBootInfo(VjoBootInfo *out) { out->mode = VJO_BOOT_NORMAL; return 0; }
 int vjoOcrRegister(void) { return retail_return(test_kernel_register()); }
 int vjoOcrSubmit(const VjoGameOcrRequest *r) { return retail_return(test_kernel_submit(r)); }
 int vjoOcrTake(VjoGameOcrRequest *out) { return retail_return(test_kernel_take(out)); }

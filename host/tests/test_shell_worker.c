@@ -111,6 +111,8 @@ static const char *logged(const char *needle)
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { return 0; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
+static int guard_marks[8], guard_mark_rc;
+int vjo_guard_mark(int stage) { if (stage >= 0 && stage < 8) guard_marks[stage]++; return guard_mark_rc; }
 int vjo_anki_start(void) { return 0; }
 int vjo_anki_stop(void) { return anki_stop_rc; }
 int vjo_anki_configure(const VjoConfig *c) { anki_configured++; return c->anki_mining; }
@@ -1835,7 +1837,62 @@ static void test_local_switch_drains_warm_pool(void)
 }
 #endif
 
+/* The boot guard's "ok": the control thread alive for a minute, marked once;
+ * a BUSY kernel (its own uptime shorter) is retried a bounded number of
+ * times, five seconds apart. */
+static void test_boot_guard_ok_after_a_stable_minute(void)
+{
+    memset(guard_marks, 0, sizeof(guard_marks));
+    guard_mark_rc = 0;
+    test_now = 1000000;
+    ctl_started_us = now_us();
+    boot_ok_attempts = 0;
+    for (int s = 0; s < 60; s++) {
+        boot_guard_ok();
+        test_now += 1000000;
+    }
+    TEST_CHECK(guard_marks[VJO_BOOT_STAGE_OK] == 0); /* 59 s: not yet */
+    boot_guard_ok();                                 /* 60 s */
+    TEST_CHECK(guard_marks[VJO_BOOT_STAGE_OK] == 1);
+    test_now += 3600LL * 1000000;
+    boot_guard_ok();
+    boot_guard_ok();
+    TEST_CHECK(guard_marks[VJO_BOOT_STAGE_OK] == 1); /* once per boot */
+
+    /* refused: retried every 5 s, at most BOOT_OK_ATTEMPTS times */
+    memset(guard_marks, 0, sizeof(guard_marks));
+    guard_mark_rc = -1;
+    ctl_started_us = now_us();
+    boot_ok_attempts = 0;
+    test_now += 60LL * 1000000;
+    for (int s = 0; s < 200; s++) {
+        boot_guard_ok();
+        test_now += 1000000;
+    }
+    TEST_CHECK_(guard_marks[VJO_BOOT_STAGE_OK] == BOOT_OK_ATTEMPTS, "%d attempts", guard_marks[VJO_BOOT_STAGE_OK]);
+    guard_mark_rc = 0;
+    boot_guard_ok();
+    TEST_CHECK(guard_marks[VJO_BOOT_STAGE_OK] == BOOT_OK_ATTEMPTS); /* gave up */
+
+    /* refused twice, then accepted */
+    memset(guard_marks, 0, sizeof(guard_marks));
+    guard_mark_rc = -1;
+    ctl_started_us = now_us();
+    boot_ok_attempts = 0;
+    test_now += 61LL * 1000000;
+    boot_guard_ok();
+    test_now += 5LL * 1000000;
+    boot_guard_ok();
+    guard_mark_rc = 0;
+    test_now += 5LL * 1000000;
+    boot_guard_ok();
+    boot_guard_ok();
+    TEST_CHECK(guard_marks[VJO_BOOT_STAGE_OK] == 3);
+    TEST_CHECK(boot_ok_attempts == -1);
+}
+
 TEST_LIST = {
+    {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},

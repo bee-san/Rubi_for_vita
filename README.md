@@ -330,8 +330,17 @@ Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
 attempts are in `ux0:data/VitaJPOverlay/log.txt`. Each game OCR job logs the
 game's free USER memory against what the job needed (also when it refused the
-job) and, for each recognized line, its size, CTC frames and recognition time. If boot fails, hold L while
-powering on to skip plugins, start VitaShell FTP, and run
+job) and, for each recognized line, its size, CTC frames and recognition time.
+
+A boot that does not complete (the Shell plugin not alive a minute after start,
+or SceShell exiting with the plugin loaded) makes the next boot a **safe boot**:
+the kernel plugin installs no hooks and the Shell and game plugins unload
+themselves, so the Vita starts as if the overlay were not installed, and
+`status.txt` says why. Reboot once to try again; after two failed boots in a
+row safe mode stays until you install a new build (the installer resets the
+record) or delete `ur0:data/VitaJPOverlay/boot.txt`. See
+[docs/boot-safety.md](docs/boot-safety.md). If the Vita does not boot at all,
+hold L while powering on to skip plugins, start VitaShell FTP, and run
 `bash tools/install_ftp.sh --uninstall VITA_IP`. Uninstalling preserves data.
 
 ## Build and validation

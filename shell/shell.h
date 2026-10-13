@@ -100,6 +100,15 @@ int vjo_post_page(int page, uint32_t text_generation);
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
 
+/* guard.c: boot-safety guard (core/boot_guard.h). */
+/* 1 when the kernel decided this boot is a safe one: the note is written to
+ * status.txt and the shell is marked inert; the caller returns NO_RESIDENT. */
+int vjo_guard_safe_mode(void);
+/* Reports a stage reached (VJO_BOOT_STAGE_*), or 0 for "inert": the plugin
+ * unloads itself on purpose, which completes this boot for the guard.
+ * Returns the kernel's answer (< 0: not recorded). */
+int vjo_guard_mark(int stage);
+
 /* strip_view.c: the strip's view model (control thread) */
 /* Subtitles on/off and the settings the strip shows with (cfg loaded). */
 void vjo_strip_configure(int on, const VjoConfig *cfg);

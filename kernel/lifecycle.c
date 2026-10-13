@@ -6,6 +6,7 @@
 
 #include "vjo_kernel.h"
 #include "game_ocr.h"
+#include "../core/boot_guard.h"
 
 static tai_hook_ref_t hook_ref;
 static SceUID hook_uid = -1;
@@ -42,6 +43,11 @@ static int procevent_patched(int pid, int ev, int a3, int a4, int *a5, int a6)
 {
     VjoForeground f;
     uint32_t iev;
+    /* SceShell dying with our plugin inside it is the failure the boot guard
+     * exists for: the next boot runs in safe mode even if this one had
+     * already been marked ok. */
+    if (ev == PROCEV_EXIT && pid > 0 && pid == g.shell_pid)
+        boot_fault(VJO_BOOT_FAULT_SHELL_EXIT);
     if (ksceKernelLockMutex(g.game_lock, 1, NULL) < 0)
         goto out;
     f = fg_load();

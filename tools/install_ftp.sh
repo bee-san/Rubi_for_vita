@@ -84,6 +84,13 @@ print("verified " + sys.argv[3])
 PY
 }
 
+# Resets the boot guard's record (docs/boot-safety.md): an empty boot.txt is
+# "no record" to the kernel plugin, so the next boot is a fresh normal one.
+reset_boot_record() {
+  : > "$TMP/boot.empty"
+  put "$TMP/boot.empty" "ur0:/data/VitaJPOverlay/boot.txt"
+}
+
 python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5).close()' \
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
   echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."; exit 1; }
@@ -119,6 +126,11 @@ fi
 
 if [ $STATUS = 1 ]; then
   mkdir -p build/device/status
+  # The boot guard's record (docs/boot-safety.md) lives on ur0, which is
+  # readable before ux0 is mounted.
+  echo "=== boot.txt (ur0)"
+  get "ur0:/data/VitaJPOverlay/boot.txt" "build/device/status/boot.txt" 2>/dev/null \
+    && cat "build/device/status/boot.txt" || echo "(none)"
   for f in kernel.prev kernel status.prev status; do
     echo "=== $f.txt"
     get "ux0:/data/VitaJPOverlay/$f.txt" "build/device/status/$f.txt" 2>/dev/null \
@@ -148,6 +160,7 @@ if [ $UNINSTALL = 1 ]; then
     put "$TMP/$n.new" "$CFG"
     echo "removed the plugin lines from $CFG"
   done
+  reset_boot_record
   if [ $PURGE = 0 ]; then
     echo "Reboot the Vita (plugin files are left in place)."
     exit 0
@@ -217,6 +230,9 @@ for CFG in "${CFGS[@]}"; do
 done
 
 put "$B/VitaJPOverlay_Kernel.skprx" "ur0:/tai/VitaJPOverlay_Kernel.skprx"
+# A new build starts with a clean boot record: the guard's safe mode was about
+# the build being replaced.
+reset_boot_record
 put "$B/VitaJPOverlay_Shell.suprx" "ur0:/tai/VitaJPOverlay_Shell.suprx"
 put "$B/VitaJPOverlay_OCR.suprx" "ur0:/tai/VitaJPOverlay_OCR.suprx"
 put "$RCO" "ur0:/data/VitaJPOverlay/vitajpoverlay.rco"
@@ -258,4 +274,4 @@ else
   echo "config.ini is up to date"
 fi
 for CFG in "${CFGS[@]}"; do put "$TMP/${CFG%%:*}.new" "$CFG"; done
-echo "Installed. Reboot the Vita. If it fails to boot, hold L while powering on and run: tools/install_ftp.sh --uninstall ${HOST%%:*}"
+echo "Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on and run: tools/install_ftp.sh --uninstall ${HOST%%:*}"

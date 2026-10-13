@@ -14,6 +14,7 @@ typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKe
 #define SCE_SEEK_SET SEEK_SET
 #define SCE_SEEK_END SEEK_END
 #define SCE_KERNEL_START_SUCCESS 0
+#define SCE_KERNEL_START_NO_RESIDENT 1
 #define SCE_KERNEL_STOP_SUCCESS 0
 #define SCE_KERNEL_STOP_FAIL 1
 #define sceClibMemset memset
