@@ -92,11 +92,14 @@ Repeat `--title` for more games. Games registered by an earlier install are
 kept, so later updates need no `--title`; with none given and none registered
 yet, as after an install that used `*ALL`, the installer changes nothing and
 says so. A game added later needs `--title` and a reboot. JP Overlay Settings
-shows each game's title ID. Adrenaline's PSP games share NPXS10028:
-`bash install-vita.sh --title NPXS10028 VITA_IP:1337` adds them. (Adrenaline's
-own kernel module identifies its emulator process by the title ID `PSPEMUCFW`; if
-`log.txt` says `game PSPEMUCFW started`, add `--title PSPEMUCFW` too. Neither ID
-is checked on a console yet.) The 0.7.12 archive's own `install-vita.sh` predates `--title`
+shows each game's title ID. For Adrenaline's PSP games add both
+`--title NPXS10028`, the PSP emulator's ID that the overlay uses for them, and
+`--title PSPEMUCFW`, the title ID of the process Adrenaline's own kernel module
+patches; which one taiHEN matches is not checked on a console yet, and a section
+that matches no process loads nothing. A PSP game started from its own bubble
+(Adrenaline Bubble Manager) may run under that bubble's ID instead; with
+`log_file = on` (the installer's default), `log.txt` names each enabled game as
+it starts (`game … started`), and that ID is the one to add. The 0.7.12 archive's own `install-vita.sh` predates `--title`
 and registers the worker under `*ALL`; use the installer from `main` or a
 later release.
 
@@ -111,7 +114,7 @@ and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` befor
 copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
 `ur0:tai/VitaJPOverlay_OCR.suprx` under a section for each game, such as
-`*PCSG00415` (`*NPXS10028` for Adrenaline), never under `*ALL`, in the active
+`*PCSG00415` (for Adrenaline `*NPXS10028` and `*PSPEMUCFW`), never under `*ALL`, in the active
 taiHEN config (`ux0:tai/config.txt` if it exists, else `ur0:tai/config.txt`).
 Disable old `VitaJPOverlay_Text.suprx` entries, an `*ALL` worker line and
 duplicate worker registrations, then reboot. Keep unrelated plugins and

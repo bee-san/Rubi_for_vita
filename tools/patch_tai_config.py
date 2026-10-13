@@ -17,13 +17,14 @@ SHELL = "ur0:tai/VitaJPOverlay_Shell.suprx"
 TEXT = "ur0:tai/VitaJPOverlay_Text.suprx"
 OCR = "ur0:tai/VitaJPOverlay_OCR.suprx"
 DISABLED = "# Mainline OCR: "
-# The PSP emulator's ID, which all of Adrenaline's PSP games share (core/games.c).
+# The PSP emulator's ID, which the overlay uses for Adrenaline's PSP games
+# (core/games.c); README 'Install' explains PSPEMUCFW, Adrenaline's own ID.
 PSP_EMULATOR = "NPXS10028"
 # Title IDs have the XXXXYYYYY form (taiHEN README, 'config.txt'), e.g. PCSG00415.
 TITLE_ID = re.compile(r"[A-Z0-9]{9}")
 NO_TITLES = ("No game is registered for the OCR worker (VitaJPOverlay_OCR.suprx), and it is never "
              "registered under *ALL. Name each game with --title TITLEID, for example "
-             "--title PCSG00415 (CLANNAD); Adrenaline's PSP games share NPXS10028.")
+             "--title PCSG00415 (CLANNAD); for Adrenaline's PSP games see README 'Install' (NPXS10028).")
 
 
 class TitleError(ValueError):
@@ -48,7 +49,8 @@ def is_game(name):
 
 def game_title(value):
     """The section name for one --title value (PCSG00415, pcsg00415 or
-    *PCSG00415), or TitleError."""
+    *PCSG00415), or TitleError. Title IDs are upper case and taiHEN compares
+    section names case-sensitively, so the value is upper-cased."""
     title = value.strip().lstrip("*").strip().upper()
     if title in ("ALL", "KERNEL", "MAIN"):
         raise TitleError(f"--title {value}: the OCR worker is registered per game, never under "
@@ -58,7 +60,7 @@ def game_title(value):
                          "such as PCSG00415")
     if not is_game(title):
         raise TitleError(f"--title {title} is a system application, VitaShell or the settings app, "
-                         "where the OCR worker never runs (Adrenaline's PSP games: NPXS10028)")
+                         "where the OCR worker never runs (for Adrenaline see README 'Install')")
     return title
 
 
@@ -92,6 +94,20 @@ def add(lines, name, plugin):
     lines.insert(begin + 1, plugin)
 
 
+def games_for(lines, titles=(), keep_from=()):
+    """The games to register the worker for: the --title IDs, then the games
+    registered in the other configurations and in this one, without repeats.
+    Every configuration patched with the same arguments gets the same list."""
+    games = []
+    for value in titles:
+        title = game_title(value)
+        if title not in games:
+            games.append(title)
+    for other in [config.decode("utf-8").splitlines() for config in keep_from] + [lines]:
+        games += [title for title in registered(other) if title not in games]
+    return games
+
+
 def patch(raw: bytes, extra_kernel=(), uninstall=False, titles=(), keep_from=()) -> bytes:
     source = raw.decode("utf-8")
     newline = "\r\n" if "\r\n" in source else "\n"
@@ -99,14 +115,7 @@ def patch(raw: bytes, extra_kernel=(), uninstall=False, titles=(), keep_from=())
     if uninstall:
         lines = [line for line in lines if line.strip() not in (KERNEL, SHELL, TEXT, OCR)]
         return (newline.join(lines) + newline).encode("utf-8")
-    games = []
-    for value in titles:
-        title = game_title(value)
-        if title not in games:
-            games.append(title)
-    # The other configurations first, so that each one lists its games in the same order.
-    for other in [config.decode("utf-8").splitlines() for config in keep_from] + [lines]:
-        games += [title for title in registered(other) if title not in games]
+    games = games_for(lines, titles, keep_from)
     if not games:
         raise TitleError(NO_TITLES)
     add(lines, "KERNEL", KERNEL)
@@ -144,7 +153,8 @@ def main():
     args = parser.parse_args()
     try:
         keep = [path.read_bytes() for path in args.keep_titles_from]
-        result = patch(args.source.read_bytes(), args.kernel_plugin, args.uninstall, args.title, keep)
+        raw = args.source.read_bytes()
+        result = patch(raw, args.kernel_plugin, args.uninstall, args.title, keep)
     except TitleError as error:
         print(error, file=sys.stderr)
         raise SystemExit(3)
@@ -155,7 +165,7 @@ def main():
     except OSError as error:
         parser.error(str(error))
     if not args.uninstall:
-        games = registered(result.decode("utf-8").splitlines())
+        games = games_for(raw.decode("utf-8").splitlines(), args.title, keep)
         print(f"OCR worker registered for {', '.join(games)}")
 
 

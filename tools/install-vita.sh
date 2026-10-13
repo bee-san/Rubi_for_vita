@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Installs this release over VitaShell's FTP. Name each game that should have
 # OCR with --title (repeatable): the OCR worker is registered for those games
-# and the games registered before, never under *ALL. NPXS10028 is Adrenaline's
-# PSP emulator, which all its PSP games share.
+# and the games registered before, never under *ALL. For Adrenaline's PSP
+# games add NPXS10028 and PSPEMUCFW (README 'Install').
 set -euo pipefail
 PACKAGE=$(cd "$(dirname "$0")" && pwd)
 TITLES=()

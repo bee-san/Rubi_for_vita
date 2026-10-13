@@ -197,6 +197,7 @@ elif '-o' in a:
                 result = self.install("install-vita.sh", *options)
                 self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
                 self.assertIn("Nothing was changed on the Vita", result.stdout)
+                self.assertIn("Correct the --title value" if options else "Run again with --title", result.stdout)
                 self.assertIn("bash install-vita.sh --title PCSG00415 127.0.0.1", result.stdout)
                 self.assertIn("--title" if options else "never registered under *ALL", result.stderr)
                 self.assertNotIn("Installed.", result.stdout)
@@ -208,7 +209,8 @@ elif '-o' in a:
             b"*KERNEL\r\nur0:tai/Other.skprx\r\n*PCSE00120\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n")
         result = self.install("install-vita.sh", "--title", "NPXS10028", "--title", "pcsg00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("OCR worker registered for NPXS10028, PCSG00415, PCSE00120", result.stdout)
+        # Both configurations report the same games, in the same order.
+        self.assertEqual(result.stdout.count("(OCR worker registered for NPXS10028, PCSG00415, PCSE00120)"), 2)
         for partition in ("ur0", "ux0"):
             tai = self.tai(partition)
             for title in (b"NPXS10028", b"PCSG00415", b"PCSE00120"):

@@ -84,8 +84,9 @@ class TaiConfigTests(unittest.TestCase):
                 patch(b"*KERNEL\n", titles=[title])
         with self.assertRaises(TitleError) as refusal:
             patch(b"", titles=["NPXS10015"])
-        self.assertIn("NPXS10028", str(refusal.exception))
-        # Adrenaline's bubble ID is a candidate like any other title (core/games.c).
+        self.assertIn("system application", str(refusal.exception))
+        self.assertIn("Adrenaline", str(refusal.exception))
+        # Adrenaline's process title is a candidate like any other title (core/games.c).
         self.assertEqual(worker_sections(patch(b"", titles=["PSPEMUCFW"])), ["PSPEMUCFW"])
 
     def test_kept_titles_come_from_every_configuration(self):

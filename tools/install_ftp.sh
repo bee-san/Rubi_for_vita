@@ -13,8 +13,8 @@
 # yet, nothing is changed.
 #
 #   tools/install_ftp.sh --title PCSG00415 192.168.1.50[:1337]
-#   tools/install_ftp.sh --title PCSG00415 --title NPXS10028 192.168.1.50
-#     (NPXS10028: Adrenaline, whose PSP games all run in the PSP emulator's process)
+#   tools/install_ftp.sh --title PCSG00415 --title NPXS10028 --title PSPEMUCFW 192.168.1.50
+#     (NPXS10028 and PSPEMUCFW: Adrenaline's PSP games, README 'Install')
 #   tools/install_ftp.sh --set dictionary=jiten --set jiten_api_key=KEY 192.168.1.50
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;
@@ -272,7 +272,11 @@ for CFG in "${CFGS[@]}"; do
     "${KEEP[@]}") || patch_status=$?
   if [ "$patch_status" -ne 0 ]; then
     if [ "$patch_status" -eq 3 ]; then
-      echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
+      if [ -n "${TITLES[*]+x}" ]; then
+        echo "Nothing was changed on the Vita. Correct the --title value named above and run again, for example:"
+      else
+        echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
+      fi
       echo "  $INSTALL_CMD --title PCSG00415 ${HOST%%:*}"
       echo "JP Overlay Settings shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
     fi
