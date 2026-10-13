@@ -402,6 +402,14 @@ accuracy is measured separately against vita-vn-ocr's hand-checked shared
 `eval/` screenshots. The experimental text-extraction branch remains
 separate from this release.
 
+[docs/offline-testing.md](docs/offline-testing.md) says what of this runs where:
+the real plugin sources with the SDK boundary stubbed on the host, the pure-C
+kernel and core suites on the Vita's CPU under qemu-arm (`tools/arm_host_tests.sh`),
+nothing in Vita3K (it has no SceShell, no kernel plugins and no memory budgets),
+and the Shell budget replay model (`tools/shell_budget_model.py`) that ranks a
+build's SceShell footprint against the console's measured samples. Boot and
+memory on the console remain the self-test's to answer.
+
 Controller regressions exercise all 12 hooked read/peek variants, including
 negative logic and 64-sample batches. The [pinned VitaSDK headers](https://github.com/vitasdk/vita-headers/blob/e66ebe90b73d1fa4cce005a5b2072cec27322544/include/psp2/ctrl.h)
 map Vita shoulders to L1/R1 in `*2`/`Ext2` calls. A physical v0.7.3 trace

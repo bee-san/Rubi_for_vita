@@ -57,7 +57,10 @@ thread, static buffer or taiHEN registration.
    with every driver) are region-sized and transient; kernel `.bss` stays small.
 5. **Vita3K is not evidence.** A Vita3K pass says nothing about plugin boot or memory safety on a
    console: it does not model the budgets, SceShell or taiHEN. Only a console run counts, and
-   every unmeasured console number is marked as an estimate.
+   every unmeasured console number is marked as an estimate. What can run off the console, and
+   what each result does and does not show, is in [docs/offline-testing.md](docs/offline-testing.md);
+   `tools/shell_budget_model.py` ranks a change's SceShell footprint against the measured
+   sessions before it is built.
 6. **Recovery path.** The boot-safety guard ([docs/boot-safety.md](docs/boot-safety.md)) turns
    the boot after an incomplete one into a safe boot: no kernel hooks, the Shell and game
    plugins unload themselves, a note in `status.txt`. If a plugin still stops the Vita from

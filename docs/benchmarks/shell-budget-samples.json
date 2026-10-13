@@ -1,0 +1,62 @@
+{
+  "_comment": "Console samples of SceShell's memory, with the overlay build that was loaded when each was taken (tools/shell_budget_model.py replays the current build against them; docs/offline-testing.md). Every number is measured unless its field says estimate.",
+  "shell_partition_total": 52428800,
+  "paf_heap_total": 5242880,
+  "paf_reserve": 1572864,
+  "samples": [
+    {
+      "id": "notes26-v074",
+      "date": "2026-10-11",
+      "source": "vita-vn-ocr notes/26-Game-process-OCR-hardware-checkpoint.md, 'Observed memory-mode boundary': USER_RW total 52,428,800 B, free 98,304 B, Shell figures, CLANNAD in front",
+      "shell_free": 98304,
+      "ownership": "SceShell (the sample names the Shell's partition total)",
+      "overlay_build": "v0.7.4 (3f7ae81, API 13)",
+      "overlay_pages": {
+        "shell_module": 331776,
+        "worker_module": 40960,
+        "stacks_tls": 90112,
+        "_source": "release VitaJPOverlay-0.7.4.zip SELF segments (Shell 170,264 text + 159,612 data/bss; OCR 28,840 + 4,176; kernel sha256 9f6591... matches the note); VjoNet 65,536 + VjoControl 16,384 + 2 x 4,096 TLS from shell/worker.c at that tag"
+      },
+      "other_occupants": "the private native testing agent was loaded in SceShell too; its footprint is unknown (estimate: not counted)",
+      "paf_free": null
+    },
+    {
+      "id": "notes08-early",
+      "date": "2026-10-10",
+      "source": "vita-vn-ocr notes/08-Validation-and-measurements.md: pushed native events with partition free-memory fields, USER_RW 28,672 B free of 50 MiB; address-space ownership not verified",
+      "shell_free": 28672,
+      "ownership": "not verified (consistent with SceShell's 50 MiB)",
+      "overlay_build": "PR #14/#15 era (API <= 12), exact commit unknown",
+      "overlay_pages": null,
+      "other_occupants": "the native testing agent; unknown",
+      "paf_free": null
+    },
+    {
+      "id": "notes26-paf-fresh",
+      "date": "2026-10-11",
+      "source": "vita-vn-ocr notes/26, HW12: after one cold reboot with zero screenshot requests, fresh PAF free space 2,538,568 B",
+      "shell_free": null,
+      "overlay_build": "v0.7.4 (3f7ae81, API 13)",
+      "paf_free": 2538568,
+      "paf_held_by_overlay": "the Paf plugin and RCO only (estimate 8,192 B)"
+    },
+    {
+      "id": "meiki-paf",
+      "date": "2026-10-10",
+      "source": "docs/meiki-ocr.md on branch experiment/meiki-ocr: Paf's whole mapped heap is 5,242,880 B, roughly 2.4 MiB free; 2,498 KiB reported free from Paf in-game",
+      "shell_free": null,
+      "overlay_build": "experiment/meiki-ocr (Shell-side recognizer)",
+      "paf_free": 2557952,
+      "paf_held_by_overlay": "the Paf plugin and RCO (estimate 8,192 B); the Meiki workspaces were not allocated at that point"
+    },
+    {
+      "id": "notes26-paf-leaked",
+      "date": "2026-10-11",
+      "source": "vita-vn-ocr notes/26, HW11: Shell PAF free 355,256-441,080 B while a test tool held a 2,187,264 B JPEG pool; HW12 recovered it by reboot",
+      "shell_free": null,
+      "overlay_build": "v0.7.4 (3f7ae81, API 13)",
+      "paf_free": 355256,
+      "paf_held_by_overlay": "an outside tool's 2,187,264 B pool, not ours: the low-water case"
+    }
+  ]
+}

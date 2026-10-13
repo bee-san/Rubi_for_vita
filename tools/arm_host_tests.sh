@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# The pure-C kernel and core suites, built for the Vita's CPU (ARMv7-A
+# Cortex-A9, 32-bit pointers and size_t, LDREX/STREX atomics) with a Linux
+# ARM toolchain and run under qemu-arm user mode. The x86_64 host suites
+# cannot see 32-bit width or ARM atomics bugs; this lane can. It is not a
+# Vita: no firmware, no SceShell, no taiHEN, no memory budgets
+# (docs/offline-testing.md). Suites that need the vocr runtime, BearSSL or
+# the full core library are left to the host job and to vita-vn-ocr's own
+# ARM parity lane.
+#
+#   ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static tools/arm_host_tests.sh [build-dir]
+#
+# Ubuntu: apt-get install gcc-arm-linux-gnueabihf qemu-user-static. The
+# defaults below are those package names; the fleet box sets both variables.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+ARM_CC=${ARM_CC:-arm-linux-gnueabihf-gcc}
+QEMU=${QEMU:-qemu-arm-static}
+OUT=${1:-build/arm-tests}
+mkdir -p "$OUT"
+FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -Wall -Wextra -Wno-unused-parameter
+       -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1)
+QEMU_ARGS=(-cpu cortex-a9)
+# qemu-arm needs the dynamic loader's directory only for dynamic binaries;
+# everything here is static.
+"$ARM_CC" --version | head -1
+"$QEMU" --version | head -1
+
+build() { # build NAME SOURCES...
+  local name=$1; shift
+  "$ARM_CC" "${FLAGS[@]}" -o "$OUT/$name" "$@"
+  file "$OUT/$name" 2>/dev/null | sed -E 's/, (BuildID|for GNU|with debug_info|not stripped).*//' || true
+}
+
+build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
+build ledger host/tests/test_ledger.c core/ledger.c
+build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
+build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
+build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
+
+fail=0
+for t in boot_guard ledger kernel_capture kernel_input kernel_game_ocr; do
+  if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$t" > "$OUT/$t.log" 2>&1; then
+    echo "arm $t: $(grep -c '\[ OK \]' "$OUT/$t.log") cases pass"
+  else
+    echo "arm $t: FAILED"; tail -20 "$OUT/$t.log"; fail=1
+  fi
+done
+# The record the kernel writes must be the same bytes on ARM and on the host.
+"$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
+exit $fail
