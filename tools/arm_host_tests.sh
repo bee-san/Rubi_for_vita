@@ -10,8 +10,10 @@
 #
 #   ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static tools/arm_host_tests.sh [build-dir]
 #
-# Ubuntu: apt-get install gcc-arm-linux-gnueabihf qemu-user-static. The
-# defaults below are those package names; the fleet box sets both variables.
+# Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+# qemu-user-static (the cross gcc alone has no ARM libc headers or static
+# libc). The defaults below are those package names; the fleet box sets both
+# variables to its own toolchain, which bundles a sysroot.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ARM_CC=${ARM_CC:-arm-linux-gnueabihf-gcc}
