@@ -458,7 +458,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     if (kalloc) buffers_kstrip_free();
     if (rc > 0 && (req.flags & VJO_ROWS_SIG)) {
         rows.sig_next = req.y + req.n;
-        if ((req.flags & VJO_ROWS_LAST) && valid && claimed && !cancelled && req.seq == request.seq) {
+        /* Only a region job's capture is the region's: a full-frame or probe
+         * pass (the self-test's) must not stand in for the Shell's region. */
+        if ((req.flags & VJO_ROWS_LAST) && valid && claimed && !cancelled && req.seq == request.seq &&
+            !(request.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE))) {
             publish_capture_locked();
             VJO_UNLOCK();
             ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);

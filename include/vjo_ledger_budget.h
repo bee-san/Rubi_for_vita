@@ -22,7 +22,10 @@
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 45056u      /* VitaJPOverlay_OCR.suprx: 36,864 text + 8,192 data/bss [measured] */
+/* VitaJPOverlay_OCR.suprx: 45,056 text + 8,192 data/bss [measured, API 19 build]. Raised from 45,056 B
+ * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
+ * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 53248u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -76,7 +79,7 @@
 #define VJO_LIMIT_SHELL_PAF (VJO_PAF_FREE_MEASURED - VJO_PAF_RESERVE)
 
 /* ---- the kernel's partition (ScePhyMemPartKD, 36 MiB shared by every driver; pool "kernel") ---- */
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u     /* VitaJPOverlay_Kernel.skprx: 32,768 text + 81,920 data/bss [measured] */
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u     /* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured] */
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
 /* The Shell's JPEG capture (Lens, an Anki screenshot) at a full frame, KERNEL_RW,

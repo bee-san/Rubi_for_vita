@@ -175,11 +175,12 @@ static const struct {
     const char *name;
     uint32_t flags;
 } stages[] = {
+    /* In this order: the last stage's result is the job's (shell/worker.c). */
     {"probe", VJO_GAME_OCR_F_PROBE},          /* each capture path and memory type, one strip each */
-    {"textbox", 0},                           /* the user's region; the configured model's weights read */
-    {"textbox2", 0},                          /* again: the weights kept, the warm time */
-    {"fullscreen", VJO_GAME_OCR_F_FULL},      /* the whole frame, through the strips */
-    {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model */
+    {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model (FL10 read) */
+    {"textbox", 0},                           /* the user's region; the configured model's weights read (H15) */
+    {"fullscreen", VJO_GAME_OCR_F_FULL},      /* the whole frame, through the strips; the weights kept */
+    {"textbox2", 0},                          /* the user's region again: the warm time; the job's text */
 };
 
 unsigned vjo_selftest_stages(void)

@@ -127,9 +127,10 @@ static unsigned selftest_begins, selftest_ends, selftest_stage_count;
 static uint32_t selftest_flags_seen[8];
 static int selftest_rcs[8];
 static VjoRect selftest_region;
-static const char *const selftest_names[] = {"probe", "textbox", "textbox2", "fullscreen", "fallback"};
-static const uint32_t selftest_stage_flags_tab[] = {VJO_GAME_OCR_F_PROBE, 0, 0, VJO_GAME_OCR_F_FULL,
-                                                    VJO_GAME_OCR_F_FORCE_FALLBACK};
+/* shell/selftest.c's order: the last stage's result is the job's */
+static const char *const selftest_names[] = {"probe", "fallback", "textbox", "fullscreen", "textbox2"};
+static const uint32_t selftest_stage_flags_tab[] = {VJO_GAME_OCR_F_PROBE, VJO_GAME_OCR_F_FORCE_FALLBACK, 0,
+                                                    VJO_GAME_OCR_F_FULL, 0};
 int vjo_selftest_armed(void) { return selftest_armed && !selftest_done; }
 void vjo_selftest_init(const VjoConfig *cfg) {}
 void vjo_selftest_step(const char *step) { selftest_steps++; }
@@ -169,13 +170,6 @@ int vjo_capture_jpeg(VjoArena *a, uint32_t f, int q, VjoBuf *b, VjoState *s)
     if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
     if (jpeg_encoder_oom) { s->capture_result = 0; return VJO_E_OOM; }
     return VJO_E_SOURCE;
-}
-/* A finished region capture of raw_region, read through vjoReadRaw. */
-int vjo_capture_raw(uint32_t f, int (*consume)(void *ud, const VjoState *st), void *ud, VjoState *s)
-{
-    if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
-    *s = raw_state;
-    return consume(ud, s);
 }
 int vjo_title_id(SceUID pid, char *out, int cap) { return -1; }
 int vjo_title_game_mode(const char *id) { return VJO_GAME; }
@@ -2010,11 +2004,11 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
-    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_PROBE && selftest_flags_seen[1] == 0 &&
-               selftest_flags_seen[2] == 0 && selftest_flags_seen[3] == VJO_GAME_OCR_F_FULL &&
-               selftest_flags_seen[4] == VJO_GAME_OCR_F_FORCE_FALLBACK);
+    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_PROBE &&
+               selftest_flags_seen[1] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[2] == 0 &&
+               selftest_flags_seen[3] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[4] == 0);
+    TEST_CHECK(!strcmp(cache_data[0].sentence, "猫")); /* the last stage's text is the job's */
     TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
-    TEST_CHECK(logged("gstep") || 1);
     mem_free();
     /* A failing stage still gets its record and the test still finishes. */
     reset();

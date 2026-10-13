@@ -580,7 +580,7 @@ static int vocr_capture_seen;
 static void vocr_note_capture(void)
 {
     VjoState st;
-    if (vocr_capture_seen) return;
+    if (vocr_capture_seen) return; /* also set for full-frame and probe jobs: theirs is not the region's */
     st.size = sizeof(st);
     if (vjoGetState(&st) < 0 || st.done_seq == vocr_done_before) return;
     vocr_capture_seen = 1;
@@ -635,7 +635,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     vocr_fallback_requested = fallback_len > 0;
     st0.size = sizeof(st0);
     vocr_done_before = vjoGetState(&st0) < 0 ? 0 : st0.done_seq;
-    vocr_capture_seen = 0;
+    vocr_capture_seen = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
     vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
@@ -667,32 +667,25 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     return rc;
 }
 
-/* The self-test (docs/self-test.md): every stage on this settled screen, each
- * with its record; the textbox stage's result is this job's. */
-static int run_selftest_stages(VjoGameOcrResult *result, VjoOverlayData *out)
+/* The self-test (docs/self-test.md): every stage on this settled screen in
+ * turn, each with its record, a failed one included. They share the job's one
+ * result (the Shell's pages may only shrink): the last stage, the user's
+ * region again, leaves the job's text. */
+static int run_selftest_stages(VjoGameOcrResult *result)
 {
-    static VjoGameOcrResult stage_result; /* never put large results on thread stacks */
     unsigned n = vjo_selftest_stages();
-    int textbox_rc = VJO_E_SOURCE, have_textbox = 0;
+    int rc = VJO_E_SOURCE;
     for (unsigned i = 0; i < n && !vocr_cancelled(NULL); i++) {
-        uint32_t flags = vjo_selftest_stage_flags(i);
         const char *ran = "?";
         int64_t t = now_us();
-        int rc;
         vjo_selftest_stage_begin(i, job_cfg.vocr_model, job_cfg.vocr_fallback_model);
-        sceClibMemset(&stage_result, 0, sizeof(stage_result));
-        rc = vocr_run_one(&stage_result, flags, NULL, &ran);
-        vjo_selftest_stage_end(i, rc, &stage_result, (uint32_t)((now_us() - t) / 1000), ran);
-        if (!sceClibStrcmp(vjo_selftest_stage_name(i), "textbox")) {
-            *result = stage_result;
-            textbox_rc = rc;
-            have_textbox = 1;
-        }
+        sceClibMemset(result, 0, sizeof(*result));
+        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), NULL, &ran);
+        vjo_selftest_stage_end(i, rc, result, (uint32_t)((now_us() - t) / 1000), ran);
     }
     if (vocr_cancelled(NULL)) return VJO_E_CANCELLED; /* the stages run again on the next settled screen */
     vjo_selftest_done();
-    (void)out;
-    return have_textbox ? textbox_rc : VJO_E_SOURCE;
+    return rc;
 }
 
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
@@ -707,7 +700,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     sceClibMemset(&result, 0, sizeof(result));
     vocr_fallback_requested = 0;
     if (vjo_selftest_stages())
-        out->err.rc = run_selftest_stages(&result, out);
+        out->err.rc = run_selftest_stages(&result);
     else
         out->err.rc = vocr_run_one(&result, 0, NULL, &ran);
     /* The configured model failed to open or verify: keep OCR working with

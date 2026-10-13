@@ -462,13 +462,19 @@ int vjoMemInfo(VjoMemInfo *out)
     uint32_t state;
     VjoMemInfo info;
     uint32_t size = 0;
-    SceUID pid = ksceKernelGetProcessId(), worker;
-    VJO_LOCK();
-    worker = game_ocr_worker_pid_locked();
-    VJO_UNLOCK();
-    if (!caller_ok() && (worker <= 0 || pid != worker))
-        return VJO_ERR_PERM;
+    SceUID pid = ksceKernelGetProcessId(), worker = 0;
     ENTER_SYSCALL(state);
+    /* The Shell, or the registered game worker (it names its own partitions).
+     * The lock is released before meminfo_fill, which takes it itself. */
+    if (!caller_ok()) {
+        VJO_LOCK();
+        worker = game_ocr_worker_pid_locked();
+        VJO_UNLOCK();
+        if (worker <= 0 || pid != worker) {
+            EXIT_SYSCALL(state);
+            return VJO_ERR_PERM;
+        }
+    }
     ksceKernelMemcpyUserToKernel(&size, out, sizeof(size));
     meminfo_fill(pid, out, &info);
     if (size > sizeof(info))
