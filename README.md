@@ -209,7 +209,7 @@ the game to be registered for the OCR worker at install time (`--title`, see
 ```ini
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
-local_dictionaries = jmdict.vjdict
+local_dictionaries = plaintext.vjdict
 local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
@@ -237,26 +237,32 @@ dictionary results.
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
-JMdict is disk-backed: its approximately 74 MiB file is never loaded into RAM.
-The bundle uses plain English definitions, Japanese spellings/readings, and
-inflection rules. Source provenance is in [docs/jmdict-source.json](docs/jmdict-source.json).
-Copyright belongs to James William Breen and the EDRDG; it is distributed under
-[CC BY-SA 4.0](https://www.edrdg.org/edrdg/licence.html). The release includes
-attribution, its conversion manifest and the license. To rebuild this pinned
-snapshot, run `python3 tools/prepare_jmdict.py -o jmdict.vjdict`; the original
-gzip snapshot is also attached to the release.
+The next release bundles one frozen disk-backed `plaintext.vjdict`, combining
+**Daijirin4 → Sankoku8 → JMdict** in that priority order. The original archives
+and processed file are committed in the private
+[plaintext-dicts repository](https://github.com/bee-san/plaintext-dicts).
+The public release includes the processed dictionary and its attribution.
+The 2026-10-13 snapshot is pinned by exact commit and SHA-256; builds perform
+no dictionary updates and need no conversion or current upstream snapshot.
 
-You can add your own Yomitan dictionaries, including a legally obtained
-Daijirin export, with [the converter and installation guide](docs/local-dictionaries.md).
+Deduplication keeps a spelling and normalized reading pair from the first
+source that contains it, preserving that source's separate senses, distinct
+readings and inflection rules. The result has 485,410 entries (301,927
+Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 134 MiB on disk.
+It stays on disk and is never loaded whole into RAM. Twelve definitions carry
+a truncation notice at the existing 7,000-byte limit; 16 empty or overlong
+source rows cannot be indexed. Exact provenance and counts are in
+[docs/plaintext-dictionaries.json](docs/plaintext-dictionaries.json), with
+[attribution](docs/plaintext-attribution.txt) and the
+[JMdict license](docs/JMdict-LICENSE.html).
+
+You can add your own Yomitan dictionaries with
+[the converter and installation guide](docs/local-dictionaries.md).
 Up to eight dictionary files can be enabled in priority order. The Overlay
-app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages through
-them for the selected word: the first page is the usual best match, and Down
-shows the next enabled dictionary that has an entry there. Only the page on
-screen is held in memory; definitions are always stored and shown as plain
-text. See [several dictionaries](docs/local-dictionaries.md#several-dictionaries). The downloaded
-Daijirin v3 has been converted and measured separately; the commercial file is
-installed privately, while the public release includes the converter and JMdict.
-The dictionary stays on disk; it is never loaded whole into RAM.
+app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages
+through files for the selected word. The combined bundle is one file, so
+it displays the preferred source; add separate dictionaries to page through
+other definitions. Only the page on screen is held in memory.
 
 Google Lens can also be selected with `ocr_backend = lens`; it uploads the
 selected image to Google and works with the configured dictionary, including
@@ -414,15 +420,25 @@ Python and Pillow are needed for host image tests.
 cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/host
 ctest --test-dir build/host --output-on-failure
-cmake -S vita -B build/vita -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
+cmake -S vita -B build/vita -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
+  -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake --build build/vita --target release
 ```
 
-The cross-build produces a base ZIP. `tools/package_release.py` combines it with
-the checksum-pinned models, JMdict conversion and license to create the complete
-installable release and its per-file manifest. CI builds the kernel, Shell UI
-and game vocr worker using a read-only private-source key; publication happens
-after validation.
+Check out the exact `plaintext-dicts` commit recorded in
+`docs/plaintext-dictionaries.json` and point `VJO_PLAINTEXT_SOURCE` at that
+checkout. CI uses a read-only deploy key and the same exact commit. To prepare
+the dictionary separately, run `python3 tools/prepare_plaintext.py --source
+/path/to/plaintext-dicts -o plaintext.vjdict`; without `--source`, authenticated
+GitHub CLI access can fetch the pinned archive. Both the archive and unpacked
+file must match their committed checksums.
+
+The cross-build produces a base ZIP containing the frozen dictionary and
+attribution. `tools/package_release.py BASE.zip -o RELEASE.zip --models
+/path/to/models` adds the checksum-pinned OCR models and per-file manifest.
+Packaging reads the dictionary already in the base ZIP, requires its exact
+checksum, and never substitutes a newer JMdict-only snapshot. Publication
+still happens explicitly after validation.
 
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell

@@ -23,7 +23,7 @@ class ReleaseInstall(unittest.TestCase):
         for folder in ("tools", "ur0/tai", "ur0/data/VitaJPOverlay",
                        "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries"):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
-        for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py",
+        for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py",
                      "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
@@ -33,7 +33,7 @@ class ReleaseInstall(unittest.TestCase):
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
                      "ur0/tai/VitaJPOverlay_OCR.suprx",
                      "ux0/data/VitaJPOverlay/ocr/FL10_w8.vocr", "ux0/data/VitaJPOverlay/ocr/H15_w8.vocr",
-                     "ux0/data/VitaJPOverlay/dictionaries/jmdict.vjdict"):
+                     "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
@@ -124,14 +124,14 @@ elif '-o' in a:
         config = (self.data / "config.ini").read_text()
         for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = H15_w8.vocr",
                         "vocr_fallback_model = FL10_w8.vocr",
-                        "local_dictionaries = jmdict.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key"):
+                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key"):
             self.assertIn(setting, config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
         self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
-        for name in ("dictionaries/jmdict.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr"):
+        for name in ("dictionaries/plaintext.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
 
@@ -183,7 +183,7 @@ elif '-o' in a:
         self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
 
     def test_bad_readback_stops_before_publishing_configuration(self):
-        self.environment["CORRUPT_READBACK"] = "ux0/data/VitaJPOverlay/dictionaries/jmdict.vjdict"
+        self.environment["CORRUPT_READBACK"] = "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FTP readback checksum failed", result.stdout + result.stderr)

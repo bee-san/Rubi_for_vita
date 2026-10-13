@@ -1,0 +1,82 @@
+{
+  "snapshot": "2026-10-13",
+  "updates": false,
+  "priority": [
+    "Daijirin4",
+    "Sankoku8",
+    "JMdict"
+  ],
+  "archive": "processed/plaintext.vjdict.zip",
+  "archive_bytes": 43125915,
+  "archive_sha256": "bb07edc2a56505d18f5ec889ba2d4bc623316d2ca47cfed571f8d30d0bb72798",
+  "filename": "plaintext.vjdict",
+  "bytes": 140556089,
+  "sha256": "57d482968cb28560ac484e36f499219a5ad82e2bb172a4729614bf161e497568",
+  "max_definition_bytes": 7000,
+  "conversion": {
+    "format_version": 2,
+    "entries": 485410,
+    "index_records": 840994,
+    "truncated_definitions": 12,
+    "reading_only_entries": 2,
+    "skipped_empty_headwords": 1,
+    "skipped_long_headwords": 15,
+    "dictionaries": [
+      "Daijirin4 Plain",
+      "Sankoku8 Plain",
+      "JMdict Plain"
+    ],
+    "deduplication": "first dictionary per spelling and normalized reading",
+    "deduplicated_rows": 227445,
+    "source_entries": [
+      301927,
+      12561,
+      170922
+    ],
+    "bytes": 140556089,
+    "unique_keys": 661469,
+    "hash_buckets": 8192,
+    "index_pages": 8192
+  },
+  "sources": [
+    {
+      "file": "sources/Daijirin4-plain.zip",
+      "bytes": 22127846,
+      "sha256": "b38ff76657041fb89fdf29a963a4935f3832fa12f8ea3aeba94a3d5b532fe3e6",
+      "index": {
+        "attribution": "© Sanseido Co., LTD. 2019; gpt-6-luna",
+        "title": "Daijirin4 Plain",
+        "format": 3,
+        "revision": "plain.2026-10-13",
+        "sequenced": true
+      }
+    },
+    {
+      "file": "sources/Sankoku8-plain.zip",
+      "bytes": 3550549,
+      "sha256": "9be368afbd611016adf688c79eb4dc6423a4443a26f97b26be19743b7e656afc",
+      "index": {
+        "attribution": "© Sanseido Co., LTD. 2021\n gpt-5.6-luna",
+        "title": "Sankoku8 Plain",
+        "format": 3,
+        "revision": "plain.2026-10-13",
+        "sequenced": true
+      }
+    },
+    {
+      "file": "sources/JMdict-plain.zip",
+      "bytes": 9385842,
+      "sha256": "14729ca303da7b9f603233934618369e7089cb3c6254649da5887d25463235c9",
+      "index": {
+        "author": "yomitan-import",
+        "attribution": "This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group. See http://www.edrdg.org/",
+        "title": "JMdict Plain",
+        "format": 3,
+        "revision": "plain.2026-10-13",
+        "sequenced": true
+      }
+    }
+  ],
+  "repository": "bee-san/plaintext-dicts",
+  "revision": "8d3d80ace15001500e88709c4981baf664732de4"
+}

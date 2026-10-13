@@ -111,9 +111,7 @@ class Vocr2AssetPlumbing(unittest.TestCase):
             (self.models / name).write_bytes(self.legacy)
         dictionary = self.root / "jmdict.vjdict"
         dictionary.write_bytes(b"VJDICT2\0synthetic dictionary fixture")
-        source_pin = json.loads((ROOT / "docs/jmdict-source.json").read_text())["sha256"]
-        dictionary.with_suffix(".json").write_text(json.dumps({
-            "source_sha256": source_pin, "sha256": release.digest(dictionary)}))
+        snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
         license_file = self.root / "fixture-license.txt"
         license_file.write_text("Unit-test fixture")
         base = self.root / "base.zip"
@@ -124,6 +122,7 @@ class Vocr2AssetPlumbing(unittest.TestCase):
                 archive.writestr(name, b"synthetic package fixture")
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR2_ENABLED", enabled), \
+             mock.patch.object(release, "load_manifest", return_value=snapshot), \
              contextlib.redirect_stdout(io.StringIO()):
             release.package(base, output, self.models, dictionary, license_file)
         return output

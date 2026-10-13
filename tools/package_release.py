@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Combine tested plugins/settings VPK with pinned OCR and plain JMdict data."""
+"""Combine tested plugins/settings VPK with pinned OCR and frozen dictionaries."""
 import argparse
 import hashlib
 import json
 import re
 from pathlib import Path
 import shutil
+import tempfile
 import zipfile
 
 from prepare_ocr import VOCR_ASSETS, VOCR2_ASSETS, VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG
+from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
 
@@ -32,19 +34,29 @@ def verify(root):
     print(f"Verified {len(manifest['files'])} package files")
 
 
-def package(base, output, models, dictionary, license_file, version="0.7.12", source_revision=None):
+def package(base, output, models, dictionary=None, license_file=None, version="0.7.12", source_revision=None):
+    source = Path(__file__).resolve().parents[1]
+    license_file = license_file or source / "docs/JMdict-LICENSE.html"
+    if dictionary is not None:
+        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision)
+    # The cross-build already contains the exact frozen dictionary. Packaging
+    # needs no private-repository access and cannot substitute a fresh snapshot.
+    with tempfile.TemporaryDirectory(prefix="vjo-release-") as tmp:
+        dictionary = Path(tmp) / FILENAME
+        with zipfile.ZipFile(base) as archive, archive.open(DATA + "dictionaries/" + FILENAME) as src, dictionary.open("wb") as dst:
+            shutil.copyfileobj(src, dst)
+        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision)
+
+
+def package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision):
     source = Path(__file__).resolve().parents[1]
     if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
         raise ValueError("Expected an exact 40-character source revision")
-    conversion = json.loads(dictionary.with_suffix(".json").read_text())
-    snapshot = json.loads((source / "docs/jmdict-source.json").read_text())
-    if conversion["source_sha256"] != snapshot["sha256"] or digest(dictionary) != conversion["sha256"]:
-        raise ValueError("JMdict does not match its pinned source and conversion manifest")
-    with dictionary.open("rb") as stream:
-        if stream.read(8) != b"VJDICT2\0":
-            raise ValueError("Expected a version 2 disk-backed dictionary")
-    assets = {DATA + "dictionaries/jmdict.vjdict": dictionary,
-              "docs/jmdict-conversion.json": dictionary.with_suffix(".json"),
+    conversion = load_manifest()
+    validate(dictionary, conversion)
+    assets = {DATA + "dictionaries/" + FILENAME: dictionary,
+              "docs/plaintext-dictionaries.json": source / "docs/plaintext-dictionaries.json",
+              "docs/plaintext-attribution.txt": source / "docs/plaintext-attribution.txt",
               "docs/JMdict-LICENSE.html": license_file,
               DATA + "config.ini": source / "docs/config.example.ini",
               "install-vita.sh": source / "tools/install-vita.sh"}
@@ -62,7 +74,7 @@ def package(base, output, models, dictionary, license_file, version="0.7.12", so
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "vocr_model": "H15_w8.vocr",
                              "vocr_fallback_model": "FL10_w8.vocr",
-                             "dictionary": "local", "local_dictionaries": "jmdict.vjdict",
+                             "dictionary": "local", "local_dictionaries": "plaintext.vjdict",
                              "japanese_only_selection": True,
                              "ocr_mode": "auto", "anki": False}}
     if source_revision:
@@ -119,10 +131,10 @@ def main():
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)
-    elif all((args.base, args.output, args.models, args.dictionary, args.license_file)):
+    elif all((args.base, args.output, args.models)):
         package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision)
     else:
-        parser.error("Provide --verify DIRECTORY, or base, --output, --models, --dictionary and --license-file")
+        parser.error("Provide --verify DIRECTORY, or base, --output and --models (dictionary is already in the base)")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,27 @@ Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards
 wait in an offline queue on the memory card until you send them. The
 instructions below add your own dictionaries.
 
+## Frozen release bundle
+
+Upcoming releases include `plaintext.vjdict`: Daijirin4 Plain, Sankoku8 Plain,
+then JMdict Plain, from the frozen 2026-10-13 downloads. Sources and the processed
+archive live in the private `bee-san/plaintext-dicts` repository; public releases
+include the processed dictionary. The release build checks an exact source commit
+and archive/output SHA-256 against `plaintext-dictionaries.json`.
+
+The bundle removes lower-priority rows sharing a spelling and normalized reading
+pair. It keeps all senses from the winning source and distinct spellings/readings;
+an empty reading uses its spelling. Definitions retain their source title and
+inflection rules. There are 485,410 entries; 227,445 lower-priority rows were
+removed. Twelve definitions are clipped at 7,000 UTF-8 bytes, one empty row and
+15 overlong rows are skipped. These are fixed format bounds, not runtime RAM
+increases. No dictionary update or conversion occurs during release builds.
+
+Rebuild the frozen artifact with `python3 tools/build.py` in the private repo.
+Its `sources.json` verifies all three original ZIPs before processing. Prepare
+an existing artifact with `tools/prepare_plaintext.py`; the Vita reads only the
+resulting `.vjdict`. This combined file counts as one dictionary for paging.
+
 ## Convert and install
 
 1. Download a **Yomitan format 3 term dictionary ZIP**, such as a Jitendex
@@ -84,8 +105,9 @@ the explicit truncation notice at the chosen limit.
 
 The archive attributes the dictionary to Sanseido and supplies no redistribution
 license in `index.json` or a separate license file. Keep your archive and converted
-file private. The public plugin release continues to ship plain JMdict; it does
-not include Daijirin data. The conversion and selected-position host measurements
+file private. The earlier public releases shipped plain JMdict. Upcoming releases include
+the separate frozen plaintext bundle described above; this bilingual archive
+is not the source of that bundle. The conversion and selected-position host measurements
 are recorded in [the v3 report](benchmarks/daijirin-v3-selected-20261011.json).
 The converted file has 334,741 entries; 53 definitions receive truncation notices
 at 7,000 bytes. All payloads stay within 7,021 bytes. Twenty-five selected-position
@@ -123,8 +145,9 @@ Each definition includes its source dictionary title. The converter preserves
 separate senses/entries and indexes both spelling and reading without duplicating
 the definition payload. Reading-only terms use their reading as the displayed
 headword and are counted in the conversion report. Earlier dictionaries and
-higher Yomitan term scores have priority for equal keys. Reconvert the original
-ZIPs to update a combined file. The converter writes to a temporary file and
+higher Yomitan term scores have priority for equal keys. Add `--deduplicate` to keep each spelling/normalized-reading pair from its
+first source while preserving all of that source's senses. Without this flag,
+all source rows are retained. Reconvert the original ZIPs to rebuild a combined file. The converter writes to a temporary file and
 replaces the destination only after success, so a failed conversion preserves
 the previous dictionary.
 

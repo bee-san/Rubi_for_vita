@@ -25,7 +25,7 @@ if [ $USAGE = 1 ] || [ $HOSTS -ne 1 ]; then
 fi
 python3 "$PACKAGE/tools/package_release.py" --verify "$PACKAGE"
 exec bash "$PACKAGE/tools/install_ftp.sh" --package-dir "$PACKAGE" ${TITLES[@]+"${TITLES[@]}"} \
-  --set dictionary=local --set local_dictionaries=jmdict.vjdict \
+  --set dictionary=local --set local_dictionaries=plaintext.vjdict \
   --set local_dictionary_dir=ux0:data/VitaJPOverlay/dictionaries \
   --set text_source=ocr --set ocr_backend=vocr --set vocr_model=H15_w8.vocr \
   --set vocr_fallback_model=FL10_w8.vocr \
