@@ -23,7 +23,9 @@
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 45056u      /* VitaJPOverlay_OCR.suprx: 36,864 text + 8,192 data/bss [measured] */
-/* *ALL loads the worker into SceShell too, but its module_start returns
+/* The installer registers the worker per game (*TITLEID), never under *ALL,
+ * so taiHEN does not load it into SceShell. Were it loaded there (an older
+ * install's *ALL line, a hand edit), its module_start returns
  * SCE_KERNEL_START_NO_RESIDENT outside a candidate game, so the pages are
  * given back at once [SDK: Kernel-Overview, module_start]. */
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u

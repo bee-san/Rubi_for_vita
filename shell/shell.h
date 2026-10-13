@@ -204,7 +204,7 @@ uint32_t vjo_shell_heap_free_size(void);
 /* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
 enum VjoShellLedgerItem {
     VJO_SL_MODULE = 0,      /* our module's pages (declared) */
-    VJO_SL_WORKER_MODULE,   /* the *ALL OCR worker's pages in SceShell (declared) */
+    VJO_SL_WORKER_MODULE,   /* the OCR worker's pages in SceShell (declared 0: registered per game, not loaded here) */
     VJO_SL_NET_STACK,
     VJO_SL_CTL_STACK,
     VJO_SL_ANKI_STACK,

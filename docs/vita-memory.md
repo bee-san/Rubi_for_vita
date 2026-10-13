@@ -140,8 +140,9 @@ running out of pages.
   allocations are all charged to the host process's budget. PR #60 measured exactly this for our
   Shell plugin [measured: PR #60, `docs/issue-59-root-cause.md` section 3].
 - A plugin that is in several sections must find out itself which process it is in [source:
-  taiHEN README, note 3]. Our worker does this with the title ID, but the module stays resident
-  wherever it was loaded (section 4.3).
+  taiHEN README, note 3]. Our worker does this with the title ID and gives its pages back
+  (`NO_RESIDENT`) outside a candidate game; it is registered per game anyway, so taiHEN loads it
+  nowhere else (section 4.3).
 
 | Context | Pool for module pages, stacks, TLS | Pool for `sceKernelAllocMemBlock(USER_RW)` | Other heaps available |
 |---|---|---|---|
@@ -164,7 +165,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | `VjoNet` stack 65,536 B + 4,096 B TLS; `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 90,112 B permanent [measured] | same |
 | | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki job 128 or 384 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
 | | | Anki thread stack 64 KiB + TLS, only while a card is saved or sent | Shell partition | transient | [`shell/anki.c`] |
-| `VitaJPOverlay_OCR.suprx` | `*ALL` | module pages in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
+| `VitaJPOverlay_OCR.suprx` | `*TITLEID`, one section per game (`*ALL` up to the installer's `--title`) | module pages in each registered game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside registered games since `--title` | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
 | | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10) or 1,159,168 B (H15); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); 4 MiB reserve kept free before either block | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
@@ -178,9 +179,18 @@ pages sitting in SceShell and in every system app, because the title check in `m
 returned `SCE_KERNEL_START_SUCCESS` and kept the module resident. Since the #59 fix (PR #68)
 `module_start` returns `SCE_KERNEL_START_NO_RESIDENT` outside a candidate game, which unloads the
 module at once without `module_stop` [SDK: Kernel-Overview, 'module_start Function'], so `*ALL`
-costs SceShell and the system apps no pages. The expert's rule is still a `*TITLEID` section per
-enabled game and never `*ALL` [expert]: that removes the load itself (and the moment of it), and
-is the follow-up once the installer writes those sections.
+costs SceShell and the system apps no pages. It still loaded the module there at every process
+start, only to unload it again.
+
+The installer now follows the expert's rule: one `*TITLEID` section per game, never `*ALL`
+[expert]. `install-vita.sh --title PCSG00415 VITA_IP` (repeatable) registers the worker
+under `*PCSG00415`, keeps the games registered by an earlier install, and comments out an
+`*ALL` worker line; with no game named or registered it changes nothing and says so
+(`tools/patch_tai_config.py`, README 'Install'). taiHEN therefore loads the worker only into
+those games, never into SceShell or a system app [source: taihen-parser `parser.c`,
+`taihen_config_parse`], which removes the load itself, not only its pages. `NO_RESIDENT` stays
+as the guard for a configuration edited by hand. Adrenaline's PSP games share `NPXS10028`; a
+game added later needs `--title` and a reboot.
 
 Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 299,008 B, the two
 thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at

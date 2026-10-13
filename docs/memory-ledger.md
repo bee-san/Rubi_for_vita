@@ -46,7 +46,7 @@ transient set that can be live at once.
 | item | bytes | what | source |
 |---|---|---|---|
 | Shell module pages | 299,008 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 81,920 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap) | packaged SELF segments [measured] |
-| OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is loaded into SceShell by `*ALL`, but its `module_start` returns `NO_RESIDENT` there, which unloads it at once (45,056 B before) | `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
+| OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is registered per game (one `*TITLEID` section each, the installer's `--title`), never under `*ALL`, so taiHEN does not load it into SceShell. Were it loaded there (an older install's `*ALL` line, a hand edit), its `module_start` returns `NO_RESIDENT`, which unloads it at once (it held 45,056 B there before PR #68) | `tools/patch_tai_config.py`; `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
 | VjoAnki stack+TLS | 69,632 | only while a card is saved or sent | `shell/anki.c` |
@@ -83,7 +83,7 @@ overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary'
 
 | item | bytes | what | source |
 |---|---|---|---|
-| OCR worker pages | 45,056 | the module in the game | packaged SELF segments [measured] |
+| OCR worker pages | 45,056 | the module, in each game it is registered for | packaged SELF segments [measured] |
 | VjoGameVocr stack+TLS | 36,864 | 32,768 + 4,096 | `game_ocr/main.c` |
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
 | VjoGameVocr workspace | 770,048 at most | F20 at a 960 × 544 region, page-rounded, per job | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |

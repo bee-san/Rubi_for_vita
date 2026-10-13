@@ -65,7 +65,7 @@ front, 98,304 B free, the build holding 462,848 B):
 ```
 step                                        held      headroom
 Shell module loaded into SceShell        299,008       262,144
-OCR worker loaded into SceShell (*ALL)   299,008       262,144   (NO_RESIDENT: 0 pages)
+OCR worker pages in SceShell             299,008       262,144   (0: registered per game, not loaded there)
 VjoNet thread                            368,640       192,512
 VjoControl thread (boot complete)        389,120       172,032
 game start: result memory (local)        389,120       172,032

@@ -45,7 +45,8 @@ always returns `SCE_KERNEL_START_SUCCESS` (`game_ocr/main.c:395`), so the 39.4 K
 stays resident in every process, and every candidate game gets a 32 KiB polling thread
 (`game_ocr/main.c:8, 345`) before the Shell has said whether that game is enabled. No
 plugin in the reference set runs a thread in a game it does nothing for; the only other
-`*ALL` plugin read (VitaGrafix) allocates nothing and creates no thread.
+`*ALL` plugin read (VitaGrafix) allocates nothing and creates no thread. (Status
+2026-10-13: the installer now registers the worker per game; see departure 2.)
 
 **Is every hook released on a partial failure?** Kernel: no. `module_start` installs the
 display hook, the 16 input hooks and the process-event hook and only logs their results
@@ -207,6 +208,12 @@ enabled game (the Shell already knows the list from `games.ini`), and return
 not a candidate, as the Shell plugin already does when its prerequisites are missing
 (`shell/boot.c:49, 57, 67`). Until then, at least start the thread only after the Shell
 has confirmed the policy, not at module start.
+
+Status (2026-10-13): `module_start` returns `NO_RESIDENT` outside a candidate game
+(PR #68), and the installer registers the worker per game, one `*TITLEID` section for
+each `--title`, never `*ALL` ([vita-memory.md 4.3](vita-memory.md)). The settings app
+does not write taiHEN sections; a game is added with the installer. The idle worker
+thread in candidate games is unchanged.
 
 ### 3. File writes on SceShell's boot path and inside a SceShell hook (boot, highest of the boot risks)
 

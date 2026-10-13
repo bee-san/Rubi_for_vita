@@ -76,25 +76,50 @@ elif '-o' in a:
         self.listener.listen(10)
         self.addCleanup(self.listener.close)
 
-    def install(self, script="install-vita.sh"):
-        return subprocess.run(["bash", str(self.package / script),
+    def install(self, script="install-vita.sh", *options):
+        return subprocess.run(["bash", str(self.package / script), *options,
                                "127.0.0.1:" + str(self.listener.getsockname()[1])],
                               env=self.environment, capture_output=True, text=True, timeout=30)
 
+    def tai(self, partition):
+        return (self.device / partition / "tai/config.txt").read_bytes()
+
+    def assert_unchanged(self, result):
+        """Nothing reached the Vita: no plugin, backup, boot record or setting."""
+        self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists(), result.stdout)
+        self.assertFalse((self.device / "ur0/data/VitaJPOverlay/boot.txt").exists())
+        for partition in ("ur0", "ux0"):
+            self.assertEqual(self.tai(partition), self.original_tai)
+            self.assertFalse((self.device / partition / "tai/config.txt.vjo-bak").exists())
+        self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
+
     def test_update_is_verified_idempotent_and_preserves_unrelated_state(self):
         self.assertFalse((self.package / "docs/config.example.ini").exists())
-        for _ in range(2):
-            result = self.install()
+        installed = None
+        # The second update names no game: the one registered by the first is kept.
+        for options in (("--title", "PCSG00415"), ()):
+            result = self.install("install-vita.sh", *options)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn("test-key", result.stdout)
             self.assertNotIn("migration failed", result.stdout + result.stderr)
+            self.assertIn("OCR worker registered for PCSG00415", result.stdout)
+            if installed is not None:
+                self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], installed)
+            else:
+                # The Vita's own backup is the configuration from before the update.
+                for partition in ("ur0", "ux0"):
+                    self.assertEqual((self.device / partition / "tai/config.txt.vjo-bak").read_bytes(),
+                                     self.original_tai)
+            installed = [self.tai(p) for p in ("ur0", "ux0")]
         for partition in ("ur0", "ux0"):
-            tai = (self.device / partition / "tai/config.txt").read_bytes()
+            tai = self.tai(partition)
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Kernel.skprx"), 1)
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Shell.suprx"), 1)
             self.assertIn(b"ur0:tai/Other.skprx\r\n", tai)
-            self.assertIn(b"*ALL\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
-            self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_OCR.suprx"), 1)
+            # The *ALL worker is commented out; the game's own section loads it.
+            self.assertIn(b"*ALL\r\n# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
+            self.assertIn(b"\r\n*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
+            self.assertEqual(tai.count(b"\nur0:tai/VitaJPOverlay_OCR.suprx"), 1)
             self.assertNotIn(b"\n", tai.replace(b"\r\n", b""))
         config = (self.data / "config.ini").read_text()
         for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = H15_w8.vocr",
@@ -121,7 +146,7 @@ elif '-o' in a:
             shutil.copyfile(plugin, build / plugin.name)
         shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco",
                         build / "vitajpoverlay.rco")
-        result = self.install("tools/install_ftp.sh")
+        result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = (self.data / "config.ini").read_text()
         for setting in ("ocr_backend = lens", "vocr_model = H15_w8.vocr",
@@ -130,7 +155,7 @@ elif '-o' in a:
         self.assertNotIn("test-key", result.stdout)
 
     def test_missing_source_template_stops_before_uploading_plugins(self):
-        result = self.install("tools/install_ftp.sh")
+        result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing configuration template", result.stdout + result.stderr)
         self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists())
@@ -148,7 +173,7 @@ elif '-o' in a:
             "sha256": hashlib.sha256(template.read_bytes()).hexdigest(),
         }
         manifest_path.write_text(json.dumps(manifest))
-        result = self.install()
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("config.ini migration failed", result.stdout + result.stderr)
         self.assertNotIn("config.ini is up to date", result.stdout)
@@ -159,8 +184,69 @@ elif '-o' in a:
 
     def test_bad_readback_stops_before_publishing_configuration(self):
         self.environment["CORRUPT_READBACK"] = "ux0/data/VitaJPOverlay/dictionaries/jmdict.vjdict"
-        result = self.install()
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FTP readback checksum failed", result.stdout + result.stderr)
         self.assertEqual((self.device / "ur0/tai/config.txt").read_bytes(), self.original_tai)
         self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
+
+    def test_without_a_title_nothing_is_changed(self):
+        # The previous installer's *ALL registration names no game: refused, never kept.
+        for options in ((), ("--title", "ALL"), ("--title", "NPXS10015"), ("--title", "PCSG0041")):
+            with self.subTest(options=options):
+                result = self.install("install-vita.sh", *options)
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn("Nothing was changed on the Vita", result.stdout)
+                self.assertIn("bash install-vita.sh --title PCSG00415 127.0.0.1", result.stdout)
+                self.assertIn("--title" if options else "never registered under *ALL", result.stderr)
+                self.assertNotIn("Installed.", result.stdout)
+                self.assert_unchanged(result)
+
+    def test_titles_are_added_and_kept_in_both_configurations(self):
+        # ux0 already has one game; ur0 only the old *ALL line. Both end with the same games.
+        (self.device / "ux0/tai/config.txt").write_bytes(
+            b"*KERNEL\r\nur0:tai/Other.skprx\r\n*PCSE00120\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n")
+        result = self.install("install-vita.sh", "--title", "NPXS10028", "--title", "pcsg00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("OCR worker registered for NPXS10028, PCSG00415, PCSE00120", result.stdout)
+        for partition in ("ur0", "ux0"):
+            tai = self.tai(partition)
+            for title in (b"NPXS10028", b"PCSG00415", b"PCSE00120"):
+                self.assertIn(b"*" + title + b"\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
+            self.assertEqual(tai.count(b"\nur0:tai/VitaJPOverlay_OCR.suprx"), 3)
+            self.assertNotIn(b"*ALL\r\nur0:tai/VitaJPOverlay_OCR.suprx", tai)
+        # Options after the address work too, and change nothing more.
+        before = [self.tai(p) for p in ("ur0", "ux0")]
+        result = subprocess.run(["bash", str(self.package / "install-vita.sh"),
+                                 "127.0.0.1:" + str(self.listener.getsockname()[1]), "--title", "PCSE00120"],
+                                env=self.environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], before)
+
+    def test_uninstall_after_a_per_title_install(self):
+        self.assertEqual(self.install("install-vita.sh", "--title", "PCSG00415").returncode, 0)
+        result = self.install("tools/install_ftp.sh", "--uninstall")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for partition in ("ur0", "ux0"):
+            tai = self.tai(partition)
+            self.assertIn(b"ur0:tai/Other.skprx\r\n", tai)
+            for line in tai.split(b"\r\n"):
+                self.assertFalse(line.startswith(b"ur0:tai/VitaJPOverlay_"), tai)
+        # Data stays; the boot record is reset for the next build.
+        self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
+        self.assertEqual((self.device / "ur0/data/VitaJPOverlay/boot.txt").read_bytes(), b"")
+        # Nothing of ours is registered any more: the next install has to name its games.
+        uninstalled = [self.tai(p) for p in ("ur0", "ux0")]
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], uninstalled)
+
+    def test_self_test_accepts_a_title_and_leaves_the_configuration(self):
+        # Issue #70's step: arming the self-test with --title changes no registration.
+        result = self.install("tools/install_ftp.sh", "--self-test", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Self-test armed", result.stdout)
+        self.assertIn("--title takes effect when installing (bash install-vita.sh --title PCSG00415", result.stdout)
+        self.assertEqual((self.data / "selftest.txt").read_bytes(), b"")
+        for partition in ("ur0", "ux0"):
+            self.assertEqual(self.tai(partition), self.original_tai)

@@ -199,5 +199,5 @@ restoring a plugin set that differs by exactly those pages. It is not a proof.
   below the v0.7.4 build that ran beside a game. `--gc-sections` was tried and grew the Shell's
   text (section alignment under `-Wl,-q`); not applied. Still to come, as the expert's rule
   requires: the dictionary lookup and the Anki queue leave SceShell for the game process through
-  the kernel broker, and the worker moves from `*ALL` to `*TITLEID`; the Shell keeps only the PAF
-  UI.
+  the kernel broker; the Shell keeps only the PAF UI. Done since: the worker moved from `*ALL`
+  to `*TITLEID` (the installer's `--title`; [vita-memory.md 4.3](vita-memory.md)).
