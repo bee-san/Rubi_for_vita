@@ -99,12 +99,13 @@ line, under `render`'s 312 B, so the overlay's deepest frame is unchanged [measu
 The overlay's arrow keys over the header's displayed rows (#81, `core/text_rows.c`, 1,462 B of
 text at `-Os`) take no allocation either: a key press walks the overlay's existing 4 KiB text copy
 (`s_cursor_text`) on the paf thread, its deepest call chain 384 B of stack plus paf's own
-`GetCharInfo` [measured: `arm-vita-eabi-gcc -Os -fstack-usage`]. Their state is a
-static 88-byte `VjoRowNav` (Right's 16 positions, Up/Down's column, three counters) in place of
-the 68-byte `VjoWordNavigation`, plus two words: `.bss` grows by 24 B, within the module's data
-pages. The text pages stay at 299,008 B because `shell/strip.cpp` (4,107 to 2,974 B) and
-`core/arena.c` (912 to 518 B; `vjo_arena_alloc` is the same instructions) are built with `-Os`
-too (the build log's module row: 216,912 B of text, 81,256 B of data and `.bss` [measured]).
+`GetCharInfo` [measured: `arm-vita-eabi-gcc -Os -fstack-usage`]. Their state is a static 88-byte
+`VjoRowNav` (Right's 16 positions, Up/Down's column, three counters) in place of the 68-byte
+`VjoWordNavigation`, the L/R tap's state, the header's point size and the slowest key's time:
+`.bss` grows by 32 B, within the module's data pages. The text pages stay at 299,008 B because
+`shell/strip.cpp` (4,107 to 2,974 B) and `core/arena.c` (912 to 518 B; `vjo_arena_alloc` is the
+same instructions) are built with `-Os` too (the build log's module row: 216,976 B of text,
+81,264 B of data and `.bss` [measured]).
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
