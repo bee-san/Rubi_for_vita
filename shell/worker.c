@@ -766,7 +766,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
      * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
      * one step, not none); a screen not settled now is waited for first. */
     if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
-    request.flags |= (uint32_t)(job_cfg.ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT;
+    request.flags |= (uint32_t)(job_cfg.ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
+                     (uint32_t)(job_cfg.ocr_refine_lines & VJO_GAME_OCR_REFINE_MASK) << VJO_GAME_OCR_REFINE_SHIFT;
     if (job_cfg.ocr_cascade_ms > 0) { /* in 250 ms steps, at least one */
         uint32_t c = (uint32_t)(job_cfg.ocr_cascade_ms + 125) / 250u;
         request.flags |= (c ? c > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : c : 1u)
@@ -1252,6 +1253,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
     if (game_ocr_backend(a->ocr_backend) &&
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
          a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
+         a->ocr_refine_lines != b->ocr_refine_lines ||
          (a->ocr_backend == VJO_OCR_VOCR && (sceClibStrcmp(a->vocr_model, b->vocr_model) ||
                                              sceClibStrcmp(a->vocr_fallback_model, b->vocr_fallback_model)))))
         return 0;

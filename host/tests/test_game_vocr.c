@@ -242,6 +242,7 @@ static VjoGameOcrRequest setup(void)
     lm_live = 0; lm_allocations = lm_frees = lm_opens = last_which = 0;
     cascade_res.model = NULL; cascade_res.data = NULL; cascade_res.capacity = 0; cascade_res.size = cascade_res.stamp = 0;
     cascade_uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0; test_cascade_conf = 0;
+    psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
     model_mtime = 0x1234567; model_stat_error = 0;
     model_owned = 0; model_seq = 0;
@@ -330,7 +331,7 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.width = 200; r.x = 1; /* past the frame's edge */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.x = 0; r.flags = 0x1000; /* API 20: bits 12-15 mean nothing yet */
+    r.x = 0; r.flags = 0x4000; /* API 20: bits 14-15 mean nothing yet */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.flags = 0; r.model[31] = 'x';
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
@@ -623,7 +624,7 @@ static void policy_in_the_flags(void)
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
     allocations = 0;
-    r.flags = 0x1000u; /* bits 12-15 mean nothing yet */
+    r.flags = 0x4000u; /* bits 14-15 mean nothing yet */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
 }
 
@@ -1046,6 +1047,44 @@ static void cascade_jobs(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !cascade_live && !lm_live && !weights_live);
 }
 
+/* API 20, the finder's boxes refined: on, or in PSP games only (the worker's own
+ * title: NPXS10028 or a PSPEMU* bubble). The job's workspace holds the arena,
+ * and a REFINE step reports it; mode 3 is refused before anything is allocated. */
+static void refine_modes(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    static const struct { const char *title; int psp; } titles[] = {
+        {"NPXS10028", 1}, {"PSPEMU005", 1}, {"PSPEMUCFW", 1}, {"PCSG00415", 0}, {"PSPEM", 0}, {"XPSPEMU01", 0}, {"", 0}};
+    for (unsigned i = 0; i < sizeof(titles) / sizeof(titles[0]); i++)
+        TEST_CHECK_(is_psp_title(titles[i].title) == titles[i].psp, "%s", titles[i].title);
+    line();
+    struct { unsigned mode; int psp; int refined; } cases[] = {
+        {0, 1, 0}, {VJO_GAME_OCR_REFINE_ON, 0, 1}, {VJO_GAME_OCR_REFINE_PSP, 0, 0}, {VJO_GAME_OCR_REFINE_PSP, 1, 1}};
+    unsigned plain_block = 0;
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        const VjoGameOcrStep *rs = NULL;
+        r = setup();
+        line();
+        psp_title = cases[c].psp;
+        r.flags = cases[c].mode << VJO_GAME_OCR_REFINE_SHIFT;
+        int rc = vjo_game_ocr_run_request(&r, &out);
+        TEST_CHECK(rc == 0 || rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+        for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_REFINE) rs = &out.step[i];
+        TEST_CHECK_((rs != NULL) == cases[c].refined, "mode %u psp %d", cases[c].mode, cases[c].psp);
+        if (rs) TEST_CHECK(rs->kind == cases[c].mode && rs->rc == 0 && (rs->bytes >> 16) == out.lines && rs->arg >= out.lines);
+        if (!c) plain_block = job_block;
+        else if (cases[c].refined)
+            TEST_CHECK(job_block == PAGE_ROUND(vjo_vocr_job_bytes(r.model, r.width, r.height) +
+                                               vjo_vocr_refine_bytes(r.width, r.height)) && job_block >= plain_block);
+        TEST_MSG("mode %u psp %d: workspace %u B (plain %u B)", cases[c].mode, cases[c].psp, job_block, plain_block);
+    }
+    r = setup();
+    allocations = 0;
+    r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    psp_title = 0;
+}
+
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -1086,5 +1125,6 @@ TEST_LIST = {
     {"the confidence cascade: doubtful lines read again, its model resident, given back, left when tight", cascade_jobs},
     {"an inactive game gets the cascade's block back", an_inactive_game_gets_the_cascade_block_back},
     {"the first job's step log keeps its lm, cascade and norm steps", the_first_job_logs_the_lm_cascade_and_norm},
+    {"the refinement: on, in PSP games only by title, its step and arena; mode 3 refused", refine_modes},
     {NULL, NULL}
 };

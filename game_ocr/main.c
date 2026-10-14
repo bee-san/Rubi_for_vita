@@ -222,6 +222,18 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
+/* A PSP game (Adrenaline runs them as NPXS10028, or from a PSPEMU* bubble): the
+ * refinement's "psp" mode applies (set by module_start from the title). */
+static int psp_title;
+static int is_psp_title(const char *t)
+{
+    static const char emu[] = "PSPEMU";
+    unsigned i = 0;
+    if (!sceClibStrcmp(t, "NPXS10028")) return 1;
+    while (emu[i] && t[i] == emu[i]) i++;
+    return !emu[i];
+}
+
 /* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens;
  * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
@@ -863,12 +875,20 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
     const VjoVocrModel *model = vjo_vocr_model(r->model);
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
+    unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
+    if (refine_mode > VJO_GAME_OCR_REFINE_PSP) goto done;
+    unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
+                      ? VJO_VOCR_REFINE_ALL : 0u;
+    size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t bytes = vjo_vocr_job_bytes(r->model, r->width, r->height);
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
     if (!bytes || !capture_bytes) { rc = model ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
+    bytes += refine_bytes;
     /* A fallback is used only if it is another pinned model needing less memory. */
     const VjoVocrModel *fallback = r->fallback[0] ? vjo_vocr_model(r->fallback) : NULL;
     size_t fallback_bytes = fallback ? vjo_vocr_job_bytes(r->fallback, r->width, r->height) : 0;
+    if (fallback_bytes) fallback_bytes += refine_bytes;
     if (!fallback_bytes || fallback == model ||
         PAGE_ROUND(fallback_bytes) + PAGE_ROUND(fallback->bytes) >= PAGE_ROUND(bytes) + PAGE_ROUND(model->bytes))
         fallback = NULL;
@@ -961,6 +981,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         policy.cascade_us = casc_us;
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
+    policy.refine = refine;
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
     open_cascade = casc != NULL;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes + core_extra,
@@ -982,6 +1003,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
                  (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
     }
+    if (refine && stats.lines)
+        step_add(VJO_GSTEP_REFINE, refine_mode, stats.refine_lines, stats.refine_rc,
+                 (stats.refine_boxes > 0xFFFFu ? 0xFFFFu : stats.refine_boxes) << 16 |
+                 (stats.refine_split > 0xFFFFu ? 0xFFFFu : stats.refine_split),
+                 (uint32_t)stats.refine_rows, stats.refine_us + 1u, 0);
     if (stats.model_loaded || stats.model_cached)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
                  resident_bytes(), 0, stats.load_us, 1);
@@ -1166,6 +1192,7 @@ int module_start(SceSize args, void *argp)
      * treated the same way: nothing is started, nothing stays. Candidate
      * games keep an idle worker until the Shell confirms their games.ini policy. */
     if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
+    psp_title = is_psp_title(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */

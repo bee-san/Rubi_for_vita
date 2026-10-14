@@ -128,7 +128,8 @@ static int usage(void)
                     "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines;\n"
                     "             [--lm vocr_lm_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
                     "             [--cascade VOCR4_W20_w8.vocr [--cascade-conf 700] [--cascade-ms 2000]] read\n"
-                    "             lines under that confidence again with the larger model, within that time\n"
+                    "             lines under that confidence again with the larger model, within that time;\n"
+                    "             [--refine on] refine the finder's boxes (vita-vn-ocr's vocr_lines_refine)\n"
 #endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
@@ -151,7 +152,7 @@ int main(int argc, char **argv)
     const char *model = NULL;
 #ifdef VJO_WITH_VOCR
     const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL;
-    int blank = 0;
+    int blank = 0, refine = 0;
     unsigned cascade_conf = 0, cascade_ms = 2000;
 #endif
     int i = 1;
@@ -166,6 +167,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--cascade")) cascade_name = argv[i+1];
         else if (!strcmp(argv[i], "--cascade-conf")) cascade_conf = (unsigned)strtoul(argv[i+1], NULL, 10);
         else if (!strcmp(argv[i], "--cascade-ms")) cascade_ms = (unsigned)strtoul(argv[i+1], NULL, 10);
+        else if (!strcmp(argv[i], "--refine")) refine = !strcmp(argv[i+1], "on");
 #endif
         else return usage();
     }
@@ -217,13 +219,15 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        if (lines_path || blank || lm_name || cascade_name) {
+        if (lines_path || blank || lm_name || cascade_name || refine) {
             /* The game worker's form: resident weights, the job policy, the LM. */
-            VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL};
+            VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL,
+                                    .refine = refine ? VJO_VOCR_REFINE_ALL : 0u};
             VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
             VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
             FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
-            size_t job = vjo_vocr_job_bytes(model, im.width, im.height);
+            size_t job = vjo_vocr_job_bytes(model, im.width, im.height) +
+                         (refine ? vjo_vocr_refine_bytes(im.width, im.height) : 0);
             void *lws = NULL;
             if (lines_path && !lf) return 2;
             if (lm_name && !(policy.lm = vjo_vocr_lm(lm_name))) {
@@ -241,7 +245,7 @@ int main(int argc, char **argv)
                 policy.cascade_us = cascade_ms * 1000u;
                 policy.cascade_conf = cascade_conf;
             }
-            if (policy.lm || policy.cascade) {
+            if (policy.lm || policy.cascade || refine) {
                 job += vjo_vocr_lm_job_bytes(model) + (policy.cascade ? vjo_vocr_cascade_job_bytes(cascade_name) : 0);
                 if (posix_memalign(&lws, 64, job)) return 2;
             }
@@ -253,6 +257,10 @@ int main(int argc, char **argv)
                 fprintf(stderr, "lm=%s lm_rc=%d lm_lines=%u lm_changed=%u lm_us=%u lm_load_us=%u\n",
                         st.lm ? st.lm->name : "-", st.lm_rc, st.lm_lines, st.lm_changed, (unsigned)st.lm_us,
                         (unsigned)st.lm_load_us);
+            if (refine)
+                fprintf(stderr, "refine_boxes=%u refine_lines=%u refine_split=%u refine_kept=%u refine_rc=%d "
+                        "refine_rows=%lu refine_us=%u\n", st.refine_boxes, st.refine_lines, st.refine_split,
+                        st.refine_kept, st.refine_rc, st.refine_rows, (unsigned)st.refine_us);
             if (policy.cascade)
                 fprintf(stderr, "cascade=%s cascade_rc=%d cascade_lines=%u cascade_changed=%u cascade_skipped=%u "
                         "cascade_us=%u cascade_load_us=%u\n", st.cascade ? st.cascade->name : "-", st.cascade_rc,

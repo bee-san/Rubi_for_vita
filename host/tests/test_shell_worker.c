@@ -1146,6 +1146,18 @@ static void test_vocr_request_carries_the_job_policy(void)
                !(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
     TEST_MSG("blank on, wait off: flags 0x%08X", (unsigned)fake_game_request.flags);
     mem_free();
+    /* the refinement's mode: psp by default, on, off */
+    static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
+    for (unsigned i = 0; i < 3; i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        if (i) cfg.ocr_refine_lines = (int)modes[i];
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_REFINE_SHIFT & VJO_GAME_OCR_REFINE_MASK) == modes[i]);
+        TEST_MSG("mode %u: flags 0x%08X", modes[i], (unsigned)fake_game_request.flags);
+        mem_free();
+    }
     /* the cascade's ceiling in 250 ms steps: 2 s by default, off with 0, 1-124 ms one step, 3,750 the most */
     static const struct { int ms; unsigned units; } cascade[] = {{2000, 8}, {0, 0}, {100, 1}, {375, 2}, {3750, 15}};
     for (unsigned i = 0; i < sizeof(cascade) / sizeof(cascade[0]); i++) {
@@ -2436,7 +2448,8 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     const uint32_t stage_bits = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
     const uint32_t policy = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT |
                             2u << VJO_GAME_OCR_LM_SHIFT |     /* the 1 MB LM at most */
-                            8u << VJO_GAME_OCR_CASCADE_SHIFT; /* the cascade within 2 s */
+                            8u << VJO_GAME_OCR_CASCADE_SHIFT | /* the cascade within 2 s */
+                            VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT; /* refined in PSP games */
     TEST_CHECK((selftest_flags_seen[0] & stage_bits) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
                (selftest_flags_seen[1] & stage_bits) == 0 &&
                (selftest_flags_seen[2] & stage_bits) == VJO_GAME_OCR_F_FULL &&

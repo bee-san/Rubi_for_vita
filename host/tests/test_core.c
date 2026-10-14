@@ -943,7 +943,14 @@ static void test_config(void)
     /* The beam + LM decoder's largest LM (1000k by default, tiers 1-4, off) and the
      * confidence cascade's time ceiling (2 s by default, 0 = off, at most 3,750 ms). */
     vjo_config_defaults(&c);
-    TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 2000);
+    TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 2000 && c.ocr_refine_lines == 2);
+    const char *refine = "ocr_refine_lines = ON\n";
+    vjo_config_parse(&c, refine, strlen(refine));
+    TEST_CHECK(c.ocr_refine_lines == 1 && c.n_warnings == 0);
+    refine = "ocr_refine_lines = off\nocr_refine_lines = sometimes\n";
+    vjo_config_parse(&c, refine, strlen(refine));
+    TEST_CHECK(c.ocr_refine_lines == 0 && c.n_warnings == 1);
+    vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
     TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 0 && c.n_warnings == 0);
@@ -968,6 +975,7 @@ static void test_config(void)
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
         TEST_CHECK(d.ocr_settle_ms == 150 && d.ocr_settle_max_ms == 2000 && d.ocr_skip_blank_lines == 0);
+        TEST_CHECK(d.ocr_refine_lines == 2 && strstr(t, "\nocr_refine_lines = psp\n"));
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
     }

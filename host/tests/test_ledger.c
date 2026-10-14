@@ -102,9 +102,10 @@ static void test_budget_table_is_consistent(void)
 
 #ifdef VJO_WITH_VOCR
 /* The workspace budget is the real layout code's figure for the largest job of
- * any pinned model at the largest region, with (API 20) the LM decoder's extras,
- * the greedy text the game worker keeps, and for a model smaller than the
- * confidence cascade's its extras (game_ocr/main.c extra_job_bytes). */
+ * any pinned model at the largest region, with (API 20) the refinement's arena,
+ * the LM decoder's extras, the greedy text the game worker keeps, and for a
+ * model smaller than the confidence cascade's its extras (game_ocr/main.c
+ * extra_job_bytes). */
 static void test_game_workspace_budget_matches_the_layout(void)
 {
     unsigned n = 0;
@@ -115,6 +116,7 @@ static void test_game_workspace_budget_matches_the_layout(void)
     TEST_CHECK(n >= 5); /* every model the game worker accepts */
     for (unsigned i = 0; i < n; i++) {
         size_t bytes = vjo_vocr_job_bytes(all[i].name, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) +
+                       vjo_vocr_refine_bytes(VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) +
                        vjo_vocr_lm_job_bytes(all[i].name) + VJO_GAME_OCR_TEXT_BYTES +
                        (all[i].bytes < casc->bytes ? casc_bytes : 0);
         TEST_CHECK_(bytes > 0, "%s", all[i].name);
