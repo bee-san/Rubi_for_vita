@@ -114,6 +114,15 @@ else
   fail "Anki offline queue (Shell)" "$log/anki-build.log $log/anki-restart.log"
 fi
 
+# 2c. the one-command collect (install_ftp.sh --collect: the real script, curl and ftplib against a
+# VitaShell-like FTP server) and logging on by default in every template the installer uses
+if "$PY" -W ignore -m unittest tools.tests.test_collect > "$log/collect.log" 2>&1 \
+   && grep -qx 'log_file = on' docs/config.example.ini && grep -q -- '--set log_file=on' tools/install-vita.sh; then
+  pass "collect + logging on" "install_ftp.sh --collect vs the FTP mock: $(grep -o 'Ran [0-9]* tests' "$log/collect.log"): read-only, API keys redacted, one folder + zip, analysed; log_file = on by default"
+else
+  fail "collect + logging on" "$log/collect.log"
+fi
+
 # 3. the allocation simulator: the real worker and kernel under #74's measured pools
 sim=$BUILD/vjo-alloc-sim-tests
 if [ -x "$sim" ]; then

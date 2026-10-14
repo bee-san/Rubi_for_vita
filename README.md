@@ -406,9 +406,13 @@ pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
 `ux0:data/VitaJPOverlay/log.txt` holds at most 1 MB and one rotated
 `log.old.txt`, each line written and closed at once so a crash keeps every line
 before it; `kernel.txt` holds up to 256 KB per boot (the previous boot's is
-`kernel.prev.txt`). Fetch the bootstrap logs with
-`bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
-attempts are in `log.txt`. For a decisive console test,
+`kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
+it read-only into one timestamped folder and zip, with `config.ini`'s API keys
+redacted, both taiHEN configurations, the Anki queue, crash dumps and the
+installed files' hashes, and prints its analysis
+([self-test](docs/self-test.md#collecting-everything---collect)); `--status VITA_IP`
+fetches just the bootstrap logs. Recognition timings and memory attempts are in
+`log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
 start a game and reach a text screen: on the first settled screen one job runs
 the fallback model, the configured model, the full screen, the capture probe and

@@ -30,6 +30,10 @@
 #   tools/install_ftp.sh --self-test 192.168.1.50 (arms the on-device self-test for the next
 #      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
+#   tools/install_ftp.sh --collect 192.168.1.50  (everything the overlay wrote, read-only: the logs,
+#      the self-test report, status/kernel/boot records, config.ini with its API keys redacted, both
+#      taiHEN configs, the Anki queue, crash dumps and the installed files' hashes, into one
+#      timestamped folder and zip under build/device/collect/, then analyse_selftest.py --collect on it)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -38,6 +42,7 @@ PURGE=0
 STATUS=0
 DUMPS=0
 SELFTEST=0
+COLLECT=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
@@ -50,6 +55,7 @@ while [ $# -gt 1 ]; do
     --dumps) DUMPS=1 ;;
     --status) STATUS=1 ;;
     --self-test) SELFTEST=1 ;;
+    --collect) COLLECT=1 ;;
     --set) SETS+=("$2"); shift ;;
     --title) TITLES+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
@@ -59,12 +65,12 @@ while [ $# -gt 1 ]; do
   esac
   shift
 done
-HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--dumps|--self-test] VITA_IP[:PORT]}
+HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
 # How to install from here: the release package has install-vita.sh at its root.
 INSTALL_CMD="bash tools/install_ftp.sh"
 [ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
-if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST)) -gt 0 ]; then
+if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT)) -gt 0 ]; then
   echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
   echo "this command does not change which games the OCR worker is registered for."
 fi
@@ -117,6 +123,32 @@ python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.a
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
   echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."; exit 1; }
 
+if [ $COLLECT = 1 ]; then
+  # Read-only: tools/collect_vita.py sends only CWD, LIST, SIZE and RETR. One timestamped folder
+  # (device paths kept: ux0/data/VitaJPOverlay/log.txt, ...), its analysis, and one zip of both.
+  OUT=build/device/collect/vjo-collect-$(date -u +%Y%m%d-%H%M%SZ)
+  MANIFEST=()
+  [ -f package-manifest.json ] && MANIFEST=(--manifest package-manifest.json)
+  python3 tools/collect_vita.py "${HOST%%:*}" "${HOST##*:}" "$OUT" ${MANIFEST[@]+"${MANIFEST[@]}"} || exit 1
+  verdict=0
+  python3 tools/analyse_selftest.py --collect "$OUT" > "$OUT/analysis.txt" 2>&1 || verdict=$?
+  python3 tools/analyse_selftest.py --collect "$OUT" --json > "$OUT/analysis.json" 2>/dev/null || true
+  python3 - "$OUT" <<'PY'
+import sys, zipfile
+from pathlib import Path
+out = Path(sys.argv[1])
+with zipfile.ZipFile(str(out) + ".zip", "w", zipfile.ZIP_DEFLATED) as z:
+    for p in sorted(out.rglob("*")):
+        if p.is_file():
+            z.write(p, str(Path(out.name) / p.relative_to(out)))
+PY
+  cat "$OUT/analysis.txt"
+  echo
+  echo "analysis exit $verdict (0: the self-test passed or did not run, 1: it failed or stopped part way)"
+  echo "Send this one file: $(pwd)/$OUT.zip"
+  exit 0
+fi
+
 if [ $DUMPS = 1 ]; then
   # Crash dumps written by the system (psp2core-*.psp2dmp in ux0:data).
   mkdir -p build/device/dumps
@@ -152,8 +184,8 @@ if [ $SELFTEST = 1 ]; then
   : > "$TMP/selftest.txt"
   put "$TMP/selftest.txt" "ux0:/data/VitaJPOverlay/selftest.txt"
   echo "Self-test armed. Reboot the Vita, wait for the LiveArea, leave it for a minute, start the game to test,"
-  echo "reach a text screen and wait 30 s. Then start VitaShell's FTP again and run: tools/install_ftp.sh --status ${HOST%%:*}"
-  echo "Analyse build/device/status/selftest-report.txt with: python3 tools/analyse_selftest.py build/device/status/selftest-report.txt"
+  echo "reach a text screen and wait 30 s. Then start VitaShell's FTP again and run: bash tools/install_ftp.sh --collect ${HOST%%:*}"
+  echo "(it fetches the report with every log into one zip and analyses it; --status fetches just the report)"
   exit 0
 fi
 

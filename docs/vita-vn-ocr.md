@@ -351,8 +351,8 @@ copied, and the settings above. Close other apps first.
    and press ×.
 3. **One recognition.** Reopen the overlay on a dialogue line. Note what it
    shows: the text, or an error message.
-4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` over VitaShell's FTP
-   (`curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/log.txt`). A completed job logs
+4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` with every other log and record:
+   `bash tools/install_ftp.sh --collect VITA_IP` (one zip; [self-test](self-test.md#collecting-everything---collect)). A completed job logs
    `game vocr rc=... VOCR3_H15_w8.vocr: WxH, lines=N USER workspace=B
    weights=read|resident resident=R, find=X ms load=Y ms recognize=Z ms
    frames=F io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and
