@@ -33,6 +33,7 @@ class ReleaseInstall(unittest.TestCase):
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
                      "ur0/tai/VitaJPOverlay_OCR.suprx",
                      "ux0/data/VitaJPOverlay/ocr/FL10_w8.vocr", "ux0/data/VitaJPOverlay/ocr/H15_w8.vocr",
+                     "ux0/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr", "ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
@@ -122,8 +123,8 @@ elif '-o' in a:
             self.assertEqual(tai.count(b"\nur0:tai/VitaJPOverlay_OCR.suprx"), 1)
             self.assertNotIn(b"\n", tai.replace(b"\r\n", b""))
         config = (self.data / "config.ini").read_text()
-        for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = H15_w8.vocr",
-                        "vocr_fallback_model = FL10_w8.vocr",
+        for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = VOCR3_H15_w8.vocr",
+                        "vocr_fallback_model = VOCR3_FL10_w8.vocr", "log_file = on", "anki_mining = off",
                         "local_dictionaries = plaintext.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key"):
             self.assertIn(setting, config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
@@ -131,9 +132,27 @@ elif '-o' in a:
         self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
-        for name in ("dictionaries/plaintext.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr"):
+        for name in ("dictionaries/plaintext.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr",
+                     "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
+
+    def test_package_settings_from_the_manifest_are_applied_after_the_defaults(self):
+        # A test build's own settings (package_release.py --set): anki_mining = on wins over
+        # the user's earlier off, and the installer says which settings the package brings.
+        (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = H15_w8.vocr\njpdb_api_key = test-key\n")
+        manifest_path = self.package / "package-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["install_settings"] = {"anki_mining": "on", "anki_field_picture": ""}
+        manifest_path.write_text(json.dumps(manifest))
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("package settings: anki_mining=on anki_field_picture=\n", result.stdout)
+        config = (self.data / "config.ini").read_text()
+        for setting in ("anki_mining = on\n", "anki_field_picture =\n", "vocr_model = VOCR3_H15_w8.vocr\n",
+                        "jpdb_api_key = test-key\n"):
+            self.assertIn(setting, config)
+        self.assertNotIn("test-key", result.stdout)
 
     def test_source_install_uses_the_checkout_template(self):
         # A source checkout has its template under docs, not at the package root.
@@ -149,8 +168,8 @@ elif '-o' in a:
         result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = (self.data / "config.ini").read_text()
-        for setting in ("ocr_backend = lens", "vocr_model = H15_w8.vocr",
-                        "vocr_fallback_model = FL10_w8.vocr", "font_size_ja = 24"):
+        for setting in ("ocr_backend = lens", "vocr_model = VOCR3_H15_w8.vocr",
+                        "vocr_fallback_model = VOCR3_FL10_w8.vocr", "font_size_ja = 24"):
             self.assertIn(setting, config)
         self.assertNotIn("test-key", result.stdout)
 

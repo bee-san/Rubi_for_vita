@@ -58,9 +58,22 @@ class MemoryLedgerCheck(unittest.TestCase):
         for pool in as_json["pools"]:
             if not pool.get("soft"):
                 self.assertLessEqual(pool["worst"], pool["limit"])
-        # the opt-in network configuration's overshoot is a warning with the bytes, never hidden
-        self.assertTrue(any("network dictionary" in w for w in as_json["warnings"]))
-        self.assertIn("WARNING: shell paf (network dictionary)", result.stderr)
+        # Anki cards are text-only (VJO_ANKI_SCREENSHOT 0): the opt-in network configuration fits too
+        self.assertEqual(as_json["warnings"], [])
+        self.assertNotIn("WARNING", result.stderr)
+        net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (network dictionary)")
+        self.assertEqual(net["worst"], 8192 + 571888 + 131072 + 20480)
+
+    def test_a_soft_overshoot_is_a_warning_with_the_bytes(self):
+        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) put the network configuration over
+        tmp = self.copy_tree()
+        budget = tmp / "include/vjo_ledger_budget.h"
+        budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u",
+                                 budget.read_text()))
+        result = run("--root", str(tmp))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("WARNING: shell paf (network dictionary): worst case 993,776 B exceeds the limit 985,088 B "
+                      "by 8,688 B", result.stderr)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()

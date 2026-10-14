@@ -82,15 +82,26 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
 
 /* Formats like the Vita's, so every log call's arguments are exercised. */
 static char last_log[512], last_queue_log[512];
+static char all_logs[32768]; /* every line since reset(), for logged() */
+static size_t all_logs_len;
 void vjo_log(const char *fmt, ...)
 {
     va_list ap;
+    size_t n;
     va_start(ap, fmt);
     vsnprintf(last_log, sizeof(last_log), fmt, ap);
     va_end(ap);
     if (!strncmp(last_log, "anki queue: ", 12))
         memcpy(last_queue_log, last_log, sizeof(last_log));
+    n = strlen(last_log);
+    if (all_logs_len + n + 2 < sizeof(all_logs)) {
+        memcpy(all_logs + all_logs_len, last_log, n);
+        all_logs_len += n;
+        all_logs[all_logs_len++] = '\n';
+        all_logs[all_logs_len] = '\0';
+    }
 }
+static int logged(const char *text) { return strstr(all_logs, text) != NULL; }
 
 /* capture.c and anki.c both have a static now_us. */
 #define now_us capture_now_us
@@ -704,6 +715,8 @@ static char *queue_file(const char *id, const char *ext, size_t *len)
 
 static void reset(void)
 {
+    all_logs_len = 0;
+    all_logs[0] = '\0';
     vjo_ledger_shell_init();
     clear_files();
     memset(&g_view, 0, sizeof(g_view));
@@ -820,10 +833,12 @@ static void test_cross_saves_offline_without_host(void)
     TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 1 && files_ending(".tmp") == 0);
     TEST_CHECK(captures == 1 && capture_flags == (VJO_CAPTURE_FULL | VJO_CAPTURE_ONCE) && rows_read == FRAME_H);
     TEST_CHECK(heap_allocs == 1 && heap_frees == 1 && !heap_live && heap_last == ANKI_PICTURE_MEM);
-    /* the ledger: the budget's Anki figure is this code's, the arena and the
-     * thread's stack were counted in and are out again */
-    TEST_CHECK(ANKI_PICTURE_MEM == VJO_BUDGET_PAF_ANKI && ANKI_STACK == VJO_STACK_SHELL_ANKI);
-    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == VJO_BUDGET_PAF_ANKI);
+    /* the ledger: the arena and the thread's stack were counted in and are out
+     * again. This binary builds the screenshot path (VJO_ANKI_SCREENSHOT 1),
+     * whose arena is above the shipped text-only budget; the shipped build's is
+     * checked by the build-config tests (vjo-shell-anki-build-tests). */
+    TEST_CHECK(ANKI_STACK == VJO_STACK_SHELL_ANKI && ANKI_TEXT_MEM == VJO_BUDGET_PAF_ANKI);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == ANKI_PICTURE_MEM);
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_ANKI_STACK) == VJO_BUDGET_SHELL_ANKI_STACK);
     vjo_anki_reap();
@@ -1757,28 +1772,102 @@ static void test_hundred_text_cards_send_in_bounded_memory(void)
     finish();
 }
 
+
+#if !VJO_ANKI_SCREENSHOT
+/* The shipped build (VJO_ANKI_SCREENSHOT 0). × with the default Lapis mapping,
+ * whose Picture field is set, and no anki_host (Wi-Fi off, Anki closed): a
+ * text-only card is saved offline and the kernel is never asked for a capture
+ * (its full-frame buffer is the 2,088,960 B block #74's console refused). The
+ * job's arena is the ledger's VJO_BUDGET_PAF_ANKI, every step is logged, and △
+ * then sends the default Lapis note, without a picture. */
+static void test_build_saves_text_cards_without_the_kernel_capture(void)
+{
+    static const char note[] =
+        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Japanese::Mining\","
+        "\"modelName\":\"Lapis\",\"fields\":{\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\","
+        "\"ExpressionFurigana\":\"猫[ねこ]\",\"MainDefinition\":\"<ol><li>cat</li><li>shamisen "
+        "&quot;neko&quot;</li></ol>\",\"Sentence\":\"<b>猫</b>が好き猫\",\"FreqSort\":\"1500\","
+        "\"SentenceFurigana\":\"<b>猫</b>が好き猫\",\"MiscInfo\":\"CLANNAD (2026-10-12 09:30)\"},"
+        "\"tags\":[\"vita-jp-overlay\",\"vita_queue_";
+    const char *body;
+    reset();
+    TEST_CHECK(!strcmp(cfg.anki_field[VJO_ANKI_PICTURE], "Picture")); /* the default mapping has one */
+    cfg.anki_host[0] = '\0';
+    reconfigure();
+    cross(0);
+    cross(1);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && g_view.anki_pending == 2);
+    TEST_MSG("%s", g_view.anki_status);
+    /* no capture of any kind, no network: two records, no screenshot */
+    TEST_CHECK(captures == 0 && discards == 0 && rows_read == 0 && net.next == 0);
+    TEST_CHECK(files_ending(".json") == 2 && files_ending(".jpg") == 0 && files_ending(".tmp") == 0);
+    /* the text-only arena, which is the ledger's figure, freed after each job */
+    TEST_CHECK(heap_last == ANKI_TEXT_MEM && ANKI_TEXT_MEM == VJO_BUDGET_PAF_ANKI && !heap_live &&
+               heap_allocs == 2 && heap_frees == 2);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == VJO_BUDGET_PAF_ANKI);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_ANKI_STACK) == VJO_BUDGET_SHELL_ANKI_STACK);
+    /* every step logged: why there is no picture, the record's bytes, the queue */
+    TEST_CHECK(logged("anki: Picture field off in this build: no screenshot, no kernel capture buffer\n"));
+    TEST_CHECK(logged(" saved, ") && logged(" B record, 0 B picture\n"));
+    TEST_CHECK(logged("anki: save 猫 rc=0, 0-byte screenshot, ") && logged("anki: save 好き rc=0, "));
+    TEST_CHECK(logged("anki: queue 1 card(s)\n") && logged("anki: queue 2 card(s)\n"));
+    TEST_CHECK(logged("anki: arena peak "));
+    TEST_MSG("%s", all_logs);
+    /* the queue survives the plugin's restart (every byte of memory gone) */
+    finish();
+    memset(&g_view, 0, sizeof(g_view));
+    memset(heap, 0x5A, sizeof(heap));
+    saved_loaded = scanned = 0;
+    saved_host[0] = '\0';
+    TEST_ASSERT(vjo_anki_start() == 0);
+    fixture();
+    reconfigure();
+    vjo_anki_post_count();
+    vjo_anki_reap();
+    TEST_CHECK(g_view.anki_pending == 2);
+    /* △ to AnkiConnect: the default Lapis note without its Picture field and no picture */
+    lan(4, ok(EMPTY), ok(NOTE_ID), ok(EMPTY), ok(NOTE_ID));
+    triangle();
+    TEST_CHECK(net.next == 4 && !strcmp(net.host[1], "192.168.1.23") && net.port[1] == VJO_ANKI_PORT);
+    body = strstr(body_of(1), "\"Expression\":\"猫\"") ? body_of(1) : body_of(3);
+    TEST_CHECK(!strncmp(body, note, strlen(note)) && !strstr(body, "\"picture\":") && !strstr(body, "Picture"));
+    TEST_MSG("%.700s", body);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Sent 2 to Anki") && g_view.anki_pending == 0);
+    TEST_CHECK(files_ending(".json") == 0 && captures == 0 && heap_last == ANKI_TEXT_MEM && !heap_live);
+    TEST_CHECK(logged("anki: to 192.168.1.23:8765: vita_queue_") && logged("anki: send ") &&
+               logged("anki: sent 2, 0 duplicates, 0 unreadable, 0 too large, 0 pending, "));
+    finish();
+}
+#endif
+
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
-    {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"japanese_text_and_escaping_round_trip_to_anki", test_japanese_and_escaping_round_trip},
+    {"field_mapping_port_and_audio_resolved_at_send", test_mapping_port_and_audio_at_send},
+    {"partial_send_keeps_the_rest_and_needs_anki_host", test_partial_send_keeps_the_rest},
+    {"auto_host_searches_lan_once_when_sending_and_remembers", test_auto_finds_anki_on_the_lan},
+    {"hundred_text_cards_send_with_one_scan_each_in_bounded_memory", test_hundred_text_cards_send_in_bounded_memory},
+#if VJO_ANKI_SCREENSHOT
+    {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"queue_survives_restart_and_triangle_sends_with_current_settings", test_queue_survives_restart_and_triangle_sends_it},
     {"triangle_sends_configured_note_tag_and_bounded_screenshot", test_send_builds_the_configured_note_with_screenshot},
-    {"field_mapping_port_and_audio_resolved_at_send", test_mapping_port_and_audio_at_send},
     {"ankiconnect_failures_keep_the_card_and_the_overlay", test_failures_keep_the_card_and_the_overlay},
     {"lost_reply_failed_cleanup_and_bad_replies_retry_without_double_add", test_lost_reply_and_retry_add_once},
     {"duplicates_archived_with_screenshot_and_sending_continues", test_duplicates_are_archived_and_sending_continues},
-    {"partial_send_keeps_the_rest_and_needs_anki_host", test_partial_send_keeps_the_rest},
     {"failed_writes_temp_files_and_damaged_cards_never_lose_cards", test_failed_writes_never_queue_a_partial_card},
     {"failed_directory_flush_is_retried_before_acknowledging", test_failed_directory_flush_is_retried},
     {"screenshot_failure_or_oversize_still_saves_the_card", test_screenshot_failures_still_save},
     {"oom_keeps_recognized_text_and_queued_cards", test_oom_keeps_recognized_text_and_cards},
     {"stale_list_close_stop_and_busy_jobs_cancel_without_leaks", test_cancellation},
-    {"auto_host_searches_lan_once_when_sending_and_remembers", test_auto_finds_anki_on_the_lan},
     {"version_1_record_from_the_first_queue_still_sends", test_version_1_record_still_sends},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_then_one_send_release_memory_and_threads", test_fifty_cards_then_one_send_release_everything},
-    {"hundred_text_cards_send_with_one_scan_each_in_bounded_memory", test_hundred_text_cards_send_in_bounded_memory},
-    {NULL, NULL},
+#else
+    {"build_saves_text_cards_offline_without_the_kernel_capture_and_sends_lapis",
+     test_build_saves_text_cards_without_the_kernel_capture},
+#endif
+    {NULL, NULL}
 };
 
 /* ---------------- restart steps (test_anki_restart.py) ---------------- */
@@ -1795,7 +1884,8 @@ static void print_string(const char *s)
 }
 
 /* DIR ACTION [CRASH] [HOST]: save (the shown 猫), save-other (好き),
- * inspect (the first card) or sync (△ to HOST). Prints one JSON line. */
+ * inspect (the first card), sync (△ to HOST) or mode (this binary's
+ * VJO_ANKI_SCREENSHOT). Prints one JSON line. */
 static int restart_step(int argc, char **argv)
 {
     static uint8_t mem[ANKI_PICTURE_MEM];
@@ -1804,6 +1894,10 @@ static int restart_step(int argc, char **argv)
     if (argc < 4 || chdir(argv[2]) < 0)
         return 2;
     what = argv[3];
+    if (!strcmp(what, "mode")) {
+        printf("{\"screenshot\":%d}\n", VJO_ANKI_SCREENSHOT);
+        return 0;
+    }
     mkdir("ux0:data", 0777);
     if (argc > 4 && argv[4][0])
         crash_point = argv[4];
@@ -1823,7 +1917,10 @@ static int restart_step(int argc, char **argv)
         vjo_anki_post_add(5, !strcmp(what, "save-other"));
         printf("{\"status\":");
         print_string(g_view.anki_status);
-        printf(",\"count\":%d}\n", g_view.anki_pending);
+        printf(",\"count\":%d", g_view.anki_pending);
+        if (!VJO_ANKI_SCREENSHOT) /* the shipped build: never a kernel capture */
+            printf(",\"captures\":%u", captures + discards);
+        printf("}\n");
         return strncmp(g_view.anki_status, "Saved", 5) && strncmp(g_view.anki_status, "Already", 7);
     }
     if (!strcmp(what, "inspect")) {

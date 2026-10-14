@@ -146,7 +146,10 @@ int vjo_queue_save(VjoArena *a, const VjoAnkiNote *note, const VjoAnkiMedia *med
             return VJO_QUEUE_FAILED;
     }
     path_for(path, id, "json");
-    return commit(path, json, strlen(json)) < 0 ? VJO_QUEUE_FAILED : VJO_QUEUE_SAVED;
+    if (commit(path, json, strlen(json)) < 0)
+        return VJO_QUEUE_FAILED;
+    vjo_log("anki queue: %s saved, %u B record, %u B picture", id, (unsigned)strlen(json), (unsigned)media->picture_len);
+    return VJO_QUEUE_SAVED;
 }
 
 static void *read_file(VjoArena *a, const char *path, size_t max, size_t *len)

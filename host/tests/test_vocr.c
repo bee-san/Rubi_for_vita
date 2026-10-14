@@ -93,12 +93,13 @@ static void test_models_and_sizes(void)
 {
     unsigned n = 0;
     const VjoVocrModel *all = vjo_vocr_models(&n);
-    TEST_CHECK(n == 3 + VJO_VOCR2_ENABLED && all != NULL);
-    for (unsigned i = 0; i < 3; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
+    TEST_CHECK(n == 5 + VJO_VOCR2_ENABLED && all != NULL);
+    for (unsigned i = 0; i < 5; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
     const VjoVocrModel *h15 = vjo_vocr_model(VJO_VOCR_DEFAULT_MODEL);
     TEST_ASSERT(h15 != NULL);
     TEST_CHECK(h15->bytes == 1155968 && h15->arena_bytes == 182944);
     TEST_CHECK(vjo_vocr_model("FL10_w8.vocr")->bytes == 657664);
+    TEST_CHECK(vjo_vocr_model(VJO_VOCR3_FL10_NAME)->bytes == 657664);
     TEST_CHECK(!vjo_vocr_model("H15_f32.vocr") && !vjo_vocr_model("") && !vjo_vocr_model(NULL));
     /* weights + max(finder, recognizer arena) + the runtime's two structs: no grey
      * copy of the region any more (API 19), at any size */
@@ -372,24 +373,46 @@ static void test_release_files(void)
     TEST_MSG("no release file in %s", dir);
 }
 
-/* The device default is H15 (bee-san/vita-vn-ocr v0.2.0 H15_w8.vocr, its
- * published sha256), FL10 its automatic fallback, and nothing pinned exceeds
- * the console budget ceiling (docs/vita-memory-budget.md in vita-vn-ocr). */
+/* The device default is VOCR3-H15 (bee-san/vita-vn-ocr v0.2.5-vocr3.1
+ * VOCR3_H15_w8.vocr, its published sha256), VOCR3-FL10 its automatic fallback;
+ * both have the size and arena of the v0.2.0 H15 and FL10 they were retrained
+ * from (so a job needs the same memory), which stay accepted; and nothing
+ * pinned exceeds the console budget ceiling (docs/vita-memory-budget.md in
+ * vita-vn-ocr). */
 static void test_default_model_and_ceiling(void)
 {
+    static const unsigned char vocr3_h15[32] = {
+        0xcb,0x3c,0x61,0xa8,0xf9,0x1f,0x9a,0xee,0xb3,0xef,0xcc,0x0e,0x79,0x31,0x3f,0x66,
+        0x41,0x12,0xf2,0x5c,0x4b,0xd5,0x58,0x65,0xba,0xe9,0xdf,0x52,0x52,0x2b,0x36,0x0c};
+    static const unsigned char vocr3_fl10[32] = {
+        0x87,0xfb,0x4d,0x0c,0x18,0x41,0x6f,0x5f,0x37,0x71,0xce,0xcd,0x27,0x4c,0x8d,0xb3,
+        0xcf,0x69,0xb8,0xb4,0xa4,0xee,0x9f,0x20,0x4e,0xde,0xbb,0x4b,0x82,0x07,0x91,0x54};
     static const unsigned char h15_v020[32] = {
         0x31,0x6e,0xbc,0x37,0x7e,0xc3,0x45,0x20,0x44,0x09,0x91,0xc5,0x08,0x51,0x99,0xd8,
         0xe7,0x40,0x31,0xf0,0x1a,0x86,0x79,0x38,0xbe,0x90,0xa6,0x0c,0x1e,0x3f,0x03,0xcd};
     VjoConfig c;
     unsigned n = 0;
-    const VjoVocrModel *all = vjo_vocr_models(&n), *h15, *fl10;
+    const VjoVocrModel *all = vjo_vocr_models(&n), *h15, *fl10, *old_h15, *old_fl10;
     vjo_config_defaults(&c);
-    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr") && !strcmp(c.vocr_fallback_model, "FL10_w8.vocr"));
-    TEST_CHECK(!strcmp(VJO_VOCR_DEFAULT_MODEL, c.vocr_model));
+    TEST_CHECK(!strcmp(c.vocr_model, "VOCR3_H15_w8.vocr") && !strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr"));
+    TEST_CHECK(!strcmp(VJO_VOCR_DEFAULT_MODEL, c.vocr_model) && !strcmp(VJO_VOCR3_H15_NAME, c.vocr_model) &&
+               !strcmp(VJO_VOCR3_FL10_NAME, c.vocr_fallback_model));
     h15 = vjo_vocr_model(c.vocr_model);
     fl10 = vjo_vocr_model(c.vocr_fallback_model);
-    TEST_ASSERT(h15 && fl10);
-    TEST_CHECK(!memcmp(h15->sha256, h15_v020, 32) && h15->bytes == 1155968 && h15->arena_bytes == 182944);
+    old_h15 = vjo_vocr_model("H15_w8.vocr");
+    old_fl10 = vjo_vocr_model("FL10_w8.vocr");
+    TEST_ASSERT(h15 && fl10 && old_h15 && old_fl10);
+    TEST_CHECK(!memcmp(h15->sha256, vocr3_h15, 32) && h15->bytes == 1155968 && h15->arena_bytes == 182944);
+    TEST_CHECK(!memcmp(fl10->sha256, vocr3_fl10, 32) && fl10->bytes == 657664 && fl10->arena_bytes == 124832);
+    TEST_CHECK(!memcmp(old_h15->sha256, h15_v020, 32));
+    /* the same shapes: equal sizes, arenas, finders and job memory at every region */
+    TEST_CHECK(h15->bytes == old_h15->bytes && h15->arena_bytes == old_h15->arena_bytes &&
+               h15->finder_mode == old_h15->finder_mode && memcmp(h15->sha256, old_h15->sha256, 32));
+    TEST_CHECK(fl10->bytes == old_fl10->bytes && fl10->arena_bytes == old_fl10->arena_bytes &&
+               fl10->finder_mode == old_fl10->finder_mode && memcmp(fl10->sha256, old_fl10->sha256, 32));
+    TEST_CHECK(vjo_vocr_job_bytes(h15->name, 960, 544) == vjo_vocr_job_bytes(old_h15->name, 960, 544));
+    TEST_CHECK(vjo_vocr_job_bytes(fl10->name, 917, 125) == vjo_vocr_job_bytes(old_fl10->name, 917, 125));
+    TEST_CHECK(vjo_vocr_workspace_bytes(h15->name, 1, 1) == vjo_vocr_workspace_bytes(old_h15->name, 1, 1));
     /* The fallback needs less game memory than the default for every region. */
     TEST_CHECK(vjo_vocr_workspace_bytes(fl10->name, 960, 544) < vjo_vocr_workspace_bytes(h15->name, 960, 544));
     TEST_CHECK(vjo_vocr_workspace_bytes(fl10->name, 1, 1) < vjo_vocr_workspace_bytes(h15->name, 1, 1));
@@ -400,7 +423,7 @@ static void test_default_model_and_ceiling(void)
 }
 
 TEST_LIST = {
-    {"default_is_h15_with_fl10_fallback_within_the_budget_ceiling", test_default_model_and_ceiling},
+    {"default_is_vocr3_h15_with_vocr3_fl10_fallback_v020_kept_within_the_ceiling", test_default_model_and_ceiling},
     {"models_and_workspace_sizes", test_models_and_sizes},
     {"empty_region_reads_strips_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},

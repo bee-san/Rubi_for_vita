@@ -113,7 +113,7 @@ already in Anki.
 | `anki_field_furigana` | `ExpressionFurigana` | `言葉[ことば]` |
 | `anki_field_definition` | `MainDefinition` | The definitions, as a numbered list |
 | `anki_field_sentence` | `Sentence` | The recognized sentence, the word in bold |
-| `anki_field_picture` | `Picture` | A JPEG of the whole game frame at the × press |
+| `anki_field_picture` | `Picture` | Not filled by this build: see [Memory and network](#memory-and-network) |
 | `anki_field_frequency` | `FreqSort` | The frequency rank, when the dictionary has one |
 | `anki_field_audio` | `ExpressionAudio` | The word's recording from `anki_audio_url`, looked up when sent |
 | `anki_field_sentence_furigana` | `SentenceFurigana` | The sentence with readings, when the lookup has them |
@@ -141,17 +141,28 @@ added before sending is filled too; only the screenshot depends on
   sends right after it.
 - Saving or sending takes one bounded allocation from the Shell's Paf heap,
   through the same guard as the result workspace, which keeps the 1.5 MiB UI
-  reserve: 128 KiB without a picture field, 384 KiB with
-  `anki_field_picture` set. It is freed before the thread ends. Counting
+  reserve: 128 KiB (`ANKI_TEXT_MEM`, the ledger's `VJO_BUDGET_PAF_ANKI`; the
+  build checks they agree). It is freed before the thread ends. Counting
   only reads the directory, on the thread's stack, with no heap allocation.
   Nothing Anki-related stays
   allocated between jobs, and the queue is never read into memory whole:
   each step scans the directory once or reads one card.
-- The screenshot is one single-pass full-frame kernel capture, the same as a
-  full-screen OCR capture: the kernel allocates the raw frame (2 MiB of kernel
-  memory at 960×544, not game memory) and frees it when the encoder reads the
-  last row. The JPEG is at most 192 KiB (`VJO_ANKI_PICTURE_MAX`); a larger
-  frame is saved without its screenshot. A card's text is at most 32 KiB.
+- **Cards have no screenshot in this build.** The Picture field's screenshot
+  is a single-pass full-frame kernel capture: the kernel allocates the raw
+  frame, 2,088,960 B of the shared kernel pool at 960×544, which #74's console
+  refused five times (`0x80024302`). OCR stopped using that buffer in API 19
+  (it reads the game's own memory in strips, [in-game capture](ingame-capture.md));
+  until a screenshot does the same, `shell/anki.c` is built with
+  `VJO_ANKI_SCREENSHOT 0`: × never asks the kernel for a capture, the job takes
+  the 128 KiB text-only arena, and log.txt says `anki: Picture field off in
+  this build: no screenshot, no kernel capture buffer` whenever
+  `anki_field_picture` is set. Sending names no Picture field, so Anki's
+  stays empty. The screenshot path is still built and tested on the host
+  (`vjo-shell-anki-tests`), where the JPEG is at most 192 KiB
+  (`VJO_ANKI_PICTURE_MAX`) in a 384 KiB arena. A card's text is at most 32 KiB.
+- Every step is in log.txt: the record's bytes (`anki queue: <id> saved, …`),
+  the save's rc and time, the queue's size after each job, each send's
+  endpoint and rc, and the job arena's peak.
 - When sending, the screenshot is read back and streamed to AnkiConnect as
   base64 in 4 KiB pieces, never encoded whole. Before anything is sent, the
   request is built once as a dry run: a card whose text does not fit beside

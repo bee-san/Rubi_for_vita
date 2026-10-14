@@ -9,10 +9,49 @@ import shutil
 import tempfile
 import zipfile
 
-from prepare_ocr import VOCR_ASSETS, VOCR2_ASSETS, VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG
+from prepare_ocr import (VOCR_ASSETS, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_TAG, VOCR2_ASSETS,
+                         VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG, VOCR3_ASSETS, VOCR3_TAG)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
+SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def shipped_models():
+    """(name, pins, release tag, role) of every shipped weights file: VOCR3 (the default and its
+    fallback), v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings'), and the
+    opt-in VOCR2 trial."""
+    models = [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
+              (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
+              ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
+              ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
+    if VOCR2_ENABLED:
+        models.append((VOCR2_MODEL, VOCR2_ASSETS, VOCR2_TAG, "VOCR2 trial (opt-in)"))
+    return models
+
+
+def parse_setting(text):
+    """KEY=VALUE for --set: a key of the config template and a one-line value."""
+    key, sep, value = text.partition("=")
+    key, value = key.strip().lower(), value.strip()
+    if not sep or not SETTING_KEY.fullmatch(key) or any(ord(c) < 32 for c in value):
+        raise argparse.ArgumentTypeError("expected KEY=VALUE on one line: " + text)
+    return key, value
+
+
+def apply_settings(text, settings):
+    """The config template with each setting's line replaced; every key must be in it."""
+    out, seen = [], set()
+    for line in text.splitlines():
+        m = re.match(r"^(\w+)\s*=", line)
+        if m and m.group(1) in settings:
+            line = ("%s = %s" % (m.group(1), settings[m.group(1)])).rstrip()
+            seen.add(m.group(1))
+        out.append(line)
+    missing = sorted(set(settings) - seen)
+    if missing:
+        raise ValueError("Not a setting of the config template: " + ", ".join(missing))
+    return "\n".join(out) + "\n"
 
 
 def digest(path):
@@ -34,49 +73,67 @@ def verify(root):
     print(f"Verified {len(manifest['files'])} package files")
 
 
-def package(base, output, models, dictionary=None, license_file=None, version="0.7.12", source_revision=None):
+def package(base, output, models, dictionary=None, license_file=None, version="0.7.12", source_revision=None,
+            settings=None):
     source = Path(__file__).resolve().parents[1]
     license_file = license_file or source / "docs/JMdict-LICENSE.html"
     if dictionary is not None:
-        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision)
+        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision,
+                                       settings)
     # The cross-build already contains the exact frozen dictionary. Packaging
     # needs no private-repository access and cannot substitute a fresh snapshot.
     with tempfile.TemporaryDirectory(prefix="vjo-release-") as tmp:
         dictionary = Path(tmp) / FILENAME
         with zipfile.ZipFile(base) as archive, archive.open(DATA + "dictionaries/" + FILENAME) as src, dictionary.open("wb") as dst:
             shutil.copyfileobj(src, dst)
-        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision)
+        return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision,
+                                       settings)
 
 
-def package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision):
+def package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision, settings=None):
     source = Path(__file__).resolve().parents[1]
     if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
         raise ValueError("Expected an exact 40-character source revision")
+    settings = dict(settings or {})
     conversion = load_manifest()
     validate(dictionary, conversion)
-    assets = {DATA + "dictionaries/" + FILENAME: dictionary,
-              "docs/plaintext-dictionaries.json": source / "docs/plaintext-dictionaries.json",
-              "docs/plaintext-attribution.txt": source / "docs/plaintext-attribution.txt",
-              "docs/JMdict-LICENSE.html": license_file,
-              DATA + "config.ini": source / "docs/config.example.ini",
-              "install-vita.sh": source / "tools/install-vita.sh"}
-    model_names = ["FL10_w8.vocr", "H15_w8.vocr"]
-    if VOCR2_ENABLED:
-        model_names.append(VOCR2_MODEL)
-    for name in model_names:
+    with tempfile.TemporaryDirectory(prefix="vjo-config-") as tmp:
+        # The package's config template (both copies: the installer's and the one a manual
+        # install copies to the Vita), with this package's --set settings applied.
+        template = Path(tmp) / "config.ini"
+        template.write_text(apply_settings((source / "docs/config.example.ini").read_text(encoding="utf-8"), settings),
+                            encoding="utf-8")
+        assets = {DATA + "dictionaries/" + FILENAME: dictionary,
+                  "docs/plaintext-dictionaries.json": source / "docs/plaintext-dictionaries.json",
+                  "docs/plaintext-attribution.txt": source / "docs/plaintext-attribution.txt",
+                  "docs/JMdict-LICENSE.html": license_file,
+                  "config.ini": template,
+                  DATA + "config.ini": template,
+                  "install-vita.sh": source / "tools/install-vita.sh"}
+        return write_package(base, output, models, assets, conversion, version, source_revision, settings)
+
+
+def write_package(base, output, models, assets, conversion, version, source_revision, settings):
+    shipped = {}
+    for name, pins, tag, role in shipped_models():
         path = models / name
         if not path.is_file():
             raise ValueError("OCR model is missing: " + name)
-        _, size, sha = (VOCR2_ASSETS if name == VOCR2_MODEL else VOCR_ASSETS)[name]
+        _, size, sha = pins[name]
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
+        shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag, "bytes": size, "sha256": sha, "role": role}
     manifest = {"version": version, "files": {}, "dictionary": conversion,
-                "defaults": {"ocr_backend": "vocr", "vocr_model": "H15_w8.vocr",
-                             "vocr_fallback_model": "FL10_w8.vocr",
+                "defaults": {"ocr_backend": "vocr", "vocr_model": VOCR_DEFAULT_MODEL,
+                             "vocr_fallback_model": VOCR_FALLBACK_MODEL,
                              "dictionary": "local", "local_dictionaries": "plaintext.vjdict",
                              "japanese_only_selection": True,
-                             "ocr_mode": "auto", "anki": False}}
+                             "ocr_mode": "auto", "log_file": True, "anki": settings.get("anki_mining") == "on"},
+                "models": shipped}
+    if settings:
+        # Applied by install-vita.sh after its own settings (tools/install-vita.sh).
+        manifest["install_settings"] = settings
     if source_revision:
         manifest["source_revision"] = source_revision
     if VOCR2_ENABLED:
@@ -128,11 +185,15 @@ def main():
     parser.add_argument("--verify", type=Path)
     parser.add_argument("--version", default="0.7.12")
     parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
+    parser.add_argument("--set", dest="settings", action="append", type=parse_setting, default=[], metavar="KEY=VALUE",
+                        help="A config.ini setting of this package (repeatable): written into its config template "
+                             "and applied by install-vita.sh, e.g. --set anki_mining=on for a test build")
     args = parser.parse_args()
     if args.verify:
         verify(args.verify)
     elif all((args.base, args.output, args.models)):
-        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision)
+        package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision,
+                dict(args.settings))
     else:
         parser.error("Provide --verify DIRECTORY, or base, --output and --models (dictionary is already in the base)")
 

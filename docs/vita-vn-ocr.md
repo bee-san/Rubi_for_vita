@@ -164,7 +164,39 @@ or stability. A physical in-game recognition remains required.
 
 ## Models
 
-The weights are the int8 assets of the vita-vn-ocr
+**The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as
+its automatic fallback.** They are vita-vn-ocr #67's recognizers, published as the
+[v0.2.5-vocr3.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.5-vocr3.1):
+H15's and FL10's shapes retrained, so the same sizes, arenas and line finder, and a job needs
+exactly the memory it needed with v0.2.0's H15 and FL10 (`host/tests/test_vocr.c` checks the
+sizes, arenas and job bytes are equal; the Vita build's memory ledger is unchanged).
+
+| file | bytes | sha256 | W8I arena | release |
+|---|---|---|---|---|
+| `VOCR3_H15_w8.vocr` (default) | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
+| `VOCR3_FL10_w8.vocr` (fallback) | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
+| `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
+| `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
+
+vita-vn-ocr's locked report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
+vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0 H15, and 2.13%
+for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
+repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
+dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
+and no console has run them: they are the default of the test builds by the owner's choice
+(2026-10-14), and the v0.2.0 models stay in the package as the documented fallback. To go back
+to them, set in `config.ini`:
+
+```ini
+vocr_model = H15_w8.vocr
+vocr_fallback_model = FL10_w8.vocr
+```
+
+`vocr_model = VOCR3_FL10_w8.vocr` always runs the smaller model; `vocr_fallback_model = none`
+never falls back. The game worker and the kernel's model broker accept exactly these names, F20
+and VOCR2's model, each at its pinned size and SHA-256.
+
+The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
 (unchanged from v0.2.0). On its hand-checked real screenshots (int8, C runtime, its
 `eval/run.py`, with hand-drawn line boxes):
@@ -219,21 +251,22 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr --output ocr          # H15_w8.vocr
-   python3 tools/prepare_ocr.py --backend vocr --model FL10_w8.vocr --output ocr
+   python3 tools/prepare_ocr.py --backend vocr --output ocr          # VOCR3_H15_w8.vocr
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_FL10_w8.vocr --output ocr
+   python3 tools/prepare_ocr.py --backend vocr --model H15_w8.vocr --output ocr   # v0.2.0
    ```
 
    While vita-vn-ocr is private this uses the GitHub CLI (`gh auth login`
    with access to it). `--from FILE` checks a copy downloaded another way.
 3. Copy the file to `ux0:data/VitaJPOverlay/ocr/`, or let the FTP installer do
-   it: `tools/install_ftp.sh --vocr-model ocr/H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
+   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini
    ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-   vocr_model = H15_w8.vocr
-   vocr_fallback_model = FL10_w8.vocr
+   vocr_model = VOCR3_H15_w8.vocr
+   vocr_fallback_model = VOCR3_FL10_w8.vocr
    ocr_mode = auto
    log_file = on
    ```

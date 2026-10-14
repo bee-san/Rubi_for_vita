@@ -1,6 +1,7 @@
 /* Logging: UDP datagrams to log_host:9999 (tools/udp_log_listener.py) and,
- * if enabled, ux0:data/VitaJPOverlay/log.txt capped at 256 KB with one
- * rotation (log.old.txt), so at most 512 KB is ever used. */
+ * if enabled (the default), ux0:data/VitaJPOverlay/log.txt capped at 1 MiB with
+ * one rotation (log.old.txt), so at most 2 MiB of the memory card is ever used.
+ * Every line is its own open/append/close, so a crash loses no written line. */
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
@@ -11,7 +12,7 @@
 #include "shell.h"
 
 #define LOG_PORT 9999
-#define LOG_FILE_CAP (256 * 1024)
+#define LOG_FILE_CAP (1024 * 1024)
 #define STATUS_CAP (64 * 1024)
 
 static SceUID log_mutex = -1;

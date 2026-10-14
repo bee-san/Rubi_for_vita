@@ -23,20 +23,23 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
 ```
   pool                              permanent   worst case        limit     headroom
   shell pages                         389,120      458,752    1,048,576      589,824
-  shell paf                             8,192      487,424      985,088      497,664
+  shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
-  game                                 81,920    2,330,624    2,392,064       61,440
-  shell paf (network dictionary)     (opt-in)      993,776      985,088       -8,688
+  game                                 90,112    2,392,064    2,392,064            0
+  shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
       VitaJPOverlay_Shell       299,008 B of    299,008 B declared
-      VitaJPOverlay_OCR          45,056 B of     45,056 B declared
+      VitaJPOverlay_OCR          53,248 B of     53,248 B declared
 ```
 
-The last row is the opt-in network dictionary with an Anki picture card and the overlay all at
-their peaks: 8,688 B over the best-case limit. The checker reports it as a **warning** with the
-bytes, not a failure, because the runtime reserve guard refuses the last of the three (the code
-survives a refusal, host tests); the shipped default (local JMdict) has 497,664 B of headroom.
+The last row is the opt-in network dictionary with an Anki card and the overlay all at their
+peaks. Since Anki cards are text-only (128 KiB arena; `shell/anki.c` `VJO_ANKI_SCREENSHOT 0`)
+it is inside the limit; with a 384 KiB picture card it was 8,688 B over, which the checker
+reports as a **warning** with the bytes, not a failure, because the runtime reserve guard
+refuses the last of the three (the code survives a refusal, host tests). The shipped default
+(local JMdict) has 759,808 B of headroom. The kernel row keeps the Lens JPEG capture's
+2,088,960 B: Lens still uses it; Anki and OCR take none of it.
 
 *Permanent* is held from boot (or from the game's start) until exit; *worst case* adds the largest
 transient set that can be live at once.
@@ -59,7 +62,7 @@ transient set that can be live at once.
 |---|---|---|---|
 | Paf plugin+RCO | 8,192 | the RCO (5,632 B file) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (local dictionary) or 571,888 (network: 2 × 262,144 + 47,600 connection pool) | held while a game runs | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`, `MEM_SIZE`; asserted equal in `test_shell_worker.c` |
-| Anki job arena | 393,216 (with a picture field; 131,072 without) | per job | `shell/anki.c` `ANKI_PICTURE_MEM`; asserted equal in `test_shell_anki.c` |
+| Anki job arena | 131,072 | per job: a text-only card; the Picture field's screenshot is off in the build (`VJO_ANKI_SCREENSHOT 0`), so neither its 393,216 B arena nor the kernel's 2,088,960 B full-frame capture is ever taken for Anki | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
 | overlay text arena | 20,480 | the header and body texts and their spans (17,952 B needed, `test_ledger.c`), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
 
@@ -67,8 +70,9 @@ Allocations here take no new pages from the partition; a failure is a `NULL`, ne
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
 refuse everything above; the code survives a refusal (host tests), so this limit is the best
 measured case, not a guarantee. The worst case of the shipped default (one 64 KiB arena, the
-overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary's is 993,776 B,
-8,688 B over the limit, reported as a warning.
+overlay open, an Anki card being saved) is 225,280 B; the opt-in network dictionary's is
+731,632 B, inside the limit too (with a 384 KiB picture card it was 993,776 B, 8,688 B over,
+which the checker reports as a warning).
 
 The word lookup's ranking (`core/local_dict.c`) takes no allocation and no item of its own: its
 common-readings table (70 pairs, 924 B of `const` strings) is in the Shell module's text pages, which

@@ -146,9 +146,12 @@ settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. With `anki_mining = on`, Cross saves the shown word,
-its sentence and a screenshot of the game to the card queue on the memory card,
-even with Wi-Fi off or Anki closed; Triangle sends the queue to AnkiConnect.
+when opening the overlay. With `anki_mining = on`, Cross saves the shown word
+and its sentence to the card queue on the memory card, even with Wi-Fi off or
+Anki closed; Triangle sends the queue to AnkiConnect. The card has no
+screenshot: the Picture field's full-frame capture is the kernel buffer #74's
+console refused, so the build leaves it out until it comes from the game's own
+memory ([Anki](docs/anki.md#memory-and-network)).
 
 ## Per-game settings
 
@@ -219,19 +222,26 @@ local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-vocr_model = H15_w8.vocr
-vocr_fallback_model = FL10_w8.vocr
+vocr_model = VOCR3_H15_w8.vocr
+vocr_fallback_model = VOCR3_FL10_w8.vocr
 ocr_mode = auto
 japanese_only_selection = on
+log_file = on
 ```
 
-H15 is the default recognizer: on the shared host test screenshots it makes
-about a fifth fewer character errors than FL10 (6.78% against 8.66% CER over
-84 Vita dialogue regions), for 0.5 MB more game memory per job. When a game has too
-little free memory for H15, that job runs FL10 instead, automatically; if
-`H15_w8.vocr` is missing or corrupt, the game's jobs use FL10 as well. Set
-`vocr_model = FL10_w8.vocr` to always use FL10, or `vocr_fallback_model = none`
-to never fall back. Console speed and accuracy of H15 are not measured yet
+VOCR3-H15 (`VOCR3_H15_w8.vocr`, vita-vn-ocr #67) is the default recognizer and
+VOCR3-FL10 its fallback: H15's and FL10's shapes retrained, the same sizes and
+game memory as v0.2.0's H15 and FL10. On vita-vn-ocr's hand-checked host test
+lines VOCR3-H15 has 1.73% CER against v0.2.0 H15's 2.21%, VOCR3-FL10 2.13%
+against v0.2.0 FL10's 3.82%; neither passed that repository's promotion gate
+and no console has run them ([models](docs/vita-vn-ocr.md#models)). When a game
+has too little free memory for VOCR3-H15, that job runs VOCR3-FL10 instead,
+automatically; if `VOCR3_H15_w8.vocr` is missing or corrupt, the game's jobs use
+the fallback as well. The v0.2.0 `H15_w8.vocr` and `FL10_w8.vocr` are still
+installed: set `vocr_model = H15_w8.vocr` and `vocr_fallback_model = FL10_w8.vocr`
+to go back to them, `vocr_model = VOCR3_FL10_w8.vocr` to always use the smaller
+model, or `vocr_fallback_model = none` to never fall back. Console speed and
+accuracy are not measured yet
 (see [the checklist](docs/vita-vn-ocr.md#on-console-checklist)). A memory
 error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the model's weights (FL10 is the smallest),
@@ -325,8 +335,8 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](docs/ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(657,664 B for FL10 and 1,155,968 B for H15, held as 659,456 and
-1,159,168 B page-rounded blocks) and are read and
+(657,664 B for FL10 and VOCR3-FL10 and 1,155,968 B for H15 and VOCR3-H15,
+held as 659,456 and 1,159,168 B page-rounded blocks) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. They are released when a job's memory check
 fails, when the file is missing or wrong, when the worker finds the game is
@@ -338,8 +348,8 @@ because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the three original VOCR model names and the separate pinned VOCR2 trial
-model in `ux0:data/VitaJPOverlay/ocr`, checks
+only the two VOCR3 model names, the three original VOCR model names and the
+separate pinned VOCR2 trial model in `ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, reports their modification time, and copies at most 32 KiB per
 request into game-owned memory. Each model call waits (at most 50 ms, without
 the kernel lock) for the kernel worker instead of polling with a 1 ms sleep.
@@ -371,9 +381,9 @@ local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
 With `anki_mining = on`, saving a card (×) or sending the queue (△) takes one
-bounded Paf allocation through the same reserve guard (128 KiB, or 384 KiB
-with a screenshot field; the JPEG is capped at 192 KiB) and a 64 KiB thread
-stack; both are released when the job is done. Counting the queue when the
+bounded Paf allocation through the same reserve guard (128 KiB: cards are
+text-only, no screenshot and no kernel capture) and a 64 KiB thread stack; both
+are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
 and refused memory never touch the recognized text.
 The kernel startup instruction and all three plugins' syscall imports are audited.
@@ -388,9 +398,13 @@ outside the wrappers, a worst case over a pool's limit, or a module that grew by
 page fails the build), printed in the build log and, with current and peak per
 pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
 
-Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
-with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
-attempts are in `ux0:data/VitaJPOverlay/log.txt`. For a decisive console test,
+`log_file = on`, the default, records bounded diagnostic logs:
+`ux0:data/VitaJPOverlay/log.txt` holds at most 1 MB and one rotated
+`log.old.txt`, each line written and closed at once so a crash keeps every line
+before it; `kernel.txt` holds up to 256 KB per boot (the previous boot's is
+`kernel.prev.txt`). Fetch the bootstrap logs with
+`bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
+attempts are in `log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
 start a game and reach a text screen: on the first settled screen one job runs
 the fallback model, the configured model, the full screen, the capture probe and

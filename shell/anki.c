@@ -39,6 +39,20 @@
  * encoded and a send reads back from the queue. */
 #define ANKI_TEXT_MEM (128 * 1024)
 #define ANKI_PICTURE_MEM (384 * 1024)
+/* The Picture field's screenshot is a full frame through the kernel's capture
+ * buffer (vjo_capture_jpeg: 2,088,960 B of the shared kernel pool at 960x544),
+ * the block #74's console refused with 0x80024302. Until a screenshot comes from
+ * the game's own memory as OCR's strips do (#75), a build without
+ * VJO_ANKI_SCREENSHOT never takes one: a card is saved without a picture, the
+ * log says so, and a job takes the text-only arena. */
+#ifndef VJO_ANKI_SCREENSHOT
+#define VJO_ANKI_SCREENSHOT 0
+#endif
+/* The job's arena is the ledger's (include/vjo_ledger_budget.h). The host tests also build
+ * the screenshot path (vjo-shell-anki-tests), whose arena would need that budget raised. */
+#if !defined(VJO_HOST) || !VJO_ANKI_SCREENSHOT
+typedef char vjo_anki_ledger_check[(VJO_ANKI_SCREENSHOT ? ANKI_PICTURE_MEM : ANKI_TEXT_MEM) <= VJO_BUDGET_PAF_ANKI ? 1 : -1];
+#endif
 /* Left after the addNote request for its exchange: the 4 KiB base64 chunk,
  * the 2 KiB reply reader, AnkiConnect's short replies and a createDeck. */
 #define ANKI_SEND_ROOM (16 * 1024)
@@ -138,6 +152,7 @@ static int refresh_count(void)
 {
     int n = vjo_queue_count();
     set_queue(n, -1);
+    vjo_log("anki: queue %d card(s)", n);
     return n;
 }
 
@@ -175,7 +190,7 @@ static int mem_with_settings(void)
     VjoConfig *c;
     int picture;
     sceKernelLockMutex(box_lock, 1, NULL);
-    picture = next_cfg.anki_field[VJO_ANKI_PICTURE][0] != '\0';
+    picture = VJO_ANKI_SCREENSHOT && next_cfg.anki_field[VJO_ANKI_PICTURE][0] != '\0';
     sceKernelUnlockMutex(box_lock, 1);
     /* Allocated before any view lock is taken (Paf has its own lock). */
     if (mem_get(picture ? ANKI_PICTURE_MEM : ANKI_TEXT_MEM) < 0 ||
@@ -192,7 +207,7 @@ static int mem_with_settings(void)
 
 static int want_picture(void)
 {
-    return acfg->anki_field[VJO_ANKI_PICTURE][0] != '\0' && mem_size >= ANKI_PICTURE_MEM;
+    return VJO_ANKI_SCREENSHOT && acfg->anki_field[VJO_ANKI_PICTURE][0] != '\0' && mem_size >= ANKI_PICTURE_MEM;
 }
 
 /* ---------------- finding Anki ---------------- */
@@ -326,6 +341,8 @@ static void misc_info(char *out, size_t cap)
 /* Why a card has no screenshot. */
 enum { PICTURE_OK = 0, PICTURE_CAPTURE_FAILED, PICTURE_TOO_LARGE };
 
+#if VJO_ANKI_SCREENSHOT
+
 /* The game's frame when × was pressed, into m (nothing when the capture
  * fails or its JPEG is over VJO_ANKI_PICTURE_MAX). The kernel frees its raw
  * frame after the last row is read; the encoder's band is returned to the
@@ -356,6 +373,13 @@ static int take_screenshot(VjoAnkiMedia *m)
             (int)((now_us() - t0) / 1000));
     return PICTURE_OK;
 }
+#else
+static int take_screenshot(VjoAnkiMedia *m)
+{
+    (void)m;
+    return PICTURE_CAPTURE_FAILED; /* never called: want_picture() is 0 */
+}
+#endif
 
 static void do_save(unsigned seq, int entry)
 {
@@ -399,6 +423,8 @@ static void do_save(unsigned seq, int entry)
         publish(seq, "Anki: not enough memory for this entry; card not saved", VJO_ANKI_STATUS_ERROR, -1, 0);
         return;
     }
+    if (!VJO_ANKI_SCREENSHOT && acfg->anki_field[VJO_ANKI_PICTURE][0])
+        vjo_log("anki: Picture field off in this build: no screenshot, no kernel capture buffer");
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1, 0);
     misc_info(misc, sizeof(misc));
     note.misc = misc;
@@ -468,6 +494,7 @@ static int op_send(const char *host, int port, void *ud, VjoErr *err)
 {
     SendOp *o = (SendOp *)ud;
     int found;
+    vjo_log("anki: to %s:%d: %s", host, port, o->note->queue_tag);
     o->audio_error = o->no_audio = 0;
     /* A lost addNote reply, or a stop before the card was removed here:
      * Anki has it already. */

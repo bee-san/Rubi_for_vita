@@ -21,6 +21,9 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PROBE = str(Path(sys.argv.pop(1)).resolve())
+# 1: the binary builds the screenshot path; 0: the shipped build's text-only cards (shell/anki.c).
+SCREENSHOT = json.loads(subprocess.run([PROBE, "--restart-step", tempfile.gettempdir(), "mode"], text=True,
+                                       capture_output=True, timeout=60, check=True).stdout)["screenshot"]
 
 
 @contextmanager
@@ -92,6 +95,44 @@ class RestartTests(unittest.TestCase):
     def snapshot(self):
         return {p.name: p.read_bytes() for p in self.queue.iterdir() if p.is_file()}
 
+    def test_lapis_note_after_offline_saves_and_restarts(self):
+        """Wi-Fi off (no anki_host, no socket): two cards saved in fresh processes, the queue read back
+        in three more, then △ sends both to the AnkiConnect double with the default Lapis note."""
+        for action, status, count in (("save", "Saved for Anki", 1), ("save-other", "Saved for Anki", 2)):
+            saved = self.step(action)
+            self.assertEqual((saved["status"], saved["count"]), (status, count))
+            if not SCREENSHOT:
+                self.assertEqual(saved["captures"], 0)  # never the kernel capture buffer
+        for _ in range(3):
+            self.assertEqual(self.step("inspect")["count"], 2)
+        names = sorted(p.name for p in self.queue.iterdir())
+        self.assertEqual(sum(n.endswith(".json") for n in names), 2)
+        self.assertEqual(sum(n.endswith(".jpg") for n in names), 2 if SCREENSHOT else 0)
+        with anki_server() as (state, host):
+            self.assertEqual(self.step("sync", host=host), {"count": 0, "status": "Sent 2 to Anki"})
+            self.assertEqual(state["actions"], ["findNotes", "addNote", "findNotes", "addNote"])
+            notes = {n["note"]["fields"]["Expression"]: n["note"] for n in state["notes"].values()}
+        self.assertEqual(sorted(notes), ["好き", "猫"])
+        neko = notes["猫"]
+        self.assertEqual((neko["deckName"], neko["modelName"]), ("Japanese::Mining", "Lapis"))
+        fields = {
+            "Expression": "猫", "ExpressionReading": "ねこ", "ExpressionFurigana": "猫[ねこ]",
+            "MainDefinition": "<ol><li>cat</li><li>shamisen &quot;neko&quot;</li></ol>",
+            "Sentence": "<b>猫</b>が好き猫", "FreqSort": "1500",
+            "SentenceFurigana": "<b>猫</b>が好き猫", "MiscInfo": "CLANNAD (2026-10-12 09:30)"}
+        if SCREENSHOT:  # AnkiConnect fills the named Picture field with the attached JPEG
+            fields["Picture"] = ""
+        self.assertEqual(neko["fields"], fields)
+        self.assertEqual(neko["tags"][0], "vita-jp-overlay")
+        self.assertRegex(neko["tags"][1], r"^vita_queue_[0-9a-f]{32}$")
+        self.assertEqual(len(neko["tags"]), 2)
+        if SCREENSHOT:
+            self.assertEqual(neko["picture"][0]["fields"], ["Picture"])
+        else:
+            self.assertNotIn("picture", neko)
+        self.assertEqual(self.step("inspect"), {"count": 0})
+
+    @unittest.skipUnless(SCREENSHOT, "the shipped build saves text-only cards")
     def test_confirmed_save_survives_fresh_processes_with_screenshot(self):
         self.assertEqual(self.step("save"), {"status": "Saved for Anki", "count": 1})
         first = self.step("inspect")
@@ -119,8 +160,8 @@ class RestartTests(unittest.TestCase):
         self.assertEqual(self.step("inspect"), {"count": 0})
 
     def test_interrupted_save_never_damages_previously_saved_cards(self):
-        checkpoints = ("jpeg_partial", "jpeg_flushed", "jpeg_renamed", "json_partial",
-                       "json_flushed", "json_renamed", "json_committed")
+        checkpoints = (("jpeg_partial", "jpeg_flushed", "jpeg_renamed") if SCREENSHOT else ()) + (
+            "json_partial", "json_flushed", "json_renamed", "json_committed")
         for point in checkpoints:
             with self.subTest(checkpoint=point):
                 # A separate storage directory for every crash boundary.
@@ -162,7 +203,7 @@ class RestartTests(unittest.TestCase):
             self.assertEqual(state["adds"], 1)
 
     def test_restart_during_cleanup_leaves_no_broken_pending_record(self):
-        for point in ("after_json_remove", "before_jpeg_remove"):
+        for point in ("after_json_remove",) + (("before_jpeg_remove",) if SCREENSHOT else ()):
             with self.subTest(checkpoint=point):
                 self.root = Path(self.temp.name) / point
                 self.root.mkdir()
