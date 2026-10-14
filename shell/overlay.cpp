@@ -118,7 +118,7 @@ static uint32_t s_tap; /* the L or R being tapped: dictionary pages */
 static int s_ja_px;    /* the header's point size: a row's last cell */
 
 /* logged when the overlay closes */
-static int64_t s_frame_max_us;
+static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
 static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre */
 static int s_mode;
 static uint32_t s_prev_buttons;
@@ -640,7 +640,7 @@ static void open_page(void)
     s_frames = s_moves = 0;
     s_nav.row_moves = s_nav.wraps = s_nav.no_layout = 0;
     s_tap = 0;
-    s_frame_max_us = 0;
+    s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_prev_touch = 1;
@@ -658,8 +658,8 @@ static void close_page(void)
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
     vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
-            "%d without layout", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves,
-            s_nav.wraps, s_nav.no_layout);
+            "%d without layout, slowest key %d us", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000),
+            s_nav.row_moves, s_nav.wraps, s_nav.no_layout, (int)s_key_max_us);
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
     s_header.text = s_body.text = NULL;
     s_separator = s_band_mid = NULL;
@@ -778,9 +778,13 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * soft-wrapped ones included. */
             VjoTextRows rows;
             size_t to;
+            int64_t t0 = sceKernelGetProcessTimeWide();
             vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
                              s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
                              s_japanese_only_selection, &to);
+            t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
+            if (t0 > s_key_max_us)
+                s_key_max_us = t0;
             cursor = (uint32_t)to;
         }
         if (cursor != s_cursor_byte) {

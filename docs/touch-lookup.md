@@ -114,11 +114,13 @@ cursor's, querying only selectable characters, allocates nothing and takes no
 lock. Before the header is laid out, or if paf reports no position for a
 character, Left/Right step through the text as one row and Up/Down do nothing;
 the cursor stays on a selectable character either way. The overlay's close line in
-`log.txt` counts the row changes, wraps and presses without a layout, and
-`--collect`'s analysis sums them (`tools/analyse_selftest.py`):
+`log.txt` counts the row changes, wraps and presses without a layout, and times
+the slowest key's walk (the `GetCharInfo` queries included; not measured on a
+console yet); `--collect`'s analysis sums them (`tools/analyse_selftest.py`). The
+format, with illustrative numbers:
 
 ```
-overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms, 4 row moves, 2 wraps, 0 without layout
+overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms, 4 row moves, 2 wraps, 0 without layout, slowest key 412 us
 ```
 
 `host/tests/test_text_rows.c` checks the rules on layout fixtures

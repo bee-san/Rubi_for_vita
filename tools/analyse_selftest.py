@@ -739,7 +739,7 @@ LOG = {
     "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
     # builds with row navigation (#81) add the arrow keys' row changes, wraps and presses before a layout
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"
-                          r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout)?"),
+                          r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout(?:, slowest key (\d+) us)?)?"),
     "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (\d+)-byte screenshot, (\d+) ms"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
@@ -846,10 +846,13 @@ def summarise_log(text):
             elif key == "overlay":
                 s["overlay"].append(int(m.group(4)))
                 if m.group(5) is not None:
-                    ar = s.setdefault("arrows", {"closes": 0, "row_moves": 0, "wraps": 0, "without_layout": 0})
+                    ar = s.setdefault("arrows", {"closes": 0, "row_moves": 0, "wraps": 0, "without_layout": 0,
+                                                 "slowest_key_us": None})
                     ar["closes"] += 1
                     for k, g in (("row_moves", 5), ("wraps", 6), ("without_layout", 7)):
                         ar[k] += int(m.group(g))
+                    if m.group(8) is not None:
+                        ar["slowest_key_us"] = max(ar["slowest_key_us"] or 0, int(m.group(8)))
             elif key == "anki_save":
                 s["anki"]["saves"] += 1
                 s["anki"]["save_fail"] += int(m.group(2)) < 0
@@ -884,7 +887,8 @@ def overlay_summary(lg):
     ar = lg.get("arrows")
     if ar:
         t += (f"; arrows ({ar['closes']} of them): {ar['row_moves']} row changes, {ar['wraps']} row wraps, "
-              f"{ar['without_layout']} before the header's layout")
+              f"{ar['without_layout']} before the header's layout"
+              + (f", slowest key {ar['slowest_key_us']:,} us" if ar["slowest_key_us"] is not None else ""))
     return t
 
 
