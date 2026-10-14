@@ -2,7 +2,7 @@
  * stdout rendering or process startup in the timer. All buffers here are host
  * instrumentation; reported arena_peak measures the production arena only.
  * With RESULTS (local_dictionary_results), every other dictionary page at the
- * cursor is then read and timed separately, as Up/Down does in the Shell. */
+ * cursor is then read and timed separately, as an L/R tap does in the Shell. */
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>

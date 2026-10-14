@@ -2,12 +2,14 @@
 
 Overlay app → OCR & lookup → Highlight chooses **Whole word** (default) or
 **Character**. Local dictionaries show one entry at a time; with
-**Dictionaries shown** above 1, Up/Down pages to other dictionaries' entries
-at the same character ([details](local-dictionaries.md#dictionaries-shown)).
+**Dictionaries shown** above 1, an L or R tap pages to other dictionaries'
+entries at the same character ([details](local-dictionaries.md#dictionaries-shown)).
 Each page highlights its own match, and Right skips the one shown. In Whole
 word mode, Right skips the current matched source span and Left retraces up to
 16 recent forward selections. Without a match or previous selection, movement
 falls back to one Unicode character. Character mode always steps one character.
+Both stay on the header's displayed row and wrap at its ends, and Up/Down
+change rows ([rows and arrow keys](#rows-and-arrow-keys)).
 Whole word uses the matched source span, including an inflected ending, rather
 than the dictionary's normalized spelling. While a lookup runs or has no result,
 it highlights the selected character instead. Changing the preference preserves
@@ -68,6 +70,75 @@ These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
 
+## Rows and arrow keys
+
+The arrows move by the header as it is drawn, not by the text's line breaks
+([#81](https://github.com/bee-san/vita-jp-overlay/issues/81), requests 1 and 2).
+A recognized line longer than the 920 px box wraps onto a second displayed row;
+each row is its own row for the arrows.
+
+- **Left/Right** stay on the cursor's row. Right from the row's last word
+  (Whole word) or character (Character) goes to the row's first, Left from
+  its first to the row's last character. In Whole word mode Right still skips
+  the matched source span, a word that continues onto the next row included:
+  Right then wraps to the first word of the cursor's row. Left retraces the
+  last 16 Rights, a wrap among them, and otherwise steps one character back:
+  a word's start is known only from its lookup, which runs after the cursor
+  lands, so Left from a row's first word goes to the row's last character and
+  that character's lookup shows the word starting there.
+- **Up/Down** go to the nearest row above or below that has a selectable
+  character, a soft-wrapped part of a long line included, and there to the
+  character whose cell is nearest the same horizontal position (inside it, or
+  the nearest edge; the earlier on a tie), which can be inside a word, as a
+  tap can. Repeated Up/Down keep that column while the cursor stays where the
+  last one left it, so going down through a short row and on to a long one
+  returns to it; Left/Right, a tap or new text take it afresh. A row change
+  forgets Right's history, so Left retraces only the new row's words.
+- **Japanese-only** applies to all four arrows, as to taps: with it ON the
+  cursor lands only on kana and Han; OFF, on any visible character. The arrows
+  never land on spaces (U+0020, U+3000), line breaks or control characters,
+  and pass over a row of only those (or, with Japanese-only, of only Latin
+  text and punctuation).
+- Dictionary paging, which used Up/Down, is an **L or R tap**: a shoulder
+  pressed and released with no other button, so the L + R chord that closes the
+  overlay and Select + L/R never page.
+
+The rows are the header's own layout, as for taps: the laid-out line and start
+x of each character from paf (`GetCharInfo`), with a row's last cell bounded by
+the Japanese point size (27 px at the default `font_size_ja = 18`, 34 cells
+across the 920 px box). Undocumented `LineInfo.frame` fields and paf's
+`GetNextUpHit`/`GetNextDownHit` are not used (pressing ▼ with ScrollView
+`DoSnap` and `GetNextDownHit` crashed the console). A key press walks the
+header's text (at most 4,095 bytes) from its start to the row after the
+cursor's, querying only selectable characters, allocates nothing and takes no
+lock. Before the header is laid out, or if paf reports no position for a
+character, Left/Right step through the text as one row and Up/Down do nothing;
+the cursor stays on a selectable character either way. The overlay's close line in
+`log.txt` counts the row changes, wraps and presses without a layout, and
+`--collect`'s analysis sums them (`tools/analyse_selftest.py`):
+
+```
+overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms, 4 row moves, 2 wraps, 0 without layout
+```
+
+`host/tests/test_text_rows.c` checks the rules on layout fixtures
+(`host/tests/layout_double.h`, a renderer double with 10 full-width cells per
+row): soft-wrapped and hard-broken rows, the column kept across a short row,
+mixed full-width and narrow advances (Latin cells are half as wide), kinsoku
+punctuation hanging past the edge, CR and UTF-16 surrogate pairs, unavailable
+layouts and invalid positions, whole words crossing a row's end, and Left's
+retrace of a wrap. It then compares every arrow from every character of 120
+generated texts (four box widths, Japanese-only ON and OFF) with the rules
+restated over the laid-out cells, and checks that Right from any selectable
+character visits each one of its row once and returns. The word lookup test
+(`real_lines_navigate_displayed_rows`) does the same on the 50 real VOCR lines,
+laid out at the default 27 px font size as recognized, as one joined line
+(soft wraps) and in a narrow box: Whole word Right with the bundled dictionary's
+real match ends stays on its row and wraps to the row's first word, and Left
+undoes it. The shoulder-tap rule is in `host/tests/test_word_navigation.cpp`.
+These are host checks of the portable code against a layout double; the paf
+layout itself, the key feel and the shoulder taps are for the console run.
+
 ## Word lookup on recognized text
 
 `host/tests/test_word_lookup.cpp` checks the whole path on real recognizer
@@ -97,8 +168,8 @@ lookup cursor at 6: 1 chars, dictionary 1/1, page 1/1, 6 reads 16564 B, rc=0, 0 
 lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 23 reads 86633 B, rc=0, 0 ms; "会ってなかったか" -> 会う (あう) [Daijirin4 Plain]
 ```
 
-That is why (`first word` during Auto OCR, `on open`, `cursor` for Left, Right
-or a tap, `page` for Up/Down), the cursor byte, the matched span in
+That is why (`first word` during Auto OCR, `on open`, `cursor` for an arrow
+or a tap, `page` for an L or R tap), the cursor byte, the matched span in
 characters, the dictionary file (`?` among several with one shown), the page,
 the file reads and bytes, the result and the time; then up to 8 characters
 at the cursor, the entry and the source named in its definition. The numbers

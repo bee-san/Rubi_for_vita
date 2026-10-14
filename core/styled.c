@@ -161,6 +161,6 @@ void vjo_styled_dict_page(VjoStyled *s, int page, int pages, int en_px)
     char line[48];
     if (pages <= 1 || page < 0 || page >= pages)
         return;
-    vjo_snprintf(line, sizeof(line), "▲▼ Dictionary %d of %d", page + 1, pages);
+    vjo_snprintf(line, sizeof(line), "L/R Dictionary %d of %d", page + 1, pages);
     vjo_styled_puts(s, line, VJO_RGB_RANK, en_px);
 }

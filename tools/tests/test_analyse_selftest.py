@@ -433,5 +433,25 @@ class DiagnosticsNeverDecide(unittest.TestCase):
         self.assertEqual((j["ocr_result"], j["diagnostics_result"]), ("INCOMPLETE", "INCOMPLETE"))
 
 
+class OverlayCloseLines(unittest.TestCase):
+    """log.txt's "overlay closed" lines (shell/overlay.cpp close_page), before and after row navigation (#81)."""
+
+    OLD = "overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms\n"
+    NEW = "overlay closed: 993 frames, 6 word moves, stick 2, slowest frame 36 ms, 4 row moves, 2 wraps, 1 without layout\n"
+
+    def test_an_older_build_reads_as_before(self):
+        lg = a.summarise_log(self.OLD)
+        self.assertEqual(lg["overlay"], [2])
+        self.assertNotIn("arrows", lg)
+        self.assertEqual(a.overlay_summary(lg), "  overlay opened 1x, slowest frame 2 ms")
+
+    def test_the_arrow_keys_are_counted(self):
+        lg = a.summarise_log(self.OLD + self.NEW + self.NEW)
+        self.assertEqual(lg["overlay"], [2, 36, 36])
+        self.assertEqual(lg["arrows"], {"closes": 2, "row_moves": 8, "wraps": 4, "without_layout": 2})
+        self.assertEqual(a.overlay_summary(lg), "  overlay opened 3x, slowest frame 36 ms; arrows (2 of them): "
+                                                "8 row changes, 4 row wraps, 2 before the header's layout")
+
+
 if __name__ == "__main__":
     unittest.main()

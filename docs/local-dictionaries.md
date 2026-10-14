@@ -164,10 +164,14 @@ local_dictionary_results = 3
 ```
 
 Page 1 is unchanged: the longest match, then an exact match, then dictionary
-order. Down shows the next enabled dictionary, in `local_dictionaries` order,
-that has an entry at the selected character; Up goes back. The body reads
-`▲▼ Dictionary 2 of 3` while paging is available; dictionaries with no entry
-are skipped. Each page highlights its own match, which can be shorter than
+order. Tapping R (pressed and released alone) shows the next enabled
+dictionary, in `local_dictionaries` order, that has an entry at the selected
+character; tapping L goes back. Up/Down move the cursor between the header's
+displayed rows instead ([rows and arrow keys](touch-lookup.md#rows-and-arrow-keys)).
+The L + R chord that closes the overlay, Select + L/R and a shoulder held with
+another button never page. The body reads `L/R Dictionary 2 of 3` while paging
+is available; dictionaries with no entry are skipped. Each page highlights its
+own match, which can be shorter than
 page 1's, for example `猫` in one dictionary and `猫舌` in another; in Whole word
 mode, Right skips the highlighted match. Every new character, from the arrows
 or a tap, starts at page 1. Changing the count looks the word up again without capturing
@@ -180,8 +184,8 @@ would keep several definitions resident and make each entry shorter.
 
 Only the entry on screen is in memory. When looking up a word, the worker
 records where each other dictionary's best entry is on disk: 24 bytes per
-dictionary, a 208-byte table at the start of the single result arena. Up/Down
-releases the shown entry, then opens only that page's dictionary and reads its
+dictionary, a 208-byte table at the start of the single result arena. A page
+change releases the shown entry, then opens only that page's dictionary and reads its
 header and one payload into the same arena. It needs no page cache,
 deinflection scratch or allocation, and is checked against the file's size
 when located; a replaced file reports an error and is located again next time.
