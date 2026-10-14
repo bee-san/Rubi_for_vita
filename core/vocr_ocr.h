@@ -1,7 +1,7 @@
 /* vita-vn-ocr backend: bee-san/vita-vn-ocr's polarity-agnostic dialogue line
  * finder and tiny CTC recognizer (plain C99, no malloc), with the int8 weights
- * published in its v0.2.0 release. Built with -DVJO_WITH_VOCR=ON; see
- * docs/vita-vn-ocr.md.
+ * published in its v0.2.5-vocr3.1 (VOCR3) and v0.2.0 releases. Built with
+ * -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
  *
  * API 19: a job never holds the region. It reads the region in strips of grey
  * rows (VjoGreySource: in the game, the display hook copies each strip from the
@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-#define VJO_VOCR_DEFAULT_MODEL "H15_w8.vocr"
+#define VJO_VOCR_DEFAULT_MODEL "VOCR3_H15_w8.vocr" /* VJO_VOCR3_H15_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
  * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus 4 bytes of

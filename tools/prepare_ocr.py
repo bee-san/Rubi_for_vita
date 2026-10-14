@@ -4,8 +4,9 @@
 No ONNX/Paddle/Python runtime is needed on the Vita. Run without --ncnn-source
 to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 
---backend vocr fetches a vita-vn-ocr recognizer (default H15_w8.vocr) from the
-bee-san/vita-vn-ocr v0.2.0 release instead. While that repository is private,
+--backend vocr fetches a vita-vn-ocr recognizer (default VOCR3_H15_w8.vocr, from
+the bee-san/vita-vn-ocr v0.2.5-vocr3.1 pre-release; H15_w8.vocr, FL10_w8.vocr and
+F20_w8.vocr from v0.2.0) instead. While that repository is private,
 the download needs an authenticated GitHub CLI (`gh auth login`) with access to
 it; --from takes a copy downloaded by other means. Every file is checked
 against its pinned size and SHA-256.
@@ -40,6 +41,20 @@ ASSETS = {
 VOCR_REPO = 'bee-san/vita-vn-ocr'
 VOCR_TAG = 'v0.2.0'
 VOCR_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_TAG}/'
+# VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
+# arenas; the default and its fallback. Pre-release v0.2.5-vocr3.1, whose
+# SHA256SUMS and vocr3-assets.json list these hashes (also the VOCR3_H15 and
+# VOCR3_FL10 arms of vita-vn-ocr eval/vocr3_report_spec_20261013.json).
+VOCR3_TAG = 'v0.2.5-vocr3.1'
+VOCR3_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR3_TAG}/'
+VOCR3_ASSETS = {
+    'VOCR3_H15_w8.vocr': (VOCR3_BASE + 'VOCR3_H15_w8.vocr', 1155968,
+        'cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c'),
+    'VOCR3_FL10_w8.vocr': (VOCR3_BASE + 'VOCR3_FL10_w8.vocr', 657664,
+        '87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154'),
+}
+VOCR_DEFAULT_MODEL = 'VOCR3_H15_w8.vocr'
+VOCR_FALLBACK_MODEL = 'VOCR3_FL10_w8.vocr'
 VOCR_ASSETS = {
     'H15_w8.vocr': (VOCR_BASE + 'H15_w8.vocr', 1155968,
         '316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd'),
@@ -113,6 +128,8 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
 
 
 def fetch_vocr(directory, name, source=None):
+    if name in VOCR3_ASSETS:
+        return fetch_release_asset(directory, name, VOCR3_ASSETS, VOCR3_TAG, source)
     return fetch_release_asset(directory, name, VOCR_ASSETS, VOCR_TAG, source)
 
 
@@ -185,8 +202,8 @@ def main():
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr2'), default='ncnn')
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted(VOCR_ASSETS),
-                    help='vocr: which v0.2.0 recognizer (default: H15_w8.vocr)')
+    ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR_ASSETS}),
+                    help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()
     if args.backend == 'vocr2' and not VOCR2_ENABLED:
@@ -200,7 +217,7 @@ def main():
         print('Model ready in', args.output, '- copy', model.name, 'to ux0:data/VitaJPOverlay/ocr/')
         return
     if args.backend == 'vocr':
-        model = args.model or 'H15_w8.vocr'
+        model = args.model or VOCR_DEFAULT_MODEL
         fetch_vocr(args.output, model, args.source)
         print('Verified', model)
         print('Model ready in', args.output, '- copy', model, 'to ux0:data/VitaJPOverlay/ocr/')

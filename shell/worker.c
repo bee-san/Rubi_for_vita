@@ -523,9 +523,9 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 #define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a 4 MiB " \
     "reserve). Try again later in the game, or restart it."
 #define OOM_GAME_MODEL_FITS "The game has too little free memory for this OCR model's weights; " \
-    "FL10_w8.vocr, the smallest model, would fit this region."
+    "VOCR3_FL10_w8.vocr, the smallest model, would fit this region."
 #define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights. Select " \
-    "FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
+    "VOCR3_FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
 #define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights, already " \
     "the smallest. Select a tighter dialogue region with Square, or try again later."
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
@@ -568,9 +568,20 @@ static int ocr_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(se
 static int64_t ocr_clock(void *ud) { (void)ud; return now_us(); }
 static void ocr_delay(void *ud, uint32_t us) { (void)ud; sceKernelDelayThread(us); }
 
+/* The job's headroom: free USER (+ another model's resident weights, released
+ * first) minus the reserve and what the job needs; negative means refused.
+ * Clamped to int32 for the log. */
+static int32_t vocr_headroom(const VjoGameOcrResult *r)
+{
+    int64_t h = (int64_t)r->free_user + r->release_bytes - (int64_t)r->reserve_bytes -
+                (int64_t)r->need_workspace - (int64_t)r->need_weights;
+    return h > INT32_MAX ? INT32_MAX : h < INT32_MIN ? INT32_MIN : (int32_t)h;
+}
+
 /* The game worker's memory check and per-line recognition, after the job
- * line: free USER against what the job needed (also for a refused job), and
- * each line's crop, CTC frames and time, i.e. ms per frame on this console. */
+ * line: free USER against what the job needed (also for a refused job), its
+ * headroom, and each line's crop, CTC frames and time, i.e. ms per frame on
+ * this console. */
 static void log_vocr_measurements(const VjoGameOcrResult *r)
 {
     char buf[224];
@@ -582,16 +593,13 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
     else if (r->reserve_bytes && r->release_bytes)
         /* Another model's resident weights, released before this job's. */
         vjo_log("game vocr memory: free USER=%d + own weights %u, needs workspace %u + weights %u + "
-                "reserve %u: check %s", (int)r->free_user, (unsigned)r->release_bytes,
+                "reserve %u: check %s, headroom %d", (int)r->free_user, (unsigned)r->release_bytes,
                 (unsigned)r->need_workspace, (unsigned)r->need_weights, (unsigned)r->reserve_bytes,
-                (int64_t)r->free_user + r->release_bytes >=
-                    (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes ? "passed" : "refused");
+                vocr_headroom(r) >= 0 ? "passed" : "refused", (int)vocr_headroom(r));
     else if (r->reserve_bytes)
-        vjo_log("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s",
+        vjo_log("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s, headroom %d",
                 (int)r->free_user, (unsigned)r->need_workspace, (unsigned)r->need_weights,
-                (unsigned)r->reserve_bytes,
-                (int64_t)r->free_user >= (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes
-                    ? "passed" : "refused");
+                (unsigned)r->reserve_bytes, vocr_headroom(r) >= 0 ? "passed" : "refused", (int)vocr_headroom(r));
     if (r->frames)
         vjo_log("game vocr speed: %u frames in %u us, %u us per frame", (unsigned)r->frames,
                 (unsigned)r->recognize_us, (unsigned)(r->recognize_us / r->frames));

@@ -90,11 +90,35 @@ else
   fail "diagnostics never decide" "a diagnostic changed the verdict (exit $rc)"
 fi
 
+# 2b. the offline Anki queue as shipped (anki_mining = on in the test build): text-only cards, so
+# × never asks the kernel for its 2,088,960 B capture (#74's refusal); the job's arena and stack are
+# the ledger's, and the Shell budget model replays them against the console's measured SceShell
+ab=$BUILD/vjo-shell-anki-build-tests
+if [ -x "$ab" ] && "$ab" > "$log/anki-build.log" 2>&1 \
+   && "$PY" host/tests/test_anki_restart.py "$ab" > "$log/anki-restart.log" 2>&1; then
+  am=$("$PY" tools/shell_budget_model.py --anki --json 2>/dev/null | "$PY" -c '
+import json, sys
+r = json.load(sys.stdin)
+v = next(s for s in r["scenarios"] if s["id"] == "notes26-v074")
+anki = [s for s in v["steps"] if s["step"].startswith("Anki")]
+print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/null)
+  read -r am_head am_pages am_paf <<<"$am"
+  arena=$(grep -E '^#define VJO_BUDGET_PAF_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
+  if [ -n "$am_head" ] && [ "$am_head" -gt 0 ] && [ "$arena" = 131072 ] \
+     && "$PY" tools/check_memory_ledger.py > "$log/ledger-src.log" 2>&1 && ! grep -q WARNING "$log/ledger-src.log"; then
+    pass "Anki offline queue (Shell)" "text-only cards, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); restart/Lapis $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
+  else
+    fail "Anki offline queue (Shell)" "budget/model check (arena ${arena:-?}, headroom ${am_head:-?}; $log/ledger-src.log)"
+  fi
+else
+  fail "Anki offline queue (Shell)" "$log/anki-build.log $log/anki-restart.log"
+fi
+
 # 3. the allocation simulator: the real worker and kernel under #74's measured pools
 sim=$BUILD/vjo-alloc-sim-tests
 if [ -x "$sim" ]; then
   "$sim" > "$log/alloc-sim.log" 2>&1; rc=$?
-  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
+  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, VOCR3-H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
     pass "allocation simulator" "API 18 full screen refused (0x80024302) as on the console; API 19 0 B of KD at every region and model, every ladder rung works"
     grep -o "alloc-sim: .*" "$log/alloc-sim.log" | sed 's/^alloc-sim: /           /'
   elif [ $rc -eq 0 ]; then
@@ -214,6 +238,12 @@ assumptions the console still has to confirm (none of these is measured yet):
     (argument), each OCR stage FAILs with that step, and the probe shows it per memory type.
   - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
     and relocations only.
+  - Anki (anki_mining = on in the test build): every Anki job holds a 69,632 B thread stack in
+    SceShell's partition while it runs (a count of the queue on every overlay open, a save, a
+    send), and a save or send a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
+    beside a game were measured once at 98,304 B with an older, larger build; the model's
+    headroom at that step is an estimate, and a refused thread or arena is survived (host
+    tests), the card is then not saved and the overlay says so. Cards carry no screenshot.
   - CPU3 load and the hook's cost per frame: unmeasured (AGENTS.md rule 8).
   - Vita3K is not evidence: it cannot load the kernel plugin and has no KD, SceShell or taiHEN.
 EOF

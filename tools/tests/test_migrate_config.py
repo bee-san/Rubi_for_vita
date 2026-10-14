@@ -46,21 +46,22 @@ class MigrateConfig(unittest.TestCase):
         # keeps that choice and adds the fallback key with its default.
         text, _ = self.migrate("ocr_backend = vocr\nvocr_model = FL10_w8.vocr\n")
         self.assertIn("vocr_model = FL10_w8.vocr\n", text)
-        self.assertIn("vocr_fallback_model = FL10_w8.vocr\n", text)
-        # The release installer selects the new default and keeps the fallback.
-        text, _ = self.migrate("vocr_model = FL10_w8.vocr\n", "vocr_model=H15_w8.vocr",
-                               "vocr_fallback_model=FL10_w8.vocr")
-        self.assertIn("vocr_model = H15_w8.vocr\n", text)
-        self.assertIn("vocr_fallback_model = FL10_w8.vocr\n", text)
+        self.assertIn("vocr_fallback_model = VOCR3_FL10_w8.vocr\n", text)
+        # The release installer selects the new default and its fallback.
+        text, _ = self.migrate("vocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\n",
+                               "vocr_model=VOCR3_H15_w8.vocr", "vocr_fallback_model=VOCR3_FL10_w8.vocr")
+        self.assertIn("vocr_model = VOCR3_H15_w8.vocr\n", text)
+        self.assertIn("vocr_fallback_model = VOCR3_FL10_w8.vocr\n", text)
         text, _ = self.migrate("vocr_fallback_model = none\n")
         self.assertIn("vocr_fallback_model = none\n", text)
         self.assertEqual(text.count("vocr_fallback_model ="), 1)
 
-    def test_release_installer_sets_h15_with_fl10_fallback(self):
+    def test_release_installer_sets_vocr3_h15_with_vocr3_fl10_fallback(self):
         script = (ROOT / "tools/install-vita.sh").read_text()
-        self.assertIn("--set vocr_model=H15_w8.vocr", script)
-        self.assertIn("--set vocr_fallback_model=FL10_w8.vocr", script)
+        self.assertIn("--set vocr_model=VOCR3_H15_w8.vocr", script)
+        self.assertIn("--set vocr_fallback_model=VOCR3_FL10_w8.vocr", script)
         self.assertNotIn("vocr_model=FL10_w8.vocr", script)
+        self.assertIn("--set log_file=on", script)
 
     def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):
         # A config from the LAN-only release: anki_host alone used to send.

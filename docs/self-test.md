@@ -29,9 +29,9 @@ with its own record whether it passed or not ([ingame-capture.md](ingame-capture
 
 | stage | job | what it shows |
 |---|---|---|
-| `fallback` | your region, the fallback model forced | FL10 read from the card and recognizing |
-| `textbox` | your region, the configured model | H15 read from the card (its load time), the strip capture, the finder and the recognizer |
-| `fullscreen` | the whole frame | the full screen through the strips, H15 kept resident |
+| `fallback` | your region, the fallback model forced | the fallback (VOCR3-FL10 by default) read from the card and recognizing |
+| `textbox` | your region, the configured model | the configured model (VOCR3-H15 by default) read from the card (its load time), the strip capture, the finder and the recognizer |
+| `fullscreen` | the whole frame | the full screen through the strips, the configured model kept resident |
 | `probe` | each capture path into each memory type, one strip | whether the display hook can write the game's `USER_RW`, `CDRAM` and `PHYCONT` memory, the kernel strip, and a user-mode `sceDisplayGetFrameBuf` read; each with its rc and the rows' checksum |
 | `textbox2` | your region again | the warm time; its text is the job's result |
 

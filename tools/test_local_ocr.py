@@ -2,7 +2,7 @@
 """Run the real pinned model on existing synthetic Japanese dialogue fixtures.
 
 --backend ncnn (default): PP-OCRv5 mobile, model directory from prepare_ocr.py.
---backend vocr: vita-vn-ocr, a directory holding the release's H15_w8.vocr
+--backend vocr: vita-vn-ocr, a directory holding the default VOCR3_H15_w8.vocr
 (tools/prepare_ocr.py --backend vocr).
 """
 import argparse
@@ -23,7 +23,9 @@ def main():
     args = ap.parse_args()
     root = Path(__file__).resolve().parent.parent
     image = Image.open(root/'host/samples/vn_textbox.jpg').crop((45, 375, 920, 475)).convert('RGBA')
-    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else 'H15_w8.vocr'
+    # the file the CLI loads by default (host/ocr_tool.c: VJO_VOCR_DEFAULT_MODEL), so the
+    # corruption below is the default model's own SHA-256 check, not a missing file
+    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else 'VOCR3_H15_w8.vocr'
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         pixels = tmp/'input.rgba'

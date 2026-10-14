@@ -70,37 +70,45 @@ A missing or corrupt candidate reports an error without changing engines.
    is shown; the verified weights stay for the next job (see below). A failed
    or cancelled job shows no partial text.
 
-A job's memory is two blocks: the weights, kept between jobs, and a
-workspace sized exactly for its region and freed after the job:
+A job's memory is three blocks in the game: the weights, kept between jobs;
+the workspace; and the capture block (one strip of the region's grey rows
+with a checksum and a bit per row, under 64 KiB at any region). The last two
+are freed after the job. Since API 19 the workspace holds no copy of the
+region, so a job hardly depends on the region's size:
 
 ```
-weights (kept)
-max(line finder arena, recognizer arena) + region width × height
-+ the runtime's two structs (3,760 bytes on the Vita)          (per job)
+weights (kept)                                  page(model bytes)
+max(line finder arena, recognizer arena)
++ the runtime's two structs (3,760 bytes)       page(...)          (per job)
+capture block: one strip, 4 bytes + 1 bit per region row  < 64 KiB (per job)
 ```
 
-The table's totals are the two together, the peak of a job; between jobs
-only the weights remain, page-rounded.
+A line taller than a 64-row strip is kept whole in one more block of its own
+size (at most 516,096 B), only while that job runs. The table's totals are the
+three page-rounded blocks together, the peak of a job (`vjo_vocr_job_bytes`,
+`vjo_vocr_capture_bytes`; the allocation simulator's "game USER peak" lines
+are the same figures); between jobs only the weights remain.
 
 | model (`vocr_model`) | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
 |---|---|---|---|---|
-| `H15_w8.vocr` (default, more accurate) | 1,155,968 B | 182,944 B | 1,864,912 B (1.78 MiB) | 1,469,392 B (1.40 MiB) |
-| `FL10_w8.vocr` (smallest; automatic fallback) | 657,664 B | 124,832 B | 1,308,496 B (1.25 MiB) | 912,976 B (0.87 MiB) |
-| `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 2,325,072 B (2.22 MiB) | 1,929,552 B (1.84 MiB) |
+| `VOCR3_H15_w8.vocr` (default), `H15_w8.vocr` (v0.2.0) | 1,155,968 B | 182,944 B | 1,409,024 B (1.34 MiB) | 1,404,928 B (1.34 MiB) |
+| `VOCR3_FL10_w8.vocr` (automatic fallback), `FL10_w8.vocr` (v0.2.0) | 657,664 B | 124,832 B | 851,968 B (0.81 MiB) | 847,872 B (0.81 MiB) |
+| `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 1,871,872 B (1.79 MiB) | 1,867,776 B (1.78 MiB) |
 
 The line finder's arena (83,323 B at 960×544) is smaller than every
 recognizer arena, so it costs nothing extra.
 
-**Default and fallback.** `vocr_model` (default `H15_w8.vocr`) is the model a
-job uses when the game has room for it. The game worker checks free `USER`
-memory before each job; if the reserve, H15's workspace and (unless already
-resident) H15's weights do not fit but the smaller `vocr_fallback_model`
-(default `FL10_w8.vocr`) does, that job runs FL10. Resident FL10 weights stay
-while H15 still does not fit, and are released for H15 once it does. A
-missing, wrong or corrupt `vocr_model` file also makes the game's later jobs
-use the fallback (until the game restarts). The kernel opens only the two
-pinned names the Shell submitted; the log names the model that ran and, after
-a memory fallback, what H15 would have needed. Every pinned model is inside
+**Default and fallback.** `vocr_model` (default `VOCR3_H15_w8.vocr`) is the
+model a job uses when the game has room for it. The game worker checks free
+`USER` memory before each job; if the reserve, the model's workspace and
+(unless already resident) its weights do not fit but the smaller
+`vocr_fallback_model` (default `VOCR3_FL10_w8.vocr`) does, that job runs the
+fallback. Resident fallback weights stay while the default still does not fit,
+and are released for it once it does. A missing, wrong or corrupt `vocr_model`
+file also makes the game's later jobs use the fallback (until the game
+restarts). The kernel opens only the two pinned names the Shell submitted; the
+log names the model that ran and, after a memory fallback, what the default
+would have needed. Every pinned model is inside
 the console budget ceiling (weights ≤ 1,600,000 B, recognizer arena ≤
 262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). Since v0.7.1 inference runs in
 `VitaJPOverlay_OCR.suprx`, now registered per game in its own `*TITLEID` section
@@ -164,7 +172,40 @@ or stability. A physical in-game recognition remains required.
 
 ## Models
 
-The weights are the int8 assets of the vita-vn-ocr
+**The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as
+its automatic fallback.** They are vita-vn-ocr #67's recognizers, published as the
+[v0.2.5-vocr3.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.5-vocr3.1):
+H15's and FL10's shapes retrained, so the same sizes, arenas and line finder, and a job needs
+exactly the memory it needed with v0.2.0's H15 and FL10 (`host/tests/test_vocr.c` checks the
+sizes, arenas and job bytes are equal; the Vita build's memory ledger is unchanged).
+
+| file | bytes | sha256 | W8I arena | release |
+|---|---|---|---|---|
+| `VOCR3_H15_w8.vocr` (default) | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
+| `VOCR3_FL10_w8.vocr` (fallback) | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
+| `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
+| `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
+
+vita-vn-ocr's locked report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
+vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0 H15, and 2.13%
+for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
+repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
+dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
+and no console has run them: they are the default of the test builds by the owner's choice
+(2026-10-14), and the v0.2.0 models stay in the package as the documented fallback. To go back
+to them, set in `config.ini`:
+
+```ini
+vocr_model = H15_w8.vocr
+vocr_fallback_model = FL10_w8.vocr
+```
+
+`vocr_model = VOCR3_FL10_w8.vocr` always runs the smaller model; `vocr_fallback_model = none`
+never falls back. `install-vita.sh` sets the package's defaults each time it runs, so set the choice
+again after a reinstall. The game worker and the kernel's model broker accept exactly these names,
+F20 and VOCR2's model, each at its pinned size and SHA-256.
+
+The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
 (unchanged from v0.2.0). On its hand-checked real screenshots (int8, C runtime, its
 `eval/run.py`, with hand-drawn line boxes):
@@ -219,21 +260,22 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr --output ocr          # H15_w8.vocr
-   python3 tools/prepare_ocr.py --backend vocr --model FL10_w8.vocr --output ocr
+   python3 tools/prepare_ocr.py --backend vocr --output ocr          # VOCR3_H15_w8.vocr
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_FL10_w8.vocr --output ocr
+   python3 tools/prepare_ocr.py --backend vocr --model H15_w8.vocr --output ocr   # v0.2.0
    ```
 
    While vita-vn-ocr is private this uses the GitHub CLI (`gh auth login`
    with access to it). `--from FILE` checks a copy downloaded another way.
 3. Copy the file to `ux0:data/VitaJPOverlay/ocr/`, or let the FTP installer do
-   it: `tools/install_ftp.sh --vocr-model ocr/H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
+   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini
    ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-   vocr_model = H15_w8.vocr
-   vocr_fallback_model = FL10_w8.vocr
+   vocr_model = VOCR3_H15_w8.vocr
+   vocr_fallback_model = VOCR3_FL10_w8.vocr
    ocr_mode = auto
    log_file = on
    ```
@@ -309,18 +351,19 @@ copied, and the settings above. Close other apps first.
    and press ×.
 3. **One recognition.** Reopen the overlay on a dialogue line. Note what it
    shows: the text, or an error message.
-4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` with
-   `tools/install_ftp.sh --status VITA_IP`. A completed job logs
-   `game vocr rc=... H15_w8.vocr: WxH, lines=N USER workspace=B
+4. **Log.** Fetch `ux0:data/VitaJPOverlay/log.txt` over VitaShell's FTP
+   (`curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/log.txt`). A completed job logs
+   `game vocr rc=... VOCR3_H15_w8.vocr: WxH, lines=N USER workspace=B
    weights=read|resident resident=R, find=X ms load=Y ms recognize=Z ms
    frames=F io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and
    `cleanup=0`. The first text-bearing job of a game logs `weights=read`;
    later ones log `weights=resident` with a much smaller `load`.
-   A job that fell back logs `FL10_w8.vocr (fallback)` and a `game vocr
-   fallback:` line with H15's needs. Three more lines follow:
+   A job that fell back logs `VOCR3_FL10_w8.vocr (fallback)` and a `game vocr
+   fallback:` line with the default's needs. Three more lines follow:
    - `game vocr memory: free USER=U, needs workspace J + weights W + reserve
-     4194304: check passed|refused`: the game's free memory at that moment,
-     also for a refused job (`rc=-103`), i.e. this title's real OCR budget.
+     4194304: check passed|refused, headroom H`: the game's free memory at that
+     moment, also for a refused job (`rc=-103`), i.e. this title's real OCR
+     budget, and what was left (H < 0: refused).
    - `game vocr speed: F frames in T us, P us per frame`: the recognizer's
      on-console time per CTC frame (a 640-px line at the model height is about 80 frames).
    - `game vocr lines: 917x30 114f 52.1ms ...`: each recognized line's crop

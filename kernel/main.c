@@ -116,14 +116,16 @@ static void free_game_buffers(void)
 
 /* The kernel log goes straight to ux0:data/VitaJPOverlay/kernel.txt (flushed
  * every worker tick) so it survives a crash; the previous boot's file is kept
- * as kernel.prev.txt. Capped at 64 KB per boot. The file is first opened once
+ * as kernel.prev.txt. Capped at 256 KB per boot (64 KB until 0.8.0-test: one long
+ * console session with every OCR job could fill that, and the lines after it were lost).
+ * The file is first opened once
  * SceShell has registered: earlier in boot ux0: can still be another device
  * (SD2Vita remaps it), and the rotation would happen there. Lines logged
  * before that wait in the ring. In safe mode the Shell never registers; its
  * boot mark serves the same purpose. */
 #define KFILE "ux0:data/VitaJPOverlay/kernel.txt"
 #define KFILE_PREV "ux0:data/VitaJPOverlay/kernel.prev.txt"
-#define KFILE_CAP (64 * 1024)
+#define KFILE_CAP (256 * 1024)
 static int kfile_size = -1;
 
 static void kernel_file_flush(void)

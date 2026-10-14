@@ -175,12 +175,20 @@ target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)
 add_test(NAME anki COMMAND vjo-anki-tests)
 # Real Shell Anki miner, offline file queue (real files) and screenshot capture;
-# Vita SDK substituted.
+# Vita SDK substituted. This binary builds the screenshot path (VJO_ANKI_SCREENSHOT 1),
+# which the Vita build leaves out (shell/anki.c); vjo-shell-anki-build-tests is the
+# shipped, text-only configuration.
 add_executable(vjo-shell-anki-tests host/tests/test_shell_anki.c)
 target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-shell-anki-tests PRIVATE VJO_ANKI_SCREENSHOT=1)
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
+add_executable(vjo-shell-anki-build-tests host/tests/test_shell_anki.c)
+target_include_directories(vjo-shell-anki-build-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-shell-anki-build-tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-unused-function)
+target_link_libraries(vjo-shell-anki-build-tests vjo_host)
+add_test(NAME shell_anki_build COMMAND vjo-shell-anki-build-tests)
 add_executable(vjo-hachidori-tests host/tests/test_hachidori.c)
 target_include_directories(vjo-hachidori-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-hachidori-tests vjo_host)
@@ -219,6 +227,10 @@ add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/to
 # Each step is a fresh process; the AnkiConnect HTTP double survives client restarts.
 add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-tests>)
+add_test(NAME anki_restart_build COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-build-tests>)
+set_tests_properties(anki_restart PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=1")
+set_tests_properties(anki_restart_build PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=0")
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)

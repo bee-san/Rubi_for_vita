@@ -90,9 +90,10 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_backend = VJO_OCR_VOCR;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
-    /* H15 is the default where the game's memory allows; FL10 runs otherwise. */
-    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "H15_w8.vocr");
-    vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "FL10_w8.vocr");
+    /* VOCR3-H15 is the default where the game's memory allows; VOCR3-FL10 runs otherwise. */
+    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "VOCR3_H15_w8.vocr");
+    vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "VOCR3_FL10_w8.vocr");
+    c->log_file = 1; /* log.txt is on unless log_file = off */
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
     vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
     vjo_snprintf(c->anki_tags, sizeof(c->anki_tags), "vita-jp-overlay");
@@ -161,12 +162,12 @@ const char *vjo_config_default_text(void)
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
-           "; vocr weights in ocr_model_dir: H15_w8.vocr (default, more accurate) | FL10_w8.vocr\n"
-           "; (smallest) | F20_w8.vocr (larger)\n"
-           "vocr_model = H15_w8.vocr\n"
+           "; vocr weights in ocr_model_dir: VOCR3_H15_w8.vocr (default) | VOCR3_FL10_w8.vocr\n"
+           "; (smaller) | v0.2.0's H15_w8.vocr, FL10_w8.vocr | F20_w8.vocr (larger)\n"
+           "vocr_model = VOCR3_H15_w8.vocr\n"
            "; Smaller weights used automatically for a job when the game has too little free\n"
-           "; memory for vocr_model: FL10_w8.vocr | none\n"
-           "vocr_fallback_model = FL10_w8.vocr\n"
+           "; memory for vocr_model: VOCR3_FL10_w8.vocr | FL10_w8.vocr | none\n"
+           "vocr_fallback_model = VOCR3_FL10_w8.vocr\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -175,8 +176,8 @@ const char *vjo_config_default_text(void)
            "; Debugging: IP of a computer running tools/udp_log_listener.py (empty = off)\n"
            "log_host =\n"
            "\n"
-           "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 256 KB + one rotated file): on | off\n"
-           "log_file = off\n"
+           "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
+           "log_file = on\n"
            "\n"
            "; ---- Anki card mining (optional, see docs/anki.md) ----\n"
            "; on: × in the overlay saves the shown word as a card in a queue on the memory\n"

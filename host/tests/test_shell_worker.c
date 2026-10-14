@@ -618,14 +618,14 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    /* H15 by default, FL10 when the game's memory has no room for it. */
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "H15_w8.vocr"));
-    TEST_CHECK(!strcmp(c.vocr_fallback_model, "FL10_w8.vocr"));
-    vjo_config_parse(&c, ini, sizeof(ini) - 1); /* FL10 stays selectable */
+    /* VOCR3-H15 by default, VOCR3-FL10 when the game's memory has no room for it. */
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "VOCR3_H15_w8.vocr"));
+    TEST_CHECK(!strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr") && c.log_file == 1);
+    vjo_config_parse(&c, ini, sizeof(ini) - 1); /* v0.2.0's FL10 stays selectable */
     TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 0);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
-    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr") && c.n_warnings == 3); /* each kept the default */
+    TEST_CHECK(!strcmp(c.vocr_model, "VOCR3_H15_w8.vocr") && c.n_warnings == 3); /* each kept the default */
     const char fallbacks[] = "vocr_fallback_model = none\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, fallbacks, sizeof(fallbacks) - 1);
@@ -636,7 +636,7 @@ static void test_vocr_config(void)
     TEST_CHECK(!c.vocr_fallback_model[0] && !c.n_warnings);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad_fallback, sizeof(bad_fallback) - 1);
-    TEST_CHECK(!strcmp(c.vocr_fallback_model, "FL10_w8.vocr") && c.n_warnings == 1);
+    TEST_CHECK(!strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr") && c.n_warnings == 1);
     TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_NCNN == 1 && VJO_OCR_VOCR == 2 &&
                VJO_OCR_VOCR2 == 4); /* 3 was Meiki; saved IDs never move */
     const char new_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
@@ -699,7 +699,7 @@ static void test_vocr_missing_model_releases_workspace(void)
     strokes(15, 39);
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].failed_stage == VJO_STAGE_OCR);
     TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 2 && vocr_frees == 2);
-    TEST_CHECK(!strcmp(fake_game_request.model, "FL10_w8.vocr") && !fake_game_request.fallback[0]);
+    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr") && !fake_game_request.fallback[0]);
     mem_free();
 }
 
@@ -711,17 +711,17 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    fake_missing_model = "H15_w8.vocr";
+    fake_missing_model = "VOCR3_H15_w8.vocr";
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
-    TEST_CHECK(vocr_allocs == 2 && !strcmp(fake_game_request.model, "FL10_w8.vocr"));
-    TEST_CHECK(logged("H15_w8.vocr is unusable here (io=0x80010002), using FL10_w8.vocr for this game") != NULL);
+    TEST_CHECK(vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
+    TEST_CHECK(logged("VOCR3_H15_w8.vocr is unusable here (io=0x80010002), using VOCR3_FL10_w8.vocr for this game") != NULL);
     mem_free();
     unsigned before = vocr_allocs;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* one job, straight to FL10 */
-    TEST_CHECK(vocr_allocs == before + 1 && !strcmp(fake_game_request.model, "FL10_w8.vocr"));
+    TEST_CHECK(vocr_allocs == before + 1 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
     TEST_CHECK(!fake_game_request.fallback[0]);
     mem_free();
     game_generation++; job_generation = game_generation; /* another game: H15 is tried again */
@@ -729,7 +729,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
-    TEST_CHECK(!strcmp(fake_game_request.model, "H15_w8.vocr") && !strcmp(fake_game_request.fallback, "FL10_w8.vocr"));
+    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && !strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
     mem_free();
     /* VOCR2 has no fallback: its pinned model is already FL10-sized. */
     reset();
@@ -746,23 +746,23 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
     for (unsigned i = 0; i < 3; i++) {
         reset();
         cfg.ocr_backend = VJO_OCR_VOCR;
-        fake_missing_model = "H15_w8.vocr"; fake_missing_io = transient[i];
+        fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = transient[i];
         fake_recognized_text = "猫";
-        TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && !strcmp(fake_game_request.model, "FL10_w8.vocr"));
-        TEST_CHECK(logged("using FL10_w8.vocr for this job") != NULL && !vocr_unusable[0]);
+        TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
+        TEST_CHECK(logged("using VOCR3_FL10_w8.vocr for this job") != NULL && !vocr_unusable[0]);
         mem_free();
         fake_missing_model = NULL;
         TEST_ASSERT(mem_alloc() == 0);
         job_cfg = cfg; vjo_arena_reset(&results[0]);
         TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && vocr_allocs == 3);
-        TEST_CHECK(!strcmp(fake_game_request.model, "H15_w8.vocr") && !strcmp(fake_game_request.fallback, "FL10_w8.vocr"));
+        TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && !strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
         mem_free();
     }
     /* A hash/format rejection (io 0) is a bad file: sticky, like a missing one. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    fake_missing_model = "H15_w8.vocr"; fake_missing_io = 0; fake_recognized_text = "猫";
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(vocr_unusable, "H15_w8.vocr"));
+    fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = 0; fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(vocr_unusable, "VOCR3_H15_w8.vocr"));
     mem_free();
 }
 
@@ -772,30 +772,30 @@ static void test_vocr_model_error_retry_limits(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    fake_missing_model = "H15_w8.vocr"; fake_missing_with_fallback = 1;
+    fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_with_fallback = 1;
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !vocr_unusable[0]);
     mem_free();
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    fake_missing_model = "H15_w8.vocr"; fake_cancel_on_model_error = 1;
+    fake_missing_model = "VOCR3_H15_w8.vocr"; fake_cancel_on_model_error = 1;
     run_vocr_job();
     TEST_CHECK(vocr_allocs == 1 && !vocr_unusable[0]);
     mem_free();
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_fallback_model[0] = 0;
-    fake_missing_model = "H15_w8.vocr";
+    fake_missing_model = "VOCR3_H15_w8.vocr";
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !fake_game_request.fallback[0]);
     mem_free();
 }
 
-/* Neither H15 nor FL10 fitted: the job line says the fallback was refused too. */
+/* Neither VOCR3-H15 nor VOCR3-FL10 fitted: the job line says the fallback was refused too. */
 static void test_vocr_refused_fallback_is_labelled(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1; fake_memory_fallback = 1; fake_free_user = 4300000;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    TEST_CHECK(logged("game vocr rc=-103 FL10_w8.vocr (fallback, refused too):") != NULL);
+    TEST_CHECK(logged("game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too):") != NULL);
     TEST_CHECK(cache_data[0].err.detail && !strcmp(cache_data[0].err.detail, OOM_GAME_REGION));
     mem_free();
 }
@@ -809,10 +809,10 @@ static void test_vocr_memory_fallback_is_logged(void)
     fake_recognized_text = "猫";
     fake_memory_fallback = 1;
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫") && vocr_allocs == 1);
-    const char *line = logged("game vocr rc=0 FL10_w8.vocr (fallback):");
+    const char *line = logged("game vocr rc=0 VOCR3_FL10_w8.vocr (fallback):");
     TEST_CHECK(line != NULL);
     line = logged("game vocr fallback:");
-    TEST_CHECK(line && !strcmp(line, "game vocr fallback: H15_w8.vocr needs workspace 303104 + weights "
+    TEST_CHECK(line && !strcmp(line, "game vocr fallback: VOCR3_H15_w8.vocr needs workspace 303104 + weights "
                                      "1159168 + reserve 4194304, more than free USER 5300000 + own weights 659456"));
     TEST_MSG("%s", line ? line : "(no fallback line)");
     line = logged("game vocr memory:");
@@ -841,8 +841,9 @@ static void test_vocr_logs_memory_check_and_frames(void)
     const char *line = logged("game vocr rc=");
     TEST_CHECK(line && strstr(line, "USER workspace=244896"));
     line = logged("game vocr memory:");
+    /* 5,000,000 - 4,194,304 - 245,760 - 659,456 = -99,520: the job was 99,520 B short */
     TEST_CHECK(line && !strcmp(line, "game vocr memory: free USER=5000000, needs workspace 245760 + "
-                                      "weights 659456 + reserve 4194304: check refused"));
+                                      "weights 659456 + reserve 4194304: check refused, headroom -99520"));
     TEST_MSG("%s", line ? line : "(no memory line)");
     TEST_CHECK(!logged("game vocr speed:") && !logged("game vocr lines"));
     mem_free();
@@ -865,7 +866,7 @@ static void test_vocr_logs_memory_check_and_frames(void)
     line = logged("game vocr rc=0");
     TEST_CHECK(line && strstr(line, "recognize=92 ms frames=205 "));
     line = logged("game vocr memory:");
-    TEST_CHECK(line && strstr(line, "free USER=91226112") && strstr(line, "check passed"));
+    TEST_CHECK(line && strstr(line, "free USER=91226112") && strstr(line, "check passed, headroom "));
     line = logged("game vocr speed:");
     TEST_CHECK(line && !strcmp(line, "game vocr speed: 205 frames in 92345 us, 450 us per frame"));
     line = logged("game vocr lines:");
@@ -913,7 +914,7 @@ static void test_vocr_oom_advice_names_the_stage(void)
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
         {5200000, 1159168, OOM_GAME_MODEL_FITS, "would fit this region", "tighter"}, /* H15; FL10 fits */
-        {5000000, 1159168, OOM_GAME_MODEL, "FL10_w8.vocr, the smallest model, and a tighter", NULL},
+        {5000000, 1159168, OOM_GAME_MODEL, "VOCR3_FL10_w8.vocr, the smallest model, and a tighter", NULL},
         {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
         {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
         {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},

@@ -45,7 +45,7 @@ def steps(v, shell_pages=None, worker_pages=None, network=False, anki=False):
     ]
     if anki:
         out.append(("Anki card saved: job thread", v["VJO_BUDGET_SHELL_ANKI_STACK"], 0))
-        out.append(("Anki card saved: job arena (picture field)", 0, v["VJO_BUDGET_PAF_ANKI"]))
+        out.append(("Anki card saved: job arena (text-only card)", 0, v["VJO_BUDGET_PAF_ANKI"]))
         out.append(("Anki job done", -v["VJO_BUDGET_SHELL_ANKI_STACK"], -v["VJO_BUDGET_PAF_ANKI"]))
     out.append(("game exit: result memory freed", 0, -arena))
     return out
@@ -118,7 +118,7 @@ def main():
     ap.add_argument("--worker-pages", type=int, help="model a build whose OCR worker holds this many bytes in SceShell "
                     "(an *ALL registration; 0: not loaded there, or NO_RESIDENT)")
     ap.add_argument("--network", action="store_true", help="a network dictionary (two arenas and a pool) instead of the local one")
-    ap.add_argument("--anki", action="store_true", help="include an Anki card save with a picture field")
+    ap.add_argument("--anki", action="store_true", help="include an Anki card save (text-only: no screenshot)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     v = parse_budget(args.budget)

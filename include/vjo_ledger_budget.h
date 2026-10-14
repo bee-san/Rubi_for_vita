@@ -34,7 +34,8 @@
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u
 #define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
-#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, only while a card is saved or sent */
+#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
+                                                    * of the queue on every overlay open, a save (×), a send (△) */
 #define VJO_BUDGET_SHELL_NET_STACK (VJO_STACK_SHELL_NET + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_CTL_STACK (VJO_STACK_SHELL_CTL + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_ANKI_STACK (VJO_STACK_SHELL_ANKI + VJO_LEDGER_TLS)
@@ -60,17 +61,20 @@
 #define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (5,632 B file) and the Paf Plugin object [estimate] */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
 #define VJO_BUDGET_PAF_RESULTS_NET 571888u         /* 2 x 262,144 arenas + 47,600 connection pool (worker.c MEM_SIZE) */
-#define VJO_BUDGET_PAF_ANKI 393216u                /* an Anki job with a picture field (anki.c ANKI_PICTURE_MEM) */
+/* An Anki job (anki.c ANKI_TEXT_MEM): a text-only card. The Picture field is off in the
+ * build (VJO_ANKI_SCREENSHOT 0): its screenshot would be the kernel's 2,088,960 B full-frame
+ * capture (VJO_BUDGET_KERNEL_CAPTURE), which #74's console refused, and 393,216 B here (a
+ * picture card's arena, ANKI_PICTURE_MEM). anki.c checks its arena against this at compile time. */
+#define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
 /* The shipped default (local JMdict): one 64 KiB arena, the overlay open, an
- * Anki picture card being saved. */
+ * Anki card being saved. */
 #define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* The opt-in network dictionary (two arenas and a connection pool) with the
- * same overlay and Anki card: over the best-case limit by a few KiB. The
- * runtime reserve guard then refuses the last of the three (the Anki card
- * or the overlay's text), which the code survives (host tests); it is
- * reported by the checker as a warning, not hidden. */
+ * same overlay and Anki card. With a picture card's 384 KiB arena this was over
+ * the best-case limit by 8,688 B (the checker warned; the runtime reserve guard
+ * refuses the last allocation, which the code survives); a text-only card fits. */
 #define VJO_WORST_SHELL_PAF_NET (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_NET + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
@@ -82,7 +86,7 @@
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u     /* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured] */
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
-/* The Shell's JPEG capture (Lens, an Anki screenshot) at a full frame, KERNEL_RW,
+/* The Shell's JPEG capture (Lens; an Anki screenshot only with VJO_ANKI_SCREENSHOT) at a full frame, KERNEL_RW,
  * per request. Local OCR takes no kernel block since API 19 (#74: on the owner's
  * 3.65 this 2,088,960 B request failed with 0x80024302 at every attempt). */
 #define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u)

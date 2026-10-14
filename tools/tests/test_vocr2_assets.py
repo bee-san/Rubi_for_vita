@@ -41,9 +41,13 @@ class Vocr2AssetPlumbing(unittest.TestCase):
                     hashlib.sha256(self.legacy).hexdigest())
         old = {name: old_spec for name in ("FL10_w8.vocr", "H15_w8.vocr")}
         new = {prepare.VOCR2_MODEL: self.spec}
+        self.vocr3 = b"tiny VOCR3 asset fixture, not OCR weights!!"
+        vocr3_spec = ("https://fixture.invalid/VOCR3", len(self.vocr3), hashlib.sha256(self.vocr3).hexdigest())
+        vocr3 = {name: vocr3_spec for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR2_ASSETS", new))
+            self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -106,9 +110,11 @@ class Vocr2AssetPlumbing(unittest.TestCase):
             pinned = prepare.fetch_vocr2(self.models)
         self.assertEqual(pinned.read_bytes(), self.data)
 
-    def package_fixture(self, enabled):
+    def package_fixture(self, enabled, settings=None):
         for name in ("FL10_w8.vocr", "H15_w8.vocr"):
             (self.models / name).write_bytes(self.legacy)
+        for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"):
+            (self.models / name).write_bytes(self.vocr3)
         dictionary = self.root / "jmdict.vjdict"
         dictionary.write_bytes(b"VJDICT2\0synthetic dictionary fixture")
         snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
@@ -120,12 +126,58 @@ class Vocr2AssetPlumbing(unittest.TestCase):
                          "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
                          "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
                 archive.writestr(name, b"synthetic package fixture")
+            archive.writestr("config.ini", b"; the build's own template copy\n")
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR2_ENABLED", enabled), \
              mock.patch.object(release, "load_manifest", return_value=snapshot), \
              contextlib.redirect_stdout(io.StringIO()):
-            release.package(base, output, self.models, dictionary, license_file)
+            release.package(base, output, self.models, dictionary, license_file, settings=settings)
         return output
+
+    def test_bundle_ships_vocr3_as_default_and_v020_as_fallback(self):
+        (self.models / prepare.VOCR2_MODEL).write_bytes(self.data)
+        package = self.package_fixture(True)
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr", prepare.VOCR2_MODEL):
+                self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
+                self.assertIn(name, manifest["models"])
+            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr3.1")
+            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["role"], "default")
+            self.assertEqual(manifest["models"]["H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.0")
+            self.assertEqual(manifest["defaults"]["vocr_model"], "VOCR3_H15_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "VOCR3_FL10_w8.vocr")
+            self.assertTrue(manifest["defaults"]["log_file"])
+            self.assertFalse(manifest["defaults"]["anki"])
+            self.assertNotIn("install_settings", manifest)
+            # both template copies are the source template: logging on, Anki off
+            for name in ("config.ini", release.DATA + "config.ini"):
+                text = archive.read(name).decode()
+                self.assertIn("\nlog_file = on\n", text)
+                self.assertIn("\nanki_mining = off\n", text)
+                self.assertIn("\nvocr_model = VOCR3_H15_w8.vocr\n", text)
+
+    def test_package_settings_go_into_both_templates_and_the_manifest(self):
+        (self.models / prepare.VOCR2_MODEL).write_bytes(self.data)
+        package = self.package_fixture(True, {"anki_mining": "on", "log_file": "on"})
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            self.assertEqual(manifest["install_settings"], {"anki_mining": "on", "log_file": "on"})
+            self.assertTrue(manifest["defaults"]["anki"])
+            for name in ("config.ini", release.DATA + "config.ini"):
+                text = archive.read(name).decode()
+                self.assertIn("\nanki_mining = on\n", text)
+                self.assertNotIn("anki_mining = off", text)
+                self.assertEqual(manifest["files"][name]["sha256"], hashlib.sha256(text.encode()).hexdigest())
+        # a key the template does not have, or a value with a line break, is refused before output
+        with self.assertRaisesRegex(ValueError, "Not a setting of the config template: anki_minnig"):
+            self.package_fixture(True, {"anki_minnig": "on"})
+        for bad in ("anki_mining", "anki_mining=on\nlog_file=off", "=on", "Bad Key=1", "anki_deck=a\u2028b",
+                    "anki_deck=a\x85b", "anki_deck=a\x7fb"):
+            with self.assertRaises(Exception):
+                release.parse_setting(bad)
+        self.assertEqual(release.parse_setting(" Anki_Mining = on "), ("anki_mining", "on"))
+        self.assertEqual(release.parse_setting("anki_field_picture="), ("anki_field_picture", ""))
 
     def test_enabled_bundle_contains_distinct_model_with_old_defaults(self):
         (self.models / prepare.VOCR2_MODEL).write_bytes(self.data)
@@ -145,8 +197,8 @@ class Vocr2AssetPlumbing(unittest.TestCase):
                 "protected_result_sha256": "3c2c873239e1bcbdf3858650d7b628853b0f4b1f4c324ecc9519a7348c8d09f7",
                 "runtime_commit": "49ff6f4d1c55804c600d098810574a49d382a009"})
             self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
-            self.assertEqual(manifest["defaults"]["vocr_model"], "H15_w8.vocr")
-            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "FL10_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_model"], "VOCR3_H15_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "VOCR3_FL10_w8.vocr")
 
     def test_enabled_bundle_refuses_missing_or_legacy_model_before_output(self):
         with self.assertRaisesRegex(ValueError, "OCR model is missing: " + prepare.VOCR2_MODEL):

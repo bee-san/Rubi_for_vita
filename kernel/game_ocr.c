@@ -213,6 +213,10 @@ int vjoOcrRegister(void)
                         worker_epoch != __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE)))
         rc = VJO_ERR_BUSY;
     else {
+        /* The worker asks every 100 ms: only a new registration is logged, so kernel.txt
+         * says which game process the worker loaded into (its *TITLEID section works). */
+        if (pid != worker_pid || worker_module != info.modid)
+            klog("ocr worker registered: game pid 0x%X module 0x%X", pid, info.modid);
         worker_pid = pid;
         worker_module = info.modid;
         worker_epoch = __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE);
@@ -615,6 +619,8 @@ int vjoOcrCancel(uint32_t seq)
 
 static uint32_t model_size(const char *name)
 {
+    if (!strcmp(name, VJO_VOCR3_H15_NAME)) return VJO_VOCR_H15_BYTES;
+    if (!strcmp(name, VJO_VOCR3_FL10_NAME)) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "FL10_w8.vocr")) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;
