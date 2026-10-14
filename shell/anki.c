@@ -285,9 +285,67 @@ static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
     n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;
 }
 
+/* Can △ send this card: its record read back, decoded and made into a note
+ * beside the settings, with ANKI_SEND_ROOM to spare, in an arena of this
+ * job's size (as request_fits checks there)? The same calls, as a dry run. */
+static int sendable(const VjoAnkiNote *note, const VjoAnkiMedia *media)
+{
+    size_t mark = vjo_arena_mark(&arena);
+    VjoAnkiNote d;
+    VjoAnkiBody body;
+    int picture;
+    char *json = vjo_queue_encode(&arena, note, media->picture_len != 0);
+    int fits = json && vjo_queue_decode(&arena, json, strlen(json), &d, &picture) > 0;
+    if (fits) {
+        d.queue_tag = "vita_queue_00000000000000000000000000000000";
+        fits = vjo_anki_add_request(&arena, &d, media, &body) == 0 &&
+               sizeof(VjoConfig) + 16 + (vjo_arena_mark(&arena) - mark) + media->picture_len + ANKI_SEND_ROOM <=
+                   mem_size;
+    }
+    vjo_arena_release(&arena, mark);
+    return fits;
+}
+
+/* An entry read at mark, kept compact there: its strings are copied above
+ * the read's memory, then moved down over it (as find_audio keeps its URL). */
+static int keep_entry(const VjoVocab *v, size_t mark, VjoAnkiGloss *g)
+{
+    size_t n = (size_t)v->n_meanings, total = n * sizeof(char *), at = (mark + 7) & ~(size_t)7, len;
+    const char *src[2] = {v->spelling, v->reading};
+    char *top, *p, **m;
+    for (size_t k = 0; k < n + 2; k++)
+        total += strlen(k < 2 ? src[k] : v->meanings[k - 2]) + 1;
+    if (!(top = (char *)vjo_arena_alloc(&arena, total)))
+        return -1;
+    m = (char **)top;
+    p = top + n * sizeof(char *);
+    for (size_t k = 0; k < n + 2; k++) { /* the strings, each one's offset in m[] (spelling, reading first) */
+        const char *t = k < 2 ? src[k] : v->meanings[k - 2];
+        len = strlen(t) + 1;
+        sceClibMemcpy(p, t, len);
+        if (k < 2)
+            src[k] = (const char *)(uintptr_t)(p - top);
+        else
+            m[k - 2] = (char *)(uintptr_t)(p - top);
+        p += len;
+    }
+    sceClibMemmove(arena.base + at, top, total);
+    vjo_arena_release(&arena, mark);
+    top = (char *)vjo_arena_alloc(&arena, total); /* the moved block: arena.base + at */
+    m = (char **)top;
+    for (size_t k = 0; k < n; k++)
+        m[k] = top + (uintptr_t)m[k];
+    g->spelling = top + (uintptr_t)src[0];
+    g->reading = top + (uintptr_t)src[1];
+    g->meanings = (const char **)m;
+    g->n_meanings = (int)n;
+    return 0;
+}
+
 /* The other dictionaries' entries for the word (local_dictionary_results
- * above 1): each page's payload read from its file, one at a time. */
-static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
+ * above 1): each page's payload read from its file, one at a time, kept
+ * while △ can still send the card. */
+static void read_more(VjoAnkiNote *n, const VjoAnkiMedia *media, const VjoLocalPages *pages, int shown)
 {
     VjoAnkiGloss *g;
     char name[96];
@@ -295,14 +353,24 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
         return;
     n->more = g;
     for (int i = 0; i < pages->count && n->n_more < VJO_ANKI_MAX_MORE && !stopping(); i++) {
+        size_t mark = vjo_arena_mark(&arena);
         VjoDictResult r;
         VjoErr err;
-        if (i == shown || vjo_local_read_page(&arena, &plat, acfg, pages, i, &r, &err) || !r.n_vocab ||
-            !r.vocab[0].n_meanings)
+        if (i == shown)
             continue;
-        vjo_anki_meaning_source(r.vocab[0].meanings[0], name, sizeof(name));
-        g[n->n_more++] = (VjoAnkiGloss){keep_str(name), r.vocab[0].spelling, r.vocab[0].reading, r.vocab[0].meanings,
-                                        r.vocab[0].n_meanings};
+        if (vjo_local_read_page(&arena, &plat, acfg, pages, i, &r, &err) || !r.n_vocab || !r.vocab[0].n_meanings ||
+            keep_entry(&r.vocab[0], mark, &g[n->n_more]) < 0) {
+            vjo_arena_release(&arena, mark);
+            continue;
+        }
+        /* (r is gone: keep_entry moved its entry over the read) */
+        vjo_anki_meaning_source(g[n->n_more].meanings[0], name, sizeof(name));
+        g[n->n_more++].dictionary = keep_str(name);
+        if (!sendable(n, media)) {
+            vjo_log("anki: %d other dictionaries' entries kept: the next would be too large for △", --n->n_more);
+            vjo_arena_release(&arena, mark);
+            break;
+        }
     }
 }
 
@@ -360,7 +428,6 @@ static void do_save(unsigned seq, int entry)
     VjoLocalPages *pages = NULL;
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)], name[96];
     int shown, mark_value = 0, ok = 0, rc, picture = PICTURE_OK, wanted, page = 0;
-    size_t mark;
     int64_t t0 = now_us();
 
     /* The √ or the queued mark already says it: no memory for that. */
@@ -402,18 +469,11 @@ static void do_save(unsigned seq, int entry)
     /* The shown entry's dictionary: a local definition names it; else the service. */
     vjo_anki_meaning_source(note.n_meanings ? note.meanings[0] : "", name, sizeof(name));
     note.dictionary = *name ? keep_str(name) : acfg->dictionary == VJO_DICT_LOCAL ? NULL : vjo_dict_name(acfg->dictionary);
-    read_more(&note, pages, page);
     sceClibMemset(&media, 0, sizeof(media));
     if (wanted && !stopping()) /* the frame of the × press */
         picture = take_screenshot(&media);
-    mark = vjo_arena_mark(&arena);
+    read_more(&note, &media, pages, page);
     rc = vjo_queue_save(&arena, &note, &media);
-    if (rc == VJO_QUEUE_TOO_LARGE && note.n_more) {
-        vjo_log("anki: card over %u KiB with the other dictionaries: saved without them", VJO_QUEUE_TEXT_MAX >> 10);
-        vjo_arena_release(&arena, mark); /* the refused record's bytes */
-        note.n_more = 0;
-        rc = vjo_queue_save(&arena, &note, &media);
-    }
     vjo_log("anki: save %s rc=%d, %u-byte screenshot, %d ms", note.spelling, rc, (unsigned)media.picture_len,
             (int)((now_us() - t0) / 1000));
     if (rc == VJO_QUEUE_TOO_LARGE) {

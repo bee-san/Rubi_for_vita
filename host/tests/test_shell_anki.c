@@ -555,7 +555,7 @@ typedef struct {
     size_t size;
     int active;
 } DictFile;
-static DictFile dict_files[3];
+static DictFile dict_files[8];
 static int dict_opens;
 
 static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
@@ -608,7 +608,7 @@ static int dict_open(void *ud, const char *path, VjoFile *out)
     const char *name = strrchr(path, '/');
     name = name ? name + 1 : path;
     (void)ud;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 8; i++)
         if (dict_files[i].name && !strcmp(name, dict_files[i].name)) {
             dict_files[i].active++;
             dict_opens++;
@@ -1866,6 +1866,81 @@ static void test_cross_records_every_dictionary_and_sends_the_glossary(void)
     finish();
 }
 
+/* Whatever × saves, △ can send: with 8 dictionaries' entries of any size
+ * (and text that HTML and JSON escaping grow), × keeps the other
+ * dictionaries' entries only while the card stays sendable in △'s arena, as
+ * a dry run of the send; small ones are all kept. */
+static void test_what_cross_saves_triangle_sends(void)
+{
+    static const int sizes[] = {300, 900, 2700, 4000, 7000};
+    static char meaning[8][7200], names[8][16], list_names[160];
+    static DictRow rows[8];
+    static uint8_t mem[256 * 1024];
+    static VjoLocalPages pages;
+    for (int heavy = 0; heavy < 2; heavy++) {
+        for (unsigned z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++) {
+            VjoArena a;
+            VjoPlatform p;
+            VjoDictResult res;
+            VjoErr err;
+            char id[VJO_QUEUE_ID_SIZE];
+            const char *json;
+            int kept = 0;
+            reset();
+            vjo_test_anki_text_only = 1;
+            list_names[0] = '\0';
+            for (int k = 0; k < 8; k++) {
+                int o = snprintf(meaning[k], sizeof(meaning[k]), "[Dictionary %d]\n", k);
+                while (o + 3 < sizes[z]) { /* kana, or text escaping grows: & < > " and line breaks */
+                    const char *piece = heavy ? (o % 4 ? "\"&\"" : "<\n>") : "す";
+                    memcpy(meaning[k] + o, piece, 3);
+                    o += 3;
+                }
+                meaning[k][o] = '\0';
+                snprintf(names[k], sizeof(names[k]), "d%d.vjdict", k);
+                rows[k] = (DictRow){"好き", "好き", "すき", meaning[k]};
+                dict_build(&dict_files[k], names[k], &rows[k]);
+                strcat(list_names, k ? "," : "");
+                strcat(list_names, names[k]);
+            }
+            snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+            snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
+            cfg.local_dictionary_results = 8;
+            reconfigure();
+            vjo_arena_init(&a, mem, sizeof(mem));
+            vjo_platform_vita(&p, NULL);
+            TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 8, &pages, &res, &err) == VJO_OK);
+            TEST_ASSERT(pages.count == 8 && res.n_vocab == 1);
+            entries[1].vocab = &res.vocab[0];
+            view_pages = &pages;
+            view_page = 0;
+            cross(1);
+            TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
+            only_id(id);
+            json = queue_file(id, "json", NULL);
+            TEST_ASSERT(json != NULL);
+            for (const char *q = json; (q = strstr(q, "{\"dictionary\":")); q++)
+                kept++;
+            server();
+            triangle();
+            /* sent; or, when even the shown entry alone is too large for △ (7 KB of
+             * text that escaping grows about six times), kept for the Overlay app */
+            int sent = !strcmp(g_view.anki_status, "Sent 1 to Anki") && anki.adds == 1 && vjo_queue_count() == 0;
+            TEST_CHECK(sent || (heavy && !kept && vjo_queue_count() == 1 &&
+                                !strcmp(g_view.anki_status, "Sent 0 to Anki, 1 kept (too large: the Overlay app sends it)")));
+            TEST_MSG("%s: entries of %d B, %s text: record %u B, %d of 7 others kept", g_view.anki_status, sizes[z],
+                     heavy ? "escaping" : "kana", (unsigned)strlen(json), kept);
+            printf("measure: 8 dictionaries, entries of %d B (%s): record %u B with %d of 7 others, %s\n", sizes[z],
+                   heavy ? "escaping" : "kana", (unsigned)strlen(json), kept, sent ? "sent" : "kept for the app");
+            if (!heavy && sizes[z] <= 900)
+                TEST_CHECK(kept == 7 && !logged("would be too large for △"));
+            if (kept < 7)
+                TEST_CHECK(logged("other dictionaries' entries kept: the next would be too large for △"));
+            finish();
+        }
+    }
+}
+
 /* The largest card a record holds (8 dictionaries' long entries, under 32
  * KiB): its note does not fit the overlay's 128 KiB arena beside the record,
  * so △ keeps it and says the Overlay app sends it (test_anki_app sends it). */
@@ -2178,6 +2253,7 @@ TEST_LIST = {
     {"version_2_record_from_the_test_build_sends_as_kiku", test_version_2_record_from_the_test_build_sends_as_kiku},
     {"cross_records_every_dictionary_and_sends_the_glossary", test_cross_records_every_dictionary_and_sends_the_glossary},
     {"largest_card_is_kept_by_triangle_for_the_overlay_app", test_largest_card_is_kept_for_the_app},
+    {"what_cross_saves_triangle_sends_whatever_the_dictionaries", test_what_cross_saves_triangle_sends},
 #if VJO_ANKI_SCREENSHOT
     {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"queue_survives_restart_and_triangle_sends_with_current_settings", test_queue_survives_restart_and_triangle_sends_it},

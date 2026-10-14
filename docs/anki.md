@@ -72,7 +72,7 @@ words get the green √.
 | `Card not saved: over 32 KiB of text` | The card's text exceeds a record's limit |
 | `Sent 3 to Anki, 1 already there` | Done; duplicates were archived |
 | `Sent 2 to Anki, 1 kept (unreadable, see log.txt)` | A damaged or edited record, or one whose screenshot is missing, stays queued |
-| `Sent 2 to Anki, 1 kept (too large: the Overlay app sends it)` | A card whose note does not fit the overlay's 128 KiB arena (many long dictionary entries); the app's Send now has 512 KiB |
+| `Sent 2 to Anki, 1 kept (too large: the Overlay app sends it)` | A card whose note does not fit the overlay's 128 KiB arena: one saved by an earlier build, or a shown entry that alone is too large (several KB of text that HTML escaping grows); the app's Send now has 512 KiB |
 | `1 sent; 2 kept: Anki offline` | Sending stopped; the rest stays queued. Also any AnkiConnect error and an HTTP error |
 | `0 sent; 1 kept: Kiku note type not found in Anki: import Kiku (docs/anki.md)` | Anki has no Kiku note type ([setup](#setup)) |
 | `0 sent; 1 kept: Anki not found: test the connection in the Overlay app` | `anki_host` is `auto`, and no search has found AnkiConnect yet or the computer it found does not answer now (Anki closed, or the computer has another address); the app's test searches again |
@@ -151,7 +151,7 @@ card can be made into a note later, by any version that reads the record:
 | `version` | 3 |
 | `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none) |
 | `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (a local one's from its definition's first line, `[JMdict Plain]`; a service's name for jpdb, jiten or Hachidori) |
-| `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7 |
+| `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while △ can still send the card ([below](#memory-and-network)) |
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (99999 = none) and its source, pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
@@ -162,8 +162,7 @@ card can be made into a note later, by any version that reads the record:
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
 | `time` | When × was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC) |
 
-A record is at most 32 KiB; a card whose other dictionaries' entries would
-make it larger is saved without them (log.txt says so). Records of version 2
+A record is at most 32 KiB. Records of version 2
 (#49, v0.8.0-test.1: the same keys up to `misc`) and version 1 (#5) still load
 and send as Kiku notes; a local definition's first line names its dictionary
 there too. A version this build does not know is kept, not sent.
@@ -218,8 +217,16 @@ In SceShell (the overlay, `shell/anki.c`):
   read into memory whole: each step scans the directory once or reads one card.
 - With Dictionaries shown above 1, × reads each other dictionary's entry for
   the word from its file into that arena, one at a time (at most 8,448 B each,
-  `VJO_LOCAL_SELECTED_BUDGET`), after copying the 208-byte page locators under
-  the view lock.
+  `VJO_LOCAL_SELECTED_BUDGET`, then compacted to the entry's own strings),
+  after copying the 208-byte page locators under the view lock. An entry is
+  kept only while △ can still send the card: after each one, × runs the send's
+  own steps as a dry run (the record encoded, decoded and made into the Kiku
+  note beside the settings, with the exchange's 16 KiB to spare in a 128 KiB
+  arena). The first that would not fit, and the ones after it, are left out
+  and log.txt says how many were kept. Measured on the host with 8 dictionaries
+  (`what_cross_saves_triangle_sends_whatever_the_dictionaries`): entries of
+  900 B all kept (an 8,273 B record); 2,700 B, 5 of 7 (17,107 B); 7,000 B, 1
+  of 7. Every such card is sent by △.
 - △ sends to `anki_host`, or for `auto` to the address in `anki_host.txt`,
   read again on every send. SceShell does not search the network: the
   search (up to 254 hosts in batches of 32 sockets) is the Overlay app's.
