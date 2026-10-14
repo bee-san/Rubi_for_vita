@@ -1,0 +1,57 @@
+# What a lookup at a character of a real recognized line shows with the bundled
+# plaintext.vjdict (Daijirin4 -> Sankoku8 -> JMdict, docs/plaintext-dictionaries.json).
+# id and model name a line of vocr_lines.tsv. The cursor is the first occurrence of
+# `at` in the overlay's sentence; the highlight must be exactly `span`, the popup
+# entry `spelling` (reading `reading`; "-" = none shown: it is the spelling).
+# span "" = no entry starts there: the character stays highlighted (fallback).
+# id	model	at	span	spelling	reading	category
+vita_tight_v12178_127145	H15	分かりました	分かりました	分かる	わかる	inflection
+vita_tight_v13090_154661	H15	聞いてる	聞いてる	聞く	きく	inflection
+vita_tight_v13090_154662	H15	会ってなかった	会ってなかった	会う	あう	inflection
+vita_tight_v13090_154662	H15	入って	入って	入る	はいる	inflection
+vita_tight_v13766_88834	H15	撮れ	撮れ	撮る	とる	inflection
+vita_tight_v13766_88834	H15	写真を撮れ	写真を撮れ	写真を撮る	しゃしんをとる	inflection
+vita_tight_v14813_78849	H15	売り飛ばされ	売り飛ばされ	売り飛ばす	うりとばす	inflection
+vita_tight_v14813_78849	H15	乗せられる	乗せられる	乗せる	のせる	inflection
+vita_tight_v15577_157071	H15	立ち上げた	立ち上げた	立ち上げる	たちあげる	inflection
+vita_tight_v15577_157071	H15	疑われて	疑われて	疑う	うたがう	inflection
+vita_tight_v1629_155350	H15	叫んだ	叫んだ	叫ぶ	さけぶ	inflection
+vita_tight_v1629_155350	H15	した！	した	する	-	inflection
+vita_tight_v18457_99919	H15	殺されてしまう	殺されてしまう	殺す	ころす	inflection
+vita_tight_v16770_154900	H15	死ねば	死ねば	死ぬ	しぬ	inflection
+vita_tight_v19012_100497	H15	認めろ	認めろ	認める	みとめる	inflection
+vita_tight_v19141_112857	H15	現れた	現れた	現れる	あらわれる	inflection
+vita_tight_v19141_112857	H15	した	した	する	-	inflection
+psp_tight_v4060_10997	H15	ことにしました	ことにしました	事にする	ことにする	inflection
+psp_tight_v5690_52119	H15	食べて	食べて	食べる	たべる	inflection
+psp_tight_v5690_52118	H15	作って	作って	作る	つくる	inflection
+psp_tight_v11879_56279	H15	静かな	静か	静か	しずか	na-adjective
+vita_tight_v1015_151321	H15	そうなんだ	そうなんだ	そうなんだ	-	kana
+vita_tight_v12178_127145	H15	して	して	して	-	kana
+vita_tight_v12178_127145	H15	ましょう	ましょう	ましょう	-	kana
+vita_tight_v12178_127145	H15	こう	こう	斯う	こう	kana
+vita_tight_v18449_89742	H15	ありがとう	ありがとう	有り難う	ありがとう	kana
+vita_tight_v18449_89742	H15	うふふ	うふふ	うふふ	-	kana
+vita_tight_v13090_154662	H15	から	から	から	-	kana
+vita_tight_v13090_154662	H15	ほとんど	ほとんど	ほとんど	-	kana
+vita_tight_v14813_78848	H15	でも	でも	でも	-	kana
+vita_tight_v18164_149316	H15	する？	する	する	-	kana
+vita_tight_v1015_151321	H15	ジュース	ジュース	ジュース	-	katakana
+vita_tight_v1015_151321	H15	クラス	クラス	クラス	-	katakana
+vita_tight_v13090_154662	H15	デート	デート	デート	-	katakana
+vita_tight_v14813_78849	H15	マグロ	マグロ	マグロ	-	katakana
+vita_tight_v15577_157071	H15	ロック	ロック	ロック	-	katakana
+vita_tight_v13766_88835	H15	長谷川	長谷川	長谷川	はせがわ	name
+vita_tight_v18641_121294	H15	織田信長	織田信長	織田信長	おだのぶなが	name
+vita_tight_v18641_121294	H15	秀吉	秀吉	秀吉	ひでよし	name
+vita_tight_v14869_116051	H15	桜井	桜井	桜井	さくらい	name
+vita_tight_v14813_78848	H15	私	私	私	わたし	common reading
+vita_tight_v15231_88272	H15	僕	僕	僕	ぼく	common reading
+vita_tight_v13766_88834	H15	先生	先生	先生	せんせい	common reading
+vita_tight_v17641_99842	H15	お姫様	お姫様	お姫様	おひめさま	common reading
+vita_tight_v1015_151321	FL10	美味しいつて	美味しい	美味しい	おいしい	ocr error
+psp_tight_v481_57980	H15	室息死	室	室	しつ	ocr error
+psp_tight_v481_57980	FL10	窒息死	窒息死	窒息死	ちっそくし	ocr error
+psp_tight_v2063_138885	FL10	無遠作	無	無	む	ocr error
+vita_tight_v13090_154661	FL10	入生	入	入	にゅう	ocr error
+vita_tight_v13766_88835	H15	莉				character fallback

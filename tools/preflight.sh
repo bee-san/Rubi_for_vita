@@ -6,6 +6,8 @@
 #
 # Required: VJO_VOCR_SOURCE_DIR (the pinned runtime). Each optional input adds checks:
 #   VJO_VOCR_MODEL_DIR   the release weights: the simulator's and the parity test's real runs
+#   VJO_PLAINTEXT_SOURCE plaintext-dicts checkout (or .refs/plaintext-dicts): the word lookup on real
+#                        recognized lines with the bundled dictionary (host/tests/test_word_lookup.cpp)
 #   VJO_EVAL_MANIFESTS   vita-vn-ocr eval/linefind/manifests, with VJO_EVAL_SHOTS (dirs, colon-separated):
 #                        the capture parity test on the dev eval crops
 #   VITASDK              the Vita build: module pages, memory ledger, syscall ABI, kernel FPU check
@@ -33,6 +35,7 @@ echo "preflight $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet 2>/d
 # 1. host build and every host suite (the real kernel, Shell and game worker with SDK stubs)
 if cmake -S . -B "$BUILD" -G Ninja -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
      ${VJO_VOCR_MODEL_DIR:+-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR"} -DPython3_EXECUTABLE="$(command -v "$PY")" \
+     ${VJO_PLAINTEXT_SOURCE:+-DVJO_PLAINTEXT_SOURCE="$VJO_PLAINTEXT_SOURCE"} \
      > "$log/configure.log" 2>&1 && cmake --build "$BUILD" -j"${JOBS:-8}" > "$log/build.log" 2>&1; then
   if ctest --test-dir "$BUILD" -j"${JOBS:-8}" --output-on-failure > "$log/ctest.log" 2>&1; then
     pass "host suites" "$(grep -o '[0-9]*% tests passed, [0-9]* tests failed out of [0-9]*' "$log/ctest.log" | tail -1) (kernel, Shell, worker, core, tools)"
@@ -49,6 +52,18 @@ if [ -x "$km" ] && "$km" > "$log/kernel-meminfo.log" 2>&1; then
   pass "kernel memory routes (B1)" "$(grep -c '\[ OK \]' "$log/kernel-meminfo.log") cases: objects below 0x40000000 read by every route; user-half ones (0x5..., 0x8..., unreadable) refused unread, step 3; the guard at its edges"
 else
   fail "kernel memory routes (B1)" "${km} ($log/kernel-meminfo.log)"
+fi
+
+# word lookup end to end: real VOCR lines -> the bundled dictionary -> highlight span -> entry
+wl=$BUILD/vjo-word-lookup-tests
+if [ -f "$BUILD/plaintext/plaintext.vjdict" ]; then
+  if VJO_PLAINTEXT_DIR=$BUILD/plaintext VJO_REQUIRE_PLAINTEXT=1 "$wl" > "$log/word-lookup.log" 2>&1; then
+    pass "word lookup (bundled dict)" "$(grep -o '[0-9]* real VOCR lines, [0-9]* lookups' "$log/word-lookup.log"), $(grep -o '[0-9.]*%)' "$log/word-lookup.log" | tr -d ')') of letters in a word, $(grep -o 'host lookup [0-9.]* us mean' "$log/word-lookup.log")"
+  else
+    fail "word lookup (bundled dict)" "$log/word-lookup.log"
+  fi
+else
+  skip "word lookup (bundled dict)" "VJO_PLAINTEXT_SOURCE unset (no plaintext.vjdict)"
 fi
 
 # 2. #74 replayed: its report and logs through the analyser and the tests built on them
@@ -137,8 +152,9 @@ fi
 
 # 6. the ARMv7 lane (32-bit, LDREX/STREX) and the Vita3K smoke
 if [ -n "${ARM_CC:-}" ] && [ -n "${QEMU:-}" ]; then
+  wl_dir=; [ -f "$BUILD/plaintext/plaintext.vjdict" ] && wl_dir=$root/$BUILD/plaintext
   if ARM_CC=$ARM_CC QEMU=$QEMU VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR VJO_VOCR_MODEL_DIR=${VJO_VOCR_MODEL_DIR:-} \
-       bash tools/arm_host_tests.sh "$BUILD-arm" > "$log/arm.log" 2>&1; then
+       VJO_PLAINTEXT_DIR=$wl_dir bash tools/arm_host_tests.sh "$BUILD-arm" > "$log/arm.log" 2>&1; then
     pass "ARM lane (qemu-arm)" "$(grep '^arm ' "$log/arm.log" | sed 's/^arm //; s/ cases pass//' | tr '\n' ' ')"
     # the capture parity on the eval crops, on the Vita's CPU
     if [ -n "${VJO_EVAL_MANIFESTS:-}" ] && [ -n "${VJO_EVAL_SHOTS:-}" ] && [ -x "$BUILD-arm/capture_parity" ]; then

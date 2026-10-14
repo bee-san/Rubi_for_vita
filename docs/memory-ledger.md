@@ -70,6 +70,14 @@ measured case, not a guarantee. The worst case of the shipped default (one 64 Ki
 overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary's is 993,776 B,
 8,688 B over the limit, reported as a warning.
 
+The word lookup's ranking (`core/local_dict.c`) takes no allocation and no item of its own: its
+common-readings table (72 pairs, 964 B of `const` strings) is in the Shell module's text pages, which
+stay at 299,008 B because `shell/worker.c` is now built with `-Os` (the build log's module row:
+216,848 B of text, 81,232 B of data and `.bss` [measured]); its per-lookup state (a 160-byte
+head buffer and 2 × 8 32-byte matches, 672 B) is on the VjoNet thread's 64 KiB stack, beside
+the lookup's 48 KiB scratch, which stays inside the 64 KiB result arena (compile-time check
+`WorkspaceFits`). The lookup log line uses a 256-byte stack line, as every `vjo_log` call does.
+
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
 | item | bytes | what | source |

@@ -193,6 +193,11 @@ no match or previous selection, movement falls back to one character.
 Character mode always moves one character; Japanese-only applies to both modes.
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there; Japanese-only selection also applies to taps.
+Kana text shows the kana word (から, する) and inflected text its dictionary
+form (した → する); a short built-in list gives very frequent kanji their common
+reading (私 → わたし). Each lookup writes one `log.txt` line with the text at the
+cursor, the entry, its length, the dictionary, file reads and time
+([word lookup on recognized text](docs/touch-lookup.md#word-lookup-on-recognized-text)).
 [Touch selection details and validation](docs/touch-lookup.md).
 
 Disable games such as Uncharted when you need their normal L+R controls.

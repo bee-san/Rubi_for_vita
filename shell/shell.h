@@ -243,6 +243,9 @@ int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask);
 int vjo_net_probe_port(const uint32_t *ips, int n, int port, int window_us, uint8_t *open);
 
 /* log_vita.c */
+/* Dictionary file reads and bytes since the current lookup began (worker.c's
+ * lookup log; platform_vita.c counts them). */
+extern uint32_t vjo_dict_reads, vjo_dict_read_bytes;
 void vjo_log_configure(const VjoConfig *cfg);
 void vjo_log(const char *fmt, ...);
 void vjo_log_raw(const char *line, int len);

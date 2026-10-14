@@ -25,6 +25,7 @@ typedef struct {
 
 typedef struct {
     char key[VJO_LOCAL_MAX_KEY + 1];
+    uint8_t depth; /* deinflection steps from the text (in the former padding) */
     uint16_t rules, len;
 } Candidate;
 
@@ -235,10 +236,171 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
     return VJO_OK;
 }
 
-static int find_matches_v1(Workspace *w, int di, const Candidate *c, int limit)
+
+/* One key's postings are in source order. In the bundled Daijirin4 that is
+ * reading order, not use: 私 lists あたい first, する 剃る, から 空. Only one
+ * entry is shown, so the postings are ranked (docs/local-dictionaries.md):
+ * a common reading of a frequent word (the table below), then an entry
+ * spelled exactly as the text is written (kana text: the kana word, such as
+ * the particle から or the verb する; inflected text: the dictionary form),
+ * then for katakana text one written so in hiragana (って for ッて), then one with a reading (Daijirin4's kanji-character articles have none),
+ * then the longer article. Equal ranks keep source order. */
+#define RANK_PREFERRED (1u << 23)
+#define RANK_WRITTEN (1u << 22)
+#define RANK_KANA (1u << 21) /* katakana text, an entry written so in hiragana */
+#define RANK_READING (1u << 20)
+#define HEAD_BYTES 160u /* a payload's spelling (<= 32 characters) and reading */
+
+/* Key, then the reading (or, for kana keys, the spelling) its frequent sense
+ * uses; checked to exist in the bundled dictionary. Ends with an empty key. */
+static const char preferred_readings[] =
+    "私\0わたし\0僕\0ぼく\0彼\0かれ\0何\0なに\0今日\0きょう\0一\0いち\0日\0ひ\0火\0ひ\0水\0みず\0"
+    "上\0うえ\0下\0した\0中\0なか\0後\0あと\0間\0あいだ\0方\0ほう\0様\0さま\0次\0つぎ\0別\0べつ\0"
+    "母\0はは\0兄\0あに\0弟\0おとうと\0大人\0おとな\0学生\0がくせい\0体\0からだ\0頭\0あたま\0腕\0うで\0"
+    "空\0そら\0金\0かね\0朝\0あさ\0秋\0あき\0夏\0なつ\0風\0かぜ\0木\0き\0道\0みち\0字\0じ\0飯\0めし\0"
+    "同じ\0おなじ\0本気\0ほんき\0大切\0たいせつ\0何処\0どこ\0入る\0はいる\0守る\0まもる\0怒る\0おこる\0"
+    "こう\0斯う\0そう\0然う\0どう\0如何\0ああ\0嗚呼\0くん\0君\0よう\0様\0いい\0良い\0"
+    "ここ\0此処\0そこ\0其処\0あそこ\0彼処\0どこ\0何処\0これ\0此れ\0それ\0其れ\0どれ\0何れ\0"
+    "たち\0達\0ことにする\0事にする\0私達\0わたしたち\0致す\0いたす\0立場\0たちば\0形相\0ぎょうそう\0"
+    "米\0こめ\0神\0かみ\0服\0ふく\0羽\0はね\0和\0わ\0性\0せい\0室\0しつ\0美女\0びじょ\0小路\0こうじ\0";
+
+typedef struct {
+    const char *written;   /* the text as written: the source span, or a dictionary form */
+    size_t written_len;
+    /* The normalized form, when the text is written otherwise (katakana or
+     * full width): an entry spelled so in hiragana also counts as written. */
+    const Candidate *key;
+    const char *preferred; /* preferred_readings' value for the key, or NULL */
+    /* Strict: only an entry written so (or preferred) is taken; the best
+     * other one goes to *fallback, once, for when no candidate has one. */
+    int strict, fell_back;
+    Match *fallback;
+    uint32_t score; /* the taken posting's rank */
+} Query;
+
+static const char *preferred_for(const char *key)
+{
+    for (const char *p = preferred_readings; *p; p += strlen(p) + 1) {
+        const char *value = p + strlen(p) + 1;
+        if (!strcmp(p, key)) return value;
+        p = value;
+    }
+    return NULL;
+}
+
+static int is_duplicate(const Workspace *w, int di, const Record *r)
+{
+    for (int k = 0; k < w->n_matches; k++)
+        if (w->matches[k].dict == di && w->matches[k].record.entry_off == r->entry_off) return 1;
+    return 0;
+}
+
+/* The converter's key normalization: katakana as hiragana, full-width ASCII
+ * as ASCII (source spans keep their own lengths). */
+static uint32_t normalize(uint32_t cp)
+{
+    if (cp >= 0x30a1 && cp <= 0x30f6) cp -= 0x60;
+    if (cp >= 0xff01 && cp <= 0xff5e) cp -= 0xfee0;
+    return cp;
+}
+
+static int normalized_equal(const char *s, size_t n, const Candidate *key)
+{
+    size_t i = 0, k = 0;
+    while (i < n) {
+        char enc[4];
+        int m = vjo_utf8_encode(normalize(vjo_utf8_next(s, n, &i)), enc);
+        if (k + (size_t)m > key->len || memcmp(key->key + k, enc, (size_t)m)) return 0;
+        k += (size_t)m;
+    }
+    return k == key->len;
+}
+
+/* Reads the payload's spelling and reading (one bounded head) to rank it. */
+static int rank_posting(Workspace *w, Dictionary *d, const Record *r, const Query *q, uint32_t *score)
+{
+    char head[HEAD_BYTES];
+    size_t n = r->entry_len < HEAD_BYTES ? r->entry_len : HEAD_BYTES, spelling;
+    const char *reading;
+    int rc = cached_read(w, d, r->entry_off, head, n);
+    *score = r->entry_len;
+    if (rc) return rc;
+    if (!(reading = memchr(head, 0, n))) return VJO_OK; /* longer than any written text */
+    spelling = (size_t)(reading - head);
+    reading++;
+    if (spelling == q->written_len && !memcmp(head, q->written, spelling)) *score |= RANK_WRITTEN | RANK_KANA;
+    else if (q->key && normalized_equal(head, spelling, q->key)) *score |= RANK_KANA;
+    if (reading < head + n && *reading) *score |= RANK_READING;
+    if (q->preferred) {
+        size_t m = strlen(q->preferred) + 1;
+        if ((spelling + 1 == m && !memcmp(head, q->preferred, m)) ||
+            ((size_t)(head + n - reading) >= m && !memcmp(reading, q->preferred, m)))
+            *score |= RANK_PREFERRED;
+    }
+    return VJO_OK;
+}
+
+/* Posting j of a key: v2, the group's 16-byte postings; v1, index record
+ * group + j (group is the key's first record). */
+static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_len, uint32_t j, Record *r)
+{
+    uint8_t post[16];
+    int rc;
+    if (d->version == 1) {
+        char key[VJO_LOCAL_MAX_KEY + 1];
+        return record_at(w, d, (uint32_t)group + j, r, key);
+    }
+    if ((rc = cached_read(w, d, group + key_len + j * 16, post, sizeof(post)))) return rc;
+    r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
+    r->key_off = group; r->key_len = key_len;
+    if (u16(post + 14) || (r->rules & ~RULE_MASK) || r->entry_off < d->data ||
+        r->entry_len < 4 || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
+        !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
+    return VJO_OK;
+}
+
+/* The best-ranked usable posting first; then, unless strict, the others in
+ * source order, up to limit. */
+static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int limit,
+                         uint64_t group, uint16_t key_len, uint32_t n)
 {
     Dictionary *d = &w->dicts[di];
-    uint32_t lo = 0, hi = d->count;
+    Record r, top, other;
+    uint32_t best = n, best_score = 0, other_score = 0, score;
+    int rc, any = 0;
+    for (uint32_t j = 0; j < n; j++) {
+        if ((rc = posting_at(w, d, group, key_len, j, &r))) return rc;
+        if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
+        if ((rc = rank_posting(w, d, &r, q, &score))) return rc;
+        if (q->strict && !(score & (RANK_PREFERRED | RANK_KANA))) {
+            if (!any || score > other_score) { other = r; other_score = score; any = 1; }
+            continue;
+        }
+        if (best == n || score > best_score) { best = j; best_score = score; top = r; }
+    }
+    if (best == n && any && q->fallback && !q->fell_back) {
+        q->fallback->dict = di;
+        q->fallback->record = other;
+        q->fell_back = 1;
+    }
+    if (best == n || w->n_matches >= limit) return VJO_OK;
+    q->score = best_score;
+    w->matches[w->n_matches].dict = di;
+    w->matches[w->n_matches++].record = top;
+    for (uint32_t j = 0; j < n && !q->strict && w->n_matches < limit; j++) {
+        if (j == best) continue;
+        if ((rc = posting_at(w, d, group, key_len, j, &r))) return rc;
+        if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
+        w->matches[w->n_matches].dict = di;
+        w->matches[w->n_matches++].record = r;
+    }
+    return VJO_OK;
+}
+
+static int find_matches_v1(Workspace *w, int di, const Candidate *c, Query *q, int limit)
+{
+    Dictionary *d = &w->dicts[di];
+    uint32_t lo = 0, hi = d->count, n = 0;
     Record r;
     char key[VJO_LOCAL_MAX_KEY + 1];
     int rc;
@@ -248,20 +410,11 @@ static int find_matches_v1(Workspace *w, int di, const Candidate *c, int limit)
         if (strcmp(key, c->key) < 0) lo = mid + 1; else hi = mid;
     }
     /* Bound duplicate-heavy dictionaries as well as result storage. */
-    for (unsigned scanned = 0; lo < d->count && scanned < MAX_HOMONYMS; lo++, scanned++) {
-        int duplicate = 0;
-        if ((rc = record_at(w, d, lo, &r, key))) return rc;
+    for (; lo + n < d->count && n < MAX_HOMONYMS; n++) {
+        if ((rc = record_at(w, d, lo + n, &r, key))) return rc;
         if (strcmp(key, c->key)) break;
-        if (c->rules && !(c->rules & r.rules)) continue;
-        for (int j = 0; j < w->n_matches; j++)
-            if (w->matches[j].dict == di && w->matches[j].record.entry_off == r.entry_off) duplicate = 1;
-        if (duplicate) continue;
-        if (w->n_matches >= limit) break;
-        w->matches[w->n_matches].dict = di;
-        w->matches[w->n_matches++].record = r;
-        if (w->n_matches >= limit) break; /* never read a row that cannot be kept */
     }
-    return VJO_OK;
+    return n ? take_postings(w, di, c, q, limit, lo, 0, n) : VJO_OK;
 }
 
 /* Stable FNV-1a-64 hash with an avalanche finalizer; mirrored by the converter.
@@ -275,7 +428,8 @@ static uint64_t key_hash(const char *key)
     return h ^ (h >> 33);
 }
 
-static int find_matches_v2(Workspace *w, int di, const Candidate *c, int limit)
+
+static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, int limit)
 {
     Dictionary *d = &w->dicts[di];
     uint64_t hash = key_hash(c->key), page = PAGE_SIZE + (hash & (d->buckets - 1)) * PAGE_SIZE;
@@ -316,24 +470,7 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, int limit)
             if ((rc = cached_read(w, d, group, key, key_len))) return rc;
             if (memcmp(key, c->key, key_len)) continue;
             if (n > MAX_HOMONYMS) n = MAX_HOMONYMS;
-            for (uint32_t j = 0; j < n && w->n_matches < limit; j++) {
-                uint8_t post[16];
-                Record r;
-                int duplicate = 0;
-                if ((rc = cached_read(w, d, group + key_len + j * 16, post, sizeof(post)))) return rc;
-                r.entry_off = u64(post); r.entry_len = u32(post + 8); r.rules = u16(post + 12);
-                r.key_off = group; r.key_len = key_len;
-                if (u16(post + 14) || (r.rules & ~RULE_MASK) || r.entry_off < d->data ||
-                    r.entry_len < 4 || r.entry_len > VJO_LOCAL_MAX_ENTRY ||
-                    !range_ok(d, r.entry_off, r.entry_len)) return VJO_E_LOCAL_FORMAT;
-                if (c->rules && !(c->rules & r.rules)) continue;
-                for (int k = 0; k < w->n_matches; k++)
-                    if (w->matches[k].dict == di && w->matches[k].record.entry_off == r.entry_off) duplicate = 1;
-                if (duplicate) continue;
-                w->matches[w->n_matches].dict = di;
-                w->matches[w->n_matches++].record = r;
-            }
-            return VJO_OK;
+            return take_postings(w, di, c, q, limit, group, key_len, n);
         }
         if (!next) break;
         page = next;
@@ -344,16 +481,23 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, int limit)
     return VJO_OK;
 }
 
-static int find_matches(Workspace *w, int di, const Candidate *c, int limit)
+/* Candidate c (0: the text itself, written as the raw span; otherwise a
+ * deinflected dictionary form, written as its key) in dictionary di. */
+static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw_len, Query *q, int limit)
 {
-    return w->dicts[di].version == 2 ? find_matches_v2(w, di, c, limit) : find_matches_v1(w, di, c, limit);
+    const Candidate *cand = &w->candidates[c];
+    q->written = c ? cand->key : raw;
+    q->written_len = c ? cand->len : raw_len;
+    q->key = !c && (raw_len != cand->len || memcmp(raw, cand->key, raw_len)) ? cand : NULL;
+    q->preferred = preferred_for(cand->key);
+    return w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
 }
 
 static int deinflect(Candidate *c, const char *key)
 {
     int count = 1;
     size_t len = strlen(key);
-    memcpy(c[0].key, key, len + 1); c[0].len = (uint16_t)len; c[0].rules = 0;
+    memcpy(c[0].key, key, len + 1); c[0].len = (uint16_t)len; c[0].rules = 0; c[0].depth = 0;
     for (int i = 0; i < count; i++) {
         unsigned suffix = (uint8_t)c[i].key[c[i].len - 1];
         for (unsigned r = deinflect_offsets[suffix]; r < deinflect_offsets[suffix + 1]; r++) {
@@ -372,6 +516,7 @@ static int deinflect(Candidate *c, const char *key)
             if (duplicate) continue;
             if (count >= MAX_CANDIDATES) return count;
             memcpy(c[count].key, next, n + 1);
+            c[count].depth = (uint8_t)(c[i].depth + 1);
             c[count].rules = rule->rules_out; c[count++].len = (uint16_t)n;
         }
     }
@@ -456,23 +601,23 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             int k;
             if (boundary(cp)) break;
             u += vjo_utf16_units(cp);
-            /* Same normalization as the converter; source lengths stay intact. */
-            if (cp >= 0x30a1 && cp <= 0x30f6) cp -= 0x60;
-            if (cp >= 0xff01 && cp <= 0xff5e) cp -= 0xfee0;
-            k = vjo_utf8_encode(cp, enc);
+            k = vjo_utf8_encode(normalize(cp), enc);
             if (bytes + (size_t)k > VJO_LOCAL_MAX_KEY) break;
             memcpy(key + bytes, enc, (size_t)k); bytes += (size_t)k;
             count++; ends[count] = scan; lengths[count] = bytes; units[count] = u;
         }
         for (int k = count; k > 0 && !matched; k--) {
             int candidates;
+            Query q = {0};
             key[lengths[k]] = 0;
             candidates = deinflect(w->candidates, key);
             w->n_matches = 0;
-            /* Exact matches in all dictionaries precede deinflected matches. */
+            /* Exact matches in all dictionaries precede deinflected matches;
+             * each key's best-ranked posting comes first. */
             for (int c = 0; c < candidates && w->n_matches < VJO_LOCAL_MAX_MATCHES; c++)
                 for (int d = 0; d < w->n_dicts && w->n_matches < VJO_LOCAL_MAX_MATCHES; d++)
-                    if ((rc = find_matches(w, d, &w->candidates[c], VJO_LOCAL_MAX_MATCHES))) goto done;
+                    if ((rc = find_matches(w, d, c, text + off, ends[k] - off, &q, VJO_LOCAL_MAX_MATCHES)))
+                        goto done;
             if (!w->n_matches) continue;
             for (int j = 0; j < w->n_matches; j++)
                 if ((rc = append_match(&output, w, &w->matches[j], pos16, units[k], res))) goto done;
@@ -528,10 +673,11 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err)
 {
     size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0;
-    size_t lengths[MAX_SCAN_CHARS + 1];
+    size_t lengths[MAX_SCAN_CHARS + 1], ends[MAX_SCAN_CHARS + 1];
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
     unsigned resolved = 0;
     char key[VJO_LOCAL_MAX_KEY + 1];
+    Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
     Workspace *w;
     void *outmem;
@@ -561,12 +707,10 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
         int n;
         if (boundary(cp)) break;
         source_units += vjo_utf16_units(cp);
-        if (cp >= 0x30a1 && cp <= 0x30f6) cp -= 0x60;
-        if (cp >= 0xff01 && cp <= 0xff5e) cp -= 0xfee0;
-        n = vjo_utf8_encode(cp, enc);
+        n = vjo_utf8_encode(normalize(cp), enc);
         if (bytes + (size_t)n > VJO_LOCAL_MAX_KEY) break;
         memcpy(key + bytes, enc, (size_t)n); bytes += (size_t)n;
-        count++; lengths[count] = bytes; units[count] = source_units;
+        count++; lengths[count] = bytes; units[count] = source_units; ends[count] = off;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
 
@@ -580,23 +724,61 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     res->vocab = vjo_arena_zalloc(&output, sizeof(VjoVocab));
     res->tokens = vjo_arena_zalloc(&output, sizeof(VjoToken));
     if ((rc = open_dictionaries(w, p, cfg, err))) goto done;
-    /* An exact hit in a later dictionary beats an inflected hit in an earlier
-     * dictionary. Within the same candidate, first dictionary and first
-     * posting win. Each dictionary keeps only its first (best) match; the
-     * first one found overall is the single result. Only page 0's payload is
+    /* Longest source span first. At one span, each dictionary's best entry
+     * written as the text is (or a preferred reading): the text itself
+     * before any inflection, then the higher rank, so kana text finds its
+     * kana word or its inflection (した: する, なってる: なる) before a
+     * homograph written in kanji (下). An exact hit in a later dictionary
+     * beats an inflected hit in an earlier one; otherwise configured order.
+     * A dictionary without such an entry takes the best homograph of its
+     * first matching candidate. Each dictionary keeps only its best match;
+     * the first one overall is the single result. Only page 0's payload is
      * read: other pages are located, never loaded. */
     for (int k = count; k > 0 && !complete; k--) {
         int candidates;
+        unsigned fell_back = 0, found = 0, exact = 0;
         key[lengths[k]] = 0;
         candidates = deinflect(w->candidates, key);
-        for (int c = 0; c < candidates && !complete; c++)
-            for (int d = 0; d < w->n_dicts && !complete; d++) {
+        /* Phase 0: the text itself in each dictionary; phase 1: its inflections.
+         * With one result, the first dictionary that has an entry ends it. */
+        for (int phase = 0; phase < 2; phase++)
+            for (int d = 0; d < w->n_dicts && !(limit == 1 && found); d++) {
+            uint32_t top = 0;
+            int depth = 0;
+            if (((resolved | found) >> d) & 1) continue;
+            for (int c = phase; c < (phase ? candidates : 1); c++) {
                 int before = w->n_matches;
-                if (resolved & (1u << d)) continue;
-                if ((rc = find_matches(w, d, &w->candidates[c], before + 1))) goto done;
+                Query q = {0};
+                /* Candidates come in breadth-first order: fewer inflections first. */
+                if (((found >> d) & 1) && w->candidates[c].depth > depth) break;
+                q.strict = 1;
+                q.fallback = &fallback[d];
+                q.fell_back = (fell_back >> d) & 1;
+                if ((rc = find_matches(w, d, c, text + cursor_byte, ends[k] - cursor_byte, &q, before + 1)))
+                    goto done;
+                fell_back |= (unsigned)q.fell_back << d;
                 if (w->n_matches == before) continue;
-                resolved |= 1u << d;
-                w->matches[before].units = (uint16_t)units[k];
+                w->n_matches = before; /* held in chosen[d] until the span's order is known */
+                if (((found >> d) & 1) && q.score <= top) continue;
+                chosen[d] = w->matches[before];
+                top = q.score;
+                depth = w->candidates[c].depth;
+                found |= 1u << d;
+                exact |= (unsigned)!c << d;
+            }
+        }
+        for (int pass = 0; pass < 3 && !complete; pass++)
+            for (int d = 0; d < w->n_dicts && !complete; d++) {
+                unsigned bit = 1u << d;
+                const Match *m = &fallback[d];
+                if (resolved & bit) continue;
+                if (pass < 2) {
+                    if (!(found & bit) || ((exact & bit) != 0) != (pass == 0)) continue;
+                    m = &chosen[d];
+                } else if (!(fell_back & bit)) continue;
+                resolved |= bit;
+                w->matches[w->n_matches] = *m;
+                w->matches[w->n_matches++].units = (uint16_t)units[k];
                 complete = pages_complete(w, resolved, limit);
             }
     }

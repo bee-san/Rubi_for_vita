@@ -68,6 +68,45 @@ These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
 
+## Word lookup on recognized text
+
+`host/tests/test_word_lookup.cpp` checks the whole path on real recognizer
+output: 48 VOCR lines of development screenshots
+([fixtures](../host/fixtures/word_lookup/README.md)) go through the overlay's
+sentence filter, the first Japanese letter, the lookup at the cursor with the
+bundled `plaintext.vjdict`, the header range the overlay recolors, the popup
+entry, and the Shell's own Right/Left navigation and touch hit test. Every
+lookup gives one entry or none, the highlight starts at the cursor and ends on
+a character boundary, and Right always advances. With the bundled dictionary,
+1,221 of the 1,225 Japanese letters lie inside a matched word (578 entries in
+582 lookups); a character without an entry stays highlighted and Right steps
+one character. The 50 cases of `expect.tsv` cover inflections
+(会ってなかった → 会う, 殺されてしまう → 殺す, した → する), 静かな (静か; な is
+the next word, as in Yomitan), kana words (から, して, ありがとう), katakana loanwords,
+names, common readings (私 わたし, 先生 せんせい) and OCR errors (FL10's
+美味しいつて still finds 美味しい; H15's 室息死 falls back to 室). The Shell worker
+test runs one line through Auto OCR (the first word prepared while the
+overlay is closed, shown on opening without file I/O), Right and a tap.
+
+Every lookup writes one `log.txt` line, for the console run. The Shell worker
+test's lines (the host test's clock does not advance, hence 0 ms):
+
+```
+lookup first word at 0 "伊佐那社": 伊佐 (いさ), 2 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 7 reads 20837 B, rc=0, 0 ms
+lookup cursor at 6 "那社": 那 (な), 1 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 6 reads 16564 B, rc=0, 0 ms
+lookup cursor at 59 "会ってなかったか": 会う (あう), 7 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 23 reads 86633 B, rc=0, 0 ms
+```
+
+That is why (`first word` during Auto OCR, `on open`, `cursor` for Left, Right
+or a tap, `page` for Up/Down), the byte and up to 8 characters at the cursor,
+the entry, the matched span in characters, the dictionary file (`?` among
+several with one shown) and the source named in its definition, the page,
+the file reads and bytes, the result and the time. On the host the lookup takes
+49 µs on average and at most 48 file reads
+([measurements](benchmarks/word-lookup-20261014.json)); one A9 core at 444 MHz
+is **estimated** at about 4–16 ms on average and under 50 ms at worst, mostly
+memory-card reads. The console's log lines measure it.
+
 ## Installation checkpoint
 
 After the v0.7.9 checkpoint, the user reported that Whole word still showed one

@@ -336,6 +336,8 @@ static int local_read(void *ctx, uint64_t off, void *dst, size_t n)
 {
     SceUID fd = (SceUID)(intptr_t)ctx;
     uint8_t *out = dst;
+    vjo_dict_reads++; /* the lookup log's read count (worker.c) */
+    vjo_dict_read_bytes += (uint32_t)n;
     if (off > INT64_MAX || sceIoLseek(fd, (SceOff)off, SCE_SEEK_SET) != (SceOff)off) return -1;
     while (n) {
         int got = sceIoRead(fd, out, (SceSize)n);

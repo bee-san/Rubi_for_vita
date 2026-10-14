@@ -16,6 +16,12 @@
 # Vita's CPU (procedural frames; VJO_VOCR_MODEL_DIR adds the preprocessed
 # tensors; tools/preflight.sh runs the eval crops through it as well).
 #
+# With VJO_PLAINTEXT_DIR (the directory holding the bundled plaintext.vjdict,
+# e.g. build/host/plaintext after the host ctest) the local dictionary lookup
+# runs at every Japanese letter of the real VOCR lines in
+# host/fixtures/word_lookup on ARM and natively (HOST_CC, default cc), and the
+# two outputs must be identical (host/tests/word_lookup_parity.c).
+#
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
 # libc). The defaults below are those package names; the fleet box sets both
@@ -65,6 +71,21 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
 fi
 
 fail=0
+if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
+  WL=(host/tests/word_lookup_parity.c core/local_dict.c core/utf.c core/arena.c)
+  WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)
+  "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity" "${WL[@]}"
+  "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"
+  fx=host/fixtures/word_lookup/vocr_lines.tsv
+  if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/word_lookup_parity" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.arm" 2> "$OUT/word_lookup.log" &&
+     "$OUT/word_lookup_parity_host" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.host" 2>> "$OUT/word_lookup.log" &&
+     cmp -s "$OUT/word_lookup.arm" "$OUT/word_lookup.host"; then
+    echo "arm word_lookup: $(head -1 "$OUT/word_lookup.log"), identical to the host's"
+  else
+    echo "arm word_lookup: FAILED"; cat "$OUT/word_lookup.log"
+    diff "$OUT/word_lookup.arm" "$OUT/word_lookup.host" | head -20 || true; fail=1
+  fi
+fi
 for t in "${TESTS[@]}"; do
   if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$t" > "$OUT/$t.log" 2>&1; then
     echo "arm $t: $(grep -c '\[ OK \]' "$OUT/$t.log") cases pass"
