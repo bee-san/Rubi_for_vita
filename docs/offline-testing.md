@@ -40,10 +40,11 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | ledger | 2 | `__sync` atomics compile to LDREX/STREX; 32-bit counters |
 | kernel_capture | 8 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format |
 | kernel_input | 14 | the trigger state machine |
-| kernel_game_ocr | 30 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
+| kernel_game_ocr | 33 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
+| kernel_meminfo | 4 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 67 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 74 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-arm-linux-gnueabihf`, `qemu-user-static`). It
 is not a Vita: no firmware, no taiHEN, no SceShell, no budgets; a pass here says the C is

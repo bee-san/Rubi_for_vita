@@ -78,7 +78,9 @@ static int fake_info_core(void *part, PartInfoCore *out)
     out->free = p->free;
     return 0;
 }
-static void *fake_cas(void) { return (void *)(region + CAS); }
+static int cas_override; /* fake_cas returns cas_at instead of the region's control block */
+static uintptr_t cas_at;
+static void *fake_cas(void) { return (void *)(cas_override ? cas_at : region + CAS); }
 static int as_kernel_refused;
 static SceUID fake_as_of_pid(SceUID pid)
 {
@@ -160,7 +162,7 @@ static void kernel_range_objects_are_read(void)
 static void upper_kernel_half_needs_a_block(void)
 {
     uintptr_t at = map_in(0x20000000u, 0x3FF00000u);
-    if (!at) { TEST_MSG("no free 64 KiB in 0x20000000-0x3FF00000: skipped"); return; }
+    TEST_ASSERT_(at != 0, "no free 64 KiB in 0x20000000-0x3FF00000 in this process");
     place(at);
     block_known = 1;
     VjoMemInfo m = run();
@@ -178,7 +180,7 @@ static void upper_kernel_half_needs_a_block(void)
 static void user_half_objects_are_refused(void)
 {
     uintptr_t at = map_in(0x50000000u, 0x7FF00000u);
-    if (!at) { TEST_MSG("no free 64 KiB in 0x50000000-0x7FF00000: skipped"); return; }
+    TEST_ASSERT_(at != 0, "no free 64 KiB in 0x50000000-0x7FF00000 in this process");
     place(at);
     block_known = 1;
     VjoMemInfo m = run();
@@ -193,7 +195,7 @@ static void user_half_objects_are_refused(void)
 static void lookups_fallbacks_and_bad_pointers(void)
 {
     uintptr_t at = map_in(0x00100000u, 0x00F00000u);
-    if (!at) { TEST_MSG("no free 64 KiB below 0x1000000: skipped"); return; }
+    TEST_ASSERT_(at != 0, "no free 64 KiB below 0x1000000 in this process");
     place(at);
     as_kernel_refused = 1;
     VjoMemInfo m = run();
@@ -205,6 +207,20 @@ static void lookups_fallbacks_and_bad_pointers(void)
     ((uint32_t *)(at + CAS))[CAS_MAIN / 4] = (uint32_t)(at + PART_MAIN + 2); /* misaligned */
     m = run();
     TEST_CHECK(m.cas_rc == VJO_ERR_ARG && m.cas_step == VJO_MEMSTEP_RANGE && core_bad == 0);
+    /* The control block itself is checked, not only the partitions it names: a null
+     * one, and one in the user half that names a valid kernel partition. */
+    cas_override = 1; cas_at = 0;
+    m = run();
+    TEST_CHECK(m.cas_rc == VJO_ERR_ARG && m.cas_step == VJO_MEMSTEP_RANGE && !m.cas_main_total && core_bad == 0);
+    uintptr_t user = map_in(0x50000000u, 0x7FF00000u);
+    TEST_ASSERT_(user != 0, "no free 64 KiB in 0x50000000-0x7FF00000 in this process");
+    memset((void *)user, 0, 512);
+    ((uint32_t *)user)[CAS_MAIN / 4] = (uint32_t)(at + PART_MAIN);
+    cas_at = user;
+    m = run();
+    TEST_CHECK(m.cas_rc == VJO_ERR_ARG && m.cas_step == VJO_MEMSTEP_RANGE && !m.cas_main_total);
+    unmap(user);
+    cas_override = 0;
     missing_core = 1;
     m = run();
     TEST_CHECK(m.kernel_rc == (int)0x90010002u && m.kernel_step == VJO_MEMSTEP_CORE && m.cas_step == VJO_MEMSTEP_CORE);

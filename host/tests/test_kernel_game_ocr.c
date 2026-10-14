@@ -625,6 +625,8 @@ static void rows_stride_is_bounded(void)
     frames_come = 1;
     TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, VJO_MAX_W + 1, user_rows, &info) == VJO_ERR_ARG);
     TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 0x04104105u, user_rows, &info) == VJO_ERR_ARG);
+    /* a stride whose span wraps 32 bits: 31 x 0x08421085 + 32 is 59 B mod 2^32, inside the block */
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, 0, 0x08421085u, user_rows, &info) == VJO_ERR_ARG);
     TEST_CHECK(!info.armed && rows.state == ROWS_IDLE && frames_come == 1 && user_rows[0] == 0xCC);
     TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);

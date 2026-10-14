@@ -90,8 +90,9 @@ So a textbox takes at most 61,440 B of capture memory when all its lines fit a s
 the 372 linefind dev regions. The other 41 contain a band the finder reports taller than a strip
 (42 such lines), which the recognizer needs whole for byte-identical input, as API 18's grey plane
 held it; it takes a block of its own size for that line. With it, 349 regions stay within 64 KiB
-of capture memory in all and 23 go over; the most is 131,072 B (a 61,440 B capture block and an
-89-row band's 73,728 B block), and the largest band is 533×148 = 78,884 B. The design bound is the
+of capture memory in all and 23 go over; the most is 131,072 B (an 822×183 region: its 53,364 B
+capture block and its 822×89 band of 73,158 B, page-rounded to 57,344 + 73,728 B), and the largest
+band is 533×148 = 78,884 B. The design bound is the
 ledger's `VJO_BUDGET_GAME_LINE`, 516,096 B of game memory (nearly a whole 960×544 grey frame, should
 the finder ever report a band that large). A strict 64 KiB bound for those regions would need a
 row-callback form of `vocr_run` in vita-vn-ocr (not done: `vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
@@ -123,7 +124,11 @@ reach a full-screen JPEG too (not changed here).
   range, 0x1000-0x1000000 (`info.c:57`, `:91`), or higher in the kernel half only inside a kernel
   memory block; anything else is refused before it is read, with its own step (`kmem ... step=`:
   1 find, 2 block or address-space info, 3 outside the kernel range, 4 in no memory block, 5
-  InfoCore). `host/tests/test_kernel_meminfo.c` runs the routes with the objects at kernel-range,
+  InfoCore). The control block's own pointer is checked too, which PSVshellPlus does not do
+  (`info.c:82-91` adds 328 and reads): a `cas` route stopped at step 3 or 4 on a console means
+  this guard refused the block, not the firmware. Whether `ksceKernelFindMemBlockByAddr` finds a
+  block for a kernel heap object above 0x1000000 is unverified; step 4 says when it does not.
+  `host/tests/test_kernel_meminfo.c` runs the routes with the objects at kernel-range,
   upper-kernel and user-range addresses. Route 3 asks for the kernel process first and the caller's
   if that is refused (faps-coredump asks for a user process). Which route reads on 3.65 is
   [unmeasured].
@@ -159,6 +164,13 @@ Off the console (`tools/preflight.sh` runs all of it and prints GO/NO-GO):
   syscall, the hook path, every refusal, cancellation, process exit, the ladder and the probe.
 - `tools/vita3k_smoke.sh`: the real worker's five stage jobs and both other formats as a Vita
   homebrew app in Vita3K, crash check only.
+
+Known limitation (from the audit, not reachable in a normal run): the kernel worker tidies a
+rows call whose process exited once 10 s have passed, so a thread of an exited process still
+running that call's kernel code after that time could act on the next game's request. A call
+waits at most 3.5 s (`ROWS_WAIT_US` + `ROWS_COPY_WAIT_US`), and a dying thread's kernel wait is
+expected to end at once [inference], so this needs a thread held for seconds inside the syscall
+after its process exited; a generation number per request would close it.
 
 Only the console answers: whether the hook can write each memory type of every game, the time a
 strip takes in the hook and its CPU3 cost (unmeasured, AGENTS.md rule 8), which memory route

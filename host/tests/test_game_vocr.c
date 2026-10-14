@@ -105,7 +105,11 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     info->fb_width = 200; info->fb_height = 60; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
     info->armed = 1;
     if (busy_unarmed > 0) { busy_unarmed--; info->armed = 0; return VJO_ERR_BUSY; } /* a previous copy not tidied */
-    if (busy_armed) return VJO_ERR_BUSY; /* this copy outlived the call */
+    if (busy_armed) { /* this copy outlived the call; until the kernel worker tidies it, every
+                         later call is refused before arming */
+        busy_armed = 0; busy_unarmed = 1000;
+        return VJO_ERR_BUSY;
+    }
     if (rows_error) return rows_error;
     if (hook_write_error && req->mode == VJO_GAME_OCR_SRC_HOOK) return VJO_ERR_COPY;
     for (unsigned r = 0; r < req->n; r++)
@@ -388,9 +392,10 @@ static void busy_rows_calls(void)
     TEST_CHECK(logged == 1 && busy_unarmed == 0);
     busy_unarmed = 1000; /* never tidied: the job gives up, the worker stays usable */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !blocked && !capture_live && !memory_live);
-    busy_unarmed = 0; busy_armed = 1; allow_capture_held = 1;
+    busy_unarmed = 0; busy_armed = 1; allow_capture_held = 1; rows_calls = 0;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK);
-    TEST_CHECK(blocked && hook_owns_capture && capture_live && !memory_live); /* the block stays the hook's */
+    /* the armed BUSY is not retried, so the unarmed ones after it never hide it */
+    TEST_CHECK(rows_calls == 1 && blocked && hook_owns_capture && capture_live && !memory_live);
 }
 
 /* The probe tries every rung once and recognizes nothing. */

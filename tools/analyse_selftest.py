@@ -8,7 +8,7 @@ every memory route read at each step, the game worker's own memory around
 each allocation, and what failed, in plain words.
 
 v2 reports (API 19, `selftest v2`): boot, ok, game, then the stages one OCR job
-runs on the first settled screen (probe, fallback, textbox, fullscreen,
+runs on the first settled screen (fallback, textbox, fullscreen, probe,
 textbox2), then done. v1 reports (API 18, `selftest v1`, as #74 sent) get the
 same table for their steps (boot, ok, game, ocr, done).
 
