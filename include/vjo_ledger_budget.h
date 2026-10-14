@@ -36,8 +36,10 @@
  * Raised again from 61,440 B by two text pages for the beam + LM decoder: vita-vn-ocr's
  * runtime/vocr_lm.c (the decoder and the LM scorer) and vocr.c's top-K extras, with their
  * planning and per-line confidence in core/vocr_ocr.c, and the confidence cascade
- * (59,692 B text measured at 68d6dc9, core/vocr_ocr.c built for size). */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 69632u
+ * (59,692 B text measured at 68d6dc9, core/vocr_ocr.c built for size); and by one more for the finder
+ * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built).
+ * The game's partition has the room (90,177,536 B free USER the least #81 saw). */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 73728u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns

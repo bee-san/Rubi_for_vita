@@ -161,7 +161,7 @@ const char *vjo_config_default_text(void)
            "ocr_lm = 1000k\n"
            "; vocr: re-read doubtful lines with a larger model within (ms, 0 = off)\n"
            "ocr_cascade_ms = 2000\n"
-           "; vocr: refine found lines: psp (PSP games) | on | off\n"
+           "; vocr: refine lines: psp | on | off\n"
            "ocr_refine_lines = psp\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"

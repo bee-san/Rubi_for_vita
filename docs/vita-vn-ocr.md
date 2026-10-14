@@ -545,6 +545,59 @@ job's.
   doubtful lines (21.5 % per line, assuming independence). So 0.729 % bounds the gain; it is not a
   forecast.
 
+## Finder refinement (API 20)
+
+```ini
+ocr_refine_lines = psp   ; psp: PSP games only | on | off
+```
+
+The line finder's boxes are taller than their text: its padding takes in the dialogue box's frame,
+the edges of the next line, furigana, and sometimes two text rows set close. vita-vn-ocr #83
+(`runtime/vocr_lines_refine.c`) refines each box from its own pixels: it cuts the box to its text
+band, ignores frame rows, drops a trailing cursor or a portrait edge, and splits a box of several
+text rows into one line each. A box never grows and no line is dropped.
+
+- **No reads.** The job refines each box on the pixels it already holds for it, before it reads
+  the box: its strip (the box made strip-relative), or a tall line's own block. So the refinement
+  adds no strip read. finder-tighten's console figures put a strip read at 11-26 ms, the
+  refinement's own work at 0.5-1.1 ms per line at 444 MHz (estimate).
+- **The same lines as #83's.** A host test checks this on 251 procedural regions of one strip and
+  of several (frames, panels, close rows, cursors, slabs, 23 tall lines): per box on the job's
+  pixels equals #83's whole-set refinement of the whole region, line for line.
+- **The 16-line cap.** A box whose split would take the job past 16 lines is kept as found.
+- **Memory.** The refinement's arena (`vjo_vocr_refine_bytes`: 16,768 B at 883×112, 72,400 B at
+  960×544) is part of the job's workspace when it is on. Off, nothing changes: the lines are the
+  finder's, exactly, and nothing is read or allocated for it.
+
+**Why `psp` by default.** #83's measurement on vita-vn-ocr's protected sets (once, after its rule
+was frozen):
+- whole dialogue gains on PSP text (−2.19 to −2.90 points);
+- native Vita text is level or slightly worse (−0.13 to +0.50, intervals include 0);
+- CLANNAD, a native Vita title, is worse for five of six models.
+
+The worker decides by its own title: Adrenaline's PSP games run as `NPXS10028`, or from a
+`PSPEMU*` bubble. `on` refines in every game, `off` in none.
+
+**Logs.** `gstep job refine` per job: arg the lines the boxes became, rc 0 or the first refusal
+(that box kept as found), bytes the boxes refined and split, sum the rows read (from memory), us
+the time. `tools/analyse_selftest.py --collect` sums them.
+
+**Measured on the host** (`tools/refine_eval.py`, `docs/benchmarks/refine-20261014.json`): the
+linefind development regions, read by the job as shipped (VOCR3-H15, the 1 MB LM, the cascade) with
+and without the refinement. The manifests mark each line's box by hand but hold no text, so this
+measures the boxes against the hand-marked ones (IoU); the text accuracy is #83's.
+
+| regions | regions read | lines read (boxes split) | mean IoU of a line with its marked box | marked lines covered (IoU ≥ 0.5) | regions whose text changed | refinement, all regions (host) |
+|---|---|---|---|---|---|---|
+| PSP (psp_dev) | 145 | 332 → 338 (6 split) | 0.559 → **0.591** | 65.5 → 69.3 % | 66 | 8.8 ms |
+| PSP, tight | 59 | 148 → 151 (3 split) | 0.678 → **0.707** | 70.9 → 72.8 % | 32 | 3.7 ms |
+| PSP, loose | 59 | 154 → 157 (3 split) | 0.553 → **0.591** | 60.1 → 65.8 % | 31 | 4.3 ms |
+| Vita (vita_dev) | 173 | 445 → 450 (5 split) | 0.594 → **0.594** | 78.5 → 79.8 % | 65 | 24.1 ms |
+| Vita, tight | 75 | 206 → 206 (0 split) | 0.716 → **0.721** | 80.8 → 81.8 % | 28 | 10.2 ms |
+| Vita, loose | 68 | 193 → 196 (3 split) | 0.606 → **0.605** | 75.9 → 77.6 % | 30 | 10.9 ms |
+
+On PSP regions the refined boxes fit the marked lines better (mean IoU +0.032, 3.8 points more of the marked lines covered); on Vita regions they are level (mean IoU 0.594 both ways, +1.3 points covered), as #83 found for the text. The refinement takes about 0.06 ms a region on the host.
+
 ## Models
 
 **The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as

@@ -331,6 +331,11 @@ The greedy reading, each line's confidence and what the cascade read again are
 logged beside the shown text
 ([beam + LM decoding](docs/vita-vn-ocr.md#beam--lm-decoding-api-20),
 [confidence cascade](docs/vita-vn-ocr.md#confidence-cascade-api-20)).
+In PSP games the line finder's boxes are also refined, cut back to their text
+and split where two text rows were merged (`ocr_refine_lines = psp`; `on` for
+every game, `off`); vita-vn-ocr #83 measured that as a gain on PSP text and
+not on native Vita text
+([finder refinement](docs/vita-vn-ocr.md#finder-refinement-api-20)).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
