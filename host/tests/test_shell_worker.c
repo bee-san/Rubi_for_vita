@@ -2358,6 +2358,8 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
  * screens they run anyway (their records then say there was no text). */
 static void test_selftest_waits_for_text_in_the_region(void)
 {
+    /* The stage's own bits (a job's policy may ride in the other flags). */
+    const uint32_t stage = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
     reset();
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
@@ -2365,7 +2367,7 @@ static void test_selftest_waits_for_text_in_the_region(void)
     TEST_CHECK(run_vocr_job() == VJO_OK); /* an empty region: no line */
     TEST_CHECK(selftest_begins == 1 && !selftest_ends && submits == 1 && selftest_waits == 1 && !selftest_done);
     TEST_CHECK(vjo_selftest_stages() == 5 && cache_data[0].sentence && !cache_data[0].sentence[0]);
-    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_FORCE_FALLBACK);
+    TEST_CHECK((selftest_flags_seen[0] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK);
     mem_free();
     fake_screen_changes = 1; /* typing text: the screen changed under every read */
     TEST_CHECK(run_vocr_job() == VJO_E_SCREEN_CHANGED && selftest_waits == 2 && !selftest_ends && !selftest_done);
@@ -2373,7 +2375,8 @@ static void test_selftest_waits_for_text_in_the_region(void)
     fake_recognized_text = "猫"; /* dialogue in the region: every stage, then done */
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
     TEST_CHECK(selftest_begins == 2 + 5 && selftest_ends == 5 && submits == 2 + 5 && selftest_done);
-    TEST_CHECK(selftest_flags_seen[2] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[4] == VJO_GAME_OCR_F_FULL);
+    TEST_CHECK((selftest_flags_seen[2] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
+               (selftest_flags_seen[4] & stage) == VJO_GAME_OCR_F_FULL);
     mem_free();
     /* Bounded: after VJO_SELFTEST_WAITS empty screens the stages run on the next anyway. */
     reset();
