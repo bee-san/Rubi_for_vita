@@ -24,6 +24,56 @@ static int rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
     return (int)n;
 }
 
+#ifdef VJO_WITH_VOCR
+/* --lines: one JSON object per found line (the policy's line callback). */
+static void json_text(FILE *f, const char *s)
+{
+    fputc('"', f);
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') fprintf(f, "\\%c", c);
+        else if (c < 0x20) fprintf(f, "\\u%04x", c);
+        else fputc(c, f);
+    }
+    fputc('"', f);
+}
+
+static void print_line(void *ud, const VjoVocrLineInfo *l)
+{
+    FILE *f = ud;
+    const VjoVocrInk *k = &l->ink;
+    fprintf(f, "{\"index\": %u, \"box\": [%u, %u, %u, %u], \"dark\": %u, \"ink\": {\"lo\": %u, \"hi\": %u, "
+            "\"edge\": %u, \"edges\": %u}, \"blank\": %d, \"us\": %u, \"text\": ",
+            l->index, l->x, l->y, l->w, l->h, l->dark, k->lo, k->hi, k->edge, k->edges, l->blank, (unsigned)l->us);
+    json_text(f, l->text);
+    fputs("}\n", f);
+}
+
+/* A line taller than a strip, kept whole, as the game worker's line block. */
+static void *line_mem;
+static void *line_buffer(void *ud, size_t bytes)
+{
+    (void)ud;
+    if (!line_mem) line_mem = malloc(VJO_VOCR_LINE_MAX_BYTES);
+    return bytes <= VJO_VOCR_LINE_MAX_BYTES ? line_mem : NULL;
+}
+
+static void *resident_mem;
+static void *resident_alloc(void *ud, size_t bytes)
+{
+    (void)ud;
+    if (resident_mem || posix_memalign(&resident_mem, 64, bytes)) return NULL;
+    return resident_mem;
+}
+static int resident_release(void *ud)
+{
+    (void)ud;
+    free(resident_mem);
+    resident_mem = NULL;
+    return 0;
+}
+#endif
+
 /* This process's peak resident set since exec (Linux VmHWM), or 0. A parent's
  * wait4 ru_maxrss would also count the pages it forked from. */
 static unsigned long peak_rss(void)
@@ -41,6 +91,9 @@ static unsigned long peak_rss(void)
 static int usage(void)
 {
     fprintf(stderr, "Usage: vjo-ocr [--backend ncnn|vocr] [--model FILE] MODEL_DIR WIDTH HEIGHT INPUT.rgba\n"
+#ifdef VJO_WITH_VOCR
+                    "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines\n"
+#endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
                     " ncnn"
@@ -60,11 +113,19 @@ int main(int argc, char **argv)
     const char *backend = "vocr";
 #endif
     const char *model = NULL;
+#ifdef VJO_WITH_VOCR
+    const char *lines_path = NULL;
+    int blank = 0;
+#endif
     int i = 1;
     for (; i < argc && !strncmp(argv[i], "--", 2); i += 2) {
         if (i + 1 >= argc) return usage();
         if (!strcmp(argv[i], "--backend")) backend = argv[i+1];
         else if (!strcmp(argv[i], "--model")) model = argv[i+1];
+#ifdef VJO_WITH_VOCR
+        else if (!strcmp(argv[i], "--lines")) lines_path = argv[i+1];
+        else if (!strcmp(argv[i], "--blank")) blank = !strcmp(argv[i+1], "on");
+#endif
         else return usage();
     }
     if (argc - i != 4) return usage();
@@ -115,13 +176,30 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        rc = vjo_vocr_ocr(&platform, argv[i], model, &grey, workspace, need, capture, cap, text, sizeof(text), &st);
+        if (lines_path || blank) {
+            /* The game worker's form: resident weights, the job policy. */
+            VjoVocrPolicy policy = {0, 0, 0, blank, 0, lines_path ? print_line : NULL, NULL, NULL};
+            VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
+            FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
+            if (lines_path && !lf) return 2;
+            policy.ud = lf;
+            grey.line_buffer = line_buffer;
+            rc = vjo_vocr_ocr_policy(&platform, argv[i], model, &grey, &res, workspace,
+                                     vjo_vocr_job_bytes(model, im.width, im.height), capture, cap, &policy, text,
+                                     sizeof(text), &st);
+            vjo_vocr_resident_drop(&res);
+            if (lf) fclose(lf);
+        } else {
+            rc = vjo_vocr_ocr(&platform, argv[i], model, &grey, workspace, need, capture, cap, text, sizeof(text),
+                              &st);
+        }
         fprintf(stderr, "rc=%d lines=%u tensor_heap_peak=%zu backend=vocr model=%s workspace=%zu "
                 "weights=%zu scratch=%zu capture=%zu strip_rows=%u strips=%u dark=%u truncated=%u frames=%u "
-                "loaded=%u find_us=%u load_us=%u recognize_us=%u\n",
+                "loaded=%u find_us=%u load_us=%u recognize_us=%u blank=%u blank_us=%u\n",
                 rc, st.lines, st.workspace + st.capture, model, st.workspace, st.model_bytes, st.scratch_bytes,
                 st.capture, st.strip_rows, st.strips, st.dark, st.truncated, st.frames, st.model_loaded,
-                (unsigned)st.find_us, (unsigned)st.load_us, (unsigned)st.recognize_us);
+                (unsigned)st.find_us, (unsigned)st.load_us, (unsigned)st.recognize_us, st.blank,
+                (unsigned)st.blank_us);
         free(capture);
 #else
         return usage();

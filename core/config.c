@@ -93,6 +93,9 @@ void vjo_config_defaults(VjoConfig *c)
     /* VOCR3-H15 is the default where the game's memory allows; VOCR3-FL10 runs otherwise. */
     vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "VOCR3_H15_w8.vocr");
     vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "VOCR3_FL10_w8.vocr");
+    c->ocr_settle_ms = 150;
+    c->ocr_settle_max_ms = 2000;
+    c->ocr_skip_blank_lines = 1;
     c->log_file = 1; /* log.txt is on unless log_file = off */
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
     vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
@@ -168,6 +171,13 @@ const char *vjo_config_default_text(void)
            "; Smaller weights used automatically for a job when the game has too little free\n"
            "; memory for vocr_model: VOCR3_FL10_w8.vocr | FL10_w8.vocr | none\n"
            "vocr_fallback_model = VOCR3_FL10_w8.vocr\n"
+           "; vocr: read the region once its rows have held still this long, in ms (0-1000,\n"
+           "; 0 = off), so text that types out is read whole; waiting at most\n"
+           "; ocr_settle_max_ms (100-10000) per recognition, then it reads anyway.\n"
+           "ocr_settle_ms = 150\n"
+           "ocr_settle_max_ms = 2000\n"
+           "; vocr: skip found lines without text-like ink (scene art, the box frame): on | off\n"
+           "ocr_skip_blank_lines = on\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -469,6 +479,16 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
         warn(c, "%s: invalid value '%s' (8-40)", key, val);
 }
 
+/* A time in ms within [lo, hi]. */
+static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int lo, int hi)
+{
+    int v;
+    if (parse_int(val, &v) == 0 && v >= lo && v <= hi)
+        *dst = v;
+    else
+        warn(c, "%s: invalid value '%s' (ms, out of range)", key, val);
+}
+
 static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst)
 {
     for (int i = 0; i < VJO_TRIGGER_COUNT; i++) {
@@ -560,6 +580,14 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             set_str(c, key, val, c->vocr_fallback_model, sizeof(c->vocr_fallback_model));
         else
             warn(c, "%s: invalid value '%s' (a .vocr file name in ocr_model_dir, or none)", key, val);
+    } else if (vjo_ieq(key, "ocr_settle_ms")) {
+        set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
+    } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
+        set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
+    } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
+        if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
+        else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;
+        else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

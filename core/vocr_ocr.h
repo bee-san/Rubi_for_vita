@@ -9,15 +9,23 @@
  * (vocr_lines_rows.h) and recognizes each line straight from the strip that
  * holds it. Its memory is a workspace (the finder's arena, then the
  * recognizer's, and the runtime's two structs: vjo_vocr_job_bytes) and a
- * capture block (one strip, the rows' checksums: vjo_vocr_capture_bytes, at
- * most VJO_VOCR_CAPTURE_MAX). Every row's checksum is kept the first time it is
+ * capture block (one strip, the rows' checksums: vjo_vocr_capture_bytes, under
+ * 64 KiB page-rounded). Every row's checksum is kept the first time it is
  * read and compared whenever it is read again; a row that changed means the
  * screen changed while it was read, and the job starts over (VJO_VOCR_TRIES in
- * all, then VJO_E_SCREEN_CHANGED). The weights live in a separate caller-owned
+ * all, then VJO_E_SCREEN_CHANGED). A row that goes back to a state it had a
+ * little earlier in the job (a blinking or bobbing "next" icon, a looping
+ * background) is not a change: each row keeps its recent states. The weights live in a separate caller-owned
  * block (VjoVocrResident) that is read and checked once and then kept for later
  * jobs while the file's size and stamp stay the same; nothing else is
  * allocated. vjo_vocr_ocr() is the one-shot form: weights and job share one
- * workspace (vjo_vocr_workspace_bytes()) and are read for every job. */
+ * workspace (vjo_vocr_workspace_bytes()) and are read for every job.
+ *
+ * Two optional checks (VjoVocrPolicy; vjo_vocr_ocr_policy): the stable-text
+ * wait recognizes nothing until every row of the region has held still for
+ * settle_us (text that types out character by character is read once it is
+ * whole, never half-typed), and the blank-line check skips a found line whose
+ * crop holds no text-like ink (vjo_vocr_ink) instead of recognizing it. */
 #ifndef VJO_VOCR_OCR_H
 #define VJO_VOCR_OCR_H
 
@@ -34,11 +42,25 @@ extern "C" {
 #define VJO_VOCR_DEFAULT_MODEL "VOCR3_H15_w8.vocr" /* VJO_VOCR3_H15_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
- * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus 4 bytes of
- * checksum and one bit per region row; page-rounded it stays under 64 KiB. */
+ * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus per region
+ * row its checksum, its earlier states (16-bit, the latest first) and two
+ * bits; as many earlier states as fit within VJO_VOCR_CAPTURE_LIMIT, 2 to
+ * VJO_VOCR_STATES_MAX (vjo_vocr_state_slots: 16 for a dialogue box, 6 at
+ * 960x544, 5 at 896x544, the widest strip). */
 #define VJO_VOCR_STRIP_BYTES (56u * 1024u)
 #define VJO_VOCR_STRIP_MAX_ROWS 64u /* the kernel copies at most this many rows per call */
 #define VJO_VOCR_TRIES 3u           /* captures of one job before VJO_E_SCREEN_CHANGED */
+#define VJO_VOCR_CAPTURE_LIMIT 65536u /* include/vjo_ledger_budget.h VJO_BUDGET_GAME_CAPTURE */
+#define VJO_VOCR_STATES_MAX 16u
+/* With the stable-text wait on, a row that goes back to one of its recent
+ * states (an animated icon) is not a change, in this many rows of a job at
+ * most: a page of new text, or a box of several lines clearing back to what
+ * the job saw before, changes more. A one- or two-line box that clears back to
+ * an empty box the same job saw earlier, while the job reads it, can be taken
+ * for an icon (the job's text then misses those lines; it is tagged with the
+ * screen it read, which is no longer shown). Without the wait every change is
+ * one, as in API 19. */
+#define VJO_VOCR_CYCLE_ROWS 64u
 /* A line taller than a strip is read through the strip and kept whole, its own
  * columns only, in VjoGreySource.line_buffer: line width x line height bytes, up
  * to this many (include/vjo_ledger_budget.h VJO_BUDGET_GAME_LINE), so the
@@ -95,6 +117,34 @@ typedef struct {
     uint32_t us;             /* vocr_run time with VjoPlatform.now_us, else 0 */
 } VjoVocrLineStat;
 
+/* A found line's ink (vjo_vocr_ink): its contrast (the 98th minus the 2nd
+ * percentile grey) and its sharp edges, the neighbouring pixel pairs (right and
+ * below) that differ by at least `edge` = max(VJO_VOCR_EDGE_MIN, contrast / 2)
+ * grey levels, per 10,000 pixels. Text is sharp strokes on a background: on the
+ * linefind development lines no text line has fewer than 141; a crop with fewer
+ * than VJO_VOCR_BLANK_EDGES holds no text-like ink: an even area, a smooth part
+ * of a picture, the box's gradient, strokes under 24 levels of contrast. A lone
+ * small mark ("。") is too few pixels to move the percentiles, but its edges
+ * count. */
+typedef struct {
+    uint8_t lo, hi;          /* 2nd and 98th percentile grey */
+    uint8_t edge;            /* the step a sharp edge needs */
+    uint8_t reserved;
+    uint16_t edges;          /* sharp edges per 10,000 pixels */
+    uint16_t reserved2;
+} VjoVocrInk;
+#define VJO_VOCR_EDGE_MIN 24u
+#define VJO_VOCR_BLANK_EDGES 50u
+
+/* A line the blank-line check skipped, for the log. */
+typedef struct {
+    uint16_t index;          /* its place among the found lines */
+    uint16_t width, height;
+    uint16_t x, y;
+    VjoVocrInk ink;
+} VjoVocrBlankStat;
+#define VJO_VOCR_BLANK_LOGGED 4u
+
 typedef struct {
     size_t workspace;        /* bytes of this job's workspace (see vjo_vocr_ocr*) */
     size_t capture;          /* bytes of its capture block (vjo_vocr_capture_bytes) */
@@ -119,7 +169,64 @@ typedef struct {
     uint32_t find_us, load_us, recognize_us; /* with VjoPlatform.now_us, else 0 */
     unsigned recognized;     /* entries of line[] filled: lines vocr_run finished */
     VjoVocrLineStat line[VJO_VOCR_MAX_LINES];
+    /* The stable-text wait (VjoVocrPolicy.settle_us). */
+    uint32_t settle_us;      /* time spent on passes read only to see the rows hold still */
+    unsigned settle_passes;  /* those passes */
+    unsigned settle_changes; /* row changes to a new state they saw (text being typed) */
+    unsigned cycles;         /* rows that went back to their previous state (an icon), all reads */
+    unsigned cycling_rows;   /* distinct such rows */
+    unsigned settled;        /* 1: the rows held still for settle_us before the lines were read */
+    unsigned settle_timeout; /* 1: settle_max_us ran out first, so the job went on without it */
+    /* The blank-line check (VjoVocrPolicy.blank). */
+    unsigned blank;          /* lines skipped: no text-like ink in their crop */
+    uint32_t blank_us;       /* time spent checking */
+    VjoVocrBlankStat blank_line[VJO_VOCR_BLANK_LOGGED]; /* the first ones skipped */
 } VjoVocrStats;
+
+/* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
+typedef struct {
+    unsigned index, x, y, w, h, dark;
+    const unsigned char *pixels;  /* the crop's grey rows, stride apart */
+    size_t stride;
+    VjoVocrInk ink;
+    int blank;                    /* skipped by the blank-line check */
+    const char *text;             /* what the recognizer read ("" when skipped) */
+    uint32_t us;                  /* its recognition time */
+} VjoVocrLineInfo;
+
+/* What a job does besides finding and recognizing the lines; a zeroed policy
+ * (or NULL) is API 19's job exactly.
+ *
+ * settle_us: before any line is recognized, every row of the region has to
+ * read the same (an icon toggling between two states aside) on passes that
+ * span at least this long, so a line still typing out is never read half
+ * done. A job whose screen was already still when it was asked reads its
+ * first pass and finds its lines as before, then re-reads the region until the
+ * span is long enough; with settle_first, or once the screen changed under a
+ * job, it waits first, re-reading the region without finding lines, and takes
+ * its first pass (the capture the Shell is told of) only once the rows hold
+ * still. settle_max_us bounds the time spent waiting over the whole job (0:
+ * VJO_VOCR_SETTLE_MAX_US): a region that never holds still (a video behind the
+ * text) is then read as before. blank: a found line whose crop has no
+ * text-like ink is skipped (vjo_vocr_blank; blank_edges, if set, in place of
+ * VJO_VOCR_BLANK_EDGES, for tools and tests). sleep, optional: once the region
+ * has been re-read without a change, the job sleeps until a re-read can be the
+ * last one instead of reading passes that are too early to count. */
+typedef struct {
+    uint32_t settle_us, settle_max_us;
+    int settle_first;
+    int blank;
+    unsigned blank_edges;
+    void (*line)(void *ud, const VjoVocrLineInfo *info);
+    void *ud;
+    void (*sleep)(uint32_t us);
+} VjoVocrPolicy;
+#define VJO_VOCR_SETTLE_MAX_US 2000000u
+
+/* The ink of a w x h crop of grey rows, stride apart (either polarity).
+ * Returns 1 when it holds no text-like ink (vjo_vocr_blank), else 0. */
+int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigned h, VjoVocrInk *out);
+int vjo_vocr_blank(const VjoVocrInk *ink);
 
 /* Weights kept between jobs. The caller supplies their memory: alloc returns
  * 16-byte aligned memory for `bytes`, or NULL (the job then fails with
@@ -148,9 +255,11 @@ int vjo_vocr_resident_drop(VjoVocrResident *resident);
 size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height);
 size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height);
 /* Rows per strip for a region of this size, and the capture block's exact
- * bytes (0 for an unsupported region). */
+ * bytes (0 for an unsupported region), never more than VJO_VOCR_CAPTURE_LIMIT;
+ * the recent states it keeps per row. */
 unsigned vjo_vocr_strip_rows(unsigned width, unsigned height);
 size_t vjo_vocr_capture_bytes(unsigned width, unsigned height);
+unsigned vjo_vocr_state_slots(unsigned width, unsigned height);
 
 /* Recognizes the region: lines top to bottom, separated by '\n', in text (at
  * most text_cap bytes with the NUL). workspace: 16-byte aligned, private to
@@ -176,6 +285,11 @@ int vjo_vocr_ocr_resident(const VjoPlatform *platform, const char *model_dir, co
                           const VjoGreySource *image, VjoVocrResident *resident,
                           void *workspace, size_t workspace_size, void *capture, size_t capture_size,
                           char *text, size_t text_cap, VjoVocrStats *stats);
+/* The same with a policy (NULL: as vjo_vocr_ocr_resident). */
+int vjo_vocr_ocr_policy(const VjoPlatform *platform, const char *model_dir, const char *model,
+                        const VjoGreySource *image, VjoVocrResident *resident,
+                        void *workspace, size_t workspace_size, void *capture, size_t capture_size,
+                        const VjoVocrPolicy *policy, char *text, size_t text_cap, VjoVocrStats *stats);
 
 /* The one-shot form: the weights are read into the front of workspace (at
  * least vjo_vocr_workspace_bytes()) for this job only, as the host tools do. */

@@ -57,22 +57,28 @@ A missing or corrupt candidate reports an error without changing engines.
    finder it reads dark text on light boxes, outlined text and coloured names,
    and never rejects a region. A region with no line ends here: the weights
    file is not read.
-3. The existing kernel worker opens the pinned model from
+3. Nothing is recognized before every row of the region has read the same for
+   `ocr_settle_ms` (150 ms): text that types out is read once it is whole
+   ([stable text](#stable-text-and-blank-lines-api-20)).
+4. A found line whose crop holds no text-like ink (an even area, a smooth part
+   of a picture, the box's gradient) is skipped: `ocr_skip_blank_lines`.
+5. The existing kernel worker opens the pinned model from
    `ux0:data/VitaJPOverlay/ocr` and reports its length and modification
    time. The first job, and any job after the file changed, copies it in
    32 KiB reads into its own weights block and checks size and SHA-256
    against the pinned release asset. Later jobs of the same game reuse those
    verified weights without reading the card again. The runtime validates the
-   model either way.
-4. Each line is recognized (int8 weights, int32 sums, NEON); lines of dark
+   model either way. A region whose lines were all skipped opens no file.
+6. Each line is recognized (int8 weights, int32 sums, NEON); lines of dark
    text are inverted first, as the model was trained.
-5. The job workspace is freed before the dictionary lookup and before anything
+7. The job workspace is freed before the dictionary lookup and before anything
    is shown; the verified weights stay for the next job (see below). A failed
    or cancelled job shows no partial text.
 
 A job's memory is three blocks in the game: the weights, kept between jobs;
-the workspace; and the capture block (one strip of the region's grey rows
-with a checksum and a bit per row, under 64 KiB at any region). The last two
+the workspace; and the capture block (one strip of the region's grey rows,
+and per row its checksum, its recent states and two bits; within 64 KiB at any
+region). The last two
 are freed after the job. Since API 19 the workspace holds no copy of the
 region, so a job hardly depends on the region's size:
 
@@ -80,7 +86,8 @@ region, so a job hardly depends on the region's size:
 weights (kept)                                  page(model bytes)
 max(line finder arena, recognizer arena)
 + the runtime's two structs (3,760 bytes)       page(...)          (per job)
-capture block: one strip, 4 bytes + 1 bit per region row  < 64 KiB (per job)
+capture block: one strip; per region row 4 bytes, 2 bytes per earlier state
+  (16, or as many as fit: 6 at 960x544) and 2 bits              <= 64 KiB (per job)
 ```
 
 A line taller than a 64-row strip is kept whole in one more block of its own
@@ -169,6 +176,109 @@ namespace and exercises both pinned models through the actual broker and
 worker, with injected short reads, corruption, cancellation and failed Close.
 These tests and bounds do not establish real Vita memory availability, speed
 or stability. A physical in-game recognition remains required.
+
+## Stable text and blank lines (API 20)
+
+Two checks in the game worker (`core/vocr_ocr.h` `VjoVocrPolicy`), set in
+`config.ini` and sent with every job in the request's flags:
+
+```ini
+ocr_settle_ms = 150         ; 0-1000, 0 = off
+ocr_settle_max_ms = 2000    ; 100-10000
+ocr_skip_blank_lines = on   ; on | off
+```
+
+**Stable text.** Visual novels type their text out a character at a time. A
+job reads the region a strip per game frame, and before API 20 it recognized
+whatever its first two passes saw, as long as they agreed: on a line that
+types slowly, or pauses longer than those passes take, that can be half a
+line. Now nothing is recognized until every row of the region has read the
+same, at full resolution (the rows' FNV-1a checksums the job already keeps),
+on passes that span at least `ocr_settle_ms`. A job the Shell asks for when
+the kernel has already seen the region settle reads its first pass and finds
+its lines at once, then re-reads the region until the span is long enough. A
+job asked while the region is still changing (a "quiet" screen, the overlay
+opened over typing text, the subtitles' 2 s refresh) waits first, re-reading
+the region without finding lines, and takes its first pass, the capture the
+Shell is told of, only once the rows hold still. When the screen changes
+under a job, it voids the capture it published (the Shell then treats the job
+as not captured yet), waits, and publishes the retry's (before API 20 the Shell
+kept the first capture's screen for a retried job's text). A row that goes
+back to one of its recent states (up to 16 earlier ones; 6 at a full 960×544
+frame, as many as fit the 64 KiB block) is not a change: a "next" icon that
+blinks or bobs does not hold the wait up, nor tear the job while it reads, in
+up to 64 rows of a job. A page of new text, or a box of several lines that
+clears back to what the job saw before, changes more rows than that; a one-
+or two-line box that does so while the job reads it can be taken for an icon
+(that job's text then misses those lines; it is tagged with the screen it
+read, which is no longer shown). Once a re-read has matched, the job sleeps
+until a re-read can be the last one rather than reading passes too early to
+count, so the display hook copies fewer strips. A region that never holds
+still (a video behind the text) stops waiting after `ocr_settle_max_ms` for
+the whole job and is read as before. The wait costs frames, not CPU: one
+FNV-1a pass over each row read. Without the wait (`ocr_settle_ms = 0`) a job
+reads, compares and retries exactly as API 19 did.
+
+**Blank lines.** The line finder also reports boxes with no text in them. A
+found line is skipped, not recognized, when its crop has fewer than 50 sharp
+edges per 10,000 pixels: neighbouring pixels (right and below) that differ by
+at least half the crop's contrast, 24 grey levels at the least. Text is sharp
+strokes; an even area, a smooth part of a picture or the box's gradient is not.
+If every line of a region is skipped, the weights are not opened. The check
+reads each crop twice (a histogram, then the edges).
+
+**Logs.** Each job adds `gstep job settle` (rc 1: the rows held still, 2: the
+limit ran out first; arg: passes read waiting; bytes: row changes seen, i.e.
+text typing out; the high half of sum: rows that toggled; us: the wait) and a
+`gstep job blank` line per skipped line (its index, size, contrast and edges).
+`tools/analyse_selftest.py --collect` sums them up: how often the rows held
+still or the limit ran out, the wait's range, whether an icon toggled, and the
+lines skipped.
+
+**Measured on the host** (`vjo-settle-bench`, `docs/benchmarks/settle-wait-20261014.json`): a
+simulated screen where every strip read is one game frame, at 60 and 30 frames
+a second; no weights, so the numbers are the capture and the wait. The
+console's frame pacing and strip time are unmeasured (#81), so the ms are
+estimates.
+
+| region (strips per pass), fps | screen | without the wait | with 150 ms |
+|---|---|---|---|
+| 917×125 (3), 60 | still, asked settled | 7 frames, 116 ms | 12 frames (10 strips read), 199 ms |
+| 917×125 (3), 60 | still, asked while it changed | 7 frames, 116 ms | 22 frames, 366 ms |
+| 960×544 (10), 60 | still, asked settled | 21 frames, 349 ms | 21 frames, 349 ms (the finder's second pass is the span) |
+| 917×125 (3), 60 | 12 of 25 characters shown, typing resumes 8 frames (133 ms) after the job is asked | **reads 12 of 25** | the change is seen; the retry reads **25 of 25** (65 frames, 1,083 ms) |
+| 917×125 (3), 30 | the same, 8 frames (267 ms) | reads 12 of 25 | reads 25 of 25 (60 frames, 1,999 ms) |
+| 960×544 (10), 60 | the same, 8 frames | the screen changed under all 3 tries: no text | reads 25 of 25 |
+| 917×125 (3), 60 | the same, 24 frames (400 ms) | reads 12 of 25 | reads 12 of 25: the pause outlasts the job's reads |
+| 917×125 (3), 60 | asked while 25 characters type, one per 3 frames | 3 tries, the screen changed: no text | first pass at frame 91 (typed by frame 75): 25 of 25 |
+| 917×125 (3), 30 | the same typing (2.5 s) | no text | the 2 s limit runs out: read without it, the screen changed: no text (as before) |
+| 917×125 (3), 60 | blinking icon (8 frames) beside a still line | - | 31 frames, 516 ms; its rows counted as cycling, no timeout |
+
+A pause in the typing longer than `ocr_settle_ms` plus the job's own reads
+(the 400 ms case) is still read as a part line, as before; raise
+`ocr_settle_ms` for a game that pauses longer mid-line.
+
+**Measured on development data** (`tools/blank_lines_eval.py`,
+`docs/benchmarks/blank-lines-20261014.json`): the linefind `vita_dev` and
+`psp_dev` regions (317 regions of 84 VNs; 16 reserved VNs skipped), read by
+the finder and VOCR3-H15/FL10 exactly as the worker reads them. A found line is
+text when it overlaps a hand-marked line box, else empty.
+
+| | VOCR3-H15 | VOCR3-FL10 |
+|---|---|---|
+| text lines skipped | **0 of 643** | **0 of 643** |
+| empty lines skipped | 13 of 105 | 13 of 105 |
+| characters written on empty lines, kept / of | 125 of 129 | 103 of 108 |
+| host recognition time, all regions | 16,892 → 16,637 ms (−1.5%) | 8,989 → 9,017 ms (noise) |
+| the check, all 753 lines (host) | 15.5 ms | 15.4 ms |
+
+So the check is safe and cheap, but it removes little of what the recognizer
+writes on boxes without text: most of those crops are textured (parts of a
+portrait, scene art, frame lines; one frame line alone made 48 of H15's 129
+characters, "ニニニ…"), which no image statistic tried here separates from text
+without losing dialogue (sharp-edge direction, mid-tones and ink runs each lost
+text lines first). That needs the recognizer's own confidence, or a finder
+that cuts frame lines.
 
 ## Models
 

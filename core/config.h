@@ -62,6 +62,12 @@ typedef struct {
     /* Smaller weights run instead when the game's free memory has no room
      * for vocr_model (the game worker decides per job); "" = none. */
     char vocr_fallback_model[64];
+    /* Local OCR (vocr): the region's rows hold still this long before a job
+     * reads its lines (0 = off), waiting at most ocr_settle_max_ms per job; and
+     * found lines without text-like ink are skipped (core/vocr_ocr.h). */
+    int ocr_settle_ms;        /* 0..1000 */
+    int ocr_settle_max_ms;    /* 100..10000 */
+    int ocr_skip_blank_lines; /* 0/1 */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     int anki_mining;          /* 0/1: × saves cards to the offline queue, △ sends it */

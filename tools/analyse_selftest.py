@@ -743,6 +743,9 @@ LOG = {
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
+    # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
+    "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
 }
 TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|SAFE MODE|not starting|missing at|"
                      r"too large|not opened|unreadable|not writable|unavailable|success=0|reserve guard|not started|"
@@ -765,7 +768,9 @@ def summarise_log(text):
     s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
-         "gstep_fail": {}, "config_warnings": []}
+         "gstep_fail": {}, "config_warnings": [],
+         "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
+         "blank": {"lines": 0, "sizes": [], "edges": []}}
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
@@ -777,6 +782,24 @@ def summarise_log(text):
                 s["boot"].append(line)
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
+        m = LOG["settle"].match(line)
+        if m:
+            st, rc = s["settle"], int(m.group(2), 16)
+            st["jobs"] += 1
+            st[{1: "held", 2: "timeout"}.get(rc, "none")] += 1
+            if rc in (1, 2):
+                st["ms"].append(int(m.group(5)) // 1000)
+                st["passes"].append(int(m.group(1)))
+            st["changes"] += int(m.group(3))
+            st["toggling_jobs"] += (int(m.group(4), 16) >> 16) > 0
+            continue
+        m = LOG["blank"].match(line)
+        if m:
+            size = int(m.group(3))
+            s["blank"]["lines"] += 1
+            s["blank"]["sizes"].append(f"{size >> 16}x{size & 0xFFFF}")
+            s["blank"]["edges"].append(int(m.group(4), 16) & 0xFFFF)
+            continue
         m = LOG["job"].match(line)
         if m:
             s["jobs"].append({"rc": int(m.group(1)), "model": m.group(2), "fallback": bool(m.group(3)),
@@ -1051,6 +1074,16 @@ def render_collect(c):
                          f"per CTC frame {_span(lg['speed_us'])} us")
             if lg["captures"]:
                 L.append("  capture: " + ", ".join(f"{k} x{n}" for k, n in lg["captures"].items()))
+        st = lg.get("settle") or {}
+        if st.get("jobs"):
+            L.append(f"  stable-text wait: {st['jobs']} job(s): rows held still in {st['held']}, the limit reached in "
+                     f"{st['timeout']}, no line to wait for in {st['none']}; waited {_span(st['ms'])} ms "
+                     f"({_span(st['passes'])} passes); {st['changes']} row change(s) seen while waiting (text typing "
+                     f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)")
+        bl = lg.get("blank") or {}
+        if bl.get("lines"):
+            L.append(f"  blank lines skipped: {bl['lines']} ({', '.join(bl['sizes'][:6])}"
+                     f"{', ...' if len(bl['sizes']) > 6 else ''}; sharp edges {_span(bl['edges'])} per 10,000)")
         if lg["memory"]:
             frees = [m["free"] for m in lg["memory"]]
             heads = [m["headroom"] for m in lg["memory"]]

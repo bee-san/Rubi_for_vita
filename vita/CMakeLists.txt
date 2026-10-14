@@ -168,7 +168,8 @@ target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-paramet
   "$<$<COMPILE_LANGUAGE:CXX>:-fno-rtti;-fno-exceptions;-Wno-sign-compare;-Wno-unused-function>"
   "-D__declspec(x)=")
 target_link_directories(VitaJPOverlay_Shell PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
-target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--no-wchar-size-warning)
+target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
+  -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
 target_link_libraries(VitaJPOverlay_Shell
   vjo_core_vita
   VitaJPOverlay_Kernel_stub_weak  # weak: the shell still starts (and reports) without the kernel plugin

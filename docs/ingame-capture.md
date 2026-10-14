@@ -27,8 +27,10 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    before) and the `*TITLEID` worker claims it.
 2. The worker checks the game's free memory, then allocates its capture block: one strip of grey
    rows (at most 64 rows and 56 KiB) and a checksum and a bit per region row,
-   `vjo_vocr_capture_bytes`: 58,884 B at 960×544, at most 59,588 B (896×544, 64-row strips),
-   page-rounded to 61,440 B; under 64 KiB at any region.
+   `vjo_vocr_capture_bytes`: within 64 KiB at any region (65,480 B at 960×544, 61,388 B at
+   917×125). Since API 20 each row also keeps its recent states, so an animated icon is not a change
+   ([stable text](vita-vn-ocr.md#stable-text-and-blank-lines-api-20)): 16 earlier states when they
+   fit, as many as fit otherwise (6 at 960×544, 5 at 896×544, the widest strip).
 3. For each strip the worker calls `vjoOcrCaptureRows` with the strip (`seq`, first row `y`, `n` rows, the rung `mode`, `flags`, `dst_stride`) and `dst`.
    The kernel checks that `[dst, dst + bytes)` is one memory block of the worker's process
    (`ksceKernelFindProcMemBlockByAddr(pid, addr, 0)`, first and last byte), arms the request and
@@ -82,12 +84,12 @@ game's process rather than free memory the hook might write.
 | | API 18 | API 19 |
 |---|---|---|
 | kernel (`ScePhyMemPartKD`) | w×h×4, 2,088,960 B at 960×544 | 0 B (rung 4 only: ≤ 64 KiB for one call) |
-| game: capture | the grey plane, w×h in the workspace (522,240 B at 960×544) | ≤ 61,440 B at any region |
+| game: capture | the grey plane, w×h in the workspace (522,240 B at 960×544) | ≤ 65,536 B at any region (API 19 kept one checksum and one bit a row: ≤ 61,440 B) |
 | game: workspace with the grey plane (H15) | 712,704 B at 960×544, 303,104 B at 917×125 | 188,416 B at any region (no plane) |
 | game: a line taller than a strip | — | its own width × height, only then (41 of 372 linefind dev regions; the largest 533×148 = 78,884 B) |
 | game: weights (resident) | H15 1,159,168 B, FL10 659,456 B | unchanged |
 
-So a textbox takes at most 61,440 B of capture memory when all its lines fit a strip: 331 of
+So a textbox takes at most 65,536 B of capture memory when all its lines fit a strip: 331 of
 the 372 linefind dev regions. The other 41 contain a band the finder reports taller than a strip
 (42 such lines), which the recognizer needs whole for byte-identical input, as API 18's grey plane
 held it; it takes a block of its own size for that line. With it, 349 regions stay within 64 KiB

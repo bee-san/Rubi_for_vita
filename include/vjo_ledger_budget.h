@@ -22,10 +22,12 @@
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss */
-/* VitaJPOverlay_OCR.suprx: 45,056 text + 8,192 data/bss [measured, API 19 build]. Raised from 45,056 B
+/* VitaJPOverlay_OCR.suprx: 49,152 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
- * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 53248u
+ * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
+ * Raised again from 53,248 B (45,056 + 8,192) by one text page for API 20's job policy: the
+ * stable-text wait and the blank-line check (core/vocr_ocr.c), in the same game partition. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 57344u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -111,9 +113,9 @@
 /* F20 at a 960x544 region, page-rounded (vjo_vocr_job_bytes, host build: 245,808 B).
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
 #define VJO_BUDGET_GAME_WORKSPACE 249856u
-/* The capture block: one strip of grey rows and a checksum and a bit per region
- * row, at most 59,588 B (896x544, 64-row strips; 58,884 B at 960x544), page-rounded 61,440 B, under 64 KiB
- * (vjo_vocr_capture_bytes). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
+/* The capture block: one strip of grey rows and, per region row, its checksum,
+ * its recent states and two bits, at most 65,536 B at any region (vjo_vocr_capture_bytes,
+ * VJO_VOCR_CAPTURE_LIMIT; 65,480 B at 960x544, 61,388 B at 917x125). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
  * phycont instead, other partitions, only when USER_RW refused it. */
 #define VJO_BUDGET_GAME_CAPTURE 65536u
 /* A line taller than a strip, kept whole (core/vocr_ocr.h VJO_VOCR_LINE_MAX_BYTES): line

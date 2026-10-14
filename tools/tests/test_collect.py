@@ -33,6 +33,8 @@ game vocr memory: free USER=91226112, needs workspace 249856 + weights 1159168 +
 game vocr speed: 330 frames in 820000 us, 2484 us per frame
 game vocr lines: 877x30 110f 273.3ms 870x30 110f 273.3ms 860x30 110f 273.3ms
 gstep job alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
+gstep job settle kind=- arg=4 rc=0x00000001 bytes=37 sum=0x00020006 main=0 cdram=0 phycont=0 us=183000
+gstep job blank kind=- arg=2 rc=0x00000001 bytes=19660830 sum=0x00C00014 main=0 cdram=0 phycont=0 us=310
 job 0 done rc=0 in 2100 ms, arena peak 4096, dictionary page 1/1
 game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too): 917x125 at 22,400 of 960x544 fmt 0x00000000, lines=0 USER workspace=0 weights=none resident=0, find=0 ms load=0 ms recognize=0 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
 game vocr memory: free USER=5000000, needs workspace 245760 + weights 659456 + reserve 4194304: check refused, headroom -99520
@@ -191,6 +193,10 @@ class Collect(unittest.TestCase):
                      "models VOCR3_H15_w8.vocr x1, VOCR3_FL10_w8.vocr (fallback) x1",
                      "times (ms): find 9-9, load 1,050-1,050 (1 read), recognize 820-820; per line 273-273",
                      "capture: hook into USER x1",
+                     "stable-text wait: 1 job(s): rows held still in 1, the limit reached in 0, no line to wait for in 0; "
+                     "waited 183-183 ms (4-4 passes); 37 row change(s) seen while waiting (text typing out); rows toggling "
+                     "(an icon) in 1 job(s)",
+                     "blank lines skipped: 1 (300x30; sharp edges 20-20 per 10,000)",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",

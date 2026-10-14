@@ -209,9 +209,19 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     fake_game_result.size = sizeof(fake_game_result); fake_game_result.seq = 12;
     return 12;
 }
+/* fake_republish: the job's first two reads are still pending; the kernel
+ * meanwhile voids the job's first capture (region_seq 0: the screen changed,
+ * the worker waits and reads again) and then publishes the retry's (scene 3,
+ * capture 5), as API 20's worker does. */
+static int fake_republish, republish_reads, captured_while_void;
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     TEST_CHECK(seq == 12);
+    if (fake_republish && republish_reads < 2) {
+        if (republish_reads++ == 0) state.region_seq = 0;
+        else { captured_while_void = job_captured; state.capture_scene = state.scene = state.region_scene = 3; state.region_seq = 5; }
+        return 1;
+    }
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
     if (fake_missing_model && !strcmp(fake_game_request.model, fake_missing_model)) {
@@ -547,6 +557,24 @@ static int run_vocr_job(void)
     vjo_arena_reset(&results[0]);
     return run_job(&results[0], &cache_data[0]);
 }
+
+#ifdef VJO_WITH_VOCR
+/* The job's capture is its latest one: voided while the worker waits for a
+ * changed screen to hold still, then the retry's. A settled screen cancels no
+ * job whose retry already shows it. */
+static void test_vocr_capture_follows_the_retry(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    fake_republish = 1; republish_reads = captured_while_void = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(republish_reads == 2 && !captured_while_void);
+    TEST_CHECK(job_captured && job_capture_scene == 3 && job_capture_seq == 5);
+    TEST_CHECK(shows_screen(job_capture_scene, job_capture_seq, &state));
+    fake_republish = 0;
+    mem_free();
+}
+#endif
 
 static void test_vocr_never_uses_lens(void)
 {
@@ -2121,9 +2149,20 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
     TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
-    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[1] == 0 &&
-               selftest_flags_seen[2] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[3] == VJO_GAME_OCR_F_PROBE &&
-               selftest_flags_seen[4] == 0);
+    /* The stage's own flags, and the job policy every stage carries (API 20):
+     * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
+     * ms), blank lines skipped. */
+    const uint32_t stage_bits = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
+    const uint32_t policy = VJO_GAME_OCR_F_BLANK | 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    TEST_CHECK((selftest_flags_seen[0] & stage_bits) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
+               (selftest_flags_seen[1] & stage_bits) == 0 &&
+               (selftest_flags_seen[2] & stage_bits) == VJO_GAME_OCR_F_FULL &&
+               (selftest_flags_seen[3] & stage_bits) == VJO_GAME_OCR_F_PROBE &&
+               (selftest_flags_seen[4] & stage_bits) == 0);
+    for (unsigned i = 0; i < 5; i++) {
+        TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
+        TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);
+    }
     TEST_CHECK(!strcmp(cache_data[0].sentence, "猫")); /* the last stage's text is the job's */
     TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
     mem_free();
@@ -2174,6 +2213,9 @@ TEST_LIST = {
     {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
+#ifdef VJO_WITH_VOCR
+    {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
+#endif
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
     {"vocr_config_parses_and_validates", test_vocr_config},

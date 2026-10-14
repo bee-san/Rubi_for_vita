@@ -1,0 +1,88 @@
+{
+ "what": "The blank-line check (found lines with fewer than 50 sharp edges per 10,000 pixels are not recognized) on vita-vn-ocr's linefind development regions, read by the overlay's own adapter (vjo-ocr --lines, the line finder and the pinned recognizer as the game worker runs them, with its line block). A found line is 'text' when it overlaps a hand-marked line box (at least 10% of either box), 'empty' when it overlaps none, 'ignored' when it overlaps only a box marked ignore. Counts, rates and times only; no pixels or text.",
+ "how": "python3 tools/blank_lines_eval.py --ocr build/host/vjo-ocr --models DIR --vocr-repo VITA_VN_OCR --shots DIR... --out lines.jsonl; python3 tools/blank_lines_eval.py --summary lines.jsonl",
+ "when": "2026-10-14T15:07Z",
+ "manifests": [
+  "eval/linefind/manifests/vita_dev.jsonl",
+  "eval/linefind/manifests/psp_dev.jsonl"
+ ],
+ "vita_vn_ocr": "a5d5aad68bb8e719e44e2e50b5836cf9afeae796",
+ "reserved_vns_skipped": 16,
+ "models_sha256": {
+  "VOCR3_FL10_w8.vocr": "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154",
+  "VOCR3_H15_w8.vocr": "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c"
+ },
+ "host": "times are host wall-clock µs from VjoVocrStats (shared box under load); A9 time is not measured",
+ "summary": {
+  "VOCR3_FL10_w8.vocr": {
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 753,
+   "by_label": {
+    "text": {
+     "lines": 643,
+     "chars": 6969,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 105,
+     "chars": 108,
+     "rejected": 13,
+     "rejected_chars": 5,
+     "rejected_nonempty_text": 4
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 52,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 4,
+   "chars_before": 7129,
+   "chars_after": 7124,
+   "recognize_ms_before": 8989.1,
+   "recognize_ms_after": 9016.8,
+   "blank_check_ms": 15.4,
+   "regions_all_blank": 8
+  },
+  "VOCR3_H15_w8.vocr": {
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 753,
+   "by_label": {
+    "text": {
+     "lines": 643,
+     "chars": 7010,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 105,
+     "chars": 129,
+     "rejected": 13,
+     "rejected_chars": 4,
+     "rejected_nonempty_text": 3
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 54,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 3,
+   "chars_before": 7193,
+   "chars_after": 7189,
+   "recognize_ms_before": 16892.3,
+   "recognize_ms_after": 16636.8,
+   "blank_check_ms": 15.5,
+   "regions_all_blank": 8
+  }
+ }
+}

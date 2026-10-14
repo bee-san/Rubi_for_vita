@@ -25,12 +25,12 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell pages                         389,120      458,752    1,048,576      589,824
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
-  game                                 90,112    2,392,064    2,392,064            0
+  game                                 94,208    2,392,064    2,392,064            0
   shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
       VitaJPOverlay_Shell       299,008 B of    299,008 B declared
-      VitaJPOverlay_OCR          53,248 B of     53,248 B declared
+      VitaJPOverlay_OCR          57,344 B of     57,344 B declared
 ```
 
 The last row is the opt-in network dictionary with an Anki card and the overlay all at their
@@ -110,11 +110,11 @@ line, under `render`'s 312 B, so the overlay's deepest frame is unchanged [measu
 
 | item | bytes | what | source |
 |---|---|---|---|
-| OCR worker pages | 53,248 | the module, in each game it is registered for: 45,056 text + 8,192 data/bss; raised from 45,056 B for the in-game capture (strips, ladder, probe, step log), in the game's partition, never SceShell's | packaged SELF segments [measured, API 19 build] |
+| OCR worker pages | 57,344 | the module, in each game it is registered for: 49,152 text + 8,192 data/bss; raised from 45,056 B for the in-game capture (strips, ladder, probe, step log), then from 53,248 B by one text page for API 20's job policy (the stable-text wait and the blank-line check), in the game's partition, never SceShell's | packaged SELF segments [measured, API 20 build] |
 | VjoGameVocr stack+TLS | 36,864 | 32,768 + 4,096 | `game_ocr/main.c` |
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
 | VjoGameVocr workspace | 249,856 at most | F20, page-rounded, per job, at any region: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544) | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |
-| VjoGameVocrCapture | 65,536 at most | one strip of grey rows and a checksum and a bit per region row (at most 59,588 B, at 896 × 544 with 64-row strips; 58,884 B at 960 × 544; 61,440 page-rounded), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
+| VjoGameVocrCapture | 65,536 at most | one strip of grey rows and, per region row, its checksum, its recent states (16, or as many as fit) and two bits: at most 65,536 B at any region (`VJO_VOCR_CAPTURE_LIMIT`; 65,480 B at 960 × 544, 61,388 B at 917 × 125), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
 | VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |
 | **limits** | weights 1,601,536; workspace 790,528; job 2,392,064 | the recognizer's ceiling tier, which the preflight (free `USER` minus the 4 MiB reserve) has to cover before anything is allocated | vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md) |
 

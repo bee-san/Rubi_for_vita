@@ -269,6 +269,14 @@ kernel's capture buffer, where a tighter region helps; Anki cards take no
 screenshot in this build, so they never use it. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
+
+Text that types out is read once it is whole: a job recognizes nothing until
+every row of the region has held still for `ocr_settle_ms` (150 ms by default,
+`0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
+and a blinking "next" icon does not hold it up. Found lines with no text-like
+ink are skipped (`ocr_skip_blank_lines = on`). Both are logged per job; see
+[stable text and blank lines](docs/vita-vn-ocr.md#stable-text-and-blank-lines-api-20)
+for what each costs and what the host measurements show.
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
@@ -379,8 +387,9 @@ The shared API 13+ error codes keep bit 30 clear. On the physical Vita, the
 previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
-Native SDK file errors are unchanged. Install all three API 19 plugins together
-and reboot; older plugin versions cannot use this transport.
+Native SDK file errors are unchanged. Install all three plugins of one build
+together (API 20 since the job policy below) and reboot; older plugin versions
+cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
 64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B

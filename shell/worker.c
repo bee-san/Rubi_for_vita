@@ -639,17 +639,23 @@ static int vocr_retry_with_fallback; /* this job's retry: request the fallback i
 
 /* The capture of the job in flight: the kernel publishes it (VjoState.done_seq
  * moves on, with capture_scene and region_seq) once the game has read its
- * first pass over the region. Polled from the exchange's cancel callback. */
+ * first pass over the region. A try after the screen changed under the job
+ * voids it (region_seq 0 while the rows settle and are read again) and
+ * publishes its own, so the job's capture is always its latest one. Polled
+ * from the exchange's cancel callback. */
 static uint32_t vocr_done_before;
-static int vocr_capture_seen;
+static int vocr_capture_fixed; /* full-frame and probe jobs: theirs is not the region's */
 
 static void vocr_note_capture(void)
 {
     VjoState st;
-    if (vocr_capture_seen) return; /* also set for full-frame and probe jobs: theirs is not the region's */
+    if (vocr_capture_fixed) return;
     st.size = sizeof(st);
     if (vjoGetState(&st) < 0 || st.done_seq == vocr_done_before) return;
-    vocr_capture_seen = 1;
+    if (!st.region_seq) {
+        job_captured = 0;
+        return;
+    }
     job_capture_scene = st.capture_scene;
     job_capture_seq = st.region_seq;
     __sync_synchronize(); /* the scene is visible before job_captured */
@@ -700,8 +706,17 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     sceClibMemcpy(request.fallback, fallback, fallback_len+1);
     vocr_fallback_requested = fallback_len > 0;
     st0.size = sizeof(st0);
-    vocr_done_before = vjoGetState(&st0) < 0 ? 0 : st0.done_seq;
-    vocr_capture_seen = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
+    if (vjoGetState(&st0) < 0) st0.done_seq = st0.stable = 0;
+    vocr_done_before = st0.done_seq;
+    vocr_capture_fixed = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
+    /* The job's policy (API 20). The config keeps both waits in range, so the
+     * counts fit their 8 bits; a screen not settled now is waited for first. */
+    if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
+    if (job_cfg.ocr_settle_ms >= 5) {
+        request.flags |= (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u << VJO_GAME_OCR_SETTLE_SHIFT |
+                         (uint32_t)(job_cfg.ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+        if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
+    }
     vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
     vjo_capture_release();
@@ -1112,7 +1127,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->japanese_only_selection != b->japanese_only_selection)
         return 0;
     if (game_ocr_backend(a->ocr_backend) &&
-        (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) ||
+        (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
          (a->ocr_backend == VJO_OCR_VOCR && (sceClibStrcmp(a->vocr_model, b->vocr_model) ||
                                              sceClibStrcmp(a->vocr_fallback_model, b->vocr_fallback_model)))))
         return 0;

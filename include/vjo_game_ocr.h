@@ -27,7 +27,17 @@
 #define VJO_GAME_OCR_F_FULL 0x1u           /* the whole frame, whatever the region */
 #define VJO_GAME_OCR_F_FORCE_FALLBACK 0x2u /* self-test: the memory check refuses the model, so the fallback runs */
 #define VJO_GAME_OCR_F_PROBE 0x4u          /* self-test: try every capture path and memory type, recognize nothing */
-#define VJO_GAME_OCR_F_ALL 0x7u
+/* API 20: the job's policy (core/vocr_ocr.h VjoVocrPolicy). It rides in the
+ * flags so the request, which the kernel keeps a copy of, keeps its size. */
+#define VJO_GAME_OCR_F_BLANK 0x8u          /* skip found lines whose crop holds no text-like ink */
+#define VJO_GAME_OCR_F_SETTLE_FIRST 0x10u  /* the screen was still changing when the job was asked: wait first */
+/* Bits 16-23: the stable-text wait, in 10 ms (0: off); bits 24-31: the most the
+ * job spends waiting, in 50 ms (0: VJO_VOCR_SETTLE_MAX_US, 2 s). */
+#define VJO_GAME_OCR_SETTLE_SHIFT 16u
+#define VJO_GAME_OCR_SETTLE_UNIT_US 10000u
+#define VJO_GAME_OCR_SETTLE_MAX_SHIFT 24u
+#define VJO_GAME_OCR_SETTLE_MAX_UNIT_US 50000u
+#define VJO_GAME_OCR_F_ALL 0xFFFF001Fu
 
 typedef struct {
     uint32_t size;
@@ -92,8 +102,19 @@ enum {
                             arg = width, sum = pixel format, rc the query's */
     VJO_GSTEP_PROBE,     /* a probe capture: kind VJO_GAME_OCR_SRC_*, arg VJO_GAME_OCR_MEM_*, sum the
                             rows' checksum, bytes copied */
+    VJO_GSTEP_SETTLE,    /* API 20, the stable-text wait: rc VJO_GSETTLE_*, arg passes read waiting, bytes row
+                            changes to a new state seen (text typing out), sum = distinct rows that went back
+                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait */
+    VJO_GSTEP_BLANK,     /* API 20, a found line skipped as blank: arg its index, rc the job's skipped lines,
+                            bytes = width << 16 | height, sum = contrast (98th - 2nd percentile grey) << 16 |
+                            sharp edges per 10,000 pixels (core/vocr_ocr.h VjoVocrInk), us the job's time
+                            checking lines */
     VJO_GSTEP_COUNT
 };
+/* VJO_GSTEP_SETTLE rc. */
+#define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
+#define VJO_GSETTLE_HELD 1     /* the rows held still settle long before the lines were read */
+#define VJO_GSETTLE_TIMEOUT 2  /* the job's waiting budget ran out first: read without it */
 /* VJO_GSTEP_ALLOC/FREE arg: which block. */
 #define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */

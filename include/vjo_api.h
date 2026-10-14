@@ -20,8 +20,12 @@
  * the region straight into the game worker's buffer (vjoOcrCaptureRows); no
  * kernel capture buffer for OCR (vjoOcrReadRaw is gone). Requests carry the
  * region and flags, results the capture and a step log. vjoMemInfo reports each
- * memory query route's step and result, and the game worker may call it. */
-#define VJO_API_VERSION 19
+ * memory query route's step and result, and the game worker may call it.
+ * 20: the job's policy rides in VjoGameOcrRequest.flags (the stable-text wait,
+ * its limit, waiting first, blank lines skipped); two new step kinds (settle,
+ * blank). A job may publish its first pass, void it (a VJO_ROWS_SIG read from
+ * row 0 it does not finish) and publish its retry's. Sizes are unchanged. */
+#define VJO_API_VERSION 20
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {

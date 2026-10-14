@@ -285,6 +285,7 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
+typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
@@ -598,6 +599,23 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     return any ? rc : VJO_E_SOURCE;
 }
 
+/* The job's policy, from its request's flags (include/vjo_game_ocr.h, API 20):
+ * the stable-text wait and its limit, whether to wait first, blank lines. */
+static void policy_sleep(uint32_t us)
+{
+    sceKernelDelayThread(us);
+}
+
+static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
+{
+    sceClibMemset(p, 0, sizeof(*p));
+    p->settle_us = ((r->flags >> VJO_GAME_OCR_SETTLE_SHIFT) & 0xFFu) * VJO_GAME_OCR_SETTLE_UNIT_US;
+    p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
+    p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
+    p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
+    p->sleep = policy_sleep;
+}
+
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
@@ -682,9 +700,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     workspace_memory = mem;
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
     VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
+    VjoVocrPolicy policy;
+    request_policy(r, &policy);
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
-    rc = vjo_vocr_ocr_resident(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
-                               capture_base, capture_bytes_held, out->text, sizeof(out->text), &stats);
+    rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
+                             capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */
     if (rc < -199) rc = VJO_E_SOURCE;
@@ -692,6 +712,16 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
+    if (policy.settle_us)
+        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
+                 stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
+                 stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
+                 (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles), stats.settle_us ? stats.settle_us : 1u, 0);
+    for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
+        const VjoVocrBlankStat *b = &stats.blank_line[i];
+        step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
+                 (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
+    }
     if (stats.model_loaded || stats.model_cached)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
                  resident_bytes(), 0, stats.load_us, 1);

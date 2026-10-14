@@ -57,6 +57,9 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
   endif()
   if(VJO_WITH_VOCR)
     target_link_libraries(vjo-ocr vjo_vocr)
+    # The stable-text wait's frames and time on a simulated screen (docs/vita-vn-ocr.md).
+    add_executable(vjo-settle-bench host/settle_bench.c)
+    target_link_libraries(vjo-settle-bench vjo_vocr vjo_host)
   endif()
 endif()
 
@@ -254,6 +257,13 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_unit COMMAND vjo-vocr-tests)
+  # The job policy (core/vocr_ocr.h VjoVocrPolicy): the stable-text wait and the
+  # blank-line check, frame by frame on a simulated screen, without weights.
+  add_executable(vjo-vocr-policy-tests host/tests/test_vocr_policy.c)
+  target_include_directories(vjo-vocr-policy-tests PRIVATE third_party/acutest/include)
+  target_link_libraries(vjo-vocr-policy-tests vjo_vocr vjo_host)
+  target_compile_options(vjo-vocr-policy-tests PRIVATE -Wall -Wextra)
+  add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
   # #74: API 18's capture (the kernel's A8B8G8R8 copy of the region, the worker's
   # grey plane; 8228c3c, verbatim in host/tests/api18) against API 19's (the
   # display hook's grey rows in the worker's strip): the recognizer gets
