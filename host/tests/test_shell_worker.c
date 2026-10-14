@@ -2472,6 +2472,15 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_ASSERT(job_running); /* at once */
     finish_current_job();
     mem_free();
+    /* A job of the previous game that ends after the change counts for no game. */
+    cursor_setup();
+    fake_screen_changes = 1;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    invalidate_game_work();
+    finish_current_job();
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
+    mem_free();
 
     cursor_setup();
     fake_screen_changes = 3;

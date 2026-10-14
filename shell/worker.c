@@ -1643,7 +1643,7 @@ static void on_job_done(void)
      * follows note_screen_changed's pace. */
     if (job_cancelled || job_generation != game_generation || !same_pipeline(&job_cfg, &cfg) ||
         d->err.rc == VJO_E_SCREEN_CHANGED) {
-        if (d->err.rc == VJO_E_SCREEN_CHANGED && !job_cancelled)
+        if (d->err.rc == VJO_E_SCREEN_CHANGED && !job_cancelled) /* a game change cancels its jobs */
             note_screen_changed("job");
         cache_ok = 0;
         job_cancelled = 0;
