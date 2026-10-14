@@ -8,6 +8,7 @@
  * a console every route would have failed before reading anything. */
 #define _GNU_SOURCE
 #include "acutest.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <psp2kern/host_stubs.h>
@@ -26,7 +27,9 @@ int ksceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; locks--; return 0
 typedef struct { uint32_t magic, total, free; } FakePart; /* what our InfoCore fake reads */
 static uintptr_t region;      /* where the objects are mapped */
 static int block_known;       /* ksceKernelFindMemBlockByAddr finds the objects' block */
-static unsigned core_calls, core_bad;
+static int block_anywhere;    /* ... or a block at every address (the guard's edges) */
+static unsigned core_calls, core_bad, find_calls;
+static uintptr_t find_last;
 
 static void *map_at(uintptr_t want)
 {
@@ -111,7 +114,10 @@ int module_get_export_func(SceUID pid, const char *mod, uint32_t lib, uint32_t f
 SceUID ksceKernelFindMemBlockByAddr(const void *addr, SceSize size)
 {
     TEST_CHECK(size == 0);
-    if (addr == (const void *)&g) return MB_UID;
+    find_calls++;
+    find_last = (uintptr_t)addr;
+    if (addr == (const void *)&g) return MB_UID; /* the module's own block: the kernel's partition */
+    if (block_anywhere) return MB_UID + 1;
     if ((uintptr_t)addr >= region && (uintptr_t)addr < region + 0x10000) return block_known ? MB_UID + 1 : -1;
     return (int)0x80024308u;
 }
@@ -228,10 +234,85 @@ static void lookups_fallbacks_and_bad_pointers(void)
     unmap(at);
 }
 
+/* The guard itself, at each of its edges: 0x1000 < p < 0x40000000, 4-aligned;
+ * at or above 0x1000000 only with a kernel memory block (one lookup), below it
+ * with no lookup. #75's first guard read p >= 0x40000000 only. */
+static void the_guard_at_its_edges(void)
+{
+    static const struct { uint32_t p; int want; int looked_up; } cases[] = {
+        {0x00000000u, VJO_MEMSTEP_RANGE, 0},    {0x00001000u, VJO_MEMSTEP_RANGE, 0},
+        {0x00001002u, VJO_MEMSTEP_RANGE, 0},    {0x00001004u, 0, 0},
+        {0x00800000u, 0, 0},                    {0x00FFFFFCu, 0, 0},
+        {0x01000000u, VJO_MEMSTEP_NO_BLOCK, 1}, {0x20000000u, VJO_MEMSTEP_NO_BLOCK, 1},
+        {0x3FFFFFFCu, VJO_MEMSTEP_NO_BLOCK, 1}, {0x3FFFFFFEu, VJO_MEMSTEP_RANGE, 0},
+        {0x40000000u, VJO_MEMSTEP_RANGE, 0},    {0x50000000u, VJO_MEMSTEP_RANGE, 0},
+        {0x81000000u, VJO_MEMSTEP_RANGE, 0},    {0xFFFFFFFCu, VJO_MEMSTEP_RANGE, 0},
+    };
+    region = 0; block_known = 0;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for (int anywhere = 0; anywhere < 2; anywhere++) {
+            int want = cases[i].want == VJO_MEMSTEP_NO_BLOCK && anywhere ? 0 : cases[i].want;
+            block_anywhere = anywhere;
+            find_calls = 0;
+            int got = kernel_object_ok(cases[i].p);
+            TEST_CHECK_(got == want, "0x%08X (a block %s): %d, want %d", (unsigned)cases[i].p,
+                        anywhere ? "everywhere" : "nowhere", got, want);
+            TEST_CHECK_(find_calls == (unsigned)cases[i].looked_up && (!find_calls || find_last == cases[i].p),
+                        "0x%08X: %u lookups", (unsigned)cases[i].p, find_calls);
+        }
+    }
+    block_anywhere = 0;
+}
+
+/* x86-64 AddressSanitizer keeps its shadow memory from 0x7FFF8000 up, so a sanitized
+ * build cannot map anything at 0x8...: it tests the 0x5... range only. The plain, ARM
+ * and CI builds test both. */
+#if defined(__SANITIZE_ADDRESS__)
+#define VJO_TEST_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define VJO_TEST_ASAN 1
+#endif
+#endif
+#ifdef VJO_TEST_ASAN
+#define USER_HALF_RANGES 1u
+#else
+#define USER_HALF_RANGES 2u
+#endif
+
+/* The user half (0x40000000 and up) is never read, even when every lookup would
+ * name a block: the objects at 0x5... and at 0x8... are made unreadable, so any
+ * read of one faults this test. */
+static void user_half_objects_are_never_touched(void)
+{
+    static const uintptr_t ranges[][2] = {{0x50000000u, 0x7FF00000u}, {0x80000000u, 0xBFF00000u}};
+    if (USER_HALF_RANGES < 2u) /* always visible, not only after a failed check (acutest's TEST_MSG) */
+        fprintf(stderr, "note: AddressSanitizer build, the 0x8... range is its shadow memory, not tested\n");
+    for (unsigned i = 0; i < USER_HALF_RANGES; i++) {
+        uintptr_t at = map_in(ranges[i][0], ranges[i][1]);
+        TEST_ASSERT_(at != 0, "no free 64 KiB in 0x%08lX-0x%08lX in this process", (unsigned long)ranges[i][0],
+                     (unsigned long)ranges[i][1]);
+        place(at);
+        TEST_ASSERT(mprotect((void *)at, 0x10000, PROT_NONE) == 0);
+        block_known = 1; block_anywhere = 1;
+        VjoMemInfo m = run();
+        TEST_CHECK(m.kernel_rc == VJO_ERR_ARG && m.kernel_step == VJO_MEMSTEP_RANGE);
+        TEST_CHECK(m.caller_rc == VJO_ERR_ARG && m.caller_step == VJO_MEMSTEP_RANGE);
+        TEST_CHECK(m.cas_rc == VJO_ERR_ARG && m.cas_step == VJO_MEMSTEP_RANGE && !m.cas_main_total);
+        TEST_CHECK(m.as_rc == VJO_ERR_FORMAT && m.as_parts == 0 && m.as_skipped == 3 && m.as_step == VJO_MEMSTEP_RANGE);
+        TEST_CHECK(core_calls == 0);
+        TEST_MSG("objects at 0x%08lX, unreadable", (unsigned long)at);
+        block_anywhere = 0;
+        unmap(at);
+    }
+}
+
 TEST_LIST = {
     {"objects in PSVshellPlus's kernel range are read by every route", kernel_range_objects_are_read},
     {"objects higher in the kernel half are read only inside a memory block", upper_kernel_half_needs_a_block},
     {"user-half objects are never read", user_half_objects_are_refused},
     {"lookups, the address-space fallback and bad pointers", lookups_fallbacks_and_bad_pointers},
+    {"the guard at each of its edges", the_guard_at_its_edges},
+    {"unreadable user-half objects at 0x5... and 0x8... are never touched", user_half_objects_are_never_touched},
     {NULL, NULL}
 };

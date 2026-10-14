@@ -2,10 +2,17 @@
  * reports exactly as the Shell writes them, for tools/analyse_selftest.py's
  * tests (tools/tests/test_analyse_selftest.py) and its committed fixtures.
  *
- *   vjo-selftest-writer OUT_DIR pass|fail|incomplete
+ *   vjo-selftest-writer OUT_DIR pass|fail|incomplete|routes|diagnostics
  *
  * writes OUT_DIR/selftest-report.txt. The figures are synthetic: they exercise
- * the report's format and the analyser's verdicts, they measure nothing. */
+ * the report's format and the analyser's verdicts, they measure nothing.
+ * `diagnostics`: OCR works in every stage while every diagnostic a passing run can
+ * warn does (probe, capture<64KiB, kernel-pool, kernel-memory; tearing and game-memory
+ * cannot warn when OCR passes): each
+ * kernel memory route refused at step 3, as #75's first guard refused every
+ * kernel object on a console (the audit's B1), the display hook unable to write
+ * the game's memory (the kernel strip used), and USER_RW refusing the
+ * full-screen stage's capture block (CDRAM's 256 KiB block instead). */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +30,7 @@ typedef struct {
 static char out_dir[512];
 static uint64_t now_us = 1000;
 static int memory_routes_fail;
+static int diagnostics_warn; /* "diagnostics": every diagnostic a passing run can warn does, OCR works */
 
 static void host_path(const char *path, char *buf, size_t cap)
 {
@@ -79,6 +87,12 @@ int vjoMemInfo(VjoMemInfo *m)
 {
     m->ledger_current = m->ledger_peak = 131072;
     m->ledger_limit = 2220032;
+    if (diagnostics_warn) { /* #75's first guard on a console: every kernel object refused at step 3 */
+        m->kernel_rc = m->caller_rc = m->cas_rc = VJO_ERR_ARG;
+        m->kernel_step = m->caller_step = m->cas_step = VJO_MEMSTEP_RANGE;
+        m->as_rc = VJO_ERR_FORMAT; m->as_step = VJO_MEMSTEP_RANGE; m->as_skipped = 2;
+        return 0;
+    }
     if (memory_routes_fail) { /* the block route stops at its memory-block info, the kernel's
                                  address space is refused and the caller's is read */
         m->kernel_rc = m->caller_rc = (int32_t)0x80020001u;
@@ -107,11 +121,17 @@ static VjoGameOcrStep *add(VjoGameOcrResult *r, unsigned id, unsigned kind, unsi
     return s;
 }
 
-/* A region job's result: the capture in strips through the hook into USER. */
-static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback, int fail_workspace)
+/* A region job's result: the capture in strips through the hook into USER;
+ * kstrip: through the kernel strip after the hook could not write (the ladder's
+ * last rung); cdram: USER_RW refused the capture block, CDRAM gave one. */
+static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback, int fail_workspace, int kstrip,
+                       int cdram)
 {
     unsigned w = full ? 960 : 917, h = full ? 544 : 125, rows = full ? 59 : 62;
     unsigned cap = full ? 61440 : 61440, ws = 188416, lines = full ? 5 : 3;
+    unsigned src = kstrip ? VJO_GAME_OCR_SRC_KSTRIP : VJO_GAME_OCR_SRC_HOOK;
+    unsigned cmem = cdram ? VJO_GAME_OCR_MEM_CDRAM : VJO_GAME_OCR_MEM_USER;
+    unsigned held = cdram ? 262144 : cap;
     int32_t freem = 91226112;
     memset(r, 0, sizeof(*r));
     r->size = sizeof(*r);
@@ -121,7 +141,11 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     r->need_workspace = ws + cap; r->need_weights = weights == 1 ? (fallback ? 659456 : 1159168) : 0;
     add(r, VJO_GSTEP_MEM, 0, 0, 0, 0, freem, 10);
     add(r, VJO_GSTEP_CHECK, 0, 0, 0, r->need_workspace + r->need_weights + r->reserve_bytes, freem, 20);
-    add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0x41, cap, freem -= (int32_t)cap, 30);
+    if (cdram) {
+        add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, (int32_t)0x80024302u, cap, freem, 30);
+        add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_CDRAM, VJO_GITEM_CAPTURE, 0x41, held, freem, 31)->free_cdram -= 262144;
+    } else
+        add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0x41, cap, freem -= (int32_t)cap, 30);
     if (fail_workspace) {
         add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, (int32_t)0x80024302u, ws, freem, 40);
         add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_CDRAM, VJO_GITEM_WORKSPACE, (int32_t)0x80024302u, 262144, freem, 50);
@@ -135,15 +159,17 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
         add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WEIGHTS, 0x43, r->need_weights,
             freem -= (int32_t)r->need_weights, 50);
     add(r, VJO_GSTEP_FB, VJO_GAME_OCR_SRC_HOOK, 960, 0, 960, freem, 16000)->sum = 0;
-    add(r, VJO_GSTEP_PASS, VJO_GAME_OCR_SRC_HOOK, (h + rows - 1) / rows, 0, w * h, freem, full ? 160000 : 34000);
-    add(r, VJO_GSTEP_SIG, VJO_GAME_OCR_SRC_HOOK, 0, 0, 960, freem, 0)->sum = 960u << 16 | 544u;
+    if (kstrip) add(r, VJO_GSTEP_PASS, VJO_GAME_OCR_SRC_HOOK, 0, VJO_ERR_COPY, 0, freem, 16000);
+    add(r, VJO_GSTEP_PASS, src, (h + rows - 1) / rows, 0, w * h, freem, full ? 160000 : 34000);
+    add(r, VJO_GSTEP_SIG, src, 0, 0, 960, freem, 0)->sum = 960u << 16 | 544u;
     add(r, VJO_GSTEP_FIND, 0, lines, 0, 0, freem, full ? 48000 : 9000);
     if (weights == 1) add(r, VJO_GSTEP_LOAD, 0, 0, 0, r->need_weights, freem, fallback ? 610000 : 1050000);
     if (fallback) add(r, VJO_GSTEP_FALLBACK, 0, 1, 0, 0, freem, 0);
     add(r, VJO_GSTEP_RECOGNIZE, 0, lines, 0, 0, freem, full ? 1400000 : 820000);
     add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, 0, ws, freem += (int32_t)ws, 0);
-    add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0, cap, freem += (int32_t)cap, 0);
-    r->source = VJO_GAME_OCR_SRC_HOOK; r->capture_memory = VJO_GAME_OCR_MEM_USER; r->capture_bytes = cap;
+    if (cdram) add(r, VJO_GSTEP_FREE, cmem, VJO_GITEM_CAPTURE, 0, held, freem, 0);
+    else add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0, cap, freem += (int32_t)cap, 0);
+    r->source = src; r->capture_memory = cmem; r->capture_bytes = held;
     r->strip_rows = rows; r->captures = 2u * ((h + rows - 1) / rows) + lines; r->capture_us = full ? 160000 : 34000;
     r->workspace_bytes = ws; r->resident_bytes = weights ? (fallback ? 659456 : 1159168) : 0;
     r->weights = (uint32_t)weights; r->fallback = (uint32_t)fallback;
@@ -156,8 +182,9 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     }
 }
 
-/* The probe: each capture path into each memory type, one strip each. */
-static void probe_job(VjoGameOcrResult *r)
+/* The probe: each capture path into each memory type, one strip each; with
+ * hook_fails the display hook cannot write the game's memory. */
+static void probe_job(VjoGameOcrResult *r, int hook_fails)
 {
     int32_t freem = 91226112;
     memset(r, 0, sizeof(*r));
@@ -166,12 +193,19 @@ static void probe_job(VjoGameOcrResult *r)
     r->fb_width = 960; r->fb_height = 544; r->fb_pitch = 960;
     add(r, VJO_GSTEP_MEM, 0, 0, 0, 0, freem, 10);
     add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_PROBE, 0x51, 61440, freem - 61440, 20);
-    add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_USER, 62, 56854, freem - 61440, 16500)->sum = 0x1234ABCDu;
+    if (hook_fails)
+        add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_USER, VJO_ERR_COPY, 0, freem - 61440, 16500);
+    else
+        add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_USER, 62, 56854, freem - 61440, 16500)->sum =
+            0x1234ABCDu;
     add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_KSTRIP, VJO_GAME_OCR_MEM_USER, 62, 56854, freem - 61440, 16900)->sum = 0x1234ABCDu;
     add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_USER, VJO_GAME_OCR_MEM_USER, 62, 56854, freem - 61440, 900)->sum = 0x1234ABCDu;
     add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_PROBE, 0, 61440, freem, 0);
     add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_CDRAM, VJO_GITEM_PROBE, 0x52, 262144, freem, 30);
-    add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_CDRAM, 62, 56854, freem, 16400)->sum = 0x1234ABCDu;
+    if (hook_fails)
+        add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_CDRAM, VJO_ERR_COPY, 0, freem, 16400);
+    else
+        add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_HOOK, VJO_GAME_OCR_MEM_CDRAM, 62, 56854, freem, 16400)->sum = 0x1234ABCDu;
     add(r, VJO_GSTEP_PROBE, VJO_GAME_OCR_SRC_KSTRIP, VJO_GAME_OCR_MEM_CDRAM, 62, 56854, freem, 16800)->sum = 0x1234ABCDu;
     add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_CDRAM, VJO_GITEM_PROBE, 0, 262144, freem, 0);
     add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_PHYCONT, VJO_GITEM_PROBE, (int32_t)0x80024302u, 1048576, freem, 40);
@@ -187,13 +221,14 @@ int main(int argc, char **argv)
     int stop_in_fullscreen;
     int fd;
     if (argc != 3) {
-        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes\n", argv[0]);
+        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics\n", argv[0]);
         return 2;
     }
     snprintf(out_dir, sizeof(out_dir), "%s", argv[1]);
     scenario = argv[2];
     stop_in_fullscreen = !strcmp(scenario, "incomplete"); /* the Vita stops during the full-screen stage */
     memory_routes_fail = !strcmp(scenario, "routes");
+    diagnostics_warn = !strcmp(scenario, "diagnostics");
     /* the marker tools/install_ftp.sh --self-test leaves */
     fd = sceIoOpen(MARKER, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return 1;
@@ -212,10 +247,11 @@ int main(int argc, char **argv)
         int fallback = !strcmp(name, "fallback");
         vjo_selftest_stage_begin(i, "H15_w8.vocr", "FL10_w8.vocr");
         if (stop_in_fullscreen && !strcmp(name, "fullscreen")) return 0; /* nothing after the begin line */
-        if (!strcmp(name, "probe")) probe_job(&result);
+        if (!strcmp(name, "probe")) probe_job(&result, diagnostics_warn);
         else region_job(&result, !strcmp(name, "fullscreen"),
                         fallback || !strcmp(name, "textbox") ? 1 : 2, fallback,
-                        !strcmp(scenario, "fail") && !strcmp(name, "textbox"));
+                        !strcmp(scenario, "fail") && !strcmp(name, "textbox"), diagnostics_warn,
+                        diagnostics_warn && !strcmp(name, "fullscreen"));
         now_us += 2500000;
         vjo_selftest_stage_end(i, result.rc, &result, 2500, fallback ? "FL10_w8.vocr" : "H15_w8.vocr");
     }

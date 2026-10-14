@@ -58,7 +58,9 @@ curl -O ftp://VITA_IP:1337/ux0:/data/VitaJPOverlay/log.txt
 ```
 Attach `selftest-report.txt`, `status.txt`, `kernel.txt` and `boot.txt` (from
 `build/device/status/`), plus `log.txt` and the analyser's output, and one line per step saying
-what you saw ("overlay showed", "no OCR", "crash at step 3"...). Keep the photos private (the game
+what you saw ("overlay showed", "no OCR", "crash at step 3"...). The analyser's last line is the
+verdict, decided by the OCR rows alone; diagnostics (the probe, the memory routes) marked WARN are
+measurements to send back, not failures. Keep the photos private (the game
 is copyrighted): send them directly, not on the issue.
 
 ## If something goes wrong

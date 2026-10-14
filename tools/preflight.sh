@@ -42,6 +42,14 @@ if cmake -S . -B "$BUILD" -G Ninja -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" 
 else
   fail "host build" "$log/build.log"
 fi
+# kernel/meminfo.c itself, built on the host with the firmware stubbed (#75's audit, B1: its first guard
+# read only user-half pointers, so on a console every route failed before reading anything)
+km=$BUILD/vjo-kernel-meminfo-tests
+if [ -x "$km" ] && "$km" > "$log/kernel-meminfo.log" 2>&1; then
+  pass "kernel memory routes (B1)" "$(grep -c '\[ OK \]' "$log/kernel-meminfo.log") cases: objects below 0x40000000 read by every route; user-half ones (0x5..., 0x8..., unreadable) refused unread, step 3; the guard at its edges"
+else
+  fail "kernel memory routes (B1)" "${km} ($log/kernel-meminfo.log)"
+fi
 
 # 2. #74 replayed: its report and logs through the analyser and the tests built on them
 r74=$("$PY" tools/analyse_selftest.py tools/tests/fixtures/selftest-74-report.txt 2>&1)
@@ -50,10 +58,21 @@ if [ $? -eq 1 ] && grep -q "never reached: the capture failed 5 time(s)" <<<"$r7
 else
   fail "#74 replay (API 18)" "the analyser no longer reproduces #74's failure"
 fi
-if "$PY" -m unittest tools.tests.test_analyse_selftest > "$log/analyser.log" 2>&1; then
-  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log"): v1 (#74 fixture) and v2 PASS/FAIL/INCOMPLETE tables"
+# with the real writer, so the fixtures are checked to be what shell/selftest.c writes
+if VJO_SELFTEST_WRITER=$BUILD/vjo-selftest-writer "$PY" -m unittest tools.tests.test_analyse_selftest \
+     > "$log/analyser.log" 2>&1; then
+  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log")$(grep -o ' (skipped=[0-9]*)' "$log/analyser.log"): v1 (#74 fixture), v2 PASS/FAIL/INCOMPLETE, diagnostics PASS/WARN"
 else
   fail "self-test analyser" "$log/analyser.log"
+fi
+# a working OCR whose diagnostics warn (routes refused at step 3 as B1's guard refused them, the kernel
+# strip, a CDRAM capture block): the verdict is the OCR's PASS, exit 0; a diagnostic can never say FAIL
+rd=$("$PY" tools/analyse_selftest.py tools/tests/fixtures/selftest-v2-diagnostics.txt 2>&1); rc=$?
+if [ $rc -eq 0 ] && grep -q '^  kernel-memory  *WARN .*at step 3 (pointer outside the kernel range)' <<<"$rd" \
+   && ! grep -qE '^  [^ ]+ +FAIL ' <<<"$rd" && tail -1 <<<"$rd" | grep -q '^PASS: every stage completed'; then
+  pass "diagnostics never decide" "$(grep -o '^diagnostics: WARN ([^)]*)' <<<"$rd"), verdict PASS, exit 0 (B1's routes replayed)"
+else
+  fail "diagnostics never decide" "a diagnostic changed the verdict (exit $rc)"
 fi
 
 # 3. the allocation simulator: the real worker and kernel under #74's measured pools
@@ -168,7 +187,15 @@ assumptions the console still has to confirm (none of these is measured yet):
     (docs/vita-memory.md); a job is refused below its need plus the 4 MiB reserve, and the
     memory ladder (USER -> CDRAM -> PHYCONT) logs each refusal.
   - The three memory-query routes (block, PSVshell's address-space block, faps-coredump's
-    process route) are untested on 3.65; each reports its own result.
+    process route) are untested on 3.65; each reports its own result and step. They are
+    diagnostics: one that reads nothing is a WARN and never changes the OCR verdict. Whether
+    ksceKernelFindMemBlockByAddr finds a block for a kernel object above 0x1000000 is
+    unverified (step 4 says when it does not).
+  - The rows call checks its destination with ksceKernelFindProcMemBlockByAddr(pid, addr, 0),
+    size 0 meaning "the block that contains addr" (VitaSDK psp2kern/kernel/sysmem.h: "usually
+    set to 0"; henkaku payload.c:775 passes 0 to the kernel form). No console run has used that
+    form with size 0 yet: if it refuses the game's blocks, every rows call returns 0xBFFFFFFA
+    (argument), each OCR stage FAILs with that step, and the probe shows it per memory type.
   - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
     and relocations only.
   - CPU3 load and the hook's cost per frame: unmeasured (AGENTS.md rule 8).

@@ -3,17 +3,30 @@
 
     python3 tools/analyse_selftest.py build/device/status/selftest-report.txt [--json]
 
-Prints a PASS/FAIL table with one row per stage of the run, the free memory
-every memory route read at each step, the game worker's own memory around
-each allocation, and what failed, in plain words.
+Prints two tables, then the free memory every memory route read at each step,
+the game worker's own memory around each allocation, and what failed, in plain
+words:
+
+- the run and its OCR, PASS/FAIL: boot, ok, game, the OCR stages, recognitions,
+  done. These rows alone decide the verdict.
+- diagnostics, PASS/WARN, never FAIL: the capture probe, the capture block's
+  size, the kernel pool, tearing, the kernel memory routes, the game's memory.
+  They say how OCR ran and what the console measured; a diagnostic that could
+  not read or did not work is a WARN and never changes the verdict. #75's
+  first build checked the wrong address range in every kernel memory route:
+  its report would have said FAIL with OCR working.
+
+A stage the Vita stopped in (a begin record and no end) is the run's failure
+whichever stage it was, the probe included: the verdict is INCOMPLETE.
 
 v2 reports (API 19, `selftest v2`): boot, ok, game, then the stages one OCR job
 runs on the first settled screen (fallback, textbox, fullscreen, probe,
 textbox2), then done. v1 reports (API 18, `selftest v1`, as #74 sent) get the
 same table for their steps (boot, ok, game, ocr, done).
 
-Exit status: 0 when every row passed, 1 when one failed or the run stopped
-early, 2 for a file that is not a report.
+Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL or
+INCOMPLETE, 2 for a file that is not a report. `--json` adds `ocr_result`,
+`diagnostics_result` and `warnings`, and each row's `kind` (ocr or diagnostic).
 """
 import argparse
 import json
@@ -32,6 +45,8 @@ CAPTURE_LIMIT = 64 * 1024            # API 19: a region's capture block (one str
 STEPS_V1 = ("boot", "ok", "game", "ocr", "done")
 STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/selftest.c's order
 ROWS_V2 = ("boot", "ok", "game") + STAGES + ("done",)
+# Rows that report how OCR ran, never whether it worked: PASS or WARN only.
+DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-memory", "game-memory")
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
@@ -147,8 +162,12 @@ def analyse_v2(records):
     findings = out["findings"]
     rows = out["rows"]
 
-    def row(name, ok, detail):
-        rows.append({"row": name, "result": ok, "detail": detail})
+    def row(name, ok, detail, kind="ocr"):
+        rows.append({"row": name, "result": ok, "detail": detail, "kind": kind})
+
+    def diag(name, ok, detail):
+        """A diagnostic row: PASS, WARN or not reached, never FAIL, so it cannot change the verdict."""
+        row(name, None if ok is None else ("PASS" if ok == "PASS" else "WARN"), detail, "diagnostic")
 
     boot = out.get("boot")
     if "boot" not in steps:
@@ -180,11 +199,13 @@ def analyse_v2(records):
     recognized = 0
     for name in STAGES:
         s = stages.get(name)
+        kind = "diagnostic" if name in DIAGNOSTIC_ROWS else "ocr"
         if not s or "begin" not in s:
-            row(name, None, "not reached")
+            row(name, None, "not reached", kind)
             continue
         end, res, mem = s.get("end"), s.get("result", {}), s.get("memory", {})
         if end is None:
+            # A stop is the run's failure in any stage, the probe included: never a WARN.
             row(name, "FAIL", f"began at {s['begin'].get('t', '?')} ms and has no record: the Vita stopped "
                               f"(crash, hang or power) during this stage")
             continue
@@ -200,9 +221,10 @@ def analyse_v2(records):
             primary = "hook->user" in ok_paths
             detail = (f"worked: {', '.join(ok_paths) or 'none'}"
                       + (f"; failed: {', '.join(failed)}" if failed else "")
-                      + (f"; memory refused: {', '.join(refused)}" if refused else ""))
-            row(name, "PASS" if primary else "FAIL", detail if primary else
-                "the display hook could not write the game's USER memory: " + detail)
+                      + (f"; memory refused: {', '.join(refused)}" if refused else "")
+                      + (f"; the stage ended with {rc_text(rc)}" if rc else ""))
+            diag(name, "PASS" if primary else "WARN", detail if primary else
+                 "the display hook could not write the game's USER memory: " + detail)
             continue
         if rc != 0:
             row(name, "FAIL", f"{rc_text(rc)}" + (f"; failed steps: {'; '.join(bad)}" if bad else "")
@@ -226,33 +248,42 @@ def analyse_v2(records):
                 verdict, detail = "FAIL", "the region was not the whole frame: " + detail
         row(name, verdict, detail)
 
-    # the run's own requirements, one row each
+    # the run's own requirements, one row each: the recognitions decide; the rest are diagnostics
     regions = [(n, stages[n]) for n in STAGES if n != "probe" and n in stages and stages[n].get("end")
                and s32(stages[n]["end"].get("rc", 0)) == 0]
     if regions:
-        caps = [s.get("result", {}).get("capture", 0) for _, s in regions]
+        caps = [(n, s.get("result", {}).get("capture", 0), s.get("result", {}).get("mem", "?")) for n, s in regions]
+        largest = max(b for _, b, _ in caps)
+        over = [(n, b, m) for n, b, m in caps if b > CAPTURE_LIMIT]
         tall = [(n, gs.get("bytes", 0)) for n, s in regions for gs in s["gsteps"]
                 if gs["step"] == "alloc" and gs.get("arg") == "line" and s32(gs.get("rc", 0)) >= 0]
-        row("capture<64KiB", "PASS" if max(caps) <= CAPTURE_LIMIT else "FAIL",
-            f"largest capture block {max(caps):,} B (limit {CAPTURE_LIMIT:,} B)"
-            + (f"; plus a line taller than a strip, kept whole: {', '.join(f'{b:,} B in {n}' for n, b in tall)}"
-               if tall else ""))
+        tall_text = (f"; plus a line taller than a strip, kept whole: {', '.join(f'{b:,} B in {n}' for n, b in tall)}"
+                     if tall else "")
+        if not over:
+            diag("capture<64KiB", "PASS",
+                 f"largest capture block {largest:,} B (limit {CAPTURE_LIMIT:,} B)" + tall_text)
+        else:
+            units = {"cdram": "CDRAM allocates in 256 KiB units", "phycont": "phycont allocates in 1 MiB units"}
+            rungs = [units.get(m, m) for m in sorted({m for _, _, m in over if m != "user"})]
+            diag("capture<64KiB", "WARN",
+                 f"capture block over {CAPTURE_LIMIT:,} B in: {', '.join(f'{n} {b:,} B of {m}' for n, b, m in over)}"
+                 + (f" (USER_RW refused it there, and {', '.join(rungs)})" if rungs else "") + tall_text)
         kstrip = [n for n, s in regions if s.get("result", {}).get("source") == "kstrip"]
-        row("kernel-pool", "PASS" if not kstrip else "WARN",
-            "every capture was written by the display hook into the game's memory" if not kstrip else
-            f"the kernel strip (<= 64 KiB of the kernel pool) was used in: {', '.join(kstrip)}")
+        diag("kernel-pool", "PASS" if not kstrip else "WARN",
+             "every capture was written by the display hook into the game's memory" if not kstrip else
+             f"the kernel strip (<= 64 KiB of the kernel pool) was used in: {', '.join(kstrip)}")
         row("recognitions", "PASS" if recognized >= 3 else "FAIL", f"{recognized} line(s) recognized in all")
         tears = sum(s.get("result", {}).get("tears", 0) for _, s in regions)
-        row("tearing", "PASS", f"{tears} row(s) changed between two reads (the job reads again)")
+        diag("tearing", "PASS", f"{tears} row(s) changed between two reads (the job reads again)")
 
-    # memory routes at each step
+    # memory routes at each step (diagnostics: a route that read nothing is a WARN with its native result)
     for step, sample in out["samples"].items():
         cells = {}
         mem = sample.get("mem")
         if mem is not None:
             rc = u32(mem.get("rc", 0))
             if rc:
-                cells["user"] = ("FAIL", native(rc))
+                cells["user"] = ("WARN", native(rc))
             elif mem.get("valid") == 0 or (isinstance(mem.get("main"), int) and mem["main"] < 0):
                 cells["user"] = ("PASS", f"main {mem.get('main')} (under the margin: 0 B free above it)")
             else:
@@ -260,22 +291,22 @@ def analyse_v2(records):
         for route, f in sample.get("kmem", {}).items():
             rc = u32(f.get("rc", 0))
             if route == "none":
-                cells["kernel"] = ("FAIL", f"vjoMemInfo {native(rc)}")
+                cells["kernel"] = ("WARN", f"vjoMemInfo {native(rc)}")
             elif rc:
                 ks = f.get("step")
-                cells[route] = ("FAIL", native(rc) + (f" at step {ks} ({MEMSTEPS.get(ks, '?')})" if ks else ""))
+                cells[route] = ("WARN", native(rc) + (f" at step {ks} ({MEMSTEPS.get(ks, '?')})" if ks else ""))
             elif route.startswith("block"):
                 total = f.get("total", 0)
-                cells[route] = ("PASS" if total else "FAIL", f"{f.get('free', 0):,} of {total:,} B free")
+                cells[route] = ("PASS" if total else "WARN", f"{f.get('free', 0):,} of {total:,} B free")
             elif route == "cas":
                 main = f.get("main", (0, 0))
-                cells[route] = ("PASS" if isinstance(main, tuple) and main[1] else "FAIL",
+                cells[route] = ("PASS" if isinstance(main, tuple) and main[1] else "WARN",
                                 f"main {main[0]:,} of {main[1]:,} B" if isinstance(main, tuple) else str(main))
             elif route == "as":
                 parts = [f[k] for k in sorted(f) if re.fullmatch(r"p\d+", k)]
                 kd = [p for p in parts if isinstance(p, tuple) and p[1] == KD_TOTAL]
                 skipped = f.get("skipped", 0)
-                cells[route] = ("PASS" if f.get("parts", 0) else "FAIL",
+                cells[route] = ("PASS" if f.get("parts", 0) else "WARN",
                                 f"{f.get('parts', 0)} partitions of {f.get('part', 'kernel')}'s address space"
                                 + (f", KD {kd[0][0]:,} B free" if kd else "")
                                 + (f"; {skipped} not read ({MEMSTEPS.get(f.get('step'), '?')})" if skipped else ""))
@@ -286,21 +317,21 @@ def analyse_v2(records):
         missing, notes = [], set()
         for r in out["routes"]:
             c = r["cells"]
-            kd = c.get("block kernel", ("FAIL",))[0] == "PASS" or (c.get("as", ("FAIL", ""))[0] == "PASS"
+            kd = c.get("block kernel", ("WARN",))[0] == "PASS" or (c.get("as", ("WARN", ""))[0] == "PASS"
                                                                    and "KD" in c["as"][1])
-            if c.get("user", ("FAIL",))[0] != "PASS" or not kd:
+            if c.get("user", ("WARN",))[0] != "PASS" or not kd:
                 missing.append(r["step"])
-            notes.update(f"{n} {d}" for n, (ok, d) in c.items() if ok == "FAIL")
-        row("kernel-memory", "PASS" if not missing else "FAIL",
-            ("the user API and a KD figure at every step" if not missing else
-             f"no KD figure or no user figure at: {', '.join(missing)}")
-            + (f"; failed routes: {'; '.join(sorted(notes))}" if notes else ""))
+            notes.update(f"{n} {d}" for n, (ok, d) in c.items() if ok == "WARN")
+        diag("kernel-memory", "PASS" if not missing else "WARN",
+             ("the user API and a KD figure at every step" if not missing else
+              f"no KD figure or no user figure at: {', '.join(missing)}")
+             + (f"; routes that read nothing: {'; '.join(sorted(notes))}" if notes else ""))
     gmem = [gs for n in STAGES for gs in stages.get(n, {}).get("gsteps", []) if gs["step"] == "mem"]
     if gmem:
         good = [gs for gs in gmem if s32(gs.get("rc", 0)) >= 0 and isinstance(gs.get("main"), int) and gs["main"] >= 0]
-        row("game-memory", "PASS" if good else "FAIL",
-            f"free USER {good[0]['main']:,} B, CDRAM {good[0].get('cdram', 0):,} B in the game before its first block"
-            if good else f"the game's free memory could not be read ({native(gmem[0].get('rc', 0))})")
+        diag("game-memory", "PASS" if good else "WARN",
+             f"free USER {good[0]['main']:,} B, CDRAM {good[0].get('cdram', 0):,} B in the game before its first block"
+             if good else f"the game's free memory could not be read ({native(gmem[0].get('rc', 0))})")
 
     row("done", "PASS" if "done" in steps else None,
         f"at {steps['done'].get('t', '?')} ms, the marker removed" if "done" in steps else "not reached")
@@ -333,19 +364,44 @@ def analyse_v2(records):
             findings.append(f"{name}: model I/O error {native(io)}.")
 
     begun = [n for n in STAGES if n in stages and "begin" in stages[n] and stages[n].get("end") is None]
-    failed = [r["row"] for r in rows if r["result"] == "FAIL"]
+    # The run wrote 'done' but an OCR stage left no record: report() drops a line when the file
+    # cannot be written (shell/selftest.c), so a missing OCR stage with 'done' present is a failure,
+    # not "not reached".
+    if "done" in steps:
+        for r in rows:
+            if r["kind"] == "ocr" and r["result"] is None and r["row"] in STAGES:
+                r["result"], r["detail"] = "FAIL", "no record though the run finished: its lines were lost"
+    failed = [r["row"] for r in rows if r["kind"] == "ocr" and r["result"] == "FAIL"]
+    diagnostics(out)
+    warned = out["warnings"]
     if begun:
+        out["ocr_result"] = "INCOMPLETE"
         out["verdict"] = (f"INCOMPLETE: stage '{begun[0]}' began and never wrote its record: the Vita stopped during "
                           f"it. The rows before it are what was measured.")
     elif "done" not in steps:
         reached = [r["row"] for r in rows if r["result"] is not None]
+        out["ocr_result"] = "INCOMPLETE"
         out["verdict"] = (f"INCOMPLETE: the run reached '{reached[-1] if reached else 'nothing'}' and never wrote "
                           f"'done'. If the Vita crashed or hung, look at the step after it.")
     elif failed:
+        out["ocr_result"] = "FAIL"
         out["verdict"] = f"FAIL: {', '.join(failed)} failed; see the rows above."
     else:
-        out["verdict"] = "PASS: every stage completed; the figures above are this console's."
+        out["ocr_result"] = "PASS"
+        out["verdict"] = ("PASS: every stage completed; the figures above are this console's."
+                          + (f" The diagnostics that warned ({', '.join(warned)}) do not change this verdict."
+                             if warned else ""))
+    if out["ocr_result"] == "INCOMPLETE":
+        out["diagnostics_result"] = "INCOMPLETE"  # a partial run has no full diagnostic table
     return out
+
+
+def diagnostics(out):
+    """The diagnostics' own result, kept apart from the verdict: WARN when one warned."""
+    rows = [r for r in out["rows"] if r.get("kind") == "diagnostic"]
+    out["warnings"] = [r["row"] for r in rows if r["result"] == "WARN"]
+    unreached = [r["row"] for r in rows if r["result"] is None]
+    out["diagnostics_result"] = "WARN" if out["warnings"] else "INCOMPLETE" if unreached else "PASS"
 
 
 # ---------------------------------------------------------------- v1 (API 18)
@@ -382,7 +438,7 @@ def analyse_v1(records):
     findings, rows = out["findings"], out["rows"]
 
     def row(name, ok, detail):
-        rows.append({"row": name, "result": ok, "detail": detail})
+        rows.append({"row": name, "result": ok, "detail": detail, "kind": "ocr"})
 
     boot = out.get("boot")
     if boot:
@@ -470,7 +526,7 @@ def analyse_v1(records):
         main = mem.get("shell_main")
         if mem:
             if u32(mem.get("rc", 0)):
-                cells["user"] = ("FAIL", native(mem.get("rc")))
+                cells["user"] = ("WARN", native(mem.get("rc")))
                 findings.append(f"At {step}: sceKernelGetFreeMemorySize failed ({native(mem.get('rc'))}).")
             elif isinstance(main, int) and main < 0:
                 cells["user"] = ("PASS", f"main {main} (under the margin: 0 B free above it)")
@@ -484,7 +540,7 @@ def analyse_v1(records):
             findings.append(f"At {step}: the PAF heap had {paf:,} B free, under the {PAF_RESERVE:,} B reserve: every "
                             f"Shell result allocation is refused (dictionary results, Anki).")
         if kern and kern.get("words") and kern["words"][0] == "unavailable":
-            cells["kernel"] = ("FAIL", f"sample unavailable {native(kern.get('rc', 0))}")
+            cells["kernel"] = ("WARN", f"sample unavailable {native(kern.get('rc', 0))}")
             findings.append(f"At {step}: the kernel memory sample was unavailable (rc 0x{u32(kern.get('rc', 0)):08X}).")
         elif kern:
             if u32(kern.get("kd_rc", 0)) == 0:
@@ -493,21 +549,26 @@ def analyse_v1(records):
                     findings.append(f"At {step}: the kernel module's partition reads {kern.get('kd_total', 0):,} B total, "
                                     f"not the 36 MiB of ScePhyMemPartKD: treat kd_free as unconfirmed.")
             else:
-                cells["block kernel"] = ("FAIL", native(kern.get("kd_rc")))
+                cells["block kernel"] = ("WARN", native(kern.get("kd_rc")))
             if u32(kern.get("shell_rc", 0)) == 0:
                 cells["block shell"] = ("PASS", f"{kern.get('shell_free', 0):,} of {kern.get('shell_total', 0):,} B free")
                 if kern.get("shell_total") not in (None, SHELL_TOTAL):
                     findings.append(f"At {step}: the Shell's partition reads {kern['shell_total']:,} B total, not 50 MiB.")
             else:
-                cells["block shell"] = ("FAIL", native(kern.get("shell_rc")))
+                cells["block shell"] = ("WARN", native(kern.get("shell_rc")))
         out["routes"].append({"step": step, "cells": cells})
-    bad_routes = {name for r in out["routes"] for name, (ok, _) in r["cells"].items() if ok == "FAIL"}
+    bad_routes = {name for r in out["routes"] for name, (ok, _) in r["cells"].items() if ok == "WARN"}
     for name in sorted(bad_routes):
-        rcs = sorted({c[1] for r in out["routes"] for n, c in r["cells"].items() if n == name and c[0] == "FAIL"})
+        rcs = sorted({c[1] for r in out["routes"] for n, c in r["cells"].items() if n == name and c[0] == "WARN"})
         findings.append(f"The {name} memory route failed at every step it was tried ({', '.join(rcs)}): its zero "
                         f"figures are not measurements.")
 
+    # v1 has no diagnostic rows: its memory routes are its diagnostics
+    out["warnings"] = [f"{name} route" for name in sorted(bad_routes)]
+    out["diagnostics_result"] = "WARN" if bad_routes else "PASS"
     failed = [r["row"] for r in rows if r["result"] == "FAIL"]
+    out["ocr_result"] = "PASS" if "done" in steps and not failed else "FAIL" if failed or out["reached"] is None \
+        else "INCOMPLETE"
     if "done" in steps and not failed:
         out["verdict"] = "PASS: boot, game start and an OCR job completed; see the figures above."
     elif failed:
@@ -534,14 +595,18 @@ def analyse(text):
 
 
 def render(result):
-    lines = [f"self-test report v{result['version']}, API {result['api']}", "",
-             f"  {'stage':16} {'result':7} detail"]
-    for r in result["rows"]:
-        lines.append(f"  {r['row']:16} {r['result'] or '-':7} {r['detail']}")
+    lines = [f"self-test report v{result['version']}, API {result['api']}"]
+    sections = (("ocr", "the run and its OCR (PASS/FAIL: these rows decide the verdict)"),
+                ("diagnostic", "diagnostics (PASS/WARN: a WARN never changes the verdict)"))
+    for kind, title in sections:
+        rows = [r for r in result["rows"] if r.get("kind", "ocr") == kind]
+        if rows:
+            lines += ["", title, f"  {'stage':16} {'result':7} detail"]
+            lines += [f"  {r['row']:16} {r['result'] or '-':7} {r['detail']}" for r in rows]
     route_names = [n for n, _ in ROUTES] + ["kernel"]
     used = [n for n in route_names if any(n in r["cells"] for r in result["routes"])]
     if used:
-        lines += ["", "memory routes (PASS: the route read a figure; FAIL: its native result)"]
+        lines += ["", "memory routes (diagnostics; PASS: the route read a figure; WARN: it did not, its native result)"]
         for r in result["routes"]:
             lines.append(f"  {r['step']}:")
             for n in used:
@@ -556,7 +621,11 @@ def render(result):
             lines.append(f"  {g['stage']:10} {g['step']:5} {str(g.get('arg')):9} {str(g.get('kind')):7} "
                          f"{g.get('bytes', 0):>9,} B rc={'ok' if rc >= 0 else native(rc):12} "
                          f"main={g.get('main', 0):,} cdram={g.get('cdram', 0):,}")
-    lines += ["", "findings:"] + [f"  - {f}" for f in result["findings"]] + ["", result["verdict"]]
+    warned = result.get("warnings", [])
+    diag = {"WARN": f"WARN ({', '.join(warned)}); diagnostics never change the verdict",
+            "INCOMPLETE": "not all reached"}.get(result.get("diagnostics_result"), result.get("diagnostics_result"))
+    lines += ["", "findings:"] + [f"  - {f}" for f in result["findings"]]
+    lines += ["", f"diagnostics: {diag}", result["verdict"]]
     return "\n".join(lines)
 
 
@@ -574,7 +643,8 @@ def main():
         print(json.dumps(result, indent=2, default=list))
     else:
         print(render(result))
-    return 0 if result["verdict"].startswith("PASS") else 1
+    # the OCR verdict alone: a diagnostic WARN never makes this 1
+    return 0 if result["ocr_result"] == "PASS" else 1
 
 
 if __name__ == "__main__":

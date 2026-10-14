@@ -21,9 +21,11 @@ with its own record whether it passed or not ([ingame-capture.md](ingame-capture
    otherwise the stages report `rc=-117` (`ocr unavailable`).
 4. Back in VitaShell: `bash tools/install_ftp.sh --status VITA_IP` fetches
    `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
-5. `python3 tools/analyse_selftest.py build/device/status/selftest-report.txt` prints one
-   PASS/FAIL row per stage, the free memory every route read at each step, the game worker's
-   memory around each allocation, the findings and a verdict. Attach the report to the issue.
+5. `python3 tools/analyse_selftest.py build/device/status/selftest-report.txt` prints the run
+   and its OCR, one PASS/FAIL row per stage, then the diagnostics (PASS/WARN), the free memory
+   every route read at each step, the game worker's memory around each allocation, the findings
+   and a verdict. Only the OCR rows decide the verdict; a diagnostic WARN never does. Attach the
+   report to the issue.
 
 | stage | job | what it shows |
 |---|---|---|
@@ -100,9 +102,11 @@ the analyser reports such a route as failed, never its zeros as figures.
 
 `tools/analyse_selftest.py` (tests: `tools/tests/test_analyse_selftest.py`, with #74's own report
 as `tools/tests/fixtures/selftest-74-report.txt`, and v2 reports written by the real
-`shell/selftest.c` on the host, `host/tests/selftest_writer.c`):
+`shell/selftest.c` on the host, `host/tests/selftest_writer.c`) prints two tables. The first is
+the run and its OCR, PASS or FAIL; these rows alone decide the verdict:
 
 ```
+the run and its OCR (PASS/FAIL: these rows decide the verdict)
   stage            result  detail
   boot             PASS    normal boot (seq 2, 0 failed boots before)
   ok               PASS    stable minute at 60999 ms
@@ -110,24 +114,49 @@ as `tools/tests/fixtures/selftest-74-report.txt`, and v2 reports written by the 
   fallback         PASS    917x125+22+400 FL10_w8.vocr, 3 line(s), capture hook into user 61,440 B ...
   textbox          FAIL    out of memory (rc -103); failed steps: alloc user/workspace 0x80024302 ...
   fullscreen       PASS    960x544+0+0 H15_w8.vocr, 5 line(s), ...
-  probe            PASS    worked: hook->user, kstrip->user, user->user, hook->cdram, ...
   textbox2         PASS    ...
-  capture<64KiB    PASS    largest capture block 61,440 B (limit 65,536 B)
-  kernel-pool      PASS    every capture was written by the display hook into the game's memory
   recognitions     PASS    11 line(s) recognized in all
-  tearing          PASS    0 row(s) changed between two reads (the job reads again)
-  kernel-memory    PASS    the user API and a KD figure at every step
-  game-memory      PASS    free USER 91,226,112 B, CDRAM 117,440,512 B in the game before its first block
   done             PASS    at 155499 ms, the marker removed
 ```
 
-then the memory routes per step, the game worker's memory per allocation, the findings and the
-verdict: `PASS`, `FAIL: <rows> failed`, or `INCOMPLETE: stage '<name>' began and never wrote its
-record` (the Vita stopped during that stage). An API 18 (`selftest v1`) report gets the same
-table for its steps (`boot`, `ok`, `game`, `ocr`, `done`); for #74 it says `ocr FAIL: never
-reached: the capture failed 5 time(s) (no memory)` and names the 2,088,960 B kernel buffer.
+The second is the diagnostics, PASS or WARN, never FAIL. They say how OCR ran and what the
+console measured, so a diagnostic that read nothing or did not work is a WARN and leaves the
+verdict alone. #75's first build checked the wrong address range in every kernel memory route;
+its report would have said FAIL with OCR working. `selftest-v2-diagnostics.txt` is that case: OCR
+works in every stage while every diagnostic a passing run can warn does (probe,
+capture<64KiB, kernel-pool, kernel-memory; tearing and game-memory cannot warn when OCR passes).
 
-Exit status 0 when every row passed, 1 otherwise, 2 for a file that is not a report.
+```
+diagnostics (PASS/WARN: a WARN never changes the verdict)
+  stage            result  detail
+  probe            WARN    the display hook could not write the game's USER memory: worked: kstrip->user, ...
+  capture<64KiB    WARN    capture block over 65,536 B in: fullscreen 262,144 B of cdram (USER_RW refused it there, ...
+  kernel-pool      WARN    the kernel strip (<= 64 KiB of the kernel pool) was used in: fallback, textbox, ...
+  tearing          PASS    0 row(s) changed between two reads (the job reads again)
+  kernel-memory    WARN    no KD figure or no user figure at: boot, ok, game, done; routes that read nothing: ...
+  game-memory      PASS    free USER 91,226,112 B, CDRAM 117,440,512 B in the game before its first block
+```
+
+| diagnostic | WARN means |
+|---|---|
+| `probe` | the display hook could not write the game's `USER_RW`; the paths that did work are listed |
+| `capture<64KiB` | a capture block over 64 KiB: USER_RW refused it and CDRAM (256 KiB units) or phycont (1 MiB) gave one |
+| `kernel-pool` | the ladder's last rung, the kernel strip (at most 64 KiB, one call), carried a stage's capture |
+| `kernel-memory` | no KD or no user figure at some step; each route that read nothing is named with its rc and step |
+| `game-memory` | the game's free memory could not be read |
+
+Then come the memory routes per step (a WARN cell gives the route's native result and the step it
+stopped at), the game worker's memory per allocation, the findings, a `diagnostics:` line (`PASS`,
+or `WARN (rows)`) and the verdict: `PASS` (it names any diagnostics that warned),
+`FAIL: <rows> failed`, or `INCOMPLETE: stage '<name>' began and never wrote its record`. A stop
+is the run's failure in whichever stage it happens, the probe included, and never a WARN. An API
+18 (`selftest v1`) report gets the same table for its steps (`boot`, `ok`, `game`, `ocr`, `done`),
+with its memory routes as diagnostics; for #74 it says `ocr FAIL: never reached: the capture
+failed 5 time(s) (no memory)` and names the 2,088,960 B kernel buffer.
+
+Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL or
+INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result`, `diagnostics_result`,
+`warnings` and each row's `kind` (`ocr` or `diagnostic`).
 
 ## Cost and limits
 
