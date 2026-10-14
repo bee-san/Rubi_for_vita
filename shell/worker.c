@@ -863,8 +863,8 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     /* The worker returns the text normalised (core/textnorm.h: one form of each
      * mark, ー or 一 by context); the recognizer's own text goes to the log. */
     log_text_lines(result.text, sizeof(result.text));
-    /* The model on this text's Anki cards (ran names the request's fallback
-     * only inside vocr_run_one; a self-test job's last stage is the configured one). */
+    /* The model on this text's Anki cards (ran: the config's name of the model
+     * that ran; a self-test job's last stage is the configured one). */
     vjo_anki_set_ocr_model(result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model);
     if (local) {
         VjoArena text_arena;
