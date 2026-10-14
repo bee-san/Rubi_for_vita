@@ -276,8 +276,10 @@ built-in list of common readings of very frequent words (私 → わたし, 僕 
 こう → 斯う; `preferred_readings` in `core/local_dict.c`, every pair checked to
 exist in the bundle), then the spelling as written, then an entry that has a
 reading (Daijirin4's kanji-character articles have none), then the longer
-article. An exact hit in a later dictionary still beats an inflected hit in
-an earlier one; otherwise configured dictionary order decides. This is
+article. With several dictionaries, at one span an entry written as the
+text is (in any dictionary) beats a homograph in an earlier dictionary, an
+exact hit in a later dictionary still beats an inflected hit in an earlier
+one, and otherwise configured dictionary order decides. This is
 bounded matching, not a full Japanese morphological parser: longest match
 can still join a particle to the next word (頭がすっきり shows ガス for がす),
 and words never span a line break, because the first recognized line is often

@@ -728,10 +728,11 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
      * written as the text is (or a preferred reading): the text itself
      * before any inflection, then the higher rank, so kana text finds its
      * kana word or its inflection (した: する, なってる: なる) before a
-     * homograph written in kanji (下). An exact hit in a later dictionary
-     * beats an inflected hit in an earlier one; otherwise configured order.
-     * A dictionary without such an entry takes the best homograph of its
-     * first matching candidate. Each dictionary keeps only its best match;
+     * homograph written in kanji (下). Such an entry in any dictionary
+     * beats a homograph in an earlier one, and an exact hit in a later
+     * dictionary beats an inflected hit in an earlier one; otherwise
+     * configured order. A dictionary without such an entry takes the best
+     * homograph of its first matching candidate (passes 0, 1, 2 below). Each dictionary keeps only its best match;
      * the first one overall is the single result. Only page 0's payload is
      * read: other pages are located, never loaded. */
     for (int k = count; k > 0 && !complete; k--) {

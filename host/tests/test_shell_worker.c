@@ -1433,12 +1433,12 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     TEST_ASSERT(job_running && job_lookup && ov == OV_CLOSED);
     finish_current_job();
     TEST_CHECK(cache_ok && real_opens == 1);
-    const char *first = lookup_line("first word at 0 ");
+    const char *first = lookup_line("first word at 0: ");
     TEST_ASSERT_(first != NULL, "no first-word lookup log line");
-    TEST_CHECK(strstr(first, "\"伊佐那社\": 伊佐 (いさ), 2 chars, dictionary 1/1 Daijirin4 Plain, page 1/1") != NULL);
-    TEST_CHECK(strstr(first, "rc=0") != NULL && strstr(first, " ms") != NULL);
+    TEST_CHECK(!strncmp(first, "lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, ", 59));
+    TEST_CHECK(strstr(first, " ms; \"伊佐那社\" -> 伊佐 (いさ) [Daijirin4 Plain]") != NULL && strstr(first, ", rc=0, ") != NULL);
     unsigned logged_reads = 0;
-    TEST_CHECK(sscanf(strstr(first, "page 1/1, "), "page 1/1, %u reads", &logged_reads) == 1 && logged_reads > 0);
+    TEST_CHECK(sscanf(first + 59, "%u reads", &logged_reads) == 1 && logged_reads > 0);
     /* Opening shows the prepared word at once: no job, no file opened. */
     open_overlay();
     TEST_CHECK(!job_running && real_opens == 1);
@@ -1450,7 +1450,7 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     vjo_post_cursor((uint32_t)strlen("伊佐"), generation); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
     TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 2);
-    TEST_CHECK(lookup_line("cursor at 6 \"那社\"") != NULL);
+    TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1") && lookup_line("\"那社\" -> 那 (な)"));
     /* A tap on 会 looks up the inflected word: 会ってなかった -> 会う. */
     uint32_t at = (uint32_t)(strstr(local_text, "会って") - local_text);
     vjo_post_cursor(at, generation); on_command(); finish_current_job();
@@ -1460,9 +1460,38 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
                e->hl_end == (int)(at + strlen("会ってなかった")));
     const char *tap = lookup_line("会ってなかった");
     TEST_ASSERT(tap != NULL);
-    TEST_CHECK(strstr(tap, ": 会う (あう), 7 chars, dictionary 1/1 Daijirin4 Plain") != NULL);
-    printf("\n  %s\n  %s\n  %s\n", first, lookup_line("cursor at 6 "), tap);
+    TEST_CHECK(strstr(tap, ": 7 chars, dictionary 1/1, page 1/1, ") && strstr(tap, "-> 会う (あう) [Daijirin4 Plain]"));
+    printf("\n  %s\n  %s\n  %s\n", first, lookup_line("cursor at 6: "), tap);
     close_overlay(); mem_free();
+}
+/* vjo_log keeps 254 bytes of a line. The lookup line's numbers come first and
+ * its texts are bounded in whole characters, so even with every field at its
+ * largest (4-byte characters, eight dictionaries, a 4-digit cursor) nothing
+ * is cut: the line ends with the source's ']'. */
+static void test_lookup_log_line_fits_with_worst_case_fields(void)
+{
+    static char text[VJO_LOCAL_MAX_TEXT];
+    static char name[40 * 4 + 1];
+    const char *meaning = "[Daijirin4 Plain Plain12]\ndefinition";
+    VjoVocab v; VjoEntry e; VjoLocalPages pages; VjoOverlayData out;
+    reset();
+    memset(text, 'a', 3900); text[3900] = 0;
+    for (int i = 0; i < 40; i++) strcat(text, "\xF0\xA0\xAE\xB7");
+    name[0] = 0;
+    for (int i = 0; i < 40; i++) strcat(name, "\xF0\xA0\xAE\xB7");
+    memset(&v, 0, sizeof(v)); memset(&e, 0, sizeof(e)); memset(&pages, 0, sizeof(pages)); memset(&out, 0, sizeof(out));
+    v.spelling = name; v.reading = name + 4; v.meanings = &meaning; v.n_meanings = 1;
+    e.vocab = &v; e.hl_start = 3900; e.hl_end = 3900 + 32 * 4;
+    pages.count = 8; pages.page[7].dict = 7;
+    out.sentence = text; out.list.entries = &e; out.list.n_entries = 1; out.pages = &pages; out.page = 7;
+    strcpy(job_cfg.local_dictionaries, "a1.vjdict,a2.vjdict,a3.vjdict,a4.vjdict,a5.vjdict,a6.vjdict,a7.vjdict,a8.vjdict");
+    vjo_dict_reads = 99999; vjo_dict_read_bytes = 9999999;
+    log_lookup("first word", &out, 3900, -115, (int64_t)test_now - 99999000);
+    const char *line = lookup_line("first word at 3900: 32 chars, dictionary 8/8, page 8/8, 99999 reads 9999999 B, rc=-115, 99999 ms; ");
+    TEST_ASSERT(line != NULL);
+    TEST_CHECK_(strlen(line) <= 254 && line[strlen(line) - 1] == ']', "%zu bytes: %s", strlen(line), line);
+    TEST_CHECK(strstr(line, " [Daijirin4 Plain Plain12]") != NULL);
+    printf("\n  worst case: %zu of 254 bytes\n", strlen(line));
 }
 static void test_character_coalesces_and_drops_inflight_definition(void)
 {
@@ -2128,6 +2157,7 @@ TEST_LIST = {
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
     {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
     {"word_lookup_with_the_bundled_dictionary_first_word_right_and_tap", test_word_lookup_with_the_bundled_dictionary},
+    {"lookup_log_line_fits_with_worst_case_fields", test_lookup_log_line_fits_with_worst_case_fields},
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_and_region_changes_retire_saved_text", test_character_scene_and_region_invalidate_saved_text},

@@ -305,13 +305,15 @@ static void log_text(char *out, size_t cap, const char *s, size_t len, int chars
     out[i] = 0;
 }
 
-/* One log.txt line per dictionary lookup: why (first word during OCR,
- * cursor or tap, dictionary page), the text at the cursor, the entry, its
- * matched span in characters, the dictionary (file, then the source named
- * in its definition), the file reads and the time. */
+/* One log.txt line per dictionary lookup: why (first word during OCR, on
+ * open, cursor or tap, dictionary page), the cursor byte, the matched span
+ * in characters, the dictionary file, the page, the file reads, rc and the
+ * time; then the text at the cursor, the entry and the source named in its
+ * definition. The numbers come first and the texts are bounded (32 + 31 + 31
+ * + 23 bytes, whole characters), so the line fits vjo_log's 254 bytes. */
 static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t cursor, int rc, int64_t t0)
 {
-    char query[40], head[40], reading[40], source[28], dict[16];
+    char query[33], head[32], reading[32], source[24], dict[8];
     const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
     const char *text = out->sentence ? out->sentence : "";
     size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
@@ -323,9 +325,9 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
     if (e) {
         size_t i = (size_t)e->hl_start;
         while (i < (size_t)e->hl_end && i < len) { vjo_utf8_next(text, len, &i); chars++; }
-        log_text(head, sizeof(head), e->vocab->spelling, sceClibStrnlen(e->vocab->spelling, 256), 12);
+        log_text(head, sizeof(head), e->vocab->spelling, sceClibStrnlen(e->vocab->spelling, 256), 10);
         if (e->vocab->reading != e->vocab->spelling)
-            log_text(reading, sizeof(reading), e->vocab->reading, sceClibStrnlen(e->vocab->reading, 256), 12);
+            log_text(reading, sizeof(reading), e->vocab->reading, sceClibStrnlen(e->vocab->reading, 256), 10);
         if (e->vocab->n_meanings && e->vocab->meanings[0][0] == '[') { /* "[Daijirin4 Plain]\n..." */
             const char *m = e->vocab->meanings[0] + 1;
             size_t n = 0;
@@ -333,13 +335,14 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
             if (m[n] == ']') { sceClibMemcpy(source, m, n); source[n] = 0; }
         }
     }
-    if (file) sceClibSnprintf(dict, sizeof(dict), "%d/%d", file, files);
+    if (!e) sceClibSnprintf(dict, sizeof(dict), "-");
+    else if (file) sceClibSnprintf(dict, sizeof(dict), "%d/%d", file, files);
     else sceClibSnprintf(dict, sizeof(dict), "?/%d", files);
-    vjo_log("lookup %s at %u \"%s\": %s%s%s%s, %d chars, dictionary %s %s, page %d/%d, %u reads %u B, rc=%d, %u ms",
-            why, (unsigned)cursor, query, e ? head : "no entry", reading[0] ? " (" : "", reading,
-            reading[0] ? ")" : "", chars, e ? dict : "-", source[0] ? source : "-", page + 1,
-            vjo_overlay_page_count(out), (unsigned)vjo_dict_reads, (unsigned)vjo_dict_read_bytes, rc,
-            (unsigned)((now_us() - t0) / 1000));
+    vjo_log("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
+            why, (unsigned)cursor, chars, dict, page + 1, vjo_overlay_page_count(out),
+            (unsigned)vjo_dict_reads, (unsigned)vjo_dict_read_bytes, rc, (unsigned)((now_us() - t0) / 1000),
+            query, e ? head : "no entry", reading[0] ? " (" : "", reading, reading[0] ? ")" : "",
+            source[0] ? " [" : "", source, source[0] ? "]" : "");
 }
 
 /* Does a result for scene `a` show the current scene `b`? */

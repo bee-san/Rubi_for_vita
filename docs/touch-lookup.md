@@ -92,16 +92,19 @@ Every lookup writes one `log.txt` line, for the console run. The Shell worker
 test's lines (the host test's clock does not advance, hence 0 ms):
 
 ```
-lookup first word at 0 "伊佐那社": 伊佐 (いさ), 2 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 7 reads 20837 B, rc=0, 0 ms
-lookup cursor at 6 "那社": 那 (な), 1 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 6 reads 16564 B, rc=0, 0 ms
-lookup cursor at 59 "会ってなかったか": 会う (あう), 7 chars, dictionary 1/1 Daijirin4 Plain, page 1/1, 23 reads 86633 B, rc=0, 0 ms
+lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, 7 reads 20837 B, rc=0, 0 ms; "伊佐那社" -> 伊佐 (いさ) [Daijirin4 Plain]
+lookup cursor at 6: 1 chars, dictionary 1/1, page 1/1, 6 reads 16564 B, rc=0, 0 ms; "那社" -> 那 (な) [Daijirin4 Plain]
+lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 23 reads 86633 B, rc=0, 0 ms; "会ってなかったか" -> 会う (あう) [Daijirin4 Plain]
 ```
 
 That is why (`first word` during Auto OCR, `on open`, `cursor` for Left, Right
-or a tap, `page` for Up/Down), the byte and up to 8 characters at the cursor,
-the entry, the matched span in characters, the dictionary file (`?` among
-several with one shown) and the source named in its definition, the page,
-the file reads and bytes, the result and the time. On the host the lookup takes
+or a tap, `page` for Up/Down), the cursor byte, the matched span in
+characters, the dictionary file (`?` among several with one shown), the page,
+the file reads and bytes, the result and the time; then up to 8 characters
+at the cursor, the entry and the source named in its definition. The numbers
+come first and the texts are bounded in whole characters, so a line is at
+most 228 bytes even with 4-byte characters in every field (a host test) and
+`vjo_log` never cuts it. On the host the lookup takes
 49 µs on average and at most 48 file reads
 ([measurements](benchmarks/word-lookup-20261014.json)); one A9 core at 444 MHz
 is **estimated** at about 4–16 ms on average and under 50 ms at worst, mostly

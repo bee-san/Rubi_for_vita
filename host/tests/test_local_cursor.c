@@ -467,6 +467,57 @@ static void exact_later_dictionary_precedes_inflected_page(void)
     TEST_CHECK(pages.page[0].len16 == 3 && pages.page[1].len16 == 3);
 }
 
+/* One key's postings are ranked, not taken in file order (generated rows in
+ * the bundled Daijirin4's order, both formats): kana text shows the entry
+ * spelled in kana, inflected kana its dictionary form before a homograph, a
+ * listed common reading wins, an entry with a reading beats a reading-less
+ * character article, then the longer article; katakana text matches its
+ * hiragana spelling. Synthetic rows, not dictionary content. */
+static void postings_are_ranked_by_how_the_text_is_written(void)
+{
+    const Row rows[] = {
+        {"から", "空", "から", "empty", 0}, {"から", "殻", "から", "shell, much longer article", 0},
+        {"から", "から", "", "particle: from", 0},
+        {"した", "下", "した", "below", 0}, {"する", "剃る", "する", "to shave", 2},
+        {"する", "する", "", "to do", 4},
+        {"わたし", "私", "わたし", "I", 0}, {"私", "私", "あたい", "I (casual)", 0},
+        {"私", "私", "わたし", "I", 0}, {"私", "私", "わっし", "I (old), the longest article of the three", 0},
+        {"人", "人", "", "the character", 0}, {"人", "人", "ひと", "person", 0},
+        {"って", "って", "", "quotative", 0}};
+    for (int version = 1; version <= 2; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        static const struct { const char *text, *meaning; int len16; } cases[] = {
+            {"から", "particle: from", 2}, {"した", "to do", 2}, {"私", "I", 1}, {"人", "person", 1},
+            {"ッて", "quotative", 2}, {"するの", "to do", 2}};
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_CASE_("v%d %s", version, cases[i].text);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], cases[i].meaning), "got %s", r.vocab[0].meanings[0]);
+            TEST_CHECK(r.tokens[0].len16 == cases[i].len16);
+        }
+    }
+}
+
+/* With several dictionaries, an entry written as the text is in a later one
+ * beats a homograph in an earlier one; the homograph is still a page. */
+static void written_entry_in_later_dictionary_precedes_homograph(void)
+{
+    const Row d0[] = {{"から", "空", "から", "d0 homograph", 0}};
+    const Row d1[] = {{"から", "から", "", "d1 written", 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
+    build(&fixtures[0], page_names[0], d0, 1, 2);
+    build(&fixtures[1], page_names[1], d1, 1, 2);
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "から", 0, 1, &pages, &r, &e) && r.n_vocab == 1);
+    TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 written"));
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "から", 0, 8, &pages, &r, &e) && pages.count == 2);
+    TEST_CHECK(pages.page[0].dict == 1 && pages.page[1].dict == 0);
+}
+
 static void single_result_reads_are_unchanged(void)
 {
     /* Limit 1 is the previous single lookup: once d0 matches, d1's index is
@@ -632,6 +683,8 @@ static void eight_dictionaries_only_matching_pages(void)
 TEST_LIST = {
     {"pages_follow_best_match_then_priority", pages_follow_best_match_then_priority},
     {"exact_later_dictionary_precedes_inflected_page", exact_later_dictionary_precedes_inflected_page},
+    {"postings_are_ranked_by_how_the_text_is_written", postings_are_ranked_by_how_the_text_is_written},
+    {"written_entry_in_later_dictionary_precedes_homograph", written_entry_in_later_dictionary_precedes_homograph},
     {"single_result_reads_are_unchanged", single_result_reads_are_unchanged},
     {"overlay_pages_stream_through_one_arena", overlay_pages_stream_through_one_arena},
     {"page_failures_keep_header_and_locators", page_failures_keep_header_and_locators},
