@@ -74,19 +74,22 @@ overlay open, an Anki picture card) is 487,424 B; the opt-in network dictionary'
 
 | item | bytes | what | source |
 |---|---|---|---|
-| kernel module pages | 114,688 | `VitaJPOverlay_Kernel.skprx`: 32,768 text + 81,920 data/bss (the 32 KiB model staging buffer and the 4 KiB log ring are in it) | packaged SELF segments [measured] |
+| kernel module pages | 114,688 | `VitaJPOverlay_Kernel.skprx`: 36,864 text + 77,824 data/bss (the 32 KiB model staging buffer and the 4 KiB log ring are in it) | packaged SELF segments [measured, API 19 build] |
 | VjoWorker stack | 16,384 | permanent | `kernel/main.c` |
-| VjoCapture | 2,088,960 at most (960 × 544 × 4) | region-sized, `KERNEL_RW`, per capture, freed when the reader has the last row; 458,752 B at 917 × 125 [measured] | `kernel/buffers.c` |
+| VjoCapture | 2,088,960 at most (960 × 544 × 4) | the Lens/Anki JPEG capture only since API 19: region-sized, `KERNEL_RW`, per capture, freed when the reader has the last row; 458,752 B at 917 × 125 [measured]; #74's console refused 2,088,960 B five times (`0x80024302`) [measured] | `kernel/buffers.c` |
+| VjoOcrStrip | 65,536 at most | the OCR ladder's last rung: one strip for one `vjoOcrCaptureRows` call, only when the display hook could not write the game's memory; never held with `VjoCapture` (refused while that is), so it adds nothing to the worst case | `kernel/buffers.c` |
 | **limit** | **2,220,032** | today's worst case: a **ratchet**, not a cited safe size. The pool's free space on a retail console is unmeasured; a 2,088,960 B capture failed there once (#14) and has succeeded since. The self-test reads the partition kernel-side and replaces this number | [vita-memory.md 5.3](vita-memory.md) |
 
 ### Pool "game": `ScePhyMemPartGame` (256 MiB minus the game's own use)
 
 | item | bytes | what | source |
 |---|---|---|---|
-| OCR worker pages | 45,056 | the module, in each game it is registered for | packaged SELF segments [measured] |
+| OCR worker pages | 53,248 | the module, in each game it is registered for: 45,056 text + 8,192 data/bss; raised from 45,056 B for the in-game capture (strips, ladder, probe, step log), in the game's partition, never SceShell's | packaged SELF segments [measured, API 19 build] |
 | VjoGameVocr stack+TLS | 36,864 | 32,768 + 4,096 | `game_ocr/main.c` |
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
-| VjoGameVocr workspace | 770,048 at most | F20 at a 960 × 544 region, page-rounded, per job | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |
+| VjoGameVocr workspace | 249,856 at most | F20, page-rounded, per job, at any region: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544) | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |
+| VjoGameVocrCapture | 65,536 at most | one strip of grey rows and a checksum and a bit per region row (at most 59,588 B, at 896 × 544 with 64-row strips; 58,884 B at 960 × 544; 61,440 page-rounded), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
+| VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |
 | **limits** | weights 1,601,536; workspace 790,528; job 2,392,064 | the recognizer's ceiling tier, which the preflight (free `USER` minus the 4 MiB reserve) has to cover before anything is allocated | vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md) |
 
 ## The CI check

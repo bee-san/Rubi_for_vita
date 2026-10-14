@@ -1,8 +1,19 @@
-/* Bounded OCR-only transport. No pointers or executable addresses cross it. */
+/* Bounded OCR-only transport between the Shell, the kernel and the game worker.
+ *
+ * API 19: the capture happens in the game's process. The worker asks the kernel
+ * for rows of the job's region (vjoOcrCaptureRows); the kernel's display hook,
+ * which runs in the game's own thread on the frame the game submits, converts
+ * those rows to 8-bit grey and copies them straight into the worker's buffer in
+ * the game's memory. The kernel holds no pixel buffer for OCR (a small kernel
+ * strip only on the last rung of the fallback ladder), and the worker holds one
+ * strip of the region, never the whole frame. The only user pointer the kernel
+ * sees is the destination of one vjoOcrCaptureRows call, checked to lie in a
+ * memory block of the calling process and used only until that call returns. */
 #ifndef VJO_GAME_OCR_H
 #define VJO_GAME_OCR_H
 
 #include <stdint.h>
+#include "vjo_api.h" /* VjoRect */
 
 #define VJO_GAME_OCR_MODULE "VitaJPOverlay_OCR"
 #define VJO_GAME_OCR_MODEL_DIR_BYTES 256u
@@ -12,11 +23,23 @@
  * game reads and hashes the weights in pieces of this size. */
 #define VJO_GAME_OCR_MODEL_CHUNK 32768u
 
+/* VjoGameOcrRequest.flags (the Shell sets them; normal jobs use 0). */
+#define VJO_GAME_OCR_F_FULL 0x1u           /* the whole frame, whatever the region */
+#define VJO_GAME_OCR_F_FORCE_FALLBACK 0x2u /* self-test: the memory check refuses the model, so the fallback runs */
+#define VJO_GAME_OCR_F_PROBE 0x4u          /* self-test: try every capture path and memory type, recognize nothing */
+#define VJO_GAME_OCR_F_ALL 0x7u
+
 typedef struct {
     uint32_t size;
-    uint32_t seq;      /* Assigned by Submit; never reused within this kernel module's lifetime. */
-    uint32_t done_seq; /* Exact completed single-pass capture owned by this job. */
-    uint32_t width, height, stride;
+    uint32_t seq;         /* Assigned by Submit; never reused within this kernel module's lifetime. */
+    uint32_t capture_seq; /* Assigned by Submit: VjoState.done_seq reaches it once the job's first
+                             pass over the region is in (vjoOcrCaptureRows with VJO_ROWS_LAST) */
+    uint32_t flags;       /* VJO_GAME_OCR_F_* */
+    /* Filled by Submit: the kernel's region (normalized; w == 0 is the whole frame), the size of
+     * the game's last frame and the region's pixels in it, which every row request reads. */
+    VjoRect region;
+    uint32_t fb_width, fb_height;
+    uint32_t x, y, width, height;
     char model[VJO_GAME_OCR_MODEL_BYTES];
     char model_dir[VJO_GAME_OCR_MODEL_DIR_BYTES];
     /* A smaller pinned model the worker runs instead when the game's free
@@ -34,6 +57,62 @@ typedef struct {
 #define VJO_GAME_OCR_WEIGHTS_RESIDENT 2u /* kept from an earlier job; the file is unchanged */
 
 #define VJO_GAME_OCR_LINES 16u /* the line finder's maximum (vocr_lines.h) */
+
+/* How rows reached the worker (VjoGameOcrRows.mode, VjoGameOcrResult.source, probe steps). */
+#define VJO_GAME_OCR_SRC_NONE 0u
+#define VJO_GAME_OCR_SRC_HOOK 1u    /* the display hook copies grey rows into the worker's buffer */
+#define VJO_GAME_OCR_SRC_KSTRIP 2u  /* the hook fills a small kernel strip; the worker's call copies it out */
+#define VJO_GAME_OCR_SRC_USER 3u    /* the worker reads sceDisplayGetFrameBuf's frame itself (probe only) */
+
+/* Where a block of the worker lives (steps, VjoGameOcrResult.capture_memory). */
+#define VJO_GAME_OCR_MEM_NONE 0u
+#define VJO_GAME_OCR_MEM_USER 1u    /* USER_RW, 4 KiB pages, cached */
+#define VJO_GAME_OCR_MEM_CDRAM 2u   /* USER_CDRAM_RW, 256 KiB units, uncached */
+#define VJO_GAME_OCR_MEM_PHYCONT 3u /* USER_MAIN_PHYCONT_NC_RW, 1 MiB units, uncached */
+#define VJO_GAME_OCR_MEM_KERNEL 4u  /* a kernel strip (VJO_GAME_OCR_SRC_KSTRIP) */
+
+/* One step of a job, for the logs and the self-test: what was tried, its native
+ * result, the bytes involved and the game's free memory right after it
+ * (sceKernelGetFreeMemorySize: main, CDRAM, phycont; main holds the API's error,
+ * the others 0, when the query failed). */
+enum {
+    VJO_GSTEP_NONE = 0,
+    VJO_GSTEP_MEM,       /* a memory sample (rc: the query's) */
+    VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's */
+    VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
+    VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
+    VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
+    VJO_GSTEP_TEAR,      /* a row read differently than before: arg the row, rc the retry */
+    VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
+    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
+    VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes */
+    VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
+    VJO_GSTEP_FALLBACK,  /* the fallback model runs: arg 1 = forced by the self-test */
+    VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
+                            arg = width, sum = pixel format, rc the query's */
+    VJO_GSTEP_PROBE,     /* a probe capture: kind VJO_GAME_OCR_SRC_*, arg VJO_GAME_OCR_MEM_*, sum the
+                            rows' checksum, bytes copied */
+    VJO_GSTEP_COUNT
+};
+/* VJO_GSTEP_ALLOC/FREE arg: which block. */
+#define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
+#define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */
+#define VJO_GITEM_WEIGHTS 3u   /* "VjoGameVocrWeights" */
+#define VJO_GITEM_PROBE 4u     /* a probe's strip */
+#define VJO_GITEM_LINE 5u      /* "VjoGameVocrLine": a line taller than a strip, read whole */
+
+typedef struct {
+    uint8_t id;      /* VJO_GSTEP_* */
+    uint8_t kind;
+    uint16_t arg;
+    int32_t rc;
+    uint32_t bytes;
+    uint32_t sum;
+    int32_t free_main, free_cdram, free_phycont;
+    uint32_t us;     /* duration, or the time since the job started for instant steps */
+} VjoGameOcrStep;
+
+#define VJO_GAME_OCR_STEPS 20u
 
 /* One recognized line: crop size, CTC frames and recognition time. */
 typedef struct {
@@ -69,6 +148,19 @@ typedef struct {
     /* Recognition: CTC frames over all lines, and each recognized line. */
     uint32_t frames, recognized;
     VjoGameOcrLine line[VJO_GAME_OCR_LINES];
+    /* API 19, the capture: the region read and the frame it came from. */
+    uint32_t region_x, region_y, width, height;
+    uint32_t fb_width, fb_height, fb_pitch, fb_format;
+    uint32_t source;         /* VJO_GAME_OCR_SRC_* the rows came through */
+    uint32_t capture_memory; /* VJO_GAME_OCR_MEM_* of the capture block */
+    uint32_t capture_bytes;  /* the capture block: one strip and the row checksums, page-rounded */
+    uint32_t strip_rows;     /* rows per strip */
+    uint32_t captures;       /* strips captured (one game frame each) */
+    uint32_t tears;          /* rows that read differently on a later pass: the screen changed */
+    uint32_t capture_us;     /* time spent waiting for and copying strips */
+    uint32_t region_sum;     /* FNV-1a over the region's grey rows on the first pass */
+    uint32_t n_steps;        /* entries of step[] (the first VJO_GAME_OCR_STEPS of the job) */
+    VjoGameOcrStep step[VJO_GAME_OCR_STEPS];
     /* UTF-8 OCR text on success; every failed result carries empty text. */
     char text[VJO_GAME_OCR_TEXT_BYTES];
 } VjoGameOcrResult;
@@ -83,13 +175,49 @@ typedef struct {
     uint64_t mtime;     /* last modification, packed (kernel/game_ocr.c); 0 if unknown */
 } VjoGameOcrModelInfo;
 
+/* vjoOcrCaptureRows: rows [y, y + n) of the claimed job's region, as 8-bit grey
+ * (77 R + 150 G + 29 B) >> 8, width bytes each, dst_stride apart in dst. */
+#define VJO_ROWS_SIG 0x1u  /* these rows continue the job's first pass from row 0 (scene signature) */
+#define VJO_ROWS_LAST 0x2u /* with SIG: the first pass ends here; the capture is published */
+#define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
+#define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
+
+typedef struct {
+    uint32_t size;       /* sizeof(VjoGameOcrRows) */
+    uint32_t seq;        /* the claimed job */
+    uint32_t y, n;       /* region rows; 1 <= n <= VJO_GAME_OCR_ROWS_MAX */
+    uint32_t mode;       /* VJO_GAME_OCR_SRC_HOOK or VJO_GAME_OCR_SRC_KSTRIP */
+    uint32_t flags;      /* VJO_ROWS_* */
+    uint32_t dst_stride; /* >= the region's width */
+    uint32_t reserved;
+} VjoGameOcrRows;
+
+typedef struct {
+    uint32_t size;       /* sizeof(VjoGameOcrRowsInfo), set by the caller */
+    int32_t rc;          /* rows copied, or the error */
+    uint32_t fb_width, fb_height, fb_pitch, fb_format; /* the frame the rows came from */
+    uint32_t wait_us;    /* from the request to the end of the copy */
+    uint32_t copy_us;    /* the copy itself, in the game's display call */
+    uint32_t kstrip_bytes; /* VJO_GAME_OCR_SRC_KSTRIP: the kernel strip held for this call */
+    int32_t kstrip_rc;   /* its allocation's result */
+    uint32_t armed;      /* 1: the request reached the display hook (a BUSY then means its copy may
+                            still write dst); 0: refused before (a BUSY then is a previous copy not
+                            yet tidied: ask again shortly) */
+} VjoGameOcrRowsInfo;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 int vjoOcrRegister(void); /* Current active game, verified module; retry at startup. */
 int vjoOcrTake(VjoGameOcrRequest *out); /* 0 claimed, 1 no job, <0 error. */
 int vjoOcrCancelled(uint32_t seq); /* Worker: 0 active, 1 cancelled, <0 stale. */
-int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t n, void *dst);
+/* Worker: rows of the claimed job's region into dst (memory of the calling
+ * process), copied by the display hook from the next frame the game shows, or
+ * through a kernel strip (mode). Waits for that frame (bounded) and returns the
+ * rows copied; VJO_ERR_TIMEOUT without a frame, VJO_ERR_CANCELLED when the job
+ * was cancelled meanwhile, VJO_ERR_FORMAT when the frame's size or pixel format
+ * changed. When it returns the kernel holds nothing of dst. */
+int vjoOcrCaptureRows(const VjoGameOcrRows *request, void *dst, VjoGameOcrRowsInfo *info);
 int vjoOcrComplete(const VjoGameOcrResult *result); /* Worker: publish or drain. */
 int vjoOcrSubmit(const VjoGameOcrRequest *request); /* Shell: sequence >0. */
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out); /* Shell: 0 done, 1 pending. */

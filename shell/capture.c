@@ -1,6 +1,6 @@
 /* The region (or the whole frame) as a JPEG: a kernel capture, then the
- * software encoder over its raw rows. Local OCR reads the raw rows itself
- * (vjo_capture_raw). */
+ * software encoder over its raw rows (Lens, an Anki screenshot). Local OCR
+ * takes no kernel capture: the game worker reads its own screen (API 19). */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -28,6 +28,19 @@ void vjo_capture_fini(void)
     if (capture_lock >= 0)
         sceKernelDeleteMutex(capture_lock);
     capture_lock = -1;
+}
+
+/* A local OCR job holds the lock from its submission to its result, as API
+ * 18's raw reader did: the game's capture then never overlaps a Lens or Anki
+ * capture's sequence (VjoState.done_seq) or its buffer's rows. */
+void vjo_capture_hold(void)
+{
+    sceKernelLockMutex(capture_lock, 1, NULL);
+}
+
+void vjo_capture_release(void)
+{
+    sceKernelUnlockMutex(capture_lock, 1);
 }
 
 static int raw_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
@@ -98,17 +111,3 @@ out:
     return rc;
 }
 
-int vjo_capture_raw(uint32_t flags, int (*consume)(void *ud, const VjoState *st), void *ud, VjoState *st)
-{
-    int seq = 0, rc;
-    sceKernelLockMutex(capture_lock, 1, NULL);
-    rc = capture_wait(flags, st, &seq);
-    if (rc == VJO_OK)
-        rc = consume(ud, st);
-    /* consume reads each row once; one that stopped early leaves the buffer
-     * to release (after the last row the kernel has already freed it). */
-    if (rc < 0 && seq > 0)
-        vjoRequestCapture(VJO_CAPTURE_DISCARD);
-    sceKernelUnlockMutex(capture_lock, 1);
-    return rc;
-}

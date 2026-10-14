@@ -3,7 +3,7 @@
 #define vjoOcrRegister test_kernel_register
 #define vjoOcrSubmit test_kernel_submit
 #define vjoOcrTake test_kernel_take
-#define vjoOcrReadRaw test_kernel_read_raw
+#define vjoOcrCaptureRows test_kernel_capture_rows
 #define vjoOcrCancelled test_kernel_cancelled
 #define vjoOcrComplete test_kernel_complete
 #define vjoOcrRead test_kernel_read

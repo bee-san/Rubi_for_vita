@@ -103,12 +103,21 @@ int vjo_worker_stop(void);
 
 /* selftest.c: the on-device self-test (docs/self-test.md). */
 #include "../include/vjo_game_ocr.h"
-int vjo_selftest_armed(void);                 /* the marker was found and the OCR step is not in yet */
+int vjo_selftest_armed(void);                 /* the marker was found and the stages are not all done */
 void vjo_selftest_init(const VjoConfig *cfg); /* control thread, once the config is loaded */
 void vjo_selftest_step(const char *step);     /* "ok" (boot guard), "exit" */
-void vjo_selftest_game(const char *title, int enabled, int mode);
-void vjo_selftest_ocr(const VjoState *st, const VjoGameOcrResult *r, int rc, const char *model);
-void vjo_selftest_fail(const char *what, int rc);
+/* The first game: its title, policy, mode and the user's saved region (w == 0: none). */
+void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region);
+/* The stages one job runs in turn (network thread): how many (0 when not
+ * armed), each one's name and request flags, its records. */
+unsigned vjo_selftest_stages(void);
+const char *vjo_selftest_stage_name(unsigned i);
+uint32_t vjo_selftest_stage_flags(unsigned i);
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback);
+void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model);
+void vjo_selftest_done(void); /* every stage has its record: the test is complete, the marker removed */
+/* One step of a game worker's log as text (log.txt and the report). */
+int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *s);
 
 /* guard.c: boot-safety guard (core/boot_guard.h). */
 /* 1 when the kernel decided this boot is a safe one: the note is written to
@@ -133,16 +142,14 @@ void vjo_strip_show_readings(VjoArena *scratch, const VjoEntryList *words);
 int vjo_capture_init(void);
 void vjo_capture_fini(void);
 /* Captures the screen (flags: VJO_CAPTURE_*) and encodes it as a JPEG into
- * out; serialized with the OCR job's capture (one kernel buffer). Returns
+ * out; one capture at a time (one kernel buffer). Returns
  * VJO_OK or a VJO_E_* code. When the capture itself failed, st->capture_result
  * holds the kernel's error: VJO_ERR_NO_MEMORY means its capture buffer could
  * not be allocated (VJO_E_OOM); any other VJO_E_OOM is the encoder's (Shell). */
 int vjo_capture_jpeg(VjoArena *a, uint32_t flags, int quality, VjoBuf *out, VjoState *st);
-/* The same single-pass capture for a raw-pixel reader: consume(ud, st) runs
- * with the capture held and reads its rows with vjoReadRaw, each once (the
- * kernel frees its buffer after the last). Returns consume's result, or the
- * capture's VJO_E_* code, with st->capture_result as for vjo_capture_jpeg. */
-int vjo_capture_raw(uint32_t flags, int (*consume)(void *ud, const VjoState *st), void *ud, VjoState *st);
+/* Held by a local OCR job from submission to result (the game captures then). */
+void vjo_capture_hold(void);
+void vjo_capture_release(void);
 
 /* game.c */
 /* The process's title ID; 0, or < 0 when not readable (yet). */

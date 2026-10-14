@@ -45,7 +45,7 @@ ALLOWED = {
     ("shell/memory.cpp", "sce_paf_memalign"): 1,   # vjo_shell_heap_alloc_for
     ("shell/ledger.c", "sceKernelCreateThread"): 1, # vjo_shell_thread_create
     ("shell/ledger.c", "sceKernelAllocMemBlock"): 1, # vjo_shell_memblock_alloc (host tests' USER_RW path)
-    ("kernel/buffers.c", "ksceKernelAllocMemBlock"): 1, # buffers_alloc
+    ("kernel/buffers.c", "ksceKernelAllocMemBlock"): 2, # buffers_alloc (Shell JPEG), buffers_kstrip_alloc (OCR ladder's last rung)
     ("kernel/main.c", "ksceKernelCreateThread"): 1,  # the worker thread, counted right after
     ("game_ocr/main.c", "sceKernelAllocMemBlock"): 1, # game_memblock_alloc
     ("game_ocr/main.c", "sceKernelCreateThread"): 1, # vjo_game_ocr_worker_start, counted right after
@@ -71,8 +71,11 @@ ITEMS = {
                     "VJO_BUDGET_SHELL_CTL_STACK", "VJO_BUDGET_SHELL_ANKI_STACK", "VJO_BUDGET_SHELL_USERRW_RESULTS"),
     "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_RESULTS_NET", "VJO_BUDGET_PAF_ANKI",
                   "VJO_BUDGET_PAF_UI"),
-    "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE"),
-    "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE"),
+    # VJO_BUDGET_KERNEL_OCR_STRIP is never held with the capture (kernel/buffers.c): not in the sum
+    "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE",
+               "VJO_BUDGET_KERNEL_OCR_STRIP"),
+    "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
+             "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE"),
 }
 # Packaged module -> the macro its pages must not exceed.
 MODULE_BUDGETS = {

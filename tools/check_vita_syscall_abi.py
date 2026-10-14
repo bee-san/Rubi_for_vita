@@ -22,9 +22,11 @@ HOOKS = {
     "vjoTextReference": 0x2B6DDFAB,
     "vjoTextRead": 0x834C749E,
 }
-GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrReadRaw",
+GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCaptureRows",
                   "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel",
                   "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose")
+# API 19 removed the RGBA reader: no module may still import it.
+REMOVED = ("vjoOcrReadRaw",)
 GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
         for name in GAME_FUNCTIONS}
 WEAK_STUB = (0xE3E00000, 0xE12FFF1E, 0xE1A00000, 0)
@@ -207,6 +209,10 @@ def audit(kernel, shell, require_hooks=False, worker=None):
             require(nid in exports, f"Kernel does not export {name}")
             owner = imports if name in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel") else worker_imports
             require(nid in owner, f"Missing role-specific import {name}")
+        for name in REMOVED:
+            nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
+            require(nid not in exports and nid not in worker_imports and nid not in imports,
+                    f"{name} was removed in API 19")
         shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell")
         for name in shell_only:
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")

@@ -84,6 +84,12 @@ target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_capture COMMAND vjo-kernel-capture-tests)
+# kernel/meminfo.c's three routes with the firmware's objects at kernel-range addresses (#74 audit B1).
+add_executable(vjo-kernel-meminfo-tests host/tests/test_kernel_meminfo.c core/ledger.c)
+target_include_directories(vjo-kernel-meminfo-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-meminfo-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-meminfo-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_meminfo COMMAND vjo-kernel-meminfo-tests)
 add_executable(vjo-kernel-input-tests host/tests/test_kernel_input.c kernel/triggers.c)
 target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
@@ -197,11 +203,25 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_unit COMMAND vjo-vocr-tests)
+  # #74: API 18's capture (the kernel's A8B8G8R8 copy of the region, the worker's
+  # grey plane; 8228c3c, verbatim in host/tests/api18) against API 19's (the
+  # display hook's grey rows in the worker's strip): the recognizer gets
+  # byte-identical input. tools/capture_parity.py adds the eval crops.
+  add_library(vjo_parity_kernel OBJECT host/tests/parity_kernel.c kernel/capture.c kernel/scene.c)
+  target_include_directories(vjo_parity_kernel PRIVATE host/tests/vita_stubs)
+  target_compile_definitions(vjo_parity_kernel PRIVATE VJO_HOST=1)
+  add_executable(vjo-capture-parity-tests host/tests/test_capture_parity.c host/tests/parity_api18.c
+    host/tests/parity_api19.c $<TARGET_OBJECTS:vjo_parity_kernel>)
+  target_include_directories(vjo-capture-parity-tests PRIVATE third_party/acutest/include)
+  target_link_libraries(vjo-capture-parity-tests vjo_vocr_rt vjo_core)
+  target_compile_options(vjo-capture-parity-tests PRIVATE -Wall -Wextra)
+  target_compile_definitions(vjo-capture-parity-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  add_test(NAME capture_parity COMMAND vjo-capture-parity-tests)
   # Exercise the real adapter with only the finder call replaced by a spy.
   # This verifies dispatch and capture ownership without weights or inference.
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
-  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines=vjo_test_find_lines)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows)
   target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
   target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
   add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)
@@ -214,8 +234,17 @@ if(VJO_WITH_VOCR)
 endif()
 add_test(NAME local_dictionary COMMAND ${Python3_EXECUTABLE} -m unittest discover
   -s ${CMAKE_SOURCE_DIR}/tools/tests -v)
-set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT
-  "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
+# The real self-test writer (shell/selftest.c) on the host: v2 reports for the analyser's tests.
+add_executable(vjo-selftest-writer host/tests/selftest_writer.c)
+target_include_directories(vjo-selftest-writer PRIVATE host/tests/vita_stubs)
+target_compile_definitions(vjo-selftest-writer PRIVATE VJO_HOST=1)
+target_link_libraries(vjo-selftest-writer vjo_core)
+set(_vjo_tool_env "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
+string(APPEND _vjo_tool_env ";VJO_SELFTEST_WRITER=$<TARGET_FILE:vjo-selftest-writer>")
+if(VJO_WITH_VOCR)
+  string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
+endif()
+set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
 
 
 # Counts production file reads and times lookup only (no OCR or process startup).
@@ -264,17 +293,28 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-resident-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines=test_vocr_find_lines vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
-    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/ledger.c core/ledger.c)
+    host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/capture.c
+    kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests/vita_stubs)
   target_compile_options(vjo-game-model-broker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-model-broker-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
     VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
+  # #74 preflight: the real worker and kernel under the console's measured pool limits.
+  add_executable(vjo-alloc-sim-tests host/tests/test_alloc_sim.c host/tests/kernel_model_broker_boundary.c
+    kernel/capture_request.c kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+  target_include_directories(vjo-alloc-sim-tests PRIVATE third_party/acutest/include host/tests/game_stubs
+    host/tests/vita_stubs)
+  target_compile_options(vjo-alloc-sim-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-alloc-sim-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
+    VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_link_libraries(vjo-alloc-sim-tests vjo_vocr)
+  add_test(NAME alloc_sim COMMAND vjo-alloc-sim-tests)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
 endif()

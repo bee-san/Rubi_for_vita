@@ -11,6 +11,7 @@ typedef struct { SceIoStat d_stat; char d_name[256]; } SceIoDirent;
 #define SCE_O_WRONLY O_WRONLY
 #define SCE_O_CREAT O_CREAT
 #define SCE_O_TRUNC O_TRUNC
+#define SCE_O_APPEND O_APPEND
 #define SCE_SEEK_END SEEK_END
 #define SCE_SEEK_SET SEEK_SET
 #define SCE_S_ISDIR S_ISDIR

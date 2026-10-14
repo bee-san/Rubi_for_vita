@@ -9,6 +9,7 @@
 #include <psp2/host_stubs.h>
 #include "vocr.h"
 #include "vocr_lines.h"
+#include "vocr_lines_rows.h"
 #include "test_resident_weights.h"
 #include "../../game_ocr/main.c"
 #include <bearssl_hash.h>
@@ -18,6 +19,9 @@
 static unsigned char job_memory[1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char pixels[W*H*4];
+static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
+static int capture_live;
+static unsigned capture_block, capture_allocs;
 static int64_t available;
 static unsigned live_bytes, peak_bytes, job_block, weights_block;
 static int job_live, weights_live, job_alloc_failure, weights_alloc_failure, weights_free_failure;
@@ -41,6 +45,13 @@ int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(size & 4095));
+    if (!strcmp(name, "VjoGameVocrCapture")) {
+        TEST_CHECK(!capture_live && size <= sizeof(capture_mem_block));
+        if (job_alloc_failure) return -1;
+        capture_live = 1; capture_block = size; capture_allocs++;
+        live_bytes += size; if (live_bytes > peak_bytes) peak_bytes = live_bytes;
+        return 11;
+    }
     if (!strcmp(name, "VjoGameVocrWeights")) {
         TEST_CHECK(!weights_live && size <= sizeof(weights_memory)); /* never two weight blocks */
         weights_allocs++;
@@ -58,11 +69,13 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
+    if (uid == 11) { TEST_CHECK(capture_live); *base = capture_mem_block; return 0; }
     TEST_CHECK(uid == 10 ? weights_live : uid == 9 && job_live);
     *base = uid == 10 ? (void *)weights_memory : (void *)job_memory; return 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
+    if (uid == 11) { TEST_CHECK(capture_live); capture_live = 0; live_bytes -= capture_block; return 0; }
     if (uid == 10) {
         TEST_CHECK(weights_live);
         if (weights_free_failure) return -1;
@@ -86,9 +99,21 @@ int vjoOcrRegister(void) { return registered_rc; }
 int vjoOcrTake(VjoGameOcrRequest *out) { return 1; }
 int vjoOcrCancelled(uint32_t seq)
 { return cancel_now || (cancel_after_reads && reads >= (unsigned)cancel_after_reads); }
-int vjoOcrComplete(const VjoGameOcrResult *out) { TEST_CHECK(!job_live); return 0; }
-int vjoOcrReadRaw(uint32_t seq, uint32_t row, uint32_t n, void *dst)
-{ TEST_CHECK(row < H && n <= H-row); memcpy(dst, pixels+row*W*4, n*W*4); return (int)n; }
+int vjoOcrComplete(const VjoGameOcrResult *out) { TEST_CHECK(!job_live && !capture_live); return 0; }
+/* The kernel's rows: grey of the pixels, straight into the worker's capture block. */
+int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
+{
+    TEST_CHECK(req->seq == 12 && req->y < H && req->n && req->n <= H - req->y && capture_live);
+    for (unsigned r = 0; r < req->n; r++)
+        for (unsigned x = 0; x < W; x++) {
+            const unsigned char *p = pixels + ((req->y + r) * W + x) * 4;
+            ((unsigned char *)dst)[r * req->dst_stride + x] = (unsigned char)((77u*p[0] + 150u*p[1] + 29u*p[2]) >> 8);
+        }
+    info->fb_width = W; info->fb_height = H; info->fb_pitch = W;
+    return (int)req->n;
+}
+int sceDisplayGetFrameBuf(SceDisplayFrameBuf *fb, int sync) { return -1; }
+int sceKernelGetMemBlockInfoByAddr(void *base, SceKernelMemBlockInfo *info) { return -1; }
 
 static const VjoVocrModel *served_model(void) { return vjo_vocr_model(served); }
 static uint32_t served_seed(void) { return !strcmp(served, "FL10_w8.vocr") ? TEST_FL10_SEED : TEST_H15_SEED; }
@@ -122,7 +147,7 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
 int vjoOcrModelClose(uint32_t seq) { TEST_CHECK(seq == 12); if (file_open_now) closes++; file_open_now = 0; return 0; }
 
 /* ---- the runtime: spies, each checking it got the verified resident bytes ---- */
-int vocr_find_lines(const VocrLinesImage *im, int mode, void *arena, size_t bytes, VocrLineSet *out)
+int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t bytes, VocrLineSet *out)
 {
     memset(out, 0, sizeof(*out));
     out->count = spy_lines;
@@ -151,7 +176,7 @@ int vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t cap, vocr_ex
 /* ---- helpers ---- */
 static VjoGameOcrRequest request_with(const char *name, const char *fallback)
 {
-    VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .done_seq=11, .width=W, .height=H, .stride=W*4};
+    VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=W, .fb_height=H, .width=W, .height=H};
     snprintf(r.model, sizeof(r.model), "%s", name);
     snprintf(r.fallback, sizeof(r.fallback), "%s", fallback);
     snprintf(r.model_dir, sizeof(r.model_dir), "%s", VJO_VOCR_MODEL_ROOT);
@@ -163,7 +188,8 @@ static VjoGameOcrRequest request(const char *name) { return request_with(name, "
 static void reset(void)
 {
     if (weights_live) { weights_free_failure = 0; TEST_CHECK(!drop_weights()); }
-    worker = workspace_uid = weights_uid = -1;
+    worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
+    capture_live = 0; capture_block = capture_allocs = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     model_owned = 0; model_seq = 0;
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = stat_error = 0;
@@ -181,7 +207,7 @@ static int run_with(const char *name, const char *fallback, VjoGameOcrResult *ou
 {
     VjoGameOcrRequest r = request_with(name, fallback);
     int rc = vjo_game_ocr_run_request(&r, out);
-    TEST_CHECK(!job_live && !file_open_now && !model_owned && !out->cleanup_status);
+    TEST_CHECK(!job_live && !capture_live && !file_open_now && !model_owned && !out->cleanup_status);
     TEST_CHECK(weights_live == (resident.model != NULL));
     TEST_CHECK(out->resident_bytes == (weights_live ? weights_block : 0));
     return rc;
@@ -291,7 +317,8 @@ static void model_change_releases_the_old_weights_first(void)
     TEST_CHECK(!run("H15_w8.vocr", &out) && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
     TEST_CHECK(weights_frees == 1 && weights_allocs == 2 && weights_block == PAGE_ROUND(TEST_H15_BYTES));
     /* The alloc stub asserts one weights block at a time; the peak is H15's job. */
-    TEST_CHECK(peak_bytes == PAGE_ROUND(TEST_H15_BYTES) + PAGE_ROUND(vjo_vocr_job_bytes("H15_w8.vocr", W, H)));
+    TEST_CHECK(peak_bytes == PAGE_ROUND(TEST_H15_BYTES) + PAGE_ROUND(vjo_vocr_job_bytes("H15_w8.vocr", W, H)) +
+                             PAGE_ROUND(vjo_vocr_capture_bytes(W, H)));
     TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_frees == 2 && weights_block == PAGE_ROUND(TEST_FL10_BYTES));
 }
 static void peak_is_the_old_single_block_within_a_page(void)
@@ -301,7 +328,7 @@ static void peak_is_the_old_single_block_within_a_page(void)
         reset(); VjoGameOcrResult out;
         TEST_CHECK(!run(names[k], &out));
         uint32_t old_block = PAGE_ROUND(vjo_vocr_workspace_bytes(names[k], W, H));
-        TEST_CHECK(peak_bytes <= old_block + 4096u);
+        TEST_CHECK(peak_bytes <= old_block + PAGE_ROUND(vjo_vocr_capture_bytes(W, H)) + 4096u);
         TEST_MSG("%s: peak %u, one-block %u", names[k], peak_bytes, old_block);
         TEST_CHECK(live_bytes == PAGE_ROUND(vjo_vocr_model(names[k])->bytes)); /* kept between jobs */
     }
@@ -309,7 +336,8 @@ static void peak_is_the_old_single_block_within_a_page(void)
 static void preflight_counts_resident_weights_and_refusal_releases_them(void)
 {
     reset(); VjoGameOcrResult out;
-    const uint32_t job = PAGE_ROUND(vjo_vocr_job_bytes("FL10_w8.vocr", W, H)), weights = PAGE_ROUND(TEST_FL10_BYTES);
+    const uint32_t job = PAGE_ROUND(vjo_vocr_job_bytes("FL10_w8.vocr", W, H)) + PAGE_ROUND(vjo_vocr_capture_bytes(W, H)),
+                   weights = PAGE_ROUND(TEST_FL10_BYTES);
     available = GAME_RESERVE + job + weights - 1; /* the first job also needs the weights */
     TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_OOM && !job_allocs && !weights_allocs);
     available = GAME_RESERVE + job + weights;
@@ -357,7 +385,8 @@ static void failed_release_blocks_until_stop_retries(void)
 static void memory_check_is_reported_also_when_refused(void)
 {
     reset(); VjoGameOcrResult out;
-    const uint32_t job = PAGE_ROUND(vjo_vocr_job_bytes("FL10_w8.vocr", W, H)), weights = PAGE_ROUND(TEST_FL10_BYTES);
+    const uint32_t job = PAGE_ROUND(vjo_vocr_job_bytes("FL10_w8.vocr", W, H)) + PAGE_ROUND(vjo_vocr_capture_bytes(W, H)),
+                   weights = PAGE_ROUND(TEST_FL10_BYTES);
     available = GAME_RESERVE + job + weights - 4096;
     TEST_CHECK(run("FL10_w8.vocr", &out) == VJO_E_OOM && !job_allocs);
     TEST_CHECK(out.free_user == (int32_t)available && out.reserve_bytes == GAME_RESERVE);
@@ -393,7 +422,9 @@ static void frames_and_lines_are_reported(void)
 }
 
 /* Bytes the memory check counts for a model's job and weights (page-rounded). */
-static uint32_t job_of(const char *name) { return PAGE_ROUND(vjo_vocr_job_bytes(name, W, H)); }
+static uint32_t capture_of(void) { return PAGE_ROUND(vjo_vocr_capture_bytes(W, H)); }
+/* The job's need: its workspace and its capture block (API 19). */
+static uint32_t job_of(const char *name) { return PAGE_ROUND(vjo_vocr_job_bytes(name, W, H)) + capture_of(); }
 static uint32_t weights_of(const char *name) { return PAGE_ROUND(vjo_vocr_model(name)->bytes); }
 
 static void fallback_runs_only_when_the_model_does_not_fit(void)

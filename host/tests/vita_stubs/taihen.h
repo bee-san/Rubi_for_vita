@@ -1,4 +1,7 @@
 #include <psp2kern/host_stubs.h>
+#ifndef KERNEL_PID
+#define KERNEL_PID 0x10005 /* taihen.h */
+#endif
 #ifdef VJO_TEST_MODEL_BROKER
 typedef struct { size_t size; SceUID modid; } tai_module_info_t;
 int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
@@ -6,7 +9,6 @@ int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
 #if defined(VJO_TEST_INPUT_HOOKS) && !defined(VJO_TEST_TAIHEN_H)
 #define VJO_TEST_TAIHEN_H
 typedef uintptr_t tai_hook_ref_t;
-#define KERNEL_PID 0x10005
 #define TAI_ANY_LIBRARY UINT32_MAX
 int test_tai_continue(tai_hook_ref_t, int, void *, unsigned, ...);
 #define TAI_CONTINUE(type, ref, ...) ((type)test_tai_continue((ref), __VA_ARGS__))

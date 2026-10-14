@@ -105,13 +105,30 @@ int klog_read(char *dst, int len);
 int buffers_alloc(uint32_t bytes); /* capture lock held, idle; page-aligned internally */
 void buffers_free(void);
 void buffers_read_done(uint32_t row, uint32_t rows); /* lock held, successful user copy */
+int buffers_kstrip_alloc(uint32_t bytes); /* the OCR kernel strip (lock held): 0 or the error */
+uint8_t *buffers_kstrip(void);
+void buffers_kstrip_free(void);
 int capture_request(uint32_t flags);
 
 /* capture.c */
 void capture_compute_crop(uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y, uint32_t *w,
                           uint32_t *h);
+/* The same crop for any normalized region (w == 0: the whole frame). */
+void capture_crop_of(const VjoRect *region, uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y,
+                     uint32_t *w, uint32_t *h);
 int capture_copy(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h);
 int region_sig_hook(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h, SceneSig *out);
+/* An armed vjoOcrCaptureRows (game_ocr.c), as the display hook copies it. */
+typedef struct {
+    uint32_t x0, y0, w, h, fb_w, fb_h; /* the job's region in a frame of fb_w x fb_h */
+    uint32_t y, n, stride;             /* region rows [y, y + n), stride bytes apart at the destination */
+    uintptr_t dst_user;                /* the worker's buffer (same process as the hook), or 0 */
+    uint8_t *dst_kernel;               /* a kernel strip, or NULL */
+    int sig;                           /* the rows continue g.capture_sig (capture_sig_begin) */
+} OcrRowsJob;
+int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w, uint32_t fb_h,
+                      const OcrRowsJob *job);
+void capture_sig_begin(uint32_t w, uint32_t h); /* a new capture signature into g.capture_sig */
 
 /* input.c */
 int input_hooks_install(void);
@@ -130,7 +147,7 @@ void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
 
 /* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
-enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_COUNT };
+enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_OCR_STRIP, VJO_KL_COUNT };
 extern VjoLedger g_kernel_ledger;
 void kledger_init(void);
 void kledger_log(const char *when); /* the pool and its items, to kernel.txt */

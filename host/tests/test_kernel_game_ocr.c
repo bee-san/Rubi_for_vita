@@ -26,20 +26,68 @@ static unsigned done_events, waits, stats;
 static int expect_fallback;
 static int done_pending, wait_runs_worker, stat_error;
 static SceIoStat file_stat;
+/* The game's frame, as the display hook sees it (32 x 32 A8B8G8R8, pitch 40). */
+#define FB_W 32u
+#define FB_H 32u
+#define FB_PITCH 40u
+static uint32_t game_fb[FB_PITCH * FB_H];
+static uint32_t fb_fmt;
+static unsigned fb_w = FB_W, fb_h = FB_H;
+static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
+static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
+static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
+static unsigned frees_seen_at_exit;
+static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
+static unsigned char user_rows[64 * 64]; /* the worker's capture block */
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return model_clock; }
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
 {
+    if (uid == g.mevf && g.mevf > 0 && bits == MEV_ROWS) { rows_events++; return 0; }
     if (uid == g.mevf && g.mevf > 0) { TEST_CHECK(bits == MEV_DONE); done_events++; done_pending = 1; return 0; }
+    if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) { capture_events++; return 0; }
     TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); model_events++; return 0;
+}
+int ksceKernelClearEventFlag(SceUID uid, unsigned bits) { TEST_CHECK(uid == g.mevf && bits == ~MEV_ROWS); return 0; }
+int ksceKernelDelayThread(SceUInt us) { model_clock += us; return 0; }
+SceUID ksceKernelFindMemBlockByAddr(const void *addr, SceSize size) { (void)addr; (void)size; return 40; }
+/* The worker's memory: only its capture block counts as a block of process 7. */
+SceUID ksceKernelFindProcMemBlockByAddr(SceUID pid, const void *addr, SceSize size)
+{
+    const unsigned char *p = addr;
+    TEST_CHECK(size == 0);
+    if (pid != 7 || !user_block_ok || p < user_rows || p >= user_rows + sizeof(user_rows)) return -1;
+    return 41;
+}
+/* The game submits a frame: the display hook runs in its thread, no lock held. */
+static void game_frame(void)
+{
+    in_hook = 1; hook_frames++;
+    game_ocr_rows_hook(frame_pid, (uintptr_t)game_fb, FB_PITCH, fb_fmt, fb_w, fb_h);
+    in_hook = 0;
 }
 static void model_tick(void);
 /* A model syscall waiting for the kernel worker: g.lock is not held, so the
  * worker can run (wait_runs_worker) and finish the queued operation. */
 int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *out, SceUInt *timeout)
 {
+    if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
+        TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
+        if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
+            model_clock += *timeout;
+            return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+        }
+        if (frames_come) {
+            frames_come--; game_frame();
+            if (gone_after_frame) { gone_after_frame = 0; game_ocr_process_gone(7); frees_seen_at_exit = kstrip_frees; }
+            if (out) *out = MEV_ROWS;
+            return 0;
+        }
+        model_clock += *timeout;
+        return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+    }
     TEST_ASSERT(uid == g.mevf && bits == MEV_DONE && !locks && syscall_depth == 1);
     TEST_CHECK(wait == (SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT) && timeout && *timeout <= 50000);
     waits++;
@@ -127,33 +175,55 @@ int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize bytes)
 }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize bytes)
 {
+    /* The hook writes the worker's rows in the game's thread with no lock; every
+     * other copy out is a syscall's, under the lock. */
+    if (in_hook) { TEST_CHECK(!locks); if (hook_copy_fail || !dst) return -1; memcpy(dst, src, bytes); return 0; }
     TEST_CHECK(syscall_depth == 1 && locks == 1);
     if (copy_out_fail || !dst) return -1;
     memcpy(dst, src, bytes); return 0;
 }
+static unsigned char kstrip_storage[VJO_GAME_OCR_KSTRIP_MAX];
 SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, SceSize bytes, void *opt)
 {
-    (void)name; (void)opt;
-    TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(raw_storage));
+    (void)opt;
+    TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW);
+    if (!strcmp(name, "VjoOcrStrip")) {
+        TEST_CHECK(bytes <= sizeof(kstrip_storage) && !(bytes & 4095) && locks == 1);
+        kstrip_allocs++;
+        return kstrip_alloc_fail ? (int)0x80024302u : 28;
+    }
+    TEST_CHECK(bytes <= sizeof(raw_storage));
     allocations++; return 27;
 }
 int ksceKernelGetMemBlockBase(SceUID uid, void **base)
 {
-    TEST_CHECK(uid == 27); *base = raw_storage; return 0;
+    TEST_CHECK(uid == 27 || uid == 28); *base = uid == 28 ? (void *)kstrip_storage : (void *)raw_storage; return 0;
 }
-int ksceKernelFreeMemBlock(SceUID uid) { TEST_CHECK(uid == 27); frees++; return 0; }
+int ksceKernelFreeMemBlock(SceUID uid)
+{
+    TEST_CHECK(uid == 27 || uid == 28);
+    if (uid == 28) kstrip_frees++; else frees++;
+    return 0;
+}
 
 static void setup(void)
 {
     memset(&g, 0, sizeof(g));
     game_ocr_init();
+    buffers_kstrip_free();
     g.lock = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
-    g.capture_state = CAPTURE_IDLE; g.raw_valid = 1;
-    g.raw = raw_storage; g.mem_uid = 27; g.raw_capacity = 4096;
-    g.crop_w = g.crop_h = 32; g.raw_stride = 128;
-    g.capture_once = 1;
-    g.capture_seq = g.done_seq = 11; g.fb_w = g.fb_h = 32;
-    g.capture_game_pid = 7; g.capture_epoch = 1;
+    g.evf = 2; g.ievf = 6; g.mevf = 5;
+    g.capture_state = CAPTURE_IDLE;
+    g.capture_seq = g.done_seq = 11; g.fb_w = FB_W; g.fb_h = FB_H;
+    for (unsigned y = 0; y < FB_H; y++)
+        for (unsigned x = 0; x < FB_PITCH; x++) /* R, G, B, A bytes: R = x * 7, G = y * 5, B = x ^ y */
+            game_fb[y * FB_PITCH + x] = 0xFF000000u | ((x ^ y) & 0xFFu) << 16 | ((y * 5u) & 0xFFu) << 8 | ((x * 7u) & 0xFFu);
+    fb_fmt = VJO_FB_A8B8G8R8; fb_w = FB_W; fb_h = FB_H;
+    frames_come = 0; frame_pid = 7; in_hook = 0; user_block_ok = 1; hook_copy_fail = kstrip_alloc_fail = 0;
+    stall_copy = gone_after_frame = 0;
+    kledger_init();
+    rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
+    memset(user_rows, 0xCC, sizeof(user_rows));
     caller = 7; module_id = 99;
     module_missing = copy_in_fail = copy_out_fail = 0;
     locks = allocations = frees = syscall_depth = 0;
@@ -171,7 +241,7 @@ static void setup(void)
 static VjoGameOcrRequest make_request(void)
 {
     VjoGameOcrRequest r = {0};
-    r.size = sizeof(r); r.done_seq = g.done_seq;
+    r.size = sizeof(r);
     strcpy(r.model, "FL10_w8.vocr");
     strcpy(r.model_dir, "ux0:data/VitaJPOverlay/ocr");
     return r;
@@ -191,8 +261,9 @@ static void take(uint32_t seq)
     VjoGameOcrRequest r = {0};
     caller = 7;
     TEST_ASSERT(vjoOcrTake(&r) == 0);
-    TEST_CHECK(r.size == sizeof(r) && r.seq == seq && r.done_seq == 11);
-    TEST_CHECK(r.width == 32 && r.height == 32 && r.stride == 128);
+    /* Submit filled in the capture this job takes and the region in the last frame. */
+    TEST_CHECK(r.size == sizeof(r) && r.seq == seq && r.capture_seq > 11);
+    TEST_CHECK(r.x == 0 && r.y == 0 && r.width == 32 && r.height == 32 && r.fb_width == 32 && r.fb_height == 32);
     memset(&message, 0, sizeof(message));
     message.size = sizeof(message); message.seq = seq;
     strcpy(message.text, "猫");
@@ -217,15 +288,13 @@ static void complete_and_replacement(void)
 {
     setup(); uint32_t seq = submit();
     TEST_CHECK(game_ocr_capture_busy_locked());
-    TEST_CHECK(!game_ocr_raw_caller_locked(7));
     TEST_CHECK(vjoOcrRead(seq, &message) == 1);
     take(seq);
     TEST_CHECK(vjoOcrRegister() == 0); /* Repeated registration keeps the claim. */
     TEST_CHECK(vjoOcrTake(&request) == VJO_ERR_BUSY);
-    TEST_CHECK(game_ocr_raw_caller_locked(7) && !game_ocr_raw_caller_locked(8));
     TEST_CHECK(vjoOcrCancelled(seq) == 0);
     TEST_CHECK(vjoOcrComplete(&message) == 0);
-    TEST_CHECK(!game_ocr_capture_busy_locked() && !game_ocr_raw_caller_locked(7));
+    TEST_CHECK(!game_ocr_capture_busy_locked());
     TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG);
     caller = 3;
     TEST_CHECK(vjoOcrRead(seq, &message) == 0 && !strcmp(message.text, "猫"));
@@ -252,7 +321,6 @@ static void cancellation_drains_reader(void)
     TEST_CHECK(vjoOcrCancel(seq) == 0);
     TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED);
     TEST_CHECK(capture_request(0) == VJO_ERR_BUSY);
-    TEST_CHECK(!game_ocr_raw_caller_locked(7));
     caller = 7;
     TEST_CHECK(vjoOcrCancelled(seq) == 1);
     TEST_CHECK(vjoOcrComplete(&message) == 0);
@@ -276,7 +344,7 @@ static void suspended_and_same_pid_epoch(void)
     setup(); uint32_t seq = submit(); take(seq);
     g.game_active = 0; g.ocr_epoch++;
     game_ocr_foreground_changed_locked();
-    TEST_CHECK(game_ocr_capture_busy_locked() && !game_ocr_raw_caller_locked(7));
+    TEST_CHECK(game_ocr_capture_busy_locked());
     TEST_CHECK(vjoOcrCancelled(seq) == 1);
     TEST_CHECK(vjoOcrRegister() == VJO_ERR_NO_GAME);
     g.game_active = VJO_GAME; g.ocr_epoch++;
@@ -312,7 +380,8 @@ static void shell_restart(void)
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
     TEST_CHECK(vjoOcrRegister() == 0 && !game_ocr_capture_busy_locked());
     caller = 4; VjoGameOcrRequest r = make_request();
-    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* Old Shell's finished crop is stale too. */
+    /* No kernel crop to go stale (API 19): the new Shell's first job is accepted. */
+    TEST_CHECK(vjoOcrSubmit(&r) > 0);
 }
 
 static void cleanup_failure_and_module_replacement(void)
@@ -334,19 +403,14 @@ static void invalid_capture_and_wire(void)
     r.size--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.size++;
     r.model[31] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model[31] = 0;
     r.model_dir[255] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model_dir[255] = 0;
-    r.done_seq--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.done_seq++;
-    g.capture_once = 0; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); g.capture_once = 1;
-    g.raw_capacity--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); g.raw_capacity++;
-    g.raw_valid = 0; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); g.raw_valid = 1;
-    g.capture_epoch++; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); g.capture_epoch--;
-    g.capture_game_pid++; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); g.capture_game_pid--;
-    g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.flags = 0;
+    /* A Lens/Anki capture in flight: the OCR job waits for it. */
+    g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY);
     g.capture_state = CAPTURE_IDLE; uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
     message.cleanup_status = -1; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG);
     TEST_CHECK(game_ocr_capture_busy_locked());
-    g.done_seq++; TEST_CHECK(!game_ocr_raw_caller_locked(7));
 }
 
 static void user_copy_failures_and_sequence_exhaustion(void)
@@ -375,24 +439,229 @@ static void shutdown_refuses_claim_and_closes_registration(void)
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_NO_GAME);
 }
 
-static void single_pass_raw_and_stale_sequences(void)
+static int rows_call(uint32_t seq, unsigned y, unsigned n, uint32_t mode, uint32_t flags, unsigned stride, void *dst,
+                     VjoGameOcrRowsInfo *info)
+{
+    VjoGameOcrRows r = {sizeof(r), seq, y, n, mode, flags, stride, 0};
+    memset(info, 0, sizeof(*info));
+    info->size = sizeof(*info);
+    caller = 7;
+    return vjoOcrCaptureRows(&r, dst, info);
+}
+static unsigned grey_of(unsigned x, unsigned y)
+{
+    uint32_t v = game_fb[y * FB_PITCH + x];
+    return (77u * (v & 0xFF) + 150u * ((v >> 8) & 0xFF) + 29u * ((v >> 16) & 0xFF)) >> 8;
+}
+static int rows_match(const unsigned char *dst, unsigned y0, unsigned n, unsigned stride, unsigned x0)
+{
+    for (unsigned r = 0; r < n; r++)
+        for (unsigned x = 0; x < 32; x++)
+            if (dst[r * stride + x] != grey_of(x0 + x, y0 + r)) return 0;
+    return 1;
+}
+/* The display hook copies grey rows of the region straight into the worker's
+ * block on the game's next frame; the first pass publishes the capture. No
+ * kernel block is taken. */
+static void rows_hook_copies_grey_and_publishes_the_capture(void)
 {
     setup(); uint32_t seq = submit(); take(seq);
-    unsigned char out[4096];
-    memset(raw_storage, 0x52, 4096);
-    TEST_CHECK(vjoOcrReadRaw(seq+1, 0, 1, out) == VJO_ERR_ARG);
-    TEST_CHECK(vjoOcrReadRaw(seq, 0, 0, out) == VJO_ERR_ARG);
-    TEST_CHECK(vjoOcrReadRaw(seq, 30, 3, out) == VJO_ERR_ARG);
-    caller = 8; TEST_CHECK(vjoOcrReadRaw(seq, 0, 1, out) == VJO_ERR_PERM);
-    caller = 7; copy_out_fail = 1;
-    TEST_CHECK(vjoOcrReadRaw(seq, 0, 32, out) == VJO_ERR_COPY && !frees);
-    copy_out_fail = 0;
-    TEST_CHECK(vjoOcrReadRaw(seq, 0, 16, out) == 16 && !frees);
-    TEST_CHECK(out[0] == 0x52 && out[2047] == 0x52);
-    TEST_CHECK(vjoOcrReadRaw(seq, 16, 16, out) == 16 && frees == 1 && !g.raw);
-    TEST_CHECK(vjoOcrReadRaw(seq, 0, 1, out) < 0);
-    TEST_CHECK(game_ocr_capture_busy_locked()); /* inference still owns the job */
-    TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+    VjoGameOcrRowsInfo info;
+    uint32_t done_before = g.done_seq;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG, 40, user_rows, &info) == 16);
+    TEST_CHECK(rows_match(user_rows, 0, 16, 40, 0) && user_rows[32] == 0xCC); /* only width bytes per row */
+    TEST_CHECK(info.rc == 16 && info.fb_width == 32 && info.fb_pitch == FB_PITCH && info.fb_format == 0);
+    TEST_CHECK(hook_frames == 1 && rows_events == 1 && !allocations && !kstrip_allocs && !locks && !syscall_depth);
+    TEST_CHECK(g.done_seq == done_before && !capture_events); /* the pass is not over */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 16, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 16);
+    TEST_CHECK(rows_match(user_rows, 16, 16, 40, 0));
+    TEST_CHECK(g.done_seq == request.capture_seq && g.region_seq == request.capture_seq && capture_events == 1);
+    TEST_CHECK(g.crop_w == 32 && g.crop_h == 32 && !g.capture_result);
+    /* Later reads (the second pass, a line) need no signature. */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
+    TEST_CHECK(game_ocr_capture_busy_locked()); /* the job still owns the capture */
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+}
+static void rows_refuse_bad_requests_without_arming(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 100;
+    caller = 8; { VjoGameOcrRows r = {sizeof(r), seq, 0, 1, VJO_GAME_OCR_SRC_HOOK, 0, 32, 0};
+                  TEST_CHECK(vjoOcrCaptureRows(&r, user_rows, &info) == VJO_ERR_PERM); }
+    TEST_CHECK(rows_call(seq + 1, 0, 1, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 0, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, VJO_GAME_OCR_ROWS_MAX + 1, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 30, 3, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 1, VJO_GAME_OCR_SRC_HOOK, 0, 31, user_rows, &info) == VJO_ERR_ARG); /* stride < width */
+    TEST_CHECK(rows_call(seq, 0, 1, 7, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 1, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_LAST, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 4, 1, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG, 32, user_rows, &info) == VJO_ERR_ARG);
+    /* The destination must lie in one block of the caller: here, the end runs past it. */
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, 0, 200, user_rows, &info) == VJO_ERR_ARG);
+    user_block_ok = 0;
+    TEST_CHECK(rows_call(seq, 0, 1, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!hook_frames && rows.state == ROWS_IDLE && user_rows[0] == 0xCC && !locks && !syscall_depth);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* No frame within the wait: a timeout, and nothing is armed afterwards; a
+ * frame of another process or another size does not satisfy the request. */
+static void rows_timeout_other_process_and_size(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    uint64_t before = model_clock;
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(model_clock - before >= ROWS_WAIT_US && rows.state == ROWS_IDLE && user_rows[0] == 0xCC);
+    frame_pid = 8; frames_come = 1000;
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(user_rows[0] == 0xCC && rows.state == ROWS_IDLE);
+    frame_pid = 7; fb_w = 24; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_FORMAT);
+    fb_w = FB_W; fb_fmt = 0x12345678u; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_FORMAT);
+    TEST_CHECK(info.fb_format == 0x12345678u); /* the log names the format */
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+}
+/* Cancellation during the wait ends it; the hook copies nothing afterwards. */
+static void rows_cancelled_while_waiting(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0);
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_CANCELLED);
+    frames_come = 1; game_frame();
+    TEST_CHECK(user_rows[0] == 0xCC && rows.state == ROWS_IDLE);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* The ladder's last rung: the hook fills a small kernel strip and the call
+ * copies it out; the strip is freed before the call returns. */
+static void rows_kernel_strip_rung(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    hook_copy_fail = 1; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == VJO_ERR_COPY);
+    TEST_CHECK(user_rows[0] == 0xCC && !kstrip_allocs);
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info) == 8);
+    TEST_CHECK(rows_match(user_rows, 0, 8, 48, 0));
+    TEST_CHECK(kstrip_allocs == 1 && kstrip_frees == 1 && info.kstrip_bytes == 8 * 32 && !info.kstrip_rc);
+    TEST_CHECK(vjo_ledger_current(&g_kernel_ledger, VJO_KL_OCR_STRIP) == 0 &&
+               vjo_ledger_peak(&g_kernel_ledger, VJO_KL_OCR_STRIP) == 4096);
+    TEST_MSG("ledger current %u peak %u", (unsigned)vjo_ledger_current(&g_kernel_ledger, VJO_KL_OCR_STRIP),
+             (unsigned)vjo_ledger_peak(&g_kernel_ledger, VJO_KL_OCR_STRIP));
+    /* never while the Shell's JPEG capture holds its buffer */
+    g.mem_uid = 5;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info) == VJO_ERR_NO_MEMORY);
+    TEST_CHECK(info.kstrip_rc == VJO_ERR_NO_MEMORY && kstrip_allocs == 1 && rows.state == ROWS_IDLE);
+    g.mem_uid = 0;
+    kstrip_alloc_fail = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info) == (int)0x80024302u);
+    TEST_CHECK(info.kstrip_rc == (int)0x80024302u && rows.state == ROWS_IDLE && kstrip_frees == 1);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* A pending request holds off Lens/Anki captures and Submit; the game exiting
+ * clears it without any copy. */
+static void rows_pending_pins_and_process_exit(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    (void)info;
+    rows.state = ROWS_PENDING; rows.pid = 7; /* as a waiting syscall leaves it */
+    VJO_LOCK(); TEST_CHECK(game_ocr_capture_busy_locked()); VJO_UNLOCK();
+    game_ocr_process_gone(7);
+    TEST_CHECK(rows.state == ROWS_IDLE);
+    frames_come = 1; game_frame();
+    TEST_CHECK(user_rows[0] == 0xCC);
+    /* A copy in progress when the process exits: the kernel worker tidies up. */
+    setup(); seq = submit(); take(seq);
+    rows.state = ROWS_COPYING; rows.pid = 7;
+    game_ocr_process_gone(7);
+    TEST_CHECK(rows.state == ROWS_COPYING && rows.orphan);
+    rows.state = ROWS_DONE;
+    model_tick();
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.orphan);
+}
+
+/* A copy the hook started and has not finished when the call gives up: BUSY,
+ * the destination stays the hook's (and so does a kernel strip), no new
+ * request is armed meanwhile, and once the copy ends the kernel worker returns
+ * the state to IDLE so a Lens/Anki capture is not refused for the rest of the game. */
+static void rows_copy_outliving_its_call(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        setup(); uint32_t seq = submit(); take(seq);
+        VjoGameOcrRowsInfo info;
+        uint32_t m = mode ? VJO_GAME_OCR_SRC_KSTRIP : VJO_GAME_OCR_SRC_HOOK;
+        stall_copy = 1;
+        TEST_CHECK(rows_call(seq, 0, 8, m, 0, 48, user_rows, &info) == VJO_ERR_BUSY);
+        TEST_CHECK(rows.state == ROWS_COPYING && rows.abandoned && !rows.orphan);
+        TEST_CHECK(kstrip_frees == 0 && kstrip_allocs == (unsigned)mode); /* the hook may still write it */
+        VJO_LOCK(); TEST_CHECK(game_ocr_capture_busy_locked()); VJO_UNLOCK();
+        stall_copy = 0; frames_come = 1;
+        TEST_CHECK(rows_call(seq, 8, 8, m, 0, 48, user_rows, &info) == VJO_ERR_BUSY); /* not re-armed */
+        TEST_CHECK(rows.state == ROWS_COPYING && frames_come == 1);
+        model_tick();
+        TEST_CHECK(rows.state == ROWS_COPYING); /* still copying: left alone */
+        rows.state = ROWS_DONE;                 /* the hook ends its copy */
+        model_tick();
+        TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned && kstrip_frees == (unsigned)mode);
+        TEST_CHECK(rows_call(seq, 0, 8, m, 0, 48, user_rows, &info) == 8); /* usable again */
+        caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+        VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK(); /* Lens/Anki may capture */
+    }
+}
+
+/* N1: the destination stride is bounded, so the span the kernel checks is the
+ * span the hook writes. */
+static void rows_stride_is_bounded(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, VJO_MAX_W + 1, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 0x04104105u, user_rows, &info) == VJO_ERR_ARG);
+    /* a stride whose span wraps 32 bits: 31 x 0x08421085 + 32 is 59 B mod 2^32, inside the block */
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, 0, 0x08421085u, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!info.armed && rows.state == ROWS_IDLE && frames_come == 1 && user_rows[0] == 0xCC);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* N2: a copy whose process exited is never overtaken by a new request (BUSY,
+ * not armed: the worker asks again), and a process exit while its rows call is
+ * still in the kernel frees nothing the call still uses. */
+static void rows_process_exit_cannot_pull_state_from_a_call(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    rows.state = ROWS_COPYING; rows.pid = 9; rows.orphan = 1; /* the last game's copy, its process gone */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == VJO_ERR_BUSY);
+    TEST_CHECK(!info.armed && rows.pid == 9 && frames_come == 1); /* not armed, the old copy untouched */
+    rows.state = ROWS_DONE; model_tick();                      /* it ends; the kernel worker tidies */
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.orphan);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* The game exits after its frame, while the kernel-strip call is still inside:
+     * the strip stays until the call has copied it out. */
+    setup(); seq = submit(); take(seq);
+    gone_after_frame = 1; frames_come = 1;
+    int rc = rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info);
+    TEST_CHECK(frees_seen_at_exit == 0);                       /* process_gone freed nothing */
+    TEST_CHECK(rc == 8 && kstrip_allocs == 1 && kstrip_frees == 1); /* the call freed it, after its copy */
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.in_call && !rows.orphan);
+    VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK();
+    /* A call that never returns after its process exited: tidied after ROWS_GONE_US. */
+    rows.state = ROWS_DONE; rows.in_call = 1; rows.orphan = 1; rows.gone_us = model_clock;
+    model_tick();
+    TEST_CHECK(rows.state == ROWS_DONE && rows.in_call);         /* not yet */
+    model_clock += ROWS_GONE_US + 1; model_tick();
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.in_call && !rows.orphan);
 }
 
 static void open_model(uint32_t seq)
@@ -665,7 +934,15 @@ TEST_LIST = {
     {"model broker short reads copy retry EOF and native errors", model_short_read_copy_retry_and_errors},
     {"model broker late I/O cancellation exit Shell restart and pending close", model_cancel_exit_restart_and_late_io},
     {"model broker failed close and automatic orphan recovery", model_failed_close_and_orphan_recovery},
-    {"single-pass raw access and stale job sequences", single_pass_raw_and_stale_sequences},
+    {"rows: the hook copies grey rows into the worker block; the first pass publishes the capture", rows_hook_copies_grey_and_publishes_the_capture},
+    {"rows: bad requests are refused without arming", rows_refuse_bad_requests_without_arming},
+    {"rows: no frame, another process's frame or another size", rows_timeout_other_process_and_size},
+    {"rows: cancellation during the wait", rows_cancelled_while_waiting},
+    {"rows: the kernel strip rung, freed before the call returns", rows_kernel_strip_rung},
+    {"rows: a copy outliving its call is abandoned, then tidied by the kernel worker", rows_copy_outliving_its_call},
+    {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
+    {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
+    {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},
     {"queued and claimed capture pins", capture_pins_queued_and_claimed},

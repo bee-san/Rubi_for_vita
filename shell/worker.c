@@ -571,19 +571,58 @@ static uint32_t vocr_unusable_generation;
 static int vocr_fallback_requested;  /* the last request carried a fallback */
 static int vocr_retry_with_fallback; /* this job's retry: request the fallback itself */
 
-static int vocr_consume(void *ud, const VjoState *st)
+/* The capture of the job in flight: the kernel publishes it (VjoState.done_seq
+ * moves on, with capture_scene and region_seq) once the game has read its
+ * first pass over the region. Polled from the exchange's cancel callback. */
+static uint32_t vocr_done_before;
+static int vocr_capture_seen;
+
+static void vocr_note_capture(void)
 {
-    VjoGameOcrResult *result = ud;
-    VjoGameOcrRequest request = {.size=sizeof(request), .done_seq=st->done_seq};
+    VjoState st;
+    if (vocr_capture_seen) return; /* also set for full-frame and probe jobs: theirs is not the region's */
+    st.size = sizeof(st);
+    if (vjoGetState(&st) < 0 || st.done_seq == vocr_done_before) return;
+    vocr_capture_seen = 1;
+    job_capture_scene = st.capture_scene;
+    job_capture_seq = st.region_seq;
+    __sync_synchronize(); /* the scene is visible before job_captured */
+    job_captured = 1;
+}
+
+static int vocr_poll_cancelled(void *ud)
+{
+    vocr_note_capture();
+    return vocr_cancelled(ud);
+}
+
+/* The game worker's step log: one log.txt line per step (`step/rc/bytes/free`). */
+static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
+{
+    char line[224];
+    for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (vjo_gstep_format(line, sizeof(line), who, &r->step[i]) > 0)
+            vjo_log("%s", line);
+}
+
+/* One job: request (flags: VJO_GAME_OCR_F_*; force_model: this model, no
+ * fallback), exchange, logs. */
+static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *force_model, const char **ran)
+{
+    VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
+    VjoState st0;
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
     const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
     /* VOCR2's pinned model is already FL10-sized: no fallback. */
     const char *fallback = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? "" : job_cfg.vocr_fallback_model;
     vocr_fallback_requested = 0;
     if (fallback[0] && !sceClibStrcmp(fallback, model)) fallback = "";
-    if (fallback[0] && (vocr_retry_with_fallback ||
-                        (vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)))) {
+    if (force_model) {
+        model = force_model;
+        fallback = "";
+    } else if (fallback[0] && (vocr_retry_with_fallback ||
+                               (vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)))) {
         model = fallback;
         fallback = "";
     }
@@ -594,46 +633,78 @@ static int vocr_consume(void *ud, const VjoState *st)
     sceClibMemcpy(request.model, model, model_len+1);
     sceClibMemcpy(request.fallback, fallback, fallback_len+1);
     vocr_fallback_requested = fallback_len > 0;
-    job_capture_scene = st->capture_scene;
-    job_capture_seq = st->region_seq;
-    __sync_synchronize();
-    job_captured = 1;
-    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_cancelled, NULL, 60000000);
+    st0.size = sizeof(st0);
+    vocr_done_before = vjoGetState(&st0) < 0 ? 0 : st0.done_seq;
+    vocr_capture_seen = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
+    vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
+    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
+    vjo_capture_release();
+    vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
     static const char *const weights[] = {"none", "read", "resident"};
-    vjo_log("game vocr rc=%d %s%s: %ux%u, lines=%u USER workspace=%u weights=%s resident=%u, "
+    static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
+    static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
+    *ran = result->fallback ? request.fallback : model;
+    vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-            rc, result->fallback ? request.fallback : model,
-            !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
-            st->width, st->height, result->lines, result->workspace_bytes,
+            rc, *ran, !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
+            result->width, result->height, result->region_x, result->region_y, result->fb_width, result->fb_height,
+            (unsigned)result->fb_format, result->lines, result->workspace_bytes,
             result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
             result->find_us/1000, result->load_us/1000, result->recognize_us/1000, result->frames,
             (unsigned)result->io_error, (unsigned)result->stat_error, result->cleanup_status);
+    vjo_log("game vocr capture: %s into %s, %u B block, %u-row strips, %u strips in %u ms, %u rows changed, sum 0x%08X",
+            result->source < 4 ? sources[result->source] : "?",
+            result->capture_memory < 5 ? memories[result->capture_memory] : "?", (unsigned)result->capture_bytes,
+            (unsigned)result->strip_rows, (unsigned)result->captures, (unsigned)(result->capture_us / 1000),
+            (unsigned)result->tears, (unsigned)result->region_sum);
     if (result->fallback)
         vjo_log("game vocr fallback: %s needs workspace %u + weights %u + reserve %u, more than free "
                 "USER %d + own weights %u", model, (unsigned)result->model_need_workspace,
                 (unsigned)result->model_need_weights, (unsigned)result->reserve_bytes,
                 (int)result->free_user, (unsigned)result->model_release_bytes);
     log_vocr_measurements(result);
-    vjo_selftest_ocr(st, result, rc, result->fallback ? request.fallback : model);
+    log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
+    return rc;
+}
+
+/* The self-test (docs/self-test.md): every stage on this settled screen in
+ * turn, each with its record, a failed one included. They share the job's one
+ * result (the Shell's pages may only shrink): the last stage, the user's
+ * region again, leaves the job's text. */
+static int run_selftest_stages(VjoGameOcrResult *result)
+{
+    unsigned n = vjo_selftest_stages();
+    int rc = VJO_E_SOURCE;
+    for (unsigned i = 0; i < n && !vocr_cancelled(NULL); i++) {
+        const char *ran = "?";
+        int64_t t = now_us();
+        vjo_selftest_stage_begin(i, job_cfg.vocr_model, job_cfg.vocr_fallback_model);
+        sceClibMemset(result, 0, sizeof(*result));
+        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), NULL, &ran);
+        vjo_selftest_stage_end(i, rc, result, (uint32_t)((now_us() - t) / 1000), ran);
+    }
+    if (vocr_cancelled(NULL)) return VJO_E_CANCELLED; /* the stages run again on the next settled screen */
+    vjo_selftest_done();
     return rc;
 }
 
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
-    VjoState st;
     static VjoGameOcrResult result;
+    const char *ran = "?";
     int local = local_pipeline(&job_cfg);
     if (job_cfg.ocr_backend == VJO_OCR_VOCR2 && !VJO_VOCR2_MODEL_NAME[0]) {
         out->err.detail = "VOCR2 weights are unavailable in this build.";
         return out->err.rc = VJO_E_OCR_MODEL;
     }
-    st.capture_scene = 0;
-    st.capture_result = 0;
     sceClibMemset(&result, 0, sizeof(result));
     vocr_fallback_requested = 0;
-    out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
+    if (vjo_selftest_stages())
+        out->err.rc = run_selftest_stages(&result);
+    else
+        out->err.rc = vocr_run_one(&result, 0, NULL, &ran);
     /* The configured model failed to open or verify: keep OCR working with
      * the fallback for this job. Only a file that is absent, the wrong
      * length or fails its hash (io 0: rejected after reading) makes the
@@ -651,10 +722,8 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
             vocr_unusable_generation = job_generation;
         }
         vocr_retry_with_fallback = 1;
-        st.capture_scene = 0;
-        st.capture_result = 0;
         sceClibMemset(&result, 0, sizeof(result));
-        out->err.rc = vjo_capture_raw(0, vocr_consume, &result, &st);
+        out->err.rc = vocr_run_one(&result, 0, NULL, &ran);
         vocr_retry_with_fallback = 0;
     }
     if (out->err.rc != VJO_OK) {
@@ -666,10 +735,9 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }
         if (out->err.rc == VJO_E_OOM)
-            out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE
-                                                                    : game_oom_detail(&result);
-        if (st.capture_result)
-            vjo_selftest_fail("capture", st.capture_result); /* the game result's step was not reached */
+            out->err.detail = game_oom_detail(&result);
+        if (out->err.rc == VJO_E_SOURCE)
+            out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
     }
     if (local) {
@@ -1015,13 +1083,18 @@ static void apply_config(void)
         vjo_log("config warning: %s", cfg.warnings[i]);
 }
 
+/* The region in force for this game (w == 0: none, the whole frame). The
+ * self-test uses it as it is; its full-screen stage asks for the whole frame
+ * itself (VJO_GAME_OCR_F_FULL). */
+static VjoRect game_region;
+
 static void push_region(void)
 {
     VjoRect r;
     int found = vjo_region_load(title_id, &r, &scratch);
-    if (vjo_selftest_armed()) /* the largest region a job can need */
-        found = 0;
     vjoSetRegion(found && r.w ? &r : NULL);
+    if (found && r.w) game_region = r;
+    else sceClibMemset(&game_region, 0, sizeof(game_region));
     vjo_log("region: %s%s", found == VJO_REGION_GAME ? "this game's" : found ? "all games'" : "none",
             found && r.w ? "" : ", full screen");
 }
@@ -1273,7 +1346,12 @@ static void on_job_done(void)
     job_running = 0;
     job_done = 0;
     job_text_ready = 0;
-    if (job_cancelled || job_generation != game_generation || !same_pipeline(&job_cfg, &cfg)) {
+    /* A job that read a screen while it changed is as stale as a cancelled one:
+     * the next settled screen gets a new job, and no error is shown. */
+    if (job_cancelled || job_generation != game_generation || !same_pipeline(&job_cfg, &cfg) ||
+        d->err.rc == VJO_E_SCREEN_CHANGED) {
+        if (d->err.rc == VJO_E_SCREEN_CHANGED)
+            vjo_log("job dropped: the screen changed while the game read it");
         cache_ok = 0;
         job_cancelled = 0;
         if (ov != OV_CLOSED && game_active()) { /* the overlay waits for this screen's */
@@ -1503,7 +1581,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
         vjo_log("%s: JP Overlay disabled; game input passes through", tid);
-        vjo_selftest_game(tid, 0, mode);
+        vjo_selftest_game(tid, 0, mode, NULL);
         return;
     }
     sceClibSnprintf(title_id, sizeof(title_id), "%s", tid);
@@ -1524,7 +1602,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
             vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
-    vjo_selftest_game(tid, 1, mode);
+    vjo_selftest_game(tid, 1, mode, &game_region);
 }
 
 static void classify_pending(void)

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 49ff6f4d1c55804c600d098810574a49d382a009)
+set(VJO_VOCR_COMMIT a5d5aad68bb8e719e44e2e50b5836cf9afeae796)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -18,11 +18,16 @@ if(NOT VJO_VOCR_SOURCE_DIR)
 endif()
 
 set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
+# vocr_lines_rows.c is the row-callback form of vocr_lines.c (API 19 reads the
+# region from the game's framebuffer in strips); the game worker uses it, and
+# the host tests check that both give the same lines.
 set(_vocr_pins
   vocr.c d1fe1f7be4b479ec96d5ca0c1c44c4c3cb7edcf66dcf7abced332601fdcdeb33
   vocr.h c4948a25be4063cd1e22c2011a24c21d95c6a06c2360348452876a24288e09dd
-  vocr_lines.c 0752584953d92efa1e7e8195eaae31048bc4b79694da832349c37e1da82fa348
-  vocr_lines.h 2a5ba01c129608b94b92c28b77057f4e4ddb64a6f58c9c88fb1f8dfa8442d8e6)
+  vocr_lines.c 90c30a1c1e1707b818c2bd919243ee589700ff44ceac8b8d7a842b9d55d8d9ca
+  vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
+  vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e
+  vocr_lines_rows.h 60967239238df1ecca767e95c9c752f4c0b9efba097a59034ae2326717ad3465)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -44,7 +49,7 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # platform computes the same bits; the Vita build adds the Cortex-A9 NEON flags.
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
-add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c")
+add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)

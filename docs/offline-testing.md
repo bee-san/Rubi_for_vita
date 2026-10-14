@@ -15,7 +15,7 @@ partition, and taiHEN loading our modules into firmware processes
 | kernel: the hooks themselves (display, pad, touch, process events) | no | no | no | only here |
 | Shell plugin: control policy, memory lifetime, Anki miner and queue, strip, cursor, dictionary paging | real `shell/worker.c`, `anki.c`, `anki_queue.c`, `capture.c`, `strip_view.c`, `files.c` with stubs (16 suites) | not built (needs BearSSL and the core library; vita-vn-ocr's ARM lane covers the recognizer) | not loadable in its real context: Vita3K has no SceShell ("Shell support is pretty spotty" is about its own replacement UI); ScePaf, SceShell's partition and the LiveArea daily job do not exist there | only here |
 | Shell plugin: the Paf UI (`overlay.cpp`, `strip.cpp`) | header-level tests (`test_header_highlight.cpp`, `test_word_navigation.cpp`) | no | no | only here |
-| game worker: memory check, resident weights, model I/O through the broker, cancellation, the safe-boot exit | real `game_ocr/main.c` with stubs, real FL10/H15 when the models are present | no (the vocr runtime has its own ARM parity lane in vita-vn-ocr) | could load into a game through Vita3K's taiHEN HLE, but its `vjoOcr*` syscalls come from our kernel plugin, which cannot load: `module_start` would find the imports unresolved and start nothing | only here |
+| game worker: memory check, the capture ladder and probe, resident weights, model I/O through the broker, cancellation, the safe-boot exit | real `game_ocr/main.c` with stubs, real FL10/H15 when the models are present; with the real kernel (rows syscall, display-hook copy) in `test_game_model_broker.c` and under #74's measured pools in `test_alloc_sim.c` | the capture parity test (API 18's capture against API 19's, `test_capture_parity.c`) | as a plugin it could load into a game through Vita3K's taiHEN HLE, but its `vjoOcr*` syscalls come from our kernel plugin, which cannot load. `tools/vita3k_smoke.sh` runs its job code as a homebrew app instead, with an in-process kernel stand-in: a crash check, nothing more | only here |
 | packaged modules: syscall ABI, firmware-independent kernel imports, ARM-only instructions, page budgets | `check_vita_syscall_abi.py`, `check_kernel_instructions.py`, `check_memory_ledger.py` in the `vita` job | | | |
 | SceShell's memory under our footprint | the replay model (section 4), from console samples | | not modelled: no budgets, no SceShell | the self-test ([self-test.md](self-test.md)) |
 
@@ -24,7 +24,7 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 28 ctest suites
+failed joins, cancelled jobs and crashes between steps are injected there. 32 ctest suites
 plus the Python tool suites run in the `host` job; `test_jpegsw.py` and the Hachidori relay
 contract test complete it.
 
@@ -38,11 +38,14 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 |---|---|---|
 | boot_guard | 11 | 32-bit `uint32_t`/`int` arithmetic of the record, byte-identical record text |
 | ledger | 2 | `__sync` atomics compile to LDREX/STREX; 32-bit counters |
-| kernel_capture | 7 | 32-bit stride and capacity arithmetic |
+| kernel_capture | 8 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format |
 | kernel_input | 14 | the trigger state machine |
-| kernel_game_ocr | 25 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU) |
+| kernel_game_ocr | 33 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
+| kernel_meminfo | 4 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses |
+| capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 59 cases pass.
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 74 cases pass,
+and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-arm-linux-gnueabihf`, `qemu-user-static`). It
 is not a Vita: no firmware, no taiHEN, no SceShell, no budgets; a pass here says the C is
 32-bit clean, nothing more.
@@ -114,7 +117,12 @@ functions Vita3K does not implement likely will not work." The page's own note o
 
 So Vita3K can run none of the three plugins as they are, and it would say nothing about boot
 or memory if it could: no `ScePhyMemPartShell`, no `ScePhyMemPartKD`, no `0x80024302`
-[expert; AGENTS.md rule 5]. It is not wired into CI. vita-vn-ocr uses qemu-arm, not Vita3K,
+[expert; AGENTS.md rule 5]. It is not wired into CI. `tools/vita3k_smoke.sh` (#74 preflight)
+builds `tools/vita3k_smoke/` as a homebrew app: the real game worker's five self-test jobs and
+the two other pixel formats in a Vita user process, on a 32 KiB thread stack, with the release
+weights and an in-process stand-in for the kernel's syscalls. It passes when every job returns
+and the app and the emulator exit 0: it catches crashes in that code, and is not evidence of
+anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.
 
 ## 6. What only the console answers

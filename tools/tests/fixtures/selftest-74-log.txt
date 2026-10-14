@@ -1,0 +1,6 @@
+Vita JP Overlay kernel 18 started (normal mode)
+alloc capture buffer (2040 KiB) failed 0x80024302
+step game t=142959 title=PCSG00415 enabled=1 mode=1 region=full
+fail capture rc=-1073741826 t=144933
+capture request failed -1073741826
+job 0 done rc=-103 in 208 ms, arena peak 0, dictionary page 1/0

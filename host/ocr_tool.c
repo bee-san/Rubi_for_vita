@@ -107,15 +107,22 @@ int main(int argc, char **argv)
                     VJO_E_OCR_MODEL, model);
             return 1;
         }
-        /* Exactly what the Shell allocates for this region, nothing more. */
-        if (posix_memalign(&workspace, 64, need)) return 2;
-        rc = vjo_vocr_ocr(&platform, argv[i], model, &input, workspace, need, text, sizeof(text), &st);
+        /* Exactly what the game worker allocates for this region, nothing more:
+         * the workspace (here with the weights in front) and one capture strip. */
+        size_t cap = vjo_vocr_capture_bytes(im.width, im.height);
+        void *capture = malloc(cap);
+        if (!capture || posix_memalign(&workspace, 64, need)) return 2;
+        VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
+        VjoGreySource grey;
+        vjo_grey_source_rgba(&rgba, &grey);
+        rc = vjo_vocr_ocr(&platform, argv[i], model, &grey, workspace, need, capture, cap, text, sizeof(text), &st);
         fprintf(stderr, "rc=%d lines=%u tensor_heap_peak=%zu backend=vocr model=%s workspace=%zu "
-                "weights=%zu scratch=%zu region=%zu dark=%u truncated=%u frames=%u loaded=%u "
-                "find_us=%u load_us=%u recognize_us=%u\n",
-                rc, st.lines, st.workspace, model, st.workspace, st.model_bytes, st.scratch_bytes,
-                st.region_bytes, st.dark, st.truncated, st.frames, st.model_loaded,
+                "weights=%zu scratch=%zu capture=%zu strip_rows=%u strips=%u dark=%u truncated=%u frames=%u "
+                "loaded=%u find_us=%u load_us=%u recognize_us=%u\n",
+                rc, st.lines, st.workspace + st.capture, model, st.workspace, st.model_bytes, st.scratch_bytes,
+                st.capture, st.strip_rows, st.strips, st.dark, st.truncated, st.frames, st.model_loaded,
                 (unsigned)st.find_us, (unsigned)st.load_us, (unsigned)st.recognize_us);
+        free(capture);
 #else
         return usage();
 #endif

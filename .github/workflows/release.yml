@@ -66,7 +66,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 49ff6f4d1c55804c600d098810574a49d382a009
+          ref: a5d5aad68bb8e719e44e2e50b5836cf9afeae796
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -86,7 +86,7 @@ jobs:
       # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
       # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).
       - run: sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static
-      - run: ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static bash tools/arm_host_tests.sh build/arm-tests
+      - run: ARM_CC=arm-linux-gnueabihf-gcc QEMU=qemu-arm-static VJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr bash tools/arm_host_tests.sh build/arm-tests
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -113,7 +113,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          ref: 49ff6f4d1c55804c600d098810574a49d382a009
+          ref: a5d5aad68bb8e719e44e2e50b5836cf9afeae796
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

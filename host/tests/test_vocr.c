@@ -1,12 +1,15 @@
-/* vita-vn-ocr backend (core/vocr_ocr.c) without its weights: sizing, the
- * single pass over the rows, the line finder on both polarities, and every
- * refusal before or while the model loads. With VJO_VOCR_MODEL_DIR set, the
- * pinned table is also checked against the real release files. */
+/* vita-vn-ocr backend (core/vocr_ocr.c) without its weights: sizing (no copy
+ * of the region: one strip and its row checksums), the strips read through the
+ * source, the line finder on both polarities, a screen that changes while it is
+ * read, and every refusal before or while the model loads. With
+ * VJO_VOCR_MODEL_DIR set, the pinned table is also checked against the real
+ * release files. */
 #include "acutest.h"
 #include "net_posix.h"
 #include "vocr.h"
 #include "vocr_ocr.h"
 #include "vocr_lines.h"
+#include "../../core/fbgrey.h"
 #include "../../include/vjo_vocr_sizes.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,20 +19,32 @@
 #define W 400
 #define H 100
 static unsigned char pixels[W * H * 4];
-static unsigned reads[H];
-static int last_row, fail_rows, cancel_now, opens;
+static unsigned reads[H], strips_read, change_at;
+static int fail_rows, cancel_now, opens, change_every;
 
-static int rows(void *ud, unsigned y, unsigned n, unsigned char *dst)
+/* Grey strips of the RGBA pixels. change_at: from that strip on the screen is
+ * different (the player advanced the text); change_every: it never settles. */
+static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
-    (void)ud;
-    if (fail_rows || y + n > H || (int)y != last_row + 1) return -1;
-    for (unsigned r = 0; r < n; r++) reads[y + r]++;
-    last_row = (int)(y + n - 1);
-    memcpy(dst, pixels + (size_t)y * W * 4, (size_t)n * W * 4);
+    (void)ud; (void)flags;
+    if (fail_rows) return fail_rows;
+    if (y + n > H) return VJO_E_SOURCE;
+    strips_read++;
+    for (unsigned r = 0; r < n; r++) {
+        reads[y + r]++;
+        for (unsigned x = 0; x < W; x++) {
+            const unsigned char *p = pixels + ((size_t)(y + r) * W + x) * 4;
+            unsigned g = vjo_grey(p[0], p[1], p[2]);
+            if (change_at && strips_read >= change_at) g ^= 0x40;
+            if (change_every) g ^= (strips_read * 37u) & 0x7Fu; /* every read differs */
+            dst[(size_t)r * stride + x] = (unsigned char)g;
+        }
+    }
     return (int)n;
 }
 static int cancelled(void *ud) { (void)ud; return cancel_now; }
-static VjoOcrImage im = {NULL, W, H, rows, cancelled};
+static VjoGreySource im = {NULL, W, H, strip, cancelled, NULL};
+static unsigned char capture[64 * 1024];
 
 static void fill(unsigned char v)
 {
@@ -53,9 +68,10 @@ static void line_of_strokes(unsigned y0, unsigned y1, unsigned char v)
 static void reset(void)
 {
     memset(reads, 0, sizeof(reads));
-    last_row = -1;
-    fail_rows = cancel_now = opens = 0;
+    strips_read = change_at = 0;
+    fail_rows = cancel_now = opens = change_every = 0;
 }
+#define CAP capture, vjo_vocr_capture_bytes(W, H)
 
 static int no_file(void *ud, const char *path, VjoFile *out)
 {
@@ -84,11 +100,25 @@ static void test_models_and_sizes(void)
     TEST_CHECK(h15->bytes == 1155968 && h15->arena_bytes == 182944);
     TEST_CHECK(vjo_vocr_model("FL10_w8.vocr")->bytes == 657664);
     TEST_CHECK(!vjo_vocr_model("H15_f32.vocr") && !vjo_vocr_model("") && !vjo_vocr_model(NULL));
-    /* weights + max(finder, recognizer arena) + grey region + the runtime's two structs */
+    /* weights + max(finder, recognizer arena) + the runtime's two structs: no grey
+     * copy of the region any more (API 19), at any size */
     size_t full = vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 960, 544);
-    size_t parts = 1155968 + 182944 + 960 * 544;
+    size_t parts = 1155968 + 182944;
     TEST_CHECK(full >= parts && full - parts < sizeof(vocr_model) + sizeof(vocr_ctx) + 64);
     TEST_MSG("960x544 workspace %zu, parts %zu", full, parts);
+    TEST_CHECK(vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 917, 125) == full); /* the arenas dominate */
+    /* The capture block: one strip of grey rows and a checksum and a bit per row,
+     * under 64 KiB at every region size, a full frame included. */
+    static const unsigned sizes[][2] = {{960, 544}, {917, 125}, {760, 130}, {480, 272}, {1, 1}, {64, 544}};
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        unsigned w = sizes[i][0], h = sizes[i][1], rows = vjo_vocr_strip_rows(w, h);
+        size_t cap = vjo_vocr_capture_bytes(w, h);
+        TEST_CHECK(rows >= 1 && rows <= VJO_VOCR_STRIP_MAX_ROWS && rows <= h && (size_t)rows * w <= VJO_VOCR_STRIP_BYTES);
+        TEST_CHECK(cap < 64u * 1024u && ((cap + 4095u) & ~(size_t)4095u) <= 64u * 1024u);
+        TEST_MSG("%ux%u: %u-row strips, capture block %zu B", w, h, rows, cap);
+    }
+    TEST_CHECK(vjo_vocr_strip_rows(960, 544) == 59 && vjo_vocr_strip_rows(917, 125) == 62);
+    TEST_CHECK(!vjo_vocr_capture_bytes(961, 10) && !vjo_vocr_capture_bytes(10, 545) && !vjo_vocr_capture_bytes(0, 1));
     /* Resident form: the job is the one-shot workspace without the weights. */
     for (unsigned i = 0; i < n; i++) {
         size_t job = vjo_vocr_job_bytes(all[i].name, 917, 125);
@@ -96,7 +126,8 @@ static void test_models_and_sizes(void)
     }
     TEST_CHECK(!vjo_vocr_job_bytes("other.vocr", 100, 10) && !vjo_vocr_job_bytes(VJO_VOCR_DEFAULT_MODEL, 961, 10));
     TEST_CHECK(vjo_vocr_workspace_bytes("FL10_w8.vocr", 960, 544) < full);
-    TEST_CHECK(vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 880, 144) < full);
+    /* the region's size no longer counts: the arenas and weights dominate */
+    TEST_CHECK(vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 880, 144) == full);
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 961, 10));
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 10, 545));
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 0, 10));
@@ -127,10 +158,17 @@ static void test_empty_region_reads_no_model(void)
     p.file_open = no_file;
     reset();
     fill(16);
-    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) == VJO_OK);
     TEST_CHECK(!text[0] && st.lines == 0 && !st.model_loaded && opens == 0);
-    TEST_CHECK(st.workspace == bytes && st.region_bytes == (size_t)W * H);
-    for (unsigned y = 0; y < H; y++) TEST_CHECK(reads[y] == 1); /* each row once, in order */
+    TEST_CHECK(st.workspace == bytes && st.capture == vjo_vocr_capture_bytes(W, H));
+    TEST_CHECK(st.strip_rows == 64 && st.strip_rows == vjo_vocr_strip_rows(W, H));
+    /* The finder's two passes (both polarities), each over two 64-row strips:
+     * the first pass's strips follow each other ([0,64) [64,100)), a later
+     * strip stays inside the region ([0,64) [36,100)). No line: nothing more. */
+    for (unsigned y = 0; y < H; y++) TEST_CHECK(reads[y] == (y >= 36 && y < 64 ? 3u : 2u));
+    TEST_MSG("reads: row0 %u row63 %u row64 %u row99 %u, strips %u tries %u", reads[0], reads[63], reads[64],
+             reads[99], st.strips, st.tries);
+    TEST_CHECK(st.strips == 4 && !st.tears && st.tries == 1);
     free(ws);
 }
 
@@ -147,7 +185,7 @@ static void test_lines_both_polarities(void)
     fill(20);
     line_of_strokes(20, 44, 235);
     line_of_strokes(60, 84, 235);
-    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_OCR_MODEL);
     TEST_CHECK(st.lines == 2 && st.dark == 0 && opens == 1 && !text[0]);
     TEST_MSG("lines %u dark %u", st.lines, st.dark);
@@ -156,7 +194,7 @@ static void test_lines_both_polarities(void)
     fill(235);
     line_of_strokes(20, 44, 30);
     line_of_strokes(60, 84, 30);
-    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_OCR_MODEL);
     TEST_CHECK(st.lines == 2 && st.dark == 2);
     TEST_MSG("lines %u dark %u", st.lines, st.dark);
@@ -186,11 +224,11 @@ static void test_wrong_or_corrupt_weights(void)
     line_of_strokes(30, 54, 235);
     write_file(path, 1000, 0); /* wrong size */
     reset();
-    TEST_CHECK(vjo_vocr_ocr(&p, dir, VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, dir, VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_OCR_MODEL);
     write_file(path, 1155968, 0x5A); /* right size, wrong SHA-256 */
     reset();
-    TEST_CHECK(vjo_vocr_ocr(&p, dir, VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, dir, VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_OCR_MODEL);
     TEST_CHECK(st.lines == 1 && !st.model_loaded && !text[0]);
     unlink(path);
@@ -210,26 +248,92 @@ static void test_refusals(void)
     line_of_strokes(30, 54, 235);
 
     reset();
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes - 1, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes - 1, CAP, text, sizeof(text), &st) ==
                VJO_E_OOM);
     TEST_CHECK(!text[0] && st.workspace == bytes && reads[0] == 0); /* refused before any read */
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws + 8, bytes - 8, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, capture, vjo_vocr_capture_bytes(W, H) - 1,
+                            text, sizeof(text), &st) == VJO_E_OOM && reads[0] == 0);
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws + 8, bytes - 8, CAP, text, sizeof(text), &st) ==
                VJO_E_OOM); /* unaligned */
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", "other.vocr", &im, ws, bytes, text, sizeof(text), &st) == VJO_E_OCR_MODEL);
-    VjoOcrImage big = im;
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", "other.vocr", &im, ws, bytes, CAP, text, sizeof(text), &st) == VJO_E_OCR_MODEL);
+    VjoGreySource big = im;
     big.width = VJO_OCR_MAX_WIDTH + 1;
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &big, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &big, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_OCR_REGION);
     reset();
     cancel_now = 1;
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_CANCELLED);
     reset();
-    fail_rows = 1;
-    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
+    fail_rows = (int)0xBFFFFFFCu; /* the source's own error comes back */
+    TEST_CHECK(vjo_vocr_ocr(&p, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
+               (int)0xBFFFFFFCu);
+    TEST_CHECK(vjo_vocr_ocr(NULL, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
                VJO_E_SOURCE);
-    TEST_CHECK(vjo_vocr_ocr(NULL, "d", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, text, sizeof(text), &st) ==
-               VJO_E_SOURCE);
+    free(ws);
+}
+
+/* The screen changes while it is read: the row checksums differ, the job starts
+ * over, and gives up with VJO_E_SCREEN_CHANGED when it never settles. */
+static void test_changed_screen_is_read_again(void)
+{
+    VjoPlatform p = {0};
+    VjoVocrStats st;
+    char text[64];
+    size_t bytes;
+    void *ws = workspace(VJO_VOCR_DEFAULT_MODEL, &bytes);
+    p.file_open = no_file;
+    fill(20);
+    line_of_strokes(30, 54, 235);
+    reset();
+    change_at = 2; /* the check read differs from the first */
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
+               VJO_E_OCR_MODEL); /* read again, then the (missing) model */
+    /* 100 rows: two strips; the second pass's first strip saw the change */
+    TEST_CHECK(st.tries == 2 && st.tears == vjo_vocr_strip_rows(W, H) && st.lines == 1);
+    reset();
+    change_every = 1;
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &im, ws, bytes, CAP, text, sizeof(text), &st) ==
+               VJO_E_SCREEN_CHANGED);
+    TEST_CHECK(st.tries == VJO_VOCR_TRIES && !text[0] && !opens);
+    free(ws);
+}
+
+/* A region taller than a strip: two passes over every row (the finder's own),
+ * each strip read once per pass, the first pass's strips in order with the last
+ * one marked; a 960x544 frame never needs more than its capture block. */
+static int full_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
+{
+    static unsigned next_first;
+    unsigned *count = ud;
+    if (flags & VJO_STRIP_FIRST) { TEST_CHECK(y == next_first); next_first = y + n; if (flags & VJO_STRIP_LAST) { TEST_CHECK(y + n == 544); next_first = 0; } }
+    TEST_CHECK(y + n <= 544 && n <= 59 && stride == 960);
+    for (unsigned r = 0; r < n; r++) {
+        memset(dst + (size_t)r * stride, 16, 960);
+        if ((y + r) % 100 >= 40 && (y + r) % 100 < 64)
+            for (unsigned x = 40; x < 900; x += 6) memset(dst + (size_t)r * stride + x, 235, 2);
+    }
+    count[0]++;
+    if (flags & VJO_STRIP_LAST) count[1]++;
+    return (int)n;
+}
+static void test_full_frame_in_strips(void)
+{
+    VjoPlatform p = {0};
+    VjoVocrStats st;
+    char text[64];
+    unsigned counts[2] = {0, 0};
+    size_t bytes = vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 960, 544);
+    void *ws = NULL;
+    VjoGreySource full = {counts, 960, 544, full_strip, NULL, NULL};
+    TEST_ASSERT(posix_memalign(&ws, 64, bytes) == 0);
+    p.file_open = no_file;
+    TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &full, ws, bytes, capture,
+                            vjo_vocr_capture_bytes(960, 544), text, sizeof(text), &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.lines == 5 && st.strip_rows == 59 && counts[1] == 1 && !st.tears);
+    TEST_CHECK(st.strips >= 2u * 10u && st.strips == counts[0]); /* ceil(544 / 59) = 10 strips a pass */
+    TEST_MSG("960x544: %u lines, %u strips of %u rows, capture block %zu B", st.lines, st.strips, st.strip_rows,
+             vjo_vocr_capture_bytes(960, 544));
     free(ws);
 }
 
@@ -298,10 +402,12 @@ static void test_default_model_and_ceiling(void)
 TEST_LIST = {
     {"default_is_h15_with_fl10_fallback_within_the_budget_ceiling", test_default_model_and_ceiling},
     {"models_and_workspace_sizes", test_models_and_sizes},
-    {"empty_region_reads_rows_once_and_no_model", test_empty_region_reads_no_model},
+    {"empty_region_reads_strips_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},
     {"wrong_size_or_hash_is_refused", test_wrong_or_corrupt_weights},
     {"refusals_publish_no_text", test_refusals},
+    {"a_changed_screen_is_read_again_then_refused", test_changed_screen_is_read_again},
+    {"a_full_frame_goes_through_strips", test_full_frame_in_strips},
     {"pinned_table_matches_release_files", test_release_files},
     {NULL, NULL}
 };

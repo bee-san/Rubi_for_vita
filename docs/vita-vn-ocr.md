@@ -47,10 +47,11 @@ A missing or corrupt candidate reports an error without changing engines.
 
 ## What a recognition does
 
-1. The kernel captures the selected region (single pass). The game worker reads each
-   row once, converting it to grey (`(77 R + 150 G + 29 B) >> 8`, the luma both
-   the finder and the recognizer use), so the kernel frees its capture buffer
-   before recognition starts.
+1. The game reads its own screen ([in-game capture](ingame-capture.md)): the
+   display hook writes the selected region's rows, already grey
+   (`(77 R + 150 G + 29 B) >> 8`, the luma both the finder and the recognizer
+   use), a strip at a time into the game worker's own capture block. No copy
+   of the region exists; the kernel gives OCR no buffer.
 2. The polarity-agnostic line finder (`vocr_find_lines`, gradient/contrast
    projection) finds up to 16 lines. Unlike the PP-OCRv5 backend's bright-pixel
    finder it reads dark text on light boxes, outlined text and coloured names,
@@ -189,7 +190,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 49ff6f4d1c55804c600d098810574a49d382a009
+git -C /path/to/vita-vn-ocr checkout a5d5aad68bb8e719e44e2e50b5836cf9afeae796
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr

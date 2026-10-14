@@ -228,10 +228,12 @@ little free memory for H15, that job runs FL10 instead, automatically; if
 `vocr_model = FL10_w8.vocr` to always use FL10, or `vocr_fallback_model = none`
 to never fall back. Console speed and accuracy of H15 are not measured yet
 (see [the checklist](docs/vita-vn-ocr.md#on-console-checklist)). A memory
-error names where the memory ran out: the kernel's screen capture (a tighter
-region helps; the model does not matter), the game's memory for this region
+error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the model's weights (FL10 is the smallest),
-or the Shell's memory for results (restart the Vita). A Shell UI memory error
+or the Shell's memory for results (restart the Vita). Local OCR takes no
+kernel memory for the screen since API 19: the game reads its own screen
+([in-game capture](docs/ingame-capture.md)); Lens and Anki screenshots still
+use the kernel's capture buffer, where a tighter region helps. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 The complete settings template is
@@ -307,12 +309,17 @@ game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace.
 Adrenaline's PSP titles share its Vita process.
 
-The kernel transports bounded jobs, copied pixels and text. Game workers cannot
+The kernel transports bounded jobs and text. Game workers cannot
 submit jobs or control input. A job is tied to its game, capture sequence and
 foreground generation; suspend, game changes, cancellation and Shell restarts
-invalidate old work. The single-pass raw capture is freed when the game worker
-reads its final row. The worker frees each job's workspace before returning
-text. The verified weights stay in their own `USER_RW` block between jobs
+invalidate old work. The screen is read in the game: the display hook writes
+the region's rows, as 8-bit grey, a strip at a time (under 64 KiB at any
+region) into a block of the game worker's own memory, where the recognizer
+reads them; no copy of the region or of the frame exists, and the kernel pool
+gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
+CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
+logs each attempt ([docs/ingame-capture.md](docs/ingame-capture.md)). The
+worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
 (657,664 B for FL10 and 1,155,968 B for H15, held as 659,456 and
 1,159,168 B page-rounded blocks) and are read and
 SHA-256 checked again only when the model file's size or modification time
@@ -338,7 +345,7 @@ The shared API 13+ error codes keep bit 30 clear. On the physical Vita, the
 previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
-Native SDK file errors are unchanged. Install all three API 15 plugins together
+Native SDK file errors are unchanged. Install all three API 19 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
@@ -380,10 +387,12 @@ Set `log_file = on` to record bounded diagnostic logs. Fetch the bootstrap logs
 with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memory
 attempts are in `ux0:data/VitaJPOverlay/log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
-start a game and reach a text screen: it recognizes the first settled screen at
-the full-screen region and writes one report with every pool's free memory at each
-step; `--status` fetches it and `python3 tools/analyse_selftest.py` names what
-failed. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
+start a game and reach a text screen: on the first settled screen one job runs
+the fallback model, the configured model, the full screen, the capture probe and
+the configured model again, in your saved region, each stage with its own record,
+and the report has every pool's free memory at each step by every query route;
+`--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL
+row per stage. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
 game's free USER memory against what the job needed (also when it refused the
 job) and, for each recognized line, its size, CTC frames and recognition time.
 

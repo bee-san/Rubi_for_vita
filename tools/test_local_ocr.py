@@ -74,13 +74,15 @@ def check_vocr(run, image, many):
     assert result.returncode == 0 and 'lines=2' in result.stderr and 'dark=2' in result.stderr, result.stderr
     for line in LINES:
         assert line in result.stdout, result.stdout
-    # The workspace is the whole job's memory: weights + max(finder, recognizer
-    # arena) + the grey region + the runtime's structs.
+    # The job's whole memory is the workspace (weights + max(finder, recognizer
+    # arena) + the runtime's structs) and one capture strip (API 19: no grey copy
+    # of the region), the strip under 64 KiB.
     result = run(many)
     used = stat(result.stderr, 'tensor_heap_peak')
-    parts = stat(result.stderr, 'weights') + stat(result.stderr, 'scratch') + stat(result.stderr, 'region')
-    assert used == stat(result.stderr, 'workspace') and 0 <= used - parts < 16384, result.stderr
-    assert used < 2 * 1024 * 1024, result.stderr
+    workspace, capture = stat(result.stderr, 'workspace'), stat(result.stderr, 'capture')
+    parts = stat(result.stderr, 'weights') + stat(result.stderr, 'scratch')
+    assert used == workspace + capture and 0 <= workspace - parts < 16384, result.stderr
+    assert capture < 64 * 1024 and used < 2 * 1024 * 1024, result.stderr
 
 
 if __name__ == '__main__':

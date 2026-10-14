@@ -7,6 +7,7 @@
 #include <taihen.h>
 
 #include "vjo_kernel.h"
+#include "game_ocr.h"
 
 static tai_hook_ref_t hook_ref;
 static SceUID hook_uid = -1;
@@ -84,6 +85,8 @@ static void on_frame(const GameFb *fb)
         klog("capture %ux%u fmt %08X in %d us -> %d", g.crop_w, g.crop_h, fb->fmt,
              (int)(ksceKernelGetSystemTimeWide() - t0), g.capture_result);
     }
+    /* The game OCR worker's rows (API 19), straight into its own memory. */
+    game_ocr_rows_hook(fb->pid, fb->base, fb->pitch, fb->fmt, fb->w, fb->h);
     __sync_lock_release(&frame_busy);
 }
 
