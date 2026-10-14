@@ -2687,6 +2687,24 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     view_invariant = 0;
 }
 
+/* ocr_mode = on_press recognizes only when the overlay opens: the open
+ * overlay keeps its text and runs no refresh, however the screen settles. */
+static void test_on_press_overlay_never_refreshes(void)
+{
+    cursor_setup();
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    unsigned inferences = vocr_allocs;
+    for (int i = 0; i < 3; i++) {
+        next_scene(20 + i);
+        test_now += 4 * REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_CHECK(!job_running && vocr_allocs == inferences);
+    }
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay(); mem_free();
+}
+
 /* A replaced text's dictionary pages go with it: the overlay never offers
  * the old text's pages for the new text's word. */
 static void test_refresh_replacement_resets_dictionary_pages(void)
@@ -2718,6 +2736,7 @@ TEST_LIST = {
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
+    {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},

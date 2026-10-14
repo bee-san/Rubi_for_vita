@@ -297,8 +297,8 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual({k: v for k, v in rows(r.stdout).items() if v != "PASS"}, {})
         self.assertIn("FL10_w8.vocr, 3 line(s)", r.stdout)
         self.assertIn("; after 3 settled screen(s) without text in your region", r.stdout)
-        self.assertIn("The stages waited for text in your region: 3 settled screen(s) had none (rc -120, 0) before they "
-                      "ran.", r.stdout)
+        self.assertIn("The stages waited for text in your region past 3 settled screen(s) (2 with no line in your "
+                      "region, 1 that changed under every read (rc -120)) before they ran.", r.stdout)
         self.assertNotIn("The wait reached its bound", r.stdout)
         self.assertIn("14 line(s) recognized in all, 9 in your region", r.stdout)
         self.assertNotIn("INCOMPLETE", r.stdout)  # each wait closed the begin before it

@@ -2036,8 +2036,9 @@ static void background_open(void)
     if (!refresh_pending || t < refresh_after_us || t - lookup_us < REFRESH_IDLE_US)
         return;
     refresh_pending = 0;
-    /* Local text is valid only for this game's local pipeline (retired at every change). */
-    if (local_text_valid && vjoGetState(&st) >= 0 && (st.stable || st.quiet) &&
+    /* Local text is valid only for this game's local pipeline (retired at every
+     * change). ocr_mode = on_press recognizes only when the overlay opens. */
+    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && vjoGetState(&st) >= 0 && (st.stable || st.quiet) &&
         !shows_screen(local_text_scene, local_text_capture_seq, &st))
         start_job_kind("auto: screen settled", 0, 1);
 }

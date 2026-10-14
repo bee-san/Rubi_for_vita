@@ -30,8 +30,9 @@ it, and nothing says the dialogue changed. The region's scene can change while
 the dialogue does not: in the test build's console log one open overlay saw ten
 new scene numbers with the game's input blocked and one cell masked as
 animated (an icon whose mask comes and goes is enough).
-A screen that settles and is not the one the text was read from is recognized
-in the background, a refresh, which leaves the text, its entry and the result
+In Auto mode (not with `ocr_mode = on_press`, which recognizes only when the
+overlay opens), a screen that settles and is not the one the text was read from
+is recognized in the background, a refresh, which leaves the text, its entry and the result
 arena alone: the same text changes nothing, no text (a box between lines)
 keeps the shown one, and a different text replaces it quietly, with the cursor
 on its first character and its first word looked up. Requests made for the old

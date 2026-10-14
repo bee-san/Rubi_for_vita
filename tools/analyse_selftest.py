@@ -481,9 +481,11 @@ def analyse_v2(records):
     waits = stages.get("fallback", {}).get("waits", [])
     if waits:
         ran = bool(stages["fallback"].get("end"))
-        findings.append(f"The stages waited for text in your region: {len(waits)} settled screen(s) had none "
-                        f"(rc {', '.join(sorted({str(s32(x.get('rc', 0))) for x in waits}))})"
-                        + (" before they ran." if ran else " so far."))
+        changed = sum(1 for x in waits if s32(x.get("rc", 0)) == -120)
+        kinds = [f"{len(waits) - changed} with no line in your region"] if len(waits) > changed else []
+        kinds += [f"{changed} that changed under every read (rc -120)"] if changed else []
+        findings.append(f"The stages waited for text in your region past {len(waits)} settled screen(s) "
+                        f"({', '.join(kinds)})" + (" before they ran." if ran else " so far."))
         last = waits[-1].get("screens")
         if ran and isinstance(last, tuple) and last[0] >= last[1]:
             findings.append(f"The wait reached its bound ({last[1]} screens): the stages then ran on whatever was "

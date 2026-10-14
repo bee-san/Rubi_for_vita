@@ -149,8 +149,8 @@ word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. While the overlay is
 open, its text stays usable for lookups and Anki whatever the screen does, with no
-"dialogue changed" message: a newly settled screen is recognized in the background
-and replaces the text quietly only when it reads a different one
+"dialogue changed" message: in Auto mode a newly settled screen is recognized in the
+background and replaces the text quietly only when it reads a different one
 ([touch lookup](docs/touch-lookup.md)). A job that read a screen changing under it
 shows nothing and is retried quietly. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. With card mining on, Cross saves the shown word,
