@@ -143,13 +143,13 @@ elif '-o' in a:
         (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = H15_w8.vocr\njpdb_api_key = test-key\n")
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["install_settings"] = {"anki_mining": "on", "anki_field_picture": ""}
+        manifest["install_settings"] = {"anki_mining": "on", "anki_host": ""}
         manifest_path.write_text(json.dumps(manifest))
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("package settings: anki_mining=on anki_field_picture=\n", result.stdout)
+        self.assertIn("package settings: anki_mining=on anki_host=\n", result.stdout)
         config = (self.data / "config.ini").read_text()
-        for setting in ("anki_mining = on\n", "anki_field_picture =\n", "vocr_model = VOCR3_H15_w8.vocr\n",
+        for setting in ("anki_mining = on\n", "anki_host =\n", "vocr_model = VOCR3_H15_w8.vocr\n",
                         "jpdb_api_key = test-key\n"):
             self.assertIn(setting, config)
         self.assertNotIn("test-key", result.stdout)
@@ -161,9 +161,10 @@ elif '-o' in a:
         manifest = json.loads(manifest_path.read_text())
         canary = self.root / "canary"
         manifest["install_settings"] = {
-            "anki_deck": f"$(touch {canary}) `touch {canary}` 'q' \"dq\"",
-            "anki_tags": "line1\nlog_file = off", "anki_note_type": "a\u2028anki_host = 6.6.6.6",
-            "anki_audio_url": "x\x85y", "bad key": "1", "not_a_setting": "on", "jpdb_api_key": "pkg-secret"}
+            "anki_audio_url": f"$(touch {canary}) `touch {canary}` 'q' \"dq\"",
+            "log_host": "line1\nlog_file = off", "hachidori_host": "a\u2028anki_host = 6.6.6.6",
+            "anki_host": "x\x85y", "bad key": "1", "not_a_setting": "on", "anki_deck": "removed",
+            "jpdb_api_key": "pkg-secret"}
         manifest_path.write_text(json.dumps(manifest))
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -171,10 +172,10 @@ elif '-o' in a:
         self.assertNotIn("pkg-secret", result.stdout + result.stderr)
         self.assertIn("jpdb_api_key=set", result.stdout)
         shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
-        for dropped in ("anki_tags", "anki_note_type", "anki_audio_url", "bad key", "not_a_setting"):
+        for dropped in ("log_host", "hachidori_host", "anki_host", "bad key", "not_a_setting", "anki_deck"):
             self.assertNotIn(dropped, shown)
         config = (self.data / "config.ini").read_text()
-        self.assertIn(f"anki_deck = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
+        self.assertIn(f"anki_audio_url = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
         self.assertIn("jpdb_api_key = pkg-secret\n", config)
         self.assertIn("log_file = on\n", config)
         self.assertNotIn("6.6.6.6", config)

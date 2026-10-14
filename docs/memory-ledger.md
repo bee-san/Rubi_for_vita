@@ -22,14 +22,14 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
 
 ```
   pool                              permanent   worst case        limit     headroom
-  shell pages                         389,120      458,752    1,048,576      589,824
+  shell pages                         385,024      454,656    1,048,576      593,920
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
   game                                 94,208    2,392,064    2,392,064            0
   shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
-      VitaJPOverlay_Shell       299,008 B of    299,008 B declared
+      VitaJPOverlay_Shell       294,912 B of    294,912 B declared
       VitaJPOverlay_OCR          57,344 B of     57,344 B declared
 ```
 
@@ -48,7 +48,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 299,008 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 81,920 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap) | packaged SELF segments [measured] |
+| Shell module pages | 294,912 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 77,824 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap; 299,008 B until the fixed Kiku note removed the Anki field mapping's 1,152 B from each `VjoConfig` copy, and the LAN search moved to the Overlay app) | packaged SELF segments [measured] |
 | OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is registered per game (one `*TITLEID` section each, the installer's `--title`), never under `*ALL`, so taiHEN does not load it into SceShell. Were it loaded there (an older install's `*ALL` line, a hand edit), its `module_start` returns `NO_RESIDENT`, which unloads it at once (it held 45,056 B there before PR #68) | `tools/patch_tai_config.py`; `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |

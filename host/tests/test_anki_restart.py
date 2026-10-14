@@ -103,9 +103,9 @@ class RestartTests(unittest.TestCase):
             self.skipTest("VJO_EXPECT_ANKI_SCREENSHOT not set")
         self.assertEqual(SCREENSHOT, int(expected))
 
-    def test_lapis_note_after_offline_saves_and_restarts(self):
+    def test_kiku_note_after_offline_saves_and_restarts(self):
         """Wi-Fi off (no anki_host, no socket): two cards saved in fresh processes, the queue read back
-        in three more, then △ sends both to the AnkiConnect double with the default Lapis note."""
+        in three more, then △ sends both to the AnkiConnect double as Kiku notes in the Kiku deck."""
         for action, status, count in (("save", "Saved for Anki", 1), ("save-other", "Saved for Anki", 2)):
             saved = self.step(action)
             self.assertEqual((saved["status"], saved["count"]), (status, count))
@@ -116,16 +116,21 @@ class RestartTests(unittest.TestCase):
         names = sorted(p.name for p in self.queue.iterdir())
         self.assertEqual(sum(n.endswith(".json") for n in names), 2)
         self.assertEqual(sum(n.endswith(".jpg") for n in names), 2 if SCREENSHOT else 0)
+        records = [json.loads((self.queue / n).read_text("utf-8")) for n in names if n.endswith(".json")]
+        self.assertEqual({r["version"] for r in records}, {3})
+        self.assertEqual({(r["game"], r["title_id"], r["platform"]) for r in records},
+                         {("CLANNAD", "PCSG00415", "vita")})
         with anki_server() as (state, host):
             self.assertEqual(self.step("sync", host=host), {"count": 0, "status": "Sent 2 to Anki"})
             self.assertEqual(state["actions"], ["findNotes", "addNote", "findNotes", "addNote"])
             notes = {n["note"]["fields"]["Expression"]: n["note"] for n in state["notes"].values()}
         self.assertEqual(sorted(notes), ["好き", "猫"])
         neko = notes["猫"]
-        self.assertEqual((neko["deckName"], neko["modelName"]), ("Japanese::Mining", "Lapis"))
+        self.assertEqual((neko["deckName"], neko["modelName"]), ("Kiku", "Kiku"))
         fields = {
             "Expression": "猫", "ExpressionReading": "ねこ", "ExpressionFurigana": "猫[ねこ]",
-            "MainDefinition": "<ol><li>cat</li><li>shamisen &quot;neko&quot;</li></ol>",
+            "MainDefinition": '<div style="text-align: left;" class="yomitan-glossary"><ol><li><span><ul>'
+                              "<li>cat</li><li>shamisen &quot;neko&quot;</li></ul></span></li></ol></div>",
             "Sentence": "<b>猫</b>が好き猫", "FreqSort": "1500",
             "SentenceFurigana": "<b>猫</b>が好き猫", "MiscInfo": "CLANNAD (2026-10-12 09:30)"}
         if SCREENSHOT:  # AnkiConnect fills the named Picture field with the attached JPEG

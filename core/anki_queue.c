@@ -1,4 +1,5 @@
 #include "anki_queue.h"
+#include <stddef.h>
 #include <string.h>
 #include "bearssl.h"
 #include "json.h"
@@ -19,43 +20,85 @@ static void put_opt(VjoBuf *b, const char *s)
         vjo_buf_puts(b, "null");
 }
 
+/* ,"key":"value" (or null) */
+static void put_key(VjoBuf *b, const char *key, const char *s)
+{
+    vjo_buf_printf(b, ",\"%s\":", key);
+    put_opt(b, s);
+}
+
+static void put_strings(VjoBuf *b, const char *const *v, int n)
+{
+    vjo_buf_putc(b, '[');
+    for (int i = 0; i < n; i++) {
+        if (i)
+            vjo_buf_putc(b, ',');
+        put_str(b, v[i]);
+    }
+    vjo_buf_putc(b, ']');
+}
+
+/* Version 3's facts about the card: its game and how its text was read. */
+static const struct {
+    const char *key;
+    size_t offset;
+} facts[] = {
+    {"game", offsetof(VjoAnkiNote, game)},
+    {"title_id", offsetof(VjoAnkiNote, title_id)},
+    {"platform", offsetof(VjoAnkiNote, platform)},
+    {"ocr_engine", offsetof(VjoAnkiNote, ocr_engine)},
+    {"ocr_model", offsetof(VjoAnkiNote, ocr_model)},
+};
+
 char *vjo_queue_encode(VjoArena *a, const VjoAnkiNote *n, int picture)
 {
     VjoBuf b;
     if (n->n_meanings < 0 || n->n_meanings > VJO_QUEUE_MAX_MEANINGS || n->n_pos < 0 ||
         n->n_pos > VJO_QUEUE_MAX_POS || n->n_pitch < 0 || n->n_pitch > VJO_MAX_PITCH || !n->spelling ||
-        !*n->spelling)
+        !*n->spelling || n->n_more < 0 || n->n_more > VJO_ANKI_MAX_MORE)
         return NULL;
+    for (int k = 0; k < n->n_more; k++)
+        if (n->more[k].n_meanings < 0 || n->more[k].n_meanings > VJO_QUEUE_MAX_MEANINGS)
+            return NULL;
     vjo_buf_init(&b, a);
-    vjo_buf_puts(&b, "{\"version\":2,\"spelling\":");
+    vjo_buf_puts(&b, "{\"version\":3,\"spelling\":");
     put_str(&b, n->spelling);
     vjo_buf_puts(&b, ",\"reading\":");
     put_str(&b, n->reading);
     vjo_buf_puts(&b, ",\"sentence\":");
     put_str(&b, n->sentence);
-    vjo_buf_printf(&b, ",\"rank\":%d,\"hl_start\":%d,\"hl_end\":%d,\"picture\":%s,\"meanings\":[",
+    vjo_buf_printf(&b, ",\"rank\":%d,\"hl_start\":%d,\"hl_end\":%d,\"picture\":%s,\"meanings\":",
                    n->rank, n->hl_start, n->hl_end, picture ? "true" : "false");
-    for (int i = 0; i < n->n_meanings; i++) {
-        if (i)
-            vjo_buf_putc(&b, ',');
-        put_str(&b, n->meanings[i]);
-    }
-    vjo_buf_puts(&b, "],\"sentence_furigana\":");
-    put_opt(&b, n->sentence_furigana);
-    vjo_buf_printf(&b, ",\"sf_hl_start\":%d,\"sf_hl_end\":%d,\"source\":", n->sf_hl_start, n->sf_hl_end);
-    put_opt(&b, n->source);
+    put_strings(&b, n->meanings, n->n_meanings);
+    put_key(&b, "sentence_furigana", n->sentence_furigana);
+    vjo_buf_printf(&b, ",\"sf_hl_start\":%d,\"sf_hl_end\":%d", n->sf_hl_start, n->sf_hl_end);
+    put_key(&b, "source", n->source);
     vjo_buf_puts(&b, ",\"pitch\":[");
     for (int i = 0; i < n->n_pitch; i++)
         vjo_buf_printf(&b, "%s%d", i ? "," : "", n->pitch[i]);
-    vjo_buf_puts(&b, "],\"pos\":[");
-    for (int i = 0; i < n->n_pos; i++) {
-        if (i)
-            vjo_buf_putc(&b, ',');
-        put_str(&b, n->pos[i]);
+    vjo_buf_puts(&b, "],\"pos\":");
+    put_strings(&b, n->pos, n->n_pos);
+    put_key(&b, "misc", n->misc);
+    /* Version 3: the rest of what × knows. */
+    put_key(&b, "furigana", n->furigana);
+    put_key(&b, "dictionary", n->dictionary);
+    vjo_buf_puts(&b, ",\"more\":[");
+    for (int k = 0; k < n->n_more; k++) {
+        const VjoAnkiGloss *g = &n->more[k];
+        vjo_buf_puts(&b, k ? ",{\"dictionary\":" : "{\"dictionary\":");
+        put_opt(&b, g->dictionary);
+        put_key(&b, "spelling", g->spelling);
+        put_key(&b, "reading", g->reading);
+        vjo_buf_puts(&b, ",\"meanings\":");
+        put_strings(&b, g->meanings, g->n_meanings);
+        vjo_buf_putc(&b, '}');
     }
-    vjo_buf_puts(&b, "],\"misc\":");
-    put_opt(&b, n->misc);
-    vjo_buf_puts(&b, "}\n");
+    vjo_buf_putc(&b, ']');
+    for (unsigned i = 0; i < sizeof(facts) / sizeof(facts[0]); i++)
+        put_key(&b, facts[i].key, *(const char *const *)((const char *)n + facts[i].offset));
+    /* time: unsigned, until 2106. The recognizer reports no confidence yet:
+     * the key is there for when it does. */
+    vjo_buf_printf(&b, ",\"time\":%u,\"ocr_confidence\":null}\n", (unsigned)n->unix_time);
     return b.oom || b.len > VJO_QUEUE_TEXT_MAX ? NULL : vjo_buf_cstr(&b);
 }
 
@@ -96,21 +139,21 @@ static const char *string(VjoArena *a, const VjoJson *j, int t)
     return vjo_json_str(a, j, t);
 }
 
-/* An optional string: absent or null = none (0, *out NULL). */
-static int opt_string(VjoArena *a, const VjoJson *j, const char *key, const char **out)
+/* An optional string of object obj: absent or null = none (0, *out NULL). */
+static int opt_string(VjoArena *a, const VjoJson *j, int obj, const char *key, const char **out)
 {
-    int t = vjo_json_obj_get(j, 0, key);
+    int t = vjo_json_obj_get(j, obj, key);
     *out = NULL;
     if (t < 0 || vjo_json_is_null(j, t))
         return 0;
     return (*out = string(a, j, t)) ? 0 : -1;
 }
 
-/* An array of strings (absent = none unless required), at most max. */
-static int strings(VjoArena *a, const VjoJson *j, const char *key, int max, int required, const char ***out,
-                   int *n)
+/* An array of strings of object obj (absent = none unless required), at most max. */
+static int strings(VjoArena *a, const VjoJson *j, int obj, const char *key, int max, int required,
+                   const char ***out, int *n)
 {
-    int arr = vjo_json_obj_get(j, 0, key);
+    int arr = vjo_json_obj_get(j, obj, key);
     const char **v;
     *n = 0;
     *out = NULL;
@@ -129,6 +172,26 @@ static int strings(VjoArena *a, const VjoJson *j, const char *key, int max, int 
     return 0;
 }
 
+/* Version 3's other dictionaries' entries. */
+static int more(VjoArena *a, const VjoJson *j, VjoAnkiNote *n)
+{
+    int arr = vjo_json_obj_get(j, 0, "more");
+    VjoAnkiGloss *g;
+    if (arr < 0)
+        return 0;
+    if (!vjo_json_is_type(j, arr, JSMN_ARRAY) || j->t[arr].size > VJO_ANKI_MAX_MORE ||
+        !(g = (VjoAnkiGloss *)vjo_arena_zalloc(a, sizeof(*g) * (size_t)(j->t[arr].size + 1))))
+        return -1;
+    for (int k = 0, t = arr + 1; k < j->t[arr].size; k++, t = vjo_json_skip(j, t))
+        if (!vjo_json_is_type(j, t, JSMN_OBJECT) || opt_string(a, j, t, "dictionary", &g[k].dictionary) ||
+            opt_string(a, j, t, "spelling", &g[k].spelling) || opt_string(a, j, t, "reading", &g[k].reading) ||
+            strings(a, j, t, "meanings", VJO_QUEUE_MAX_MEANINGS, 1, &g[k].meanings, &g[k].n_meanings))
+            return -1;
+    n->more = g;
+    n->n_more = j->t[arr].size;
+    return 0;
+}
+
 int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, int *picture)
 {
     VjoJson j;
@@ -137,8 +200,8 @@ int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, 
     n->sf_hl_start = n->sf_hl_end = -1;
     if (!len || len > VJO_QUEUE_TEXT_MAX || memchr(json, 0, len) ||
         vjo_json_parse(a, json, len, &j) < 0 || !vjo_json_is_type(&j, 0, JSMN_OBJECT) ||
-        vjo_json_skip(&j, 0) != j.n || number(&j, "version", &version) || (version != 1 && version != 2) ||
-        number(&j, "rank", &n->rank) || number(&j, "hl_start", &n->hl_start) ||
+        vjo_json_skip(&j, 0) != j.n || number(&j, "version", &version) || version < 1 ||
+        version > VJO_QUEUE_VERSION || number(&j, "rank", &n->rank) || number(&j, "hl_start", &n->hl_start) ||
         number(&j, "hl_end", &n->hl_end) ||
         vjo_json_bool(&j, vjo_json_obj_get(&j, 0, "picture"), picture))
         return -1;
@@ -146,16 +209,16 @@ int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, 
     n->reading = string(a, &j, vjo_json_obj_get(&j, 0, "reading"));
     n->sentence = string(a, &j, vjo_json_obj_get(&j, 0, "sentence"));
     if (!n->spelling || !*n->spelling || !n->reading || !n->sentence ||
-        strings(a, &j, "meanings", VJO_QUEUE_MAX_MEANINGS, 1, &n->meanings, &n->n_meanings))
+        strings(a, &j, 0, "meanings", VJO_QUEUE_MAX_MEANINGS, 1, &n->meanings, &n->n_meanings))
         return -1;
     if (version == 1)
-        return 0;
+        return version;
     /* Version 2: upstream's values. */
-    if (opt_string(a, &j, "sentence_furigana", &n->sentence_furigana) ||
+    if (opt_string(a, &j, 0, "sentence_furigana", &n->sentence_furigana) ||
         (n->sentence_furigana && (number(&j, "sf_hl_start", &n->sf_hl_start) ||
                                   number(&j, "sf_hl_end", &n->sf_hl_end))) ||
-        opt_string(a, &j, "source", &n->source) || opt_string(a, &j, "misc", &n->misc) ||
-        strings(a, &j, "pos", VJO_QUEUE_MAX_POS, 0, &n->pos, &n->n_pos))
+        opt_string(a, &j, 0, "source", &n->source) || opt_string(a, &j, 0, "misc", &n->misc) ||
+        strings(a, &j, 0, "pos", VJO_QUEUE_MAX_POS, 0, &n->pos, &n->n_pos))
         return -1;
     pitch = vjo_json_obj_get(&j, 0, "pitch");
     if (pitch >= 0) {
@@ -166,7 +229,13 @@ int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, 
                 return -1;
         n->n_pitch = j.t[pitch].size;
     }
-    return 0;
+    if (version == 2)
+        return version;
+    /* Version 3: what the note needs of the rest. */
+    if (opt_string(a, &j, 0, "furigana", &n->furigana) || opt_string(a, &j, 0, "dictionary", &n->dictionary) ||
+        more(a, &j, n))
+        return -1;
+    return version;
 }
 
 /* ---------------- IDs ---------------- */

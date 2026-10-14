@@ -175,8 +175,9 @@ static void test_save_switch_reload_retains_other_settings(void)
     TEST_CHECK(strstr(out, "; Keep this comment\r\n") && strstr(out, "unknown_future_setting = unchanged\n"));
     TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
 }
-/* Anki is configured in config.ini only: a Settings save keeps every anki_*
- * line verbatim, and the Shell still reads the same host, deck and fields. */
+/* An OCR choice saved by the app keeps every anki_* line verbatim, and the
+ * field-mapping settings of older builds (anki_deck, anki_note_type,
+ * anki_field_*: Kiku is fixed now) load without a warning. */
 static void test_settings_save_keeps_anki_settings(void)
 {
     static const char anki[] =
@@ -193,10 +194,64 @@ static void test_settings_save_keeps_anki_settings(void)
     TEST_MSG("%s", out);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && cfg.local_dictionary_results == 3 && cfg.anki_mining == 1 &&
-               !strcmp(cfg.anki_host, "192.168.1.23:8766") &&
-               !strcmp(cfg.anki_deck, "Mining #1 ; main") && !strcmp(cfg.anki_note_type, "Lapis;v2") &&
-               !cfg.anki_field[VJO_ANKI_PICTURE][0] && !strcmp(cfg.anki_field[VJO_ANKI_WORD], "Word") &&
-               cfg.n_warnings == 0);
+               !strcmp(cfg.anki_host, "192.168.1.23:8766") && cfg.n_warnings == 0);
+    TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
+}
+/* The Anki page's save: anki_mining and anki_host replaced where they are,
+ * a duplicate dropped, a missing one appended; every other byte kept. */
+static void test_anki_page_save(void)
+{
+    static const char before[] =
+        "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = off ; old\r\nocr_backend = vocr\n"
+        "ANKI_HOST=10.0.0.1\nanki_audio_url = http://h/?t={term};x\nanki_mining = on\nfont_size_ja = 22";
+    static const char *const keys[] = {"anki_mining", "anki_host"};
+    const char *values[] = {"on", "auto"};
+    char out[512];
+    VjoConfig cfg;
+    int len = vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, sizeof(out));
+    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\nocr_backend = vocr\n"
+                                       "anki_host = auto\nanki_audio_url = http://h/?t={term};x\nfont_size_ja = 22"));
+    TEST_MSG("%s", out);
+    /* missing keys go at the end, after a line break */
+    len = vjo_config_patch_keys("a = 1", 5, keys, values, 2, out, sizeof(out));
+    TEST_CHECK(len > 0 && !strcmp(out, "a = 1\nanki_mining = on\nanki_host = auto\n"));
+    len = vjo_config_patch_keys("", 0, keys, values, 2, out, sizeof(out));
+    TEST_CHECK(len > 0 && !strcmp(out, "anki_mining = on\nanki_host = auto\n"));
+    /* refused: no room, a line break in a value, an embedded NUL */
+    TEST_CHECK(vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, 40) == -1);
+    values[1] = "auto\nanki_mining = off";
+    TEST_CHECK(vjo_config_patch_keys("", 0, keys, values, 2, out, sizeof(out)) == -1);
+    values[1] = "auto";
+    TEST_CHECK(vjo_config_patch_keys("a\0b", 3, keys, values, 2, out, sizeof(out)) == -1);
+    /* through the file: what the overlay then loads */
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    TEST_ASSERT(vjo_preferences_save_anki(1, "192.168.1.23:8766", &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    /* (the fixture's one warning is its unknown_future_setting) */
+    TEST_CHECK(cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "192.168.1.23:8766") && cfg.n_warnings == 1 &&
+               cfg.font_size_ja == 22 && !strcmp(cfg.vocr_model, "H15_w8.vocr"));
+    TEST_MSG("mining %d host %s warnings %d: %s", cfg.anki_mining, cfg.anki_host, cfg.n_warnings, cfg.warnings[0]);
+    TEST_ASSERT(vjo_preferences_save_anki(0, "", &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.anki_mining == 0 && !cfg.anki_host[0] && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
+    {
+        char text[sizeof(original) + 160];
+        int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
+        ssize_t n = read(fd, text, sizeof(text) - 1);
+        close(fd);
+        TEST_ASSERT(n > 0);
+        text[n] = 0;
+        TEST_CHECK(!strncmp(text, original, sizeof(original) - 1) &&
+                   !strcmp(text + sizeof(original) - 1, "anki_mining = off\nanki_host = \n"));
+        TEST_MSG("%s", text);
+    }
+    /* a failed write leaves the old file */
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    write_fail = 1;
+    TEST_CHECK(vjo_preferences_save_anki(1, "auto", &arena) < 0);
+    write_fail = 0;
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(!cfg.anki_mining && !cfg.anki_host[0]);
 }
 static void test_save_failure_preserves_or_recovers_actual_choices(void)
 {
@@ -386,6 +441,7 @@ static void test_removed_meiki_choice_loads_as_vocr_and_is_rewritten(void)
 }
 TEST_LIST = {
     {"settings_save_keeps_anki_settings_verbatim", test_settings_save_keeps_anki_settings},
+    {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"removed_Meiki_choice_loads_as_VOCR_and_next_save_rewrites_it", test_removed_meiki_choice_loads_as_vocr_and_is_rewritten},
     {"dictionary_results_is_an_owned_validated_preference", test_dictionary_results_patch_and_parse},

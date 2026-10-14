@@ -16,25 +16,6 @@ enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
 
-/* Data put on an Anki note, each into the field named by its
- * anki_field_* setting ("" = not added). */
-enum {
-    VJO_ANKI_WORD = 0,   /* spelling */
-    VJO_ANKI_READING,    /* kana */
-    VJO_ANKI_FURIGANA,   /* 言葉[ことば] */
-    VJO_ANKI_DEFINITION, /* <ol><li>meaning</li>...</ol> */
-    VJO_ANKI_SENTENCE,   /* the recognized text, the word in <b> */
-    VJO_ANKI_PICTURE,    /* screenshot */
-    VJO_ANKI_FREQUENCY,  /* frequency rank */
-    VJO_ANKI_AUDIO,      /* the word's pronunciation, downloaded by Anki */
-    VJO_ANKI_SENTENCE_FURIGANA, /* the sentence in 漢字[かんじ] syntax, the word in <b> */
-    VJO_ANKI_PITCH_POSITION,    /* [2], as Yomitan writes it */
-    VJO_ANKI_PITCH_CATEGORIES,  /* heiban,kifuku */
-    VJO_ANKI_FREQUENCY_LIST,    /* <ul><li>Jiten: 384</li></ul> */
-    VJO_ANKI_MISC_INFO,         /* the game and the date */
-    VJO_ANKI_FIELD_COUNT
-};
-
 #define VJO_CONFIG_MAX_WARNINGS 4
 /* The Shell reads the text plus NUL into its existing 24 KiB scratch arena.
  * Settings must never publish a file larger than that reader can load. */
@@ -70,12 +51,9 @@ typedef struct {
     int ocr_skip_blank_lines; /* 0/1 */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
+    /* Anki (core/anki.h): one note type, Kiku, in one deck; nothing else to set. */
     int anki_mining;          /* 0/1: × saves cards to the offline queue, △ sends it */
     char anki_host[64];       /* see vjo_anki_endpoint */
-    char anki_deck[128];
-    char anki_note_type[64];
-    char anki_tags[128];      /* separated by spaces */
-    char anki_field[VJO_ANKI_FIELD_COUNT][64]; /* note field names, "" = skip */
     char anki_audio_url[256]; /* "" = no word audio; see vjo_anki_audio_endpoint */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;

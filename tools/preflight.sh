@@ -106,12 +106,20 @@ print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/
   arena=$(grep -E '^#define VJO_BUDGET_PAF_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
   if [ -n "$am_head" ] && [ "$am_head" -gt 0 ] && [ "$arena" = 131072 ] \
      && "$PY" tools/check_memory_ledger.py > "$log/ledger-src.log" 2>&1 && ! grep -q WARNING "$log/ledger-src.log"; then
-    pass "Anki offline queue (Shell)" "text-only cards, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); restart/Lapis $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
+    pass "Anki offline queue (Shell)" "text-only cards, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); restart/Kiku $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
   else
     fail "Anki offline queue (Shell)" "budget/model check (arena ${arena:-?}, headroom ${am_head:-?}; $log/ledger-src.log)"
   fi
 else
   fail "Anki offline queue (Shell)" "$log/anki-build.log $log/anki-restart.log"
+fi
+# 2c. the Overlay app's Anki page (core/anki_app.c): the LAN search, the connection test (version,
+# the Kiku note type's fields, the Kiku deck) and Send now, on the queue's real storage
+aa=$BUILD/vjo-anki-app-tests
+if [ -x "$aa" ] && "$aa" > "$log/anki-app.log" 2>&1; then
+  pass "Anki page (Overlay app)" "$(grep -c '\[ OK \]' "$log/anki-app.log") cases: Kiku notes in the deck Kiku from record versions 1-3, test, auto search, send once"
+else
+  fail "Anki page (Overlay app)" "$aa ($log/anki-app.log)"
 fi
 
 # 2c. the one-command collect (install_ftp.sh --collect: the real script, curl and ftplib against a
@@ -253,6 +261,9 @@ assumptions the console still has to confirm (none of these is measured yet):
     beside a game were measured once at 98,304 B with an older, larger build; the model's
     headroom at that step is an estimate, and a refused thread or arena is survived (host
     tests), the card is then not saved and the overlay says so. Cards carry no screenshot.
+  - The Overlay app's Anki page (its SceNet, the system keyboard, the LAN search) and a real
+    AnkiConnect with Kiku v2.1.0 have run on the host only (a fake AnkiConnect); no console has
+    run them.
   - CPU3 load and the hook's cost per frame: unmeasured (AGENTS.md rule 8).
   - Vita3K is not evidence: it cannot load the kernel plugin and has no KD, SceShell or taiHEN.
 EOF

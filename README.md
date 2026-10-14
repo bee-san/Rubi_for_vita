@@ -7,8 +7,9 @@ Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes **Overlay**, a standalone per-game settings app. Optional
 [Anki card mining](docs/anki.md) saves the shown word as a card in an offline
 queue on the memory card, with or without Wi-Fi, and sends the queue to
-AnkiConnect on a computer on your local network when you press Triangle. It is
-off until you set `anki_mining = on`. There is no AnkiWeb sync.
+AnkiConnect on a computer on your local network, as [Kiku](https://github.com/youyoumu/kiku)
+notes in the deck Kiku, when you press Triangle or **Send queued cards now** in
+the Overlay app's Anki page, where it is also switched on. There is no AnkiWeb sync.
 
 Open the **Overlay** app, press **Select**, and choose **VOCR**,
 **[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
@@ -136,8 +137,8 @@ ur0:tai/VitaJPOverlay_OCR.suprx
 | Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
-| Cross | Save the shown word as an Anki card in the offline queue, with `anki_mining = on` ([Anki mining](docs/anki.md)) |
-| Triangle | Send the queued cards to Anki at `anki_host` |
+| Cross | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](docs/anki.md)) |
+| Triangle | Send the queued cards to AnkiConnect, as Kiku notes |
 | Circle | Close the overlay |
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
@@ -146,12 +147,12 @@ settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
 Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. With `anki_mining = on`, Cross saves the shown word
-and its sentence to the card queue on the memory card, even with Wi-Fi off or
-Anki closed; Triangle sends the queue to AnkiConnect. The card has no
-screenshot: the Picture field's full-frame capture is the kernel buffer #74's
-console refused, so the build leaves it out until it comes from the game's own
-memory ([Anki](docs/anki.md#memory-and-network)).
+when opening the overlay. With card mining on, Cross saves the shown word,
+its sentence and every dictionary's entry for it to the card queue on the
+memory card, even with Wi-Fi off or Anki closed; Triangle sends the queue to
+AnkiConnect. The card has no screenshot yet: the old full-frame capture is the
+kernel buffer #74's console refused, and one from the game's own strips is
+not built yet ([Anki](docs/anki.md#the-record-version-3)).
 
 ### Drawing the region
 
@@ -171,8 +172,8 @@ not tested yet.
 ## Per-game settings
 
 The **Overlay** app shows three large game cards at a time, with wrapped
-titles, visible IDs and clear ON/OFF badges. Tap the **Games** or **OCR & lookup**
-tab, or press Select, to change pages. Choices save automatically to
+titles, visible IDs and clear ON/OFF badges. Tap the **Games**, **OCR & lookup**
+or **Anki** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 
 | Control | Action |
@@ -182,7 +183,7 @@ tab, or press Select, to change pages. Choices save automatically to
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list |
-| Select or touch a page tab | Switch between Games and OCR/lookup settings |
+| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup) settings |
 | Circle | Exit |
 
 On the **OCR & lookup** page, select a card with Up/Down. Cross
@@ -323,21 +324,29 @@ cloud fallback.
 
 ### Anki
 
-Card mining is off by default (the test builds turn it on). With
-`anki_mining = on`, Cross saves cards as readable JSON files, text only (this
-build takes no screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they
-survive restarts and need no network.
-To send them to Anki on your computer, install AnkiConnect, set its
-`webBindAddress` to `0.0.0.0`, set `anki_host = COMPUTER_IP` (or `IP:port`, or
-`auto` to search the local network once), and press Triangle. Cards go one at
-a time; a card leaves the queue only when Anki confirms it, so a failed or
-interrupted send can be repeated without duplicates. `anki_deck`,
-`anki_note_type`, `anki_tags` and the `anki_field_*` keys choose the deck,
-note type and field mapping when you send; the defaults fit the Lapis note
-type. An empty field key leaves that item out; `anki_audio_url` adds word
-audio from a Yomitan audio source. AnkiConnect is unauthenticated plain HTTP:
-use it only on a trusted network. These settings are edited in `config.ini`,
-not in the Overlay app. See [docs/anki.md](docs/anki.md) for the queue,
+Card mining is off by default (the test builds turn it on). With it on, Cross
+saves cards as readable JSON files, text only (this build takes no
+screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts
+and need no network. Each record (version 3) keeps everything known at the
+press: the word, its reading and furigana, the shown entry and its
+dictionary's name, the other dictionaries' entries, the whole recognized text
+with the word's offsets, the game, its title ID and platform, the time, and
+the OCR engine and model.
+
+The cards become notes of one note type, [Kiku](https://github.com/youyoumu/kiku)
+(its v2.1.0 fields), in one deck, **Kiku**: there is no deck, note type or
+field mapping to set. On the computer, install AnkiConnect, set its
+`webBindAddress` to `0.0.0.0` and import `Kiku_v2.1.0.apkg`. On the Vita, the
+Overlay app's **Anki** page has the rest: card mining ON/OFF, AnkiConnect's
+address (your computer's IP, `IP:port`, or `auto` to search the local
+network), **Test connection** (AnkiConnect, the Kiku note type's fields and
+the Kiku deck) and **Send queued cards now**. Triangle in the overlay sends
+too. Cards go one at a time; a card leaves the queue only when Anki confirms
+it, so a failed or interrupted send can be repeated without duplicates.
+Records of the earlier queue (v0.8.0-test.1's and #5's) still send.
+`anki_audio_url` in `config.ini` optionally adds word audio from a Yomitan
+audio source. AnkiConnect is unauthenticated plain HTTP: use it only on a
+trusted network. See [docs/anki.md](docs/anki.md) for the queue, the Kiku
 fields, messages and memory bounds.
 
 ## Memory and troubleshooting
@@ -394,7 +403,7 @@ together (API 20 since the job policy below) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B
+64 KiB result arena and no TLS pool for local lookup. Its module holds 294,912 B
 of SceShell's partition (down from 405,504 B in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
@@ -415,7 +424,8 @@ bounded Paf allocation through the same reserve guard (128 KiB: cards are
 text-only, no screenshot and no kernel capture) and a 64 KiB thread stack; both
 are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
-and refused memory never touch the recognized text.
+and refused memory never touch the recognized text. SceShell never searches
+the network for Anki: `auto` uses the address the Overlay app's search found.
 The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
@@ -512,9 +522,12 @@ close/reopen during lookup, scene/region invalidation, Unicode navigation and
 allocation/free cycles, bounded model reads and stale-job isolation. The Shell
 Anki miner is tested with its real capture path and its offline queue on real
 files: saves without a host or network, restarts, Japanese text and escaping,
-failed and short writes, temp and damaged files, AnkiConnect requests and field
-mapping, lost replies and retries, duplicates, refused memory, cancellation and
-50 card lifetimes; crash/restart tests run each step in a fresh process. Real
+failed and short writes, temp and damaged files, AnkiConnect requests and the
+Kiku note, every record version, other dictionaries' entries, lost replies and
+retries, duplicates, refused memory, cancellation and 50 card lifetimes;
+crash/restart tests run each step in a fresh process. The Overlay app's Anki
+page logic (the search, the connection test, Send now) runs against the same
+queue storage and a fake AnkiConnect. Real
 model tests also run the actual game worker through the actual kernel broker
 with FL10/H15, unavailable game storage, short reads, corrupt weights and
 failed cleanup. The integration tests model the observed syscall return

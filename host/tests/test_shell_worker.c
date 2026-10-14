@@ -153,8 +153,13 @@ int vjo_anki_stop(void) { return anki_stop_rc; }
 int vjo_anki_configure(const VjoConfig *c) { anki_configured++; return c->anki_mining; }
 void vjo_anki_reap(void) { anki_reaps++; }
 void vjo_anki_post_count(void) { anki_counts++; }
-static char anki_game[128];
-void vjo_anki_set_game(const char *name) { snprintf(anki_game, sizeof(anki_game), "%s", name); }
+static char anki_game[128], anki_tid[16], anki_model[64];
+void vjo_anki_set_game(const char *tid, const char *name)
+{
+    snprintf(anki_game, sizeof(anki_game), "%s", name);
+    snprintf(anki_tid, sizeof(anki_tid), "%s", tid);
+}
+void vjo_anki_set_ocr_model(const char *model) { snprintf(anki_model, sizeof(anki_model), "%s", model); }
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size) { snprintf(name, size, "Title of %s", tid); }
 void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *c) {}
 int vjo_net_cancel_init(VjoNetCancel *c) { return 0; }

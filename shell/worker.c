@@ -483,6 +483,16 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     vjo_view_unlock();
 }
 
+const VjoLocalPages *vjo_view_pages(int *page)
+{
+    for (int k = 0; k < 2; k++)
+        if (g_view.list == &cache_data[k].list && cache_data[k].pages) {
+            *page = cache_data[k].page;
+            return cache_data[k].pages;
+        }
+    return NULL;
+}
+
 static void view_show_cache(void)
 {
     view_waiting = view_job_text = 0;
@@ -823,6 +833,9 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
             out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
     }
+    /* The model on this text's Anki cards (ran names the request's fallback
+     * only inside vocr_run_one; a self-test job's last stage is the configured one). */
+    vjo_anki_set_ocr_model(result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model);
     if (local) {
         VjoArena text_arena;
         vjo_arena_init(&text_arena, local_text, sizeof(local_text));
@@ -1679,7 +1692,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
     {
         char name[128];
         vjo_title_name(pid, tid, name, sizeof(name)); /* "" for an unreadable title */
-        vjo_anki_set_game(name);                      /* Anki's MiscInfo */
+        vjo_anki_set_game(tid, name);                 /* recorded on Anki cards */
     }
     apply_config();
     if (!net_busy() && !local_pipeline(&cfg))
@@ -1742,7 +1755,7 @@ static void on_game_exit(void)
     if (!net_busy())
         mem_free();
     title_id[0] = '\0';
-    vjo_anki_set_game("");
+    vjo_anki_set_game("", "");
     vjo_ledger_shell_log("exit");
     vjo_selftest_step("exit");
 }

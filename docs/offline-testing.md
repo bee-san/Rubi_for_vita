@@ -70,12 +70,12 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        299,008       262,144
-OCR worker pages in SceShell             299,008       262,144   (0: registered per game, not loaded there)
-VjoNet thread                            368,640       192,512
-VjoControl thread (boot complete)        389,120       172,032
-game start: result memory (local)        389,120       172,032
-Anki card saved: job thread              458,752       102,400
+Shell module loaded into SceShell        294,912       266,240
+OCR worker pages in SceShell             294,912       266,240   (0: registered per game, not loaded there)
+VjoNet thread                            364,544       196,608
+VjoControl thread (boot complete)        385,024       176,128
+game start: result memory (local)        385,024       176,128
+Anki card saved: job thread              454,656       106,496
 ```
 
 What this says, and what it does not:
@@ -84,7 +84,8 @@ What this says, and what it does not:
   left 28,672 B in that session: seven pages, less than the 65,544 B change that broke the boot
   in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
   the overlay's text arena out of `.bss`) holds 389,120 B, 73,728 B below the v0.7.4 build that
-  ran beside a game, and leaves 172,032 B at the end of boot in the same session.
+  ran beside a game, and leaves 172,032 B at the end of boot in the same session; without the
+  Anki field mapping the build holds 385,024 B and leaves 176,128 B.
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily
