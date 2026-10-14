@@ -115,12 +115,12 @@ one 64 KiB result arena (`VJO_SL_PAF_RESULTS`) stays held during it instead of b
 the job, its text stays in the worker's static result until the control thread compares it in its
 24 KiB scratch, and a new text is copied into the existing 4 KiB `local_text`. The item's worst case
 is unchanged (the arena was already held with the overlay open). Its code (and the SCREEN_CHANGED
-pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,072 B of Shell text
-(object text, Vita build, `-Os`: `shell/worker.c` +978, `shell/selftest.c` +129,
+pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,148 B of Shell text
+(object text, Vita build, `-Os`: `shell/worker.c` +1,054, `shell/selftest.c` +129,
 `shell/game_ocr_client.c` +66, `core/client.c` −101), paid for by building six more cold files with
 `-Os` (`vita/CMakeLists.txt`: −1,204 B). The module stays at 299,008 B: the build log's module row
-goes from 217,048 to 216,816 B of text and from 81,232 to 81,264 B of data and `.bss` (+32 B of
-state) [measured: `.refs/ci.sh … vita` on main 4a7ae4d and on this change].
+goes from 214,488 to 214,360 B of text and from 77,876 to 77,924 B of data and `.bss` (+48 B of
+state) [measured: `.refs/ci.sh … vita` on main dca0ba4 and on this change].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 

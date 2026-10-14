@@ -35,12 +35,15 @@ overlay opens), a screen that settles and is not the one the text was read from
 is recognized in the background, a refresh, which leaves the text, its entry and the result
 arena alone: the same text changes nothing, no text (a box between lines)
 keeps the shown one, and a different text replaces it quietly, with the cursor
-on its first character and its first word looked up. Requests made for the old
-text are refused by its generation. A lookup goes first: it cancels a refresh
-in progress, and a refresh starts only once no lookup has started for 1.5 s
-and at least 2 s after the previous one. A refresh whose screen changed under
-every read is tried again at the pace of any such job ([in-game
-capture](ingame-capture.md)). Region and game changes still retire the text.
+on its first character and its first word looked up; the subtitle strip (Select
++ R, if on) shows it too, and Anki cards name the model that read it. Requests
+made for the old text are refused by its generation. A lookup goes first: it
+cancels a refresh in progress, and a refresh starts only once no lookup has
+started for 1.5 s and at least 2 s after the previous one. A refresh whose
+screen changed under every read is tried again at the pace of any such job
+([in-game capture](ingame-capture.md)); one that fails (the game's memory, say)
+shows nothing and backs off as any OCR job, 2 s doubling to 60 s. No refresh
+runs while the self-test is armed. Region and game changes still retire the text.
 
 In v0.7.10, a highlight change explicitly invalidates the header drawing after
 updating its color styles. The applied range is committed only after the native

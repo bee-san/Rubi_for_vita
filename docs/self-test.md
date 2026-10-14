@@ -130,8 +130,10 @@ A region stage (`fallback`, `textbox`, `textbox2`) that completed but found no l
 is `NOTEXT`, not PASS: it shows the capture and the memory, not recognition. #81's report (the
 v0.8.0-test.1 console run) had all three at 0 lines while the full screen found 5, and this tool
 then said PASS. `recognitions` is NOTEXT when no region stage recognized a line. A run with no
-FAIL but a NOTEXT row ends `NO TEXT: ...` (it names the stages and what the full screen found)
-and exits 1; a FAIL wins over it. The `fallback` row and the findings count the settled screens
+FAIL but a NOTEXT row ends `NO TEXT: ...` and exits 1; a FAIL wins over it. The verdict names the
+stages without a line and either what the full screen found (no region stage read a line: the
+text was elsewhere) or what the other region stages read there (the screen changed between the
+stages, when the region's checksum did). The `fallback` row and the findings count the settled screens
 the stages waited past (`selftest-v2-waited.txt`), and say when the wait reached its bound
 (`selftest-v2-notext.txt`, shaped like #81's run); a report that ends while the stages still wait
 is INCOMPLETE and says so (`selftest-v2-waiting.txt`).
