@@ -4,8 +4,9 @@ The release defaults to `ocr_backend = vocr`: the
 [vita-vn-ocr](vita-vn-ocr.md) recognizer and polarity-agnostic line finder run
 inside each enabled game through the game OCR worker, registered for each game
 (`*TITLEID`, the installer's `--title`); the `*main` plugin owns
-the UI and dictionary lookup. FL10 is the smaller default; FL10 and H15 int8 models are in
-the complete release archive. With the bundled local JMdict, the whole
+the UI and dictionary lookup. VOCR3-H15 is the default, with VOCR3-FL10 as its
+automatic fallback; v0.2.0's H15 and FL10 int8 models are in the package too
+([models](vita-vn-ocr.md#models)). With the bundled local JMdict, the whole
 recognition/lookup pipeline needs no network. See the guide for real-screenshot
 host measurements, memory bounds and the physical-console validation limits.
 
