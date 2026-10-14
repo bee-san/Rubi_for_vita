@@ -293,6 +293,9 @@ elif '-o' in a:
         result = self.install("tools/install_ftp.sh", "--self-test", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Self-test armed", result.stdout)
+        # the command it names is the one that collects (install-vita.sh takes no --collect)
+        self.assertIn("run: bash tools/install_ftp.sh --collect 127.0.0.1\n", result.stdout)
+        self.assertNotIn("install-vita.sh --collect", result.stdout)
         self.assertIn("--title takes effect when installing (bash install-vita.sh --title PCSG00415", result.stdout)
         self.assertEqual((self.data / "selftest.txt").read_bytes(), b"")
         for partition in ("ur0", "ux0"):

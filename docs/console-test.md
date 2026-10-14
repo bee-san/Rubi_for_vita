@@ -35,14 +35,16 @@ bash tools/install_ftp.sh --self-test VITA_IP
 - It registers the OCR worker for CLANNAD only (`*PCSG00415`), the kernel plugin under `*KERNEL`
   and the Shell plugin under `*main`, and prints each change.
 - It prints `package settings: ...` for the test build's own settings (`anki_mining=on`).
-- Keep the screen on until it prints `Installed. Reboot the Vita.`; `Nothing was changed on the Vita`
-  means you left out `--title`.
+- Keep the screen on until it prints `Installed. Reboot the Vita, then leave it on for a minute. …`;
+  `Nothing was changed on the Vita` means you left out `--title`.
 - In VitaShell, install `ux0:data/JPOverlaySettings.vpk` (the **Overlay** app).
 
 Manual install without the install script (VitaShell's file manager, over USB or FTP): first copy
 `ur0:tai/config.txt` to `ur0:tai/config.txt.bak` and your `ux0:data/VitaJPOverlay/config.ini` aside
 (the zip's replaces it), copy the zip's `ur0/` and `ux0/` folders onto the Vita's `ur0:` and `ux0:`,
-install `ux0:data/JPOverlaySettings.vpk`, then add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
+copy the zip's `JPOverlaySettings.vpk` (at its top level) to `ux0:data/` and install it with VitaShell,
+delete `ur0:data/VitaJPOverlay/boot.txt` if it exists (the installer resets it, so a safe mode left by
+an earlier build ends), then add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` and, in a new section,
 ```ini
 *PCSG00415
@@ -71,9 +73,10 @@ It reads everything the overlay wrote (logs, the self-test report, status/kernel
 `config.ini` with its API keys redacted, both taiHEN configurations, the Anki queue, crash dumps, the
 installed files' hashes) into one folder and zip under `build/device/collect/`, writes nothing on the
 Vita, and prints the analysis. Send the zip it names (`Send this one file: ...`) and one line per step
-saying what you saw ("overlay showed", "no OCR", "crash at step 3"...). The zip holds your queued Anki
-cards' sentences; send it directly rather than on a public issue if you prefer. Keep the photos
-private (the game is copyrighted).
+saying what you saw ("overlay showed", "no OCR", "crash at step 3"...). Send it privately, not on a
+public issue: API keys are removed, but it holds your queued Anki cards' sentences (text of a
+copyrighted game), your PC's LAN address (`anki_host`), your taiHEN plugin list, your games' title
+IDs and any crash dump (a memory image of the crashed process). Keep the photos private too.
 
 The analysis's self-test verdict is decided by the OCR rows alone; diagnostics marked WARN (the probe,
 the memory routes) are measurements to send back, not failures.

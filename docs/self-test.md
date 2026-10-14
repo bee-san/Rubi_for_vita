@@ -187,14 +187,16 @@ are a proposal; the table says so.
 bash tools/install_ftp.sh --collect VITA_IP
 ```
 
-With VitaShell's FTP running, this fetches, **read-only** (only `CWD`, `LIST`, `SIZE` and `RETR`
-reach the Vita; `tools/collect_vita.py`), into one timestamped folder
+With VitaShell's FTP running, this fetches, **read-only** (the Vita receives only the login and
+`PWD`, `CWD`, `TYPE`, `PASV`/`EPSV`, `LIST`, `SIZE`, `RETR` and `QUIT`; nothing that writes, renames or
+deletes; `tools/collect_vita.py`), into one timestamped folder
 `build/device/collect/vjo-collect-YYYYMMDD-HHMMSSZ/` and a zip of it next to it:
 
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
   marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
   `kernel.prev.txt`, `config.ini` with every `*api_key` value replaced by its length before anything
-  is written, `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
+  is written (also a key line without `=`; any `api_key` text in the logs' config warnings is masked
+  too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK and OCR

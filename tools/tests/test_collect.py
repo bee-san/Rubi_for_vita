@@ -18,12 +18,14 @@ from ftp_mock import FtpMock  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SECRET = "jpdb-secret-key-1234"
+SECRET2 = "jiten-secret-without-equals"
 
 LOG = """bootstrap: shell API 19 entered
 bootstrap: kernel resident, installing Paf callback
 Vita JP Overlay shell started (kernel API 19)
 bootstrap: worker started
-game PCSG00415 started: dictionary local (key MISSING), trigger l+r, subtitles select+r, ocr_mode auto
+config warning: ignored line 'jiten_api_key {SECRET2}'
+game PCSG00415 started: dictionary Local dictionaries (key MISSING), trigger l+r, subtitles select+r, ocr_mode auto
 job start (auto: screen settled)
 game vocr rc=0 VOCR3_H15_w8.vocr: 917x125 at 22,400 of 960x544 fmt 0x00000000, lines=3 USER workspace=188416 weights=read resident=1159168, find=9 ms load=1050 ms recognize=820 ms frames=330 io=0x00000000 stat=0x00000000 cleanup=0
 game vocr capture: hook into USER, 61440 B block, 62-row strips, 9 strips in 34 ms, 0 rows changed, sum 0x5EED0003
@@ -39,7 +41,10 @@ overlay closed: 120 frames, 3 word moves, stick 0, slowest frame 33 ms
 anki: Picture field off in this build: no screenshot, no kernel capture buffer
 anki: save 猫 rc=0, 0-byte screenshot, 45 ms
 anki: queue 1 card(s)
-"""
+anki: sent 0, 0 duplicates, 0 unreadable, 0 too large, 1 pending, 30 ms
+thread VjoAnki refused 0x80024302: 69632 B; SceShell free 28672 (0x00000000), held 389120
+anki: count not started 0x80024302
+""".replace("{SECRET2}", SECRET2)
 KERNEL = """Vita JP Overlay kernel 19 started (normal mode)
 hooks: display 0, input 0, procevent 0 (0 = ok)
 shell registered: pid 0x10000 (was 0x0)
@@ -47,8 +52,9 @@ game pid 0x20000 active
 ocr worker registered: game pid 0x20000 module 0x30000
 ocr job 1: 917x125 at 22,400 of 960x544, capture 1, flags 0x0, VOCR3_H15_w8.vocr / VOCR3_FL10_w8.vocr
 """
-CONFIG = (f"; settings\nocr_backend = vocr\nvocr_model = VOCR3_H15_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n"
-          f"ocr_mode = auto\nlog_file = on\nanki_mining = on\nanki_host =\njpdb_api_key = {SECRET}\njiten_api_key =\n")
+CONFIG = (f"\ufeff; settings\r\nocr_backend = vocr\r\nvocr_model = VOCR3_H15_w8.vocr\r\nvocr_fallback_model = VOCR3_FL10_w8.vocr\r\n"
+          f"ocr_mode = auto\r\nlog_file = on\r\nanki_mining = on\r\nanki_host =\r\njpdb_api_key = {SECRET}\r\njiten_api_key =\r\n"
+          f"jiten_api_key {SECRET2}\r\n\tJPDB_API_KEY\t=\tx{SECRET}\x0cy\r\nlens_api_key = cr{SECRET}\rpart\r\n")
 TAI = (b"*KERNEL\r\nur0:tai/VitaJPOverlay_Kernel.skprx\r\n*main\r\nur0:tai/VitaJPOverlay_Shell.suprx\r\n*ALL\r\n"
        b"# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx\r\n*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n")
 
@@ -85,6 +91,7 @@ class Collect(unittest.TestCase):
         (data / "anki_queue/0123456789abcdef0123456789abcdef.json").write_text('{"version":2,"spelling":"猫"}\n',
                                                                                 encoding="utf-8")
         (data / "anki_queue/fedcba9876543210fedcba9876543210.json.tmp").write_text("{")
+        (data / "anki_queue/a  b#c%20d?.json").write_text("{}")  # spaces, URL characters: fetched as named
         (self.device / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             "vjoboot1 seq=3 mode=0 stage=4 inert=0 fault=0 failures=0 api=19 prev=0/0/0/0\n")
         (self.device / "ur0/tai/config.txt").write_bytes(TAI)
@@ -142,15 +149,25 @@ class Collect(unittest.TestCase):
                     "analysis.json"):
             self.assertIn(folder.name + "/" + rel, names)
         self.assertTrue(any(n.startswith(folder.name + "/listings/") for n in names))
-        # the API key is in no file of the zip; its length is
+        self.assertIn(d + "anki_queue/a  b#c%20d?.json", names)
+        # no API key is in any file of the zip, also one written without = (the C parser logs that line
+        # whole as a config warning) or one with a form feed in it; its length is
         self.assertNotIn(SECRET.encode(), blob)
-        config = (folder / "ux0/data/VitaJPOverlay/config.ini").read_text()
-        self.assertIn(f"jpdb_api_key = <redacted: {len(SECRET)} characters>\n", config)
-        self.assertIn("jiten_api_key =\n", config)
+        self.assertNotIn(SECRET2.encode(), blob)
+        self.assertNotIn(SECRET2, result.stdout + result.stderr)
+        config = (folder / "ux0/data/VitaJPOverlay/config.ini").read_bytes().decode()
+        self.assertIn(f"jpdb_api_key = <redacted: {len(SECRET)} characters>\r\n", config)
+        self.assertIn("jiten_api_key =\r\n", config)
+        self.assertIn(f"jiten_api_key <redacted: {len(SECRET2)} characters>\r\n", config)
+        self.assertIn(f"\tJPDB_API_KEY\t=\t<redacted: {len(SECRET) + 3} characters>\r\n", config)
+        self.assertIn(f"lens_api_key = <redacted: {len(SECRET) + 7} characters>\r\n", config)  # a lone CR stays in
+        self.assertIn("config warning: ignored line 'jiten_api_key <redacted>'",
+                      (folder / "ux0/data/VitaJPOverlay/log.txt").read_text())
         # the weights are hashed, never kept
         self.assertFalse(any(n.endswith(".vocr") for n in names))
         record = json.loads((folder / "COLLECT.json").read_text())
-        self.assertEqual(record["redacted_keys"], ["jpdb_api_key"])
+        self.assertEqual(record["redacted_keys"], ["jpdb_api_key", "jiten_api_key", "jpdb_api_key", "lens_api_key"])
+        self.assertEqual(record["redacted_log_lines"], {"ux0:/data/VitaJPOverlay/log.txt": 1})
         self.assertIn("ux0:/data/VitaJPOverlay/selftest.txt", record["missing"])
         self.assertEqual(record["errors"], [])
         self.assertEqual(record["hashed"]["ux0:/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr"]["sha256"],
@@ -163,7 +180,10 @@ class Collect(unittest.TestCase):
         # the analysis: the self-test, the logs, the tiers, and what it cannot decide
         analysis = (folder / "analysis.txt").read_text()
         for text in ("installed files: 7 of 8 match the package; DIFFER or absent: ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
-                     "API keys redacted: jpdb_api_key",
+                     "API keys redacted: jpdb_api_key, jiten_api_key, jpdb_api_key, lens_api_key",
+                     "games: PCSG00415 x1 (ocr_mode auto, Local dictionaries)",
+                     "Shell jobs (OCR + dictionary): 1 (rc ok (rc 0) x1)",
+                     "SceShell refused memory 2 time(s)",
                      "ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], OCR worker under ['PCSG00415']",
                      "boot.txt: vjoboot1 seq=3 mode=0 stage=4",
                      "worker registrations 1, OCR jobs submitted 1",
@@ -175,7 +195,7 @@ class Collect(unittest.TestCase):
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",
                      "Anki: 1 save(s) (0 failed), queue 1, 0 sent, Picture off in this build",
-                     "anki_queue on the card: 1 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); anki_host.txt 192.168.1.23:8765",
+                     "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); anki_host.txt 192.168.1.23:8765",
                      "crash dumps: psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (4,096 B)",
                      "free game USER before the self-test's first block (selftest-report.txt): 91,226,112 B",
                      "recommendation: Large (the largest tier",
@@ -188,7 +208,11 @@ class Collect(unittest.TestCase):
             self.assertIn(text, analysis)
         # the lowest free USER any job saw (5,000,000 B, a refused job) is under Small's 4 MiB reserve +
         # 1,716,224 B first job: the game's recommendation is the most conservative sample's
-        self.assertNotIn("key MISSING", analysis.split("lines reporting a problem")[-1].split("anki_queue")[0])
+        problems = analysis.split("lines reporting a problem", 1)[1].split("anki_queue on the card")[0]
+        self.assertNotIn("key MISSING", problems)
+        self.assertNotIn("anki: sent N, N duplicates, N unreadable", problems)  # a clean summary is not a problem
+        self.assertIn("thread VjoAnki refused", problems)
+        self.assertIn("anki: count not started", problems)
         summary = json.loads((folder / "analysis.json").read_text())
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
         self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])
@@ -228,6 +252,30 @@ class Collect(unittest.TestCase):
         self.assertIn("anki_queue on the card: 0 card(s)", analysis)
         self.assertIn("crash dumps: none", analysis)
         self.assertIn("boot.txt: (empty: the installer reset it", analysis)
+
+    def test_names_from_the_server_never_leave_the_folder(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import collect_vita
+        for bad in ("..", ".", "../x.json", "a/b.json", "a\\b.json", ""):
+            self.assertFalse(collect_vita.safe_name(bad), bad)
+        for ok in ("0123456789abcdef0123456789abcdef.json", "a  b#c%20d?.json", "psp2core-1-x.psp2dmp"):
+            self.assertTrue(collect_vita.safe_name(ok), ok)
+        entries = collect_vita.Collector.parse_list(["-rw-rw-rw- 1 vita vita 12 Oct 5  10:00 a  b.json\r",
+                                                     "drwxrwxrwx 1 vita vita 0 Oct 14 10:00 anki_queue"])
+        self.assertEqual(entries, [{"name": "a  b.json", "bytes": 12, "dir": False},
+                                   {"name": "anki_queue", "bytes": 0, "dir": True}])
+        text, keys = collect_vita.redact("\ufeffjpdb_api_key = abc\r\njpdb_api_key: d e\r\nlens_api_keyx = keep\r\n")
+        self.assertEqual(text, "\ufeffjpdb_api_key = <redacted: 3 characters>\r\njpdb_api_key: <redacted: 3 characters>\r\n"
+                               "lens_api_keyx = keep\r\n")
+        self.assertEqual(keys, ["jpdb_api_key", "jpdb_api_key"])
+
+    def test_an_empty_report_is_a_stop_not_a_pass(self):
+        (self.device / "ux0/data/VitaJPOverlay/selftest-report.txt").write_text("")
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("analysis exit 1", result.stdout)
+        self.assertIn("the report is empty", result.stdout)
 
     def test_collect_cannot_reach_the_vita(self):
         with FtpMock(self.device) as ftp:

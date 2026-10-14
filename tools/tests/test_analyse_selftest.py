@@ -246,14 +246,14 @@ class AnalyseV2(unittest.TestCase):
         for free, want in ((27_672_576, "Large"), (27_672_575, "Normal"), (13_234_176, "Normal"), (13_234_175, "Small"),
                            (5_910_528, "Small"), (5_910_527, None)):
             self.assertEqual(a.tier_table(free)["recommendation"], want, free)
-        # a refused stage has a negative headroom and says so
-        text = (FIXTURES / "selftest-v2-fail.txt").read_text()
-        out = a.analyse(text)
+        # a refused stage has a negative headroom and says so: the textbox stage in a game with 5,000,000 B free
+        text = (FIXTURES / "selftest-v2-pass.txt").read_text()
+        assert "memory textbox free_user=91226112 " in text
+        out = a.analyse(text.replace("memory textbox free_user=91226112 ", "memory textbox free_user=5000000 "))
         refused = [h for h in out["headroom"] if h["headroom"] is not None and h["headroom"] < 0]
-        for h in refused:
-            self.assertEqual(h["headroom"], h["free_user"] + h["release"] - h["reserve"] - h["need"])
-        rendered = a.render(out)
-        self.assertEqual(rendered.count("(refused)"), len(refused))
+        self.assertEqual([(h["stage"], h["headroom"]) for h in refused], [("textbox", 5_000_000 - 4_194_304 - 249_856 - 1_159_168)])
+        self.assertEqual(refused[0]["headroom"], -603_328)
+        self.assertEqual(a.render(out).count("(refused)"), 1)
 
     def test_collect_needs_a_collect_folder(self):
         with tempfile.TemporaryDirectory() as d:

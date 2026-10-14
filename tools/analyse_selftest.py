@@ -733,7 +733,8 @@ LOG = {
     "speed": re.compile(r"^game vocr speed: (\d+) frames in (\d+) us, (\d+) us per frame"),
     "unusable": re.compile(r"^game vocr: (\S+) is unusable here \(io=0x([0-9A-Fa-f]+)\), using (\S+)"),
     "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
-    "game": re.compile(r"^game (\S+) started: dictionary (\S+) \(key (\S+)\), trigger (\S+), subtitles (\S+), ocr_mode (\S+)"),
+    # shell/worker.c: the dictionary's display name (core/config.c), "Local dictionaries" by default
+    "game": re.compile(r"^game (\S+) started: dictionary (.+?) \(key (\S+)\), trigger (\S+), subtitles (\S+), ocr_mode (\S+)"),
     "disabled": re.compile(r"^(\S+): JP Overlay disabled"),
     "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"),
@@ -744,7 +745,10 @@ LOG = {
                         r"cdram=(-?\d+)"),
 }
 TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|SAFE MODE|not starting|missing at|"
-                     r"too large|not opened", re.I)
+                     r"too large|not opened|unreadable|not writable|unavailable|success=0|reserve guard|not started|"
+                     r"damaged|mismatch|out of memory|not enough memory|not a directory", re.I)
+# shell/memory.cpp: a PAF request the reserve guard or Paf refused; shell/ledger.c: a refused thread
+SHELL_REFUSAL = re.compile(r"Paf reserve guard|Paf allocation: .*success=0|^thread \S+ refused|^anki: \w+ not started")
 
 
 def _read(folder, rel):
@@ -808,6 +812,8 @@ def summarise_log(text):
                 s["disabled"].add(m.group(1))
             elif key == "done":
                 s["dictionary_ms"].append(int(m.group(3)))
+                s.setdefault("job_rc", {})
+                s["job_rc"][int(m.group(2))] = s["job_rc"].get(int(m.group(2)), 0) + 1
             elif key == "overlay":
                 s["overlay"].append(int(m.group(4)))
             elif key == "anki_save":
@@ -825,6 +831,11 @@ def summarise_log(text):
             s["line_ms"] += [int(m.group(4)) for m in LOG["line"].finditer(line)]
         if line.startswith("anki: Picture field off"):
             s["anki"]["picture_off"] += 1
+        if SHELL_REFUSAL.search(line):
+            s.setdefault("shell_refusals", []).append(line[:160])
+        sent = LOG["anki_sent"].match(line)
+        if sent and not int(sent.group(3)) and not int(sent.group(4)):
+            continue  # "0 unreadable, 0 too large": a summary, not a problem
         if TROUBLE.search(line) and not line.startswith("gstep"):
             key = re.sub(r"\d+", "N", line)[:120]
             s["trouble"][key] = s["trouble"].get(key, 0) + 1
@@ -918,6 +929,8 @@ def summarise_collect(folder):
     st = _read(folder, data + "status.txt")
     out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", "Vita JP Overlay",
                                                                                 "worker start", "boot guard"))][:12]
+    sp = _read(folder, data + "status.prev.txt")
+    out["status_prev_head"] = [l for l in (sp or "").splitlines() if l.startswith(("BOOT GUARD", "boot guard"))][:6]
     # the Anki queue on the card
     q = folder / (data + "anki_queue")
     names = [p.name for p in q.iterdir()] if q.is_dir() else []
@@ -932,7 +945,9 @@ def summarise_collect(folder):
     report = _read(folder, data + "selftest-report.txt")
     armed = (folder / (data + "selftest.txt")).is_file()
     out["selftest"] = None
-    if report:
+    if report is not None and not report.strip():
+        out["selftest_error"] = "the report is empty (the Shell began the test and wrote no line)"
+    elif report:
         try:
             out["selftest"] = analyse(report)
         except ValueError as e:
@@ -950,6 +965,17 @@ def summarise_collect(folder):
         out["tiers"] = max(out["tiers_all"], key=lambda t: order.index(t["recommendation"]))
     # what the analyser cannot decide, and where in the zip the data to decide it is
     und = out["undecided"]
+    for e in record.get("errors") or []:
+        und.append(f"a file could not be collected ({e}); its directory listing is in listings/")
+    if out.get("selftest_error"):
+        und.append(f"the self-test report could not be analysed ({out['selftest_error']}): "
+                   f"{data}selftest-report.txt and status.txt are in the zip")
+    if out["status_prev_head"] or (folder / (data + "kernel.prev.txt")).is_file():
+        und.append(f"the previous boot's records ({data}status.prev.txt, kernel.prev.txt) are in the zip, not summarised"
+                   + (f"; it had: {out['status_prev_head'][0]}" if out["status_prev_head"] else ""))
+    if (out["log"] or {}).get("shell_refusals"):
+        und.append(f"SceShell refused memory {len(out['log']['shell_refusals'])} time(s) (threads/PAF; listed above with the other "
+                   f"problem lines): whether that is SceShell's own use or ours needs the status.txt ledger lines")
     if out["selftest"]:
         for w in out["selftest"].get("warnings", []):
             src = {"probe": "the probe stage's gstep lines", "kernel-memory": "the kmem lines",
@@ -988,6 +1014,8 @@ def render_collect(c):
                  f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]
                                                                     else "") + f"; {t['commented']} commented line(s)")
     L.append(f"  boot.txt: {c['boot_record'] or '(none)'}")
+    if c.get("status_prev_head"):
+        L.append("  previous boot (status.prev.txt): " + "; ".join(c["status_prev_head"][:3]))
     k = c["kernel"]
     if k:
         L.append(f"  kernel.txt: {k['bytes']:,} B{' (cap reached)' if k['capped'] else ''}; "
@@ -1034,7 +1062,8 @@ def render_collect(c):
         if lg["unusable"]:
             L.append("  model files unusable: " + "; ".join(lg["unusable"]))
         if lg["dictionary_ms"]:
-            L.append(f"  Shell jobs (OCR + dictionary): {len(lg['dictionary_ms'])}, {_span(lg['dictionary_ms'])} ms")
+            rcs = ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(lg.get("job_rc", {}).items()))
+            L.append(f"  Shell jobs (OCR + dictionary): {len(lg['dictionary_ms'])} ({rcs}), {_span(lg['dictionary_ms'])} ms")
         if lg["overlay"]:
             L.append(f"  overlay opened {len(lg['overlay'])}x, slowest frame {max(lg['overlay'])} ms")
         a = lg["anki"]
@@ -1083,6 +1112,8 @@ def main():
         load_rc_names()
         c = summarise_collect(args.collect)
         print(json.dumps(c, indent=2, default=list) if args.json else render_collect(c))
+        if c.get("selftest_error"):
+            return 1  # a report is there and cannot be read: the run stopped somewhere
         return 0 if not c["selftest"] or c["selftest"]["ocr_result"] == "PASS" else 1
     if not args.report:
         parser.error("give a report, or --collect DIR")

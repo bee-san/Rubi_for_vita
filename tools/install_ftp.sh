@@ -184,7 +184,7 @@ if [ $SELFTEST = 1 ]; then
   : > "$TMP/selftest.txt"
   put "$TMP/selftest.txt" "ux0:/data/VitaJPOverlay/selftest.txt"
   echo "Self-test armed. Reboot the Vita, wait for the LiveArea, leave it for a minute, start the game to test,"
-  echo "reach a text screen and wait 30 s. Then start VitaShell's FTP again and run: $INSTALL_CMD --collect ${HOST%%:*}"
+  echo "reach a text screen and wait 30 s. Then start VitaShell's FTP again and run: bash tools/install_ftp.sh --collect ${HOST%%:*}"
   echo "(it fetches the report with every log into one zip and analyses it; --status fetches just the report)"
   exit 0
 fi

@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 from pathlib import Path
 
 DATA = "ux0:/data/VitaJPOverlay"
@@ -47,7 +48,13 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (DATA, None, None), (f"{DATA}/ocr"
 # Device paths of the hashed files -> their package path (package-manifest.json "files")
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",
                  f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/JPOverlaySettings.vpk": "JPOverlaySettings.vpk"}
-SECRET = re.compile(r"^(\s*)([A-Za-z0-9_]*api_key)(\s*=\s*)(.*?)\s*$", re.I)
+# A line whose first word is *api_key, whatever follows it (=, :, a space: the C parser logs a
+# line without = whole, as "ignored line '...'"), is a secret line.
+SECRET = re.compile(r"^([\ufeff\s]*)([A-Za-z0-9_]*api_key)(?![A-Za-z0-9_])(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
+# In the logs: anything after an api_key name on the same line, up to a quote (config warnings).
+LOG_SECRET = re.compile(r"(?i)([A-Za-z0-9_]*api_key)(?![A-Za-z0-9_])[^'\n]*")
+LOG_FILES = re.compile(r"/(log|log\.old|status|status\.prev|kernel|kernel\.prev)\.txt$")
+DUMP_TIMEOUT = 900  # a crash dump can be tens of MB over the Vita's Wi-Fi
 
 
 def local_path(out, device_path):
@@ -56,15 +63,32 @@ def local_path(out, device_path):
 
 
 def redact(text):
-    """config.ini with every *api_key value replaced by its length; the keys that were set."""
+    """config.ini with every *api_key value replaced by its length; the keys that were set. Lines are split
+    on \\n only, as the plugin's parser does, so no other character can carry a value onto a line of its own."""
     out, keys = [], []
-    for line in text.splitlines():
+    for raw in text.split("\n"):
+        cr = "\r" if raw.endswith("\r") else ""
+        line = raw[:-1] if cr else raw
         m = SECRET.match(line)
         if m and m.group(4):
             keys.append(m.group(2).lower())
             line = f"{m.group(1)}{m.group(2)}{m.group(3)}<redacted: {len(m.group(4))} characters>"
-        out.append(line)
-    return "\n".join(out) + ("\n" if text.endswith("\n") else ""), keys
+        out.append(line + cr)
+    return "\n".join(out), keys
+
+
+def redact_log(data):
+    """A log or status file: any api_key text on a line masked (the parser's warnings quote lines)."""
+    text = data.decode("utf-8", "replace")
+    if not re.search(r"(?i)api_key", text):
+        return data, 0
+    n = len(re.findall(r"(?i)api_key", text))
+    return LOG_SECRET.sub(lambda m: m.group(1) + " <redacted>", text).encode("utf-8"), n
+
+
+def safe_name(name):
+    """A directory entry the server listed: never a path of its own."""
+    return bool(name) and name not in (".", "..") and "/" not in name and "\\" not in name and "\0" not in name
 
 
 class Collector:
@@ -77,11 +101,14 @@ class Collector:
 
     # ---- transport ----
     def curl(self, device_path, dest):
-        """RETR through curl, exactly as install_ftp.sh's get(); False when the file is absent or unreadable."""
+        """RETR through curl, as install_ftp.sh's get() does; (0, "") or (curl's exit, its message). The name is
+        URL-quoted: curl decodes it again, so the server gets the exact name (spaces, #, ?, % included)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
-        r = subprocess.run(["curl", "--fail", "-s", "--show-error", "--max-time", str(self.timeout), "-o", str(dest),
-                            f"ftp://{self.host}:{self.port}/{device_path}"], capture_output=True, text=True,
-                           stdin=subprocess.DEVNULL, timeout=self.timeout + 30)
+        limit = DUMP_TIMEOUT if device_path.lower().endswith(".psp2dmp") else self.timeout
+        url = f"ftp://{self.host}:{self.port}/" + urllib.parse.quote(device_path, safe="/:")
+        r = subprocess.run(["curl", "--fail", "-s", "--show-error", "--connect-timeout", "15", "--max-time", str(limit),
+                            "-o", str(dest), url], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, timeout=limit + 30)
         if r.returncode != 0:
             dest.unlink(missing_ok=True)
             return r.returncode, r.stderr.strip()
@@ -126,32 +153,43 @@ class Collector:
 
     @staticmethod
     def parse_list(lines):
+        """VitaShell's LIST (`%c%s 1 vita vita %u %s %-2d %s %s`): the name is the rest after the eighth
+        field and one space, its own spaces kept."""
         entries = []
         for l in lines:
-            parts = l.split()
-            if len(parts) < 9:
+            m = re.match(r"^(\S+)\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+ (.*)$", l.rstrip("\r\n"))
+            if not m:
                 continue
-            size = int(parts[4]) if parts[4].isdigit() else None
-            entries.append({"name": " ".join(parts[8:]), "bytes": size, "dir": l.startswith("d")})
+            entries.append({"name": m.group(3), "bytes": int(m.group(2)) if m.group(2).isdigit() else None,
+                            "dir": l.startswith("d")})
         return entries
 
     # ---- collection ----
     def fetch(self, device_path):
         dest = local_path(self.out, device_path)
+        if not dest.resolve().is_relative_to(self.out.resolve()):
+            self.record["errors"].append(f"{device_path}: not fetched: its name leaves the collect folder")
+            return False
         if device_path.endswith("/config.ini"):
             with tempfile.TemporaryDirectory(prefix="vjo-collect-") as tmp:
                 raw = Path(tmp) / "config.ini"
                 rc, err = self.curl(device_path, raw)
                 if rc:
                     return self.absent(device_path, rc, err)
-                text, keys = redact(raw.read_text(encoding="utf-8-sig", errors="replace"))
+                # bytes, not text mode: universal newlines would turn a lone \r inside a value into a line
+                text, keys = redact(raw.read_bytes().decode("utf-8-sig", "replace"))
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(text, encoding="utf-8")
+            dest.write_bytes(text.encode("utf-8"))
             self.record["redacted_keys"] = keys
         else:
             rc, err = self.curl(device_path, dest)
             if rc:
                 return self.absent(device_path, rc, err)
+            if LOG_FILES.search(device_path):
+                data, n = redact_log(dest.read_bytes())
+                if n:
+                    dest.write_bytes(data)
+                    self.record.setdefault("redacted_log_lines", {})[device_path] = n
         data = dest.read_bytes()
         self.record["files"][device_path] = {"local": str(dest.relative_to(self.out)), "bytes": len(data),
                                              "sha256": hashlib.sha256(data).hexdigest()}
@@ -201,6 +239,9 @@ class Collector:
             entries = listed[device_path] or []
             for e in entries:
                 if e["dir"] or not action or (pattern and not pattern.search(e["name"])):
+                    continue
+                if not safe_name(e["name"]):
+                    self.record["errors"].append(f"{device_path}/{e['name']!r}: not fetched: not a plain file name")
                     continue
                 child = f"{device_path}/{e['name']}"
                 if action == "keep":
