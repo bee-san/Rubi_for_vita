@@ -345,7 +345,7 @@ The shared API 13+ error codes keep bit 30 clear. On the physical Vita, the
 previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
-Native SDK file errors are unchanged. Install all three API 15 plugins together
+Native SDK file errors are unchanged. Install all three API 19 plugins together
 and reboot; older plugin versions cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
@@ -388,7 +388,7 @@ with `bash tools/install_ftp.sh --status VITA_IP`; recognition timings and memor
 attempts are in `ux0:data/VitaJPOverlay/log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
 start a game and reach a text screen: on the first settled screen one job runs
-the capture probe, the fallback model, the configured model, the full screen and
+the fallback model, the configured model, the full screen, the capture probe and
 the configured model again, in your saved region, each stage with its own record,
 and the report has every pool's free memory at each step by every query route;
 `--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL

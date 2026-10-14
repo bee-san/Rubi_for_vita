@@ -7,10 +7,10 @@
  * what the owner copies back for tools/analyse_selftest.py.
  *
  * v2 (API 19): on the first settled screen of the game, one job runs every
- * stage in turn: the capture probe (each capture path and memory type, one
- * strip each), the user's region with the fallback model forced (FL10 read
+ * stage in turn: the user's region with the fallback model forced (FL10 read
  * from the card), the user's region with the configured model (H15 read), the
- * full screen through the strips (weights kept), and the user's region again
+ * full screen through the strips (weights kept), the capture probe (each
+ * capture path and memory type, one strip each), and the user's region again
  * (the warm time; its text is the job's). Each stage ends with its own record,
  * passed or not, then the next one starts; after the last the test is done and
  * the marker removed, so a failure never leaves it armed
@@ -102,9 +102,10 @@ static void sample(const char *step)
            (int)m.kernel_step, (unsigned)m.kernel_total, (unsigned)m.kernel_free);
     report("kmem %s route=block part=shell rc=0x%08X step=%d total=%u free=%u", step, (unsigned)m.caller_rc,
            (int)m.caller_step, (unsigned)m.caller_total, (unsigned)m.caller_free);
-    report("kmem %s route=cas part=shell rc=0x%08X main=%u/%u cdram=%u/%u phycont=%u/%u", step, (unsigned)m.cas_rc,
-           (unsigned)m.cas_main_free, (unsigned)m.cas_main_total, (unsigned)m.cas_cdram_free,
-           (unsigned)m.cas_cdram_total, (unsigned)m.cas_phycont_free, (unsigned)m.cas_phycont_total);
+    report("kmem %s route=cas part=shell rc=0x%08X step=%d main=%u/%u cdram=%u/%u phycont=%u/%u", step,
+           (unsigned)m.cas_rc, (int)m.cas_step, (unsigned)m.cas_main_free, (unsigned)m.cas_main_total,
+           (unsigned)m.cas_cdram_free, (unsigned)m.cas_cdram_total, (unsigned)m.cas_phycont_free,
+           (unsigned)m.cas_phycont_total);
     {
         char parts[160];
         size_t n = 0;
@@ -115,8 +116,9 @@ static void sample(const char *step)
             if (w < 0 || (size_t)w >= sizeof(parts) - n) break;
             n += (size_t)w;
         }
-        report("kmem %s route=as part=kernel rc=0x%08X parts=%u%s", step, (unsigned)m.as_rc, (unsigned)m.as_parts,
-               parts);
+        report("kmem %s route=as part=%s rc=0x%08X step=%d parts=%u skipped=%u%s", step,
+               m.as_caller ? "shell" : "kernel", (unsigned)m.as_rc, (int)m.as_step, (unsigned)m.as_parts,
+               (unsigned)m.as_skipped, parts);
     }
     report("kernel %s ledger=%u/%u limit=%u capture=%u", step, (unsigned)m.ledger_current, (unsigned)m.ledger_peak,
            (unsigned)m.ledger_limit, (unsigned)m.capture_bytes);
@@ -176,11 +178,12 @@ static const struct {
     const char *name;
     uint32_t flags;
 } stages[] = {
-    /* In this order: the last stage's result is the job's (shell/worker.c). */
-    {"probe", VJO_GAME_OCR_F_PROBE},          /* each capture path and memory type, one strip each */
+    /* In this order: the last stage's result is the job's (shell/worker.c); the
+     * probe, which also reads the frame from user mode, after the main stages. */
     {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model (FL10 read) */
     {"textbox", 0},                           /* the user's region; the configured model's weights read (H15) */
     {"fullscreen", VJO_GAME_OCR_F_FULL},      /* the whole frame, through the strips; the weights kept */
+    {"probe", VJO_GAME_OCR_F_PROBE},          /* each capture path and memory type, one strip each */
     {"textbox2", 0},                          /* the user's region again: the warm time; the job's text */
 };
 

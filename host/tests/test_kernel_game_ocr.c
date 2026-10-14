@@ -35,6 +35,8 @@ static uint32_t fb_fmt;
 static unsigned fb_w = FB_W, fb_h = FB_H;
 static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
 static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
+static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
+static unsigned frees_seen_at_exit;
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
 static unsigned char user_rows[64 * 64]; /* the worker's capture block */
 
@@ -77,7 +79,12 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
             model_clock += *timeout;
             return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
         }
-        if (frames_come) { frames_come--; game_frame(); if (out) *out = MEV_ROWS; return 0; }
+        if (frames_come) {
+            frames_come--; game_frame();
+            if (gone_after_frame) { gone_after_frame = 0; game_ocr_process_gone(7); frees_seen_at_exit = kstrip_frees; }
+            if (out) *out = MEV_ROWS;
+            return 0;
+        }
         model_clock += *timeout;
         return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
     }
@@ -213,7 +220,7 @@ static void setup(void)
             game_fb[y * FB_PITCH + x] = 0xFF000000u | ((x ^ y) & 0xFFu) << 16 | ((y * 5u) & 0xFFu) << 8 | ((x * 7u) & 0xFFu);
     fb_fmt = VJO_FB_A8B8G8R8; fb_w = FB_W; fb_h = FB_H;
     frames_come = 0; frame_pid = 7; in_hook = 0; user_block_ok = 1; hook_copy_fail = kstrip_alloc_fail = 0;
-    stall_copy = 0;
+    stall_copy = gone_after_frame = 0;
     kledger_init();
     rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
     memset(user_rows, 0xCC, sizeof(user_rows));
@@ -609,6 +616,52 @@ static void rows_copy_outliving_its_call(void)
     }
 }
 
+/* N1: the destination stride is bounded, so the span the kernel checks is the
+ * span the hook writes. */
+static void rows_stride_is_bounded(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, VJO_MAX_W + 1, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 0x04104105u, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!info.armed && rows.state == ROWS_IDLE && frames_come == 1 && user_rows[0] == 0xCC);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* N2: a copy whose process exited is never overtaken by a new request (BUSY,
+ * not armed: the worker asks again), and a process exit while its rows call is
+ * still in the kernel frees nothing the call still uses. */
+static void rows_process_exit_cannot_pull_state_from_a_call(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    VjoGameOcrRowsInfo info;
+    rows.state = ROWS_COPYING; rows.pid = 9; rows.orphan = 1; /* the last game's copy, its process gone */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == VJO_ERR_BUSY);
+    TEST_CHECK(!info.armed && rows.pid == 9 && frames_come == 1); /* not armed, the old copy untouched */
+    rows.state = ROWS_DONE; model_tick();                      /* it ends; the kernel worker tidies */
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.orphan);
+    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_HOOK, 0, 48, user_rows, &info) == 8 && info.armed);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* The game exits after its frame, while the kernel-strip call is still inside:
+     * the strip stays until the call has copied it out. */
+    setup(); seq = submit(); take(seq);
+    gone_after_frame = 1; frames_come = 1;
+    int rc = rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info);
+    TEST_CHECK(frees_seen_at_exit == 0);                       /* process_gone freed nothing */
+    TEST_CHECK(rc == 8 && kstrip_allocs == 1 && kstrip_frees == 1); /* the call freed it, after its copy */
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.in_call && !rows.orphan);
+    VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK();
+    /* A call that never returns after its process exited: tidied after ROWS_GONE_US. */
+    rows.state = ROWS_DONE; rows.in_call = 1; rows.orphan = 1; rows.gone_us = model_clock;
+    model_tick();
+    TEST_CHECK(rows.state == ROWS_DONE && rows.in_call);         /* not yet */
+    model_clock += ROWS_GONE_US + 1; model_tick();
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.in_call && !rows.orphan);
+}
+
 static void open_model(uint32_t seq)
 {
     TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY && !file_live);
@@ -885,6 +938,8 @@ TEST_LIST = {
     {"rows: cancellation during the wait", rows_cancelled_while_waiting},
     {"rows: the kernel strip rung, freed before the call returns", rows_kernel_strip_rung},
     {"rows: a copy outliving its call is abandoned, then tidied by the kernel worker", rows_copy_outliving_its_call},
+    {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
+    {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},

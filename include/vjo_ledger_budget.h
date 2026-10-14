@@ -108,7 +108,7 @@
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
 #define VJO_BUDGET_GAME_WORKSPACE 249856u
 /* The capture block: one strip of grey rows and a checksum and a bit per region
- * row, at most 58,884 B (960x544, 59-row strips), page-rounded under 64 KiB
+ * row, at most 59,588 B (896x544, 64-row strips; 58,884 B at 960x544), page-rounded 61,440 B, under 64 KiB
  * (vjo_vocr_capture_bytes). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
  * phycont instead, other partitions, only when USER_RW refused it. */
 #define VJO_BUDGET_GAME_CAPTURE 65536u

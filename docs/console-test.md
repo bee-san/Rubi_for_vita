@@ -43,7 +43,7 @@ bash tools/install_ftp.sh --self-test VITA_IP
 1. Reboot. Wait for the LiveArea, then leave the Vita alone for 1 minute.
 2. Start CLANNAD and get to a dialogue screen. The self-test uses **CLANNAD's saved region**
    (your textbox; with none saved, the full screen). Wait 30 s without pressing anything: on the
-   first settled screen it runs its five stages (capture probe, FL10, H15, full screen, H15
+   first settled screen it runs its five stages (FL10, H15, full screen, capture probe, H15
    again), each with its own record, then finishes by itself.
 3. Read about 10 pages, pausing about 3 s on each. On 3 of them, open the overlay (L+R), take a
    phone photo of the screen, then press Circle. Note any slowdown, stutter or crash.

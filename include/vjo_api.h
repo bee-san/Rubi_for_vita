@@ -127,15 +127,31 @@ typedef struct {
  * kernel; a negative rc means that figure is unavailable and why. Three routes
  * are tried, each reported on its own, because only a console run tells which
  * works on its firmware (3.65's answer to the first route in API 18 was
- * 0x80020001, #74): */
+ * 0x80020001, #74).
+ *
+ * Every partition object the firmware hands back is checked before
+ * PhyMemPartInfoCore reads it: kernel objects live below 0x40000000 (TTBR0;
+ * VitaSDK psp2kern/kernel/sysmem/data_transfers.h). A pointer in
+ * PSVshellPlus's range 0x1000-0x1000000 (info.c:57, :91) is read; one higher in
+ * the kernel half only inside a kernel memory block. The *_step fields name
+ * where a route stopped (0: it read its figures):
+ *   VJO_MEMSTEP_FIND 1       FindMemBlockByAddr / the function lookup
+ *   VJO_MEMSTEP_INFO 2       MemBlockGetInfoEx / the address-space query
+ *   VJO_MEMSTEP_RANGE 3      the object pointer is outside the kernel half (or 0, or misaligned)
+ *   VJO_MEMSTEP_NO_BLOCK 4   in the kernel half above 0x1000000, but in no kernel memory block
+ *   VJO_MEMSTEP_CORE 5       PhyMemPartInfoCore itself (its lookup, or the call: rc tells) */
 #define VJO_MEMINFO_PARTS 8u
+#define VJO_MEMSTEP_FIND 1
+#define VJO_MEMSTEP_INFO 2
+#define VJO_MEMSTEP_RANGE 3
+#define VJO_MEMSTEP_NO_BLOCK 4
+#define VJO_MEMSTEP_CORE 5
 typedef struct {
     uint32_t size;           /* sizeof(VjoMemInfo), set by the caller */
     /* Route 1, a memory block's partition: FindMemBlockByAddr (size 0) ->
      * MemBlockGetInfoEx -> PhyMemPartInfoCore, for our module's block (the
      * kernel's partition, ScePhyMemPartKD when total is 36 MiB) and for the
-     * caller's out pointer (SceShell's or the game's partition). *_step names
-     * the step that failed: 1 find, 2 block info, 3 partition info (0: none). */
+     * caller's out pointer (SceShell's or the game's partition). */
     int32_t kernel_rc;
     uint32_t kernel_total, kernel_free;
     int32_t caller_rc;
@@ -145,16 +161,21 @@ typedef struct {
     int32_t kernel_step, caller_step;
     /* Route 2 (PSVshell, PSVshellPlus): the caller's address space control
      * block at +328 (main), +332 (CDRAM), +316 (phycont), each partition's
-     * PhyMemPartInfoCore. */
+     * PhyMemPartInfoCore. cas_step: where the main partition stopped. */
     int32_t cas_rc;
     uint32_t cas_main_total, cas_main_free, cas_cdram_total, cas_cdram_free;
     uint32_t cas_phycont_total, cas_phycont_free;
-    /* Route 3 (faps-coredump): the kernel process's address space info
+    /* Route 3 (faps-coredump): a process's address space info
      * (SceSysmemForKernel_C3EF4055) and each of its partitions' InfoCore; the
-     * one of 36 MiB is ScePhyMemPartKD. */
+     * one of 36 MiB is ScePhyMemPartKD. The kernel process's is asked first;
+     * as_caller = 1 when that was refused and the caller's was read instead.
+     * as_step: where it stopped, or for a partition that could not be read
+     * the last such reason (as_skipped of them). */
     int32_t as_rc;
     uint32_t as_parts;
     uint32_t as_total[VJO_MEMINFO_PARTS], as_free[VJO_MEMINFO_PARTS];
+    int32_t cas_step, as_step;
+    uint32_t as_caller, as_skipped;
 } VjoMemInfo;
 
 /* Syscalls exported by VitaJPOverlay_Kernel (library VitaJPOverlayForUser).

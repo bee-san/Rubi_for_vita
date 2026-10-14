@@ -27,8 +27,8 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    before) and the `*TITLEID` worker claims it.
 2. The worker checks the game's free memory, then allocates its capture block: one strip of grey
    rows (at most 64 rows and 56 KiB) and a checksum and a bit per region row,
-   `vjo_vocr_capture_bytes`: 58,884 B at 960×544, page-rounded to 61,440 B; under 64 KiB at any
-   region.
+   `vjo_vocr_capture_bytes`: 58,884 B at 960×544, at most 59,588 B (896×544, 64-row strips),
+   page-rounded to 61,440 B; under 64 KiB at any region.
 3. For each strip the worker calls `vjoOcrCaptureRows` with the strip (`seq`, first row `y`, `n` rows, the rung `mode`, `flags`, `dst_stride`) and `dst`.
    The kernel checks that `[dst, dst + bytes)` is one memory block of the worker's process
    (`ksceKernelFindProcMemBlockByAddr(pid, addr, 0)`, first and last byte), arms the request and
@@ -86,11 +86,15 @@ game's process rather than free memory the hook might write.
 | game: a line taller than a strip | — | its own width × height, only then (41 of 372 linefind dev regions; the largest 533×148 = 78,884 B) |
 | game: weights (resident) | H15 1,159,168 B, FL10 659,456 B | unchanged |
 
-So a textbox takes at most 61,440 B of capture memory whenever its lines fit a strip (64 rows):
-349 of the 372 linefind dev regions. The other 23 contain a band taller than a strip, which the
-recognizer needs whole for byte-identical input, as API 18's grey plane held it; a strict 64 KiB
-bound for those would need a row-callback form of `vocr_run` in vita-vn-ocr (not done:
-`vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
+So a textbox takes at most 61,440 B of capture memory when all its lines fit a strip: 331 of
+the 372 linefind dev regions. The other 41 contain a band the finder reports taller than a strip
+(42 such lines), which the recognizer needs whole for byte-identical input, as API 18's grey plane
+held it; it takes a block of its own size for that line. With it, 349 regions stay within 64 KiB
+of capture memory in all and 23 go over; the most is 131,072 B (a 61,440 B capture block and an
+89-row band's 73,728 B block), and the largest band is 533×148 = 78,884 B. The design bound is the
+ledger's `VJO_BUDGET_GAME_LINE`, 516,096 B of game memory (nearly a whole 960×544 grey frame, should
+the finder ever report a band that large). A strict 64 KiB bound for those regions would need a
+row-callback form of `vocr_run` in vita-vn-ocr (not done: `vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
 ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
 The Lens and Anki JPEG captures still use the kernel's region-sized buffer; #74's refusal would
@@ -113,8 +117,16 @@ reach a full-screen JPEG too (not changed here).
      `SceSysmemForKernel_C3EF4055`'s partition list, as faps-coredump reads it on 3.65 [10]; a
      partition of 36 MiB is ScePhyMemPartKD.
   The `PhyMemPartInfoCore` NID changed at 3.63 (0x63A519E5/0x3650963F on 3.60-3.61,
-  0x02451F0F/0xB9B69700 on 3.63-3.74) [wiki: SceSysmem]. A pointer outside kernel memory is
-  rejected before it is read. Which route reads on 3.65 is [unmeasured].
+  0x02451F0F/0xB9B69700 on 3.63-3.74) [wiki: SceSysmem]. Kernel objects live below 0x40000000
+  (TTBR0; 0x40000000 and up is user memory [VitaSDK `psp2kern/kernel/sysmem/data_transfers.h`;
+  wiki: Virtual_Memory]). A partition object or control block is read when it is in PSVshellPlus's
+  range, 0x1000-0x1000000 (`info.c:57`, `:91`), or higher in the kernel half only inside a kernel
+  memory block; anything else is refused before it is read, with its own step (`kmem ... step=`:
+  1 find, 2 block or address-space info, 3 outside the kernel range, 4 in no memory block, 5
+  InfoCore). `host/tests/test_kernel_meminfo.c` runs the routes with the objects at kernel-range,
+  upper-kernel and user-range addresses. Route 3 asks for the kernel process first and the caller's
+  if that is refused (faps-coredump asks for a user process). Which route reads on 3.65 is
+  [unmeasured].
 
 ## Prior art
 
@@ -138,7 +150,8 @@ Off the console (`tools/preflight.sh` runs all of it and prints GO/NO-GO):
   verbatim) against API 19's (today's kernel `capture_grey_rows` and core), both run to
   `vocr_run`: byte-identical recognizer input and identical preprocessed tensors on all 372
   regions of vita-vn-ocr's linefind dev manifests (206 Vita, 166 PSP) in each of the three formats,
-  and on procedural frames; also on ARMv7 under qemu-arm (`tools/arm_host_tests.sh`).
+  and on procedural frames; also on ARMv7 under qemu-arm (`tools/arm_host_tests.sh` runs the
+  procedural frames, `tools/preflight.sh` the eval crops through the same ARM build).
 - `host/tests/test_alloc_sim.c`: the real worker and kernel under #74's measured pools: API 18's
   full-screen buffer refused with `0x80024302`; API 19 at the full screen and a textbox, H15 and
   FL10, with 0 B of the kernel pool, also when it refuses everything; each ladder rung.

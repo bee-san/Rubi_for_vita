@@ -200,6 +200,9 @@ typedef struct {
     uint32_t copy_us;    /* the copy itself, in the game's display call */
     uint32_t kstrip_bytes; /* VJO_GAME_OCR_SRC_KSTRIP: the kernel strip held for this call */
     int32_t kstrip_rc;   /* its allocation's result */
+    uint32_t armed;      /* 1: the request reached the display hook (a BUSY then means its copy may
+                            still write dst); 0: refused before (a BUSY then is a previous copy not
+                            yet tidied: ask again shortly) */
 } VjoGameOcrRowsInfo;
 
 #ifdef __cplusplus

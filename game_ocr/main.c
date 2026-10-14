@@ -211,6 +211,12 @@ typedef struct {
     int fixed;              /* the probe: test this mode only, no ladder */
 } Capture;
 
+/* A BUSY from a request that never reached the hook (info.armed 0) is a
+ * previous copy the kernel worker has not tidied yet (it does within a 16 ms
+ * tick): ask again, a few times. */
+#define ROWS_BUSY_TRIES 25u
+#define ROWS_BUSY_DELAY_US 20000u
+
 /* Errors after which the kernel strip may still work: the hook could not
  * write into this block, or the kernel refused its range. */
 static int kernel_strip_may_help(int rc)
@@ -221,6 +227,7 @@ static int kernel_strip_may_help(int rc)
 static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
     VjoGameOcrRows req;
+    unsigned busy = 0;
     int rc;
     for (;;) {
         sceClibMemset(&req, 0, sizeof(req));
@@ -240,6 +247,11 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
             c->pass_us += c->last.wait_us;
             return rc;
         }
+        if (rc == VJO_ERR_BUSY && !c->last.armed && busy < ROWS_BUSY_TRIES && !cancelled(NULL)) {
+            if (!busy++) step_add(VJO_GSTEP_PASS, c->mode, y, rc, 0, 0, 0, 0);
+            sceKernelDelayThread(ROWS_BUSY_DELAY_US);
+            continue;
+        }
         /* The ladder's last rung, once per job: the same rows through a kernel strip. */
         if (!c->fixed && c->mode == VJO_GAME_OCR_SRC_HOOK && kernel_strip_may_help(rc)) {
             step_add(VJO_GSTEP_PASS, VJO_GAME_OCR_SRC_HOOK, y, rc, 0, 0, c->last.wait_us, 0);
@@ -250,7 +262,9 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
             step_add(VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_KERNEL, VJO_GITEM_CAPTURE, c->last.kstrip_rc,
                      n * c->r->width, 0, 0, 0);
         c->failed = rc;
-        if (rc == VJO_ERR_BUSY) blocked = hook_owns_capture = 1; /* the hook may still own dst: never free it */
+        /* An armed request's copy outlived the call: the hook may still write dst, so the
+         * block is never freed and this worker takes no more jobs. */
+        if (rc == VJO_ERR_BUSY && c->last.armed) blocked = hook_owns_capture = 1;
         return rc == VJO_ERR_CANCELLED ? VJO_E_CANCELLED : rc < 0 ? rc : VJO_E_SOURCE;
     }
 }

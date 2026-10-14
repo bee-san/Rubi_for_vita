@@ -10,6 +10,7 @@ static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
 static unsigned char pixels[200*60*4];
 /* The capture block and the memory-type ladder: which types refuse. */
 static int capture_live, refuse_user, refuse_cdram, refuse_phycont, rows_error, hook_write_error;
+static int busy_unarmed, busy_armed, allow_capture_held; /* rows calls that answer BUSY, before / after arming */
 static unsigned capture_block, capture_allocs, capture_frees, rows_calls, kstrip_calls, last_type;
 static unsigned allocations, frees, reads_count, bytes_read, thread_creates, weight_allocations, weight_frees;
 static int memory_live, alloc_failure, base_failure, free_failure, close_failure, weights_live;
@@ -91,7 +92,8 @@ int vjoBootInfo(VjoBootInfo *out) { boot_info_calls++; TEST_CHECK(out->size == s
 int vjoOcrRegister(void) { return VJO_ERR_NO_GAME; }
 int vjoOcrTake(VjoGameOcrRequest *out) { return 1; }
 int vjoOcrCancelled(uint32_t seq) { return cancel_job || (cancel_reads && reads_count >= (unsigned)cancel_reads); }
-int vjoOcrComplete(const VjoGameOcrResult *out) { TEST_CHECK(!memory_live && !model && !capture_live); return 0; }
+int vjoOcrComplete(const VjoGameOcrResult *out)
+{ TEST_CHECK(!memory_live && !model && (!capture_live || allow_capture_held)); return 0; }
 /* The kernel's rows call: grey rows of the 200x60 region into the worker's block. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
@@ -101,6 +103,9 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     rows_calls++;
     if (req->mode == VJO_GAME_OCR_SRC_KSTRIP) kstrip_calls++;
     info->fb_width = 200; info->fb_height = 60; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
+    info->armed = 1;
+    if (busy_unarmed > 0) { busy_unarmed--; info->armed = 0; return VJO_ERR_BUSY; } /* a previous copy not tidied */
+    if (busy_armed) return VJO_ERR_BUSY; /* this copy outlived the call */
     if (rows_error) return rows_error;
     if (hook_write_error && req->mode == VJO_GAME_OCR_SRC_HOOK) return VJO_ERR_COPY;
     for (unsigned r = 0; r < req->n; r++)
@@ -152,6 +157,7 @@ static VjoGameOcrRequest setup(void)
     if (model) { fclose(model); model = NULL; }
     worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
     capture_live = refuse_user = refuse_cdram = refuse_phycont = rows_error = hook_write_error = 0;
+    busy_unarmed = busy_armed = allow_capture_held = 0; hook_owns_capture = 0;
     capture_block = capture_allocs = capture_frees = rows_calls = kstrip_calls = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
@@ -368,6 +374,25 @@ static void hook_failure_falls_back_to_the_kernel_strip(void)
         if (out.step[i].id == VJO_GSTEP_PASS && out.step[i].rc == VJO_ERR_TIMEOUT) logged = 1;
     TEST_CHECK(logged);
 }
+/* A BUSY before arming (a previous copy not tidied yet) is asked again; one
+ * after arming (the copy outlived the call) keeps the block for the hook and
+ * stops the worker. */
+static void busy_rows_calls(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    busy_unarmed = 3;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !blocked && !hook_owns_capture && !capture_live);
+    int logged = 0;
+    for (unsigned i = 0; i < out.n_steps; i++)
+        if (out.step[i].id == VJO_GSTEP_PASS && out.step[i].rc == VJO_ERR_BUSY) logged++;
+    TEST_CHECK(logged == 1 && busy_unarmed == 0);
+    busy_unarmed = 1000; /* never tidied: the job gives up, the worker stays usable */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !blocked && !capture_live && !memory_live);
+    busy_unarmed = 0; busy_armed = 1; allow_capture_held = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK);
+    TEST_CHECK(blocked && hook_owns_capture && capture_live && !memory_live); /* the block stays the hook's */
+}
+
 /* The probe tries every rung once and recognizes nothing. */
 static void probe_tries_every_rung(void)
 {
@@ -413,6 +438,7 @@ TEST_LIST = {
     {"ALL system gate and retained thread joins", system_app_gate_and_failed_joins},
     {"capture memory ladder USER CDRAM PHYCONT each logged", capture_memory_ladder_is_logged},
     {"the kernel strip after a failed hook write; timeouts are not retried", hook_failure_falls_back_to_the_kernel_strip},
+    {"BUSY rows calls: asked again before arming, the block kept after", busy_rows_calls},
     {"the self-test probe tries every rung", probe_tries_every_rung},
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {NULL, NULL}

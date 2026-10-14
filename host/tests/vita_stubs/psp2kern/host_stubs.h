@@ -10,7 +10,8 @@ typedef int64_t SceOff;
 /* Preserve the Vita structure's size and type offset on a 64-bit host. */
 typedef struct {
     SceSize size;
-    struct { unsigned int type; uint32_t remaining[10]; } core_info;
+    /* SceKernelMemBlockInfoCore: type ... partition_guid, then phy_mem_part (word 10) */
+    struct { unsigned int type; uint32_t remaining[9]; uint32_t phy_mem_part; } core_info;
     uint32_t remaining[34];
 } SceKernelMemBlockInfoEx;
 #define SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_RW 1

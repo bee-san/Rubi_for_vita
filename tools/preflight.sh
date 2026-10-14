@@ -118,8 +118,22 @@ fi
 
 # 6. the ARMv7 lane (32-bit, LDREX/STREX) and the Vita3K smoke
 if [ -n "${ARM_CC:-}" ] && [ -n "${QEMU:-}" ]; then
-  if ARM_CC=$ARM_CC QEMU=$QEMU VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR bash tools/arm_host_tests.sh "$BUILD-arm" > "$log/arm.log" 2>&1; then
+  if ARM_CC=$ARM_CC QEMU=$QEMU VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR VJO_VOCR_MODEL_DIR=${VJO_VOCR_MODEL_DIR:-} \
+       bash tools/arm_host_tests.sh "$BUILD-arm" > "$log/arm.log" 2>&1; then
     pass "ARM lane (qemu-arm)" "$(grep '^arm ' "$log/arm.log" | sed 's/^arm //; s/ cases pass//' | tr '\n' ' ')"
+    # the capture parity on the eval crops, on the Vita's CPU
+    if [ -n "${VJO_EVAL_MANIFESTS:-}" ] && [ -n "${VJO_EVAL_SHOTS:-}" ] && [ -x "$BUILD-arm/capture_parity" ]; then
+      printf '#!/bin/sh\nexec "%s" -cpu cortex-a9 "%s" "$@"\n' "$QEMU" "$root/$BUILD-arm/capture_parity" > "$log/arm-parity.sh"
+      chmod +x "$log/arm-parity.sh"
+      shots=(); IFS=: read -ra dirs <<<"$VJO_EVAL_SHOTS"; for d in "${dirs[@]}"; do shots+=(--shots "$d"); done
+      if "$PY" tools/capture_parity.py --binary "$log/arm-parity.sh" --manifests "$VJO_EVAL_MANIFESTS" "${shots[@]}" \
+           > "$log/arm-parity-eval.log" 2>&1; then
+        pass "ARM capture parity (eval)" "$(head -1 "$log/arm-parity-eval.log" | sed 's/^capture parity: //')"
+        grep -o 'parity eval .*' "$log/arm-parity-eval.log" | sed 's/^/           /'
+      else
+        fail "ARM capture parity (eval)" "$log/arm-parity-eval.log"
+      fi
+    fi
   else
     fail "ARM lane (qemu-arm)" "$log/arm.log"
   fi

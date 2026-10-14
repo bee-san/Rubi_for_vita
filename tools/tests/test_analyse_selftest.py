@@ -233,7 +233,10 @@ class AnalyseV2(unittest.TestCase):
         r = self.analyse("routes")
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("kernel block route, KD                   FAIL  0x80020001", r.stdout)
-        self.assertIn("kernel process route (faps-coredump)     PASS  2 partitions, KD 9,437,184 B free", r.stdout)
+        self.assertIn("at step 2 (block/address-space info)", r.stdout)
+        # the kernel's address space refused, the caller's read; a slot outside the kernel half not read
+        self.assertIn("kernel process route (faps-coredump)     PASS  2 partitions of shell's address space, "
+                      "KD 9,437,184 B free; 1 not read (pointer outside the kernel range)", r.stdout)
         self.assertIn("failed routes: block kernel 0x80020001", r.stdout)
         self.assertEqual(rows(r.stdout)["kernel-memory"], "PASS")
 

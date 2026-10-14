@@ -128,9 +128,9 @@ static uint32_t selftest_flags_seen[8];
 static int selftest_rcs[8];
 static VjoRect selftest_region;
 /* shell/selftest.c's order: the last stage's result is the job's */
-static const char *const selftest_names[] = {"probe", "fallback", "textbox", "fullscreen", "textbox2"};
-static const uint32_t selftest_stage_flags_tab[] = {VJO_GAME_OCR_F_PROBE, VJO_GAME_OCR_F_FORCE_FALLBACK, 0,
-                                                    VJO_GAME_OCR_F_FULL, 0};
+static const char *const selftest_names[] = {"fallback", "textbox", "fullscreen", "probe", "textbox2"};
+static const uint32_t selftest_stage_flags_tab[] = {VJO_GAME_OCR_F_FORCE_FALLBACK, 0, VJO_GAME_OCR_F_FULL,
+                                                    VJO_GAME_OCR_F_PROBE, 0};
 int vjo_selftest_armed(void) { return selftest_armed && !selftest_done; }
 void vjo_selftest_init(const VjoConfig *cfg) {}
 void vjo_selftest_step(const char *step) { selftest_steps++; }
@@ -2010,9 +2010,9 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
     TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
-    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_PROBE &&
-               selftest_flags_seen[1] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[2] == 0 &&
-               selftest_flags_seen[3] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[4] == 0);
+    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[1] == 0 &&
+               selftest_flags_seen[2] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[3] == VJO_GAME_OCR_F_PROBE &&
+               selftest_flags_seen[4] == 0);
     TEST_CHECK(!strcmp(cache_data[0].sentence, "猫")); /* the last stage's text is the job's */
     TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
     mem_free();
@@ -2022,7 +2022,7 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     selftest_armed = 1; selftest_done = 0; selftest_begins = selftest_ends = submits = 0;
     fail_vocr_user = 1; fake_free_user = 1000; fake_need_weights = 659456; fake_reserve = 4194304;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    TEST_CHECK(selftest_ends == 5 && selftest_rcs[1] == VJO_E_OOM && selftest_done);
+    TEST_CHECK(selftest_ends == 5 && selftest_rcs[0] == VJO_E_OOM && selftest_rcs[1] == VJO_E_OOM && selftest_done);
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
 }

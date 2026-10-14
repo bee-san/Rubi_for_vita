@@ -84,6 +84,12 @@ target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_capture COMMAND vjo-kernel-capture-tests)
+# kernel/meminfo.c's three routes with the firmware's objects at kernel-range addresses (#74 audit B1).
+add_executable(vjo-kernel-meminfo-tests host/tests/test_kernel_meminfo.c core/ledger.c)
+target_include_directories(vjo-kernel-meminfo-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-meminfo-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-meminfo-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_meminfo COMMAND vjo-kernel-meminfo-tests)
 add_executable(vjo-kernel-input-tests host/tests/test_kernel_input.c kernel/triggers.c)
 target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)

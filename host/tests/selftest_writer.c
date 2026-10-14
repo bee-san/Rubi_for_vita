@@ -79,9 +79,11 @@ int vjoMemInfo(VjoMemInfo *m)
 {
     m->ledger_current = m->ledger_peak = 131072;
     m->ledger_limit = 2220032;
-    if (memory_routes_fail) { /* #74: the block route fails on 3.65 */
+    if (memory_routes_fail) { /* the block route stops at its memory-block info, the kernel's
+                                 address space is refused and the caller's is read */
         m->kernel_rc = m->caller_rc = (int32_t)0x80020001u;
-        m->kernel_step = m->caller_step = 2;
+        m->kernel_step = m->caller_step = VJO_MEMSTEP_INFO;
+        m->as_caller = 1;
     } else {
         m->kernel_total = 37748736; m->kernel_free = 9437184; m->kernel_step = 0;
         m->caller_total = 52428800; m->caller_free = 98304;
@@ -92,6 +94,7 @@ int vjoMemInfo(VjoMemInfo *m)
     m->as_parts = 2;
     m->as_total[0] = 37748736; m->as_free[0] = 9437184;
     m->as_total[1] = 16777216; m->as_free[1] = 4194304;
+    m->as_skipped = 1; m->as_step = VJO_MEMSTEP_RANGE; /* one slot outside the kernel half, not read */
     return 0;
 }
 
@@ -181,7 +184,7 @@ int main(int argc, char **argv)
     VjoConfig cfg;
     VjoRect region = {1536, 48188, 62600, 15059};
     const char *scenario;
-    unsigned stop_at = 99;
+    int stop_in_fullscreen;
     int fd;
     if (argc != 3) {
         fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes\n", argv[0]);
@@ -189,7 +192,7 @@ int main(int argc, char **argv)
     }
     snprintf(out_dir, sizeof(out_dir), "%s", argv[1]);
     scenario = argv[2];
-    if (!strcmp(scenario, "incomplete")) stop_at = 3; /* the Vita stops during the full-screen stage */
+    stop_in_fullscreen = !strcmp(scenario, "incomplete"); /* the Vita stops during the full-screen stage */
     memory_routes_fail = !strcmp(scenario, "routes");
     /* the marker tools/install_ftp.sh --self-test leaves */
     fd = sceIoOpen(MARKER, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
@@ -208,7 +211,7 @@ int main(int argc, char **argv)
         const char *name = vjo_selftest_stage_name(i);
         int fallback = !strcmp(name, "fallback");
         vjo_selftest_stage_begin(i, "H15_w8.vocr", "FL10_w8.vocr");
-        if (i == stop_at) return 0; /* nothing after the begin line */
+        if (stop_in_fullscreen && !strcmp(name, "fullscreen")) return 0; /* nothing after the begin line */
         if (!strcmp(name, "probe")) probe_job(&result);
         else region_job(&result, !strcmp(name, "fullscreen"),
                         fallback || !strcmp(name, "textbox") ? 1 : 2, fallback,

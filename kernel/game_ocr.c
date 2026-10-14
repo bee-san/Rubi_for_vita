@@ -50,12 +50,17 @@ static struct {
     int orphan;                     /* its process exited during a copy: the kernel worker tidies up */
     int abandoned;                  /* the copy outlived its rows call (BUSY): the kernel worker returns
                                        the state to IDLE once the copy ends; no new request meanwhile */
+    int in_call;                    /* a rows call is between arming and its last use of the state and
+                                       the kernel strip: nobody else resets or frees them meanwhile */
+    uint64_t gone_us;               /* when its process exited during the call */
 } rows;
 /* A frame has to come within this; cancellation is checked every slice. */
 #define ROWS_WAIT_US 1500000u
 #define ROWS_SLICE_US 50000u
 /* A copy the hook started finishes within this (one strip, a few ms). */
 #define ROWS_COPY_WAIT_US 2000000u
+/* Longer than any call can stay inside the kernel (ROWS_WAIT_US + ROWS_COPY_WAIT_US). */
+#define ROWS_GONE_US 10000000u
 /* A model syscall waits this long for the kernel worker before answering
  * BUSY; the game then yields and repeats it, as before. */
 #define MODEL_SYSCALL_WAIT_US 50000u
@@ -168,9 +173,15 @@ void game_ocr_process_gone(SceUID pid)
      * process any more, and an idle kernel strip goes. A copy in progress runs
      * in that process's own display call and ends by itself. */
     if (pid == rows.pid) {
-        if (__sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_IDLE) ||
-            rows.state == ROWS_DONE) {
+        if (rows.in_call) {
+            /* its rows call is still inside the kernel: it sees the process gone,
+             * stops, and tidies up itself (nothing is freed under it) */
+            rows.orphan = 1;
+            rows.gone_us = ksceKernelGetSystemTimeWide();
+        } else if (__sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_IDLE) ||
+                   rows.state == ROWS_DONE) {
             rows.state = ROWS_IDLE;
+            rows.orphan = rows.abandoned = 0;
             buffers_kstrip_free();
         } else if (rows.state == ROWS_COPYING) {
             rows.orphan = 1;
@@ -358,16 +369,20 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     else if (!valid || !claimed || req.seq != request.seq || req.size != sizeof(req)) rc = VJO_ERR_ARG;
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
     else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
-             req.dst_stride < request.width || (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST)) ||
+             req.dst_stride < request.width || req.dst_stride > VJO_MAX_W ||
+             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST)) ||
              ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
              (req.mode != VJO_GAME_OCR_SRC_HOOK && req.mode != VJO_GAME_OCR_SRC_KSTRIP))
         rc = VJO_ERR_ARG;
     else if ((req.flags & VJO_ROWS_SIG) && !(req.y == 0 || (rows.sig_seq == req.seq && req.y == rows.sig_next)))
         rc = VJO_ERR_ARG; /* the first pass runs from row 0, in order */
-    else if (rows.state != ROWS_IDLE && !rows.orphan) rc = VJO_ERR_BUSY;
+    /* A previous copy (also one whose process exited, or that outlived its call)
+     * is not tidied yet: the kernel worker returns it to IDLE within a tick. */
+    else if (rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else {
-        span = (req.n - 1u) * req.dst_stride + request.width;
-        if (!user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;
+        uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width; /* <= 61,440: no wrap */
+        span = (uint32_t)bytes;
+        if (bytes > 0xFFFFFFFFu || !user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;
     }
     if (!rc && req.mode == VJO_GAME_OCR_SRC_KSTRIP) {
         kbytes = req.n * request.width;
@@ -401,6 +416,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         rows.pid = pid;
         rows.rc = 0;
         rows.orphan = rows.abandoned = 0;
+        rows.in_call = 1;
         rows.fb_w = rows.fb_h = rows.fb_pitch = rows.fb_fmt = 0;
         rows.copy_start_us = rows.copy_end_us = 0;
         rows.armed_us = ksceKernelGetSystemTimeWide();
@@ -446,6 +462,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
             klog("ocr rows: copy still running after %u us", ROWS_COPY_WAIT_US);
             VJO_LOCK();
             rows.abandoned = 1;
+            rows.in_call = 0;
             model_wake_locked();
             VJO_UNLOCK();
             rc = VJO_ERR_BUSY;
@@ -454,7 +471,11 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         rc = rows.rc;
     }
     VJO_LOCK();
+    /* The copy is over (DONE) or never started (IDLE): this call's last use of
+     * the state and the strip, then both are free for the next request. */
     if (rows.state == ROWS_DONE) rows.state = ROWS_IDLE;
+    rows.orphan = rows.abandoned = 0;
+    if (rc > 0 && kalloc && !buffers_kstrip()) rc = VJO_ERR_NO_MEMORY; /* never: freed only by this call */
     if (rc > 0 && kalloc) {
         /* Last rung of the ladder: the hook filled the kernel strip; copy it out here. */
         const uint8_t *k = buffers_kstrip();
@@ -464,6 +485,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
                 rc = VJO_ERR_COPY;
     }
     if (kalloc) buffers_kstrip_free();
+    rows.in_call = 0;
     if (rc > 0 && (req.flags & VJO_ROWS_SIG)) {
         rows.sig_next = req.y + req.n;
         /* Only a region job's capture is the region's: a full-frame or probe
@@ -492,6 +514,7 @@ info_out:
     info.kstrip_bytes = kalloc ? kbytes : 0;
 out:
     info.rc = rc;
+    info.armed = (uint32_t)armed;
     if (user_info) {
         uint32_t size = 0;
         if (ksceKernelMemcpyUserToKernel(&size, user_info, sizeof(size)) >= 0 && size == sizeof(info)) {
@@ -786,9 +809,19 @@ void game_ocr_model_tick(void)
     VJO_LOCK();
     /* A rows copy whose process exited during it, or that outlived its call:
      * nobody waits for it now. */
-    if ((rows.orphan || rows.abandoned) && rows.state == ROWS_DONE) {
+    if ((rows.orphan || rows.abandoned) && rows.state == ROWS_DONE && !rows.in_call) {
         rows.state = ROWS_IDLE;
         rows.orphan = rows.abandoned = 0;
+        buffers_kstrip_free();
+    }
+    /* A call whose process exited and that never reached its end: a call waits
+     * at most ROWS_WAIT_US + ROWS_COPY_WAIT_US, so after ROWS_GONE_US its thread
+     * is gone and nothing uses the state or the strip any more. */
+    if (rows.in_call && rows.orphan && rows.state != ROWS_COPYING &&
+        (uint64_t)ksceKernelGetSystemTimeWide() - rows.gone_us > ROWS_GONE_US) {
+        klog("ocr rows: the exited process's call never returned; tidied");
+        rows.state = ROWS_IDLE;
+        rows.in_call = rows.orphan = rows.abandoned = 0;
         buffers_kstrip_free();
     }
     sync_locked();

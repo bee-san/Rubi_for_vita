@@ -30,11 +30,14 @@ PAF_RESERVE = 1536 * 1024            # shell/memory.cpp RESERVE: below it every 
 FULL_FRAME = 960 * 544 * 4           # API 18's kernel capture block at the largest region
 CAPTURE_LIMIT = 64 * 1024            # API 19: a region's capture block (one strip and its row checksums)
 STEPS_V1 = ("boot", "ok", "game", "ocr", "done")
-STAGES = ("probe", "fallback", "textbox", "fullscreen", "textbox2")
+STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/selftest.c's order
 ROWS_V2 = ("boot", "ok", "game") + STAGES + ("done",)
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
+# include/vjo_api.h VJO_MEMSTEP_*: where a kernel route stopped
+MEMSTEPS = {1: "find", 2: "block/address-space info", 3: "pointer outside the kernel range",
+            4: "no kernel memory block", 5: "InfoCore"}
 
 # VJO_E_* of core/conn.h, as the game result reports them (read from the
 # source when it is at hand, so the two cannot drift).
@@ -259,7 +262,8 @@ def analyse_v2(records):
             if route == "none":
                 cells["kernel"] = ("FAIL", f"vjoMemInfo {native(rc)}")
             elif rc:
-                cells[route] = ("FAIL", native(rc) + (f" at step {f.get('step')}" if f.get("step") else ""))
+                ks = f.get("step")
+                cells[route] = ("FAIL", native(rc) + (f" at step {ks} ({MEMSTEPS.get(ks, '?')})" if ks else ""))
             elif route.startswith("block"):
                 total = f.get("total", 0)
                 cells[route] = ("PASS" if total else "FAIL", f"{f.get('free', 0):,} of {total:,} B free")
@@ -270,8 +274,11 @@ def analyse_v2(records):
             elif route == "as":
                 parts = [f[k] for k in sorted(f) if re.fullmatch(r"p\d+", k)]
                 kd = [p for p in parts if isinstance(p, tuple) and p[1] == KD_TOTAL]
+                skipped = f.get("skipped", 0)
                 cells[route] = ("PASS" if f.get("parts", 0) else "FAIL",
-                                f"{f.get('parts', 0)} partitions" + (f", KD {kd[0][0]:,} B free" if kd else ""))
+                                f"{f.get('parts', 0)} partitions of {f.get('part', 'kernel')}'s address space"
+                                + (f", KD {kd[0][0]:,} B free" if kd else "")
+                                + (f"; {skipped} not read ({MEMSTEPS.get(f.get('step'), '?')})" if skipped else ""))
         out["routes"].append({"step": step, "cells": cells})
 
     # memory queries: the user API and at least one kernel route reading ScePhyMemPartKD, at every step

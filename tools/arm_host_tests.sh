@@ -13,7 +13,8 @@
 # With VJO_VOCR_SOURCE_DIR (a vita-vn-ocr checkout at the pinned commit) the
 # capture parity test (#74, host/tests/test_capture_parity.c) runs here too:
 # API 18's and API 19's capture give the recognizer the same bytes on the
-# Vita's CPU (procedural frames; tools/capture_parity.py adds eval crops).
+# Vita's CPU (procedural frames; VJO_VOCR_MODEL_DIR adds the preprocessed
+# tensors; tools/preflight.sh runs the eval crops through it as well).
 #
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
@@ -44,15 +45,18 @@ build ledger host/tests/test_ledger.c core/ledger.c
 build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
+build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 
-TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr)
+TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c
+  MODEL_DEF=()
+  [ -n "${VJO_VOCR_MODEL_DIR:-}" ] && MODEL_DEF=(-DVJO_VOCR_MODEL_DIR="\"$VJO_VOCR_MODEL_DIR\"")
   "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-    -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
+    "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
     -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
     "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
     "$RT/vocr_lines_rows.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
