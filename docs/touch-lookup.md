@@ -71,20 +71,20 @@ validation and are recorded separately from host results.
 ## Word lookup on recognized text
 
 `host/tests/test_word_lookup.cpp` checks the whole path on real recognizer
-output: 48 VOCR lines of development screenshots
+output: 50 VOCR lines of development screenshots
 ([fixtures](../host/fixtures/word_lookup/README.md)) go through the overlay's
 sentence filter, the first Japanese letter, the lookup at the cursor with the
 bundled `plaintext.vjdict`, the header range the overlay recolors, the popup
 entry, and the Shell's own Right/Left navigation and touch hit test. Every
 lookup gives one entry or none, the highlight starts at the cursor and ends on
 a character boundary, and Right always advances. With the bundled dictionary,
-1,221 of the 1,225 Japanese letters lie inside a matched word (578 entries in
-582 lookups); a character without an entry stays highlighted and Right steps
-one character. The 50 cases of `expect.tsv` cover inflections
+1,317 of the 1,321 Japanese letters lie inside a matched word (625 entries in
+629 lookups); a character without an entry stays highlighted and Right steps
+one character. The 56 cases of `expect.tsv` cover inflections
 (会ってなかった → 会う, 殺されてしまう → 殺す, した → する), 静かな (静か; な is
 the next word, as in Yomitan), kana words (から, して, ありがとう), katakana loanwords,
 names, common readings (私 わたし, 先生 せんせい) and OCR errors (FL10's
-美味しいつて still finds 美味しい; H15's 室息死 falls back to 室). The Shell worker
+美味しいつて still finds 美味しい; H15's 脱組んで, for 腕組んで, falls back to 脱). The Shell worker
 test runs one line through Auto OCR (the first word prepared while the
 overlay is closed, shown on opening without file I/O), Right and a tap.
 
@@ -105,9 +105,9 @@ at the cursor, the entry and the source named in its definition. The numbers
 come first and the texts are bounded in whole characters, so a line is at
 most 228 bytes even with 4-byte characters in every field (a host test) and
 `vjo_log` never cuts it. On the host the lookup takes
-49 µs on average and at most 48 file reads
+45 µs on average and at most 38 file reads
 ([measurements](benchmarks/word-lookup-20261014.json)); one A9 core at 444 MHz
-is **estimated** at about 4–16 ms on average and under 50 ms at worst, mostly
+is **estimated** at about 3–15 ms on average and under 45 ms at worst, mostly
 memory-card reads. The console's log lines measure it.
 
 ## Installation checkpoint

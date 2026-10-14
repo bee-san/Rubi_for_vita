@@ -1,6 +1,8 @@
 # Real VOCR output of vita-vn-ocr linefind development regions (eval/linefind/manifests,
-# a5d5aad), recognized by the overlay's own adapter: tools/collect_word_lookup_lines.py.
-# No protected test set, CLANNAD or reserved game. Text only; \n separates recognized lines.
+# a5d5aad), recognized by the overlay's own adapter: tools/collect_word_lookup_lines.py, whose
+# filter reads no VN that realplus/shots.reserved_vns reserves for a test reason (CLANNAD, the
+# owner's test series, test sets, fresh native, their relations) nor an owner -TEST title.
+# Text only; \n separates recognized lines.
 # id	model	model_sha256	shot_sha256	region	text
 vita_tight_v1015_151320	H15	316ebc377ec34520	ba7978ce7df37d0d	158,352,520,477	天羽菜美\n今や面倒見のいい彼氏様\nだもんね～
 vita_tight_v1015_151320	FL10	500e0b842e5f0cb3	ba7978ce7df37d0d	158,352,520,477	天刀菜美\n今や面倒見のいい彼氏様\nだもんね～
@@ -26,8 +28,6 @@ vita_tight_v15231_88272	H15	316ebc377ec34520	3ee0ed54290ed716	65,330,587,512	か
 vita_tight_v15231_88272	FL10	500e0b842e5f0cb3	3ee0ed54290ed716	65,330,587,512	かげろう\n「みさを……\n貴女が僕だけを見ないと言うなら、\n僕は―」
 vita_tight_v15577_157071	H15	316ebc377ec34520	decc0afd7e7e8c27	45,349,732,486	朝魔仁\n「だが、ロック部を立ち上げたのはその後だろう。\n疑われても仕方がないと思うが？」
 vita_tight_v15577_157071	FL10	500e0b842e5f0cb3	decc0afd7e7e8c27	45,349,732,486	朝霧\n「だが、ロック部を立ち上げたのはその後だろう。\n疑われても仕方がないと思うが？」
-vita_tight_v15771_192365	H15	316ebc377ec34520	833ce6d577062f66	96,352,647,521	Eikage\nBeingcaledaNOmanistheb1ggeStinsuty0uca1\nSayt0t皿an.S0hydonty0ueplainwichpart\nofme1ss0efeminate?
-vita_tight_v15771_192365	FL10	500e0b842e5f0cb3	833ce6d577062f66	96,352,647,521	HIk4g9\nBeingCaledaTOmanSuebgg8tinSuky0ICan\nSay0a血an.Soydoaty0uCxPlainichpar\nmeisspefeninatey
 vita_tight_v1629_155350	H15	316ebc377ec34520	d14f25e35c8c8056	123,403,615,445	そう叫んだ瞬間、霊符が、赤熱した！
 vita_tight_v16770_154900	H15	316ebc377ec34520	061e985efbf6fb14	258,365,556,489	エース\n弱虫はひとりで死ねばいい。\nあいつを道連れにするな。
 vita_tight_v17641_99842	H15	316ebc377ec34520	8767e6a24ea7c903	199,362,714,507	木夜椎名\nどうやら君は、僕が思っていた\n『お姫様』とは少し違うようです。
@@ -40,13 +40,17 @@ vita_tight_v18641_121294	H15	316ebc377ec34520	85cb01145a4287da	82,335,345,444	�
 vita_tight_v19012_100497	H15	316ebc377ec34520	4d2dd3a1851674ee	173,340,590,464	シュド\n「知らないって言ってるだろうが！\nいい加減認めろこのイカレ野郎！」
 vita_tight_v19141_112857	H15	316ebc377ec34520	8ef411afd96e9530	227,443,530,514	急いで柱の後ろに移動したとたん、\n前から西小路先生の姿が現れた。
 psp_tight_v11879_56279	H15	316ebc377ec34520	ab4a78517efc8bfa	100,190,350,211	静かな室内に、剣が空を割く音が響く。
-psp_tight_v4060_10997	H15	316ebc377ec34520	bef867bbd17ab48c	6,201,463,248	今日からは自分の日記とは別に、私の妹、ふぅちゃんの\n観察日記をつけることにしました。
-psp_tight_v4060_10997	FL10	500e0b842e5f0cb3	bef867bbd17ab48c	6,201,463,248	今日からは自分の日記とは別に、私の妹、ふうちゃんの\n観察日記をつけることにしました。
-psp_tight_v5690_52118	H15	316ebc377ec34520	3aee1a02a7271874	30,148,427,223	「ちなつがなおくんのお弁当を作ってきて……なおくんは\nちゃんとそれを食べるっていう約束です」
-psp_tight_v5690_52119	H15	316ebc377ec34520	d20865783a8f457b	29,147,440,224	「先輩が、アタシの作ったお弁当を残さず食べてくれるよう\nに、ゆびきりしてください」
-psp_tight_v481_57980	H15	316ebc377ec34520	c8870994236eb2f8	114,194,374,220	前回は鼻血ぞ、今回はあわや室息死か。
-psp_tight_v481_57980	FL10	500e0b842e5f0cb3	c8870994236eb2f8	114,194,374,220	前回は鼻血で、今回はあわや窒息死か。
-psp_tight_v2063_138885	H15	316ebc377ec34520	12ee4d56c4181831	12,162,369,244	そこには信じられない光景が広がっていた。\n無造作に切り刻まれた肉塊を愛しそうに眺め、\n口づけし、嘗め回す女。
-psp_tight_v2063_138885	FL10	500e0b842e5f0cb3	12ee4d56c4181831	12,162,369,244	そこには信じられない光景が広がっていた。\n無遠作に切りリ刻まれた肉塊を愛しそうに眺め、\nロつけし、嘗め回す女。
 psp_tight_v1970_57600	H15	316ebc377ec34520	3f9f55bf5649ea70	137,189,430,233	望がいおいただ
 psp_tight_v1970_57600	FL10	500e0b842e5f0cb3	3f9f55bf5649ea70	137,189,430,233	Kのないたさ
+psp_tight_v10968_57568	H15	316ebc377ec34520	b0dbf335ef16b1df	21,168,374,267	秋房\n「な、なるほど。それは理解致しました。\nしかし……おい、貴様！お前だ、お前！\n先ほどから、なぜこちらを見ない！」
+psp_tight_v10968_57568	FL10	500e0b842e5f0cb3	b0dbf335ef16b1df	21,168,374,267	秋房\n「な、なるほど。それは解致しました。\nしかし……おい、貴様！お前だ、お前！\n先ほどから、なぜこちらを見ない！」
+psp_tight_v1015_57057	H15	316ebc377ec34520	6bc9a4c3c44e4aa7	57,164,294,235	月森蓮\nここに来ると、つい\n時間が経つのを忘れてしまう
+psp_tight_v728_57950	H15	316ebc377ec34520	619f4694b6edc233	93,200,229,224	算数部の活動に励んだ。
+psp_tight_v9885_73926	H15	316ebc377ec34520	39aea975ed56ff93	79,166,414,268	琴浦爺米く\n「いやいや、そうでもないのじゃよ。\nここのところ、物忘れが激しくてのう\nもう、年じゃろうか」
+psp_tight_v9885_73926	FL10	500e0b842e5f0cb3	39aea975ed56ff93	79,166,414,268	琴浦爺く物A\n「いやいや、そうでもないのじゃよ。\nここのところ、物忘れが激しくてのう\nもう、年じゃろうか」
+vita_tight_v24291_151163	H15	316ebc377ec34520	2f89bbf4a2ff89ae	217,331,664,506	冬海笙子\n……そうですね\nここ数日、一緒に過ごすうちに\n皆さん打ち解けてきたと思います
+vita_tight_v24291_151163	FL10	500e0b842e5f0cb3	2f89bbf4a2ff89ae	217,331,664,506	冬海年子\n……そうですね\nここ数日、一緒に過ごすうちに\n皆さん打ち解けてきたと思います
+psp_tight_v8591_53476	H15	316ebc377ec34520	5f27f38a3552cfe6	186,197,419,240	脱組んで歩くって、友達とか……\nただの幼なじみならやらないよな
+psp_tight_v8591_53476	FL10	500e0b842e5f0cb3	5f27f38a3552cfe6	186,197,419,240	腕組んで歩くって、友違とか……\nただの幼なじみならやらないよな
+psp_tight_v6723_36095	H15	316ebc377ec34520	ba52dce2ba170c7b	76,197,379,245	机の士に広げられた紙とにらあっこを\nすること数十分。
+psp_tight_v6723_36095	FL10	500e0b842e5f0cb3	ba52dce2ba170c7b	76,197,379,245	机の上に広げられた紙とにらあっこを\nすること数分。

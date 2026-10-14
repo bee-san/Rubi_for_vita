@@ -283,9 +283,14 @@ one, and otherwise configured dictionary order decides. This is
 bounded matching, not a full Japanese morphological parser: longest match
 can still join a particle to the next word (頭がすっきり shows ガス for がす),
 and words never span a line break, because the first recognized line is often
-a speaker's name. On the real recognized lines of
-`host/fixtures/word_lookup` the ranking changed 462 of 1,615 shown entries,
-nearly all from a rare homograph or reading to the common one
+a speaker's name. On the 134 recognized development lines whose VNs the
+fixture's filter allows (`tools/collect_word_lookup_lines.py`), stepping with
+Right, the ranking changed 375 of 1,376 shown entries (164 of 625 on the 50
+committed lines), and no matched span. An independent audit judged a random
+sample of 80 changes: 51 better, 25 the same, 4 worse. The remaining losses
+are mostly single kanji whose longer article is a rarer reading (泉 せん, 比
+ころ, 校 きょう) and same-depth inflection ties (飛ばされ → 飛ぶ); a frequency
+signal would be the real fix
 ([word lookup](touch-lookup.md#word-lookup-on-recognized-text)).
 The caps above can omit lower-priority matches or unusually complex inflections.
 Missing or corrupt enabled files fail the lookup with an actionable error;

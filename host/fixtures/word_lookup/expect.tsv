@@ -22,9 +22,13 @@ vita_tight_v16770_154900	H15	死ねば	死ねば	死ぬ	しぬ	inflection
 vita_tight_v19012_100497	H15	認めろ	認めろ	認める	みとめる	inflection
 vita_tight_v19141_112857	H15	現れた	現れた	現れる	あらわれる	inflection
 vita_tight_v19141_112857	H15	した	した	する	-	inflection
-psp_tight_v4060_10997	H15	ことにしました	ことにしました	事にする	ことにする	inflection
-psp_tight_v5690_52119	H15	食べて	食べて	食べる	たべる	inflection
-psp_tight_v5690_52118	H15	作って	作って	作る	つくる	inflection
+psp_tight_v10968_57568	H15	致しました	致しました	致す	いたす	inflection
+psp_tight_v10968_57568	H15	見ない！	見ない	見る	みる	inflection
+psp_tight_v1015_57057	H15	忘れてしまう	忘れてしまう	忘れる	わすれる	inflection
+psp_tight_v728_57950	H15	励んだ	励んだ	励む	はげむ	inflection
+psp_tight_v9885_73926	H15	激しくて	激しくて	激しい	はげしい	inflection
+vita_tight_v24291_151163	H15	打ち解けて	打ち解けて	打ち解ける	うちとける	inflection
+vita_tight_v24291_151163	H15	思います	思います	思う	おもう	inflection
 psp_tight_v11879_56279	H15	静かな	静か	静か	しずか	na-adjective
 vita_tight_v1015_151321	H15	そうなんだ	そうなんだ	そうなんだ	-	kana
 vita_tight_v12178_127145	H15	して	して	して	-	kana
@@ -41,6 +45,8 @@ vita_tight_v1015_151321	H15	クラス	クラス	クラス	-	katakana
 vita_tight_v13090_154662	H15	デート	デート	デート	-	katakana
 vita_tight_v14813_78849	H15	マグロ	マグロ	マグロ	-	katakana
 vita_tight_v15577_157071	H15	ロック	ロック	ロック	-	katakana
+vita_tight_v13090_154662	H15	ト？	ト	ト	と	katakana
+vita_tight_v1015_151321	H15	ス、	ス	す	-	katakana
 vita_tight_v13766_88835	H15	長谷川	長谷川	長谷川	はせがわ	name
 vita_tight_v18641_121294	H15	織田信長	織田信長	織田信長	おだのぶなが	name
 vita_tight_v18641_121294	H15	秀吉	秀吉	秀吉	ひでよし	name
@@ -50,8 +56,8 @@ vita_tight_v15231_88272	H15	僕	僕	僕	ぼく	common reading
 vita_tight_v13766_88834	H15	先生	先生	先生	せんせい	common reading
 vita_tight_v17641_99842	H15	お姫様	お姫様	お姫様	おひめさま	common reading
 vita_tight_v1015_151321	FL10	美味しいつて	美味しい	美味しい	おいしい	ocr error
-psp_tight_v481_57980	H15	室息死	室	室	しつ	ocr error
-psp_tight_v481_57980	FL10	窒息死	窒息死	窒息死	ちっそくし	ocr error
-psp_tight_v2063_138885	FL10	無遠作	無	無	む	ocr error
 vita_tight_v13090_154661	FL10	入生	入	入	にゅう	ocr error
+psp_tight_v8591_53476	H15	脱組んで	脱	脱	だつ	ocr error
+psp_tight_v8591_53476	FL10	友違	友	友	とも	ocr error
+psp_tight_v6723_36095	H15	士に	士	士	し	ocr error
 vita_tight_v13766_88835	H15	莉				character fallback

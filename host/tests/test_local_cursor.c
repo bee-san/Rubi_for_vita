@@ -501,6 +501,43 @@ static void postings_are_ranked_by_how_the_text_is_written(void)
     }
 }
 
+/* Katakana text: the entry spelled exactly so (RANK_WRITTEN) beats one spelled
+ * so in hiragana, which beats a homograph with a longer article (RANK_KANA);
+ * mixed script and full width ASCII; half-width katakana is not normalized,
+ * as before. The cases are audit-word-lookup's (its adversarial.c
+ * a4_kana_mixes_and_fullwidth): they fail with RANK_WRITTEN or the katakana
+ * match removed. Synthetic rows, not dictionary content. */
+static void katakana_text_prefers_its_spelling_then_hiragana(void)
+{
+    const Row rows[] = {
+        {"じゅーす", "汁酢", "じゅーす", "kanji homograph, the longest article of all of these", 0},
+        {"じゅーす", "じゅーす", "", "hiragana spelled, longer article", 0},
+        {"じゅーす", "ジュース", "", "katakana", 0},
+        {"って", "偶て", "って", "kanji homograph with a much longer article", 0},
+        {"って", "って", "", "quotative", 0},
+        {"ok", "OK", "", "ascii", 0}, {"ok", "ＯＫ", "", "full width", 0},
+        {"OK", "OK", "", "ascii upper", 0}, {"OK", "ＯＫ", "", "full width upper", 0}};
+    static const struct { const char *text, *meaning; } cases[] = {
+        {"ジュース", "katakana"}, {"じゅーす", "hiragana spelled, longer article"},
+        {"ジューす", "hiragana spelled, longer article"}, /* mixed: both equal as kana, the longer article */
+        {"ッて", "quotative"}, {"って", "quotative"}, {"ッテ", "quotative"},
+        {"ＯＫ", "full width upper"}, {"OK", "ascii upper"}};
+    for (int version = 1; version <= 2; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_CASE_("v%d %s", version, cases[i].text);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], cases[i].meaning), "got %s", r.vocab[0].meanings[0]);
+        }
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_CHECK(!lookup(&a, &p, &cfg, "\xef\xbd\xbc\xef\xbe\x9e\xef\xbd\xad\xef\xbd\xb0\xef\xbd\xbd", 0, &r, &e) &&
+                   r.n_vocab == 0); /* ｼﾞｭｰｽ */
+    }
+}
+
 /* With several dictionaries, an entry written as the text is in a later one
  * beats a homograph in an earlier one; the homograph is still a page. */
 static void written_entry_in_later_dictionary_precedes_homograph(void)
@@ -685,6 +722,7 @@ TEST_LIST = {
     {"exact_later_dictionary_precedes_inflected_page", exact_later_dictionary_precedes_inflected_page},
     {"postings_are_ranked_by_how_the_text_is_written", postings_are_ranked_by_how_the_text_is_written},
     {"written_entry_in_later_dictionary_precedes_homograph", written_entry_in_later_dictionary_precedes_homograph},
+    {"katakana_text_prefers_its_spelling_then_hiragana", katakana_text_prefers_its_spelling_then_hiragana},
     {"single_result_reads_are_unchanged", single_result_reads_are_unchanged},
     {"overlay_pages_stream_through_one_arena", overlay_pages_stream_through_one_arena},
     {"page_failures_keep_header_and_locators", page_failures_keep_header_and_locators},
