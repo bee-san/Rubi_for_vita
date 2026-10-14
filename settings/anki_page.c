@@ -468,7 +468,14 @@ void vjo_anki_page_quit(void)
         running = 0;
     }
     if (ime_open) {
+        /* Term only once the dialog has finished (bounded: leaving anyway). */
         sceImeDialogAbort();
+        for (int i = 0; i < 100 && sceImeDialogGetStatus() != SCE_COMMON_DIALOG_STATUS_FINISHED; i++) {
+            vita2d_start_drawing();
+            vita2d_end_drawing();
+            vita2d_common_dialog_update();
+            vita2d_swap_buffers();
+        }
         sceImeDialogTerm();
         ime_open = 0;
     }

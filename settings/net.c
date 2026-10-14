@@ -1,4 +1,5 @@
 #include "net.h"
+#include "../shell/shell.h" /* vjo_log: anki_page.c */
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/rng.h>
@@ -18,7 +19,7 @@
 static unsigned char net_pool[NET_POOL] __attribute__((aligned(16)));
 static int net_up;
 static SceUID cancel_lock = -1;
-static int cancel_fd = -1;
+static int cancel_fd = -1, cancel_rid = -1; /* the socket and the resolver in use */
 static volatile int cancelled;
 
 int vjo_app_net_init(void)
@@ -69,6 +70,8 @@ void vjo_app_net_cancel(void)
     sceKernelLockMutex(cancel_lock, 1, NULL);
     if (cancel_fd >= 0)
         sceNetSocketAbort(cancel_fd, 0);
+    if (cancel_rid >= 0)
+        sceNetResolverAbort(cancel_rid, 0);
     sceKernelUnlockMutex(cancel_lock, 1);
 }
 
@@ -145,13 +148,22 @@ static int connect_poll(int fd, const SceNetSockaddrIn *sin)
     return ret;
 }
 
+/* A host name (an IP address needs none); vjo_app_net_cancel aborts it. */
 static int resolve(const char *host, SceNetInAddr *addr, int timeout_us)
 {
-    int rid = sceNetResolverCreate("VjoAppResolver", NULL, 0), ret;
+    int rid = sceNetResolverCreate("VjoAppResolver", NULL, 0), ret = -1;
     if (rid < 0)
         return rid;
-    ret = sceNetResolverStartNtoa(rid, host, addr, timeout_us > 0 ? timeout_us : 5000000, timeout_us > 0 ? 0 : 2, 0);
+    sceKernelLockMutex(cancel_lock, 1, NULL);
+    cancel_rid = cancelled ? -1 : rid;
+    sceKernelUnlockMutex(cancel_lock, 1);
+    if (cancel_rid >= 0)
+        ret = sceNetResolverStartNtoa(rid, host, addr, timeout_us > 0 ? timeout_us : 5000000, timeout_us > 0 ? 0 : 2,
+                                      0);
+    sceKernelLockMutex(cancel_lock, 1, NULL);
+    cancel_rid = -1;
     sceNetResolverDestroy(rid);
+    sceKernelUnlockMutex(cancel_lock, 1);
     return ret;
 }
 
@@ -263,7 +275,7 @@ int vjo_app_net_local_ipv4(void *ud, uint32_t *ip, uint32_t *mask)
 
 int vjo_app_net_probe(void *ud, const uint32_t *ips, int n, int port, int window_us, uint8_t *open)
 {
-    int fds[VJO_ANKI_PROBE_MAX], pending = 0;
+    int fds[VJO_ANKI_PROBE_MAX], pending = 0, failed = 0, last = 0;
     int64_t end;
     (void)ud;
     if (n > VJO_ANKI_PROBE_MAX)
@@ -272,8 +284,11 @@ int vjo_app_net_probe(void *ud, const uint32_t *ips, int n, int port, int window
         SceNetSockaddrIn sin;
         int st;
         open[i] = 0;
-        if ((fds[i] = sceNetSocket("VjoAppProbe", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0)) < 0)
+        if ((fds[i] = sceNetSocket("VjoAppProbe", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0)) < 0) {
+            failed++; /* that host is not tried: said in log.txt, not taken for "closed" silently */
+            last = fds[i];
             continue;
+        }
         ipv4_addr(&sin, ips[i], port);
         st = connect_start(fds[i], &sin);
         if (st == 1)
@@ -303,5 +318,8 @@ int vjo_app_net_probe(void *ud, const uint32_t *ips, int n, int port, int window
     for (int i = 0; i < n; i++)
         if (fds[i] >= 0)
             sceNetSocketClose(fds[i]);
+    if (failed)
+        vjo_log("anki: search: %d of %d sockets refused (0x%08X); those hosts were not tried", failed, n,
+                (unsigned)last);
     return n;
 }

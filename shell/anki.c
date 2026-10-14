@@ -281,7 +281,8 @@ static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
                   : !sceClibStrcmp(n->title_id, "NPXS10028") || !sceClibStrcmp(n->title_id, "PSPEMUCFW") ? "psp"
                                                                                                         : "vita";
     n->ocr_engine = acfg->ocr_backend == VJO_OCR_LENS ? "lens" : "vocr";
-    n->unix_time = (int64_t)(unix_ms() / 1000u);
+    /* To the minute, as MiscInfo: the same card saved again within it is the same record (its ID). */
+    n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;
 }
 
 /* The other dictionaries' entries for the word (local_dictionary_results
@@ -751,6 +752,7 @@ void vjo_anki_set_game(const char *tid, const char *name)
     sceKernelLockMutex(box_lock, 1, NULL);
     sceClibSnprintf(game_tid, sizeof(game_tid), "%s", tid);
     sceClibSnprintf(game_name, sizeof(game_name), "%s", name);
+    ocr_model[0] = '\0'; /* until this game's first recognition */
     vjo_utf8_trim_partial(game_name);
     sceKernelUnlockMutex(box_lock, 1);
 }

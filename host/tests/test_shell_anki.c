@@ -1143,7 +1143,7 @@ static void test_mapping_port_and_audio_at_send(void)
     body = body_of(2);
     TEST_CHECK(strstr(sent[2], "Host: my-pc.local:9000\r\n") != NULL);
     TEST_CHECK(strstr(body, "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"好き\","
-                            "\"ExpressionFurigana\":\"好き[すき]\",\"ExpressionReading\":\"すき\","
+                            "\"ExpressionFurigana\":\"好[す]き\",\"ExpressionReading\":\"すき\","
                             "\"ExpressionAudio\":\"\",\"MainDefinition\":") != NULL &&
                strstr(body, "<li>liked</li><li>favourite</li>") != NULL &&
                strstr(body, "\"MiscInfo\":\"CLANNAD\"},\"tags\":[\"vita-jp-overlay\",\"vita_queue_") != NULL);

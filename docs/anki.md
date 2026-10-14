@@ -35,7 +35,8 @@ the tab):
 2. **AnkiConnect address**: Cross opens the keyboard. Type your computer's IP
    address, such as `192.168.1.23` (`IP:port` if you changed AnkiConnect's
    port; `http://` and a trailing `/` are accepted and dropped), or `auto` to
-   let the app search your local network.
+   let the app search your local network. A new address is tested at once
+   (for `auto`, that is the search: a few seconds).
 3. **Test connection**: the result says whether AnkiConnect answered, whether
    Anki has the Kiku note type with the fields a card fills, and whether the
    Kiku deck exists (else the first card creates it). With `auto`, the test
@@ -73,7 +74,7 @@ words get the green √.
 | `Sent 2 to Anki, 1 kept (unreadable, see log.txt)` | A damaged or edited record, or one whose screenshot is missing, stays queued |
 | `1 sent; 2 kept: Anki offline` | Sending stopped; the rest stays queued. Also any AnkiConnect error and an HTTP error |
 | `0 sent; 1 kept: Kiku note type not found in Anki: import Kiku (docs/anki.md)` | Anki has no Kiku note type ([setup](#setup)) |
-| `0 sent; 1 kept: Anki not found: test the connection in the Overlay app` | `anki_host` is `auto` and no search has found AnkiConnect yet |
+| `0 sent; 1 kept: Anki not found: test the connection in the Overlay app` | `anki_host` is `auto`, and no search has found AnkiConnect yet or the computer it found does not answer now (Anki closed, or the computer has another address); the app's test searches again |
 | `0 sent; 1 kept: audio: …` | The audio source failed; the card waits rather than going without audio |
 | `Set Anki's address in the Overlay app; cards stay queued` | No computer set |
 | `Anki: not enough memory…` | The Shell's memory reserve refused the job; nothing changed |
@@ -123,7 +124,8 @@ its glossary item. jpdb and jiten lookups fill all of them.
 Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
 
 - `<id>.json`: the card, readable UTF-8 JSON (below). The ID is the first 128
-  bits of the record's SHA-256, so the same card saved twice has the same name.
+  bits of the record's SHA-256, so the same card saved twice in the same
+  minute has the same name (the record holds the minute of the × press).
 - `<id>.jpg`: its screenshot, for a card of an earlier build that took one.
 - `<id>.duplicate.json`: a card Anki already had, kept for review.
 
@@ -157,7 +159,7 @@ card can be made into a note later, by any version that reads the record:
 | `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp` (Adrenaline's shared title IDs) |
 | `ocr_engine`, `ocr_model` | `vocr` or `lens`, and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
-| `time` | When × was pressed, seconds since 1970 (UTC) |
+| `time` | When × was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC) |
 
 A record is at most 32 KiB; a card whose other dictionaries' entries would
 make it larger is saved without them (log.txt says so). Records of version 2

@@ -69,16 +69,58 @@ static void test_anki_fields(void)
     BUF(vjo_anki_sentence(&b, "猫", 0, 99)); /* out of range: no bold */
     TEST_CHECK(!strcmp(s, "猫"));
 
-    BUF(vjo_anki_furigana(&b, "言葉", "ことば"));
-    TEST_CHECK(!strcmp(s, "言葉[ことば]"));
-    BUF(vjo_anki_furigana(&b, "食べる", "たべる"));
-    TEST_CHECK(!strcmp(s, "食べる[たべる]"));
-    BUF(vjo_anki_furigana(&b, "ある", "ある"));
-    TEST_CHECK(!strcmp(s, "ある"));
-    BUF(vjo_anki_furigana(&b, "テレビ", "てれび")); /* no kanji */
-    TEST_CHECK(!strcmp(s, "テレビ"));
-    BUF(vjo_anki_furigana(&b, "時々", "ときどき"));
-    TEST_CHECK(!strcmp(s, "時々[ときどき]"));
+    /* Yomitan's {furigana-plain}, which Kiku's install guide asks for: each
+     * kanji run takes its part of the reading; a space before a base that
+     * follows other text, so Kiku's parser (and Anki's filter) read only that
+     * run: お茶[おちゃ] would put おちゃ over 茶 in Kiku */
+    {
+        static const char *const cases[][3] = {
+            {"言葉", "ことば", "言葉[ことば]"},
+            {"食べる", "たべる", "食[た]べる"},
+            {"お茶", "おちゃ", "お 茶[ちゃ]"},
+            {"ご飯", "ごはん", "ご 飯[はん]"},
+            {"お母さん", "おかあさん", "お 母[かあ]さん"},
+            {"真っ白", "まっしろ", "真[ま]っ 白[しろ]"},
+            {"見張り番", "みはりばん", "見張[みは]り 番[ばん]"},
+            {"取り扱い", "とりあつかい", "取[と]り 扱[あつか]い"},
+            {"大人しい", "おとなしい", "大人[おとな]しい"},
+            {"時々", "ときどき", "時々[ときどき]"},
+            {"ブラック企業", "ぶらっくきぎょう", "ブラック 企業[きぎょう]"}, /* katakana as hiragana */
+            {"一ヶ月", "いっかげつ", " 一ヶ月[いっかげつ]"},             /* ヶ: kana to Kiku */
+            /* the kana do not line up: the whole word, after a space */
+            {"今日は", "きょうわ", " 今日は[きょうわ]"},
+            {"3日", "みっか", " 3日[みっか]"},
+            {"ある", "ある", "ある"},
+            {"テレビ", "てれび", "テレビ"}, /* no kanji */
+            {"猫", "", "猫"},
+            {"a<b&猫", "a<b&ねこ", "a&lt;b&amp; 猫[ねこ]"},
+        };
+        for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            BUF(vjo_anki_furigana(&b, cases[i][0], cases[i][1]));
+            TEST_CHECK(!strcmp(s, cases[i][2]));
+            TEST_MSG("%s %s -> '%s', want '%s'", cases[i][0], cases[i][1], s, cases[i][2]);
+        }
+        /* longer than the distribution handles, or that never lines up: the whole word */
+        char word[200] = "", reading[300] = "";
+        for (int i = 0; i < 49; i++)
+            strcat(word, "茶");
+        for (int i = 0; i < 49; i++)
+            strcat(reading, "ちゃ");
+        BUF(vjo_anki_furigana(&b, word, reading));
+        TEST_CHECK(s[0] != ' ' && strstr(s, "茶[ちゃちゃ") != NULL);
+        /* 16 runs of kanji between の over a reading of 47 の that never ends in the
+         * word's x: no fit, found out within the step bound */
+        strcpy(word, "");
+        strcpy(reading, "");
+        for (int i = 0; i < 15; i++)
+            strcat(word, "茶の");
+        strcat(word, "茶x");
+        for (int i = 0; i < 47; i++)
+            strcat(reading, "の");
+        BUF(vjo_anki_furigana(&b, word, reading));
+        TEST_CHECK(s[0] == ' ' && strstr(s, "茶x[のの") != NULL);
+        TEST_MSG("%.40s", s);
+    }
 
 #undef BUF
     {
@@ -138,7 +180,7 @@ static void test_anki_fields(void)
         /* the dictionary's ruby in Anki's syntax, else the whole word's reading */
         n.spelling = "取り扱い";
         n.reading = "とりあつかい";
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取り扱い[とりあつかい]"));
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
         n.furigana = "取[と]り扱[あつか]い";
         TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
         TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n));
@@ -340,7 +382,7 @@ static void test_anki_requests(void)
     n.n_meanings = 0;
     TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
     TEST_CHECK(!strcmp(b.prefix, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET
-                                 ",\"fields\":{\"Expression\":\"好き\",\"ExpressionFurigana\":\"好き[すき]\","
+                                 ",\"fields\":{\"Expression\":\"好き\",\"ExpressionFurigana\":\"好[す]き\","
                                  "\"ExpressionReading\":\"すき\",\"Sentence\":\"猫が<br><b>好き</b>\","
                                  "\"SentenceFurigana\":\"猫[ねこ]が<br><b> 好[す]き</b>\",\"PitchPosition\":\"<ol>"
                                  "<li><span style=\\\"display:inline;\\\"><span>[</span><span>2</span><span>]</span></span></li>"

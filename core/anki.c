@@ -99,22 +99,106 @@ void vjo_anki_sentence(VjoBuf *b, const char *text, int hl_start, int hl_end)
     html_text(b, text + hl_end, n - (size_t)hl_end);
 }
 
-static int has_kanji(const char *s)
+/* ---- the word's furigana, as Yomitan's {furigana-plain} ---- */
+
+#define FURI_MAX 48     /* code points of a word or its reading distributed (longer: the whole word) */
+#define FURI_STEPS 4096 /* tries of the distribution before the whole word takes the reading */
+/* ヵヶ: kanji to the bases here (vjo_is_kanji), kana to Kiku's parser (not Han script) */
+#define KANA_TO_KIKU(c) ((c) == 0x30F5 || (c) == 0x30F6)
+
+typedef struct {
+    uint32_t w[FURI_MAX], r[FURI_MAX]; /* the word and its reading, katakana as hiragana */
+    size_t wo[FURI_MAX + 1], ro[FURI_MAX + 1]; /* byte offsets */
+    int nw, nr, steps;
+    int end[FURI_MAX]; /* a kanji run starting at i: where its reading ends in r */
+} Furi;
+
+/* s's code points into cp (katakana as hiragana: readings are written in
+ * hiragana) and their byte offsets; -1 when it has more than FURI_MAX. */
+static int furi_split(const char *s, uint32_t *cp, size_t *off)
 {
     size_t n = strlen(s), i = 0;
-    while (i < n)
-        if (vjo_is_kanji(vjo_utf8_next(s, n, &i)))
+    int k = 0;
+    while (i < n) {
+        uint32_t c;
+        if (k == FURI_MAX)
+            return -1;
+        off[k] = i;
+        c = vjo_utf8_next(s, n, &i);
+        cp[k++] = c >= 0x30A1 && c <= 0x30F6 && !vjo_is_kanji(c) ? c - 0x60 : c;
+    }
+    off[k] = n;
+    return k;
+}
+
+/* Does the word from i fit the reading from j? Kana must match; a run of
+ * kanji takes one or more of the reading's characters, the fewest first. */
+static int furi_fit(Furi *f, int i, int j)
+{
+    int e = i;
+    if (++f->steps > FURI_STEPS)
+        return 0;
+    if (i == f->nw)
+        return j == f->nr;
+    if (!vjo_is_kanji(f->w[i]))
+        return j < f->nr && f->w[i] == f->r[j] && furi_fit(f, i + 1, j + 1);
+    while (e < f->nw && vjo_is_kanji(f->w[e]))
+        e++;
+    for (int k = j + 1; k <= f->nr; k++) {
+        f->end[i] = k;
+        if (furi_fit(f, e, k))
             return 1;
+    }
     return 0;
 }
 
+/* "食[た]べる", "お 茶[ちゃ]", "真[ま]っ 白[しろ]": a space before a base that
+ * follows other text, or holds a character Kiku's parser does not count as a
+ * kanji (ヵヶ), so Anki's furigana filter and Kiku both read exactly that run. */
 void vjo_anki_furigana(VjoBuf *b, const char *spelling, const char *reading)
 {
-    html_escape(b, spelling, strlen(spelling));
-    if (reading && *reading && strcmp(spelling, reading) != 0 && has_kanji(spelling)) {
+    Furi f;
+    size_t n = strlen(spelling), i = 0;
+    int any = 0, mixed = 0, fit;
+    while (i < n) {
+        uint32_t c = vjo_utf8_next(spelling, n, &i);
+        any |= vjo_is_kanji(c);
+        mixed |= !vjo_is_kanji(c) || KANA_TO_KIKU(c);
+    }
+    if (!any || !reading || !*reading || !strcmp(spelling, reading)) {
+        html_escape(b, spelling, n);
+        return;
+    }
+    f.steps = 0;
+    fit = (f.nw = furi_split(spelling, f.w, f.wo)) > 0 && (f.nr = furi_split(reading, f.r, f.ro)) > 0 &&
+          furi_fit(&f, 0, 0);
+    if (!fit) { /* the whole word takes the reading */
+        if (mixed)
+            vjo_buf_putc(b, ' ');
+        html_escape(b, spelling, n);
         vjo_buf_putc(b, '[');
         html_escape(b, reading, strlen(reading));
         vjo_buf_putc(b, ']');
+        return;
+    }
+    for (int i = 0, j = 0; i < f.nw;) {
+        int e = i, space = i > 0;
+        if (!vjo_is_kanji(f.w[i])) {
+            html_escape(b, spelling + f.wo[i], f.wo[i + 1] - f.wo[i]);
+            i++;
+            j++;
+            continue;
+        }
+        for (; e < f.nw && vjo_is_kanji(f.w[e]); e++)
+            space |= KANA_TO_KIKU(f.w[e]);
+        if (space)
+            vjo_buf_putc(b, ' ');
+        html_escape(b, spelling + f.wo[i], f.wo[e] - f.wo[i]);
+        vjo_buf_putc(b, '[');
+        html_escape(b, reading + f.ro[j], f.ro[f.end[i]] - f.ro[j]);
+        vjo_buf_putc(b, ']');
+        j = f.end[i];
+        i = e;
     }
 }
 
