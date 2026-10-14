@@ -22,8 +22,9 @@
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
 /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
- * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector
- * the module is 215,240 text + 77,848 data/bss, still these pages [measured]. */
+ * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
+ * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
+ * data/bss, still these pages [measured]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
 /* VitaJPOverlay_OCR.suprx: 49,152 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
