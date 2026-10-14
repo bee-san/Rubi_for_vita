@@ -117,6 +117,13 @@ unsigned vjo_selftest_stages(void);
 const char *vjo_selftest_stage_name(unsigned i);
 uint32_t vjo_selftest_stage_flags(unsigned i);
 void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback);
+/* After stage i ran (before its record): 1 when the stages wait for another
+ * settled screen instead, because this one had no text in the region (rc 0, no
+ * line) or changed under every read; the wait is recorded, and the job ends
+ * with this stage's result. Only the first stage waits, at most
+ * VJO_SELFTEST_WAITS screens; after that the stages run on whatever is shown. */
+#define VJO_SELFTEST_WAITS 30
+int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r);
 void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model);
 void vjo_selftest_done(void); /* every stage has its record: the test is complete, the marker removed */
 /* One step of a game worker's log as text (log.txt and the report). */

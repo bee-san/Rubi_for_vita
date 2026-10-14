@@ -62,7 +62,7 @@ def rows(stdout):
     out = {}
     for line in stdout.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and line.startswith("  ") and not line.startswith("    ") and parts[1] in ("PASS", "FAIL", "WARN", "-"):
+        if len(parts) >= 2 and line.startswith("  ") and not line.startswith("    ") and parts[1] in ("PASS", "FAIL", "WARN", "NOTEXT", "-"):
             out[parts[0]] = parts[1]
     return out
 
@@ -291,9 +291,64 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(rows(r.stdout)["kernel-memory"], "PASS")
         self.assertEqual(failed_cells(r.stdout), [])
 
+    def test_stages_that_waited_for_text_in_the_region_pass_and_say_so(self):
+        r = self.analyse("waited")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual({k: v for k, v in rows(r.stdout).items() if v != "PASS"}, {})
+        self.assertIn("FL10_w8.vocr, 3 line(s)", r.stdout)
+        self.assertIn("; after 3 settled screen(s) without text in your region", r.stdout)
+        self.assertIn("The stages waited for text in your region: 3 settled screen(s) had none (rc -120, 0) before they "
+                      "ran.", r.stdout)
+        self.assertNotIn("The wait reached its bound", r.stdout)
+        self.assertIn("14 line(s) recognized in all, 9 in your region", r.stdout)
+        self.assertNotIn("INCOMPLETE", r.stdout)  # each wait closed the begin before it
+        self.assertTrue(r.stdout.rstrip().endswith("PASS: every stage completed; the figures above are this console's."))
+
+    def test_region_stages_that_found_no_line_are_not_a_recognition_pass(self):
+        """#81: the stages ran on the game's opening notice; the region stages found no line while the full
+        screen found five, and the old analyser said PASS. Such rows are NOTEXT, and so is the run."""
+        r = self.analyse("notext")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        got = rows(r.stdout)
+        self.assertEqual({k: got[k] for k in ("fallback", "textbox", "fullscreen", "textbox2", "recognitions", "done")},
+                         {"fallback": "NOTEXT", "textbox": "NOTEXT", "fullscreen": "PASS", "textbox2": "NOTEXT",
+                          "recognitions": "NOTEXT", "done": "PASS"})
+        self.assertIn("no text in your region (no line found there): 917x125+22+400 FL10_w8.vocr, 0 line(s)", r.stdout)
+        self.assertIn("5 line(s) recognized in all, none in your region", r.stdout)
+        self.assertIn("The wait reached its bound (30 screens)", r.stdout)
+        verdict = r.stdout.rstrip().splitlines()[-1]
+        self.assertTrue(verdict.startswith("NO TEXT: every stage completed, but no line was found in your region in "
+                                           "fallback, textbox, textbox2 (the full screen found 5"), verdict)
+        as_json = json.loads(self.analyse("notext", "--json").stdout)
+        self.assertEqual(as_json["ocr_result"], "NOTEXT")
+        # a failure still wins over a missing text
+        text = re.sub(r"^(stage textbox end) rc=0 ", r"\1 rc=-103 ", (FIXTURES / "selftest-v2-notext.txt").read_text(),
+                      flags=re.M)
+        r = run(text)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(rows(r.stdout)["textbox"], "FAIL")
+        self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("FAIL: textbox failed"))
+
+    def test_a_run_still_waiting_for_text_is_incomplete_and_says_why(self):
+        r = self.analyse("waiting")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        got = rows(r.stdout)
+        self.assertEqual((got["fallback"], got["textbox"], got["done"]), ("-", "-", "-"))
+        self.assertIn("waiting for text in your region: 4 settled screen(s) had none, the last at", r.stdout)
+        self.assertIn("INCOMPLETE: the stages were still waiting for text in your region: 4 settled screen(s) had none",
+                      r.stdout)
+        self.assertNotIn("began and never wrote its record", r.stdout)
+        self.assertNotIn("The wait reached its bound", r.stdout)
+        self.assertEqual(json.loads(self.analyse("waiting", "--json").stdout)["ocr_result"], "INCOMPLETE")
+        # a stop in the first stage after the waits is still where the Vita stopped
+        text = (FIXTURES / "selftest-v2-waiting.txt").read_text() + \
+            "stage fallback begin t=170000 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr\n"
+        r = run(text)
+        self.assertIn("INCOMPLETE: stage 'fallback' began and never wrote its record", r.stdout)
+
     @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
     def test_the_fixtures_are_what_the_writer_writes(self):
-        for name in ("pass", "fail", "incomplete", "routes", "diagnostics"):
+        for name in ("pass", "fail", "incomplete", "routes", "diagnostics", "waited", "notext", "waiting"):
             with tempfile.TemporaryDirectory() as tmp:
                 done = subprocess.run([os.environ["VJO_SELFTEST_WRITER"], tmp, name], capture_output=True, text=True)
                 self.assertEqual(done.returncode, 0, done.stderr)
@@ -302,7 +357,7 @@ class AnalyseV2(unittest.TestCase):
                                  f"selftest-v2-{name}.txt differs from shell/selftest.c's output: regenerate it with "
                                  f"vjo-selftest-writer DIR {name}")
                 # the marker is removed when (and only when) the run finished
-                self.assertEqual((Path(tmp) / "selftest.txt").exists(), name == "incomplete")
+                self.assertEqual((Path(tmp) / "selftest.txt").exists(), name in ("incomplete", "waiting"))
 
 
 # The kernel memory routes exactly as #75's first guard (7bba2aa: only pointers at or above 0x40000000

@@ -6,8 +6,10 @@
  * is appended line by line, so a crash leaves the steps reached; the report is
  * what the owner copies back for tools/analyse_selftest.py.
  *
- * v2 (API 19): on the first settled screen of the game, one job runs every
- * stage in turn: the user's region with the fallback model forced (FL10 read
+ * v2 (API 19): on the first settled screen of the game with text in the
+ * user's region (vjo_selftest_stage_wait waits for one, at most
+ * VJO_SELFTEST_WAITS screens), one job runs every stage in turn: the user's
+ * region with the fallback model forced (FL10 read
  * from the card), the user's region with the configured model (H15 read), the
  * full screen through the strips (weights kept), the capture probe (each
  * capture path and memory type, one strip each), and the user's region again
@@ -208,6 +210,25 @@ void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallbac
         return;
     report("stage %s begin t=%lld flags=0x%X model=%s fallback=%s", vjo_selftest_stage_name(i),
            (long long)ms_since_start(), (unsigned)vjo_selftest_stage_flags(i), model, fallback[0] ? fallback : "-");
+}
+
+/* #81's run began 2 s after the game started, on its opening notice: the five
+ * lines the full screen found lay above the region, and all three region
+ * stages found none (the same pixels each time; the region's later jobs read
+ * text). So the stages need text in the region: a first stage that found no
+ * line, or whose screen changed under every read, closes its begin with a wait
+ * record instead, and the stages run on the next settled screen. */
+static int waits; /* settled screens the stages waited past */
+
+int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
+{
+    if (!vjo_selftest_armed() || i != 0 || !((rc == VJO_OK && !r->lines) || rc == VJO_E_SCREEN_CHANGED) ||
+        waits >= VJO_SELFTEST_WAITS)
+        return 0;
+    waits++;
+    report("stage %s wait t=%lld rc=%d screens=%d/%d", vjo_selftest_stage_name(i), (long long)ms_since_start(), rc,
+           waits, VJO_SELFTEST_WAITS);
+    return 1;
 }
 
 static const char *const step_names[VJO_GSTEP_COUNT] = {

@@ -109,6 +109,17 @@ same instructions) are built with `-Os` too. They pay for `text_rows.c` and for 
 214,488 to 214,480 B of text and from 77,876 to 77,908 B of data and `.bss` [measured: main
 `dca0ba4` and this change].
 
+The open overlay's quiet refresh (#81 request 4, `docs/touch-lookup.md`) takes no allocation and no
+item of its own either. A refresh is a game OCR job that keeps the overlay's text and its entry: the
+one 64 KiB result arena (`VJO_SL_PAF_RESULTS`) stays held during it instead of being freed before
+the job, its text stays in the worker's static result until the control thread compares it in its
+24 KiB scratch, and a new text is copied into the existing 4 KiB `local_text`. The item's worst case
+is unchanged (the arena was already held with the overlay open). Its code (and the SCREEN_CHANGED
+pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,060 B of Shell text,
+paid for by building six more cold files with `-Os` (`vita/CMakeLists.txt`): the module stays at
+299,008 B (the build log's module row: 216,800 B of text, 81,264 B of data and `.bss`, +32 B of
+state [measured]).
+
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
 | item | bytes | what | source |

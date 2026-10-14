@@ -2,7 +2,7 @@
  * reports exactly as the Shell writes them, for tools/analyse_selftest.py's
  * tests (tools/tests/test_analyse_selftest.py) and its committed fixtures.
  *
- *   vjo-selftest-writer OUT_DIR pass|fail|incomplete|routes|diagnostics
+ *   vjo-selftest-writer OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting
  *
  * writes OUT_DIR/selftest-report.txt. The figures are synthetic: they exercise
  * the report's format and the analyser's verdicts, they measure nothing.
@@ -12,7 +12,12 @@
  * kernel memory route refused at step 3, as #75's first guard refused every
  * kernel object on a console (the audit's B1), the display hook unable to write
  * the game's memory (the kernel strip used), and USER_RW refusing the
- * full-screen stage's capture block (CDRAM's 256 KiB block instead). */
+ * full-screen stage's capture block (CDRAM's 256 KiB block instead).
+ * `waited`: three settled screens without text in the region come first (their
+ * wait records; the second one changed under every read), then the stages pass. `notext`: as #81's run, no screen with
+ * text in the region: after VJO_SELFTEST_WAITS waits the stages run anyway,
+ * their region stages find no line and the full screen five. `waiting`: the
+ * report ends while the stages still wait (the marker stays). */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -182,6 +187,35 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     }
 }
 
+/* A region job on a screen with no text in the region (#81: the game's opening
+ * notice, its lines above the region): the finder finds no line, so the model
+ * file is not opened and nothing is recognized. */
+static void empty_region_job(VjoGameOcrResult *r, int fallback, int resident)
+{
+    unsigned cap = 61440, ws = fallback ? 131072 : 188416;
+    int32_t freem = 91226112;
+    memset(r, 0, sizeof(*r));
+    r->size = sizeof(*r);
+    r->width = 917; r->height = 125; r->region_x = 22; r->region_y = 400;
+    r->fb_width = 960; r->fb_height = 544; r->fb_pitch = 960; r->fb_format = 0;
+    r->free_user = freem; r->reserve_bytes = 4194304;
+    r->need_workspace = ws + cap; r->need_weights = resident ? 0 : fallback ? 659456 : 1159168;
+    r->fallback = (uint32_t)fallback;
+    r->resident_bytes = resident ? 1159168 : 0;
+    add(r, VJO_GSTEP_MEM, 0, 0, 0, 0, freem, 10);
+    add(r, VJO_GSTEP_CHECK, 0, 0, 0, r->need_workspace + r->need_weights + r->reserve_bytes, freem, 20);
+    add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0x41, cap, freem - (int32_t)cap, 30);
+    add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, 0x42, ws, freem - (int32_t)(cap + ws), 40);
+    add(r, VJO_GSTEP_PASS, VJO_GAME_OCR_SRC_HOOK, 3, 0, 917 * 125, freem - (int32_t)(cap + ws), 34000);
+    add(r, VJO_GSTEP_SIG, VJO_GAME_OCR_SRC_HOOK, 0, 0, 960, freem - (int32_t)(cap + ws), 0)->sum = 960u << 16 | 544u;
+    add(r, VJO_GSTEP_FIND, 0, 0, 0, 0, freem - (int32_t)(cap + ws), 9000);
+    add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, 0, ws, freem - (int32_t)cap, 0);
+    add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0, cap, freem, 0);
+    r->source = VJO_GAME_OCR_SRC_HOOK; r->capture_memory = VJO_GAME_OCR_MEM_USER; r->capture_bytes = cap;
+    r->strip_rows = 62; r->captures = 6; r->capture_us = 34000; r->workspace_bytes = ws;
+    r->find_us = 9000; r->region_sum = 0x5EED0000u;
+}
+
 /* The probe: each capture path into each memory type, one strip each; with
  * hook_fails the display hook cannot write the game's memory. */
 static void probe_job(VjoGameOcrResult *r, int hook_fails)
@@ -218,10 +252,10 @@ int main(int argc, char **argv)
     VjoConfig cfg;
     VjoRect region = {1536, 48188, 62600, 15059};
     const char *scenario;
-    int stop_in_fullscreen;
+    int stop_in_fullscreen, no_text, empty_screens;
     int fd;
     if (argc != 3) {
-        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics\n", argv[0]);
+        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting\n", argv[0]);
         return 2;
     }
     snprintf(out_dir, sizeof(out_dir), "%s", argv[1]);
@@ -229,6 +263,11 @@ int main(int argc, char **argv)
     stop_in_fullscreen = !strcmp(scenario, "incomplete"); /* the Vita stops during the full-screen stage */
     memory_routes_fail = !strcmp(scenario, "routes");
     diagnostics_warn = !strcmp(scenario, "diagnostics");
+    /* Settled screens without text in the region before the stages run: three
+     * (waited); the wait's bound, after which they run on a screen without any
+     * (notext, #81's run); and a player who never reaches text (waiting). */
+    no_text = !strcmp(scenario, "notext");
+    empty_screens = !strcmp(scenario, "waited") ? 3 : no_text ? VJO_SELFTEST_WAITS : !strcmp(scenario, "waiting") ? 4 : 0;
     /* the marker tools/install_ftp.sh --self-test leaves */
     fd = sceIoOpen(MARKER, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return 1;
@@ -242,17 +281,37 @@ int main(int argc, char **argv)
     vjo_selftest_step("ok");
     now_us = 143000000;
     vjo_selftest_game("PCSG00415", 1, 1, &region);
+    for (int k = 0; k < empty_screens; k++) { /* as shell/worker.c run_selftest_stages: the first stage, then the gate */
+        vjo_selftest_stage_begin(0, "H15_w8.vocr", "FL10_w8.vocr");
+        empty_region_job(&result, 1, 0);
+        if (k == 1 && !no_text) { /* text typing out: the screen changed under every read */
+            result.rc = VJO_E_SCREEN_CHANGED;
+            result.tears = 3;
+        }
+        now_us += 600000;
+        if (!vjo_selftest_stage_wait(0, result.rc, &result)) {
+            fprintf(stderr, "screen %d without text did not wait\n", k + 1);
+            return 3;
+        }
+        now_us += 4000000;
+    }
+    if (!strcmp(scenario, "waiting")) return 0; /* the marker stays: the stages still wait */
     for (unsigned i = 0; i < vjo_selftest_stages(); i++) {
         const char *name = vjo_selftest_stage_name(i);
-        int fallback = !strcmp(name, "fallback");
+        int fallback = !strcmp(name, "fallback"), full = !strcmp(name, "fullscreen");
         vjo_selftest_stage_begin(i, "H15_w8.vocr", "FL10_w8.vocr");
-        if (stop_in_fullscreen && !strcmp(name, "fullscreen")) return 0; /* nothing after the begin line */
+        if (stop_in_fullscreen && full) return 0; /* nothing after the begin line */
         if (!strcmp(name, "probe")) probe_job(&result, diagnostics_warn);
-        else region_job(&result, !strcmp(name, "fullscreen"),
+        else if (no_text && !full) empty_region_job(&result, fallback, !strcmp(name, "textbox2"));
+        else region_job(&result, full,
                         fallback || !strcmp(name, "textbox") ? 1 : 2, fallback,
                         !strcmp(scenario, "fail") && !strcmp(name, "textbox"), diagnostics_warn,
-                        diagnostics_warn && !strcmp(name, "fullscreen"));
+                        diagnostics_warn && full);
         now_us += 2500000;
+        if (vjo_selftest_stage_wait(i, result.rc, &result)) {
+            fprintf(stderr, "stage %s waited\n", name);
+            return 3;
+        }
         vjo_selftest_stage_end(i, result.rc, &result, 2500, fallback ? "FL10_w8.vocr" : "H15_w8.vocr");
     }
     vjo_selftest_done();

@@ -58,7 +58,8 @@ by an empty `ux0:data/VitaJPOverlay/selftest.txt` (what `--self-test` uploads); 
 2. Start CLANNAD and go to a dialogue screen. Keep your saved textbox region; with none, draw it
    first: L+R, Square, drag around the text, Cross, Circle. Wait 1 minute without pressing anything:
    the self-test runs its five stages (VOCR3-FL10, VOCR3-H15, full screen, capture probe, VOCR3-H15
-   again) on the first settled screen and finishes by itself.
+   again) on the first settled screen with text in your region (it waits past screens without
+   any, such as the game's opening notice, at most 30) and finishes by itself.
 3. Read about 10 pages, pausing about 3 s on each. On 3 of them open the overlay (L+R), take a phone
    photo of the screen, then press Circle. Optional: on one of them press × to save the word as an
    Anki card (it is saved offline on the card). Note any slowdown, stutter or crash.

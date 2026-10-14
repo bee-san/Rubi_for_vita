@@ -6,11 +6,17 @@
 typedef struct {
     int submit_rc, read_rc, cancelled, malformed, cleanup, engine_rc;
     int submits, reads, cancels, delays, ready_after, abort_after;
+    int busy, cancel_when_busy; /* the first `busy` submissions answer BUSY */
     int64_t time;
     const char *text;
 } Fake;
 static int submit(void *ud, const VjoGameOcrRequest *req) {
-    Fake *f = ud; f->submits++; TEST_CHECK(req->size == sizeof(*req)); return f->submit_rc;
+    Fake *f = ud; f->submits++; TEST_CHECK(req->size == sizeof(*req));
+    if (f->submits <= f->busy) {
+        if (f->cancel_when_busy) f->cancelled = 1;
+        return VJO_ERR_BUSY;
+    }
+    return f->submit_rc;
 }
 static int read_result(void *ud, uint32_t seq, VjoGameOcrResult *out) {
     Fake *f = ud; f->reads++;
@@ -82,10 +88,26 @@ static void refuses_unclean_or_failed_engine(void) {
     f = (Fake){.submit_rc = 9, .engine_rc = 1};
     TEST_CHECK(exchange(&f, &out) == VJO_E_OCR_INFERENCE && !out.text[0] && f.cancels == 1);
 }
+/* A BUSY kernel (the worker still drains a job cancelled a moment ago) is
+ * asked again, 20 ms apart, for 2 s; the job then runs as usual. One that
+ * stays BUSY is the unavailable worker it always was, and a cancellation
+ * meanwhile ends the wait with nothing submitted. */
+static void busy_submission_is_repeated_within_its_time(void) {
+    Fake f = {.submit_rc = 17, .busy = 2}; VjoGameOcrResult out;
+    TEST_CHECK(exchange(&f, &out) == 0 && !strcmp(out.text, "test"));
+    TEST_CHECK(f.submits == 3 && f.reads == 1 && f.time == 40000 && !f.cancels);
+    f = (Fake){.submit_rc = 17, .busy = 1000};
+    memset(&out, 0xA5, sizeof(out));
+    TEST_CHECK(exchange(&f, &out) == VJO_E_OCR_UNAVAILABLE && !out.text[0]);
+    TEST_CHECK(!f.reads && !f.cancels && f.time == 2000000 && f.submits == 101 && f.delays == 100);
+    f = (Fake){.submit_rc = 17, .busy = 1000, .cancel_when_busy = 1};
+    TEST_CHECK(exchange(&f, &out) == VJO_E_CANCELLED && f.submits == 1 && !f.reads && !f.cancels);
+}
 TEST_LIST = {
     {"completed worker", successful}, {"missing worker", refuses_missing_worker},
     {"bounded timeout", timeout_keeps_worker_cleanup_separate},
     {"cancellation", cancellation}, {"stale and incomplete", rejects_stale_and_incomplete_results},
     {"cleanup and engine failure", refuses_unclean_or_failed_engine},
+    {"busy submission repeated within its time", busy_submission_is_repeated_within_its_time},
  {NULL, NULL}
 };

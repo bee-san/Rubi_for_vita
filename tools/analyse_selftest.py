@@ -9,7 +9,11 @@ the game worker's own memory around each allocation, and what failed, in plain
 words:
 
 - the run and its OCR, PASS/FAIL: boot, ok, game, the OCR stages, recognitions,
-  done. These rows alone decide the verdict.
+  done. These rows alone decide the verdict. A region stage (fallback,
+  textbox, textbox2) that found no line in the user's region is NOTEXT, not
+  PASS: it shows the capture and the memory, not recognition (#81's stages ran
+  on the game's opening notice, whose lines lay outside the region). A run
+  whose only problem is that is NO TEXT (exit 1).
 - diagnostics, PASS/WARN, never FAIL: the capture probe, the capture block's
   size, the kernel pool, tearing, the kernel memory routes, the game's memory.
   They say how OCR ran and what the console measured; a diagnostic that could
@@ -21,8 +25,10 @@ A stage the Vita stopped in (a begin record and no end) is the run's failure
 whichever stage it was, the probe included: the verdict is INCOMPLETE.
 
 v2 reports (API 19, `selftest v2`): boot, ok, game, then the stages one OCR job
-runs on the first settled screen (fallback, textbox, fullscreen, probe,
-textbox2), then done. v1 reports (API 18, `selftest v1`, as #74 sent) get the
+runs on the first settled screen with text in the region (fallback, textbox,
+fullscreen, probe, textbox2), then done. Each screen without text before it
+closes the fallback stage's begin with a `stage fallback wait` record (at most
+VJO_SELFTEST_WAITS, then the stages run anyway). v1 reports (API 18, `selftest v1`, as #74 sent) get the
 same table for their steps (boot, ok, game, ocr, done).
 
 After the diagnostics come each stage's memory headroom (free USER, plus another
@@ -37,8 +43,8 @@ OCR job, its memory and times, the dictionary, the overlay, Anki), the Anki queu
 crash dumps, the self-test analysis when a report is there, the tier from the lowest
 free game memory seen, and what this tool cannot decide, with where the data is.
 
-Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL or
-INCOMPLETE, 2 for a file that is not a report. With --collect: the self-test's
+Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL,
+NO TEXT or INCOMPLETE, 2 for a file that is not a report. With --collect: the self-test's
 verdict when a report is there, else 0. `--json` adds `ocr_result`,
 `diagnostics_result` and `warnings`, and each row's `kind` (ocr or diagnostic).
 """
@@ -58,6 +64,7 @@ FULL_FRAME = 960 * 544 * 4           # API 18's kernel capture block at the larg
 CAPTURE_LIMIT = 64 * 1024            # API 19: a region's capture block (one strip and its row checksums)
 STEPS_V1 = ("boot", "ok", "game", "ocr", "done")
 STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/selftest.c's order
+REGION_STAGES = ("fallback", "textbox", "textbox2")  # the user's region: a row there with no line is NOTEXT
 ROWS_V2 = ("boot", "ok", "game") + STAGES + ("done",)
 # Rows that report how OCR ran, never whether it worked: PASS or WARN only.
 DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-memory", "game-memory")
@@ -207,7 +214,13 @@ def analyse_v2(records):
             out["samples"].setdefault(w[0], {}).setdefault("kmem", {})[route] = f
         elif k == "stage" and len(w) >= 2:
             s = stages.setdefault(w[0], {"gsteps": [], "lines": []})
-            s[w[1]] = f
+            if w[1] == "wait":
+                # No text in the region (or a screen that changed under every read): this begin is
+                # closed, and the stages run on a later settled screen (shell/selftest.c).
+                s.setdefault("waits", []).append(f)
+                s.pop("begin", None)
+            else:
+                s[w[1]] = f
         elif k == "gstep" and len(w) >= 2:
             stages.setdefault(w[0], {"gsteps": [], "lines": []})["gsteps"].append({"step": w[1], **f})
         elif k in ("result", "memory") and w:
@@ -257,7 +270,9 @@ def analyse_v2(records):
         s = stages.get(name)
         kind = "diagnostic" if name in DIAGNOSTIC_ROWS else "ocr"
         if not s or "begin" not in s:
-            row(name, None, "not reached", kind)
+            waits = (s or {}).get("waits", [])
+            row(name, None, f"waiting for text in your region: {len(waits)} settled screen(s) had none, the last at "
+                            f"{waits[-1].get('t', '?')} ms" if waits else "not reached", kind)
             continue
         end, res, mem = s.get("end"), s.get("result", {}), s.get("memory", {})
         if end is None:
@@ -302,6 +317,12 @@ def analyse_v2(records):
             fb = re.match(r"(\d+)x(\d+)", str(end.get("fb", "")))
             if m and fb and m.groups() != fb.groups():
                 verdict, detail = "FAIL", "the region was not the whole frame: " + detail
+        if name in REGION_STAGES and verdict == "PASS" and not end.get("lines", 0):
+            # #81: the stages ran on the game's opening notice; nothing in the region was read,
+            # so this row shows the capture and the memory, not recognition.
+            verdict, detail = "NOTEXT", "no text in your region (no line found there): " + detail
+        if s.get("waits"):
+            detail += f"; after {len(s['waits'])} settled screen(s) without text in your region"
         row(name, verdict, detail)
 
     # the run's own requirements, one row each: the recognitions decide; the rest are diagnostics
@@ -328,7 +349,12 @@ def analyse_v2(records):
         diag("kernel-pool", "PASS" if not kstrip else "WARN",
              "every capture was written by the display hook into the game's memory" if not kstrip else
              f"the kernel strip (<= 64 KiB of the kernel pool) was used in: {', '.join(kstrip)}")
-        row("recognitions", "PASS" if recognized >= 3 else "FAIL", f"{recognized} line(s) recognized in all")
+        region_lines = sum(s["end"].get("recognized", 0) for n, s in regions if n in REGION_STAGES)
+        if region_lines:
+            row("recognitions", "PASS" if recognized >= 3 else "FAIL",
+                f"{recognized} line(s) recognized in all, {region_lines} in your region")
+        else:
+            row("recognitions", "NOTEXT", f"{recognized} line(s) recognized in all, none in your region")
         tears = sum(s.get("result", {}).get("tears", 0) for _, s in regions)
         diag("tearing", "PASS", f"{tears} row(s) changed between two reads (the job reads again)")
 
@@ -451,12 +477,28 @@ def analyse_v2(records):
             if r["kind"] == "ocr" and r["result"] is None and r["row"] in STAGES:
                 r["result"], r["detail"] = "FAIL", "no record though the run finished: its lines were lost"
     failed = [r["row"] for r in rows if r["kind"] == "ocr" and r["result"] == "FAIL"]
+    notext = [r["row"] for r in rows if r["kind"] == "ocr" and r["result"] == "NOTEXT" and r["row"] in STAGES]
+    waits = stages.get("fallback", {}).get("waits", [])
+    if waits:
+        ran = bool(stages["fallback"].get("end"))
+        findings.append(f"The stages waited for text in your region: {len(waits)} settled screen(s) had none "
+                        f"(rc {', '.join(sorted({str(s32(x.get('rc', 0))) for x in waits}))})"
+                        + (" before they ran." if ran else " so far."))
+        last = waits[-1].get("screens")
+        if ran and isinstance(last, tuple) and last[0] >= last[1]:
+            findings.append(f"The wait reached its bound ({last[1]} screens): the stages then ran on whatever was "
+                            "shown. Check the region (Square) if they read no text.")
     diagnostics(out)
     warned = out["warnings"]
     if begun:
         out["ocr_result"] = "INCOMPLETE"
         out["verdict"] = (f"INCOMPLETE: stage '{begun[0]}' began and never wrote its record: the Vita stopped during "
                           f"it. The rows before it are what was measured.")
+    elif "done" not in steps and waits and not stages["fallback"].get("end"):
+        out["ocr_result"] = "INCOMPLETE"
+        out["verdict"] = (f"INCOMPLETE: the stages were still waiting for text in your region: {len(waits)} settled "
+                          f"screen(s) had none, the last at {waits[-1].get('t', '?')} ms. Reach a dialogue line in the "
+                          f"game and wait there; the stages run on the first settled screen with text in the region.")
     elif "done" not in steps:
         reached = [r["row"] for r in rows if r["result"] is not None]
         out["ocr_result"] = "INCOMPLETE"
@@ -465,6 +507,15 @@ def analyse_v2(records):
     elif failed:
         out["ocr_result"] = "FAIL"
         out["verdict"] = f"FAIL: {', '.join(failed)} failed; see the rows above."
+    elif notext:
+        full = (stages.get("fullscreen") or {}).get("end") or {}
+        out["ocr_result"] = "NOTEXT"
+        out["verdict"] = (f"NO TEXT: every stage completed, but no line was found in your region in "
+                          f"{', '.join(notext)}"
+                          + (f" (the full screen found {full['lines']}: the text was elsewhere on the screen)"
+                             if full.get("lines") else "")
+                          + ". This run shows the capture and the memory, not recognition in your region; run the "
+                          "test again on a dialogue line, or check the region (Square).")
     else:
         out["ocr_result"] = "PASS"
         out["verdict"] = ("PASS: every stage completed; the figures above are this console's."
@@ -675,7 +726,7 @@ def analyse(text):
 
 def render(result):
     lines = [f"self-test report v{result['version']}, API {result['api']}"]
-    sections = (("ocr", "the run and its OCR (PASS/FAIL: these rows decide the verdict)"),
+    sections = (("ocr", "the run and its OCR (PASS/FAIL, NOTEXT: no line in your region; these rows decide the verdict)"),
                 ("diagnostic", "diagnostics (PASS/WARN: a WARN never changes the verdict)"))
     for kind, title in sections:
         rows = [r for r in result["rows"] if r.get("kind", "ocr") == kind]

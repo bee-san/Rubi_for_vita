@@ -14,8 +14,14 @@ with its own record whether it passed or not ([ingame-capture.md](ingame-capture
    one empty file, `ux0:data/VitaJPOverlay/selftest.txt`.
 2. Reboot. Wait for the LiveArea and leave the Vita alone for a minute (the boot guard's `ok`).
 3. Start the game to test. Reach a screen with dialogue text and wait about 30 seconds without
-   pressing anything: on the first settled screen one OCR job runs every stage below in turn.
-   OCR runs automatically while the test is armed, whatever `ocr_mode` says; the region is
+   pressing anything: on the first settled screen with text in your region, one OCR job runs every
+   stage below in turn. Screens before it with no line in your region, or that change under every
+   read, are waited past: the game's logos and notices (#81's run began 2 s after the game
+   started, on CLANNAD's opening notice, whose five lines lay above the region, and all three
+   region stages found nothing), menus, black screens. Each closes the first stage's `begin` with
+   a `stage fallback wait` record; after 30 such screens the stages run anyway, and the analyser
+   says when they then found no text. OCR runs automatically while the test is armed, whatever
+   `ocr_mode` says; the region is
    **yours** (draw it with Square first if you have not; with none, the full screen). The game
    needs the OCR worker registered for it (installed with `--title TITLEID`, README 'Install');
    otherwise the stages report `rc=-117` (`ocr unavailable`).
@@ -89,7 +95,7 @@ step done t=155499
 | `ledger` | the Shell ledger ([memory-ledger.md](memory-ledger.md)) | current/peak bytes we hold in SceShell's partition and in its PAF heap |
 | `kmem` | `vjoMemInfo` (`kernel/meminfo.c`), one line per route | `route=block`: FindMemBlockByAddr (size 0) → MemBlockGetInfoEx → PhyMemPartInfoCore for the kernel's own block (`part=kernel`, ScePhyMemPartKD when the total is 36 MiB) and the caller's (`part=shell`); `step` names where a route stopped (0 read; 1 find; 2 block or address-space info; 3 a pointer outside the kernel range, below 0x40000000; 4 in no kernel memory block; 5 InfoCore). `route=cas`: the caller's address-space block at +328/+332/+316 (main/CDRAM/phycont), as PSVshell and PSVshellPlus read it. `route=as`: the kernel process's address-space partitions (SceSysmemForKernel_C3EF4055), as faps-coredump reads them, or the caller's (`part=shell`) when the kernel's is refused; `skipped`: partitions not read, `step` the reason. Every route reports its own rc |
 | `kernel` | `vjoMemInfo` | the kernel ledger and the capture block held (Lens/Anki only; OCR holds none) |
-| `stage` | the Shell | `begin` with the model and flags; `end` with the rc, time, region, frame (size/pitch/format), model, fallback, lines |
+| `stage` | the Shell | `begin` with the model and flags; `end` with the rc, time, region, frame (size/pitch/format), model, fallback, lines; `wait` (first stage only) when that screen had no line in your region (rc 0) or changed under every read (rc -120): its time, rc and `screens=k/30`; the stages run on a later settled screen |
 | `gstep` | the game worker's step log | each step of the job, at most 20: `mem`, `check`, `alloc`/`free` (memory type, block, native rc, bytes; every block's `free` keeps a slot), `pass` (the job's first capture pass, or a failed one), `sig`, `find`, `load`, `recognize`, `fallback`, `fb`, `probe`, and since API 20 `settle` (the stable-text wait), `blank` (a skipped line, [vita-vn-ocr.md](vita-vn-ocr.md#stable-text-and-blank-lines-api-20)) and `norm` (the text normalised, [vita-vn-ocr.md](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)), each with the game's free main/CDRAM/phycont after it |
 | `line` | the game worker | each recognized line: size, CTC frames, time |
 | `result` / `memory` | the game worker's result | capture source and memory, block size, strip rows, strips read, rows that changed between reads, timings; the job's memory check |
@@ -104,10 +110,10 @@ the analyser reports such a route as failed, never its zeros as figures.
 `tools/analyse_selftest.py` (tests: `tools/tests/test_analyse_selftest.py`, with #74's own report
 as `tools/tests/fixtures/selftest-74-report.txt`, and v2 reports written by the real
 `shell/selftest.c` on the host, `host/tests/selftest_writer.c`) prints two tables. The first is
-the run and its OCR, PASS or FAIL; these rows alone decide the verdict:
+the run and its OCR, PASS, FAIL or NOTEXT; these rows alone decide the verdict:
 
 ```
-the run and its OCR (PASS/FAIL: these rows decide the verdict)
+the run and its OCR (PASS/FAIL, NOTEXT: no line in your region; these rows decide the verdict)
   stage            result  detail
   boot             PASS    normal boot (seq 2, 0 failed boots before)
   ok               PASS    stable minute at 60999 ms
@@ -116,9 +122,19 @@ the run and its OCR (PASS/FAIL: these rows decide the verdict)
   textbox          FAIL    out of memory (rc -103); failed steps: alloc user/workspace 0x80024302 ...
   fullscreen       PASS    960x544+0+0 H15_w8.vocr, 5 line(s), ...
   textbox2         PASS    ...
-  recognitions     PASS    11 line(s) recognized in all
+  recognitions     PASS    11 line(s) recognized in all, 6 in your region
   done             PASS    at 155499 ms, the marker removed
 ```
+
+A region stage (`fallback`, `textbox`, `textbox2`) that completed but found no line in your region
+is `NOTEXT`, not PASS: it shows the capture and the memory, not recognition. #81's report (the
+v0.8.0-test.1 console run) had all three at 0 lines while the full screen found 5, and this tool
+then said PASS. `recognitions` is NOTEXT when no region stage recognized a line. A run with no
+FAIL but a NOTEXT row ends `NO TEXT: ...` (it names the stages and what the full screen found)
+and exits 1; a FAIL wins over it. The `fallback` row and the findings count the settled screens
+the stages waited past (`selftest-v2-waited.txt`), and say when the wait reached its bound
+(`selftest-v2-notext.txt`, shaped like #81's run); a report that ends while the stages still wait
+is INCOMPLETE and says so (`selftest-v2-waiting.txt`).
 
 The second is the diagnostics, PASS or WARN, never FAIL. They say how OCR ran and what the
 console measured, so a diagnostic that read nothing or did not work is a WARN and leaves the
@@ -149,14 +165,17 @@ diagnostics (PASS/WARN: a WARN never changes the verdict)
 Then come the memory routes per step (a WARN cell gives the route's native result and the step it
 stopped at), the game worker's memory per allocation, the findings, a `diagnostics:` line (`PASS`,
 or `WARN (rows)`) and the verdict: `PASS` (it names any diagnostics that warned),
-`FAIL: <rows> failed`, or `INCOMPLETE: stage '<name>' began and never wrote its record`. A stop
+`FAIL: <rows> failed`, `NO TEXT: ...` (no FAIL, but no line in your region), or
+`INCOMPLETE: stage '<name>' began and never wrote its record` (or `INCOMPLETE: the stages were
+still waiting for text in your region`). A stop
 is the run's failure in whichever stage it happens, the probe included, and never a WARN. An API
 18 (`selftest v1`) report gets the same table for its steps (`boot`, `ok`, `game`, `ocr`, `done`),
 with its memory routes as diagnostics; for #74 it says `ocr FAIL: never reached: the capture
 failed 5 time(s) (no memory)` and names the 2,088,960 B kernel buffer.
 
-Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL or
-INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result`, `diagnostics_result`,
+Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL, NO TEXT or
+INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result` (`PASS`, `FAIL`,
+`NOTEXT` or `INCOMPLETE`), `diagnostics_result`,
 `warnings` and each row's `kind` (`ocr` or `diagnostic`).
 
 ## Memory headroom and the model tier

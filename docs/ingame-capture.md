@@ -53,7 +53,12 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
 7. Every row keeps the checksum of its first read; a later read that differs means the screen
    changed under the job (`VJO_E_SCREEN_CHANGED`, -120): the job reads the region again, up to
    three times, and logs the rows that changed. A region inside one strip is read a second time
-   to check it.
+   to check it. A job whose every read changed shows nothing, and no message (#81 request 4: 4 of
+   the test build's 21 console jobs ended so); the Shell logs `job dropped: the screen changed
+   under it (N in a row), next try in T ms` and tries again: at once, from the
+   second in a row 250 ms later, doubling up to 4 s, until a job reads its screen
+   (`shell/worker.c` `note_screen_changed`). An open overlay waiting for its text shows
+   "Recognizing…" meanwhile; one already showing text keeps it.
 
 Pixel formats: `A8B8G8R8` (0x00000000), `A2B10G10R10` (0x60800000, the top 8 bits of each 10)
 and `A1B5G5R5` (0x50000000, each 5-bit channel `<< 3`), as the JPEG capture already converted

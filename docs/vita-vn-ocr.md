@@ -159,12 +159,15 @@ the game exits. If the kernel cannot read the file's modification time, every
 job reads and checks the weights again, as before. Local
 lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
 view/cache is retired before a local job begins, so a second arena is unnecessary;
+a refresh of the open overlay (docs/touch-lookup.md) keeps the view and the arena
+and leaves its text in the worker's result until the control thread compares it;
 network jobs retain their two arenas. Local OCR-only/subtitle jobs use a static
 4 KiB filtered-text buffer and allocate no dictionary arena. The UI owns a
 separate 4 KiB copy for character navigation. Left/right moves one Unicode
 character and requests zero or one best entry at that position; it does not
-recapture or recognize text. Scene, region and foreground changes invalidate
-saved text, while rapid cursor moves supersede earlier lookup results. If Shell refuses
+recapture or recognize text. Region and foreground changes invalidate
+saved text; a scene change never does while the overlay shows it (a refresh
+replaces it quietly when it reads another), while rapid cursor moves supersede earlier lookup results. If Shell refuses
 lookup memory after successful OCR, this buffer preserves the recognized
 sentence/header; the error names Shell UI memory and applies dictionary backoff
 without marking recognition failed. The 1.5 MiB Shell UI reserve is unchanged.
