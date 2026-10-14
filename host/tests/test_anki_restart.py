@@ -10,6 +10,7 @@ loss on physical Vita/SD2Vita hardware.
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -94,6 +95,13 @@ class RestartTests(unittest.TestCase):
 
     def snapshot(self):
         return {p.name: p.read_bytes() for p in self.queue.iterdir() if p.is_file()}
+
+    def test_the_binary_is_the_configuration_ctest_names(self):
+        # ctest names the mode it means (CMakeLists.txt): the shipped build is 0, never a screenshot
+        expected = os.environ.get("VJO_EXPECT_ANKI_SCREENSHOT")
+        if expected is None:
+            self.skipTest("VJO_EXPECT_ANKI_SCREENSHOT not set")
+        self.assertEqual(SCREENSHOT, int(expected))
 
     def test_lapis_note_after_offline_saves_and_restarts(self):
         """Wi-Fi off (no anki_host, no socket): two cards saved in fresh processes, the queue read back

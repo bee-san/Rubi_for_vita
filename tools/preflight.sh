@@ -118,7 +118,7 @@ fi
 sim=$BUILD/vjo-alloc-sim-tests
 if [ -x "$sim" ]; then
   "$sim" > "$log/alloc-sim.log" 2>&1; rc=$?
-  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
+  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, VOCR3-H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
     pass "allocation simulator" "API 18 full screen refused (0x80024302) as on the console; API 19 0 B of KD at every region and model, every ladder rung works"
     grep -o "alloc-sim: .*" "$log/alloc-sim.log" | sed 's/^alloc-sim: /           /'
   elif [ $rc -eq 0 ]; then
@@ -238,8 +238,9 @@ assumptions the console still has to confirm (none of these is measured yet):
     (argument), each OCR stage FAILs with that step, and the probe shows it per memory type.
   - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
     and relocations only.
-  - Anki (anki_mining = on in the test build): saving a card holds a 69,632 B thread stack in
-    SceShell's partition and a 131,072 B PAF arena until it is written. SceShell's free pages
+  - Anki (anki_mining = on in the test build): every Anki job holds a 69,632 B thread stack in
+    SceShell's partition while it runs (a count of the queue on every overlay open, a save, a
+    send), and a save or send a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
     beside a game were measured once at 98,304 B with an older, larger build; the model's
     headroom at that step is an estimate, and a refused thread or arena is survived (host
     tests), the card is then not saved and the overlay says so. Cards carry no screenshot.

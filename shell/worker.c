@@ -523,9 +523,9 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 #define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a 4 MiB " \
     "reserve). Try again later in the game, or restart it."
 #define OOM_GAME_MODEL_FITS "The game has too little free memory for this OCR model's weights; " \
-    "FL10_w8.vocr, the smallest model, would fit this region."
+    "VOCR3_FL10_w8.vocr, the smallest model, would fit this region."
 #define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights. Select " \
-    "FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
+    "VOCR3_FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
 #define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights, already " \
     "the smallest. Select a tighter dialogue region with Square, or try again later."
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \

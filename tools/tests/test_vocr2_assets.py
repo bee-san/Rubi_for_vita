@@ -172,7 +172,8 @@ class Vocr2AssetPlumbing(unittest.TestCase):
         # a key the template does not have, or a value with a line break, is refused before output
         with self.assertRaisesRegex(ValueError, "Not a setting of the config template: anki_minnig"):
             self.package_fixture(True, {"anki_minnig": "on"})
-        for bad in ("anki_mining", "anki_mining=on\nlog_file=off", "=on", "Bad Key=1"):
+        for bad in ("anki_mining", "anki_mining=on\nlog_file=off", "=on", "Bad Key=1", "anki_deck=a\u2028b",
+                    "anki_deck=a\x85b", "anki_deck=a\x7fb"):
             with self.assertRaises(Exception):
                 release.parse_setting(bad)
         self.assertEqual(release.parse_setting(" Anki_Mining = on "), ("anki_mining", "on"))

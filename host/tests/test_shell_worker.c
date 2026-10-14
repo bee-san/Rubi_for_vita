@@ -914,7 +914,7 @@ static void test_vocr_oom_advice_names_the_stage(void)
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
         {5200000, 1159168, OOM_GAME_MODEL_FITS, "would fit this region", "tighter"}, /* H15; FL10 fits */
-        {5000000, 1159168, OOM_GAME_MODEL, "FL10_w8.vocr, the smallest model, and a tighter", NULL},
+        {5000000, 1159168, OOM_GAME_MODEL, "VOCR3_FL10_w8.vocr, the smallest model, and a tighter", NULL},
         {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
         {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
         {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},

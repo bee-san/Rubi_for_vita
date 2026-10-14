@@ -713,7 +713,7 @@ enum { POST_STARTED, POST_OFF, POST_BUSY, POST_FAILED };
 static int post_job(int what, unsigned seq, int entry, int *busy)
 {
     SceUID t = -1;
-    int r = POST_STARTED;
+    int r = POST_STARTED, rc = 0;
     *busy = JOB_NONE;
     if (box_lock < 0)
         return POST_OFF;
@@ -742,11 +742,12 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
             thread_done = 0;
             thread = t;
         } else {
+            rc = t; /* vjo_shell_thread_create logged SceShell's refusal */
             r = POST_FAILED;
         }
     }
     sceKernelUnlockMutex(box_lock, 1);
-    if (t >= 0 && sceKernelStartThread(t, 0, NULL) < 0) {
+    if (t >= 0 && (rc = sceKernelStartThread(t, 0, NULL)) < 0) {
         sceKernelLockMutex(box_lock, 1, NULL);
         vjo_shell_thread_delete(VJO_SL_ANKI_STACK, t, ANKI_STACK);
         thread = -1;
@@ -754,6 +755,9 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
         sceKernelUnlockMutex(box_lock, 1);
         r = POST_FAILED;
     }
+    if (r == POST_FAILED) /* a count runs on every overlay open with anki_mining on */
+        vjo_log("anki: %s not started 0x%08X", what == JOB_COUNT ? "count" : what == JOB_SAVE ? "save" : "send",
+                (unsigned)rc);
     return r;
 }
 

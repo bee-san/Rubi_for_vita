@@ -102,6 +102,13 @@ void vjo_log(const char *fmt, ...)
     }
 }
 static int logged(const char *text) { return strstr(all_logs, text) != NULL; }
+static int times_logged(const char *text)
+{
+    int n = 0;
+    for (const char *p = all_logs; (p = strstr(p, text)) != NULL; p += strlen(text))
+        n++;
+    return n;
+}
 
 /* capture.c and anki.c both have a static now_us. */
 #define now_us capture_now_us
@@ -717,6 +724,8 @@ static void reset(void)
 {
     all_logs_len = 0;
     all_logs[0] = '\0';
+    vjo_test_shell_free_rc = -1;
+    vjo_test_shell_free_user = 0;
     vjo_ledger_shell_init();
     clear_files();
     memset(&g_view, 0, sizeof(g_view));
@@ -1773,6 +1782,43 @@ static void test_hundred_text_cards_send_in_bounded_memory(void)
 }
 
 
+
+/* SceShell refuses the VjoAnki thread. With anki_mining on it is created on every
+ * overlay open (to count the queue), and for × and △: each refusal is in log.txt
+ * with its rc, the bytes asked for, SceShell's free USER and the Shell pages we hold,
+ * and the job that did not start; a thread that is created but does not start too. */
+static void test_a_refused_job_thread_is_logged(void)
+{
+    reset();
+    vjo_test_shell_free_rc = 0;
+    vjo_test_shell_free_user = 28672; /* the lowest SceShell figure measured beside a game */
+    fail_create = 1;
+    vjo_anki_post_count();
+    vjo_anki_reap();
+    cross(0);
+    triangle();
+    fail_create = 0;
+    TEST_CHECK(times_logged("thread VjoAnki refused 0xFFFFFFFF: 69632 B; SceShell free 28672 (0x00000000), held "
+                            "299008\n") == 3);
+    TEST_CHECK(logged("anki: count not started 0xFFFFFFFF\n") && logged("anki: save not started 0xFFFFFFFF\n") &&
+               logged("anki: send not started 0xFFFFFFFF\n"));
+    TEST_MSG("%s", all_logs);
+    TEST_CHECK(!threads_created && !heap_attempts && !strcmp(g_view.anki_status, "Anki: not enough memory to send; cards kept"));
+    /* created, then refused to start: deleted again, logged with the start's rc */
+    fail_start = 1;
+    cross(0);
+    fail_start = 0;
+    TEST_CHECK(times_logged("anki: save not started 0xFFFFFFFF\n") == 2 && threads_created == 1 && threads_deleted == 1);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_ANKI_STACK) == 0);
+    /* the query failed: its rc is logged, not a made-up figure */
+    vjo_test_shell_free_rc = (int)0x80020001u;
+    fail_create = 1;
+    vjo_anki_post_count();
+    fail_create = 0;
+    TEST_CHECK(logged("SceShell free 0 (0x80020001)"));
+    finish();
+}
+
 #if !VJO_ANKI_SCREENSHOT
 /* The shipped build (VJO_ANKI_SCREENSHOT 0). × with the default Lapis mapping,
  * whose Picture field is set, and no anki_host (Wi-Fi off, Anki closed): a
@@ -1848,6 +1894,7 @@ TEST_LIST = {
     {"partial_send_keeps_the_rest_and_needs_anki_host", test_partial_send_keeps_the_rest},
     {"auto_host_searches_lan_once_when_sending_and_remembers", test_auto_finds_anki_on_the_lan},
     {"hundred_text_cards_send_with_one_scan_each_in_bounded_memory", test_hundred_text_cards_send_in_bounded_memory},
+    {"a_refused_job_thread_is_logged_with_its_rc_and_sceshell_free", test_a_refused_job_thread_is_logged},
 #if VJO_ANKI_SCREENSHOT
     {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"queue_survives_restart_and_triangle_sends_with_current_settings", test_queue_survives_restart_and_triangle_sends_it},

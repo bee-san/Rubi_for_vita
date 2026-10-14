@@ -229,6 +229,8 @@ add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-tests>)
 add_test(NAME anki_restart_build COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-build-tests>)
+set_tests_properties(anki_restart PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=1")
+set_tests_properties(anki_restart_build PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=0")
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)

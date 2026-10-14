@@ -3,6 +3,7 @@
  * goes to status.txt. Every thread the Shell creates goes through
  * vjo_shell_thread_create, every PAF allocation through shell/memory.cpp;
  * tools/check_memory_ledger.py fails the build on any other site. */
+#include <psp2/kernel/clib.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 
@@ -35,11 +36,42 @@ void vjo_ledger_shell_init(void)
     vjo_ledger_add(&g_shell_ledger, VJO_SL_PAF_PLUGIN, VJO_BUDGET_PAF_PLUGIN);
 }
 
+/* SceShell's free USER memory as the user API reports it (the free size minus a
+ * system margin, so it can be negative [SDK: Kernel-Reference]) and the query's
+ * rc, for a refusal's log line. The host tests have no SceShell partition: they
+ * set these two. */
+#ifdef VJO_HOST
+int vjo_test_shell_free_rc = -1, vjo_test_shell_free_user;
+#endif
+static int shell_free_user(int *bytes)
+{
+#ifdef VJO_HOST
+    *bytes = vjo_test_shell_free_rc < 0 ? 0 : vjo_test_shell_free_user;
+    return vjo_test_shell_free_rc;
+#else
+    SceKernelFreeMemorySizeInfo f;
+    int rc;
+    sceClibMemset(&f, 0, sizeof(f));
+    f.size = sizeof(f);
+    rc = sceKernelGetFreeMemorySize(&f);
+    *bytes = rc < 0 ? 0 : f.size_user;
+    return rc;
+#endif
+}
+
 SceUID vjo_shell_thread_create(int item, const char *name, int (*entry)(SceSize, void *), unsigned stack)
 {
     SceUID uid = sceKernelCreateThread(name, entry, 0x10000100, stack, 0, 0, NULL);
-    if (uid >= 0)
+    if (uid >= 0) {
         vjo_ledger_add(&g_shell_ledger, item, stack + VJO_LEDGER_TLS);
+    } else {
+        /* SceShell's partition said no: its rc, what we asked for, its free USER
+         * and what we hold there, so the collected logs decide it. */
+        int free_user, rc = shell_free_user(&free_user);
+        vjo_log("thread %s refused 0x%08X: %u B; SceShell free %d (0x%08X), held %u", name, (unsigned)uid,
+                stack + VJO_LEDGER_TLS, free_user, (unsigned)rc,
+                (unsigned)g_shell_ledger.pool_current[VJO_LEDGER_POOL_SHELL_PAGES]);
+    }
     return uid;
 }
 

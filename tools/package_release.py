@@ -30,11 +30,16 @@ def shipped_models():
     return models
 
 
+def one_line(value):
+    """No control character and nothing Python's splitlines() (and so migrate_config.py) splits on."""
+    return len(("<" + value + ">").splitlines()) == 1 and all(ord(c) >= 32 and c != "\x7f" for c in value)
+
+
 def parse_setting(text):
     """KEY=VALUE for --set: a key of the config template and a one-line value."""
     key, sep, value = text.partition("=")
     key, value = key.strip().lower(), value.strip()
-    if not sep or not SETTING_KEY.fullmatch(key) or any(ord(c) < 32 for c in value):
+    if not sep or not SETTING_KEY.fullmatch(key) or not one_line(value):
         raise argparse.ArgumentTypeError("expected KEY=VALUE on one line: " + text)
     return key, value
 

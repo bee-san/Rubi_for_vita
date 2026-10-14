@@ -34,7 +34,8 @@
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u
 #define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
-#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, only while a card is saved or sent */
+#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
+                                                    * of the queue on every overlay open, a save (×), a send (△) */
 #define VJO_BUDGET_SHELL_NET_STACK (VJO_STACK_SHELL_NET + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_CTL_STACK (VJO_STACK_SHELL_CTL + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_ANKI_STACK (VJO_STACK_SHELL_ANKI + VJO_LEDGER_TLS)

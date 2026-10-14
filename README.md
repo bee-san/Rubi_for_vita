@@ -240,15 +240,18 @@ automatically; if `VOCR3_H15_w8.vocr` is missing or corrupt, the game's jobs use
 the fallback as well. The v0.2.0 `H15_w8.vocr` and `FL10_w8.vocr` are still
 installed: set `vocr_model = H15_w8.vocr` and `vocr_fallback_model = FL10_w8.vocr`
 to go back to them, `vocr_model = VOCR3_FL10_w8.vocr` to always use the smaller
-model, or `vocr_fallback_model = none` to never fall back. Console speed and
+model, or `vocr_fallback_model = none` to never fall back. `install-vita.sh` sets
+the package's default models each time it runs, so set the choice again after a
+reinstall. Console speed and
 accuracy are not measured yet
 (see [the checklist](docs/vita-vn-ocr.md#on-console-checklist)). A memory
 error names where the memory ran out: the game's memory for this region
-(a tighter region helps) or for the model's weights (FL10 is the smallest),
-or the Shell's memory for results (restart the Vita). Local OCR takes no
-kernel memory for the screen since API 19: the game reads its own screen
-([in-game capture](docs/ingame-capture.md)); Lens and Anki screenshots still
-use the kernel's capture buffer, where a tighter region helps. A Shell UI memory error
+(a tighter region helps) or for the model's weights (VOCR3-FL10 and FL10 are
+the smallest), or the Shell's memory for results (restart the Vita). Local OCR
+takes no kernel memory for the screen since API 19: the game reads its own
+screen ([in-game capture](docs/ingame-capture.md)). Google Lens still uses the
+kernel's capture buffer, where a tighter region helps; Anki cards take no
+screenshot in this build, so they never use it. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 The complete settings template is
@@ -295,9 +298,10 @@ cloud fallback.
 
 ### Anki
 
-Card mining is off by default. With `anki_mining = on`, Cross saves cards as
-readable JSON files (plus a JPEG screenshot) in
-`ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts and need no network.
+Card mining is off by default (the test builds turn it on). With
+`anki_mining = on`, Cross saves cards as readable JSON files, text only (this
+build takes no screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they
+survive restarts and need no network.
 To send them to Anki on your computer, install AnkiConnect, set its
 `webBindAddress` to `0.0.0.0`, set `anki_host = COMPUTER_IP` (or `IP:port`, or
 `auto` to search the local network once), and press Triangle. Cards go one at

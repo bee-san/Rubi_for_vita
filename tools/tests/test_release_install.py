@@ -154,6 +154,32 @@ elif '-o' in a:
             self.assertIn(setting, config)
         self.assertNotIn("test-key", result.stdout)
 
+    def test_package_settings_are_validated_again_and_keys_are_masked(self):
+        # A crafted manifest: no shell runs, a line break of any kind or an unknown key is dropped,
+        # an API key's value is never printed.
+        manifest_path = self.package / "package-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        canary = self.root / "canary"
+        manifest["install_settings"] = {
+            "anki_deck": f"$(touch {canary}) `touch {canary}` 'q' \"dq\"",
+            "anki_tags": "line1\nlog_file = off", "anki_note_type": "a\u2028anki_host = 6.6.6.6",
+            "anki_audio_url": "x\x85y", "bad key": "1", "not_a_setting": "on", "jpdb_api_key": "pkg-secret"}
+        manifest_path.write_text(json.dumps(manifest))
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(canary.exists())
+        self.assertNotIn("pkg-secret", result.stdout + result.stderr)
+        self.assertIn("jpdb_api_key=set", result.stdout)
+        shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
+        for dropped in ("anki_tags", "anki_note_type", "anki_audio_url", "bad key", "not_a_setting"):
+            self.assertNotIn(dropped, shown)
+        config = (self.data / "config.ini").read_text()
+        self.assertIn(f"anki_deck = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
+        self.assertIn("jpdb_api_key = pkg-secret\n", config)
+        self.assertIn("log_file = on\n", config)
+        self.assertNotIn("6.6.6.6", config)
+        self.assertNotIn("not_a_setting", config)
+
     def test_source_install_uses_the_checkout_template(self):
         # A source checkout has its template under docs, not at the package root.
         (self.package / "config.ini").unlink()
