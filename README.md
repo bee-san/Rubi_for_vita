@@ -392,7 +392,8 @@ the fallback model, the configured model, the full screen, the capture probe and
 the configured model again, in your saved region, each stage with its own record,
 and the report has every pool's free memory at each step by every query route;
 `--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL
-row per stage. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
+row per stage and the diagnostics (probe, memory routes) as PASS/WARN, which never change
+the OCR verdict. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
 game's free USER memory against what the job needed (also when it refused the
 job) and, for each recognized line, its size, CTC frames and recognition time.
 

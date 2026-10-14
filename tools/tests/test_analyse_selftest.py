@@ -8,6 +8,7 @@ with VJO_SELFTEST_WRITER set the writer runs again and must reproduce them.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -49,6 +50,11 @@ def run(text, *args):
         return subprocess.run([sys.executable, str(SCRIPT), f.name, *args], capture_output=True, text=True)
     finally:
         Path(f.name).unlink()
+
+
+def failed_cells(stdout):
+    """Table rows or memory-route cells whose result is FAIL."""
+    return re.findall(r"^ {2}\S+ +FAIL .*$|^ {4}.{40} FAIL .*$", stdout, re.M)
 
 
 def rows(stdout):
@@ -185,14 +191,18 @@ class Issue74(unittest.TestCase):
         # the user view after boot was under the system margin (rc 0), not an error
         self.assertIn("main -2097152 (under the margin: 0 B free above it)", r.stdout)
         self.assertNotIn("sceKernelGetFreeMemorySize failed", r.stdout)
+        # the routes are diagnostics: WARN cells; the verdict is the OCR row's FAIL
+        self.assertIn("kernel block route, KD                   WARN  0x80020001", r.stdout)
+        self.assertIn("diagnostics: WARN (block kernel route, block shell route)", r.stdout)
         as_json = json.loads(run(self.report, "--json").stdout)
+        self.assertEqual((as_json["ocr_result"], as_json["diagnostics_result"]), ("FAIL", "WARN"))
         self.assertEqual(as_json["reached"], "game")
         self.assertEqual(len(as_json["fails"]), 5)
 
 
 class AnalyseV2(unittest.TestCase):
-    def analyse(self, name):
-        return run((FIXTURES / f"selftest-v2-{name}.txt").read_text())
+    def analyse(self, name, *args):
+        return run((FIXTURES / f"selftest-v2-{name}.txt").read_text(), *args)
 
     def test_a_complete_run_passes_every_row(self):
         r = self.analyse("pass")
@@ -210,6 +220,10 @@ class AnalyseV2(unittest.TestCase):
         self.assertIn("14 line(s) recognized in all", r.stdout)
         self.assertIn("game worker memory", r.stdout)
         self.assertTrue(r.stdout.rstrip().endswith("PASS: every stage completed; the figures above are this console's."))
+        self.assertIn("diagnostics: PASS\n", r.stdout)
+        as_json = json.loads(self.analyse("pass", "--json").stdout)
+        self.assertEqual((as_json["ocr_result"], as_json["diagnostics_result"], as_json["warnings"]),
+                         ("PASS", "PASS", []))
 
     def test_a_failed_stage_keeps_its_record_and_the_run_goes_on(self):
         r = self.analyse("fail")
@@ -232,17 +246,18 @@ class AnalyseV2(unittest.TestCase):
     def test_a_failed_memory_route_is_named_and_another_route_still_counts(self):
         r = self.analyse("routes")
         self.assertEqual(r.returncode, 0, r.stdout)
-        self.assertIn("kernel block route, KD                   FAIL  0x80020001", r.stdout)
+        self.assertIn("kernel block route, KD                   WARN  0x80020001", r.stdout)
         self.assertIn("at step 2 (block/address-space info)", r.stdout)
         # the kernel's address space refused, the caller's read; a slot outside the kernel half not read
         self.assertIn("kernel process route (faps-coredump)     PASS  2 partitions of shell's address space, "
                       "KD 9,437,184 B free; 1 not read (pointer outside the kernel range)", r.stdout)
-        self.assertIn("failed routes: block kernel 0x80020001", r.stdout)
+        self.assertIn("routes that read nothing: block kernel 0x80020001", r.stdout)
         self.assertEqual(rows(r.stdout)["kernel-memory"], "PASS")
+        self.assertEqual(failed_cells(r.stdout), [])
 
     @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
     def test_the_fixtures_are_what_the_writer_writes(self):
-        for name in ("pass", "fail", "incomplete", "routes"):
+        for name in ("pass", "fail", "incomplete", "routes", "diagnostics"):
             with tempfile.TemporaryDirectory() as tmp:
                 done = subprocess.run([os.environ["VJO_SELFTEST_WRITER"], tmp, name], capture_output=True, text=True)
                 self.assertEqual(done.returncode, 0, done.stderr)
@@ -252,6 +267,134 @@ class AnalyseV2(unittest.TestCase):
                                  f"vjo-selftest-writer DIR {name}")
                 # the marker is removed when (and only when) the run finished
                 self.assertEqual((Path(tmp) / "selftest.txt").exists(), name == "incomplete")
+
+
+# The kernel memory routes exactly as #75's first guard (7bba2aa: only pointers at or above 0x40000000
+# were read) answered on a console, where every kernel object is below 0x40000000: the audit's B1.
+B1_KMEM = (
+    (re.compile(r"^(kmem \w+ route=block part=\w+) rc=0x00000000 step=0 total=\d+ free=\d+$", re.M),
+     r"\1 rc=0xBFFFFFFA step=3 total=0 free=0", 8),  # kernel and shell, at boot, ok, game, done
+    (re.compile(r"^(kmem \w+ route=cas part=\w+) rc=0x00000000 step=0 .*$", re.M),
+     r"\1 rc=0xBFFFFFFA step=3 main=0/0 cdram=0/0 phycont=0/0", 4),
+    (re.compile(r"^(kmem \w+ route=as part=\w+) rc=0x00000000 .*$", re.M),
+     r"\1 rc=0xBFFFFFFB step=3 parts=0 skipped=2", 4),
+)
+
+
+def with_b1_routes(text):
+    for pattern, repl, count in B1_KMEM:
+        text, n = pattern.subn(repl, text)
+        assert n == count, (pattern.pattern, n)
+    return text
+
+
+class DiagnosticsNeverDecide(unittest.TestCase):
+    """A diagnostic that read nothing or did not work is a WARN: it can never turn a working OCR into FAIL
+    (#75's first build would have: its kernel memory guard was inverted)."""
+
+    def fixture(self, name):
+        return (FIXTURES / f"selftest-v2-{name}.txt").read_text()
+
+    def test_the_row_kinds_are_fixed(self):
+        rows_json = json.loads(run(self.fixture("pass"), "--json").stdout)["rows"]
+        kinds = {r["row"]: r["kind"] for r in rows_json}
+        self.assertEqual({n for n, k in kinds.items() if k == "diagnostic"}, set(a.DIAGNOSTIC_ROWS))
+        self.assertEqual({n for n, k in kinds.items() if k == "ocr"},
+                         (set(a.ROWS_V2) - {"probe"}) | {"recognitions"})
+
+    def test_every_diagnostic_warns_and_ocr_still_passes(self):
+        r = run(self.fixture("diagnostics"))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        got = rows(r.stdout)
+        self.assertEqual({k for k, v in got.items() if v == "WARN"}, {"probe", "capture<64KiB", "kernel-pool",
+                                                                     "kernel-memory"})
+        self.assertEqual({k for k, v in got.items() if v not in ("PASS", "WARN")}, set())
+        self.assertEqual(failed_cells(r.stdout), [])
+        self.assertIn("block kernel 0xBFFFFFFA argument at step 3 (pointer outside the kernel range)", r.stdout)
+        self.assertIn("fullscreen 262,144 B of cdram (USER_RW refused it there, and CDRAM allocates in 256 KiB units)",
+                      r.stdout)
+        self.assertIn("the kernel strip (<= 64 KiB of the kernel pool) was used in: fallback, textbox, fullscreen, "
+                      "textbox2", r.stdout)
+        self.assertIn("the display hook could not write the game's USER memory: worked: kstrip->user, user->user, "
+                      "kstrip->cdram; failed: hook->user 0xBFFFFFF9 copy", r.stdout)
+        self.assertIn("diagnostics: WARN (probe, capture<64KiB, kernel-pool, kernel-memory)", r.stdout)
+        self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("PASS: every stage completed"))
+        as_json = json.loads(run(self.fixture("diagnostics"), "--json").stdout)
+        self.assertEqual((as_json["ocr_result"], as_json["diagnostics_result"]), ("PASS", "WARN"))
+        self.assertEqual(as_json["warnings"], ["probe", "capture<64KiB", "kernel-pool", "kernel-memory"])
+
+    def test_warnings_never_soften_an_ocr_failure(self):
+        text = re.sub(r"^(stage textbox2 end) rc=0 ", r"\1 rc=-103 ", self.fixture("diagnostics"), flags=re.M)
+        r = run(text)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertEqual(rows(r.stdout)["textbox2"], "FAIL")
+        self.assertIn("FAIL: textbox2 failed", r.stdout)
+
+    def test_the_b1_console_outcome_is_a_warning_not_a_fail(self):
+        """The first audit put 7bba2aa's route results into the pass fixture: exit 1, kernel-memory FAIL."""
+        r = run(with_b1_routes(self.fixture("pass")))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        got = rows(r.stdout)
+        self.assertEqual(got["kernel-memory"], "WARN")
+        self.assertEqual({k for k, v in got.items() if v != "PASS"}, {"kernel-memory"})
+        for route in ("block kernel 0xBFFFFFFA", "block shell 0xBFFFFFFA", "cas 0xBFFFFFFA", "as 0xBFFFFFFB"):
+            self.assertIn(route, r.stdout)
+        self.assertIn("no KD figure or no user figure at: boot, ok, game, done", r.stdout)
+        self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("PASS"))
+
+    def test_no_diagnostic_row_can_fail(self):
+        base = self.fixture("pass")
+        cases = {
+            "kernel-memory": [  # vjoMemInfo refused outright at every step (route=none)
+                (r"^kmem (\w+) route=block part=kernel .*$", r"kmem \1 route=none rc=0xBFFFFFF8"),
+                (r"^kmem \w+ route=(block part=shell|cas|as) .*\n", "")],
+            "game-memory": [(r"^(gstep \w+ mem kind=- arg=0) rc=0x00000000 (.*) main=\d+ ",
+                             r"\1 rc=0x80020001 \2 main=-1 ")],
+            "probe": [(r"^(gstep probe probe kind=\w+ arg=\w+) rc=0x0000003E ", r"\1 rc=0xBFFFFFF9 ")],
+            "capture<64KiB": [(r"^(result textbox .* capture=)61440 ", r"\g<1>69632 ")],
+            "kernel-pool": [(r"^(result textbox2 source=)hook ", r"\1kstrip ")],
+        }
+        for name, subs in cases.items():
+            text = base
+            for pattern, repl in subs:
+                text, n = re.subn(pattern, repl, text, flags=re.M)
+                self.assertGreater(n, 0, (name, pattern))
+            r = run(text)
+            with self.subTest(name):
+                self.assertEqual(r.returncode, 0, r.stdout)
+                self.assertEqual(rows(r.stdout)[name], "WARN", r.stdout)
+                self.assertEqual(failed_cells(r.stdout), [])
+                self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("PASS"))
+        # the user API itself failing in SceShell: a WARN cell and a kernel-memory WARN
+        text = re.sub(r"^(mem ok) rc=0x00000000 ", r"\1 rc=0x80020001 ", base, flags=re.M)
+        r = run(text)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("user API (sceKernelGetFreeMemorySize)    WARN  0x80020001", r.stdout)
+        self.assertEqual(rows(r.stdout)["kernel-memory"], "WARN")
+
+    def test_a_missing_ocr_stage_with_done_present_is_a_failure(self):
+        """report() drops a line it cannot write (shell/selftest.c): a 'done' run missing an OCR
+        stage's records is a failure, not 'not reached'."""
+        base = self.fixture("pass")
+        # drop every line of the textbox2 stage (begin..its records), keep 'done'
+        lines = base.splitlines(keepends=True)
+        kept = [ln for ln in lines if " textbox2 " not in ln and not ln.startswith("stage textbox2 ")]
+        r = run("".join(kept))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertEqual(rows(r.stdout)["textbox2"], "FAIL")
+        self.assertIn("no record though the run finished", r.stdout)
+        self.assertEqual(json.loads(run("".join(kept), "--json").stdout)["ocr_result"], "FAIL")
+
+    def test_a_stop_in_the_probe_is_never_a_warning(self):
+        text = self.fixture("pass")
+        text = text[:text.index("\n", text.index("stage probe begin")) + 1]  # the Vita stopped in the probe
+        r = run(text)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertEqual(rows(r.stdout)["probe"], "FAIL")
+        self.assertIn("INCOMPLETE: stage 'probe' began and never wrote its record", r.stdout)
+        self.assertIn("diagnostics: not all reached", r.stdout)  # a partial run has no full diagnostic table
+        j = json.loads(run(text, "--json").stdout)
+        self.assertEqual((j["ocr_result"], j["diagnostics_result"]), ("INCOMPLETE", "INCOMPLETE"))
 
 
 if __name__ == "__main__":

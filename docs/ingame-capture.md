@@ -129,9 +129,12 @@ reach a full-screen JPEG too (not changed here).
   this guard refused the block, not the firmware. Whether `ksceKernelFindMemBlockByAddr` finds a
   block for a kernel heap object above 0x1000000 is unverified; step 4 says when it does not.
   `host/tests/test_kernel_meminfo.c` runs the routes with the objects at kernel-range,
-  upper-kernel and user-range addresses. Route 3 asks for the kernel process first and the caller's
-  if that is refused (faps-coredump asks for a user process). Which route reads on 3.65 is
-  [unmeasured].
+  upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8..., so a
+  read faults the test), and the guard at each of its edges; the guard as #75 first had it (only
+  0x40000000 and up read) fails all six cases. Route 3 asks for the kernel process first and the
+  caller's if that is refused (faps-coredump asks for a user process). Which route reads on 3.65 is
+  [unmeasured]. The routes are diagnostics: `tools/analyse_selftest.py` reports a route that read
+  nothing as WARN, and no diagnostic changes the OCR verdict ([self-test.md](self-test.md)).
 
 ## Prior art
 

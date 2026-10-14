@@ -1,6 +1,7 @@
 /* Real game worker and real vocr, with Vita scheduling/USER_RW/file boundaries.
  * No emulator claims: the caller PID and SDK responses are failure-injected. */
 #include "acutest.h"
+#include <sys/mman.h>
 #include <psp2/host_stubs.h>
 #include "../../game_ocr/main.c"
 
@@ -119,8 +120,26 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         }
     return (int)req->n;
 }
-int sceDisplayGetFrameBuf(SceDisplayFrameBuf *fb, int sync) { return -1; }
-int sceKernelGetMemBlockInfoByAddr(void *base, SceKernelMemBlockInfo *info) { return -1; }
+/* The probe's user-mode read: the frame sceDisplayGetFrameBuf names (frame_at,
+ * none by default) and the block sceKernelGetMemBlockInfoByAddr reports for it. */
+static unsigned char *frame_at;
+static uintptr_t block_base;
+static unsigned block_size, block_access, frame_info_calls, frame_w = 200;
+int sceDisplayGetFrameBuf(SceDisplayFrameBuf *fb, int sync)
+{
+    if (!frame_at) return -1;
+    TEST_CHECK(fb->size == sizeof(SceDisplayFrameBuf) && sync == SCE_DISPLAY_SETBUF_NEXTFRAME);
+    fb->base = frame_at; fb->pitch = 200; fb->pixelformat = VJO_FB_A8B8G8R8; fb->width = frame_w; fb->height = 60;
+    return 0;
+}
+int sceKernelGetMemBlockInfoByAddr(void *base, SceKernelMemBlockInfo *info)
+{
+    if (!frame_at) return -1;
+    TEST_CHECK(base == frame_at && info->size == sizeof(*info));
+    frame_info_calls++;
+    info->mappedBase = (void *)block_base; info->mappedSize = block_size; info->access = block_access;
+    return 0;
+}
 SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 { user_open_calls++; return (int)0x80010013u; /* Physical game's ux0 is unavailable. */ }
 static uint64_t model_mtime = 0x1234567;
@@ -176,6 +195,7 @@ static VjoGameOcrRequest setup(void)
     cancel_job = short_reads = open_failure = bad_read = 0;
     available = 16*1024*1024;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
+    frame_at = NULL; frame_info_calls = 0; frame_w = 200;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
     /* Blank images never open weights, but requests still need a valid directory.
@@ -420,6 +440,78 @@ static void probe_tries_every_rung(void)
     TEST_CHECK(probes == 5 && hook_ok == 2 && kstrip_ok == 2 && user_fail == 1 && phycont_refused == 1);
     TEST_CHECK(out.strip_rows == 60 && !out.lines && allocations == 0);
 }
+/* The probe's user-mode read of the frame stays inside the frame's own block:
+ * the frame (200x60, 48,000 B) is in 64 KiB of mapped memory, and each refused
+ * case makes the bytes outside the block it reports unreadable, so a read past
+ * the check faults this test instead of passing it. */
+static int probe_user_read(const VjoGameOcrRequest *r, uint32_t *sum)
+{
+    VjoGameOcrResult out;
+    int rc = INT32_MIN;
+    TEST_CHECK(!vjo_game_ocr_run_request(r, &out) && !capture_live && !memory_live);
+    for (unsigned i = 0; i < out.n_steps; i++)
+        if (out.step[i].id == VJO_GSTEP_PROBE && out.step[i].kind == VJO_GAME_OCR_SRC_USER) {
+            rc = out.step[i].rc;
+            *sum = out.step[i].sum;
+        } else if (out.step[i].id == VJO_GSTEP_PROBE && out.step[i].kind == VJO_GAME_OCR_SRC_HOOK && !*sum) {
+            *sum = out.step[i].sum; /* the hook's rows of the same frame */
+        }
+    return rc;
+}
+static void probe_user_read_stays_in_the_frame_block(void)
+{
+    VjoGameOcrRequest r = setup();
+    uint32_t hook_sum = 0, sum = 0;
+    r.flags = VJO_GAME_OCR_F_PROBE;
+    refuse_phycont = 1;
+    line();
+    unsigned char *map = mmap(NULL, 0x10000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_ASSERT(map != MAP_FAILED);
+    frame_at = map;
+    memcpy(frame_at, pixels, sizeof(pixels));
+    /* the whole frame in one readable block: 60 rows, the same grey as the hook's */
+    block_base = (uintptr_t)map; block_size = 0x10000; block_access = SCE_KERNEL_MEMORY_ACCESS_R;
+    int rc = probe_user_read(&r, &hook_sum);
+    sum = hook_sum;
+    TEST_CHECK_(rc == 60, "user-mode read: rc %d", rc);
+    TEST_CHECK(frame_info_calls == 1 && hook_sum != 0);
+    /* the block ends before the frame's last row: refused, the rest never read */
+    block_size = 0xA000;
+    TEST_ASSERT(mprotect(map + 0xA000, 0x6000, PROT_NONE) == 0);
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == VJO_ERR_ARG);
+    TEST_ASSERT(mprotect(map, 0x10000, PROT_READ | PROT_WRITE) == 0);
+    /* the exact edge: the block one byte short of the frame's last byte, nothing unreadable.
+     * The read's last byte is first + (n-1)*pitch*bpp + width*bpp - 1 = 48,000-1; a block of
+     * 47,999 B must refuse it, so a check that drops the last row's width or a row of the end
+     * (which still fits 47,999) is caught here, not only by the unreadable bytes. */
+    block_size = 48000 - 1;
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == VJO_ERR_ARG);
+    block_size = 48000; /* exactly enough: read */
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == 60);
+    block_size = 0x10000;
+    /* the block begins after the frame's first row */
+    block_base = (uintptr_t)map + 0x1000; block_size = 0xF000;
+    TEST_ASSERT(mprotect(map, 0x1000, PROT_NONE) == 0);
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == VJO_ERR_ARG);
+    /* a block this process cannot read */
+    block_base = (uintptr_t)map; block_size = 0x10000; block_access = 0x02; /* write only */
+    TEST_ASSERT(mprotect(map, 0x10000, PROT_NONE) == 0);
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == VJO_ERR_ARG);
+    /* a frame of another size than the job's: refused before its block is asked */
+    TEST_ASSERT(mprotect(map, 0x10000, PROT_READ | PROT_WRITE) == 0);
+    block_access = SCE_KERNEL_MEMORY_ACCESS_R;
+    frame_w = 240; frame_info_calls = 0;
+    sum = 0;
+    TEST_CHECK(probe_user_read(&r, &sum) == VJO_ERR_FORMAT && !frame_info_calls);
+    frame_w = 200;
+    munmap(map, 0x10000);
+    frame_at = NULL;
+}
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -445,6 +537,7 @@ TEST_LIST = {
     {"the kernel strip after a failed hook write; timeouts are not retried", hook_failure_falls_back_to_the_kernel_strip},
     {"BUSY rows calls: asked again before arming, the block kept after", busy_rows_calls},
     {"the self-test probe tries every rung", probe_tries_every_rung},
+    {"the probe's user-mode frame read stays inside the frame's block", probe_user_read_stays_in_the_frame_block},
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {NULL, NULL}
 };
