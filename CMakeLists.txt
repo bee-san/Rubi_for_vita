@@ -20,7 +20,7 @@ target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c core/jpdb.c
-  core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
+  core/textfilter.c core/textnorm.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c shell/game_ocr_client.c)
@@ -44,6 +44,15 @@ add_library(vjo_host STATIC host/net_posix.c host/render.c host/replay.c)
 target_include_directories(vjo_host PUBLIC host)
 target_link_libraries(vjo_host PUBLIC vjo_core)
 target_compile_options(vjo_host PRIVATE -Wall -Wextra)
+
+# Recognized text normalised as the overlay shows it, one line per line (tools/textnorm_eval.py).
+add_executable(vjo-textnorm host/textnorm_tool.c)
+target_link_libraries(vjo-textnorm vjo_core)
+
+add_executable(vjo-textnorm-tests host/tests/test_textnorm.c)
+target_include_directories(vjo-textnorm-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-textnorm-tests vjo_core)
+add_test(NAME textnorm COMMAND vjo-textnorm-tests)
 
 add_executable(vjo-cli host/cli.c)
 target_link_libraries(vjo-cli vjo_host)

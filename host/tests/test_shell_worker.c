@@ -581,6 +581,26 @@ static void test_vocr_capture_follows_the_retry(void)
 }
 #endif
 
+#ifdef VJO_WITH_VOCR
+/* The recognizer's text is logged as it read it, a line per line; the sentence
+ * shown, saved and looked up is normalised (one form of each mark, ー or 一 by
+ * context), and what changed is logged. */
+static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "コ一ヒ一！？\n統ー的．．．";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!strcmp(cache_data[0].sentence, "コーヒー!?\n統一的…"));
+    TEST_MSG("shown: %s", cache_data[0].sentence);
+    TEST_CHECK(logged("game vocr text 0: コ一ヒ一！？") != NULL && logged("game vocr text 1: 統ー的．．．") != NULL);
+    TEST_CHECK(logged("game vocr text normalised: width 5, tilde 0, dash 0, ellipsis 1, ー 2, 一 1") != NULL);
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+    mem_free();
+}
+#endif
+
 static void test_vocr_never_uses_lens(void)
 {
     reset();
@@ -2281,6 +2301,7 @@ TEST_LIST = {
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
+    {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
 #endif
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},

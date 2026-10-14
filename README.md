@@ -291,6 +291,10 @@ keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
 nothing to skip in the test screenshots. Both are logged per job; see
 [stable text and blank lines](docs/vita-vn-ocr.md#stable-text-and-blank-lines-api-20)
 for what each costs and what the host measurements show.
+The recognized text is shown, saved and looked up in one form of each mark
+(full-width `！` as `!`, `〜` as `~`, `...` as `…`, `ー` or `一` by context), the
+form vita-vn-ocr's scorer uses; the recognizer's own text is in `log.txt`
+([text normalisation](docs/vita-vn-ocr.md#text-normalisation-shown-and-looked-up)).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 

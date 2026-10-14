@@ -12,6 +12,7 @@
 #include "../core/regions.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
+#include "../core/textnorm.h"
 #include "../core/utf.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
@@ -762,6 +763,26 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     return rc;
 }
 
+/* The recognized text as the recognizer wrote it, a log line per line (60
+ * characters each at most), then normalised in place for display and lookup,
+ * with what changed. */
+static void log_and_normalize(char *text)
+{
+    char line[184];
+    VjoTextNorm k;
+    unsigned i = 0;
+    for (const char *s = text; *s; i++) {
+        size_t n = 0;
+        while (s[n] && s[n] != '\n') n++;
+        log_text(line, sizeof(line), s, n, 60);
+        vjo_log("game vocr text %u: %s", i, line);
+        s += n + (s[n] == '\n');
+    }
+    if (vjo_text_normalize(text, &k))
+        vjo_log("game vocr text normalised: width %u, tilde %u, dash %u, ellipsis %u, ー %u, 一 %u", k.width, k.tilde,
+                k.dash, k.ellipsis, k.long_vowel, k.kanji_one);
+}
+
 /* The self-test (docs/self-test.md): every stage on this settled screen in
  * turn, each with its record, a failed one included. They share the job's one
  * result (the Shell's pages may only shrink): the last stage, the user's
@@ -833,6 +854,9 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
             out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
     }
+    /* The recognizer's own text goes to the log; what is shown and looked up is
+     * normalised (core/textnorm.h: one form of each mark, ー or 一 by context). */
+    log_and_normalize(result.text);
     /* The model on this text's Anki cards (ran names the request's fallback
      * only inside vocr_run_one; a self-test job's last stage is the configured one). */
     vjo_anki_set_ocr_model(result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model);
