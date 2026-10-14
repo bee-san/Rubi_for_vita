@@ -1,0 +1,163 @@
+"""The release package's OCR models and their metadata, with tiny fixture bytes; no models,
+network or device access."""
+import contextlib
+import hashlib
+import io
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+import zipfile
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+import prepare_ocr as prepare
+import package_release as release
+
+
+class PackageModels(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.models = self.root / "models"
+        self.models.mkdir()
+        self.legacy = b"tiny legacy asset fixture, not OCR weights!"
+        old_spec = ("https://fixture.invalid/FL10_w8.vocr", len(self.legacy),
+                    hashlib.sha256(self.legacy).hexdigest())
+        old = {name: old_spec for name in ("FL10_w8.vocr", "H15_w8.vocr")}
+        self.vocr3 = b"tiny VOCR3 asset fixture, not OCR weights!!"
+        vocr3_spec = ("https://fixture.invalid/VOCR3", len(self.vocr3), hashlib.sha256(self.vocr3).hexdigest())
+        vocr3 = {name: vocr3_spec for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
+        for module in (prepare, release):
+            self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
+            self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
+        self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
+                                          side_effect=AssertionError("No test network access")))
+
+    def write_models(self):
+        for name in ("FL10_w8.vocr", "H15_w8.vocr"):
+            (self.models / name).write_bytes(self.legacy)
+        for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"):
+            (self.models / name).write_bytes(self.vocr3)
+
+    def package_fixture(self, settings=None, write_models=True):
+        """The release package of a synthetic base archive and the fixture models (written first
+        unless write_models is False); returns its path."""
+        if write_models:
+            self.write_models()
+        dictionary = self.root / "jmdict.vjdict"
+        dictionary.write_bytes(b"VJDICT2\0synthetic dictionary fixture")
+        snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
+        license_file = self.root / "fixture-license.txt"
+        license_file.write_text("Unit-test fixture")
+        base = self.root / "base.zip"
+        with zipfile.ZipFile(base, "w") as archive:
+            for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
+                         "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
+                         "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
+                archive.writestr(name, b"synthetic package fixture")
+            archive.writestr("config.ini", b"; the build's own template copy\n")
+        output = self.root / "package.zip"
+        with mock.patch.object(release, "load_manifest", return_value=snapshot), \
+             contextlib.redirect_stdout(io.StringIO()):
+            release.package(base, output, self.models, dictionary, license_file, settings=settings)
+        return output
+
+    def test_bundle_ships_vocr3_as_default_and_v020_as_fallback(self):
+        package = self.package_fixture()
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr"):
+                self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
+                self.assertIn(name, manifest["models"])
+            self.assertEqual(sorted(manifest["models"]),
+                             ["FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr"])
+            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr3.1")
+            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["role"], "default")
+            self.assertEqual(manifest["models"]["H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.0")
+            self.assertEqual(manifest["defaults"]["vocr_model"], "VOCR3_H15_w8.vocr")
+            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "VOCR3_FL10_w8.vocr")
+            self.assertTrue(manifest["defaults"]["log_file"])
+            self.assertFalse(manifest["defaults"]["anki"])
+            self.assertNotIn("install_settings", manifest)
+            # both template copies are the source template: logging on, Anki off
+            for name in ("config.ini", release.DATA + "config.ini"):
+                text = archive.read(name).decode()
+                self.assertIn("\nlog_file = on\n", text)
+                self.assertIn("\nanki_mining = off\n", text)
+                self.assertIn("\nvocr_model = VOCR3_H15_w8.vocr\n", text)
+
+    def test_manifest_names_each_model_generation_and_the_local_engine(self):
+        """The bundled metadata the Overlay app's label comes from: each model's generation (by its
+        release), and the local engine's name for the package's default, VOCR3."""
+        package = self.package_fixture()
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+        self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items()},
+                         {"VOCR3_H15_w8.vocr": "VOCR3", "VOCR3_FL10_w8.vocr": "VOCR3",
+                          "H15_w8.vocr": "VOCR1", "FL10_w8.vocr": "VOCR1"})
+        self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
+        self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR3")
+        self.assertEqual(manifest["defaults"]["ocr_engine"],
+                         manifest["models"][manifest["defaults"]["vocr_model"]]["generation"])
+        # a later release's generation reaches the manifest through its tag
+        with mock.patch.dict(prepare.VOCR_GENERATION, {prepare.VOCR3_TAG: "VOCR5"}), \
+             mock.patch.dict(release.VOCR_GENERATION, {prepare.VOCR3_TAG: "VOCR5"}):
+            (self.root / "package.zip").unlink()
+            package = self.package_fixture()
+            with zipfile.ZipFile(package) as archive:
+                manifest = json.loads(archive.read("package-manifest.json"))
+        self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR5")
+        self.assertEqual(manifest["models"]["VOCR3_FL10_w8.vocr"]["generation"], "VOCR5")
+        self.assertEqual(manifest["models"]["H15_w8.vocr"]["generation"], "VOCR1")
+
+    def test_removed_vocr2_is_neither_shipped_nor_claimed(self):
+        # a VOCR2 file left in the models directory is not packaged
+        (self.models / "VOCR2_FL10_w8.vocr").write_bytes(self.legacy)
+        package = self.package_fixture()
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            self.assertFalse([n for n in archive.namelist() if "VOCR2" in n])
+        self.assertNotIn("ocr_backends", manifest)
+        self.assertNotIn("VOCR2", json.dumps(manifest))
+        for name in ("VOCR2_ENABLED", "VOCR2_MODEL", "VOCR2_TAG", "VOCR2_ASSETS", "fetch_vocr2"):
+            self.assertFalse(hasattr(prepare, name), name)
+            self.assertFalse(hasattr(release, name), name)
+
+    def test_package_settings_go_into_both_templates_and_the_manifest(self):
+        package = self.package_fixture({"anki_mining": "on", "log_file": "on"})
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            self.assertEqual(manifest["install_settings"], {"anki_mining": "on", "log_file": "on"})
+            self.assertTrue(manifest["defaults"]["anki"])
+            for name in ("config.ini", release.DATA + "config.ini"):
+                text = archive.read(name).decode()
+                self.assertIn("\nanki_mining = on\n", text)
+                self.assertNotIn("anki_mining = off", text)
+                self.assertEqual(manifest["files"][name]["sha256"], hashlib.sha256(text.encode()).hexdigest())
+        # a key the template does not have, or a value with a line break, is refused before output
+        with self.assertRaisesRegex(ValueError, "Not a setting of the config template: anki_minnig"):
+            self.package_fixture({"anki_minnig": "on"})
+        for bad in ("anki_mining", "anki_mining=on\nlog_file=off", "=on", "Bad Key=1", "anki_deck=a\u2028b",
+                    "anki_deck=a\x85b", "anki_deck=a\x7fb"):
+            with self.assertRaises(Exception):
+                release.parse_setting(bad)
+        self.assertEqual(release.parse_setting(" Anki_Mining = on "), ("anki_mining", "on"))
+        self.assertEqual(release.parse_setting("anki_field_picture="), ("anki_field_picture", ""))
+
+    def test_missing_or_wrong_model_is_refused_before_output(self):
+        self.write_models()
+        (self.models / "VOCR3_FL10_w8.vocr").unlink()
+        with self.assertRaisesRegex(ValueError, "OCR model is missing: VOCR3_FL10_w8.vocr"):
+            self.package_fixture(write_models=False)
+        self.assertFalse((self.root / "package.zip").exists())
+        (self.models / "VOCR3_FL10_w8.vocr").write_bytes(self.legacy)  # the right size, another hash
+        with self.assertRaisesRegex(ValueError, "OCR model checksum failed: VOCR3_FL10_w8.vocr"):
+            self.package_fixture(write_models=False)
+        self.assertFalse((self.root / "package.zip").exists())
+
+if __name__ == "__main__":
+    unittest.main()

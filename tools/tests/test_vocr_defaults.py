@@ -1,6 +1,7 @@
 """The device default is VOCR3_H15_w8.vocr from bee-san/vita-vn-ocr v0.2.5-vocr3.1, with
 VOCR3_FL10_w8.vocr as its fallback; v0.2.0's H15/FL10 stay pinned and shipped; every pinned
-model fits the console budget ceiling, and the C, kernel and Python pins agree."""
+model fits the console budget ceiling; and the game worker's, the kernel's, the model metadata's
+(core/vocr_models.c, with each model's generation) and the Python pins agree."""
 import re
 import sys
 import unittest
@@ -24,7 +25,6 @@ def macros():
     text = (ROOT / "include/vjo_vocr_sizes.h").read_text()
     out = {m.group(1): int(m.group(2)) for m in re.finditer(r"#define (VJO_\w+) (\d+)u", text)}
     out.update({m.group(1): m.group(2) for m in re.finditer(r'#define (VJO_\w+) "([^"]+)"', text)})
-    out["VJO_VOCR2_BYTES"] = out["VJO_VOCR_FL10_BYTES"]
     return out
 
 
@@ -39,6 +39,16 @@ def c_table():
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
         out[name] = (sizes[m.group(2)], digest, int(m.group(4)))
     return out
+
+
+def metadata_table():
+    """name -> (generation, shape, bytes) from core/vocr_models.c, the Overlay app's model metadata."""
+    source = (ROOT / "core/vocr_models.c").read_text()
+    sizes = macros()
+    table = source[source.index("#else\nstatic const VjoVocrModelInfo infos[]"):]
+    table = table[:table.index("};")]
+    return {sizes.get(m.group(1), m.group(1)): (m.group(2), m.group(3), sizes[m.group(4)])
+            for m in re.finditer(r'\{"?([\w.]+)"?, "(\w+)", "(\w+)", (VJO_\w+)\}', table)}
 
 
 def kernel_names():
@@ -66,7 +76,7 @@ class VocrDefaults(unittest.TestCase):
 
     def test_c_kernel_and_python_pins_agree_and_fit_the_ceiling(self):
         table = c_table()
-        python = {**prepare_ocr.VOCR3_ASSETS, **prepare_ocr.VOCR_ASSETS, **prepare_ocr.VOCR2_ASSETS}
+        python = {**prepare_ocr.VOCR3_ASSETS, **prepare_ocr.VOCR_ASSETS}
         self.assertEqual(set(table), set(python))
         for name, (size, sha, arena) in table.items():
             _, want_size, want_sha = python[name]
@@ -75,11 +85,36 @@ class VocrDefaults(unittest.TestCase):
             self.assertLessEqual(arena, CEILING_ARENA, name)
         # the kernel opens exactly the pinned names, at their pinned sizes
         self.assertEqual(kernel_names(), {name: size for name, (size, _, _) in table.items()})
+        # the model metadata names exactly the same files, at the same sizes
+        self.assertEqual({name: size for name, (_, _, size) in metadata_table().items()},
+                         {name: size for name, (size, _, _) in table.items()})
         # VOCR3 has the shapes of v0.2.0's H15 and FL10: the same bytes and arena, other weights
         for new, old in (("VOCR3_H15_w8.vocr", "H15_w8.vocr"), ("VOCR3_FL10_w8.vocr", "FL10_w8.vocr")):
             self.assertEqual(table[new][0], table[old][0])
             self.assertEqual(table[new][2], table[old][2])
             self.assertNotEqual(table[new][1], table[old][1])
+
+    def test_each_model_generation_is_its_releases(self):
+        """The generation the Overlay app names the local engine after: the same in the C metadata
+        and in the packager's pins (each release's), VOCR3 for the default, and the VOCRn of a file
+        named VOCRn_...; the removed VOCR2 trial is pinned nowhere."""
+        meta = metadata_table()
+        self.assertEqual(len(meta), 5)
+        for name, (generation, shape, _) in meta.items():
+            tag = prepare_ocr.VOCR3_TAG if name in prepare_ocr.VOCR3_ASSETS else prepare_ocr.VOCR_TAG
+            self.assertIn(name, {**prepare_ocr.VOCR3_ASSETS, **prepare_ocr.VOCR_ASSETS})
+            self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[tag], name)
+            if name.startswith("VOCR"):
+                self.assertTrue(name.startswith(generation + "_"), name)
+            self.assertIn(shape, name, name)
+        self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3"})
+        self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], "VOCR3")
+        self.assertEqual(meta[prepare_ocr.VOCR_FALLBACK_MODEL][0], "VOCR3")
+        for path in ("core/vocr_ocr.c", "core/vocr_models.c", "kernel/game_ocr.c", "include/vjo_vocr_sizes.h",
+                     "tools/prepare_ocr.py", "tools/package_release.py"):
+            text = (ROOT / path).read_text()
+            for pin in ('"VOCR2_FL10_w8.vocr"', "'VOCR2_FL10_w8.vocr'", "VJO_VOCR2", "VOCR2_ASSETS"):
+                self.assertNotIn(pin, text, path)
 
     def test_defaults_everywhere_are_vocr3_h15_with_vocr3_fl10_fallback(self):
         self.assertEqual((prepare_ocr.VOCR_DEFAULT_MODEL, prepare_ocr.VOCR_FALLBACK_MODEL),

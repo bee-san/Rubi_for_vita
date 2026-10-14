@@ -9,8 +9,8 @@ import shutil
 import tempfile
 import zipfile
 
-from prepare_ocr import (VOCR_ASSETS, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_TAG, VOCR2_ASSETS,
-                         VOCR2_ENABLED, VOCR2_MODEL, VOCR2_TAG, VOCR3_ASSETS, VOCR3_TAG)
+from prepare_ocr import (VOCR_ASSETS, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_GENERATION, VOCR_TAG,
+                         VOCR3_ASSETS, VOCR3_TAG)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -19,15 +19,11 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 
 def shipped_models():
     """(name, pins, release tag, role) of every shipped weights file: VOCR3 (the default and its
-    fallback), v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings'), and the
-    opt-in VOCR2 trial."""
-    models = [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
-              (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
-              ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
-              ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
-    if VOCR2_ENABLED:
-        models.append((VOCR2_MODEL, VOCR2_ASSETS, VOCR2_TAG, "VOCR2 trial (opt-in)"))
-    return models
+    fallback) and v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings')."""
+    return [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
+            (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
+            ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
+            ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
 
 
 def one_line(value):
@@ -128,9 +124,12 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-        shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag, "bytes": size, "sha256": sha, "role": role}
+        # The generation the Overlay app names the local engine after (core/vocr_models.c).
+        shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag, "generation": VOCR_GENERATION[tag],
+                         "bytes": size, "sha256": sha, "role": role}
     manifest = {"version": version, "files": {}, "dictionary": conversion,
-                "defaults": {"ocr_backend": "vocr", "vocr_model": VOCR_DEFAULT_MODEL,
+                "defaults": {"ocr_backend": "vocr", "ocr_engine": shipped[VOCR_DEFAULT_MODEL]["generation"],
+                             "vocr_model": VOCR_DEFAULT_MODEL,
                              "vocr_fallback_model": VOCR_FALLBACK_MODEL,
                              "dictionary": "local", "local_dictionaries": "plaintext.vjdict",
                              "japanese_only_selection": True,
@@ -141,19 +140,6 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         manifest["install_settings"] = settings
     if source_revision:
         manifest["source_revision"] = source_revision
-    if VOCR2_ENABLED:
-        manifest["ocr_backends"] = {
-            "vocr2": {"model": VOCR2_MODEL, "finder_mode": "textbox",
-                      "model_release": VOCR2_TAG,
-                      "model_sha256": VOCR2_ASSETS[VOCR2_MODEL][2],
-                      "model_bytes": VOCR2_ASSETS[VOCR2_MODEL][1],
-                      "recognizer_arena_bytes": 124832,
-                      "experimental": True,
-                      "qualification": "rejected_for_promotion",
-                      "default": False,
-                      "protected_result_sha256": "3c2c873239e1bcbdf3858650d7b628853b0f4b1f4c324ecc9519a7348c8d09f7",
-                      "runtime_commit": "49ff6f4d1c55804c600d098810574a49d382a009"}
-        }
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if original.testzip() is not None:

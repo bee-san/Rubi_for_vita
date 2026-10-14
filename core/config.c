@@ -137,8 +137,8 @@ const char *vjo_config_default_text(void)
            "; Text is read from screenshots using OCR.\n"
            "text_source = ocr\n"
            "\n"
-           "; OCR: lens (online) | vocr (on the Vita: vita-vn-ocr, needs a build with it\n"
-           "; and its model file; see docs/vita-vn-ocr.md) | ncnn (PP-OCRv5, host tests only)\n"
+           "; OCR engine: vocr (offline on the Vita; the Overlay app names it after its\n"
+           "; model's generation, e.g. VOCR3: docs/vita-vn-ocr.md) | lens (Google, online)\n"
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -347,6 +347,22 @@ static int valid_audio_url(const char *v)
     return !*v || vjo_anki_audio_endpoint(v, host, &port, &tls, &path) == 0;
 }
 
+/* An ocr_backend value of a removed engine: why it no longer runs (the config
+ * warning), or NULL. Such a file loads as vocr; the Overlay app's next save
+ * and the installer (tools/migrate_config.py REPLACED_VALUES) rewrite it. */
+static const char *removed_engine(const char *v)
+{
+    static const char *const removed[][2] = {
+        {"vocr2", "VOCR2 was removed"},  /* the experimental trial, v0.7.12 to v0.8.0-test.1 */
+        {"meiki", "Meiki was removed"},  /* the manual single-line trial, v0.7.6 to v0.7.12 */
+        {"ncnn", "ncnn runs only in host tools"}, /* vjo-ocr --backend ncnn; never on the Vita */
+    };
+    for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++)
+        if (vjo_ieq(v, removed[i][0]))
+            return removed[i][1];
+    return NULL;
+}
+
 /* vocr_model: a plain file name in ocr_model_dir, ending in .vocr (which
  * models a build accepts is checked when it loads one). */
 static int valid_vocr_model(const char *v)
@@ -503,19 +519,15 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "ocr")) c->text_source = VJO_SOURCE_OCR;
         else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "ocr_backend")) {
+        const char *removed;
         if (vjo_ieq(val, "lens"))
             c->ocr_backend = VJO_OCR_LENS;
-        else if (vjo_ieq(val, "ncnn"))
-            c->ocr_backend = VJO_OCR_NCNN;
         else if (vjo_ieq(val, "vocr"))
             c->ocr_backend = VJO_OCR_VOCR;
-        else if (vjo_ieq(val, "meiki")) {
-            /* Saved by v0.7.6-v0.7.12; the trial engine has been removed. */
+        else if ((removed = removed_engine(val)) != NULL) {
             c->ocr_backend = VJO_OCR_VOCR;
-            warn(c, "%s: Meiki was removed; using %s", key, "vocr");
+            warn(c, "%s: %s; using vocr", key, removed);
         }
-        else if (vjo_ieq(val, "vocr2"))
-            c->ocr_backend = VJO_OCR_VOCR2;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "vocr_model")) {
@@ -610,11 +622,10 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
     size_t i = 0, used = 0;
     unsigned seen = 0;
     static const char *const backend_values[] = {
-        [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_NCNN] = "ocr_backend = ncnn\n",
-        [VJO_OCR_VOCR] = "ocr_backend = vocr\n", [VJO_OCR_VOCR2] = "ocr_backend = vocr2\n"
+        [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_VOCR] = "ocr_backend = vocr\n"
     };
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend < VJO_OCR_LENS || backend > VJO_OCR_VOCR2 || !backend_values[backend]) ||
+        (backend != VJO_OCR_LENS && backend != VJO_OCR_VOCR) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||

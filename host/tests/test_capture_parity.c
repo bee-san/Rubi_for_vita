@@ -218,11 +218,7 @@ static uint16_t norm(unsigned v, unsigned size)
     return (uint16_t)(n > 65535u ? 65535u : n);
 }
 
-static const char *const models[] = {"H15_w8.vocr", "FL10_w8.vocr",
-#if VJO_VOCR2_ENABLED
-                                     VJO_VOCR2_ARTIFACT_NAME,
-#endif
-};
+static const char *const models[] = {"H15_w8.vocr", "FL10_w8.vocr"};
 
 static void load_weights(void)
 {

@@ -7,11 +7,13 @@
 #include "../include/vjo_api.h"
 
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
-/* ocr_backend. VJO_OCR_VOCR and VJO_OCR_VOCR2 share bee-san/vita-vn-ocr on
- * the Vita CPU (VJO_WITH_VOCR); VJO_OCR_NCNN is for host experiments only.
- * Values are persisted by the settings app; keep existing IDs unchanged.
- * 3 belonged to the removed Meiki trial and stays unused. */
-enum { VJO_OCR_LENS = 0, VJO_OCR_NCNN = 1, VJO_OCR_VOCR = 2, VJO_OCR_VOCR2 = 4 };
+/* ocr_backend: the two OCR engines. VJO_OCR_VOCR runs bee-san/vita-vn-ocr on
+ * the Vita CPU, in the game (VJO_WITH_VOCR); the Overlay app names it after its
+ * model's generation (core/vocr_models.h). VJO_OCR_LENS is Google Lens. The
+ * self-test reports the value (config backend=); keep the IDs unchanged. The
+ * removed engines' IDs stay unused: 1 ncnn (host experiments), 3 the Meiki
+ * trial, 4 the VOCR2 trial; config.ini values naming them load as vocr. */
+enum { VJO_OCR_LENS = 0, VJO_OCR_VOCR = 2 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
@@ -36,10 +38,10 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int ocr_backend;          /* VJO_OCR_LENS | VJO_OCR_VOCR | VJO_OCR_VOCR2 | VJO_OCR_NCNN */
+    int ocr_backend;          /* VJO_OCR_VOCR | VJO_OCR_LENS */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
-    char vocr_model[64];      /* old VOCR weights in ocr_model_dir; VOCR2 uses its build pin */
+    char vocr_model[64];      /* the local engine's weights in ocr_model_dir */
     /* Smaller weights run instead when the game's free memory has no room
      * for vocr_model (the game worker decides per job); "" = none. */
     char vocr_fallback_model[64];

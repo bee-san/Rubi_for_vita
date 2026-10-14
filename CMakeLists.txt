@@ -23,7 +23,7 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c shell/game_ocr_client.c)
+  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -342,6 +342,24 @@ target_include_directories(vjo-preferences-tests PRIVATE third_party/acutest/inc
 target_link_libraries(vjo-preferences-tests vjo_host)
 target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME preferences COMMAND vjo-preferences-tests)
+# The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
+# boundary: the OCR engine card's two engines, the local one named after its
+# model's generation; then the same app with a later package's model table
+# (generation VOCR5), which it names unchanged.
+foreach(_vjo_variant IN ITEMS app vocr5)
+  set(_vjo_target vjo-settings-${_vjo_variant}-tests)
+  add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
+    settings/preferences.c vita/games_storage.c host/tests/settings_stubs/anki_page_stub.c)
+  target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
+    host/tests/vita_stubs host/tests)
+  target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_link_libraries(${_vjo_target} vjo_host)
+  add_test(NAME settings_${_vjo_variant} COMMAND ${_vjo_target})
+endforeach()
+set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
+# The later package's metadata replaces this build's (core/vocr_models.c, compiled in).
+target_sources(vjo-settings-vocr5-tests PRIVATE core/vocr_models.c)
+target_compile_definitions(vjo-settings-vocr5-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr5_models.h")
 add_executable(vjo-game-input-tests host/tests/test_game_input.c kernel/triggers.c)
 target_include_directories(vjo-game-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_link_libraries(vjo-game-input-tests vjo_host)

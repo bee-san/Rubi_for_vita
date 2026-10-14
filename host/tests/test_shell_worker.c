@@ -698,45 +698,71 @@ static void test_vocr_never_uses_lens(void)
     mem_free();
 }
 
-static void test_vocr2_selection_stays_local(void)
+/* A config.ini that still chooses the removed VOCR2 trial (or ncnn) runs the
+ * local engine: the configured model with its fallback, in the game, with no
+ * screenshot and no Lens connection. */
+static void test_removed_engine_choice_runs_the_local_engine(void)
 {
-    reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR2;
-    /* Selecting the new engine must never reuse the saved old-model choice. */
-    strcpy(cfg.vocr_model, "H15_w8.vocr");
-    TEST_CHECK(local_pipeline(&cfg) && background_wanted());
-    int rc = run_vocr_job();
-    TEST_CHECK(!jpeg_captures);
-#if defined(VJO_WITH_VOCR) && VJO_VOCR2_ENABLED
-    TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
-    TEST_CHECK(!strcmp(fake_game_request.model, VJO_VOCR2_ARTIFACT_NAME));
-    TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_NONE);
-#elif defined(VJO_WITH_VOCR)
-    TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(rc == VJO_E_OCR_MODEL);
-    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "VOCR2 weights"));
+    /* Only the local engine runs in the game: the retired IDs (1 ncnn, 3 Meiki, 4 VOCR2) never do. */
+    for (int id = -1; id <= 5; id++) TEST_CHECK_(game_ocr_backend(id) == (id == VJO_OCR_VOCR), "backend %d", id);
+    static const char *const ini[] = {"ocr_backend = vocr2\n", "ocr_backend = ncnn\n"};
+    static const char *const warning[] = {"config warning: ocr_backend: VOCR2 was removed; using vocr",
+                                          "config warning: ocr_backend: ncnn runs only in host tools; using vocr"};
+    for (unsigned i = 0; i < 2; i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_LENS;
+        vjo_config_defaults(&loaded);
+        loaded.ocr_backend = VJO_OCR_LENS;
+        vjo_config_parse(&loaded, ini[i], strlen(ini[i]));
+        apply_config();
+        TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
+        TEST_CHECK(local_pipeline(&cfg) && background_wanted());
+        TEST_CHECK_(logged(warning[i]) != NULL, "%s", warning[i]);
+        int rc = run_vocr_job();
+        TEST_CHECK(!jpeg_captures);
+#ifdef VJO_WITH_VOCR
+        TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
+        TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
+        TEST_CHECK(!strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
+        TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_NONE);
 #else
-    TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
+        TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
+        TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
 #endif
-    warm_connections();
-    TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
-    mem_free();
+        warm_connections();
+        TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
+        mem_free();
+    }
 }
 
-static void test_vocr2_cache_uses_its_own_backend_and_storage(void)
+/* The cached result belongs to its engine and, for the local engine, to its
+ * model files: switching engine, model, fallback or directory drops it; the
+ * local engine's model settings do not matter to Google Lens. */
+static void test_engine_cache_tracks_backend_models_and_storage(void)
 {
     reset();
     loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     cache_ok = 1;
-    loaded.ocr_backend = VJO_OCR_VOCR2;
+    loaded.ocr_backend = VJO_OCR_LENS;
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
     strcpy(loaded.vocr_model, "H15_w8.vocr");
     apply_config();
-    TEST_CHECK(cache_ok); /* The legacy VOCR model setting does not select VOCR2 weights. */
+    TEST_CHECK(cache_ok); /* Lens runs no local model */
+    loaded.ocr_backend = VJO_OCR_VOCR;
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    strcpy(loaded.vocr_model, "VOCR3_H15_w8.vocr");
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    strcpy(loaded.vocr_fallback_model, "FL10_w8.vocr");
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     strcpy(loaded.ocr_model_dir, "ux0:data/other-ocr");
     apply_config();
     TEST_CHECK(!cache_ok);
@@ -767,12 +793,12 @@ static void test_vocr_config(void)
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad_fallback, sizeof(bad_fallback) - 1);
     TEST_CHECK(!strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr") && c.n_warnings == 1);
-    TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_NCNN == 1 && VJO_OCR_VOCR == 2 &&
-               VJO_OCR_VOCR2 == 4); /* 3 was Meiki; saved IDs never move */
-    const char new_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
+    TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_VOCR == 2); /* 1, 3, 4: removed engines; IDs never move */
+    /* A saved VOCR2 choice keeps the configured model: the local engine runs it. */
+    const char old_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
     vjo_config_defaults(&c);
-    vjo_config_parse(&c, new_ini, sizeof(new_ini) - 1);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR2 && !c.n_warnings);
+    vjo_config_parse(&c, old_ini, sizeof(old_ini) - 1);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
     TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
 }
 
@@ -861,10 +887,12 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
     TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && !strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
     mem_free();
-    /* VOCR2 has no fallback: its pinned model is already FL10-sized. */
+    /* No fallback configured: the job names none. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR2;
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.vocr_fallback_model[0] = '\0';
     TEST_CHECK(run_vocr_job() == VJO_OK && !fake_game_request.fallback[0]);
+    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
     mem_free();
 }
 
@@ -1485,9 +1513,9 @@ static void test_japanese_only_selection_and_config_reload(void)
     generation = local_text_generation;
     vjo_post_cursor(1, generation); on_command(); finish_current_job();
     TEST_CHECK(g_view.cursor_byte == 1);
-    close_overlay(); loaded.ocr_backend = VJO_OCR_VOCR2;
+    close_overlay(); strcpy(loaded.vocr_model, "VOCR3_FL10_w8.vocr");
     open_overlay();
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR2 && job_cfg.ocr_backend == VJO_OCR_VOCR2);
+    TEST_CHECK(!strcmp(cfg.vocr_model, "VOCR3_FL10_w8.vocr") && !strcmp(job_cfg.vocr_model, "VOCR3_FL10_w8.vocr"));
     TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);
     close_overlay(); finish_current_job(); mem_free();
 }
@@ -2940,8 +2968,8 @@ TEST_LIST = {
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
     {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
 #endif
-    {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
-    {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
+    {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},
+    {"engine_cache_tracks_backend_local_models_and_storage", test_engine_cache_tracks_backend_models_and_storage},
     {"vocr_config_parses_and_validates", test_vocr_config},
     {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},

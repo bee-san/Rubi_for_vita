@@ -285,11 +285,7 @@ static void finish(const VjoGameOcrResult *out)
 static void real_models_cross_namespace(void)
 {
     if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; real-model integration skipped"); return; }
-    const char *names[] = {"FL10_w8.vocr", "H15_w8.vocr",
-#if VJO_VOCR2_ENABLED
-                           VJO_VOCR2_ARTIFACT_NAME,
-#endif
-    };
+    const char *names[] = {"FL10_w8.vocr", "H15_w8.vocr", VJO_VOCR3_FL10_NAME};
     for (unsigned i=0; i<sizeof(names)/sizeof(names[0]); i++) {
         VjoGameOcrRequest request = setup(names[i]); VjoGameOcrResult out;
         /* Demonstrate the physical failing boundary before using the broker. */
@@ -387,19 +383,17 @@ static void real_fallback_runs_fl10_when_h15_does_not_fit(void)
     finish(&out);
     submit_fallback = ""; game_free = 16*1024*1024;
 }
-static void vocr2_rejects_legacy_model_through_real_broker(void)
+static void pin_rejects_renamed_same_sized_model_through_real_broker(void)
 {
-#if VJO_VOCR2_ENABLED
-    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; VOCR2 hash test skipped"); return; }
-    VjoGameOcrRequest request = setup(VJO_VOCR2_ARTIFACT_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Pinned release weights absent; renamed-model hash test skipped"); return; }
+    VjoGameOcrRequest request = setup(VJO_VOCR3_FL10_NAME);
     VjoGameOcrResult out;
-    /* Simulate an installation that renamed the old same-sized model. */
+    /* Simulate an installation that renamed v0.2.0's same-sized FL10 to VOCR3's name. */
     substitute_legacy = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&request, &out) == VJO_E_OCR_MODEL);
     TEST_CHECK(!out.text[0] && out.lines == 1 && !out.io_error && !out.cleanup_status);
-    TEST_CHECK(received == VJO_VOCR2_BYTES && kernel_opens == 1 && kernel_closes == 1);
+    TEST_CHECK(received == VJO_VOCR_FL10_BYTES && kernel_opens == 1 && kernel_closes == 1);
     finish(&out);
-#endif
 }
 static void real_model_failure_recovery(void)
 {
@@ -467,7 +461,7 @@ TEST_LIST = {
     {"actual game worker and kernel broker load every pinned trial model despite game ENODEV", real_models_cross_namespace},
     {"real weights: waited 32 KiB reads, no game sleeps, resident reuse and re-read on a new file time", real_models_resident_through_waiting_broker},
     {"real weights: H15 with an FL10 fallback runs FL10 when H15 does not fit, then H15 again", real_fallback_runs_fl10_when_h15_does_not_fit},
-    {"VOCR2 rejects renamed old FL10 bytes through the real broker and releases ownership", vocr2_rejects_legacy_model_through_real_broker},
+    {"a pin rejects renamed same-sized bytes (v0.2.0 FL10 as VOCR3-FL10) through the real broker", pin_rejects_renamed_same_sized_model_through_real_broker},
     {"actual broker model I/O corruption cancellation close failure and recovery", real_model_failure_recovery},
     {"actual queued Open timeout and later Close drain without weights", queued_open_timeout_and_drain},
     {NULL, NULL}

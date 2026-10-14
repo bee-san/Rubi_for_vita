@@ -32,10 +32,22 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("config.ini: ocr_backend = vocr", report)
         self.assertNotIn("secret-key", report)
 
-    def test_current_backends_are_unchanged(self):
-        for backend in ("vocr", "vocr2", "lens"):
-            text, _ = self.migrate("ocr_backend = %s\n" % backend)
-            self.assertIn("ocr_backend = %s\n" % backend, text)
+    def test_removed_engines_become_vocr_and_keep_other_values(self):
+        # The VOCR2 trial (v0.7.12 to v0.8.0-test.1) and ncnn (host tools) are no engines any more.
+        for old in ("vocr2", "VOCR2", "ncnn", "meiki"):
+            text, report = self.migrate("ocr_backend = %s\nvocr_model = H15_w8.vocr\nocr_mode = on_press\n" % old)
+            self.assertIn("\nocr_backend = vocr\n", text, old)
+            self.assertNotIn("ocr_backend = " + old, text)
+            self.assertEqual(text.count("ocr_backend ="), 1)
+            self.assertIn("vocr_model = H15_w8.vocr\n", text)
+            self.assertIn("ocr_mode = on_press\n", text)
+            self.assertIn("config.ini: ocr_backend = vocr", report)
+
+    def test_the_two_engines_are_unchanged(self):
+        for backend in ("vocr", "lens"):
+            text, report = self.migrate("ocr_backend = %s\n" % backend)
+            self.assertIn("\nocr_backend = %s\n" % backend, text)
+            self.assertNotIn("config.ini: ocr_backend", report)
 
     def test_explicit_setting_still_wins(self):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")

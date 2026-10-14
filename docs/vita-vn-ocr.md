@@ -11,39 +11,43 @@ passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
 
-## Experimental VOCR2 trial
+## The engine's name: the model generation
 
-Select **VOCR2** on the Overlay app's OCR & lookup page, or set
-`ocr_backend = vocr2` in `config.ini`. It uses the same selected dialogue crop,
-automatic/manual modes and game worker as VOCR. Select **VOCR** to return to the
-original backend. The saved `vocr_model` setting applies only to VOCR.
+The Overlay app offers two OCR engines: this local one and Google Lens. It names
+the local engine after the generation of the model it runs, `vocr_model`, or the
+fallback when this build does not run that file: **VOCR3** for this package's
+default `VOCR3_H15_w8.vocr`, **VOCR1** for v0.2.0's `H15_w8.vocr`. The last line of
+the engine card names the file's generation and shape (`VOCR3-H15 found`), or what
+is missing (`VOCR3-H15 missing; uses VOCR3-FL10`).
 
-VOCR2 pairs the native textbox finder with a separately trained
-`VOCR2_FL10_w8.vocr` recognizer. The model remains 657,664 bytes and its
-recognition arena remains 124,832 bytes. Workspace sizing and one-pass capture
-ownership are unchanged. The extra finder code and bounded stack use still
-occupy memory; unchanged workspace does not mean unchanged total plugin memory.
-Console speed, memory and compatibility require physical testing.
+A `.vocr` blob has no generation in it: its 64-byte header holds the layout, a
+CRC and the first 16 bytes of the checkpoint's SHA-256 (vita-vn-ocr
+`train/export.py`). The generation therefore comes with the pin, from the
+vita-vn-ocr release that published the file (VOCR1: v0.2.0; VOCR3:
+v0.2.5-vocr3.1), and is kept in three places that the tests compare:
 
-**This is an opt-in experiment, rejected for promotion.** Shared screenshot
-aggregate errors improved on both platforms and with 4/8-pixel crop margins,
-but eleven title/margin groups had small regressions and the predeclared strict
-per-title guard failed. It is not the default or a qualified replacement for
-VOCR. The [measured results and exact candidate pins](benchmarks/vocr2-candidate-20261012.json)
-are also published with the [OCR research release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.3-vocr2.1).
+- `core/vocr_models.c`, per file: generation, shape and size. The Overlay app
+  reads it; the game worker's pins (`core/vocr_ocr.c`: SHA-256, arena) and the
+  kernel broker's (`kernel/game_ocr.c`: size) name exactly the same files.
+- `tools/prepare_ocr.py` `VOCR_GENERATION`, per release tag.
+- `package-manifest.json` in the release zip: `generation` for every shipped
+  model and `defaults.ocr_engine` for the default's.
 
-The trial bundle includes the separate model. For a source build:
+A later generation needs no app change: pin its files where every model is
+pinned (`core/vocr_ocr.c`: SHA-256 and arena; `kernel/game_ocr.c`: size;
+`core/vocr_models.c`: generation and shape; `tools/prepare_ocr.py`: the release
+assets and `VOCR_GENERATION`; the tests fail while one of them is missing), make
+one the default (`vocr_model`, the installer's `--set`), and the app shows its
+name, for example **VOCR5** (`host/tests/test_settings_app.c` builds the app
+against such a table).
 
-```sh
-python3 tools/prepare_ocr.py --backend vocr2 --output ocr
-```
-
-An authenticated GitHub CLI is needed while the OCR repository is private;
-`--from FILE` or `--from DIRECTORY` verifies a previously downloaded candidate.
-Copy `VOCR2_FL10_w8.vocr` to `ux0:data/VitaJPOverlay/ocr/`. Its SHA-256 is
-`d3adc52e5cf62b548af04c5ab07a2f57cf0419386bbdf49ba19c9703be6e1766`.
-Renaming old FL10 weights does not enable VOCR2: the worker rejects that hash.
-A missing or corrupt candidate reports an error without changing engines.
+The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
+`VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
+v0.8.0-test.1) has been removed: its strict per-title promotion guard failed
+([its results](benchmarks/vocr2-candidate-20261012.json)). A saved
+`ocr_backend = vocr2`, `meiki` or `ncnn` loads as `vocr`, with a config warning
+in `log.txt`; the app's next save and the installer write `vocr`. The kernel no
+longer opens `VOCR2_FL10_w8.vocr`; the file may be deleted.
 
 ## What a recognition does
 
@@ -139,7 +143,7 @@ cannot read a newer capture or publish old results. Model reads finish short
 reads in at most 32 KiB calls and check cancellation between calls. Each call
 waits up to 50 ms in the kernel for the worker thread's result; only a slower
 read returns BUSY, which the game repeats after a 1 ms yield. The kernel
-allows only FL10, H15, F20 or the separate VOCR2 trial model under the exact directory above, with their pinned
+allows only the VOCR3 FL10/H15 and v0.2.0 FL10/H15/F20 models under the exact directory above, with their pinned
 file lengths; it does not accept a caller-supplied file path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
 the current foreground epoch, and completion copies use the current syscall's
@@ -416,8 +420,9 @@ vocr_fallback_model = FL10_w8.vocr
 
 `vocr_model = VOCR3_FL10_w8.vocr` always runs the smaller model; `vocr_fallback_model = none`
 never falls back. `install-vita.sh` sets the package's defaults each time it runs, so set the choice
-again after a reinstall. The game worker and the kernel's model broker accept exactly these names,
-F20 and VOCR2's model, each at its pinned size and SHA-256.
+again after a reinstall. The game worker and the kernel's model broker accept exactly these names
+and F20, each at its pinned size and SHA-256; `core/vocr_models.c` gives each its generation
+(VOCR3, or VOCR1 for v0.2.0's), the name of the local engine in the Overlay app.
 
 The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
@@ -622,5 +627,6 @@ copied, and the settings above. Close other apps first.
   frames can add a stray line; tight regions read best.
 - Recognition runs on a low-priority thread in the enabled game process at
   the game's clock. The overlay does not change the CPU clock or memory mode.
-- The pinned table accepts the three v0.2.0 int8 files and the separate VOCR2 trial; a new release
-  needs its sizes and hashes added (`core/vocr_ocr.c`, `tools/prepare_ocr.py`).
+- The pinned table accepts the two VOCR3 and three v0.2.0 int8 files; a new release needs its sizes,
+  hashes and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
+  `tools/prepare_ocr.py`).

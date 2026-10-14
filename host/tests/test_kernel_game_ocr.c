@@ -706,36 +706,39 @@ static void model_permissions_paths_and_bounds(void)
     TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
     TEST_CHECK(!vjoOcrModelClose(seq));
 }
-static void removed_meiki_model_is_refused(void)
+static void removed_models_are_refused(void)
 {
     TEST_CHECK(sizeof(model_stage)==32768);
-    /* The broker opens only the VOCR/VOCR2 pins; the removed recognizer is unlisted. */
-    TEST_CHECK(!model_size("meiki-stream-int8.mnn") && !model_size("meiki-detect-int8.mnn"));
-    setup(); uint32_t seq=submit(); take(seq);
-    strcpy(request.model,"meiki-stream-int8.mnn");
-    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL)==VJO_ERR_ARG && !model_opens && !file_live);
-    TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    /* The broker opens only the VOCR pins; the removed engines' files (the Meiki
+     * recognizer, the VOCR2 trial's FL10-sized model) are unlisted, though they
+     * may still be on the memory card. */
+    static const char *const removed[] = {"meiki-stream-int8.mnn", "meiki-detect-int8.mnn", "VOCR2_FL10_w8.vocr"};
+    for (unsigned i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
+        TEST_CHECK(!model_size(removed[i]));
+        setup(); uint32_t seq=submit(); take(seq);
+        strcpy(request.model, removed[i]);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL)==VJO_ERR_ARG && !model_opens && !file_live);
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        TEST_MSG("%s", removed[i]);
+    }
 }
 
-static void vocr2_fixed_pin_preserves_paths_and_bounds(void)
+/* A pinned name opens only as itself (no path around it) and reads end at its
+ * pinned size, the last chunk included. */
+static void exact_pin_keeps_canonical_path_and_final_chunk_bounds(void)
 {
-    TEST_CHECK(!model_size("../" VJO_VOCR2_ARTIFACT_NAME));
+    TEST_CHECK(!model_size("../" VJO_VOCR3_FL10_NAME) && !model_size(VJO_VOCR3_FL10_NAME "/"));
     setup(); uint32_t seq = submit(); take(seq);
-    strcpy(request.model, VJO_VOCR2_ARTIFACT_NAME);
-#if VJO_VOCR2_ENABLED
-    TEST_CHECK(model_size(VJO_VOCR2_ARTIFACT_NAME) == VJO_VOCR_FL10_BYTES);
-    expected_model_size = VJO_VOCR2_BYTES;
+    strcpy(request.model, VJO_VOCR3_FL10_NAME);
+    TEST_CHECK(model_size(VJO_VOCR3_FL10_NAME) == VJO_VOCR_FL10_BYTES);
+    expected_model_size = VJO_VOCR_FL10_BYTES;
     open_model(seq);
     unsigned char tail[2] = {0xCC, 0xCC};
-    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR2_BYTES - 1, 2, tail) == VJO_ERR_ARG);
-    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR2_BYTES - 1, 1, tail) == VJO_ERR_BUSY);
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_FL10_BYTES - 1, 2, tail) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_FL10_BYTES - 1, 1, tail) == VJO_ERR_BUSY);
     model_tick();
-    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR2_BYTES - 1, 1, tail) == 1 && tail[1] == 0xCC);
+    TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_FL10_BYTES - 1, 1, tail) == 1 && tail[1] == 0xCC);
     close_model(seq);
-#else
-    TEST_CHECK(!model_size(VJO_VOCR2_ARTIFACT_NAME));
-    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_opens);
-#endif
     TEST_CHECK(!vjoOcrComplete(&message));
 }
 
@@ -930,8 +933,8 @@ TEST_LIST = {
     {"cancellation during a waited Open is reported and Close drains in one call", model_cancel_while_waiting},
     {"packed modification times differ for every field", modification_times_pack_distinctly},
     {"the fallback is one of the submitted pinned names; Open picks which", fallback_is_one_of_the_submitted_pinned_names},
-    {"removed_Meiki_recognizer_is_not_in_the_broker_allowlist",removed_meiki_model_is_refused},
-    {"VOCR2_exact_pin_keeps_canonical_path_and_final_chunk_bounds",vocr2_fixed_pin_preserves_paths_and_bounds},
+    {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
+    {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
     {"model broker short reads copy retry EOF and native errors", model_short_read_copy_retry_and_errors},
     {"model broker late I/O cancellation exit Shell restart and pending close", model_cancel_exit_restart_and_late_io},
