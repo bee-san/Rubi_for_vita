@@ -739,7 +739,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     static const char *const weights[] = {"none", "read", "resident"};
     static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
     static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
-    *ran = result->fallback ? request.fallback : model;
+    /* The name of the model that ran, for after this call: the config's string, never
+     * the request's copy (a local of this call). */
+    *ran = result->fallback ? fallback : model;
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, *ran, !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",

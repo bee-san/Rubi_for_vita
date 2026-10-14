@@ -567,6 +567,28 @@ static int run_vocr_job(void)
 }
 
 #ifdef VJO_WITH_VOCR
+/* The model name a job reports (the self-test's stage record reads it after
+ * the job) is the configuration's string, never the request's copy, a local
+ * of the call that is gone by then. */
+static void test_vocr_ran_names_outlive_the_job(void)
+{
+    VjoGameOcrResult result;
+    const char *ran = NULL;
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    TEST_ASSERT(mem_alloc() == 0);
+    job_cfg = cfg;
+    fake_memory_fallback = 1; /* the game ran the fallback */
+    (void)vocr_run_one(&result, 0, NULL, &ran);
+    TEST_CHECK(result.fallback && ran == job_cfg.vocr_fallback_model && !strcmp(ran, "VOCR3_FL10_w8.vocr"));
+    fake_memory_fallback = 0;
+    (void)vocr_run_one(&result, 0, NULL, &ran);
+    TEST_CHECK(!result.fallback && ran == job_cfg.vocr_model);
+    TEST_MSG("ran %s", ran ? ran : "(null)");
+    mem_free();
+}
+
 /* The job's capture is its latest one: voided while the worker waits for a
  * changed screen to hold still, then the retry's. A settled screen cancels no
  * job whose retry already shows it. */
@@ -2306,6 +2328,7 @@ TEST_LIST = {
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
+    {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
     {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
 #endif
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
