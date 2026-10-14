@@ -48,6 +48,7 @@ build() { # build NAME SOURCES...
 
 build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
 build ledger host/tests/test_ledger.c core/ledger.c
+build fbgrey host/tests/test_fbgrey.c
 build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c core/region_select.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
@@ -58,7 +59,7 @@ build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
 
-TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
 TESTS+=(text_rows settings_layout)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime

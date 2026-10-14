@@ -33,6 +33,31 @@ static inline unsigned vjo_grey(unsigned r, unsigned g, unsigned b)
     return (77u * r + 150u * g + 29u * b) >> 8;
 }
 
+/* The same grey of one A8B8G8R8 word (R in the low byte) with two multiplies
+ * and no per-channel extraction. (v & 0x00FF00FF) is R + B * 2^16; times
+ * 29 + 77 * 2^16 it is 29 R + (77 R + 29 B) * 2^16 (the 77 B * 2^32 term
+ * leaves the 32-bit word). (v & 0xFF00) * 150 * 2^8 is 150 G * 2^16. The sum
+ * is 29 R + (77 R + 150 G + 29 B) * 2^16: the bracket is at most 256 * 255 =
+ * 65,280 and 29 R at most 7,395, so nothing wraps or carries into bit 16, and
+ * bits 24-31 are exactly (77 R + 150 G + 29 B) >> 8 (host/tests/test_fbgrey.c
+ * checks every R, G, B). The alpha byte never takes part. */
+#define VJO_GREY_RB 0x004D001Du /* 29 + (77 << 16) */
+#define VJO_GREY_G8 0x00009600u /* 150 << 8 */
+static inline unsigned vjo_grey_abgr(uint32_t v)
+{
+    return ((v & 0x00FF00FFu) * VJO_GREY_RB + (v & 0x0000FF00u) * VJO_GREY_G8) >> 24;
+}
+
+/* The 16-bit format straight to grey, with the kernel's expansion
+ * (vjo_fb_to_abgr: each 5-bit channel c5 << 3) folded into the weights: R5 +
+ * B5 * 2^16 times 232 + 616 * 2^16 and G5 * 2^5 times 1200 * 2^11 give the same
+ * sum at bits 16-31 (at most 2,048 * 31 = 63,488; the low part at most
+ * 232 * 31 = 7,192). It is the PSP emulator's format (Adrenaline). */
+static inline unsigned vjo_grey_a1b5g5r5(uint32_t v)
+{
+    return ((((v & 0x1Fu) | ((v & 0x7C00u) << 6)) * 0x026800E8u) + (v & 0x03E0u) * 0x00258000u) >> 24;
+}
+
 /* n pixels of src (fmt) as A8B8G8R8 words (R in the low byte). src and dst may
  * not overlap. */
 static inline void vjo_fb_to_abgr(uint32_t *dst, const void *src, unsigned n, uint32_t fmt)
@@ -62,10 +87,17 @@ static inline void vjo_fb_to_abgr(uint32_t *dst, const void *src, unsigned n, ui
 static inline void vjo_abgr_to_grey(unsigned char *dst, const uint32_t *src, unsigned n)
 {
     unsigned i;
-    for (i = 0; i < n; i++) {
-        uint32_t v = src[i];
-        dst[i] = (unsigned char)vjo_grey(v & 0xFFu, (v >> 8) & 0xFFu, (v >> 16) & 0xFFu);
-    }
+    for (i = 0; i < n; i++)
+        dst[i] = (unsigned char)vjo_grey_abgr(src[i]);
+}
+
+/* n A1B5G5R5 pixels as grey bytes: the same bytes as vjo_fb_to_abgr then
+ * vjo_abgr_to_grey, in one pass. */
+static inline void vjo_a1b5g5r5_to_grey(unsigned char *dst, const uint16_t *src, unsigned n)
+{
+    unsigned i;
+    for (i = 0; i < n; i++)
+        dst[i] = (unsigned char)vjo_grey_a1b5g5r5(src[i]);
 }
 
 /* FNV-1a, 32 bits, continuing h: the row checksums the worker compares between
