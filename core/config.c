@@ -177,7 +177,7 @@ const char *vjo_config_default_text(void)
            "; anyway (set it above ocr_settle_ms, or every wait runs out before the text holds still).\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
-           "; vocr: skip found lines without text-like ink (scene art, the box frame): on | off\n"
+           "; vocr: skip found lines with no ink (an even area, a smooth gradient): on | off\n"
            "; (off: it finds next to none at native resolution; see docs/vita-vn-ocr.md)\n"
            "ocr_skip_blank_lines = off\n"
            "\n"

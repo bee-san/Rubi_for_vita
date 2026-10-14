@@ -922,7 +922,27 @@ static void test_vocr_request_carries_the_job_policy(void)
     TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_BLANK));
     TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u &&
                (fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == 40u);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST)); /* the kernel saw the region settle */
     TEST_MSG("default flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* a screen the kernel has not seen settle (VjoState.stable 0): the job waits first */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    state.stable = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST);
+    TEST_MSG("unsettled screen: flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* ... unless the wait is off: then nothing of it is sent */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.ocr_settle_ms = 0;
+    fake_recognized_text = "猫";
+    state.stable = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) &&
+               !(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
     mem_free();
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;

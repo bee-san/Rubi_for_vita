@@ -261,9 +261,10 @@ memory given back.
 
 **Measured on the console** (#81's `--collect` of v0.8.0-test.1, API 19, so
 without the wait; CLANNAD, an 883×112 region, two strips a pass): 4 of the 16
-game jobs ended with the screen changed under all three tries (38 to 192 rows
-changed on the last), and a fifth read its text only on its third (26 rows
-changed before). CLANNAD types its text out, the case the wait is for. A still
+game jobs ended with the screen changed under all three tries (38 to 192
+changed rows counted over the three; a try stops at the first strip that
+changed, so at most 64 rows count in one), and a fifth read its text only on
+its third try (26 changed rows counted before it). CLANNAD types its text out, the case the wait is for. A still
 screen's job read its 4-5 strips in 43-106 ms, about a frame a strip, as the
 host bench below assumes.
 

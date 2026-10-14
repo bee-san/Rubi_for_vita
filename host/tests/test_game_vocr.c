@@ -525,6 +525,27 @@ static void probe_user_read_stays_in_the_frame_block(void)
  * the region until it held still, records the wait as a step, and only then
  * finds its line; the blank-line check passes a line of strokes. Unknown flag
  * bits are refused before anything is allocated. */
+/* The request's flags become the job's policy (include/vjo_game_ocr.h): the
+ * wait in 10 ms steps, its limit in 50 ms steps, settle_first, the blank-line
+ * check; a request without them is API 19's job (a zero policy but for the
+ * sleep callback, which only a wait uses). */
+static void request_flags_become_the_policy(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoVocrPolicy p;
+    request_policy(&r, &p);
+    TEST_CHECK(!p.settle_us && !p.settle_max_us && !p.settle_first && !p.blank && p.sleep == policy_sleep);
+    r.flags = VJO_GAME_OCR_F_BLANK;
+    request_policy(&r, &p);
+    TEST_CHECK(p.blank == 1 && !p.settle_us && !p.settle_first);
+    r.flags = VJO_GAME_OCR_F_SETTLE_FIRST | 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_us == 150000u && p.settle_max_us == 2000000u && p.settle_first == 1 && !p.blank);
+    r.flags = 255u << VJO_GAME_OCR_SETTLE_SHIFT | 255u << VJO_GAME_OCR_SETTLE_MAX_SHIFT; /* the largest the bits hold */
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_us == 2550000u && p.settle_max_us == 12750000u && !p.settle_first);
+}
+
 static void policy_in_the_flags(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -618,6 +639,7 @@ TEST_LIST = {
     {"the probe's user-mode frame read stays inside the frame's block", probe_user_read_stays_in_the_frame_block},
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
+    {"the request's flags become the job's policy", request_flags_become_the_policy},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {NULL, NULL}
 };
