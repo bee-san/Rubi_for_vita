@@ -410,12 +410,14 @@ static void render(int new_content)
     vjo_view_unlock();
 
     /* Dictionary paging is taught by the body's "L/R Dictionary 2 of 3" line,
-     * shown only while paging is available; the hint keeps its width. */
+     * shown only while paging is available; the hint keeps its width (the
+     * longest, Character mode with Japanese-only, is shorter than before
+     * the row navigation). */
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
             ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ word"
-               : s_japanese_only_selection ? "Tap / ◀▶▲▼ Japanese character" : "Tap / ◀▶▲▼ character")
+               : s_japanese_only_selection ? "Tap / ◀▶▲▼ Japanese letter" : "Tap / ◀▶▲▼ character")
             : "◀ ▶ ▲ ▼ word";
         sceClibSnprintf(hint, sizeof(hint),
                         "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · ○ close</font>", nav,
