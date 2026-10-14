@@ -60,8 +60,9 @@ A missing or corrupt candidate reports an error without changing engines.
 3. Nothing is recognized before every row of the region has read the same for
    `ocr_settle_ms` (150 ms): text that types out is read once it is whole
    ([stable text](#stable-text-and-blank-lines-api-20)).
-4. A found line whose crop holds no text-like ink (an even area, a smooth part
-   of a picture, the box's gradient) is skipped: `ocr_skip_blank_lines`.
+4. With `ocr_skip_blank_lines = on` (off by default), a found line whose crop
+   holds no text-like ink (an even area, a smooth part of a picture, the box's
+   gradient) is skipped.
 5. The existing kernel worker opens the pinned model from
    `ux0:data/VitaJPOverlay/ocr` and reports its length and modification
    time. The first job, and any job after the file changed, copies it in
@@ -183,9 +184,9 @@ Two checks in the game worker (`core/vocr_ocr.h` `VjoVocrPolicy`), set in
 `config.ini` and sent with every job in the request's flags:
 
 ```ini
-ocr_settle_ms = 150         ; 0-1000, 0 = off
-ocr_settle_max_ms = 2000    ; 100-10000
-ocr_skip_blank_lines = on   ; on | off
+ocr_settle_ms = 150         ; 0-1000, 0 = off; sent in 10 ms steps (1-14 ms: 10 ms)
+ocr_settle_max_ms = 2000    ; 100-10000, in 50 ms steps; above ocr_settle_ms
+ocr_skip_blank_lines = off  ; on | off
 ```
 
 **Stable text.** Visual novels type their text out a character at a time. A
@@ -215,25 +216,48 @@ read, which is no longer shown). Once a re-read has matched, the job sleeps
 until a re-read can be the last one rather than reading passes too early to
 count, so the display hook copies fewer strips. A region that never holds
 still (a video behind the text) stops waiting after `ocr_settle_max_ms` for
-the whole job and is read as before. The wait costs frames, not CPU: one
+the whole job and is read as before; a value under `ocr_settle_ms` ends every
+wait that way. Whatever the clock says, a job's waits read at most 4,096 strips
+(a real job reads a few hundred at most). The wait costs frames, not CPU: one
 FNV-1a pass over each row read. Without the wait (`ocr_settle_ms = 0`) a job
 reads, compares and retries exactly as API 19 did.
 
-**Blank lines.** The line finder also reports boxes with no text in them. A
-found line is skipped, not recognized, when its crop has fewer than 50 sharp
-edges per 10,000 pixels: neighbouring pixels (right and below) that differ by
-at least half the crop's contrast, 24 grey levels at the least. Text is sharp
-strokes; an even area, a smooth part of a picture or the box's gradient is not.
-If every line of a region is skipped, the weights are not opened. The check
-reads each crop twice (a histogram, then the edges).
+Not learning a row as an icon's once the job has stopped waiting would close
+the one- and two-line limit above, and it was tried (audit-overlay-dialogue-1,
+N3): then a "next" icon that blinks slower than the wait, and so changed only
+once while the job waited, makes the job read again when it goes back, in 4
+of `vjo-settle-bench`'s 88 rows (+11 to +25 frames: the blinking icon at 30
+fps and at 960×544). That icon is on most screens a player reads, while the
+limit needs the player to advance within the job's first reads after the text
+held still, so it stays as it is.
+
+**Blank lines.** The line finder also reports boxes with no text in them.
+With `ocr_skip_blank_lines = on` a found line is skipped, not recognized, when
+its crop has fewer than 50 edges per 10,000 pixels: pixels from which the grey
+level changes, within two pixels to the right or below, by at least a quarter
+of the crop's contrast (98th minus 2nd percentile), 24 grey levels at the
+least. Two pixels and a quarter, not one and a half: text whose edges are soft
+is strokes too, and a PSP game reaches the display hook as its 480×272 frame
+shown 2x through the emulator's bilinear filter, which turns each one-pixel
+step into two half steps (audit-overlay-dialogue-1, B2). An even area, a
+smooth part of a picture or the box's gradient has no such edges. If every
+line of a region is skipped, the weights are not opened. The check reads each
+crop twice (a histogram, then the edges). It is off by default: once it keeps
+soft text it skips no line of the development set (below), and which frames a
+console game's hook reads, and how soft, is still unmeasured (#81's
+`--collect` logs carry each skipped line's contrast and edges).
 
 **Logs.** Each job adds `gstep job settle` (rc 1: the rows held still, 2: the
 limit ran out first; arg: passes read waiting; bytes: row changes seen, i.e.
 text typing out; the high half of sum: rows that toggled; us: the wait) and a
-`gstep job blank` line per skipped line (its index, size, contrast and edges).
-`tools/analyse_selftest.py --collect` sums them up: how often the rows held
-still or the limit ran out, the wait's range, whether an icon toggled, and the
-lines skipped.
+`gstep job blank` line for each of the first four skipped lines (its index,
+size, contrast and edges; rc: the job's total). `tools/analyse_selftest.py
+--collect` sums them up: how often the rows held still or the limit ran out,
+the wait's range, whether an icon toggled, and the lines skipped. A retried
+job logs its first pass and its signature once (`pass`, `sig`; `tear` counts
+the tries), and when its 20 steps run out the other steps make room for the
+`free` of every block the worker holds, so the log always shows the job's
+memory given back.
 
 **Measured on the host** (`vjo-settle-bench`, `docs/benchmarks/settle-wait-20261014.json`): a
 simulated screen where every strip read is one game frame, at 60 and 30 frames
@@ -258,27 +282,37 @@ A pause in the typing longer than `ocr_settle_ms` plus the job's own reads
 (the 400 ms case) is still read as a part line, as before; raise
 `ocr_settle_ms` for a game that pauses longer mid-line.
 
-**Measured on development data** (`tools/blank_lines_eval.py`,
+**Measured on development data** (`tools/blank_lines_eval.py --rules`,
 `docs/benchmarks/blank-lines-20261014.json`): the linefind `vita_dev` and
 `psp_dev` regions (317 regions of 84 VNs; 16 reserved VNs skipped), read by
-the finder and VOCR3-H15/FL10 exactly as the worker reads them. A found line is
-text when it overlaps a hand-marked line box, else empty.
+the finder and the recognizer exactly as the worker reads them, as captured
+and in seven softer display paths of the same screenshots (`--how`). A found
+line is text when it overlaps a hand-marked line box, else empty. Each line is
+also recounted in numpy under the rule this check first had (one-pixel steps
+of half the contrast), and under the current one, whose count equals the C's
+on every line.
 
-| | VOCR3-H15 | VOCR3-FL10 |
-|---|---|---|
-| text lines skipped | **0 of 643** | **0 of 643** |
-| empty lines skipped | 13 of 105 | 13 of 105 |
-| characters written on empty lines, kept / of | 125 of 129 | 103 of 108 |
-| host recognition time, all regions | 16,892 → 16,637 ms (−1.5%) | 8,989 → 9,017 ms (noise) |
-| the check, all 753 lines (host) | 15.5 ms | 15.4 ms |
+| display path (VOCR3-FL10) | text lines skipped, current rule | lowest text line | empty lines skipped | the first rule: text lines skipped |
+|---|---|---|---|---|
+| as captured (x1; H15 the same) | **0 of 643** | 1,553 | 0 of 105 | 0 of 643 (13 of 105 empty) |
+| PSP 2x, unfiltered | **0 of 267** | 1,289 | 0 of 44 | 0 of 267 |
+| PSP 2x, bilinear | **0 of 266** | 350 | 0 of 35 | **163 of 266** (1,631 characters) |
+| PSP 2x, bilinear, 1-pixel box blur | **0 of 263** | 190 | 1 of 43 | **263 of 263** |
+| Vita, rendered 720×408, upscaled bilinear | **0 of 380** | 1,011 | 0 of 68 | **104 of 380** |
+| Vita, rendered 640×368, upscaled bilinear | **0 of 384** | 866 | 0 of 77 | **178 of 384** |
+| Gaussian blur σ 1.0 | **0 of 632** | 270 | 0 of 102 | **585 of 632** |
+| Gaussian blur σ 1.5 | **0 of 583** | 209 | 0 of 134 | **583 of 583** |
 
-So the check is safe and cheap, but it removes little of what the recognizer
-writes on boxes without text: most of those crops are textured (parts of a
-portrait, scene art, frame lines; one frame line alone made 48 of H15's 129
-characters, "ニニニ…"), which no image statistic tried here separates from text
-without losing dialogue (sharp-edge direction, mid-tones and ink runs each lost
-text lines first). That needs the recognizer's own confidence, or a finder
-that cuts frame lines.
+The check costs 30-50 ms on the host for all lines of a path (753 lines as
+captured). So it now keeps every text line in every path, and in exchange it
+skips no line of the development set as captured: the boxes without text that
+the finder reports are textured (parts of a portrait, scene art, frame lines;
+one frame line alone made 48 of H15's 129 characters there, "ニニニ…"), which no
+image statistic tried here separates from text without losing dialogue
+(sharp-edge direction, mid-tones and ink runs each lost text lines first).
+What is left for it is an even area or a smooth gradient. Telling the rest
+apart needs the recognizer's own confidence, or a finder that cuts frame
+lines.
 
 ## Models
 

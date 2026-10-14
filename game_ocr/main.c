@@ -109,11 +109,16 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
     return 0;
 }
 
+/* Blocks the worker holds: each one's FREE step keeps a slot of the step log. */
+static unsigned blocks_held;
+
 static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_t rc, uint32_t bytes,
                                 uint32_t sum, uint32_t us, int sample)
 {
     VjoGameOcrStep *s;
     if (!log_to || log_to->n_steps >= VJO_GAME_OCR_STEPS) return NULL;
+    /* The log is full before a block's release is: another step is dropped. */
+    if (id != VJO_GSTEP_FREE && log_to->n_steps + blocks_held >= VJO_GAME_OCR_STEPS) return NULL;
     s = &log_to->step[log_to->n_steps++];
     sceClibMemset(s, 0, sizeof(*s));
     s->id = (uint8_t)id;
@@ -157,11 +162,13 @@ static SceUID game_memblock_alloc(int item, unsigned gitem, const char *name, ui
         uint32_t rounded = ROUND_TO(bytes, ladder[i].unit);
         if (!(which & (1u << i))) continue;
         uid = sceKernelAllocMemBlock(name, ladder[i].type, rounded, NULL);
+        if (uid >= 0) blocks_held++; /* from here its FREE step has a slot */
         step_add(VJO_GSTEP_ALLOC, ladder[i].mem, gitem, uid, rounded, 0, 0, 1);
         if (uid < 0) continue;
         if (sceKernelGetMemBlockBase(uid, base) < 0 || !*base || ((uintptr_t)*base & 15u)) {
             *base = NULL;
             if (sceKernelFreeMemBlock(uid) < 0) *leaked = uid;
+            else blocks_held--;
             return -1;
         }
         vjo_ledger_add(&g_game_ledger, item, rounded);
@@ -177,6 +184,7 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
     int rc = sceKernelFreeMemBlock(uid);
     step_add(VJO_GSTEP_FREE, 0, gitem, rc, bytes, 0, 0, 1);
     if (rc < 0) return -1;
+    if (blocks_held) blocks_held--;
     vjo_ledger_sub(&g_game_ledger, item, bytes);
     return 0;
 }
@@ -209,6 +217,7 @@ typedef struct {
     uint32_t pass_bytes, pass_strips, pass_us;
     int failed;             /* the rows call that ended the job, for the log */
     int fixed;              /* the probe: test this mode only, no ladder */
+    int logged;             /* the first pass's PASS and SIG steps are in (a retry's are not logged) */
 } Capture;
 
 /* A BUSY from a request that never reached the hook (info.armed 0) is a
@@ -275,8 +284,10 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     int rc;
     if (cancelled(NULL)) return VJO_E_CANCELLED;
     rc = capture_rows(c, y, n, dst, stride, flags);
-    /* The first pass is in: one step for it, and the kernel's publication. */
-    if (rc > 0 && (flags & VJO_STRIP_LAST)) {
+    /* The first pass is in: one step for it, and the kernel's publication (the
+     * job's first; a retry's is the same source, its count is the TEAR step's). */
+    if (rc > 0 && (flags & VJO_STRIP_LAST) && !c->logged) {
+        c->logged = 1;
         step_add(VJO_GSTEP_PASS, c->mode, c->pass_strips, 0, c->pass_bytes, c->last.fb_format, c->pass_us, 0);
         step_add(VJO_GSTEP_SIG, c->mode, 0, 0, c->last.fb_pitch, c->last.fb_width << 16 | c->last.fb_height, 0, 0);
     }
@@ -547,7 +558,7 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     unsigned rows = vjo_vocr_strip_rows(r->width, r->height);
     uint32_t bytes = rows * r->width;
-    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1};
+    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0};
     int rc = VJO_OK, any = 0;
     if (!rows) return VJO_E_OCR_REGION;
     for (unsigned i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++) {
@@ -627,7 +638,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0};
+    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||

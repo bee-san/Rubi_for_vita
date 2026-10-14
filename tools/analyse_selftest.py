@@ -771,11 +771,13 @@ def summarise_log(text):
          "gstep_fail": {}, "config_warnings": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []}}
+    in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
         s["lines"] += 1
+        blank_step, in_blank = in_blank, False
         if line.startswith(("bootstrap:", "Vita JP Overlay shell started", "BOOT GUARD", "boot guard:", "worker start",
                             "kernel plugin not loaded", "kernel API version", "RCO missing")):
             if len(s["boot"]) < 40:
@@ -796,7 +798,9 @@ def summarise_log(text):
         m = LOG["blank"].match(line)
         if m:
             size = int(m.group(3))
-            s["blank"]["lines"] += 1
+            if not blank_step:  # the job's first: its total (at most VJO_VOCR_BLANK_LOGGED lines are logged)
+                s["blank"]["lines"] += int(m.group(2), 16)
+            in_blank = True
             s["blank"]["sizes"].append(f"{size >> 16}x{size & 0xFFFF}")
             s["blank"]["edges"].append(int(m.group(4), 16) & 0xFFFF)
             continue
@@ -1083,7 +1087,7 @@ def render_collect(c):
         bl = lg.get("blank") or {}
         if bl.get("lines"):
             L.append(f"  blank lines skipped: {bl['lines']} ({', '.join(bl['sizes'][:6])}"
-                     f"{', ...' if len(bl['sizes']) > 6 else ''}; sharp edges {_span(bl['edges'])} per 10,000)")
+                     f"{', ...' if len(bl['sizes']) > 6 else ''}; edges {_span(bl['edges'])} per 10,000)")
         if lg["memory"]:
             frees = [m["free"] for m in lg["memory"]]
             heads = [m["headroom"] for m in lg["memory"]]

@@ -25,6 +25,7 @@ static int virtual_file, open_busy, read_busy, close_busy, read_eof;
 static char own_title[12];
 static uint64_t clock_value;
 static unsigned frame_us; /* each rows call waits this long for its frame (0: none) */
+static unsigned change_at_rows; /* at this rows call the line moves down 6 rows (the player advanced); 0: never */
 
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
@@ -104,6 +105,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     TEST_CHECK(capture_live && (unsigned char *)dst >= capture_mem && (unsigned char *)dst < capture_mem + capture_block);
     rows_calls++;
     clock_value += frame_us;
+    if (change_at_rows && rows_calls == change_at_rows) { /* the next screen: the line 6 rows lower */
+        memset(pixels, 0, sizeof(pixels));
+        for (unsigned y = 21; y < 45; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
+    }
     if (req->mode == VJO_GAME_OCR_SRC_KSTRIP) kstrip_calls++;
     info->fb_width = 200; info->fb_height = 60; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
     info->armed = 1;
@@ -198,6 +203,7 @@ static VjoGameOcrRequest setup(void)
     available = 16*1024*1024;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
+    change_at_rows = 0; blocks_held = 0;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
     /* Blank images never open weights, but requests still need a valid directory.
@@ -548,6 +554,42 @@ static void policy_in_the_flags(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
 }
 
+/* The step log: a retried job logs its first pass and its signature once (the
+ * TEAR step counts the tries), and when the log fills up the other steps make
+ * room for the release of every block the worker holds, so the FREE steps that
+ * show the job gave its memory back are never the ones lost. */
+static void step_log_keeps_the_releases(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    unsigned pass = 0, sig = 0, tear = 0, frees = 0;
+    line();
+    change_at_rows = 2; /* during the finder's second pass of the first try */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        pass += out.step[i].id == VJO_GSTEP_PASS && !out.step[i].rc;
+        sig += out.step[i].id == VJO_GSTEP_SIG;
+        if (out.step[i].id == VJO_GSTEP_TEAR) { tear++; TEST_CHECK(out.step[i].rc >= 2); }
+        frees += out.step[i].id == VJO_GSTEP_FREE;
+    }
+    TEST_CHECK(tear == 1 && pass == 1 && sig == 1 && frees == 2 && !memory_live && !capture_live);
+    TEST_MSG("%u steps: %u PASS, %u SIG, %u TEAR, %u FREE", out.n_steps, pass, sig, tear, frees);
+    /* every block the job took is back, and counted back */
+    TEST_CHECK(blocks_held == (unsigned)(weights_live ? 1 : 0));
+    /* a full log: with two blocks held, the 19th and 20th steps are the two FREEs */
+    VjoGameOcrResult log;
+    memset(&log, 0, sizeof(log));
+    log_to = &log;
+    blocks_held = 2;
+    for (unsigned i = 0; i < VJO_GAME_OCR_STEPS; i++) step_add(VJO_GSTEP_ALLOC, 0, 0, 0, 0, 0, 1, 0);
+    TEST_CHECK(log.n_steps == VJO_GAME_OCR_STEPS - 2);
+    TEST_CHECK(step_add(VJO_GSTEP_FREE, 0, 1, 0, 4096, 0, 1, 0) && step_add(VJO_GSTEP_FREE, 0, 2, 0, 4096, 0, 1, 0));
+    TEST_CHECK(log.n_steps == VJO_GAME_OCR_STEPS && !step_add(VJO_GSTEP_FREE, 0, 3, 0, 4096, 0, 1, 0));
+    TEST_CHECK(log.step[VJO_GAME_OCR_STEPS - 1].id == VJO_GSTEP_FREE && log.step[VJO_GAME_OCR_STEPS - 1].arg == 2);
+    log_to = NULL;
+    blocks_held = 0;
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
+}
+
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -576,5 +618,6 @@ TEST_LIST = {
     {"the probe's user-mode frame read stays inside the frame's block", probe_user_read_stays_in_the_frame_block},
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
+    {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {NULL, NULL}
 };

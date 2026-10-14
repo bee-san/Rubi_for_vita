@@ -911,6 +911,47 @@ static void test_vocr_logs_memory_check_and_frames(void)
     mem_free();
 }
 
+/* The job policy in the request (API 20): the stable-text wait from its keys,
+ * the blank-line check only with ocr_skip_blank_lines = on (off by default). */
+static void test_vocr_request_carries_the_job_policy(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_BLANK));
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u &&
+               (fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == 40u);
+    TEST_MSG("default flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.ocr_skip_blank_lines = 1;
+    cfg.ocr_settle_ms = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK((fake_game_request.flags & VJO_GAME_OCR_F_BLANK) &&
+               !(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) &&
+               !(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
+    TEST_MSG("blank on, wait off: flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* a wait of 1-4 ms is the shortest one (10 ms), not none; 1,000 ms and 10 s fit their bits */
+    static const struct { int ms, max_ms; unsigned settle, max; } units[] = {
+        {3, 100, 1, 2}, {14, 2000, 1, 40}, {15, 2000, 2, 40}, {1000, 10000, 100, 200}};
+    for (unsigned i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.ocr_settle_ms = units[i].ms;
+        cfg.ocr_settle_max_ms = units[i].max_ms;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == units[i].settle &&
+                   (fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == units[i].max);
+        TEST_MSG("%d ms / %d ms: flags 0x%08X", units[i].ms, units[i].max_ms, (unsigned)fake_game_request.flags);
+        mem_free();
+    }
+}
+
 /* The whole status line the user sees for an OCR-stage error. */
 static const char *ocr_error_text(void)
 {
@@ -2151,9 +2192,9 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
     /* The stage's own flags, and the job policy every stage carries (API 20):
      * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
-     * ms), blank lines skipped. */
+     * ms); blank lines are kept by default. */
     const uint32_t stage_bits = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
-    const uint32_t policy = VJO_GAME_OCR_F_BLANK | 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    const uint32_t policy = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
     TEST_CHECK((selftest_flags_seen[0] & stage_bits) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
                (selftest_flags_seen[1] & stage_bits) == 0 &&
                (selftest_flags_seen[2] & stage_bits) == VJO_GAME_OCR_F_FULL &&
@@ -2225,6 +2266,7 @@ TEST_LIST = {
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
+    {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
     {"vocr_memory_fallback_is_logged", test_vocr_memory_fallback_is_logged},

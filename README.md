@@ -273,8 +273,10 @@ dictionary results.
 Text that types out is read once it is whole: a job recognizes nothing until
 every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 `0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
-and a blinking "next" icon does not hold it up. Found lines with no text-like
-ink are skipped (`ocr_skip_blank_lines = on`). Both are logged per job; see
+and a blinking "next" icon does not hold it up. `ocr_skip_blank_lines = on`
+skips found lines with no text-like ink; it is off by default, because once it
+keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
+nothing to skip in the test screenshots. Both are logged per job; see
 [stable text and blank lines](docs/vita-vn-ocr.md#stable-text-and-blank-lines-api-20)
 for what each costs and what the host measurements show.
 The complete settings template is

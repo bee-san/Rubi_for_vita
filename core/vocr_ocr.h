@@ -58,9 +58,14 @@ extern "C" {
  * the job saw before, changes more. A one- or two-line box that clears back to
  * an empty box the same job saw earlier, while the job reads it, can be taken
  * for an icon (the job's text then misses those lines; it is tagged with the
- * screen it read, which is no longer shown). Without the wait every change is
- * one, as in API 19. */
+ * screen it read, which is no longer shown). Not learning such rows once the
+ * job reads would close that, at a retry whenever a "next" icon that blinks
+ * slower than the wait goes back while the job reads (docs/vita-vn-ocr.md).
+ * Without the wait every change is one, as in API 19. */
 #define VJO_VOCR_CYCLE_ROWS 64u
+/* The wait reads at most this many strips a job, whatever the clock says (a
+ * real job reads a few hundred at most: its waits end by settle_max_us). */
+#define VJO_VOCR_SETTLE_READS 4096u
 /* A line taller than a strip is read through the strip and kept whole, its own
  * columns only, in VjoGreySource.line_buffer: line width x line height bytes, up
  * to this many (include/vjo_ledger_budget.h VJO_BUDGET_GAME_LINE), so the
@@ -118,23 +123,32 @@ typedef struct {
 } VjoVocrLineStat;
 
 /* A found line's ink (vjo_vocr_ink): its contrast (the 98th minus the 2nd
- * percentile grey) and its sharp edges, the neighbouring pixel pairs (right and
- * below) that differ by at least `edge` = max(VJO_VOCR_EDGE_MIN, contrast / 2)
- * grey levels, per 10,000 pixels. Text is sharp strokes on a background: on the
- * linefind development lines no text line has fewer than 141; a crop with fewer
- * than VJO_VOCR_BLANK_EDGES holds no text-like ink: an even area, a smooth part
- * of a picture, the box's gradient, strokes under 24 levels of contrast. A lone
- * small mark ("。") is too few pixels to move the percentiles, but its edges
- * count. */
+ * percentile grey) and its edges: the pixels from which the grey level changes
+ * by at least `edge` = max(VJO_VOCR_EDGE_MIN, contrast / VJO_VOCR_EDGE_DIV)
+ * within VJO_VOCR_INK_SPAN pixels to the right, and below (at most two a pixel),
+ * per 10,000 pixels. Soft edges count: text whose strokes rise over two pixels
+ * (a PSP game's 480x272 frame shown 2x with bilinear filtering, a game rendering
+ * under 960x544, a blurred font) is strokes too. On the linefind development
+ * lines no text line has fewer than 1,553, and in seven soft render paths of the
+ * same screenshots (docs/vita-vn-ocr.md) none has fewer than
+ * VJO_VOCR_BLANK_EDGES. A crop under that holds no text-like ink: an even area,
+ * a smooth part of a picture, the box's gradient, strokes under 24 levels of
+ * contrast. A lone small mark ("。") is too few pixels to move the
+ * percentiles, but its edges count. */
 typedef struct {
     uint8_t lo, hi;          /* 2nd and 98th percentile grey */
-    uint8_t edge;            /* the step a sharp edge needs */
+    uint8_t edge;            /* the step an edge needs */
     uint8_t reserved;
-    uint16_t edges;          /* sharp edges per 10,000 pixels */
+    uint16_t edges;          /* edges per 10,000 pixels */
     uint16_t reserved2;
 } VjoVocrInk;
 #define VJO_VOCR_EDGE_MIN 24u
+#define VJO_VOCR_EDGE_DIV 4u
+#define VJO_VOCR_INK_SPAN 2u
 #define VJO_VOCR_BLANK_EDGES 50u
+/* Crops of more pixels are never called blank (no line is this large: a strip
+ * holds at most 64 rows of 960, a tall line VJO_VOCR_LINE_MAX_BYTES). */
+#define VJO_VOCR_INK_PIXELS 4194304u
 
 /* A line the blank-line check skipped, for the log. */
 typedef struct {

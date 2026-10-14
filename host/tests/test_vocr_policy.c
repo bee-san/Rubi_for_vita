@@ -5,6 +5,7 @@
  * statistics. Each strip read is one frame of the game: the clock moves on by
  * 16,667 us (60 fps) per read, as the display hook's next frame would. */
 #include "acutest.h"
+#include "net_posix.h"
 #include "vocr_ocr.h"
 #include "../../core/fbgrey.h"
 #include <stdio.h>
@@ -18,6 +19,7 @@
 
 typedef struct {
     unsigned y, n, flags, frame;
+    uint64_t t0; /* the clock when the read began */
 } Read;
 
 static struct {
@@ -27,12 +29,24 @@ static struct {
     unsigned type_every;   /* frames per new character; 0: all there from the start */
     unsigned blink_every;  /* the "next" icon changes every this many frames; 0: no icon */
     unsigned icon_states;  /* 0: it blinks (on, off); n: it bobs through n positions */
+    unsigned icon_levels;  /* n: it goes through n grey levels instead (80, 140, 200, ...) */
+    unsigned icon_y;       /* its first row (0: 30, beside the line's rows); 24 rows */
+    unsigned pause_at;     /* typing stops at this frame (0: never) ... */
+    unsigned resume_for;   /* ... and goes on for this many frames once the first capture is published */
+    unsigned resumed_at;   /* the frame it went on (set by strip) */
+    unsigned change_after; /* change_frame is set this many frames after the first capture is published */
+    unsigned alt_row, alt_from; /* row alt_row shows row_b from frame alt_from on, row_a before (0: none) */
+    unsigned char row_a[W], row_b[W];
+    unsigned open_read;    /* reads done when the model file was first asked for */
     int noise;             /* every frame differs: never holds still */
     unsigned change_frame; /* from this frame on the line is another one (the player advanced); 0: never */
     unsigned text_from;    /* the line shows from this frame (an empty box before) */
     unsigned clear_at;     /* from this frame the box is empty again; 0: never */
     unsigned sleeps;       /* the policy's sleep calls */
     int three_lines;       /* three lines of 24 rows (6-30, 37-61, 68-92) instead of one (30-54) */
+    int two_lines;         /* the first two of them */
+    unsigned text_blink;   /* the text shows for this many frames, then hides as long (0: it stays) */
+    int frozen;            /* the clock never moves (reads and sleeps take no time) */
     Read log[LOG_MAX];
     unsigned n_log;
     int opens;
@@ -47,6 +61,7 @@ static uint64_t now(void *ud)
 static int no_file(void *ud, const char *path, VjoFile *out)
 {
     (void)ud; (void)path; (void)out;
+    if (!scr.opens) scr.open_read = scr.n_log;
     scr.opens++;
     return -1;
 }
@@ -54,23 +69,40 @@ static int no_file(void *ud, const char *path, VjoFile *out)
 /* Characters shown at this frame. */
 static unsigned shown(unsigned frame)
 {
-    return !scr.type_every ? scr.chars : frame / scr.type_every < scr.chars ? frame / scr.type_every : scr.chars;
+    unsigned typed = frame;
+    if (!scr.type_every) return scr.chars;
+    if (scr.pause_at && typed > scr.pause_at) {
+        typed = scr.pause_at;
+        if (scr.resumed_at && frame > scr.resumed_at)
+            typed += frame - scr.resumed_at < scr.resume_for ? frame - scr.resumed_at : scr.resume_for;
+    }
+    typed /= scr.type_every;
+    return typed < scr.chars ? typed : scr.chars;
 }
 
 static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
 {
     unsigned char v = 20;
-    int text_on = frame >= scr.text_from && !(scr.clear_at && frame >= scr.clear_at);
-    int on_line = scr.three_lines ? (y >= 6 && y < 30) || (y >= 37 && y < 61) || (y >= 68 && y < 92) : y >= 30 && y < 54;
+    int text_on = frame >= scr.text_from && !(scr.clear_at && frame >= scr.clear_at) &&
+                  !(scr.text_blink && frame / scr.text_blink % 2);
+    if (scr.alt_row && y == scr.alt_row) return (frame >= scr.alt_from ? scr.row_b : scr.row_a)[x];
+    int on_line = scr.three_lines || scr.two_lines
+                  ? (y >= 6 && y < 30) || (y >= 37 && y < 61) || (scr.three_lines && y >= 68 && y < 92)
+                  : y >= 30 && y < 54;
     if (on_line && text_on) {
         unsigned c = x >= 20 ? (x - 20) / 12 : 99, k = x >= 20 ? (x - 20) % 12 : 99;
         int other = scr.change_frame && frame >= scr.change_frame;
         if (c < shown(frame) && (k < 2 || (other && k == 6) || (k == 4 && (y & 3) == 0))) v = 235;
     }
     if (scr.blink_every && x >= 370 && x < 386) {
-        unsigned state = frame / scr.blink_every;
-        if (!scr.icon_states && y >= 30 && y < 54 && state % 2) v = 200;
-        if (scr.icon_states && y >= 32 + state % scr.icon_states * 3 && y < 44 + state % scr.icon_states * 3) v = 200;
+        unsigned state = frame / scr.blink_every, iy = scr.icon_y ? scr.icon_y : 30;
+        if (scr.icon_levels) {
+            if (y >= iy && y < iy + 24) v = (unsigned char)(80 + 60 * (state % scr.icon_levels));
+        } else if (!scr.icon_states) {
+            if (y >= iy && y < iy + 24 && state % 2) v = 200;
+        } else if (y >= iy + 2 + state % scr.icon_states * 3 && y < iy + 14 + state % scr.icon_states * 3) {
+            v = 200;
+        }
     }
     if (scr.noise) v = (unsigned char)(v ^ (frame * 37u & 0x1Fu));
     return v;
@@ -78,11 +110,16 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
 
 static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
+    uint64_t t0 = scr.clock;
     (void)ud;
     if (y + n > H) return VJO_E_SOURCE;
-    scr.clock += FRAME_US;
+    if (!scr.frozen) scr.clock += FRAME_US;
     scr.frame++;
-    if (scr.n_log < LOG_MAX) scr.log[scr.n_log++] = (Read){y, n, flags, scr.frame};
+    if (scr.n_log < LOG_MAX) scr.log[scr.n_log++] = (Read){y, n, flags, scr.frame, t0};
+    if (flags & VJO_STRIP_LAST) { /* the first capture is published: the game goes on */
+        if (scr.resume_for && !scr.resumed_at) scr.resumed_at = scr.frame;
+        if (scr.change_after && !scr.change_frame) scr.change_frame = scr.frame + scr.change_after;
+    }
     for (unsigned r = 0; r < n; r++)
         for (unsigned x = 0; x < W; x++) dst[(size_t)r * stride + x] = pixel(x, y + r, scr.frame);
     return (int)n;
@@ -91,7 +128,7 @@ static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t st
 /* The policy's sleep: the game shows frames meanwhile. */
 static void sleep_us(uint32_t us)
 {
-    scr.clock += us;
+    if (!scr.frozen) scr.clock += us;
     scr.frame += us / FRAME_US;
     scr.sleeps++;
 }
@@ -185,6 +222,13 @@ static void test_typing_is_read_once_whole(void)
         while (first < scr.n_log && !(scr.log[first].flags & VJO_STRIP_FIRST)) first++;
         TEST_CHECK(first < scr.n_log && first > 0 && scr.log[first].y == 0);
         TEST_CHECK(scr.log[first].frame > typed + 150000 / FRAME_US); /* nothing flagged while it typed */
+        /* The wait held the rows still for the span already: after the first
+         * pass only the finder's own second pass reads from row 0, no re-read
+         * of the verification, before the weights are asked for. */
+        unsigned from_zero = 0;
+        for (unsigned i = first; i < scr.open_read; i++) from_zero += scr.log[i].y == 0;
+        TEST_CHECK(scr.opens == 1 && from_zero == 2);
+        TEST_MSG("%u reads from row 0 between the first pass and the weights", from_zero);
     }
     TEST_MSG("typed by frame %u, first pass ends at frame %u, waited %u us in %u passes, %u row changes", typed, at,
              (unsigned)st.settle_us, st.settle_passes, st.settle_changes);
@@ -258,6 +302,228 @@ static void test_changed_screen_retracts_its_capture(void)
     }
     TEST_CHECK(lasts == 2 && retract > 0);
     TEST_MSG("retracted at read %u, %u publications", retract, lasts);
+    /* That read is the wait's (not the retry's own first pass): the first from
+     * row 0 after the tear, FIRST without LAST, and followed by the wait's
+     * unflagged reads, at least settle_us of them, before the retry's first pass. */
+    unsigned last1 = 0, plain = 0, next = 0;
+    while (last1 < scr.n_log && !(scr.log[last1].flags & VJO_STRIP_LAST)) last1++;
+    TEST_ASSERT(last1 + 2 < scr.n_log);
+    TEST_CHECK(scr.log[last1 + 1].y == 0 && !scr.log[last1 + 1].flags && scr.log[last1 + 1].frame >= scr.change_frame);
+    TEST_CHECK(retract == last1 + 2 && scr.log[retract].y == 0 && scr.log[retract].flags == VJO_STRIP_FIRST);
+    for (next = retract + 1; next < scr.n_log && !(scr.log[next].flags & VJO_STRIP_FIRST); next++) plain++;
+    TEST_ASSERT(next < scr.n_log);
+    TEST_CHECK(plain >= 2 && scr.log[next].t0 - scr.log[retract].t0 >= 150000);
+    TEST_MSG("the tear at read %u, the retraction at %u, then %u unflagged reads (%llu us) before the retry's first pass",
+             last1 + 1, retract, plain, (unsigned long long)(scr.log[next].t0 - scr.log[retract].t0));
+}
+
+/* The re-read that ends the verification STARTS settle_us after the job's
+ * first pass did: the rows are known to hold still from its start only, so a
+ * pass that merely ends that late does not count. Without a sleep the passes
+ * follow each other and the first one due is the last; with one, the job
+ * sleeps until it is due. Either way no pass more is read. */
+static void test_the_last_reread_starts_the_span_after_the_first_pass(void)
+{
+    for (int sleeping = 0; sleeping < 2; sleeping++) {
+        VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, sleeping ? sleep_us : NULL};
+        VjoVocrStats st;
+        uint64_t first = 0, last = 0;
+        reset();
+        TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL && scr.opens == 1 && st.settled && st.tries == 1);
+        for (unsigned i = 0; i < scr.open_read; i++) {
+            if (scr.log[i].y == 0 && (scr.log[i].flags & VJO_STRIP_FIRST) && !first) first = scr.log[i].t0;
+            if (scr.log[i].y == 0) last = scr.log[i].t0;
+        }
+        TEST_CHECK(first && last - first >= 150000 && last - first < 150000 + 2u * FRAME_US);
+        TEST_MSG("sleep %d: the last re-read from row 0 starts %llu us after the first pass", sleeping,
+                 (unsigned long long)(last - first));
+    }
+}
+
+/* Waiting first on a screen that changes once during the wait: the wait ends
+ * on the first pass that STARTS settle_us after the start of the pass that
+ * read the changed rows, never on one that only ends that late. */
+static void test_the_wait_ends_on_the_first_pass_due(void)
+{
+    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    uint64_t seen = 0, done = 0;
+    unsigned first = 0;
+    reset();
+    scr.change_frame = 6;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL && st.settled && st.settle_changes > 0 && st.tries == 1);
+    while (first < scr.n_log && !(scr.log[first].flags & VJO_STRIP_FIRST)) first++;
+    TEST_ASSERT(first < scr.n_log);
+    for (unsigned i = 0; i < first; i++) {
+        if (scr.log[i].y != 0) continue;
+        if (scr.log[i].frame >= scr.change_frame && !seen) seen = scr.log[i].t0; /* reads every changed row */
+        done = scr.log[i].t0;                                                   /* the wait's last pass */
+    }
+    TEST_CHECK(seen && done - seen >= 150000 && done - seen < 150000 + 2u * FRAME_US);
+    TEST_MSG("the wait's last pass starts %llu us after the one that read the change", (unsigned long long)(done - seen));
+}
+
+/* The waiting budget is the job's, not each wait's: the first wait settles
+ * after about 370 ms of a 600 ms budget; typing resumes once the capture is
+ * published (7 more characters, 350 ms), so the retry's wait runs out of the
+ * rest instead of settling, and the job waits no more than its budget (and the
+ * pass under way) in all. */
+static void test_the_waiting_budget_is_the_jobs(void)
+{
+    VjoVocrPolicy pol = {150000, 600000, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    reset();
+    scr.type_every = 3;
+    scr.pause_at = 12;   /* 4 characters, then still */
+    scr.resume_for = 21; /* 7 more once the first capture is published */
+    (void)run(&pol, &st);
+    TEST_CHECK(scr.resumed_at > 0 && st.tries >= 2 && st.settle_timeout);
+    TEST_CHECK(st.settle_us >= 600000 && st.settle_us <= 600000 + 3u * FRAME_US);
+    TEST_MSG("waited %u us in all (budget 600000), timeout %u, tries %u", (unsigned)st.settle_us, st.settle_timeout,
+             st.tries);
+}
+
+/* An icon that goes through three grey levels: each of its rows changes twice
+ * (to the second and the third level), then only goes back to levels it showed,
+ * also to the one two back, so the wait ends without waiting for it. */
+static void test_a_three_state_icon_settles(void)
+{
+    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    reset();
+    scr.blink_every = 4;
+    scr.icon_levels = 3;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.settled && !st.settle_timeout && st.tries == 1 && !st.tears && st.settle_us < 600000);
+    TEST_CHECK(st.cycling_rows == 24 && st.cycles > 0 && st.settle_changes <= 2u * 24u);
+    TEST_MSG("waited %u us; %u changes, %u returns on %u rows", (unsigned)st.settle_us, st.settle_changes, st.cycles,
+             st.cycling_rows);
+}
+
+/* What the job learned stays learned when it retries: an icon below the line,
+ * blinking, is taken for a cycling icon in the first wait; the player then
+ * advances the text, and the retry's wait knows the icon's rows (they are
+ * counted once in the job) instead of learning them again. */
+static void test_a_retry_keeps_what_the_job_learned(void)
+{
+    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    reset();
+    scr.blink_every = 8;
+    scr.icon_y = 70;      /* rows of its own, below the line */
+    scr.change_after = 1; /* the text changes right after the first capture */
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.tries == 2 && st.tears > 0 && st.settled && !st.settle_timeout && st.cycles > 0);
+    TEST_CHECK(st.cycling_rows == 24);
+    TEST_MSG("tries %u tears %u; %u returns on %u rows, %u changes", st.tries, st.tears, st.cycles, st.cycling_rows,
+             st.settle_changes);
+}
+
+/* FNV-1a of one region row (the job's row checksum), and the 16 bits its
+ * ring of earlier states keeps. */
+static uint32_t row_sum(const unsigned char *row)
+{
+    return vjo_fnv1a(VJO_FNV_INIT, row, W);
+}
+
+static uint16_t folded(uint32_t sum)
+{
+    return (uint16_t)(sum ^ (sum >> 16));
+}
+
+/* row_a: the background; row_b: it with 3 bytes changed so that its checksum
+ * differs but folds to the same 16 bits (172,985 tries). */
+static void find_fold_collision(void)
+{
+    uint32_t a, b = 0;
+    memset(scr.row_a, 20, W);
+    memcpy(scr.row_b, scr.row_a, W);
+    a = row_sum(scr.row_a);
+    for (uint32_t v = 0; v < (1u << 24); v++) {
+        scr.row_b[100] = (unsigned char)v;
+        scr.row_b[101] = (unsigned char)(v >> 8);
+        scr.row_b[102] = (unsigned char)(v >> 16);
+        b = row_sum(scr.row_b);
+        if (b != a && folded(b) == folded(a)) break;
+    }
+    TEST_ASSERT(b != a && folded(b) == folded(a));
+}
+
+/* Without the wait every change is one, exactly as in API 19: a row (outside
+ * the line) whose new checksum folds to the same 16 bits as its old one is a
+ * change, not a return to an earlier state. */
+static void test_without_the_wait_a_folded_match_is_a_change(void)
+{
+    VjoVocrPolicy zero;
+    VjoVocrStats st;
+    uint32_t a, b;
+    memset(&zero, 0, sizeof(zero));
+    reset();
+    find_fold_collision();
+    a = row_sum(scr.row_a);
+    b = row_sum(scr.row_b);
+    scr.alt_row = 70;
+    scr.alt_from = 4; /* the finder's second pass */
+    TEST_CHECK(run(&zero, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.tears == 1 && !st.cycles && !st.cycling_rows && st.tries == 2);
+    TEST_MSG("row 70: %08X -> %08X (both fold to %04X): tears %u, returns %u, tries %u", (unsigned)a, (unsigned)b,
+             folded(a), st.tears, st.cycles, st.tries);
+}
+
+/* Host tools see each line's ink (VjoVocrPolicy.line) with the check off too,
+ * and then nothing is skipped: the same lines are recognized as without a
+ * callback. Needs the release weights. */
+static unsigned seen_lines, seen_blank;
+static void count_line(void *ud, const VjoVocrLineInfo *info)
+{
+    (void)ud;
+    seen_lines++;
+    seen_blank += info->blank != 0;
+}
+
+static void *test_alloc(void *ud, size_t bytes)
+{
+    void *m = NULL;
+    (void)ud;
+    return posix_memalign(&m, 16, bytes) ? NULL : m;
+}
+
+static int test_release(void *ud)
+{
+    (void)ud;
+    return 0;
+}
+
+static void test_the_line_callback_skips_nothing_with_the_check_off(void)
+{
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    VjoVocrPolicy off = {0, 0, 0, 0, 20000, count_line, NULL, NULL}, on = off;
+    VjoVocrStats st;
+    VjoPlatform p;
+    PosixPlatform pp = {0};
+    char path[600], text[128];
+    FILE *f;
+    snprintf(path, sizeof(path), "%s/FL10_w8.vocr", dir);
+    if (!dir[0] || !(f = fopen(path, "rb"))) {
+        TEST_SKIP("no FL10_w8.vocr in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    fclose(f);
+    posix_platform_init(&pp, &p);
+    on.blank = 1; /* the same edges bound with the check on: every line is skipped */
+    for (int check = 0; check < 2; check++) {
+        VjoVocrResident res = {test_alloc, test_release, NULL, NULL, NULL, 0, 0, 0};
+        reset();
+        seen_lines = seen_blank = 0;
+        int rc = vjo_vocr_ocr_policy(&p, dir, "FL10_w8.vocr", &im, &res, ws_mem, vjo_vocr_job_bytes("FL10_w8.vocr", W, H),
+                                     capture, vjo_vocr_capture_bytes(W, H), check ? &on : &off, text, sizeof(text), &st);
+        TEST_CHECK(rc == VJO_OK && st.lines == 1 && seen_lines == 1);
+        if (check) TEST_CHECK(st.blank == 1 && !st.recognized && seen_blank == 1 && !text[0]);
+        else TEST_CHECK(!st.blank && st.recognized == 1 && !seen_blank && st.model_loaded);
+        TEST_MSG("check %d: rc %d, %u lines, %u skipped, %u recognized ('%s')", check, rc, st.lines, st.blank,
+                 st.recognized, text);
+        free(res.data);
+    }
 }
 
 /* With a sleep, the verification does not read passes too early to count: the
@@ -314,12 +580,140 @@ static void test_a_box_clearing_back_is_a_change(void)
     TEST_MSG("tries %u tears %u lines %u, cycling rows %u", st.tries, st.tears, st.lines, st.cycling_rows);
 }
 
+/* The documented limit (VJO_VOCR_CYCLE_ROWS), pinned so that a change to it is
+ * deliberate: the same with a box of two lines, 48 rows, fewer than an icon may
+ * take: they are taken for an icon's and the job does not read again; the
+ * finder's second pass read the empty box, so the job has fewer lines than the
+ * screen it published (here none). */
+static void test_a_two_line_box_clearing_back_is_taken_for_an_icon(void)
+{
+    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    unsigned published = 0;
+    int rc;
+    reset();
+    scr.two_lines = 1;
+    scr.text_from = 10;
+    scr.clear_at = 25;
+    rc = run(&pol, &st);
+    for (unsigned i = 0; i < scr.n_log; i++) published += (scr.log[i].flags & VJO_STRIP_LAST) != 0;
+    TEST_CHECK((rc == VJO_OK || rc == VJO_E_OCR_MODEL) && published == 1);
+    TEST_CHECK(st.tries == 1 && !st.tears && st.lines < 2 && st.cycling_rows == 48);
+    TEST_MSG("rc %d tries %u tears %u lines %u, cycling rows %u", rc, st.tries, st.tears, st.lines, st.cycling_rows);
+}
+
+/* Three lines of text that flash (8 frames shown, 8 hidden) while the job
+ * waits: their 72 rows go back and forth like an icon's, but at most 64 rows
+ * of a job are taken for an icon's; the other 8 are changes, so the screen
+ * never holds still and the wait runs out. */
+static void test_at_most_64_rows_are_taken_for_an_icon(void)
+{
+    VjoVocrPolicy pol = {150000, 400000, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    reset();
+    scr.three_lines = 1;
+    scr.text_blink = 8;
+    (void)run(&pol, &st);
+    TEST_CHECK(st.cycling_rows == VJO_VOCR_CYCLE_ROWS && st.settle_timeout && !st.settled);
+    TEST_MSG("cycling rows %u, timeout %u, waited %u us", st.cycling_rows, st.settle_timeout, (unsigned)st.settle_us);
+}
+
+/* With the wait on, a row whose new checksum folds to the 16 bits of its
+ * current one is a change too: it is not the current state (the sums differ)
+ * and not a return (the ring's copies of that fold are the current state's). */
+static uint32_t row_sum(const unsigned char *row);
+static uint16_t folded(uint32_t sum);
+static void find_fold_collision(void);
+static void test_with_the_wait_a_folded_match_is_a_change(void)
+{
+    VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, NULL};
+    VjoVocrStats st;
+    reset();
+    find_fold_collision();
+    scr.alt_row = 70;
+    scr.alt_from = 4; /* the finder's second pass: read, not waited for */
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.tears == 1 && !st.cycles && !st.cycling_rows && st.tries == 2 && st.settled);
+    TEST_MSG("tears %u, returns %u on %u rows, tries %u", st.tears, st.cycles, st.cycling_rows, st.tries);
+}
+
+/* A clock that never moves (a broken platform clock, a sleep that returns at
+ * once): the wait cannot measure a span, and it ends after
+ * VJO_VOCR_SETTLE_READS strips as if its time had run out. */
+static void test_a_frozen_clock_ends_the_wait(void)
+{
+    for (int first = 0; first < 2; first++) {
+        VjoVocrPolicy pol = {150000, 400000, first, 0, 0, NULL, NULL, sleep_us};
+        VjoVocrStats st;
+        reset();
+        scr.frozen = 1;
+        TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+        TEST_CHECK(st.settle_timeout && !st.settled && st.strips >= VJO_VOCR_SETTLE_READS &&
+                   st.strips < VJO_VOCR_SETTLE_READS + 16u && st.lines == 1);
+        TEST_MSG("settle_first %d: %u strips, timeout %u", first, st.strips, st.settle_timeout);
+    }
+}
+
+/* A 2x upscale with bilinear filtering, as a PSP game's 480x272 frame reaches
+ * the Vita's screen: each output pixel 3/4 of its nearer and 1/4 of its farther
+ * source neighbour, in each direction (edges clamped). */
+static void upscale2(const unsigned char *src, unsigned w, unsigned h, unsigned char *dst)
+{
+    for (unsigned y = 0; y < 2 * h; y++) {
+        unsigned y0 = y / 2, y1 = y % 2 ? (y0 + 1 < h ? y0 + 1 : y0) : (y0 ? y0 - 1 : 0);
+        for (unsigned x = 0; x < 2 * w; x++) {
+            unsigned x0 = x / 2, x1 = x % 2 ? (x0 + 1 < w ? x0 + 1 : x0) : (x0 ? x0 - 1 : 0);
+            unsigned v = 9u * src[y0 * w + x0] + 3u * src[y0 * w + x1] + 3u * src[y1 * w + x0] + src[y1 * w + x1];
+            dst[y * 2 * w + x] = (unsigned char)((v + 8u) / 16u);
+        }
+    }
+}
+
+/* The largest change of grey level within `span` pixels, across or down. */
+static unsigned max_step_within(const unsigned char *px, unsigned w, unsigned h, unsigned span)
+{
+    unsigned most = 0;
+    for (unsigned y = 0; y < h; y++)
+        for (unsigned x = 0; x < w; x++)
+            for (unsigned s = 1; s <= span; s++) {
+                unsigned v = px[y * w + x];
+                if (x + s < w) { unsigned o = px[y * w + x + s], d = v > o ? v - o : o - v; if (d > most) most = d; }
+                if (y + s < h) { unsigned o = px[(y + s) * w + x], d = v > o ? v - o : o - v; if (d > most) most = d; }
+            }
+    return most;
+}
+
+static unsigned max_step(const unsigned char *px, unsigned w, unsigned h)
+{
+    return max_step_within(px, w, h, 1);
+}
+
+/* A blur of about sigma 1 ([1 4 6 4 1] / 16 across, then down; edges clamped). */
+static void soften(unsigned char *px, unsigned w, unsigned h)
+{
+    static unsigned char tmp[40 * 300];
+    static const unsigned k[5] = {1, 4, 6, 4, 1};
+    for (int pass = 0; pass < 2; pass++) {
+        for (unsigned y = 0; y < h; y++)
+            for (unsigned x = 0; x < w; x++) {
+                unsigned v = 0;
+                for (int i = -2; i <= 2; i++) {
+                    int a = pass ? (int)y + i : (int)x + i, n = pass ? (int)h : (int)w;
+                    a = a < 0 ? 0 : a >= n ? n - 1 : a;
+                    v += k[i + 2] * (pass ? px[(unsigned)a * w + x] : px[y * w + (unsigned)a]);
+                }
+                tmp[y * w + x] = (unsigned char)((v + 8u) / 16u);
+            }
+        memcpy(px, tmp, (size_t)w * h);
+    }
+}
+
 /* The ink statistics: an even area or a smooth ramp holds no text-like ink;
- * strokes do, also small and also dark on light; under 24 levels of contrast
- * nothing is text. */
+ * strokes do, also small, dark on light, and soft (shown 2x with bilinear
+ * filtering, or blurred); under 24 levels of contrast nothing is text. */
 static void test_ink_and_blank(void)
 {
-    static unsigned char px[40 * 300];
+    static unsigned char px[40 * 300], small[20 * 150];
     VjoVocrInk ink;
     memset(px, 90, sizeof(px));
     TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 1 && ink.hi == ink.lo && ink.edges == 0);
@@ -333,6 +727,59 @@ static void test_ink_and_blank(void)
     TEST_MSG("strokes: contrast %u, %u edges per 10,000", ink.hi - ink.lo, ink.edges);
     for (size_t i = 0; i < sizeof(px); i++) px[i] = (unsigned char)(255 - px[i]); /* dark on light */
     TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 0);
+    /* PSP text: anti-aliased strokes at 480x272, on the Vita's screen 2x with
+     * bilinear filtering: no step between neighbouring pixels reaches half the
+     * contrast any more (the rule of one-pixel steps at contrast / 2 saw no
+     * edge at all), yet it is text */
+    memset(small, 20, sizeof(small));
+    for (unsigned x = 5; x < 145; x += 6) {
+        for (unsigned y = 4; y < 16; y++) {
+            small[y * 150 + x] = 235;
+            small[y * 150 + x - 1] = small[y * 150 + x + 1] = 127;
+        }
+        for (unsigned d = 0; d < 3; d++) small[3 * 150 + x - 1 + d] = small[16 * 150 + x - 1 + d] = 127;
+    }
+    upscale2(small, 150, 20, px);
+    TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 0 && ink.edges >= 400);
+    TEST_CHECK(max_step(px, 300, 40) < (unsigned)(ink.hi - ink.lo) / 2u);
+    TEST_MSG("PSP strokes shown 2x: contrast %u, largest step %u, edge %u, %u edges per 10,000", ink.hi - ink.lo,
+             max_step(px, 300, 40), ink.edge, ink.edges);
+    /* anti-aliased strokes blurred (sigma about 1: a soft font, a filter): the same */
+    memset(px, 20, sizeof(px));
+    for (unsigned y = 8; y < 32; y++)
+        for (unsigned x = 10; x < 290; x += 12) {
+            px[y * 300 + x] = px[y * 300 + x + 1] = 235;
+            px[y * 300 + x - 1] = px[y * 300 + x + 2] = 127;
+        }
+    soften(px, 300, 40);
+    TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 0 && ink.edges >= 400);
+    TEST_CHECK(max_step(px, 300, 40) < (unsigned)(ink.hi - ink.lo) / 2u);
+    TEST_MSG("blurred strokes: contrast %u, largest step %u, edge %u, %u edges per 10,000", ink.hi - ink.lo,
+             max_step(px, 300, 40), ink.edge, ink.edges);
+    /* strokes that rise over six pixels, across and down (a sixth of the contrast
+     * a pixel): within two pixels a third, so an edge at a quarter of the contrast
+     * and none at a half; text (a soft, large font scaled down) */
+    {
+        static const unsigned sixths[24] = {0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 6, 6, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0};
+        for (unsigned y = 0; y < 40; y++) {
+            unsigned fy = y < 4 || y >= 36 ? 0 : y < 10 ? y - 3 : y >= 30 ? 36 - y : 6;
+            for (unsigned x = 0; x < 300; x++)
+                px[y * 300 + x] = (unsigned char)(20 + (420u * sixths[x % 24] * fy + 36u) / 72u);
+        }
+        TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 0 && ink.edges >= 400);
+        TEST_CHECK(max_step_within(px, 300, 40, VJO_VOCR_INK_SPAN) < (unsigned)(ink.hi - ink.lo) / 2u);
+        TEST_MSG("ramped strokes: contrast %u, largest change within %u pixels %u, edge %u, %u edges per 10,000",
+                 ink.hi - ink.lo, VJO_VOCR_INK_SPAN, max_step_within(px, 300, 40, VJO_VOCR_INK_SPAN), ink.edge,
+                 ink.edges);
+    }
+    for (unsigned y = 0; y < 40; y++) /* a smooth wave, eight times as steep as the ramp: no edges */
+        for (unsigned x = 0; x < 300; x++) {
+            unsigned t = x % 74;
+            px[y * 300 + x] = (unsigned char)(20 + (t < 37 ? t : 74 - t) * 200 / 37);
+        }
+    soften(px, 300, 40);
+    TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 1 && ink.hi - ink.lo > 150 && !ink.edges);
+    TEST_MSG("a smooth wave: contrast %u, edge %u, %u edges per 10,000", ink.hi - ink.lo, ink.edge, ink.edges);
     memset(px, 20, sizeof(px)); /* one small mark: "。" alone in its box */
     for (unsigned y = 16; y < 24; y++)
         for (unsigned x = 16; x < 24; x++) px[y * 40 + x] = (y == 16 || y == 23 || x == 16 || x == 23) ? 230 : 20;
@@ -342,6 +789,24 @@ static void test_ink_and_blank(void)
     for (unsigned y = 8; y < 32; y++)
         for (unsigned x = 10; x < 290; x += 12) px[y * 300 + x] = 120;
     TEST_CHECK(vjo_vocr_ink(px, 300, 300, 40, &ink) == 1 && ink.edge == VJO_VOCR_EDGE_MIN && !ink.edges);
+    /* exact counts: one bright column in a 97 x 10 crop (too few pixels to move
+     * the percentiles: edge 24): across, the two pixels left of it (one and two
+     * steps away) and the column itself, 3 a row; 30 * 10,000 / 970 = 309.3 */
+    memset(px, 20, 97 * 10);
+    for (unsigned y = 0; y < 10; y++) px[y * 97 + 50] = 235;
+    TEST_CHECK(vjo_vocr_ink(px, 97, 97, 10, &ink) == 0 && ink.edge == VJO_VOCR_EDGE_MIN && ink.edges == 309);
+    TEST_MSG("one column: edge %u, %u edges per 10,000", ink.edge, ink.edges);
+    for (unsigned y = 0; y < 10; y++) px[y * 97 + 50] = 20; /* one dot: 3 across, 3 down (rows 3-5) */
+    px[5 * 97 + 50] = 235;
+    TEST_CHECK(vjo_vocr_ink(px, 97, 97, 10, &ink) == 0 && ink.edges == 61); /* 6 * 10,000 / 970 = 61.9: a mark */
+    TEST_MSG("one dot: %u edges per 10,000", ink.edges);
+    {   /* more pixels than any line: never called blank, nothing measured */
+        unsigned char *big = calloc(960u * 4400u, 1);
+        TEST_ASSERT(big != NULL);
+        TEST_CHECK(vjo_vocr_ink(big, 960, 960, 4400, &ink) == 0 && !ink.edges && !ink.hi && !ink.edge);
+        TEST_CHECK(vjo_vocr_ink(big, 960, 960, 4369, &ink) == 1); /* 4,194,240 pixels: measured, even */
+        free(big);
+    }
     TEST_CHECK(vjo_vocr_ink(NULL, 300, 300, 40, &ink) == 0 && vjo_vocr_ink(px, 300, 0, 40, &ink) == 0);
     TEST_CHECK(vjo_vocr_ink(px, 961, 961, 1, &ink) == 0); /* wider than any region: never called blank */
 }
@@ -387,6 +852,17 @@ TEST_LIST = {
     {"with_a_sleep_the_verification_reads_fewer_passes", test_sleep_skips_early_passes},
     {"a_bobbing_icon_settles_once_it_has_shown_its_positions", test_bobbing_icon_settles},
     {"a_box_clearing_back_to_empty_is_a_change", test_a_box_clearing_back_is_a_change},
+    {"a_two_line_box_clearing_back_is_taken_for_an_icon", test_a_two_line_box_clearing_back_is_taken_for_an_icon},
+    {"at_most_64_rows_are_taken_for_an_icon", test_at_most_64_rows_are_taken_for_an_icon},
+    {"with_the_wait_a_folded_match_is_a_change", test_with_the_wait_a_folded_match_is_a_change},
+    {"a_frozen_clock_ends_the_wait", test_a_frozen_clock_ends_the_wait},
+    {"the_last_reread_starts_the_span_after_the_first_pass", test_the_last_reread_starts_the_span_after_the_first_pass},
+    {"the_wait_ends_on_the_first_pass_due", test_the_wait_ends_on_the_first_pass_due},
+    {"the_waiting_budget_is_the_jobs_not_each_waits", test_the_waiting_budget_is_the_jobs},
+    {"a_three_state_icon_settles", test_a_three_state_icon_settles},
+    {"a_retry_keeps_what_the_job_learned", test_a_retry_keeps_what_the_job_learned},
+    {"without_the_wait_a_folded_match_is_a_change", test_without_the_wait_a_folded_match_is_a_change},
+    {"the_line_callback_skips_nothing_with_the_check_off", test_the_line_callback_skips_nothing_with_the_check_off},
     {"ink_statistics_and_the_blank_rule", test_ink_and_blank},
     {"blank_lines_are_skipped_and_open_no_weights", test_blank_lines_open_no_weights},
     {NULL, NULL}

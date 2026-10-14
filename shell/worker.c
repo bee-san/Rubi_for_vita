@@ -710,10 +710,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     vocr_done_before = st0.done_seq;
     vocr_capture_fixed = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
     /* The job's policy (API 20). The config keeps both waits in range, so the
-     * counts fit their 8 bits; a screen not settled now is waited for first. */
+     * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
+     * one step, not none); a screen not settled now is waited for first. */
     if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
-    if (job_cfg.ocr_settle_ms >= 5) {
-        request.flags |= (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u << VJO_GAME_OCR_SETTLE_SHIFT |
+    if (job_cfg.ocr_settle_ms > 0) {
+        uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
+        request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
                          (uint32_t)(job_cfg.ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
     }

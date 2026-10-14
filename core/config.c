@@ -95,7 +95,7 @@ void vjo_config_defaults(VjoConfig *c)
     vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "VOCR3_FL10_w8.vocr");
     c->ocr_settle_ms = 150;
     c->ocr_settle_max_ms = 2000;
-    c->ocr_skip_blank_lines = 1;
+    c->ocr_skip_blank_lines = 0;
     c->log_file = 1; /* log.txt is on unless log_file = off */
     vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
     vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
@@ -172,12 +172,14 @@ const char *vjo_config_default_text(void)
            "; memory for vocr_model: VOCR3_FL10_w8.vocr | FL10_w8.vocr | none\n"
            "vocr_fallback_model = VOCR3_FL10_w8.vocr\n"
            "; vocr: read the region once its rows have held still this long, in ms (0-1000,\n"
-           "; 0 = off), so text that types out is read whole; waiting at most\n"
-           "; ocr_settle_max_ms (100-10000) per recognition, then it reads anyway.\n"
+           "; 0 = off; sent in 10 ms steps), so text that types out is read whole; waiting at\n"
+           "; most ocr_settle_max_ms (100-10000, in 50 ms steps) per recognition, then it reads\n"
+           "; anyway (set it above ocr_settle_ms, or every wait runs out before the text holds still).\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
            "; vocr: skip found lines without text-like ink (scene art, the box frame): on | off\n"
-           "ocr_skip_blank_lines = on\n"
+           "; (off: it finds next to none at native resolution; see docs/vita-vn-ocr.md)\n"
+           "ocr_skip_blank_lines = off\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"

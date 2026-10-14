@@ -263,6 +263,7 @@ if(VJO_WITH_VOCR)
   target_include_directories(vjo-vocr-policy-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-vocr-policy-tests vjo_vocr vjo_host)
   target_compile_options(vjo-vocr-policy-tests PRIVATE -Wall -Wextra)
+  target_compile_definitions(vjo-vocr-policy-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
   # #74: API 18's capture (the kernel's A8B8G8R8 copy of the region, the worker's
   # grey plane; 8228c3c, verbatim in host/tests/api18) against API 19's (the

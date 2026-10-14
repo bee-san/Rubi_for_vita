@@ -226,8 +226,10 @@ static void stream_check(Stream *s, unsigned y, const unsigned char *p, int firs
         return;
     }
     if (s->sums[y] == sum) return;
-    for (k = 0; k < slots && ring[k] != now; k++) {
-    }
+    /* A state folding to the current one's 16 bits is a new one (the sums
+     * differ), whatever copies of that fold the ring holds. */
+    k = now == fold16(s->sums[y]) ? slots : 0;
+    while (k < slots && ring[k] != now) k++;
     /* Back to a recent state: an animated icon, not text (text being typed
      * only ever moves on to new states). With the stable-text wait on, up to
      * cycle_cap rows of a job are taken for such rows; a page of new text,
@@ -360,7 +362,7 @@ static int settle_wait(Stream *s)
     s->retract = s->published;
     while (!done) {
         uint32_t ps = clock_us(s->p);
-        if (ps - t0 >= s->settle_left) { over = 1; break; }
+        if (ps - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
         s->changed = 0;
         if (stream_pass(s) < 0) break;
         s->st->settle_passes++;
@@ -388,7 +390,7 @@ static int settle_verify(Stream *s)
     int over = 0;
     while (!s->verified || s->verified_from - s->pass_from < s->pol->settle_us) {
         uint32_t now = clock_us(s->p), due = s->pass_from + s->pol->settle_us;
-        if (now - t0 >= s->settle_left) { over = 1; break; }
+        if (now - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
         if (s->verified && s->pol->sleep && (int32_t)(due - now) > 0) {
             uint32_t nap = due - now, left = s->settle_left - (now - t0);
             s->pol->sleep(nap < left ? nap : left);
@@ -826,10 +828,11 @@ int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char 
 
 /* ---- the blank-line check ---- */
 
-/* The grey level at or below which `part` per mille of the n pixels lie. */
+/* The grey level at or below which `part` per mille of the n pixels lie
+ * (n <= VJO_VOCR_INK_PIXELS: 32-bit arithmetic, no 64-bit division helper). */
 static unsigned percentile(const uint32_t *hist, uint32_t n, unsigned part)
 {
-    uint32_t want = (uint32_t)(((uint64_t)n * part + 999u) / 1000u), acc = 0;
+    uint32_t want = (n * part + 999u) / 1000u, acc = 0;
     unsigned v;
     if (!want) want = 1;
     for (v = 0; v < 255u; v++) {
@@ -839,6 +842,22 @@ static unsigned percentile(const uint32_t *hist, uint32_t n, unsigned part)
     return v;
 }
 
+static unsigned grey_step(unsigned a, unsigned b)
+{
+    return a > b ? a - b : b - a;
+}
+
+/* floor(n * 10000 / total) for n <= 2 total, total <= VJO_VOCR_INK_PIXELS, in
+ * 32-bit steps of 100 (each remainder times 100 stays under 2^32). */
+static uint32_t per_10000(uint32_t n, uint32_t total)
+{
+    uint32_t q = n / total, r = n % total, a, b;
+    a = r * 100u / total;
+    r = r * 100u % total;
+    b = r * 100u / total;
+    return q * 10000u + a * 100u + b;
+}
+
 int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigned h, VjoVocrInk *out)
 {
     uint32_t hist[256], total, edges = 0;
@@ -846,6 +865,7 @@ int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigne
     memset(out, 0, sizeof(*out));
     if (!pixels || !w || !h || w > VJO_OCR_MAX_WIDTH || h > 0xFFFFu) return 0; /* unknown: never blank */
     total = (uint32_t)w * h;
+    if (total > VJO_VOCR_INK_PIXELS) return 0;
     memset(hist, 0, sizeof(hist));
     for (unsigned y = 0; y < h; y++) {
         const unsigned char *r = pixels + (size_t)y * stride;
@@ -853,19 +873,24 @@ int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigne
     }
     lo = percentile(hist, total, 20u);
     hi = percentile(hist, total, 980u);
-    e = (hi - lo) / 2u < VJO_VOCR_EDGE_MIN ? VJO_VOCR_EDGE_MIN : (hi - lo) / 2u;
+    e = (hi - lo) / VJO_VOCR_EDGE_DIV < VJO_VOCR_EDGE_MIN ? VJO_VOCR_EDGE_MIN : (hi - lo) / VJO_VOCR_EDGE_DIV;
+    /* An edge that scaling or blur softened rises over more than one pixel: the
+     * step counts when the grey level gets there within VJO_VOCR_INK_SPAN pixels. */
     for (unsigned y = 0; y < h; y++) {
-        const unsigned char *r = pixels + (size_t)y * stride, *below = y + 1 < h ? r + stride : NULL;
+        const unsigned char *r = pixels + (size_t)y * stride;
         for (unsigned x = 0; x < w; x++) {
-            unsigned v = r[x];
-            if (x + 1 < w && (unsigned)(v > r[x + 1] ? v - r[x + 1] : r[x + 1] - v) >= e) edges++;
-            if (below && (unsigned)(v > below[x] ? v - below[x] : below[x] - v) >= e) edges++;
+            unsigned v = r[x], across = 0, down = 0;
+            for (unsigned s = 1; s <= VJO_VOCR_INK_SPAN && !(across && down); s++) {
+                if (!across && x + s < w && grey_step(v, r[x + s]) >= e) across = 1;
+                if (!down && y + s < h && grey_step(v, r[(size_t)s * stride + x]) >= e) down = 1;
+            }
+            edges += across + down;
         }
     }
     out->lo = (uint8_t)lo;
     out->hi = (uint8_t)hi;
     out->edge = (uint8_t)e;
-    out->edges = (uint16_t)(((uint64_t)edges * 10000u) / total); /* at most 2 per pixel: 20,000 */
+    out->edges = (uint16_t)per_10000(edges, total); /* at most 2 per pixel: 20,000 */
     return vjo_vocr_blank(out);
 }
 
