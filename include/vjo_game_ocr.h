@@ -109,6 +109,10 @@ enum {
                             bytes = width << 16 | height, sum = contrast (98th - 2nd percentile grey) << 16 |
                             sharp edges per 10,000 pixels (core/vocr_ocr.h VjoVocrInk), us the job's time
                             checking lines */
+    VJO_GSTEP_NORM,      /* API 20, the text normalised (core/textnorm.h) before it is returned, the
+                            recognizer's own text kept after its NUL: arg the changes, bytes the full-width
+                            forms folded, sum = tildes << 24 | dashes << 16 | ellipses << 8 | 一 made ー << 4 |
+                            ー made 一 (each at most 255, the last two 15), us the time */
     VJO_GSTEP_COUNT
 };
 /* VJO_GSTEP_SETTLE rc. */
@@ -182,7 +186,9 @@ typedef struct {
     uint32_t region_sum;     /* FNV-1a over the region's grey rows on the first pass */
     uint32_t n_steps;        /* entries of step[] (the first VJO_GAME_OCR_STEPS of the job) */
     VjoGameOcrStep step[VJO_GAME_OCR_STEPS];
-    /* UTF-8 OCR text on success; every failed result carries empty text. */
+    /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
+     * the text is normalised (core/textnorm.h) and the recognizer's own text
+     * follows its NUL (vjo_text_raw), for the log. */
     char text[VJO_GAME_OCR_TEXT_BYTES];
 } VjoGameOcrResult;
 

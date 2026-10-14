@@ -167,3 +167,29 @@ unsigned vjo_text_normalize(char *s, VjoTextNorm *counts)
     if (counts) *counts = k;
     return k.width + k.tilde + k.dash + k.ellipsis + k.long_vowel + k.kanji_one;
 }
+
+unsigned vjo_text_normalize_keep(char *buf, size_t cap, VjoTextNorm *counts)
+{
+    size_t n = 0, keep, m;
+    unsigned changes;
+    if (!buf || cap < 2) return vjo_text_normalize(NULL, counts);
+    while (n + 1 < cap && buf[n]) n++;
+    buf[n] = '\0';
+    if (n + 2 > cap) { /* no room for a copy: the text fills the buffer */
+        changes = vjo_text_normalize(buf, counts);
+        m = strlen(buf);
+        memset(buf + m, 0, cap - m);
+        return changes;
+    }
+    /* The copy goes after the text first; it is cut to the room left, at the
+     * start of a character. */
+    keep = 2 * n + 2 <= cap ? n : cap - n - 2;
+    while (keep && keep < n && ((unsigned char)buf[keep] & 0xC0) == 0x80) keep--;
+    memcpy(buf + n + 1, buf, keep);
+    buf[n + 1 + keep] = '\0';
+    changes = vjo_text_normalize(buf, counts);
+    m = strlen(buf);
+    memmove(buf + m + 1, buf + n + 1, keep + 1);
+    memset(buf + m + 1 + keep + 1, 0, cap - (m + 1 + keep + 1));
+    return changes;
+}

@@ -15,6 +15,7 @@
  * the job's step log, so one console run says which works. */
 #include "main.h"
 #include "../core/fbgrey.h"
+#include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
@@ -738,6 +739,19 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  resident_bytes(), 0, stats.load_us, 1);
     if (stats.lines)
         step_add(VJO_GSTEP_RECOGNIZE, 0, stats.recognized, rc, stats.frames, stats.tall_skipped, stats.recognize_us, 0);
+    if (!rc && out->text[0]) {
+        /* What is shown and looked up is normalised; the recognizer's own text
+         * follows it in the same buffer, for the Shell's log. */
+        VjoTextNorm k;
+        uint64_t t0 = now_wide();
+        unsigned changes = vjo_text_normalize_keep(out->text, sizeof(out->text), &k);
+#define CLAMP8(v) ((v) > 255u ? 255u : (v))
+        step_add(VJO_GSTEP_NORM, 0, changes, 0, k.width,
+                 CLAMP8(k.tilde) << 24 | CLAMP8(k.dash) << 16 | CLAMP8(k.ellipsis) << 8 |
+                 (k.long_vowel > 15u ? 15u : k.long_vowel) << 4 | (k.kanji_one > 15u ? 15u : k.kanji_one),
+                 (uint32_t)(now_wide() - t0) + 1u, 0);
+#undef CLAMP8
+    }
 done:
     out->workspace_bytes = (uint32_t)stats.workspace;
     out->lines = stats.lines; out->find_us = stats.find_us;

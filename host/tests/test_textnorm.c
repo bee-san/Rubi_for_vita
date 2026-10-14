@@ -114,7 +114,37 @@ static void test_full_buffer(void)
     TEST_CHECK(vjo_text_normalize(buf, &k) == n / 3 && strlen(buf) == n / 3 && k.width == n / 3);
 }
 
+/* The worker's form: the normalised text, then the text as it was after its
+ * NUL; a copy that does not fit is cut at a character; no room, no copy; every
+ * byte after it zero (the kernel checks the last). */
+static void test_keep_raw(void)
+{
+    static char b[64];
+    VjoTextNorm k;
+    memset(b, 'x', sizeof(b));
+    strcpy(b, "コ一ヒ一！");
+    TEST_CHECK(vjo_text_normalize_keep(b, sizeof(b), &k) == 3 && k.long_vowel == 2 && k.width == 1);
+    TEST_CHECK(!strcmp(b, "コーヒー!") && !strcmp(vjo_text_raw(b, sizeof(b)), "コ一ヒ一！"));
+    for (size_t i = strlen(b) + 1 + strlen(vjo_text_raw(b, sizeof(b))); i < sizeof(b); i++) TEST_CHECK(!b[i]);
+    /* 30 bytes of text in a 48-byte buffer: 16 bytes of copy room, cut to 15 (5 kana) */
+    static char c[48];
+    memset(c, 'x', sizeof(c));
+    strcpy(c, "あいうえおかきくけこ");
+    TEST_CHECK(vjo_text_normalize_keep(c, sizeof(c), NULL) == 0);
+    TEST_CHECK(!strcmp(c, "あいうえおかきくけこ") && !strcmp(vjo_text_raw(c, sizeof(c)), "あいうえお") && !c[47]);
+    /* the text fills the buffer: normalised, no copy, the tail zeroed */
+    static char d[8];
+    memcpy(d, "ab\xEF\xBC\x81" "cd", 7); d[7] = 0; /* ab！cd */
+    TEST_CHECK(vjo_text_normalize_keep(d, sizeof(d), NULL) == 1 && !strcmp(d, "ab!cd") && !*vjo_text_raw(d, sizeof(d)));
+    TEST_CHECK(!d[5] && !d[6] && !d[7]);
+    /* an empty text keeps an empty copy */
+    static char e[4] = {0, 'z', 'z', 'z'};
+    TEST_CHECK(vjo_text_normalize_keep(e, sizeof(e), NULL) == 0 && !e[0] && !*vjo_text_raw(e, sizeof(e)) && !e[3]);
+    TEST_CHECK(vjo_text_normalize_keep(NULL, 10, &k) == 0 && !k.width);
+}
+
 TEST_LIST = {
+    {"keep_the_raw_text_after_the_normalised_one", test_keep_raw},
     {"width_folds_as_nfkc", test_width},
     {"tildes_and_dashes", test_tildes_and_dashes},
     {"ellipses", test_ellipses},

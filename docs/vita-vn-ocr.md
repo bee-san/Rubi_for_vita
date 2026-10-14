@@ -340,10 +340,12 @@ console compares with the evaluation directly:
   kana, `ー`, `~`, `!`, `?`, an ellipsis, `」`, `』` or the end of the line follows (`だよ一っ` →
   `だよーっ`); `ー` between two kanji becomes `一` (`玄ー郎` → `玄一郎`).
 
-The text never grows, so it is normalised in place in the result the game worker returned. The
-recognizer's own text goes to `log.txt` first, one line per recognized line
-(`game vocr text N: …`, 60 characters at most), and a job that changed anything logs
-`game vocr text normalised: width …, tilde …, dash …, ellipsis …, ー …, 一 …`.
+The text never grows, so the game worker normalises it in place before it returns it, and keeps
+the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
+is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
+recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
+what is shown (`game vocr text N shown: …`). The job's `gstep job norm` step counts the changes
+(`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 | 一→ー << 4 | ー→一).
 
 **Measured on development data** (`tools/textnorm_eval.py`, `docs/benchmarks/textnorm-20261014.json`):
 teacher_val and devnative v3 (2,629 lines, 28,544 reference characters), the console-polarity

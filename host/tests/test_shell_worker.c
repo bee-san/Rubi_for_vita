@@ -188,6 +188,7 @@ int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
 int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 #ifdef VJO_WITH_VOCR
 #include "../../core/vocr_ocr.h"
+#include "../../core/textnorm.h"
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
@@ -269,6 +270,8 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     /* A supplied successful worker response tests Shell publication, not OCR accuracy. */
     if (fake_game_result.rc == VJO_OK && fake_recognized_text) {
         snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
+        /* as the worker returns it (API 20): normalised, its own text kept after the NUL */
+        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL);
         /* A supplied measurement, as the real worker copies VjoVocrStats. */
         fake_game_result.free_user = fake_memory_fallback ? 5300000 : 91226112;
         fake_game_result.reserve_bytes = 4194304;
@@ -594,9 +597,11 @@ static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
     TEST_CHECK(!strcmp(cache_data[0].sentence, "コーヒー!?\n統一的…"));
     TEST_MSG("shown: %s", cache_data[0].sentence);
     TEST_CHECK(logged("game vocr text 0: コ一ヒ一！？") != NULL && logged("game vocr text 1: 統ー的．．．") != NULL);
-    TEST_CHECK(logged("game vocr text normalised: width 5, tilde 0, dash 0, ellipsis 1, ー 2, 一 1") != NULL);
+    TEST_CHECK(logged("game vocr text 0 shown: コーヒー!?") != NULL && logged("game vocr text 1 shown: 統一的…") != NULL);
     fake_recognized_text = "猫";
+    log_count = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+    TEST_CHECK(logged("game vocr text 0: 猫") != NULL && !logged("shown:")); /* unchanged: one line */
     mem_free();
 }
 #endif

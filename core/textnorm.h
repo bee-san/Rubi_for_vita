@@ -22,7 +22,10 @@
  * Nothing else changes: whitespace, small kana, dakuten and lookalike kanji or
  * kana are left as the recognizer read them (those are recognition errors, not
  * forms). The text never grows, so it is normalised in place. Lines (\n) are
- * normalised separately: a rule never looks across one. */
+ * normalised separately: a rule never looks across one. The game worker runs it
+ * on every recognized text (vjo_text_normalize_keep), so no consumer (overlay,
+ * subtitles, Anki, lookup) sees the recognizer's forms, and SceShell runs none
+ * of it. */
 #ifndef VJO_TEXTNORM_H
 #define VJO_TEXTNORM_H
 
@@ -45,6 +48,22 @@ typedef struct {
  * returns the number of changes, each counted in *counts when it is not NULL.
  * Invalid UTF-8 bytes are kept as they are. */
 unsigned vjo_text_normalize(char *s, VjoTextNorm *counts);
+
+/* The same for the text in buf (cap bytes, NUL-terminated within them), which
+ * also keeps the text as it was after the normalised text's NUL, so one buffer
+ * carries both (the game worker returns its result this way, and the Shell logs
+ * the recognizer's own text: vjo_text_raw). A copy that does not fit is cut at a
+ * character. Every byte after it is zeroed. Returns the changes. */
+unsigned vjo_text_normalize_keep(char *buf, size_t cap, VjoTextNorm *counts);
+
+/* The text kept by vjo_text_normalize_keep in buf (cap bytes), or "" when there
+ * is none. */
+static inline const char *vjo_text_raw(const char *buf, size_t cap)
+{
+    size_t n = 0;
+    while (n < cap && buf[n]) n++;
+    return n + 1 < cap ? buf + n + 1 : "";
+}
 
 #ifdef __cplusplus
 }

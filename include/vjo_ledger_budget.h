@@ -26,12 +26,13 @@
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
  * data/bss, still these pages [measured]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
-/* VitaJPOverlay_OCR.suprx: 49,152 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
+/* VitaJPOverlay_OCR.suprx: 53,248 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
  * Raised again from 53,248 B (45,056 + 8,192) by one text page for API 20's job policy: the
- * stable-text wait and the blank-line check (core/vocr_ocr.c), in the same game partition. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 57344u
+ * stable-text wait and the blank-line check (core/vocr_ocr.c), and by one more for the text
+ * normalisation (core/textnorm.c, -Os), which runs here so that SceShell's pages stay as they are. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 61440u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns

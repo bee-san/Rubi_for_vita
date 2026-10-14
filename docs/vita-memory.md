@@ -176,7 +176,7 @@ the 36,864 B growth coincides with the build that stopped booting (#59) [measure
 Lens/Anki JPEG, and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
 CDRAM, else phycont) instead of a region-sized grey plane in its workspace. The H15 workspace is
 188,416 B at any region (712,704 B at 960×544 and 303,104 B at 917×125 before); a line taller
-than a strip takes its own block only when it occurs. The worker's module is 57,344 B
+than a strip takes its own block only when it occurs. The worker's module is 61,440 B
 [measured, packaged SELF]. Figures from the host build's `vjo_vocr_job_bytes` and
 `vjo_vocr_capture_bytes`; [ingame-capture.md](ingame-capture.md) has the table.
 

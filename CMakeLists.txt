@@ -20,7 +20,7 @@ target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c core/jpdb.c
-  core/textfilter.c core/textnorm.c core/entries.c core/jiten.c core/config.c core/regions.c
+  core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c shell/game_ocr_client.c)
@@ -45,15 +45,6 @@ target_include_directories(vjo_host PUBLIC host)
 target_link_libraries(vjo_host PUBLIC vjo_core)
 target_compile_options(vjo_host PRIVATE -Wall -Wextra)
 
-# Recognized text normalised as the overlay shows it, one line per line (tools/textnorm_eval.py).
-add_executable(vjo-textnorm host/textnorm_tool.c)
-target_link_libraries(vjo-textnorm vjo_core)
-
-add_executable(vjo-textnorm-tests host/tests/test_textnorm.c)
-target_include_directories(vjo-textnorm-tests PRIVATE third_party/acutest/include)
-target_link_libraries(vjo-textnorm-tests vjo_core)
-add_test(NAME textnorm COMMAND vjo-textnorm-tests)
-
 add_executable(vjo-cli host/cli.c)
 target_link_libraries(vjo-cli vjo_host)
 
@@ -69,6 +60,9 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     # The stable-text wait's frames and time on a simulated screen (docs/vita-vn-ocr.md).
     add_executable(vjo-settle-bench host/settle_bench.c)
     target_link_libraries(vjo-settle-bench vjo_vocr vjo_host)
+    # Recognized text normalised as the game worker returns it, line by line (tools/textnorm_eval.py).
+    add_executable(vjo-textnorm host/textnorm_tool.c)
+    target_link_libraries(vjo-textnorm vjo_vocr)
   endif()
 endif()
 
@@ -286,6 +280,10 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-vocr-policy-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-policy-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
+  add_executable(vjo-textnorm-tests host/tests/test_textnorm.c)
+  target_include_directories(vjo-textnorm-tests PRIVATE third_party/acutest/include)
+  target_link_libraries(vjo-textnorm-tests vjo_vocr)
+  add_test(NAME textnorm COMMAND vjo-textnorm-tests)
   # #74: API 18's capture (the kernel's A8B8G8R8 copy of the region, the worker's
   # grey plane; 8228c3c, verbatim in host/tests/api18) against API 19's (the
   # display hook's grey rows in the worker's strip): the recognizer gets
@@ -370,7 +368,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
-  add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c)
+  add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c)
   target_include_directories(vjo-game-resident-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

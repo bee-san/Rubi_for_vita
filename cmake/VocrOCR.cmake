@@ -59,9 +59,12 @@ else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
 
-add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c")
+# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).
+add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c")
 target_link_libraries(vjo_vocr PUBLIC vjo_vocr_rt)
 target_compile_options(vjo_vocr PRIVATE -Wall -Wextra -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr PRIVATE -O2 -fno-builtin -fshort-wchar)
+  # A few hundred bytes of text once per job: built for size (the worker's pages).
+  set_source_files_properties("${VJO_ROOT}/core/textnorm.c" PROPERTIES COMPILE_OPTIONS "-Os")
 endif()

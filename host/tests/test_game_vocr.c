@@ -611,6 +611,27 @@ static void step_log_keeps_the_releases(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
 }
 
+/* API 20: a recognized job returns its text normalised, the recognizer's own
+ * text after its NUL, and a NORM step; the last byte stays 0 (the kernel's check). */
+static void returned_text_is_normalised_and_kept(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("VJO_VOCR_MODEL_DIR not set"); return; }
+    line();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.text[0] && !out.text[sizeof(out.text) - 1]);
+    const char *raw = vjo_text_raw(out.text, sizeof(out.text));
+    char again[sizeof(out.text)];
+    snprintf(again, sizeof(again), "%s", raw);
+    vjo_text_normalize(again, NULL);
+    TEST_CHECK(raw[0] && !strcmp(again, out.text));
+    unsigned norm = 0;
+    for (unsigned i = 0; i < out.n_steps; i++)
+        if (out.step[i].id == VJO_GSTEP_NORM) { norm++; TEST_CHECK(out.step[i].us > 0); }
+    TEST_CHECK(norm == 1);
+    TEST_MSG("text '%s', raw '%s'", out.text, raw);
+}
+
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -641,5 +662,6 @@ TEST_LIST = {
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
+    {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
     {NULL, NULL}
 };
