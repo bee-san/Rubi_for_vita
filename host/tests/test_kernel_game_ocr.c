@@ -403,7 +403,9 @@ static void invalid_capture_and_wire(void)
     r.size--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.size++;
     r.model[31] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model[31] = 0;
     r.model_dir[255] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model_dir[255] = 0;
-    r.flags = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.flags = 0;
+    r.flags = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 5-15 are still unknown */
+    r.flags = 0;
     /* A Lens/Anki capture in flight: the OCR job waits for it. */
     g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY);
     g.capture_state = CAPTURE_IDLE; uint32_t seq = submit(); take(seq);

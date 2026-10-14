@@ -109,11 +109,16 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
     return 0;
 }
 
+/* Blocks the worker holds: each one's FREE step keeps a slot of the step log. */
+static unsigned blocks_held;
+
 static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_t rc, uint32_t bytes,
                                 uint32_t sum, uint32_t us, int sample)
 {
     VjoGameOcrStep *s;
     if (!log_to || log_to->n_steps >= VJO_GAME_OCR_STEPS) return NULL;
+    /* The log is full before a block's release is: another step is dropped. */
+    if (id != VJO_GSTEP_FREE && log_to->n_steps + blocks_held >= VJO_GAME_OCR_STEPS) return NULL;
     s = &log_to->step[log_to->n_steps++];
     sceClibMemset(s, 0, sizeof(*s));
     s->id = (uint8_t)id;
@@ -157,11 +162,13 @@ static SceUID game_memblock_alloc(int item, unsigned gitem, const char *name, ui
         uint32_t rounded = ROUND_TO(bytes, ladder[i].unit);
         if (!(which & (1u << i))) continue;
         uid = sceKernelAllocMemBlock(name, ladder[i].type, rounded, NULL);
+        if (uid >= 0) blocks_held++; /* from here its FREE step has a slot */
         step_add(VJO_GSTEP_ALLOC, ladder[i].mem, gitem, uid, rounded, 0, 0, 1);
         if (uid < 0) continue;
         if (sceKernelGetMemBlockBase(uid, base) < 0 || !*base || ((uintptr_t)*base & 15u)) {
             *base = NULL;
             if (sceKernelFreeMemBlock(uid) < 0) *leaked = uid;
+            else blocks_held--;
             return -1;
         }
         vjo_ledger_add(&g_game_ledger, item, rounded);
@@ -177,6 +184,7 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
     int rc = sceKernelFreeMemBlock(uid);
     step_add(VJO_GSTEP_FREE, 0, gitem, rc, bytes, 0, 0, 1);
     if (rc < 0) return -1;
+    if (blocks_held) blocks_held--;
     vjo_ledger_sub(&g_game_ledger, item, bytes);
     return 0;
 }
@@ -209,6 +217,7 @@ typedef struct {
     uint32_t pass_bytes, pass_strips, pass_us;
     int failed;             /* the rows call that ended the job, for the log */
     int fixed;              /* the probe: test this mode only, no ladder */
+    int logged;             /* the first pass's PASS and SIG steps are in (a retry's are not logged) */
 } Capture;
 
 /* A BUSY from a request that never reached the hook (info.armed 0) is a
@@ -275,8 +284,10 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     int rc;
     if (cancelled(NULL)) return VJO_E_CANCELLED;
     rc = capture_rows(c, y, n, dst, stride, flags);
-    /* The first pass is in: one step for it, and the kernel's publication. */
-    if (rc > 0 && (flags & VJO_STRIP_LAST)) {
+    /* The first pass is in: one step for it, and the kernel's publication (the
+     * job's first; a retry's is the same source, its count is the TEAR step's). */
+    if (rc > 0 && (flags & VJO_STRIP_LAST) && !c->logged) {
+        c->logged = 1;
         step_add(VJO_GSTEP_PASS, c->mode, c->pass_strips, 0, c->pass_bytes, c->last.fb_format, c->pass_us, 0);
         step_add(VJO_GSTEP_SIG, c->mode, 0, 0, c->last.fb_pitch, c->last.fb_width << 16 | c->last.fb_height, 0, 0);
     }
@@ -285,6 +296,7 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
+typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
@@ -546,7 +558,7 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     unsigned rows = vjo_vocr_strip_rows(r->width, r->height);
     uint32_t bytes = rows * r->width;
-    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1};
+    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0};
     int rc = VJO_OK, any = 0;
     if (!rows) return VJO_E_OCR_REGION;
     for (unsigned i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++) {
@@ -598,6 +610,23 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     return any ? rc : VJO_E_SOURCE;
 }
 
+/* The job's policy, from its request's flags (include/vjo_game_ocr.h, API 20):
+ * the stable-text wait and its limit, whether to wait first, blank lines. */
+static void policy_sleep(uint32_t us)
+{
+    sceKernelDelayThread(us);
+}
+
+static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
+{
+    sceClibMemset(p, 0, sizeof(*p));
+    p->settle_us = ((r->flags >> VJO_GAME_OCR_SETTLE_SHIFT) & 0xFFu) * VJO_GAME_OCR_SETTLE_UNIT_US;
+    p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
+    p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
+    p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
+    p->sleep = policy_sleep;
+}
+
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
@@ -609,7 +638,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0};
+    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
@@ -682,9 +711,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     workspace_memory = mem;
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
     VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
+    VjoVocrPolicy policy;
+    request_policy(r, &policy);
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
-    rc = vjo_vocr_ocr_resident(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
-                               capture_base, capture_bytes_held, out->text, sizeof(out->text), &stats);
+    rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
+                             capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */
     if (rc < -199) rc = VJO_E_SOURCE;
@@ -692,6 +723,16 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
+    if (policy.settle_us)
+        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
+                 stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
+                 stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
+                 (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles), stats.settle_us ? stats.settle_us : 1u, 0);
+    for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
+        const VjoVocrBlankStat *b = &stats.blank_line[i];
+        step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
+                 (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
+    }
     if (stats.model_loaded || stats.model_cached)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
                  resident_bytes(), 0, stats.load_us, 1);

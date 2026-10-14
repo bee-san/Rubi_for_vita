@@ -887,6 +887,26 @@ static void test_config(void)
     const char *invalid_selection = "japanese_only_selection = maybe\n";
     vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
     TEST_CHECK(c.japanese_only_selection && c.n_warnings == 1);
+    /* The stable-text wait (on by default) and the blank-line check (off by
+     * default), each in its range. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_settle_ms == 150 && c.ocr_settle_max_ms == 2000 && c.ocr_skip_blank_lines == 0);
+    const char *settle = "ocr_settle_ms = 0\nocr_settle_max_ms = 5000\nocr_skip_blank_lines = ON\n";
+    vjo_config_parse(&c, settle, strlen(settle));
+    TEST_CHECK(!c.ocr_settle_ms && c.ocr_settle_max_ms == 5000 && c.ocr_skip_blank_lines == 1 && c.n_warnings == 0);
+    settle = "ocr_skip_blank_lines = off\n";
+    vjo_config_parse(&c, settle, strlen(settle));
+    TEST_CHECK(!c.ocr_skip_blank_lines && c.n_warnings == 0);
+    vjo_config_defaults(&c);
+    settle = "ocr_settle_ms = 1001\nocr_settle_max_ms = 99\nocr_skip_blank_lines = maybe\nocr_settle_ms = -5\n";
+    vjo_config_parse(&c, settle, strlen(settle));
+    TEST_CHECK(c.ocr_settle_ms == 150 && c.ocr_settle_max_ms == 2000 && c.ocr_skip_blank_lines == 0 &&
+               c.n_warnings == 4);
+    TEST_CHECK(strstr(c.warnings[0], "ocr_settle_ms") && strstr(c.warnings[1], "ocr_settle_max_ms"));
+    vjo_config_defaults(&c);
+    settle = "ocr_settle_ms = 1000\nocr_settle_max_ms = 10000\n";
+    vjo_config_parse(&c, settle, strlen(settle));
+    TEST_CHECK(c.ocr_settle_ms == 1000 && c.ocr_settle_max_ms == 10000 && c.n_warnings == 0);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -899,6 +919,7 @@ static void test_config(void)
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
+        TEST_CHECK(d.ocr_settle_ms == 150 && d.ocr_settle_max_ms == 2000 && d.ocr_skip_blank_lines == 0);
     }
 
     /* the same button for both: the toggle keeps it */

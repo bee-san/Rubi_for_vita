@@ -209,9 +209,19 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     fake_game_result.size = sizeof(fake_game_result); fake_game_result.seq = 12;
     return 12;
 }
+/* fake_republish: the job's first two reads are still pending; the kernel
+ * meanwhile voids the job's first capture (region_seq 0: the screen changed,
+ * the worker waits and reads again) and then publishes the retry's (scene 3,
+ * capture 5), as API 20's worker does. */
+static int fake_republish, republish_reads, captured_while_void;
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     TEST_CHECK(seq == 12);
+    if (fake_republish && republish_reads < 2) {
+        if (republish_reads++ == 0) state.region_seq = 0;
+        else { captured_while_void = job_captured; state.capture_scene = state.scene = state.region_scene = 3; state.region_seq = 5; }
+        return 1;
+    }
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
     if (fake_missing_model && !strcmp(fake_game_request.model, fake_missing_model)) {
@@ -548,6 +558,24 @@ static int run_vocr_job(void)
     return run_job(&results[0], &cache_data[0]);
 }
 
+#ifdef VJO_WITH_VOCR
+/* The job's capture is its latest one: voided while the worker waits for a
+ * changed screen to hold still, then the retry's. A settled screen cancels no
+ * job whose retry already shows it. */
+static void test_vocr_capture_follows_the_retry(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    fake_republish = 1; republish_reads = captured_while_void = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(republish_reads == 2 && !captured_while_void);
+    TEST_CHECK(job_captured && job_capture_scene == 3 && job_capture_seq == 5);
+    TEST_CHECK(shows_screen(job_capture_scene, job_capture_seq, &state));
+    fake_republish = 0;
+    mem_free();
+}
+#endif
+
 static void test_vocr_never_uses_lens(void)
 {
     reset();
@@ -881,6 +909,67 @@ static void test_vocr_logs_memory_check_and_frames(void)
         }
     TEST_CHECK(chunks == 3 && entries == 14);
     mem_free();
+}
+
+/* The job policy in the request (API 20): the stable-text wait from its keys,
+ * the blank-line check only with ocr_skip_blank_lines = on (off by default). */
+static void test_vocr_request_carries_the_job_policy(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_BLANK));
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u &&
+               (fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == 40u);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST)); /* the kernel saw the region settle */
+    TEST_MSG("default flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* a screen the kernel has not seen settle (VjoState.stable 0): the job waits first */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    state.stable = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST);
+    TEST_MSG("unsettled screen: flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* ... unless the wait is off: then nothing of it is sent */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.ocr_settle_ms = 0;
+    fake_recognized_text = "猫";
+    state.stable = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) &&
+               !(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
+    mem_free();
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.ocr_skip_blank_lines = 1;
+    cfg.ocr_settle_ms = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK((fake_game_request.flags & VJO_GAME_OCR_F_BLANK) &&
+               !(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) &&
+               !(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
+    TEST_MSG("blank on, wait off: flags 0x%08X", (unsigned)fake_game_request.flags);
+    mem_free();
+    /* a wait of 1-4 ms is the shortest one (10 ms), not none; 1,000 ms and 10 s fit their bits */
+    static const struct { int ms, max_ms; unsigned settle, max; } units[] = {
+        {3, 100, 1, 2}, {14, 2000, 1, 40}, {15, 2000, 2, 40}, {1000, 10000, 100, 200}};
+    for (unsigned i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.ocr_settle_ms = units[i].ms;
+        cfg.ocr_settle_max_ms = units[i].max_ms;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == units[i].settle &&
+                   (fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == units[i].max);
+        TEST_MSG("%d ms / %d ms: flags 0x%08X", units[i].ms, units[i].max_ms, (unsigned)fake_game_request.flags);
+        mem_free();
+    }
 }
 
 /* The whole status line the user sees for an OCR-stage error. */
@@ -2121,9 +2210,20 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
     TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
-    TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[1] == 0 &&
-               selftest_flags_seen[2] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[3] == VJO_GAME_OCR_F_PROBE &&
-               selftest_flags_seen[4] == 0);
+    /* The stage's own flags, and the job policy every stage carries (API 20):
+     * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
+     * ms); blank lines are kept by default. */
+    const uint32_t stage_bits = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
+    const uint32_t policy = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    TEST_CHECK((selftest_flags_seen[0] & stage_bits) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
+               (selftest_flags_seen[1] & stage_bits) == 0 &&
+               (selftest_flags_seen[2] & stage_bits) == VJO_GAME_OCR_F_FULL &&
+               (selftest_flags_seen[3] & stage_bits) == VJO_GAME_OCR_F_PROBE &&
+               (selftest_flags_seen[4] & stage_bits) == 0);
+    for (unsigned i = 0; i < 5; i++) {
+        TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
+        TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);
+    }
     TEST_CHECK(!strcmp(cache_data[0].sentence, "猫")); /* the last stage's text is the job's */
     TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
     mem_free();
@@ -2174,6 +2274,9 @@ TEST_LIST = {
     {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
+#ifdef VJO_WITH_VOCR
+    {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
+#endif
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
     {"vocr_config_parses_and_validates", test_vocr_config},
@@ -2183,6 +2286,7 @@ TEST_LIST = {
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
+    {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
     {"vocr_memory_fallback_is_logged", test_vocr_memory_fallback_is_logged},

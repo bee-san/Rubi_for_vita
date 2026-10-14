@@ -24,6 +24,8 @@ static unsigned user_open_calls;
 static int virtual_file, open_busy, read_busy, close_busy, read_eof;
 static char own_title[12];
 static uint64_t clock_value;
+static unsigned frame_us; /* each rows call waits this long for its frame (0: none) */
+static unsigned change_at_rows; /* at this rows call the line moves down 6 rows (the player advanced); 0: never */
 
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
@@ -102,6 +104,11 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
     TEST_CHECK(req->dst_stride >= 200 && info && info->size == sizeof(*info));
     TEST_CHECK(capture_live && (unsigned char *)dst >= capture_mem && (unsigned char *)dst < capture_mem + capture_block);
     rows_calls++;
+    clock_value += frame_us;
+    if (change_at_rows && rows_calls == change_at_rows) { /* the next screen: the line 6 rows lower */
+        memset(pixels, 0, sizeof(pixels));
+        for (unsigned y = 21; y < 45; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
+    }
     if (req->mode == VJO_GAME_OCR_SRC_KSTRIP) kstrip_calls++;
     info->fb_width = 200; info->fb_height = 60; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
     info->armed = 1;
@@ -189,13 +196,14 @@ static VjoGameOcrRequest setup(void)
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     allocations = frees = reads_count = bytes_read = thread_creates = 0;
     user_open_calls = 0;
-    virtual_file = open_busy = read_busy = close_busy = read_eof = 0; clock_value = 0;
+    virtual_file = open_busy = read_busy = close_busy = read_eof = 0; clock_value = 0; frame_us = 0;
     memory_live = alloc_failure = base_failure = free_failure = close_failure = 0;
     join_failure = start_failure = delete_failure = budget_failure = cancel_reads = 0;
     cancel_job = short_reads = open_failure = bad_read = 0;
     available = 16*1024*1024;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
+    change_at_rows = 0; blocks_held = 0;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
     /* Blank images never open weights, but requests still need a valid directory.
@@ -221,7 +229,7 @@ static void repeated_jobs_and_reserve(void)
     /* the ledger saw every block in and out, and its peak fits the budget */
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_WORKSPACE) == 0 && vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) > 0 && vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) <= VJO_BUDGET_GAME_WORKSPACE);
-    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_CAPTURE) == 0 && vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) == 12288);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_CAPTURE) == 0 && vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) == 16384); /* 200x60: 12,000 B strip + 8 B and 3 bits per row */
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) <= VJO_BUDGET_GAME_CAPTURE);
     TEST_CHECK(vjo_ledger_pool_peak(&g_game_ledger, VJO_LEDGER_POOL_GAME) <= VJO_WORST_GAME_PERMANENT + VJO_WORST_GAME_JOB);
     available = 4*1024*1024;
@@ -512,6 +520,97 @@ static void probe_user_read_stays_in_the_frame_block(void)
     munmap(map, 0x10000);
     frame_at = NULL;
 }
+/* API 20: the job's policy rides in the request's flags. A wait of 150 ms
+ * (15 x 10 ms) first, at 60 frames a second, on a still screen: the job reads
+ * the region until it held still, records the wait as a step, and only then
+ * finds its line; the blank-line check passes a line of strokes. Unknown flag
+ * bits are refused before anything is allocated. */
+/* The request's flags become the job's policy (include/vjo_game_ocr.h): the
+ * wait in 10 ms steps, its limit in 50 ms steps, settle_first, the blank-line
+ * check; a request without them is API 19's job (a zero policy but for the
+ * sleep callback, which only a wait uses). */
+static void request_flags_become_the_policy(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoVocrPolicy p;
+    request_policy(&r, &p);
+    TEST_CHECK(!p.settle_us && !p.settle_max_us && !p.settle_first && !p.blank && p.sleep == policy_sleep);
+    r.flags = VJO_GAME_OCR_F_BLANK;
+    request_policy(&r, &p);
+    TEST_CHECK(p.blank == 1 && !p.settle_us && !p.settle_first);
+    r.flags = VJO_GAME_OCR_F_SETTLE_FIRST | 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_us == 150000u && p.settle_max_us == 2000000u && p.settle_first == 1 && !p.blank);
+    r.flags = 255u << VJO_GAME_OCR_SETTLE_SHIFT | 255u << VJO_GAME_OCR_SETTLE_MAX_SHIFT; /* the largest the bits hold */
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_us == 2550000u && p.settle_max_us == 12750000u && !p.settle_first);
+}
+
+static void policy_in_the_flags(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    unsigned plain;
+    line();
+    frame_us = 16667;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    plain = rows_calls;
+    for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_SETTLE);
+    rows_calls = 0;
+    r.flags = VJO_GAME_OCR_F_BLANK | VJO_GAME_OCR_F_SETTLE_FIRST | 15u << VJO_GAME_OCR_SETTLE_SHIFT |
+              40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    const VjoGameOcrStep *settle = NULL;
+    unsigned blank = 0;
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        if (out.step[i].id == VJO_GSTEP_SETTLE) settle = &out.step[i];
+        if (out.step[i].id == VJO_GSTEP_BLANK) blank++;
+    }
+    TEST_ASSERT(settle != NULL);
+    TEST_CHECK(settle->rc == VJO_GSETTLE_HELD && settle->arg >= 2 && settle->bytes == 0 && settle->us >= 150000);
+    TEST_MSG("waited %u us in %u passes; %u rows calls against %u without", (unsigned)settle->us, settle->arg,
+             rows_calls, plain);
+    TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
+    allocations = 0;
+    r.flags = 0x20u; /* bits 5-15 mean nothing yet */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+}
+
+/* The step log: a retried job logs its first pass and its signature once (the
+ * TEAR step counts the tries), and when the log fills up the other steps make
+ * room for the release of every block the worker holds, so the FREE steps that
+ * show the job gave its memory back are never the ones lost. */
+static void step_log_keeps_the_releases(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    unsigned pass = 0, sig = 0, tear = 0, frees = 0;
+    line();
+    change_at_rows = 2; /* during the finder's second pass of the first try */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        pass += out.step[i].id == VJO_GSTEP_PASS && !out.step[i].rc;
+        sig += out.step[i].id == VJO_GSTEP_SIG;
+        if (out.step[i].id == VJO_GSTEP_TEAR) { tear++; TEST_CHECK(out.step[i].rc >= 2); }
+        frees += out.step[i].id == VJO_GSTEP_FREE;
+    }
+    TEST_CHECK(tear == 1 && pass == 1 && sig == 1 && frees == 2 && !memory_live && !capture_live);
+    TEST_MSG("%u steps: %u PASS, %u SIG, %u TEAR, %u FREE", out.n_steps, pass, sig, tear, frees);
+    /* every block the job took is back, and counted back */
+    TEST_CHECK(blocks_held == (unsigned)(weights_live ? 1 : 0));
+    /* a full log: with two blocks held, the 19th and 20th steps are the two FREEs */
+    VjoGameOcrResult log;
+    memset(&log, 0, sizeof(log));
+    log_to = &log;
+    blocks_held = 2;
+    for (unsigned i = 0; i < VJO_GAME_OCR_STEPS; i++) step_add(VJO_GSTEP_ALLOC, 0, 0, 0, 0, 0, 1, 0);
+    TEST_CHECK(log.n_steps == VJO_GAME_OCR_STEPS - 2);
+    TEST_CHECK(step_add(VJO_GSTEP_FREE, 0, 1, 0, 4096, 0, 1, 0) && step_add(VJO_GSTEP_FREE, 0, 2, 0, 4096, 0, 1, 0));
+    TEST_CHECK(log.n_steps == VJO_GAME_OCR_STEPS && !step_add(VJO_GSTEP_FREE, 0, 3, 0, 4096, 0, 1, 0));
+    TEST_CHECK(log.step[VJO_GAME_OCR_STEPS - 1].id == VJO_GSTEP_FREE && log.step[VJO_GAME_OCR_STEPS - 1].arg == 2);
+    log_to = NULL;
+    blocks_held = 0;
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
+}
+
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -539,5 +638,8 @@ TEST_LIST = {
     {"the self-test probe tries every rung", probe_tries_every_rung},
     {"the probe's user-mode frame read stays inside the frame's block", probe_user_read_stays_in_the_frame_block},
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
+    {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
+    {"the request's flags become the job's policy", request_flags_become_the_policy},
+    {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {NULL, NULL}
 };

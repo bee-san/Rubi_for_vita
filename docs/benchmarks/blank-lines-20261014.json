@@ -1,0 +1,730 @@
+{
+ "what": "The blank-line check (a found line with fewer than 50 edges per 10,000 pixels is not recognized; an edge: the grey level changes by at least max(24, contrast / 4) within 2 pixels, across or down) on vita-vn-ocr's linefind development regions, read by the overlay's own adapter (vjo-ocr --lines, the line finder and the pinned recognizer as the game worker runs them), as captured (x1) and in seven softer display paths of the same screenshots. A found line is 'text' when it overlaps a hand-marked line box (at least 10% of either box), 'empty' when it overlaps none, 'ignored' when it overlaps only a box marked ignore. 'rules' recounts every line in numpy under the rule PR #84 first had (1-pixel steps of contrast / 2: audit-overlay-dialogue-1 B2) and the current one ('current' equals the C's count on every line). Counts, rates and times only; no pixels or text.",
+ "how": "python3 tools/blank_lines_eval.py --ocr build/host/vjo-ocr --models DIR --vocr-repo VITA_VN_OCR --shots DIR... --rules --out x1.jsonl; the same with --model VOCR3_FL10_w8.vocr --how x2-nearest --how x2-bilinear --how x2-bil-box1 --how sub720-bilin --how sub640-bilin --how blur1.0 --how blur1.5; python3 tools/blank_lines_eval.py --summary (both)",
+ "display_paths": {
+  "x1": "the screenshot as captured",
+  "x2-nearest": "PSP rows: the 480x272 frame shown 2x without filtering",
+  "x2-bilinear": "PSP rows: shown 2x with bilinear filtering (the PSP emulator's filter)",
+  "x2-bil-box1": "PSP rows: 2x bilinear, then a 1-pixel box blur",
+  "sub720-bilin": "Vita rows: a game rendering at 720x408, upscaled bilinear to 960x544",
+  "sub640-bilin": "Vita rows: rendering at 640x368, upscaled bilinear",
+  "blur1.0": "a Gaussian blur, sigma 1.0 (a soft font or filter)",
+  "blur1.5": "sigma 1.5"
+ },
+ "when": "2026-10-14T17:46Z",
+ "manifests": [
+  "eval/linefind/manifests/vita_dev.jsonl",
+  "eval/linefind/manifests/psp_dev.jsonl"
+ ],
+ "vita_vn_ocr": "a5d5aad68bb8e719e44e2e50b5836cf9afeae796",
+ "reserved_vns_skipped": 16,
+ "models_sha256": {
+  "VOCR3_FL10_w8.vocr": "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154",
+  "VOCR3_H15_w8.vocr": "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c"
+ },
+ "host": "times are host wall-clock µs from VjoVocrStats (shared box under load); A9 time is not measured. Which display path a console game takes, and how soft its text arrives, is unmeasured (#81).",
+ "summary": {
+  "x1 VOCR3_FL10_w8.vocr": {
+   "how": "x1",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    1553,
+    1600,
+    1623
+   ],
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 753,
+   "by_label": {
+    "text": {
+     "lines": 643,
+     "chars": 6969,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 105,
+     "chars": 108,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 52,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 7129,
+   "chars_after": 7129,
+   "recognize_ms_before": 8878.9,
+   "recognize_ms_after": 8878.9,
+   "blank_check_ms": 51.2,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 643,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 105,
+      "skipped": 13,
+      "skipped_chars": 5
+     },
+     "lowest_text_edges": [
+      114,
+      141,
+      146
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 643,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 105,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      1553,
+      1600,
+      1623
+     ]
+    }
+   }
+  },
+  "x1 VOCR3_H15_w8.vocr": {
+   "how": "x1",
+   "model": "VOCR3_H15_w8.vocr",
+   "lowest_text_edges": [
+    1553,
+    1600,
+    1623
+   ],
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 753,
+   "by_label": {
+    "text": {
+     "lines": 643,
+     "chars": 7010,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 105,
+     "chars": 129,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 54,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 7193,
+   "chars_after": 7193,
+   "recognize_ms_before": 16534.7,
+   "recognize_ms_after": 16664.4,
+   "blank_check_ms": 51.2,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 643,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 105,
+      "skipped": 13,
+      "skipped_chars": 4
+     },
+     "lowest_text_edges": [
+      114,
+      141,
+      146
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 643,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 105,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      1553,
+      1600,
+      1623
+     ]
+    }
+   }
+  },
+  "x2-nearest VOCR3_FL10_w8.vocr": {
+   "how": "x2-nearest",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    1289,
+    1403,
+    1503
+   ],
+   "regions": 126,
+   "vns": 34,
+   "found_lines": 313,
+   "by_label": {
+    "text": {
+     "lines": 267,
+     "chars": 2930,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 44,
+     "chars": 55,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 2,
+     "chars": 2,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 2987,
+   "chars_after": 2987,
+   "recognize_ms_before": 3735.1,
+   "recognize_ms_after": 3723.1,
+   "blank_check_ms": 31.4,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 267,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 44,
+      "skipped": 5,
+      "skipped_chars": 3
+     },
+     "lowest_text_edges": [
+      66,
+      103,
+      104
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 267,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 44,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      1289,
+      1403,
+      1503
+     ]
+    }
+   }
+  },
+  "x2-bilinear VOCR3_FL10_w8.vocr": {
+   "how": "x2-bilinear",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    350,
+    680,
+    938
+   ],
+   "regions": 126,
+   "vns": 34,
+   "found_lines": 303,
+   "by_label": {
+    "text": {
+     "lines": 266,
+     "chars": 2865,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 35,
+     "chars": 40,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 2,
+     "chars": 0,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 2905,
+   "chars_after": 2905,
+   "recognize_ms_before": 3701.1,
+   "recognize_ms_after": 3709.3,
+   "blank_check_ms": 30.5,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 266,
+      "skipped": 163,
+      "skipped_chars": 1631
+     },
+     "empty": {
+      "lines": 35,
+      "skipped": 33,
+      "skipped_chars": 40
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 266,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 35,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      350,
+      680,
+      938
+     ]
+    }
+   }
+  },
+  "x2-bil-box1 VOCR3_FL10_w8.vocr": {
+   "how": "x2-bil-box1",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    190,
+    488,
+    611
+   ],
+   "regions": 126,
+   "vns": 34,
+   "found_lines": 308,
+   "by_label": {
+    "text": {
+     "lines": 263,
+     "chars": 2809,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 43,
+     "chars": 35,
+     "rejected": 1,
+     "rejected_chars": 3,
+     "rejected_nonempty_text": 1
+    },
+    "ignored": {
+     "lines": 2,
+     "chars": 0,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 1,
+   "chars_before": 2844,
+   "chars_after": 2841,
+   "recognize_ms_before": 3631.0,
+   "recognize_ms_after": 3657.4,
+   "blank_check_ms": 29.9,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 263,
+      "skipped": 263,
+      "skipped_chars": 2809
+     },
+     "empty": {
+      "lines": 43,
+      "skipped": 43,
+      "skipped_chars": 35
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 263,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 43,
+      "skipped": 1,
+      "skipped_chars": 3
+     },
+     "lowest_text_edges": [
+      190,
+      488,
+      611
+     ]
+    }
+   }
+  },
+  "sub720-bilin VOCR3_FL10_w8.vocr": {
+   "how": "sub720-bilin",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    1011,
+    1117,
+    1146
+   ],
+   "regions": 191,
+   "vns": 51,
+   "found_lines": 452,
+   "by_label": {
+    "text": {
+     "lines": 380,
+     "chars": 4337,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 68,
+     "chars": 46,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 4,
+     "chars": 51,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 4434,
+   "chars_after": 4434,
+   "recognize_ms_before": 5523.6,
+   "recognize_ms_after": 5530.0,
+   "blank_check_ms": 36.0,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 380,
+      "skipped": 104,
+      "skipped_chars": 811
+     },
+     "empty": {
+      "lines": 68,
+      "skipped": 62,
+      "skipped_chars": 29
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 380,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 68,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      1011,
+      1117,
+      1146
+     ]
+    }
+   }
+  },
+  "sub640-bilin VOCR3_FL10_w8.vocr": {
+   "how": "sub640-bilin",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    866,
+    1018,
+    1041
+   ],
+   "regions": 191,
+   "vns": 51,
+   "found_lines": 466,
+   "by_label": {
+    "text": {
+     "lines": 384,
+     "chars": 4341,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 77,
+     "chars": 74,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 49,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 4464,
+   "chars_after": 4464,
+   "recognize_ms_before": 5773.1,
+   "recognize_ms_after": 5774.3,
+   "blank_check_ms": 35.5,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 384,
+      "skipped": 178,
+      "skipped_chars": 1652
+     },
+     "empty": {
+      "lines": 77,
+      "skipped": 74,
+      "skipped_chars": 61
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 384,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 77,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      866,
+      1018,
+      1041
+     ]
+    }
+   }
+  },
+  "blur1.0 VOCR3_FL10_w8.vocr": {
+   "how": "blur1.0",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    270,
+    488,
+    639
+   ],
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 740,
+   "by_label": {
+    "text": {
+     "lines": 632,
+     "chars": 6779,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 102,
+     "chars": 80,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 6,
+     "chars": 54,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 6913,
+   "chars_after": 6913,
+   "recognize_ms_before": 8691.5,
+   "recognize_ms_after": 8691.4,
+   "blank_check_ms": 45.7,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 632,
+      "skipped": 585,
+      "skipped_chars": 6112
+     },
+     "empty": {
+      "lines": 102,
+      "skipped": 102,
+      "skipped_chars": 80
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 632,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 102,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      270,
+      488,
+      639
+     ]
+    }
+   }
+  },
+  "blur1.5 VOCR3_FL10_w8.vocr": {
+   "how": "blur1.5",
+   "model": "VOCR3_FL10_w8.vocr",
+   "lowest_text_edges": [
+    209,
+    211,
+    215
+   ],
+   "regions": 317,
+   "vns": 84,
+   "found_lines": 722,
+   "by_label": {
+    "text": {
+     "lines": 583,
+     "chars": 6331,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "empty": {
+     "lines": 134,
+     "chars": 81,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    },
+    "ignored": {
+     "lines": 5,
+     "chars": 50,
+     "rejected": 0,
+     "rejected_chars": 0,
+     "rejected_nonempty_text": 0
+    }
+   },
+   "regions_text_changed": 0,
+   "chars_before": 6462,
+   "chars_after": 6462,
+   "recognize_ms_before": 8063.9,
+   "recognize_ms_after": 8122.5,
+   "blank_check_ms": 36.8,
+   "regions_all_blank": 0,
+   "rules": {
+    "pr84-first": {
+     "text": {
+      "lines": 583,
+      "skipped": 583,
+      "skipped_chars": 6331
+     },
+     "empty": {
+      "lines": 134,
+      "skipped": 134,
+      "skipped_chars": 81
+     },
+     "lowest_text_edges": [
+      0,
+      0,
+      0
+     ]
+    },
+    "current": {
+     "text": {
+      "lines": 583,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "empty": {
+      "lines": 134,
+      "skipped": 0,
+      "skipped_chars": 0
+     },
+     "lowest_text_edges": [
+      209,
+      211,
+      215
+     ]
+    }
+   }
+  }
+ }
+}

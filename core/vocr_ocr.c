@@ -126,12 +126,32 @@ unsigned vjo_vocr_strip_rows(unsigned width, unsigned height)
     return rows ? rows : 1u;
 }
 
-/* Capture block: [strip: rows x width | row checksums: 4 x height | seen: 1 bit per row]. */
+/* Capture block: [strip: rows x width | sums: 4 x height | ring: slots x 2 x
+ * height | seen, cycled: 1 bit per row each]. slots: as many earlier states
+ * as fit. */
+#define BIT_BYTES(h) (((size_t)(h) + 7u) / 8u)
+static size_t capture_fixed(unsigned width, unsigned height, unsigned rows)
+{
+    return ALIGN4((size_t)rows * width) + 4u * (size_t)height + ALIGN4(2u * BIT_BYTES(height));
+}
+
+unsigned vjo_vocr_state_slots(unsigned width, unsigned height)
+{
+    unsigned rows = vjo_vocr_strip_rows(width, height), slots;
+    size_t fixed, room;
+    if (!rows) return 0;
+    fixed = capture_fixed(width, height, rows);
+    room = fixed < VJO_VOCR_CAPTURE_LIMIT ? VJO_VOCR_CAPTURE_LIMIT - fixed : 0;
+    slots = (unsigned)(room / (2u * (size_t)height));
+    while (slots > 2u && ALIGN4((size_t)slots * 2u * height) > room) slots--;
+    return slots < 2u ? 2u : slots > VJO_VOCR_STATES_MAX ? VJO_VOCR_STATES_MAX : slots;
+}
+
 size_t vjo_vocr_capture_bytes(unsigned width, unsigned height)
 {
     unsigned rows = vjo_vocr_strip_rows(width, height);
     if (!rows) return 0;
-    return ALIGN4((size_t)rows * width) + (size_t)height * 4u + ALIGN4(((size_t)height + 7u) / 8u);
+    return capture_fixed(width, height, rows) + ALIGN4((size_t)vjo_vocr_state_slots(width, height) * 2u * height);
 }
 
 static int cancelled(const VjoGreySource *im)
@@ -151,34 +171,93 @@ static uint32_t clock_us(const VjoPlatform *p)
 
 /* The region, a strip at a time, for the finder and the recognizer. Every row
  * keeps the checksum it had when first read; a later read that differs means
- * the screen changed under us (err = VJO_E_SCREEN_CHANGED). */
+ * the screen changed under us (err = VJO_E_SCREEN_CHANGED), unless the row went
+ * back to one of its recent states (an animated icon; cycle_cap rows at most:
+ * new text, or a box that clears, changes more rows than an icon). While
+ * settling, a change is only noted (changed). */
 typedef struct {
     const VjoGreySource *src;
     const VjoPlatform *p;
+    const VjoVocrPolicy *pol; /* never NULL: a zeroed one is API 19's job */
     VjoVocrStats *st;
     unsigned char *strip;   /* rows [y0, y0 + rows) of the region, width bytes each */
     uint32_t *sums;         /* per region row, valid where seen */
-    unsigned char *seen;    /* 1 bit per region row */
-    unsigned w, h, strip_rows, y0, rows;
+    uint16_t *ring;         /* per region row, slots earlier states (folded), the latest first */
+    unsigned char *seen, *cyc; /* 1 bit per region row each; cyc: it went back to an earlier state */
+    unsigned w, h, strip_rows, y0, rows, slots;
     unsigned first_next;    /* the first pass's next row (h once it is in) */
+    unsigned cycle_cap;     /* rows that may go back to an earlier state without being a change */
+    int learn;              /* the stable-text wait is on: such rows are learned */
+    int settling, changed;  /* a pass that waits: changes are noted, not errors */
+    int retract;            /* the next read from row 0 starts a first pass it does not finish */
+    int published;          /* a first pass of this job has ended (the Shell was told of it) */
+    int held;               /* the rows have read the same since pass_from (a wait ended settled) */
+    int verified;           /* verified_from is set */
+    uint32_t pass_from;     /* since when the rows have read the same (this try's first read, or the wait's) */
+    uint32_t verified_from; /* start of the latest re-read of every row (a whole pass, in order) */
+    uint32_t cover_from;    /* a re-read from row 0 in progress: its start, and its next row (0: none) */
+    unsigned cover_next;
+    uint32_t settle_left;   /* the job's waiting budget left */
     int err;
 } Stream;
+
+static void bits_clear(Stream *s)
+{
+    memset(s->seen, 0, 2u * BIT_BYTES(s->h));
+}
+
+static uint16_t fold16(uint32_t sum)
+{
+    return (uint16_t)(sum ^ (sum >> 16));
+}
 
 /* Checks (or records) the checksum of region row y, whose grey bytes are at p. */
 static void stream_check(Stream *s, unsigned y, const unsigned char *p, int first)
 {
     uint32_t sum = vjo_fnv1a(VJO_FNV_INIT, p, s->w);
+    unsigned i = y >> 3, k, slots = s->slots;
     unsigned char bit = (unsigned char)(1u << (y & 7u));
-    if (s->seen[y >> 3] & bit) {
-        if (s->sums[y] != sum) {
-            s->st->tears++;
-            s->err = VJO_E_SCREEN_CHANGED;
-        }
+    uint16_t *ring = s->ring + (size_t)y * slots, now = fold16(sum);
+    if (first) s->st->region_sum = vjo_fnv1a(s->st->region_sum, (const unsigned char *)&sum, 4);
+    if (!(s->seen[i] & bit)) {
+        s->seen[i] |= bit;
+        s->sums[y] = sum;
+        for (k = 0; k < slots; k++) ring[k] = now;
         return;
     }
-    s->seen[y >> 3] |= bit;
+    if (s->sums[y] == sum) return;
+    /* A state folding to the current one's 16 bits is a new one (the sums
+     * differ), whatever copies of that fold the ring holds. */
+    k = now == fold16(s->sums[y]) ? slots : 0;
+    while (k < slots && ring[k] != now) k++;
+    /* Back to a recent state: an animated icon, not text (text being typed
+     * only ever moves on to new states). With the stable-text wait on, up to
+     * cycle_cap rows of a job are taken for such rows; a page of new text,
+     * or a box of several lines clearing back to what it showed before,
+     * changes more rows than that. Without the wait every change is one, as
+     * in API 19. */
+    if (k < slots && ((s->cyc[i] & bit) || (s->learn && s->st->cycling_rows < s->cycle_cap))) {
+        if (!(s->cyc[i] & bit)) {
+            s->cyc[i] |= bit;
+            s->st->cycling_rows++;
+        }
+        memmove(ring + 1, ring, k * sizeof(*ring));
+        ring[0] = fold16(s->sums[y]);
+        s->sums[y] = sum;
+        s->st->cycles++;
+        return;
+    }
+    if (k == slots) k = slots - 1; /* a new state: the oldest leaves */
+    memmove(ring + 1, ring, k * sizeof(*ring));
+    ring[0] = fold16(s->sums[y]);
     s->sums[y] = sum;
-    if (first) s->st->region_sum = vjo_fnv1a(s->st->region_sum, (const unsigned char *)&sum, 4);
+    if (s->settling) {
+        s->st->settle_changes++;
+        s->changed = 1;
+        return;
+    }
+    s->st->tears++;
+    s->err = VJO_E_SCREEN_CHANGED;
 }
 
 /* Rows [y, y + n) through the source into dst (stride w), checked. */
@@ -186,11 +265,14 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
 {
     unsigned flags = 0;
     uint32_t t0;
-    int got;
+    int got, first = 0;
     if (s->err) return -1;
     if (cancelled(s->src)) { s->err = VJO_E_CANCELLED; return -1; }
-    if (y == s->first_next) {
+    if (s->retract && y == 0) {
+        flags = VJO_STRIP_FIRST; /* a first pass begun and left: the earlier capture is void */
+    } else if (!s->settling && y == s->first_next) {
         flags = VJO_STRIP_FIRST | (y + n == s->h ? VJO_STRIP_LAST : 0u);
+        first = 1;
     }
     t0 = clock_us(s->p);
     got = s->src->strip(s->src->ud, y, n, dst, s->w, flags);
@@ -200,8 +282,29 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         s->err = got < 0 ? got : VJO_E_SOURCE;
         return -1;
     }
-    if (flags) s->first_next = y + n;
-    for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, flags != 0);
+    if (flags == VJO_STRIP_FIRST && !first) s->retract = 0;
+    if (first) {
+        if (!y && !s->held) s->pass_from = t0;
+        s->first_next = y + n;
+        if (flags & VJO_STRIP_LAST) s->published = 1;
+    } else {
+        /* Reads from row 0 that follow each other to the last row re-read every
+         * row since the first of them (the finder's second pass, a wait's pass). */
+        if (!y) {
+            s->cover_from = t0;
+            s->cover_next = n;
+        } else if (s->cover_next && y <= s->cover_next) {
+            if (y + n > s->cover_next) s->cover_next = y + n;
+        } else {
+            s->cover_next = 0;
+        }
+    }
+    for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, first);
+    if (!s->err && !first && s->cover_next >= s->h) {
+        s->verified_from = s->cover_from;
+        s->verified = 1;
+        s->cover_next = 0;
+    }
     return s->err ? -1 : 0;
 }
 
@@ -221,6 +324,84 @@ static int stream_fetch(Stream *s, unsigned y)
     s->y0 = y;
     s->rows = n;
     return 0;
+}
+
+/* One whole pass over the region from row 0, a strip at a time, outside the
+ * first pass: it re-reads (verifies) every row (stream_read records it). */
+static int stream_pass(Stream *s)
+{
+    for (unsigned y = 0; y < s->h; y += s->strip_rows)
+        if (stream_fetch(s, y) < 0) return -1;
+    return 0;
+}
+
+static int settle_on(const Stream *s)
+{
+    return s->pol->settle_us && s->p->now_us && s->settle_left;
+}
+
+/* Spends us of the job's waiting budget; over: it ran out before the rows held
+ * still, so the job goes on without waiting (now and on later tries). */
+static void settle_spend(Stream *s, uint32_t us, int over)
+{
+    s->st->settle_us += us;
+    s->settle_left = !over && us < s->settle_left ? s->settle_left - us : 0;
+    if (over) s->st->settle_timeout = 1;
+}
+
+/* Waits for the rows to hold still: passes that only read the region, until
+ * one that saw no change started settle_us after the last pass that did (or the
+ * wait's first). A job that already told the Shell of a capture first voids it
+ * (retract), so the Shell does not take the screen it read before for this
+ * job's. Settled, the rows have read the same since pass_from. */
+static int settle_wait(Stream *s)
+{
+    uint32_t t0 = clock_us(s->p), stable_since = t0;
+    int done = 0, over = 0;
+    s->settling = 1;
+    s->retract = s->published;
+    while (!done) {
+        uint32_t ps = clock_us(s->p);
+        if (ps - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
+        s->changed = 0;
+        if (stream_pass(s) < 0) break;
+        s->st->settle_passes++;
+        if (s->changed) stable_since = ps;
+        else if (ps - stable_since >= s->pol->settle_us) done = 1;
+    }
+    s->settling = 0;
+    if (done) {
+        s->pass_from = stable_since;
+        s->held = 1;
+        s->st->settled = 1;
+    }
+    settle_spend(s, clock_us(s->p) - t0, over);
+    return s->err ? -1 : 0;
+}
+
+/* After the finder: re-reads the region until a whole pass started settle_us
+ * after the rows were first read the same (pass_from). A change is a tear: the
+ * lines found are not the screen's any more. Once one re-read has matched, a
+ * pass that would start too early is not read: the job sleeps until it is due
+ * (with a sleep callback). */
+static int settle_verify(Stream *s)
+{
+    uint32_t t0 = clock_us(s->p);
+    int over = 0;
+    while (!s->verified || s->verified_from - s->pass_from < s->pol->settle_us) {
+        uint32_t now = clock_us(s->p), due = s->pass_from + s->pol->settle_us;
+        if (now - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
+        if (s->verified && s->pol->sleep && (int32_t)(due - now) > 0) {
+            uint32_t nap = due - now, left = s->settle_left - (now - t0);
+            s->pol->sleep(nap < left ? nap : left);
+            if (cancelled(s->src)) { s->err = VJO_E_CANCELLED; break; }
+        }
+        if (stream_pass(s) < 0) break;
+        s->st->settle_passes++;
+    }
+    if (!s->err && !over) s->st->settled = 1;
+    settle_spend(s, clock_us(s->p) - t0, over);
+    return s->err ? -1 : 0;
 }
 
 static const unsigned char *stream_row(void *user, unsigned y)
@@ -382,23 +563,47 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
     }
 }
 
+/* The weights resident and verified, the runtime's model parsed and its arena
+ * planned in the scratch (the finder is done with it). */
+static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi, const VjoGreySource *im,
+                      VjoVocrResident *res, unsigned char *ws, const Layout *l, VjoVocrStats *st)
+{
+    vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
+    vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
+    vocr_opts opts;
+    uint32_t t0 = clock_us(p);
+    int rc = resident_weights(p, dir, mi, res, im, st);
+    if (rc) return rc;
+    /* Verified bytes the runtime refuses would fail every job: release them. */
+    if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
+    memset(&opts, 0, sizeof(opts));
+    opts.mode = VOCR_MODE_W8I;
+    {
+        size_t need = vocr_arena_bytes(model, &opts);
+        if (!need || need > l->scratch) return drop_with(res, VJO_E_OCR_MODEL);
+        if (vocr_init(ctx, model, &opts, ws + l->scratch_off, need) != VOCR_OK) return VJO_E_OCR_INFERENCE;
+    }
+    st->load_us = clock_us(p) - t0;
+    return VJO_OK;
+}
+
 /* One capture of the region: lines, then (weights) each line recognized. */
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
                      const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
                      Stream *s, char *text, size_t cap, VjoVocrStats *st)
 {
     const unsigned w = im->width;
+    const VjoVocrPolicy *pol = s->pol;
     VocrLinesRows region = {w, im->height, VOCR_LINES_GREY, stream_row, s};
     VocrLineSet set;
-    vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
-    vocr_opts opts;
     size_t used = 0;
     uint32_t t0;
-    int rc;
+    int rc, loaded = 0;
 
     text[0] = '\0';
     st->lines = st->truncated = st->dark = st->frames = st->recognized = 0;
+    st->blank = 0;
     t0 = clock_us(p);
     rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
@@ -414,20 +619,16 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->dark += set.lines[i].dark ? 1u : 0u;
     if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
+    /* Nothing is recognized before the rows have held still for settle_us. */
+    if (settle_on(s) && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
 
-    t0 = clock_us(p);
-    rc = resident_weights(p, dir, mi, res, im, st);
-    if (rc) return rc;
-    /* Verified bytes the runtime refuses would fail every job: release them. */
-    if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
-    memset(&opts, 0, sizeof(opts));
-    opts.mode = VOCR_MODE_W8I;
-    {
-        size_t need = vocr_arena_bytes(model, &opts);
-        if (!need || need > l->scratch) return drop_with(res, VJO_E_OCR_MODEL);
-        if (vocr_init(ctx, model, &opts, ws + l->scratch_off, need) != VOCR_OK) return VJO_E_OCR_INFERENCE;
+    /* With the blank-line check, the weights are read at the first line that
+     * is not skipped: a box of blank lines opens no model file. */
+    if (!pol->blank) {
+        rc = load_model(p, dir, mi, im, res, ws, l, st);
+        if (rc) return rc;
+        loaded = 1;
     }
-    st->load_us = clock_us(p) - t0;
 
     t0 = clock_us(p);
     for (unsigned i = 0; i < set.count; i++) {
@@ -436,13 +637,46 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         size_t stride = w;
         vocr_image img;
         vocr_extra extra;
+        VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
         size_t start = used ? used + 1 : 0, n;
         uint32_t line_t0;
+        int blank = 0;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
         pixels = line_pixels(s, ln, &stride);
         if (s->err) return s->err;
         if (!pixels) continue; /* taller than a strip and no line buffer: left out */
+        if (pol->blank || pol->line) {
+            uint32_t b0 = clock_us(p);
+            blank = vjo_vocr_ink(pixels, stride, ln->w, ln->h, &ink);
+            if (pol->blank_edges) blank = ink.edges < pol->blank_edges;
+            blank = blank && pol->blank;
+            st->blank_us += clock_us(p) - b0;
+        }
+        if (blank) {
+            if (st->blank < VJO_VOCR_BLANK_LOGGED) {
+                VjoVocrBlankStat *b = &st->blank_line[st->blank];
+                b->index = (uint16_t)i;
+                b->width = (uint16_t)ln->w;
+                b->height = (uint16_t)ln->h;
+                b->x = (uint16_t)ln->x;
+                b->y = (uint16_t)ln->y;
+                b->ink = ink;
+            }
+            st->blank++;
+            if (pol->line) {
+                VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0};
+                pol->line(pol->ud, &info);
+            }
+            continue;
+        }
+        if (!loaded) {
+            uint32_t r0 = clock_us(p);
+            rc = load_model(p, dir, mi, im, res, ws, l, st);
+            if (rc) return rc;
+            loaded = 1;
+            t0 += clock_us(p) - r0; /* recognize_us leaves the load out */
+        }
         img.pixels = pixels;
         img.width = ln->w;
         img.height = ln->h;
@@ -462,6 +696,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             ls->frames = (uint16_t)(extra.frames > 0xFFFFu ? 0xFFFFu : extra.frames);
             ls->us = clock_us(p) - line_t0;
         }
+        if (pol->line) {
+            VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
+                                    text + start, clock_us(p) - line_t0};
+            pol->line(pol->ud, &info);
+        }
         n = strlen(text + start);
         if (!n) { /* nothing read on this line: no separator either */
             text[used] = '\0';
@@ -474,11 +713,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     return VJO_OK;
 }
 
+static const VjoVocrPolicy no_policy;
+
 /* one_shot: the weights occupy the front of workspace for this job only. */
 static int run_job(const VjoPlatform *platform, const char *model_dir, const char *model,
                    const VjoGreySource *image, VjoVocrResident *res, void *workspace,
                    size_t workspace_size, void *capture, size_t capture_size, int one_shot,
-                   char *text, size_t text_cap, VjoVocrStats *stats)
+                   const VjoVocrPolicy *policy, char *text, size_t text_cap, VjoVocrStats *stats)
 {
     const VjoVocrModel *mi;
     Layout l;
@@ -509,21 +750,38 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     memset(&st, 0, sizeof(st));
     st.src = image;
     st.p = platform;
+    st.pol = policy ? policy : &no_policy;
     st.st = stats;
     st.w = image->width;
     st.h = image->height;
     st.strip_rows = strip_rows;
     st.strip = (unsigned char *)capture;
+    st.slots = vjo_vocr_state_slots(st.w, st.h);
     st.sums = (uint32_t *)(void *)((unsigned char *)capture + ALIGN4((size_t)strip_rows * st.w));
-    st.seen = (unsigned char *)(st.sums + st.h);
+    st.ring = (uint16_t *)(void *)(st.sums + st.h);
+    st.seen = (unsigned char *)(st.ring + (size_t)st.slots * st.h);
+    st.cyc = st.seen + BIT_BYTES(st.h);
+    /* An icon is a few dozen rows; a looping background may be more. */
+    st.cycle_cap = VJO_VOCR_CYCLE_ROWS;
+    st.learn = st.pol->settle_us && platform->now_us;
+    st.settle_left = st.pol->settle_max_us ? st.pol->settle_max_us : VJO_VOCR_SETTLE_MAX_US;
     /* The screen may change while it is read (the player advanced the text): then
-     * the region is captured again from scratch, up to VJO_VOCR_TRIES times. */
+     * the region is captured again, up to VJO_VOCR_TRIES times. Without the
+     * stable-text wait from scratch; with it, after waiting for the rows to hold
+     * still (and before the first, with settle_first). */
     for (unsigned attempt = 1; attempt <= VJO_VOCR_TRIES; attempt++) {
-        memset(st.seen, 0, ((size_t)st.h + 7u) / 8u);
+        int wait = settle_on(&st) && (attempt > 1 || st.pol->settle_first);
+        if (!wait || attempt == 1) bits_clear(&st);
         st.rows = st.y0 = st.first_next = 0;
         st.err = 0;
+        st.held = st.verified = 0;
+        st.cover_next = 0;
         stats->tries = attempt;
         stats->region_sum = VJO_FNV_INIT;
+        if (wait && settle_wait(&st) < 0) {
+            rc = stream_error(&st, VJO_E_SOURCE);
+            break;
+        }
         rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st,
                        text, text_cap, stats);
         if (rc != VJO_E_SCREEN_CHANGED || cancelled(image)) break;
@@ -538,7 +796,16 @@ int vjo_vocr_ocr_resident(const VjoPlatform *platform, const char *model_dir, co
                           char *text, size_t text_cap, VjoVocrStats *stats)
 {
     return run_job(platform, model_dir, model, image, resident, workspace, workspace_size, capture,
-                   capture_size, 0, text, text_cap, stats);
+                   capture_size, 0, NULL, text, text_cap, stats);
+}
+
+int vjo_vocr_ocr_policy(const VjoPlatform *platform, const char *model_dir, const char *model,
+                        const VjoGreySource *image, VjoVocrResident *resident,
+                        void *workspace, size_t workspace_size, void *capture, size_t capture_size,
+                        const VjoVocrPolicy *policy, char *text, size_t text_cap, VjoVocrStats *stats)
+{
+    return run_job(platform, model_dir, model, image, resident, workspace, workspace_size, capture,
+                   capture_size, 0, policy, text, text_cap, stats);
 }
 
 static void *one_shot_alloc(void *ud, size_t bytes)
@@ -556,7 +823,80 @@ int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char 
     one.alloc = one_shot_alloc;
     one.ud = workspace;
     return run_job(platform, model_dir, model, image, &one, workspace, workspace_size, capture,
-                   capture_size, 1, text, text_cap, stats);
+                   capture_size, 1, NULL, text, text_cap, stats);
+}
+
+/* ---- the blank-line check ---- */
+
+/* The grey level at or below which `part` per mille of the n pixels lie
+ * (n <= VJO_VOCR_INK_PIXELS: 32-bit arithmetic, no 64-bit division helper). */
+static unsigned percentile(const uint32_t *hist, uint32_t n, unsigned part)
+{
+    uint32_t want = (n * part + 999u) / 1000u, acc = 0;
+    unsigned v;
+    if (!want) want = 1;
+    for (v = 0; v < 255u; v++) {
+        acc += hist[v];
+        if (acc >= want) break;
+    }
+    return v;
+}
+
+static unsigned grey_step(unsigned a, unsigned b)
+{
+    return a > b ? a - b : b - a;
+}
+
+/* floor(n * 10000 / total) for n <= 2 total, total <= VJO_VOCR_INK_PIXELS, in
+ * 32-bit steps of 100 (each remainder times 100 stays under 2^32). */
+static uint32_t per_10000(uint32_t n, uint32_t total)
+{
+    uint32_t q = n / total, r = n % total, a, b;
+    a = r * 100u / total;
+    r = r * 100u % total;
+    b = r * 100u / total;
+    return q * 10000u + a * 100u + b;
+}
+
+int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigned h, VjoVocrInk *out)
+{
+    uint32_t hist[256], total, edges = 0;
+    unsigned lo, hi, e;
+    memset(out, 0, sizeof(*out));
+    if (!pixels || !w || !h || w > VJO_OCR_MAX_WIDTH || h > 0xFFFFu) return 0; /* unknown: never blank */
+    total = (uint32_t)w * h;
+    if (total > VJO_VOCR_INK_PIXELS) return 0;
+    memset(hist, 0, sizeof(hist));
+    for (unsigned y = 0; y < h; y++) {
+        const unsigned char *r = pixels + (size_t)y * stride;
+        for (unsigned x = 0; x < w; x++) hist[r[x]]++;
+    }
+    lo = percentile(hist, total, 20u);
+    hi = percentile(hist, total, 980u);
+    e = (hi - lo) / VJO_VOCR_EDGE_DIV < VJO_VOCR_EDGE_MIN ? VJO_VOCR_EDGE_MIN : (hi - lo) / VJO_VOCR_EDGE_DIV;
+    /* An edge that scaling or blur softened rises over more than one pixel: the
+     * step counts when the grey level gets there within VJO_VOCR_INK_SPAN pixels. */
+    for (unsigned y = 0; y < h; y++) {
+        const unsigned char *r = pixels + (size_t)y * stride;
+        for (unsigned x = 0; x < w; x++) {
+            unsigned v = r[x], across = 0, down = 0;
+            for (unsigned s = 1; s <= VJO_VOCR_INK_SPAN && !(across && down); s++) {
+                if (!across && x + s < w && grey_step(v, r[x + s]) >= e) across = 1;
+                if (!down && y + s < h && grey_step(v, r[(size_t)s * stride + x]) >= e) down = 1;
+            }
+            edges += across + down;
+        }
+    }
+    out->lo = (uint8_t)lo;
+    out->hi = (uint8_t)hi;
+    out->edge = (uint8_t)e;
+    out->edges = (uint16_t)per_10000(edges, total); /* at most 2 per pixel: 20,000 */
+    return vjo_vocr_blank(out);
+}
+
+int vjo_vocr_blank(const VjoVocrInk *ink)
+{
+    return ink->edges < VJO_VOCR_BLANK_EDGES;
 }
 
 /* ---- an RGBA image in memory as a grey source (host tools and tests) ---- */
