@@ -1552,7 +1552,7 @@ static void test_oom_keeps_recognized_text_and_cards(void)
     TEST_ASSERT(vjo_queue_count() == 2);
     server();
     triangle();
-    TEST_CHECK(anki.adds == 1 && vjo_queue_count() == 1 && !strcmp(g_view.anki_status, "Sent 1 to Anki, 1 kept (too large)"));
+    TEST_CHECK(anki.adds == 1 && vjo_queue_count() == 1 && !strcmp(g_view.anki_status, "Sent 1 to Anki, 1 kept (too large: the Overlay app sends it)"));
     TEST_MSG("%s", g_view.anki_status);
     TEST_CHECK(g_view.anki_mark[0] == VJO_ANKI_MARK_QUEUED); /* not all were sent */
     finish();
@@ -1866,6 +1866,53 @@ static void test_cross_records_every_dictionary_and_sends_the_glossary(void)
     finish();
 }
 
+/* The largest card a record holds (8 dictionaries' long entries, under 32
+ * KiB): its note does not fit the overlay's 128 KiB arena beside the record,
+ * so △ keeps it and says the Overlay app sends it (test_anki_app sends it). */
+static void test_largest_card_is_kept_for_the_app(void)
+{
+    static char text[8][3700], path[256];
+    static const char *m[8][1];
+    static uint8_t mem[96 * 1024];
+    VjoAnkiGloss more[7];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = VJO_NO_RANK, .sentence = "好き",
+                     .hl_start = 0, .hl_end = 6, .sf_hl_start = -1, .sf_hl_end = -1, .misc = "G (2026-10-14 17:12)"};
+    char id[VJO_QUEUE_ID_SIZE], *json;
+    VjoArena a;
+    FILE *f;
+    reset();
+    vjo_test_anki_text_only = 1;
+    for (int k = 0; k < 8; k++) {
+        int o = snprintf(text[k], sizeof(text[k]), "[Dictionary %d]\n", k);
+        while (o + 3 < (int)sizeof(text[k]) - 1) {
+            memcpy(text[k] + o, "好", 3);
+            o += 3;
+        }
+        text[k][o] = '\0';
+        m[k][0] = text[k];
+        if (k)
+            more[k - 1] = (VjoAnkiGloss){NULL, "好き", "すき", m[k], 1};
+    }
+    n.meanings = m[0];
+    n.n_meanings = 1;
+    n.more = more;
+    n.n_more = 7;
+    vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_ASSERT((json = vjo_queue_encode(&a, &n, 0)) != NULL && vjo_queue_count() == 0);
+    vjo_queue_id(json, strlen(json), id);
+    snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.json", id);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    fputs(json, f);
+    fclose(f);
+    server();
+    triangle();
+    TEST_CHECK(anki.adds == 0 && vjo_queue_count() == 1 &&
+               !strcmp(g_view.anki_status, "Sent 0 to Anki, 1 kept (too large: the Overlay app sends it)"));
+    TEST_MSG("%s (record %u B)", g_view.anki_status, (unsigned)strlen(json));
+    TEST_CHECK(logged(" is too large to send in 131072 bytes; kept"));
+    finish();
+}
+
 /* The record format on its own: every value round-trips, the same note
  * gives the same bytes (its ID), and anything but an exact record fails. */
 static void test_record_format(void)
@@ -2128,6 +2175,9 @@ TEST_LIST = {
     {"auto_host_sends_to_the_address_the_overlay_app_found", test_auto_finds_anki_on_the_lan},
     {"hundred_text_cards_send_with_one_scan_each_in_bounded_memory", test_hundred_text_cards_send_in_bounded_memory},
     {"a_refused_job_thread_is_logged_with_its_rc_and_sceshell_free", test_a_refused_job_thread_is_logged},
+    {"version_2_record_from_the_test_build_sends_as_kiku", test_version_2_record_from_the_test_build_sends_as_kiku},
+    {"cross_records_every_dictionary_and_sends_the_glossary", test_cross_records_every_dictionary_and_sends_the_glossary},
+    {"largest_card_is_kept_by_triangle_for_the_overlay_app", test_largest_card_is_kept_for_the_app},
 #if VJO_ANKI_SCREENSHOT
     {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"queue_survives_restart_and_triangle_sends_with_current_settings", test_queue_survives_restart_and_triangle_sends_it},
@@ -2141,8 +2191,6 @@ TEST_LIST = {
     {"oom_keeps_recognized_text_and_queued_cards", test_oom_keeps_recognized_text_and_cards},
     {"stale_list_close_stop_and_busy_jobs_cancel_without_leaks", test_cancellation},
     {"version_1_record_from_the_first_queue_still_sends", test_version_1_record_still_sends},
-    {"version_2_record_from_the_test_build_sends_as_kiku", test_version_2_record_from_the_test_build_sends_as_kiku},
-    {"cross_records_every_dictionary_and_sends_the_glossary", test_cross_records_every_dictionary_and_sends_the_glossary},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_then_one_send_release_memory_and_threads", test_fifty_cards_then_one_send_release_everything},
 #else

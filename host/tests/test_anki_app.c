@@ -538,6 +538,50 @@ static void test_send(void)
     TEST_CHECK(vjo_queue_count() == 1 && strstr(msg, "No AnkiConnect found") == msg);
 }
 
+/* A card with the most a record holds: 8 dictionaries' long entries (the
+ * record under 32 KiB). The overlay's 128 KiB arena cannot build its note
+ * (shell_anki keeps it "too large"); Send now's 512 KiB can. */
+static void test_send_the_largest_card(void)
+{
+    static char text[8][3700];
+    static const char *m[8][1];
+    VjoAnkiGloss more[7];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = VJO_NO_RANK, .sentence = "好き",
+                     .hl_start = 0, .hl_end = 6, .sf_hl_start = -1, .sf_hl_end = -1, .misc = "G (2026-10-14 17:12)"};
+    VjoAnkiSend s;
+    char msg[240], *json;
+    size_t mark;
+    reset();
+    for (int k = 0; k < 8; k++) {
+        int o = snprintf(text[k], sizeof(text[k]), "[Dictionary %d]\n", k);
+        while (o + 3 < (int)sizeof(text[k]) - 1) {
+            memcpy(text[k] + o, "好", 3);
+            o += 3;
+        }
+        text[k][o] = '\0';
+        m[k][0] = text[k];
+        if (k)
+            more[k - 1] = (VjoAnkiGloss){NULL, "好き", "すき", m[k], 1};
+    }
+    n.meanings = m[0];
+    n.n_meanings = 1;
+    n.more = more;
+    n.n_more = 7;
+    mark = vjo_arena_mark(&A);
+    json = vjo_queue_encode(&A, &n, 0);
+    TEST_ASSERT(json != NULL);
+    printf("largest card: record %u B\n", (unsigned)strlen(json));
+    TEST_CHECK(strlen(json) > 28000 && strlen(json) <= VJO_QUEUE_TEXT_MAX);
+    queue_record(json);
+    vjo_arena_release(&A, mark);
+    TEST_CHECK(vjo_anki_app_send(&A, &P, &ops, &cfg, &s, msg, sizeof(msg)) == VJO_OK && s.sent == 1 &&
+               !s.too_large && vjo_queue_count() == 0);
+    TEST_MSG("%s", msg);
+    TEST_CHECK(strstr(anki.last_add, "\"Glossary\":") && strstr(anki.last_add, "Dictionary 7"));
+    printf("largest card: sent, addNote %u B, arena peak %u of %u B\n", (unsigned)strlen(anki.last_add),
+           (unsigned)A.peak, (unsigned)A.size);
+}
+
 /* The real v2 records of a console's queue, when a directory of them is
  * given (VJO_ANKI_REAL_QUEUE, private: never committed): each decodes and
  * becomes a Kiku note, without printing its text. */
@@ -608,6 +652,7 @@ TEST_LIST = {
     {"connection_test_reports_version_kiku_fields_and_deck", test_connection_test},
     {"auto_searches_the_lan_saves_the_address_and_searches_again_when_it_moved", test_auto_search},
     {"send_now_sends_every_record_version_as_kiku_once", test_send},
+    {"send_now_sends_the_largest_card_the_overlay_keeps", test_send_the_largest_card},
     {"real_console_records_become_kiku_notes", test_real_queue},
     {NULL, NULL},
 };

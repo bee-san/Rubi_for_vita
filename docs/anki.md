@@ -72,6 +72,7 @@ words get the green √.
 | `Card not saved: over 32 KiB of text` | The card's text exceeds a record's limit |
 | `Sent 3 to Anki, 1 already there` | Done; duplicates were archived |
 | `Sent 2 to Anki, 1 kept (unreadable, see log.txt)` | A damaged or edited record, or one whose screenshot is missing, stays queued |
+| `Sent 2 to Anki, 1 kept (too large: the Overlay app sends it)` | A card whose note does not fit the overlay's 128 KiB arena (many long dictionary entries); the app's Send now has 512 KiB |
 | `1 sent; 2 kept: Anki offline` | Sending stopped; the rest stays queued. Also any AnkiConnect error and an HTTP error |
 | `0 sent; 1 kept: Kiku note type not found in Anki: import Kiku (docs/anki.md)` | Anki has no Kiku note type ([setup](#setup)) |
 | `0 sent; 1 kept: Anki not found: test the connection in the Overlay app` | `anki_host` is `auto`, and no search has found AnkiConnect yet or the computer it found does not answer now (Anki closed, or the computer has another address); the app's test searches again |
