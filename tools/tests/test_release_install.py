@@ -200,6 +200,30 @@ elif '-o' in a:
             self.assertIn(setting, config)
         self.assertNotIn("test-key", result.stdout)
 
+    def test_source_install_rewrites_a_removed_engine_to_vocr(self):
+        # The source installer keeps the saved engine (no --set ocr_backend), except a removed
+        # one: the VOCR2 trial and ncnn (host tools) become the local engine, vocr.
+        (self.package / "config.ini").unlink()
+        (self.package / "docs").mkdir()
+        shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
+        build = self.package / "build/vita"
+        build.mkdir(parents=True)
+        for plugin in (self.package / "ur0/tai").iterdir():
+            shutil.copyfile(plugin, build / plugin.name)
+        shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco", build / "vitajpoverlay.rco")
+        for removed in ("vocr2", "ncnn"):
+            (self.data / "config.ini").write_text(
+                "ocr_backend = %s\nvocr_model = H15_w8.vocr\nfont_size_ja = 24\njpdb_api_key = test-key\n" % removed)
+            result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            config = (self.data / "config.ini").read_text()
+            self.assertIn("\nocr_backend = vocr\n", config)
+            self.assertNotIn("ocr_backend = " + removed, config)
+            for setting in ("vocr_model = H15_w8.vocr", "font_size_ja = 24", "jpdb_api_key = test-key"):
+                self.assertIn(setting, config)
+            self.assertIn("config.ini: ocr_backend = vocr", result.stdout)
+            self.assertNotIn("test-key", result.stdout)
+
     def test_missing_source_template_stops_before_uploading_plugins(self):
         result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
         self.assertNotEqual(result.returncode, 0)
