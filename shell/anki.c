@@ -3,8 +3,8 @@
  * ux0:data/VitaJPOverlay/anki_queue/ (anki_queue.c): a readable JSON record
  * and an optional JPEG of the game frame, written the same way with Wi-Fi
  * off, Anki closed or anki_host empty. △ sends the queued cards to
- * AnkiConnect at anki_host on the local network, one at a time, with the
- * deck, note type, fields, tags and word audio configured at that moment. A
+ * AnkiConnect at anki_host on the local network, one at a time, as Kiku
+ * notes in the Kiku deck (core/anki.h), with word audio when set. A
  * card leaves the queue only once AnkiConnect returns its note ID, or finds
  * its stable vita_queue_<id> tag after a lost reply; one Anki already has is
  * kept as <id>.duplicate.json. No AnkiWeb sync and no login. Nothing runs and
@@ -25,8 +25,10 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/rtc.h>
+#include <string.h> /* strlen: shell/libc_shim.c */
 
 #include "../core/anki.h"
+#include "../core/local_dict.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/utf.h"
 #include "anki_queue.h"
@@ -48,6 +50,12 @@
 #ifndef VJO_ANKI_SCREENSHOT
 #define VJO_ANKI_SCREENSHOT 0
 #endif
+#ifdef VJO_HOST
+int vjo_test_anki_text_only; /* host tests: text-only cards from the screenshot build */
+#define TEXT_ONLY vjo_test_anki_text_only
+#else
+#define TEXT_ONLY 0
+#endif
 /* The job's arena is the ledger's (include/vjo_ledger_budget.h). The host tests also build
  * the screenshot path (vjo-shell-anki-tests), whose arena would need that budget raised. */
 #if !defined(VJO_HOST) || !VJO_ANKI_SCREENSHOT
@@ -58,7 +66,6 @@ typedef char vjo_anki_ledger_check[(VJO_ANKI_SCREENSHOT ? ANKI_PICTURE_MEM : ANK
 #define ANKI_SEND_ROOM (16 * 1024)
 #define ANKI_STACK VJO_STACK_SHELL_ANKI /* as VjoNet: BearSSL for an https audio source */
 #define PICTURE_QUALITY 75
-#define SCAN_WINDOW_US 350000 /* per batch of VJO_NET_PROBE_MAX hosts */
 
 enum { JOB_NONE = 0, JOB_COUNT, JOB_SAVE, JOB_SEND };
 
@@ -68,6 +75,8 @@ static VjoNetCancel cancel = {-1, -1, 0}; /* the job thread's requests */
 /* mailbox (box_lock) */
 static VjoConfig next_cfg;   /* the control thread's settings, for the next job */
 static char game_name[128];  /* the running game's, for MiscInfo */
+static char game_tid[12];    /* its title ID */
+static char ocr_model[32];   /* the model of the last recognition ("" for Lens) */
 static int started;          /* vjo_anki_start succeeded; vjo_anki_stop clears it */
 static int job;              /* the running job (JOB_*) */
 static int next_job;         /* run by the same thread after it (behind a count or a save) */
@@ -82,9 +91,6 @@ static VjoPlatform plat;
 static void *mem;
 static size_t mem_size, last_peak; /* last_peak: the last job's arena peak */
 static VjoArena arena;
-static char saved_host[64]; /* anki_host.txt (auto) */
-static int saved_port, saved_loaded;
-static int scanned; /* searched the network since boot */
 
 static int64_t now_us(void)
 {
@@ -189,9 +195,7 @@ static int mem_with_settings(void)
 {
     VjoConfig *c;
     int picture;
-    sceKernelLockMutex(box_lock, 1, NULL);
-    picture = VJO_ANKI_SCREENSHOT && next_cfg.anki_field[VJO_ANKI_PICTURE][0] != '\0';
-    sceKernelUnlockMutex(box_lock, 1);
+    picture = VJO_ANKI_SCREENSHOT && !TEXT_ONLY;
     /* Allocated before any view lock is taken (Paf has its own lock). */
     if (mem_get(picture ? ANKI_PICTURE_MEM : ANKI_TEXT_MEM) < 0 ||
         !(c = (VjoConfig *)vjo_arena_alloc(&arena, sizeof(*c)))) {
@@ -207,109 +211,40 @@ static int mem_with_settings(void)
 
 static int want_picture(void)
 {
-    return VJO_ANKI_SCREENSHOT && acfg->anki_field[VJO_ANKI_PICTURE][0] != '\0' && mem_size >= ANKI_PICTURE_MEM;
+    return VJO_ANKI_SCREENSHOT && !TEXT_ONLY && mem_size >= ANKI_PICTURE_MEM;
 }
 
 /* ---------------- finding Anki ---------------- */
 
-static void load_saved(void)
-{
-    size_t mark, len = 0;
-    char *t;
-    if (saved_loaded)
-        return;
-    saved_loaded = 1;
-    mark = vjo_arena_mark(&arena);
-    t = vjo_file_read(&arena, VJO_ANKI_HOST_PATH, &len);
-    if (t) {
-        while (len && (uint8_t)t[len - 1] <= ' ')
-            t[--len] = '\0';
-        if (vjo_anki_endpoint(t, saved_host, sizeof(saved_host), &saved_port) != VJO_ANKI_MANUAL)
-            saved_host[0] = '\0';
-    }
-    vjo_arena_release(&arena, mark);
-}
-
-static void save_host(const char *host, int port)
-{
-    char line[80];
-    int n = sceClibSnprintf(line, sizeof(line), "%s:%d\n", host, port);
-    sceClibSnprintf(saved_host, sizeof(saved_host), "%s", host);
-    saved_port = port;
-    vjo_file_write(VJO_ANKI_HOST_PATH, line, (size_t)n);
-}
-
-static void ip_text(uint32_t ip, char *out, size_t cap)
-{
-    sceClibSnprintf(out, cap, "%u.%u.%u.%u", (unsigned)(ip >> 24), (unsigned)(ip >> 16) & 255,
-                    (unsigned)(ip >> 8) & 255, (unsigned)ip & 255);
-}
-
-/* Searches the local /24 for AnkiConnect; the first that answers wins. */
-static int scan(char *host, size_t cap, int *port)
-{
-    uint32_t ip, mask, cand[254];
-    uint8_t open[VJO_NET_PROBE_MAX];
-    int n, n_open = 0;
-    int64_t t0 = now_us();
-    char net[16];
-    if (vjo_net_local_ipv4(&ip, &mask) < 0) {
-        vjo_log("anki: scan: no IP address");
-        return -1;
-    }
-    n = vjo_anki_scan_candidates(ip, mask, cand, 254);
-    ip_text(ip, net, sizeof(net));
-    for (int b = 0; b < n && !stopping(); b += VJO_NET_PROBE_MAX) {
-        int k = vjo_net_probe_port(cand + b, n - b, VJO_ANKI_PORT, SCAN_WINDOW_US, open);
-        for (int i = 0; i < k; i++) {
-            VjoErr err;
-            if (!open[i])
-                continue;
-            n_open++;
-            ip_text(cand[b + i], host, cap);
-            if (vjo_anki_probe(&arena, &plat, host, VJO_ANKI_PORT, &err) == VJO_OK) {
-                *port = VJO_ANKI_PORT;
-                vjo_log("anki: scan from %s -> %s in %d ms", net, host, (int)((now_us() - t0) / 1000));
-                return 0;
-            }
-            vjo_log("anki: %s:%d is open but not AnkiConnect (%d)", host, VJO_ANKI_PORT, err.rc);
-        }
-    }
-    vjo_log("anki: scan from %s (mask %08X, %d hosts): not found, %d open, %d ms", net, (unsigned)mask, n, n_open,
-            (int)((now_us() - t0) / 1000));
-    return -1;
-}
-
-/* Runs op on the endpoint: anki_host, or (auto) the saved host, then a
- * network search if that fails and may_scan (or nothing was searched since
- * boot). Returns op's result, VJO_E_NET or VJO_E_NOT_FOUND. */
+/* Runs op on the endpoint: anki_host, or (auto) the computer the Overlay
+ * app's search found and saved in anki_host.txt, read again on every send.
+ * The search is the app's (settings/anki_page.c): SceShell opens no scan
+ * sockets. Returns op's result, VJO_E_NET or VJO_E_NOT_FOUND. */
 typedef int (*AnkiOp)(const char *host, int port, void *ud, VjoErr *err);
 
-static int with_anki(int may_scan, AnkiOp op, void *ud, VjoErr *err)
+static int with_anki(AnkiOp op, void *ud, VjoErr *err)
 {
     char host[64];
+    size_t mark = vjo_arena_mark(&arena), len = 0;
     int port, mode = vjo_anki_endpoint(acfg->anki_host, host, sizeof(host), &port), rc;
+    char *t;
     sceClibMemset(err, 0, sizeof(*err));
-    if (mode == VJO_ANKI_MANUAL)
-        return op(host, port, ud, err);
     if (mode != VJO_ANKI_AUTO)
-        return err->rc = VJO_E_NET;
-    load_saved();
-    if (saved_host[0]) {
-        rc = op(saved_host, saved_port, ud, err);
-        if (!vjo_anki_host_stale(rc) || rc == VJO_E_CANCELLED)
-            return rc;
-        vjo_log("anki: saved host %s:%d failed (%d)", saved_host, saved_port, rc);
+        return mode == VJO_ANKI_MANUAL ? op(host, port, ud, err) : (err->rc = VJO_E_NET);
+    t = vjo_file_read(&arena, VJO_ANKI_HOST_PATH, &len);
+    while (t && len && (uint8_t)t[len - 1] <= ' ')
+        t[--len] = '\0';
+    mode = t ? vjo_anki_endpoint(t, host, sizeof(host), &port) : -1;
+    vjo_arena_release(&arena, mark);
+    if (mode != VJO_ANKI_MANUAL)
+        return err->rc = VJO_E_NOT_FOUND;
+    rc = op(host, port, ud, err);
+    /* The computer the search found is not AnkiConnect now: the app searches again. */
+    if (rc != VJO_E_CANCELLED && vjo_anki_host_stale(rc)) {
+        vjo_log("anki: %s:%d (auto) failed %d", host, port, rc);
+        rc = err->rc = VJO_E_NOT_FOUND;
     }
-    if ((scanned && !may_scan) || stopping())
-        return err->rc = stopping() ? VJO_E_CANCELLED : VJO_E_NET;
-    scanned = 1;
-    if (scan(host, sizeof(host), &port) < 0) {
-        sceClibMemset(err, 0, sizeof(*err));
-        return err->rc = stopping() ? VJO_E_CANCELLED : VJO_E_NOT_FOUND;
-    }
-    save_host(host, port);
-    return op(host, port, ud, err);
+    return rc;
 }
 
 /* ---------------- saving a card (×) ---------------- */
@@ -322,20 +257,121 @@ static uint64_t unix_ms(void)
     return t.tick / 1000ull - 62135596800000ull; /* microseconds since 0001-01-01 UTC */
 }
 
-/* MiscInfo: the game's name and the local time of the × press. */
-static void misc_info(char *out, size_t cap)
+static const char *keep_str(const char *s)
 {
-    char game[sizeof(game_name)];
-    SceDateTime t;
+    return *s ? vjo_arena_strndup(&arena, s, strlen(s)) : NULL;
+}
+
+/* What × records besides the entry (the strings in the arena): MiscInfo
+ * (the game's name and the local time), the game, its title ID and
+ * platform, the time (UTC), the OCR engine and model. */
+static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
+{
+    SceDateTime t = {0};
+    int clock = sceRtcGetCurrentClockLocalTime(&t) >= 0;
+    VjoAnkiDate d = {t.year, t.month, t.day, t.hour, t.minute};
     sceKernelLockMutex(box_lock, 1, NULL);
-    sceClibMemcpy(game, game_name, sizeof(game));
+    n->game = keep_str(game_name);
+    n->title_id = keep_str(game_tid);
+    n->ocr_model = acfg->ocr_backend == VJO_OCR_LENS ? NULL : keep_str(ocr_model);
     sceKernelUnlockMutex(box_lock, 1);
-    if (sceRtcGetCurrentClockLocalTime(&t) < 0) {
-        vjo_anki_misc_info(out, cap, game, NULL); /* no date rather than a wrong one */
-        return;
+    vjo_anki_misc_info(misc, cap, n->game, clock ? &d : NULL); /* no date rather than a wrong one */
+    n->misc = misc;
+    n->platform = !n->title_id ? NULL
+                  : !sceClibStrcmp(n->title_id, "NPXS10028") || !sceClibStrcmp(n->title_id, "PSPEMUCFW") ? "psp"
+                                                                                                        : "vita";
+    n->ocr_engine = acfg->ocr_backend == VJO_OCR_LENS ? "lens" : "vocr";
+    /* To the minute, as MiscInfo: the same card saved again within it is the same record (its ID). */
+    n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;
+}
+
+/* Can △ send this card: its record read back, decoded and made into a note
+ * beside the settings, with ANKI_SEND_ROOM to spare, in an arena of this
+ * job's size (as request_fits checks there)? The same calls, as a dry run. */
+static int sendable(const VjoAnkiNote *note, const VjoAnkiMedia *media)
+{
+    size_t mark = vjo_arena_mark(&arena);
+    VjoAnkiNote d;
+    VjoAnkiBody body;
+    int picture;
+    char *json = vjo_queue_encode(&arena, note, media->picture_len != 0);
+    int fits = json && vjo_queue_decode(&arena, json, strlen(json), &d, &picture) > 0;
+    if (fits) {
+        d.queue_tag = "vita_queue_00000000000000000000000000000000";
+        fits = vjo_anki_add_request(&arena, &d, media, &body) == 0 &&
+               sizeof(VjoConfig) + 16 + (vjo_arena_mark(&arena) - mark) + media->picture_len + ANKI_SEND_ROOM <=
+                   mem_size;
     }
-    VjoAnkiDate when = {t.year, t.month, t.day, t.hour, t.minute};
-    vjo_anki_misc_info(out, cap, game, &when);
+    vjo_arena_release(&arena, mark);
+    return fits;
+}
+
+/* An entry read at mark, kept compact there: its strings are copied above
+ * the read's memory, then moved down over it (as find_audio keeps its URL). */
+static int keep_entry(const VjoVocab *v, size_t mark, VjoAnkiGloss *g)
+{
+    size_t n = (size_t)v->n_meanings, total = n * sizeof(char *), at = (mark + 7) & ~(size_t)7, len;
+    const char *src[2] = {v->spelling, v->reading};
+    char *top, *p, **m;
+    for (size_t k = 0; k < n + 2; k++)
+        total += strlen(k < 2 ? src[k] : v->meanings[k - 2]) + 1;
+    if (!(top = (char *)vjo_arena_alloc(&arena, total)))
+        return -1;
+    m = (char **)top;
+    p = top + n * sizeof(char *);
+    for (size_t k = 0; k < n + 2; k++) { /* the strings, each one's offset in m[] (spelling, reading first) */
+        const char *t = k < 2 ? src[k] : v->meanings[k - 2];
+        len = strlen(t) + 1;
+        sceClibMemcpy(p, t, len);
+        if (k < 2)
+            src[k] = (const char *)(uintptr_t)(p - top);
+        else
+            m[k - 2] = (char *)(uintptr_t)(p - top);
+        p += len;
+    }
+    sceClibMemmove(arena.base + at, top, total);
+    vjo_arena_release(&arena, mark);
+    top = (char *)vjo_arena_alloc(&arena, total); /* the moved block: arena.base + at */
+    m = (char **)top;
+    for (size_t k = 0; k < n; k++)
+        m[k] = top + (uintptr_t)m[k];
+    g->spelling = top + (uintptr_t)src[0];
+    g->reading = top + (uintptr_t)src[1];
+    g->meanings = (const char **)m;
+    g->n_meanings = (int)n;
+    return 0;
+}
+
+/* The other dictionaries' entries for the word (local_dictionary_results
+ * above 1): each page's payload read from its file, one at a time, kept
+ * while △ can still send the card. */
+static void read_more(VjoAnkiNote *n, const VjoAnkiMedia *media, const VjoLocalPages *pages, int shown)
+{
+    VjoAnkiGloss *g;
+    char name[96];
+    if (!pages || !(g = (VjoAnkiGloss *)vjo_arena_alloc(&arena, sizeof(*g) * VJO_ANKI_MAX_MORE)))
+        return;
+    n->more = g;
+    for (int i = 0; i < pages->count && n->n_more < VJO_ANKI_MAX_MORE && !stopping(); i++) {
+        size_t mark = vjo_arena_mark(&arena);
+        VjoDictResult r;
+        VjoErr err;
+        if (i == shown)
+            continue;
+        if (vjo_local_read_page(&arena, &plat, acfg, pages, i, &r, &err) || !r.n_vocab || !r.vocab[0].n_meanings ||
+            keep_entry(&r.vocab[0], mark, &g[n->n_more]) < 0) {
+            vjo_arena_release(&arena, mark);
+            continue;
+        }
+        /* (r is gone: keep_entry moved its entry over the read) */
+        vjo_anki_meaning_source(g[n->n_more].meanings[0], name, sizeof(name));
+        g[n->n_more++].dictionary = keep_str(name);
+        if (!sendable(n, media)) {
+            vjo_log("anki: %d other dictionaries' entries kept: the next would be too large for △", --n->n_more);
+            vjo_arena_release(&arena, mark);
+            break;
+        }
+    }
 }
 
 /* Why a card has no screenshot. */
@@ -389,20 +425,21 @@ static void do_save(unsigned seq, int entry)
     };
     VjoAnkiNote note;
     VjoAnkiMedia media;
-    char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
-    int shown, mark = 0, ok = 0, rc, picture = PICTURE_OK, wanted;
+    VjoLocalPages *pages = NULL;
+    char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)], name[96];
+    int shown, mark_value = 0, ok = 0, rc, picture = PICTURE_OK, wanted, page = 0;
     int64_t t0 = now_us();
 
     /* The √ or the queued mark already says it: no memory for that. */
     vjo_view_lock();
     shown = g_view.open && g_view.list_seq == seq && g_view.list && entry >= 0 && entry < g_view.list->n_entries;
     if (shown && entry < VJO_MAX_ENTRIES && g_view.anki_marks_seq == seq)
-        mark = g_view.anki_mark[entry];
+        mark_value = g_view.anki_mark[entry];
     vjo_view_unlock();
     if (!shown) /* another word is shown by now */
         return;
-    if (mark) {
-        publish(seq, mark == VJO_ANKI_MARK_ADDED ? "Already in Anki" : "Already queued · △ sends it",
+    if (mark_value) {
+        publish(seq, mark_value == VJO_ANKI_MARK_ADDED ? "Already in Anki" : "Already queued · △ sends it",
                 VJO_ANKI_STATUS_DIM, -1, 0);
         return;
     }
@@ -413,9 +450,13 @@ static void do_save(unsigned seq, int entry)
     wanted = want_picture();
     vjo_view_lock();
     shown = g_view.open && g_view.list_seq == seq && g_view.list && entry < g_view.list->n_entries;
-    /* Every value, whatever the field mapping is now: the send applies its own. */
-    if (shown)
-        ok = vjo_anki_note_from_entry(&arena, NULL, g_view.list, entry, &note) == 0;
+    /* Every value: the card is made into a note when it is sent. */
+    if (shown) {
+        const VjoLocalPages *p = vjo_view_pages(&page);
+        ok = vjo_anki_note_from_entry(&arena, g_view.list, entry, &note) == 0;
+        if (p && p->count > 1 && (pages = (VjoLocalPages *)vjo_arena_alloc(&arena, sizeof(*p))))
+            *pages = *p; /* the other dictionaries' locators, in the result memory */
+    }
     vjo_view_unlock();
     if (!shown)
         return;
@@ -423,14 +464,15 @@ static void do_save(unsigned seq, int entry)
         publish(seq, "Anki: not enough memory for this entry; card not saved", VJO_ANKI_STATUS_ERROR, -1, 0);
         return;
     }
-    if (!VJO_ANKI_SCREENSHOT && acfg->anki_field[VJO_ANKI_PICTURE][0])
-        vjo_log("anki: Picture field off in this build: no screenshot, no kernel capture buffer");
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1, 0);
-    misc_info(misc, sizeof(misc));
-    note.misc = misc;
+    card_facts(&note, misc, sizeof(misc));
+    /* The shown entry's dictionary: a local definition names it; else the service. */
+    vjo_anki_meaning_source(note.n_meanings ? note.meanings[0] : "", name, sizeof(name));
+    note.dictionary = *name ? keep_str(name) : acfg->dictionary == VJO_DICT_LOCAL ? NULL : vjo_dict_name(acfg->dictionary);
     sceClibMemset(&media, 0, sizeof(media));
     if (wanted && !stopping()) /* the frame of the × press */
         picture = take_screenshot(&media);
+    read_more(&note, &media, pages, page);
     rc = vjo_queue_save(&arena, &note, &media);
     vjo_log("anki: save %s rc=%d, %u-byte screenshot, %d ms", note.spelling, rc, (unsigned)media.picture_len,
             (int)((now_us() - t0) / 1000));
@@ -477,7 +519,7 @@ static int request_fits(const VjoAnkiNote *note, const VjoAnkiMedia *media)
 {
     size_t mark = vjo_arena_mark(&arena);
     VjoAnkiBody body;
-    int fits = vjo_anki_add_request(&arena, acfg, note, media, &body) == 0 &&
+    int fits = vjo_anki_add_request(&arena, note, media, &body) == 0 &&
                vjo_arena_free(&arena) >= ANKI_SEND_ROOM;
     vjo_arena_release(&arena, mark);
     return fits;
@@ -515,7 +557,7 @@ static int op_send(const char *host, int port, void *ud, VjoErr *err)
         }
         o->no_audio = !o->media->audio_url; /* no recording, or no memory for it */
     }
-    return vjo_anki_add(&arena, &plat, host, port, acfg, o->note, o->media, err);
+    return vjo_anki_add(&arena, &plat, host, port, o->note, o->media, err);
 }
 
 static void do_send(void)
@@ -540,7 +582,7 @@ static void do_send(void)
         return;
     }
     if (!has_host) {
-        publish(0, "Set anki_host in config.ini to send; cards stay queued", VJO_ANKI_STATUS_ERROR, -1, 0);
+        publish(0, "Set Anki's address in the Overlay app; cards stay queued", VJO_ANKI_STATUS_ERROR, -1, 0);
         return;
     }
     if (mem_with_settings() < 0) {
@@ -576,6 +618,7 @@ static void do_send(void)
             continue;
         }
         note.queue_tag = tag;
+#if VJO_ANKI_SCREENSHOT /* (else no screenshot is ever read) */
         if (!request_fits(&note, &media) && media.picture_len) {
             /* This card's text and screenshot do not both fit: it goes
              * without the screenshot (read again without it). */
@@ -588,6 +631,7 @@ static void do_send(void)
             note.queue_tag = tag;
             no_picture++;
         }
+#endif
         if (!request_fits(&note, &media)) {
             vjo_log("anki: %s is too large to send in %u bytes; kept", id, (unsigned)mem_size);
             too_large++;
@@ -596,7 +640,7 @@ static void do_send(void)
         sceClibMemset(&op, 0, sizeof(op));
         op.note = &note;
         op.media = &media;
-        rc = with_anki(1, op_send, &op, &err);
+        rc = with_anki(op_send, &op, &err);
         vjo_log("anki: send %s %s rc=%d %s", id, note.spelling, rc, err.detail ? err.detail : "");
         if (rc == VJO_E_CANCELLED || stopping())
             break;
@@ -628,12 +672,13 @@ static void do_send(void)
         no_audio |= op.no_audio;
     }
     if (done) {
-        char dup_text[32] = "", kept_text[48] = "", pic_text[40] = "";
+        char dup_text[32] = "", kept_text[72] = "", pic_text[40] = "";
         if (duplicates)
             sceClibSnprintf(dup_text, sizeof(dup_text), ", %d already there", duplicates);
         if (unreadable + too_large)
-            sceClibSnprintf(kept_text, sizeof(kept_text), ", %d kept (%s)", unreadable + too_large,
-                            unreadable ? "unreadable, see log.txt" : "too large");
+            sceClibSnprintf(kept_text, sizeof(kept_text), ", %d kept (%s%s)", unreadable + too_large,
+                            unreadable ? "unreadable, see log.txt" : "too large: the Overlay app sends it",
+                            unreadable && too_large ? "; too large: the app" : "");
         if (no_picture)
             sceClibSnprintf(pic_text, sizeof(pic_text), ", %d without screenshot", no_picture);
         sceClibSnprintf(msg, sizeof(msg), "Sent %d to Anki%s%s%s%s", sent, dup_text, kept_text, pic_text,
@@ -761,13 +806,24 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
     return r;
 }
 
-void vjo_anki_set_game(const char *name)
+void vjo_anki_set_game(const char *tid, const char *name)
 {
     if (box_lock < 0)
         return;
     sceKernelLockMutex(box_lock, 1, NULL);
+    sceClibSnprintf(game_tid, sizeof(game_tid), "%s", tid);
     sceClibSnprintf(game_name, sizeof(game_name), "%s", name);
+    ocr_model[0] = '\0'; /* until this game's first recognition */
     vjo_utf8_trim_partial(game_name);
+    sceKernelUnlockMutex(box_lock, 1);
+}
+
+void vjo_anki_set_ocr_model(const char *model)
+{
+    if (box_lock < 0)
+        return;
+    sceKernelLockMutex(box_lock, 1, NULL);
+    sceClibSnprintf(ocr_model, sizeof(ocr_model), "%s", model);
     sceKernelUnlockMutex(box_lock, 1);
 }
 

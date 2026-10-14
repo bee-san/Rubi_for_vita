@@ -15,14 +15,31 @@
  * (its createNote), then its rewrite's (2026: notes.validate, resolve). */
 #define ERR_DUPLICATE "cannot create note because it is a duplicate"
 #define ERR_DUPLICATE_V2 "A matching note exists."
-#define ERR_EMPTY "cannot create note because it is empty"
-#define ERR_EMPTY_V2 "Anki field validation: emptyFirstField"
 #define ERR_NO_MODEL "model was not found: "
 #define ERR_NO_MODEL_V2 "Notetype not found: "
 #define ERR_NO_DECK "deck was not found: "
 #define ERR_NO_DECK_V2 "Deck not found: "
 /* The rewrite's addNote names no reason: canAddNotesWithErrorDetail has it. */
 #define ERR_VALIDATION_V2 "One or more notes failed validation."
+
+/* Kiku v2.1.0's field names (youyoumu/kiku b7fb283, packages/note/src/lib/types.ts,
+ * the same in Kiku_v2.1.0.apkg; docs/anki.md). */
+const char *const vjo_kiku_field[VJO_KIKU_FIELDS] = {
+    [VJO_KIKU_EXPRESSION] = "Expression",
+    [VJO_KIKU_EXPRESSION_FURIGANA] = "ExpressionFurigana",
+    [VJO_KIKU_EXPRESSION_READING] = "ExpressionReading",
+    [VJO_KIKU_EXPRESSION_AUDIO] = "ExpressionAudio",
+    [VJO_KIKU_MAIN_DEFINITION] = "MainDefinition",
+    [VJO_KIKU_SENTENCE] = "Sentence",
+    [VJO_KIKU_SENTENCE_FURIGANA] = "SentenceFurigana",
+    [VJO_KIKU_PICTURE] = "Picture",
+    [VJO_KIKU_GLOSSARY] = "Glossary",
+    [VJO_KIKU_PITCH_POSITION] = "PitchPosition",
+    [VJO_KIKU_PITCH_CATEGORIES] = "PitchCategories",
+    [VJO_KIKU_FREQUENCY] = "Frequency",
+    [VJO_KIKU_FREQ_SORT] = "FreqSort",
+    [VJO_KIKU_MISC_INFO] = "MiscInfo",
+};
 
 static int starts_with(const char *s, const char *prefix)
 {
@@ -82,37 +99,175 @@ void vjo_anki_sentence(VjoBuf *b, const char *text, int hl_start, int hl_end)
     html_text(b, text + hl_end, n - (size_t)hl_end);
 }
 
-static int has_kanji(const char *s)
+/* ---- the word's furigana, as Yomitan's {furigana-plain} ---- */
+
+#define FURI_MAX 48     /* code points of a word or its reading distributed (longer: the whole word) */
+#define FURI_STEPS 4096 /* tries of the distribution before the whole word takes the reading */
+/* ヵヶ: kanji to the bases here (vjo_is_kanji), kana to Kiku's parser (not Han script) */
+#define KANA_TO_KIKU(c) ((c) == 0x30F5 || (c) == 0x30F6)
+
+typedef struct {
+    uint32_t w[FURI_MAX], r[FURI_MAX]; /* the word and its reading, katakana as hiragana */
+    size_t wo[FURI_MAX + 1], ro[FURI_MAX + 1]; /* byte offsets */
+    int nw, nr, steps, found;
+    int end[FURI_MAX];  /* a kanji run starting at i: where its reading ends in r */
+    int best[FURI_MAX]; /* the same, of the first way it fits */
+} Furi;
+
+/* s's code points into cp (katakana as hiragana: readings are written in
+ * hiragana) and their byte offsets; -1 when it has more than FURI_MAX. */
+static int furi_split(const char *s, uint32_t *cp, size_t *off)
 {
     size_t n = strlen(s), i = 0;
-    while (i < n)
-        if (vjo_is_kanji(vjo_utf8_next(s, n, &i)))
-            return 1;
-    return 0;
+    int k = 0;
+    while (i < n) {
+        uint32_t c;
+        if (k == FURI_MAX)
+            return -1;
+        off[k] = i;
+        c = vjo_utf8_next(s, n, &i);
+        cp[k++] = c >= 0x30A1 && c <= 0x30F6 && !vjo_is_kanji(c) ? c - 0x60 : c;
+    }
+    off[k] = n;
+    return k;
 }
 
+/* The ways the word from i fits the reading from j, counted in found (up to
+ * 2), the first one's runs in best: kana must match; a run of kanji takes one
+ * or more of the reading's characters. Two ways (物の怪, もののけ: も|け or
+ * もの|け) or too many tries leave it undecided: the whole word, as Yomitan. */
+static void furi_fit(Furi *f, int i, int j)
+{
+    int e = i;
+    if (f->found > 1)
+        return;
+    if (++f->steps > FURI_STEPS) {
+        f->found = 2;
+        return;
+    }
+    if (i == f->nw) {
+        if (j == f->nr && !f->found++)
+            memcpy(f->best, f->end, sizeof(f->end));
+        return;
+    }
+    if (!vjo_is_kanji(f->w[i])) {
+        if (j < f->nr && f->w[i] == f->r[j])
+            furi_fit(f, i + 1, j + 1);
+        return;
+    }
+    while (e < f->nw && vjo_is_kanji(f->w[e]))
+        e++;
+    for (int k = j + 1; k <= f->nr && f->found < 2; k++) {
+        f->end[i] = k;
+        furi_fit(f, e, k);
+    }
+}
+
+/* "食[た]べる", "お 茶[ちゃ]", "真[ま]っ 白[しろ]": a space before a base that
+ * follows other text, or holds a character Kiku's parser does not count as a
+ * kanji (ヵヶ), so Anki's furigana filter and Kiku both read exactly that run. */
 void vjo_anki_furigana(VjoBuf *b, const char *spelling, const char *reading)
 {
-    html_escape(b, spelling, strlen(spelling));
-    if (reading && *reading && strcmp(spelling, reading) != 0 && has_kanji(spelling)) {
+    Furi f;
+    size_t n = strlen(spelling), i = 0;
+    int any = 0, mixed = 0, fit;
+    while (i < n) {
+        uint32_t c = vjo_utf8_next(spelling, n, &i);
+        any |= vjo_is_kanji(c);
+        mixed |= !vjo_is_kanji(c) || KANA_TO_KIKU(c);
+    }
+    if (!any || !reading || !*reading || !strcmp(spelling, reading)) {
+        html_escape(b, spelling, n);
+        return;
+    }
+    f.steps = f.found = 0;
+    if ((f.nw = furi_split(spelling, f.w, f.wo)) > 0 && (f.nr = furi_split(reading, f.r, f.ro)) > 0)
+        furi_fit(&f, 0, 0);
+    fit = f.found == 1;
+    if (!fit) { /* the whole word takes the reading */
+        if (mixed)
+            vjo_buf_putc(b, ' ');
+        html_escape(b, spelling, n);
         vjo_buf_putc(b, '[');
         html_escape(b, reading, strlen(reading));
         vjo_buf_putc(b, ']');
+        return;
+    }
+    for (int i = 0, j = 0; i < f.nw;) {
+        int e = i, space = i > 0;
+        if (!vjo_is_kanji(f.w[i])) {
+            html_escape(b, spelling + f.wo[i], f.wo[i + 1] - f.wo[i]);
+            i++;
+            j++;
+            continue;
+        }
+        for (; e < f.nw && vjo_is_kanji(f.w[e]); e++)
+            space |= KANA_TO_KIKU(f.w[e]);
+        if (space)
+            vjo_buf_putc(b, ' ');
+        html_escape(b, spelling + f.wo[i], f.wo[e] - f.wo[i]);
+        vjo_buf_putc(b, '[');
+        html_escape(b, reading + f.ro[j], f.ro[f.best[i]] - f.ro[j]);
+        vjo_buf_putc(b, ']');
+        j = f.best[i];
+        i = e;
     }
 }
 
-void vjo_anki_definition(VjoBuf *b, const char *const *meanings, int n)
+const char *vjo_anki_meaning_source(const char *meaning, char *name, size_t cap)
 {
+    const char *nl = strchr(meaning, '\n');
+    size_t n;
+    name[0] = '\0';
+    /* tools/convert_dictionary.py: "[title]\n" + the definition; a title may
+     * hold brackets itself ("Jitendex.org [2026-05-05]"). */
+    if (meaning[0] != '[' || !nl || nl - meaning < 3 || nl[-1] != ']')
+        return meaning;
+    n = (size_t)(nl - meaning) - 2;
+    if (n >= cap)
+        n = cap - 1;
+    memcpy(name, meaning + 1, n);
+    name[n] = '\0';
+    vjo_utf8_trim_partial(name);
+    return nl + 1;
+}
+
+/* One dictionary's entry as Yomitan writes it into a glossary, which Kiku
+ * pages by data-dictionary:
+ * <li data-dictionary="NAME"><i>(NAME)</i> <span>...</span></li>; several
+ * meanings in <ul>. NAME: dict, else the first meaning's own. */
+static void gloss_item(VjoBuf *b, const char *dict, const char *const *meanings, int n)
+{
+    char name[96], own[96];
     if (n <= 0)
         return;
-    vjo_buf_puts(b, "<ol>");
-    for (int i = 0; i < n; i++) {
-        vjo_buf_puts(b, "<li>");
-        html_escape(b, meanings[i], strlen(meanings[i]));
-        vjo_buf_puts(b, "</li>");
+    vjo_anki_meaning_source(meanings[0], name, sizeof(name));
+    if (dict && *dict)
+        vjo_snprintf(name, sizeof(name), "%s", dict);
+    vjo_buf_puts(b, "<li");
+    if (*name) {
+        vjo_buf_puts(b, " data-dictionary=\"");
+        html_escape(b, name, strlen(name));
+        vjo_buf_puts(b, "\"><i>(");
+        html_escape(b, name, strlen(name));
+        vjo_buf_puts(b, ")</i> ");
+    } else {
+        vjo_buf_putc(b, '>');
     }
-    vjo_buf_puts(b, "</ol>");
+    vjo_buf_puts(b, n > 1 ? "<span><ul>" : "<span>");
+    for (int i = 0; i < n; i++) {
+        const char *t = vjo_anki_meaning_source(meanings[i], own, sizeof(own));
+        if (n > 1)
+            vjo_buf_puts(b, "<li>");
+        html_text(b, t, strlen(t));
+        if (n > 1)
+            vjo_buf_puts(b, "</li>");
+    }
+    vjo_buf_puts(b, n > 1 ? "</ul></span></li>" : "</span></li>");
 }
+
+#define GLOSSARY_OPEN "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+#define GLOSSARY_CLOSE "</ol></div>"
 
 void vjo_anki_pitch_position(VjoBuf *b, const int *pitch, int n)
 {
@@ -196,7 +351,7 @@ static int sentence_furigana(VjoArena *a, const VjoEntryList *l, int target, Vjo
     return 0;
 }
 
-int vjo_anki_note_from_entry(VjoArena *a, const VjoConfig *cfg, const VjoEntryList *l, int entry, VjoAnkiNote *out)
+int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoAnkiNote *out)
 {
     const VjoEntry *e;
     const VjoVocab *v;
@@ -212,12 +367,10 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoConfig *cfg, const VjoEntryLi
     out->rank = v->rank;
     out->hl_start = e->hl_start;
     out->hl_end = e->hl_end;
-    out->n_meanings = 0;
-    out->misc = NULL;
     out->source = l->source;
-    out->sentence_furigana = NULL;
+    out->furigana = v->ruby ? dup(a, v->ruby) : NULL;
     out->sf_hl_start = out->sf_hl_end = -1;
-    if ((!cfg || cfg->anki_field[VJO_ANKI_SENTENCE_FURIGANA][0]) && sentence_furigana(a, l, entry, out) < 0) {
+    if (sentence_furigana(a, l, entry, out) < 0) {
         out->sentence_furigana = NULL; /* added without it */
         out->sf_hl_start = out->sf_hl_end = -1;
     }
@@ -248,65 +401,33 @@ static size_t body_len(const VjoAnkiBody *b)
 }
 
 #define VERSION_REQUEST "{\"action\":\"version\",\"version\":6}"
+#define CREATE_DECK_REQUEST "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"" VJO_ANKI_DECK "\"}}"
 
-static char *create_deck_request(VjoArena *a, const char *deck)
+/* The note's target and its duplicate check: the Kiku deck only. */
+#define TARGET "\"deckName\":\"" VJO_ANKI_DECK "\",\"modelName\":\"" VJO_ANKI_NOTE_TYPE "\""
+#define OPTIONS                                                                                               \
+    ",\"options\":{\"allowDuplicate\":false,\"duplicateScope\":\"deck\",\"duplicateScopeOptions\":{"           \
+    "\"deckName\":\"" VJO_ANKI_DECK "\",\"checkChildren\":false,\"checkAllModels\":false}}"
+
+/* canAddNotesWithErrorDetail for the n words, each in Expression. */
+static char *can_add_request(VjoArena *a, const char *const *words, int n)
 {
     VjoBuf b;
-    vjo_buf_init(&b, a);
-    vjo_buf_puts(&b, "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":");
-    vjo_json_write_string(&b, deck);
-    vjo_buf_puts(&b, "}}");
-    return b.oom ? NULL : vjo_buf_cstr(&b);
-}
-
-/* "deckName":..,"modelName":.. */
-static void put_target(VjoBuf *b, const VjoConfig *cfg)
-{
-    vjo_buf_puts(b, "\"deckName\":");
-    vjo_json_write_string(b, cfg->anki_deck);
-    vjo_buf_puts(b, ",\"modelName\":");
-    vjo_json_write_string(b, cfg->anki_note_type);
-}
-
-/* Duplicates are refused, checked in the target deck only. */
-static void put_options(VjoBuf *b, const VjoConfig *cfg)
-{
-    vjo_buf_puts(b, ",\"options\":{\"allowDuplicate\":false,\"duplicateScope\":\"deck\","
-                    "\"duplicateScopeOptions\":{\"deckName\":");
-    vjo_json_write_string(b, cfg->anki_deck);
-    vjo_buf_puts(b, ",\"checkChildren\":false,\"checkAllModels\":false}}");
-}
-
-/* canAddNotesWithErrorDetail for the n words, each in the word field. */
-static char *can_add_request(VjoArena *a, const VjoConfig *cfg, const char *const *words, int n)
-{
-    const char *word = cfg->anki_field[VJO_ANKI_WORD];
-    VjoBuf b;
-    if (!*word)
-        return NULL;
     vjo_buf_init(&b, a);
     vjo_buf_puts(&b, "{\"action\":\"canAddNotesWithErrorDetail\",\"version\":6,\"params\":{\"notes\":[");
     for (int i = 0; i < n; i++) {
-        if (i)
-            vjo_buf_putc(&b, ',');
-        vjo_buf_putc(&b, '{');
-        put_target(&b, cfg);
-        vjo_buf_puts(&b, ",\"fields\":{");
-        vjo_json_write_string(&b, word);
-        vjo_buf_putc(&b, ':');
+        vjo_buf_puts(&b, i ? ",{" TARGET ",\"fields\":{\"Expression\":" : "{" TARGET ",\"fields\":{\"Expression\":");
         vjo_json_write_string(&b, words[i]);
-        vjo_buf_putc(&b, '}');
-        put_options(&b, cfg);
-        vjo_buf_putc(&b, '}');
+        vjo_buf_puts(&b, "}" OPTIONS "}");
     }
     vjo_buf_puts(&b, "]}}");
     return b.oom ? NULL : vjo_buf_cstr(&b);
 }
 
-char *vjo_anki_can_add_request(VjoArena *a, const VjoConfig *cfg, const VjoEntryList *l, int n)
+char *vjo_anki_can_add_request(VjoArena *a, const VjoEntryList *l, int n)
 {
     const char **words;
-    if (!cfg->anki_field[VJO_ANKI_WORD][0] || !l)
+    if (!l)
         return NULL;
     if (n > l->n_entries)
         n = l->n_entries;
@@ -315,71 +436,65 @@ char *vjo_anki_can_add_request(VjoArena *a, const VjoConfig *cfg, const VjoEntry
         return NULL;
     for (int i = 0; i < n; i++)
         words[i] = l->entries[i].vocab->spelling;
-    return can_add_request(a, cfg, words, n);
-}
-
-/* "tags":[...] from tags separated by spaces. */
-static void put_tags(VjoBuf *b, const char *t, const char *queue_tag)
-{
-    int k = 0;
-    vjo_buf_puts(b, "\"tags\":[");
-    for (;;) {
-        size_t len;
-        while (*t == ' ' || *t == '\t')
-            t++;
-        for (len = 0; t[len] && t[len] != ' ' && t[len] != '\t'; len++)
-            ;
-        if (!len)
-            break;
-        if (k++)
-            vjo_buf_putc(b, ',');
-        vjo_json_write_stringn(b, t, len);
-        t += len;
-    }
-    if (queue_tag) {
-        if (k)
-            vjo_buf_putc(b, ',');
-        vjo_json_write_string(b, queue_tag);
-    }
-    vjo_buf_putc(b, ']');
+    return can_add_request(a, words, n);
 }
 
 static int is_media(int field)
 {
-    return field == VJO_ANKI_PICTURE || field == VJO_ANKI_AUDIO;
+    return field == VJO_KIKU_PICTURE || field == VJO_KIKU_EXPRESSION_AUDIO;
 }
 
-/* The HTML value of a VJO_ANKI_* field that is not media. */
-static char *value(VjoArena *a, int field, const VjoAnkiNote *n)
+char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
 {
     VjoBuf b;
     vjo_buf_init(&b, a);
     switch (field) {
-    case VJO_ANKI_WORD: html_escape(&b, n->spelling, strlen(n->spelling)); break;
-    case VJO_ANKI_READING: html_escape(&b, n->reading, strlen(n->reading)); break;
-    case VJO_ANKI_FURIGANA: vjo_anki_furigana(&b, n->spelling, n->reading); break;
-    case VJO_ANKI_DEFINITION: vjo_anki_definition(&b, n->meanings, n->n_meanings); break;
-    case VJO_ANKI_SENTENCE: vjo_anki_sentence(&b, n->sentence, n->hl_start, n->hl_end); break;
-    case VJO_ANKI_FREQUENCY:
+    case VJO_KIKU_EXPRESSION: html_escape(&b, n->spelling, strlen(n->spelling)); break;
+    case VJO_KIKU_EXPRESSION_READING: html_escape(&b, n->reading, strlen(n->reading)); break;
+    case VJO_KIKU_EXPRESSION_FURIGANA:
+        if (n->furigana) {
+            /* the dictionary's ruby ("来[く]る"), in Anki's syntax */
+            char *f = vjo_furigana_align(a, n->spelling, strlen(n->spelling), n->furigana);
+            vjo_buf_init(&b, a);
+            if (f)
+                html_escape(&b, f + (*f == ' '), strlen(f + (*f == ' ')));
+        }
+        if (!b.len)
+            vjo_anki_furigana(&b, n->spelling, n->reading);
+        break;
+    case VJO_KIKU_MAIN_DEFINITION:
+    case VJO_KIKU_GLOSSARY:
+        /* Glossary: every dictionary's entry, the shown one first (Kiku
+         * leaves out the one MainDefinition has); none for a single one. */
+        if (!n->n_meanings || (field == VJO_KIKU_GLOSSARY && !n->n_more))
+            break;
+        vjo_buf_puts(&b, GLOSSARY_OPEN);
+        gloss_item(&b, n->dictionary, n->meanings, n->n_meanings);
+        for (int k = 0; field == VJO_KIKU_GLOSSARY && k < n->n_more; k++)
+            gloss_item(&b, n->more[k].dictionary, n->more[k].meanings, n->more[k].n_meanings);
+        vjo_buf_puts(&b, GLOSSARY_CLOSE);
+        break;
+    case VJO_KIKU_SENTENCE: vjo_anki_sentence(&b, n->sentence, n->hl_start, n->hl_end); break;
+    case VJO_KIKU_FREQ_SORT:
         if (n->rank != VJO_NO_RANK)
             vjo_buf_printf(&b, "%d", n->rank);
         break;
-    case VJO_ANKI_SENTENCE_FURIGANA:
+    case VJO_KIKU_SENTENCE_FURIGANA:
         if (n->sentence_furigana)
             vjo_anki_sentence(&b, n->sentence_furigana, n->sf_hl_start, n->sf_hl_end);
         break;
-    case VJO_ANKI_PITCH_POSITION: vjo_anki_pitch_position(&b, n->pitch, n->n_pitch); break;
-    case VJO_ANKI_PITCH_CATEGORIES:
+    case VJO_KIKU_PITCH_POSITION: vjo_anki_pitch_position(&b, n->pitch, n->n_pitch); break;
+    case VJO_KIKU_PITCH_CATEGORIES:
         vjo_anki_pitch_categories(&b, n->reading, n->pitch, n->n_pitch, n->pos, n->n_pos);
         break;
-    case VJO_ANKI_FREQUENCY_LIST:
+    case VJO_KIKU_FREQUENCY:
         if (n->rank != VJO_NO_RANK && n->source) {
             vjo_buf_puts(&b, "<ul style=\"text-align: left;\"><li>");
             html_escape(&b, n->source, strlen(n->source));
             vjo_buf_printf(&b, ": %d</li></ul>", n->rank);
         }
         break;
-    case VJO_ANKI_MISC_INFO:
+    case VJO_KIKU_MISC_INFO:
         if (n->misc)
             html_escape(&b, n->misc, strlen(n->misc));
         break;
@@ -389,62 +504,56 @@ static char *value(VjoArena *a, int field, const VjoAnkiNote *n)
 }
 
 /* "audio"/"picture":[{"filename":..,"fields":[field], then the source */
-static void put_media(VjoBuf *b, const char *kind, const char *name, const char *field)
+static void put_media(VjoBuf *b, const char *kind, const char *name, int field)
 {
     vjo_buf_printf(b, ",\"%s\":[{\"filename\":", kind);
     vjo_json_write_string(b, name);
-    vjo_buf_puts(b, ",\"fields\":[");
-    vjo_json_write_string(b, field);
-    vjo_buf_puts(b, "],");
+    vjo_buf_printf(b, ",\"fields\":[\"%s\"],", vjo_kiku_field[field]);
 }
 
-int vjo_anki_add_request(VjoArena *a, const VjoConfig *cfg, const VjoAnkiNote *n, const VjoAnkiMedia *m,
-                         VjoAnkiBody *out)
+int vjo_anki_add_request(VjoArena *a, const VjoAnkiNote *n, const VjoAnkiMedia *m, VjoAnkiBody *out)
 {
-    const char *v[VJO_ANKI_FIELD_COUNT];
-    const char *pic = cfg->anki_field[VJO_ANKI_PICTURE], *audio = cfg->anki_field[VJO_ANKI_AUDIO];
-    int first = 1;
+    const char *v[VJO_KIKU_FIELDS];
+    int first = 1, audio = m->audio_url && m->audio_name, pic = m->picture_len && m->picture_name;
     VjoBuf b;
     memset(out, 0, sizeof(*out));
     /* Values first, so the request below grows in place. */
-    for (int f = 0; f < VJO_ANKI_FIELD_COUNT; f++) {
+    for (int f = 0; f < VJO_KIKU_FIELDS; f++) {
         v[f] = NULL;
-        if (!is_media(f) && cfg->anki_field[f][0] && !(v[f] = value(a, f, n)))
+        if (!is_media(f) && !(v[f] = vjo_anki_field_value(a, f, n)))
             return -1;
         if (v[f] && !*v[f])
             v[f] = NULL; /* nothing to add (no rank, no meanings) */
     }
     /* A media field is sent empty: the rewritten AnkiConnect (2026) puts the
      * <img>/[sound:] only into fields the request names. */
-    if (m->audio_url && m->audio_name && *audio)
-        v[VJO_ANKI_AUDIO] = "";
-    if (m->picture_len && m->picture_name && *pic)
-        v[VJO_ANKI_PICTURE] = "";
+    if (audio)
+        v[VJO_KIKU_EXPRESSION_AUDIO] = "";
+    if (pic)
+        v[VJO_KIKU_PICTURE] = "";
     vjo_buf_init(&b, a);
-    vjo_buf_puts(&b, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{");
-    put_target(&b, cfg);
-    vjo_buf_puts(&b, ",\"fields\":{");
-    for (int f = 0; f < VJO_ANKI_FIELD_COUNT; f++) {
+    vjo_buf_puts(&b, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET ",\"fields\":{");
+    for (int f = 0; f < VJO_KIKU_FIELDS; f++) {
         if (!v[f])
             continue;
-        if (!first)
-            vjo_buf_putc(&b, ',');
+        vjo_buf_printf(&b, first ? "\"%s\":" : ",\"%s\":", vjo_kiku_field[f]);
         first = 0;
-        vjo_json_write_string(&b, cfg->anki_field[f]);
-        vjo_buf_putc(&b, ':');
         vjo_json_write_string(&b, v[f]);
     }
-    vjo_buf_puts(&b, "},");
-    put_tags(&b, cfg->anki_tags, n->queue_tag);
-    put_options(&b, cfg);
-    if (m->audio_url && m->audio_name && *audio) {
-        put_media(&b, "audio", m->audio_name, audio);
+    vjo_buf_puts(&b, "},\"tags\":[\"" VJO_ANKI_TAG "\"");
+    if (n->queue_tag) {
+        vjo_buf_putc(&b, ',');
+        vjo_json_write_string(&b, n->queue_tag);
+    }
+    vjo_buf_puts(&b, "]" OPTIONS);
+    if (audio) {
+        put_media(&b, "audio", m->audio_name, VJO_KIKU_EXPRESSION_AUDIO);
         vjo_buf_puts(&b, "\"url\":");
         vjo_json_write_string(&b, m->audio_url);
         vjo_buf_puts(&b, "}]");
     }
-    if (m->picture_len && m->picture_name && *pic) {
-        put_media(&b, "picture", m->picture_name, pic);
+    if (pic) {
+        put_media(&b, "picture", m->picture_name, VJO_KIKU_PICTURE);
         vjo_buf_puts(&b, "\"data\":\"");
         out->picture = m->picture;
         out->picture_len = m->picture_len;
@@ -476,7 +585,7 @@ void vjo_anki_media_name(char *out, size_t cap, uint64_t unix_ms, const char *ex
 
 int vjo_anki_audio_enabled(const VjoConfig *cfg)
 {
-    return cfg->anki_audio_url[0] && cfg->anki_field[VJO_ANKI_AUDIO][0];
+    return cfg->anki_audio_url[0] != '\0';
 }
 
 static void url_encode(VjoBuf *b, const char *s)
@@ -697,6 +806,14 @@ static int call(VjoArena *a, const VjoPlatform *p, const char *host, int port, c
     return err->rc;
 }
 
+int vjo_anki_call(VjoArena *a, const VjoPlatform *p, const char *host, int port, const char *json, VjoJson *j,
+                  int *result, VjoErr *err)
+{
+    VjoAnkiBody b;
+    text_body(&b, json);
+    return call(a, p, host, port, &b, j, result, err);
+}
+
 int vjo_anki_probe(VjoArena *a, const VjoPlatform *p, const char *host, int port, VjoErr *err)
 {
     VjoAnkiBody b;
@@ -793,15 +910,15 @@ int vjo_anki_find_queued(VjoArena *a, const VjoPlatform *p, const char *host, in
 /* The rewritten AnkiConnect refused the note without a reason: asks for
  * it, so a duplicate is VJO_E_ANKI_DUPLICATE (its ✓) and anything else
  * says what failed. Keeps err as it is when the question fails too. */
-static int why_refused(VjoArena *a, const VjoPlatform *p, const char *host, int port, const VjoConfig *cfg,
-                       const VjoAnkiNote *n, VjoErr *err)
+static int why_refused(VjoArena *a, const VjoPlatform *p, const char *host, int port, const VjoAnkiNote *n,
+                       VjoErr *err)
 {
     VjoAnkiBody b;
     VjoHttpResponse resp;
     VjoErr e;
     uint8_t dup = 0;
     const char *reason = NULL, *error, *words[1] = {n->spelling};
-    char *request = can_add_request(a, cfg, words, 1);
+    char *request = can_add_request(a, words, 1);
     if (!request)
         return err->rc;
     memset(&e, 0, sizeof(e));
@@ -816,22 +933,19 @@ static int why_refused(VjoArena *a, const VjoPlatform *p, const char *host, int 
     return err->rc;
 }
 
-int vjo_anki_add(VjoArena *a, const VjoPlatform *p, const char *host, int port, const VjoConfig *cfg,
-                 const VjoAnkiNote *n, const VjoAnkiMedia *m, VjoErr *err)
+int vjo_anki_add(VjoArena *a, const VjoPlatform *p, const char *host, int port, const VjoAnkiNote *n,
+                 const VjoAnkiMedia *m, VjoErr *err)
 {
     VjoAnkiBody note, deck;
-    char *create;
     memset(err, 0, sizeof(*err));
-    if (vjo_anki_add_request(a, cfg, n, m, &note) < 0)
+    if (vjo_anki_add_request(a, n, m, &note) < 0)
         return err->rc = VJO_E_OOM;
     if (call_id(a, p, host, port, &note, err) == VJO_E_ANKI && starts_with(err->detail, ERR_VALIDATION_V2))
-        return why_refused(a, p, host, port, cfg, n, err);
+        return why_refused(a, p, host, port, n, err);
     if (err->rc != VJO_E_ANKI || !is_no_deck(err->detail))
         return err->rc;
     /* The first note of a new deck. */
-    if (!(create = create_deck_request(a, cfg->anki_deck)))
-        return err->rc = VJO_E_OOM;
-    text_body(&deck, create);
+    text_body(&deck, CREATE_DECK_REQUEST);
     if (call_id(a, p, host, port, &deck, err))
         return err->rc;
     return call_id(a, p, host, port, &note, err);
@@ -912,7 +1026,7 @@ const char *vjo_anki_err_text(VjoArena *a, const VjoErr *err)
     case VJO_E_NET:
         return "Anki offline";
     case VJO_E_NOT_FOUND:
-        return "Anki not found on the network";
+        return "Anki not found: test the connection in the Overlay app";
     case VJO_E_OOM:
         return "Anki: not enough memory";
     case VJO_E_ANKI_DUPLICATE:
@@ -921,23 +1035,10 @@ const char *vjo_anki_err_text(VjoArena *a, const VjoErr *err)
         vjo_buf_printf(&b, "Anki refused the request (HTTP %d)", err->http_status);
         break;
     case VJO_E_ANKI:
-        if (starts_with(err->detail, ERR_NO_MODEL) || starts_with(err->detail, ERR_NO_MODEL_V2)) {
-            /* "model was not found: Lapis", "Notetype not found: {'name': 'Lapis'}" */
-            const char *name = err->detail + strlen(starts_with(err->detail, ERR_NO_MODEL) ? ERR_NO_MODEL : ERR_NO_MODEL_V2);
-            size_t len = strlen(name);
-            if (starts_with(name, "{'name': '") && len >= 12 && !strcmp(name + len - 2, "'}")) {
-                name += 10;
-                len -= 12;
-            }
-            vjo_buf_puts(&b, "Note type \"");
-            vjo_buf_append(&b, name, len);
-            vjo_buf_puts(&b, "\" not found in Anki (anki_note_type)");
-        } else if (starts_with(err->detail, ERR_EMPTY) || starts_with(err->detail, ERR_EMPTY_V2)) {
-            vjo_buf_puts(&b, "Anki: the note type's first field is empty (check anki_field_word)");
-        } else {
-            vjo_buf_puts(&b, "Anki: ");
-            vjo_buf_puts(&b, err->detail ? err->detail : "error");
-        }
+        if (starts_with(err->detail, ERR_NO_MODEL) || starts_with(err->detail, ERR_NO_MODEL_V2))
+            return "Kiku note type not found in Anki: import Kiku (docs/anki.md)";
+        vjo_buf_puts(&b, "Anki: ");
+        vjo_buf_puts(&b, err->detail ? err->detail : "error");
         break;
     default:
         vjo_buf_printf(&b, "Anki: unexpected response (%d). Is AnkiConnect running?", err->rc);

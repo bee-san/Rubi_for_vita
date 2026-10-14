@@ -14,7 +14,11 @@ import re
 import sys
 
 RENAMED = {"api_key": "jpdb_api_key"}
-REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms"}
+REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
+           # Anki's field mapping: the note is Kiku's, in the deck Kiku (docs/anki.md); with every
+           # anki_field_* key (REMOVED_PREFIXES), as core/config.c ignores them.
+           "anki_deck", "anki_note_type", "anki_tags"}
+REMOVED_PREFIXES = ("anki_field_",)
 # Values whose feature was removed, with their replacement.
 REPLACED_VALUES = {"ocr_backend": {"meiki": "vocr"}}
 
@@ -47,7 +51,7 @@ def main():
     vals = {}
     for k, v in (old or {}).items():
         k = RENAMED.get(k, k)
-        if k not in REMOVED:
+        if k not in REMOVED and not k.startswith(REMOVED_PREFIXES):
             vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
     explicit = set()
     for s in sets:

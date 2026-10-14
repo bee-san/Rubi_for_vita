@@ -81,6 +81,9 @@ typedef struct {
 extern VjoView g_view;
 void vjo_view_lock(void);
 void vjo_view_unlock(void);
+/* Under the view lock: the shown local result's dictionary page locators and
+ * the page shown, or NULL (worker.c; anki.c saves every dictionary's entry). */
+const VjoLocalPages *vjo_view_pages(int *page);
 
 /* ---- overlay -> control thread commands ---- */
 enum {
@@ -170,8 +173,10 @@ int vjo_anki_stop(void);
 /* Settings for the next job (control thread, after each config load).
  * Returns 1 when × and △ work (anki_mining is on). */
 int vjo_anki_configure(const VjoConfig *cfg);
-/* The running game's name for MiscInfo ("" = none; control thread). */
-void vjo_anki_set_game(const char *name);
+/* The running game's title ID and name for its cards ("" = none; control thread). */
+void vjo_anki_set_game(const char *tid, const char *name);
+/* The OCR model of the last recognition, recorded on its cards (network thread). */
+void vjo_anki_set_ocr_model(const char *model);
 /* Saves entry `entry` of list list_seq to the queue (overlay, × pressed).
  * Ignored while anki_mining is off. */
 void vjo_anki_post_add(unsigned list_seq, int entry);
@@ -233,14 +238,6 @@ SceUID vjo_shell_memblock_alloc(int item, const char *name, size_t bytes, void *
 void vjo_shell_memblock_free(int item, SceUID uid, size_t bytes);
 /* Writes the pools, the items in use and the PAF free size to status.txt. */
 void vjo_ledger_shell_log(const char *when);
-
-/* This console's IPv4 address and netmask (host byte order); -1 if none. */
-int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask);
-/* Connects to port of up to VJO_NET_PROBE_MAX hosts (host byte order) at
- * once; open[i] = 1 for those that accept within window_us. Returns the
- * number of hosts tried. */
-#define VJO_NET_PROBE_MAX 32
-int vjo_net_probe_port(const uint32_t *ips, int n, int port, int window_us, uint8_t *open);
 
 /* log_vita.c */
 /* Dictionary file reads and bytes since the current lookup began (worker.c's

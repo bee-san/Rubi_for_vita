@@ -54,24 +54,6 @@ int vjo_config_dict_ready(const VjoConfig *c)
     return vjo_config_api_key(c)[0] != '\0';
 }
 
-static const struct {
-    const char *key, *def; /* defaults: the Lapis note type */
-} anki_fields[VJO_ANKI_FIELD_COUNT] = {
-    [VJO_ANKI_WORD] = {"anki_field_word", "Expression"},
-    [VJO_ANKI_READING] = {"anki_field_reading", "ExpressionReading"},
-    [VJO_ANKI_FURIGANA] = {"anki_field_furigana", "ExpressionFurigana"},
-    [VJO_ANKI_DEFINITION] = {"anki_field_definition", "MainDefinition"},
-    [VJO_ANKI_SENTENCE] = {"anki_field_sentence", "Sentence"},
-    [VJO_ANKI_PICTURE] = {"anki_field_picture", "Picture"},
-    [VJO_ANKI_FREQUENCY] = {"anki_field_frequency", "FreqSort"},
-    [VJO_ANKI_AUDIO] = {"anki_field_audio", "ExpressionAudio"},
-    [VJO_ANKI_SENTENCE_FURIGANA] = {"anki_field_sentence_furigana", "SentenceFurigana"},
-    [VJO_ANKI_PITCH_POSITION] = {"anki_field_pitch_position", "PitchPosition"},
-    [VJO_ANKI_PITCH_CATEGORIES] = {"anki_field_pitch_categories", "PitchCategories"},
-    [VJO_ANKI_FREQUENCY_LIST] = {"anki_field_frequency_list", "Frequency"},
-    [VJO_ANKI_MISC_INFO] = {"anki_field_misc_info", "MiscInfo"},
-};
-
 void vjo_config_defaults(VjoConfig *c)
 {
     memset(c, 0, sizeof(*c));
@@ -97,11 +79,6 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_settle_max_ms = 2000;
     c->ocr_skip_blank_lines = 0;
     c->log_file = 1; /* log.txt is on unless log_file = off */
-    vjo_snprintf(c->anki_deck, sizeof(c->anki_deck), "Default");
-    vjo_snprintf(c->anki_note_type, sizeof(c->anki_note_type), "Lapis");
-    vjo_snprintf(c->anki_tags, sizeof(c->anki_tags), "vita-jp-overlay");
-    for (int i = 0; i < VJO_ANKI_FIELD_COUNT; i++)
-        vjo_snprintf(c->anki_field[i], sizeof(c->anki_field[i]), "%s", anki_fields[i].def);
 }
 
 const char *vjo_config_default_text(void)
@@ -191,40 +168,14 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
            "log_file = on\n"
            "\n"
-           "; ---- Anki card mining (optional, see docs/anki.md) ----\n"
+           "; ---- Anki (optional): set it up in the Overlay app's Anki page ----\n"
            "; on: × in the overlay saves the shown word as a card in a queue on the memory\n"
-           "; card (ux0:data/VitaJPOverlay/anki_queue), even with Wi-Fi off or Anki closed.\n"
-           "; △ sends the queue to AnkiConnect on a computer on your local network (plain\n"
-           "; HTTP). No AnkiWeb sync. off (the default): × and △ do nothing.\n"
+           "; card, even with Wi-Fi off; △ or the Overlay app sends the queue to AnkiConnect\n"
+           "; (Kiku note type, deck Kiku; docs/anki.md). off: × and △ do nothing.\n"
            "anki_mining = off\n"
-           "\n"
-           "; The computer running Anki with AnkiConnect, for △: its IP address[:port]\n"
-           "; (default 8765), or auto = search the local network once. Empty: cards stay queued.\n"
+           "; AnkiConnect's computer: IP[:port] (default 8765), or auto: the Overlay app finds it\n"
            "anki_host =\n"
-           "\n"
-           "; Deck (created if missing), note type, and tags separated by spaces. These and\n"
-           "; the fields below are read when △ sends, so queued cards use the latest ones.\n"
-           "anki_deck = Default\n"
-           "anki_note_type = Lapis\n"
-           "anki_tags = vita-jp-overlay\n"
-           "\n"
-           "; The note type's field for each item; empty = leave it out\n"
-           "anki_field_word = Expression\n"
-           "anki_field_reading = ExpressionReading\n"
-           "anki_field_furigana = ExpressionFurigana\n"
-           "anki_field_definition = MainDefinition\n"
-           "anki_field_sentence = Sentence\n"
-           "anki_field_picture = Picture\n"
-           "anki_field_frequency = FreqSort\n"
-           "anki_field_audio = ExpressionAudio\n"
-           "anki_field_sentence_furigana = SentenceFurigana\n"
-           "anki_field_pitch_position = PitchPosition\n"
-           "anki_field_pitch_categories = PitchCategories\n"
-           "anki_field_frequency_list = Frequency\n"
-           "anki_field_misc_info = MiscInfo\n"
-           "\n"
-           "; Word audio, looked up when △ sends: a Yomitan audio source URL with {term}\n"
-           "; and {reading} (empty = off)\n"
+           "; Optional word audio when sending: a Yomitan audio source URL with {term}\n"
            "anki_audio_url =\n";
 }
 
@@ -412,8 +363,8 @@ static int valid_vocr_model(const char *v)
     return 1;
 }
 
-/* Plain string settings. Deck, note type, tags, field names and the
- * audio URL may contain ';' and '#' (raw: no inline comment). */
+/* Plain string settings. Paths and the audio URL may contain ';' and '#'
+ * (raw: no inline comment). */
 typedef struct {
     const char *key;
     size_t offset, size;
@@ -435,9 +386,6 @@ static const StrSetting str_settings[] = {
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
     STR_SETTING(log_host, 0, 0),
     CHECKED_SETTING(anki_host, 0, valid_anki_host, "empty, auto, or IP[:port]", 0),
-    STR_SETTING(anki_deck, 1, 1),
-    STR_SETTING(anki_note_type, 1, 1),
-    STR_SETTING(anki_tags, 0, 1),
     CHECKED_SETTING(anki_audio_url, 1, valid_audio_url, "empty, or http(s)://host[:port]/path with {term}", 1),
 };
 #define N_STR_SETTINGS ((int)(sizeof(str_settings) / sizeof(str_settings[0])))
@@ -450,18 +398,18 @@ static const StrSetting *find_str_setting(const char *key)
     return NULL;
 }
 
-static int anki_field_index(const char *key)
+/* Settings of the Anki field mapping, which a fixed Kiku note replaced:
+ * anki_deck, anki_note_type, anki_tags, anki_field_* (any case). */
+static int removed_anki_key(const char *key)
 {
-    for (int i = 0; i < VJO_ANKI_FIELD_COUNT; i++)
-        if (vjo_ieq(key, anki_fields[i].key))
-            return i;
-    return -1;
+    return vjo_ieq(key, "anki_deck") || vjo_ieq(key, "anki_note_type") || vjo_ieq(key, "anki_tags") ||
+           vjo_ieq_prefix(key, "anki_field_");
 }
 
 static int keeps_comment_chars(const char *key)
 {
     const StrSetting *ss = find_str_setting(key);
-    return (ss && ss->raw) || anki_field_index(key) >= 0;
+    return ss && ss->raw;
 }
 
 static void set_str(VjoConfig *c, const char *key, const char *val, char *dst, size_t size)
@@ -515,7 +463,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if ((d = api_key_dict(key)) >= 0) {
         set_str(c, key, val, c->api_key[d], sizeof(c->api_key[d]));
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms")) {
+               vjo_ieq(key, "combo_delay_ms") || removed_anki_key(key)) {
         /* removed settings (tools/migrate_config.py REMOVED): no warning */
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
@@ -613,8 +561,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             }
             dst[0] = '\0';
         }
-    } else if ((d = anki_field_index(key)) >= 0) {
-        set_str(c, key, val, c->anki_field[d], sizeof(c->anki_field[d]));
     } else if (vjo_ieq(key, "log_file")) {
         if (vjo_ieq(val, "on"))
             c->log_file = 1;

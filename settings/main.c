@@ -1,4 +1,5 @@
-/* Standalone LiveArea settings app: no network, no plugin imports. */
+/* Standalone LiveArea settings app: no plugin imports. Its only network use
+ * is the Anki page's (anki_page.c: AnkiConnect on the LAN). */
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/kernel/processmgr.h>
@@ -7,6 +8,7 @@
 #include <vita2d.h>
 #include <stdio.h>
 #include <string.h>
+#include "anki_page.h"
 #include "catalog.h"
 #include "preferences.h"
 #include "../core/local_dict.h"
@@ -169,16 +171,20 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
     centered_text(x, y + height / 2 + 9, width, active ? BG : WHITE, 26, label);
 }
 
+/* The page tabs: Games, OCR & lookup, Anki. */
+#define PAGES 3
+#define TAB_X(i) (24 + (i) * 304)
+#define TAB_W 296
+
 static void header(void)
 {
+    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki"};
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
     text(744, 34, DIM, 24, "Select: page");
-    for (int i = 0; i < 2; i++) {
-        int x = i ? 486 : 24, width = i ? 450 : 446;
-        vita2d_draw_rectangle(x, TAB_Y, width, TAB_H, page == i ? ACCENT : CARD);
-        centered_text(x, TAB_Y + 33, width, page == i ? BG : WHITE, 28,
-                      i ? "OCR & lookup" : "Games");
+    for (int i = 0; i < PAGES; i++) {
+        vita2d_draw_rectangle(TAB_X(i), TAB_Y, TAB_W, TAB_H, page == i ? ACCENT : CARD);
+        centered_text(TAB_X(i), TAB_Y + 33, TAB_W, page == i ? BG : WHITE, 28, tabs[i]);
     }
 }
 
@@ -198,6 +204,9 @@ static void footer(const char *message, int error, const char *controls)
 {
     footer_at(440, 64, 467, 2, message, error, controls);
 }
+
+static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
+                                  WHITE, DIM, ACCENT, OFF};
 
 static void free_icons(void)
 {
@@ -546,9 +555,27 @@ int main(void)
         uint32_t pressed = pad.buttons & ~previous;
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN);
         uint64_t now = sceKernelGetProcessTimeWide();
-        if (pressed & SCE_CTRL_CIRCLE) break;
-        if (pressed & SCE_CTRL_SELECT) { page = !page; repeat_at = now + 350000; }
-        if (page) {
+        if (page == 2 && vjo_anki_page_modal()) {
+            /* The system keyboard has every button and the touch screen; a
+             * finger or button still down when it closes is no new press. */
+            SceTouchData held;
+            memset(&held, 0, sizeof(held));
+            sceTouchPeek(SCE_TOUCH_PORT_FRONT, &held, 1);
+            touched = held.reportNum != 0;
+            previous = pad.buttons;
+            vjo_anki_page_frame(&anki_ui, 0, -1, -1, &scratch);
+            sceDisplayWaitVblankStart();
+            continue;
+        }
+        if ((pressed & SCE_CTRL_CIRCLE) && !(page == 2 && vjo_anki_page_busy())) break;
+        if (pressed & SCE_CTRL_SELECT) {
+            page = (page + 1) % PAGES;
+            repeat_at = now + 350000;
+            if (page == 2) vjo_anki_page_show(&scratch);
+        }
+        if (page == 2) {
+            /* anki_page.c reads its own buttons and touches */
+        } else if (page) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
             if (pressed & SCE_CTRL_CROSS) toggle_preference();
@@ -571,10 +598,16 @@ int main(void)
         SceTouchData touch;
         memset(&touch, 0, sizeof(touch));
         sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
+        int touch_x = -1, touch_y = -1;
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 470) page = 0;
-            else if (y >= TAB_Y && y < TAB_Y + TAB_H && x >= 486 && x < 936) page = 1;
+            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 936 && (x - 24) % 304 < TAB_W
+                      ? (x - 24) / 304 : -1;
+            if (tab >= 0) {
+                if (tab == 2 && page != 2) vjo_anki_page_show(&scratch);
+                page = tab;
+            }
+            else if (page == 2) { touch_x = x; touch_y = y; }
             else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 preference_selected = 0;
                 if (y >= OCR_CHOICE_Y && y < OCR_CHOICE_Y + OCR_CHOICE_H) {
@@ -619,9 +652,11 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page) draw_preferences(); else draw();
+        if (page == 2) vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
+        else if (page) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }
+    vjo_anki_page_quit();
     vita2d_wait_rendering_done();
     free_icons();
     vita2d_free_pvf(font);

@@ -69,25 +69,124 @@ static void test_anki_fields(void)
     BUF(vjo_anki_sentence(&b, "猫", 0, 99)); /* out of range: no bold */
     TEST_CHECK(!strcmp(s, "猫"));
 
-    BUF(vjo_anki_furigana(&b, "言葉", "ことば"));
-    TEST_CHECK(!strcmp(s, "言葉[ことば]"));
-    BUF(vjo_anki_furigana(&b, "食べる", "たべる"));
-    TEST_CHECK(!strcmp(s, "食べる[たべる]"));
-    BUF(vjo_anki_furigana(&b, "ある", "ある"));
-    TEST_CHECK(!strcmp(s, "ある"));
-    BUF(vjo_anki_furigana(&b, "テレビ", "てれび")); /* no kanji */
-    TEST_CHECK(!strcmp(s, "テレビ"));
-    BUF(vjo_anki_furigana(&b, "時々", "ときどき"));
-    TEST_CHECK(!strcmp(s, "時々[ときどき]"));
-
+    /* Yomitan's {furigana-plain}, which Kiku's install guide asks for: each
+     * kanji run takes its part of the reading; a space before a base that
+     * follows other text, so Kiku's parser (and Anki's filter) read only that
+     * run: お茶[おちゃ] would put おちゃ over 茶 in Kiku */
     {
-        const char *m[] = {"to eat", "to live on <sth>"};
-        BUF(vjo_anki_definition(&b, m, 2));
-        TEST_CHECK(!strcmp(s, "<ol><li>to eat</li><li>to live on &lt;sth&gt;</li></ol>"));
-        BUF(vjo_anki_definition(&b, m, 0));
-        TEST_CHECK(!strcmp(s, ""));
+        static const char *const cases[][3] = {
+            {"言葉", "ことば", "言葉[ことば]"},
+            {"食べる", "たべる", "食[た]べる"},
+            {"お茶", "おちゃ", "お 茶[ちゃ]"},
+            {"ご飯", "ごはん", "ご 飯[はん]"},
+            {"お母さん", "おかあさん", "お 母[かあ]さん"},
+            {"真っ白", "まっしろ", "真[ま]っ 白[しろ]"},
+            {"見張り番", "みはりばん", "見張[みは]り 番[ばん]"},
+            {"取り扱い", "とりあつかい", "取[と]り 扱[あつか]い"},
+            {"大人しい", "おとなしい", "大人[おとな]しい"},
+            {"時々", "ときどき", "時々[ときどき]"},
+            {"ブラック企業", "ぶらっくきぎょう", "ブラック 企業[きぎょう]"}, /* katakana as hiragana */
+            {"一ヶ月", "いっかげつ", " 一ヶ月[いっかげつ]"},             /* ヶ: kana to Kiku */
+            /* the kana do not line up, or line up two ways: the whole word, after a space */
+            {"今日は", "きょうわ", " 今日は[きょうわ]"},
+            {"物の怪", "もののけ", " 物の怪[もののけ]"},   /* も|のけ or もの|け */
+            {"物の哀れ", "もののあわれ", " 物の哀れ[もののあわれ]"},
+            {"3日", "みっか", " 3日[みっか]"},
+            {"ある", "ある", "ある"},
+            {"テレビ", "てれび", "テレビ"}, /* no kanji */
+            {"猫", "", "猫"},
+            {"a<b&猫", "a<b&ねこ", "a&lt;b&amp; 猫[ねこ]"},
+        };
+        for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            BUF(vjo_anki_furigana(&b, cases[i][0], cases[i][1]));
+            TEST_CHECK(!strcmp(s, cases[i][2]));
+            TEST_MSG("%s %s -> '%s', want '%s'", cases[i][0], cases[i][1], s, cases[i][2]);
+        }
+        /* longer than the distribution handles, or that never lines up: the whole word */
+        char word[200] = "", reading[300] = "";
+        for (int i = 0; i < 49; i++)
+            strcat(word, "茶");
+        for (int i = 0; i < 49; i++)
+            strcat(reading, "ちゃ");
+        BUF(vjo_anki_furigana(&b, word, reading));
+        TEST_CHECK(s[0] != ' ' && strstr(s, "茶[ちゃちゃ") != NULL);
+        /* 16 runs of kanji between の over a reading of 47 の that never ends in the
+         * word's x: no fit, given up within the step bound */
+        strcpy(word, "");
+        strcpy(reading, "");
+        for (int i = 0; i < 15; i++)
+            strcat(word, "茶の");
+        strcat(word, "茶x");
+        for (int i = 0; i < 47; i++)
+            strcat(reading, "の");
+        BUF(vjo_anki_furigana(&b, word, reading));
+        TEST_CHECK(s[0] == ' ' && strstr(s, "茶x[のの") != NULL);
+        TEST_MSG("%.40s", s);
     }
+
 #undef BUF
+    {
+        /* a local definition's first line names its dictionary (tools/convert_dictionary.py) */
+        char name[16];
+        const char *t = vjo_anki_meaning_source("[JMdict Plain]\nto eat\nto bite", name, sizeof(name));
+        TEST_CHECK(!strcmp(name, "JMdict Plain") && !strcmp(t, "to eat\nto bite"));
+        t = vjo_anki_meaning_source("[Jitendex.org [2026-05-05]]\nx", name, sizeof(name)); /* brackets in it, cut */
+        TEST_CHECK(!strcmp(name, "Jitendex.org [2") && !strcmp(t, "x"));
+        t = vjo_anki_meaning_source("[大辞林第四版]\nx", name, 8); /* cut on a character */
+        TEST_CHECK(!strcmp(name, "大辞") && !strcmp(t, "x"));
+        static const char *const plain[] = {"to eat", "[x] y", "[x]", "[]\nz", "[x\n]y", "x\n[y]\n"};
+        for (unsigned i = 0; i < sizeof(plain) / sizeof(plain[0]); i++) {
+            TEST_CHECK(vjo_anki_meaning_source(plain[i], name, sizeof(name)) == plain[i] && !name[0]);
+            TEST_MSG("%s", plain[i]);
+        }
+    }
+    {
+        /* MainDefinition and Glossary as Yomitan writes them, which Kiku pages by dictionary */
+        static const char *const daijirin[] = {"[Daijirin4 Plain]\nA room; a <chamber>.\nAlso a stable."};
+        static const char *const jmdict[] = {"[JMdict Plain]\nroom", "chamber"};
+        static const char *const jpdb[] = {"room \"heya\"", "chamber"};
+        VjoAnkiGloss more[2] = {{NULL, "部屋", "へや", (const char **)jmdict, 2},
+                                {"jpdb.io", "部屋", "へや", (const char **)jpdb, 2}};
+        VjoAnkiNote n = {.spelling = "部屋", .reading = "へや", .meanings = (const char **)daijirin, .n_meanings = 1,
+                         .sentence = "", .rank = VJO_NO_RANK};
+        setup();
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
+                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                           "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
+                           "&lt;chamber&gt;.<br>Also a stable.</span></li></ol></div>"));
+        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n));
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n), "")); /* one dictionary: none */
+        n.more = more;
+        n.n_more = 2;
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n),
+                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                           "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
+                           "&lt;chamber&gt;.<br>Also a stable.</span></li>"
+                           "<li data-dictionary=\"JMdict Plain\"><i>(JMdict Plain)</i> <span><ul><li>room</li>"
+                           "<li>chamber</li></ul></span></li>"
+                           "<li data-dictionary=\"jpdb.io\"><i>(jpdb.io)</i> <span><ul><li>room &quot;heya&quot;"
+                           "</li><li>chamber</li></ul></span></li></ol></div>"));
+        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n));
+        /* a name of the record's own wins; none at all: no label */
+        n.dictionary = "Daijirin <4>";
+        TEST_CHECK(strstr(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
+                          "<li data-dictionary=\"Daijirin &lt;4&gt;\"><i>(Daijirin &lt;4&gt;)</i> <span>A room;") != NULL);
+        n.meanings = (const char **)jpdb;
+        n.n_meanings = 2;
+        n.dictionary = NULL;
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
+                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol><li><span><ul><li>"
+                           "room &quot;heya&quot;</li><li>chamber</li></ul></span></li></ol></div>"));
+        n.n_meanings = 0;
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n), ""));
+        /* the dictionary's ruby in Anki's syntax, else the whole word's reading */
+        n.spelling = "取り扱い";
+        n.reading = "とりあつかい";
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
+        n.furigana = "取[と]り扱[あつか]い";
+        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
+        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n));
+    }
 
     {
         char name[40];
@@ -163,10 +262,11 @@ static void anki_list(VjoEntryList *l)
     TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, l) == 0);
 }
 
+/* The one target: Kiku notes in the Kiku deck, duplicates checked there. */
 #define OPTS                                                                                                  \
     "\"options\":{\"allowDuplicate\":false,\"duplicateScope\":\"deck\",\"duplicateScopeOptions\":"            \
-    "{\"deckName\":\"Japanese::Mining \\\"1\\\"\",\"checkChildren\":false,\"checkAllModels\":false}}"
-#define TARGET "\"deckName\":\"Japanese::Mining \\\"1\\\"\",\"modelName\":\"Lapis\""
+    "{\"deckName\":\"Kiku\",\"checkChildren\":false,\"checkAllModels\":false}}"
+#define TARGET "\"deckName\":\"Kiku\",\"modelName\":\"Kiku\""
 
 /* jiten: furigana lined up from the dictionary form inside the sentence;
  * an overlapping token and a word without one are skipped. */
@@ -185,7 +285,6 @@ static void test_anki_sentence_furigana_jiten(void)
         "\"meaningsChunks\":[[\"to come\"]],\"meaningsPartOfSpeech\":[\"vk\",\"vi\",\"vk\"],\"pitchAccents\":[1]},"
         "{\"wordId\":4,\"readingIndex\":0,\"spelling\":\"な\",\"reading\":\"な\",\"meaningsChunks\":[[\"x\"]]},"
         "{\"wordId\":5,\"readingIndex\":0,\"spelling\":\"雨\",\"reading\":\"雨[あめ]\",\"meaningsChunks\":[[\"rain\"]]}]}";
-    VjoConfig cfg;
     VjoDictResult r;
     VjoEntryList l;
     VjoAnkiNote n;
@@ -193,7 +292,6 @@ static void test_anki_sentence_furigana_jiten(void)
     VjoAnkiBody b;
     int kuru = -1, ame = -1;
     setup();
-    vjo_config_defaults(&cfg);
     TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
     TEST_ASSERT(vjo_entries_build(&A, "彼は来なかった。", &r, &l) == 0);
     for (int i = 0; i < l.n_entries; i++) {
@@ -203,102 +301,97 @@ static void test_anki_sentence_furigana_jiten(void)
             ame = i;
     }
     TEST_ASSERT(kuru >= 0 && ame >= 0);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, kuru, &n) == 0);
-    TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &none, &b) == 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, kuru, &n) == 0);
+    TEST_ASSERT(vjo_anki_add_request(&A, &n, &none, &b) == 0);
     TEST_CHECK(strstr(b.prefix, "\"SentenceFurigana\":\"彼[かれ]は<b> 来[こ]なかった</b>。\"") != NULL);
+    /* jiten's ruby of the dictionary form, kept as the word's furigana */
+    TEST_CHECK(n.furigana && !strcmp(n.furigana, "来[く]る"));
+    TEST_CHECK(strstr(b.prefix, "\"ExpressionFurigana\":\"来[く]る\"") != NULL);
     TEST_CHECK(strstr(b.prefix, "\"PitchCategories\":\"kifuku\"") != NULL);
     TEST_CHECK(strstr(b.prefix, "<li>Jiten: 59</li>") != NULL);
     TEST_MSG("%s", b.prefix);
     /* a word without a token: nothing in bold */
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, ame, &n) == 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, ame, &n) == 0);
     TEST_CHECK(n.sf_hl_start < 0 && !strcmp(n.sentence_furigana, "彼[かれ]は 来[こ]なかった。"));
-    /* no field for it: not made */
-    cfg.anki_field[VJO_ANKI_SENTENCE_FURIGANA][0] = '\0';
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, kuru, &n) == 0);
-    TEST_CHECK(n.sentence_furigana == NULL);
 }
 
 static void test_anki_requests(void)
 {
-    VjoConfig cfg;
     VjoEntryList l;
     VjoAnkiNote n;
     VjoAnkiMedia m = {(const uint8_t *)"jpeg", 4, "vitajp_1.jpg", NULL, NULL};
     VjoAnkiBody b;
     char *s, misc[96];
     setup();
-    vjo_config_defaults(&cfg);
-    snprintf(cfg.anki_deck, sizeof(cfg.anki_deck), "Japanese::Mining \"1\"");
-    snprintf(cfg.anki_tags, sizeof(cfg.anki_tags), " vita  jp-overlay ");
     anki_list(&l);
 
-    s = vjo_anki_can_add_request(&A, &cfg, &l, 99);
+    s = vjo_anki_can_add_request(&A, &l, 99);
     TEST_CHECK(s && !strcmp(s, "{\"action\":\"canAddNotesWithErrorDetail\",\"version\":6,\"params\":{\"notes\":["
                                "{" TARGET ",\"fields\":{\"Expression\":\"猫\"}," OPTS "},"
                                "{" TARGET ",\"fields\":{\"Expression\":\"が\"}," OPTS "},"
                                "{" TARGET ",\"fields\":{\"Expression\":\"好き\"}," OPTS "}]}}"));
     TEST_MSG("%s", s);
-    s = vjo_anki_can_add_request(&A, &cfg, &l, 1); /* the first n only */
+    s = vjo_anki_can_add_request(&A, &l, 1); /* the first n only */
     TEST_CHECK(s && strstr(s, "猫") && !strstr(s, "が"));
 
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, 0, &n) == 0);
-    TEST_CHECK(vjo_anki_note_from_entry(&A, &cfg, &l, 3, &n) < 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
+    TEST_CHECK(vjo_anki_note_from_entry(&A, &l, 3, &n) < 0);
     {
         VjoAnkiDate when = {2026, 10, 11, 9, 5};
         vjo_anki_misc_info(misc, sizeof(misc), "Persona 4 <Golden>", &when);
     }
     n.misc = misc;
-    TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &m, &b) == 0);
+    n.dictionary = "jpdb.io";
+    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
+    /* Kiku v2.1.0's field names, in its order, the media fields named empty */
     TEST_CHECK(!strcmp(b.prefix,
                        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET ",\"fields\":{"
-                       "\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\",\"ExpressionFurigana\":\"猫[ねこ]\","
-                       "\"MainDefinition\":\"<ol><li>cat &quot;neko&quot;</li><li>a\\\\b &lt;&amp;&gt;\\nc</li></ol>\","
-                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"Picture\":\"\",\"FreqSort\":\"1500\","
-                       "\"SentenceFurigana\":\"<b>猫[ねこ]</b>が<br> 好[す]き\","
+                       "\"Expression\":\"猫\",\"ExpressionFurigana\":\"猫[ねこ]\",\"ExpressionReading\":\"ねこ\","
+                       "\"MainDefinition\":\"<div style=\\\"text-align: left;\\\" class=\\\"yomitan-glossary\\\"><ol>"
+                       "<li data-dictionary=\\\"jpdb.io\\\"><i>(jpdb.io)</i> <span><ul><li>cat &quot;neko&quot;</li>"
+                       "<li>a\\\\b &lt;&amp;&gt;<br>c</li></ul></span></li></ol></div>\","
+                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"SentenceFurigana\":\"<b>猫[ねこ]</b>が<br> 好[す]き\","
+                       "\"Picture\":\"\","
                        "\"PitchPosition\":\"<span style=\\\"display:inline;\\\"><span>[</span><span>1</span>"
                        "<span>]</span></span>\",\"PitchCategories\":\"atamadaka\","
                        "\"Frequency\":\"<ul style=\\\"text-align: left;\\\"><li>jpdb: 1500</li></ul>\","
+                       "\"FreqSort\":\"1500\","
                        "\"MiscInfo\":\"Persona 4 &lt;Golden&gt; (2026-10-11 09:05)\"},"
-                       "\"tags\":[\"vita\",\"jp-overlay\"]," OPTS ","
+                       "\"tags\":[\"vita-jp-overlay\"]," OPTS ","
                        "\"picture\":[{\"filename\":\"vitajp_1.jpg\",\"fields\":[\"Picture\"],\"data\":\""));
     TEST_MSG("%s", b.prefix);
     TEST_CHECK(b.prefix_len == strlen(b.prefix) && !strcmp(b.suffix, "\"}]}}}") && b.suffix_len == 6);
     TEST_CHECK(b.picture == m.picture && b.picture_len == 4);
 
-    /* the word's audio, for Anki to download, before the picture */
+    /* the word's audio, for Anki to download, before the picture; the queue's tag */
     m.audio_url = "https://example.com/a \"b\".opus";
     m.audio_name = "vitajp_1.opus";
-    TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &m, &b) == 0);
+    n.queue_tag = "vita_queue_00ff";
+    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
     /* media fields are named, empty: the rewritten AnkiConnect fills only named ones */
-    TEST_CHECK(strstr(b.prefix, "\"Picture\":\"\",\"FreqSort\"") && strstr(b.prefix, "\"ExpressionAudio\":\"\","));
-    TEST_CHECK(strstr(b.prefix, OPTS ",\"audio\":[{\"filename\":\"vitajp_1.opus\",\"fields\":[\"ExpressionAudio\"],"
+    TEST_CHECK(strstr(b.prefix, "\"ExpressionReading\":\"ねこ\",\"ExpressionAudio\":\"\",\"MainDefinition\"") &&
+               strstr(b.prefix, "\"Picture\":\"\",\"PitchPosition\""));
+    TEST_CHECK(strstr(b.prefix, "\"tags\":[\"vita-jp-overlay\",\"vita_queue_00ff\"]," OPTS
+                                ",\"audio\":[{\"filename\":\"vitajp_1.opus\",\"fields\":[\"ExpressionAudio\"],"
                                 "\"url\":\"https://example.com/a \\\"b\\\".opus\"}],"
                                 "\"picture\":[{\"filename\":\"vitajp_1.jpg\"") != NULL);
     TEST_MSG("%s", b.prefix);
-    cfg.anki_field[VJO_ANKI_AUDIO][0] = '\0'; /* no audio field: no audio */
-    TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &m, &b) == 0);
-    TEST_CHECK(!strstr(b.prefix, "\"audio\"") && !strstr(b.prefix, "ExpressionAudio"));
 
-    /* blank fields are skipped; no picture field: no picture; no rank: no frequency */
-    cfg.anki_field[VJO_ANKI_READING][0] = '\0';
-    cfg.anki_field[VJO_ANKI_FURIGANA][0] = '\0';
-    cfg.anki_field[VJO_ANKI_DEFINITION][0] = '\0';
-    cfg.anki_field[VJO_ANKI_SENTENCE][0] = '\0';
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    cfg.anki_field[VJO_ANKI_SENTENCE_FURIGANA][0] = '\0';
-    cfg.anki_field[VJO_ANKI_PITCH_CATEGORIES][0] = '\0';
-    cfg.anki_tags[0] = '\0';
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, 2, &n) == 0);
-    TEST_ASSERT(vjo_anki_add_request(&A, &cfg, &n, &m, &b) == 0);
+    /* nothing to fill is left out: no rank, no meanings, no picture or audio */
+    m = (VjoAnkiMedia){0};
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 2, &n) == 0);
+    n.meanings = NULL;
+    n.n_meanings = 0;
+    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
     TEST_CHECK(!strcmp(b.prefix, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET
-                                 ",\"fields\":{\"Expression\":\"好き\",\"PitchPosition\":\"<ol>"
+                                 ",\"fields\":{\"Expression\":\"好き\",\"ExpressionFurigana\":\"好[す]き\","
+                                 "\"ExpressionReading\":\"すき\",\"Sentence\":\"猫が<br><b>好き</b>\","
+                                 "\"SentenceFurigana\":\"猫[ねこ]が<br><b> 好[す]き</b>\",\"PitchPosition\":\"<ol>"
                                  "<li><span style=\\\"display:inline;\\\"><span>[</span><span>2</span><span>]</span></span></li>"
                                  "<li><span style=\\\"display:inline;\\\"><span>[</span><span>1</span><span>]</span></span></li>"
-                                 "</ol>\"},\"tags\":[]," OPTS "}}}"));
+                                 "</ol>\",\"PitchCategories\":\"odaka,atamadaka\"},\"tags\":[\"vita-jp-overlay\"]," OPTS "}}}"));
     TEST_MSG("%s", b.prefix);
     TEST_CHECK(b.suffix_len == 0 && b.picture_len == 0);
-    cfg.anki_field[VJO_ANKI_WORD][0] = '\0';
-    TEST_CHECK(vjo_anki_can_add_request(&A, &cfg, &l, 3) == NULL);
 }
 
 /* ---------- AnkiConnect over a fake network ---------- */
@@ -396,15 +489,13 @@ static void test_anki_check(void)
 {
     FakeNet f;
     VjoPlatform p;
-    VjoConfig cfg;
     VjoEntryList l;
     VjoErr err;
     uint8_t marks[4];
     const char *req;
     setup();
-    vjo_config_defaults(&cfg);
     anki_list(&l);
-    req = vjo_anki_can_add_request(&A, &cfg, &l, 3);
+    req = vjo_anki_can_add_request(&A, &l, 3);
     TEST_ASSERT(req != NULL);
     /* only a duplicate is marked: a missing deck (even one named after
      * duplicates) or note type is not */
@@ -435,7 +526,6 @@ static void test_anki_add(void)
 {
     FakeNet f;
     VjoPlatform p;
-    VjoConfig cfg;
     VjoEntryList l;
     VjoAnkiNote n;
     VjoErr err;
@@ -445,9 +535,8 @@ static void test_anki_add(void)
     const char *body;
 
     setup();
-    vjo_config_defaults(&cfg);
     anki_list(&l);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, 0, &n) == 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
     for (int i = 0; i < 100; i++)
         jpeg[i] = (uint8_t)(255 - i);
     vjo_base64_encode(jpeg, sizeof(jpeg), b64);
@@ -457,7 +546,7 @@ static void test_anki_add(void)
     m.picture = jpeg;
     m.picture_len = sizeof(jpeg);
     m.picture_name = "vitajp_1.jpg";
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &m, &err) == VJO_OK);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &m, &err) == VJO_OK);
     TEST_CHECK(f.next == 1);
     body = strstr(f.sent[0], "\r\n\r\n");
     TEST_ASSERT(body != NULL);
@@ -475,60 +564,58 @@ static void test_anki_add(void)
     }
 
     /* a new deck: created, then the note again */
-    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"deck was not found: Default\"}"),
+    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"deck was not found: Kiku\"}"),
              ok("{\"result\": 1, \"error\": null}"), ok("{\"result\": 2, \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_OK);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_OK);
     TEST_CHECK(f.next == 3 && strstr(f.sent[2], "\"action\":\"addNote\""));
-    TEST_CHECK(strstr(f.sent[1], "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"Default\"}}"));
+    TEST_CHECK(strstr(f.sent[1], "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"Kiku\"}}"));
     TEST_CHECK(!strstr(f.sent[2], "\"picture\"")); /* no JPEG: no picture */
 
     /* AnkiConnect refusals and their messages */
 #define REFUSED(error, rc, text)                                                                               \
     do {                                                                                                       \
         fake_net(&f, &p, 1, ok("{\"result\": null, \"error\": \"" error "\"}"));                             \
-        TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == (rc));                   \
+        TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == (rc));                   \
         TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), text));                                                \
         TEST_MSG("%s -> %s", error, vjo_anki_err_text(&A, &err));                                              \
     } while (0)
     REFUSED(DUPLICATE, VJO_E_ANKI_DUPLICATE, "Already in Anki");
-    REFUSED("model was not found: Lapis", VJO_E_ANKI, "Note type \"Lapis\" not found in Anki (anki_note_type)");
+#define NO_KIKU "Kiku note type not found in Anki: import Kiku (docs/anki.md)"
+    REFUSED("model was not found: Kiku", VJO_E_ANKI, NO_KIKU);
     /* a note type named after duplicates is not one */
-    REFUSED("model was not found: duplicate-lapis", VJO_E_ANKI,
-            "Note type \"duplicate-lapis\" not found in Anki (anki_note_type)");
-    REFUSED("cannot create note because it is empty", VJO_E_ANKI,
-            "Anki: the note type's first field is empty (check anki_field_word)");
+    REFUSED("model was not found: duplicate-kiku", VJO_E_ANKI, NO_KIKU);
+    REFUSED("cannot create note because it is empty", VJO_E_ANKI, "Anki: cannot create note because it is empty");
     REFUSED("collection is not available", VJO_E_ANKI, "Anki: collection is not available");
-    REFUSED("Notetype not found: {'name': 'Lapis'}", VJO_E_ANKI,
-            "Note type \"Lapis\" not found in Anki (anki_note_type)");
+    REFUSED("Notetype not found: {'name': 'Kiku'}", VJO_E_ANKI, NO_KIKU);
 #undef REFUSED
 
     /* The rewritten AnkiConnect (2026): a new deck is "Deck not found" */
-    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"Deck not found: {'name': 'Default'}\"}"),
+    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"Deck not found: {'name': 'Kiku'}\"}"),
              ok("{\"result\": 1, \"error\": null}"), ok("{\"result\": 2, \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_OK);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_OK);
     TEST_CHECK(f.next == 3 && strstr(f.sent[1], "\"action\":\"createDeck\""));
     /* ... and a refused note names no reason: asked with canAddNotesWithErrorDetail */
 #define VALIDATION "{\"result\": null, \"error\": \"One or more notes failed validation.\"}"
     fake_net(&f, &p, 2, ok(VALIDATION),
              ok("{\"result\": [{\"canAdd\": false, \"error\": \"A matching note exists.\"}], \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_E_ANKI_DUPLICATE);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI_DUPLICATE);
     TEST_CHECK(f.next == 2 && strstr(f.sent[1], "\"action\":\"canAddNotesWithErrorDetail\""));
     TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Already in Anki"));
     fake_net(&f, &p, 2, ok(VALIDATION),
              ok("{\"result\": [{\"canAdd\": false, \"error\": \"Anki field validation: emptyFirstField\"}], "
                 "\"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_E_ANKI);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: the note type's first field is empty (check anki_field_word)"));
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI);
+    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: Anki field validation: emptyFirstField"));
     fake_net(&f, &p, 1, ok(VALIDATION)); /* the question fails too: the refusal as it is */
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_E_ANKI);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI);
     TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: One or more notes failed validation."));
 #undef VALIDATION
 
     fake_net(&f, &p, 1, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &cfg, &n, &none, &err) == VJO_E_STATUS);
+    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_STATUS);
     TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki refused the request (HTTP 403)"));
     err.rc = VJO_E_NOT_FOUND;
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki not found on the network"));
+    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki not found: test the connection in the Overlay app"));
     err.rc = VJO_OK;
     TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), ""));
 
@@ -556,8 +643,6 @@ static void test_anki_audio_parts(void)
     TEST_CHECK(!vjo_anki_audio_enabled(&cfg)); /* no URL by default */
     snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), "https://h/?t={term}");
     TEST_CHECK(vjo_anki_audio_enabled(&cfg));
-    cfg.anki_field[VJO_ANKI_AUDIO][0] = '\0';
-    TEST_CHECK(!vjo_anki_audio_enabled(&cfg));
 
     /* the template with {term} and {reading} percent-encoded (no reading: the term) */
     TEST_CHECK(!strcmp(vjo_anki_audio_path(&A, "/audio/list?term={term}&reading={reading}&apiKey=k", "猫", "ねこ"),
@@ -626,7 +711,7 @@ static void test_anki_find_audio(void)
     setup();
     vjo_config_defaults(&cfg);
     anki_list(&l);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &cfg, &l, 0, &n) == 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
 #define FIND() vjo_anki_find_audio(&A, &p, &cfg, &n, now, &m, &err)
 #define WORKER "https://my-audio.example.workers.dev/audio/list?term={term}&reading={reading}&apiKey=k"
     snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), WORKER);
@@ -696,8 +781,9 @@ static void test_anki_config(void)
     VjoConfig c;
     char host[64];
     int port = 0;
-    /* defaults, ';' and '#' kept in names, blank field = skip, inline
-     * comments still allowed after anki_host */
+    /* ';' and '#' kept in the audio URL, inline comments allowed after
+     * anki_host; the field mapping's settings, which a fixed Kiku note
+     * replaced, are ignored without a warning (in any case) */
     const char *ini = "anki_host = auto ; LAN\n"
                       "anki_deck = Mining #1 ; main\n"
                       "anki_note_type = Lapis;v2\n"
@@ -705,28 +791,27 @@ static void test_anki_config(void)
                       "anki_field_picture =\n"
                       "anki_field_audio =\n"
                       "anki_audio_url = https://w.dev/audio/list?term={term}&reading={reading}&apiKey=a;b\n"
-                      "Anki_Field_Word = Word\n";
+                      "Anki_Field_Word = Word\n"
+                      "ANKI_DECK = x\n";
     vjo_config_defaults(&c);
-    TEST_CHECK(!c.anki_host[0] && !strcmp(c.anki_deck, "Default") && !strcmp(c.anki_note_type, "Lapis") &&
-               !strcmp(c.anki_tags, "vita-jp-overlay"));
-    TEST_CHECK(!strcmp(c.anki_field[VJO_ANKI_WORD], "Expression") &&
-               !strcmp(c.anki_field[VJO_ANKI_FREQUENCY], "FreqSort") &&
-               !strcmp(c.anki_field[VJO_ANKI_AUDIO], "ExpressionAudio") && !c.anki_audio_url[0]);
+    TEST_CHECK(!c.anki_host[0] && !c.anki_audio_url[0] && !c.anki_mining);
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.n_warnings == 0);
+    TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
     TEST_CHECK(!strcmp(c.anki_host, "auto"));
-    TEST_CHECK(!strcmp(c.anki_deck, "Mining #1 ; main"));
-    TEST_CHECK(!strcmp(c.anki_note_type, "Lapis;v2"));
-    TEST_CHECK(!strcmp(c.anki_tags, "a b"));
-    TEST_CHECK(c.anki_field[VJO_ANKI_PICTURE][0] == 0 && c.anki_field[VJO_ANKI_AUDIO][0] == 0 &&
-               !strcmp(c.anki_field[VJO_ANKI_WORD], "Word"));
     TEST_CHECK(!strcmp(c.anki_audio_url, "https://w.dev/audio/list?term={term}&reading={reading}&apiKey=a;b"));
     TEST_MSG("%s", c.anki_audio_url);
+    /* only those names: a near miss is still an unknown setting */
+    ini = "anki_decks = x\nanki_field = x\nanki_tag = x\n";
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, ini, strlen(ini));
+    TEST_CHECK(c.n_warnings == 3 && strstr(c.warnings[1], "unknown setting 'anki_field'"));
+    TEST_MSG("%s", c.warnings[1]);
 
     ini = "anki_host = 192.168.1.5:99999\nanki_deck =\nanki_host2 = x\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.n_warnings == 3 && !c.anki_host[0] && !strcmp(c.anki_deck, "Default"));
+    TEST_CHECK(c.n_warnings == 2 && !c.anki_host[0]);
     TEST_CHECK(!strcmp(c.warnings[0], "anki_host: invalid value '192.168.1.5:99999' (empty, auto, or IP[:port])"));
     TEST_MSG("%s", c.warnings[0]);
     /* anki_audio_url: one warning for each invalid value, and no audio */

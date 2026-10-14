@@ -21,7 +21,11 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 299008u      /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss */
+/* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
+ * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
+ * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
+ * data/bss, still these pages [measured]. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
 /* VitaJPOverlay_OCR.suprx: 49,152 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.

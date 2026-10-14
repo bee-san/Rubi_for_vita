@@ -65,14 +65,30 @@ class MigrateConfig(unittest.TestCase):
 
     def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):
         # A config from the LAN-only release: anki_host alone used to send.
-        text, _ = self.migrate("anki_host = 192.168.1.23\nanki_deck = Mining #1 ; main\n")
+        text, _ = self.migrate("anki_host = 192.168.1.23\nanki_audio_url = http://h/?t={term};k\n")
         self.assertIn("anki_mining = off\n", text)
         self.assertIn("anki_host = 192.168.1.23\n", text)
-        self.assertIn("anki_deck = Mining #1 ; main\n", text)
+        self.assertIn("anki_audio_url = http://h/?t={term};k\n", text)
         text, _ = self.migrate("anki_mining = on\nanki_host = auto\n")
         self.assertIn("anki_mining = on\n", text)
         self.assertEqual(text.count("anki_mining"), 1)
 
+    def test_the_field_mapping_of_earlier_builds_is_removed(self):
+        # Kiku is the one note type now: no deck, note type, tags or fields to set.
+        old = ("anki_host = auto\nanki_deck = Mining #1 ; main\nanki_note_type = Lapis\nanki_tags = a b\n"
+               + "".join("anki_field_%s = X\n" % f for f in (
+                   "word", "reading", "furigana", "definition", "sentence", "picture", "frequency", "audio",
+                   "sentence_furigana", "pitch_position", "pitch_categories", "frequency_list", "misc_info"))
+               + "anki_field_wrod = Word\n")
+        text, out = self.migrate(old)
+        self.assertNotIn("anki_deck", text)
+        self.assertNotIn("anki_note_type", text)
+        self.assertNotIn("anki_tags", text)
+        self.assertNotIn("anki_field_", text)
+        self.assertIn("anki_host = auto\n", text)
+        self.assertIn("config.ini: anki_deck removed", out)
+        self.assertIn("config.ini: anki_field_misc_info removed", out)
+        self.assertIn("config.ini: anki_field_wrod removed", out)
 
 if __name__ == "__main__":
     unittest.main()

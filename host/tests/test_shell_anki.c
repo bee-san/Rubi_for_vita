@@ -173,7 +173,8 @@ int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout)
     return 0;
 }
 int sceKernelDeleteThread(SceUID uid) { threads_deleted++; return 0; }
-int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + 1791158400007000ull; return 0; }
+static uint64_t rtc_unix_us = 1791158400007000ull; /* the UTC clock (a minute starts at 1791158400 s) */
+int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + rtc_unix_us; return 0; }
 static int clock_fails;
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
 {
@@ -349,29 +350,22 @@ char *vjo_file_read(VjoArena *a, const char *path, size_t *len)
 }
 int vjo_file_write(const char *path, const void *data, size_t len)
 {
-    TEST_CHECK(!strcmp(path, VJO_ANKI_HOST_PATH) && len < sizeof(host_file));
-    memcpy(host_file, data, len);
-    host_file[len] = '\0';
+    TEST_CHECK(!"the Shell writes no file but the queue's"); /* anki_host.txt is the Overlay app's */
     host_file_writes++;
     return 0;
 }
 
-static unsigned probe_batches, cancels;
-static uint32_t anki_ip = 0xC0A80117u; /* 192.168.1.23 answers on 8765 */
-int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask)
+static unsigned cancels;
+
+/* The shown result's dictionary page locators (worker.c), and their
+ * entries for local_read_page below. */
+static VjoLocalPages *view_pages;
+static int view_page;
+const VjoLocalPages *vjo_view_pages(int *page)
 {
-    *ip = 0xC0A8011Eu; /* 192.168.1.30/24 */
-    *mask = 0xFFFFFF00u;
-    return 0;
-}
-int vjo_net_probe_port(const uint32_t *ips, int n, int port, int window_us, uint8_t *open)
-{
-    if (n > VJO_NET_PROBE_MAX)
-        n = VJO_NET_PROBE_MAX;
-    probe_batches++;
-    for (int i = 0; i < n; i++)
-        open[i] = ips[i] == anki_ip && port == VJO_ANKI_PORT;
-    return n;
+    TEST_CHECK(held_view == 1); /* under the view lock */
+    *page = view_page;
+    return view_pages;
 }
 int vjo_net_cancel_init(VjoNetCancel *c)
 {
@@ -550,6 +544,81 @@ static int fake_connect(void *ud, const char *host, int port, int timeout_us, in
 }
 static void fake_disconnect(void *ud, VjoConn *c) {}
 
+/* Local dictionaries for the other pages a card records: small VJDICT2
+ * files in memory (as test_local_cursor.c builds them), opened through the
+ * platform's file_open as the Vita's local_open does. */
+typedef struct {
+    const char *key, *spelling, *reading, *meaning;
+} DictRow;
+typedef struct {
+    const char *name;
+    uint8_t bytes[16384];
+    size_t size;
+    int active;
+} DictFile;
+static DictFile dict_files[8];
+static int dict_opens;
+
+static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
+static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
+static void put64(uint8_t *p, uint64_t x) { put32(p, (uint32_t)x); put32(p + 4, (uint32_t)(x >> 32)); }
+static uint64_t key_hash(const char *s)
+{
+    uint64_t h = UINT64_C(14695981039346656037);
+    for (; *s; s++) h = (h ^ (uint8_t)*s) * UINT64_C(1099511628211);
+    h ^= h >> 33; h *= UINT64_C(0xff51afd7ed558ccd);
+    h ^= h >> 33; h *= UINT64_C(0xc4ceb9fe1a85ec53);
+    return h ^ (h >> 33);
+}
+/* One key with one entry (VJDICT2: header, one hash slot, the key, its posting, the payload). */
+static void dict_build(DictFile *f, const char *name, const DictRow *r)
+{
+    size_t off = 8192, key_len = strlen(r->key), posting, payload;
+    const char *parts[] = {r->spelling, r->reading, r->meaning};
+    memset(f, 0, sizeof(*f));
+    f->name = name;
+    memcpy(f->bytes, "VJDICT2\0", 8);
+    put32(f->bytes + 8, 2); put32(f->bytes + 12, 64);
+    put32(f->bytes + 16, 1); put32(f->bytes + 20, 24);
+    put64(f->bytes + 24, 4096); put64(f->bytes + 32, off);
+    put64(f->bytes + 48, 1); put64(f->bytes + 56, 1);
+    memcpy(f->bytes + 4096, "VJHP", 4);
+    put64(f->bytes + 4112, key_hash(r->key)); put64(f->bytes + 4120, off);
+    put32(f->bytes + 4128, 1); put16(f->bytes + 4132, (uint16_t)key_len);
+    memcpy(f->bytes + off, r->key, key_len); off += key_len;
+    posting = off; off += 16;
+    payload = off;
+    for (int i = 0; i < 3; i++) {
+        size_t n = strlen(parts[i]) + 1;
+        memcpy(f->bytes + off, parts[i], n); off += n;
+    }
+    put64(f->bytes + posting, payload); put32(f->bytes + posting + 8, (uint32_t)(off - payload));
+    put32(f->bytes + 4100, 1);
+    f->size = off; put64(f->bytes + 40, off);
+}
+static int dict_read(void *ctx, uint64_t off, void *dst, size_t n)
+{
+    DictFile *f = ctx;
+    if (off > f->size || n > f->size - (size_t)off) return -1;
+    memcpy(dst, f->bytes + (size_t)off, n);
+    return 0;
+}
+static void dict_close(void *ctx) { ((DictFile *)ctx)->active--; }
+static int dict_open(void *ud, const char *path, VjoFile *out)
+{
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    (void)ud;
+    for (int i = 0; i < 8; i++)
+        if (dict_files[i].name && !strcmp(name, dict_files[i].name)) {
+            dict_files[i].active++;
+            dict_opens++;
+            *out = (VjoFile){&dict_files[i], dict_files[i].size, dict_read, dict_close, 0};
+            return 0;
+        }
+    return -1;
+}
+
 static int use_posix; /* restart steps: real sockets */
 static PosixPlatform posix;
 void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel)
@@ -562,6 +631,7 @@ void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel)
     p->ud = cancel;
     p->connect = fake_connect;
     p->disconnect = fake_disconnect;
+    p->file_open = dict_open;
 }
 
 #include "../../shell/anki.c"
@@ -668,8 +738,9 @@ static void fixture(void)
     vjo_config_defaults(&cfg);
     cfg.anki_mining = 1;
     snprintf(cfg.anki_host, sizeof(cfg.anki_host), "192.168.1.23");
-    snprintf(cfg.anki_deck, sizeof(cfg.anki_deck), "Japanese::Mining");
     clock_fails = 0;
+    view_pages = NULL;
+    view_page = 0;
 }
 
 static void clear_files(void)
@@ -744,16 +815,17 @@ static void reset(void)
     write_path[0] = last_rename[0] = '\0';
     host_file[0] = '\0';
     host_file_writes = 0;
-    probe_batches = cancels = 0;
-    saved_loaded = scanned = 0;
-    saved_host[0] = '\0';
+    cancels = 0;
+    rtc_unix_us = 1791158400007000ull;
+    vjo_test_anki_text_only = 0;
     lan(0);
     /* the Shell starts the mailbox before its first config load */
     TEST_ASSERT(vjo_anki_start() == 0);
     TEST_ASSERT(capture_lock < 0 ? vjo_capture_init() == 0 : 1);
     fixture();
     TEST_ASSERT(vjo_anki_configure(&cfg) == 1);
-    vjo_anki_set_game("CLANNAD");
+    vjo_anki_set_game("PCSG00415", "CLANNAD");
+    vjo_anki_set_ocr_model("VOCR3_H15_w8.vocr");
     make_frame(0);
 }
 
@@ -770,6 +842,7 @@ static void finish(void)
     TEST_CHECK(!heap_live && heap_allocs == heap_frees);
     TEST_CHECK(threads_created == threads_deleted);
     TEST_CHECK(!held_box && !held_view);
+    TEST_CHECK(host_file_writes == 0);
 }
 
 /* × on entry of the shown list, and △: each job runs to its end. */
@@ -860,11 +933,16 @@ static void test_cross_saves_offline_without_host(void)
     only_id(id);
     json = queue_file(id, "json", &len);
     TEST_ASSERT(json != NULL);
-    TEST_CHECK(!strcmp(json, "{\"version\":2,\"spelling\":\"猫\",\"reading\":\"ねこ\",\"sentence\":\"猫が好き猫\","
+    /* version 3: and the furigana, the dictionary, the other dictionaries'
+     * entries, the game, its title ID and platform, the OCR model and the time */
+    TEST_CHECK(!strcmp(json, "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"ねこ\",\"sentence\":\"猫が好き猫\","
                              "\"rank\":1500,\"hl_start\":0,\"hl_end\":3,\"picture\":true,"
                              "\"meanings\":[\"cat\",\"shamisen \\\"neko\\\"\"],\"sentence_furigana\":\"猫が好き猫\","
                              "\"sf_hl_start\":0,\"sf_hl_end\":3,\"source\":null,\"pitch\":[],\"pos\":[],"
-                             "\"misc\":\"CLANNAD (2026-10-12 09:30)\"}\n"));
+                             "\"misc\":\"CLANNAD (2026-10-12 09:30)\",\"furigana\":null,\"dictionary\":null,"
+                             "\"more\":[],\"game\":\"CLANNAD\",\"title_id\":\"PCSG00415\",\"platform\":\"vita\","
+                             "\"ocr_engine\":\"vocr\",\"ocr_model\":\"VOCR3_H15_w8.vocr\",\"time\":1791158400,"
+                             "\"ocr_confidence\":null}\n"));
     TEST_MSG("%s", json);
     jpeg = (const uint8_t *)queue_file(id, "jpg", &len);
     TEST_CHECK(jpeg && len > 1000 && len <= VJO_ANKI_PICTURE_MAX && jpeg[0] == 0xFF && jpeg[1] == 0xD8);
@@ -897,8 +975,7 @@ static void test_japanese_and_escaping_round_trip(void)
     size_t len;
     char *json;
     reset();
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    reconfigure();
+    vjo_test_anki_text_only = 1;
     entries[0] = (VjoEntry){.vocab = &v, .pos16 = 0, .hl_start = 0, .hl_end = 10, .text = "𠮷野家"};
     list = (VjoEntryList){.header = "𠮷野家で\r\n\"牛丼\" & <b>\\", .entries = entries, .n_entries = 1};
     cross(0);
@@ -911,7 +988,7 @@ static void test_japanese_and_escaping_round_trip(void)
                strstr(json, "\"cat \\\"quoted\\\" & <tag>\\nnext\\tline\",\"back\\\\slash\",\"日本語𠮷\""));
     TEST_MSG("%s", json);
     vjo_arena_init(&a, mem, sizeof(mem));
-    TEST_ASSERT(vjo_queue_decode(&a, json, len, &n, &picture) == 0);
+    TEST_ASSERT(vjo_queue_decode(&a, json, len, &n, &picture) == 3);
     TEST_CHECK(!picture && !strcmp(n.spelling, v.spelling) && !strcmp(n.reading, v.reading) &&
                !strcmp(n.sentence, list.header) && n.n_meanings == 3 && n.rank == 1234 && n.hl_end == 10);
     for (int i = 0; i < 3; i++)
@@ -921,8 +998,9 @@ static void test_japanese_and_escaping_round_trip(void)
     lan(2, ok(EMPTY), ok(NOTE_ID));
     triangle();
     TEST_CHECK(strstr(body_of(1), "\"Expression\":\"𠮷野家\"") &&
-               strstr(body_of(1), "\"MainDefinition\":\"<ol><li>cat &quot;quoted&quot; &amp; &lt;tag&gt;\\nnext\\tline</li>"
-                                  "<li>back\\\\slash</li><li>日本語𠮷</li></ol>\"") &&
+               strstr(body_of(1), "class=\\\"yomitan-glossary\\\"><ol><li><span><ul><li>cat &quot;quoted&quot; "
+                                  "&amp; &lt;tag&gt;<br>next\\tline</li><li>back\\\\slash</li><li>日本語𠮷</li>"
+                                  "</ul></span></li></ol></div>\"") &&
                strstr(body_of(1), "\"Sentence\":\"<b>𠮷野家</b>で<br>&quot;牛丼&quot; &amp; &lt;b&gt;\\\\\""));
     TEST_MSG("%s", body_of(1));
     TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki") && files_ending(".json") == 0);
@@ -952,16 +1030,9 @@ static void test_queue_survives_restart_and_triangle_sends_it(void)
     finish();
     memset(&g_view, 0, sizeof(g_view));
     memset(heap, 0x5A, sizeof(heap));
-    saved_loaded = scanned = 0;
-    saved_host[0] = '\0';
     TEST_ASSERT(vjo_anki_start() == 0);
-    /* settings changed while it was queued: these apply now */
+    /* the address set while it was queued applies now */
     fixture();
-    snprintf(cfg.anki_deck, sizeof(cfg.anki_deck), "Mining 2");
-    snprintf(cfg.anki_note_type, sizeof(cfg.anki_note_type), "Lapis v2");
-    snprintf(cfg.anki_tags, sizeof(cfg.anki_tags), "vn mined");
-    snprintf(cfg.anki_field[VJO_ANKI_WORD], sizeof(cfg.anki_field[0]), "Word");
-    snprintf(cfg.anki_field[VJO_ANKI_PICTURE], sizeof(cfg.anki_field[0]), "Image");
     reconfigure();
     TEST_CHECK(g_view.anki_pending == -2); /* not counted yet */
     allocs = heap_attempts;
@@ -976,14 +1047,14 @@ static void test_queue_survives_restart_and_triangle_sends_it(void)
     TEST_CHECK(strstr(body_of(0), tags) != NULL);
     body = body_of(1);
     {
-        static const char start[] = "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Mining 2\","
-                                    "\"modelName\":\"Lapis v2\",\"fields\":{\"Word\":\"猫\"";
+        static const char start[] = "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Kiku\","
+                                    "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"猫\"";
         TEST_CHECK(!strncmp(body, start, strlen(start)));
     }
     TEST_MSG("%.300s", body);
-    snprintf(tags, sizeof(tags), "\"tags\":[\"vn\",\"mined\",\"vita_queue_%s\"]", id);
+    snprintf(tags, sizeof(tags), "\"tags\":[\"vita-jp-overlay\",\"vita_queue_%s\"]", id);
     TEST_CHECK(strstr(body, tags) != NULL);
-    snprintf(name, sizeof(name), "\"picture\":[{\"filename\":\"vitajp_%s.jpg\",\"fields\":[\"Image\"],\"data\":\"", id);
+    snprintf(name, sizeof(name), "\"picture\":[{\"filename\":\"vitajp_%s.jpg\",\"fields\":[\"Picture\"],\"data\":\"", id);
     data = strstr(body, name);
     TEST_ASSERT(data != NULL);
     data += strlen(name);
@@ -998,17 +1069,19 @@ static void test_queue_survives_restart_and_triangle_sends_it(void)
     finish();
 }
 
-/* The note △ sends for the default Lapis mapping: upstream's fields, the
- * configured tags plus the card's stable tag, and the bounded screenshot. */
+/* The note △ sends: a Kiku note (v2.1.0's fields) in the Kiku deck, the tag
+ * plus the card's stable tag, and the bounded screenshot. */
 static void test_send_builds_the_configured_note_with_screenshot(void)
 {
     static const char post[] = "POST / HTTP/1.1\r\nHost: 192.168.1.23:8765\r\nContent-Type: application/json\r\n";
     static const char note[] =
-        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Japanese::Mining\","
-        "\"modelName\":\"Lapis\",\"fields\":{\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\","
-        "\"ExpressionFurigana\":\"猫[ねこ]\",\"MainDefinition\":\"<ol><li>cat</li><li>shamisen "
-        "&quot;neko&quot;</li></ol>\",\"Sentence\":\"<b>猫</b>が好き猫\",\"Picture\":\"\",\"FreqSort\":\"1500\","
-        "\"SentenceFurigana\":\"<b>猫</b>が好き猫\",\"MiscInfo\":\"CLANNAD (2026-10-12 09:30)\"},"
+        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Kiku\","
+        "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"猫\",\"ExpressionFurigana\":\"猫[ねこ]\","
+        "\"ExpressionReading\":\"ねこ\","
+        "\"MainDefinition\":\"<div style=\\\"text-align: left;\\\" class=\\\"yomitan-glossary\\\"><ol><li><span><ul>"
+        "<li>cat</li><li>shamisen &quot;neko&quot;</li></ul></span></li></ol></div>\","
+        "\"Sentence\":\"<b>猫</b>が好き猫\",\"SentenceFurigana\":\"<b>猫</b>が好き猫\",\"Picture\":\"\","
+        "\"FreqSort\":\"1500\",\"MiscInfo\":\"CLANNAD (2026-10-12 09:30)\"},"
         "\"tags\":[\"vita-jp-overlay\",\"vita_queue_";
     char id[VJO_QUEUE_ID_SIZE], cl[64], soi[8] = {0};
     const char *body, *data, *end;
@@ -1046,24 +1119,15 @@ static void test_send_builds_the_configured_note_with_screenshot(void)
     finish();
 }
 
-/* Field mapping, port and note type come from the settings at △, and the
- * word's audio is looked up then, not when × saves. */
+/* The port comes from anki_host at △, and the word's audio is looked up
+ * then, not when × saves. */
 static void test_mapping_port_and_audio_at_send(void)
 {
     static const char get[] = "GET /?term=%E5%A5%BD%E3%81%8D&reading=%E3%81%99%E3%81%8D HTTP/1.1\r\n";
     const char *body;
     reset();
+    vjo_test_anki_text_only = 1;
     snprintf(cfg.anki_host, sizeof(cfg.anki_host), "my-pc.local:9000");
-    snprintf(cfg.anki_note_type, sizeof(cfg.anki_note_type), "Japanese (recognition)");
-    snprintf(cfg.anki_tags, sizeof(cfg.anki_tags), "vita  vn");
-    snprintf(cfg.anki_field[VJO_ANKI_WORD], sizeof(cfg.anki_field[0]), "Front");
-    snprintf(cfg.anki_field[VJO_ANKI_DEFINITION], sizeof(cfg.anki_field[0]), "Back");
-    cfg.anki_field[VJO_ANKI_READING][0] = cfg.anki_field[VJO_ANKI_FURIGANA][0] = '\0';
-    cfg.anki_field[VJO_ANKI_SENTENCE][0] = cfg.anki_field[VJO_ANKI_FREQUENCY][0] = '\0';
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = cfg.anki_field[VJO_ANKI_SENTENCE_FURIGANA][0] = '\0';
-    cfg.anki_field[VJO_ANKI_PITCH_POSITION][0] = cfg.anki_field[VJO_ANKI_PITCH_CATEGORIES][0] = '\0';
-    cfg.anki_field[VJO_ANKI_FREQUENCY_LIST][0] = '\0';
-    snprintf(cfg.anki_field[VJO_ANKI_MISC_INFO], sizeof(cfg.anki_field[0]), "Source");
     clock_fails = 1; /* MiscInfo without a date rather than a wrong one */
     snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), "http://192.168.1.23:5050/?term={term}&reading={reading}");
     reconfigure();
@@ -1080,9 +1144,11 @@ static void test_mapping_port_and_audio_at_send(void)
     TEST_MSG("%s", sent[1]);
     body = body_of(2);
     TEST_CHECK(strstr(sent[2], "Host: my-pc.local:9000\r\n") != NULL);
-    TEST_CHECK(strstr(body, "\"modelName\":\"Japanese (recognition)\",\"fields\":{\"Front\":\"好き\","
-                            "\"Back\":\"<ol><li>liked</li><li>favourite</li></ol>\",\"ExpressionAudio\":\"\","
-                            "\"Source\":\"CLANNAD\"},\"tags\":[\"vita\",\"vn\",\"vita_queue_") != NULL);
+    TEST_CHECK(strstr(body, "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"好き\","
+                            "\"ExpressionFurigana\":\"好[す]き\",\"ExpressionReading\":\"すき\","
+                            "\"ExpressionAudio\":\"\",\"MainDefinition\":") != NULL &&
+               strstr(body, "<li>liked</li><li>favourite</li>") != NULL &&
+               strstr(body, "\"MiscInfo\":\"CLANNAD\"},\"tags\":[\"vita-jp-overlay\",\"vita_queue_") != NULL);
     TEST_CHECK(strstr(body, "\"audio\":[{\"filename\":\"vitajp_1791158400007.opus\",\"fields\":[\"ExpressionAudio\"],"
                             "\"url\":\"http://192.168.1.23:5050/su.opus\"}]") != NULL);
     TEST_MSG("%s", body);
@@ -1109,11 +1175,11 @@ static void test_failures_keep_the_card_and_the_overlay(void)
          "0 sent; 1 kept: Anki refused the request (HTTP 403)", VJO_ANKI_STATUS_ERROR, 1, 0},
         {1, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi", NULL, NULL, NULL,
          "0 sent; 1 kept: Anki: unexpected response (-104). Is AnkiConnect running?", VJO_ANKI_STATUS_ERROR, 1, 0},
-        {2, EMPTY, "{\"result\": null, \"error\": \"model was not found: Lapis\"}", NULL, NULL,
-         "0 sent; 1 kept: Note type \"Lapis\" not found in Anki (anki_note_type)", VJO_ANKI_STATUS_ERROR, 1, 0},
+        {2, EMPTY, "{\"result\": null, \"error\": \"model was not found: Kiku\"}", NULL, NULL,
+         "0 sent; 1 kept: Kiku note type not found in Anki: import Kiku (docs/anki.md)", VJO_ANKI_STATUS_ERROR, 1, 0},
         {2, EMPTY, DUPLICATE, NULL, NULL, "Sent 0 to Anki, 1 already there", VJO_ANKI_STATUS_DIM, 0, 1},
         /* a new deck is created, then the note added */
-        {4, EMPTY, "{\"result\": null, \"error\": \"deck was not found: Japanese::Mining\"}", "{\"result\": 1, \"error\": null}",
+        {4, EMPTY, "{\"result\": null, \"error\": \"deck was not found: Kiku\"}", "{\"result\": 1, \"error\": null}",
          NOTE_ID, "Sent 1 to Anki", VJO_ANKI_STATUS_DIM, 0, 0},
     };
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -1134,7 +1200,7 @@ static void test_failures_keep_the_card_and_the_overlay(void)
         TEST_CHECK(g_view.anki_mark[0] == (cases[i].queued ? VJO_ANKI_MARK_QUEUED : VJO_ANKI_MARK_ADDED));
         TEST_CHECK(g_view.list == &list && !strcmp(g_view.status, "kept") && !heap_live && heap_frees == 2);
         if (i == 5)
-            TEST_CHECK(strstr(body_of(2), "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"Japanese::Mining\"}}") &&
+            TEST_CHECK(strstr(body_of(2), "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"Kiku\"}}") &&
                        strstr(body_of(3), "\"action\":\"addNote\""));
         /* × and △ work again after any result */
         TEST_CHECK(job == JOB_NONE && !g_view.anki_sending);
@@ -1245,7 +1311,7 @@ static void test_partial_send_keeps_the_rest(void)
     g_view.list_seq = 6;
     cross(0);
     triangle();
-    TEST_CHECK(!strcmp(g_view.anki_status, "Set anki_host in config.ini to send; cards stay queued") &&
+    TEST_CHECK(!strcmp(g_view.anki_status, "Set Anki's address in the Overlay app; cards stay queued") &&
                files_ending(".json") == 1 && heap_allocs == 5);
     finish();
 }
@@ -1324,9 +1390,8 @@ static void test_failed_writes_never_queue_a_partial_card(void)
     triangle();
     TEST_CHECK(anki.adds == 1 && vjo_queue_count() == 1 &&
                !strcmp(g_view.anki_status, "Sent 0 to Anki, 1 kept (unreadable, see log.txt)"));
-    /* ...and sent without it once no field does */
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    reconfigure();
+    /* ...and sent without it by a build that takes no screenshots */
+    vjo_test_anki_text_only = 1;
     triangle();
     body = body_of(net.next - 1);
     TEST_CHECK(anki.adds == 2 && vjo_queue_count() == 0 && !strstr(body, "\"picture\"") &&
@@ -1468,8 +1533,7 @@ static void test_oom_keeps_recognized_text_and_cards(void)
 
     /* an entry larger than the text-only arena */
     reset();
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    reconfigure();
+    vjo_test_anki_text_only = 1;
     entries[0].vocab = &huge_word;
     cross(0);
     TEST_CHECK(!strcmp(g_view.anki_status, "Anki: not enough memory for this entry; card not saved") &&
@@ -1480,8 +1544,7 @@ static void test_oom_keeps_recognized_text_and_cards(void)
     /* a queued card too large to send in the text-only arena is kept, and
      * the others are sent */
     reset();
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    reconfigure();
+    vjo_test_anki_text_only = 1;
     entries[0].vocab = &amp_word;
     cross(0);
     TEST_ASSERT(!strcmp(g_view.anki_status, "Saved for Anki"));
@@ -1491,7 +1554,7 @@ static void test_oom_keeps_recognized_text_and_cards(void)
     TEST_ASSERT(vjo_queue_count() == 2);
     server();
     triangle();
-    TEST_CHECK(anki.adds == 1 && vjo_queue_count() == 1 && !strcmp(g_view.anki_status, "Sent 1 to Anki, 1 kept (too large)"));
+    TEST_CHECK(anki.adds == 1 && vjo_queue_count() == 1 && !strcmp(g_view.anki_status, "Sent 1 to Anki, 1 kept (too large: the Overlay app sends it)"));
     TEST_MSG("%s", g_view.anki_status);
     TEST_CHECK(g_view.anki_mark[0] == VJO_ANKI_MARK_QUEUED); /* not all were sent */
     finish();
@@ -1594,38 +1657,64 @@ static void test_cancellation(void)
     TEST_CHECK(vjo_anki_stop() == 0 && box_lock < 0 && threads_deleted == 1);
 }
 
-/* anki_host = auto: one LAN search when △ sends, remembered; searched again
- * only after the remembered computer stops answering. */
+/* anki_host = auto: △ sends to the computer the Overlay app's search found
+ * (anki_host.txt), read again for every send; SceShell itself never
+ * searches the network, opens no probe sockets and writes no host file. */
 static void test_auto_finds_anki_on_the_lan(void)
 {
     reset();
     snprintf(cfg.anki_host, sizeof(cfg.anki_host), "auto");
     reconfigure();
     cross(0);
-    TEST_CHECK(probe_batches == 0 && net.next == 0); /* saving never searches */
-    lan(3, ok(VERSION), ok(EMPTY), ok(NOTE_ID));
+    TEST_CHECK(net.next == 0);
+    /* not found yet: the card waits, and the app is where to look */
     triangle();
-    TEST_CHECK(probe_batches == 1 && net.next == 3 && !strcmp(net.host[0], "192.168.1.23"));
-    TEST_CHECK(strstr(body_of(0), "\"action\":\"version\"") && strstr(body_of(1), "\"action\":\"findNotes\"") &&
-               strstr(body_of(2), "\"action\":\"addNote\""));
-    TEST_CHECK(!strcmp(host_file, "192.168.1.23:8765\n") && !strcmp(g_view.anki_status, "Sent 1 to Anki"));
-    /* the next send goes straight to the saved computer */
+    TEST_CHECK(net.next == 0 && vjo_queue_count() == 1 &&
+               !strcmp(g_view.anki_status, "0 sent; 1 kept: Anki not found: test the connection in the Overlay app") &&
+               g_view.anki_status_kind == VJO_ANKI_STATUS_DIM);
+    TEST_MSG("%s", g_view.anki_status);
+    /* the app found it */
+    snprintf(host_file, sizeof(host_file), "192.168.1.23:8765\r\n");
+    lan(2, ok(EMPTY), ok(NOTE_ID));
+    triangle();
+    TEST_CHECK(net.next == 2 && !strcmp(net.host[0], "192.168.1.23") && net.port[1] == 8765 &&
+               strstr(body_of(0), "\"action\":\"findNotes\"") && strstr(body_of(1), "\"action\":\"addNote\""));
+    TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki") && vjo_queue_count() == 0);
+    /* it moved and the app found it again while the plugin ran: the next send uses it */
+    snprintf(host_file, sizeof(host_file), "192.168.1.64:9000\n");
     g_view.list_seq = 6;
     cross(1);
     lan(2, ok(EMPTY), ok(NOTE_ID));
     triangle();
-    TEST_CHECK(probe_batches == 1 && net.next == 2 && !strcmp(net.host[0], "192.168.1.23"));
-    /* it moved: the saved one is offline, a new search finds it */
-    anki_ip = 0xC0A80140u;
-    g_view.list_seq = 7;
+    TEST_CHECK(net.next == 2 && !strcmp(net.host[1], "192.168.1.64") && net.port[1] == 9000 &&
+               !strcmp(g_view.anki_status, "Sent 1 to Anki"));
+    /* the found computer does not answer: the app is to search again */
+    g_view.list_seq = 8;
     list.header = "猫が好き猫。";
     cross(0);
-    lan(4, NULL, ok(VERSION), ok(EMPTY), ok(NOTE_ID));
+    lan(0);
     triangle();
-    TEST_CHECK(probe_batches > 1 && !strcmp(host_file, "192.168.1.64:8765\n"));
-    TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki") && vjo_queue_count() == 0);
-    TEST_MSG("%s / %s", host_file, g_view.anki_status);
-    anki_ip = 0xC0A80117u;
+    TEST_CHECK(net.next == 1 && vjo_queue_count() == 1 &&
+               !strcmp(g_view.anki_status, "0 sent; 1 kept: Anki not found: test the connection in the Overlay app") &&
+               logged("anki: 192.168.1.64:9000 (auto) failed -100\n"));
+    TEST_MSG("%s", g_view.anki_status);
+    /* nor is a reply that is not AnkiConnect's */
+    lan(1, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi");
+    triangle();
+    TEST_CHECK(vjo_queue_count() == 1 && strstr(g_view.anki_status, "Anki not found") != NULL);
+    /* an AnkiConnect refusal is AnkiConnect answering: it is shown as it is */
+    lan(2, ok(EMPTY), ok("{\"result\": null, \"error\": \"collection is not available\"}"));
+    triangle();
+    TEST_CHECK(vjo_queue_count() == 1 && !strcmp(g_view.anki_status, "0 sent; 1 kept: Anki: collection is not available"));
+    TEST_MSG("%s", g_view.anki_status);
+    clear_files();
+    /* a damaged file is no address */
+    snprintf(host_file, sizeof(host_file), "my pc\n");
+    g_view.list_seq = 7;
+    cross(0);
+    lan(0);
+    triangle();
+    TEST_CHECK(net.next == 0 && strstr(g_view.anki_status, "Anki not found") && vjo_queue_count() == 1);
     finish();
 }
 
@@ -1649,11 +1738,277 @@ static void test_version_1_record_still_sends(void)
     lan(2, ok(EMPTY), ok(NOTE_ID));
     triangle();
     snprintf(tag, sizeof(tag), "\"vita_queue_%s\"", id);
-    TEST_CHECK(strstr(body_of(1), "\"fields\":{\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\"") &&
+    TEST_CHECK(strstr(body_of(1), "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"猫\","
+                                  "\"ExpressionFurigana\":\"猫[ねこ]\",\"ExpressionReading\":\"ねこ\",") &&
                strstr(body_of(1), "\"Sentence\":\"<b>猫</b>が<br>好き\",\"FreqSort\":\"1234\"}") &&
                strstr(body_of(1), tag));
     TEST_MSG("%s", body_of(1));
     TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki") && vjo_queue_count() == 0);
+    finish();
+}
+
+/* A card saved by v0.8.0-test.1 (record version 2), in the shape of the
+ * owner's console queue (#81: a local dictionary's entry, its name on its
+ * definition's first line; no pitch, parts of speech or frequency source),
+ * becomes a Kiku note: the dictionary's name on its glossary item. The text
+ * here is made up: the real records stay private. */
+static void test_version_2_record_from_the_test_build_sends_as_kiku(void)
+{
+    static const char v2[] =
+        "{\"version\":2,\"spelling\":\"部屋\",\"reading\":\"へや\","
+        "\"sentence\":\"隣の部屋で、妙に背の高い先生と話をして\",\"rank\":99999,\"hl_start\":6,\"hl_end\":12,"
+        "\"picture\":false,\"meanings\":[\"[Daijirin4 Plain]\\nA room or chamber of a house.; A sumo stable.\"],"
+        "\"sentence_furigana\":\"隣の部屋で、妙に背の高い先生と話をして\",\"sf_hl_start\":6,\"sf_hl_end\":12,"
+        "\"source\":null,\"pitch\":[],\"pos\":[],\"misc\":\"SOME GAME (2026-10-11 17:11)\"}\n";
+    char id[VJO_QUEUE_ID_SIZE], path[256];
+    const char *body;
+    FILE *f;
+    reset();
+    TEST_ASSERT(vjo_queue_count() == 0);
+    vjo_queue_id(v2, strlen(v2), id);
+    snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.json", id);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    fputs(v2, f);
+    fclose(f);
+    lan(2, ok(EMPTY), ok(NOTE_ID));
+    triangle();
+    body = body_of(1);
+    TEST_CHECK(strstr(body, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Kiku\","
+                            "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"部屋\",\"ExpressionFurigana\":"
+                            "\"部屋[へや]\",\"ExpressionReading\":\"へや\",\"MainDefinition\":\"<div style=\\\"text-align: "
+                            "left;\\\" class=\\\"yomitan-glossary\\\"><ol><li data-dictionary=\\\"Daijirin4 Plain\\\">"
+                            "<i>(Daijirin4 Plain)</i> <span>A room or chamber of a house.; A sumo stable.</span></li></ol>"
+                            "</div>\",\"Sentence\":\"隣の<b>部屋</b>で、妙に背の高い先生と話をして\","
+                            "\"SentenceFurigana\":\"隣の<b>部屋</b>で、妙に背の高い先生と話をして\","
+                            "\"MiscInfo\":\"SOME GAME (2026-10-11 17:11)\"},\"tags\":[\"vita-jp-overlay\",") == body);
+    TEST_MSG("%s", body);
+    TEST_CHECK(!strstr(body, "FreqSort") && !strstr(body, "Glossary")); /* no rank; one dictionary */
+    TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki") && vjo_queue_count() == 0);
+    finish();
+}
+
+/* × with Dictionaries shown above 1: the other dictionaries' entries are
+ * read from their files then (one payload at a time, after the view lock)
+ * and recorded with their names; △ puts every one into Kiku's Glossary. */
+static void test_cross_records_every_dictionary_and_sends_the_glossary(void)
+{
+    static const DictRow rows[3] = {
+        {"好き", "好き", "すき", "[Daijirin4 Plain]\nliked; favourite"},
+        {"好き", "好き", "すき", "[JMdict Plain]\nliked"},
+        {"好き", "好き", "すき", "[Sankoku8 Plain]\nfond of"},
+    };
+    static uint8_t mem[96 * 1024];
+    static VjoLocalPages pages;
+    VjoArena a;
+    VjoPlatform p;
+    VjoDictResult res;
+    VjoErr err;
+    char id[VJO_QUEUE_ID_SIZE];
+    const char *json, *body;
+    reset();
+    vjo_test_anki_text_only = 1;
+    dict_build(&dict_files[0], "main.vjdict", &rows[0]);
+    dict_build(&dict_files[1], "b.vjdict", &rows[1]);
+    dict_build(&dict_files[2], "c.vjdict", &rows[2]);
+    snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+    snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict,c.vjdict");
+    cfg.local_dictionary_results = 3;
+    reconfigure();
+    /* the shown result: worker.c's lookup at 好き, its first page shown */
+    vjo_arena_init(&a, mem, sizeof(mem));
+    vjo_platform_vita(&p, NULL);
+    TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 3, &pages, &res, &err) == VJO_OK);
+    TEST_ASSERT(pages.count == 3 && res.n_vocab == 1);
+    entries[1].vocab = &res.vocab[0];
+    view_pages = &pages;
+    view_page = 0;
+    dict_opens = 0;
+    cross(1);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 2);
+    TEST_CHECK(!dict_files[0].active && !dict_files[1].active && !dict_files[2].active);
+    printf("measure: save with 2 other dictionaries' entries: arena %u bytes, peak %u\n", (unsigned)heap_last,
+           (unsigned)last_peak);
+    TEST_CHECK(heap_last == ANKI_TEXT_MEM && last_peak < ANKI_TEXT_MEM / 2);
+    only_id(id);
+    json = queue_file(id, "json", NULL);
+    TEST_ASSERT(json != NULL);
+    TEST_CHECK(strstr(json, "\"meanings\":[\"[Daijirin4 Plain]\\nliked; favourite\"]") &&
+               strstr(json, "\"dictionary\":\"Daijirin4 Plain\",\"more\":[{\"dictionary\":\"JMdict Plain\","
+                            "\"spelling\":\"好き\",\"reading\":\"すき\",\"meanings\":[\"[JMdict Plain]\\nliked\"]},"
+                            "{\"dictionary\":\"Sankoku8 Plain\",\"spelling\":\"好き\",\"reading\":\"すき\","
+                            "\"meanings\":[\"[Sankoku8 Plain]\\nfond of\"]}],"));
+    TEST_MSG("%s", json);
+    lan(2, ok(EMPTY), ok(NOTE_ID));
+    triangle();
+    body = body_of(1);
+    TEST_CHECK(strstr(body, "\"Glossary\":\"<div style=\\\"text-align: left;\\\" class=\\\"yomitan-glossary\\\"><ol>"
+                            "<li data-dictionary=\\\"Daijirin4 Plain\\\"><i>(Daijirin4 Plain)</i> <span>liked; favourite"
+                            "</span></li><li data-dictionary=\\\"JMdict Plain\\\"><i>(JMdict Plain)</i> <span>liked</span>"
+                            "</li><li data-dictionary=\\\"Sankoku8 Plain\\\"><i>(Sankoku8 Plain)</i> <span>fond of</span>"
+                            "</li></ol></div>\"") != NULL);
+    TEST_MSG("%s", body);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Sent 1 to Anki"));
+    /* the page shown is the main definition; the others are not read twice */
+    reset();
+    vjo_test_anki_text_only = 1;
+    snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+    snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict,c.vjdict");
+    reconfigure();
+    entries[1].vocab = &res.vocab[0];
+    view_pages = &pages;
+    view_page = 2;
+    dict_opens = 0;
+    cross(1);
+    TEST_CHECK(dict_opens == 2);
+    only_id(id);
+    json = queue_file(id, "json", NULL);
+    TEST_CHECK(json && strstr(json, "\"more\":[{\"dictionary\":\"Daijirin4 Plain\"") &&
+               strstr(json, "{\"dictionary\":\"JMdict Plain\"") && !strstr(json, "{\"dictionary\":\"Sankoku8 Plain\""));
+    TEST_MSG("%s", json ? json : "");
+    finish();
+}
+
+/* The record holds the minute of the × press: the same card saved again
+ * within it (the marks gone: a new lookup of the same text) is the same
+ * record; in the next minute it is another one. */
+static void test_same_card_within_a_minute_is_one_record(void)
+{
+    reset();
+    vjo_test_anki_text_only = 1;
+    rtc_unix_us = 1791158405000000ull; /* 0:05 */
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 1);
+    rtc_unix_us = 1791158459999000ull; /* 0:59 */
+    g_view.list_seq = 6;
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already queued") && files_ending(".json") == 1);
+    TEST_MSG("%s", g_view.anki_status);
+    rtc_unix_us = 1791158460000000ull; /* 1:00 */
+    g_view.list_seq = 7;
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 2);
+    finish();
+}
+
+/* Whatever × saves, △ can send: with 8 dictionaries' entries of any size
+ * (and text that HTML and JSON escaping grow), × keeps the other
+ * dictionaries' entries only while the card stays sendable in △'s arena, as
+ * a dry run of the send; small ones are all kept. */
+static void test_what_cross_saves_triangle_sends(void)
+{
+    static const int sizes[] = {300, 900, 2700, 4000, 7000};
+    static char meaning[8][7200], names[8][16], list_names[160];
+    static DictRow rows[8];
+    static uint8_t mem[256 * 1024];
+    static VjoLocalPages pages;
+    for (int heavy = 0; heavy < 2; heavy++) {
+        for (unsigned z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++) {
+            VjoArena a;
+            VjoPlatform p;
+            VjoDictResult res;
+            VjoErr err;
+            char id[VJO_QUEUE_ID_SIZE];
+            const char *json;
+            int kept = 0;
+            reset();
+            vjo_test_anki_text_only = 1;
+            list_names[0] = '\0';
+            for (int k = 0; k < 8; k++) {
+                int o = snprintf(meaning[k], sizeof(meaning[k]), "[Dictionary %d]\n", k);
+                while (o + 3 < sizes[z]) { /* kana, or text escaping grows: & < > " and line breaks */
+                    const char *piece = heavy ? (o % 4 ? "\"&\"" : "<\n>") : "す";
+                    memcpy(meaning[k] + o, piece, 3);
+                    o += 3;
+                }
+                meaning[k][o] = '\0';
+                snprintf(names[k], sizeof(names[k]), "d%d.vjdict", k);
+                rows[k] = (DictRow){"好き", "好き", "すき", meaning[k]};
+                dict_build(&dict_files[k], names[k], &rows[k]);
+                strcat(list_names, k ? "," : "");
+                strcat(list_names, names[k]);
+            }
+            snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+            snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
+            cfg.local_dictionary_results = 8;
+            reconfigure();
+            vjo_arena_init(&a, mem, sizeof(mem));
+            vjo_platform_vita(&p, NULL);
+            TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 8, &pages, &res, &err) == VJO_OK);
+            TEST_ASSERT(pages.count == 8 && res.n_vocab == 1);
+            entries[1].vocab = &res.vocab[0];
+            view_pages = &pages;
+            view_page = 0;
+            cross(1);
+            TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
+            only_id(id);
+            json = queue_file(id, "json", NULL);
+            TEST_ASSERT(json != NULL);
+            for (const char *q = json; (q = strstr(q, "{\"dictionary\":")); q++)
+                kept++;
+            server();
+            triangle();
+            /* sent; or, when even the shown entry alone is too large for △ (7 KB of
+             * text that escaping grows about six times), kept for the Overlay app */
+            int sent = !strcmp(g_view.anki_status, "Sent 1 to Anki") && anki.adds == 1 && vjo_queue_count() == 0;
+            TEST_CHECK(sent || (heavy && !kept && vjo_queue_count() == 1 &&
+                                !strcmp(g_view.anki_status, "Sent 0 to Anki, 1 kept (too large: the Overlay app sends it)")));
+            TEST_MSG("%s: entries of %d B, %s text: record %u B, %d of 7 others kept", g_view.anki_status, sizes[z],
+                     heavy ? "escaping" : "kana", (unsigned)strlen(json), kept);
+            printf("measure: 8 dictionaries, entries of %d B (%s): record %u B with %d of 7 others, %s\n", sizes[z],
+                   heavy ? "escaping" : "kana", (unsigned)strlen(json), kept, sent ? "sent" : "kept for the app");
+            if (!heavy && sizes[z] <= 900)
+                TEST_CHECK(kept == 7 && !logged("would be too large for △"));
+            if (kept < 7)
+                TEST_CHECK(logged("other dictionaries' entries kept: the next would be too large for △"));
+            finish();
+        }
+    }
+}
+
+/* The largest card a record holds (8 dictionaries' long entries, under 32
+ * KiB): its note does not fit the overlay's 128 KiB arena beside the record,
+ * so △ keeps it and says the Overlay app sends it (test_anki_app sends it). */
+static void test_largest_card_is_kept_for_the_app(void)
+{
+    static char text[8][3700], path[256];
+    static const char *m[8][1];
+    static uint8_t mem[96 * 1024];
+    VjoAnkiGloss more[7];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = VJO_NO_RANK, .sentence = "好き",
+                     .hl_start = 0, .hl_end = 6, .sf_hl_start = -1, .sf_hl_end = -1, .misc = "G (2026-10-14 17:12)"};
+    char id[VJO_QUEUE_ID_SIZE], *json;
+    VjoArena a;
+    FILE *f;
+    reset();
+    vjo_test_anki_text_only = 1;
+    for (int k = 0; k < 8; k++) {
+        int o = snprintf(text[k], sizeof(text[k]), "[Dictionary %d]\n", k);
+        while (o + 3 < (int)sizeof(text[k]) - 1) {
+            memcpy(text[k] + o, "好", 3);
+            o += 3;
+        }
+        text[k][o] = '\0';
+        m[k][0] = text[k];
+        if (k)
+            more[k - 1] = (VjoAnkiGloss){NULL, "好き", "すき", m[k], 1};
+    }
+    n.meanings = m[0];
+    n.n_meanings = 1;
+    n.more = more;
+    n.n_more = 7;
+    vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_ASSERT((json = vjo_queue_encode(&a, &n, 0)) != NULL && vjo_queue_count() == 0);
+    vjo_queue_id(json, strlen(json), id);
+    snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.json", id);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    fputs(json, f);
+    fclose(f);
+    server();
+    triangle();
+    TEST_CHECK(anki.adds == 0 && vjo_queue_count() == 1 &&
+               !strcmp(g_view.anki_status, "Sent 0 to Anki, 1 kept (too large: the Overlay app sends it)"));
+    TEST_MSG("%s (record %u B)", g_view.anki_status, (unsigned)strlen(json));
+    TEST_CHECK(logged(" is too large to send in 131072 bytes; kept"));
     finish();
 }
 
@@ -1681,11 +2036,30 @@ static void test_record_format(void)
         "\"picture\":false,\"meanings\":[],\"misc\":7}",
         "{\"version\":2,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
         "\"picture\":false,\"meanings\":[]} {}",
+        /* version 3's own values, and a version this build does not know */
+        "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[],\"more\":{}}",
+        "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[],\"more\":[\"x\"]}",
+        "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[],\"more\":[{\"dictionary\":\"a\"}]}",
+        "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[],\"more\":[{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]},"
+        "{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]}]}",
+        "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[],\"furigana\":7}",
+        "{\"version\":4,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[]}",
     };
+    static const char *jm[] = {"[JMdict]\nto come"};
+    static const VjoAnkiGloss more[1] = {{"JMdict", "来る", "くる", jm, 1}};
     VjoAnkiNote n = {.spelling = "来る", .reading = "くる", .rank = 384, .meanings = meanings, .n_meanings = 2,
                      .sentence = "明日来る", .hl_start = 6, .hl_end = 12, .sentence_furigana = "明日[あした]<b>来[く]る</b>",
                      .sf_hl_start = 18, .sf_hl_end = 34, .source = "Jiten", .pitch = {1, 0}, .n_pitch = 2,
-                     .pos = pos, .n_pos = 2, .misc = "CLANNAD (2026-10-12 09:30)"}, d;
+                     .pos = pos, .n_pos = 2, .misc = "CLANNAD (2026-10-12 09:30)", .furigana = "来[く]る",
+                     .dictionary = "Jiten", .more = more, .n_more = 1, .game = "CLANNAD", .title_id = "PCSG00415",
+                     .platform = "vita", .unix_time = 1791727902, .ocr_engine = "vocr",
+                     .ocr_model = "VOCR3_FL10_w8.vocr"}, d;
     VjoArena a;
     char *json, *again, id[VJO_QUEUE_ID_SIZE], id2[VJO_QUEUE_ID_SIZE];
     int picture;
@@ -1696,7 +2070,16 @@ static void test_record_format(void)
     vjo_queue_id(json, strlen(json), id);
     vjo_queue_id(again, strlen(again), id2);
     TEST_CHECK(vjo_queue_valid_id(id) && !strcmp(id, id2));
-    TEST_ASSERT(vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 0);
+    TEST_CHECK(strstr(json, ",\"misc\":\"CLANNAD (2026-10-12 09:30)\",\"furigana\":\"来[く]る\",\"dictionary\":\"Jiten\","
+                            "\"more\":[{\"dictionary\":\"JMdict\",\"spelling\":\"来る\",\"reading\":\"くる\","
+                            "\"meanings\":[\"[JMdict]\\nto come\"]}],\"game\":\"CLANNAD\",\"title_id\":\"PCSG00415\","
+                            "\"platform\":\"vita\",\"ocr_engine\":\"vocr\",\"ocr_model\":\"VOCR3_FL10_w8.vocr\","
+                            "\"time\":1791727902,\"ocr_confidence\":null}\n") != NULL);
+    TEST_MSG("%s", json);
+    TEST_ASSERT(vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 3);
+    TEST_CHECK(!strcmp(d.furigana, "来[く]る") && !strcmp(d.dictionary, "Jiten") && d.n_more == 1 &&
+               !strcmp(d.more[0].dictionary, "JMdict") && !strcmp(d.more[0].spelling, "来る") &&
+               d.more[0].n_meanings == 1 && !strcmp(d.more[0].meanings[0], jm[0]));
     TEST_CHECK(picture && !strcmp(d.spelling, n.spelling) && !strcmp(d.reading, n.reading) && d.rank == 384 &&
                d.n_meanings == 2 && !strcmp(d.meanings[1], "to arrive") && !strcmp(d.sentence, n.sentence) &&
                d.hl_start == 6 && d.hl_end == 12 && !strcmp(d.sentence_furigana, n.sentence_furigana) &&
@@ -1757,8 +2140,7 @@ static void test_hundred_text_cards_send_in_bounded_memory(void)
 {
     static char headers[100][64];
     reset();
-    cfg.anki_field[VJO_ANKI_PICTURE][0] = '\0';
-    reconfigure();
+    vjo_test_anki_text_only = 1;
     for (int i = 0; i < 100; i++) {
         snprintf(headers[i], sizeof(headers[i]), "言葉%dの猫が好き", i);
         list.header = headers[i];
@@ -1820,24 +2202,24 @@ static void test_a_refused_job_thread_is_logged(void)
 }
 
 #if !VJO_ANKI_SCREENSHOT
-/* The shipped build (VJO_ANKI_SCREENSHOT 0). × with the default Lapis mapping,
- * whose Picture field is set, and no anki_host (Wi-Fi off, Anki closed): a
- * text-only card is saved offline and the kernel is never asked for a capture
- * (its full-frame buffer is the 2,088,960 B block #74's console refused). The
- * job's arena is the ledger's VJO_BUDGET_PAF_ANKI, every step is logged, and △
- * then sends the default Lapis note, without a picture. */
+/* The shipped build (VJO_ANKI_SCREENSHOT 0). × with no anki_host (Wi-Fi
+ * off, Anki closed): a text-only card is saved offline and the kernel is
+ * never asked for a capture (its full-frame buffer is the 2,088,960 B block
+ * #74's console refused). The job's arena is the ledger's
+ * VJO_BUDGET_PAF_ANKI, every step is logged, and △ then sends the Kiku
+ * note, without a picture. */
 static void test_build_saves_text_cards_without_the_kernel_capture(void)
 {
     static const char note[] =
-        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Japanese::Mining\","
-        "\"modelName\":\"Lapis\",\"fields\":{\"Expression\":\"猫\",\"ExpressionReading\":\"ねこ\","
-        "\"ExpressionFurigana\":\"猫[ねこ]\",\"MainDefinition\":\"<ol><li>cat</li><li>shamisen "
-        "&quot;neko&quot;</li></ol>\",\"Sentence\":\"<b>猫</b>が好き猫\",\"FreqSort\":\"1500\","
-        "\"SentenceFurigana\":\"<b>猫</b>が好き猫\",\"MiscInfo\":\"CLANNAD (2026-10-12 09:30)\"},"
+        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{\"deckName\":\"Kiku\","
+        "\"modelName\":\"Kiku\",\"fields\":{\"Expression\":\"猫\",\"ExpressionFurigana\":\"猫[ねこ]\","
+        "\"ExpressionReading\":\"ねこ\",\"MainDefinition\":\"<div style=\\\"text-align: left;\\\" "
+        "class=\\\"yomitan-glossary\\\"><ol><li><span><ul><li>cat</li><li>shamisen &quot;neko&quot;</li></ul>"
+        "</span></li></ol></div>\",\"Sentence\":\"<b>猫</b>が好き猫\",\"SentenceFurigana\":\"<b>猫</b>が好き猫\","
+        "\"FreqSort\":\"1500\",\"MiscInfo\":\"CLANNAD (2026-10-12 09:30)\"},"
         "\"tags\":[\"vita-jp-overlay\",\"vita_queue_";
     const char *body;
     reset();
-    TEST_CHECK(!strcmp(cfg.anki_field[VJO_ANKI_PICTURE], "Picture")); /* the default mapping has one */
     cfg.anki_host[0] = '\0';
     reconfigure();
     cross(0);
@@ -1853,8 +2235,7 @@ static void test_build_saves_text_cards_without_the_kernel_capture(void)
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == VJO_BUDGET_PAF_ANKI);
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_ANKI_STACK) == VJO_BUDGET_SHELL_ANKI_STACK);
-    /* every step logged: why there is no picture, the record's bytes, the queue */
-    TEST_CHECK(logged("anki: Picture field off in this build: no screenshot, no kernel capture buffer\n"));
+    /* every step logged: the record's bytes, the queue */
     TEST_CHECK(logged(" saved, ") && logged(" B record, 0 B picture\n"));
     TEST_CHECK(logged("anki: save 猫 rc=0, 0-byte screenshot, ") && logged("anki: save 好き rc=0, "));
     TEST_CHECK(logged("anki: queue 1 card(s)\n") && logged("anki: queue 2 card(s)\n"));
@@ -1864,15 +2245,13 @@ static void test_build_saves_text_cards_without_the_kernel_capture(void)
     finish();
     memset(&g_view, 0, sizeof(g_view));
     memset(heap, 0x5A, sizeof(heap));
-    saved_loaded = scanned = 0;
-    saved_host[0] = '\0';
     TEST_ASSERT(vjo_anki_start() == 0);
     fixture();
     reconfigure();
     vjo_anki_post_count();
     vjo_anki_reap();
     TEST_CHECK(g_view.anki_pending == 2);
-    /* △ to AnkiConnect: the default Lapis note without its Picture field and no picture */
+    /* △ to AnkiConnect: the Kiku note without its Picture field and no picture */
     lan(4, ok(EMPTY), ok(NOTE_ID), ok(EMPTY), ok(NOTE_ID));
     triangle();
     TEST_CHECK(net.next == 4 && !strcmp(net.host[1], "192.168.1.23") && net.port[1] == VJO_ANKI_PORT);
@@ -1890,11 +2269,16 @@ static void test_build_saves_text_cards_without_the_kernel_capture(void)
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"japanese_text_and_escaping_round_trip_to_anki", test_japanese_and_escaping_round_trip},
-    {"field_mapping_port_and_audio_resolved_at_send", test_mapping_port_and_audio_at_send},
+    {"port_and_audio_resolved_at_send", test_mapping_port_and_audio_at_send},
     {"partial_send_keeps_the_rest_and_needs_anki_host", test_partial_send_keeps_the_rest},
-    {"auto_host_searches_lan_once_when_sending_and_remembers", test_auto_finds_anki_on_the_lan},
+    {"auto_host_sends_to_the_address_the_overlay_app_found", test_auto_finds_anki_on_the_lan},
     {"hundred_text_cards_send_with_one_scan_each_in_bounded_memory", test_hundred_text_cards_send_in_bounded_memory},
     {"a_refused_job_thread_is_logged_with_its_rc_and_sceshell_free", test_a_refused_job_thread_is_logged},
+    {"version_2_record_from_the_test_build_sends_as_kiku", test_version_2_record_from_the_test_build_sends_as_kiku},
+    {"cross_records_every_dictionary_and_sends_the_glossary", test_cross_records_every_dictionary_and_sends_the_glossary},
+    {"largest_card_is_kept_by_triangle_for_the_overlay_app", test_largest_card_is_kept_for_the_app},
+    {"same_card_saved_again_within_the_minute_is_one_record", test_same_card_within_a_minute_is_one_record},
+    {"what_cross_saves_triangle_sends_whatever_the_dictionaries", test_what_cross_saves_triangle_sends},
 #if VJO_ANKI_SCREENSHOT
     {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},
     {"queue_survives_restart_and_triangle_sends_with_current_settings", test_queue_survives_restart_and_triangle_sends_it},
@@ -1911,7 +2295,7 @@ TEST_LIST = {
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_then_one_send_release_memory_and_threads", test_fifty_cards_then_one_send_release_everything},
 #else
-    {"build_saves_text_cards_offline_without_the_kernel_capture_and_sends_lapis",
+    {"build_saves_text_cards_offline_without_the_kernel_capture_and_sends_kiku",
      test_build_saves_text_cards_without_the_kernel_capture},
 #endif
     {NULL, NULL}
@@ -1957,7 +2341,7 @@ static int restart_step(int argc, char **argv)
     if (argc > 5)
         snprintf(cfg.anki_host, sizeof(cfg.anki_host), "%s", argv[5]);
     vjo_anki_configure(&cfg);
-    vjo_anki_set_game("CLANNAD");
+    vjo_anki_set_game("PCSG00415", "CLANNAD");
     make_frame(0);
     vjo_arena_init(&a, mem, sizeof(mem));
     if (!strcmp(what, "save") || !strcmp(what, "save-other")) {

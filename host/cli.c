@@ -5,7 +5,7 @@
  *   vjo-cli --text "日本語" --api-key KEY ...
  *   vjo-cli --replay DIR [--dict jpdb|jiten] [--filter lines|none] [--nav]
  *   vjo-cli --print-default-config
- *   ... --anki HOST[:PORT] [--anki-deck DECK] [--anki-add N [--picture FILE.jpg] [--game NAME]]
+ *   ... --anki HOST[:PORT] [--anki-add N [--picture FILE.jpg] [--game NAME]]
  *
  * --anki checks every entry against AnkiConnect (duplicates in the deck)
  * and --anki-add adds entry N (1-based, as --nav numbers them), with the
@@ -81,10 +81,10 @@ static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoCo
         printf("\n[anki] %s:%d: %s\n", host, port, vjo_anki_err_text(a, &err));
         return 1;
     }
-    printf("\n[anki] AnkiConnect at %s:%d, deck \"%s\", note type \"%s\"\n", host, port, cfg->anki_deck,
-           cfg->anki_note_type);
+    printf("\n[anki] AnkiConnect at %s:%d, deck \"" VJO_ANKI_DECK "\", note type \"" VJO_ANKI_NOTE_TYPE "\"\n",
+           host, port);
     marks = (uint8_t *)vjo_arena_zalloc(a, (size_t)l->n_entries + 1);
-    request = vjo_anki_can_add_request(a, cfg, l, l->n_entries);
+    request = vjo_anki_can_add_request(a, l, l->n_entries);
     if (request && (rc = vjo_anki_check(a, p, host, port, request, marks, l->n_entries, &err)) != VJO_OK)
         printf("check: %s\n", vjo_anki_err_text(a, &err));
     for (int i = 0; i < l->n_entries; i++)
@@ -101,7 +101,7 @@ static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoCo
         localtime_r(&t, &lt);
         gettimeofday(&tv, NULL);
         now = (uint64_t)tv.tv_sec * 1000u + (uint64_t)(tv.tv_usec / 1000);
-        if (vjo_anki_note_from_entry(a, cfg, l, add - 1, &n) < 0) {
+        if (vjo_anki_note_from_entry(a, l, add - 1, &n) < 0) {
             fprintf(stderr, "--anki-add: no entry %d\n", add);
             return 1;
         }
@@ -120,7 +120,7 @@ static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoCo
             vjo_anki_find_audio(a, p, cfg, &n, now, &m, &err);
             printf("audio: %s\n", m.audio_url ? m.audio_url : vjo_anki_audio_err_text(a, &err));
         }
-        if (vjo_anki_add(a, p, host, port, cfg, &n, &m, &err)) {
+        if (vjo_anki_add(a, p, host, port, &n, &m, &err)) {
             printf("add %s: %s\n", n.spelling, vjo_anki_err_text(a, &err));
             return 1;
         }
@@ -139,7 +139,7 @@ static void usage(void)
             "               [--filter lines|none] [--record DIR] [--nav] [--stats] [-v]\n"
             "       vjo-cli --text TEXT [options]\n"
             "       vjo-cli --replay DIR [options]\n"
-            "       ... --anki HOST[:PORT] [--anki-deck DECK] [--anki-add N [--picture FILE.jpg] [--game NAME]]\n");
+            "       ... --anki HOST[:PORT] [--anki-add N [--picture FILE.jpg] [--game NAME]]\n");
     exit(2);
 }
 
@@ -152,7 +152,7 @@ int main(int argc, char **argv)
     VjoPlatform plat;
     VjoOverlayData d;
     const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *key = NULL, *dict = NULL;
-    const char *anki = NULL, *anki_deck = NULL, *picture = NULL, *game = NULL;
+    const char *anki = NULL, *picture = NULL, *game = NULL;
     const char *hachidori = NULL, *local_dir = NULL, *local_dicts = NULL;
     int nav = 0, stats = 0, anki_add = 0, rc;
 
@@ -185,8 +185,6 @@ int main(int argc, char **argv)
             replay = argv[++i];
         else if (!strcmp(s, "--anki") && more)
             anki = argv[++i];
-        else if (!strcmp(s, "--anki-deck") && more)
-            anki_deck = argv[++i];
         else if (!strcmp(s, "--anki-add") && more) {
             anki_add = atoi(argv[++i]);
             if (anki_add < 1)
@@ -224,8 +222,6 @@ int main(int argc, char **argv)
     }
     if (replay)
         vjo_replay_config(&cfg, replay);
-    if (anki_deck)
-        snprintf(cfg.anki_deck, sizeof(cfg.anki_deck), "%s", anki_deck);
     if ((anki_add || picture || game) && !anki)
         usage();
     if (dict) {

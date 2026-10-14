@@ -1,6 +1,6 @@
 /* VjoPlatform for SceShell: SceNet sockets (SceShell has already initialized
- * the network stack), resolver DNS, RTC time and the kernel RNG; plus the
- * LAN probing used to find Anki. */
+ * the network stack), resolver DNS, RTC time and the kernel RNG. Finding
+ * Anki on the LAN is the Overlay app's (settings/net.c), not SceShell's. */
 #include <psp2/kernel/clib.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
@@ -193,75 +193,6 @@ static int vita_connect(void *ud, const char *host, int port, int timeout_us, in
     out->send = sock_send;
     out->recv = sock_recv;
     return VJO_OK;
-}
-
-int vjo_net_probe_port(const uint32_t *ips, int n, int port, int window_us, uint8_t *open)
-{
-    int fds[VJO_NET_PROBE_MAX], pending = 0, n_fail = 0;
-    int64_t end;
-    if (n > VJO_NET_PROBE_MAX)
-        n = VJO_NET_PROBE_MAX;
-    for (int i = 0; i < n; i++) {
-        SceNetSockaddrIn sin;
-        int st;
-        open[i] = 0;
-        fds[i] = sceNetSocket("VjoProbe", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
-        if (fds[i] < 0) {
-            n_fail++;
-            continue;
-        }
-        ipv4_addr(&sin, ips[i], port);
-        st = connect_start(fds[i], &sin);
-        if (st == 1)
-            open[i] = 1;
-        else if (st == 0)
-            pending++;
-    }
-    if (n_fail)
-        vjo_log("net: probe: %d of %d sockets failed", n_fail, n);
-    end = (int64_t)sceKernelGetProcessTimeWide() + window_us;
-    while (pending > 0 && (int64_t)sceKernelGetProcessTimeWide() < end) {
-        sceKernelDelayThread(CONNECT_POLL_US);
-        for (int i = 0; i < n; i++) {
-            SceNetSockaddrIn sin;
-            int st;
-            if (fds[i] < 0 || open[i])
-                continue;
-            ipv4_addr(&sin, ips[i], port);
-            st = connect_poll(fds[i], &sin);
-            if (st == 0)
-                continue;
-            open[i] = st == 1;
-            pending--;
-            if (st < 0) {
-                sceNetSocketClose(fds[i]);
-                fds[i] = -1;
-            }
-        }
-    }
-    for (int i = 0; i < n; i++)
-        if (fds[i] >= 0)
-            sceNetSocketClose(fds[i]);
-    return n;
-}
-
-static uint32_t netctl_ipv4(int code)
-{
-    SceNetCtlInfo info;
-    SceNetInAddr a;
-    sceClibMemset(&info, 0, sizeof(info));
-    if (sceNetCtlInetGetInfo(code, &info) < 0)
-        return 0;
-    if (sceNetInetPton(SCE_NET_AF_INET, code == SCE_NETCTL_INFO_GET_NETMASK ? info.netmask : info.ip_address, &a) != 1)
-        return 0;
-    return sceNetNtohl(a.s_addr);
-}
-
-int vjo_net_local_ipv4(uint32_t *ip, uint32_t *mask)
-{
-    *ip = netctl_ipv4(SCE_NETCTL_INFO_GET_IP_ADDRESS);
-    *mask = netctl_ipv4(SCE_NETCTL_INFO_GET_NETMASK);
-    return *ip ? 0 : -1;
 }
 
 static void vita_disconnect(void *ud, VjoConn *c)
