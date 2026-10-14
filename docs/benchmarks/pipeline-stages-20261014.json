@@ -1,0 +1,3438 @@
+{
+ "what": "tools/bench_stages.py baseline (docs/performance.md): main 4a7ae4d, vita-vn-ocr a5d5aad, VOCR3-H15/FL10, the bundled plaintext.vjdict; A9 figures are estimates (vita-vn-ocr vita/a9_cycles.py on qemu-arm counts)",
+ "date": "2026-10-14",
+ "report": {
+  "stages": [
+   {
+    "workload": "capture_abgr",
+    "unit": "strip",
+    "what": "display hook: a strip of region rows to grey (A8B8G8R8), one rows call per display frame",
+    "ops_per_iter": 3,
+    "host_ms": 0.06642340000000001,
+    "a9_insns": 627170.0,
+    "a9_444": [
+     0.7062725225225225,
+     1.9047297297297296
+    ],
+    "a9_333": [
+     0.9416966966966966,
+     2.5396396396396397
+    ],
+    "l1d_misses": 7284.333333333333,
+    "libc_share": 0.1046351069088126,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (64 rows); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_abgr_sig",
+    "unit": "strip",
+    "what": "the same, first pass: also the capture's scene signature",
+    "ops_per_iter": 3,
+    "host_ms": 0.06749346666666665,
+    "a9_insns": 642162.6666666666,
+    "a9_444": [
+     0.7231561561561561,
+     1.943159159159159
+    ],
+    "a9_333": [
+     0.9642082082082082,
+     2.5908788788788786
+    ],
+    "l1d_misses": 7353.333333333333,
+    "libc_share": 0.10219217560659605,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (64 rows); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_a2b10",
+    "unit": "strip",
+    "what": "the same, A2B10G10R10",
+    "ops_per_iter": 3,
+    "host_ms": 0.1111328,
+    "a9_insns": 1187418.0,
+    "a9_444": [
+     1.3371824324324324,
+     3.1665495495495497
+    ],
+    "a9_333": [
+     1.78290990990991,
+     4.222066066066066
+    ],
+    "l1d_misses": 7284.333333333333,
+    "libc_share": 0.05526613206132971,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (64 rows); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_a1b5",
+    "unit": "strip",
+    "what": "the same, A1B5G5R5 (PSP emulator)",
+    "ops_per_iter": 3,
+    "host_ms": 0.11077953333333332,
+    "a9_insns": 1209573.0,
+    "a9_444": [
+     1.3621317567567568,
+     3.0196914414414415
+    ],
+    "a9_333": [
+     1.8161756756756757,
+     4.026255255255255
+    ],
+    "l1d_misses": 4372.333333333333,
+    "libc_share": 0.03379043679050375,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "memory": "reads 93,184 B of the frame, writes 46,592 B of grey per strip (64 rows); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_full_abgr",
+    "unit": "strip",
+    "what": "display hook, full screen (the self-test's stage), A8B8G8R8",
+    "ops_per_iter": 10,
+    "host_ms": 0.0750485,
+    "a9_insns": 703333.2,
+    "a9_444": [
+     0.7920418918918919,
+     2.351510027027027
+    ],
+    "a9_333": [
+     1.0560558558558557,
+     3.090785702702703
+    ],
+    "l1d_misses": 8164.1,
+    "libc_share": 0.10534523324080251,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    },
+    "memory": "reads 208,896 B of the frame, writes 52,224 B of grey per strip (59 rows); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "scene_sig",
+    "unit": "signature",
+    "what": "display hook: the region's change-detection signature (every 8th game frame)",
+    "ops_per_iter": 1,
+    "host_ms": 0.004176,
+    "a9_insns": 67766.0,
+    "a9_444": [
+     0.07631306306306307,
+     0.329990990990991
+    ],
+    "a9_333": [
+     0.10175075075075075,
+     0.439987987987988
+    ],
+    "l1d_misses": 2625.0,
+    "libc_share": 0.33533040167635686,
+    "parity": true,
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    },
+    "memory": "sampled rows of the 896x156 region (A8B8G8R8), 25-column grid"
+   },
+   {
+    "workload": "scene_update",
+    "unit": "update",
+    "what": "kernel worker: one signature into the scene tracker (every 64 ms), screen unchanged",
+    "ops_per_iter": 1,
+    "host_ms": 0.000532,
+    "a9_insns": 9421.0,
+    "a9_444": [
+     0.010609234234234235,
+     0.02121846846846847
+    ],
+    "a9_333": [
+     0.014145645645645646,
+     0.028291291291291293
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0,
+    "parity": true,
+    "counters": {
+     "events": 1
+    },
+    "memory": ""
+   },
+   {
+    "workload": "scene_update_typing",
+    "unit": "update",
+    "what": "the same while text types out (a cell changes every signature)",
+    "ops_per_iter": 1,
+    "host_ms": 0.001112,
+    "a9_insns": 14201.0,
+    "a9_444": [
+     0.015992117117117118,
+     0.03202927927927928
+    ],
+    "a9_333": [
+     0.021322822822822822,
+     0.042705705705705706
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.0063375818604323635,
+    "parity": true,
+    "counters": {
+     "events": 0
+    },
+    "memory": ""
+   },
+   {
+    "workload": "find",
+    "unit": "region",
+    "what": "game worker: the line finder, one region",
+    "ops_per_iter": 1,
+    "host_ms": 0.8873112,
+    "a9_insns": 16492225.5,
+    "a9_444": [
+     18.572339527027026,
+     37.93440427927928
+    ],
+    "a9_333": [
+     24.76311936936937,
+     50.579205705705704
+    ],
+    "l1d_misses": 11683.0,
+    "libc_share": 0.000654672105956834,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    },
+    "memory": "31,971 B arena; 382 row reads (two passes) of the region"
+   },
+   {
+    "workload": "recognize_h15",
+    "unit": "line",
+    "what": "game worker: VOCR3-H15 on each found line (resident weights)",
+    "ops_per_iter": 2,
+    "host_ms": 33.1335052,
+    "a9_insns": 63005351.5,
+    "a9_444": [
+     111.56659009009009,
+     202.2834831081081
+    ],
+    "a9_333": [
+     148.75545345345344,
+     269.7113108108108
+    ],
+    "l1d_misses": 571372.5,
+    "libc_share": 0.02536385341807037,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    },
+    "memory": "182,944 B arena + resident weights; 54 CTC frames per line"
+   },
+   {
+    "workload": "recognize_fl10",
+    "unit": "line",
+    "what": "game worker: VOCR3-FL10 on each found line (the fallback)",
+    "ops_per_iter": 2,
+    "host_ms": 17.692783600000002,
+    "a9_insns": 37145343.0,
+    "a9_444": [
+     63.32538738738739,
+     118.57514864864865
+    ],
+    "a9_333": [
+     84.43384984984985,
+     158.1001981981982
+    ],
+    "l1d_misses": 302334.5,
+    "libc_share": 0.028685385944612223,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    },
+    "memory": "124,832 B arena + resident weights; 54 CTC frames per line"
+   },
+   {
+    "workload": "job_h15",
+    "unit": "job",
+    "what": "game worker: the whole job (core/vocr_ocr.c: strips, checksums, finder, recognition), resident weights",
+    "ops_per_iter": 1,
+    "host_ms": 67.74557420000001,
+    "a9_insns": 145456441.0,
+    "a9_444": [
+     223.4396936936937,
+     452.5433626126126
+    ],
+    "a9_333": [
+     297.9195915915916,
+     603.3911501501501
+    ],
+    "l1d_misses": 1204585.0,
+    "libc_share": 0.023197962062058153,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 187696,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1
+    },
+    "memory": "187,696 B workspace + 57,988 B capture block; 10 strips, 604 rows read for a 64-row strip"
+   },
+   {
+    "workload": "job_h15_first",
+    "unit": "job",
+    "what": "the same as a game's first job: the weights read in 32 KiB pieces and SHA-256 checked",
+    "ops_per_iter": 1,
+    "host_ms": 71.7859558,
+    "a9_insns": 189735120.0,
+    "a9_444": [
+     225.92187387387386,
+     574.3143167567567
+    ],
+    "a9_333": [
+     301.22916516516517,
+     763.2124856756757
+    ],
+    "l1d_misses": 1304817.0,
+    "libc_share": 0.02437828062616979,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 1343664,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0
+    },
+    "memory": "1,343,664 B workspace + 57,988 B capture block; 10 strips, 604 rows read for a 64-row strip"
+   },
+   {
+    "workload": "sha256_h15",
+    "unit": "model",
+    "what": "SHA-256 of the VOCR3-H15 weights (1,155,968 B), BearSSL",
+    "ops_per_iter": 1,
+    "host_ms": 4.0196914,
+    "a9_insns": 43966006.0,
+    "a9_444": [
+     49.755362612612615,
+     104.43827702702703
+    ],
+    "a9_333": [
+     66.34048348348348,
+     139.25103603603603
+    ],
+    "l1d_misses": 36199.0,
+    "libc_share": 0.021365279347867076,
+    "parity": true,
+    "counters": {
+     "bytes": 1155968
+    },
+    "memory": "1,155,968 B of weights"
+   },
+   {
+    "workload": "postproc",
+    "unit": "text",
+    "what": "Shell: the recognized text filtered and trimmed, its first selectable letter",
+    "ops_per_iter": 50,
+    "host_ms": 0.0003632,
+    "a9_insns": 5309.14,
+    "a9_444": [
+     0.005978761261261262,
+     0.011957522522522523
+    ],
+    "a9_333": [
+     0.007971681681681683,
+     0.015943363363363366
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.17198265632475315,
+    "parity": true,
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    },
+    "memory": "92 B of text"
+   },
+   {
+    "workload": "lookup_first",
+    "unit": "lookup",
+    "what": "Shell: the first word's lookup with the bundled dictionary (Auto OCR prepares it)",
+    "ops_per_iter": 50,
+    "host_ms": 0.04540302400000001,
+    "a9_insns": 127115.81,
+    "a9_444": [
+     0.14345032657657658,
+     0.47884403153153154
+    ],
+    "a9_333": [
+     0.1912671021021021,
+     0.6384587087087087
+    ],
+    "l1d_misses": 2826.96,
+    "libc_share": 0.7025226838423954,
+    "parity": true,
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53648
+    },
+    "memory": "14.3 reads, 49.6 KiB and 1 open per lookup; arena peak 53,648 B of the Shell's 64 KiB"
+   },
+   {
+    "workload": "lookup_every",
+    "unit": "lookup",
+    "what": "Shell: a lookup at every selectable letter (Right in Character mode, a tap)",
+    "ops_per_iter": 1321,
+    "host_ms": 0.046496314912944745,
+    "a9_insns": 116150.1056018168,
+    "a9_444": [
+     0.13134473056516016,
+     0.38416275634074654
+    ],
+    "a9_333": [
+     0.17512630742021354,
+     0.5122170084543287
+    ],
+    "l1d_misses": 1777.3080999242998,
+    "libc_share": 0.650346277388015,
+    "parity": true,
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53648
+    },
+    "memory": "14.0 reads, 48.8 KiB and 1 open per lookup; arena peak 53,648 B of the Shell's 64 KiB"
+   },
+   {
+    "workload": "config",
+    "unit": "parse",
+    "what": "Shell: config.ini parsed (every overlay open)",
+    "ops_per_iter": 1,
+    "host_ms": 0.012742,
+    "a9_insns": 233124.0,
+    "a9_444": [
+     0.262527027027027,
+     0.526
+    ],
+    "a9_333": [
+     0.35003603603603606,
+     0.7013333333333334
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.09598754311010449,
+    "parity": true,
+    "counters": {
+     "bytes": 4702,
+     "warnings": 0
+    },
+    "memory": "4,702 B of config.ini"
+   },
+   {
+    "workload": "log",
+    "unit": "line",
+    "what": "Shell: formatting a job's log lines (formatting only)",
+    "ops_per_iter": 19,
+    "host_ms": 0.0002637894736842105,
+    "a9_insns": 3262.684210526316,
+    "a9_444": [
+     0.003674193930772878,
+     0.007393432906590802
+    ],
+    "a9_333": [
+     0.004898925241030504,
+     0.009857910542121068
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 1.0,
+    "parity": true,
+    "counters": {
+     "lines": 19,
+     "bytes": 2181
+    },
+    "memory": "115 B per line"
+   },
+   {
+    "workload": "anki",
+    "unit": "card",
+    "what": "Shell: an Anki card's note and queue record",
+    "ops_per_iter": 50,
+    "host_ms": 0.003043164,
+    "a9_insns": 48042.42,
+    "a9_444": [
+     0.054105608108108105,
+     0.1096950900900901
+    ],
+    "a9_333": [
+     0.07214081081081081,
+     0.14626012012012013
+    ],
+    "l1d_misses": 20.54,
+    "libc_share": 0.3233059450377396,
+    "parity": true,
+    "counters": {
+     "cards": 50,
+     "json_bytes": 42173
+    },
+    "memory": "843 B queue record per card"
+   },
+   {
+    "workload": "furigana",
+    "unit": "word",
+    "what": "Shell: a word's reading aligned with its spelling (subtitle strip, network dictionaries)",
+    "ops_per_iter": 50,
+    "host_ms": 0.0001314,
+    "a9_insns": 1639.76,
+    "a9_444": [
+     0.0018465765765765766,
+     0.00369990990990991
+    ],
+    "a9_333": [
+     0.0024621021021021022,
+     0.004933213213213213
+    ],
+    "l1d_misses": 0.1,
+    "libc_share": 0.4921207981655852,
+    "parity": true,
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    },
+    "memory": ""
+   }
+  ],
+  "source": {
+   "worker_take_poll_ms": 100,
+   "shell_result_poll_ms": 50,
+   "control_poll_ms": 50,
+   "kernel_tick_ms": 16,
+   "signature_every_frames": 8,
+   "settle_ms": 300
+  },
+  "assumptions": {
+   "fs_line_ms": [
+    0.5,
+    3.0,
+    "one open + write + close of a small append on ux0 (assumed range)"
+   ],
+   "dict_read_ms": [
+    0.2,
+    1.0,
+    "one 4 KiB read at a random offset of the 134 MiB dictionary on ux0 (assumed)"
+   ],
+   "dict_open_ms": [
+    0.2,
+    1.0,
+    "open + size of the dictionary file (assumed)"
+   ],
+   "model_read_mb_s": [
+    20.0,
+    40.0,
+    "the model file through the kernel broker, 32 KiB at a time (assumed)"
+   ]
+  },
+  "job_log_lines": {
+   "before": 1,
+   "report": 16,
+   "after": 4
+  },
+  "host_cpu": "AMD EPYC 9R14",
+  "dev": {
+   "regions": 372,
+   "with_lines": 367,
+   "strips": {
+    "mean": 7.28494623655914,
+    "median": 8.0,
+    "p90": 12,
+    "max": 18
+   },
+   "lines": {
+    "mean": 2.4166666666666665,
+    "median": 2.0,
+    "p90": 4,
+    "max": 8
+   },
+   "frames": {
+    "mean": 86.19086021505376,
+    "median": 77.5,
+    "p90": 158,
+    "max": 433
+   },
+   "rows_read_per_row": 3.9867958617069914,
+   "tall": 41
+  },
+  "jobs": [
+   {
+    "mhz": 444,
+    "fps": 60,
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 159.3501748885983,
+      "note": "7.3 strips (dev mean), one display frame each (16.7 ms at 60 fps), the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07445131713254,
+      "high": 322.8701373404654,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 4-7 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.005978761261261262,
+      "high": 0.011957522522522523,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.1994503265765766,
+      "high": 15.758844031531531,
+      "note": "CPU 0.14-0.48 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     }
+    },
+    "total": [
+     313.1956510142894,
+     773.9911137831177
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 280.7659454979173,
+      "note": "7.3 strips (dev mean), one display frame each (33.3 ms at 30 fps), the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07445131713254,
+      "high": 322.8701373404654,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 4-7 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.005978761261261262,
+      "high": 0.011957522522522523,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.1994503265765766,
+      "high": 15.758844031531531,
+      "note": "CPU 0.14-0.48 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     }
+    },
+    "total": [
+     434.6114216236084,
+     895.4068843924367
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 171.9949763150247,
+      "note": "7.3 strips (dev mean), one display frame each (16.7 ms at 60 fps), the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43260175617672,
+      "high": 430.4935164539539,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 5-10 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.007971681681681683,
+      "high": 0.015943363363363366,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.247267102102102,
+      "high": 15.918458708708709,
+      "note": "CPU 0.19-0.64 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     }
+    },
+    "total": [
+     372.6036111492795,
+     894.4228948410507
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 293.4107469243437,
+      "note": "7.3 strips (dev mean), one display frame each (33.3 ms at 30 fps), the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43260175617672,
+      "high": 430.4935164539539,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 5-10 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.007971681681681683,
+      "high": 0.015943363363363366,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.247267102102102,
+      "high": 15.918458708708709,
+      "note": "CPU 0.19-0.64 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     }
+    },
+    "total": [
+     494.0193817585985,
+     1015.8386654503697
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 60,
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 159.3501748885983,
+      "note": "7.3 strips (dev mean), one display frame each (16.7 ms at 60 fps), the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07445131713254,
+      "high": 322.8701373404654,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 4-7 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.005978761261261262,
+      "high": 0.011957522522522523,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.1994503265765766,
+      "high": 15.758844031531531,
+      "note": "CPU 0.14-0.48 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 78.65456261261262,
+      "high": 162.23667702702704,
+      "note": "SHA-256 49.8-104.4 ms (A9) + 1.16 MB read (assumed 20-40 MB/s)"
+     }
+    },
+    "total": [
+     391.850213626902,
+     936.2277908101448
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 280.7659454979173,
+      "note": "7.3 strips (dev mean), one display frame each (33.3 ms at 30 fps), the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07445131713254,
+      "high": 322.8701373404654,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 4-7 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.005978761261261262,
+      "high": 0.011957522522522523,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.1994503265765766,
+      "high": 15.758844031531531,
+      "note": "CPU 0.14-0.48 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 78.65456261261262,
+      "high": 162.23667702702704,
+      "note": "SHA-256 49.8-104.4 ms (A9) + 1.16 MB read (assumed 20-40 MB/s)"
+     }
+    },
+    "total": [
+     513.265984236221,
+     1057.6435614194638
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 171.9949763150247,
+      "note": "7.3 strips (dev mean), one display frame each (16.7 ms at 60 fps), the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43260175617672,
+      "high": 430.4935164539539,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 5-10 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.007971681681681683,
+      "high": 0.015943363363363366,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.247267102102102,
+      "high": 15.918458708708709,
+      "note": "CPU 0.19-0.64 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 95.23968348348349,
+      "high": 197.04943603603604,
+      "note": "SHA-256 66.3-139.3 ms (A9) + 1.16 MB read (assumed 20-40 MB/s)"
+     }
+    },
+    "total": [
+     467.843294632763,
+     1091.4723308770867
+    ],
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 293.4107469243437,
+      "note": "7.3 strips (dev mean), one display frame each (33.3 ms at 30 fps), the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43260175617672,
+      "high": 430.4935164539539,
+      "note": "A9 estimate, 86 CTC frames (dev mean, 2.4 lines)"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt (+ status.txt)": {
+      "low": 10.5,
+      "high": 126.0,
+      "note": "21 lines, each an open/write/close (twice while status.txt < 64 KiB); assumed 0.5-3.0 ms each; formatting 5-10 µs per line"
+     },
+     "text post-processing": {
+      "low": 0.007971681681681683,
+      "high": 0.015943363363363366,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 3.247267102102102,
+      "high": 15.918458708708709,
+      "note": "CPU 0.19-0.64 ms (A9) + 1 open + 14.3 reads (assumed 0.2-1.0 ms each)"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 95.23968348348349,
+      "high": 197.04943603603604,
+      "note": "SHA-256 66.3-139.3 ms (A9) + 1.16 MB read (assumed 20-40 MB/s)"
+     }
+    },
+    "total": [
+     589.259065242082,
+     1212.8881014864057
+    ],
+    "mean_polling_ms": 75.0
+   }
+  ]
+ },
+ "a9": {
+  "lane": "a9",
+  "cache": true,
+  "iters": [
+   1,
+   3
+  ],
+  "workloads": {
+   "capture_abgr": {
+    "insns_per_op": 627170.0,
+    "share": {
+     "plugin": 0.8953648930911874,
+     "libc": 0.1046351069088126
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93340.0,
+    "ls_per_op": 152379.0,
+    "l1d_misses_per_op": 7284.333333333333,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561338.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ],
+     [
+      "read_row.constprop.0",
+      208.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      313585.0,
+      845700.0
+     ],
+     "333": [
+      313585.0,
+      845700.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7062725225225225,
+      1.9047297297297296
+     ],
+     "333": [
+      0.9416966966966966,
+      2.5396396396396397
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_abgr_sig": {
+    "insns_per_op": 642162.6666666666,
+    "share": {
+     "plugin": 0.897807824393404,
+     "libc": 0.10219217560659605
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 95072.66666666667,
+    "ls_per_op": 155525.66666666666,
+    "l1d_misses_per_op": 7353.333333333333,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561598.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ],
+     [
+      "scene_acc_row",
+      14593.666666666666
+     ],
+     [
+      "read_row.constprop.0",
+      208.0
+     ],
+     [
+      "scene_acc_begin",
+      137.33333333333334
+     ],
+     [
+      "capture_sig_begin",
+      1.6666666666666667
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      321081.3333333333,
+      862762.6666666666
+     ],
+     "333": [
+      321081.3333333333,
+      862762.6666666666
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7231561561561561,
+      1.943159159159159
+     ],
+     "333": [
+      0.9642082082082082,
+      2.5908788788788786
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "57c8dd5523fb84bc",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_a2b10": {
+    "insns_per_op": 1187418.0,
+    "share": {
+     "plugin": 0.9447338679386703,
+     "libc": 0.05526613206132971
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93340.0,
+    "ls_per_op": 245875.0,
+    "l1d_misses_per_op": 7284.333333333333,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561338.0
+     ],
+     [
+      "read_row.constprop.0",
+      560456.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      593709.0,
+      1405948.0
+     ],
+     "333": [
+      593709.0,
+      1405948.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      1.3371824324324324,
+      3.1665495495495497
+     ],
+     "333": [
+      1.78290990990991,
+      4.222066066066066
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_a1b5": {
+    "insns_per_op": 1209573.0,
+    "share": {
+     "plugin": 0.9662095632094962,
+     "libc": 0.03379043679050375
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93392.0,
+    "ls_per_op": 222579.0,
+    "l1d_misses_per_op": 4372.333333333333,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "read_row.constprop.0",
+      607360.0
+     ],
+     [
+      "capture_grey_rows",
+      561341.0
+     ],
+     [
+      "memcpy",
+      40872.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      604786.5,
+      1340743.0
+     ],
+     "333": [
+      604786.5,
+      1340743.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      1.3621317567567568,
+      3.0196914414414415
+     ],
+     "333": [
+      1.8161756756756757,
+      4.026255255255255
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "c409a398540f05ca",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_full_abgr": {
+    "insns_per_op": 703333.2,
+    "share": {
+     "plugin": 0.8946547667591975,
+     "libc": 0.10534523324080251
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 108.8,
+    "mul_per_op": 104611.2,
+    "ls_per_op": 170726.2,
+    "l1d_misses_per_op": 8164.1,
+    "l2_misses_per_op": 1215.3,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      629022.8
+     ],
+     [
+      "memcpy",
+      74092.8
+     ],
+     [
+      "read_row.constprop.0",
+      217.6
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      351666.6,
+      1044070.4519999999
+     ],
+     "333": [
+      351666.6,
+      1029231.6390000001
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7920418918918919,
+      2.351510027027027
+     ],
+     "333": [
+      1.0560558558558557,
+      3.090785702702703
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 10,
+    "check": "bba813e898da8726",
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    },
+    "parity": true
+   },
+   "scene_sig": {
+    "insns_per_op": 67766.0,
+    "share": {
+     "plugin": 0.6646695983236431,
+     "libc": 0.33533040167635686
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 23.0,
+    "mul_per_op": 5248.0,
+    "ls_per_op": 30007.0,
+    "l1d_misses_per_op": 2625.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_acc_row",
+      43249.0
+     ],
+     [
+      "memcpy",
+      22724.0
+     ],
+     [
+      "__udivmoddi4",
+      785.0
+     ],
+     [
+      "scene_acc_begin",
+      412.0
+     ],
+     [
+      "region_sig_hook",
+      409.0
+     ],
+     [
+      "read_row.constprop.0",
+      92.0
+     ],
+     [
+      "capture_crop_of",
+      59.0
+     ],
+     [
+      "__aeabi_uldivmod",
+      36.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      33883.0,
+      146516.0
+     ],
+     "333": [
+      33883.0,
+      146516.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.07631306306306307,
+      0.329990990990991
+     ],
+     "333": [
+      0.10175075075075075,
+      0.439987987987988
+     ]
+    },
+    "stage": "scene_sig",
+    "unit": "signature",
+    "ops": 1,
+    "check": "1be6f203f8214077",
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    },
+    "parity": true
+   },
+   "scene_update": {
+    "insns_per_op": 9421.0,
+    "share": {
+     "plugin": 1.0
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 2255.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_update",
+      9421.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      4710.5,
+      9421.0
+     ],
+     "333": [
+      4710.5,
+      9421.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.010609234234234235,
+      0.02121846846846847
+     ],
+     "333": [
+      0.014145645645645646,
+      0.028291291291291293
+     ]
+    },
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "0f6ac6889dc93ab4",
+    "counters": {
+     "events": 1
+    },
+    "parity": true
+   },
+   "scene_update_typing": {
+    "insns_per_op": 14201.0,
+    "share": {
+     "libc": 0.0063375818604323635,
+     "plugin": 0.9936624181395677
+    },
+    "neon_insns_per_op": 34.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 3459.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_update",
+      10148.5
+     ],
+     [
+      "fits",
+      3962.5
+     ],
+     [
+      "memcpy",
+      90.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      7100.5,
+      14221.0
+     ],
+     "333": [
+      7100.5,
+      14221.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.015992117117117118,
+      0.03202927927927928
+     ],
+     "333": [
+      0.021322822822822822,
+      0.042705705705705706
+     ]
+    },
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "47a591be264574a5",
+    "counters": {
+     "events": 0
+    },
+    "parity": true
+   },
+   "find": {
+    "insns_per_op": 16492225.5,
+    "share": {
+     "libc": 0.000654672105956834,
+     "plugin": 0.9993453278940432
+    },
+    "neon_insns_per_op": 9.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 1354.0,
+    "ls_per_op": 3932166.0,
+    "l1d_misses_per_op": 11683.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "row_kept",
+      825066.0
+     ],
+     [
+      "pix_dark",
+      394460.0
+     ],
+     [
+      "memset",
+      10696.0
+     ],
+     [
+      "strcmp",
+      101.0
+     ],
+     [
+      "vocr_find_lines_rows",
+      82.0
+     ],
+     [
+      "vocr_lines_arena_bytes",
+      27.0
+     ],
+     [
+      "vjo_vocr_model",
+      15.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      8246118.75,
+      16842875.5
+     ],
+     "333": [
+      8246118.75,
+      16842875.5
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      18.572339527027026,
+      37.93440427927928
+     ],
+     "333": [
+      24.76311936936937,
+      50.579205705705704
+     ]
+    },
+    "stage": "find",
+    "unit": "region",
+    "ops": 1,
+    "check": "80623443cd1ef05e",
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    },
+    "parity": true
+   },
+   "recognize_h15": {
+    "insns_per_op": 63005351.5,
+    "share": {
+     "plugin": 0.9746361465819297,
+     "libc": 0.02536385341807037
+    },
+    "neon_insns_per_op": 34584910.0,
+    "vfp_insns_per_op": 769266.0,
+    "mul_per_op": 720942.0,
+    "ls_per_op": 18196473.5,
+    "l1d_misses_per_op": 571372.5,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      43504702.0
+     ],
+     [
+      "step_op",
+      9858574.0
+     ],
+     [
+      "run_head",
+      5860020.0
+     ],
+     [
+      "memset",
+      1597637.0
+     ],
+     [
+      "quant16",
+      1266296.0
+     ],
+     [
+      "resized_px",
+      649728.0
+     ],
+     [
+      "vocr_run",
+      236711.0
+     ],
+     [
+      "col_coef",
+      28695.0
+     ],
+     [
+      "line_setup",
+      1985.0
+     ],
+     [
+      "vocr_class_text",
+      332.5
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      49535566.0,
+      89813866.5
+     ],
+     "333": [
+      49535566.0,
+      89813866.5
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      111.56659009009009,
+      202.2834831081081
+     ],
+     "333": [
+      148.75545345345344,
+      269.7113108108108
+     ]
+    },
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    },
+    "parity": true
+   },
+   "recognize_fl10": {
+    "insns_per_op": 37145343.0,
+    "share": {
+     "plugin": 0.9713146140553878,
+     "libc": 0.028685385944612223
+    },
+    "neon_insns_per_op": 18864568.0,
+    "vfp_insns_per_op": 532554.0,
+    "mul_per_op": 522222.0,
+    "ls_per_op": 11519542.0,
+    "l1d_misses_per_op": 302334.5,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      23749898.0
+     ],
+     [
+      "step_op",
+      6696490.0
+     ],
+     [
+      "run_head",
+      3831749.5
+     ],
+     [
+      "memset",
+      1065107.0
+     ],
+     [
+      "quant16",
+      883976.0
+     ],
+     [
+      "resized_px",
+      649728.0
+     ],
+     [
+      "vocr_run",
+      236711.0
+     ],
+     [
+      "col_coef",
+      28695.0
+     ],
+     [
+      "line_setup",
+      1985.0
+     ],
+     [
+      "vocr_class_text",
+      332.5
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      28116472.0,
+      52647366.0
+     ],
+     "333": [
+      28116472.0,
+      52647366.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      63.32538738738739,
+      118.57514864864865
+     ],
+     "333": [
+      84.43384984984985,
+      158.1001981981982
+     ]
+    },
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    },
+    "parity": true
+   },
+   "job_h15": {
+    "insns_per_op": 145456441.0,
+    "share": {
+     "plugin": 0.9768020379379418,
+     "libc": 0.023197962062058153
+    },
+    "neon_insns_per_op": 69169862.0,
+    "vfp_insns_per_op": 1539143.0,
+    "mul_per_op": 1986362.0,
+    "ls_per_op": 41026512.0,
+    "l1d_misses_per_op": 1204585.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      11720040.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3207964.0
+     ],
+     [
+      "stream_read.constprop.0",
+      2725733.0
+     ],
+     [
+      "quant16",
+      2532592.0
+     ],
+     [
+      "resized_px",
+      1299456.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      99207224.0,
+      200929253.0
+     ],
+     "333": [
+      99207224.0,
+      200929253.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      223.4396936936937,
+      452.5433626126126
+     ],
+     "333": [
+      297.9195915915916,
+      603.3911501501501
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 186704,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1
+    },
+    "parity": true
+   },
+   "job_h15_first": {
+    "insns_per_op": 189735120.0,
+    "share": {
+     "plugin": 0.9756217193738302,
+     "libc": 0.02437828062616979
+    },
+    "neon_insns_per_op": 69531126.0,
+    "vfp_insns_per_op": 1557242.0,
+    "mul_per_op": 1986362.0,
+    "ls_per_op": 48017652.0,
+    "l1d_misses_per_op": 1304817.0,
+    "l2_misses_per_op": 69271.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "br_sha2small_round",
+      40894632.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      11720040.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3208065.0
+     ],
+     [
+      "stream_read.constprop.0",
+      2725733.0
+     ],
+     [
+      "quant16",
+      2532592.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      100309312.0,
+      254995556.64
+     ],
+     "333": [
+      100309312.0,
+      254149757.73
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      225.92187387387386,
+      574.3143167567567
+     ],
+     "333": [
+      301.22916516516517,
+      763.2124856756757
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 1342672,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0
+    },
+    "parity": true
+   },
+   "sha256_h15": {
+    "insns_per_op": 43966006.0,
+    "share": {
+     "plugin": 0.978634720652133,
+     "libc": 0.021365279347867076
+    },
+    "neon_insns_per_op": 361263.0,
+    "vfp_insns_per_op": 18063.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 6701825.0,
+    "l1d_misses_per_op": 36199.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "br_sha2small_round",
+      40894632.0
+     ],
+     [
+      "br_range_dec32be",
+      1788237.0
+     ],
+     [
+      "memcpy",
+      939285.0
+     ],
+     [
+      "br_sha224_update",
+      343682.0
+     ],
+     [
+      "memset",
+      61.0
+     ],
+     [
+      "br_range_enc32be",
+      51.0
+     ],
+     [
+      "sha2small_out",
+      44.0
+     ],
+     [
+      "br_sha256_init",
+      12.0
+     ],
+     [
+      "br_sha256_out",
+      2.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      22091381.0,
+      46370595.0
+     ],
+     "333": [
+      22091381.0,
+      46370595.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      49.755362612612615,
+      104.43827702702703
+     ],
+     "333": [
+      66.34048348348348,
+      139.25103603603603
+     ]
+    },
+    "stage": "sha256",
+    "unit": "model",
+    "ops": 1,
+    "check": "dfecd73969bab9ef",
+    "counters": {
+     "bytes": 1155968
+    },
+    "parity": true
+   },
+   "postproc": {
+    "insns_per_op": 5309.14,
+    "share": {
+     "libc": 0.17198265632475315,
+     "plugin": 0.8280173436752468
+    },
+    "neon_insns_per_op": 21.36,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 816.6,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2435.92
+     ],
+     [
+      "vjo_utf8_next",
+      1591.76
+     ],
+     [
+      "strchr",
+      412.14
+     ],
+     [
+      "strlen",
+      411.12
+     ],
+     [
+      "vjo_filter_lines",
+      133.98
+     ],
+     [
+      "buf_reserve",
+      104.76
+     ],
+     [
+      "memcpy",
+      89.82
+     ],
+     [
+      "vjo_buf_append",
+      55.2
+     ],
+     [
+      "vjo_buf_putc",
+      33.44
+     ],
+     [
+      "vjo_java_trim",
+      17.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      2654.57,
+      5309.14
+     ],
+     "333": [
+      2654.57,
+      5309.14
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.005978761261261262,
+      0.011957522522522523
+     ],
+     "333": [
+      0.007971681681681683,
+      0.015943363363363366
+     ]
+    },
+    "stage": "postproc",
+    "unit": "text",
+    "ops": 50,
+    "check": "03b3a86926a580ab",
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    },
+    "parity": true
+   },
+   "lookup_first": {
+    "insns_per_op": 127115.81,
+    "share": {
+     "printf": 0.01713083525959517,
+     "plugin": 0.29747731615760464,
+     "libc": 0.6853918485828002
+    },
+    "neon_insns_per_op": 721.76,
+    "vfp_insns_per_op": 31.2,
+    "mul_per_op": 427.46,
+    "ls_per_op": 29870.96,
+    "l1d_misses_per_op": 2826.96,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      47983.16
+     ],
+     [
+      "memset",
+      22629.2
+     ],
+     [
+      "find_matches",
+      15051.8
+     ],
+     [
+      "cached_read",
+      7750.2
+     ],
+     [
+      "strcmp",
+      7338.26
+     ],
+     [
+      "__memcmpeq",
+      5878.78
+     ],
+     [
+      "deinflect",
+      5282.58
+     ],
+     [
+      "memcpy",
+      2544.58
+     ],
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2435.92
+     ],
+     [
+      "vjo_local_lookup_pages",
+      2166.88
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      63691.945,
+      212606.75
+     ],
+     "333": [
+      63691.945,
+      212606.75
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.14345032657657658,
+      0.47884403153153154
+     ],
+     "333": [
+      0.1912671021021021,
+      0.6384587087087087
+     ]
+    },
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 50,
+    "check": "a4142e2f67d614c9",
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53552
+    },
+    "parity": true
+   },
+   "lookup_every": {
+    "insns_per_op": 116150.1056018168,
+    "share": {
+     "printf": 0.017108255322549656,
+     "plugin": 0.34965372261198496,
+     "libc": 0.6332380220654653
+    },
+    "neon_insns_per_op": 890.4254352763058,
+    "vfp_insns_per_op": 54.444360333081,
+    "mul_per_op": 330.1029523088569,
+    "ls_per_op": 26653.67070401211,
+    "l1d_misses_per_op": 1777.3080999242998,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      42360.66161998486
+     ],
+     [
+      "memset",
+      13686.844057532173
+     ],
+     [
+      "find_matches",
+      12978.191521574565
+     ],
+     [
+      "cached_read",
+      8000.274791824376
+     ],
+     [
+      "strcmp",
+      7616.172596517789
+     ],
+     [
+      "__memcmpeq",
+      6140.061317183951
+     ],
+     [
+      "deinflect",
+      5788.50340651022
+     ],
+     [
+      "vjo_utf8_next",
+      4433.838001514005
+     ],
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2996.2611657834973
+     ],
+     [
+      "memcpy",
+      2705.009841029523
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      58317.06037093111,
+      170568.26381529146
+     ],
+     "333": [
+      58317.06037093111,
+      170568.26381529146
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.13134473056516016,
+      0.38416275634074654
+     ],
+     "333": [
+      0.17512630742021354,
+      0.5122170084543287
+     ]
+    },
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 1321,
+    "check": "487865c8197030a2",
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53552
+    },
+    "parity": true
+   },
+   "config": {
+    "insns_per_op": 233124.0,
+    "share": {
+     "plugin": 0.9040124568898955,
+     "printf": 0.017715893687479625,
+     "libc": 0.07827164942262486
+    },
+    "neon_insns_per_op": 314.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 39.0,
+    "ls_per_op": 50722.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_ieq",
+      125933.0
+     ],
+     [
+      "vjo_config_parse",
+      71370.0
+     ],
+     [
+      "strlen",
+      9253.0
+     ],
+     [
+      "find_str_setting",
+      5466.0
+     ],
+     [
+      "strchr",
+      5405.0
+     ],
+     [
+      "anki_field_index",
+      3704.0
+     ],
+     [
+      "is_space",
+      2493.0
+     ],
+     [
+      "memcpy",
+      2264.0
+     ],
+     [
+      "__printf_buffer",
+      1949.0
+     ],
+     [
+      "memset",
+      1021.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      116562.0,
+      233544.0
+     ],
+     "333": [
+      116562.0,
+      233544.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.262527027027027,
+      0.526
+     ],
+     "333": [
+      0.35003603603603606,
+      0.7013333333333334
+     ]
+    },
+    "stage": "config",
+    "unit": "parse",
+    "ops": 1,
+    "check": "aad8a0d88d741faf",
+    "counters": {
+     "bytes": 4702,
+     "warnings": 0
+    },
+    "parity": true
+   },
+   "log": {
+    "insns_per_op": 3262.684210526316,
+    "share": {
+     "printf": 0.8753528738042619,
+     "libc": 0.12464712619573809
+    },
+    "neon_insns_per_op": 10.526315789473685,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 37.1578947368421,
+    "ls_per_op": 1090.3157894736842,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "__printf_buffer",
+      1581.3157894736842
+     ],
+     [
+      "__printf_buffer_write",
+      546.0
+     ],
+     [
+      "_itoa_word",
+      359.4736842105263
+     ],
+     [
+      "memcpy",
+      320.7894736842105
+     ],
+     [
+      "__strchrnul",
+      306.63157894736844
+     ],
+     [
+      "strlen",
+      56.94736842105263
+     ],
+     [
+      "__printf_buffer_pad_1",
+      31.57894736842105
+     ],
+     [
+      "memset",
+      28.94736842105263
+     ],
+     [
+      "__printf_buffer_done",
+      20.0
+     ],
+     [
+      "sceClibSnprintf",
+      11.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      1631.342105263158,
+      3282.684210526316
+     ],
+     "333": [
+      1631.342105263158,
+      3282.684210526316
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.003674193930772878,
+      0.007393432906590802
+     ],
+     "333": [
+      0.004898925241030504,
+      0.009857910542121068
+     ]
+    },
+    "stage": "log",
+    "unit": "line",
+    "ops": 19,
+    "check": "b5d975dcf7b16e78",
+    "counters": {
+     "lines": 19,
+     "bytes": 2181
+    },
+    "parity": true
+   },
+   "anki": {
+    "insns_per_op": 48042.42,
+    "share": {
+     "printf": 0.03648109316724678,
+     "plugin": 0.6766940549622604,
+     "libc": 0.2868248518704928
+    },
+    "neon_insns_per_op": 112.0,
+    "vfp_insns_per_op": 0.3,
+    "mul_per_op": 18.16,
+    "ls_per_op": 16760.7,
+    "l1d_misses_per_op": 20.54,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_buf_putc",
+      11803.94
+     ],
+     [
+      "vjo_json_write_stringn",
+      10549.7
+     ],
+     [
+      "memcpy",
+      10109.42
+     ],
+     [
+      "buf_reserve",
+      8488.8
+     ],
+     [
+      "strlen",
+      3378.22
+     ],
+     [
+      "__printf_buffer",
+      917.2
+     ],
+     [
+      "__printf_buffer_write",
+      364.0
+     ],
+     [
+      "vjo_buf_puts",
+      333.96
+     ],
+     [
+      "vjo_furigana_rubies",
+      321.64
+     ],
+     [
+      "__strchrnul",
+      282.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      24022.89,
+      48704.62
+     ],
+     "333": [
+      24022.89,
+      48704.62
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.054105608108108105,
+      0.1096950900900901
+     ],
+     "333": [
+      0.07214081081081081,
+      0.14626012012012013
+     ]
+    },
+    "stage": "anki",
+    "unit": "card",
+    "ops": 50,
+    "check": "91df0bfd339a34e6",
+    "counters": {
+     "cards": 50,
+     "json_bytes": 42173
+    },
+    "parity": true
+   },
+   "furigana": {
+    "insns_per_op": 1639.76,
+    "share": {
+     "plugin": 0.5078792018344148,
+     "libc": 0.4921207981655852
+    },
+    "neon_insns_per_op": 2.24,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 457.08,
+    "l1d_misses_per_op": 0.1,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      545.38
+     ],
+     [
+      "vjo_furigana_rubies",
+      376.56
+     ],
+     [
+      "__memcmpeq",
+      246.34
+     ],
+     [
+      "vjo_utf8_next",
+      200.56
+     ],
+     [
+      "vjo_is_kanji",
+      81.68
+     ],
+     [
+      "buf_reserve",
+      59.0
+     ],
+     [
+      "vjo_furigana_align",
+      37.0
+     ],
+     [
+      "vjo_buf_append",
+      20.0
+     ],
+     [
+      "vjo_arena_alloc",
+      18.0
+     ],
+     [
+      "vjo_furigana_render",
+      16.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      819.88,
+      1642.76
+     ],
+     "333": [
+      819.88,
+      1642.76
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.0018465765765765766,
+      0.00369990990990991
+     ],
+     "333": [
+      0.0024621021021021022,
+      0.004933213213213213
+     ]
+    },
+    "stage": "furigana",
+    "unit": "word",
+    "ops": 50,
+    "check": "cb44e11fb03dd38d",
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    },
+    "parity": true
+   }
+  }
+ },
+ "host": {
+  "lane": "host",
+  "cpu": "AMD EPYC 9R14",
+  "runs": 5,
+  "workloads": {
+   "capture_abgr": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "ns_per_iter": 199270.2,
+    "ms_per_op": 0.06642340000000001,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_abgr_sig": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "57c8dd5523fb84bc",
+    "ns_per_iter": 202480.4,
+    "ms_per_op": 0.06749346666666665,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_a2b10": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "ns_per_iter": 333398.4,
+    "ms_per_op": 0.1111328,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_a1b5": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "c409a398540f05ca",
+    "ns_per_iter": 332338.6,
+    "ms_per_op": 0.11077953333333332,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_full_abgr": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 10,
+    "check": "bba813e898da8726",
+    "ns_per_iter": 750485.0,
+    "ms_per_op": 0.0750485,
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    }
+   },
+   "scene_sig": {
+    "stage": "scene_sig",
+    "unit": "signature",
+    "ops": 1,
+    "check": "1be6f203f8214077",
+    "ns_per_iter": 4176.0,
+    "ms_per_op": 0.004176,
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    }
+   },
+   "scene_update": {
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "0f6ac6889dc93ab4",
+    "ns_per_iter": 532.0,
+    "ms_per_op": 0.000532,
+    "counters": {
+     "events": 1
+    }
+   },
+   "scene_update_typing": {
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "47a591be264574a5",
+    "ns_per_iter": 1112.0,
+    "ms_per_op": 0.001112,
+    "counters": {
+     "events": 0
+    }
+   },
+   "find": {
+    "stage": "find",
+    "unit": "region",
+    "ops": 1,
+    "check": "80623443cd1ef05e",
+    "ns_per_iter": 887311.2,
+    "ms_per_op": 0.8873112,
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    }
+   },
+   "recognize_h15": {
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "ns_per_iter": 66267010.4,
+    "ms_per_op": 33.1335052,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    }
+   },
+   "recognize_fl10": {
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "ns_per_iter": 35385567.2,
+    "ms_per_op": 17.692783600000002,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    }
+   },
+   "job_h15": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "ns_per_iter": 67745574.2,
+    "ms_per_op": 67.74557420000001,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 187696,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1
+    }
+   },
+   "job_h15_first": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "ns_per_iter": 71785955.8,
+    "ms_per_op": 71.7859558,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 1343664,
+     "capture_bytes": 57988,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0
+    }
+   },
+   "sha256_h15": {
+    "stage": "sha256",
+    "unit": "model",
+    "ops": 1,
+    "check": "dfecd73969bab9ef",
+    "ns_per_iter": 4019691.4,
+    "ms_per_op": 4.0196914,
+    "counters": {
+     "bytes": 1155968
+    }
+   },
+   "postproc": {
+    "stage": "postproc",
+    "unit": "text",
+    "ops": 50,
+    "check": "03b3a86926a580ab",
+    "ns_per_iter": 18160.0,
+    "ms_per_op": 0.0003632,
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    }
+   },
+   "lookup_first": {
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 50,
+    "check": "a4142e2f67d614c9",
+    "ns_per_iter": 2270151.2,
+    "ms_per_op": 0.04540302400000001,
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53648
+    }
+   },
+   "lookup_every": {
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 1321,
+    "check": "487865c8197030a2",
+    "ns_per_iter": 61421632.0,
+    "ms_per_op": 0.046496314912944745,
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53648
+    }
+   },
+   "config": {
+    "stage": "config",
+    "unit": "parse",
+    "ops": 1,
+    "check": "aad8a0d88d741faf",
+    "ns_per_iter": 12742.0,
+    "ms_per_op": 0.012742,
+    "counters": {
+     "bytes": 4702,
+     "warnings": 0
+    }
+   },
+   "log": {
+    "stage": "log",
+    "unit": "line",
+    "ops": 19,
+    "check": "b5d975dcf7b16e78",
+    "ns_per_iter": 5012.0,
+    "ms_per_op": 0.0002637894736842105,
+    "counters": {
+     "lines": 19,
+     "bytes": 2181
+    }
+   },
+   "anki": {
+    "stage": "anki",
+    "unit": "card",
+    "ops": 50,
+    "check": "91df0bfd339a34e6",
+    "ns_per_iter": 152158.2,
+    "ms_per_op": 0.003043164,
+    "counters": {
+     "cards": 50,
+     "json_bytes": 42173
+    }
+   },
+   "furigana": {
+    "stage": "furigana",
+    "unit": "word",
+    "ops": 50,
+    "check": "cb44e11fb03dd38d",
+    "ns_per_iter": 6570.0,
+    "ms_per_op": 0.0001314,
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    }
+   }
+  }
+ },
+ "dev": {
+  "summary": {
+   "regions": 372,
+   "with_lines": 367,
+   "strips": {
+    "mean": 7.28494623655914,
+    "median": 8.0,
+    "p90": 12,
+    "max": 18
+   },
+   "lines": {
+    "mean": 2.4166666666666665,
+    "median": 2.0,
+    "p90": 4,
+    "max": 8
+   },
+   "frames": {
+    "mean": 86.19086021505376,
+    "median": 77.5,
+    "p90": 158,
+    "max": 433
+   },
+   "rows_read_per_row": 3.9867958617069914,
+   "tall": 41
+  },
+  "excluded": 0,
+  "model": "VOCR3_H15_w8.vocr",
+  "manifests": [
+   "vita_dev.jsonl",
+   "psp_dev.jsonl"
+  ],
+  "note": "per region of the linefind dev manifests, in manifest order: geometry and the job counters only",
+  "columns": [
+   "w",
+   "h",
+   "strips",
+   "lines",
+   "frames",
+   "tall",
+   "rows_read",
+   "strip_rows"
+  ]
+ },
+ "dev_rows": [
+  [362, 125, 9, 3, 66, 0, 573, 64],
+  [424, 150, 11, 3, 66, 0, 662, 64],
+  [435, 154, 13, 4, 131, 0, 794, 64],
+  [547, 163, 13, 4, 136, 0, 803, 64],
+  [325, 52, 2, 1, 38, 0, 104, 52],
+  [382, 75, 4, 1, 38, 0, 203, 64],
+  [789, 160, 13, 4, 141, 0, 800, 64],
+  [820, 184, 13, 5, 185, 0, 824, 64],
+  [341, 83, 8, 2, 47, 0, 467, 64],
+  [748, 141, 12, 3, 170, 0, 717, 64],
+  [779, 172, 13, 3, 149, 1, 757, 64],
+  [771, 125, 8, 2, 115, 0, 509, 64],
+  [839, 125, 8, 2, 115, 0, 509, 64],
+  [786, 174, 12, 3, 100, 0, 750, 64],
+  [830, 189, 12, 3, 100, 0, 765, 64],
+  [361, 113, 5, 1, 7, 0, 305, 64],
+  [596, 150, 12, 3, 97, 0, 726, 64],
+  [654, 183, 12, 3, 97, 0, 759, 64],
+  [531, 182, 13, 4, 150, 0, 822, 64],
+  [609, 210, 16, 4, 149, 0, 978, 64],
+  [492, 153, 13, 4, 168, 0, 793, 64],
+  [547, 186, 13, 5, 179, 0, 826, 64],
+  [666, 123, 9, 3, 97, 0, 571, 64],
+  [621, 88, 8, 2, 111, 0, 472, 64],
+  [691, 99, 8, 2, 114, 0, 483, 64],
+  [397, 91, 4, 1, 23, 0, 219, 64],
+  [438, 88, 8, 2, 90, 0, 472, 64],
+  [689, 152, 14, 4, 182, 0, 856, 64],
+  [744, 179, 14, 5, 224, 1, 839, 64],
+  [435, 138, 12, 2, 27, 1, 693, 64],
+  [310, 157, 13, 4, 99, 0, 797, 64],
+  [335, 166, 15, 4, 100, 1, 874, 64],
+  [704, 204, 17, 5, 190, 0, 1036, 64],
+  [740, 217, 18, 5, 190, 1, 1060, 64],
+  [577, 147, 10, 3, 123, 0, 595, 64],
+  [638, 184, 12, 4, 134, 0, 760, 64],
+  [487, 87, 5, 2, 112, 0, 279, 64],
+  [500, 130, 10, 2, 88, 0, 578, 64],
+  [419, 87, 8, 1, 20, 1, 430, 64],
+  [422, 89, 8, 2, 80, 0, 473, 64],
+  [478, 122, 8, 2, 82, 0, 506, 64],
+  [493, 40, 2, 1, 53, 0, 80, 40],
+  [572, 66, 5, 1, 52, 0, 258, 64],
+  [640, 115, 8, 2, 69, 0, 499, 64],
+  [674, 139, 10, 2, 69, 0, 587, 64],
+  [316, 61, 2, 1, 8, 0, 122, 61],
+  [479, 107, 8, 2, 53, 0, 491, 64],
+  [552, 162, 10, 2, 51, 0, 610, 64],
+  [404, 131, 12, 1, 13, 1, 646, 64],
+  [523, 182, 13, 4, 99, 0, 822, 64],
+  [599, 198, 15, 4, 100, 0, 902, 64],
+  [385, 96, 8, 1, 16, 1, 448, 64],
+  [482, 77, 8, 1, 25, 1, 410, 64],
+  [378, 112, 8, 2, 40, 0, 496, 64],
+  [434, 140, 10, 2, 39, 0, 588, 64],
+  [688, 137, 11, 3, 152, 0, 649, 64],
+  [713, 154, 13, 4, 179, 0, 794, 64],
+  [551, 169, 12, 4, 188, 0, 745, 64],
+  [642, 209, 16, 7, 433, 0, 977, 64],
+  [490, 173, 12, 4, 169, 0, 749, 64],
+  [591, 205, 14, 4, 170, 0, 845, 64],
+  [824, 56, 2, 1, 84, 0, 112, 56],
+  [864, 70, 4, 1, 84, 0, 198, 64],
+  [745, 92, 8, 2, 145, 0, 476, 64],
+  [792, 98, 8, 2, 145, 0, 482, 64],
+  [544, 180, 13, 4, 153, 0, 820, 64],
+  [564, 186, 13, 4, 152, 0, 826, 64],
+  [512, 108, 8, 1, 17, 1, 472, 64],
+  [570, 57, 2, 1, 66, 0, 114, 57],
+  [618, 71, 4, 1, 66, 0, 199, 64],
+  [377, 61, 2, 1, 39, 0, 122, 61],
+  [445, 89, 4, 1, 39, 0, 217, 64],
+  [493, 42, 2, 1, 54, 0, 84, 42],
+  [578, 63, 2, 1, 54, 0, 126, 63],
+  [617, 149, 12, 4, 235, 0, 725, 64],
+  [526, 93, 8, 2, 94, 0, 477, 64],
+  [631, 129, 7, 1, 45, 0, 385, 64],
+  [406, 123, 8, 3, 121, 0, 507, 64],
+  [468, 140, 10, 3, 121, 0, 588, 64],
+  [298, 124, 8, 3, 89, 0, 508, 64],
+  [337, 129, 10, 3, 89, 0, 577, 64],
+  [451, 94, 8, 2, 57, 0, 478, 64],
+  [509, 126, 8, 2, 57, 0, 510, 64],
+  [256, 46, 2, 1, 33, 0, 92, 46],
+  [346, 73, 4, 2, 83, 0, 201, 64],
+  [521, 74, 4, 1, 13, 0, 202, 64],
+  [391, 126, 9, 2, 18, 1, 511, 64],
+  [347, 87, 8, 2, 78, 0, 471, 64],
+  [361, 88, 8, 2, 78, 0, 472, 64],
+  [378, 75, 5, 2, 89, 0, 267, 64],
+  [462, 103, 5, 2, 89, 0, 295, 64],
+  [452, 80, 8, 1, 26, 1, 405, 64],
+  [544, 97, 8, 2, 79, 0, 481, 64],
+  [578, 108, 8, 2, 79, 0, 492, 64],
+  [310, 77, 8, 2, 53, 0, 461, 64],
+  [418, 106, 8, 2, 64, 0, 490, 64],
+  [650, 117, 9, 3, 148, 0, 565, 64],
+  [516, 145, 12, 3, 108, 0, 721, 64],
+  [579, 178, 13, 3, 118, 1, 759, 64],
+  [443, 109, 8, 2, 76, 0, 493, 64],
+  [524, 128, 8, 2, 75, 0, 512, 64],
+  [536, 92, 8, 2, 100, 0, 476, 64],
+  [594, 133, 10, 1, 36, 1, 518, 64],
+  [439, 62, 2, 0, 0, 0, 124, 62],
+  [381, 57, 2, 1, 44, 0, 114, 57],
+  [416, 78, 4, 1, 44, 0, 206, 64],
+  [560, 142, 11, 3, 147, 0, 654, 64],
+  [709, 147, 12, 3, 130, 0, 723, 64],
+  [591, 150, 12, 3, 106, 0, 726, 64],
+  [628, 172, 12, 3, 107, 0, 748, 64],
+  [486, 122, 8, 2, 19, 0, 506, 64],
+  [393, 90, 8, 2, 45, 0, 474, 64],
+  [448, 127, 8, 2, 45, 0, 511, 64],
+  [317, 131, 10, 2, 37, 0, 579, 64],
+  [508, 118, 8, 1, 17, 1, 492, 64],
+  [538, 136, 11, 3, 134, 0, 648, 64],
+  [608, 155, 11, 3, 134, 0, 667, 64],
+  [568, 138, 12, 2, 73, 1, 692, 64],
+  [619, 143, 11, 3, 146, 0, 655, 64],
+  [381, 97, 8, 3, 161, 0, 481, 64],
+  [426, 120, 5, 1, 32, 0, 312, 64],
+  [276, 90, 8, 2, 64, 0, 474, 64],
+  [381, 114, 8, 1, 22, 1, 436, 64],
+  [696, 125, 8, 3, 132, 0, 509, 64],
+  [782, 154, 10, 3, 132, 0, 602, 64],
+  [356, 67, 8, 1, 22, 1, 390, 64],
+  [406, 89, 8, 2, 56, 0, 473, 64],
+  [440, 130, 10, 3, 100, 0, 578, 64],
+  [296, 125, 9, 3, 62, 0, 573, 64],
+  [359, 151, 11, 3, 48, 0, 663, 64],
+  [455, 78, 8, 2, 53, 0, 462, 64],
+  [263, 109, 8, 2, 40, 0, 493, 64],
+  [343, 127, 8, 2, 55, 0, 511, 64],
+  [581, 158, 12, 3, 120, 0, 734, 64],
+  [630, 176, 12, 3, 120, 0, 752, 64],
+  [318, 76, 8, 2, 34, 0, 460, 64],
+  [741, 114, 8, 1, 45, 1, 436, 64],
+  [813, 193, 15, 3, 181, 1, 852, 64],
+  [736, 155, 10, 1, 35, 1, 559, 64],
+  [822, 183, 10, 1, 37, 1, 592, 64],
+  [641, 92, 8, 2, 101, 0, 476, 64],
+  [737, 134, 10, 3, 164, 0, 582, 64],
+  [516, 123, 8, 1, 21, 1, 457, 64],
+  [418, 124, 9, 3, 110, 0, 572, 64],
+  [468, 149, 11, 3, 112, 0, 661, 64],
+  [420, 123, 8, 3, 103, 0, 507, 64],
+  [526, 159, 10, 3, 104, 0, 607, 64],
+  [449, 113, 8, 4, 201, 0, 497, 64],
+  [504, 141, 11, 4, 176, 0, 653, 64],
+  [352, 140, 11, 4, 105, 0, 652, 64],
+  [451, 38, 2, 1, 67, 0, 76, 38],
+  [511, 73, 8, 2, 83, 0, 457, 64],
+  [304, 71, 4, 2, 89, 0, 199, 64],
+  [403, 88, 4, 2, 89, 0, 216, 64],
+  [439, 38, 2, 1, 55, 0, 76, 38],
+  [525, 69, 8, 4, 337, 0, 453, 64],
+  [436, 78, 8, 2, 84, 0, 462, 64],
+  [474, 108, 8, 2, 85, 0, 492, 64],
+  [328, 107, 8, 3, 107, 0, 491, 64],
+  [455, 105, 9, 2, 13, 1, 493, 64],
+  [529, 234, 16, 8, 260, 0, 1002, 64],
+  [599, 241, 16, 7, 253, 0, 1009, 64],
+  [489, 110, 4, 1, 24, 0, 238, 64],
+  [520, 123, 9, 3, 77, 0, 571, 64],
+  [471, 205, 17, 5, 158, 1, 978, 64],
+  [536, 122, 9, 3, 137, 0, 570, 64],
+  [619, 162, 13, 3, 125, 1, 750, 64],
+  [509, 168, 13, 4, 122, 0, 808, 64],
+  [545, 199, 15, 5, 141, 0, 903, 64],
+  [537, 87, 5, 2, 85, 0, 279, 64],
+  [611, 131, 7, 2, 85, 0, 387, 64],
+  [463, 92, 8, 1, 21, 1, 440, 64],
+  [533, 148, 12, 1, 15, 1, 680, 64],
+  [501, 71, 8, 1, 17, 1, 398, 64],
+  [521, 123, 9, 4, 124, 0, 571, 64],
+  [295, 88, 5, 2, 45, 0, 280, 64],
+  [365, 92, 5, 2, 49, 0, 284, 64],
+  [372, 111, 10, 3, 43, 1, 571, 64],
+  [336, 130, 12, 2, 44, 1, 646, 64],
+  [406, 121, 8, 1, 16, 1, 483, 64],
+  [401, 102, 8, 4, 68, 0, 486, 64],
+  [324, 69, 8, 1, 19, 1, 394, 64],
+  [521, 61, 2, 1, 35, 0, 122, 61],
+  [576, 112, 8, 3, 118, 0, 496, 64],
+  [615, 135, 12, 5, 309, 0, 711, 64],
+  [496, 136, 10, 3, 105, 0, 584, 64],
+  [448, 175, 13, 4, 151, 0, 815, 64],
+  [523, 207, 15, 4, 155, 0, 911, 64],
+  [561, 130, 12, 2, 64, 1, 654, 64],
+  [583, 132, 11, 3, 112, 0, 644, 64],
+  [632, 130, 11, 3, 115, 0, 642, 64],
+  [309, 63, 2, 1, 9, 0, 126, 63],
+  [600, 172, 13, 4, 201, 0, 812, 64],
+  [646, 210, 18, 6, 349, 0, 1106, 64],
+  [241, 89, 8, 2, 58, 0, 473, 64],
+  [297, 101, 8, 2, 48, 0, 485, 64],
+  [454, 107, 8, 1, 17, 1, 470, 64],
+  [326, 106, 8, 3, 112, 0, 490, 64],
+  [402, 140, 13, 2, 44, 2, 669, 64],
+  [871, 159, 12, 3, 168, 0, 735, 64],
+  [902, 195, 15, 4, 189, 0, 888, 63],
+  [590, 119, 8, 1, 19, 1, 494, 64],
+  [821, 148, 12, 3, 124, 0, 724, 64],
+  [885, 185, 12, 3, 126, 0, 761, 64],
+  [409, 139, 11, 3, 85, 0, 651, 64],
+  [430, 173, 11, 3, 85, 0, 685, 64],
+  [130, 43, 2, 2, 47, 0, 86, 43],
+  [169, 59, 2, 2, 44, 0, 118, 59],
+  [182, 67, 8, 3, 74, 0, 451, 64],
+  [217, 96, 8, 3, 71, 0, 480, 64],
+  [240, 55, 2, 1, 14, 0, 110, 55],
+  [238, 71, 8, 3, 65, 0, 455, 64],
+  [266, 77, 8, 3, 62, 0, 461, 64],
+  [331, 81, 8, 4, 161, 0, 465, 64],
+  [367, 102, 8, 5, 202, 0, 486, 64],
+  [125, 22, 2, 1, 24, 0, 44, 22],
+  [172, 42, 2, 1, 21, 0, 84, 42],
+  [182, 30, 2, 1, 25, 0, 60, 30],
+  [303, 57, 2, 2, 63, 0, 114, 57],
+  [327, 69, 4, 2, 67, 0, 197, 64],
+  [376, 66, 5, 3, 146, 0, 258, 64],
+  [420, 89, 8, 3, 146, 0, 473, 64],
+  [233, 60, 2, 2, 40, 0, 120, 60],
+  [253, 73, 8, 3, 53, 0, 457, 64],
+  [354, 99, 8, 4, 203, 0, 483, 64],
+  [389, 110, 8, 4, 200, 0, 494, 64],
+  [283, 68, 8, 1, 17, 1, 392, 64],
+  [241, 35, 2, 0, 0, 0, 70, 35],
+  [218, 95, 8, 4, 92, 0, 479, 64],
+  [274, 112, 8, 5, 162, 0, 496, 64],
+  [171, 48, 2, 0, 0, 0, 96, 48],
+  [173, 65, 8, 3, 93, 0, 449, 64],
+  [191, 72, 8, 3, 95, 0, 456, 64],
+  [328, 84, 8, 4, 211, 0, 468, 64],
+  [371, 102, 9, 3, 123, 0, 550, 64],
+  [250, 21, 2, 1, 48, 0, 42, 21],
+  [299, 43, 2, 1, 28, 0, 86, 43],
+  [370, 85, 8, 3, 121, 0, 469, 64],
+  [397, 98, 8, 3, 116, 0, 482, 64],
+  [289, 30, 2, 1, 37, 0, 60, 30],
+  [246, 85, 8, 3, 97, 0, 469, 64],
+  [258, 101, 8, 4, 153, 0, 485, 64],
+  [160, 40, 2, 1, 20, 0, 80, 40],
+  [286, 41, 2, 2, 85, 0, 82, 41],
+  [311, 55, 2, 2, 78, 0, 110, 55],
+  [184, 43, 2, 1, 14, 0, 86, 43],
+  [338, 77, 8, 3, 64, 0, 461, 64],
+  [356, 96, 8, 3, 64, 0, 480, 64],
+  [205, 41, 2, 1, 18, 0, 82, 41],
+  [342, 49, 2, 2, 108, 0, 98, 49],
+  [364, 56, 2, 1, 41, 0, 112, 56],
+  [136, 106, 8, 6, 147, 0, 490, 64],
+  [174, 111, 8, 6, 155, 0, 495, 64],
+  [424, 73, 4, 1, 32, 0, 201, 64],
+  [454, 79, 4, 1, 32, 0, 207, 64],
+  [208, 65, 8, 1, 13, 1, 386, 64],
+  [318, 30, 2, 1, 43, 0, 60, 30],
+  [344, 49, 2, 1, 35, 0, 98, 49],
+  [306, 79, 8, 4, 145, 0, 463, 64],
+  [342, 100, 8, 6, 236, 0, 484, 64],
+  [169, 44, 2, 2, 37, 0, 88, 44],
+  [216, 72, 8, 2, 45, 0, 456, 64],
+  [164, 43, 2, 1, 16, 0, 86, 43],
+  [156, 36, 2, 2, 47, 0, 72, 36],
+  [205, 37, 2, 1, 30, 0, 74, 37],
+  [254, 31, 2, 1, 39, 0, 62, 31],
+  [289, 52, 2, 1, 42, 0, 104, 52],
+  [188, 88, 8, 4, 102, 0, 472, 64],
+  [228, 106, 8, 4, 101, 0, 490, 64],
+  [253, 53, 2, 2, 77, 0, 106, 53],
+  [277, 70, 5, 1, 26, 0, 262, 64],
+  [294, 44, 2, 1, 29, 0, 88, 44],
+  [325, 67, 5, 1, 25, 0, 259, 64],
+  [270, 64, 2, 3, 55, 0, 128, 64],
+  [273, 40, 2, 1, 8, 0, 80, 40],
+  [357, 82, 8, 3, 147, 0, 466, 64],
+  [373, 101, 8, 3, 138, 0, 485, 64],
+  [432, 123, 9, 4, 114, 0, 571, 64],
+  [460, 145, 11, 4, 114, 0, 657, 64],
+  [164, 60, 2, 1, 8, 0, 120, 60],
+  [212, 55, 2, 2, 67, 0, 110, 55],
+  [234, 81, 5, 1, 24, 0, 273, 64],
+  [180, 61, 2, 1, 14, 0, 122, 61],
+  [142, 57, 2, 2, 43, 0, 114, 57],
+  [150, 63, 2, 2, 43, 0, 126, 63],
+  [435, 29, 2, 1, 67, 0, 58, 29],
+  [457, 45, 2, 1, 46, 0, 90, 45],
+  [169, 54, 2, 1, 13, 0, 108, 54],
+  [288, 61, 2, 1, 29, 0, 122, 61],
+  [326, 66, 8, 2, 70, 0, 450, 64],
+  [254, 41, 2, 1, 25, 0, 82, 41],
+  [284, 52, 2, 1, 25, 0, 104, 52],
+  [457, 47, 2, 2, 114, 0, 94, 47],
+  [474, 68, 5, 3, 123, 0, 260, 64],
+  [351, 61, 2, 2, 79, 0, 122, 61],
+  [368, 82, 8, 2, 67, 0, 466, 64],
+  [262, 41, 2, 1, 23, 0, 82, 41],
+  [390, 65, 8, 2, 81, 0, 449, 64],
+  [406, 66, 8, 2, 80, 0, 450, 64],
+  [326, 93, 8, 5, 174, 0, 477, 64],
+  [365, 112, 8, 5, 196, 0, 496, 64],
+  [246, 56, 2, 2, 65, 0, 112, 56],
+  [337, 74, 8, 3, 110, 0, 458, 64],
+  [359, 83, 8, 3, 109, 0, 467, 64],
+  [260, 26, 2, 1, 47, 0, 52, 26],
+  [296, 32, 2, 1, 47, 0, 64, 32],
+  [293, 50, 2, 2, 63, 0, 100, 50],
+  [190, 36, 2, 1, 18, 0, 72, 36],
+  [473, 63, 2, 1, 30, 0, 126, 63],
+  [480, 61, 2, 1, 32, 0, 122, 61],
+  [300, 56, 2, 1, 22, 0, 112, 56],
+  [336, 69, 5, 1, 21, 0, 261, 64],
+  [231, 79, 8, 2, 27, 0, 463, 64],
+  [242, 103, 8, 3, 53, 0, 487, 64],
+  [231, 62, 2, 2, 63, 0, 124, 62],
+  [272, 79, 8, 3, 110, 0, 463, 64],
+  [397, 75, 8, 3, 139, 0, 459, 64],
+  [447, 89, 8, 3, 153, 0, 473, 64],
+  [412, 77, 8, 3, 119, 0, 461, 64],
+  [459, 103, 8, 3, 115, 0, 487, 64],
+  [235, 61, 2, 2, 29, 0, 122, 61],
+  [199, 42, 2, 2, 43, 0, 84, 42],
+  [243, 47, 2, 2, 43, 0, 94, 47],
+  [171, 42, 2, 2, 38, 0, 84, 42],
+  [205, 60, 2, 3, 69, 0, 120, 60],
+  [285, 68, 8, 3, 121, 0, 452, 64],
+  [314, 89, 8, 4, 144, 0, 473, 64],
+  [280, 63, 2, 3, 128, 0, 126, 63],
+  [318, 83, 8, 3, 127, 0, 467, 64],
+  [204, 35, 2, 1, 12, 0, 70, 35],
+  [303, 48, 2, 2, 67, 0, 96, 48],
+  [331, 58, 2, 2, 64, 0, 116, 58],
+  [227, 39, 2, 0, 0, 0, 78, 39],
+  [197, 62, 2, 2, 52, 0, 124, 62],
+  [226, 74, 4, 2, 56, 0, 202, 64],
+  [335, 72, 8, 3, 130, 0, 456, 64],
+  [372, 76, 8, 3, 133, 0, 460, 64],
+  [137, 24, 2, 1, 28, 0, 48, 24],
+  [184, 42, 2, 1, 28, 0, 84, 42],
+  [270, 51, 2, 1, 21, 0, 102, 51],
+  [317, 93, 8, 3, 102, 0, 477, 64],
+  [357, 102, 8, 3, 106, 0, 486, 64],
+  [400, 112, 8, 2, 52, 0, 496, 64],
+  [410, 126, 8, 2, 46, 0, 510, 64],
+  [195, 35, 2, 1, 21, 0, 70, 35],
+  [211, 89, 8, 3, 73, 0, 473, 64],
+  [246, 99, 8, 3, 75, 0, 483, 64],
+  [170, 38, 2, 0, 0, 0, 76, 38],
+  [318, 82, 8, 3, 132, 0, 466, 64],
+  [338, 89, 8, 3, 136, 0, 473, 64],
+  [290, 64, 2, 3, 108, 0, 128, 64],
+  [330, 72, 8, 3, 145, 0, 456, 64],
+  [194, 64, 2, 3, 78, 0, 128, 64],
+  [230, 80, 8, 1, 12, 1, 416, 64],
+  [157, 66, 8, 2, 36, 0, 450, 64],
+  [241, 25, 2, 1, 44, 0, 50, 25],
+  [287, 44, 2, 1, 44, 0, 88, 44],
+  [280, 125, 9, 4, 101, 0, 573, 64],
+  [314, 138, 13, 4, 96, 0, 778, 64],
+  [272, 51, 2, 2, 84, 0, 102, 51],
+  [313, 77, 5, 1, 30, 0, 269, 64],
+  [242, 78, 8, 3, 92, 0, 462, 64],
+  [251, 89, 8, 4, 154, 0, 473, 64],
+  [233, 43, 2, 2, 84, 0, 86, 43],
+  [275, 60, 2, 3, 135, 0, 120, 60],
+  [336, 102, 8, 4, 169, 0, 486, 64],
+  [353, 117, 9, 4, 160, 0, 565, 64],
+  [368, 65, 4, 3, 98, 0, 193, 64],
+  [397, 67, 4, 3, 98, 0, 195, 64],
+  [268, 41, 2, 1, 26, 0, 82, 41],
+  [200, 68, 4, 3, 65, 0, 196, 64],
+  [203, 84, 5, 3, 63, 0, 276, 64]
+ ]
+}
