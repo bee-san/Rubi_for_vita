@@ -19,7 +19,7 @@ target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_
 target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
-  core/arena.c core/pb.c core/utf.c core/text_hit.c core/lens.c core/json.c core/jpdb.c
+  core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c core/jpdb.c
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
@@ -136,7 +136,7 @@ target_compile_features(vjo-header-highlight-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-header-highlight-tests PRIVATE -Wall -Wextra)
 add_test(NAME header_highlight COMMAND vjo-header-highlight-tests)
 add_executable(vjo-word-navigation-tests host/tests/test_word_navigation.cpp)
-target_include_directories(vjo-word-navigation-tests PRIVATE third_party/acutest/include)
+target_include_directories(vjo-word-navigation-tests PRIVATE third_party/acutest/include host/tests)
 target_link_libraries(vjo-word-navigation-tests vjo_host)
 target_compile_features(vjo-word-navigation-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-word-navigation-tests PRIVATE -Wall -Wextra)
@@ -159,7 +159,7 @@ if(NOT _vjo_plaintext AND EXISTS ${CMAKE_SOURCE_DIR}/.refs/plaintext-dicts/proce
   set(_vjo_plaintext ${CMAKE_SOURCE_DIR}/.refs/plaintext-dicts)
 endif()
 add_executable(vjo-word-lookup-tests host/tests/test_word_lookup.cpp)
-target_include_directories(vjo-word-lookup-tests PRIVATE third_party/acutest/include)
+target_include_directories(vjo-word-lookup-tests PRIVATE third_party/acutest/include host/tests)
 target_link_libraries(vjo-word-lookup-tests vjo_host)
 target_compile_features(vjo-word-lookup-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-word-lookup-tests PRIVATE -Wall -Wextra)
@@ -181,6 +181,12 @@ target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/includ
 target_link_libraries(vjo-text-hit-tests vjo_host)
 target_compile_options(vjo-text-hit-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_hit COMMAND vjo-text-hit-tests)
+# The arrow keys over the header's displayed rows (#81), on layout fixtures.
+add_executable(vjo-text-rows-tests host/tests/test_text_rows.c)
+target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-text-rows-tests vjo_host)
+target_compile_options(vjo-text-rows-tests PRIVATE -Wall -Wextra)
+add_test(NAME text_rows COMMAND vjo-text-rows-tests)
 add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)

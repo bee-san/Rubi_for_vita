@@ -85,7 +85,8 @@ target_compile_definitions(vjo_bearssl PRIVATE BR_USE_URANDOM=0 BR_USE_GETENTROP
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
-  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/lens.c ${ROOT}/core/json.c
+  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
+  ${ROOT}/core/lens.c ${ROOT}/core/json.c
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
@@ -153,11 +154,16 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/s
 # Cold paths (bootstrap, guard, ledger, logging, file access, queue files, the
 # worker's job control): every page of this module is SceShell's, so they are
 # built for size. worker.c at -Os pays for the word lookup's ranking and log
-# within the module's pages (docs/memory-ledger.md).
+# within the module's pages (docs/memory-ledger.md). The header's row
+# navigation (#81: core/text_rows.c, once per arrow key) is paid for by the
+# subtitle strip's layout (strip.cpp) and core/arena.c, whose allocation fast
+# path is the same instructions at -Os (only VjoBuf's growth path and the
+# inlined copies of it shrink).
 set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
   ${ROOT}/shell/files.c ${ROOT}/shell/game.c ${ROOT}/shell/worker.c
   ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
+  ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)

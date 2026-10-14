@@ -132,11 +132,12 @@ ur0:tai/VitaJPOverlay_OCR.suprx
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| Left / Right | Skip matched words in Whole word mode; step one character in Character mode |
+| Left / Right | Move along the displayed row: skip matched words in Whole word mode, one character in Character mode; Right from the row's last wraps to its first, Left from its first to its last |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
+| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position; navigate words with a network dictionary |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
+| L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Cross | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](docs/anki.md)) |
 | Triangle | Send the queued cards to AnkiConnect, as Kiku notes |
 | Circle | Close the overlay |
@@ -197,11 +198,12 @@ Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
 paths, capture mode and API keys, are preserved.
 
-Japanese-only selection is **ON by default**. The initial cursor and Left/Right
-skip Latin text, digits, punctuation and Hangul while selecting kana and Han
-characters. It does not tokenize words or hide the recognized sentence. With
-it OFF, every Unicode character is selectable. No Japanese characters means
-no character lookup or dictionary allocation.
+Japanese-only selection is **ON by default**. The initial cursor and the
+arrows skip Latin text, digits, punctuation and Hangul while selecting kana
+and Han characters. It does not tokenize words or hide the recognized
+sentence. With it OFF, every visible character is selectable; the arrows skip
+spaces and line breaks. No Japanese characters means no character lookup or
+dictionary allocation.
 
 **Whole word** highlighting is the default. It highlights the actual dictionary
 match, including the original inflected text, when lookup finishes. **Character**
@@ -210,6 +212,15 @@ keeps the character highlighted. In Whole word mode, Right advances past the
 matched source span and Left retraces up to 16 recent forward selections. With
 no match or previous selection, movement falls back to one character.
 Character mode always moves one character; Japanese-only applies to both modes.
+The arrows follow the header as it is drawn: Left/Right stay on the cursor's
+displayed row and wrap at its ends (Right from its last word or character goes
+to its first; Left from its first goes to its last character, and retraces a
+wrap like any other Right), and Up/Down go to the nearest row above or below
+with a selectable character, a soft-wrapped part of a long line included, to
+the character nearest the same horizontal position, which repeated Up/Down
+keep across a shorter row. The rows and positions are the header's own
+laid-out lines and character starts, as for taps
+([row navigation](docs/touch-lookup.md#rows-and-arrow-keys)).
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there; Japanese-only selection also applies to taps.
 Kana text shows the kana word (から, する) and inflected text its dictionary
@@ -412,8 +423,8 @@ jobs use a static 4 KiB filtered-text buffer and no dynamic dictionary arena.
 The UI keeps its own 4 KiB text copy for Unicode character navigation. A lookup
 reads only the selected position and shows zero or one entry. With Dictionaries
 shown above 1 it also keeps a 208-byte table locating the other dictionaries'
-entries in the same arena; Up/Down releases the shown entry and reads one other
-payload, so several definitions are never resident together.
+entries in the same arena; an L or R tap releases the shown entry and reads one
+other payload, so several definitions are never resident together.
 The previous local result is retired before either is reused; network jobs
 retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text

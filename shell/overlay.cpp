@@ -113,10 +113,12 @@ static int s_highlight_mode;
 static uint32_t s_cursor_byte, s_text_generation;
 static uint32_t s_match_end; /* raw UTF-8 end of the current matched source word */
 static int s_dict_page, s_dict_pages; /* local: shown/requested dictionary page, pages at the cursor */
-static VjoWordNavigation s_word_navigation;
+static VjoRowNav s_nav; /* the arrow keys: Right's history, Up/Down's column, counts */
+static uint32_t s_tap; /* the L or R being tapped: dictionary pages */
+static int s_ja_px;    /* the header's point size: a row's last cell */
 
 /* logged when the overlay closes */
-static int64_t s_frame_max_us;
+static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
 static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre */
 static int s_mode;
 static uint32_t s_prev_buttons;
@@ -274,11 +276,12 @@ static void render(int new_content)
     const VjoEntryList *l;
 
     font_px(&ja, &en);
+    s_ja_px = ja;
     vjo_view_lock();
     l = g_view.list;
     s_highlight_mode = g_view.highlight_mode;
     if (s_highlight_mode != VJO_HIGHLIGHT_WORD)
-        s_word_navigation.count = 0;
+        s_nav.words.count = 0;
     s_match_end = 0;
     rebuild_header = new_content || !s_header_has_text;
     if (g_view.local_cursor_mode) {
@@ -300,7 +303,8 @@ static void render(int new_content)
             s_cursor_text_len = n;
         }
         if (new_text || copy_text) {
-            s_word_navigation.count = 0;
+            s_nav.words.count = 0;
+            s_nav.goal.at = 0;
             s_text_generation = g_view.text_generation;
             s_cursor_byte = (uint32_t)(g_view.japanese_only_selection
                 ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, g_view.cursor_byte, 0)
@@ -405,13 +409,15 @@ static void render(int new_content)
     }
     vjo_view_unlock();
 
-    /* Dictionary paging is taught by the body's "▲▼ Dictionary 2 of 3" line,
-     * shown only while paging is available; the hint keeps its width. */
+    /* Dictionary paging is taught by the body's "L/R Dictionary 2 of 3" line,
+     * shown only while paging is available; the hint keeps its width (the
+     * longest, Character mode with Japanese-only, is shorter than before
+     * the row navigation). */
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
-            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap character / ◀ ▶ word"
-               : s_japanese_only_selection ? "Tap / ◀ ▶ Japanese character" : "Tap / ◀ ▶ character")
+            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ word"
+               : s_japanese_only_selection ? "Tap / ◀▶▲▼ Japanese letter" : "Tap / ◀▶▲▼ character")
             : "◀ ▶ ▲ ▼ word";
         sceClibSnprintf(hint, sizeof(hint),
                         "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · ○ close</font>", nav,
@@ -632,7 +638,9 @@ static void open_page(void)
     s_n_entries = 0;
     s_header_has_text = 0;
     s_frames = s_moves = 0;
-    s_frame_max_us = 0;
+    s_nav.row_moves = s_nav.wraps = s_nav.no_layout = 0;
+    s_tap = 0;
+    s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_prev_touch = 1;
@@ -649,8 +657,9 @@ static void close_page(void)
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
-    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms", s_frames, s_moves,
-            s_stick_max, (int)(s_frame_max_us / 1000));
+    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+            "%d without layout, slowest key %d us", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000),
+            s_nav.row_moves, s_nav.wraps, s_nav.no_layout, (int)s_key_max_us);
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
     s_header.text = s_body.text = NULL;
     s_separator = s_band_mid = NULL;
@@ -703,6 +712,20 @@ static int header_char_position(void *ctx, uint32_t unit, float *x, uint32_t *li
     return rc;
 }
 
+/* The header's displayed rows for the cursor keys: its own laid-out lines and
+ * character starts (GetCharInfo), as for taps; 0 until laid out. */
+static int header_rows(VjoTextRows *rows)
+{
+    uint32_t lines = 0;
+    if (!s_header.text || !s_header_has_text || s_header.text->GetLineCount(lines) < 0 || !lines)
+        return 0;
+    rows->position = header_char_position;
+    rows->ctx = s_header.text;
+    rows->lines = lines;
+    rows->terminal_width = (float)s_ja_px;
+    return 1;
+}
+
 static void input_header_touch(void)
 {
     const inputdevice::touchscreen::Data *pd = NULL;
@@ -730,7 +753,7 @@ static void input_header_touch(void)
                       s_japanese_only_selection, &byte)) return;
     if (byte == s_cursor_byte) return;
     s_cursor_byte = (uint32_t)byte;
-    s_word_navigation.count = 0; /* a tap starts a new navigation path */
+    s_nav.words.count = 0; /* a tap starts a new navigation path */
     s_moves++;
     vjo_log("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
     vjo_post_cursor(s_cursor_byte, s_text_generation);
@@ -746,13 +769,24 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     if (s_local_cursor_mode) {
         uint32_t cursor = s_cursor_byte;
         int direction = pressed & SCE_CTRL_LEFT ? -1 : pressed & SCE_CTRL_RIGHT ? 1 : 0;
-        if (direction && s_highlight_mode == VJO_HIGHLIGHT_WORD)
-            cursor = (uint32_t)vjo_word_cursor_step(s_word_navigation, s_cursor_text,
-                s_cursor_text_len, s_cursor_byte, s_match_end, direction, s_japanese_only_selection);
-        else if (direction)
-            cursor = (uint32_t)(s_japanese_only_selection
-                ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, direction)
-                : vjo_utf8_cursor_step(s_cursor_text, s_cursor_text_len, s_cursor_byte, direction));
+        int vertical = pressed & SCE_CTRL_UP ? -1 : pressed & SCE_CTRL_DOWN ? 1 : 0;
+        /* L or R tapped alone (never the L + R chord): seen every frame. */
+        int tap = vjo_shoulder_tap(s_tap, in->buttons & 0xFFFFu, pressed, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER);
+        if (direction || vertical) {
+            /* The header's displayed rows (core/text_rows.h): Left/Right stay
+             * on the cursor's row and wrap at its ends, Up/Down change rows,
+             * soft-wrapped ones included. */
+            VjoTextRows rows;
+            size_t to;
+            int64_t t0 = sceKernelGetProcessTimeWide();
+            vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
+                             s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
+                             s_japanese_only_selection, &to);
+            t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
+            if (t0 > s_key_max_us)
+                s_key_max_us = t0;
+            cursor = (uint32_t)to;
+        }
         if (cursor != s_cursor_byte) {
             s_cursor_byte = cursor;
             s_moves++;
@@ -760,11 +794,12 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * only its asynchronous lookup touches dictionary storage. */
             vjo_post_cursor(cursor, s_text_generation);
             render(0);
-        } else if (s_dict_pages > 1 && (pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN))) {
-            /* Another dictionary's entry at this cursor: the worker reads
-             * only that page's definition into the same result arena. */
-            int page = s_dict_page + (pressed & SCE_CTRL_DOWN ? 1 : -1);
-            if (page >= 0 && page < s_dict_pages && vjo_post_page(page, s_text_generation)) {
+        } else {
+            /* A tapped shoulder: another dictionary's entry at this cursor.
+             * The worker reads only that page's definition into the same
+             * result arena. */
+            int page = s_dict_page + tap;
+            if (tap && page >= 0 && page < s_dict_pages && vjo_post_page(page, s_text_generation)) {
                 s_moves++;
                 render(0);
             }

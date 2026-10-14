@@ -23,6 +23,7 @@ extern "C" {
 #include "utf.h"
 }
 #include "../../shell/word_navigation.h"
+#include "layout_double.h"
 
 #ifndef VJO_WORD_FIXTURES
 #define VJO_WORD_FIXTURES "host/fixtures/word_lookup"
@@ -161,10 +162,12 @@ void check_header_range(const VjoOverlayData *d, size_t start, size_t end)
 
 } // namespace
 
-/* Every real line, word by word with Right as the Shell navigates: one entry
- * or none per lookup, the highlight starting at the cursor and ending on a
- * character boundary, the popup naming the entry, Right always advancing,
- * nothing left allocated between lookups and every file closed. */
+/* Every real line, word by word with Right as the Shell navigates before
+ * the header is laid out (the whole text one row): one entry or none per
+ * lookup, the highlight starting at the cursor and ending on a character
+ * boundary, the popup naming the entry, Right advancing until it wraps from
+ * the last word, nothing left allocated between lookups and every file
+ * closed. */
 static void real_lines_walk_word_by_word(void)
 {
     VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
@@ -208,9 +211,11 @@ static void real_lines_walk_word_by_word(void)
             } else {
                 none++;
             }
-            size_t next = vjo_word_cursor_step(nav, s, len, cursor, end, 1, cfg.japanese_only_selection);
-            if (next == cursor) break;
-            TEST_CHECK_(next > cursor && (!end || next >= end), "%s: Right from %zu to %zu (match end %zu)",
+            int row = VJO_ROW_STAY;
+            size_t next = vjo_word_cursor_step(nav, s, len, cursor, end, 1, cfg.japanese_only_selection, NULL, &row);
+            TEST_CHECK(row == VJO_ROW_UNAVAILABLE || next == cursor);
+            if (next <= cursor) break; /* the last word: Right wraps to the first */
+            TEST_CHECK_(!end || next >= end, "%s: Right from %zu to %zu (match end %zu)",
                         line.id.c_str(), cursor, next, end);
             vjo_arena_release(&a, mark); /* the Shell releases the shown entry before the next cursor */
             cursor = next;
@@ -221,6 +226,107 @@ static void real_lines_walk_word_by_word(void)
            "  host lookup %.1f us mean, %.1f us max; at most %lu file reads per lookup\n",
            lines.size(), lookups, matched, single, none, covered, letters, 100.0 * covered / (letters ? letters : 1),
            total_us / (lookups ? lookups : 1), max_us, max_reads);
+}
+
+/* The arrow keys over displayed rows of every real line (#81), laid out as
+ * the header is on the console (font_size_ja 18: 27 px cells in the 920 px
+ * box), with each region's lines also joined into one long line (soft wraps
+ * at 34 cells) and in a 270 px box (soft wraps every 10 cells). Whole word
+ * Right, with the real lookups' match ends, stays on its row and comes back
+ * to the row's first word; Left retraces those words, the wrap first. Up and
+ * Down from every letter land where the rule restated over the cells
+ * (layout_double.h) says. */
+static void real_lines_navigate_displayed_rows(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    static Layout lay;
+    unsigned long rows_seen = 0, wrapped_rows = 0, words = 0, verticals = 0, lookups_n = 0, long_rows = 0;
+    load(); setup(&cfg, &p, &pp);
+    for (auto &line : lines) {
+        std::string joined;
+        for (char c : line.text) if (c != '\n') joined += c;
+        const std::string variants[3] = {line.text, joined, line.text};
+        const float widths[3] = {920.0f, 920.0f, 270.0f};
+        for (int v = 0; v < 3; v++) {
+            VjoArena a; VjoOverlayData d;
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, variants[v].c_str(), &d) == VJO_OK);
+            const char *s = d.sentence;
+            size_t len = strlen(s), mark = vjo_arena_mark(&a);
+            layout_text(&lay, s, widths[v], 27.0f, 13.5f);
+            VjoTextRows rows = layout_rows(&lay);
+            TEST_CASE_("%s variant %d", line.id.c_str(), v);
+            for (uint32_t row = 0; row < lay.lines; row++) {
+                int first = -1;
+                for (unsigned k = 0; k < lay.n && first < 0; k++)
+                    if (lay.line[k] == row && layout_selectable(&lay, k, 1)) first = (int)k;
+                if (first < 0) continue;
+                rows_seen++;
+                VjoWordNavigation nav = VjoWordNavigation();
+                std::vector<size_t> visited;
+                size_t cursor = lay.begin[first];
+                int rc = VJO_ROW_STAY;
+                for (int guard = 0;; guard++) {
+                    TEST_ASSERT_(guard < 100, "row %u does not come back", row);
+                    vjo_arena_release(&a, mark);
+                    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK);
+                    lookups_n++;
+                    size_t end = d.list.n_entries ? (size_t)d.list.entries[0].hl_end : 0;
+                    visited.push_back(cursor);
+                    size_t next = vjo_word_cursor_step(nav, s, len, cursor, end, 1, 1, &rows, &rc);
+                    TEST_ASSERT(rc >= 0);
+                    if (rc == VJO_ROW_STAY) break;
+                    TEST_CHECK_(lay.line[layout_at(&lay, next)] == row, "Right left row %u", row);
+                    if (rc == VJO_ROW_WRAPPED) {
+                        TEST_CHECK(next == lay.begin[first]);
+                        wrapped_rows++;
+                        cursor = next;
+                        break;
+                    }
+                    TEST_CHECK(next > cursor && (!end || next >= end));
+                    cursor = next;
+                    words++;
+                }
+                /* Left undoes the last 16 Rights, newest first: the wrap, then
+                 * each word; past those it steps one character on the row. */
+                if (rc == VJO_ROW_WRAPPED) {
+                    size_t kept = visited.size() < 16 ? 0 : visited.size() - 16;
+                    for (size_t k = visited.size(); k-- > kept;) {
+                        cursor = vjo_word_cursor_step(nav, s, len, cursor, 0, -1, 1, &rows, &rc);
+                        TEST_CHECK_(cursor == visited[k] && rc == VJO_ROW_MOVED, "Left to %zu, expected %zu",
+                                    cursor, visited[k]);
+                    }
+                    int wrapped;
+                    size_t want = ref_step(&lay, cursor, cursor + 1, -1, 1, &wrapped);
+                    cursor = vjo_word_cursor_step(nav, s, len, cursor, 0, -1, 1, &rows, &rc);
+                    TEST_CHECK(cursor == want && rc == (wrapped ? VJO_ROW_WRAPPED : VJO_ROW_MOVED));
+                    long_rows += kept > 0;
+                }
+                TEST_CHECK(nav.count == 0);
+            }
+            /* Up/Down from every letter, with no column and with the one kept. */
+            for (unsigned k = 0; k < lay.n; k++) {
+                if (!layout_selectable(&lay, k, 1)) continue;
+                for (int dy = -1; dy <= 1; dy += 2) {
+                    VjoRowGoal goal = {0, 0};
+                    size_t out = lay.begin[k], want = ref_vertical(&lay, lay.begin[k], dy, 1, -1.0f);
+                    vjo_text_row_vertical(s, len, &rows, lay.begin[k], dy, 1, &goal, &out);
+                    TEST_CHECK_(out == want, "byte %zu dy %d: %zu, expected %zu", lay.begin[k], dy, out, want);
+                    if (out != lay.begin[k]) {
+                        float column = goal.x;
+                        size_t again = out, want2 = ref_vertical(&lay, out, dy, 1, column);
+                        vjo_text_row_vertical(s, len, &rows, out, dy, 1, &goal, &again);
+                        TEST_CHECK_(again == want2, "byte %zu kept column: %zu, expected %zu", out, again, want2);
+                    }
+                    verticals++;
+                }
+            }
+            TEST_CHECK(lay.bad_queries == 0 && opens == closes);
+        }
+    }
+    printf("\n  %zu real lines x 3 layouts: %lu rows (%lu wrap back to their first word, %lu of them over 16 words; "
+           "%lu words, %lu lookups), %lu Up/Down checks\n", lines.size(), rows_seen, wrapped_rows, long_rows, words,
+           lookups_n, verticals);
 }
 
 /* Inflections, kana-only words, katakana loanwords, names, common readings
@@ -371,6 +477,7 @@ TEST_LIST = {
     {"real_lines_walk_word_by_word", real_lines_walk_word_by_word},
     {"expected_entries_at_real_lines", expected_entries_at_real_lines},
     {"touch_and_left_right_follow_the_words", touch_and_left_right_follow_the_words},
+    {"real_lines_navigate_displayed_rows", real_lines_navigate_displayed_rows},
     {NULL, NULL}};
 
 /* acutest's main, behind the dictionary check (skip without the bundle). */

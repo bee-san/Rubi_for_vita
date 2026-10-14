@@ -75,7 +75,7 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
  * meanings at en_px; a green VJO_ANKI_MARK after the rank when in_anki. */
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki);
 
-/* Local paging: "▲▼ Dictionary 2 of 3" (page is 0-based) when pages > 1;
+/* Local paging: "L/R Dictionary 2 of 3" (page is 0-based) when pages > 1;
  * nothing otherwise. */
 void vjo_styled_dict_page(VjoStyled *s, int page, int pages, int en_px);
 

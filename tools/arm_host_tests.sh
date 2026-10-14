@@ -53,8 +53,11 @@ build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
 build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
+build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 
 TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
+TESTS+=(text_rows)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

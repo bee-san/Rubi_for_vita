@@ -459,7 +459,7 @@ static void draw_preferences(void)
         snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
                  enabled, enabled == 1 ? "dictionary" : "dictionaries");
     else
-        snprintf(results_help, sizeof(results_help), "Best match, then others with Up/Down. %d enabled.", enabled);
+        snprintf(results_help, sizeof(results_help), "Best match, then others with an L/R tap. %d enabled.", enabled);
     text(42, RESULTS_Y + CARD_HELP_Y, DIM, 24, results_help);
     vita2d_disable_clipping();
     footer_at(PREFERENCE_FOOTER_Y, PREFERENCE_FOOTER_H, PREFERENCE_FOOTER_Y + 22, 1,
