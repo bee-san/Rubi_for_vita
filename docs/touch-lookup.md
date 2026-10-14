@@ -110,9 +110,11 @@ across the 920 px box). Undocumented `LineInfo.frame` fields and paf's
 `GetNextUpHit`/`GetNextDownHit` are not used (pressing ▼ with ScrollView
 `DoSnap` and `GetNextDownHit` crashed the console). A key press walks the
 header's text (at most 4,095 bytes) from its start to the row after the
-cursor's, querying only selectable characters, allocates nothing and takes no
-lock. Before the header is laid out, or if paf reports no position for a
-character, Left/Right step through the text as one row and Up/Down do nothing;
+cursor's. It asks paf for the cursor's character, the selectable characters
+and, where a cell's end is needed, the character after one (at most 2N + 2
+queries for N characters), allocates nothing and takes no lock. Before the
+header is laid out, or if paf reports no position for a character, Left/Right
+step through the text as one row and Up/Down do nothing;
 the cursor stays on a selectable character either way. The overlay's close line in
 `log.txt` counts the row changes, wraps and presses without a layout, and times
 the slowest key's walk (the `GetCharInfo` queries included; not measured on a
