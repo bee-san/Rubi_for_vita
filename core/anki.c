@@ -109,8 +109,9 @@ void vjo_anki_sentence(VjoBuf *b, const char *text, int hl_start, int hl_end)
 typedef struct {
     uint32_t w[FURI_MAX], r[FURI_MAX]; /* the word and its reading, katakana as hiragana */
     size_t wo[FURI_MAX + 1], ro[FURI_MAX + 1]; /* byte offsets */
-    int nw, nr, steps;
-    int end[FURI_MAX]; /* a kanji run starting at i: where its reading ends in r */
+    int nw, nr, steps, found;
+    int end[FURI_MAX];  /* a kanji run starting at i: where its reading ends in r */
+    int best[FURI_MAX]; /* the same, of the first way it fits */
 } Furi;
 
 /* s's code points into cp (katakana as hiragana: readings are written in
@@ -131,25 +132,35 @@ static int furi_split(const char *s, uint32_t *cp, size_t *off)
     return k;
 }
 
-/* Does the word from i fit the reading from j? Kana must match; a run of
- * kanji takes one or more of the reading's characters, the fewest first. */
-static int furi_fit(Furi *f, int i, int j)
+/* The ways the word from i fits the reading from j, counted in found (up to
+ * 2), the first one's runs in best: kana must match; a run of kanji takes one
+ * or more of the reading's characters. Two ways (物の怪, もののけ: も|け or
+ * もの|け) or too many tries leave it undecided: the whole word, as Yomitan. */
+static void furi_fit(Furi *f, int i, int j)
 {
     int e = i;
-    if (++f->steps > FURI_STEPS)
-        return 0;
-    if (i == f->nw)
-        return j == f->nr;
-    if (!vjo_is_kanji(f->w[i]))
-        return j < f->nr && f->w[i] == f->r[j] && furi_fit(f, i + 1, j + 1);
+    if (f->found > 1)
+        return;
+    if (++f->steps > FURI_STEPS) {
+        f->found = 2;
+        return;
+    }
+    if (i == f->nw) {
+        if (j == f->nr && !f->found++)
+            memcpy(f->best, f->end, sizeof(f->end));
+        return;
+    }
+    if (!vjo_is_kanji(f->w[i])) {
+        if (j < f->nr && f->w[i] == f->r[j])
+            furi_fit(f, i + 1, j + 1);
+        return;
+    }
     while (e < f->nw && vjo_is_kanji(f->w[e]))
         e++;
-    for (int k = j + 1; k <= f->nr; k++) {
+    for (int k = j + 1; k <= f->nr && f->found < 2; k++) {
         f->end[i] = k;
-        if (furi_fit(f, e, k))
-            return 1;
+        furi_fit(f, e, k);
     }
-    return 0;
 }
 
 /* "食[た]べる", "お 茶[ちゃ]", "真[ま]っ 白[しろ]": a space before a base that
@@ -169,9 +180,10 @@ void vjo_anki_furigana(VjoBuf *b, const char *spelling, const char *reading)
         html_escape(b, spelling, n);
         return;
     }
-    f.steps = 0;
-    fit = (f.nw = furi_split(spelling, f.w, f.wo)) > 0 && (f.nr = furi_split(reading, f.r, f.ro)) > 0 &&
-          furi_fit(&f, 0, 0);
+    f.steps = f.found = 0;
+    if ((f.nw = furi_split(spelling, f.w, f.wo)) > 0 && (f.nr = furi_split(reading, f.r, f.ro)) > 0)
+        furi_fit(&f, 0, 0);
+    fit = f.found == 1;
     if (!fit) { /* the whole word takes the reading */
         if (mixed)
             vjo_buf_putc(b, ' ');
@@ -195,9 +207,9 @@ void vjo_anki_furigana(VjoBuf *b, const char *spelling, const char *reading)
             vjo_buf_putc(b, ' ');
         html_escape(b, spelling + f.wo[i], f.wo[e] - f.wo[i]);
         vjo_buf_putc(b, '[');
-        html_escape(b, reading + f.ro[j], f.ro[f.end[i]] - f.ro[j]);
+        html_escape(b, reading + f.ro[j], f.ro[f.best[i]] - f.ro[j]);
         vjo_buf_putc(b, ']');
-        j = f.end[i];
+        j = f.best[i];
         i = e;
     }
 }

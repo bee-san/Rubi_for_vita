@@ -87,8 +87,10 @@ static void test_anki_fields(void)
             {"時々", "ときどき", "時々[ときどき]"},
             {"ブラック企業", "ぶらっくきぎょう", "ブラック 企業[きぎょう]"}, /* katakana as hiragana */
             {"一ヶ月", "いっかげつ", " 一ヶ月[いっかげつ]"},             /* ヶ: kana to Kiku */
-            /* the kana do not line up: the whole word, after a space */
+            /* the kana do not line up, or line up two ways: the whole word, after a space */
             {"今日は", "きょうわ", " 今日は[きょうわ]"},
+            {"物の怪", "もののけ", " 物の怪[もののけ]"},   /* も|のけ or もの|け */
+            {"物の哀れ", "もののあわれ", " 物の哀れ[もののあわれ]"},
             {"3日", "みっか", " 3日[みっか]"},
             {"ある", "ある", "ある"},
             {"テレビ", "てれび", "テレビ"}, /* no kanji */
@@ -109,7 +111,7 @@ static void test_anki_fields(void)
         BUF(vjo_anki_furigana(&b, word, reading));
         TEST_CHECK(s[0] != ' ' && strstr(s, "茶[ちゃちゃ") != NULL);
         /* 16 runs of kanji between の over a reading of 47 の that never ends in the
-         * word's x: no fit, found out within the step bound */
+         * word's x: no fit, given up within the step bound */
         strcpy(word, "");
         strcpy(reading, "");
         for (int i = 0; i < 15; i++)
