@@ -22,7 +22,9 @@
  * Touch: SceTouch routes the front panel by region, and while a game is in
  * front SceShell's regions are inactive. The region selector activates
  * SceShell's default touch region while it is open (as SceShell's own menus
- * over a game must) and reads the touches through paf's input device. */
+ * over a game must) and reads the touches through paf's input device. It is
+ * also drawn with the left stick and the d-pad (#81): a cursor, × for each
+ * corner (core/region_select.c holds the state; this file draws it). */
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
@@ -35,6 +37,12 @@ extern "C" {
 #include "../core/text_hit.h"
 #include "../include/vjo_ledger_budget.h"
 }
+
+#include "../core/region_select.h"
+/* The region selector takes the pad's own button bits. */
+static_assert(VJO_RSEL_UP == SCE_CTRL_UP && VJO_RSEL_RIGHT == SCE_CTRL_RIGHT && VJO_RSEL_DOWN == SCE_CTRL_DOWN &&
+              VJO_RSEL_LEFT == SCE_CTRL_LEFT && VJO_RSEL_CIRCLE == SCE_CTRL_CIRCLE &&
+              VJO_RSEL_CROSS == SCE_CTRL_CROSS, "region selector buttons are SCE_CTRL_* bits");
 
 using namespace paf;
 
@@ -122,8 +130,12 @@ static int s_highlight_retry_frames;  /* bounded retries while text layout catch
 
 /* region selection (screen pixels) */
 static int s_touch_region_on; /* SceShell's default front touch region activated by us */
-static int s_drag, s_has_rect;
-static int s_x0, s_y0, s_x1, s_y1;
+static VjoRegionSelect s_rsel;
+static ui::Widget *s_region_cursor;
+static int s_region_drawn[6];          /* cursor x, y; box x, y, w, h (w 0: none) as drawn */
+static int s_hint_box[3];              /* the region hint's corner set, w, h */
+static int s_refused[2];               /* the box size × was refused for: too small */
+static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
 
@@ -454,20 +466,60 @@ static void header_fit(void)
     }
 }
 
-static void show_region_rect(void)
+/* The selector's cursor and box (paf layout: origin at the screen centre,
+ * y up); paf is told only what changed. */
+static void show_region(void)
 {
-    int x = s_x0 < s_x1 ? s_x0 : s_x1, y = s_y0 < s_y1 ? s_y0 : s_y1;
-    int w = s_x0 < s_x1 ? s_x1 - s_x0 : s_x0 - s_x1, hgt = s_y0 < s_y1 ? s_y1 - s_y0 : s_y0 - s_y1;
+    int c[6], same = 1;
+    vjo_rsel_cursor(&s_rsel, &c[0], &c[1]);
+    if (!vjo_rsel_box(&s_rsel, &c[2], &c[3], &c[4], &c[5]))
+        c[2] = c[3] = c[4] = c[5] = 0;
+    for (int i = 0; i < 6; i++) {
+        same &= c[i] == s_region_drawn[i];
+        s_region_drawn[i] = c[i];
+    }
+    if (same)
+        return;
+    if (s_region_cursor) /* its centre on the cursor pixel's centre */
+        s_region_cursor->SetPos(c[0] + 0.5f - SCREEN_W / 2, SCREEN_H / 2 - 0.5f - c[1], 0.0f);
     if (!s_region_rect)
         return;
-    if (w < 2 || hgt < 2) {
+    if (c[4] < 2 || c[5] < 2) {
         s_region_rect->Hide();
         return;
     }
-    /* paf layout: origin at the screen centre, y up */
-    s_region_rect->SetSize((float)w, (float)hgt, 0.0f);
-    s_region_rect->SetPos((float)(x + w / 2 - SCREEN_W / 2), (float)(SCREEN_H / 2 - (y + hgt / 2)), 0.0f);
+    s_region_rect->SetSize((float)c[4], (float)c[5], 0.0f);
+    s_region_rect->SetPos(c[2] + c[4] / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - c[3] - c[5] / 2.0f, 0.0f);
     s_region_rect->Show();
+}
+
+/* What × and ○ do next, and the box's size: under the 32 x 32 a region
+ * needs it says so, red once × was refused. A changing size is redrawn at
+ * most ten times a second. */
+static void region_hint(int force)
+{
+    int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
+    int64_t now = sceKernelGetProcessTimeWide();
+    char hint[192]; /* the longest is 144 B */
+    if (!force && corner == s_hint_box[0] &&
+        ((w == s_hint_box[1] && h == s_hint_box[2]) || now - s_hint_us < 100000))
+        return;
+    s_hint_box[0] = corner;
+    s_hint_box[1] = w;
+    s_hint_box[2] = h;
+    s_hint_us = now;
+    if (!corner)
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · × first corner · "
+                                            "or drag on screen · ○ cancel · hold □ full screen</font>");
+    else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
+                        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · ○ undo corner</font>",
+                        w == s_refused[0] && h == s_refused[1] ? "#ff8a80" : "#b8c0cc", w, h, VJO_RSEL_MIN,
+                        VJO_RSEL_MIN);
+    else
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Box %d x %d</font><font color=\"#ffffff\">"
+                        " · stick / ◀▶▲▼ opposite corner · × save · ○ undo corner</font>", w, h);
+    set_rich(s_region_hint, hint);
 }
 
 /* Front touches go to SceShell while on (and not to the game). */
@@ -486,18 +538,17 @@ static void enter_region_mode(void)
 {
     s_mode = MODE_REGION;
     touch_region(1);
-    s_drag = 0;
-    s_has_rect = 0;
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
+    vjo_rsel_begin(&s_rsel, s_square_down_us);
     if (s_panel)
         s_panel->Hide();
     if (s_region_layer)
         s_region_layer->Show();
-    if (s_region_rect)
-        s_region_rect->Hide();
-    set_rich(s_region_hint, "<font color=\"#ffffff\">Drag on the screen to select the text area · "
-                            "× confirm · ○ cancel · hold □ for full screen</font>");
+    s_region_drawn[0] = -1; /* draw afresh */
+    s_refused[0] = -1;
+    show_region();
+    region_hint(1);
 }
 
 static void leave_region_mode(void)
@@ -556,6 +607,7 @@ static void open_page(void)
     }
     s_region_layer = s_page->FindChild("vjo_region_layer");
     s_region_rect = s_page->FindChild("vjo_region_rect");
+    s_region_cursor = s_page->FindChild("vjo_region_cursor");
     s_region_hint = (ui::RichText *)s_page->FindChild("vjo_region_hint");
     if (s_region_layer)
         s_region_layer->Hide();
@@ -603,6 +655,7 @@ static void close_page(void)
     s_header.text = s_body.text = NULL;
     s_separator = s_band_mid = NULL;
     s_hint = s_region_hint = NULL;
+    s_region_cursor = NULL;
     s_n_entries = 0;
     s_header_has_text = 0;
     vjo_arena_init(&s_ui, NULL, 0);
@@ -751,74 +804,67 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         enter_region_mode();
 }
 
-static void input_region(uint32_t held, uint32_t pressed)
+static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
 {
     const inputdevice::touchscreen::Data *pd = NULL;
-    int touching = 0, x = 0, y = 0;
+    VjoRselInput ri;
+    int ev, x = 0, y = 0, w = 0, h = 0;
+    sceClibMemset(&ri, 0, sizeof(ri));
     /* paf: screen pixels from the top left */
     inputdevice::touchscreen::GetData(inputdevice::touchscreen::PORT_FRONT, 0, &pd);
     if (pd && pd->state != inputdevice::touchscreen::Data::STATE_NONE &&
         pd->state != inputdevice::touchscreen::Data::STATE_RELEASE) {
         float fx = 0.0f, fy = 0.0f;
         int rc = inputdevice::touchscreen::GetPointFromTopleft(inputdevice::touchscreen::PORT_FRONT, 0, fx, fy);
-        touching = 1;
-        x = rc >= 0 ? (int)fx : pd->x;
-        y = rc >= 0 ? (int)fy : pd->y;
+        ri.touch = 1;
+        ri.tx = rc >= 0 ? (int)fx : pd->x;
+        ri.ty = rc >= 0 ? (int)fy : pd->y;
     }
-    if (touching) {
-        if (x < 0)
-            x = 0;
-        if (y < 0)
-            y = 0;
-        if (x >= SCREEN_W)
-            x = SCREEN_W - 1;
-        if (y >= SCREEN_H)
-            y = SCREEN_H - 1;
-        if (!s_prev_touch || !s_drag) {
-            s_drag = 1;
-            s_x0 = s_x1 = x;
-            s_y0 = s_y1 = y;
-            vjo_log("region drag from %d,%d", x, y);
-        } else {
-            s_x1 = x;
-            s_y1 = y;
-        }
-        s_has_rect = (s_x0 != s_x1) && (s_y0 != s_y1);
-        show_region_rect();
-    } else {
-        if (s_drag)
-            vjo_log("region drag to %d,%d", s_x1, s_y1);
-        s_drag = 0;
-    }
-    s_prev_touch = touching;
+    s_prev_touch = ri.touch;
+    ri.held = held;
+    ri.pressed = pressed;
+    ri.lx = in->lx;
+    ri.ly = in->ly;
+    ri.now_us = sceKernelGetProcessTimeWide();
+    ev = vjo_rsel_update(&s_rsel, &ri);
 
     /* hold □ (from entering region mode) for 1 s -> full screen */
     if (!(held & SCE_CTRL_SQUARE))
         s_square_clear_armed = 0;
     if (pressed & SCE_CTRL_SQUARE) {
         s_square_clear_armed = 1;
-        s_square_down_us = sceKernelGetProcessTimeWide();
+        s_square_down_us = ri.now_us;
     }
-    if (s_square_clear_armed && sceKernelGetProcessTimeWide() - s_square_down_us >= CLEAR_HOLD_US) {
+    if (s_square_clear_armed && ri.now_us - s_square_down_us >= CLEAR_HOLD_US) {
         s_square_clear_armed = 0;
         leave_region_mode();
         vjo_post_command(VJO_CMD_CLEAR_REGION, NULL);
         return;
     }
-    if ((pressed & SCE_CTRL_CROSS) && s_has_rect) {
-        VjoRect r;
-        int x = s_x0 < s_x1 ? s_x0 : s_x1, y = s_y0 < s_y1 ? s_y0 : s_y1;
-        int w = s_x0 < s_x1 ? s_x1 - s_x0 : s_x0 - s_x1, h = s_y0 < s_y1 ? s_y1 - s_y0 : s_y0 - s_y1;
-        r.x = (uint16_t)(x * 65536 / SCREEN_W);
-        r.y = (uint16_t)(y * 65536 / SCREEN_H);
-        r.w = (uint16_t)((w * 65536 / SCREEN_W) > 65535 ? 65535 : w * 65536 / SCREEN_W);
-        r.h = (uint16_t)((h * 65536 / SCREEN_H) > 65535 ? 65535 : h * 65536 / SCREEN_H);
+    vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
+    if (ev == VJO_RSEL_SAVE) {
+        VjoRect r = vjo_rsel_rect(x, y, w, h);
+        vjo_log("region box %d,%d %dx%d", x, y, w, h);
         leave_region_mode();
         vjo_post_command(VJO_CMD_SET_REGION, &r);
         return;
     }
-    if (pressed & SCE_CTRL_CIRCLE)
+    if (ev == VJO_RSEL_CANCEL) {
+        vjo_log("region unchanged");
         leave_region_mode();
+        return;
+    }
+    if (ev == VJO_RSEL_CORNER) /* by ×, or by a new touch */
+        vjo_log("region corner %d,%d%s", x, y, pressed & SCE_CTRL_CROSS ? "" : " (touch)");
+    else if (ev == VJO_RSEL_BACK)
+        vjo_log("region corner undone");
+    else if (ev == VJO_RSEL_SMALL) {
+        vjo_log("region box %dx%d too small", w, h);
+        s_refused[0] = w;
+        s_refused[1] = h;
+    }
+    show_region();
+    region_hint(ev != VJO_RSEL_NONE);
 }
 
 /* ---- frame ---- */
@@ -913,7 +959,7 @@ static void frame_body(unsigned version, unsigned anki_version)
         if (s_mode == MODE_OVERLAY)
             input_overlay(&in, pressed);
         else
-            input_region(held, pressed);
+            input_region(&in, held, pressed);
     }
 }
 

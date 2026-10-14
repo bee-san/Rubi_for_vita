@@ -62,7 +62,8 @@
           <layout_hint size="920, 30" pos="0, -250" />
         </rich_text>
       </plane>
-      <!-- region selector: dimmed game, translucent selection rectangle -->
+      <!-- region selector: dimmed game, translucent selection rectangle, the
+           cursor the stick and the d-pad move -->
       <plane style="vjo_style_dim" id="vjo_region_layer">
         <layout_hint size="960, 544" />
         <plane style="vjo_style_region" id="vjo_region_rect">
@@ -71,6 +72,23 @@
         <rich_text style="vjo_style_text" id="vjo_region_hint">
           <layout_hint size="920, 30" pos="0, 250" />
         </rich_text>
+        <!-- a cross, edged dark so it shows on light and dark screens; drawn
+             after the hint, so over it; code centres it on the cursor's pixel -->
+        <plane style="vjo_style_clear" id="vjo_region_cursor">
+          <layout_hint size="27, 27" />
+          <plane style="vjo_style_band" id="vjo_region_cursor_hb">
+            <layout_hint size="27, 5" />
+          </plane>
+          <plane style="vjo_style_band" id="vjo_region_cursor_vb">
+            <layout_hint size="5, 27" />
+          </plane>
+          <plane style="vjo_style_cursor" id="vjo_region_cursor_h">
+            <layout_hint size="25, 3" />
+          </plane>
+          <plane style="vjo_style_cursor" id="vjo_region_cursor_v">
+            <layout_hint size="3, 25" />
+          </plane>
+        </plane>
       </plane>
     </page>
     <!-- subtitles strip: at the top over the running game; code sizes the
@@ -126,6 +144,9 @@
     </style_plane>
     <style_plane color="1, 0.82, 0.29, 0.35" planeobj="vjo_region_obj" id="vjo_style_region">
       <planeobj id="vjo_region_obj" />
+    </style_plane>
+    <style_plane color="1, 0.82, 0.29, 1" planeobj="vjo_cursor_obj" id="vjo_style_cursor">
+      <planeobj id="vjo_cursor_obj" />
     </style_plane>
     <style_scroll_view color="0, 0, 0, 0" sbar_v_margin="0, 0, 4" id="vjo_style_view" />
     <style_text textobj="vjo_plain_obj" id="vjo_style_plain">

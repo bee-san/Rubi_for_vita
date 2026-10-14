@@ -48,12 +48,13 @@ build() { # build NAME SOURCES...
 
 build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
 build ledger host/tests/test_ledger.c core/ledger.c
-build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
+build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c core/region_select.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
 build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
+build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
 
-TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo)
+TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
