@@ -1,7 +1,8 @@
 """The device default is VOCR3_H15_w8.vocr from bee-san/vita-vn-ocr v0.2.5-vocr3.1, with
 VOCR3_FL10_w8.vocr as its fallback; v0.2.0's H15/FL10 stay pinned and shipped; every pinned
 model fits the console budget ceiling; and the game worker's, the kernel's, the model metadata's
-(core/vocr_models.c, with each model's generation) and the Python pins agree."""
+(core/vocr_models.c, with each model's generation) and the Python pins agree. Each C table is
+read entry by entry, with a macro or a literal size; an entry the parsers cannot read fails."""
 import re
 import sys
 import unittest
@@ -28,37 +29,103 @@ def macros():
     return out
 
 
-def c_table():
+def number(token, sizes):
+    """A size or an arena: a macro of include/vjo_vocr_sizes.h, or a decimal literal (1155968u)."""
+    return sizes[token] if token.startswith("VJO_") else int(token)
+
+
+def without_comments(source):
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", source, flags=re.S)
+
+
+def array_body(source, declaration):
+    """The initialisers of the C array declared by `declaration`, between its outer braces."""
+    body = source[source.index(declaration):]
+    body = body[body.index("{") + 1:]
+    return without_comments(body[:body.index("\n};")])
+
+
+def entries(body):
+    """How many initialisers an array body holds, counted by brace depth: every entry, however it is
+    written, so that one the patterns below do not read is noticed."""
+    depth = count = 0
+    for ch in body:
+        if ch == "{":
+            count += depth == 0
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+    return count
+
+
+def every_pin(where, pins, expected):
+    """name -> value of the pins read from `where`, which must be all `expected` of its entries, each
+    name once: a pin in a form the pattern misses fails here instead of escaping the comparisons."""
+    names = [name for name, _ in pins]
+    if len(pins) != expected or len(set(names)) != len(names):
+        raise AssertionError(f"{where}: read {len(pins)} pins with {len(set(names))} names of {expected} entries")
+    return dict(pins)
+
+
+SIZE = r"(VJO_\w+|\d+)[uU]?"  # a macro or a decimal literal, as either table may spell it
+
+
+def c_table(source=None):
     """name -> (bytes, sha256 hex, arena) from core/vocr_ocr.c's release table."""
-    source = (ROOT / "core/vocr_ocr.c").read_text()
+    if source is None:
+        source = (ROOT / "core/vocr_ocr.c").read_text()
     sizes = macros()
-    table = source[source.index("#else\nstatic const VjoVocrModel models[]"):]
-    out = {}
-    for m in re.finditer(r'\{"?([\w.]+)"?, (VJO_\w+),\s*\{([^}]*)\},\s*(\d+), VOCR_LINES_\w+\}', table):
+    body = array_body(source, "#else\nstatic const VjoVocrModel models[]")
+    pins = []
+    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', VOCR_LINES_\w+\}', body):
         name = sizes.get(m.group(1), m.group(1))  # a name macro (VJO_VOCR3_H15_NAME) or a literal
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
-        out[name] = (sizes[m.group(2)], digest, int(m.group(4)))
-    return out
+        pins.append((name, (number(m.group(2), sizes), digest, number(m.group(4), sizes))))
+    return every_pin("core/vocr_ocr.c models[]", pins, entries(body))
 
 
-def metadata_table():
+def metadata_table(source=None):
     """name -> (generation, shape, bytes) from core/vocr_models.c, the Overlay app's model metadata."""
-    source = (ROOT / "core/vocr_models.c").read_text()
+    if source is None:
+        source = (ROOT / "core/vocr_models.c").read_text()
     sizes = macros()
-    table = source[source.index("#else\nstatic const VjoVocrModelInfo infos[]"):]
-    table = table[:table.index("};")]
-    return {sizes.get(m.group(1), m.group(1)): (m.group(2), m.group(3), sizes[m.group(4)])
-            for m in re.finditer(r'\{"?([\w.]+)"?, "(\w+)", "(\w+)", (VJO_\w+)\}', table)}
+    body = array_body(source, "#else\nstatic const VjoVocrModelInfo infos[]")
+    pins = [(sizes.get(m.group(1), m.group(1)), (m.group(2), m.group(3), number(m.group(4), sizes)))
+            for m in re.finditer(r'\{"?([\w.]+)"?, "(\w+)", "(\w+)", ' + SIZE + r'\}', body)]
+    return every_pin("core/vocr_models.c infos[]", pins, entries(body))
 
 
-def kernel_names():
-    """name -> bytes the kernel's model broker accepts (kernel/game_ocr.c model_size)."""
-    source = (ROOT / "kernel/game_ocr.c").read_text()
+def kernel_names(source=None):
+    """name -> bytes the kernel's model broker accepts (kernel/game_ocr.c model_size). Every return but
+    the last (return 0) and every name comparison there must be one of the pins read."""
+    if source is None:
+        source = (ROOT / "kernel/game_ocr.c").read_text()
     body = source[source.index("static uint32_t model_size(const char *name)"):]
-    body = body[:body.index("\n}\n")]
+    body = without_comments(body[:body.index("\n}\n")])
     sizes = macros()
-    return {sizes.get(n, n.strip('"')): sizes[b]
-            for n, b in re.findall(r'!strcmp\(name, ("[\w.]+"|VJO_\w+)\)\) return (VJO_\w+);', body)}
+    pins = [(sizes.get(n, n.strip('"')), number(b, sizes))
+            for n, b in re.findall(r'!strcmp\(name, ("[\w.]+"|VJO_\w+)\)\) return ' + SIZE + ';', body)]
+    if not re.search(r"\breturn 0;\s*$", body) or body.count("strcmp(") != len(pins):
+        raise AssertionError(f"kernel/game_ocr.c model_size: {body.count('strcmp(')} comparisons, "
+                             f"{len(pins)} pins read, last return {body.split('return')[-1].strip()!r}")
+    return every_pin("kernel/game_ocr.c model_size", pins, len(re.findall(r"\breturn\b", body)) - 1)
+
+
+def python_pins():
+    """name -> (url, bytes, sha256, release tag) of every release's asset table in tools/prepare_ocr.py:
+    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), each name in
+    one table only."""
+    out = {}
+    for key, assets in sorted(vars(prepare_ocr).items()):
+        release = re.fullmatch(r"(VOCR\d*)_ASSETS", key)
+        if not release:
+            continue
+        tag = getattr(prepare_ocr, release.group(1) + "_TAG")
+        for name, (url, size, sha) in assets.items():
+            if name in out:
+                raise AssertionError(f"tools/prepare_ocr.py: {name} is in two release tables")
+            out[name] = (url, size, sha, tag)
+    return out
 
 
 class VocrDefaults(unittest.TestCase):
@@ -76,10 +143,10 @@ class VocrDefaults(unittest.TestCase):
 
     def test_c_kernel_and_python_pins_agree_and_fit_the_ceiling(self):
         table = c_table()
-        python = {**prepare_ocr.VOCR3_ASSETS, **prepare_ocr.VOCR_ASSETS}
+        python = python_pins()
         self.assertEqual(set(table), set(python))
         for name, (size, sha, arena) in table.items():
-            _, want_size, want_sha = python[name]
+            _, want_size, want_sha, _ = python[name]
             self.assertEqual((size, sha), (want_size, want_sha), name)
             self.assertLessEqual(size, CEILING_WEIGHTS, name)
             self.assertLessEqual(arena, CEILING_ARENA, name)
@@ -94,16 +161,48 @@ class VocrDefaults(unittest.TestCase):
             self.assertEqual(table[new][2], table[old][2])
             self.assertNotEqual(table[new][1], table[old][1])
 
+    def test_a_pin_in_any_spelling_is_read_or_fails(self):
+        """A model pinned in one table only cannot escape the comparison above: the parsers read it
+        (a literal size as well as a macro), and an entry they cannot read fails the entry count."""
+        def add(source, after, line):
+            self.assertEqual(source.count(after), 1, after)
+            return source.replace(after, after + line)
+        kernel = (ROOT / "kernel/game_ocr.c").read_text()
+        f20 = '    if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;\n'
+        literal = kernel_names(add(kernel, f20, '    if (!strcmp(name, "VOCR5_N_w8.vocr")) return 1155968u;\n'))
+        self.assertEqual(literal["VOCR5_N_w8.vocr"], 1155968)
+        self.assertNotEqual(literal, kernel_names())
+        for line in ('    if (!strcmp(name, "VOCR5_N_w8.vocr")) return 0x11a380u;\n',  # a hex size
+                     '    if (!memcmp(name, "VOCR5", 5)) return VJO_VOCR_H15_BYTES;\n',  # another comparison
+                     '    if (!strcmp(name, "a.vocr") || !strcmp(name, "VOCR5_N_w8.vocr")) return VJO_VOCR_H15_BYTES;\n',
+                     '    if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_F20_BYTES;\n'):  # a name twice
+            with self.assertRaises(AssertionError, msg=line):
+                kernel_names(add(kernel, f20, line))
+        worker = (ROOT / "core/vocr_ocr.c").read_text()
+        end = "     241056, VOCR_LINES_GRAD},\n"  # F20's, the release table's last entry
+        sha = "{" + ",".join(["0x00"] * 32) + "}"
+        literal = c_table(add(worker, end, f'    {{"VOCR5_N_w8.vocr", 1155968u, {sha}, 182944u, VOCR_LINES_GRAD}},\n'))
+        self.assertEqual(literal["VOCR5_N_w8.vocr"], (1155968, "00" * 32, 182944))
+        with self.assertRaises(AssertionError):
+            c_table(add(worker, end, f'    {{.name = "VOCR5_N_w8.vocr", .bytes = 1155968u, .sha256 = {sha}}},\n'))
+        meta = (ROOT / "core/vocr_models.c").read_text()
+        f20 = '    {"F20_w8.vocr", "VOCR1", "F20", VJO_VOCR_F20_BYTES},\n'
+        literal = metadata_table(add(meta, f20, '    {"VOCR5_N_w8.vocr", "VOCR5", "N", 3000000u},\n'))
+        self.assertEqual(literal["VOCR5_N_w8.vocr"], ("VOCR5", "N", 3000000))
+        for line in ('    {"VOCR5_N_w8.vocr", "VOCR5", "N", 0x2dc6c0},\n', f20):  # a hex size; a name twice
+            with self.assertRaises(AssertionError, msg=line):
+                metadata_table(add(meta, f20, line))
+
     def test_each_model_generation_is_its_releases(self):
         """The generation the Overlay app names the local engine after: the same in the C metadata
         and in the packager's pins (each release's), VOCR3 for the default, and the VOCRn of a file
         named VOCRn_...; the removed VOCR2 trial is pinned nowhere."""
         meta = metadata_table()
+        python = python_pins()
         self.assertEqual(len(meta), 5)
         for name, (generation, shape, _) in meta.items():
-            tag = prepare_ocr.VOCR3_TAG if name in prepare_ocr.VOCR3_ASSETS else prepare_ocr.VOCR_TAG
-            self.assertIn(name, {**prepare_ocr.VOCR3_ASSETS, **prepare_ocr.VOCR_ASSETS})
-            self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[tag], name)
+            self.assertIn(name, python)
+            self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[python[name][3]], name)
             if name.startswith("VOCR"):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)

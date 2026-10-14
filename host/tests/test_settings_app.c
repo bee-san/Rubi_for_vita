@@ -16,11 +16,13 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
 #include <vita2d.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "../../core/vocr_models.h"
@@ -213,6 +215,29 @@ static void remove_model(const char *name)
     snprintf(path, sizeof(path), MODEL_DIR "/%s", name);
     unlink(path);
 }
+/* The temporary memory card of this test's process, removed when it ends (the
+ * app's own forked processes leave with _exit, so only the test removes it). */
+static char card_dir[64];
+static void remove_tree(const char *path)
+{
+    struct stat st;
+    if (lstat(path, &st)) return;
+    if (S_ISDIR(st.st_mode)) {
+        DIR *d = opendir(path);
+        struct dirent *e;
+        while (d && (e = readdir(d))) {
+            char child[512];
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            if (snprintf(child, sizeof(child), "%s/%s", path, e->d_name) < (int)sizeof(child)) remove_tree(child);
+        }
+        if (d) closedir(d);
+        rmdir(path);
+    } else unlink(path);
+}
+static void remove_card(void)
+{
+    if (card_dir[0] && chdir("/") == 0) remove_tree(card_dir);
+}
 /* A fresh memory card: the default models present, config.ini as given (NULL: none). */
 static void card(const char *config)
 {
@@ -220,6 +245,8 @@ static void card(const char *config)
     if (!initialized) {
         char dir[] = "/tmp/vjo-settings-app-XXXXXX";
         TEST_ASSERT(mkdtemp(dir) != NULL);
+        snprintf(card_dir, sizeof(card_dir), "%s", dir);
+        atexit(remove_card);
         TEST_ASSERT(chdir(dir) == 0);
         initialized = 1;
     }
@@ -323,6 +350,8 @@ static void check_card(int f, const char *local, int lens_active, const char *he
 #define LENS_BUTTON TAP(700, 170)
 #define CARD_TITLE TAP(300, 130)  /* the card outside its buttons: focus only */
 
+static const char *const LOCAL_HELP = "Local OCR: dialogue region, automatic or manual.";
+
 #ifndef VJO_VOCR_MODEL_INFO_TEST
 static int shows(int f, const char *needle)
 {
@@ -330,7 +359,6 @@ static int shows(int f, const char *needle)
         if (strstr(shown[f].text[i].text, needle)) return 1;
     return 0;
 }
-static const char *const LOCAL_HELP = "Local OCR: dialogue region, automatic or manual.";
 static const char *const LENS_HELP = "Wi-Fi required. Sends the selected image to Google.";
 static const char *const LENS_STATUS = "No model file needed. Uses your chosen dictionary.";
 
@@ -434,8 +462,8 @@ static void test_removed_engine_shows_local_and_next_save_rewrites_it(void)
     }
 }
 
-/* The local engine is named after the configured model's generation; the line
- * under it reports the file that runs, or what is missing. */
+/* The local engine is named after the generation of the model the game worker
+ * would load; the line under it reports that file, or what is missing. */
 static void test_label_and_status_follow_the_configured_models(void)
 {
     static const Input in[] = {OCR_PAGE};
@@ -446,9 +474,18 @@ static void test_label_and_status_follow_the_configured_models(void)
     card("vocr_model = H15_w8.vocr\n");
     run(in, 2);
     check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 found. Game OCR worker required.", DIM);
+    /* until its file is missing or not its release size: the worker refuses it and
+     * runs the fallback, which then names the engine */
     remove_model("H15_w8.vocr");
     run(in, 2);
-    check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR1-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
+    put_model("H15_w8.vocr", VJO_VOCR_H15_BYTES + 1);
+    run(in, 2);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR1-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
+    /* with the fallback's file missing too nothing runs: the configured model's name, a red line */
+    remove_model(VJO_VOCR3_FL10_NAME);
+    run(in, 2);
+    check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 missing. Game OCR worker required.", OFF);
     /* a model file that cannot be closed again is not counted as found */
     card(NULL);
     close_fails = VJO_VOCR3_H15_NAME;
@@ -459,6 +496,10 @@ static void test_label_and_status_follow_the_configured_models(void)
     card("vocr_model = VOCR4_W20_w8.vocr\n");
     run(in, 2);
     check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build; uses VOCR3-FL10.", OFF);
+    /* the fallback's file missing as well: nothing runs, and the button keeps the fallback's name */
+    remove_model(VJO_VOCR3_FL10_NAME);
+    run(in, 2);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
     card("vocr_model = VOCR4_W20_w8.vocr\nvocr_fallback_model = none\n");
     run(in, 2);
     check_card(1, "VOCR", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
@@ -558,20 +599,42 @@ static void test_later_generation_is_named_from_its_metadata(void)
     static const Input in[] = {OCR_PAGE};
     card("vocr_model = VOCR5_N_w8.vocr\nvocr_fallback_model = VOCR5_S_w8.vocr\n");
     run(in, 2);
-    check_card(1, "VOCR5", 0, "Local OCR: dialogue region, automatic or manual.",
-               "VOCR5-N found. Game OCR worker required.", DIM);
+    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
     remove_model("VOCR5_N_w8.vocr");
     run(in, 2);
-    check_card(1, "VOCR5", 0, "Local OCR: dialogue region, automatic or manual.",
-               "VOCR5-N missing; uses VOCR5-S. Game OCR worker required.", DIM);
+    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR5-S. Game OCR worker required.", DIM);
     /* the same app with an older config.ini still names that file's generation */
     card(NULL);
     run(in, 2);
-    check_card(1, "VOCR3", 0, "Local OCR: dialogue region, automatic or manual.",
-               "VOCR3-H15 found. Game OCR worker required.", DIM);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 found. Game OCR worker required.", DIM);
+}
+/* VOCR5 the default with an older generation's fallback: while the VOCR5 file is
+ * missing or only partly uploaded, the game worker runs VOCR3-FL10, and the
+ * button names VOCR3, not the VOCR5 it refuses. */
+static void test_mixed_generations_name_the_model_that_loads(void)
+{
+    static const Input in[] = {OCR_PAGE};
+    card("vocr_model = VOCR5_N_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
+    run(in, 2);
+    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
+    remove_model("VOCR5_N_w8.vocr");
+    run(in, 2);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
+    put_model("VOCR5_N_w8.vocr", 3000000 - 32768); /* one 32 KiB piece short */
+    run(in, 2);
+    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
+    /* neither file there: nothing runs; the configured model's name and a red line */
+    remove_model(VJO_VOCR3_FL10_NAME);
+    run(in, 2);
+    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N missing. Game OCR worker required.", OFF);
+    /* the VOCR5 file back: it runs again, whatever its fallback */
+    put_model("VOCR5_N_w8.vocr", 3000000);
+    run(in, 2);
+    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
 }
 TEST_LIST = {
     {"a_later_generation_VOCR5_is_named_from_its_pinned_metadata_without_app_changes", test_later_generation_is_named_from_its_metadata},
+    {"VOCR5_missing_with_a_VOCR3_fallback_names_VOCR3_the_model_that_loads", test_mixed_generations_name_the_model_that_loads},
     {NULL, NULL}
 };
 #endif

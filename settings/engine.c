@@ -27,8 +27,14 @@ void vjo_engine_card(const VjoConfig *cfg, VjoEngineCard *card)
     card->fallback = vjo_vocr_model_info(cfg->vocr_fallback_model); /* NULL for "" (none) */
     card->model_found = card->model && found(cfg->ocr_model_dir, card->model);
     card->fallback_found = card->fallback && found(cfg->ocr_model_dir, card->fallback);
-    /* A vocr_model this build does not run is refused, and the fallback runs. */
-    named = card->model ? card->model : card->fallback;
+    /* Named after the model that loads. The game worker refuses a vocr_model
+     * file that is missing or not its release size (kernel/game_ocr.c), or a
+     * name this build does not run, and the Shell then asks for the fallback
+     * (shell/worker.c run_vocr). With neither file there nothing runs: the
+     * button keeps the configured model's name, or the fallback's, and the
+     * status line is red. */
+    named = card->model_found ? card->model : card->fallback_found ? card->fallback
+          : card->model ? card->model : card->fallback;
     snprintf(card->local, sizeof(card->local), "%s", named ? named->generation : "VOCR");
 }
 

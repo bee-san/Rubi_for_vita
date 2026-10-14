@@ -14,11 +14,23 @@ measured on a PC. On-console memory, speed and stability are what the
 ## The engine's name: the model generation
 
 The Overlay app offers two OCR engines: this local one and Google Lens. It names
-the local engine after the generation of the model it runs, `vocr_model`, or the
-fallback when this build does not run that file: **VOCR3** for this package's
-default `VOCR3_H15_w8.vocr`, **VOCR1** for v0.2.0's `H15_w8.vocr`. The last line of
-the engine card names the file's generation and shape (`VOCR3-H15 found`), or what
-is missing (`VOCR3-H15 missing; uses VOCR3-FL10`).
+the local engine after the generation of the model the game worker loads:
+`vocr_model`, or the fallback when the worker refuses that file (missing, not its
+release size, or a model this build does not run): **VOCR3** for this package's
+default `VOCR3_H15_w8.vocr`, **VOCR1** for v0.2.0's `H15_w8.vocr`, and VOCR3 again
+when that `H15_w8.vocr` is missing and the default fallback `VOCR3_FL10_w8.vocr`
+runs. With neither file there nothing runs; the button keeps the configured
+model's name. The last line of the engine card names the file's generation and
+shape (`VOCR3-H15 found`), or what is missing (`VOCR3-H15 missing; uses
+VOCR3-FL10`). "Found" means the file is there at its release size: the app reads
+no weights, so a damaged file of the right size shows as found until the game
+worker's SHA-256 check refuses it and its jobs use the fallback. The memory
+fallback of a single job (too little free memory for the model) is not shown.
+
+The overlay counts every v0.2.0 model as generation VOCR1, so the card says
+`VOCR1-H15` for v0.2.0's `H15_w8.vocr`, which vita-vn-ocr's reports call
+`VOCR_H15`; there VOCR1 is v0.2.0's `FL10_w8.vocr` alone
+(vita-vn-ocr `docs/vocr3-report-20261013.md`).
 
 A `.vocr` blob has no generation in it: its 64-byte header holds the layout, a
 CRC and the first 16 bytes of the checkpoint's SHA-256 (vita-vn-ocr

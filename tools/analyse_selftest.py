@@ -1131,8 +1131,10 @@ def render_collect(c):
                  f"install settings {pkg.get('install_settings') or '-'}")
     pc = c["package_check"]
     if pc["checked"]:
-        L.append(f"  installed files: {len(pc['match'])} of {pc['checked']} match the package"
-                 + (f"; DIFFER or absent: {', '.join(pc['mismatch'])}" if pc["mismatch"] else ""))
+        # a file the package does not ship (a removed engine's model) is neither a match nor a mismatch
+        L.append(f"  installed files: {len(pc['match'])} of {pc['checked'] - len(pc['unknown'])} match the package"
+                 + (f"; DIFFER or absent: {', '.join(pc['mismatch'])}" if pc["mismatch"] else "")
+                 + (f"; not in this package: {', '.join(pc['unknown'])}" if pc["unknown"] else ""))
     if c["record"].get("missing"):
         L.append(f"  not on the Vita: {', '.join(c['record']['missing'])}")
     for e in c["record"].get("errors") or []:

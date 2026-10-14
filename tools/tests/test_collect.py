@@ -121,6 +121,8 @@ class Collect(unittest.TestCase):
         files["JPOverlaySettings.vpk"] = {"bytes": 3, "sha256": hashlib.sha256(b"vpk").hexdigest()}
         (self.device / "ux0/data/JPOverlaySettings.vpk").write_bytes(b"vpk")
         files["ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"]["sha256"] = "0" * 64  # the device's differs
+        # a removed engine's model left on the card (VOCR2, 0.7.12 to v0.8.0-test.1): not in the package
+        (self.device / "ux0/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr").write_bytes(b"vocr2 weights")
         (self.package / "package-manifest.json").write_text(json.dumps(
             {"version": "0.8.0-test.1", "source_revision": "a" * 40, "files": files,
              "install_settings": {"anki_mining": "on"}}))
@@ -186,11 +188,13 @@ class Collect(unittest.TestCase):
         check = record["package_check"]
         self.assertTrue(check["ur0:/tai/VitaJPOverlay_Kernel.skprx"]["match"])
         self.assertFalse(check["ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"]["match"])
+        self.assertIsNone(check["ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr"]["match"])
         self.assertTrue(check["ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict"]["match"])
         self.assertTrue(check["ux0:/data/JPOverlaySettings.vpk"]["match"])
         # the analysis: the self-test, the logs, the tiers, and what it cannot decide
         analysis = (folder / "analysis.txt").read_text()
-        for text in ("installed files: 7 of 8 match the package; DIFFER or absent: ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
+        for text in ("installed files: 7 of 8 match the package; DIFFER or absent: ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"
+                     "; not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                      "API keys redacted: jpdb_api_key, jiten_api_key, jpdb_api_key, lens_api_key",
                      "games: PCSG00415 x1 (ocr_mode auto, Local dictionaries)",
                      "Shell jobs (OCR + dictionary): 1 (rc ok (rc 0) x1)",

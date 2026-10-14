@@ -100,7 +100,8 @@ config warning, and the next save writes `vocr`. `host/tests/test_settings_app.c
 runs the actual input/draw loop with a scripted controller, touch screen and
 vita2d, and real files: both buttons, their edges and the gaps (focus only), Left,
 Right and Cross, the removed values, missing and wrong-sized models, an
-unreadable config.ini, and a later model table whose VOCR5 the app names unchanged.
+unreadable config.ini, and a later model table whose VOCR5 the app names unchanged
+(and VOCR3 while a missing VOCR5 file leaves a VOCR3 fallback to run).
 Its text widths are stub metrics, not firmware fonts. These scenarios, previews
 and the native checks below predate that change.
 The native Settings build, PNG ABI/assets checks and existing Lens transport
