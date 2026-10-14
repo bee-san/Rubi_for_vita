@@ -5,6 +5,7 @@
 #include "../../kernel/buffers.c"
 #include "../../kernel/capture.c"
 #include "../../kernel/capture_request.c"
+#include "../../core/region_select.h"
 
 int game_ocr_capture_busy_locked(void) { return 0; }
 VjoKernelState g;
@@ -206,6 +207,34 @@ static void capture_geometry_bounds(void)
     capture_guards();
 }
 
+/* A box drawn with the region selector (core/region_select.c, the Shell) and
+ * saved as a VjoRect is cropped by this code as exactly that box on a
+ * 960 x 544 frame, its x rounded down to even as always: every position and
+ * every size from the selector's 32 px minimum, both axes. So the size the
+ * selector shows is the size the game reads. */
+static void drawn_box_is_the_captured_crop(void)
+{
+    uint32_t x, y, w, h, cx, cy, cw, ch;
+    for (x = 0; x < 960; x++)
+        for (w = VJO_RSEL_MIN; w <= 960 - x; w++) {
+            VjoRect r = vjo_rsel_rect((int)x, 0, (int)w, 544);
+            capture_crop_of(&r, 960, 544, &cx, &cy, &cw, &ch);
+            if (cx != (x & ~1u) || cw != w || cy != 0 || ch != 544) {
+                TEST_CHECK_(0, "box x %u w %u cropped as %u,%u %ux%u", x, w, cx, cy, cw, ch);
+                return;
+            }
+        }
+    for (y = 0; y < 544; y++)
+        for (h = VJO_RSEL_MIN; h <= 544 - y; h++) {
+            VjoRect r = vjo_rsel_rect(0, (int)y, 960, (int)h);
+            capture_crop_of(&r, 960, 544, &cx, &cy, &cw, &ch);
+            if (cy != y || ch != h || cx != 0 || cw != 960) {
+                TEST_CHECK_(0, "box y %u h %u cropped as %u,%u %ux%u", y, h, cx, cy, cw, ch);
+                return;
+            }
+        }
+}
+
 static void capture_format_conversion(void)
 {
     for (int ten_bit = 0; ten_bit < 2; ten_bit++) {
@@ -287,5 +316,6 @@ TEST_LIST = {
     {"capture allocation and base failures", capture_allocation_failures},
     {"failed JPEG discard and ownership protection", capture_discard},
     {"capture geometry bounds and frozen region", capture_geometry_bounds},
+    {"a box drawn with the region selector is the captured crop", drawn_box_is_the_captured_crop},
     {"capture source pixel conversion", capture_format_conversion}, {NULL, NULL}
 };

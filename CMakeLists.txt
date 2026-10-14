@@ -79,7 +79,8 @@ target_include_directories(vjo-lens-transport-tests PRIVATE third_party/acutest/
 target_link_libraries(vjo-lens-transport-tests vjo_host)
 target_compile_options(vjo-lens-transport-tests PRIVATE -Wall -Wextra)
 add_test(NAME lens_transport COMMAND vjo-lens-transport-tests)
-add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
+  core/region_select.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -137,6 +138,13 @@ target_link_libraries(vjo-word-navigation-tests vjo_host)
 target_compile_features(vjo-word-navigation-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-word-navigation-tests PRIVATE -Wall -Wextra)
 add_test(NAME word_navigation COMMAND vjo-word-navigation-tests)
+# The region selector's cursor, corners and touch drags (core/region_select.c,
+# drawn by shell/overlay.cpp); vjo_host for region.ini's parser.
+add_executable(vjo-region-select-tests host/tests/test_region_select.c core/region_select.c)
+target_include_directories(vjo-region-select-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-region-select-tests vjo_host)
+target_compile_options(vjo-region-select-tests PRIVATE -Wall -Wextra)
+add_test(NAME region_select COMMAND vjo-region-select-tests)
 
 # End-to-end word lookup on real VOCR output with the bundled dictionary
 # (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts

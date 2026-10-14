@@ -58,7 +58,7 @@
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
-#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (5,632 B file) and the Paf Plugin object [estimate] */
+#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
 #define VJO_BUDGET_PAF_RESULTS_NET 571888u         /* 2 x 262,144 arenas + 47,600 connection pool (worker.c MEM_SIZE) */
 /* An Anki job (anki.c ANKI_TEXT_MEM): a text-only card. The Picture field is off in the

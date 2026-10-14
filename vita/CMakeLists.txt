@@ -123,6 +123,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/main.cpp
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
+  ${ROOT}/core/region_select.c
   ${ROOT}/shell/strip.cpp
   ${ROOT}/shell/strip_view.c
   ${ROOT}/shell/worker.c
@@ -139,6 +140,12 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/libc_shim.c)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
+# The overlay page (once a frame while it is open; paf's own calls dominate)
+# and the region selector it draws: built for size, which gave the region's
+# stick cursor its room in the module's pages (#81; overlay.cpp's text 11,608 B at -O2,
+# 8,822 B at -Os with the cursor).
+set_source_files_properties(${ROOT}/shell/overlay.cpp ${ROOT}/core/region_select.c
+  PROPERTIES COMPILE_OPTIONS "-Os")
 # Startup runs before Paf is ready; it only needs integer operations. Avoid
 # compiler-generated VFP/NEON copies in the early bootstrap and status logger.
 set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/shell/log_vita.c

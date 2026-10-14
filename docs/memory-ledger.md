@@ -60,7 +60,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Paf plugin+RCO | 8,192 | the RCO (5,632 B file) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
+| Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (local dictionary) or 571,888 (network: 2 × 262,144 + 47,600 connection pool) | held while a game runs | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`, `MEM_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 131,072 | per job: a text-only card; the Picture field's screenshot is off in the build (`VJO_ANKI_SCREENSHOT 0`), so neither its 393,216 B arena nor the kernel's 2,088,960 B full-frame capture is ever taken for Anki | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
 | overlay text arena | 20,480 | the header and body texts and their spans (17,952 B needed, `test_ledger.c`), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
@@ -83,6 +83,18 @@ span ends) and its deepest call chain from 1,008 to 2,464 B [measured: `arm-vita
 -fstack-usage` of `core/local_dict.c`, main and this change]. The lookup's 48 KiB scratch stays
 inside the 64 KiB result arena (compile-time check `WorkspaceFits`). The lookup log line uses a
 256-byte stack line, as every `vjo_log` call does.
+
+Drawing the region with the stick (#81, `core/region_select.c`) takes no allocation either. Its
+code (1,108 B of `region_select.c`, and `shell/overlay.cpp` at 8,822 B where the old file built
+for size is 8,237 B) is paid by building `shell/overlay.cpp` at `-Os` (11,608 B at `-O2`); it
+runs only while the overlay is open. The Shell's text goes from 217,048 to 215,312 B and its
+data and `.bss` from 81,232 to 81,336 B (the selector's state, 104 B), so the module stays at
+299,008 B [measured: the build log's module row, main `4a7ae4d` and this change]. The RCO grows
+from 5,632 to 6,368 B for the cursor's five planes and one style; the 8,192 B Paf plugin
+estimate is kept, which leaves 1,824 B (was 2,560 B) for the Paf `Plugin` object, a size still
+unmeasured. On the Paf main thread's stack the region hint's frame is 248 B with its 192-byte
+line, under `render`'s 312 B, so the overlay's deepest frame is unchanged [measured:
+`arm-vita-eabi-g++ -Os -fstack-usage`].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 

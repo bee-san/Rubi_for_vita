@@ -134,7 +134,7 @@ ur0:tai/VitaJPOverlay_OCR.suprx
 | Left / Right | Skip matched words in Whole word mode; step one character in Character mode |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Show the next/previous local dictionary's entry when **Dictionaries shown** is 2–8; navigate words with a network dictionary |
-| Square | Draw a dialogue region with the touchscreen; Cross saves, Circle cancels |
+| Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | Cross | Save the shown word as an Anki card in the offline queue, with `anki_mining = on` ([Anki mining](docs/anki.md)) |
 | Triangle | Send the queued cards to Anki at `anki_host` |
@@ -152,6 +152,21 @@ Anki closed; Triangle sends the queue to AnkiConnect. The card has no
 screenshot: the Picture field's full-frame capture is the kernel buffer #74's
 console refused, so the build leaves it out until it comes from the game's own
 memory ([Anki](docs/anki.md#memory-and-network)).
+
+### Drawing the region
+
+Square dims the game and shows a cursor in the middle of the screen. Move it
+with the left stick, which speeds up while you hold it, or one pixel per press
+with the d-pad (held, the d-pad repeats). Press Cross at one corner of the text
+box, then move to the opposite corner: the box follows the cursor, and the line
+at the top shows its size in screen pixels. Cross saves it as this game's
+region. A box smaller than 32 × 32 pixels, the capture's minimum, is not saved.
+Circle takes the first corner back; with no first corner it leaves without
+saving. A touch drag still draws the box: the first corner is where the finger
+lands, and after it lifts the stick or the d-pad can still move the opposite
+corner before Cross. Hold Square for one second for the full screen. The cursor
+and its acceleration are covered by host tests; how they feel on the console is
+not tested yet.
 
 ## Per-game settings
 
