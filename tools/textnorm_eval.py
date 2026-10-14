@@ -19,12 +19,21 @@ from core/textnorm.c). Reported per model, over all lines:
 - each rule's changes, and for the ー / 一 rules the changed characters that
   the alignment with the reference makes right or wrong.
 
+With --corpus, also what the ー / 一 rules do to CORRECT text, where every
+change is a wrong one: vita-vn-ocr's training text ($HERD/shared/data/corpus,
+dialogue, narration and wiki, from Aozora and Wikipedia), each line as it is and
+wrapped every 20 and 26 characters as a text box wraps it (the worker normalises
+each recognized line alone, so a word cut by the wrap ends a line). Reported:
+the changes per 100k characters and the contexts they fall in (character
+classes, no text).
+
 No protected set is read (the score files hold dev cohorts only); the output
 holds counts only, no text.
 
   python3 tools/textnorm_eval.py --tool build/host/vjo-textnorm --vocr-repo VITA_VN_OCR \\
-      [--herd /local/home/skerraut/herd-vita-ocr] --out docs/benchmarks/textnorm-20261014.json
+      [--herd /local/home/skerraut/herd-vita-ocr] [--corpus] --out docs/benchmarks/textnorm-20261014.json
 """
+import collections
 import argparse
 import json
 import subprocess
@@ -70,6 +79,59 @@ def normalise(tool, texts):
         out.append((text, dict(zip(RULES, (int(v) for v in counts.split())))))
     if len(out) != len(texts):
         raise SystemExit(f"vjo-textnorm returned {len(out)} lines for {len(texts)}")
+    return out
+
+
+MARKS = ("一", "ー")
+
+
+def char_class(c):
+    """The class of a neighbour of a changed mark (no text in the report)."""
+    if c is None:
+        return "end"
+    o = ord(c)
+    if c in MARKS:
+        return c
+    if 0x3041 <= o <= 0x3096 or o in (0x309D, 0x309E):
+        return "hira-small" if c in "ぁぃぅぇぉっゃゅょゎ" else "hira-counter" if c in "ゕゖ" else "hira"
+    if 0x30A1 <= o <= 0x30FA or o in (0x30FD, 0x30FE):
+        return "kata-small" if c in "ァィゥェォッャュョヮ" else "kata-counter" if c in "ヵヶ" else "kata"
+    if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF or 0xF900 <= o <= 0xFAFF or c in "々〆":
+        return "kanji"
+    return "mark" if c in "。、!?！？…‥」』~〜～・:：,，" else "other"
+
+
+def correct_text(tool, corpus):
+    """The ー / 一 changes on correct text, whole lines and wrapped at 20 and 26 characters."""
+    out = {}
+    for name in ("dialogue", "narration", "wiki"):
+        text = [t.replace("\t", " ") for t in (corpus / f"{name}.txt").read_text(encoding="utf-8").split("\n") if t]
+        for width in (0, 20, 26):
+            lines = text if not width else [t[k:k + width] for t in text for k in range(0, len(t), width)]
+            s = {"lines": len(lines), "chars": sum(map(len, lines)), "一": sum(t.count("一") for t in lines),
+                 "ー": sum(t.count("ー") for t in lines), "一->ー": 0, "ー->一": 0}
+            ctx = collections.Counter()
+            for src, (dst, counts) in zip(lines, normalise(tool, lines)):
+                if not (counts["long_vowel"] or counts["kanji_one"]):
+                    continue
+                # the forms pass can shorten the text (... is …) but never adds or drops a mark:
+                # the marks pair up in order
+                at = [i for i, c in enumerate(src) if c in MARKS]
+                now = [c for c in dst if c in MARKS]
+                if len(at) != len(now):
+                    raise SystemExit("vjo-textnorm added or dropped a ー / 一")
+                for i, c in zip(at, now):
+                    if src[i] == c:
+                        continue
+                    s[f"{src[i]}->{c}"] += 1
+                    j = i + 1
+                    while j < len(src) and src[j] in MARKS:
+                        j += 1
+                    ctx[f"{src[i]}->{c}: {char_class(src[i - 1] if i else None)} _ "
+                        f"{char_class(src[j] if j < len(src) else None)}"] += 1
+            s["wrong_per_100k_chars"] = round(1e5 * (s["一->ー"] + s["ー->一"]) / max(1, s["chars"]), 2)
+            s["contexts"] = dict(ctx.most_common(10))
+            out[f"{name}, " + (f"wrapped every {width} characters" if width else "whole lines")] = s
     return out
 
 
@@ -122,6 +184,8 @@ def main(argv=None):
     ap.add_argument("--herd", type=Path, default=Path("/local/home/skerraut/herd-vita-ocr"))
     ap.add_argument("--raw-model", action="append", default=[], metavar="NAME=FILE",
                     help="also read every dev crop raw with this blob (the console's text before normalisation)")
+    ap.add_argument("--corpus", action="store_true",
+                    help="also measure the ー / 一 rules on correct text ($HERD/shared/data/corpus)")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args(argv)
     sys.path.insert(0, str(args.vocr_repo / "eval"))
@@ -166,6 +230,9 @@ def main(argv=None):
                        "the score file's (already norm()'d)", **s}
     doc = {"what": __doc__.split("\n\n")[0], "cohorts": list(VOCR3_FILES), "view": "rv (console polarity)",
            "scorer": "vita-vn-ocr eval/metrics.py norm() + Levenshtein", "models": report}
+    if args.corpus:
+        doc["correct_text"] = {"what": "ー / 一 changes on correct text (every one is wrong): vita-vn-ocr's "
+                               "training corpus", **correct_text(args.tool, args.herd / "shared/data/corpus")}
     text = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
     if args.out:
         args.out.write_text(text, encoding="utf-8")

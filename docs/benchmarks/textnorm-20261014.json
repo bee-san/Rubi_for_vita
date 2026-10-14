@@ -95,7 +95,7 @@
    "exact_ref_chars": 28544,
    "exact_before": 702,
    "exact_after": 700,
-   "lines_changed": 3,
+   "lines_changed": 2,
    "lines_scored_differently": 2,
    "vowel_right": 2,
    "vowel_wrong": 0,
@@ -103,7 +103,7 @@
    "tilde": 0,
    "dash": 0,
    "ellipsis": 0,
-   "long_vowel": 3,
+   "long_vowel": 2,
    "kanji_one": 0,
    "cer_scored_before": 2.459,
    "cer_scored_after": 2.452,
@@ -209,6 +209,187 @@
    "cer_scored_after": 2.281,
    "cer_exact_before": 4.043,
    "cer_exact_after": 2.281
+  }
+ },
+ "correct_text": {
+  "what": "ー / 一 changes on correct text (every one is wrong): vita-vn-ocr's training corpus",
+  "dialogue, whole lines": {
+   "lines": 600000,
+   "chars": 24606112,
+   "一": 75483,
+   "ー": 26004,
+   "一->ー": 69,
+   "ー->一": 0,
+   "wrong_per_100k_chars": 0.28,
+   "contexts": {
+    "一->ー: kata _ kata": 28,
+    "一->ー: hira _ hira-small": 11,
+    "一->ー: hira _ kata-small": 10,
+    "一->ー: kata _ other": 10,
+    "一->ー: kata _ mark": 5,
+    "一->ー: hira _ mark": 3,
+    "一->ー: kata _ end": 1,
+    "一->ー: 一 _ other": 1
+   }
+  },
+  "dialogue, wrapped every 20 characters": {
+   "lines": 1499623,
+   "chars": 24606112,
+   "一": 75483,
+   "ー": 26004,
+   "一->ー": 83,
+   "ー->一": 0,
+   "wrong_per_100k_chars": 0.34,
+   "contexts": {
+    "一->ー: kata _ kata": 27,
+    "一->ー: kata _ end": 16,
+    "一->ー: hira _ kata-small": 10,
+    "一->ー: kata _ other": 10,
+    "一->ー: hira _ hira-small": 10,
+    "一->ー: kata _ mark": 5,
+    "一->ー: hira _ mark": 3,
+    "一->ー: ー _ end": 1,
+    "一->ー: 一 _ other": 1
+   }
+  },
+  "dialogue, wrapped every 26 characters": {
+   "lines": 1237533,
+   "chars": 24606112,
+   "一": 75483,
+   "ー": 26004,
+   "一->ー": 81,
+   "ー->一": 0,
+   "wrong_per_100k_chars": 0.33,
+   "contexts": {
+    "一->ー: kata _ kata": 26,
+    "一->ー: kata _ end": 15,
+    "一->ー: hira _ hira-small": 11,
+    "一->ー: hira _ kata-small": 10,
+    "一->ー: kata _ other": 9,
+    "一->ー: kata _ mark": 5,
+    "一->ー: hira _ mark": 3,
+    "一->ー: ー _ end": 1,
+    "一->ー: 一 _ other": 1
+   }
+  },
+  "narration, whole lines": {
+   "lines": 600000,
+   "chars": 37318210,
+   "一": 166089,
+   "ー": 53058,
+   "一->ー": 113,
+   "ー->一": 1,
+   "wrong_per_100k_chars": 0.31,
+   "contexts": {
+    "一->ー: kata _ kata": 65,
+    "一->ー: kata _ other": 12,
+    "一->ー: hira _ hira-small": 12,
+    "一->ー: kata _ mark": 8,
+    "一->ー: hira _ mark": 7,
+    "一->ー: kata _ end": 2,
+    "一->ー: hira _ kata-small": 2,
+    "一->ー: ー _ kata": 2,
+    "一->ー: 一 _ mark": 1,
+    "ー->一: kanji _ kanji": 1
+   }
+  },
+  "narration, wrapped every 20 characters": {
+   "lines": 2130195,
+   "chars": 37318210,
+   "一": 166089,
+   "ー": 53058,
+   "一->ー": 137,
+   "ー->一": 1,
+   "wrong_per_100k_chars": 0.37,
+   "contexts": {
+    "一->ー: kata _ kata": 59,
+    "一->ー: kata _ end": 40,
+    "一->ー: kata _ other": 10,
+    "一->ー: hira _ hira-small": 10,
+    "一->ー: kata _ mark": 7,
+    "一->ー: hira _ mark": 4,
+    "一->ー: hira _ kata-small": 2,
+    "一->ー: ー _ kata": 2,
+    "ー->一: kanji _ kanji": 1,
+    "一->ー: ー _ end": 1
+   }
+  },
+  "narration, wrapped every 26 characters": {
+   "lines": 1731563,
+   "chars": 37318210,
+   "一": 166089,
+   "ー": 53058,
+   "一->ー": 129,
+   "ー->一": 1,
+   "wrong_per_100k_chars": 0.35,
+   "contexts": {
+    "一->ー: kata _ kata": 64,
+    "一->ー: kata _ end": 19,
+    "一->ー: kata _ other": 12,
+    "一->ー: hira _ hira-small": 12,
+    "一->ー: kata _ mark": 8,
+    "一->ー: hira _ mark": 6,
+    "一->ー: hira _ kata-small": 2,
+    "一->ー: ー _ kata": 2,
+    "一->ー: ー _ end": 2,
+    "一->ー: 一 _ mark": 1
+   }
+  },
+  "wiki, whole lines": {
+   "lines": 400000,
+   "chars": 21175799,
+   "一": 49305,
+   "ー": 333722,
+   "一->ー": 21,
+   "ー->一": 32,
+   "wrong_per_100k_chars": 0.25,
+   "contexts": {
+    "ー->一: kanji _ kanji": 32,
+    "一->ー: kata _ kata": 7,
+    "一->ー: kata _ mark": 6,
+    "一->ー: kata _ other": 4,
+    "一->ー: hira _ mark": 3,
+    "一->ー: 一 _ other": 1
+   }
+  },
+  "wiki, wrapped every 20 characters": {
+   "lines": 1233134,
+   "chars": 21175799,
+   "一": 49305,
+   "ー": 333722,
+   "一->ー": 63,
+   "ー->一": 31,
+   "wrong_per_100k_chars": 0.44,
+   "contexts": {
+    "一->ー: kata _ end": 41,
+    "ー->一: kanji _ kanji": 31,
+    "一->ー: kata _ kata": 7,
+    "一->ー: kata _ mark": 6,
+    "一->ー: kata _ other": 3,
+    "一->ー: hira _ mark": 2,
+    "一->ー: ー _ end": 2,
+    "一->ー: 一 _ other": 1,
+    "一->ー: kata-small _ end": 1
+   }
+  },
+  "wiki, wrapped every 26 characters": {
+   "lines": 1006965,
+   "chars": 21175799,
+   "一": 49305,
+   "ー": 333722,
+   "一->ー": 39,
+   "ー->一": 30,
+   "wrong_per_100k_chars": 0.33,
+   "contexts": {
+    "ー->一: kanji _ kanji": 30,
+    "一->ー: kata _ end": 19,
+    "一->ー: kata _ kata": 7,
+    "一->ー: kata _ mark": 5,
+    "一->ー: kata _ other": 4,
+    "一->ー: hira _ mark": 2,
+    "一->ー: 一 _ other": 1,
+    "一->ー: kata-small _ end": 1
+   }
   }
  }
 }

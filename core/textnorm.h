@@ -15,9 +15,11 @@
  *    three of them (at least one); a lone ・ (in a name) stays;
  *  - ー or 一 by context: 一 becomes ー after a katakana (or ー) when katakana,
  *    a small kana, a mark or the end of the line follows ("コ一ヒ一"), and after
- *    a hiragana when a small kana, ー, ~, !, ?, an ellipsis, 」, 』 or the end of
- *    the line follows ("だよ一っ"); ー between two kanji becomes 一 ("統ー的").
- *    一 before a kanji or a hiragana stays, as in "コーヒー一杯" and "ケーキ一つ".
+ *    a hiragana when a small kana, ー, ~, !, ?, an ellipsis, 」 or 』 follows
+ *    ("だよ一っ"); ー between two kanji becomes 一 ("統ー的"). 一 before a kanji,
+ *    a hiragana or a counter ヶ ヵ stays ("コーヒー一杯", "ケーキ一つ",
+ *    "ハネムーン一ヶ月"), and so does one after a hiragana at the end of a line,
+ *    which a wrapped line often is ("もう一 / 度").
  *
  * Nothing else changes: whitespace, small kana, dakuten and lookalike kanji or
  * kana are left as the recognizer read them (those are recognition errors, not

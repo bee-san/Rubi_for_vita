@@ -1,5 +1,5 @@
 /* Recognized text normalised for display and lookup (textnorm.h). Built for
- * size: it runs in the Shell (SceShell's pages, AGENTS.md rule 1). */
+ * size (-Os): the game worker runs it on the text it returns. */
 #include "textnorm.h"
 
 #include <stdint.h>
@@ -50,10 +50,11 @@ static int is_kanji(uint32_t c)
            c == 0x3005 || c == 0x3006; /* 々〆 */
 }
 
-/* ぁぃぅぇぉっゃゅょゎゕゖ and their katakana (0x60 higher). */
+/* ぁぃぅぇぉっゃゅょゎ and their katakana (0x60 higher). Not the counters
+ * ゕゖヵヶ: no long vowel comes before one, and 一 often does (一ヶ月). */
 static int is_small(uint32_t c)
 {
-    static const unsigned char small[] = {0x01, 0x03, 0x05, 0x07, 0x09, 0x23, 0x43, 0x45, 0x47, 0x4E, 0x55, 0x56};
+    static const unsigned char small[] = {0x01, 0x03, 0x05, 0x07, 0x09, 0x23, 0x43, 0x45, 0x47, 0x4E};
     if (c >= 0x30A1 && c <= 0x30F6) c -= 0x60;
     if (c < 0x3041 || c > 0x3096) return 0;
     for (size_t i = 0; i < sizeof(small); i++)
@@ -62,10 +63,11 @@ static int is_small(uint32_t c)
 }
 
 /* What may follow a long vowel written after a hiragana: a small kana, ー, a
- * tilde, !, ?, an ellipsis, a closing quote, the end of the line. */
+ * tilde, !, ?, an ellipsis, a closing quote. Not the end of the line: a line
+ * wraps mid-word, and もう一 / 度 is far more common there than すごー. */
 static int ends_elongation(uint32_t c)
 {
-    return !c || is_small(c) || c == CP_LONG_VOWEL || c == '~' || c == '!' || c == '?' || c == CP_ELLIPSIS ||
+    return is_small(c) || c == CP_LONG_VOWEL || c == '~' || c == '!' || c == '?' || c == CP_ELLIPSIS ||
            c == 0x2025 /* ‥ */ || c == 0x300D /* 」 */ || c == 0x300F /* 』 */;
 }
 
@@ -135,7 +137,11 @@ static void long_vowels(char *s, VjoTextNorm *k)
         uint32_t c = decode(s + r, &n), next;
         if (c == CP_KANJI_ONE && (is_kata(prev) || is_hira(prev))) {
             next = after_run(s + r);
-            if (is_kata(prev) ? !is_kanji(next) && !(is_hira(next) && !is_small(next)) : ends_elongation(next)) {
+            /* after katakana it stays before a kanji, a big hiragana or a counter
+             * ヵ ヶ (ハネムーン一ヶ月) */
+            if (is_kata(prev) ? !is_kanji(next) && !(is_hira(next) && !is_small(next)) && next != 0x30F5 &&
+                                    next != 0x30F6
+                              : ends_elongation(next)) {
                 /* the whole run: "コ一一" is "コーー" */
                 while (decode(s + r, &n) == CP_KANJI_ONE) {
                     encode3(CP_LONG_VOWEL, s + r);

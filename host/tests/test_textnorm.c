@@ -62,7 +62,7 @@ static void test_long_vowel_and_kanji_one(void)
     /* after hiragana, before what ends an elongation */
     TEST_CHECK(check("だよ一っ!」", "だよーっ!」", &k) == 1);
     TEST_CHECK(check("こまで一」", "こまでー」", &k) == 1);
-    TEST_CHECK(check("すご一", "すごー", &k) == 1);
+    TEST_CHECK(check("すご一っ", "すごーっ", &k) == 1);
     TEST_CHECK(check("ね一~", "ねー~", &k) == 1);
     /* the number one stays: before a kanji or a hiragana, at the start, after a kanji */
     TEST_CHECK(check("コーヒー一杯", "コーヒー一杯", &k) == 0);
@@ -72,6 +72,18 @@ static void test_long_vowel_and_kanji_one(void)
     TEST_CHECK(check("たった一人", "たった一人", &k) == 0);
     TEST_CHECK(check("統一。", "統一。", &k) == 0);
     TEST_CHECK(check("嫌そ一な", "嫌そ一な", &k) == 0); /* hira 一 hira is ambiguous ("もう一つ"): left */
+    /* the counters ヶ ヵ ゖ follow the number, never a long vowel */
+    TEST_CHECK(check("あと一ヶ月", "あと一ヶ月", &k) == 0);
+    TEST_CHECK(check("この一ヵ所", "この一ヵ所", &k) == 0);
+    TEST_CHECK(check("ハネムーン一ヶ月", "ハネムーン一ヶ月", &k) == 0);
+    TEST_CHECK(check("ハネムーン一ヵ月", "ハネムーン一ヵ月", &k) == 0);
+    TEST_CHECK(check("あと一ゖ月", "あと一ゖ月", &k) == 0);
+    TEST_CHECK(check("ア一ッ", "アーッ", &k) == 1); /* a small kana that is not a counter */
+    /* after a hiragana at the end of a line it stays: a wrapped line ends mid-word */
+    TEST_CHECK(check("すご一", "すご一", &k) == 0);
+    TEST_CHECK(check("もう一", "もう一", &k) == 0);
+    TEST_CHECK(check("ただ一\n人", "ただ一\n人", &k) == 0);
+    TEST_CHECK(check("の一\nね一!", "の一\nねー!", &k) == 1);
     /* ー between two kanji is 一 */
     TEST_CHECK(check("玄ー郎", "玄一郎", &k) == 1 && k.kanji_one == 1);
     TEST_CHECK(check("統ー的", "統一的", &k) == 1);

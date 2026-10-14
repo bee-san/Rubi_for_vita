@@ -337,8 +337,10 @@ console compares with the evaluation directly:
   stays);
 - by context: `一` becomes `ー` after a katakana when katakana, a small kana, a mark or the end of the
   line follows (`コ一ヒ一` → `コーヒー`, while `コーヒー一杯` stays), and after a hiragana when a small
-  kana, `ー`, `~`, `!`, `?`, an ellipsis, `」`, `』` or the end of the line follows (`だよ一っ` →
-  `だよーっ`); `ー` between two kanji becomes `一` (`玄ー郎` → `玄一郎`).
+  kana, `ー`, `~`, `!`, `?`, an ellipsis, `」` or `』` follows (`だよ一っ` → `だよーっ`); `ー` between
+  two kanji becomes `一` (`玄ー郎` → `玄一郎`). The counters `ヶ` and `ヵ` do not count as small kana
+  (`あと一ヶ月` and `ハネムーン一ヶ月` stay). After a hiragana, `一` at the end of a line also stays,
+  because a text box wraps mid-word and `もう一` / `度` is far more common there than `すごー`.
 
 The text never grows, so the game worker normalises it in place before it returns it, and keeps
 the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
@@ -362,7 +364,19 @@ text itself with the references, which are written in the scorer's form.
 | VOCR4-W20 | 1.703 → 1.703 % | – | 0 / 0 (its one change is on a line misread around it) |
 
 The scorer already folds the forms, so only the ー/一 rules move scored CER, and only a little:
-these recognizers rarely confuse the two (one `一` after a katakana in all six models' 15,774 readings). What the
+these recognizers rarely confuse the two (one `一` after a katakana in all six models' 15,774 readings).
+
+**On correct text**, every change the ー/一 rules make is a wrong one (`--corpus` in the same tool
+and benchmark file). The text is vita-vn-ocr's training corpus, `shared/data/corpus`: 1.6 million
+lines of dialogue, narration and Wikipedia text, none of it from a test set. The rules change:
+
+- 0.25–0.31 characters per 100,000 on whole lines;
+- 0.33–0.44 per 100,000 when the lines are wrapped every 20 or 26 characters, as a text box wraps
+  them.
+
+Most of these changes come after a katakana: the numeral before a katakana counter or unit (`ビール一ケース`),
+or a word cut by the wrap right before the numeral. In Wikipedia text, `ー` written between kanji
+accounts for most of the rest. What the
 console shows moves a lot: against the references the raw text differs in 1,115 characters
 (H15), the normalised text in 603, exactly the scored errors. Lookups see the ー/一 changes only
 (punctuation is never looked up).
