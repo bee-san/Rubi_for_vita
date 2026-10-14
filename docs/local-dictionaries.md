@@ -210,8 +210,8 @@ no dictionary-sized persistent allocation is added.
 | Input text | Up to 4,095 UTF-8 bytes plus NUL |
 | Longest candidate term at the cursor | 32 Unicode code points |
 | Deinflection candidates per substring | 128 |
-| Selected entry | Zero or one resident; first posting of the best match per dictionary |
-| Same-key index rows examined per candidate/file | First 64 |
+| Selected entry | Zero or one resident; the best-ranked posting of the best match per dictionary |
+| Same-key index rows examined per candidate/file | First 64, each ranked by a 160-byte head read |
 
 Local lookup starts only at the selected Unicode character. Left/right moves
 one character, including supplementary characters; it reuses saved OCR text
@@ -260,9 +260,38 @@ selects a character and uses the same bounded lookup as the arrows. Neither
 option introduces sentence tokenization. With `anki_host` set, × sends the
 match at the cursor to [Anki](anki.md).
 Part-of-speech rules from the dictionary filter deinflected candidates.
-At the selected position, the longest exact term takes precedence, followed
-by deinflected candidates and configured dictionary order. This is bounded
-matching, not a full Japanese morphological parser.
+At the selected position the longest source span takes precedence. At that
+span, an entry written the way the text is written wins over a homograph:
+the text itself first, then its inflections with fewer steps first. Kana
+text therefore shows the kana word (the particle から, the honorific さん,
+the verb する) and inflected kana its dictionary form (した → する, なってる →
+なる) rather than a homograph spelled in kanji (空, 三, 剃る, 下). Without
+such an entry, the best homograph of the first matching candidate is shown.
+
+Only one entry is shown, and one key's entries are stored in source order,
+which for the bundled Daijirin4 is reading order, not frequency (私 lists
+あたい first, 先生 シーサン). The lookup therefore ranks a key's postings, reading
+only each one's spelling and reading (one bounded head read): first a short
+built-in list of common readings of very frequent words (私 → わたし, 僕 → ぼく,
+こう → 斯う; `preferred_readings` in `core/local_dict.c`, every pair checked to
+exist in the bundle), then the spelling as written, then an entry that has a
+reading (Daijirin4's kanji-character articles have none), then the longer
+article. With several dictionaries, at one span an entry written as the
+text is (in any dictionary) beats a homograph in an earlier dictionary, an
+exact hit in a later dictionary still beats an inflected hit in an earlier
+one, and otherwise configured dictionary order decides. This is
+bounded matching, not a full Japanese morphological parser: longest match
+can still join a particle to the next word (頭がすっきり shows ガス for がす),
+and words never span a line break, because the first recognized line is often
+a speaker's name. On the 134 recognized development lines whose VNs the
+fixture's filter allows (`tools/collect_word_lookup_lines.py`), stepping with
+Right, the ranking changed 375 of 1,376 shown entries (164 of 625 on the 50
+committed lines), and no matched span. An independent audit judged a random
+sample of 80 changes: 51 better, 25 the same, 4 worse. The remaining losses
+are mostly single kanji whose longer article is a rarer reading (泉 せん, 比
+ころ, 校 きょう) and same-depth inflection ties (飛ばされ → 飛ぶ); a frequency
+signal would be the real fix
+([word lookup](touch-lookup.md#word-lookup-on-recognized-text)).
 The caps above can omit lower-priority matches or unusually complex inflections.
 Missing or corrupt enabled files fail the lookup with an actionable error;
 there is no automatic relay/cloud fallback.

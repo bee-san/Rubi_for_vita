@@ -25,8 +25,12 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
  * be a decoder codepoint boundary; invalid offsets return VJO_E_PARSE.
  * Malformed bytes keep the existing one-byte replacement behavior. Searches
  * at most 32 characters, stopping at punctuation/whitespace, without scanning
- * later words. Longest source span wins, then exact match, then dictionary
- * order. Token positions include raw newlines and use UTF-16 units. */
+ * later words. Longest source span wins. At that span, an entry written as
+ * the text is (kana text: the kana word; inflected text: the dictionary form;
+ * or a listed common reading) wins over a homograph, the text itself before
+ * its inflections (fewer steps first), then dictionary order; a key's
+ * postings are ranked (local_dict.c, docs/local-dictionaries.md). Token
+ * positions include raw newlines and use UTF-16 units. */
 int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const char *text, size_t cursor_byte,
                         VjoDictResult *res, VjoErr *err);
@@ -51,8 +55,8 @@ struct VjoLocalPages { /* typedef in client.h */
 
 /* vjo_local_lookup_at for up to `limit` (1..8) dictionaries. Page 0 is exactly
  * vjo_local_lookup_at's single result, also read into res. Later pages are the
- * best match (longest span, then exact, then first posting) of each other
- * dictionary that has one, in local_dictionaries order; only their locators
+ * best match (longest span, then as above) of each other dictionary that has
+ * one, in local_dictionaries order; only their locators
  * are kept. limit 1 performs the same reads as vjo_local_lookup_at, and pages
  * may then be NULL (nothing to locate). */
 int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,

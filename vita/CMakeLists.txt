@@ -143,10 +143,12 @@ target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # compiler-generated VFP/NEON copies in the early bootstrap and status logger.
 set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/shell/log_vita.c
   PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only;-Os")
-# Cold paths (bootstrap, guard, ledger, logging, file access, queue files):
-# every page of this module is SceShell's, so they are built for size.
+# Cold paths (bootstrap, guard, ledger, logging, file access, queue files, the
+# worker's job control): every page of this module is SceShell's, so they are
+# built for size. worker.c at -Os pays for the word lookup's ranking and log
+# within the module's pages (docs/memory-ledger.md).
 set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
-  ${ROOT}/shell/files.c ${ROOT}/shell/game.c
+  ${ROOT}/shell/files.c ${ROOT}/shell/game.c ${ROOT}/shell/worker.c
   ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")

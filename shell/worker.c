@@ -139,6 +139,7 @@ static volatile int job_done;
 static volatile int job_idx;
 static volatile int job_rc;
 static volatile int job_lookup;     /* the job looks the words up (else OCR only) */
+static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
 static const char *job_cached_text;
@@ -285,6 +286,63 @@ int vjo_post_page(int page, uint32_t text_generation)
 static int64_t now_us(void)
 {
     return (int64_t)sceKernelGetProcessTimeWide();
+}
+
+/* Dictionary file reads since the last lookup began (platform_vita.c counts). */
+uint32_t vjo_dict_reads, vjo_dict_read_bytes;
+
+/* Up to `chars` characters of s (the line at most) into out, for the log. */
+static void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
+{
+    size_t i = 0;
+    while (i < len && chars-- > 0) {
+        size_t j = i;
+        uint32_t cp = vjo_utf8_next(s, len, &j);
+        if (cp < 0x20 || j >= cap) break;
+        i = j;
+    }
+    sceClibMemcpy(out, s, i);
+    out[i] = 0;
+}
+
+/* One log.txt line per dictionary lookup: why (first word during OCR, on
+ * open, cursor or tap, dictionary page), the cursor byte, the matched span
+ * in characters, the dictionary file, the page, the file reads, rc and the
+ * time; then the text at the cursor, the entry and the source named in its
+ * definition. The numbers come first and the texts are bounded (32 + 31 + 31
+ * + 23 bytes, whole characters), so the line fits vjo_log's 254 bytes. */
+static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t cursor, int rc, int64_t t0)
+{
+    char query[33], head[32], reading[32], source[24], dict[8];
+    const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
+    const char *text = out->sentence ? out->sentence : "";
+    size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
+    int chars = 0, page = out->page, files = vjo_local_names_count(job_cfg.local_dictionaries);
+    /* Which file: known with one, or from the page locators (2-8 shown). */
+    int file = files == 1 ? 1 : out->pages && page >= 0 && page < out->pages->count ? out->pages->page[page].dict + 1 : 0;
+    query[0] = head[0] = reading[0] = source[0] = 0;
+    if (cursor <= len) log_text(query, sizeof(query), text + cursor, len - cursor, 8);
+    if (e) {
+        size_t i = (size_t)e->hl_start;
+        while (i < (size_t)e->hl_end && i < len) { vjo_utf8_next(text, len, &i); chars++; }
+        log_text(head, sizeof(head), e->vocab->spelling, sceClibStrnlen(e->vocab->spelling, 256), 10);
+        if (e->vocab->reading != e->vocab->spelling)
+            log_text(reading, sizeof(reading), e->vocab->reading, sceClibStrnlen(e->vocab->reading, 256), 10);
+        if (e->vocab->n_meanings && e->vocab->meanings[0][0] == '[') { /* "[Daijirin4 Plain]\n..." */
+            const char *m = e->vocab->meanings[0] + 1;
+            size_t n = 0;
+            while (n + 1 < sizeof(source) && m[n] && m[n] != ']') n++;
+            if (m[n] == ']') { sceClibMemcpy(source, m, n); source[n] = 0; }
+        }
+    }
+    if (!e) sceClibSnprintf(dict, sizeof(dict), "-");
+    else if (file) sceClibSnprintf(dict, sizeof(dict), "%d/%d", file, files);
+    else sceClibSnprintf(dict, sizeof(dict), "?/%d", files);
+    vjo_log("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
+            why, (unsigned)cursor, chars, dict, page + 1, vjo_overlay_page_count(out),
+            (unsigned)vjo_dict_reads, (unsigned)vjo_dict_read_bytes, rc, (unsigned)((now_us() - t0) / 1000),
+            query, e ? head : "no entry", reading[0] ? " (" : "", reading, reading[0] ? ")" : "",
+            source[0] ? " [" : "", source, source[0] ? "]" : "");
 }
 
 /* Does a result for scene `a` show the current scene `b`? */
@@ -858,8 +916,11 @@ recognized:
         job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     if (!local_pipeline(&job_cfg))
         return vjo_overlay_lookup(a, &plat, &job_cfg, out);
+    int64_t t0 = now_us();
+    vjo_dict_reads = vjo_dict_read_bytes = 0;
     int rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
     note_pages(rc, out);
+    log_lookup(job_prepares ? "first word" : "on open", out, job_cursor_byte, rc, t0);
     return rc;
 }
 
@@ -876,7 +937,9 @@ static void note_pages(int rc, const VjoOverlayData *out)
 static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 {
     const VjoLocalPages *pages = out->pages;
+    int64_t t0 = now_us();
     int rc;
+    vjo_dict_reads = vjo_dict_read_bytes = 0;
     if (pages && has_result_memory() && pages_generation == job_text_generation &&
         pages_limit == job_cfg.local_dictionary_results &&
         pages->cursor_byte == job_cursor_byte && job_page < pages->count) {
@@ -884,6 +947,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
          * shown entry can be released without the view lock. */
         rc = vjo_overlay_lookup_page(a, &plat, &job_cfg, job_page, out);
         if (rc) pages_generation = 0; /* e.g. a replaced file: locate again next time */
+        log_lookup("page", out, job_cursor_byte, rc, t0);
         return rc;
     }
     sceClibMemset(out, 0, sizeof(*out));
@@ -904,6 +968,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     /* Locators were stale (another limit): show the requested page if it exists. */
     if (!rc && job_page > 0 && out->pages && job_page < out->pages->count)
         rc = vjo_overlay_lookup_page(a, &plat, &job_cfg, job_page, out);
+    log_lookup("cursor", out, job_cursor_byte, rc, t0);
     return rc;
 }
 
@@ -961,6 +1026,7 @@ static void start_job(const char *why, int lookup)
     }
     vjo_log("job start (%s)%s", why, lookup ? "" : ", OCR only");
     job_lookup = lookup;
+    job_prepares = ov == OV_CLOSED;
     job_cursor_only = 0;
     job_text_generation = 0;
     job_idx = local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;

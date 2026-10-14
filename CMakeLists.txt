@@ -138,6 +138,33 @@ target_compile_features(vjo-word-navigation-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-word-navigation-tests PRIVATE -Wall -Wextra)
 add_test(NAME word_navigation COMMAND vjo-word-navigation-tests)
 
+# End-to-end word lookup on real VOCR output with the bundled dictionary
+# (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts
+# checkout or the frozen archive (default: .refs/plaintext-dicts, as CI checks
+# it out); without one the test reports itself skipped.
+set(VJO_PLAINTEXT_SOURCE "" CACHE PATH "plaintext-dicts checkout or frozen archive (word-lookup test)")
+set(_vjo_plaintext "${VJO_PLAINTEXT_SOURCE}")
+if(NOT _vjo_plaintext AND EXISTS ${CMAKE_SOURCE_DIR}/.refs/plaintext-dicts/processed/plaintext.vjdict.zip)
+  set(_vjo_plaintext ${CMAKE_SOURCE_DIR}/.refs/plaintext-dicts)
+endif()
+add_executable(vjo-word-lookup-tests host/tests/test_word_lookup.cpp)
+target_include_directories(vjo-word-lookup-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-word-lookup-tests vjo_host)
+target_compile_features(vjo-word-lookup-tests PRIVATE cxx_std_11)
+target_compile_options(vjo-word-lookup-tests PRIVATE -Wall -Wextra)
+target_compile_definitions(vjo-word-lookup-tests PRIVATE VJO_WORD_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures/word_lookup")
+add_test(NAME word_lookup COMMAND vjo-word-lookup-tests)
+set_tests_properties(word_lookup PROPERTIES SKIP_RETURN_CODE 77)
+if(_vjo_plaintext)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME plaintext_dictionary COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/prepare_plaintext.py
+    --source ${_vjo_plaintext} -o ${CMAKE_BINARY_DIR}/plaintext/plaintext.vjdict)
+  set_tests_properties(plaintext_dictionary PROPERTIES FIXTURES_SETUP plaintext)
+  set_tests_properties(word_lookup PROPERTIES FIXTURES_REQUIRED plaintext
+    ENVIRONMENT "VJO_PLAINTEXT_DIR=${CMAKE_BINARY_DIR}/plaintext;VJO_REQUIRE_PLAINTEXT=1")
+  set(_vjo_plaintext_dir ${CMAKE_BINARY_DIR}/plaintext)
+endif()
+
 add_executable(vjo-text-hit-tests host/tests/test_text_hit.c)
 target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-hit-tests vjo_host)
@@ -182,6 +209,10 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-shell-worker-paf-tests vjo_vocr)
 endif()
 add_test(NAME shell_worker_paf COMMAND vjo-shell-worker-paf-tests)
+if(_vjo_plaintext_dir) # the Shell's word lookup with the bundled dictionary too
+  set_tests_properties(shell_worker shell_worker_paf PROPERTIES FIXTURES_REQUIRED plaintext
+    ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
+endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md).
 add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py)
