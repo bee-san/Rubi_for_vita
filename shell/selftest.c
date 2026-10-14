@@ -231,12 +231,15 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
     return 1;
 }
 
-static const char *const step_names[VJO_GSTEP_COUNT] = {
+static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
-    "fb", "probe", "settle", "blank", "norm"};
+    "fb", "probe", "settle", "blank", "norm", "lm", "cascade"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
-static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line"};
+static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade"};
+/* Every step and block has its name (a new one without fails the build). */
+typedef char vjo_step_names_complete[sizeof(step_names) / sizeof(step_names[0]) == VJO_GSTEP_COUNT ? 1 : -1];
+typedef char vjo_item_names_complete[sizeof(item_names) / sizeof(item_names[0]) == VJO_GITEM_COUNT ? 1 : -1];
 
 /* One step of the game worker's log as `step/rc/bytes/free` text: what the
  * step was, its native result, its bytes, the game's free memory after it. */
@@ -247,7 +250,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
     char argbuf[16];
     if (s->id == VJO_GSTEP_ALLOC || s->id == VJO_GSTEP_FREE) {
         kind = s->kind < 5 ? mem_names[s->kind] : "?";
-        arg = s->arg < 6 ? item_names[s->arg] : "?";
+        arg = s->arg < VJO_GITEM_COUNT ? item_names[s->arg] : "?";
     } else if (s->id == VJO_GSTEP_PROBE) {
         kind = s->kind < 4 ? src_names[s->kind] : "?";
         arg = s->arg < 5 ? mem_names[s->arg] : "?";

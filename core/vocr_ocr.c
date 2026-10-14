@@ -13,6 +13,7 @@
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
+#include "vocr_lm.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.2.5-vocr3.1
@@ -46,9 +47,60 @@ static const VjoVocrModel models[] = {
      {0xf8,0xc1,0xab,0xe4,0x74,0x3a,0x71,0xa7,0x42,0xe7,0x18,0x52,0x3f,0x42,0x06,0xf9,
       0x92,0xd3,0xbd,0x4f,0xb6,0x9d,0xe3,0x21,0x99,0x7b,0x2b,0xd6,0xf1,0x67,0x79,0xc0},
      241056, VOCR_LINES_GRAD},
+    /* VOCR4-W20 (vita-vn-ocr v0.2.5-vocr4.1, F20's shape): the confidence
+     * cascade's larger model; not qualified as a default (docs/vita-vn-ocr.md). */
+    {VJO_VOCR4_W20_NAME, VJO_VOCR_CASCADE_BYTES,
+     {0x27,0x45,0xe6,0x96,0x99,0xad,0x7b,0x2a,0xba,0x30,0x92,0xf8,0x3e,0x5d,0xdc,0x19,
+      0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},
+     241056, VOCR_LINES_GRAD},
 };
 #endif /* VJO_VOCR_TEST_MODELS */
 #define N_MODELS (sizeof(models) / sizeof(models[0]))
+
+/* The LM tiers of bee-san/vita-vn-ocr pre-release v0.2.6-ctclm.2 (CC BY-SA 4.0,
+ * ATTRIBUTION.md ships with them), and the per-character bonus each was tuned
+ * with (docs/ctc-lm-decode.md, "settings"). */
+static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
+    {VJO_VOCR_LM1_NAME, VJO_VOCR_LM1_BYTES,
+     {0x38,0xea,0x94,0xe0,0xc4,0xec,0x93,0x86,0x34,0x54,0x38,0x7e,0x7c,0x2c,0x46,0x9d,
+      0x20,0x9a,0xaf,0x21,0xf2,0xf6,0xee,0x5d,0x04,0x0e,0x75,0xa0,0x9d,0x00,0xd2,0x86}, 3000, 1},
+    {VJO_VOCR_LM2_NAME, VJO_VOCR_LM2_BYTES,
+     {0x99,0x30,0x00,0x61,0x15,0x55,0x17,0x1d,0xaf,0x63,0x61,0xe2,0x9a,0x50,0x3b,0x08,
+      0x71,0xa5,0xf3,0xdd,0x24,0x0a,0x19,0x55,0x5d,0x55,0xf1,0x6a,0xaa,0x3a,0xb3,0xd9}, 3500, 2},
+    {VJO_VOCR_LM3_NAME, VJO_VOCR_LM3_BYTES,
+     {0xac,0x33,0xe4,0x61,0xbd,0x34,0x66,0x17,0xaa,0xe2,0x71,0x68,0xae,0xe4,0x72,0x30,
+      0xa7,0x58,0xf4,0xb3,0x01,0xd7,0x8b,0x59,0xeb,0x55,0xca,0x25,0xa2,0x1b,0xcb,0x34}, 3000, 3},
+    {VJO_VOCR_LM4_NAME, VJO_VOCR_LM4_BYTES,
+     {0x01,0xf4,0x9b,0xe1,0x69,0x1a,0x1a,0xab,0x5a,0x6d,0x33,0x41,0x4c,0xe7,0xd1,0x7c,
+      0x3e,0x5b,0x2d,0xaf,0x97,0xdf,0xcc,0xb0,0xd3,0x41,0xa3,0x80,0xa6,0x8e,0x58,0x98}, 3500, 4},
+};
+
+const VjoVocrLm *vjo_vocr_lm(const char *name)
+{
+    if (!name) return NULL;
+    for (unsigned i = 0; i < VJO_VOCR_LM_TIERS; i++)
+        if (!strcmp(name, lms[i].name)) return &lms[i];
+    return NULL;
+}
+
+const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier)
+{
+    return tier >= 1 && tier <= VJO_VOCR_LM_TIERS ? &lms[tier - 1] : NULL;
+}
+
+/* The decoder settings for an LM (docs/ctc-lm-decode.md, the same for every model). */
+static void lm_opts(const VjoVocrLm *lm, vocr_lm_opts *o)
+{
+    memset(o, 0, sizeof(*o));
+    o->beam = 8;
+    o->topk = VJO_VOCR_LM_TOPK;
+    o->max_frames = 0;  /* the model's clamp: 1,024 px / 8 */
+    o->alpha = 500;
+    o->beta = lm->beta;
+    o->gate = 8000;
+    o->flags = VOCR_LM_EOS;
+    o->bracket = 8000;
+}
 
 #define ALIGN16(x) (((x) + (size_t)15) & ~(size_t)15)
 /* Weights are read and hashed in pieces of this size: the game worker's kernel
@@ -75,6 +127,8 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
 typedef struct {
     size_t scratch_off, structs_off, total;
     size_t scratch, finder;
+    int lm;               /* the LM extras (top-K, decoder) follow at total (lm_layout) */
+    int cascade;          /* and after them the cascade's (cascade_layout) */
 } Layout;
 
 static int region_ok(unsigned w, unsigned h)
@@ -90,7 +144,75 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     l->scratch_off = 0;
     l->structs_off = l->scratch;
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
+    l->lm = l->cascade = 0;
     return 0;
+}
+
+/* The LM extras, after the job's workspace (VjoVocrPolicy.lm): the top-K of
+ * every frame of a line, the line's greedy text, the decoder's structs and its
+ * workspace. */
+#define LM_LINE_TEXT (4u * VJO_VOCR_LM_FRAMES + 16u) /* a line's greedy text: a class a frame, 4 bytes each */
+typedef struct {
+    size_t topk_logit, topk_class, blank, line, lm, ctx, ws, total;
+} LmLayout;
+
+static void lm_layout(LmLayout *x)
+{
+    size_t off = 0;
+    x->topk_logit = off; off += ALIGN16((size_t)VJO_VOCR_LM_FRAMES * VJO_VOCR_LM_TOPK * sizeof(float));
+    x->topk_class = off; off += ALIGN16((size_t)VJO_VOCR_LM_FRAMES * VJO_VOCR_LM_TOPK * sizeof(uint16_t));
+    x->blank = off;      off += ALIGN16((size_t)VJO_VOCR_LM_FRAMES * sizeof(float));
+    x->line = off;       off += ALIGN16(LM_LINE_TEXT);
+    x->lm = off;         off += ALIGN16(sizeof(vocr_lm));
+    x->ctx = off;        off += ALIGN16(sizeof(vocr_lm_ctx));
+    x->ws = off;         off += VJO_VOCR_LM_WS_BYTES;
+    x->total = off;
+}
+
+size_t vjo_vocr_lm_job_bytes(const char *model)
+{
+    LmLayout x;
+    if (!vjo_vocr_model(model)) return 0;
+    lm_layout(&x);
+    return x.total;
+}
+
+/* The cascade's part, after the LM extras: the larger model's arena, its
+ * runtime structs, its LM decoder (the LM itself is parsed once, in the LM
+ * extras), and its line's greedy and decoded text. */
+typedef struct {
+    size_t arena, model, ctx, lm_ctx, lm_ws, greedy, text, total;
+} CascadeLayout;
+
+static void cascade_layout(const VjoVocrModel *c, CascadeLayout *x)
+{
+    size_t off = 0;
+    x->arena = off;  off += ALIGN16(c->arena_bytes);
+    x->model = off;  off += ALIGN16(sizeof(vocr_model));
+    x->ctx = off;    off += ALIGN16(sizeof(vocr_ctx));
+    x->lm_ctx = off; off += ALIGN16(sizeof(vocr_lm_ctx));
+    x->lm_ws = off;  off += VJO_VOCR_LM_WS_BYTES;
+    x->greedy = off; off += ALIGN16(LM_LINE_TEXT);
+    x->text = off;   off += ALIGN16(LM_LINE_TEXT);
+    x->total = off;
+}
+
+size_t vjo_vocr_cascade_job_bytes(const char *cascade)
+{
+    const VjoVocrModel *c = vjo_vocr_model(cascade);
+    CascadeLayout x;
+    if (!c) return 0;
+    cascade_layout(c, &x);
+    return x.total;
+}
+
+/* A shape's estimated recognition cost: ms for a 640-px line on the Cortex-A9
+ * at 444 MHz, the low end of vita-vn-ocr's estimates (v0.2.5-vocr4.1 release
+ * notes: FL10 94, H15 166, W20 235). Only their ratio is used: the cascade's
+ * time per line from the job's own measured time per line. */
+static unsigned model_cost(const VjoVocrModel *m)
+{
+    return m->bytes >= VJO_VOCR_F20_BYTES ? 235u : m->bytes >= VJO_VOCR_H15_BYTES ? 166u : 94u;
 }
 
 size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
@@ -432,16 +554,16 @@ static int drop_with(VjoVocrResident *r, int rc)
     return vjo_vocr_resident_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
 }
 
-/* Reads the whole open file into dst and checks its SHA-256 while reading;
- * cancellation is checked between pieces. */
-static int read_verified(const VjoFile *file, const VjoVocrModel *m, unsigned char *dst,
+/* Reads the whole open file (bytes long) into dst and checks its SHA-256 while
+ * reading; cancellation is checked between pieces. */
+static int read_verified(const VjoFile *file, uint32_t bytes, const unsigned char *sha256, unsigned char *dst,
                          const VjoGreySource *im)
 {
     br_sha256_context hash;
     unsigned char digest[32];
     br_sha256_init(&hash);
-    for (size_t off = 0; off < m->bytes;) {
-        size_t n = m->bytes - off < READ_CHUNK ? m->bytes - off : READ_CHUNK;
+    for (size_t off = 0; off < bytes;) {
+        size_t n = bytes - off < READ_CHUNK ? bytes - off : READ_CHUNK;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (file->read(file->ctx, off, dst + off, n) < 0)
             return cancelled(im) ? VJO_E_CANCELLED : VJO_E_OCR_MODEL;
@@ -449,25 +571,96 @@ static int read_verified(const VjoFile *file, const VjoVocrModel *m, unsigned ch
         off += n;
     }
     br_sha256_out(&hash, digest);
-    return memcmp(digest, m->sha256, sizeof(digest)) ? VJO_E_OCR_MODEL : VJO_OK;
+    return memcmp(digest, sha256, sizeof(digest)) ? VJO_E_OCR_MODEL : VJO_OK;
+}
+
+/* dir/name into path; 0, or -1 when it does not fit. */
+static int join_path(char *path, size_t cap, const char *dir, const char *name)
+{
+    size_t dn = strlen(dir), fn = strlen(name);
+    if (!dn || dn + 1 + fn >= cap) return -1;
+    memcpy(path, dir, dn);
+    path[dn] = '/';
+    memcpy(path + dn + 1, name, fn + 1);
+    return 0;
+}
+
+int vjo_vocr_lm_drop(VjoVocrLmResident *r)
+{
+    if (!r) return 0;
+    r->lm = NULL;
+    r->size = r->stamp = 0;
+    if (!r->data) return 0;
+    if (r->release && r->release(r->ud)) return -1;
+    r->data = NULL;
+    r->capacity = 0;
+    return 0;
+}
+
+static int lm_drop_with(VjoVocrLmResident *r, int rc)
+{
+    return vjo_vocr_lm_drop(r) ? VJO_E_OCR_UNAVAILABLE : rc;
+}
+
+/* Verified bytes of the LM lm in r->data, as resident_weights does for the
+ * recognizer: opened every job, read and hashed again only when its size or
+ * stamp changed (or none is held). */
+static int resident_lm(const VjoPlatform *p, const char *dir, const VjoVocrLm *lm, VjoVocrLmResident *r,
+                       const VjoGreySource *im, VjoVocrStats *st)
+{
+    char path[256];
+    VjoFile file;
+    int rc;
+    if (r->lm != lm && vjo_vocr_lm_drop(r)) return VJO_E_OCR_UNAVAILABLE; /* another tier's: never two */
+    if (join_path(path, sizeof(path), dir, lm->name) < 0) return lm_drop_with(r, VJO_E_OCR_MODEL);
+    memset(&file, 0, sizeof(file));
+    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
+        return cancelled(im) ? VJO_E_CANCELLED : lm_drop_with(r, VJO_E_OCR_MODEL);
+    if (file.size != lm->bytes || !file.read || !file.close) {
+        if (file.close) file.close(file.ctx);
+        return lm_drop_with(r, VJO_E_OCR_MODEL);
+    }
+    if (r->lm == lm && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
+        file.close(file.ctx);
+        st->lm_cached = 1;
+        return VJO_OK;
+    }
+    r->lm = NULL;
+    if (!r->data) {
+        unsigned char *data = r->alloc ? (unsigned char *)r->alloc(r->ud, lm->bytes) : NULL;
+        if (!data) {
+            file.close(file.ctx);
+            return VJO_E_OOM;
+        }
+        r->data = data;
+        r->capacity = lm->bytes;
+        if ((uintptr_t)data & 15u) {
+            file.close(file.ctx);
+            return lm_drop_with(r, VJO_E_OOM);
+        }
+    }
+    rc = read_verified(&file, lm->bytes, lm->sha256, r->data, im);
+    file.close(file.ctx);
+    if (rc) return lm_drop_with(r, rc); /* partly read: memory is held only for verified bytes */
+    r->lm = lm;
+    r->size = file.size;
+    r->stamp = file.stamp;
+    st->lm_loaded = 1;
+    return VJO_OK;
 }
 
 /* Verified weights of m in r->data. The file is always opened (its size and
  * stamp decide); it is read and hashed again only if they changed, the stamp
  * is unknown, or no verified copy is held. */
 static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocrModel *m,
-                            VjoVocrResident *r, const VjoGreySource *im, VjoVocrStats *st)
+                            VjoVocrResident *r, const VjoGreySource *im, unsigned *loaded, unsigned *cached)
 {
     char path[256];
-    size_t dn = strlen(dir), fn = strlen(m->name);
     VjoFile file;
     int rc;
     /* Another model's weights: never hold two. */
     if (r->model != m && vjo_vocr_resident_drop(r)) return VJO_E_OCR_UNAVAILABLE;
-    if (!dn || dn + 1 + fn >= sizeof(path)) return drop_with(r, VJO_E_OCR_MODEL);
-    memcpy(path, dir, dn);
-    path[dn] = '/';
-    memcpy(path + dn + 1, m->name, fn + 1);
+    if (join_path(path, sizeof(path), dir, m->name) < 0) return drop_with(r, VJO_E_OCR_MODEL);
     memset(&file, 0, sizeof(file));
     if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
         /* A cancelled check proves nothing about the file: keep verified weights. */
@@ -478,7 +671,7 @@ static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocr
     }
     if (r->model == m && r->data && file.stamp && file.stamp == r->stamp && file.size == r->size) {
         file.close(file.ctx);
-        st->model_cached = 1;
+        *cached = 1;
         return VJO_OK;
     }
     /* From here until the hash matches, the memory holds no weights. */
@@ -496,13 +689,13 @@ static int resident_weights(const VjoPlatform *p, const char *dir, const VjoVocr
             return drop_with(r, VJO_E_OOM);
         }
     }
-    rc = read_verified(&file, m, r->data, im);
+    rc = read_verified(&file, m->bytes, m->sha256, r->data, im);
     file.close(file.ctx);
     if (rc) return drop_with(r, rc);
     r->model = m;
     r->size = file.size;
     r->stamp = file.stamp;
-    st->model_loaded = 1;
+    *loaded = 1;
     return VJO_OK;
 }
 
@@ -564,7 +757,7 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
     vocr_opts opts;
     uint32_t t0 = clock_us(p);
-    int rc = resident_weights(p, dir, mi, res, im, st);
+    int rc = resident_weights(p, dir, mi, res, im, &st->model_loaded, &st->model_cached);
     if (rc) return rc;
     /* Verified bytes the runtime refuses would fail every job: release them. */
     if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
@@ -579,6 +772,103 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
     return VJO_OK;
 }
 
+/* The job's LM decoder, once the model is parsed: the LM's bytes resident and
+ * verified, parsed in place, the decoder planned in the LM extras at x0.
+ * VJO_OK: ready. VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job stops. Any
+ * other: the job reads greedily (st->lm_rc says why). */
+static int lm_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *im, const VjoVocrPolicy *pol,
+                    unsigned char *x0, const vocr_model *model, VjoVocrStats *st)
+{
+    LmLayout x;
+    vocr_lm_opts o;
+    vocr_lm *lm;
+    vocr_lm_ctx *dc;
+    size_t need;
+    uint32_t t0 = clock_us(p);
+    int rc;
+    lm_layout(&x);
+    lm = (vocr_lm *)(void *)(x0 + x.lm);
+    dc = (vocr_lm_ctx *)(void *)(x0 + x.ctx);
+    if (!model->stride || model->max_width / model->stride + 1u > VJO_VOCR_LM_FRAMES) return st->lm_rc = VJO_E_OCR_MODEL;
+    rc = resident_lm(p, dir, pol->lm, pol->lm_res, im, st);
+    if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+    if (rc) return st->lm_rc = rc;
+    if (vocr_lm_load(lm, pol->lm_res->data, pol->lm->bytes) != VOCR_OK) {
+        rc = lm_drop_with(pol->lm_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
+        return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->lm_rc = rc);
+    }
+    lm_opts(pol->lm, &o);
+    need = vocr_lm_workspace_bytes(model, lm, &o);
+    if (!need || need > VJO_VOCR_LM_WS_BYTES) return st->lm_rc = VJO_E_OOM;
+    if (vocr_lm_init(dc, model, lm, &o, x0 + x.ws, need) != VOCR_OK) return st->lm_rc = VJO_E_OCR_INFERENCE;
+    st->lm = pol->lm;
+    st->lm_load_us = clock_us(p) - t0;
+    return VJO_OK;
+}
+
+/* The cascade's larger model, at the first line it reads again: its weights
+ * resident and verified (cascade_res), parsed, its arena planned in the
+ * cascade extras at c0, and with the job's LM (parsed already, lm) a decoder
+ * for it. VJO_OK: ready. VJO_E_CANCELLED / VJO_E_OCR_UNAVAILABLE: the job
+ * stops. Any other: the job goes on without it (st->cascade_rc says why). */
+static int cascade_setup(const VjoPlatform *p, const char *dir, const VjoGreySource *im, const VjoVocrPolicy *pol,
+                         unsigned char *c0, const vocr_lm *lm, VjoVocrStats *st)
+{
+    const VjoVocrModel *c = pol->cascade;
+    CascadeLayout x;
+    vocr_model *model;
+    vocr_opts opts;
+    size_t need;
+    uint32_t t0 = clock_us(p);
+    int rc;
+    cascade_layout(c, &x);
+    model = (vocr_model *)(void *)(c0 + x.model);
+    rc = resident_weights(p, dir, c, pol->cascade_res, im, &st->cascade_loaded, &st->cascade_cached);
+    if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+    if (rc) return st->cascade_rc = rc;
+    if (vocr_load(model, pol->cascade_res->data, c->bytes) != VOCR_OK || !model->stride ||
+        model->max_width / model->stride + 1u > VJO_VOCR_LM_FRAMES) {
+        rc = drop_with(pol->cascade_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
+        return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->cascade_rc = rc);
+    }
+    memset(&opts, 0, sizeof(opts));
+    opts.mode = VOCR_MODE_W8I;
+    need = vocr_arena_bytes(model, &opts);
+    if (!need || need > ALIGN16(c->arena_bytes)) {
+        rc = drop_with(pol->cascade_res, VJO_E_OCR_MODEL);
+        return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->cascade_rc = rc);
+    }
+    if (vocr_init((vocr_ctx *)(void *)(c0 + x.ctx), model, &opts, c0 + x.arena, need) != VOCR_OK)
+        return st->cascade_rc = VJO_E_OCR_INFERENCE;
+    if (lm) {
+        vocr_lm_opts o;
+        lm_opts(st->lm, &o);
+        need = vocr_lm_workspace_bytes(model, lm, &o);
+        if (!need || need > VJO_VOCR_LM_WS_BYTES) return st->cascade_rc = VJO_E_OOM;
+        if (vocr_lm_init((vocr_lm_ctx *)(void *)(c0 + x.lm_ctx), model, lm, &o, c0 + x.lm_ws, need) != VOCR_OK)
+            return st->cascade_rc = VJO_E_OCR_INFERENCE;
+    }
+    st->cascade = c;
+    st->cascade_load_us += clock_us(p) - t0;
+    return VJO_OK;
+}
+
+/* A line's confidence from the top-K's conf_min, in 1/1000; 1000 for a line
+ * read as empty (no character to doubt). */
+static uint16_t line_conf(const vocr_extra *e, const char *greedy)
+{
+    float c = e->conf_min * 1000.0f + 0.5f;
+    if (!greedy[0]) return 1000u;
+    return (uint16_t)(c <= 0.0f ? 0u : c >= 1000.0f ? 1000u : (unsigned)c);
+}
+
+/* A line's length in the recognizer's terms: its width at the input height of
+ * 32 pixels, which its CTC frames (and so its time) follow. */
+static uint32_t line_length(const VocrLine *ln)
+{
+    return (uint32_t)ln->w * 32u / (ln->h ? ln->h : 1u) + 1u;
+}
+
 /* One capture of the region: lines, then (weights) each line recognized. */
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
                      const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
@@ -588,14 +878,39 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     const VjoVocrPolicy *pol = s->pol;
     VocrLinesRows region = {w, im->height, VOCR_LINES_GREY, stream_row, s};
     VocrLineSet set;
+    vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
-    size_t used = 0;
-    uint32_t t0;
-    int rc, loaded = 0;
+    unsigned char *x0 = ws + l->total; /* the LM extras (l->lm) */
+    unsigned char *c0 = x0 + vjo_vocr_lm_job_bytes(mi->name); /* the cascade's (l->cascade) */
+    LmLayout x;
+    CascadeLayout cx;
+    size_t used = 0, rused = 0;
+    uint32_t t0, prim_us = 0, casc_ratio = 0, len_done = 0, len_left = 0;
+    unsigned casc_conf = pol->cascade_conf ? pol->cascade_conf : VJO_VOCR_CASCADE_CONF;
+    int rc, loaded = 0, lm_on = 0, casc_on = l->cascade, casc_ready = 0;
 
+    lm_layout(&x);
+    memset(&cx, 0, sizeof(cx));
+    if (casc_on) {
+        cascade_layout(pol->cascade, &cx);
+        /* its time per line from the job's own, by the shapes' cost (then by what it measured) */
+        casc_ratio = model_cost(pol->cascade) * 256u / model_cost(mi);
+    }
     text[0] = '\0';
+    if (pol->raw && pol->raw_cap) pol->raw[0] = '\0';
     st->lines = st->truncated = st->dark = st->frames = st->recognized = 0;
-    st->blank = 0;
+    st->blank = st->lm_lines = st->lm_changed = 0;
+    st->lm_us = 0;
+    if (l->lm) { /* this try's LM, not an earlier try's */
+        st->lm = NULL;
+        st->lm_rc = 0;
+    }
+    st->cascade_lines = st->cascade_changed = st->cascade_skipped = 0;
+    st->cascade_us = 0;
+    if (l->cascade) {
+        st->cascade = NULL;
+        st->cascade_rc = 0;
+    }
     t0 = clock_us(p);
     rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
@@ -607,8 +922,10 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     st->find_us = clock_us(p) - t0;
     st->lines = set.count;
     st->truncated = set.truncated;
-    for (unsigned i = 0; i < set.count; i++)
+    for (unsigned i = 0; i < set.count; i++) {
         st->dark += set.lines[i].dark ? 1u : 0u;
+        len_left += line_length(&set.lines[i]);
+    }
     if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
     /* Nothing is recognized before the rows have held still for settle_us. */
@@ -620,6 +937,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         rc = load_model(p, dir, mi, im, res, ws, l, st);
         if (rc) return rc;
         loaded = 1;
+        if (l->lm && pol->lm) {
+            rc = lm_setup(p, dir, im, pol, x0, model, st);
+            if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+            lm_on = !rc;
+        }
     }
 
     t0 = clock_us(p);
@@ -631,8 +953,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         vocr_extra extra;
         VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
         size_t start = used ? used + 1 : 0, n;
-        uint32_t line_t0;
+        uint32_t line_t0, line_len = line_length(ln);
+        uint16_t flags;
+        char *greedy;
         int blank = 0;
+        len_left -= line_len;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
         pixels = line_pixels(s, ln, &stride);
@@ -657,7 +982,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
             st->blank++;
             if (pol->line) {
-                VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0};
+                VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0, "",
+                                        VJO_VOCR_LINE_CONF_NONE};
                 pol->line(pol->ud, &info);
             }
             continue;
@@ -667,6 +993,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             rc = load_model(p, dir, mi, im, res, ws, l, st);
             if (rc) return rc;
             loaded = 1;
+            if (l->lm && pol->lm) {
+                rc = lm_setup(p, dir, im, pol, x0, model, st);
+                if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+                lm_on = !rc;
+            }
             t0 += clock_us(p) - r0; /* recognize_us leaves the load out */
         }
         img.pixels = pixels;
@@ -677,20 +1008,120 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         memset(&extra, 0, sizeof(extra));
         extra.cancel = run_cancel;
         extra.user = (void *)im;
+        if (l->lm) { /* the top K of every frame, for the decoder, and the line's confidence */
+            extra.topk = VJO_VOCR_LM_TOPK;
+            extra.topk_logit = (float *)(void *)(x0 + x.topk_logit);
+            extra.topk_class = (uint16_t *)(void *)(x0 + x.topk_class);
+            extra.blank_logit = (float *)(void *)(x0 + x.blank);
+            extra.cap_frames = VJO_VOCR_LM_FRAMES;
+        }
         line_t0 = clock_us(p);
         rc = vocr_run(ctx, &img, text + start, cap - start, &extra);
         if (rc != VOCR_OK) return run_error(rc);
+        flags = VJO_VOCR_LINE_CONF_NONE;
+        greedy = text + start;
+        if (l->lm) {
+            size_t gn = strlen(text + start);
+            flags = line_conf(&extra, text + start);
+            if (gn < LM_LINE_TEXT) { /* a class a frame, 4 bytes at most: always; kept for the log */
+                greedy = (char *)(x0 + x.line);
+                memcpy(greedy, text + start, gn + 1);
+            }
+            if (lm_on && gn && greedy != text + start) { /* a line read as empty stays empty */
+                uint32_t d0 = clock_us(p);
+                rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(x0 + x.ctx), &extra, text + start, cap - start, NULL);
+                st->lm_us += clock_us(p) - d0;
+                if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                if (rc == VOCR_OK) {
+                    flags |= VJO_VOCR_LINE_LM;
+                    st->lm_lines++;
+                    st->lm_changed += strcmp(greedy, text + start) != 0;
+                } else { /* longer than the room left, or refused: the greedy line stands */
+                    memcpy(text + start, greedy, gn + 1);
+                    if (rc != VOCR_E_TEXT) {
+                        st->lm_rc = VJO_E_OCR_INFERENCE;
+                        lm_on = 0;
+                    }
+                }
+            }
+        }
+        {   /* the primary's time per length, for the estimate of the lines still to read */
+            uint32_t line_us = clock_us(p) - line_t0;
+            prim_us += line_us;
+            len_done += line_len;
+            /* The cascade: a doubtful line read again by the larger model, whose
+             * reading is then shown, while the job stays within its time ceiling. */
+            if (casc_on && (flags & VJO_VOCR_LINE_CONF) < casc_conf && greedy != text + start) {
+                uint64_t est = (uint64_t)line_us * casc_ratio / 256u +
+                               (uint64_t)prim_us * len_left / (len_done ? len_done : 1u);
+                if ((uint64_t)(clock_us(p) - t0) + est > pol->cascade_us) {
+                    st->cascade_skipped++;
+                } else {
+                    if (!casc_ready) {
+                        uint32_t r0 = clock_us(p);
+                        rc = cascade_setup(p, dir, im, pol, c0, lm_on ? (const vocr_lm *)(void *)(x0 + x.lm) : NULL,
+                                           st);
+                        if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+                        casc_ready = !rc;
+                        casc_on = casc_ready;
+                        t0 += clock_us(p) - r0; /* its load is not recognition time either */
+                    }
+                    if (casc_ready) {
+                        uint32_t c_t0 = clock_us(p), c_us;
+                        char *cg = (char *)(c0 + cx.greedy), *ct = cg;
+                        vocr_extra e2;
+                        memset(&e2, 0, sizeof(e2));
+                        e2.cancel = run_cancel;
+                        e2.user = (void *)im;
+                        e2.topk = VJO_VOCR_LM_TOPK;
+                        e2.topk_logit = (float *)(void *)(x0 + x.topk_logit);
+                        e2.topk_class = (uint16_t *)(void *)(x0 + x.topk_class);
+                        e2.blank_logit = (float *)(void *)(x0 + x.blank);
+                        e2.cap_frames = VJO_VOCR_LM_FRAMES;
+                        rc = vocr_run((vocr_ctx *)(void *)(c0 + cx.ctx), &img, cg, LM_LINE_TEXT, &e2);
+                        if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                        if (rc == VOCR_OK && lm_on && cg[0]) {
+                            rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(c0 + cx.lm_ctx), &e2, (char *)(c0 + cx.text),
+                                                LM_LINE_TEXT, NULL);
+                            if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                            if (rc == VOCR_OK) ct = (char *)(c0 + cx.text);
+                            rc = VOCR_OK; /* its greedy reading, when the decode does not fit */
+                        }
+                        if (rc == VOCR_OK) {
+                            size_t cn = strlen(ct);
+                            if (start + cn < cap) { /* else the primary's reading stays */
+                                st->cascade_changed += strcmp(ct, text + start) != 0;
+                                memcpy(text + start, ct, cn + 1);
+                                flags = (uint16_t)((flags & ~VJO_VOCR_LINE_CONF) | line_conf(&e2, cg) |
+                                                   VJO_VOCR_LINE_CASCADE);
+                                st->cascade_lines++;
+                            }
+                        } else if (rc != VOCR_E_TEXT) {
+                            st->cascade_rc = VJO_E_OCR_INFERENCE;
+                            casc_on = 0;
+                        }
+                        c_us = clock_us(p) - c_t0;
+                        st->cascade_us += c_us;
+                        /* what this console takes for the larger model, if more than the estimate */
+                        if (line_us && (uint64_t)c_us * 256u / line_us > casc_ratio)
+                            casc_ratio = (uint32_t)((uint64_t)c_us * 256u / line_us);
+                    }
+                }
+            }
+        }
+        if (strcmp(greedy, text + start)) flags |= VJO_VOCR_LINE_CHANGED;
         st->frames += extra.frames;
         if (st->recognized < VJO_VOCR_MAX_LINES) {
             VjoVocrLineStat *ls = &st->line[st->recognized++];
             ls->width = (uint16_t)ln->w;
             ls->height = (uint16_t)ln->h;
             ls->frames = (uint16_t)(extra.frames > 0xFFFFu ? 0xFFFFu : extra.frames);
+            ls->flags = flags;
             ls->us = clock_us(p) - line_t0;
         }
         if (pol->line) {
             VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
-                                    text + start, clock_us(p) - line_t0};
+                                    text + start, clock_us(p) - line_t0, greedy, flags};
             pol->line(pol->ud, &info);
         }
         n = strlen(text + start);
@@ -700,6 +1131,14 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
         if (start) text[used] = '\n';
         used = start + n;
+        if (pol->raw && pol->raw_cap) { /* its greedy text, laid out as the text */
+            size_t rstart = rused ? rused + 1 : 0, gn = strlen(greedy);
+            if (rstart + gn < pol->raw_cap) {
+                memmove(pol->raw + rstart, greedy, gn + 1);
+                if (rstart) pol->raw[rused] = '\n';
+                rused = rstart + gn;
+            }
+        }
     }
     st->recognize_us = clock_us(p) - t0;
     return VJO_OK;
@@ -729,7 +1168,22 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     front = one_shot ? ALIGN16(mi->bytes) : 0;
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
-    stats->workspace = front + l.total;
+    {
+        /* The LM extras (the top-K, for the LM and for each line's confidence)
+         * follow the job's workspace, and the cascade's follow them; without
+         * room the job reads greedily, or without the cascade. */
+        int want_lm = policy && policy->lm && policy->lm_res;
+        int want_cascade = policy && policy->cascade && policy->cascade_res && policy->cascade_us &&
+                           policy->cascade != mi;
+        size_t with_lm = front + l.total + vjo_vocr_lm_job_bytes(model);
+        size_t with_cascade = with_lm + (want_cascade ? vjo_vocr_cascade_job_bytes(policy->cascade->name) : 0);
+        if ((want_lm || want_cascade) && workspace && workspace_size >= with_lm) l.lm = 1;
+        else if (want_lm) stats->lm_rc = VJO_E_OOM;
+        if (want_cascade && l.lm && workspace_size >= with_cascade) l.cascade = 1;
+        else if (want_cascade) stats->cascade_rc = VJO_E_OOM;
+    }
+    stats->workspace = front + l.total + (l.lm ? vjo_vocr_lm_job_bytes(model) : 0) +
+                       (l.cascade ? vjo_vocr_cascade_job_bytes(policy->cascade->name) : 0);
     stats->capture = need_capture;
     stats->model_bytes = mi->bytes;
     stats->scratch_bytes = l.scratch;

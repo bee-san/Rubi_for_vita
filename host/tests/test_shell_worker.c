@@ -231,6 +231,7 @@ static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_mode
 static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
+static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     fake_game_request = *r;
@@ -312,7 +313,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     if (fake_game_result.rc == VJO_OK && fake_recognized_text) {
         snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
         /* as the worker returns it (API 20): normalised, its own text kept after the NUL */
-        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL);
+        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL, NULL);
         /* A supplied measurement, as the real worker copies VjoVocrStats. */
         fake_game_result.free_user = fake_memory_fallback ? 5300000 : 91226112;
         fake_game_result.reserve_bytes = 4194304;
@@ -321,7 +322,8 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.lines = fake_lines;
         fake_game_result.recognized = fake_lines;
         for (unsigned i = 0; i < fake_lines; i++)
-            fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i), 0, 52100u + i};
+            fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i),
+                                                        fake_line_flags ? fake_line_flags : 0x3FFu, 52100u + i};
     }
     *out = fake_game_result;
     return 0;
@@ -368,6 +370,7 @@ static void reset(void)
     fake_model_io_error = 0;
     fake_recognized_text = NULL;
     fake_lines = 2;
+    fake_line_flags = 0;
     fake_free_user = 5000000;
     fake_need_weights = 659456;
     fake_reserve = 4194304;
@@ -1039,6 +1042,39 @@ static void test_vocr_logs_memory_check_and_frames(void)
         }
     TEST_CHECK(chunks == 3 && entries == 14);
     mem_free();
+    /* API 20: lines the LM decoded carry their confidence, a '*' where it changed the text;
+     * still six to a log line and under vjo_log's limit at the longest */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_lines = 6;
+    fake_line_flags = 0x8000u | 0x4000u | 612u;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    line = logged("game vocr lines:");
+    TEST_CHECK(line && !strncmp(line, "game vocr lines: 917x30 114f 52.1ms c612* 916x30 113f 52.1ms c612*", 66));
+    TEST_MSG("%s", line ? line : "(no lines)");
+    TEST_CHECK(line && strlen(line) < 254 && !logged("game vocr lines (cont)"));
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_lines = 1;
+    fake_line_flags = 0x4000u | 999u; /* decoded, unchanged */
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    line = logged("game vocr lines:");
+    TEST_CHECK(line && !strcmp(line, "game vocr lines: 917x30 114f 52.1ms c999"));
+    TEST_MSG("%s", line ? line : "(no lines)");
+    /* read again by the cascade's larger model (its reading and confidence shown), changed */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_lines = 1;
+    fake_line_flags = 0x8000u | 0x4000u | 0x0400u | 845u;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    line = logged("game vocr lines:");
+    TEST_CHECK(line && !strcmp(line, "game vocr lines: 917x30 114f 52.1ms c845*^"));
+    TEST_MSG("%s", line ? line : "(no lines)");
+    fake_line_flags = 0;
+    mem_free();
 }
 
 /* The job policy in the request (API 20): the stable-text wait from its keys,
@@ -1085,6 +1121,18 @@ static void test_vocr_request_carries_the_job_policy(void)
                !(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
     TEST_MSG("blank on, wait off: flags 0x%08X", (unsigned)fake_game_request.flags);
     mem_free();
+    /* the cascade's ceiling in 250 ms steps: 2 s by default, off with 0, 1-124 ms one step, 3,750 the most */
+    static const struct { int ms; unsigned units; } cascade[] = {{2000, 8}, {0, 0}, {100, 1}, {375, 2}, {3750, 15}};
+    for (unsigned i = 0; i < sizeof(cascade) / sizeof(cascade[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.ocr_cascade_ms = cascade[i].ms;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_CASCADE_SHIFT & VJO_GAME_OCR_CASCADE_MASK) == cascade[i].units);
+        TEST_MSG("ocr_cascade_ms %d: flags 0x%08X", cascade[i].ms, (unsigned)fake_game_request.flags);
+        mem_free();
+    }
     /* a wait of 1-4 ms is the shortest one (10 ms), not none; 1,000 ms and 10 s fit their bits */
     static const struct { int ms, max_ms; unsigned settle, max; } units[] = {
         {3, 100, 1, 2}, {14, 2000, 1, 40}, {15, 2000, 2, 40}, {1000, 10000, 100, 200}};
@@ -2361,7 +2409,9 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
      * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
      * ms); blank lines are kept by default. */
     const uint32_t stage_bits = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
-    const uint32_t policy = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    const uint32_t policy = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT |
+                            2u << VJO_GAME_OCR_LM_SHIFT |     /* the 1 MB LM at most */
+                            8u << VJO_GAME_OCR_CASCADE_SHIFT; /* the cascade within 2 s */
     TEST_CHECK((selftest_flags_seen[0] & stage_bits) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
                (selftest_flags_seen[1] & stage_bits) == 0 &&
                (selftest_flags_seen[2] & stage_bits) == VJO_GAME_OCR_F_FULL &&

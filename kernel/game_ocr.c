@@ -624,7 +624,23 @@ static uint32_t model_size(const char *name)
     if (!strcmp(name, "FL10_w8.vocr")) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;
+    if (!strcmp(name, VJO_VOCR4_W20_NAME)) return VJO_VOCR_CASCADE_BYTES;
     return 0;
+}
+
+/* The pinned LM of a tier (1..VJO_VOCR_LM_TIERS): its name and length. */
+static const char *lm_name(uint32_t tier)
+{
+    static const char *const names[VJO_VOCR_LM_TIERS] = {VJO_VOCR_LM1_NAME, VJO_VOCR_LM2_NAME, VJO_VOCR_LM3_NAME,
+                                                          VJO_VOCR_LM4_NAME};
+    return names[tier - 1u];
+}
+
+static uint32_t lm_size(uint32_t tier)
+{
+    static const uint32_t sizes[VJO_VOCR_LM_TIERS] = {VJO_VOCR_LM1_BYTES, VJO_VOCR_LM2_BYTES, VJO_VOCR_LM3_BYTES,
+                                                      VJO_VOCR_LM4_BYTES};
+    return sizes[tier - 1u];
 }
 
 static int model_caller_locked(SceUID pid, uint32_t seq, int cleanup)
@@ -688,19 +704,33 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
         if (rc > 0 && model_info_out_locked(info)) rc = VJO_ERR_COPY;
         return rc;
     }
-    /* Only the two names the Shell submitted for this job, each a pinned model. */
+    /* Only the two names the Shell submitted for this job, each a pinned model,
+     * or (API 20) a pinned LM up to the tier the request allows, or the
+     * cascade's pinned model when the request gives it a time ceiling. */
+    uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
+                             ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
     else if (which == VJO_GAME_OCR_OPEN_FALLBACK) name = request.fallback;
+    else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
+             lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
+    else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
+             ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
-    uint32_t size = model_size(name);
+    size = lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;
     model_io.which = which;
     model_io.size = size;
     memcpy(model_io.path, VJO_VOCR_MODEL_ROOT "/", sizeof(VJO_VOCR_MODEL_ROOT));
-    /* Both strings are bounded and already NUL-validated by Submit. */
-    memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), name, VJO_GAME_OCR_MODEL_BYTES);
+    /* Both request strings are bounded and NUL-validated by Submit; a pinned LM
+     * name is a shorter literal: copy up to the NUL only. */
+    {
+        uint32_t n = 0;
+        while (n + 1u < VJO_GAME_OCR_MODEL_BYTES && name[n]) n++;
+        memcpy(model_io.path + sizeof(VJO_VOCR_MODEL_ROOT), name, n);
+        model_io.path[sizeof(VJO_VOCR_MODEL_ROOT) + n] = '\0';
+    }
     model_io.operation = MODEL_OPEN;
     model_io.phase = MODEL_QUEUED;
     model_wake_locked();

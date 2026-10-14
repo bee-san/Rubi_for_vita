@@ -8,6 +8,7 @@
 #include "net_posix.h"
 #include "vocr_ocr.h"
 #include "../../core/fbgrey.h"
+#include "../../include/vjo_vocr_sizes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -207,7 +208,7 @@ static void test_zero_policy_is_api19(void)
  * character; its lines are the whole line's. */
 static void test_typing_is_read_once_whole(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     unsigned at = 0, typed = 25 * 3;
     reset();
@@ -245,7 +246,7 @@ static void test_typing_is_read_once_whole(void)
  * and re-reads the region until 150 ms of reads agree, then recognizes. */
 static void test_still_screen_waits_only_the_span(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000};
     VjoVocrStats st;
     unsigned at = 0;
     reset();
@@ -260,7 +261,7 @@ static void test_still_screen_waits_only_the_span(void)
  * back and forth between two states, so the wait ends; they are counted. */
 static void test_blinking_icon_does_not_block(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.blink_every = 8;
@@ -274,7 +275,7 @@ static void test_blinking_icon_does_not_block(void)
  * after settle_max_us, once for the job, which then reads as before. */
 static void test_never_still_times_out_once(void)
 {
-    VjoVocrPolicy pol = {150000, 400000, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.noise = 1;
@@ -289,7 +290,7 @@ static void test_never_still_times_out_once(void)
  * not end it), then publishes the new screen once it holds still. */
 static void test_changed_screen_retracts_its_capture(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000};
     VjoVocrStats st;
     unsigned lasts = 0, retract = 0;
     reset();
@@ -325,7 +326,7 @@ static void test_changed_screen_retracts_its_capture(void)
 static void test_the_last_reread_starts_the_span_after_the_first_pass(void)
 {
     for (int sleeping = 0; sleeping < 2; sleeping++) {
-        VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, sleeping ? sleep_us : NULL};
+        VjoVocrPolicy pol = {.settle_us = 150000, .sleep = sleeping ? sleep_us : NULL};
         VjoVocrStats st;
         uint64_t first = 0, last = 0;
         reset();
@@ -345,7 +346,7 @@ static void test_the_last_reread_starts_the_span_after_the_first_pass(void)
  * read the changed rows, never on one that only ends that late. */
 static void test_the_wait_ends_on_the_first_pass_due(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     uint64_t seen = 0, done = 0;
     unsigned first = 0;
@@ -370,7 +371,7 @@ static void test_the_wait_ends_on_the_first_pass_due(void)
  * pass under way) in all. */
 static void test_the_waiting_budget_is_the_jobs(void)
 {
-    VjoVocrPolicy pol = {150000, 600000, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 600000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.type_every = 3;
@@ -388,7 +389,7 @@ static void test_the_waiting_budget_is_the_jobs(void)
  * also to the one two back, so the wait ends without waiting for it. */
 static void test_a_three_state_icon_settles(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.blink_every = 4;
@@ -406,7 +407,7 @@ static void test_a_three_state_icon_settles(void)
  * counted once in the job) instead of learning them again. */
 static void test_a_retry_keeps_what_the_job_learned(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.blink_every = 8;
@@ -497,7 +498,7 @@ static int test_release(void *ud)
 static void test_the_line_callback_skips_nothing_with_the_check_off(void)
 {
     const char *dir = VJO_VOCR_MODEL_DIR;
-    VjoVocrPolicy off = {0, 0, 0, 0, 20000, count_line, NULL, NULL}, on = off;
+    VjoVocrPolicy off = {.blank_edges = 20000, .line = count_line}, on = off;
     VjoVocrStats st;
     VjoPlatform p;
     PosixPlatform pp = {0};
@@ -531,7 +532,7 @@ static void test_the_line_callback_skips_nothing_with_the_check_off(void)
  * later. */
 static void test_sleep_skips_early_passes(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000};
     VjoVocrStats busy, idle;
     unsigned reads_busy, at_busy, at_idle;
     reset();
@@ -551,7 +552,7 @@ static void test_sleep_skips_early_passes(void)
  * rows only go back to recent states, so the wait ends. */
 static void test_bobbing_icon_settles(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, sleep_us};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
     VjoVocrStats st;
     reset();
     scr.blink_every = 4;
@@ -569,7 +570,7 @@ static void test_bobbing_icon_settles(void)
  * the retry reads the empty box. */
 static void test_a_box_clearing_back_is_a_change(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.three_lines = 1;
@@ -587,7 +588,7 @@ static void test_a_box_clearing_back_is_a_change(void)
  * screen it published (here none). */
 static void test_a_two_line_box_clearing_back_is_taken_for_an_icon(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1};
     VjoVocrStats st;
     unsigned published = 0;
     int rc;
@@ -608,7 +609,7 @@ static void test_a_two_line_box_clearing_back_is_taken_for_an_icon(void)
  * never holds still and the wait runs out. */
 static void test_at_most_64_rows_are_taken_for_an_icon(void)
 {
-    VjoVocrPolicy pol = {150000, 400000, 1, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1};
     VjoVocrStats st;
     reset();
     scr.three_lines = 1;
@@ -626,7 +627,7 @@ static uint16_t folded(uint32_t sum);
 static void find_fold_collision(void);
 static void test_with_the_wait_a_folded_match_is_a_change(void)
 {
-    VjoVocrPolicy pol = {150000, 0, 0, 0, 0, NULL, NULL, NULL};
+    VjoVocrPolicy pol = {.settle_us = 150000};
     VjoVocrStats st;
     reset();
     find_fold_collision();
@@ -643,7 +644,7 @@ static void test_with_the_wait_a_folded_match_is_a_change(void)
 static void test_a_frozen_clock_ends_the_wait(void)
 {
     for (int first = 0; first < 2; first++) {
-        VjoVocrPolicy pol = {150000, 400000, first, 0, 0, NULL, NULL, sleep_us};
+        VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = first, .sleep = sleep_us};
         VjoVocrStats st;
         reset();
         scr.frozen = 1;
@@ -706,6 +707,171 @@ static void soften(unsigned char *px, unsigned w, unsigned h)
             }
         memcpy(px, tmp, (size_t)w * h);
     }
+}
+
+/* A platform that refuses one file by name (a missing cascade model). */
+static PosixPlatform cascade_pp;
+static int (*posix_open)(void *ud, const char *path, VjoFile *out);
+static const char *refused_name;
+static int refusing_open(void *ud, const char *path, VjoFile *out)
+{
+    const char *base = strrchr(path, '/');
+    if (refused_name && !strcmp(base ? base + 1 : path, refused_name)) return -1;
+    return posix_open(ud, path, out);
+}
+
+/* Resident memory the test gives back: ud is the resident itself. */
+static int free_weights(void *ud)
+{
+    free(((VjoVocrResident *)ud)->data);
+    return 0;
+}
+
+static int free_lm(void *ud)
+{
+    free(((VjoVocrLmResident *)ud)->data);
+    return 0;
+}
+
+static int have_files(const char *dir, const char *const *names, unsigned n)
+{
+    for (unsigned i = 0; i < n; i++) {
+        char path[600];
+        FILE *f;
+        snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+        if (!dir[0] || !(f = fopen(path, "rb"))) return 0;
+        fclose(f);
+    }
+    return 1;
+}
+
+/* The confidence cascade with the release weights (VOCR3-FL10 reads, VOCR4-W20
+ * reads again, the 1 MB LM). A line under the threshold (forced here: every
+ * line) shows exactly what the larger model reads alone, with its confidence;
+ * the greedy text kept for the log is the first model's; the larger model's
+ * weights are read once and then resident. No doubtful line: they are not even
+ * opened. Past the time ceiling, a doubtful line is counted and left. Without
+ * the LM the confidence is still there and the larger model reads greedily. A
+ * missing file: the job reads as without the cascade and says why. */
+static void test_the_cascade_reads_doubtful_lines_again(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    const VjoVocrLm *lm = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st, alone_st;
+    char text[256], raw[256], alone[256];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 3)) { /* before any check: acutest refuses a skip after one */
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && w20 && lm);
+    posix_platform_init(&cascade_pp, &p);
+    posix_open = p.file_open;
+    p.file_open = refusing_open;
+    refused_name = NULL;
+    ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
+               vjo_vocr_cascade_job_bytes(w20->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res, wres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    cres.ud = &cres;
+    wres.ud = &wres;
+    lres.ud = &lres;
+    VjoVocrPolicy pol = {.lm = lm, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw), .cascade = w20,
+                         .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001};
+    VjoVocrPolicy w20_pol = {.lm = lm, .lm_res = &lres};
+    /* every line read again: the text is VOCR4-W20's own, with its confidence */
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.lines == 1 && st.recognized == 1 && st.cascade == w20 && st.cascade_lines == 1 && !st.cascade_rc &&
+               st.cascade_loaded && !st.cascade_skipped && cres.model == w20 && st.lm == lm);
+    TEST_CHECK((st.line[0].flags & VJO_VOCR_LINE_CASCADE) && (st.line[0].flags & VJO_VOCR_LINE_LM));
+    unsigned shown_conf = st.line[0].flags & VJO_VOCR_LINE_CONF;
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, w20->name, &im, &wres, ws, ws_bytes, capture, vjo_vocr_capture_bytes(W, H),
+                                    &w20_pol, alone, sizeof(alone), &alone_st) == VJO_OK);
+    TEST_CHECK(!strcmp(alone, text) && (alone_st.line[0].flags & VJO_VOCR_LINE_CONF) == shown_conf &&
+               !(alone_st.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    TEST_MSG("shown '%s' (conf %u); W20 alone '%s' (conf %u); FL10's greedy '%s'", text, shown_conf, alone,
+             alone_st.line[0].flags & VJO_VOCR_LINE_CONF, raw);
+    /* the next job: its weights resident, not read again */
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.cascade_cached && !st.cascade_loaded && st.cascade_lines == 1 && !strcmp(alone, text));
+    /* the threshold: a line exactly at it is not doubtful, one under it is */
+    {
+        VjoVocrPolicy plain = {.lm = lm, .lm_res = &lres};
+        unsigned conf;
+        reset();
+        TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                        vjo_vocr_capture_bytes(W, H), &plain, text, sizeof(text), &st) == VJO_OK);
+        conf = st.line[0].flags & VJO_VOCR_LINE_CONF;
+        TEST_ASSERT(conf > 0 && conf <= 1000);
+        pol.cascade_conf = conf; /* at it: kept */
+        reset();
+        TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                        vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+        TEST_CHECK(!st.cascade_lines && !(st.line[0].flags & VJO_VOCR_LINE_CASCADE));
+        pol.cascade_conf = conf + 1; /* just above it: read again */
+        reset();
+        TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                        vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+        TEST_CHECK(st.cascade_lines == 1 && (st.line[0].flags & VJO_VOCR_LINE_CASCADE));
+        TEST_MSG("FL10's confidence on the line: %u", conf);
+        pol.cascade_conf = 1001;
+    }
+    /* no doubtful line: the larger model's file is not even opened */
+    TEST_CHECK(!vjo_vocr_resident_drop(&cres) && !cres.data);
+    pol.cascade_conf = 1; /* a confidence of 0 only */
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+    if ((st.line[0].flags & VJO_VOCR_LINE_CONF) >= 1)
+        TEST_CHECK(!st.cascade_lines && !st.cascade_loaded && !st.cascade_cached && !cres.data && !st.cascade &&
+                   !(st.line[0].flags & VJO_VOCR_LINE_CASCADE) && !strcmp(text, raw) == !(st.line[0].flags & VJO_VOCR_LINE_CHANGED));
+    /* past the time ceiling: counted, left, and nothing read for it */
+    pol.cascade_conf = 1001;
+    pol.cascade_us = 1;
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.cascade_skipped == 1 && !st.cascade_lines && !cres.data && !(st.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    /* without the LM: the confidence still comes, the larger model reads greedily */
+    VjoVocrPolicy greedy = {.cascade = w20, .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001};
+    VjoVocrPolicy w20_greedy = {0};
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &greedy, text, sizeof(text), &st) == VJO_OK);
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, w20->name, &im, &wres, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &w20_greedy, alone, sizeof(alone), &alone_st) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && !st.lm && !(st.line[0].flags & VJO_VOCR_LINE_LM) &&
+               (st.line[0].flags & VJO_VOCR_LINE_CONF) != VJO_VOCR_LINE_CONF_NONE && !strcmp(text, alone));
+    TEST_MSG("greedy: shown '%s', W20 alone '%s'", text, alone);
+    /* the larger model missing: the job reads with the first one and says why */
+    TEST_CHECK(!vjo_vocr_resident_drop(&cres));
+    refused_name = VJO_VOCR_CASCADE_NAME;
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(W, H), &greedy, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.cascade_rc == VJO_E_OCR_MODEL && !st.cascade_lines && !st.cascade && st.recognized == 1 && !cres.data);
+    refused_name = NULL;
+    /* a workspace without the cascade's room: the LM still, the cascade not */
+    reset();
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws,
+                                    vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name), capture,
+                                    vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.cascade_rc == VJO_E_OOM && st.lm == lm && !st.cascade_lines);
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_resident_drop(&wres) && !vjo_vocr_lm_drop(&lres) &&
+               !vjo_vocr_resident_drop(&cres));
+    free(ws);
 }
 
 /* The ink statistics: an even area or a smooth ramp holds no text-like ink;
@@ -815,7 +981,7 @@ static void test_ink_and_blank(void)
  * lines opens no weights; without the check the same line opens them. */
 static void test_blank_lines_open_no_weights(void)
 {
-    VjoVocrPolicy all = {0, 0, 0, 1, 20000, NULL, NULL, NULL}, real = {0, 0, 0, 1, 0, NULL, NULL, NULL};
+    VjoVocrPolicy all = {.blank = 1, .blank_edges = 20000}, real = {.blank = 1};
     VjoVocrStats st;
     reset();
     TEST_CHECK(run(&all, &st) == VJO_OK && st.lines == 1 && st.blank == 1 && !scr.opens && !st.recognized);
@@ -863,6 +1029,7 @@ TEST_LIST = {
     {"a_retry_keeps_what_the_job_learned", test_a_retry_keeps_what_the_job_learned},
     {"without_the_wait_a_folded_match_is_a_change", test_without_the_wait_a_folded_match_is_a_change},
     {"the_line_callback_skips_nothing_with_the_check_off", test_the_line_callback_skips_nothing_with_the_check_off},
+    {"the_cascade_reads_doubtful_lines_again", test_the_cascade_reads_doubtful_lines_again},
     {"ink_statistics_and_the_blank_rule", test_ink_and_blank},
     {"blank_lines_are_skipped_and_open_no_weights", test_blank_lines_open_no_weights},
     {NULL, NULL}

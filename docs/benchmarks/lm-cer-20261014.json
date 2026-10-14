@@ -1,0 +1,471 @@
+{
+ "what": "Dialogue CER of the overlay's line reading on vita-vn-ocr's development line crops.",
+ "sets": [
+  "tv",
+  "dn_ink",
+  "dn_grad"
+ ],
+ "dialogue_lines": 1666,
+ "ref_chars": 25379,
+ "decoder": {
+  "beam": 8,
+  "topk": 8,
+  "alpha": 500,
+  "beta": {
+   "vocr_lm_o3_500k.vlm": 3000,
+   "vocr_lm_o3_1000k.vlm": 3500,
+   "vocr_lm_o3_2000k.vlm": 3000,
+   "vocr_lm_o3_4000k.vlm": 3500
+  },
+  "gate": 8000,
+  "flags": "EOS",
+  "bracket": 8000
+ },
+ "host": "times: host us (shared box); the A9 is not measured",
+ "models": {
+  "VOCR3_H15_w8.vocr": {
+   "lines": 1666,
+   "ref_chars": 25379,
+   "errors": {
+    "greedy": 355,
+    "vocr_lm_o3_500k.vlm": 246,
+    "vocr_lm_o3_1000k.vlm": 237,
+    "vocr_lm_o3_2000k.vlm": 229,
+    "vocr_lm_o3_4000k.vlm": 225
+   },
+   "cer": {
+    "greedy": 1.399,
+    "vocr_lm_o3_500k.vlm": 0.969,
+    "vocr_lm_o3_1000k.vlm": 0.934,
+    "vocr_lm_o3_2000k.vlm": 0.902,
+    "vocr_lm_o3_4000k.vlm": 0.887
+   },
+   "lines_changed_by_lm": {
+    "vocr_lm_o3_500k.vlm": 181,
+    "vocr_lm_o3_1000k.vlm": 178,
+    "vocr_lm_o3_2000k.vlm": 187,
+    "vocr_lm_o3_4000k.vlm": 193
+   },
+   "host_us_per_line": 28413.9,
+   "host_lm_us_per_line": {
+    "vocr_lm_o3_500k.vlm": 36.0,
+    "vocr_lm_o3_1000k.vlm": 23.7,
+    "vocr_lm_o3_2000k.vlm": 25.4,
+    "vocr_lm_o3_4000k.vlm": 26.8
+   },
+   "cer_by_set": {
+    "tv": {
+     "lines": 937,
+     "ref_chars": 14694,
+     "greedy": 1.524,
+     "vocr_lm_o3_500k.vlm": 1.028,
+     "vocr_lm_o3_1000k.vlm": 0.946,
+     "vocr_lm_o3_2000k.vlm": 0.912,
+     "vocr_lm_o3_4000k.vlm": 0.878
+    },
+    "dn_ink": {
+     "lines": 396,
+     "ref_chars": 5773,
+     "greedy": 0.624,
+     "vocr_lm_o3_500k.vlm": 0.398,
+     "vocr_lm_o3_1000k.vlm": 0.433,
+     "vocr_lm_o3_2000k.vlm": 0.433,
+     "vocr_lm_o3_4000k.vlm": 0.416
+    },
+    "dn_grad": {
+     "lines": 333,
+     "ref_chars": 4912,
+     "greedy": 1.934,
+     "vocr_lm_o3_500k.vlm": 1.466,
+     "vocr_lm_o3_1000k.vlm": 1.486,
+     "vocr_lm_o3_2000k.vlm": 1.425,
+     "vocr_lm_o3_4000k.vlm": 1.466
+    }
+   },
+   "confidence": {
+    "hist_per_100": [
+     0,
+     4,
+     21,
+     33,
+     36,
+     128,
+     136,
+     141,
+     171,
+     904,
+     92
+    ],
+    "threshold": 700,
+    "flagged": 358,
+    "flagged_share": 0.2149,
+    "lines_with_error": 190,
+    "errors_caught": 142,
+    "recall": 0.7474,
+    "precision": 0.3966
+   },
+   "cascade": {
+    "model": "VOCR4_W20_w8.vocr",
+    "threshold": 700,
+    "rule": "the larger model's reading is shown",
+    "lines_read_again": 358,
+    "sweep": {
+     "500": {
+      "lines_read_again": 94,
+      "frames_read_again": 3902,
+      "higher": {
+       "greedy": 1.19,
+       "vocr_lm_o3_4000k.vlm": 0.76
+      },
+      "always": {
+       "greedy": 1.178,
+       "vocr_lm_o3_4000k.vlm": 0.741
+      }
+     },
+     "600": {
+      "lines_read_again": 222,
+      "frames_read_again": 10429,
+      "higher": {
+       "greedy": 1.119,
+       "vocr_lm_o3_4000k.vlm": 0.768
+      },
+      "always": {
+       "greedy": 1.095,
+       "vocr_lm_o3_4000k.vlm": 0.749
+      }
+     },
+     "700": {
+      "lines_read_again": 358,
+      "frames_read_again": 17169,
+      "higher": {
+       "greedy": 1.084,
+       "vocr_lm_o3_4000k.vlm": 0.753
+      },
+      "always": {
+       "greedy": 1.032,
+       "vocr_lm_o3_4000k.vlm": 0.717
+      }
+     },
+     "800": {
+      "lines_read_again": 499,
+      "frames_read_again": 24273,
+      "higher": {
+       "greedy": 1.072,
+       "vocr_lm_o3_4000k.vlm": 0.749
+      },
+      "always": {
+       "greedy": 1.005,
+       "vocr_lm_o3_4000k.vlm": 0.697
+      }
+     },
+     "900": {
+      "lines_read_again": 670,
+      "frames_read_again": 32682,
+      "higher": {
+       "greedy": 1.072,
+       "vocr_lm_o3_4000k.vlm": 0.749
+      },
+      "always": {
+       "greedy": 1.013,
+       "vocr_lm_o3_4000k.vlm": 0.705
+      }
+     }
+    },
+    "by_set": {
+     "tv": {
+      "primary": {
+       "greedy": 1.524,
+       "vocr_lm_o3_4000k.vlm": 0.878
+      },
+      "cascade": {
+       "greedy": 1.15,
+       "vocr_lm_o3_4000k.vlm": 0.708
+      },
+      "larger_alone": {
+       "greedy": 1.068,
+       "vocr_lm_o3_4000k.vlm": 0.667
+      }
+     },
+     "dn_ink": {
+      "primary": {
+       "greedy": 0.624,
+       "vocr_lm_o3_4000k.vlm": 0.416
+      },
+      "cascade": {
+       "greedy": 0.468,
+       "vocr_lm_o3_4000k.vlm": 0.346
+      },
+      "larger_alone": {
+       "greedy": 0.485,
+       "vocr_lm_o3_4000k.vlm": 0.277
+      }
+     },
+     "dn_grad": {
+      "primary": {
+       "greedy": 1.934,
+       "vocr_lm_o3_4000k.vlm": 1.466
+      },
+      "cascade": {
+       "greedy": 1.344,
+       "vocr_lm_o3_4000k.vlm": 1.181
+      },
+      "larger_alone": {
+       "greedy": 1.221,
+       "vocr_lm_o3_4000k.vlm": 1.12
+      }
+     }
+    },
+    "frames_primary": 76906,
+    "frames_read_again": 17169,
+    "errors": {
+     "greedy": 262,
+     "vocr_lm_o3_500k.vlm": 197,
+     "vocr_lm_o3_1000k.vlm": 185,
+     "vocr_lm_o3_2000k.vlm": 183,
+     "vocr_lm_o3_4000k.vlm": 182
+    },
+    "cer": {
+     "greedy": 1.032,
+     "vocr_lm_o3_500k.vlm": 0.776,
+     "vocr_lm_o3_1000k.vlm": 0.729,
+     "vocr_lm_o3_2000k.vlm": 0.721,
+     "vocr_lm_o3_4000k.vlm": 0.717
+    },
+    "larger_alone_cer": {
+     "greedy": 0.965,
+     "vocr_lm_o3_500k.vlm": 0.705,
+     "vocr_lm_o3_1000k.vlm": 0.709,
+     "vocr_lm_o3_2000k.vlm": 0.67,
+     "vocr_lm_o3_4000k.vlm": 0.666
+    }
+   }
+  },
+  "VOCR3_FL10_w8.vocr": {
+   "lines": 1666,
+   "ref_chars": 25379,
+   "errors": {
+    "greedy": 357,
+    "vocr_lm_o3_500k.vlm": 262,
+    "vocr_lm_o3_1000k.vlm": 232,
+    "vocr_lm_o3_2000k.vlm": 222,
+    "vocr_lm_o3_4000k.vlm": 218
+   },
+   "cer": {
+    "greedy": 1.407,
+    "vocr_lm_o3_500k.vlm": 1.032,
+    "vocr_lm_o3_1000k.vlm": 0.914,
+    "vocr_lm_o3_2000k.vlm": 0.875,
+    "vocr_lm_o3_4000k.vlm": 0.859
+   },
+   "lines_changed_by_lm": {
+    "vocr_lm_o3_500k.vlm": 167,
+    "vocr_lm_o3_1000k.vlm": 182,
+    "vocr_lm_o3_2000k.vlm": 179,
+    "vocr_lm_o3_4000k.vlm": 197
+   },
+   "host_us_per_line": 15209.2,
+   "host_lm_us_per_line": {
+    "vocr_lm_o3_500k.vlm": 31.6,
+    "vocr_lm_o3_1000k.vlm": 23.7,
+    "vocr_lm_o3_2000k.vlm": 24.9,
+    "vocr_lm_o3_4000k.vlm": 26.7
+   },
+   "cer_by_set": {
+    "tv": {
+     "lines": 937,
+     "ref_chars": 14694,
+     "greedy": 1.579,
+     "vocr_lm_o3_500k.vlm": 1.068,
+     "vocr_lm_o3_1000k.vlm": 0.892,
+     "vocr_lm_o3_2000k.vlm": 0.864,
+     "vocr_lm_o3_4000k.vlm": 0.851
+    },
+    "dn_ink": {
+     "lines": 396,
+     "ref_chars": 5773,
+     "greedy": 0.71,
+     "vocr_lm_o3_500k.vlm": 0.589,
+     "vocr_lm_o3_1000k.vlm": 0.572,
+     "vocr_lm_o3_2000k.vlm": 0.502,
+     "vocr_lm_o3_4000k.vlm": 0.502
+    },
+    "dn_grad": {
+     "lines": 333,
+     "ref_chars": 4912,
+     "greedy": 1.71,
+     "vocr_lm_o3_500k.vlm": 1.445,
+     "vocr_lm_o3_1000k.vlm": 1.384,
+     "vocr_lm_o3_2000k.vlm": 1.344,
+     "vocr_lm_o3_4000k.vlm": 1.303
+    }
+   },
+   "confidence": {
+    "hist_per_100": [
+     0,
+     0,
+     27,
+     31,
+     40,
+     154,
+     151,
+     124,
+     201,
+     854,
+     84
+    ],
+    "threshold": 700,
+    "flagged": 403,
+    "flagged_share": 0.2419,
+    "lines_with_error": 206,
+    "errors_caught": 153,
+    "recall": 0.7427,
+    "precision": 0.3797
+   },
+   "cascade": {
+    "model": "VOCR4_W20_w8.vocr",
+    "threshold": 700,
+    "rule": "the larger model's reading is shown",
+    "lines_read_again": 403,
+    "sweep": {
+     "500": {
+      "lines_read_again": 98,
+      "frames_read_again": 4393,
+      "higher": {
+       "greedy": 1.253,
+       "vocr_lm_o3_4000k.vlm": 0.784
+      },
+      "always": {
+       "greedy": 1.229,
+       "vocr_lm_o3_4000k.vlm": 0.745
+      }
+     },
+     "600": {
+      "lines_read_again": 252,
+      "frames_read_again": 11861,
+      "higher": {
+       "greedy": 1.147,
+       "vocr_lm_o3_4000k.vlm": 0.768
+      },
+      "always": {
+       "greedy": 1.111,
+       "vocr_lm_o3_4000k.vlm": 0.725
+      }
+     },
+     "700": {
+      "lines_read_again": 403,
+      "frames_read_again": 19580,
+      "higher": {
+       "greedy": 1.088,
+       "vocr_lm_o3_4000k.vlm": 0.745
+      },
+      "always": {
+       "greedy": 1.052,
+       "vocr_lm_o3_4000k.vlm": 0.709
+      }
+     },
+     "800": {
+      "lines_read_again": 527,
+      "frames_read_again": 25927,
+      "higher": {
+       "greedy": 1.068,
+       "vocr_lm_o3_4000k.vlm": 0.741
+      },
+      "always": {
+       "greedy": 1.005,
+       "vocr_lm_o3_4000k.vlm": 0.686
+      }
+     },
+     "900": {
+      "lines_read_again": 728,
+      "frames_read_again": 35666,
+      "higher": {
+       "greedy": 1.04,
+       "vocr_lm_o3_4000k.vlm": 0.721
+      },
+      "always": {
+       "greedy": 0.977,
+       "vocr_lm_o3_4000k.vlm": 0.666
+      }
+     }
+    },
+    "by_set": {
+     "tv": {
+      "primary": {
+       "greedy": 1.579,
+       "vocr_lm_o3_4000k.vlm": 0.851
+      },
+      "cascade": {
+       "greedy": 1.171,
+       "vocr_lm_o3_4000k.vlm": 0.715
+      },
+      "larger_alone": {
+       "greedy": 1.068,
+       "vocr_lm_o3_4000k.vlm": 0.667
+      }
+     },
+     "dn_ink": {
+      "primary": {
+       "greedy": 0.71,
+       "vocr_lm_o3_4000k.vlm": 0.502
+      },
+      "cascade": {
+       "greedy": 0.537,
+       "vocr_lm_o3_4000k.vlm": 0.398
+      },
+      "larger_alone": {
+       "greedy": 0.485,
+       "vocr_lm_o3_4000k.vlm": 0.277
+      }
+     },
+     "dn_grad": {
+      "primary": {
+       "greedy": 1.71,
+       "vocr_lm_o3_4000k.vlm": 1.303
+      },
+      "cascade": {
+       "greedy": 1.303,
+       "vocr_lm_o3_4000k.vlm": 1.059
+      },
+      "larger_alone": {
+       "greedy": 1.221,
+       "vocr_lm_o3_4000k.vlm": 1.12
+      }
+     }
+    },
+    "frames_primary": 76906,
+    "frames_read_again": 19580,
+    "errors": {
+     "greedy": 267,
+     "vocr_lm_o3_500k.vlm": 202,
+     "vocr_lm_o3_1000k.vlm": 192,
+     "vocr_lm_o3_2000k.vlm": 181,
+     "vocr_lm_o3_4000k.vlm": 180
+    },
+    "cer": {
+     "greedy": 1.052,
+     "vocr_lm_o3_500k.vlm": 0.796,
+     "vocr_lm_o3_1000k.vlm": 0.757,
+     "vocr_lm_o3_2000k.vlm": 0.713,
+     "vocr_lm_o3_4000k.vlm": 0.709
+    },
+    "larger_alone_cer": {
+     "greedy": 0.965,
+     "vocr_lm_o3_500k.vlm": 0.705,
+     "vocr_lm_o3_1000k.vlm": 0.709,
+     "vocr_lm_o3_2000k.vlm": 0.67,
+     "vocr_lm_o3_4000k.vlm": 0.666
+    }
+   }
+  }
+ },
+ "how": "python3 tools/lm_cer_eval.py --vocr-repo VITA_VN_OCR --models DIR --cascade VOCR4_W20_w8.vocr --conf 700",
+ "when": "2026-10-14T19:41Z",
+ "vita_vn_ocr": "557f217c40af5808ab388e139ac772a3b0d4b639 (PR #82)",
+ "lms": "v0.2.6-ctclm.2",
+ "models_sha256": {
+  "VOCR3_H15_w8.vocr": "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c",
+  "VOCR3_FL10_w8.vocr": "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154",
+  "VOCR4_W20_w8.vocr": "2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e"
+ },
+ "note": "the LM's two weights per tier were tuned by vita-vn-ocr #82 on these development sets (in-sample for them); the cascade's threshold is #82's doubtful mark, not tuned here; VOCR4-W20 was selected on teacher_val (vita-vn-ocr #78)"
+}

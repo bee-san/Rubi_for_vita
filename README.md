@@ -313,6 +313,17 @@ The recognized text is shown, saved and looked up in one form of each mark
 (full-width `！` as `!`, `〜` as `~`, `...` as `…`, `ー` or `一` by context), the
 form vita-vn-ocr's scorer uses; the recognizer's own text is in `log.txt`
 ([text normalisation](docs/vita-vn-ocr.md#text-normalisation-shown-and-looked-up)).
+Each line is decoded with a beam search and a character language model
+(`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is
+vita-vn-ocr's, CC BY-SA 4.0. The game keeps the largest LM that fits its memory
+resident, and reads greedily when none does. A line read with low confidence
+is read again by the larger VOCR4-W20, whose reading is shown, while the job
+stays within `ocr_cascade_ms` (2000; `0` turns it off). On the host's
+development dialogue lines the two bring VOCR3-H15 from 1.40 % to 0.73 % CER.
+The greedy reading, each line's confidence and what the cascade read again are
+logged beside the shown text
+([beam + LM decoding](docs/vita-vn-ocr.md#beam--lm-decoding-api-20),
+[confidence cascade](docs/vita-vn-ocr.md#confidence-cascade-api-20)).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 

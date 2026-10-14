@@ -31,13 +31,24 @@
  * flags so the request, which the kernel keeps a copy of, keeps its size. */
 #define VJO_GAME_OCR_F_BLANK 0x8u          /* skip found lines whose crop holds no text-like ink */
 #define VJO_GAME_OCR_F_SETTLE_FIRST 0x10u  /* the screen was still changing when the job was asked: wait first */
+/* Bits 5-7: the largest LM tier (include/vjo_vocr_sizes.h, 1-4) the beam + LM
+ * decoder may use; 0: greedy decoding, as API 19. The worker uses the largest that fits. */
+#define VJO_GAME_OCR_LM_SHIFT 5u
+#define VJO_GAME_OCR_LM_MASK 0x7u
+/* Bits 8-11: the confidence cascade's time ceiling for the job's recognition,
+ * in 250 ms (0: no cascade). A doubtful line is read again by the larger pinned
+ * model (include/vjo_vocr_sizes.h VJO_VOCR_CASCADE_NAME) while the job stays
+ * within it. */
+#define VJO_GAME_OCR_CASCADE_SHIFT 8u
+#define VJO_GAME_OCR_CASCADE_MASK 0xFu
+#define VJO_GAME_OCR_CASCADE_UNIT_US 250000u
 /* Bits 16-23: the stable-text wait, in 10 ms (0: off); bits 24-31: the most the
  * job spends waiting, in 50 ms (0: VJO_VOCR_SETTLE_MAX_US, 2 s). */
 #define VJO_GAME_OCR_SETTLE_SHIFT 16u
 #define VJO_GAME_OCR_SETTLE_UNIT_US 10000u
 #define VJO_GAME_OCR_SETTLE_MAX_SHIFT 24u
 #define VJO_GAME_OCR_SETTLE_MAX_UNIT_US 50000u
-#define VJO_GAME_OCR_F_ALL 0xFFFF001Fu
+#define VJO_GAME_OCR_F_ALL 0xFFFF0FFFu
 
 typedef struct {
     uint32_t size;
@@ -57,9 +68,13 @@ typedef struct {
     char fallback[VJO_GAME_OCR_MODEL_BYTES];
 } VjoGameOcrRequest;
 
-/* vjoOcrModelOpen's `which`: the request's model or its fallback. */
+/* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
+ * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
+ * or the cascade's model when the request gives a cascade ceiling. */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
 #define VJO_GAME_OCR_OPEN_FALLBACK 1u
+#define VJO_GAME_OCR_OPEN_LM 2u
+#define VJO_GAME_OCR_OPEN_CASCADE 8u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -113,8 +128,18 @@ enum {
                             recognizer's own text kept after its NUL: arg the changes, bytes the full-width
                             forms folded, sum = tildes << 24 | dashes << 16 | ellipses << 8 | 一 made ー << 4 |
                             ー made 一 (each at most 255, the last two 15), us the time */
+    VJO_GSTEP_LM,        /* API 20, the beam + LM decoder: kind the LM tier, arg lines it changed, rc 0 or why the
+                            job read greedily (VJO_E_*), bytes = VJO_GLM_* | lines under VJO_GAME_OCR_LOW_CONF << 16 |
+                            lines decoded, sum the LM's load time (us), us the decoding */
+    VJO_GSTEP_CASCADE,   /* API 20, the confidence cascade: arg lines read again with the larger model, rc 0 or
+                            why it could not run (VJO_E_*), bytes = VJO_GLM_READ / _RESIDENT (its weights) | doubtful
+                            lines left for the time ceiling << 16 | lines whose text it changed, sum its load time
+                            (us), us the re-reading */
     VJO_GSTEP_COUNT
 };
+#define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
+#define VJO_GLM_RESIDENT 0x40000000u /* kept from an earlier job */
+#define VJO_GAME_OCR_LOW_CONF 700u   /* a line's confidence (VjoGameOcrLine.flags) under 0.7: doubtful */
 /* VJO_GSTEP_SETTLE rc. */
 #define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
 #define VJO_GSETTLE_HELD 1     /* the rows held still settle long before the lines were read */
@@ -125,6 +150,9 @@ enum {
 #define VJO_GITEM_WEIGHTS 3u   /* "VjoGameVocrWeights" */
 #define VJO_GITEM_PROBE 4u     /* a probe's strip */
 #define VJO_GITEM_LINE 5u      /* "VjoGameVocrLine": a line taller than a strip, read whole */
+#define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
+#define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
+#define VJO_GITEM_COUNT 8u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
@@ -139,9 +167,12 @@ typedef struct {
 
 #define VJO_GAME_OCR_STEPS 20u
 
-/* One recognized line: crop size, CTC frames and recognition time. */
+/* One recognized line: crop size, CTC frames, recognition time and (API 20)
+ * flags: its confidence in 1/1000, 1023 when not read with the top K, and
+ * whether the LM decoded (0x4000) and changed (0x8000) it (core/vocr_ocr.h
+ * VJO_VOCR_LINE_*). */
 typedef struct {
-    uint16_t width, height, frames, reserved;
+    uint16_t width, height, frames, flags;
     uint32_t us;
 } VjoGameOcrLine;
 

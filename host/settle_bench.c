@@ -80,7 +80,7 @@ static void run(const char *screen, unsigned w, unsigned h, unsigned fps, unsign
 {
     VjoPlatform p = {0};
     VjoVocrResident res = {0};
-    VjoVocrPolicy pol = {settle_ms * 1000u, 0, first, 0, 0, NULL, NULL, sleep_us};
+    VjoVocrPolicy pol = {.settle_us = settle_ms * 1000u, .settle_first = first, .sleep = sleep_us};
     VjoGreySource im = {NULL, w, h, strip, NULL, NULL};
     VjoVocrStats st;
     char text[64];

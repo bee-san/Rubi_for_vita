@@ -52,11 +52,12 @@ typedef struct {
 unsigned vjo_text_normalize(char *s, VjoTextNorm *counts);
 
 /* The same for the text in buf (cap bytes, NUL-terminated within them), which
- * also keeps the text as it was after the normalised text's NUL, so one buffer
- * carries both (the game worker returns its result this way, and the Shell logs
- * the recognizer's own text: vjo_text_raw). A copy that does not fit is cut at a
- * character. Every byte after it is zeroed. Returns the changes. */
-unsigned vjo_text_normalize_keep(char *buf, size_t cap, VjoTextNorm *counts);
+ * also keeps raw (or, when raw is NULL, the text as it was) after the normalised
+ * text's NUL, so one buffer carries both (the game worker returns its result
+ * this way, the recognizer's own greedy text as raw, and the Shell logs it:
+ * vjo_text_raw). A copy that does not fit is cut at a character. Every byte
+ * after it is zeroed. raw may not overlap buf. Returns the changes. */
+unsigned vjo_text_normalize_keep(char *buf, size_t cap, const char *raw, VjoTextNorm *counts);
 
 /* The text kept by vjo_text_normalize_keep in buf (cap bytes), or "" when there
  * is none. */

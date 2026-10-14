@@ -78,6 +78,8 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_settle_ms = 150;
     c->ocr_settle_max_ms = 2000;
     c->ocr_skip_blank_lines = 0;
+    c->ocr_lm = 2;
+    c->ocr_cascade_ms = 2000;
     c->log_file = 1; /* log.txt is on unless log_file = off */
 }
 
@@ -148,15 +150,16 @@ const char *vjo_config_default_text(void)
            "; Smaller weights used automatically for a job when the game has too little free\n"
            "; memory for vocr_model: VOCR3_FL10_w8.vocr | FL10_w8.vocr | none\n"
            "vocr_fallback_model = VOCR3_FL10_w8.vocr\n"
-           "; vocr: read the region once its rows have held still this long, in ms (0-1000,\n"
-           "; 0 = off; sent in 10 ms steps), so text that types out is read whole; waiting at\n"
-           "; most ocr_settle_max_ms (100-10000, in 50 ms steps) per recognition, then it reads\n"
-           "; anyway (set it above ocr_settle_ms, or every wait runs out before the text holds still).\n"
+           "; vocr: read text once still this long (ms, 0 = off), waiting at most the max\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
            "; vocr: skip found lines with no ink (an even area, a smooth gradient): on | off\n"
            "; (off: it finds next to none at native resolution; see docs/vita-vn-ocr.md)\n"
            "ocr_skip_blank_lines = off\n"
+           "; vocr: largest LM: 4000k | 2000k | 1000k | 500k | off\n"
+           "ocr_lm = 1000k\n"
+           "; vocr: re-read doubtful lines with a larger model within (ms, 0 = off)\n"
+           "ocr_cascade_ms = 2000\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -546,6 +549,15 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
         set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
+    } else if (vjo_ieq(key, "ocr_cascade_ms")) {
+        set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
+    } else if (vjo_ieq(key, "ocr_lm")) {
+        static const char *const tiers[] = {"off", "500k", "1000k", "2000k", "4000k"};
+        int t = -1;
+        for (int i = 0; i < 5; i++)
+            if (vjo_ieq(val, tiers[i])) t = i;
+        if (t >= 0) c->ocr_lm = t;
+        else warn(c, "%s: invalid value '%s' (4000k, 2000k, 1000k, 500k or off)", key, val);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

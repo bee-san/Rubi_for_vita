@@ -64,12 +64,42 @@ VOCR_ASSETS = {
         'f8c1abe4743a71a742e718523f4206f992d3bd4fb69de321997b2bd6f16779c0'),
 }
 
+# The character LMs of the beam + LM decoder (vita-vn-ocr #82), pre-release
+# v0.2.6-ctclm.2 (ctclm.1 is superseded: built before the protected-title filter), CC BY-SA 4.0: their ATTRIBUTION.md ships beside them. The
+# plugin pins the same sizes and hashes (core/vocr_ocr.c, include/vjo_vocr_sizes.h).
+VOCR_LM_TAG = 'v0.2.6-ctclm.2'
+VOCR_LM_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_LM_TAG}/'
+VOCR_LM_ASSETS = {
+    'vocr_lm_o3_500k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_500k.vlm', 499824,
+        '38ea94e0c4ec93863454387e7c2c469d209aaf21f2f6ee5d040e75a09d00d286'),
+    'vocr_lm_o3_1000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_1000k.vlm', 987600,
+        '993000611555171daf6361e29a503b0871a5f3dd240a19555d55f16aaa3ab3d9'),
+    'vocr_lm_o3_2000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_2000k.vlm', 1971568,
+        'ac33e461bd346617aae27168aee47230a758f4b301d78b59eb55ca25a21bcb34'),
+    'vocr_lm_o3_4000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_4000k.vlm', 3781072,
+        '01f49be1691a1aab5a6d33414ce7d17c3e5b2daf97dfccb0d341a380a68e5898'),
+}
+VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
+VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 2538,
+    '1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c')}
+
+# The confidence cascade's larger recognizer: VOCR4-W20 (vita-vn-ocr #78, pre-release
+# v0.2.5-vocr4.1, whose SHA256SUMS lists this hash; F20's shape). Not qualified as a
+# default; it reads again only the lines the default reads with low confidence.
+VOCR4_TAG = 'v0.2.5-vocr4.1'
+VOCR4_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR4_TAG}/'
+VOCR4_ASSETS = {
+    'VOCR4_W20_w8.vocr': (VOCR4_BASE + 'VOCR4_W20_w8.vocr', 1558016,
+        '2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e'),
+}
+VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'
+
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
 # the pins carry it: core/vocr_models.c per file (the Overlay app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4'}
 
 
 def store(path, data):
@@ -128,7 +158,16 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
 def fetch_vocr(directory, name, source=None):
     if name in VOCR3_ASSETS:
         return fetch_release_asset(directory, name, VOCR3_ASSETS, VOCR3_TAG, source)
+    if name in VOCR4_ASSETS:
+        return fetch_release_asset(directory, name, VOCR4_ASSETS, VOCR4_TAG, source)
     return fetch_release_asset(directory, name, VOCR_ASSETS, VOCR_TAG, source)
+
+
+def fetch_lms(directory, source=None):
+    """The four LM tiers of the beam + LM decoder and their CC BY-SA 4.0 attribution, each pinned."""
+    paths = [fetch_release_asset(directory, name, VOCR_LM_ASSETS, VOCR_LM_TAG, source) for name in VOCR_LM_ASSETS]
+    paths.append(fetch_release_asset(directory, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN, VOCR_LM_TAG, source))
+    return paths
 
 
 
@@ -192,13 +231,20 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr'), default='ncnn')
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-lm'), default='ncnn',
+                    help="vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.backend == 'vocr-lm':
+        for path in fetch_lms(args.output, args.source):
+            print('Verified', path.name)
+        print('LMs ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (CC BY-SA 4.0: keep',
+              VOCR_LM_ATTRIBUTION, 'beside them)')
+        return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL
         fetch_vocr(args.output, model, args.source)

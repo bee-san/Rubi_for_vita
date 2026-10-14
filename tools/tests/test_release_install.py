@@ -34,6 +34,8 @@ class ReleaseInstall(unittest.TestCase):
                      "ur0/tai/VitaJPOverlay_OCR.suprx",
                      "ux0/data/VitaJPOverlay/ocr/FL10_w8.vocr", "ux0/data/VitaJPOverlay/ocr/H15_w8.vocr",
                      "ux0/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr", "ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
+                     "ux0/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm", "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md",
+                     "ux0/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
@@ -125,7 +127,8 @@ elif '-o' in a:
         config = (self.data / "config.ini").read_text()
         for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_model = VOCR3_H15_w8.vocr",
                         "vocr_fallback_model = VOCR3_FL10_w8.vocr", "log_file = on", "anki_mining = off",
-                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key"):
+                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key",
+                        "ocr_lm = 1000k", "ocr_cascade_ms = 2000"):
             self.assertIn(setting, config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
@@ -133,7 +136,8 @@ elif '-o' in a:
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
         for name in ("dictionaries/plaintext.vjdict", "ocr/FL10_w8.vocr", "ocr/H15_w8.vocr",
-                     "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr"):
+                     "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr", "ocr/vocr_lm_o3_4000k.vlm",
+                     "ocr/LM-ATTRIBUTION.md", "ocr/VOCR4_W20_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
 

@@ -31,9 +31,15 @@ class PackageModels(unittest.TestCase):
         self.vocr3 = b"tiny VOCR3 asset fixture, not OCR weights!!"
         vocr3_spec = ("https://fixture.invalid/VOCR3", len(self.vocr3), hashlib.sha256(self.vocr3).hexdigest())
         vocr3 = {name: vocr3_spec for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
+        self.lm = b"tiny LM asset fixture, not a language model!"
+        lm_spec = ("https://fixture.invalid/LM", len(self.lm), hashlib.sha256(self.lm).hexdigest())
+        lms = {name: lm_spec for name in prepare.VOCR_LM_ASSETS}
+        vocr4 = {name: vocr3_spec for name in prepare.VOCR4_ASSETS}
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
+            self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
+            self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -42,6 +48,11 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.legacy)
         for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"):
             (self.models / name).write_bytes(self.vocr3)
+        for name in prepare.VOCR_LM_ASSETS:
+            (self.models / name).write_bytes(self.lm)
+        for name in prepare.VOCR4_ASSETS:
+            (self.models / name).write_bytes(self.vocr3)
+        (self.models / prepare.VOCR_LM_ATTRIBUTION).write_text("CC BY-SA 4.0 fixture")
 
     def package_fixture(self, settings=None, write_models=True):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -74,7 +85,9 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
             self.assertEqual(sorted(manifest["models"]),
-                             ["FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr"])
+                             sorted(["FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr",
+                                     *prepare.VOCR_LM_ASSETS, *prepare.VOCR4_ASSETS]))
+            self.assertIn(release.DATA + "ocr/LM-" + prepare.VOCR_LM_ATTRIBUTION, manifest["files"])
             self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr3.1")
             self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["role"], "default")
             self.assertEqual(manifest["models"]["H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.0")
@@ -96,9 +109,11 @@ class PackageModels(unittest.TestCase):
         package = self.package_fixture()
         with zipfile.ZipFile(package) as archive:
             manifest = json.loads(archive.read("package-manifest.json"))
-        self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items()},
+        self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items() if "generation" in entry},
                          {"VOCR3_H15_w8.vocr": "VOCR3", "VOCR3_FL10_w8.vocr": "VOCR3",
-                          "H15_w8.vocr": "VOCR1", "FL10_w8.vocr": "VOCR1"})
+                          "H15_w8.vocr": "VOCR1", "FL10_w8.vocr": "VOCR1", "VOCR4_W20_w8.vocr": "VOCR4"})
+        for name in prepare.VOCR_LM_ASSETS:  # an LM is no recognizer: no generation
+            self.assertNotIn("generation", manifest["models"][name])
         self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
         self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR3")
         self.assertEqual(manifest["defaults"]["ocr_engine"],

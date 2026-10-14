@@ -940,6 +940,21 @@ static void test_config(void)
     settle = "ocr_settle_ms = 1000\nocr_settle_max_ms = 10000\n";
     vjo_config_parse(&c, settle, strlen(settle));
     TEST_CHECK(c.ocr_settle_ms == 1000 && c.ocr_settle_max_ms == 10000 && c.n_warnings == 0);
+    /* The beam + LM decoder's largest LM (1000k by default, tiers 1-4, off) and the
+     * confidence cascade's time ceiling (2 s by default, 0 = off, at most 3,750 ms). */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 2000);
+    const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
+    vjo_config_parse(&c, lm, strlen(lm));
+    TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 0 && c.n_warnings == 0);
+    lm = "ocr_lm = off\nocr_cascade_ms = 3750\n";
+    vjo_config_parse(&c, lm, strlen(lm));
+    TEST_CHECK(c.ocr_lm == 0 && c.ocr_cascade_ms == 3750 && c.n_warnings == 0);
+    vjo_config_defaults(&c);
+    lm = "ocr_lm = 8000k\nocr_cascade_ms = 3751\nocr_cascade_ms = -1\n";
+    vjo_config_parse(&c, lm, strlen(lm));
+    TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 2000 && c.n_warnings == 3);
+    TEST_MSG("%u warnings", c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -953,6 +968,8 @@ static void test_config(void)
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
         TEST_CHECK(d.ocr_settle_ms == 150 && d.ocr_settle_max_ms == 2000 && d.ocr_skip_blank_lines == 0);
+        TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
+                   strstr(t, "\nocr_cascade_ms = 2000\n"));
     }
 
     /* the same button for both: the toggle keeps it */

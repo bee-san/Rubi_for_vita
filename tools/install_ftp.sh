@@ -83,7 +83,8 @@ if [ -n "$PACKAGE_DIR" ]; then
   B=$PACKAGE_DIR/ur0/tai
   RCO=$PACKAGE_DIR/ur0/data/VitaJPOverlay/vitajpoverlay.rco
   CONFIG_TEMPLATE=$PACKAGE_DIR/config.ini
-  for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr; do
+  for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vlm \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
 fi

@@ -653,6 +653,12 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
         }
         w = sceClibSnprintf(buf + n, sizeof(buf) - n, " %ux%u %uf %u.%ums", l->width, l->height,
                             l->frames, (unsigned)(l->us / 1000), (unsigned)(l->us % 1000 / 100));
+        /* API 20: the line's confidence (with the LM) and whether the LM changed it */
+        if (w > 0 && n + (size_t)w < sizeof(buf) && (l->flags & 0x3FFu) != 0x3FFu) {
+            int c = sceClibSnprintf(buf + n + w, sizeof(buf) - n - (size_t)w, " c%u%s%s", l->flags & 0x3FFu,
+                                    l->flags & 0x8000u ? "*" : "", l->flags & 0x0400u ? "^" : "");
+            if (c > 0) w += c;
+        }
         n = w > 0 && n + (size_t)w < sizeof(buf) ? n + (size_t)w : sizeof(buf) - 1;
         if (i % 6 == 5 || i + 1 == r->recognized || i + 1 == VJO_GAME_OCR_LINES) {
             vjo_log("%s", buf);
@@ -752,6 +758,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
      * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
      * one step, not none); a screen not settled now is waited for first. */
     if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
+    request.flags |= (uint32_t)(job_cfg.ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT;
+    if (job_cfg.ocr_cascade_ms > 0) { /* in 250 ms steps, at least one */
+        uint32_t c = (uint32_t)(job_cfg.ocr_cascade_ms + 125) / 250u;
+        request.flags |= (c ? c > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : c : 1u)
+                         << VJO_GAME_OCR_CASCADE_SHIFT;
+    }
     if (job_cfg.ocr_settle_ms > 0) {
         uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
         request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
@@ -1231,6 +1243,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         return 0;
     if (game_ocr_backend(a->ocr_backend) &&
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
+         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
          (a->ocr_backend == VJO_OCR_VOCR && (sceClibStrcmp(a->vocr_model, b->vocr_model) ||
                                              sceClibStrcmp(a->vocr_fallback_model, b->vocr_fallback_model)))))
         return 0;

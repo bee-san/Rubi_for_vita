@@ -24,6 +24,7 @@ static uint64_t model_clock;
 static uint32_t expected_model_size;
 static unsigned done_events, waits, stats;
 static int expect_fallback;
+static const char *expect_lm; /* API 20: the LM file Open should name */
 static int done_pending, wait_runs_worker, stat_error;
 static SceIoStat file_stat;
 /* The game's frame, as the display hook sees it (32 x 32 A8B8G8R8, pitch 40). */
@@ -124,7 +125,7 @@ SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
-                                 expect_fallback ? request.fallback : request.model);
+                                 expect_lm ? expect_lm : expect_fallback ? request.fallback : request.model);
     TEST_CHECK(!strcmp(path, expected) && flags == SCE_O_RDONLY);
     model_opens++; interrupt_io();
     if (open_error) return open_error;
@@ -231,7 +232,7 @@ static void setup(void)
     model_clock = 1000000; expected_model_size = VJO_VOCR_FL10_BYTES;
     model_opens = model_reads = model_closes = model_events = 0;
     file_live = open_error = seek_error = read_error = close_error = eof = short_read = bad_size = during_io = 0;
-    done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0; expect_fallback = 0;
+    done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0; expect_fallback = 0; expect_lm = NULL;
     memset(&file_stat, 0, sizeof(file_stat));
     file_stat.st_mtime = (SceDateTime){2026, 10, 11, 9, 43, 58, 123456};
     TEST_ASSERT(vjoOcrRegister() == 0);
@@ -403,8 +404,8 @@ static void invalid_capture_and_wire(void)
     r.size--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.size++;
     r.model[31] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model[31] = 0;
     r.model_dir[255] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model_dir[255] = 0;
-    r.flags = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
-    r.flags = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 5-15 are still unknown */
+    r.flags = 0x1000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 12-15 are still unknown */
+    r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
     /* A Lens/Anki capture in flight: the OCR job waits for it. */
     g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY);
@@ -879,6 +880,65 @@ static void model_cancel_while_waiting(void)
     TEST_CHECK(!vjoOcrModelClose(seq) && !file_live && model_closes == 1);
     TEST_CHECK(!vjoOcrComplete(&message) && !game_ocr_capture_busy_locked());
 }
+/* API 20: an LM is a pinned name the kernel knows; the game names its tier
+ * (which), up to the tier the Shell's request allows, never a path. */
+static void lm_tiers_open_up_to_the_requested_tier(void)
+{
+    static const struct { uint32_t tier; const char *name; uint32_t bytes; } lms[] = {
+        {1, VJO_VOCR_LM1_NAME, VJO_VOCR_LM1_BYTES}, {2, VJO_VOCR_LM2_NAME, VJO_VOCR_LM2_BYTES},
+        {3, VJO_VOCR_LM3_NAME, VJO_VOCR_LM3_BYTES}, {4, VJO_VOCR_LM4_NAME, VJO_VOCR_LM4_BYTES}};
+    for (unsigned allowed = 0; allowed <= 4; allowed++)
+        for (unsigned i = 0; i < 4; i++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            r.flags = allowed << VJO_GAME_OCR_LM_SHIFT;
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            uint32_t which = VJO_GAME_OCR_OPEN_LM + lms[i].tier - 1u;
+            if (lms[i].tier > allowed) {
+                TEST_CHECK(vjoOcrModelOpen(seq, which, NULL) == VJO_ERR_ARG && !model_opens);
+                TEST_MSG("tier %u opened with tier %u allowed", lms[i].tier, allowed);
+            } else {
+                expect_lm = lms[i].name; expected_model_size = lms[i].bytes;
+                TEST_CHECK(vjoOcrModelOpen(seq, which, NULL) == VJO_ERR_BUSY);
+                model_tick();
+                TEST_CHECK(vjoOcrModelOpen(seq, which, NULL) == (int)lms[i].bytes && model_opens == 1);
+                close_model(seq);
+                expect_lm = NULL;
+            }
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
+    setup(); VjoGameOcrRequest r = make_request(); /* past the last tier */
+    r.flags = 4u << VJO_GAME_OCR_LM_SHIFT;
+    caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_LM + 4u, NULL) == VJO_ERR_ARG && !model_opens);
+    TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+}
+
+/* API 20: the cascade's larger model is a pinned name the kernel knows; the
+ * game may open it only when the request gives the cascade a time ceiling. */
+static void cascade_model_opens_only_with_a_ceiling(void)
+{
+    for (unsigned ceiling = 0; ceiling <= 1; ceiling++) {
+        setup(); VjoGameOcrRequest r = make_request();
+        r.flags = ceiling ? 8u << VJO_GAME_OCR_CASCADE_SHIFT : 0u;
+        caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+        if (!ceiling) {
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE, NULL) == VJO_ERR_ARG && !model_opens);
+        } else {
+            expect_lm = VJO_VOCR_CASCADE_NAME; expected_model_size = VJO_VOCR_CASCADE_BYTES;
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE, NULL) == VJO_ERR_BUSY);
+            model_tick();
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE, NULL) == (int)VJO_VOCR_CASCADE_BYTES &&
+                       model_opens == 1);
+            close_model(seq);
+            expect_lm = NULL;
+        }
+        /* the slots between the LM tiers and it name nothing */
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_LM + VJO_VOCR_LM_TIERS, NULL) == VJO_ERR_ARG);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE + 1u, NULL) == VJO_ERR_ARG);
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    }
+}
+
 /* The fallback is a second pinned name the Shell submits; the game only
  * picks which of the two to open, never a path or another name. */
 static void fallback_is_one_of_the_submitted_pinned_names(void)
@@ -933,6 +993,8 @@ TEST_LIST = {
     {"cancellation during a waited Open is reported and Close drains in one call", model_cancel_while_waiting},
     {"packed modification times differ for every field", modification_times_pack_distinctly},
     {"the fallback is one of the submitted pinned names; Open picks which", fallback_is_one_of_the_submitted_pinned_names},
+    {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
+    {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},

@@ -812,6 +812,13 @@ LOG = {
     # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
     "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    # API 20: the beam + LM decoder (include/vjo_game_ocr.h VJO_GSTEP_LM)
+    "lm": re.compile(r"^gstep job lm kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    # API 20: the confidence cascade (include/vjo_game_ocr.h VJO_GSTEP_CASCADE)
+    "cascade": re.compile(r"^gstep job cascade kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                          r".*us=(\d+)"),
+    # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
+    "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
     "norm": re.compile(r"^gstep job norm kind=\S+ arg=(\d+) rc=0x[0-9A-Fa-f]+ bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
 }
@@ -840,7 +847,11 @@ def summarise_log(text):
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
          "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
-                  "kanji_one": 0, "us": []}}
+                  "kanji_one": 0, "us": []},
+         "lm": {"jobs": 0, "greedy": 0, "rcs": {}, "lines": 0, "changed": 0, "low": 0, "read": 0, "load_ms": [],
+                "decode_ms": [], "conf": []},
+         "cascade": {"jobs": 0, "lines": 0, "changed": 0, "left": 0, "read": 0, "load_ms": [], "ms": [], "rcs": {},
+                     "conf": []}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
@@ -864,6 +875,35 @@ def summarise_log(text):
                 st["passes"].append(int(m.group(1)))
             st["changes"] += int(m.group(3))
             st["toggling_jobs"] += (int(m.group(4), 16) >> 16) > 0
+            continue
+        m = LOG["lm"].match(line)
+        if m:
+            lm, rc, packed = s["lm"], s32(int(m.group(2), 16)), int(m.group(3))
+            lm["jobs"] += 1
+            if rc:
+                lm["greedy"] += 1
+                lm["rcs"][rc] = lm["rcs"].get(rc, 0) + 1
+            lm["changed"] += int(m.group(1))
+            lm["lines"] += packed & 0xFFFF
+            lm["low"] += (packed >> 16) & 0x3FFF
+            if packed & 0x80000000:
+                lm["read"] += 1
+                lm["load_ms"].append(int(m.group(4), 16) // 1000)
+            lm["decode_ms"].append(int(m.group(5)) // 1000)
+            continue
+        m = LOG["cascade"].match(line)
+        if m:
+            cs, rc, packed = s["cascade"], s32(int(m.group(2), 16)), int(m.group(3))
+            cs["jobs"] += 1
+            if rc:
+                cs["rcs"][rc] = cs["rcs"].get(rc, 0) + 1
+            cs["lines"] += int(m.group(1))
+            cs["changed"] += packed & 0xFFFF
+            cs["left"] += (packed >> 16) & 0x3FFF
+            if packed & 0x80000000:
+                cs["read"] += 1
+                cs["load_ms"].append(int(m.group(4), 16) // 1000)
+            cs["ms"].append(int(m.group(5)) // 1000)
             continue
         m = LOG["norm"].match(line)
         if m:
@@ -946,6 +986,8 @@ def summarise_log(text):
             break
         if line.startswith("game vocr lines"):
             s["line_ms"] += [int(m.group(4)) for m in LOG["line"].finditer(line)]
+            for m in LOG["conf"].finditer(line):
+                s["cascade" if m.group(3) else "lm"]["conf"].append(int(m.group(1)))
         if line.startswith("anki: Picture field off"):
             s["anki"]["picture_off"] += 1
         if SHELL_REFUSAL.search(line):
@@ -1190,6 +1232,25 @@ def render_collect(c):
                      f"{st['timeout']}, no line to wait for in {st['none']}; waited {_span(st['ms'])} ms "
                      f"({_span(st['passes'])} passes); {st['changes']} row change(s) seen while waiting (text typing "
                      f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)")
+        lm = lg.get("lm") or {}
+        if lm.get("jobs"):
+            conf = sorted(lm["conf"])
+            L.append(f"  beam + LM: {lm['jobs']} job(s), {lm['lines']} line(s) decoded, {lm['changed']} changed by the LM; "
+                     f"{lm['low']} line(s) under 0.70 confidence"
+                     + (f" (median {conf[len(conf) // 2] / 1000:.2f})" if conf else "")
+                     + f"; LM read {lm['read']}x ({_span(lm['load_ms'])} ms), decoding {_span(lm['decode_ms'])} ms a job"
+                     + (f"; greedy instead in {lm['greedy']} job(s): "
+                        + ", ".join(f"{rc_text(r)} x{n}" for r, n in sorted(lm["rcs"].items())) if lm["greedy"] else ""))
+        cs = lg.get("cascade") or {}
+        if cs.get("jobs"):
+            conf = sorted(cs["conf"])
+            L.append(f"  cascade: {cs['jobs']} job(s), {cs['lines']} doubtful line(s) read again with the larger model "
+                     f"({cs['changed']} changed"
+                     + (f"; its confidence median {conf[len(conf) // 2] / 1000:.2f}" if conf else "")
+                     + f"), {cs['left']} left for the time ceiling; its weights read {cs['read']}x "
+                     f"({_span(cs['load_ms'])} ms), re-reading {_span(cs['ms'])} ms a job"
+                     + ("; not used in " + ", ".join(f"{rc_text(r)} x{n}" for r, n in sorted(cs["rcs"].items()))
+                        if cs["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "
