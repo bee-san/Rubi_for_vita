@@ -135,6 +135,11 @@ jobs:
         with:
           name: VitaJPOverlay
           path: build/vita/VitaJPOverlay-*.zip
+          # A pull request's build is only needed while it is reviewed and audited (7 days); a
+          # build of main, a tag or a manual run is what test packages are made from (30 days).
+          # Published releases keep their own assets. The default would be 90 days, and a build
+          # was about 43 MB on 2026-10-14.
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
 
 # A release is published explicitly after these gates. tools/package_release.py
 # combines the built binaries with checksum-pinned models and the frozen Daijirin4 -> Sankoku8 -> JMdict bundle.
