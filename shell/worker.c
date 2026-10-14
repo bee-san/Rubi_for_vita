@@ -1559,9 +1559,10 @@ static void note_screen_changed(const char *what)
 static void on_refresh_done(void)
 {
     const char *what = "kept";
-    int rc = cache_data[1].err.rc, cancelled = job_cancelled, replaced = 0;
+    int rc, cancelled = job_cancelled, replaced = 0;
     size_t mark = vjo_arena_mark(&scratch);
-    __sync_synchronize(); /* pairs with the network thread's barrier */
+    __sync_synchronize(); /* pairs with the network thread's barrier: its result is read after it */
+    rc = cache_data[1].err.rc;
     job_running = job_done = job_text_ready = job_refresh = job_cancelled = 0;
     refresh_after_us = now_us() + REFRESH_GAP_US;
     if (ov == OV_OPEN_OLD_JOB) {
