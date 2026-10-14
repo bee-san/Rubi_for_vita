@@ -511,13 +511,24 @@ def analyse_v2(records):
         out["verdict"] = f"FAIL: {', '.join(failed)} failed; see the rows above."
     elif notext:
         full = (stages.get("fullscreen") or {}).get("end") or {}
+        read = [n for n in REGION_STAGES if n not in notext and (stages.get(n) or {}).get("end")
+                and stages[n]["end"].get("lines", 0)]
+        sums = {(stages.get(n) or {}).get("memory", {}).get("sum") for n in REGION_STAGES if (stages.get(n) or {}).get("end")}
         out["ocr_result"] = "NOTEXT"
-        out["verdict"] = (f"NO TEXT: every stage completed, but no line was found in your region in "
-                          f"{', '.join(notext)}"
-                          + (f" (the full screen found {full['lines']}: the text was elsewhere on the screen)"
-                             if full.get("lines") else "")
-                          + ". This run shows the capture and the memory, not recognition in your region; run the "
-                          "test again on a dialogue line, or check the region (Square).")
+        if read:
+            # #92's audit, N3: the text was in the region for some stages; the screen moved on between them
+            out["verdict"] = (f"NO TEXT: every stage completed, but {', '.join(notext)} found no line in your region "
+                              f"while {', '.join(read)} found {sum(stages[n]['end'].get('lines', 0) for n in read)} "
+                              f"there" + (": the screen changed between the stages" if len(sums) > 1 else "")
+                              + f". The figures of {', '.join(notext)} are not a recognition; run the test again on a "
+                              "dialogue line and wait without pressing anything until it finishes.")
+        else:
+            out["verdict"] = (f"NO TEXT: every stage completed, but no line was found in your region in "
+                              f"{', '.join(notext)}"
+                              + (f" (the full screen found {full['lines']}: the text was elsewhere on the screen)"
+                                 if full.get("lines") else "")
+                              + ". This run shows the capture and the memory, not recognition in your region; run "
+                              "the test again on a dialogue line, or check the region (Square).")
     else:
         out["ocr_result"] = "PASS"
         out["verdict"] = ("PASS: every stage completed; the figures above are this console's."

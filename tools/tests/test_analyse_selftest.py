@@ -329,6 +329,31 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(rows(r.stdout)["textbox"], "FAIL")
         self.assertTrue(r.stdout.rstrip().splitlines()[-1].startswith("FAIL: textbox failed"))
 
+    def test_no_text_in_some_region_stages_says_what_the_others_read(self):
+        """#92's audit, N3: fallback and textbox read lines but textbox2 found none (the game moved on between
+        the stages). Still NO TEXT (textbox2's figures are not a recognition), but never 'elsewhere on the
+        screen'; the screen changed between the stages only if the region's checksum did."""
+        base = (FIXTURES / "selftest-v2-pass.txt").read_text()
+        text = re.sub(r"^line textbox2 .*\n", "", base, flags=re.M)
+        text, n = re.subn(r"^(stage textbox2 end .*) lines=3 recognized=3 frames=330$", r"\1 lines=0 recognized=0 frames=0",
+                          text, flags=re.M)
+        self.assertEqual(n, 1)
+        changed, n = re.subn(r"^(memory textbox2 .*) sum=0x5EED0003$", r"\1 sum=0x5EED0000", text, flags=re.M)
+        self.assertEqual(n, 1)
+        r = run(changed)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        got = rows(r.stdout)
+        self.assertEqual((got["fallback"], got["textbox"], got["textbox2"], got["recognitions"]),
+                         ("PASS", "PASS", "NOTEXT", "PASS"))
+        verdict = r.stdout.rstrip().splitlines()[-1]
+        self.assertTrue(verdict.startswith("NO TEXT: every stage completed, but textbox2 found no line in your region "
+                                           "while fallback, textbox found 6 there: the screen changed between the "
+                                           "stages."), verdict)
+        self.assertNotIn("elsewhere", verdict)
+        same = run(text).stdout.rstrip().splitlines()[-1]  # the same pixels: no claim that the screen changed
+        self.assertTrue(same.startswith("NO TEXT: every stage completed, but textbox2 found no line in your region "
+                                        "while fallback, textbox found 6 there. "), same)
+
     def test_a_run_still_waiting_for_text_is_incomplete_and_says_why(self):
         r = self.analyse("waiting")
         self.assertEqual(r.returncode, 1, r.stdout)

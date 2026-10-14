@@ -168,6 +168,7 @@ static volatile int job_lookup;     /* the job looks the words up (else OCR only
  * neither local_text nor the result arena; its text stays in the worker's
  * result (cache_data[1].ocr_text) until on_refresh_done compares the two. */
 static volatile int job_refresh;
+static const char *refresh_model; /* the model that read the refresh's text (job_cfg's, or a constant) */
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
@@ -898,16 +899,19 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     /* The worker returns the text normalised (core/textnorm.h: one form of each
      * mark, ー or 一 by context); the recognizer's own text goes to the log. */
     log_text_lines(result.text, sizeof(result.text));
+    /* The model on this text's Anki cards (ran: the config's name of the model
+     * that ran; a self-test job's last stage is the configured one). */
+    const char *read_by = result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model;
     if (local && job_refresh) {
         /* The open overlay shows local_text, its lookup and Anki card: this
          * job changes none of them. The control thread compares its text
-         * with the shown one once it is done (on_refresh_done). */
+         * with the shown one once it is done (on_refresh_done), and gives
+         * the cards this model only if the text replaces the shown one. */
         out->ocr_text = result.text;
+        refresh_model = read_by;
         return VJO_OK;
     }
-    /* The model on this text's Anki cards (ran: the config's name of the model
-     * that ran; a self-test job's last stage is the configured one). */
-    vjo_anki_set_ocr_model(result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model);
+    vjo_anki_set_ocr_model(read_by);
     if (local) {
         VjoArena text_arena;
         vjo_arena_init(&text_arena, local_text, sizeof(local_text));
@@ -1553,9 +1557,10 @@ static void note_screen_changed(const char *what)
  * its first character and the static header leave nothing of the old text's
  * entry or pages in the view, so neither the overlay nor an Anki save pairs
  * them with the new text (requests made for the old one fail its generation),
- * and its first word is looked up as on opening. A cancelled refresh (a
- * lookup went first) is asked again; one whose screen changed under it
- * follows note_screen_changed's pace. */
+ * the subtitle strip and the cards' model follow it, and its first word is
+ * looked up as on opening. A cancelled refresh (a lookup went first) is asked
+ * again; one whose screen changed under it follows note_screen_changed's pace;
+ * a failed one backs off as any OCR job (ocr_backoff), quietly. */
 static void on_refresh_done(void)
 {
     const char *what = "kept";
@@ -1581,49 +1586,63 @@ static void on_refresh_done(void)
         refresh_pending = 1;
         refresh_after_us = screen_retry_until;
         what = NULL;
-    } else if (rc == VJO_OK) {
-        char *filtered = vjo_filter_lines(&scratch, cache_data[1].ocr_text, job_cfg.non_japanese_filter);
-        const char *text = filtered ? vjo_java_trim(filtered) : "";
-        size_t len = sceClibStrnlen(text, sizeof(local_text));
+    } else {
+        /* It read its screen: as on_job_done, the pace starts over, and a
+         * failure backs off as any OCR job's (Auto's after close too). */
         screen_changed_streak = 0;
-        sceKernelLockMutex(cmd_lock, 1, NULL);
-        vjo_view_lock();
-        if (!sceClibStrcmp(text, local_text)) {
-            local_text_scene = job_capture_scene;
-            local_text_capture_seq = job_capture_seq;
-            if (active == 0) { /* a cached lookup of this text is this screen's too */
-                cache_scene = job_capture_scene;
-                cache_seq = job_capture_seq;
+        backoff_note(&ocr_backoff, rc != VJO_OK);
+        if (rc == VJO_OK) {
+            char *filtered = vjo_filter_lines(&scratch, cache_data[1].ocr_text, job_cfg.non_japanese_filter);
+            const char *text = filtered ? vjo_java_trim(filtered) : "";
+            size_t len = sceClibStrnlen(text, sizeof(local_text));
+            sceKernelLockMutex(cmd_lock, 1, NULL);
+            vjo_view_lock();
+            if (!sceClibStrcmp(text, local_text)) {
+                local_text_scene = job_capture_scene;
+                local_text_capture_seq = job_capture_seq;
+                if (active == 0) { /* a cached lookup of this text is this screen's too */
+                    cache_scene = job_capture_scene;
+                    cache_seq = job_capture_seq;
+                }
+                what = "same text";
+            } else if (len && len < sizeof(local_text)) {
+                sceClibMemcpy(local_text, text, len + 1);
+                advance_generation(&local_text_generation);
+                local_page = 0;
+                local_cursor_byte = job_cfg.japanese_only_selection
+                    ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
+                local_text_scene = job_capture_scene;
+                local_text_capture_seq = job_capture_seq;
+                cache_ok = 0; /* the arena's entry is the old text's */
+                local_header = (VjoEntryList){.header = local_text};
+                /* As post_local_lookup: the new text and its pending lookup, at once. */
+                g_view.list = &local_header;
+                g_view.cursor_byte = local_cursor_byte;
+                g_view.text_generation = local_text_generation;
+                g_view.dict_page = g_view.dict_pages = 0;
+                sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
+                g_view.status_is_error = 0;
+                g_view.list_seq++;
+                g_view.version++;
+                replaced = 1;
+                what = "new text";
             }
-            what = "same text";
-        } else if (len && len < sizeof(local_text)) {
-            sceClibMemcpy(local_text, text, len + 1);
-            advance_generation(&local_text_generation);
-            local_page = 0;
-            local_cursor_byte = job_cfg.japanese_only_selection
-                ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
-            local_text_scene = job_capture_scene;
-            local_text_capture_seq = job_capture_seq;
-            cache_ok = 0; /* the arena's entry is the old text's */
-            local_header = (VjoEntryList){.header = local_text};
-            /* As post_local_lookup: the new text and its pending lookup, at once. */
-            g_view.list = &local_header;
-            g_view.cursor_byte = local_cursor_byte;
-            g_view.text_generation = local_text_generation;
-            g_view.dict_page = g_view.dict_pages = 0;
-            sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
-            g_view.status_is_error = 0;
-            g_view.list_seq++;
-            g_view.version++;
-            replaced = 1;
-            what = "new text";
+            vjo_view_unlock();
+            sceKernelUnlockMutex(cmd_lock, 1);
         }
-        vjo_view_unlock();
-        sceKernelUnlockMutex(cmd_lock, 1);
     }
     if (what)
         vjo_log("refresh rc=%d: %s", rc, what);
     vjo_arena_release(&scratch, mark);
+    if (replaced) {
+        /* The new text's cards name the model that read it; the subtitle
+         * strip shows it, as on_job_done's strip_show_result for any job
+         * (its lookup tags the cache, so no job reads this screen after
+         * close). Both take their own locks, so after the view's. */
+        vjo_anki_set_ocr_model(refresh_model);
+        if (subtitles)
+            vjo_strip_show(local_text, VJO_STRIP_SENTENCE, 0);
+    }
     if (replaced || (cursor_waiting && ov != OV_CLOSED))
         start_cursor_job(); /* the new text's first word, or a lookup that waited */
 }
@@ -1749,8 +1768,8 @@ static void on_job_text(void)
     __sync_synchronize(); /* pairs with the network thread's barrier */
     sentence = cache_data[job_idx].sentence;
     job_text_ready = 0;
-    if (job_cancelled || job_generation != game_generation)
-        return; /* for an earlier screen (a refresh has no sentence: it shows nothing until done) */
+    if (job_refresh || job_cancelled || job_generation != game_generation)
+        return; /* a refresh shows (and logs) nothing until it is done; or for an earlier screen */
     vjo_log("subtitle text ready in %d ms", (int)((now_us() - job_started_us) / 1000));
     if (subtitles && sentence)
         vjo_strip_show(sentence, VJO_STRIP_SENTENCE, 1);
@@ -2019,8 +2038,9 @@ static void auto_prefetch(void)
 /* The open overlay's own jobs, paced: the retry of one whose screen changed
  * under it (note_screen_changed: "Recognizing…" stays meanwhile), and the
  * refresh of the text it shows once a screen settled that the text was not
- * read from (#81 request 4; on_refresh_done), REFRESH_GAP_US apart and
- * REFRESH_IDLE_US after the last lookup: the user's lookups go first. */
+ * read from (#81 request 4; on_refresh_done), REFRESH_GAP_US apart, after the
+ * OCR backoff of a failed one and REFRESH_IDLE_US after the last lookup: the
+ * user's lookups go first. */
 static void background_open(void)
 {
     VjoState st = {.size = sizeof(st)};
@@ -2034,13 +2054,14 @@ static void background_open(void)
         }
         return;
     }
-    if (!refresh_pending || t < refresh_after_us || t - lookup_us < REFRESH_IDLE_US)
+    if (!refresh_pending || t < refresh_after_us || t < ocr_backoff.until || t - lookup_us < REFRESH_IDLE_US)
         return;
     refresh_pending = 0;
     /* Local text is valid only for this game's local pipeline (retired at every
-     * change). ocr_mode = on_press recognizes only when the overlay opens. */
-    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && vjoGetState(&st) >= 0 && (st.stable || st.quiet) &&
-        !shows_screen(local_text_scene, local_text_capture_seq, &st))
+     * change). ocr_mode = on_press recognizes only when the overlay opens; an
+     * armed self-test runs its stages in the overlay's own jobs, as on main. */
+    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && !vjo_selftest_armed() && vjoGetState(&st) >= 0 &&
+        (st.stable || st.quiet) && !shows_screen(local_text_scene, local_text_capture_seq, &st))
         start_job_kind("auto: screen settled", 0, 1);
 }
 
