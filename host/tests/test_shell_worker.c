@@ -161,6 +161,10 @@ void vjo_net_cancel(VjoNetCancel *c) { c->cancelled = 1; cancels++; }
 void vjo_net_cancel_clear(VjoNetCancel *c) { c->cancelled = 0; }
 int vjo_capture_init(void) { return 0; }
 void vjo_capture_fini(void) {}
+/* The capture lock: a local OCR job holds it from submission to result. */
+static int capture_held_now, capture_holds;
+void vjo_capture_hold(void) { TEST_CHECK(!capture_held_now); capture_held_now = 1; capture_holds++; }
+void vjo_capture_release(void) { TEST_CHECK(capture_held_now); capture_held_now = 0; }
 /* capture.c's contract: a failed capture leaves the kernel's error in
  * s->capture_result; VJO_ERR_NO_MEMORY means its buffer was refused. */
 static int capture_kernel_oom, jpeg_encoder_oom;
@@ -193,6 +197,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
+    TEST_CHECK(capture_held_now); /* the game captures with the Shell's capture lock held */
     if (submits < 8) selftest_flags_seen[submits] = r->flags;
     submits++;
     fake_game_request.seq = 12;
@@ -2000,10 +2005,11 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     reset();
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
-    selftest_begins = selftest_ends = submits = 0;
+    selftest_begins = selftest_ends = submits = 0; capture_holds = 0;
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
+    TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
     TEST_CHECK(selftest_flags_seen[0] == VJO_GAME_OCR_F_PROBE &&
                selftest_flags_seen[1] == VJO_GAME_OCR_F_FORCE_FALLBACK && selftest_flags_seen[2] == 0 &&
                selftest_flags_seen[3] == VJO_GAME_OCR_F_FULL && selftest_flags_seen[4] == 0);

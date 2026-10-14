@@ -147,6 +147,9 @@ void vjo_capture_fini(void);
  * holds the kernel's error: VJO_ERR_NO_MEMORY means its capture buffer could
  * not be allocated (VJO_E_OOM); any other VJO_E_OOM is the encoder's (Shell). */
 int vjo_capture_jpeg(VjoArena *a, uint32_t flags, int quality, VjoBuf *out, VjoState *st);
+/* Held by a local OCR job from submission to result (the game captures then). */
+void vjo_capture_hold(void);
+void vjo_capture_release(void);
 
 /* game.c */
 /* The process's title ID; 0, or < 0 when not readable (yet). */

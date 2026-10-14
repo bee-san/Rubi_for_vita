@@ -34,6 +34,7 @@ static uint32_t game_fb[FB_PITCH * FB_H];
 static uint32_t fb_fmt;
 static unsigned fb_w = FB_W, fb_h = FB_H;
 static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
+static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
 static unsigned char user_rows[64 * 64]; /* the worker's capture block */
 
@@ -72,6 +73,10 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
 {
     if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
+        if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
+            model_clock += *timeout;
+            return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+        }
         if (frames_come) { frames_come--; game_frame(); if (out) *out = MEV_ROWS; return 0; }
         model_clock += *timeout;
         return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
@@ -208,6 +213,7 @@ static void setup(void)
             game_fb[y * FB_PITCH + x] = 0xFF000000u | ((x ^ y) & 0xFFu) << 16 | ((y * 5u) & 0xFFu) << 8 | ((x * 7u) & 0xFFu);
     fb_fmt = VJO_FB_A8B8G8R8; fb_w = FB_W; fb_h = FB_H;
     frames_come = 0; frame_pid = 7; in_hook = 0; user_block_ok = 1; hook_copy_fail = kstrip_alloc_fail = 0;
+    stall_copy = 0;
     kledger_init();
     rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
     memset(user_rows, 0xCC, sizeof(user_rows));
@@ -574,6 +580,35 @@ static void rows_pending_pins_and_process_exit(void)
     TEST_CHECK(rows.state == ROWS_IDLE && !rows.orphan);
 }
 
+/* A copy the hook started and has not finished when the call gives up: BUSY,
+ * the destination stays the hook's (and so does a kernel strip), no new
+ * request is armed meanwhile, and once the copy ends the kernel worker returns
+ * the state to IDLE so a Lens/Anki capture is not refused for the rest of the game. */
+static void rows_copy_outliving_its_call(void)
+{
+    for (int mode = 0; mode < 2; mode++) {
+        setup(); uint32_t seq = submit(); take(seq);
+        VjoGameOcrRowsInfo info;
+        uint32_t m = mode ? VJO_GAME_OCR_SRC_KSTRIP : VJO_GAME_OCR_SRC_HOOK;
+        stall_copy = 1;
+        TEST_CHECK(rows_call(seq, 0, 8, m, 0, 48, user_rows, &info) == VJO_ERR_BUSY);
+        TEST_CHECK(rows.state == ROWS_COPYING && rows.abandoned && !rows.orphan);
+        TEST_CHECK(kstrip_frees == 0 && kstrip_allocs == (unsigned)mode); /* the hook may still write it */
+        VJO_LOCK(); TEST_CHECK(game_ocr_capture_busy_locked()); VJO_UNLOCK();
+        stall_copy = 0; frames_come = 1;
+        TEST_CHECK(rows_call(seq, 8, 8, m, 0, 48, user_rows, &info) == VJO_ERR_BUSY); /* not re-armed */
+        TEST_CHECK(rows.state == ROWS_COPYING && frames_come == 1);
+        model_tick();
+        TEST_CHECK(rows.state == ROWS_COPYING); /* still copying: left alone */
+        rows.state = ROWS_DONE;                 /* the hook ends its copy */
+        model_tick();
+        TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned && kstrip_frees == (unsigned)mode);
+        TEST_CHECK(rows_call(seq, 0, 8, m, 0, 48, user_rows, &info) == 8); /* usable again */
+        caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+        VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK(); /* Lens/Anki may capture */
+    }
+}
+
 static void open_model(uint32_t seq)
 {
     TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_BUSY && !file_live);
@@ -849,6 +884,7 @@ TEST_LIST = {
     {"rows: no frame, another process's frame or another size", rows_timeout_other_process_and_size},
     {"rows: cancellation during the wait", rows_cancelled_while_waiting},
     {"rows: the kernel strip rung, freed before the call returns", rows_kernel_strip_rung},
+    {"rows: a copy outliving its call is abandoned, then tidied by the kernel worker", rows_copy_outliving_its_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},

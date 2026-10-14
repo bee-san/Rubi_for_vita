@@ -48,6 +48,8 @@ static struct {
     uint32_t sig_next;              /* the first pass's next row while it runs */
     uint32_t sig_seq;               /* the job it belongs to */
     int orphan;                     /* its process exited during a copy: the kernel worker tidies up */
+    int abandoned;                  /* the copy outlived its rows call (BUSY): the kernel worker returns
+                                       the state to IDLE once the copy ends; no new request meanwhile */
 } rows;
 /* A frame has to come within this; cancellation is checked every slice. */
 #define ROWS_WAIT_US 1500000u
@@ -398,7 +400,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         }
         rows.pid = pid;
         rows.rc = 0;
-        rows.orphan = 0;
+        rows.orphan = rows.abandoned = 0;
         rows.fb_w = rows.fb_h = rows.fb_pitch = rows.fb_fmt = 0;
         rows.copy_start_us = rows.copy_end_us = 0;
         rows.armed_us = ksceKernelGetSystemTimeWide();
@@ -438,8 +440,14 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
                (uint64_t)ksceKernelGetSystemTimeWide() < copy_deadline)
             ksceKernelDelayThread(1000);
         if (__atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) != ROWS_DONE) {
-            /* Never seen: the hook still owns dst. The caller must not free it. */
+            /* Never seen: the hook still owns dst (and a kernel strip). The caller must
+             * not free dst; the kernel worker frees the strip and returns the state to
+             * IDLE once the copy ends, so a later Lens/Anki capture is not refused. */
             klog("ocr rows: copy still running after %u us", ROWS_COPY_WAIT_US);
+            VJO_LOCK();
+            rows.abandoned = 1;
+            model_wake_locked();
+            VJO_UNLOCK();
             rc = VJO_ERR_BUSY;
             goto info_out;
         }
@@ -776,10 +784,11 @@ void game_ocr_model_tick(void)
     uint64_t mtime = 0;
     char path[sizeof(model_io.path)];
     VJO_LOCK();
-    /* A rows copy whose process exited during it: nobody waits for it now. */
-    if (rows.orphan && rows.state == ROWS_DONE) {
+    /* A rows copy whose process exited during it, or that outlived its call:
+     * nobody waits for it now. */
+    if ((rows.orphan || rows.abandoned) && rows.state == ROWS_DONE) {
         rows.state = ROWS_IDLE;
-        rows.orphan = 0;
+        rows.orphan = rows.abandoned = 0;
         buffers_kstrip_free();
     }
     sync_locked();

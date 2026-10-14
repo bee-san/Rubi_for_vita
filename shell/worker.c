@@ -636,7 +636,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     st0.size = sizeof(st0);
     vocr_done_before = vjoGetState(&st0) < 0 ? 0 : st0.done_seq;
     vocr_capture_seen = (flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE)) != 0;
+    vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
+    vjo_capture_release();
     vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */

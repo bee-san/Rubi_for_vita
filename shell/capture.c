@@ -30,6 +30,19 @@ void vjo_capture_fini(void)
     capture_lock = -1;
 }
 
+/* A local OCR job holds the lock from its submission to its result, as API
+ * 18's raw reader did: the game's capture then never overlaps a Lens or Anki
+ * capture's sequence (VjoState.done_seq) or its buffer's rows. */
+void vjo_capture_hold(void)
+{
+    sceKernelLockMutex(capture_lock, 1, NULL);
+}
+
+void vjo_capture_release(void)
+{
+    sceKernelUnlockMutex(capture_lock, 1);
+}
+
 static int raw_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
 {
     (void)ud;
