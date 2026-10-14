@@ -90,6 +90,8 @@ static struct {
     const char *fields;   /* its fields' JSON array */
     int deck;             /* the Kiku deck exists */
     int version;
+    const char *refuse;   /* every action answered with this AnkiConnect error (an apiKey set) */
+    uint32_t impostor;    /* another server with the port open: answers, but not as AnkiConnect */
     char tag[MAX_NOTES][48];
     int n_notes, adds, finds, decks;
     const char *duplicate;
@@ -105,7 +107,7 @@ typedef struct {
     size_t out_len;
     char in[8192];
     size_t in_len, pos;
-    int answered;
+    int answered, impostor;
 } Conn;
 static Conn conn;
 
@@ -129,6 +131,17 @@ static void serve(void)
     const char *body = strstr(conn.out, "\r\n\r\n"), *t;
     char json[2048];
     body = body ? body + 4 : "";
+    if (conn.impostor) {
+        action("impostor");
+        respond("<html>hi</html>");
+        return;
+    }
+    if (anki.refuse) {
+        action("refused");
+        snprintf(json, sizeof(json), "{\"result\": null, \"error\": \"%s\"}", anki.refuse);
+        respond(json);
+        return;
+    }
     if (strstr(body, "\"action\":\"version\"")) {
         action("version");
         snprintf(json, sizeof(json), "{\"result\": %d, \"error\": null}", anki.version);
@@ -224,6 +237,14 @@ static int fake_connect(void *ud, const char *host, int port, int timeout_us, in
         return VJO_E_CANCELLED;
     }
     anki.connections++;
+    if (anki.impostor && parse_ip(host) == anki.impostor && port == anki.port) {
+        memset(&conn, 0, sizeof(conn));
+        conn.impostor = 1;
+        out->ctx = &conn;
+        out->send = conn_send;
+        out->recv = conn_recv;
+        return VJO_OK;
+    }
     if (parse_ip(host) != anki.at || port != anki.port ||
         (anki.offline_after >= 0 && anki.connections > anki.offline_after))
         return VJO_E_NET;
@@ -254,7 +275,7 @@ static int probe(void *ud, const uint32_t *ips, int n, int port, int window_us, 
     TEST_CHECK(n <= VJO_ANKI_PROBE_MAX && window_us == VJO_ANKI_SCAN_WINDOW_US);
     probes++;
     for (int i = 0; i < n; i++)
-        open[i] = ips[i] == anki.at && port == anki.port;
+        open[i] = (ips[i] == anki.at || (anki.impostor && ips[i] == anki.impostor)) && port == anki.port;
     return n;
 }
 static int load_host(void *ud, char *line, size_t cap)
@@ -421,6 +442,13 @@ static void test_connection_test(void)
     anki.version = 5;
     TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_E_PARSE);
     TEST_CHECK(strstr(msg, "answers, but not as AnkiConnect") != NULL);
+    /* AnkiConnect with an apiKey set */
+    reset();
+    anki.refuse = "valid api key must be provided";
+    TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_E_ANKI);
+    TEST_CHECK(!strcmp(msg, "AnkiConnect at 192.168.1.23:8765 refuses: valid api key must be provided. Leave its "
+                            "apiKey unset."));
+    TEST_MSG("%s", msg);
     /* no address */
     reset();
     cfg.anki_host[0] = '\0';
@@ -454,6 +482,25 @@ static void test_auto_search(void)
     probes = 0;
     TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_E_NOT_FOUND && probes == 8);
     TEST_CHECK(strstr(msg, "No AnkiConnect found on this network") == msg && !host_file[0]);
+    /* another server answers on the port first (a lower address): skipped, never saved */
+    anki.at = 0xC0A80140u;       /* 192.168.1.64 */
+    anki.impostor = 0xC0A80105u; /* 192.168.1.5 */
+    host_file[0] = '\0';
+    TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_OK && t.searched);
+    TEST_CHECK(!strcmp(host_file, "192.168.1.64:8765\n") && strstr(anki.actions, "impostor") != NULL);
+    TEST_MSG("%s / %s", host_file, anki.actions);
+    anki.impostor = 0;
+    /* an AnkiConnect with an apiKey set refuses every action: it is found, saved, and the test says why */
+    host_file[0] = '\0';
+    anki.refuse = "valid api key must be provided";
+    TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_E_ANKI);
+    TEST_CHECK(!strcmp(host_file, "192.168.1.64:8765\n") &&
+               !strcmp(msg, "AnkiConnect at 192.168.1.64:8765 refuses: valid api key must be provided. Leave its "
+                            "apiKey unset."));
+    TEST_MSG("%s", msg);
+    anki.refuse = NULL;
+    anki.at = 0x0A000001u;
+    host_file[0] = '\0';
     /* no network address (Wi-Fi off) */
     have_ip = 0;
     TEST_CHECK(vjo_anki_app_test(&A, &P, &ops, &cfg, &t, msg, sizeof(msg)) == VJO_E_NET);

@@ -84,9 +84,7 @@ What this says, and what it does not:
   left 28,672 B in that session: seven pages, less than the 65,544 B change that broke the boot
   in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
   the overlay's text arena out of `.bss`) holds 389,120 B, 73,728 B below the v0.7.4 build that
-  ran beside a game, and leaves 172,032 B at the end of boot in the same session. The model
-  takes the declared budget; the packaged Shell module has been 4,096 B under it since #90
-  (the Anki field mapping removed), so the real figures are one page better.
+  ran beside a game, and leaves 172,032 B at the end of boot in the same session.
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily

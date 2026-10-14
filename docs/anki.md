@@ -75,6 +75,7 @@ words get the green √.
 | `Sent 2 to Anki, 1 kept (too large: the Overlay app sends it)` | A card whose note does not fit the overlay's 128 KiB arena: one saved by an earlier build, or a shown entry that alone is too large (several KB of text that HTML escaping grows); the app's Send now has 512 KiB |
 | `1 sent; 2 kept: Anki offline` | Sending stopped; the rest stays queued. Also any AnkiConnect error and an HTTP error |
 | `0 sent; 1 kept: Kiku note type not found in Anki: import Kiku (docs/anki.md)` | Anki has no Kiku note type ([setup](#setup)) |
+| `0 sent; 1 kept: Anki: valid api key must be provided` | AnkiConnect has an `apiKey` set; leave it unset (the app's test says so too) |
 | `0 sent; 1 kept: Anki not found: test the connection in the Overlay app` | `anki_host` is `auto`, and no search has found AnkiConnect yet or the computer it found does not answer now (Anki closed, or the computer has another address); the app's test searches again |
 | `0 sent; 1 kept: audio: …` | The audio source failed; the card waits rather than going without audio |
 | `Set Anki's address in the Overlay app; cards stay queued` | No computer set |
@@ -157,7 +158,7 @@ card can be made into a note later, by any version that reads the record:
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
 | `picture` | Whether `<id>.jpg` goes with it |
 | `misc` | MiscInfo: `CLANNAD (2026-10-14 17:12)` |
-| `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp` (Adrenaline's shared title IDs) |
+| `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp` (`psp` for Adrenaline's shared title IDs, NPXS10028 and PSPEMUCFW, whose name is Adrenaline's; a PSP game started from its own bubble runs under the bubble's ID and is recorded as `vita`) |
 | `ocr_engine`, `ocr_model` | `vocr` or `lens`, and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
 | `time` | When × was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC) |
@@ -244,13 +245,13 @@ In SceShell (the overlay, `shell/anki.c`):
 The Overlay app is its own process, not one of the plugins, so it is not in
 the plugins' [memory ledger](memory-ledger.md): its Anki page holds a static
 512 KiB arena for a send (a card with a 192 KiB screenshot, its request and
-the reply), SceNet's 256 KiB pool (loaded only when the page first tests or
-sends) and a 128 KiB stack for the one worker thread that does the network
+the reply), SceNet's 256 KiB pool (static, like the arena; SceNet itself starts
+only when the page first tests or sends) and a 128 KiB stack for the one worker thread that does the network
 work while the page keeps drawing.
 
 Measured on the host with the actual `shell/anki.c`, `shell/anki_queue.c`
 (`ctest -R shell_anki -V`, "measure:" lines): a save with two other
-dictionaries' entries read from their files peaked at 12,136 of 131,072 bytes;
+dictionaries' entries read from their files peaked at 12,032 of 131,072 bytes;
 a text card with audio sent at 10,400; 100 text cards in one send at 10,408. The
 host build of the screenshot path (`vjo-shell-anki-tests`): saving a card
 with its 62,686-byte JPEG peaked at 133,712 of 393,216 bytes, sending it at

@@ -78,7 +78,8 @@ class MigrateConfig(unittest.TestCase):
         old = ("anki_host = auto\nanki_deck = Mining #1 ; main\nanki_note_type = Lapis\nanki_tags = a b\n"
                + "".join("anki_field_%s = X\n" % f for f in (
                    "word", "reading", "furigana", "definition", "sentence", "picture", "frequency", "audio",
-                   "sentence_furigana", "pitch_position", "pitch_categories", "frequency_list", "misc_info")))
+                   "sentence_furigana", "pitch_position", "pitch_categories", "frequency_list", "misc_info"))
+               + "anki_field_wrod = Word\n")
         text, out = self.migrate(old)
         self.assertNotIn("anki_deck", text)
         self.assertNotIn("anki_note_type", text)
@@ -87,6 +88,7 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("anki_host = auto\n", text)
         self.assertIn("config.ini: anki_deck removed", out)
         self.assertIn("config.ini: anki_field_misc_info removed", out)
+        self.assertIn("config.ini: anki_field_wrod removed", out)
 
 if __name__ == "__main__":
     unittest.main()

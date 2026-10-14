@@ -130,6 +130,11 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
         return -1;
     for (int k = 0; k < n; k++)
         if (strchr(values[k], '\n') || strchr(values[k], '\r') || strlen(keys[k]) >= 40) return -1;
+    /* A BOM (Notepad) stays, and the first line's key after it is still found. */
+    if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
+        if (cap <= 3) return -1;
+        memcpy(out, text, 3); used = i = 3;
+    }
     while (i < len) {
         size_t begin = i;
         char key[40];

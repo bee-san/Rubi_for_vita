@@ -936,9 +936,11 @@ def summarise_collect(folder):
         if m:
             cfg[m.group(1)] = m.group(2)
     out["config"] = {k: cfg.get(k) for k in ("ocr_backend", "vocr_model", "vocr_fallback_model", "ocr_mode", "dictionary",
-                                             "local_dictionaries", "log_file", "anki_mining", "anki_field_picture",
+                                             "local_dictionaries", "log_file", "anki_mining",
                                              "japanese_only_selection", "highlight_mode")}
     out["config"]["anki_host"] = "set" if cfg.get("anki_host") else "empty"
+    # (an audio source URL can carry an API key: only whether it is set)
+    out["config"]["anki_audio_url"] = "set" if cfg.get("anki_audio_url") else "empty"
     out["tai"] = {}
     for dev in ("ur0", "ux0"):
         t = _read(folder, f"{dev}/tai/config.txt")

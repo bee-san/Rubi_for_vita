@@ -57,7 +57,7 @@ static int search(VjoArena *a, const VjoPlatform *p, const VjoAnkiAppOps *ops, c
     uint32_t ip, mask, cand[254];
     uint8_t open[VJO_ANKI_PROBE_MAX];
     char net[16], msg[96];
-    int n;
+    int n, rc;
     if (!ops->local_ipv4 || !ops->probe || ops->local_ipv4(ops->ud, &ip, &mask) < 0)
         return VJO_E_NET;
     n = vjo_anki_scan_candidates(ip, mask, cand, 254);
@@ -75,7 +75,9 @@ static int search(VjoArena *a, const VjoPlatform *p, const VjoAnkiAppOps *ops, c
             if (!open[i])
                 continue;
             ip_text(cand[b + i], host, cap);
-            if (vjo_anki_probe(a, p, host, VJO_ANKI_PORT, &err) == VJO_OK)
+            /* AnkiConnect's own refusal (an apiKey set) is AnkiConnect too: the test says why */
+            rc = vjo_anki_probe(a, p, host, VJO_ANKI_PORT, &err);
+            if (rc == VJO_OK || rc == VJO_E_ANKI)
                 return VJO_OK;
         }
     }
@@ -99,7 +101,7 @@ int vjo_anki_app_endpoint(VjoArena *a, const VjoPlatform *p, const VjoAnkiAppOps
         while (n && (unsigned char)line[n - 1] <= ' ')
             line[--n] = '\0';
         if (vjo_anki_endpoint(line, host, cap, port) == VJO_ANKI_MANUAL &&
-            vjo_anki_probe(a, p, host, *port, &err) == VJO_OK)
+            ((rc = vjo_anki_probe(a, p, host, *port, &err)) == VJO_OK || rc == VJO_E_ANKI))
             return VJO_OK;
     }
     if ((rc = search(a, p, ops, host, cap)) != VJO_OK)
@@ -165,6 +167,9 @@ int vjo_anki_app_test(VjoArena *a, const VjoPlatform *p, const VjoAnkiAppOps *op
         if (rc == VJO_E_PARSE || rc == VJO_E_STATUS || rc == VJO_E_HTTP)
             vjo_snprintf(msg, cap, "%s:%d answers, but not as AnkiConnect (API version 6): %s", t->host, t->port,
                          vjo_anki_err_text(a, &err));
+        else if (rc == VJO_E_ANKI) /* AnkiConnect refuses (an apiKey is set: leave it unset) */
+            vjo_snprintf(msg, cap, "AnkiConnect at %s:%d refuses: %s. Leave its apiKey unset.", t->host, t->port,
+                         err.detail ? err.detail : "error");
         vjo_arena_release(a, mark);
         return t->rc = rc;
     }

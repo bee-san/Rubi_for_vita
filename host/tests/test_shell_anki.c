@@ -173,7 +173,8 @@ int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout)
     return 0;
 }
 int sceKernelDeleteThread(SceUID uid) { threads_deleted++; return 0; }
-int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + 1791158400007000ull; return 0; }
+static uint64_t rtc_unix_us = 1791158400007000ull; /* the UTC clock (a minute starts at 1791158400 s) */
+int sceRtcGetCurrentTick(SceRtcTick *t) { t->tick = 62135596800000000ull + rtc_unix_us; return 0; }
 static int clock_fails;
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
 {
@@ -815,6 +816,7 @@ static void reset(void)
     host_file[0] = '\0';
     host_file_writes = 0;
     cancels = 0;
+    rtc_unix_us = 1791158400007000ull;
     vjo_test_anki_text_only = 0;
     lan(0);
     /* the Shell starts the mailbox before its first config load */
@@ -1866,6 +1868,28 @@ static void test_cross_records_every_dictionary_and_sends_the_glossary(void)
     finish();
 }
 
+/* The record holds the minute of the × press: the same card saved again
+ * within it (the marks gone: a new lookup of the same text) is the same
+ * record; in the next minute it is another one. */
+static void test_same_card_within_a_minute_is_one_record(void)
+{
+    reset();
+    vjo_test_anki_text_only = 1;
+    rtc_unix_us = 1791158405000000ull; /* 0:05 */
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 1);
+    rtc_unix_us = 1791158459999000ull; /* 0:59 */
+    g_view.list_seq = 6;
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already queued") && files_ending(".json") == 1);
+    TEST_MSG("%s", g_view.anki_status);
+    rtc_unix_us = 1791158460000000ull; /* 1:00 */
+    g_view.list_seq = 7;
+    cross(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 2);
+    finish();
+}
+
 /* Whatever × saves, △ can send: with 8 dictionaries' entries of any size
  * (and text that HTML and JSON escaping grow), × keeps the other
  * dictionaries' entries only while the card stays sendable in △'s arena, as
@@ -2253,6 +2277,7 @@ TEST_LIST = {
     {"version_2_record_from_the_test_build_sends_as_kiku", test_version_2_record_from_the_test_build_sends_as_kiku},
     {"cross_records_every_dictionary_and_sends_the_glossary", test_cross_records_every_dictionary_and_sends_the_glossary},
     {"largest_card_is_kept_by_triangle_for_the_overlay_app", test_largest_card_is_kept_for_the_app},
+    {"same_card_saved_again_within_the_minute_is_one_record", test_same_card_within_a_minute_is_one_record},
     {"what_cross_saves_triangle_sends_whatever_the_dictionaries", test_what_cross_saves_triangle_sends},
 #if VJO_ANKI_SCREENSHOT
     {"cross_saves_offline_without_host_or_network", test_cross_saves_offline_without_host},

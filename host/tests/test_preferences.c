@@ -212,6 +212,10 @@ static void test_anki_page_save(void)
     TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\nocr_backend = vocr\n"
                                        "anki_host = auto\nanki_audio_url = http://h/?t={term};x\nfont_size_ja = 22"));
     TEST_MSG("%s", out);
+    /* a BOM right before the first line's key: kept, and that line replaced (no stale duplicate) */
+    len = vjo_config_patch_keys("\xEF\xBB\xBF" "anki_mining = off\nx = 1\n", 27, keys, values, 2, out, sizeof(out));
+    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF" "anki_mining = on\nx = 1\nanki_host = auto\n"));
+    TEST_MSG("%s", out);
     /* missing keys go at the end, after a line break */
     len = vjo_config_patch_keys("a = 1", 5, keys, values, 2, out, sizeof(out));
     TEST_CHECK(len > 0 && !strcmp(out, "a = 1\nanki_mining = on\nanki_host = auto\n"));

@@ -672,12 +672,13 @@ static void do_send(void)
         no_audio |= op.no_audio;
     }
     if (done) {
-        char dup_text[32] = "", kept_text[56] = "", pic_text[40] = "";
+        char dup_text[32] = "", kept_text[72] = "", pic_text[40] = "";
         if (duplicates)
             sceClibSnprintf(dup_text, sizeof(dup_text), ", %d already there", duplicates);
         if (unreadable + too_large)
-            sceClibSnprintf(kept_text, sizeof(kept_text), ", %d kept (%s)", unreadable + too_large,
-                            unreadable ? "unreadable, see log.txt" : "too large: the Overlay app sends it");
+            sceClibSnprintf(kept_text, sizeof(kept_text), ", %d kept (%s%s)", unreadable + too_large,
+                            unreadable ? "unreadable, see log.txt" : "too large: the Overlay app sends it",
+                            unreadable && too_large ? "; too large: the app" : "");
         if (no_picture)
             sceClibSnprintf(pic_text, sizeof(pic_text), ", %d without screenshot", no_picture);
         sceClibSnprintf(msg, sizeof(msg), "Sent %d to Anki%s%s%s%s", sent, dup_text, kept_text, pic_text,

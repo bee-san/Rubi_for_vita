@@ -403,7 +403,7 @@ together (API 20 since the job policy below) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 294,912 B
+64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B
 of SceShell's partition (down from 405,504 B in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
