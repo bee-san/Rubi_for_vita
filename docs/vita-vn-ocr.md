@@ -261,10 +261,11 @@ memory given back.
 
 **Measured on the console** (#81's `--collect` of v0.8.0-test.1, API 19, so
 without the wait; CLANNAD, an 883×112 region, two strips a pass): 4 of the 16
-game jobs ended with the screen changed under all three tries, 26 to 192 rows
-changed, while the text typed out, and a fifth read it only on its last try.
-A still screen's job read its 4-5 strips in 43-106 ms, about a frame a strip,
-as the host bench below assumes.
+game jobs ended with the screen changed under all three tries (38 to 192 rows
+changed on the last), and a fifth read its text only on its third (26 rows
+changed before). CLANNAD types its text out, the case the wait is for. A still
+screen's job read its 4-5 strips in 43-106 ms, about a frame a strip, as the
+host bench below assumes.
 
 **Measured on the host** (`vjo-settle-bench`, `docs/benchmarks/settle-wait-20261014.json`): a
 simulated screen where every strip read is one game frame, at 60 and 30 frames
