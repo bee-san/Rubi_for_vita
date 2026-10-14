@@ -2,6 +2,7 @@
 """Analyse an on-device self-test report (docs/self-test.md).
 
     python3 tools/analyse_selftest.py build/device/status/selftest-report.txt [--json]
+    python3 tools/analyse_selftest.py --collect build/device/collect/vjo-collect-STAMP [--json]
 
 Prints two tables, then the free memory every memory route read at each step,
 the game worker's own memory around each allocation, and what failed, in plain
@@ -24,8 +25,21 @@ runs on the first settled screen (fallback, textbox, fullscreen, probe,
 textbox2), then done. v1 reports (API 18, `selftest v1`, as #74 sent) get the
 same table for their steps (boot, ok, game, ocr, done).
 
+After the diagnostics come each stage's memory headroom (free USER, plus another
+model's weights it released, minus the reserve and what the job needed) and the
+recognizer tier (vita-vn-ocr #74's Small/Normal/Large proposal) that the game's
+measured free memory allows.
+
+--collect DIR reads a folder written by `install_ftp.sh --collect` (tools/collect_vita.py):
+the installed files against the package, config.ini (API keys already redacted),
+both taiHEN configurations, boot.txt, kernel.txt, log.txt and log.old.txt (every
+OCR job, its memory and times, the dictionary, the overlay, Anki), the Anki queue,
+crash dumps, the self-test analysis when a report is there, the tier from the lowest
+free game memory seen, and what this tool cannot decide, with where the data is.
+
 Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL or
-INCOMPLETE, 2 for a file that is not a report. `--json` adds `ocr_result`,
+INCOMPLETE, 2 for a file that is not a report. With --collect: the self-test's
+verdict when a report is there, else 0. `--json` adds `ocr_result`,
 `diagnostics_result` and `warnings`, and each row's `kind` (ocr or diagnostic).
 """
 import argparse
@@ -50,6 +64,48 @@ DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-m
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
+# The recognizer tiers vita-vn-ocr #74 proposes (docs/model-tiers.md, its section 1.5: a spec, not
+# final): the free game USER a first job of a tier needs is page(weights) + page(max(the line finder's
+# arena at 960x544, the tier's W8I arena) + the runtime's structs) + the capture block + the line-block
+# ceiling, and the tier keeps its own reserve. Here each tier is priced at its ceiling.
+TIER_FINDER_ARENA, TIER_RUNTIME_STRUCTS = 83_323, 3_760     # model-tiers.json "overlay" (main 64b5726)
+TIER_CAPTURE, TIER_LINE = 61_440, 516_096                   # VJO_BUDGET_GAME_CAPTURE page, VJO_VOCR_LINE_MAX_BYTES
+TIERS = (("Large", 9_000_000, 1_310_720, 16 * 1024 * 1024), ("Normal", 4_000_000, 262_144, 8 * 1024 * 1024),
+         ("Small", 999_999, 131_072, 4 * 1024 * 1024))     # (name, weights ceiling, arena ceiling, reserve)
+GAME_STEPS_MAX = 20                                         # include/vjo_game_ocr.h VJO_GAME_OCR_STEPS
+
+
+def page(n):
+    return (n + 4095) & ~4095
+
+
+def tier_need(weights, arena):
+    return page(weights) + page(max(TIER_FINDER_ARENA, arena) + TIER_RUNTIME_STRUCTS) + TIER_CAPTURE + TIER_LINE
+
+
+def tier_table(free_user):
+    """Each tier at its ceiling against one measured free USER figure; the recommendation is the largest that fits."""
+    rows = []
+    for name, weights, arena, reserve in TIERS:
+        need = tier_need(weights, arena)
+        rows.append({"tier": name, "weights": weights, "arena": arena, "need": need, "reserve": reserve,
+                     "margin": free_user - reserve - need, "fits": free_user - reserve >= need})
+    best = next((r["tier"] for r in rows if r["fits"]), None)
+    return {"free_user": free_user, "rows": rows, "recommendation": best}
+
+
+def render_tiers(t, where):
+    lines = [f"model tiers (vita-vn-ocr #74's proposal, docs/model-tiers.md; priced at each tier's ceiling, an estimate)",
+             f"  free game USER {where}: {t['free_user']:,} B",
+             f"  {'tier':7} {'weights':>11} {'arena':>10} {'first job needs':>16} {'reserve':>11} {'margin':>13} fits"]
+    for r in t["rows"]:
+        lines.append(f"  {r['tier']:7} {r['weights']:>11,} {r['arena']:>10,} {r['need']:>16,} {r['reserve']:>11,} "
+                     f"{r['margin']:>13,} {'yes' if r['fits'] else 'no'}")
+    lines.append(f"  recommendation: {t['recommendation'] or 'none: not even Small fits'} "
+                 "(the largest tier whose first job fits beside its reserve; one sample, this game)")
+    return lines
+
+
 # include/vjo_api.h VJO_MEMSTEP_*: where a kernel route stopped
 MEMSTEPS = {1: "find", 2: "block/address-space info", 3: "pointer outside the kernel range",
             4: "no kernel memory block", 5: "InfoCore"}
@@ -336,6 +392,29 @@ def analyse_v2(records):
     row("done", "PASS" if "done" in steps else None,
         f"at {steps['done'].get('t', '?')} ms, the marker removed" if "done" in steps else "not reached")
 
+    # each stage's memory headroom: free USER (+ another model's weights it released) - reserve - need
+    out["headroom"] = []
+    for name in STAGES:
+        mem = stages.get(name, {}).get("memory")
+        if not mem or not mem.get("reserve") or not isinstance(mem.get("free_user"), int):
+            continue
+        need = mem.get("need_workspace", 0) + mem.get("need_weights", 0)
+        free = mem["free_user"]
+        out["headroom"].append({"stage": name, "model": (stages[name].get("end") or {}).get("model"),
+                                "free_user": free, "release": mem.get("release", 0), "reserve": mem["reserve"],
+                                "need": need, "headroom": free + mem.get("release", 0) - mem["reserve"] - need
+                                if free >= 0 else None})
+    # the tier the measured free memory allows (before the worker's first block)
+    if gmem:
+        good = [gs for gs in gmem if s32(gs.get("rc", 0)) >= 0 and isinstance(gs.get("main"), int) and gs["main"] >= 0]
+        if good:
+            out["tiers"] = tier_table(good[0]["main"])
+            out["tiers"]["where"] = "before the worker's first block"
+    full = [n for n in STAGES if len(stages.get(n, {}).get("gsteps", [])) >= GAME_STEPS_MAX]
+    if full:
+        findings.append(f"The game worker's step log is full ({GAME_STEPS_MAX} steps) in: {', '.join(full)}; that "
+                        f"job's later steps were not recorded (its result lines still are).")
+
     # the game worker's memory around each allocation
     for name in STAGES:
         s = stages.get(name)
@@ -621,6 +700,15 @@ def render(result):
             lines.append(f"  {g['stage']:10} {g['step']:5} {str(g.get('arg')):9} {str(g.get('kind')):7} "
                          f"{g.get('bytes', 0):>9,} B rc={'ok' if rc >= 0 else native(rc):12} "
                          f"main={g.get('main', 0):,} cdram={g.get('cdram', 0):,}")
+    if result.get("headroom"):
+        lines += ["", "memory headroom per stage (free USER + released weights - reserve - workspace - weights)"]
+        for h in result["headroom"]:
+            lines.append(f"  {h['stage']:10} {str(h['model']):20} free {h['free_user']:>12,} reserve {h['reserve']:>10,} "
+                         f"need {h['need']:>10,} headroom "
+                         + (f"{h['headroom']:>12,} B" + (" (refused)" if h["headroom"] < 0 else "")
+                            if h["headroom"] is not None else "unknown (free USER not read)"))
+    if result.get("tiers"):
+        lines += [""] + render_tiers(result["tiers"], result["tiers"].get("where", ""))
     warned = result.get("warnings", [])
     diag = {"WARN": f"WARN ({', '.join(warned)}); diagnostics never change the verdict",
             "INCOMPLETE": "not all reached"}.get(result.get("diagnostics_result"), result.get("diagnostics_result"))
@@ -629,11 +717,375 @@ def render(result):
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- --collect (install_ftp.sh --collect)
+
+KERNEL_TXT_CAP = 256 * 1024          # kernel/main.c KFILE_CAP: kernel.txt per boot
+LOG_TXT_CAP = 1024 * 1024            # shell/log_vita.c LOG_FILE_CAP: log.txt before it rotates
+LOG = {
+    "job": re.compile(r"^game vocr rc=(-?\d+) (\S+?)( \(fallback(, refused too)?\))?: (\d+)x(\d+) at \d+,\d+ of \d+x\d+ "
+                      r"fmt 0x([0-9A-Fa-f]+), lines=(\d+) USER workspace=(\d+) weights=(\w+) resident=(\d+), find=(\d+) ms "
+                      r"load=(\d+) ms recognize=(\d+) ms frames=(\d+) io=0x([0-9A-Fa-f]+) stat=0x([0-9A-Fa-f]+) cleanup=(-?\d+)"),
+    "capture": re.compile(r"^game vocr capture: (.+?) into (\S+), (\d+) B block, (\d+)-row strips, (\d+) strips in (\d+) ms, "
+                          r"(\d+) rows changed"),
+    "memory": re.compile(r"^game vocr memory: free USER=(-?\d+)(?: \+ own weights (\d+))?, needs workspace (\d+) \+ weights "
+                         r"(\d+) \+ reserve (\d+): check (passed|refused)(?:, headroom (-?\d+))?"),
+    "memory_unknown": re.compile(r"^game vocr memory: free USER unknown \(error 0x([0-9A-Fa-f]+)\)"),
+    "speed": re.compile(r"^game vocr speed: (\d+) frames in (\d+) us, (\d+) us per frame"),
+    "unusable": re.compile(r"^game vocr: (\S+) is unusable here \(io=0x([0-9A-Fa-f]+)\), using (\S+)"),
+    "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
+    "game": re.compile(r"^game (\S+) started: dictionary (\S+) \(key (\S+)\), trigger (\S+), subtitles (\S+), ocr_mode (\S+)"),
+    "disabled": re.compile(r"^(\S+): JP Overlay disabled"),
+    "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
+    "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"),
+    "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (\d+)-byte screenshot, (\d+) ms"),
+    "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
+    "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
+    "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
+                        r"cdram=(-?\d+)"),
+}
+TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|SAFE MODE|not starting|missing at|"
+                     r"too large|not opened", re.I)
+
+
+def _read(folder, rel):
+    p = folder / rel
+    return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
+
+
+def _span(values):
+    return f"{min(values):,}-{max(values):,}" if values else "-"
+
+
+def summarise_log(text):
+    """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
+    s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
+         "memory_unknown": 0, "speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
+         "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
+         "gstep_fail": {}, "config_warnings": []}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        s["lines"] += 1
+        if line.startswith(("bootstrap:", "Vita JP Overlay shell started", "BOOT GUARD", "boot guard:", "worker start",
+                            "kernel plugin not loaded", "kernel API version", "RCO missing")):
+            if len(s["boot"]) < 40:
+                s["boot"].append(line)
+        if line.startswith("config warning:"):
+            s["config_warnings"].append(line[16:])
+        m = LOG["job"].match(line)
+        if m:
+            s["jobs"].append({"rc": int(m.group(1)), "model": m.group(2), "fallback": bool(m.group(3)),
+                              "refused_too": bool(m.group(4)), "region": f"{m.group(5)}x{m.group(6)}",
+                              "lines": int(m.group(8)), "weights": m.group(10), "find": int(m.group(12)),
+                              "load": int(m.group(13)), "recognize": int(m.group(14)), "frames": int(m.group(15)),
+                              "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
+            continue
+        for key in ("capture", "memory", "memory_unknown", "speed", "unusable", "game", "disabled", "done", "overlay",
+                    "anki_save", "anki_queue", "anki_sent", "gstep"):
+            m = LOG[key].match(line)
+            if not m:
+                continue
+            if key == "capture":
+                k = f"{m.group(1)} into {m.group(2)}"
+                s["captures"][k] = s["captures"].get(k, 0) + 1
+            elif key == "memory":
+                s["memory"].append({"free": int(m.group(1)), "release": int(m.group(2) or 0), "need":
+                                    int(m.group(3)) + int(m.group(4)), "reserve": int(m.group(5)),
+                                    "passed": m.group(6) == "passed",
+                                    "headroom": int(m.group(7)) if m.group(7) is not None else
+                                    int(m.group(1)) + int(m.group(2) or 0) - int(m.group(5)) - int(m.group(3)) - int(m.group(4))})
+            elif key == "memory_unknown":
+                s["memory_unknown"] += 1
+            elif key == "speed":
+                s["speed_us"].append(int(m.group(3)))
+            elif key == "unusable":
+                s["unusable"].append(f"{m.group(1)} io=0x{m.group(2)} -> {m.group(3)}")
+            elif key == "game":
+                g = s["games"].setdefault(m.group(1), {"starts": 0, "ocr_mode": m.group(6), "dictionary": m.group(2)})
+                g["starts"] += 1
+            elif key == "disabled":
+                s["disabled"].add(m.group(1))
+            elif key == "done":
+                s["dictionary_ms"].append(int(m.group(3)))
+            elif key == "overlay":
+                s["overlay"].append(int(m.group(4)))
+            elif key == "anki_save":
+                s["anki"]["saves"] += 1
+                s["anki"]["save_fail"] += int(m.group(2)) < 0
+            elif key == "anki_queue":
+                s["anki"]["queue"] = int(m.group(1))
+            elif key == "anki_sent":
+                s["anki"]["sent"] += int(m.group(1))
+            elif key == "gstep" and s32(int(m.group(5), 16)) < 0:
+                k = f"{m.group(2)} {m.group(3)}/{m.group(4)} {native(int(m.group(5), 16))}"
+                s["gstep_fail"][k] = s["gstep_fail"].get(k, 0) + 1
+            break
+        if line.startswith("game vocr lines"):
+            s["line_ms"] += [int(m.group(4)) for m in LOG["line"].finditer(line)]
+        if line.startswith("anki: Picture field off"):
+            s["anki"]["picture_off"] += 1
+        if TROUBLE.search(line) and not line.startswith("gstep"):
+            key = re.sub(r"\d+", "N", line)[:120]
+            s["trouble"][key] = s["trouble"].get(key, 0) + 1
+    s["disabled"] = sorted(s["disabled"])
+    return s
+
+
+def summarise_kernel(text, size):
+    s = {"bytes": size, "capped": size >= KERNEL_TXT_CAP - 512, "started": [], "hooks": [], "registered": 0,
+         "jobs": 0, "rows_fail": {}, "alloc_fail": [], "other": []}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("Vita JP Overlay kernel"):
+            s["started"].append(line)
+        elif line.startswith("hooks:"):
+            s["hooks"].append(line)
+        elif line.startswith("ocr worker registered"):
+            s["registered"] += 1
+        elif re.match(r"^ocr job \d+: \d+x\d+", line):
+            s["jobs"] += 1
+        elif line.startswith("ocr rows ") and "->" in line:
+            k = line.split("->")[-1].strip()
+            s["rows_fail"][k] = s["rows_fail"].get(k, 0) + 1
+        elif re.search(r"alloc .*failed|hook .*failed|timed out|refused|kept", line):
+            if len(s["alloc_fail"]) < 20:
+                s["alloc_fail"].append(line)
+    return s
+
+
+def summarise_tai(text):
+    """Which section each of our plugins is registered under (comments skipped)."""
+    out = {"kernel": [], "shell": [], "worker": [], "worker_all": False, "commented": 0}
+    section = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            out["commented"] += "VitaJPOverlay" in line
+            continue
+        if line.startswith("*"):
+            section = line[1:]
+            continue
+        name = line.rsplit("/", 1)[-1]
+        if name == "VitaJPOverlay_Kernel.skprx":
+            out["kernel"].append(section)
+        elif name == "VitaJPOverlay_Shell.suprx":
+            out["shell"].append(section)
+        elif name == "VitaJPOverlay_OCR.suprx":
+            out["worker"].append(section)
+            out["worker_all"] |= section == "ALL"
+    return out
+
+
+def summarise_collect(folder):
+    folder = Path(folder)
+    data = "ux0/data/VitaJPOverlay/"
+    record = json.loads(_read(folder, "COLLECT.json") or "{}")
+    out = {"folder": folder.name, "record": {k: record.get(k) for k in ("collected_at", "host", "missing", "errors",
+                                                                          "redacted_keys", "package")},
+           "undecided": []}
+    # the installed files against the package
+    checks = record.get("package_check") or {}
+    out["package_check"] = {"checked": len(checks), "match": sorted(k for k, v in checks.items() if v.get("match")),
+                            "mismatch": sorted(k for k, v in checks.items() if v.get("match") is False),
+                            "unknown": sorted(k for k, v in checks.items() if v.get("match") is None)}
+    # configuration
+    cfg = {}
+    for line in (_read(folder, data + "config.ini") or "").splitlines():
+        m = re.match(r"^\s*([a-z0-9_]+)\s*=\s*(.*?)\s*$", line)
+        if m:
+            cfg[m.group(1)] = m.group(2)
+    out["config"] = {k: cfg.get(k) for k in ("ocr_backend", "vocr_model", "vocr_fallback_model", "ocr_mode", "dictionary",
+                                             "local_dictionaries", "log_file", "anki_mining", "anki_field_picture",
+                                             "japanese_only_selection", "highlight_mode")}
+    out["config"]["anki_host"] = "set" if cfg.get("anki_host") else "empty"
+    out["tai"] = {}
+    for dev in ("ur0", "ux0"):
+        t = _read(folder, f"{dev}/tai/config.txt")
+        if t is not None:
+            out["tai"][f"{dev}:tai/config.txt"] = summarise_tai(t)
+    boot = _read(folder, "ur0/data/VitaJPOverlay/boot.txt")
+    out["boot_record"] = None if boot is None else boot.strip() or \
+        "(empty: the installer reset it and no boot has been recorded since)"
+    # logs
+    logs = "".join(t for t in (_read(folder, data + "log.old.txt"), _read(folder, data + "log.txt")) if t)
+    out["log"] = summarise_log(logs) if logs else None
+    out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
+    kt = _read(folder, data + "kernel.txt")
+    out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
+    st = _read(folder, data + "status.txt")
+    out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", "Vita JP Overlay",
+                                                                                "worker start", "boot guard"))][:12]
+    # the Anki queue on the card
+    q = folder / (data + "anki_queue")
+    names = [p.name for p in q.iterdir()] if q.is_dir() else []
+    out["anki_queue"] = {"cards": sum(n.endswith(".json") and not n.endswith(".duplicate.json") and ".tmp" not in n
+                                      for n in names),
+                         "duplicates": sum(n.endswith(".duplicate.json") for n in names),
+                         "pictures": sum(n.endswith(".jpg") for n in names), "temp": sum(n.endswith(".tmp") for n in names),
+                         "anki_host_txt": (_read(folder, data + "anki_host.txt") or "").strip() or None}
+    out["dumps"] = sorted((p.name, p.stat().st_size) for p in (folder / "ux0/data").glob("*.psp2dmp")) \
+        if (folder / "ux0/data").is_dir() else []
+    # the self-test
+    report = _read(folder, data + "selftest-report.txt")
+    armed = (folder / (data + "selftest.txt")).is_file()
+    out["selftest"] = None
+    if report:
+        try:
+            out["selftest"] = analyse(report)
+        except ValueError as e:
+            out["selftest_error"] = str(e)
+    out["selftest_armed"] = armed
+    # the tier each measured free USER figure allows; the game's is the most conservative of them
+    frees = [m["free"] + m["release"] for m in (out["log"] or {}).get("memory", []) if m["free"] >= 0]
+    st_free = (out["selftest"] or {}).get("tiers", {}).get("free_user") if out["selftest"] else None
+    samples = ([("before the self-test's first block (selftest-report.txt)", st_free)] if st_free else []) + \
+              ([("the lowest any job in log.txt saw (refused jobs included; weights may be resident then)", min(frees))]
+               if frees else [])
+    out["tiers_all"] = [dict(tier_table(v), where=w) for w, v in samples]
+    if out["tiers_all"]:
+        order = [t[0] for t in TIERS] + [None]
+        out["tiers"] = max(out["tiers_all"], key=lambda t: order.index(t["recommendation"]))
+    # what the analyser cannot decide, and where in the zip the data to decide it is
+    und = out["undecided"]
+    if out["selftest"]:
+        for w in out["selftest"].get("warnings", []):
+            src = {"probe": "the probe stage's gstep lines", "kernel-memory": "the kmem lines",
+                   "capture<64KiB": "the result/gstep lines", "kernel-pool": "the result lines"}.get(w, "its rows")
+            und.append(f"diagnostic {w} warned: {src} in {data}selftest-report.txt")
+    if out["dumps"]:
+        und.append("a crash dump is on the card: the analyser cannot decode it; ux0/data/*.psp2dmp is in the zip "
+                   "(vita-parse-core reads it with the matching ELFs)")
+    if out["kernel"] and out["kernel"]["capped"]:
+        und.append(f"kernel.txt reached its {KERNEL_TXT_CAP:,} B cap this boot: later kernel lines were dropped")
+    if out["log_rotated"]:
+        und.append(f"log.txt rotated at {LOG_TXT_CAP:,} B: the oldest lines are in log.old.txt (both are in the zip)")
+    und.append("recognition accuracy: the logs hold sizes and times, not the text; compare with your photos")
+    return out
+
+
+def render_collect(c):
+    L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
+    pkg = c["record"].get("package") or {}
+    if pkg:
+        L.append(f"  package {pkg.get('version')} source {str(pkg.get('source_revision'))[:12]}; "
+                 f"install settings {pkg.get('install_settings') or '-'}")
+    pc = c["package_check"]
+    if pc["checked"]:
+        L.append(f"  installed files: {len(pc['match'])} of {pc['checked']} match the package"
+                 + (f"; DIFFER or absent: {', '.join(pc['mismatch'])}" if pc["mismatch"] else ""))
+    if c["record"].get("missing"):
+        L.append(f"  not on the Vita: {', '.join(c['record']['missing'])}")
+    for e in c["record"].get("errors") or []:
+        L.append(f"  collect error: {e}")
+    cfg = c["config"]
+    L.append("  config.ini: " + ", ".join(f"{k}={v}" for k, v in cfg.items() if v is not None)
+             + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
+    for name, t in c["tai"].items():
+        L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
+                 f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]
+                                                                    else "") + f"; {t['commented']} commented line(s)")
+    L.append(f"  boot.txt: {c['boot_record'] or '(none)'}")
+    k = c["kernel"]
+    if k:
+        L.append(f"  kernel.txt: {k['bytes']:,} B{' (cap reached)' if k['capped'] else ''}; "
+                 + "; ".join(k["started"][-1:] + k["hooks"][-1:])
+                 + f"; worker registrations {k['registered']}, OCR jobs submitted {k['jobs']}"
+                 + (f"; rows failures {k['rows_fail']}" if k["rows_fail"] else ""))
+        for a in k["alloc_fail"][:8]:
+            L.append(f"    kernel: {a}")
+    lg = c["log"]
+    if lg:
+        L.append(f"  log.txt: {lg['lines']:,} lines" + (" (rotated: log.old.txt included)" if c["log_rotated"] else ""))
+        for b in lg["boot"][:8]:
+            L.append(f"    {b}")
+        if lg["games"]:
+            L.append("  games: " + ", ".join(f"{t} x{g['starts']} (ocr_mode {g['ocr_mode']}, {g['dictionary']})"
+                                            for t, g in lg["games"].items())
+                     + (f"; disabled: {', '.join(lg['disabled'])}" if lg["disabled"] else ""))
+        jobs = lg["jobs"]
+        if jobs:
+            rcs = {}
+            models = {}
+            for j in jobs:
+                rcs[j["rc"]] = rcs.get(j["rc"], 0) + 1
+                key = j["model"] + (" (fallback)" if j["fallback"] else "")
+                models[key] = models.get(key, 0) + 1
+            ok = [j for j in jobs if j["rc"] == 0 and j["lines"]]
+            L.append(f"  OCR jobs: {len(jobs)}; " + ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(rcs.items()))
+                     + "; models " + ", ".join(f"{m} x{n}" for m, n in models.items()))
+            if ok:
+                loads = [j["load"] for j in ok if j["weights"] == "read"]
+                L.append(f"  times (ms): find {_span([j['find'] for j in ok])}, load {_span(loads)} ({len(loads)} read), "
+                         f"recognize {_span([j['recognize'] for j in ok])}; per line {_span(lg['line_ms'])}; "
+                         f"per CTC frame {_span(lg['speed_us'])} us")
+            if lg["captures"]:
+                L.append("  capture: " + ", ".join(f"{k} x{n}" for k, n in lg["captures"].items()))
+        if lg["memory"]:
+            frees = [m["free"] for m in lg["memory"]]
+            heads = [m["headroom"] for m in lg["memory"]]
+            refused = sum(not m["passed"] for m in lg["memory"])
+            L.append(f"  game memory: free USER {_span(frees)} B; headroom {_span(heads)} B; refused {refused} of "
+                     f"{len(lg['memory'])}" + (f"; free USER unreadable {lg['memory_unknown']}x" if lg["memory_unknown"] else ""))
+        if lg["gstep_fail"]:
+            L.append("  game worker steps that failed: " + "; ".join(f"{k} x{n}" for k, n in lg["gstep_fail"].items()))
+        if lg["unusable"]:
+            L.append("  model files unusable: " + "; ".join(lg["unusable"]))
+        if lg["dictionary_ms"]:
+            L.append(f"  Shell jobs (OCR + dictionary): {len(lg['dictionary_ms'])}, {_span(lg['dictionary_ms'])} ms")
+        if lg["overlay"]:
+            L.append(f"  overlay opened {len(lg['overlay'])}x, slowest frame {max(lg['overlay'])} ms")
+        a = lg["anki"]
+        L.append(f"  Anki: {a['saves']} save(s) ({a['save_fail']} failed), queue {a['queue'] if a['queue'] is not None else '-'}"
+                 f", {a['sent']} sent" + (", Picture off in this build" if a["picture_off"] else ""))
+        if lg["config_warnings"]:
+            L.append("  config warnings: " + "; ".join(lg["config_warnings"][:5]))
+        if lg["trouble"]:
+            L.append("  lines reporting a problem (digits as N; count):")
+            for t, n in sorted(lg["trouble"].items(), key=lambda kv: -kv[1])[:20]:
+                L.append(f"    {n:>4} x {t}")
+    else:
+        L.append("  log.txt: (none: log_file off, or nothing logged)")
+    q = c["anki_queue"]
+    L.append(f"  anki_queue on the card: {q['cards']} card(s), {q['duplicates']} duplicate(s), {q['pictures']} picture(s), "
+             f"{q['temp']} temp file(s); anki_host.txt {q['anki_host_txt'] or '(none)'}")
+    L.append("  crash dumps: " + (", ".join(f"{n} ({b:,} B)" for n, b in c["dumps"]) if c["dumps"] else "none"))
+    for t in c.get("tiers_all") or []:
+        L += [""] + render_tiers(t, t["where"])
+    if c.get("tiers"):
+        L.append(f"  recommendation for this game: {c['tiers']['recommendation'] or 'none (not even Small fits)'} "
+                 "(the most conservative of the samples above)")
+    L.append("")
+    if c["selftest"]:
+        L += ["self-test", render(c["selftest"])]
+    elif c.get("selftest_error"):
+        L.append(f"self-test: the report is not readable: {c['selftest_error']}")
+    else:
+        L.append("self-test: no report" + (" (selftest.txt is there: armed, and it has not run yet)" if c["selftest_armed"]
+                                          else " (it was not armed: bash tools/install_ftp.sh --self-test VITA_IP)"))
+    L += ["", "not decided here (the data to decide it is in this zip):"] + [f"  - {u}" for u in c["undecided"]]
+    return "\n".join(L)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("report", type=Path)
+    parser.add_argument("report", type=Path, nargs="?")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--collect", type=Path, metavar="DIR",
+                        help="a folder written by install_ftp.sh --collect: every log, record and the self-test")
     args = parser.parse_args()
+    if args.collect:
+        if not (args.collect / "COLLECT.json").is_file():
+            print(f"analyse_selftest: {args.collect} is not a collect folder (no COLLECT.json)", file=sys.stderr)
+            return 2
+        load_rc_names()
+        c = summarise_collect(args.collect)
+        print(json.dumps(c, indent=2, default=list) if args.json else render_collect(c))
+        return 0 if not c["selftest"] or c["selftest"]["ocr_result"] == "PASS" else 1
+    if not args.report:
+        parser.error("give a report, or --collect DIR")
     try:
         result = analyse(args.report.read_text(encoding="utf-8", errors="replace"))
     except (OSError, ValueError) as e:

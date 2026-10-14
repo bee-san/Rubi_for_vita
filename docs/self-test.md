@@ -19,8 +19,9 @@ with its own record whether it passed or not ([ingame-capture.md](ingame-capture
    **yours** (draw it with Square first if you have not; with none, the full screen). The game
    needs the OCR worker registered for it (installed with `--title TITLEID`, README 'Install');
    otherwise the stages report `rc=-117` (`ocr unavailable`).
-4. Back in VitaShell: `bash tools/install_ftp.sh --status VITA_IP` fetches
-   `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
+4. Back in VitaShell: `bash tools/install_ftp.sh --collect VITA_IP` fetches the report with every
+   log and record into one zip ([below](#collecting-everything---collect)); `--status VITA_IP` fetches
+   just `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
 5. `python3 tools/analyse_selftest.py build/device/status/selftest-report.txt` prints the run
    and its OCR, one PASS/FAIL row per stage, then the diagnostics (PASS/WARN), the free memory
    every route read at each step, the game worker's memory around each allocation, the findings
@@ -157,6 +158,59 @@ failed 5 time(s) (no memory)` and names the 2,088,960 B kernel buffer.
 Exit status follows the verdict: 0 for PASS (diagnostic WARNs included), 1 for FAIL or
 INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result`, `diagnostics_result`,
 `warnings` and each row's `kind` (`ocr` or `diagnostic`).
+
+## Memory headroom and the model tier
+
+After the diagnostics the analyser prints each OCR stage's **headroom**: the game's free USER
+memory at the job's memory check, plus another model's resident weights the job released first,
+minus the 4 MiB reserve, the job's workspace and capture block and the weights it had to load. A
+negative headroom is a refused job. The Shell's `game vocr memory:` log line carries the same figure
+for every OCR job, not only the self-test's.
+
+Then a **model tier** table: vita-vn-ocr #74's proposed Small / Normal / Large recognizers
+(`docs/model-tiers.md` there, section 1.5), each priced at its ceiling with that document's formula,
+page(weights) + page(max(the line finder's 83,323 B arena, the tier's W8I arena) + 3,760 B of runtime
+structs) + the 61,440 B capture block + the 516,096 B line-block ceiling, plus the tier's own reserve
+(4 / 8 / 16 MiB), against the free USER the game had before the worker's first block. The
+recommendation is the largest tier whose first job fits. It is one sample in one game, and the tiers
+are a proposal; the table says so.
+
+| tier | weights ceiling | W8I arena ceiling | first job needs | reserve | free USER needed |
+|---|---|---|---|---|---|
+| Large | 9,000,000 B | 1,310,720 B | 10,895,360 B | 16 MiB | 27,672,576 B |
+| Normal | 4,000,000 B | 262,144 B | 4,845,568 B | 8 MiB | 13,234,176 B |
+| Small | < 1,000,000 B | 131,072 B | 1,716,224 B | 4 MiB | 5,910,528 B |
+
+## Collecting everything: `--collect`
+
+```sh
+bash tools/install_ftp.sh --collect VITA_IP
+```
+
+With VitaShell's FTP running, this fetches, **read-only** (only `CWD`, `LIST`, `SIZE` and `RETR`
+reach the Vita; `tools/collect_vita.py`), into one timestamped folder
+`build/device/collect/vjo-collect-YYYYMMDD-HHMMSSZ/` and a zip of it next to it:
+
+- `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
+  marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
+  `kernel.prev.txt`, `config.ini` with every `*api_key` value replaced by its length before anything
+  is written, `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
+- `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
+  installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
+- the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK and OCR
+  models (downloaded to a temporary file and deleted, never kept), compared with the package's
+  `package-manifest.json`; the dictionary is compared by size.
+
+Each file keeps its device path in the folder (`ux0/data/VitaJPOverlay/log.txt`, ...); `COLLECT.json`
+lists every file with its bytes and SHA-256, what was not on the Vita and every error. Then
+`analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
+the summary: whether the installed files match the package, the configuration, where taiHEN loads
+each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
+OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
+per-frame times, free USER and headroom, failed worker steps), the dictionary jobs, the overlay's
+slowest frame, Anki saves and sends, the lines that report a problem, the Anki queue, crash dumps, the
+model tier from each free-memory sample, the full self-test analysis when a report is there, and what
+it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.
 
 ## Cost and limits
 

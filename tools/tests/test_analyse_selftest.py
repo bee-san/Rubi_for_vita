@@ -225,6 +225,42 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual((as_json["ocr_result"], as_json["diagnostics_result"], as_json["warnings"]),
                          ("PASS", "PASS", []))
 
+    def test_each_stage_has_its_headroom_and_the_free_memory_picks_a_tier(self):
+        r = self.analyse("pass")
+        # textbox: 91,226,112 + 0 - 4,194,304 - (249,856 + 1,159,168) = 85,622,784
+        self.assertIn("textbox    H15_w8.vocr          free   91,226,112 reserve  4,194,304 need  1,409,024 "
+                      "headroom   85,622,784 B", r.stdout)
+        as_json = json.loads(self.analyse("pass", "--json").stdout)
+        heads = {h["stage"]: h["headroom"] for h in as_json["headroom"]}
+        self.assertEqual(heads, {"fallback": 86_122_496, "textbox": 85_622_784, "fullscreen": 86_781_952,
+                                 "textbox2": 86_781_952})
+        self.assertNotIn("probe", heads)  # the probe makes no memory check
+        t = as_json["tiers"]
+        self.assertEqual((t["free_user"], t["recommendation"]), (91_226_112, "Large"))
+        # the formula of vita-vn-ocr docs/model-tiers.md 1.5, at each tier's ceiling
+        self.assertEqual([row["need"] for row in t["rows"]], [10_895_360, 4_845_568, 1_716_224])
+        self.assertEqual([row["reserve"] for row in t["rows"]], [16 << 20, 8 << 20, 4 << 20])
+        self.assertIn("recommendation: Large", r.stdout)
+
+    def test_the_tier_falls_with_the_free_memory(self):
+        for free, want in ((27_672_576, "Large"), (27_672_575, "Normal"), (13_234_176, "Normal"), (13_234_175, "Small"),
+                           (5_910_528, "Small"), (5_910_527, None)):
+            self.assertEqual(a.tier_table(free)["recommendation"], want, free)
+        # a refused stage has a negative headroom and says so
+        text = (FIXTURES / "selftest-v2-fail.txt").read_text()
+        out = a.analyse(text)
+        refused = [h for h in out["headroom"] if h["headroom"] is not None and h["headroom"] < 0]
+        for h in refused:
+            self.assertEqual(h["headroom"], h["free_user"] + h["release"] - h["reserve"] - h["need"])
+        rendered = a.render(out)
+        self.assertEqual(rendered.count("(refused)"), len(refused))
+
+    def test_collect_needs_a_collect_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run([sys.executable, str(SCRIPT), "--collect", d], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("not a collect folder", r.stderr)
+
     def test_a_failed_stage_keeps_its_record_and_the_run_goes_on(self):
         r = self.analyse("fail")
         self.assertEqual(r.returncode, 1)
