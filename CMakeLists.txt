@@ -351,6 +351,7 @@ target_compile_definitions(vjo-selftest-writer PRIVATE VJO_HOST=1)
 target_link_libraries(vjo-selftest-writer vjo_core)
 set(_vjo_tool_env "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
 string(APPEND _vjo_tool_env ";VJO_SELFTEST_WRITER=$<TARGET_FILE:vjo-selftest-writer>")
+string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -360,6 +361,21 @@ set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
 # Counts production file reads and times lookup only (no OCR or process startup).
 add_executable(vjo-local-bench host/local_bench.c)
 target_link_libraries(vjo-local-bench vjo_host)
+
+# The Shell's word lookups over real recognized lines, every read attributed
+# (tools/dict_lookup_bench.py): its own local_dict.c with the counters on.
+add_executable(vjo-dict-bench host/dict_bench.c core/local_dict.c)
+target_compile_definitions(vjo-dict-bench PRIVATE VJO_LOCAL_STATS=1)
+target_link_libraries(vjo-dict-bench vjo_host)
+target_compile_options(vjo-dict-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)
+# What every lookup of the committed lines shows with the bundled dictionary
+# (tools/dict_lookup_golden.tsv): a lookup change that alters one fails.
+if(_vjo_plaintext_dir)
+  add_test(NAME dict_lookup_golden COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/dict_lookup_bench.py
+    --bench $<TARGET_FILE:vjo-dict-bench> --directory ${_vjo_plaintext_dir} --rounds 1
+    --golden ${CMAKE_SOURCE_DIR}/tools/dict_lookup_golden.tsv -o ${CMAKE_BINARY_DIR}/dict_lookup_golden.json)
+  set_tests_properties(dict_lookup_golden PROPERTIES FIXTURES_REQUIRED plaintext)
+endif()
 
 add_executable(vjo-games-tests host/tests/test_games.c vita/games_storage.c)
 target_include_directories(vjo-games-tests PRIVATE third_party/acutest/include host/tests/games_stubs)
