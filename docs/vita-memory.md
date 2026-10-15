@@ -207,7 +207,7 @@ thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and
 v0.7.4, the last build that ran beside a game [measured: `docs/memory-ledger.md`]. Removing the
 online dictionaries (jpdb.io, jiten.moe) brought it to 376,832 B (Shell module 286,720 B), and
 removing the Hachidori relay client to 372,736 B (Shell module 282,624 B) and AnkiConnect to
-@@VM_TAIL@@ [measured: the build log's module row]. The ledger
+352,256 B (Shell module 262,144 B) [measured: the build log's module row]. The ledger
 ([memory-ledger.md](memory-ledger.md)) fails CI if any of these grow.
 
 ### 4.4 How other plugins stay inside the budgets

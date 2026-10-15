@@ -58,14 +58,14 @@ class MemoryLedgerCheck(unittest.TestCase):
         for pool in as_json["pools"]:
             if not pool.get("soft"):
                 self.assertLessEqual(pool["worst"], pool["limit"])
-        # Anki cards are text-only (VJO_ANKI_SCREENSHOT 0): the opt-in network configuration (Google Lens) fits too
+        # Anki cards are text-only (shell/anki.c takes no screenshot): the opt-in network configuration (Google Lens) fits too
         self.assertEqual(as_json["warnings"], [])
         self.assertNotIn("WARNING", result.stderr)
         net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (Google Lens)")
         self.assertEqual(net["worst"], 8192 + 548096 + 131072 + 20480)
 
     def test_a_soft_overshoot_is_a_warning_with_the_bytes(self):
-        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) fits beside Google Lens's one-slot pool
+        # a picture card's 384 KiB arena (the screenshot branch, removed with AnkiConnect) fits beside Google Lens's one-slot pool
         # (969,984 B), but put the network configuration over while the pool had a second slot for the
         # removed Hachidori relay (571,888 B of results)
         for results, warning in ((None, None),

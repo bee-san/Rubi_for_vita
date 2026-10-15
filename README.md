@@ -552,7 +552,7 @@ together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds @@SHELL_PAGES@@ B
+64 KiB result arena and no TLS pool for local lookup. Its module holds 262,144 B
 of SceShell's partition (282,624 B before AnkiConnect was removed, 286,720 B before
 the Hachidori relay client's removal, 294,912 B before the online dictionaries', of
 299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
