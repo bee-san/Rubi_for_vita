@@ -797,21 +797,25 @@ static void key_filter_shows_what_the_plain_file_shows(void)
  * one-character candidate and a full filter all search the index as before. */
 static void key_filter_never_hides_a_key(void)
 {
+    /* 𠮟る and 😀😀: code points beyond the BMP clamp to 0xffff in the prefix
+     * (😀😀's prefix, 0xffffffff, is above every block's range: never filtered) */
     const Row rows[] = {{"する", "する", "", "do", 4}, {"した", "下", "した", "below", 0},
-        {"猫", "猫", "ねこ", "cat", 0}, {"手", "手", "て", "hand", 0}};
+        {"猫", "猫", "ねこ", "cat", 0}, {"手", "手", "て", "hand", 0},
+        {"\xf0\xa0\xae\x9fる", "\xf0\xa0\xae\x9fる", "しかる", "scold", 2},
+        {"\xf0\x9f\x98\x80\xf0\x9f\x98\x80", "\xf0\x9f\x98\x80\xf0\x9f\x98\x80", "", "two smileys", 0}};
     uint32_t split[2] = {0, prefix_of("す")};
     char plain[256], filtered[256];
     VjoArena a; VjoPlatform p; VjoConfig cfg;
     setup(&a, &p, &cfg);
-    build(&fixtures[0], "plain.vjdict", rows, 4, 2);
+    build(&fixtures[0], "plain.vjdict", rows, 6, 2);
     for (int fill = 0; fill < 3; fill++) {
-        const char *texts[] = {"しました", "した", "猫", "手を"};
-        build(&fixtures[1], "main.vjdict", rows, 4, 2);
-        add_filter(&fixtures[1], rows, 4, split, 2, fill);
+        const char *texts[] = {"しました", "した", "猫", "手を", "\xf0\xa0\xae\x9fった", "\xf0\x9f\x98\x80\xf0\x9f\x98\x80!"};
+        build(&fixtures[1], "main.vjdict", rows, 6, 2);
+        add_filter(&fixtures[1], rows, 6, split, 2, fill);
         for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
             shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
             shown("main.vjdict", texts[t], 0, filtered, sizeof(filtered));
-            if (fill == 2 && !strcmp(texts[t], "した")) continue; /* a zeroed (corrupt) block hides した itself */
+            if (fill == 2 && (!strcmp(texts[t], "した") || t == 4)) continue; /* a zeroed (corrupt) block hides them */
             TEST_CHECK_(!strcmp(plain, filtered), "fill %d %s: %s vs %s", fill, texts[t], plain, filtered);
         }
     }
@@ -843,6 +847,17 @@ static void key_filter_descriptor_is_validated(void)
         shown("main.vjdict", "猫舌", 0, out, sizeof(out));
         snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
         TEST_CHECK_(!strcmp(out, want), "field at %zu = %llu: %s", bad[i].at, (unsigned long long)bad[i].value, out);
+        fixtures[0] = saved;
+    }
+    {
+        /* An offset past the file whose size difference wraps to exactly 900
+         * blocks (a page multiple at or above the data): refused. */
+        Fixture saved = fixtures[0];
+        put32(fixtures[0].bytes + 136, 900);
+        put64(fixtures[0].bytes + 144, (uint64_t)fixtures[0].size - UINT64_C(900) * 4096);
+        shown("main.vjdict", "猫舌", 0, out, sizeof(out));
+        snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
+        TEST_CHECK_(!strcmp(out, want), "wrapped offset: %s", out);
         fixtures[0] = saved;
     }
     memcpy(fixtures[0].bytes + 128, "XXXX", 4); /* no magic: the blocks are just more data */

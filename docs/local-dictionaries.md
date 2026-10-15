@@ -34,7 +34,10 @@ an existing artifact with `tools/prepare_plaintext.py`; the Vita reads only the
 resulting `.vjdict`. This combined file counts as one dictionary for paging.
 Preparing checks the frozen file's SHA-256, adds the [key filter](#key-filter)
 and checks the result against its own pin (`key_filter` in
-`plaintext-dictionaries.json`). That step is deterministic: it indexes what the
+`plaintext-dictionaries.json`). That file's top-level `bytes` and `sha256`
+describe the frozen file in the private repository, and `key_filter` the file
+the release ships. A package manifest's `dictionary` block copies both: the
+shipped file's checksum is also under `files`. That step is deterministic: it indexes what the
 file already holds and changes no entry.
 
 ## Convert and install

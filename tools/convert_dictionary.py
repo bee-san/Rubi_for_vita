@@ -49,7 +49,7 @@ FILTER_HASHES = 7
 FILTER_BITS_PER_KEY = 10
 # Below this many hash buckets the few index pages mostly stay in the lookup's page cache and
 # the filter's own block read costs more than it saves (JMdict subsets: 2 buckets 2.82 -> 3.08
-# reads a lookup, 4 buckets 4.07 -> 3.16; docs/lookup-performance.md).
+# reads a lookup, 4 buckets 4.07 -> 3.16; reports/dict-lookup-speed.md, 6.1).
 FILTER_MIN_BUCKETS = 4
 
 

@@ -525,6 +525,64 @@ class LocalDictionaryTest(unittest.TestCase):
                 convert.add_key_filter(self.directory / "bad.vjdict", self.directory / "never.vjdict")
         self.assertFalse((self.directory / "never.vjdict").exists())
 
+    SPREAD = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわ今学行猫話高見日校友"
+
+    def spread(self):
+        """Keys over many first characters: several filter blocks."""
+        return [*self.FILTER_ROWS, *[term(f"{c}語{i:04d}", gloss=["filler"]) for c in self.SPREAD for i in range(400)]]
+
+    def test_key_filter_blocks_hold_every_key_where_the_directory_says(self):
+        """Independently of build_key_filter's own bookkeeping: the directory's block for each key's
+        prefix (the last start at or below it) has all 7 of the key's bits, block edges included."""
+        import bisect
+        keys = sorted({convert.normalize(word) for word, *_ in self.spread()}
+                      | {convert.normalize(reading) for _, reading, *_ in self.spread() if reading})
+        directory, blocks, stats = convert.build_key_filter((k, convert.key_hash(k)) for k in keys)
+        self.assertGreaterEqual(stats["filter_blocks"], 5)
+        edges = 0
+        for key in keys:
+            text = key.decode()
+            prefix = min(ord(text[0]), 0xFFFF) << 16 | (min(ord(text[1]), 0xFFFF) if len(text) > 1 else 0)
+            block = bisect.bisect_right(directory, prefix) - 1
+            edges += directory[block] == prefix
+            h = convert.key_hash(key)
+            h1, h2 = h & 0xFFFFFFFF, ((h >> 32) | 1) & 0xFFFFFFFF
+            for k in range(7):
+                bit = ((h1 + k * h2) & 0xFFFFFFFF) & 32767
+                self.assertTrue(blocks[block][bit >> 3] & (1 << (bit & 7)), (text, block, k))
+        self.assertGreater(edges, 0)  # some keys open a block: the edge case is exercised
+
+    def test_key_filter_sentence_lookups_choose_a_block_per_position(self):
+        bench = os.environ.get("VJO_BENCH")
+        if not bench:
+            self.skipTest("VJO_BENCH is set by CTest")
+        rows = self.spread()
+        _, stats = self.build(rows, "filtered.vjdict")
+        self.assertGreaterEqual(stats["filter_blocks"], 5)
+        convert.convert([self.archive(rows)], self.directory / "plain.vjdict", key_filter=False)
+        def run(name):
+            proc = subprocess.run([bench, str(self.directory), name, self.FILTER_TEXT, "1"],
+                                  capture_output=True, text=True, check=True)
+            return json.loads(proc.stdout)
+        plain, filtered = run("plain.vjdict"), run("filtered.vjdict")
+        self.assertEqual(plain["digest"], filtered["digest"])
+        # Each position of the sentence uses its own block (vjo_local_lookup's filter_restart):
+        # with the first position's block kept, most candidates would bypass the filter.
+        self.assertLess(filtered["read_calls"], plain["read_calls"] // 2)
+
+    def test_key_filter_with_more_than_960_blocks_is_refused(self):
+        """The directory must end inside page 0: 256 + 4 x 960 = 4096 bytes."""
+        path, stats = self.build([*self.FILTER_ROWS, *self.filler(1200)])
+        data = bytearray(path.read_bytes())
+        blocks = stats["filter_blocks"]
+        data += bytes((961 - blocks) * convert.PAGE_SIZE)
+        offset = len(data) - 961 * convert.PAGE_SIZE
+        struct.pack_into("<I", data, convert.FILTER_DESCRIPTOR_OFFSET + 8, 961)
+        struct.pack_into("<Q", data, convert.FILTER_DESCRIPTOR_OFFSET + 16, offset)
+        struct.pack_into("<Q", data, 40, len(data))
+        path.write_bytes(data)
+        self.assertIn("Invalid or incomplete", self.lookup(self.FILTER_TEXT, ok=False).stdout)
+
     def test_corrupt_key_filter_does_not_crash_runtime(self):
         path, _ = self.build([*self.FILTER_ROWS, *self.filler(1200)])
         original = path.read_bytes()

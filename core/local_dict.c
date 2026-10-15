@@ -277,9 +277,11 @@ static int filter_resolve(Workspace *w, Dictionary *d, uint32_t prefix)
 
 /* A file's header and, from version 2, its key filter descriptor: page 0, read
  * once into the page cache (a version 2 file's data starts at 8 KiB or later, so
- * page 0 is whole). Without the descriptor's magic: no filter. The directory is
- * not checked: every read through it stays inside page 0 and the filter's blocks,
- * and like any corrupt part of a file a corrupt filter can only hide entries. */
+ * page 0 is whole). Without the descriptor's magic: no filter. The blocks must be
+ * the file's last pages and at most 960 (the directory then ends inside page 0).
+ * The directory itself is not checked: a block read through it stays inside the
+ * filter, and like any corrupt part of a file a corrupt filter can only hide
+ * entries. */
 static int open_header(Workspace *w, Dictionary *d)
 {
     const uint8_t *f;
@@ -297,10 +299,9 @@ static int open_header(Workspace *w, Dictionary *d)
     if (d->version < 2 || memcmp(f, "VJKF", 4)) return VJO_OK;
     blocks = u32(f + 8);
     off = u64(f + 16);
-    /* off beyond the file wraps the difference: refused too */
     if (u32(f + 4) != 1 || !blocks || blocks > FILTER_MAX_BLOCKS || u32(f + 12) != FILTER_HASHES ||
-        off % PAGE_SIZE || off < d->data || d->file.size - off != (uint64_t)blocks * PAGE_SIZE)
-        return VJO_E_LOCAL_FORMAT;
+        off % PAGE_SIZE || off < d->data || off > d->file.size ||
+        d->file.size - off != (uint64_t)blocks * PAGE_SIZE) return VJO_E_LOCAL_FORMAT;
     d->filter = off;
     d->filter_blocks = blocks;
     return VJO_OK;

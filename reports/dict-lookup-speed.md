@@ -230,7 +230,10 @@ The design takes hoshidicts' Bloom filter and lays it out so a lookup needs one 
 - **Partitioning.** Keys are grouped by their first two code points and packed in prefix order
   into 4 KiB blocks of about 10 bits a key, k = 7.
 - **Directory.** A directory in page 0 maps prefixes to blocks. Page 0 is read anyway (it holds the
-  header), so the directory costs no extra read.
+  header), so with one dictionary the directory costs no extra read. With several configured files
+  the 4-page cache can evict page 0 and the blocks between them. With 4 copies of the bundled file,
+  audit-dict-lookup-speed-2 measured 6.1-6.5 header and 5.3-6.2 filter reads per lookup, instead
+  of 4. Net reads still fall from 37.3-47.4 to 19.2-21.5, with identical results.
 - **Use.** Every candidate at one cursor that keeps the cursor's first two characters, which is
   nearly all of them, is checked against one block. That block is read once, into the existing
   4 KiB page cache. A candidate whose bits are not all set is not a key, so its index page is
@@ -266,9 +269,9 @@ Raw numbers: [`docs/benchmarks/dict-key-filter-20261015.json`](../docs/benchmark
   53,648 B to 53,840 B (host build) of the 64 KiB arena. Nothing stays resident between lookups.
 - **Disk.** The bundled file grows by 904 KiB (226 blocks, 661,469 keys), from 140,556,089 B to
   141,484,032 B.
-- **Shell code.** +626 B, which fits the Shell module's existing text page. The module stays at
-  294,912 B of 299,008 B declared (Vita build). This is measured on this PR's base; #117 then
-  removes 6.6 KB of Shell text.
+- **Shell code.** +626 B. On main (Vita build) it fits the Shell module's existing text pages, as
+  measured on the base this merges onto (the PR body has the rows). Before #117 removed 6.6 KB of
+  Shell text, on ba5f69a, it would have added a page.
 - **Compatibility, both ways.**
   - Older readers read only the 64-byte header and show the same entries from a filtered file
     (main's reader on it: identical, same reads).
@@ -287,8 +290,23 @@ Whole word):
 - **First three characters:** about the same as two.
 - **Also filtering one-character candidates:** +0.17-0.18 reads per lookup. Switching blocks
   when a candidate's prefix leaves the block's range: +0.02.
-- **Bits per key:** 10 gives 1.15-1.17 searched per lookup; 8 gives 1.24-1.28 with 168 blocks;
-  6 gives 1.55-1.67.
+- **Bits per key:** 10 is the bundled filter, 226 blocks. It leaves 1.13-1.15 index reads per
+  lookup (measured; candidates that are not keys 0.12-0.14). 8 bits would leave 1.22-1.28 index
+  searches with 178 blocks, and 6 bits 1.49-1.65 with 131 blocks (both simulated with the
+  converter's packing rule).
+- **Small dictionaries.** On JMdict subsets, the filter saves reads only from 4 hash buckets up
+  (`FILTER_MIN_BUCKETS`). Reads per lookup, Whole word, on the fixture lines, without → with the
+  filter:
+
+  | rows | keys | buckets | reads |
+  |---:|---:|---:|---|
+  | 100 | 176 | 2 | 2.82 → 3.08 |
+  | 300 | 520 | 4 | 4.07 → 3.16 |
+  | 600 | 1,034 | 8 | 6.60 → 3.24 |
+  | 5,000 | 8,514 | 64 | 9.65 → 3.67 |
+  | 80,000 | 125,740 | 1,024 | 12.24 → 6.79 |
+
+  Below 4 buckets, the few index pages mostly stay in the page cache.
 
 ### 6.2 What else was considered, by gain per KB of memory
 
