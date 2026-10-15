@@ -46,12 +46,12 @@
     "vocr_lm_o3_2000k.vlm": 187,
     "vocr_lm_o3_4000k.vlm": 193
    },
-   "host_us_per_line": 28413.9,
+   "host_us_per_line": 28406.4,
    "host_lm_us_per_line": {
     "vocr_lm_o3_500k.vlm": 36.0,
-    "vocr_lm_o3_1000k.vlm": 23.7,
-    "vocr_lm_o3_2000k.vlm": 25.4,
-    "vocr_lm_o3_4000k.vlm": 26.8
+    "vocr_lm_o3_1000k.vlm": 24.2,
+    "vocr_lm_o3_2000k.vlm": 26.0,
+    "vocr_lm_o3_4000k.vlm": 27.1
    },
    "cer_by_set": {
     "tv": {
@@ -120,6 +120,10 @@
       "always": {
        "greedy": 1.178,
        "vocr_lm_o3_4000k.vlm": 0.741
+      },
+      "nonempty": {
+       "greedy": 1.178,
+       "vocr_lm_o3_4000k.vlm": 0.741
       }
      },
      "600": {
@@ -130,6 +134,10 @@
        "vocr_lm_o3_4000k.vlm": 0.768
       },
       "always": {
+       "greedy": 1.095,
+       "vocr_lm_o3_4000k.vlm": 0.749
+      },
+      "nonempty": {
        "greedy": 1.095,
        "vocr_lm_o3_4000k.vlm": 0.749
       }
@@ -144,6 +152,10 @@
       "always": {
        "greedy": 1.032,
        "vocr_lm_o3_4000k.vlm": 0.717
+      },
+      "nonempty": {
+       "greedy": 1.032,
+       "vocr_lm_o3_4000k.vlm": 0.717
       }
      },
      "800": {
@@ -156,6 +168,10 @@
       "always": {
        "greedy": 1.005,
        "vocr_lm_o3_4000k.vlm": 0.697
+      },
+      "nonempty": {
+       "greedy": 1.005,
+       "vocr_lm_o3_4000k.vlm": 0.697
       }
      },
      "900": {
@@ -166,6 +182,10 @@
        "vocr_lm_o3_4000k.vlm": 0.749
       },
       "always": {
+       "greedy": 1.013,
+       "vocr_lm_o3_4000k.vlm": 0.705
+      },
+      "nonempty": {
        "greedy": 1.013,
        "vocr_lm_o3_4000k.vlm": 0.705
       }
@@ -263,12 +283,12 @@
     "vocr_lm_o3_2000k.vlm": 179,
     "vocr_lm_o3_4000k.vlm": 197
    },
-   "host_us_per_line": 15209.2,
+   "host_us_per_line": 15211.7,
    "host_lm_us_per_line": {
-    "vocr_lm_o3_500k.vlm": 31.6,
-    "vocr_lm_o3_1000k.vlm": 23.7,
-    "vocr_lm_o3_2000k.vlm": 24.9,
-    "vocr_lm_o3_4000k.vlm": 26.7
+    "vocr_lm_o3_500k.vlm": 32.0,
+    "vocr_lm_o3_1000k.vlm": 24.1,
+    "vocr_lm_o3_2000k.vlm": 25.5,
+    "vocr_lm_o3_4000k.vlm": 26.5
    },
    "cer_by_set": {
     "tv": {
@@ -337,6 +357,10 @@
       "always": {
        "greedy": 1.229,
        "vocr_lm_o3_4000k.vlm": 0.745
+      },
+      "nonempty": {
+       "greedy": 1.229,
+       "vocr_lm_o3_4000k.vlm": 0.745
       }
      },
      "600": {
@@ -347,6 +371,10 @@
        "vocr_lm_o3_4000k.vlm": 0.768
       },
       "always": {
+       "greedy": 1.111,
+       "vocr_lm_o3_4000k.vlm": 0.725
+      },
+      "nonempty": {
        "greedy": 1.111,
        "vocr_lm_o3_4000k.vlm": 0.725
       }
@@ -361,6 +389,10 @@
       "always": {
        "greedy": 1.052,
        "vocr_lm_o3_4000k.vlm": 0.709
+      },
+      "nonempty": {
+       "greedy": 1.052,
+       "vocr_lm_o3_4000k.vlm": 0.709
       }
      },
      "800": {
@@ -373,6 +405,10 @@
       "always": {
        "greedy": 1.005,
        "vocr_lm_o3_4000k.vlm": 0.686
+      },
+      "nonempty": {
+       "greedy": 1.005,
+       "vocr_lm_o3_4000k.vlm": 0.686
       }
      },
      "900": {
@@ -383,6 +419,10 @@
        "vocr_lm_o3_4000k.vlm": 0.721
       },
       "always": {
+       "greedy": 0.977,
+       "vocr_lm_o3_4000k.vlm": 0.666
+      },
+      "nonempty": {
        "greedy": 0.977,
        "vocr_lm_o3_4000k.vlm": 0.666
       }
@@ -457,15 +497,5 @@
     }
    }
   }
- },
- "how": "python3 tools/lm_cer_eval.py --vocr-repo VITA_VN_OCR --models DIR --cascade VOCR4_W20_w8.vocr --conf 700",
- "when": "2026-10-14T19:41Z",
- "vita_vn_ocr": "557f217c40af5808ab388e139ac772a3b0d4b639 (PR #82)",
- "lms": "v0.2.6-ctclm.2",
- "models_sha256": {
-  "VOCR3_H15_w8.vocr": "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c",
-  "VOCR3_FL10_w8.vocr": "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154",
-  "VOCR4_W20_w8.vocr": "2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e"
- },
- "note": "the LM's two weights per tier were tuned by vita-vn-ocr #82 on these development sets (in-sample for them); the cascade's threshold is #82's doubtful mark, not tuned here; VOCR4-W20 was selected on teacher_val (vita-vn-ocr #78)"
+ }
 }

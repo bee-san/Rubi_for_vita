@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 
 from prepare_ocr import (VOCR_ASSETS, VOCR_CASCADE_MODEL, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_GENERATION,
-                         VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG,
+                         VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN, VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG,
                          VOCR4_ASSETS, VOCR4_TAG)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
@@ -141,6 +141,9 @@ def write_package(base, output, models, assets, conversion, version, source_revi
     attribution = models / VOCR_LM_ATTRIBUTION
     if not attribution.is_file():
         raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " is missing (release " + VOCR_LM_TAG + ")")
+    _, size, sha = VOCR_LM_ATTRIBUTION_PIN[VOCR_LM_ATTRIBUTION]
+    if attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " checksum failed: not release " + VOCR_LM_TAG + "'s")
     assets[DATA + "ocr/LM-" + VOCR_LM_ATTRIBUTION] = attribution
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "ocr_engine": shipped[VOCR_DEFAULT_MODEL]["generation"],

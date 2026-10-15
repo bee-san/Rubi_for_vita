@@ -247,7 +247,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
 {
     const char *name = s->id < VJO_GSTEP_COUNT ? step_names[s->id] : "?";
     const char *kind = "-", *arg = "";
-    char argbuf[16];
+    char argbuf[16], kindbuf[8];
     if (s->id == VJO_GSTEP_ALLOC || s->id == VJO_GSTEP_FREE) {
         kind = s->kind < 5 ? mem_names[s->kind] : "?";
         arg = s->arg < VJO_GITEM_COUNT ? item_names[s->arg] : "?";
@@ -259,6 +259,11 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
         sceClibSnprintf(argbuf, sizeof(argbuf), "%u", (unsigned)s->arg);
         arg = argbuf;
     } else {
+        if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE) {
+            /* API 20: the LM tier (check: | 8 with the cascade) */
+            sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
+            kind = kindbuf;
+        }
         sceClibSnprintf(argbuf, sizeof(argbuf), "%u", (unsigned)s->arg);
         arg = argbuf;
     }

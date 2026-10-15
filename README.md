@@ -615,4 +615,6 @@ Thanks to [meikidroid](https://github.com/rtr46/meikidroid),
 jsmn, acutest, and Yomichan for its Japanese deinflection rules.
 Pinned sources and attribution are in `third_party/`.
 
-Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0.
+Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0. The beam + LM decoder's character
+LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
+`ocr/LM-ATTRIBUTION.md`, which ships beside them.

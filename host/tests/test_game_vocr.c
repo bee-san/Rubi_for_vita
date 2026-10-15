@@ -117,7 +117,8 @@ SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p
 int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return start_failure ? -1 : 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return join_failure ? -1 : 0; }
 int sceKernelDeleteThread(SceUID uid) { return delete_failure ? -1 : 0; }
-int sceKernelDelayThread(unsigned us) { clock_value += us; return 0; }
+static int quit_on_delay; /* the worker loop's next sleep ends it (one pass of worker_main) */
+int sceKernelDelayThread(unsigned us) { clock_value += us; if (quit_on_delay) quitting = 1; return 0; }
 int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size)
 { TEST_CHECK(pid == 7); snprintf(out, size, "%s", own_title); return 0; }
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
@@ -647,11 +648,13 @@ static void step_log_keeps_the_releases(void)
     TEST_MSG("%u steps: %u PASS, %u SIG, %u TEAR, %u FREE", out.n_steps, pass, sig, tear, frees);
     /* every block the job took is back, and counted back */
     TEST_CHECK(blocks_held == (unsigned)(weights_live ? 1 : 0));
-    /* a full log: with two blocks held, the 19th and 20th steps are the two FREEs */
+    /* a full log: with two blocks held that the job frees, the 19th and 20th steps are the two
+     * FREEs; verified resident weights (kept for the next job) keep no slot */
     VjoGameOcrResult log;
     memset(&log, 0, sizeof(log));
     log_to = &log;
-    blocks_held = 2;
+    TEST_CHECK(blocks_kept() == (unsigned)(weights_live ? 1 : 0));
+    blocks_held = 2 + blocks_kept();
     for (unsigned i = 0; i < VJO_GAME_OCR_STEPS; i++) step_add(VJO_GSTEP_ALLOC, 0, 0, 0, 0, 0, 1, 0);
     TEST_CHECK(log.n_steps == VJO_GAME_OCR_STEPS - 2);
     TEST_CHECK(step_add(VJO_GSTEP_FREE, 0, 1, 0, 4096, 0, 1, 0) && step_add(VJO_GSTEP_FREE, 0, 2, 0, 4096, 0, 1, 0));
@@ -712,6 +715,151 @@ static void a_retry_to_an_empty_box_returns_nothing(void)
     TEST_CHECK(torn_empty > 0); /* some job did retry into the empty box */
 }
 
+/* Whether the job freed block `gitem` before it allocated its workspace: the
+ * memory check counted that block as released, so it must go first. */
+static int freed_before_the_workspace(const VjoGameOcrResult *out, unsigned gitem)
+{
+    int freed = -1, alloc = -1;
+    for (unsigned i = 0; i < out->n_steps; i++) {
+        if (freed < 0 && out->step[i].id == VJO_GSTEP_FREE && out->step[i].arg == gitem) freed = (int)i;
+        if (alloc < 0 && out->step[i].id == VJO_GSTEP_ALLOC && out->step[i].arg == VJO_GITEM_WORKSPACE) alloc = (int)i;
+    }
+    return freed >= 0 && alloc >= 0 && freed < alloc;
+}
+
+/* The memory check's choices (check_with_lm), from the tables' sizes alone (no
+ * files): room for everything, the cascade with the largest LM tier; for the LM
+ * alone or the cascade alone but not both, the LM, which brings more on the
+ * dialogue lines measured; for neither, greedy. A resident LM the job gives back
+ * because it chose none counts as free (audit-overlay-dialogue-4 N1). */
+static void memory_check_choices(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult o;
+    const VjoVocrModel *m = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME), *casc;
+    const VjoVocrLm *lm, *lm2 = vjo_vocr_lm_tier(2);
+    size_t jb = vjo_vocr_job_bytes(VJO_VOCR3_FL10_NAME, r.width, r.height), cb = vjo_vocr_capture_bytes(r.width, r.height);
+    uint32_t need_none, need_lm, need_casc, need_both;
+    TEST_ASSERT(m && w20 && lm2 && jb && cb);
+    memset(&o, 0, sizeof(o));
+    o.free_user = INT32_MAX;
+    check_memory(&o, m, jb, cb, NULL, NULL);
+    need_none = o.need_workspace + o.need_weights;
+    check_memory(&o, m, jb, cb, lm2, NULL);
+    need_lm = o.need_workspace + o.need_weights;
+    check_memory(&o, m, jb, cb, NULL, w20);
+    need_casc = o.need_workspace + o.need_weights;
+    check_memory(&o, m, jb, cb, lm2, w20);
+    need_both = o.need_workspace + o.need_weights;
+    TEST_ASSERT(need_none < need_lm && need_lm < need_casc && need_casc < need_both);
+    /* room for everything */
+    casc = w20;
+    o.free_user = (int32_t)(GAME_RESERVE + need_both);
+    TEST_CHECK(check_with_lm(&o, m, jb, cb, 2, &casc, &lm) && casc == w20 && lm == lm2);
+    /* the LM alone or the cascade alone, not both: the LM */
+    casc = w20;
+    o.free_user = (int32_t)(GAME_RESERVE + need_casc);
+    TEST_CHECK(check_with_lm(&o, m, jb, cb, 2, &casc, &lm) && !casc && lm == lm2);
+    /* no LM allowed: the cascade alone */
+    casc = w20;
+    TEST_CHECK(check_with_lm(&o, m, jb, cb, 0, &casc, &lm) && casc == w20 && !lm);
+    /* room for neither: greedy, and the job still fits */
+    casc = w20;
+    o.free_user = (int32_t)(GAME_RESERVE + need_none);
+    TEST_CHECK(check_with_lm(&o, m, jb, cb, 2, &casc, &lm) && !casc && !lm);
+    /* the 1 MB LM resident and no LM chosen: the job gives it back, so its block counts as free */
+    lm_res.lm = lm2;
+    lm_uid = 12;
+    o.free_user = (int32_t)(GAME_RESERVE + need_none - PAGE_ROUND(lm2->bytes) + 4096u);
+    casc = NULL;
+    TEST_CHECK(check_with_lm(&o, m, jb, cb, 0, &casc, &lm) && !lm && o.release_bytes == PAGE_ROUND(lm2->bytes));
+    lm_res.lm = NULL;
+    lm_uid = -1;
+}
+
+/* Between jobs the worker gives back an LM or cascade block whose contents were
+ * never verified (a read refused half-way, the job cancelled), as it does the
+ * weights' (cleanup). */
+static void cleanup_gives_back_unverified_blocks(void)
+{
+    VjoGameOcrRequest r = setup();
+    (void)r;
+    available = 64 * 1024 * 1024;
+    TEST_ASSERT(cascade_alloc(NULL, VJO_VOCR_CASCADE_BYTES) != NULL && cascade_live && cascade_uid >= 0);
+    TEST_ASSERT(lm_alloc(NULL, vjo_vocr_lm_tier(2)->bytes) != NULL && lm_live && lm_uid >= 0);
+    TEST_CHECK(blocks_held == 2 && !blocks_kept()); /* neither verified: both keep a slot of the log */
+    TEST_CHECK(cleanup() == 0 && !cascade_live && cascade_uid < 0 && !lm_live && lm_uid < 0);
+    TEST_CHECK(cascade_frees == 1 && lm_frees == 1 && !blocks_held);
+}
+
+/* A game that is no longer the active one gets every resident block back from
+ * the worker's loop, also when only the cascade's is left (the LM off, the
+ * weights already gone: audit-overlay-dialogue-4 N2). */
+static void an_inactive_game_gets_the_cascade_block_back(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    char w20[600];
+    FILE *f;
+    snprintf(w20, sizeof(w20), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_CASCADE_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(w20, "rb"))) { TEST_SKIP("no VOCR4-W20 beside the release weights"); return; }
+    fclose(f);
+    line();
+    available = 64 * 1024 * 1024;
+    test_cascade_conf = 1001;
+    r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT; /* ocr_lm = off, the cascade on */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(weights_live && cascade_live && !lm_live);
+    TEST_CHECK(!drop_weights() && !weights_live && cascade_live); /* say a later job's model failed to open */
+    quit_on_delay = 1;
+    worker_main(0, NULL); /* vjoOcrRegister: not the active game */
+    quit_on_delay = 0;
+    quitting = 0;
+    TEST_CHECK(!cascade_live && cascade_uid < 0 && !cascade_res.model && !blocked);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
+/* The step log of the job that first reads everything: the self-test's first
+ * stage (the fallback forced, the 1 MB LM, the cascade re-reading the line, the
+ * stable-text wait). Verified resident blocks keep no slot, so its lm, cascade and
+ * norm steps (the LM's and the larger model's first read times) are all there,
+ * and the job's own two releases are its last steps (audit-overlay-dialogue-4 B1). */
+static void the_first_job_logs_the_lm_cascade_and_norm(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    char lm2[600], w20[600];
+    FILE *f;
+    snprintf(lm2, sizeof(lm2), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_LM2_NAME);
+    snprintf(w20, sizeof(w20), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_CASCADE_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(lm2, "rb"))) { TEST_SKIP("no LM beside the release weights"); return; }
+    fclose(f);
+    if (!(f = fopen(w20, "rb"))) { TEST_SKIP("no VOCR4-W20 beside the release weights"); return; }
+    fclose(f);
+    line();
+    available = 64 * 1024 * 1024;
+    frame_us = 16667;
+    test_cascade_conf = 1001;
+    snprintf(r.model, sizeof(r.model), "H15_w8.vocr");
+    snprintf(r.fallback, sizeof(r.fallback), "FL10_w8.vocr");
+    r.flags = VJO_GAME_OCR_F_FORCE_FALLBACK | 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT |
+              15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && out.fallback == 1);
+    unsigned lm = 0, casc = 0, norm = 0, settle = 0, frees = 0;
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        lm += out.step[i].id == VJO_GSTEP_LM && (out.step[i].bytes & VJO_GLM_READ) && out.step[i].kind == 2;
+        casc += out.step[i].id == VJO_GSTEP_CASCADE && (out.step[i].bytes & VJO_GLM_READ) && out.step[i].arg == 1 &&
+                (out.step[i].bytes & 0xFFFFu) > 0 && out.step[i].kind <= out.step[i].arg; /* W20's frames */
+        norm += out.step[i].id == VJO_GSTEP_NORM;
+        settle += out.step[i].id == VJO_GSTEP_SETTLE;
+        frees += out.step[i].id == VJO_GSTEP_FREE;
+    }
+    TEST_CHECK(lm == 1 && casc == 1 && settle == 1 && frees == 2 && out.n_steps <= VJO_GAME_OCR_STEPS);
+    TEST_CHECK(norm == !!out.text[0]);
+    TEST_CHECK(out.n_steps >= 2 && out.step[out.n_steps - 1].id == VJO_GSTEP_FREE &&
+               out.step[out.n_steps - 2].id == VJO_GSTEP_FREE);
+    TEST_CHECK(weights_live && lm_live && cascade_live && blocks_held == 3 && blocks_kept() == 3);
+    TEST_MSG("%u steps: lm %u cascade %u norm %u settle %u free %u", out.n_steps, lm, casc, norm, settle, frees);
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live && !cascade_live);
+}
+
 /* API 20, the beam + LM decoder: with the LMs beside the models, a request
  * allowing tier 4 reads the 4 MB LM once (a resident USER block, like the
  * weights), decodes every line with it, records an LM step and the lines'
@@ -747,10 +895,16 @@ static void lm_jobs(void)
     for (unsigned i = 0; i < out.n_steps; i++)
         if (out.step[i].id == VJO_GSTEP_LM) TEST_CHECK((out.step[i].bytes & VJO_GLM_RESIDENT) && out.step[i].kind == 4);
     TEST_CHECK(lm_allocations == 1 && reads_count - reads < 4); /* a stat, no 32 KiB reads of the LM */
+    /* at most tier 2 allowed now: the resident 4 MB LM goes back first, the 1 MB one is read */
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(lm_live && lm_res.lm == vjo_vocr_lm_tier(2) && lm_frees == 1 && lm_allocations == 2);
+    TEST_CHECK(out.recognized >= 1 && (out.line[0].flags & VJO_VOCR_LINE_LM));
+    TEST_CHECK(freed_before_the_workspace(&out, VJO_GITEM_LM));
     /* the LM switched off: the resident one goes, the job reads greedily (no LM step) */
     r.flags = 0;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-    TEST_CHECK(!lm_live && !lm_res.lm && lm_frees == 1);
+    TEST_CHECK(!lm_live && !lm_res.lm && lm_frees == 2);
     for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_LM);
     TEST_CHECK(!(out.line[0].flags & VJO_VOCR_LINE_LM) && (out.line[0].flags & VJO_VOCR_LINE_CONF) == VJO_VOCR_LINE_CONF_NONE);
     /* room beside the resident weights for the 2 MB LM, not the 4 MB one: the 2 MB one */
@@ -830,6 +984,31 @@ static void cascade_jobs(void)
     available = 64 * 1024 * 1024;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(cascade_live && lm_live && weights_live);
+    /* everything resident, and too little room for the cascade with any LM tier (counting what
+     * each would release) though plenty for the LM alone: the LM, and the cascade's block goes
+     * back to the game */
+    {
+        VjoGameOcrResult o;
+        int64_t least = INT64_MAX;
+        memset(&o, 0, sizeof(o));
+        o.free_user = INT32_MAX;
+        for (unsigned t = 1; t <= 2; t++) {
+            check_memory(&o, vjo_vocr_model(r.model), vjo_vocr_job_bytes(r.model, r.width, r.height),
+                         vjo_vocr_capture_bytes(r.width, r.height), vjo_vocr_lm_tier(t), cascade_res.model);
+            int64_t need = (int64_t)o.need_workspace + o.need_weights - o.release_bytes;
+            if (need < least) least = need;
+        }
+        available = (int)(live_bytes + GAME_RESERVE + least - 4096);
+    }
+    unsigned frees_before = cascade_frees;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(!cascade_live && cascade_frees == frees_before + 1 && !cascade_res.model && lm_live && weights_live);
+    TEST_CHECK(lm_res.lm == vjo_vocr_lm_tier(2) && freed_before_the_workspace(&out, VJO_GITEM_CASCADE));
+    TEST_CHECK(out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    /* resident again */
+    available = 64 * 1024 * 1024;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(cascade_live && lm_live && weights_live);
     available = (int)(live_bytes + 1000000u); /* under the reserve, even with them given back */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM);
     TEST_CHECK(!cascade_live && !lm_live && !weights_live && !cascade_res.model && !lm_res.lm && !resident.model);
@@ -868,7 +1047,12 @@ TEST_LIST = {
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
     {"a retry to an empty box returns nothing of the first try", a_retry_to_an_empty_box_returns_nothing},
+    {"the memory check: the cascade and the LM, else the LM, else the cascade; a resident LM given back counts",
+     memory_check_choices},
+    {"cleanup gives back LM and cascade blocks never verified", cleanup_gives_back_unverified_blocks},
     {"the beam + LM decoder: read once, resident, a smaller tier when tight, given back when off", lm_jobs},
     {"the confidence cascade: doubtful lines read again, its model resident, given back, left when tight", cascade_jobs},
+    {"an inactive game gets the cascade's block back", an_inactive_game_gets_the_cascade_block_back},
+    {"the first job's step log keeps its lm, cascade and norm steps", the_first_job_logs_the_lm_cascade_and_norm},
     {NULL, NULL}
 };

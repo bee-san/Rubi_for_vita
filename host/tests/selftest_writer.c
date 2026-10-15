@@ -255,8 +255,18 @@ int main(int argc, char **argv)
     int stop_in_fullscreen, no_text, empty_screens;
     int fd;
     if (argc != 3) {
-        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting\n", argv[0]);
+        fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting|gstep\n", argv[0]);
         return 2;
+    }
+    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm and cascade kinds */
+        static const VjoGameOcrStep steps[] = {{.id = VJO_GSTEP_CHECK, .kind = 2 | 8, .bytes = 4096},
+                                               {.id = VJO_GSTEP_LM, .kind = 2, .arg = 1, .us = 2100},
+                                               {.id = VJO_GSTEP_CASCADE, .kind = 1, .arg = 1, .us = 550001},
+                                               {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000}};
+        char line[256];
+        for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
+            if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);
+        return 0;
     }
     snprintf(out_dir, sizeof(out_dir), "%s", argv[1]);
     scenario = argv[2];

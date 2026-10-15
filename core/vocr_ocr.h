@@ -111,7 +111,7 @@ const VjoVocrModel *vjo_vocr_model(const char *name);
 const VjoVocrModel *vjo_vocr_models(unsigned *count);
 
 /* A character language model this build accepts for the beam + LM decoder
- * (bee-san/vita-vn-ocr runtime/vocr_lm.h; release v0.2.6-ctclm.1): the asset's
+ * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.2.6-ctclm.2): the asset's
  * exact size and SHA-256, and the per-character bonus its tier was tuned with;
  * every tier shares the rest of the recommended settings (docs/ctc-lm-decode.md:
  * beam 8, the top 8 classes a frame, LM weight 0.5, gate and bracket cost 8
@@ -232,7 +232,9 @@ typedef struct {
     unsigned frames;         /* CTC frames recognized, all lines */
     unsigned model_loaded;   /* 1: the weights were read and verified in this job */
     unsigned model_cached;   /* 1: resident verified weights were reused (file unchanged) */
-    uint32_t find_us, load_us, recognize_us; /* with VjoPlatform.now_us, else 0 */
+    /* with VjoPlatform.now_us, else 0. recognize_us: the job's model on every line
+     * (its runs and LM decodes); the cascade's re-reads are in cascade_us. */
+    uint32_t find_us, load_us, recognize_us;
     unsigned recognized;     /* entries of line[] filled: lines vocr_run finished */
     VjoVocrLineStat line[VJO_VOCR_MAX_LINES];
     /* The stable-text wait (VjoVocrPolicy.settle_us). */
@@ -263,8 +265,10 @@ typedef struct {
     unsigned cascade_cached; /* 1: its resident verified weights were reused */
     uint32_t cascade_load_us; /* reading or checking them, and planning it */
     uint32_t cascade_us;     /* reading lines again (its runs and decodes), all lines */
+    unsigned cascade_frames; /* its CTC frames, all lines read again */
     unsigned cascade_lines;  /* lines read again */
     unsigned cascade_changed; /* of those, lines whose text it changed */
+    unsigned cascade_blanked; /* of those, lines it read as empty where the job's model read text */
     unsigned cascade_skipped; /* doubtful lines not read again: the time ceiling */
 } VjoVocrStats;
 
@@ -331,7 +335,8 @@ typedef struct {
  * like the job's own. A line is read again only while the job's recognition
  * (every line's run and decode, the re-reads, and an estimate for the lines
  * still to read), not counting the weights' loads, stays within cascade_us: the
- * time ceiling. The workspace must hold vjo_vocr_lm_job_bytes() and
+ * time ceiling, per capture attempt (a job read again after the screen changed
+ * starts it again). The workspace must hold vjo_vocr_lm_job_bytes() and
  * vjo_vocr_cascade_job_bytes() more. When the model cannot be used the job goes
  * on without it and says why in stats->cascade_rc. */
 typedef struct {

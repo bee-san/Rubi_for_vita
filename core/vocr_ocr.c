@@ -905,7 +905,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->lm = NULL;
         st->lm_rc = 0;
     }
-    st->cascade_lines = st->cascade_changed = st->cascade_skipped = 0;
+    st->cascade_lines = st->cascade_changed = st->cascade_skipped = st->cascade_frames = st->cascade_blanked = 0;
     st->cascade_us = 0;
     if (l->cascade) {
         st->cascade = NULL;
@@ -953,7 +953,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         vocr_extra extra;
         VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
         size_t start = used ? used + 1 : 0, n;
-        uint32_t line_t0, line_len = line_length(ln);
+        uint32_t line_t0, line_us, line_len = line_length(ln);
         uint16_t flags;
         char *greedy;
         int blank = 0;
@@ -1045,8 +1045,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 }
             }
         }
+        line_us = clock_us(p) - line_t0; /* the job's model: its run and decode */
         {   /* the primary's time per length, for the estimate of the lines still to read */
-            uint32_t line_us = clock_us(p) - line_t0;
             prim_us += line_us;
             len_done += line_len;
             /* The cascade: a doubtful line read again by the larger model, whose
@@ -1080,6 +1080,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                         e2.cap_frames = VJO_VOCR_LM_FRAMES;
                         rc = vocr_run((vocr_ctx *)(void *)(c0 + cx.ctx), &img, cg, LM_LINE_TEXT, &e2);
                         if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                        if (rc == VOCR_OK) st->cascade_frames += e2.frames;
                         if (rc == VOCR_OK && lm_on && cg[0]) {
                             rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(c0 + cx.lm_ctx), &e2, (char *)(c0 + cx.text),
                                                 LM_LINE_TEXT, NULL);
@@ -1091,6 +1092,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                             size_t cn = strlen(ct);
                             if (start + cn < cap) { /* else the primary's reading stays */
                                 st->cascade_changed += strcmp(ct, text + start) != 0;
+                                st->cascade_blanked += !cn && text[start];
                                 memcpy(text + start, ct, cn + 1);
                                 flags = (uint16_t)((flags & ~VJO_VOCR_LINE_CONF) | line_conf(&e2, cg) |
                                                    VJO_VOCR_LINE_CASCADE);
@@ -1117,7 +1119,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             ls->height = (uint16_t)ln->h;
             ls->frames = (uint16_t)(extra.frames > 0xFFFFu ? 0xFFFFu : extra.frames);
             ls->flags = flags;
-            ls->us = clock_us(p) - line_t0;
+            ls->us = line_us; /* without a re-read: frames and time are the job's model's */
         }
         if (pol->line) {
             VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
@@ -1140,7 +1142,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
         }
     }
-    st->recognize_us = clock_us(p) - t0;
+    st->recognize_us = clock_us(p) - t0 - st->cascade_us; /* the re-reads are cascade_us */
     return VJO_OK;
 }
 

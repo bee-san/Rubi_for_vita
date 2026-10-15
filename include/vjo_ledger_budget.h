@@ -157,11 +157,9 @@
  * workspace <= 790,528 B [vita-vn-ocr docs/vita-memory-budget.md], and (API 20)
  * the 4 MB LM and the cascade's larger model: a job's peak 8,036,352 B, which the
  * preflight (free USER minus the 4 MiB reserve) has to cover. Raised from
- * 2,392,064 B for the LM and the cascade: within the owner's Large tier's first
- * job (18.3 MiB, vita-vn-ocr docs/model-tiers.md) and 9 % of the 90,177,536 B
- * free USER, the least any job saw in CLANNAD [measured, #81's v0.8.0-test.1
- * log]; a game with less runs a smaller LM, no cascade, or neither (the memory
- * check). */
+ * 2,392,064 B for the LM and the cascade: 9 % of the 90,177,536 B free USER, the
+ * least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log]; a game with
+ * less runs a smaller LM, no cascade, or neither (the memory check). */
 #define VJO_LIMIT_GAME_WEIGHTS 1601536u
 #define VJO_LIMIT_GAME_WORKSPACE 790528u
 #define VJO_LIMIT_GAME_JOB 8036352u

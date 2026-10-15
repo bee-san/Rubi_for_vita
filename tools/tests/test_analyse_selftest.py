@@ -372,6 +372,18 @@ class AnalyseV2(unittest.TestCase):
         self.assertIn("INCOMPLETE: stage 'fallback' began and never wrote its record", r.stdout)
 
     @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
+    def test_the_step_formatter_prints_the_lm_tier_and_the_cascade_bit(self):
+        # shell/selftest.c vjo_gstep_format: the kind of the check (the LM tier | 8 with the cascade),
+        # lm (the tier) and cascade (lines it read as empty) steps; other steps keep kind=-
+        with tempfile.TemporaryDirectory() as tmp:
+            done = subprocess.run([os.environ["VJO_SELFTEST_WRITER"], tmp, "gstep"], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = done.stdout.splitlines()
+        for start in ("gstep job check kind=10 ", "gstep job lm kind=2 arg=1 ", "gstep job cascade kind=1 arg=1 ",
+                      "gstep job recognize kind=- arg=1 "):
+            self.assertTrue(any(line.startswith(start) for line in lines), (start, lines))
+
+    @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
     def test_the_fixtures_are_what_the_writer_writes(self):
         for name in ("pass", "fail", "incomplete", "routes", "diagnostics", "waited", "notext", "waiting"):
             with tempfile.TemporaryDirectory() as tmp:

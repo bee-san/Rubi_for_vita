@@ -7,6 +7,8 @@
 #include "acutest.h"
 #include "net_posix.h"
 #include "vocr_ocr.h"
+#include "vocr.h"
+#include "vocr_lm.h"
 #include "../../core/fbgrey.h"
 #include "../../include/vjo_vocr_sizes.h"
 #include <stdio.h>
@@ -874,6 +876,257 @@ static void test_the_cascade_reads_doubtful_lines_again(void)
     free(ws);
 }
 
+/* The runtime's calls, wrapped at link time (CMakeLists.txt: --wrap): each goes
+ * through to the real one. With wrap.on a test makes the calls take time on the
+ * fake clock, makes the job's model read a line as empty or its decoder fail, and
+ * counts them. The job's model is the first context a job runs (its first line
+ * comes before any re-read), the cascade's the other; the same for the decoders. */
+static struct {
+    int on;
+    const void *model_ctx, *decoder_ctx;
+    uint32_t run_us, cascade_run_us;
+    unsigned runs, cascade_runs, decodes, cascade_decodes, inits;
+    int empty_run; /* this run of the job's model (0, 1, ...) reads nothing; -1: none */
+    const char *cascade_text; /* the cascade's runs read this (it reads nothing on the synthetic lines) */
+    int decode_rc; /* nonzero: each decode of the job's model writes "X" and returns it */
+    long beta[8];  /* the per-character bonus each decoder was planned with */
+} wrap;
+
+static void wrap_reset(void)
+{
+    memset(&wrap, 0, sizeof(wrap));
+    wrap.empty_run = -1;
+    wrap.on = 1;
+}
+
+int __real_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_cap, vocr_extra *extra);
+int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_cap, vocr_extra *extra);
+int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_cap, vocr_extra *extra)
+{
+    int rc = __real_vocr_run(c, img, text, text_cap, extra);
+    if (!wrap.on) return rc;
+    if (!wrap.model_ctx) wrap.model_ctx = c;
+    if (c == wrap.model_ctx) {
+        if (rc == VOCR_OK && (int)wrap.runs == wrap.empty_run && text_cap) text[0] = '\0';
+        wrap.runs++;
+        scr.clock += wrap.run_us;
+    } else {
+        if (rc == VOCR_OK && wrap.cascade_text && strlen(wrap.cascade_text) < text_cap)
+            memcpy(text, wrap.cascade_text, strlen(wrap.cascade_text) + 1);
+        wrap.cascade_runs++;
+        scr.clock += wrap.cascade_run_us;
+    }
+    return rc;
+}
+
+int __real_vocr_lm_decode(vocr_lm_ctx *c, const vocr_extra *ex, char *text, size_t text_cap, unsigned *chars);
+int __wrap_vocr_lm_decode(vocr_lm_ctx *c, const vocr_extra *ex, char *text, size_t text_cap, unsigned *chars);
+int __wrap_vocr_lm_decode(vocr_lm_ctx *c, const vocr_extra *ex, char *text, size_t text_cap, unsigned *chars)
+{
+    if (wrap.on) {
+        if (!wrap.decoder_ctx) wrap.decoder_ctx = c;
+        if (c != wrap.decoder_ctx) {
+            wrap.cascade_decodes++;
+        } else {
+            wrap.decodes++;
+            if (wrap.decode_rc) { /* a decoder that wrote part of a line, then failed */
+                if (text_cap > 1) {
+                    text[0] = 'X';
+                    text[1] = '\0';
+                }
+                return wrap.decode_rc;
+            }
+        }
+    }
+    return __real_vocr_lm_decode(c, ex, text, text_cap, chars);
+}
+
+int __real_vocr_lm_init(vocr_lm_ctx *c, const vocr_model *m, const vocr_lm *lm, const vocr_lm_opts *o, void *ws,
+                        size_t bytes);
+int __wrap_vocr_lm_init(vocr_lm_ctx *c, const vocr_model *m, const vocr_lm *lm, const vocr_lm_opts *o, void *ws,
+                        size_t bytes);
+int __wrap_vocr_lm_init(vocr_lm_ctx *c, const vocr_model *m, const vocr_lm *lm, const vocr_lm_opts *o, void *ws,
+                        size_t bytes)
+{
+    if (wrap.on) {
+        if (wrap.inits < sizeof(wrap.beta) / sizeof(wrap.beta[0])) wrap.beta[wrap.inits] = (long)o->beta;
+        wrap.inits++;
+    }
+    return __real_vocr_lm_init(c, m, lm, o, ws, bytes);
+}
+
+static unsigned newlines(const char *s)
+{
+    unsigned n = 0;
+    for (; *s; s++) n += *s == '\n';
+    return n;
+}
+
+/* The cascade's time ceiling, on the fake clock (frozen: only the wrapped runs
+ * move it). Three equal lines, each read in 100 ms by the job's model (FL10) and
+ * in 250 ms by VOCR4-W20 (the shapes' cost ratio, 235/94 = 2.5); every line is
+ * doubtful. Before re-reading a line the job counts the time spent, the re-read
+ * (this line's time x the ratio) and the lines still to read (the time per length
+ * so far): at line 0, 100 + 250 + 200 = 550 ms. A ceiling of 550 ms re-reads line
+ * 0 and no other (line 1: 450 + 250 + 100 = 800 ms); 549.999 ms, none. A re-read
+ * that takes 500 ms raises the ratio to 5, so under 1,100 ms line 1 is left
+ * (700 + 500 + 100 ms), which the shapes' ratio (1,050 ms) would re-read. The
+ * job's own times leave the re-reads out (recognize_us and each line's us: its
+ * frames are the job's model's); they are counted apart, with W20's frames. */
+static void test_the_cascade_ceiling_counts_spent_reread_and_rest(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME};
+    static const struct {
+        uint32_t ceiling, cascade_run_us;
+        unsigned lines, skipped;
+    } cases[] = {{549999u, 250000u, 0, 3}, {550000u, 250000u, 1, 2}, {1100000u, 500000u, 1, 2}};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 2)) {
+        TEST_SKIP("no VOCR3-FL10 and VOCR4-W20 in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && w20);
+    posix_platform_init(&cascade_pp, &p);
+    p.now_us = now;
+    ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
+               vjo_vocr_cascade_job_bytes(w20->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
+    res.ud = &res;
+    cres.ud = &cres;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoVocrPolicy pol = {.cascade = w20, .cascade_res = &cres, .cascade_us = cases[i].ceiling,
+                             .cascade_conf = 1001};
+        reset();
+        scr.three_lines = 1;
+        scr.frozen = 1;
+        wrap_reset();
+        wrap.run_us = 100000u;
+        wrap.cascade_run_us = cases[i].cascade_run_us;
+        TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture,
+                                        vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_OK);
+        TEST_ASSERT(st.lines == 3 && st.recognized == 3);
+        for (unsigned k = 1; k < 3; k++) /* three equal lines: the arithmetic above */
+            TEST_ASSERT(st.line[k].width == st.line[0].width && st.line[k].height == st.line[0].height);
+        TEST_CHECK(st.cascade_lines == cases[i].lines && st.cascade_skipped == cases[i].skipped &&
+                   wrap.cascade_runs == cases[i].lines);
+        TEST_CHECK(!(st.line[0].flags & VJO_VOCR_LINE_CASCADE) == !cases[i].lines &&
+                   !(st.line[1].flags & VJO_VOCR_LINE_CASCADE) && !(st.line[2].flags & VJO_VOCR_LINE_CASCADE));
+        TEST_CHECK(st.recognize_us == 300000u && st.cascade_us == cases[i].lines * cases[i].cascade_run_us);
+        for (unsigned k = 0; k < 3; k++) TEST_CHECK(st.line[k].us == 100000u);
+        TEST_CHECK(!cases[i].lines == !st.cascade_frames);
+        TEST_MSG("ceiling %u us: %u read again, %u left; recognize %u us, cascade %u us (%u frames)",
+                 (unsigned)cases[i].ceiling, st.cascade_lines, st.cascade_skipped, (unsigned)st.recognize_us,
+                 (unsigned)st.cascade_us, st.cascade_frames);
+    }
+    wrap.on = 0;
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_resident_drop(&cres));
+    free(ws);
+}
+
+/* The LM's paths, with the wrapped runtime and the release weights: the larger
+ * model's re-read is decoded with the LM too; a line read as empty is not
+ * decoded; a decode that fails leaves the greedy line (one that does not fit
+ * keeps the LM on, any other error turns it off for the job); the greedy text
+ * kept for the log has the shown text's line breaks; each tier is planned with
+ * its own per-character bonus (500k 3000, 1000k 3500). */
+static void test_the_lm_paths(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM1_NAME,
+                                        VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1), *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 4)) {
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 500k and 1000k LMs in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && w20 && lm1 && lm2 && lm1->beta != lm2->beta);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
+               vjo_vocr_cascade_job_bytes(w20->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    cres.ud = &cres;
+    lres.ud = &lres;
+    VjoVocrPolicy casc = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw), .cascade = w20,
+                          .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001};
+    VjoVocrPolicy plain = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    /* one line read again (W20 reading "\xE3\x81\x82"): decoded by the job's model's decoder
+     * and by the cascade's */
+    reset();
+    wrap_reset();
+    wrap.cascade_text = "\xE3\x81\x82";
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 1 && wrap.decodes == 1 && wrap.cascade_decodes == 1);
+    TEST_CHECK(wrap.inits == 2 && wrap.beta[0] == lm2->beta && wrap.beta[1] == lm2->beta);
+    TEST_MSG("%u + %u decodes, %u decoders planned", wrap.decodes, wrap.cascade_decodes, wrap.inits);
+    /* W20 reads the synthetic line as nothing where FL10 read text: the line leaves the text
+     * shown (its greedy reading the log), and the job counts it */
+    reset();
+    wrap_reset();
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && !text[0] && !raw[0] && st.cascade_blanked == 1);
+    TEST_MSG("shown '%s', greedy kept '%s', %u blanked", text, raw, st.cascade_blanked);
+    /* three lines, the second read as empty: two decoded, two shown, two logged */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    wrap.empty_run = 1;
+    TEST_ASSERT(RUN(&plain) == VJO_OK);
+    TEST_CHECK(st.recognized == 3 && wrap.decodes == 2 && st.lm_lines == 2 && newlines(text) == 1 &&
+               newlines(raw) == 1);
+    /* three lines: the greedy text kept has the shown text's line breaks */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    TEST_ASSERT(RUN(&plain) == VJO_OK);
+    TEST_CHECK(st.lm_lines == 3 && newlines(text) == 2 && newlines(raw) == 2);
+    TEST_MSG("shown '%s', greedy '%s'", text, raw);
+    /* every decode too long for its room: the greedy lines stay, the LM stays on */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    wrap.decode_rc = VOCR_E_TEXT;
+    TEST_ASSERT(RUN(&plain) == VJO_OK);
+    TEST_CHECK(!strcmp(text, raw) && !strchr(text, 'X') && wrap.decodes == 3 && !st.lm_lines && !st.lm_rc);
+    /* another decoder error: the greedy line stays and the job decodes no more */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    wrap.decode_rc = VOCR_E_ARG;
+    TEST_ASSERT(RUN(&plain) == VJO_OK);
+    TEST_CHECK(!strcmp(text, raw) && !strchr(text, 'X') && wrap.decodes == 1 && !st.lm_lines &&
+               st.lm_rc == VJO_E_OCR_INFERENCE);
+    /* the 500k tier: planned with its own bonus */
+    TEST_CHECK(!vjo_vocr_lm_drop(&lres) && !lres.data);
+    VjoVocrPolicy small = {.lm = lm1, .lm_res = &lres};
+    reset();
+    wrap_reset();
+    TEST_ASSERT(RUN(&small) == VJO_OK);
+    TEST_CHECK(st.lm == lm1 && wrap.inits == 1 && wrap.beta[0] == lm1->beta);
+#undef RUN
+    wrap.on = 0;
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_resident_drop(&cres) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 /* The ink statistics: an even area or a smooth ramp holds no text-like ink;
  * strokes do, also small, dark on light, and soft (shown 2x with bilinear
  * filtering, or blurred); under 24 levels of contrast nothing is text. */
@@ -1030,6 +1283,8 @@ TEST_LIST = {
     {"without_the_wait_a_folded_match_is_a_change", test_without_the_wait_a_folded_match_is_a_change},
     {"the_line_callback_skips_nothing_with_the_check_off", test_the_line_callback_skips_nothing_with_the_check_off},
     {"the_cascade_reads_doubtful_lines_again", test_the_cascade_reads_doubtful_lines_again},
+    {"the_cascade_ceiling_counts_the_time_spent_the_reread_and_the_rest", test_the_cascade_ceiling_counts_spent_reread_and_rest},
+    {"the_lm_decodes_rereads_skips_empty_lines_and_keeps_greedy_on_failure", test_the_lm_paths},
     {"ink_statistics_and_the_blank_rule", test_ink_and_blank},
     {"blank_lines_are_skipped_and_open_no_weights", test_blank_lines_open_no_weights},
     {NULL, NULL}

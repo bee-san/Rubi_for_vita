@@ -80,6 +80,7 @@ TIER_CAPTURE, TIER_LINE = 61_440, 516_096                   # VJO_BUDGET_GAME_CA
 TIERS = (("Large", 9_000_000, 1_310_720, 16 * 1024 * 1024), ("Normal", 4_000_000, 262_144, 8 * 1024 * 1024),
          ("Small", 999_999, 131_072, 4 * 1024 * 1024))     # (name, weights ceiling, arena ceiling, reserve)
 GAME_STEPS_MAX = 20                                         # include/vjo_game_ocr.h VJO_GAME_OCR_STEPS
+LM_TIERS = {"1": "500k", "2": "1000k", "3": "2000k", "4": "4000k"}  # the lm step's kind (core/vocr_ocr.c lms[])
 
 
 def page(n):
@@ -795,6 +796,8 @@ LOG = {
                          r"(\d+) \+ reserve (\d+): check (passed|refused)(?:, headroom (-?\d+))?"),
     "memory_unknown": re.compile(r"^game vocr memory: free USER unknown \(error 0x([0-9A-Fa-f]+)\)"),
     "speed": re.compile(r"^game vocr speed: (\d+) frames in (\d+) us, (\d+) us per frame"),
+    # API 20: the cascade's model, whose re-reads are not in the line above
+    "cascade_speed": re.compile(r"^game vocr cascade speed: (\d+) frames in (\d+) us, (\d+) us per frame"),
     "unusable": re.compile(r"^game vocr: (\S+) is unusable here \(io=0x([0-9A-Fa-f]+)\), using (\S+)"),
     "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
     # shell/worker.c: the dictionary's display name (core/config.c), "Local dictionaries" by default
@@ -813,9 +816,9 @@ LOG = {
     "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     # API 20: the beam + LM decoder (include/vjo_game_ocr.h VJO_GSTEP_LM)
-    "lm": re.compile(r"^gstep job lm kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    "lm": re.compile(r"^gstep job lm kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     # API 20: the confidence cascade (include/vjo_game_ocr.h VJO_GSTEP_CASCADE)
-    "cascade": re.compile(r"^gstep job cascade kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+    "cascade": re.compile(r"^gstep job cascade kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                           r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
@@ -841,7 +844,7 @@ def _span(values):
 def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
     s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
-         "memory_unknown": 0, "speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
+         "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
@@ -849,9 +852,9 @@ def summarise_log(text):
          "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
                   "kanji_one": 0, "us": []},
          "lm": {"jobs": 0, "greedy": 0, "rcs": {}, "lines": 0, "changed": 0, "low": 0, "read": 0, "load_ms": [],
-                "decode_ms": [], "conf": []},
+                "decode_ms": [], "conf": [], "tiers": {}},
          "cascade": {"jobs": 0, "lines": 0, "changed": 0, "left": 0, "read": 0, "load_ms": [], "ms": [], "rcs": {},
-                     "conf": []}}
+                     "conf": [], "frames": 0, "blanked": 0}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
@@ -878,32 +881,36 @@ def summarise_log(text):
             continue
         m = LOG["lm"].match(line)
         if m:
-            lm, rc, packed = s["lm"], s32(int(m.group(2), 16)), int(m.group(3))
+            lm, rc, packed = s["lm"], s32(int(m.group(3), 16)), int(m.group(4))
             lm["jobs"] += 1
+            tier = LM_TIERS.get(m.group(1), m.group(1))  # kind: the tier decoded with ("-" before the tier was logged)
+            lm["tiers"][tier] = lm["tiers"].get(tier, 0) + 1
             if rc:
                 lm["greedy"] += 1
                 lm["rcs"][rc] = lm["rcs"].get(rc, 0) + 1
-            lm["changed"] += int(m.group(1))
+            lm["changed"] += int(m.group(2))
             lm["lines"] += packed & 0xFFFF
             lm["low"] += (packed >> 16) & 0x3FFF
             if packed & 0x80000000:
                 lm["read"] += 1
-                lm["load_ms"].append(int(m.group(4), 16) // 1000)
-            lm["decode_ms"].append(int(m.group(5)) // 1000)
+                lm["load_ms"].append(int(m.group(5), 16) // 1000)
+            lm["decode_ms"].append(int(m.group(6)) // 1000)
             continue
         m = LOG["cascade"].match(line)
         if m:
-            cs, rc, packed = s["cascade"], s32(int(m.group(2), 16)), int(m.group(3))
+            cs, rc, packed = s["cascade"], s32(int(m.group(3), 16)), int(m.group(4))
             cs["jobs"] += 1
             if rc:
                 cs["rcs"][rc] = cs["rcs"].get(rc, 0) + 1
-            cs["lines"] += int(m.group(1))
-            cs["changed"] += packed & 0xFFFF
-            cs["left"] += (packed >> 16) & 0x3FFF
+            cs["blanked"] += int(m.group(1) or 0)
+            cs["lines"] += int(m.group(2))
+            cs["changed"] += (packed >> 24) & 0x3F
+            cs["left"] += (packed >> 16) & 0xFF
+            cs["frames"] += packed & 0xFFFF
             if packed & 0x80000000:
                 cs["read"] += 1
-                cs["load_ms"].append(int(m.group(4), 16) // 1000)
-            cs["ms"].append(int(m.group(5)) // 1000)
+                cs["load_ms"].append(int(m.group(5), 16) // 1000)
+            cs["ms"].append(int(m.group(6)) // 1000)
             continue
         m = LOG["norm"].match(line)
         if m:
@@ -934,7 +941,7 @@ def summarise_log(text):
                               "load": int(m.group(13)), "recognize": int(m.group(14)), "frames": int(m.group(15)),
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             continue
-        for key in ("capture", "memory", "memory_unknown", "speed", "unusable", "game", "disabled", "done", "overlay",
+        for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "game", "disabled", "done", "overlay",
                     "anki_save", "anki_queue", "anki_sent", "gstep"):
             m = LOG[key].match(line)
             if not m:
@@ -952,6 +959,8 @@ def summarise_log(text):
                 s["memory_unknown"] += 1
             elif key == "speed":
                 s["speed_us"].append(int(m.group(3)))
+            elif key == "cascade_speed":
+                s["cascade_speed_us"].append(int(m.group(3)))
             elif key == "unusable":
                 s["unusable"].append(f"{m.group(1)} io=0x{m.group(2)} -> {m.group(3)}")
             elif key == "game":
@@ -1223,7 +1232,9 @@ def render_collect(c):
                 loads = [j["load"] for j in ok if j["weights"] == "read"]
                 L.append(f"  times (ms): find {_span([j['find'] for j in ok])}, load {_span(loads)} ({len(loads)} read), "
                          f"recognize {_span([j['recognize'] for j in ok])}; per line {_span(lg['line_ms'])}; "
-                         f"per CTC frame {_span(lg['speed_us'])} us")
+                         f"per CTC frame {_span(lg['speed_us'])} us"
+                         + (f" (the cascade's model {_span(lg['cascade_speed_us'])} us)"
+                            if lg.get("cascade_speed_us") else ""))
             if lg["captures"]:
                 L.append("  capture: " + ", ".join(f"{k} x{n}" for k, n in lg["captures"].items()))
         st = lg.get("settle") or {}
@@ -1235,7 +1246,8 @@ def render_collect(c):
         lm = lg.get("lm") or {}
         if lm.get("jobs"):
             conf = sorted(lm["conf"])
-            L.append(f"  beam + LM: {lm['jobs']} job(s), {lm['lines']} line(s) decoded, {lm['changed']} changed by the LM; "
+            L.append(f"  beam + LM: {lm['jobs']} job(s) (" + ", ".join(f"{t} x{n}" for t, n in sorted(lm["tiers"].items()))
+                     + f"), {lm['lines']} line(s) decoded, {lm['changed']} changed by the LM; "
                      f"{lm['low']} line(s) under 0.70 confidence"
                      + (f" (median {conf[len(conf) // 2] / 1000:.2f})" if conf else "")
                      + f"; LM read {lm['read']}x ({_span(lm['load_ms'])} ms), decoding {_span(lm['decode_ms'])} ms a job"
@@ -1245,7 +1257,7 @@ def render_collect(c):
         if cs.get("jobs"):
             conf = sorted(cs["conf"])
             L.append(f"  cascade: {cs['jobs']} job(s), {cs['lines']} doubtful line(s) read again with the larger model "
-                     f"({cs['changed']} changed"
+                     f"({cs['changed']} changed, {cs['blanked']} read as empty"
                      + (f"; its confidence median {conf[len(conf) // 2] / 1000:.2f}" if conf else "")
                      + f"), {cs['left']} left for the time ceiling; its weights read {cs['read']}x "
                      f"({_span(cs['load_ms'])} ms), re-reading {_span(cs['ms'])} ms a job"

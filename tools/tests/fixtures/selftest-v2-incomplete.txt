@@ -27,7 +27,7 @@ kmem game route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184
 kernel game ledger=131072/131072 limit=2220032 capture=0
 stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
 gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
-gstep fallback check kind=- arg=0 rc=0x00000000 bytes=5103616 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
+gstep fallback check kind=0 arg=0 rc=0x00000000 bytes=5103616 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep fallback alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
 gstep fallback alloc kind=user arg=workspace rc=0x00000042 bytes=188416 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=40
 gstep fallback alloc kind=user arg=weights rc=0x00000043 bytes=659456 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=50
@@ -48,7 +48,7 @@ result fallback source=hook mem=user capture=61440 strip_rows=62 strips=9 tears=
 memory fallback free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=659456 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0003
 stage textbox begin t=145499 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr
 gstep textbox mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
-gstep textbox check kind=- arg=0 rc=0x00000000 bytes=5603328 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
+gstep textbox check kind=0 arg=0 rc=0x00000000 bytes=5603328 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep textbox alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
 gstep textbox alloc kind=user arg=workspace rc=0x00000042 bytes=188416 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=40
 gstep textbox alloc kind=user arg=weights rc=0x00000043 bytes=1159168 sum=0x00000000 main=89817088 cdram=117440512 phycont=0 us=50

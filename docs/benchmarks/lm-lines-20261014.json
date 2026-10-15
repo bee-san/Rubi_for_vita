@@ -7,16 +7,16 @@
  "reserved_vns_skipped": 15,
  "host": "times: host µs (shared box); the A9 is not measured",
  "models": {
-  "VOCR3_H15_w8.vocr + vocr_lm_o3_4000k.vlm": {
+  "VOCR3_H15_w8.vocr + vocr_lm_o3_500k.vlm": {
    "regions": 318,
    "lines": 777,
    "decoded": 391,
-   "changed": 40,
+   "changed": 25,
    "greedy_mismatch": 0,
    "lm_mismatch": 0,
    "conf_mismatch": 0,
    "low_conf_lines": 0,
-   "lm_us": 29747,
+   "lm_us": 25428,
    "conf_hist": [
     0,
     0,
@@ -31,10 +31,10 @@
     38
    ],
    "cascade_lines": 315,
-   "cascade_changed": 214,
+   "cascade_changed": 216,
    "cascade_mismatch": 0,
-   "cascade_us": 10458337,
-   "lm_load_us_median": 16081
+   "cascade_us": 10461589,
+   "lm_load_us_median": 2306
   },
   "VOCR3_H15_w8.vocr + vocr_lm_o3_1000k.vlm": {
    "regions": 318,
@@ -65,16 +65,74 @@
    "cascade_us": 10456639,
    "lm_load_us_median": 4378
   },
-  "VOCR3_FL10_w8.vocr + vocr_lm_o3_4000k.vlm": {
+  "VOCR3_H15_w8.vocr + vocr_lm_o3_2000k.vlm": {
    "regions": 318,
    "lines": 777,
-   "decoded": 407,
-   "changed": 38,
+   "decoded": 391,
+   "changed": 30,
    "greedy_mismatch": 0,
    "lm_mismatch": 0,
    "conf_mismatch": 0,
    "low_conf_lines": 0,
-   "lm_us": 29041,
+   "lm_us": 28475,
+   "conf_hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    45,
+    59,
+    249,
+    38
+   ],
+   "cascade_lines": 315,
+   "cascade_changed": 211,
+   "cascade_mismatch": 0,
+   "cascade_us": 10466332,
+   "lm_load_us_median": 8350
+  },
+  "VOCR3_H15_w8.vocr + vocr_lm_o3_4000k.vlm": {
+   "regions": 318,
+   "lines": 777,
+   "decoded": 391,
+   "changed": 40,
+   "greedy_mismatch": 0,
+   "lm_mismatch": 0,
+   "conf_mismatch": 0,
+   "low_conf_lines": 0,
+   "lm_us": 29747,
+   "conf_hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    45,
+    59,
+    249,
+    38
+   ],
+   "cascade_lines": 315,
+   "cascade_changed": 214,
+   "cascade_mismatch": 0,
+   "cascade_us": 10458337,
+   "lm_load_us_median": 16081
+  },
+  "VOCR3_FL10_w8.vocr + vocr_lm_o3_500k.vlm": {
+   "regions": 318,
+   "lines": 777,
+   "decoded": 407,
+   "changed": 30,
+   "greedy_mismatch": 0,
+   "lm_mismatch": 0,
+   "conf_mismatch": 0,
+   "low_conf_lines": 0,
+   "lm_us": 24749,
    "conf_hist": [
     0,
     0,
@@ -89,10 +147,10 @@
     38
    ],
    "cascade_lines": 302,
-   "cascade_changed": 233,
+   "cascade_changed": 222,
    "cascade_mismatch": 0,
-   "cascade_us": 10158881,
-   "lm_load_us_median": 16010
+   "cascade_us": 10167966,
+   "lm_load_us_median": 2233
   },
   "VOCR3_FL10_w8.vocr + vocr_lm_o3_1000k.vlm": {
    "regions": 318,
@@ -122,10 +180,68 @@
    "cascade_mismatch": 0,
    "cascade_us": 10156531,
    "lm_load_us_median": 4304
+  },
+  "VOCR3_FL10_w8.vocr + vocr_lm_o3_2000k.vlm": {
+   "regions": 318,
+   "lines": 777,
+   "decoded": 407,
+   "changed": 32,
+   "greedy_mismatch": 0,
+   "lm_mismatch": 0,
+   "conf_mismatch": 0,
+   "low_conf_lines": 0,
+   "lm_us": 28127,
+   "conf_hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    46,
+    281,
+    38
+   ],
+   "cascade_lines": 302,
+   "cascade_changed": 221,
+   "cascade_mismatch": 0,
+   "cascade_us": 10166950,
+   "lm_load_us_median": 8279
+  },
+  "VOCR3_FL10_w8.vocr + vocr_lm_o3_4000k.vlm": {
+   "regions": 318,
+   "lines": 777,
+   "decoded": 407,
+   "changed": 38,
+   "greedy_mismatch": 0,
+   "lm_mismatch": 0,
+   "conf_mismatch": 0,
+   "low_conf_lines": 0,
+   "lm_us": 29041,
+   "conf_hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    42,
+    46,
+    281,
+    38
+   ],
+   "cascade_lines": 302,
+   "cascade_changed": 233,
+   "cascade_mismatch": 0,
+   "cascade_us": 10158881,
+   "lm_load_us_median": 16010
   }
  },
- "how": "python3 tools/lm_lines_eval.py --ocr build/host/vjo-ocr --models DIR --vocr-repo VITA_VN_OCR --shots DIR... --model VOCR3_H15_w8.vocr --model VOCR3_FL10_w8.vocr --lm vocr_lm_o3_4000k.vlm --lm vocr_lm_o3_1000k.vlm --cascade VOCR4_W20_w8.vocr",
- "when": "2026-10-14T19:41Z",
+ "how": "python3 tools/lm_lines_eval.py --ocr build/host/vjo-ocr --models DIR --vocr-repo VITA_VN_OCR --shots DIR... --model VOCR3_H15_w8.vocr --model VOCR3_FL10_w8.vocr --lm vocr_lm_o3_4000k.vlm --lm vocr_lm_o3_1000k.vlm (and, run apart, --lm vocr_lm_o3_500k.vlm --lm vocr_lm_o3_2000k.vlm) --cascade VOCR4_W20_w8.vocr",
+ "when": "2026-10-14T19:41Z; the 500k and 2000k rows 2026-10-15T00:17Z (head 166c1fe)",
  "vita_vn_ocr": "557f217c40af5808ab388e139ac772a3b0d4b639 (PR #82)",
  "lms": "v0.2.6-ctclm.2",
  "note": "mismatch counts compare the overlay's adapter with vita-vn-ocr's runtime/pyvocr.py on each found line's crop: greedy text, decoded text, confidence (within 1/1000), and with the cascade which lines were read again and what they show; the regions are read with that checkout's reservation (one more region than a5d5aad's)"

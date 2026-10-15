@@ -643,6 +643,14 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
     if (r->frames)
         vjo_log("game vocr speed: %u frames in %u us, %u us per frame", (unsigned)r->frames,
                 (unsigned)r->recognize_us, (unsigned)(r->recognize_us / r->frames));
+    /* API 20: the cascade's model, from its step (its re-reads are not in recognize_us) */
+    for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        const VjoGameOcrStep *s = &r->step[i];
+        uint32_t f = s->bytes & 0xFFFFu;
+        if (s->id == VJO_GSTEP_CASCADE && f)
+            vjo_log("game vocr cascade speed: %u frames in %u us, %u us per frame", (unsigned)f,
+                    (unsigned)(s->us - 1u), (unsigned)((s->us - 1u) / f));
+    }
     /* Crop WxH, CTC frames and time of each line; 6 per log line (256 bytes each). */
     for (uint32_t i = 0; i < r->recognized && i < VJO_GAME_OCR_LINES; i++) {
         const VjoGameOcrLine *l = &r->line[i];

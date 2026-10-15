@@ -123,7 +123,8 @@ def main(argv=None):
 
             def cascade_at(threshold, rule, keys, idx=None):
                 """CER per decoder when lines under threshold are read again; rule: keep the larger's
-                reading when it is more confident ('higher') or always ('always')."""
+                reading when it is more confident ('higher'), always ('always'), or unless it reads
+                nothing where the first read text ('nonempty')."""
                 idx = range(len(rows)) if idx is None else idx
                 n = sum(len(rows[i]["ref"]) for i in idx)
                 out = {}
@@ -132,7 +133,8 @@ def main(argv=None):
                     for i in idx:
                         x, b = reads[i], big[i]
                         again = x[1] < threshold
-                        use = b if again and (rule == "always" or b[1] > x[1]) else x
+                        use = b if again and (rule == "always" or (rule == "higher" and b[1] > x[1]) or
+                                              (rule == "nonempty" and (b[0][key] or not x[0][key]))) else x
                         e += lev(norm(use[0][key]), rows[i]["ref"])
                     out[key] = round(100 * e / max(1, n), 3)
                 return out
@@ -142,7 +144,8 @@ def main(argv=None):
                 sweep[str(t)] = {"lines_read_again": sum(again),
                                  "frames_read_again": sum(b[2] for b, a in zip(big, again) if a),
                                  "higher": cascade_at(t, "higher", ["greedy", lms[-1]]),
-                                 "always": cascade_at(t, "always", ["greedy", lms[-1]])}
+                                 "always": cascade_at(t, "always", ["greedy", lms[-1]]),
+                                 "nonempty": cascade_at(t, "nonempty", ["greedy", lms[-1]])}
             per_set = {name: {"primary": {k: by_set[name][k] for k in ("greedy", lms[-1])},
                               "cascade": cascade_at(args.conf, "always", ["greedy", lms[-1]],
                                                     [i for i, r in enumerate(rows) if r["set"] == name]),

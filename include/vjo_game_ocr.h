@@ -131,10 +131,11 @@ enum {
     VJO_GSTEP_LM,        /* API 20, the beam + LM decoder: kind the LM tier, arg lines it changed, rc 0 or why the
                             job read greedily (VJO_E_*), bytes = VJO_GLM_* | lines under VJO_GAME_OCR_LOW_CONF << 16 |
                             lines decoded, sum the LM's load time (us), us the decoding */
-    VJO_GSTEP_CASCADE,   /* API 20, the confidence cascade: arg lines read again with the larger model, rc 0 or
-                            why it could not run (VJO_E_*), bytes = VJO_GLM_READ / _RESIDENT (its weights) | doubtful
-                            lines left for the time ceiling << 16 | lines whose text it changed, sum its load time
-                            (us), us the re-reading */
+    VJO_GSTEP_CASCADE,   /* API 20, the confidence cascade: kind the lines it read as empty where the job's model
+                            read text, arg lines read again with the larger model, rc 0 or
+                            why it could not run (VJO_E_*), bytes = VJO_GLM_READ / _RESIDENT (its weights) | lines
+                            whose text it changed << 24 | doubtful lines left for the time ceiling << 16 | its CTC
+                            frames, sum its load time (us), us the re-reading (not in RECOGNIZE's us) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

@@ -35,6 +35,10 @@ class PackageModels(unittest.TestCase):
         lm_spec = ("https://fixture.invalid/LM", len(self.lm), hashlib.sha256(self.lm).hexdigest())
         lms = {name: lm_spec for name in prepare.VOCR_LM_ASSETS}
         vocr4 = {name: vocr3_spec for name in prepare.VOCR4_ASSETS}
+        self.attribution = b"CC BY-SA 4.0 fixture"
+        att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
+                                             hashlib.sha256(self.attribution).hexdigest())}
+        self.enterContext(mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att))
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
@@ -43,7 +47,7 @@ class PackageModels(unittest.TestCase):
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
-    def write_models(self):
+    def write_models(self, attribution=None):
         for name in ("FL10_w8.vocr", "H15_w8.vocr"):
             (self.models / name).write_bytes(self.legacy)
         for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"):
@@ -52,7 +56,7 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.lm)
         for name in prepare.VOCR4_ASSETS:
             (self.models / name).write_bytes(self.vocr3)
-        (self.models / prepare.VOCR_LM_ATTRIBUTION).write_text("CC BY-SA 4.0 fixture")
+        (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
 
     def package_fixture(self, settings=None, write_models=True):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -162,6 +166,13 @@ class PackageModels(unittest.TestCase):
                 release.parse_setting(bad)
         self.assertEqual(release.parse_setting(" Anki_Mining = on "), ("anki_mining", "on"))
         self.assertEqual(release.parse_setting("anki_field_picture="), ("anki_field_picture", ""))
+
+    def test_bundle_refuses_an_attribution_that_is_not_the_pinned_one(self):
+        # Another release's ATTRIBUTION.md (ctclm.1's lacks the protected-title paragraph) is refused.
+        self.write_models(attribution=b"CC BY-SA 4.0 fixture of an older release")
+        with self.assertRaisesRegex(ValueError, "ATTRIBUTION.md checksum failed"):
+            self.package_fixture(write_models=False)
+        self.assertFalse((self.root / "package.zip").exists())
 
     def test_missing_or_wrong_model_is_refused_before_output(self):
         self.write_models()

@@ -232,6 +232,7 @@ static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
+static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     fake_game_request = *r;
@@ -324,6 +325,14 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         for (unsigned i = 0; i < fake_lines; i++)
             fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i),
                                                         fake_line_flags ? fake_line_flags : 0x3FFu, 52100u + i};
+        if (fake_cascade_frames) {
+            VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
+            memset(s, 0, sizeof(*s));
+            s->id = VJO_GSTEP_CASCADE;
+            s->arg = 1;
+            s->bytes = VJO_GLM_READ | 1u << 24 | fake_cascade_frames;
+            s->us = fake_cascade_us + 1u;
+        }
     }
     *out = fake_game_result;
     return 0;
@@ -1073,6 +1082,22 @@ static void test_vocr_logs_memory_check_and_frames(void)
     line = logged("game vocr lines:");
     TEST_CHECK(line && !strcmp(line, "game vocr lines: 917x30 114f 52.1ms c845*^"));
     TEST_MSG("%s", line ? line : "(no lines)");
+    TEST_CHECK(!logged("game vocr cascade speed:"));
+    /* the cascade's model, from its step: its frames and time apart from the job's model's */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_lines = 1;
+    fake_line_flags = 0x8000u | 0x4000u | 0x0400u | 845u;
+    fake_cascade_frames = 160;
+    fake_cascade_us = 128000;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    line = logged("game vocr speed:");
+    TEST_CHECK(line && !strcmp(line, "game vocr speed: 205 frames in 92345 us, 450 us per frame"));
+    line = logged("game vocr cascade speed:");
+    TEST_CHECK(line && !strcmp(line, "game vocr cascade speed: 160 frames in 128000 us, 800 us per frame"));
+    TEST_MSG("%s", line ? line : "(no cascade speed line)");
+    fake_cascade_frames = fake_cascade_us = 0;
     fake_line_flags = 0;
     mem_free();
 }

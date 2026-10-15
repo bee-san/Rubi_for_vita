@@ -441,9 +441,17 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 | `vocr_lm_o3_4000k.vlm` | 3,781,072 (3,784,704) |
 
 **Logs (the A/B record).**
-- `gstep job lm` per job: kind the tier, arg the lines the LM changed, rc 0 or why the job read
-  greedily; bytes: read or resident, the lines under 0.7 confidence, the lines decoded. It also
-  carries the LM's load time and the decode time.
+- `gstep job lm` per job: `kind` the tier (1 500k, 2 1000k, 3 2000k, 4 4000k), arg the lines the LM
+  changed, rc 0 or why the job read greedily; bytes: read or resident, the lines under 0.7
+  confidence, the lines decoded. It also carries the LM's load time and the decode time.
+- `gstep job check`: `kind` is what the memory check chose, the LM tier, plus 8 with the cascade.
+- `game vocr speed:` is the job's own model: its CTC frames and its recognition time (runs and
+  decodes), so its µs per frame compares with #81's API 19 figure. The cascade's re-reads are not
+  in it, nor in each line's time in `game vocr lines:`.
+- The job's 20-step log reserves a slot only for the release of a block this job can still free:
+  its capture and workspace blocks, a tall line's buffer, and a resident block (weights, LM, W20)
+  only while its contents are not verified. A first job that reads all three therefore keeps its
+  `lm`, `cascade` and `norm` steps, which carry their first read times.
 - `game vocr lines:` gives each line's confidence (`c0`-`c1000`, the smallest top-class probability
   over the frames that emit a character), `*` when the text shown differs from the greedy
   reading, and `^` when the cascade read the line again.
@@ -463,13 +471,16 @@ same pixels by a larger recognizer, VOCR4-W20 (vita-vn-ocr #78,
 1,558,016 B, 241,056 B arena), and decoded with the same LM. Its reading is the one shown. On the
 lines measured that is better than keeping whichever reading is more confident (0.717 % against
 0.753 % with the 4 MB LM). VOCR4-W20 does not qualify as a default under vita-vn-ocr's gates; it only reads again
-the lines the default doubts.
+the lines the default doubts. `vocr_model = VOCR4_W20_w8.vocr` is also accepted as the job's own
+model, within the same budgets; the cascade is then off, since it needs a model larger than the
+job's.
 
 - **Time ceiling.** A doubtful line is read again only while the job's recognition (every line's
   run and decode, the re-reads, and an estimate for the lines still to read; not the weights'
   loads) stays within `ocr_cascade_ms`. The estimate is the line's own time on this console times
   W20's cost over the job's model (vita-vn-ocr's A9 figures: 235 / 166 ms per 640-px line, 1.42x),
-  then what the re-reads measured. Past the ceiling the line is counted and left. 2 s is the Normal
+  then what the re-reads measured. Past the ceiling the line is counted and left. The ceiling is per
+  capture attempt: a job read again after the screen changed starts it again. 2 s is the Normal
   tier's 3-line-box ceiling (vita-vn-ocr `docs/model-tiers.md`, an estimate at 444 MHz). In #81's
   CLANNAD log H15 took 5.0-5.2 ms per CTC frame, about 0.4 s for a full line, so a 3-line box
   leaves room for about one re-read and a 1- or 2-line box for more (estimates).
@@ -477,18 +488,30 @@ the lines the default doubts.
   read and SHA-256 checked at the first doubtful line (about 0.3 s through the broker at #81's
   rate, once a session; an estimate) and kept like the job's weights. The job's workspace grows by
   W20's arena and decoder (296,192 B). The memory check takes, in order: the cascade with the
-  largest LM tier that fits, the LM alone, the cascade alone, neither. The block is given back
-  when `ocr_cascade_ms = 0` or memory is refused.
-- **Logs.** `gstep job cascade` per job: arg the lines read again, rc 0 or why the cascade could not
-  run (W20 missing or wrong, no memory), bytes: its weights read or resident, the doubtful lines
-  left for the ceiling, the lines it changed; its load time and the re-reading time. In
+  largest LM tier that fits, the LM alone, the cascade alone, neither. A resident block the job
+  would give back counts as free. The block is given back when `ocr_cascade_ms = 0`, when the check
+  leaves the cascade out, when memory is refused, and when the game is no longer the active one.
+- **Logs.** `gstep job cascade` per job:
+  - `kind`: the lines W20 read as empty where the job's model read text. Those lines leave the text
+    shown, and with them their greedy reading leaves the log. Keeping the first reading in that case
+    changes nothing on the dialogue lines measured below: the `nonempty` sweep rows of
+    `lm-cer-20261014.json` give 0.717 % with the 4 MB LM either way, and a run with
+    `--lm vocr_lm_o3_1000k.vlm --sweep 700` gives 0.729 % either way. On those lines W20 empties
+    none, so the rule stays "W20's reading is shown".
+  - arg: the lines read again; rc: 0, or why the cascade could not run (W20 missing or wrong, no
+    memory).
+  - bytes: its weights read or resident, the lines it changed << 24, the doubtful lines left for the
+    ceiling << 16, and W20's CTC frames.
+  - Its load time and the re-reading time.
+
+  `game vocr cascade speed:` gives W20's frames and time, and its µs per frame. In
   `game vocr lines:` a line read again ends in `^`, and its confidence is W20's.
 
 **Measured on the host** (`docs/benchmarks/lm-lines-20261014.json`, `lm-cer-20261014.json`):
 
 - **Parity.** The overlay's adapter (`vjo-ocr --lm`, `--cascade`) was run on the 318 linefind
-  development regions (777 found lines) with VOCR3-H15 and VOCR3-FL10, each with the 4 MB and the
-  1 MB LM and the cascade. Against vita-vn-ocr's reference (`runtime/pyvocr.py`) on the same crops
+  development regions (777 found lines) with VOCR3-H15 and VOCR3-FL10, each with all four LM tiers
+  and the cascade. Against vita-vn-ocr's reference (`runtime/pyvocr.py`) on the same crops
   it had 0 differences in greedy text, decoded text, confidence, and which lines the cascade read
   again and what they show (`tools/lm_lines_eval.py`; 302-315 lines read again).
 - **Dialogue CER** (`tools/lm_cer_eval.py`): 1,666 dialogue lines (25,379 characters) of
@@ -513,7 +536,11 @@ the lines the default doubts.
   6-10 ms a line and the beam 0.4-0.7 ms. A re-read costs about 1.42x the line's own time.
 - **Unmeasured on the console:** the first read of the LM (~0.2 s for 1 MB, ~0.7 s for 4 MB) and of
   W20 (~0.3 s), once per game session, from #81's 218-231 ms for H15's 1,155,968 B (estimates),
-  and the cascade's real time per line.
+  and the cascade's real time per line. The next build's logs measure all of these.
+- **The CER above assumes no ceiling.** The tools allow 600 s. On the console a 3-line H15 box
+  leaves room for about one re-read (estimate), and about 12 % of such boxes have two or more
+  doubtful lines (21.5 % per line, assuming independence). So 0.729 % bounds the gain; it is not a
+  forecast.
 
 ## Models
 

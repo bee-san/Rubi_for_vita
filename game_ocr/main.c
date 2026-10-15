@@ -120,16 +120,23 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
 #define VJO_GAME_CASCADE_CONF 0u
 #endif
 
-/* Blocks the worker holds: each one's FREE step keeps a slot of the step log. */
+/* Blocks the worker holds. Each one this job can still free keeps a slot of
+ * the step log for its FREE step: the job's own blocks, and a resident block
+ * (weights, LM, the cascade's model) only while it is not verified, since a
+ * verified one stays for the next job (blocks_kept). */
 static unsigned blocks_held;
+static unsigned blocks_kept(void);
 
 static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_t rc, uint32_t bytes,
                                 uint32_t sum, uint32_t us, int sample)
 {
     VjoGameOcrStep *s;
+    unsigned kept, reserve;
     if (!log_to || log_to->n_steps >= VJO_GAME_OCR_STEPS) return NULL;
     /* The log is full before a block's release is: another step is dropped. */
-    if (id != VJO_GSTEP_FREE && log_to->n_steps + blocks_held >= VJO_GAME_OCR_STEPS) return NULL;
+    kept = blocks_kept();
+    reserve = blocks_held > kept ? blocks_held - kept : 0u;
+    if (id != VJO_GSTEP_FREE && log_to->n_steps + reserve >= VJO_GAME_OCR_STEPS) return NULL;
     s = &log_to->step[log_to->n_steps++];
     sceClibMemset(s, 0, sizeof(*s));
     s->id = (uint8_t)id;
@@ -587,6 +594,13 @@ static uint32_t resident_bytes(void)
     return resident.model && weights_uid >= 0 ? PAGE_ROUND(resident.model->bytes) : 0;
 }
 
+/* Resident blocks with verified contents: no job frees them but on a path that
+ * drops them before its recognition, so their FREE steps need no slot. */
+static unsigned blocks_kept(void)
+{
+    return (resident.model && weights_uid >= 0) + (lm_res.lm && lm_uid >= 0) + (cascade_res.model && cascade_uid >= 0);
+}
+
 /* The job workspace's bytes after the model's own, with the LM (lm) and the
  * cascade's larger model (casc): the top-K extras and the greedy text with
  * either, the cascade's arena and decoder with it. */
@@ -611,7 +625,7 @@ static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job
                         (!lm || lm_res.lm == lm ? 0 : PAGE_ROUND(lm->bytes)) +
                         (!casc || cascade_res.model == casc ? 0 : PAGE_ROUND(casc->bytes));
     out->release_bytes = (resident.model && resident.model != m ? resident_bytes() : 0) +
-                         (lm && lm_res.lm && lm_res.lm != lm ? lm_resident_bytes() : 0) +
+                         (lm_res.lm && lm_res.lm != lm ? lm_resident_bytes() : 0) +
                          (cascade_res.model && cascade_res.model != casc ? cascade_resident_bytes() : 0);
     return out->free_user >= 0 &&
            (int64_t)out->free_user + out->release_bytes - (int64_t)GAME_RESERVE >=
@@ -971,9 +985,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  stats.lm_load_us, stats.lm_us + 1u, 0);
     }
     if (casc && stats.lines)
-        step_add(VJO_GSTEP_CASCADE, 0, stats.cascade_lines, stats.cascade_rc,
+        step_add(VJO_GSTEP_CASCADE, stats.cascade_blanked, stats.cascade_lines, stats.cascade_rc,
                  (stats.cascade_loaded ? VJO_GLM_READ : stats.cascade_cached ? VJO_GLM_RESIDENT : 0u) |
-                 stats.cascade_skipped << 16 | stats.cascade_changed, stats.cascade_load_us, stats.cascade_us + 1u, 0);
+                     (stats.cascade_changed & 0x3Fu) << 24 | (stats.cascade_skipped & 0xFFu) << 16 |
+                     (stats.cascade_frames > 0xFFFFu ? 0xFFFFu : stats.cascade_frames),
+                 stats.cascade_load_us, stats.cascade_us + 1u, 0);
     if (!rc) {
         /* What is shown and looked up is normalised; the recognizer's own (greedy)
          * text follows it in the same buffer, for the Shell's log. An empty text too:
@@ -1049,7 +1065,9 @@ static int worker_main(SceSize args, void *argp)
                     vjo_game_ocr_run_request(&request, &pending_result);
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
                 }
-            } else if (registered != VJO_ERR_BUSY && (resident.data || weights_uid >= 0 || lm_res.data || lm_uid >= 0) &&
+            } else if (registered != VJO_ERR_BUSY &&
+                       (resident.data || weights_uid >= 0 || lm_res.data || lm_uid >= 0 || cascade_res.data ||
+                        cascade_uid >= 0) &&
                        drop_resident()) {
                 /* Not the active game (suspended, behind another app, or its
                  * title disabled): the weights go back to it. */
