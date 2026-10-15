@@ -599,10 +599,9 @@ int module_stop(SceSize argc, const void *args)
 {
     (void)argc;
     (void)args;
-    VJO_LOCK();
-    int busy = game_ocr_shutdown_locked();
-    VJO_UNLOCK();
-    if (busy) return SCE_KERNEL_STOP_FAIL;
+    /* Refused while a job runs; a take or read waiting in the kernel is woken and
+     * leaves the module's code first (kernel/game_ocr.c game_ocr_stop). */
+    if (game_ocr_stop()) return SCE_KERNEL_STOP_FAIL;
     worker_run = 0;
     if (worker_uid >= 0) {
         ksceKernelSetEventFlag(g.ievf, IEV_QUIT);

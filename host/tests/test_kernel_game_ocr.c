@@ -41,18 +41,39 @@ static unsigned frees_seen_at_exit;
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
 static unsigned char user_rows[64 * 64]; /* the worker's capture block */
 
-void klog(const char *format, ...) { (void)format; }
+static unsigned klogs, delays;
+static const char *last_klog = "";
+static void (*before_lock)(void); /* another thread, just before a syscall's lock */
+void klog(const char *format, ...) { klogs++; last_klog = format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return model_clock; }
+/* MEV_JOB and MEV_RESULT as the event flag holds them, and what runs on another
+ * thread while vjoOcrTake or vjoOcrRead waits for them (the Shell's submission, the
+ * game's completion, a cancellation). */
+static int job_bit, result_bit;
+static unsigned job_events, result_events, job_waits, result_waits;
+static void (*during_event_wait)(void);
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
 {
     if (uid == g.mevf && g.mevf > 0 && bits == MEV_ROWS) { rows_events++; return 0; }
+    if (uid == g.mevf && g.mevf > 0 && (bits & (MEV_JOB | MEV_RESULT)) && !(bits & ~(MEV_JOB | MEV_RESULT))) {
+        TEST_CHECK(locks == 1);
+        if (bits & MEV_JOB) { job_events++; job_bit = 1; }
+        if (bits & MEV_RESULT) { result_events++; result_bit = 1; }
+        return 0;
+    }
     if (uid == g.mevf && g.mevf > 0) { TEST_CHECK(bits == MEV_DONE); done_events++; done_pending = 1; return 0; }
     if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) { capture_events++; return 0; }
     TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); model_events++; return 0;
 }
-int ksceKernelClearEventFlag(SceUID uid, unsigned bits) { TEST_CHECK(uid == g.mevf && bits == ~MEV_ROWS); return 0; }
-int ksceKernelDelayThread(SceUInt us) { model_clock += us; return 0; }
+int ksceKernelClearEventFlag(SceUID uid, unsigned bits)
+{
+    TEST_CHECK(uid == g.mevf && (bits == ~MEV_ROWS || bits == ~MEV_JOB || bits == ~MEV_RESULT));
+    if (bits == ~MEV_JOB) { TEST_CHECK(locks == 1); job_bit = 0; } /* cleared under the lock: no lost wakeup */
+    if (bits == ~MEV_RESULT) { TEST_CHECK(locks == 1); result_bit = 0; }
+    return 0;
+}
+int ksceKernelDelayThread(SceUInt us) { model_clock += us; delays++; return 0; }
 SceUID ksceKernelFindMemBlockByAddr(const void *addr, SceSize size) { (void)addr; (void)size; return 40; }
 /* The worker's memory: only its capture block counts as a block of process 7. */
 SceUID ksceKernelFindProcMemBlockByAddr(SceUID pid, const void *addr, SceSize size)
@@ -86,6 +107,21 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
             if (out) *out = MEV_ROWS;
             return 0;
         }
+        model_clock += *timeout;
+        return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
+    }
+    if (bits == MEV_JOB || bits == MEV_RESULT) { /* vjoOcrTake / vjoOcrRead, without the lock */
+        int *bit = bits == MEV_JOB ? &job_bit : &result_bit;
+        TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout);
+        TEST_CHECK(wait == (SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT));
+        TEST_CHECK(*timeout == (bits == MEV_JOB ? 100000u : 50000u));
+        if (bits == MEV_JOB) job_waits++; else result_waits++;
+        if (during_event_wait) { /* another thread's syscall meanwhile */
+            void (*fn)(void) = during_event_wait;
+            SceUID saved = caller; unsigned depth = syscall_depth;
+            during_event_wait = NULL; syscall_depth = 0; fn(); caller = saved; syscall_depth = depth;
+        }
+        if (*bit) { *bit = 0; if (out) *out = bits; return 0; }
         model_clock += *timeout;
         return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
     }
@@ -153,13 +189,24 @@ int ksceIoClose(SceUID fd)
 }
 static void model_tick(void)
 { SceUID saved = caller; caller = 0; game_ocr_model_tick(); caller = saved; }
+static int record_unlocks, unlock_waiters[8], lock_waiters[8];
+static unsigned unlock_count, lock_count;
 int ksceKernelLockMutex(SceUID uid, int count, void *timeout)
 {
-    (void)count; (void)timeout; TEST_CHECK(uid == g.lock && locks == 0); locks++; return 0;
+    (void)count; (void)timeout;
+    if (before_lock) before_lock();
+    TEST_CHECK(uid == g.lock && locks == 0); locks++;
+    if (record_unlocks && syscall_depth == 1 && lock_count < 8) lock_waiters[lock_count++] = waiters;
+    return 0;
 }
+/* The waiter count as another thread (module_stop) would see it right after each unlock
+ * inside a syscall: it must already count a caller about to wait, and no longer count
+ * one that has left the wait (the count is changed under the lock, never after it). */
 int ksceKernelUnlockMutex(SceUID uid, int count)
 {
-    (void)count; TEST_CHECK(uid == g.lock && locks == 1); locks--; return 0;
+    (void)count; TEST_CHECK(uid == g.lock && locks == 1); locks--;
+    if (record_unlocks && syscall_depth == 1 && unlock_count < 8) unlock_waiters[unlock_count++] = waiters;
+    return 0;
 }
 int taiGetModuleInfoForKernel(SceUID pid, const char *name, tai_module_info_t *info)
 {
@@ -233,6 +280,8 @@ static void setup(void)
     model_opens = model_reads = model_closes = model_events = 0;
     file_live = open_error = seek_error = read_error = close_error = eof = short_read = bad_size = during_io = 0;
     done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0; expect_fallback = 0; expect_lm = NULL;
+    job_bit = result_bit = 0; job_events = result_events = job_waits = result_waits = 0; during_event_wait = NULL;
+    record_unlocks = 0; unlock_count = lock_count = 0; klogs = delays = 0; last_klog = ""; before_lock = NULL;
     memset(&file_stat, 0, sizeof(file_stat));
     file_stat.st_mtime = (SceDateTime){2026, 10, 11, 9, 43, 58, 123456};
     TEST_ASSERT(vjoOcrRegister() == 0);
@@ -268,6 +317,240 @@ static void take(uint32_t seq)
     memset(&message, 0, sizeof(message));
     message.size = sizeof(message); message.seq = seq;
     strcpy(message.text, "猫");
+}
+
+/* The hand-off without polls: an idle vjoOcrTake waits (once, at most 100 ms,
+ * without the lock) for vjoOcrSubmit's MEV_JOB, a pending vjoOcrRead (once, at
+ * most 50 ms) for vjoOcrComplete's MEV_RESULT. A job or result already there
+ * is answered without waiting; the bit is cleared under the lock first, so one
+ * set while the caller is between its check and its wait is not lost. */
+static void shell_submits(void) { VjoGameOcrRequest r = make_request(); caller = 3; TEST_CHECK(vjoOcrSubmit(&r) > 0); }
+static void game_completes(void) { caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0); }
+static void shell_cancels(void) { caller = 3; TEST_CHECK(vjoOcrCancel(request.seq) == 0); }
+static void game_exits(void) { game_ocr_process_gone(7); }
+static int waiters_seen;
+static void module_stops(void) /* module_stop's shutdown, on another thread */
+{
+    waiters_seen = waiters;
+    VJO_LOCK(); TEST_CHECK(game_ocr_shutdown_locked() == 0); VJO_UNLOCK();
+}
+
+static void take_wakes_on_submit(void)
+{
+    VjoGameOcrRequest r = {0};
+    setup(); caller = 7;
+    uint64_t t0 = model_clock;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1); /* idle: one bounded wait, then 1 */
+    TEST_CHECK(model_clock - t0 == 100000);
+    /* a submission while the game worker waits: claimed at once, no timeout passes */
+    t0 = model_clock; during_event_wait = shell_submits; caller = 7;
+    TEST_CHECK(vjoOcrTake(&r) == 0 && job_waits == 2 && job_events == 1);
+    TEST_CHECK(model_clock == t0 && r.seq == request.seq && claimed && !pending);
+    TEST_CHECK(locks == 0 && syscall_depth == 0);
+    /* claimed: BUSY at once, no wait */
+    TEST_CHECK(vjoOcrTake(&r) == VJO_ERR_BUSY && job_waits == 2);
+    /* a job already queued: no wait */
+    setup(); uint32_t seq = submit(); caller = 7;
+    TEST_CHECK(vjoOcrTake(&r) == 0 && r.seq == seq && job_waits == 0);
+    /* an older job's bit left set never makes an idle take skip its wait */
+    setup(); seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0);
+    TEST_CHECK(job_bit == 1); /* nobody waited for that submission */
+    t0 = model_clock;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1 && model_clock - t0 == 100000);
+    /* the module stopping while the worker waits: the shutdown wakes it, it leaves at once, and
+     * module_stop sees no thread inside the wait any more */
+    setup(); caller = 7; during_event_wait = module_stops; t0 = model_clock;
+    TEST_CHECK(vjoOcrTake(&r) == VJO_ERR_PERM && waiters_seen == 1 && model_clock == t0);
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0); VJO_UNLOCK();
+    TEST_CHECK(locks == 0 && syscall_depth == 0);
+    /* not the registered, current worker: refused without waiting */
+    setup(); caller = 8;
+    TEST_CHECK(vjoOcrTake(&r) == VJO_ERR_PERM && !job_waits);
+    caller = 7; g.game_active = 0;
+    TEST_CHECK(vjoOcrTake(&r) == VJO_ERR_PERM && !job_waits);
+}
+
+static void read_wakes_on_complete(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    caller = 3;
+    uint64_t t0 = model_clock;
+    TEST_CHECK(vjoOcrRead(seq, &message) == 1 && result_waits == 1 && model_clock - t0 == 50000);
+    /* the game completes while the Shell waits: the result at once */
+    memset(&message, 0, sizeof(message)); message.size = sizeof(message); message.seq = seq; strcpy(message.text, "猫");
+    t0 = model_clock; during_event_wait = game_completes; caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &message) == 0 && !strcmp(message.text, "猫"));
+    TEST_CHECK(result_waits == 2 && result_events == 1 && model_clock == t0);
+    TEST_CHECK(locks == 0 && syscall_depth == 0);
+    /* completed already: no wait */
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0 && result_waits == 2);
+    /* cancelled while the Shell waits (its own cancel, the game's exit): CANCELLED after the wait */
+    setup(); seq = submit(); take(seq);
+    during_event_wait = shell_cancels; caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED && result_waits == 1);
+    setup(); seq = submit(); take(seq);
+    during_event_wait = game_exits; caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED);
+    /* an earlier job's result bit, left set (no read was waiting), never cuts a later read's wait short */
+    setup(); seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0); TEST_CHECK(result_bit == 1);
+    uint32_t next = submit(); take(next); caller = 3; t0 = model_clock;
+    TEST_CHECK(vjoOcrRead(next, &message) == 1 && result_waits == 1 && model_clock - t0 == 50000);
+    /* a queued or claimed job refuses the shutdown (module_stop fails then, and nothing changed) */
+    setup(); seq = submit(); caller = 3;
+    VJO_LOCK(); TEST_CHECK(game_ocr_shutdown_locked() == VJO_ERR_BUSY && !game_ocr_waiters_locked()); VJO_UNLOCK();
+    /* a stale or foreign read: refused without waiting */
+    setup(); seq = submit(); caller = 3;
+    TEST_CHECK(vjoOcrRead(seq + 1, &message) == VJO_ERR_ARG && !result_waits);
+    caller = 4; TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_PERM && !result_waits);
+}
+
+/* The read side of the waiter count (audit-overlay-perf-4, B1; its cases): a read can be
+ * waiting when the shutdown passes, since the game's exit during the read drops the claim
+ * that would refuse it. The shutdown counts that reader and wakes it; every waited read
+ * gives its count back; a read of a cancelled job never waits. */
+static int stop_rc = 99;
+static void game_exits_then_module_stops(void)
+{
+    game_ocr_process_gone(7); /* its claim goes: the shutdown is not refused */
+    VJO_LOCK(); waiters_seen = waiters; stop_rc = game_ocr_shutdown_locked(); VJO_UNLOCK();
+}
+
+static void read_waiters_are_counted_and_woken(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    caller = 3; during_event_wait = game_exits_then_module_stops; stop_rc = 99;
+    uint64_t t0 = model_clock;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED);
+    TEST_CHECK(stop_rc == 0 && waiters_seen == 1 && model_clock == t0); /* counted, woken at once */
+    TEST_MSG("shutdown rc %d, waiters %d, %llu us", stop_rc, waiters_seen, (unsigned long long)(model_clock - t0));
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0); VJO_UNLOCK();
+    /* every waited read gives its count back, or module_stop would fail for good */
+    setup(); seq = submit(); take(seq); caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &message) == 1 && result_waits == 1);
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0); VJO_UNLOCK();
+    TEST_CHECK(vjoOcrRead(seq, &message) == 1 && result_waits == 2);
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0); VJO_UNLOCK();
+    /* a read of a job already cancelled answers at once, as main did */
+    setup(); seq = submit(); caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0);
+    t0 = model_clock;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED && !result_waits && model_clock == t0);
+}
+
+static void game_suspends(void) { g.game_active = 0; }
+
+/* The count changes under the lock: right after the unlock before a wait it counts the
+ * caller, right after the unlock that follows the wait it no longer does. And the re-check
+ * after a wait sees what changed meanwhile: a suspend during a read's wait ends it CANCELLED
+ * at once, not one read later. */
+static void waiter_count_changes_under_the_lock(void)
+{
+    VjoGameOcrRequest r = {0};
+    /* and never between an unlock and the next lock (outside it): the count at the re-check's
+     * lock is the one at the wait's unlock (audit-overlay-perf-4b's case) */
+    setup(); caller = 7; record_unlocks = 1; unlock_count = lock_count = 0;
+    TEST_CHECK(vjoOcrTake(&r) == 1);
+    record_unlocks = 0;
+    TEST_CHECK(unlock_count == 2 && unlock_waiters[0] == 1 && unlock_waiters[1] == 0);
+    TEST_CHECK(lock_count == 2 && lock_waiters[0] == 0 && lock_waiters[1] == unlock_waiters[0]);
+    TEST_MSG("take: locks see %d %d, unlocks %d %d", lock_waiters[0], lock_waiters[1], unlock_waiters[0],
+             unlock_waiters[1]);
+    setup(); uint32_t seq = submit(); take(seq); caller = 3; record_unlocks = 1; unlock_count = lock_count = 0;
+    TEST_CHECK(vjoOcrRead(seq, &message) == 1);
+    record_unlocks = 0;
+    TEST_CHECK(unlock_count == 2 && unlock_waiters[0] == 1 && unlock_waiters[1] == 0);
+    TEST_CHECK(lock_count == 2 && lock_waiters[0] == 0 && lock_waiters[1] == unlock_waiters[0]);
+    TEST_MSG("read: locks see %d %d, unlocks %d %d", lock_waiters[0], lock_waiters[1], unlock_waiters[0],
+             unlock_waiters[1]);
+    setup(); seq = submit(); take(seq); caller = 3; during_event_wait = game_suspends;
+    uint64_t t0 = model_clock;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED && result_waits == 1 && model_clock - t0 == 50000);
+    setup(); caller = 7; during_event_wait = game_suspends;
+    TEST_CHECK(vjoOcrTake(&r) == VJO_ERR_PERM && job_waits == 1);
+}
+
+/* module_stop's part (game_ocr_stop): the shutdown, the drain until the woken takes and reads
+ * have left, 1 ms of grace after any it woke, and an undone stop when one does not leave in
+ * time (cases after audit-overlay-perf-4b's harness of the drain). */
+static int stop_result = 99;
+static void module_stop_runs(void) { stop_result = game_ocr_stop(); }
+static void game_exits_then_module_stop_runs(void) { game_ocr_process_gone(7); stop_result = game_ocr_stop(); }
+
+/* A take inside the wait for the whole drain: 200 polls, the stop undone once and logged,
+ * BUSY; the take, woken by the shutdown, re-checks after the undo, gives its count back and
+ * answers 1 without a second wait; the next job goes through. */
+static void a_failed_stop_keeps_the_transport(void)
+{
+    VjoGameOcrRequest r = {0};
+    setup(); caller = 7; during_event_wait = module_stop_runs; stop_result = 99;
+    uint64_t t0 = model_clock;
+    unsigned k0 = klogs;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1);
+    TEST_CHECK(stop_result == VJO_ERR_BUSY && delays == 200 && model_clock - t0 == 200000);
+    TEST_MSG("drain: %u delays, %llu us", delays, (unsigned long long)(model_clock - t0));
+    TEST_CHECK(klogs - k0 == 1 && strstr(last_klog, "stop undone"));
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0 && !stopping); VJO_UNLOCK();
+    caller = 7; TEST_CHECK(vjoOcrRegister() == 0);
+    uint32_t seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0 && !strcmp(message.text, "猫"));
+    TEST_CHECK(locks == 0 && syscall_depth == 0);
+    /* the same with a reader: the game exits during the read, the stop gives up; CANCELLED, the
+     * count back, a new job works */
+    setup(); seq = submit(); take(seq); caller = 3; during_event_wait = game_exits_then_module_stop_runs;
+    stop_result = 99; k0 = klogs;
+    TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED && result_waits == 1);
+    TEST_CHECK(stop_result == VJO_ERR_BUSY && delays == 200 && klogs - k0 == 1);
+    VJO_LOCK(); TEST_CHECK(game_ocr_waiters_locked() == 0 && !stopping); VJO_UNLOCK();
+    caller = 7; TEST_CHECK(vjoOcrRegister() == 0);
+    seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0 && !strcmp(message.text, "猫"));
+    /* an undone stop keeps a result the Shell has not read yet: no invalidation */
+    setup(); seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 7; during_event_wait = module_stop_runs; stop_result = 99;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && stop_result == VJO_ERR_BUSY);
+    caller = 3; memset(&message, 0, sizeof(message)); message.size = sizeof(message);
+    TEST_CHECK(vjoOcrRead(seq, &message) == 0 && !strcmp(message.text, "猫"));
+}
+
+/* The drain's paths: a job queued or claimed refuses the stop (nothing changes); no waiter:
+ * no delay; a waiter leaving after 3 polls: 3 polls and 1 ms; a woken waiter that leaves before
+ * the first poll: still the 1 ms; a successful stop refuses the worker from then on. */
+static unsigned locks_seen, leave_at;
+static uint64_t left_at;
+static void waiter_leaves_on_lock(void)
+{
+    if (++locks_seen == leave_at) { waiters = 0; left_at = model_clock; }
+}
+static void stop_drains_its_waiters(void)
+{
+    setup(); uint32_t seq = submit(); (void)seq;
+    TEST_CHECK(game_ocr_stop() == VJO_ERR_BUSY && !stopping && !delays);
+    setup();
+    TEST_CHECK(game_ocr_stop() == 0 && stopping && !delays);
+    caller = 7; TEST_CHECK(vjoOcrRegister() == VJO_ERR_NO_GAME);
+    setup(); waiters = 1; locks_seen = 0; leave_at = 5; before_lock = waiter_leaves_on_lock;
+    uint64_t t0 = model_clock;
+    TEST_CHECK(game_ocr_stop() == 0);
+    before_lock = NULL;
+    TEST_CHECK(delays == 4 && model_clock - t0 == 4000 && model_clock - left_at == 1000);
+    TEST_MSG("%u delays, %llu us, %llu us after the count went to 0", delays, (unsigned long long)(model_clock - t0),
+             (unsigned long long)(model_clock - left_at));
+    TEST_CHECK(job_bit && result_bit); /* the shutdown woke both kinds */
+    setup(); waiters = 1; locks_seen = 0; leave_at = 2; before_lock = waiter_leaves_on_lock;
+    TEST_CHECK(game_ocr_stop() == 0);
+    before_lock = NULL;
+    TEST_CHECK(delays == 1 && model_clock - left_at == 1000);
+    TEST_MSG("%u delays, %llu us after the count went to 0", delays, (unsigned long long)(model_clock - left_at));
+    /* a drain that waited and then succeeded keeps the stop: the undo belongs to the give-up only,
+     * whether the waiter leaves after 4 polls or after 150 (audit-overlay-perf-4c's case) */
+    static const unsigned at[] = {5, 151};
+    for (unsigned k = 0; k < 2; k++) {
+        setup(); waiters = 1; locks_seen = 0; leave_at = at[k]; before_lock = waiter_leaves_on_lock;
+        int rc = game_ocr_stop();
+        before_lock = NULL;
+        TEST_CHECK(rc == 0 && stopping && delays == at[k] - 1);
+        TEST_MSG("leave at lock %u: rc %d, stopping %d, %u delays", at[k], rc, stopping, delays);
+        caller = 7; TEST_CHECK(vjoOcrRegister() == VJO_ERR_NO_GAME);
+    }
 }
 
 static void registration_and_permissions(void)
@@ -987,6 +1270,13 @@ static void modification_times_pack_distinctly(void)
 }
 
 TEST_LIST = {
+    {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
+    {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
+    {"hand-off: a read waiting at a shutdown is counted and woken; every waited read gives its count back",
+     read_waiters_are_counted_and_woken},
+    {"hand-off: a failed module stop keeps the transport working", a_failed_stop_keeps_the_transport},
+    {"hand-off: module_stop's drain: refused, no waiter, waiters leaving, the grace", stop_drains_its_waiters},
+    {"hand-off: the waiter count changes under the lock; the re-check sees a suspend", waiter_count_changes_under_the_lock},
     {"model syscalls wait for the kernel worker: Open Read32K Close each finish in one call", model_syscalls_wait_for_the_worker},
     {"model wait is bounded; BUSY still means repeat; a stale completion is re-checked", model_wait_is_bounded},
     {"Open reports the file modification time; a failed stat leaves it unknown and retryable", model_open_reports_modification_time},
