@@ -275,7 +275,8 @@ size, contrast and edges; rc: the job's total). `tools/analyse_selftest.py
 the wait's range, whether an icon toggled, and the lines skipped. A retried
 job logs its first pass and its signature once (`pass`, `sig`; `tear` counts
 the tries), and when its 20 steps run out the other steps make room for the
-`free` of every block the worker holds, so the log always shows the job's
+`free` of every block the job can still free (its own blocks, and a resident
+one only while its contents are unverified), so the log always shows the job's
 memory given back.
 
 **Measured on the console** (#81's `--collect` of v0.8.0-test.1, API 19, so
@@ -450,8 +451,10 @@ the first read, as #82's calibrated costs advise for the Normal tier.
   in it, nor in each line's time in `game vocr lines:`.
 - The job's 20-step log reserves a slot only for the release of a block this job can still free:
   its capture and workspace blocks, a tall line's buffer, and a resident block (weights, LM, W20)
-  only while its contents are not verified. A first job that reads all three therefore keeps its
-  `lm`, `cascade` and `norm` steps, which carry their first read times.
+  only while its contents are not verified. The self-test's first stage, the job that first reads
+  all three, then logs exactly 20 steps and keeps its `lm`, `cascade` and `norm` steps, which carry
+  their first read times. One step more (a torn read, the capture block refused by USER) drops
+  `norm`; a tall line's two drop `cascade` as well.
 - `game vocr lines:` gives each line's confidence (`c0`-`c1000`, the smallest top-class probability
   over the frames that emit a character), `*` when the text shown differs from the greedy
   reading, and `^` when the cascade read the line again.

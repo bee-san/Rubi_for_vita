@@ -776,6 +776,32 @@ static void memory_check_choices(void)
     lm_uid = -1;
 }
 
+/* The cascade step's fields, from the job's figures (include/vjo_game_ocr.h):
+ * kind the lines it read as empty, arg the lines read again, the lines it
+ * changed << 24, those left for the ceiling << 16, its frames; each clamped to
+ * its field. */
+static void the_cascade_step_carries_its_figures(void)
+{
+    VjoGameOcrResult log;
+    VjoVocrStats st;
+    memset(&log, 0, sizeof(log));
+    memset(&st, 0, sizeof(st));
+    log_to = &log;
+    st.cascade_lines = 4; st.cascade_changed = 3; st.cascade_skipped = 2; st.cascade_blanked = 1;
+    st.cascade_frames = 300; st.cascade_loaded = 1; st.cascade_load_us = 290000; st.cascade_us = 128000;
+    st.cascade_rc = VJO_E_OOM;
+    cascade_step(&st);
+    st.cascade_changed = 100; st.cascade_skipped = 300; st.cascade_frames = 70000; st.cascade_loaded = 0;
+    st.cascade_cached = 1; /* past each field: clamped, never spilling into the next */
+    cascade_step(&st);
+    log_to = NULL;
+    TEST_ASSERT(log.n_steps == 2);
+    const VjoGameOcrStep *a = &log.step[0], *b = &log.step[1];
+    TEST_CHECK(a->id == VJO_GSTEP_CASCADE && a->kind == 1 && a->arg == 4 && a->rc == VJO_E_OOM);
+    TEST_CHECK(a->bytes == (VJO_GLM_READ | 3u << 24 | 2u << 16 | 300u) && a->sum == 290000u && a->us == 128001u);
+    TEST_CHECK(b->bytes == (VJO_GLM_RESIDENT | 0x3Fu << 24 | 0xFFu << 16 | 0xFFFFu));
+}
+
 /* Between jobs the worker gives back an LM or cascade block whose contents were
  * never verified (a read refused half-way, the job cancelled), as it does the
  * weights' (cleanup). */
@@ -853,6 +879,11 @@ static void the_first_job_logs_the_lm_cascade_and_norm(void)
     }
     TEST_CHECK(lm == 1 && casc == 1 && settle == 1 && frees == 2 && out.n_steps <= VJO_GAME_OCR_STEPS);
     TEST_CHECK(norm == !!out.text[0]);
+    /* the fallback's check names what it chose: the 1 MB LM's tier and the cascade (8) */
+    unsigned fb_check = 0;
+    for (unsigned i = 0; i < out.n_steps; i++)
+        if (out.step[i].id == VJO_GSTEP_CHECK && out.step[i].arg == 1) fb_check = out.step[i].kind;
+    TEST_CHECK(fb_check == (2u | 8u));
     TEST_CHECK(out.n_steps >= 2 && out.step[out.n_steps - 1].id == VJO_GSTEP_FREE &&
                out.step[out.n_steps - 2].id == VJO_GSTEP_FREE);
     TEST_CHECK(weights_live && lm_live && cascade_live && blocks_held == 3 && blocks_kept() == 3);
@@ -1050,6 +1081,7 @@ TEST_LIST = {
     {"the memory check: the cascade and the LM, else the LM, else the cascade; a resident LM given back counts",
      memory_check_choices},
     {"cleanup gives back LM and cascade blocks never verified", cleanup_gives_back_unverified_blocks},
+    {"the cascade step carries its figures, each clamped to its field", the_cascade_step_carries_its_figures},
     {"the beam + LM decoder: read once, resident, a smaller tier when tight, given back when off", lm_jobs},
     {"the confidence cascade: doubtful lines read again, its model resident, given back, left when tight", cascade_jobs},
     {"an inactive game gets the cascade's block back", an_inactive_game_gets_the_cascade_block_back},

@@ -169,10 +169,11 @@ class PackageModels(unittest.TestCase):
 
     def test_bundle_refuses_an_attribution_that_is_not_the_pinned_one(self):
         # Another release's ATTRIBUTION.md (ctclm.1's lacks the protected-title paragraph) is refused.
-        self.write_models(attribution=b"CC BY-SA 4.0 fixture of an older release")
-        with self.assertRaisesRegex(ValueError, "ATTRIBUTION.md checksum failed"):
-            self.package_fixture(write_models=False)
-        self.assertFalse((self.root / "package.zip").exists())
+        for other in (b"CC BY-SA 4.0 fixture of an older release", b"CC BY-SA 4.0 fixturE"):  # its size; the same size
+            self.write_models(attribution=other)
+            with self.assertRaisesRegex(ValueError, "ATTRIBUTION.md checksum failed"):
+                self.package_fixture(write_models=False)
+            self.assertFalse((self.root / "package.zip").exists())
 
     def test_missing_or_wrong_model_is_refused_before_output(self):
         self.write_models()

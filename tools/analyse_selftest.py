@@ -440,7 +440,7 @@ def analyse_v2(records):
     full = [n for n in STAGES if len(stages.get(n, {}).get("gsteps", [])) >= GAME_STEPS_MAX]
     if full:
         findings.append(f"The game worker's step log is full ({GAME_STEPS_MAX} steps) in: {', '.join(full)}; that "
-                        f"job's later steps were not recorded (its result lines still are).")
+                        f"job's later steps may not have been recorded (its result lines still are).")
 
     # the game worker's memory around each allocation
     for name in STAGES:

@@ -150,6 +150,17 @@ static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_
     return s;
 }
 
+/* The confidence cascade's step (include/vjo_game_ocr.h VJO_GSTEP_CASCADE). */
+static void cascade_step(const VjoVocrStats *st)
+{
+    step_add(VJO_GSTEP_CASCADE, st->cascade_blanked, st->cascade_lines, st->cascade_rc,
+             (st->cascade_loaded ? VJO_GLM_READ : st->cascade_cached ? VJO_GLM_RESIDENT : 0u) |
+                 (st->cascade_changed > 0x3Fu ? 0x3Fu : st->cascade_changed) << 24 |
+                 (st->cascade_skipped > 0xFFu ? 0xFFu : st->cascade_skipped) << 16 |
+                 (st->cascade_frames > 0xFFFFu ? 0xFFFFu : st->cascade_frames),
+             st->cascade_load_us, st->cascade_us + 1u, 0);
+}
+
 /* ---- memory: the one USER allocation site of the worker ---- */
 static const struct {
     int type;
@@ -984,12 +995,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  (stats.lm_loaded ? VJO_GLM_READ : stats.lm_cached ? VJO_GLM_RESIDENT : 0u) | low << 16 | stats.lm_lines,
                  stats.lm_load_us, stats.lm_us + 1u, 0);
     }
-    if (casc && stats.lines)
-        step_add(VJO_GSTEP_CASCADE, stats.cascade_blanked, stats.cascade_lines, stats.cascade_rc,
-                 (stats.cascade_loaded ? VJO_GLM_READ : stats.cascade_cached ? VJO_GLM_RESIDENT : 0u) |
-                     (stats.cascade_changed & 0x3Fu) << 24 | (stats.cascade_skipped & 0xFFu) << 16 |
-                     (stats.cascade_frames > 0xFFFFu ? 0xFFFFu : stats.cascade_frames),
-                 stats.cascade_load_us, stats.cascade_us + 1u, 0);
+    if (casc && stats.lines) cascade_step(&stats);
     if (!rc) {
         /* What is shown and looked up is normalised; the recognizer's own (greedy)
          * text follows it in the same buffer, for the Shell's log. An empty text too:

@@ -38,7 +38,7 @@ gstep job settle kind=- arg=4 rc=0x00000001 bytes=37 sum=0x00020006 main=0 cdram
 gstep job blank kind=- arg=2 rc=0x00000001 bytes=19660830 sum=0x00C00014 main=0 cdram=0 phycont=0 us=310
 gstep job norm kind=- arg=4 rc=0x00000000 bytes=2 sum=0x00000121 main=0 cdram=0 phycont=0 us=41
 gstep job lm kind=2 arg=1 rc=0x00000000 bytes=2147549187 sum=0x0016E360 main=0 cdram=0 phycont=0 us=2100
-gstep job cascade kind=0 arg=1 rc=0x00000000 bytes=2164261044 sum=0x0004B000 main=0 cdram=0 phycont=0 us=550000
+gstep job cascade kind=1 arg=1 rc=0x00000000 bytes=2164261044 sum=0x0004B000 main=0 cdram=0 phycont=0 us=550000
 game vocr text 0: コ一ヒ一！
 game vocr text 0 shown: コーヒー!
 game vocr text 1: Error 404 not found
@@ -218,7 +218,7 @@ class Collect(unittest.TestCase):
                      "per CTC frame 2,484-2,484 us (the cascade's model 3,055-3,055 us)",
                      "beam + LM: 1 job(s) (1000k x1), 3 line(s) decoded, 1 changed by the LM; 1 line(s) under 0.70 confidence "
                      "(median 0.91); LM read 1x (1,500-1,500 ms), decoding 2-2 ms a job",
-                     "cascade: 1 job(s), 1 doubtful line(s) read again with the larger model (1 changed, 0 read as empty; its confidence "
+                     "cascade: 1 job(s), 1 doubtful line(s) read again with the larger model (1 changed, 1 read as empty; its confidence "
                      "median 0.85), 0 left for the time ceiling; its weights read 1x (307-307 ms), re-reading 550-550 ms "
                      "a job",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
