@@ -113,6 +113,12 @@ int __wrap_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
 int __wrap_sceKernelExitProcess(int status)
 {
     write_results(status ? "exit-error" : "done");
+    /* Since #112 the app ends without vita2d_fini: as a system application it would
+     * clear a display buffer libvita2d never set. This smoke VPK is an ordinary app
+     * (vita/CMakeLists.txt), where vita2d_fini is safe, and Vita3K needs GXM torn
+     * down to shut itself down cleanly (without it: SIGSEGV after the app's exit 0).
+     * The release eboot is not linked with this file. */
+    if (!status) vita2d_fini();
     return __real_sceKernelExitProcess(status);
 }
 
