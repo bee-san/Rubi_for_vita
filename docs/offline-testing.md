@@ -193,6 +193,9 @@ anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.
 
 The Overlay app ships as a system application (SELF attribute 0x0E, 50 MiB, since #109). The
+Vita build checks the eboot it packages for that (`tools/check_settings_self.py`: the SELF's
+control info and process parameters, the ELF's heap and thread calls; `tools/tests/test_settings_self.py`
+on synthetic files), which is a check of the file, not of what a console does with it. The
 smoke target below is built as an ordinary app (`vita-make-fself -c`: no attribute, no budget).
 libvita2d picks its system-application path when `sceAppMgrGetBudgetInfo` succeeds, and which
 path it takes under Vita3K was not checked. Either way a pass is not evidence for the

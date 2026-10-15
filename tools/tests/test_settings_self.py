@@ -37,7 +37,7 @@ def code_segment(priority=0x10000100, mask=0x80000, pointers=True, magic=b"PSP2"
 
 
 def make_self(code=None, attribute=0x0E, phycont=0, total=0xC800, compress=True, control6=True,
-              data_memsz=0x186C30):
+              data_memsz=0x186C30, is_used=1):
     """An fself: the SCE header, app info, ELF header, program headers, segment infos, the version,
     control infos 4, 5, 6, 7, then the segments from 0x1000, as vita-make-fself writes them."""
     segments = [(1, CODE, None, code if code is not None else code_segment()),
@@ -51,7 +51,7 @@ def make_self(code=None, attribute=0x0E, phycont=0, total=0xC800, compress=True,
     control = struct.pack("<4I", 4, 0x50, 1, 0) + b"\0" * 0x40
     control += struct.pack("<4I", 5, 0x110, 1, 0) + b"\0" * 0x100
     if control6:
-        control += struct.pack("<4I", 6, 0x110, 1, 0) + struct.pack("<4I", 1, attribute, phycont, total) + b"\0" * 0xF0
+        control += struct.pack("<4I", 6, 0x110, 1, 0) + struct.pack("<4I", is_used, attribute, phycont, total) + b"\0" * 0xF0
     control += struct.pack("<4I", 7, 0x50, 0, 0) + b"\0" * 0x40
     out = bytearray(0x1000)
     struct.pack_into("<4sIHHI", out, 0, b"SCE\0", 3, 0xC0, 1, 0x600)
@@ -160,6 +160,7 @@ class SettingsSelf(unittest.TestCase):
         self.fails("budget 0x0 KiB", self_bytes=make_self(total=0))
         self.fails("phycont", self_bytes=make_self(phycont=0x400))
         self.fails("no control info 6", self_bytes=make_self(control6=False))
+        self.fails("control info 6 is not in use", self_bytes=make_self(is_used=0))
 
     def test_m1_m3_m6_the_main_thread(self):
         # M1 (no --undefined) and M3 (no settings/sysapp.c): vita-elf-create writes null pointers

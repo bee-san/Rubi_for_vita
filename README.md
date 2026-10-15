@@ -228,7 +228,7 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Control | Action |
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
-| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, one row a frame after a moment; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
+| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Enter or touch a game | Toggle OCR and overlay input for that game |
@@ -639,8 +639,12 @@ title ID, so its settings stay) or delete the app; the plugins keep reading
 
 The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
 ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed
-color, and the bubble icon may be at most 32 KiB; RGBA PNGs can fail installation
-with `0x8010113D`. The Overlay mascot was drawn by a pinned, Apache-2.0
+color with no text chunks (`tEXt`, `iTXt`, `zTXt`), the bubble icon may be at most
+32 KiB and the start-up image at most 600 KiB; RGBA PNGs can fail installation
+with `0x8010113D`. It also checks that the app's `eboot.bin` is the system
+application it is built as (`tools/check_settings_self.py`: the SELF's attribute
+and 50 MiB budget, the main thread's CPU3 and priority, the heap, every thread
+created on CPU3). The Overlay mascot was drawn by a pinned, Apache-2.0
 text-to-image model; [settings/assets/ICON-SOURCE.md](settings/assets/ICON-SOURCE.md)
 records the model, checksums, prompt and seed. To recreate the committed artwork
 from that image, install `tools/requirements-assets.txt` and run
