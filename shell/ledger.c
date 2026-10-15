@@ -112,7 +112,10 @@ void vjo_shell_memblock_free(int item, SceUID uid, size_t bytes)
 void vjo_ledger_shell_log(const char *when)
 {
     const VjoLedger *l = &g_shell_ledger;
+    VjoLogBatch batch;
+    char batch_buf[1024]; /* the table, about 10 lines of 50 B: one append per file */
     int i;
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("ledger %s pages: current=%u peak=%u limit=%u", when,
             (unsigned)l->pool_current[VJO_LEDGER_POOL_SHELL_PAGES], (unsigned)l->pool_peak[VJO_LEDGER_POOL_SHELL_PAGES],
             (unsigned)VJO_LIMIT_SHELL_PAGES);
@@ -122,4 +125,5 @@ void vjo_ledger_shell_log(const char *when)
     for (i = 0; i < VJO_SL_COUNT; i++)
         if (l->peak[i])
             vjo_log("ledger   %s: current=%u peak=%u", defs[i].name, (unsigned)l->current[i], (unsigned)l->peak[i]);
+    vjo_log_batch_end(&batch);
 }

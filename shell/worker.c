@@ -791,6 +791,13 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     /* The name of the model that ran, for after this call: the config's string, never
      * the request's copy (a local of this call). */
     *ran = result->fallback ? fallback : model;
+    /* The result's lines (about 21: the job, its capture, memory, speed and lines,
+     * and every game-worker step), formatted from the result alone, go out with one
+     * append per file instead of one each: an append of log.txt costs 12-46 ms on
+     * the console (#81's self-test timestamps). */
+    VjoLogBatch batch;
+    char batch_buf[4096];
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, *ran, !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
@@ -811,6 +818,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
                 (int)result->free_user, (unsigned)result->model_release_bytes);
     log_vocr_measurements(result);
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
+    vjo_log_batch_end(&batch);
     return rc;
 }
 
@@ -819,8 +827,10 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
  * where it differs, what is shown and looked up. */
 static void log_text_lines(const char *text, size_t cap)
 {
-    char line[184];
+    char line[184], batch_buf[1536];
+    VjoLogBatch batch;
     const char *raw = vjo_text_raw(text, cap), *shown = text;
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf)); /* one append for the text's lines */
     for (unsigned i = 0; *raw || *shown; i++) {
         size_t n = 0, m = 0, same;
         while (raw[n] && raw[n] != '\n') n++;
@@ -836,6 +846,7 @@ static void log_text_lines(const char *text, size_t cap)
         raw += n + (raw[n] == '\n');
         shown += m + (shown[m] == '\n');
     }
+    vjo_log_batch_end(&batch);
 }
 
 /* The self-test (docs/self-test.md): every stage on this settled screen in

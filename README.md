@@ -504,7 +504,10 @@ pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
 `log_file = on`, the default, records bounded diagnostic logs:
 `ux0:data/VitaJPOverlay/log.txt` holds at most 1 MB and one rotated
 `log.old.txt`, each line written and closed at once so a crash keeps every line
-before it; `kernel.txt` holds up to 256 KB per boot (the previous boot's is
+before it, except that a burst of lines formatted at once (a job's result, about
+21 lines, its recognized text, the memory ledger's table) is written in one
+append, as each append costs the console 12-46 ms (#81's self-test timestamps); `kernel.txt`
+holds up to 256 KB per boot (the previous boot's is
 `kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
 it read-only into one timestamped folder and zip, with `config.ini`'s API keys
 redacted, both taiHEN configurations, the Anki queue, crash dumps and the
