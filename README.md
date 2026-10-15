@@ -123,7 +123,7 @@ builds, including 0.7.12, call it **JP Overlay Settings**; the title ID
 (`VJOSET001`) and VPK file name are unchanged, so the new VPK installs over it.
 The settings app itself is always excluded from the overlay.
 
-The Overlay app is a system application, like the console's own Settings: it
+The Overlay app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
 need to close the game first. Games turned ON or OFF there take effect when the
 game next starts or resumes; preferences apply when the overlay next opens. A
