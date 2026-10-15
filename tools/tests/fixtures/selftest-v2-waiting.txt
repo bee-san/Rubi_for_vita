@@ -1,4 +1,4 @@
-selftest v2 api=21
+selftest v2 api=22
 boot seq=2 mode=0 prev=0/0/0/0 failures=0 write=0x00000000
 config backend=2 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr tier=normal dictionary=3 anki=0
 step boot t=0

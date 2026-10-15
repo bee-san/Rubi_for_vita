@@ -1702,6 +1702,45 @@ static void forced_fallback_by_tiers_runs_the_smallest(void)
  * a model file that cannot be opened ends the job with VJO_E_OCR_MODEL and says
  * which tier failed (out.fallback), for the Shell to leave it out. And a job that
  * went down three checks keeps its LM, refinement and normalisation steps. */
+/* API 22 with model tiers (#108's audit N2): the helpers' memory fit keeps the job's
+ * tier reserve (16 MiB for Large), not the flat 4 MiB, and helpers never make a job
+ * step down a tier: with room for Large and its helpers only at 4 MiB, Large runs
+ * serially and leaves its 16 MiB free; with room at 16 MiB, it takes both helpers. */
+static void helpers_keep_the_tier_reserve(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    const VjoGameOcrStep *par;
+    line();
+    r.tiers = 7u; /* Large chosen */
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+    r.speed = 2u | VJO_GAME_OCR_S_NOCACHE;
+    const VjoVocrModel *w20 = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
+    const size_t block = vjo_vocr_job_bytes(w20->name, r.width, r.height);
+    const uint32_t large = tier_need(&r, 3, 0); /* Large's need with its 16 MiB reserve */
+    const size_t two = helpers_need(w20->name, block, 2);
+    TEST_ASSERT(two > 0 && VJO_GAME_RESERVE_LARGE - VJO_GAME_RESERVE_SMALL > two);
+    /* room for Large beside its 16 MiB, not for its helpers too (which a flat 4 MiB would allow) */
+    TEST_CHECK(!drop_resident());
+    available = (int)(live_bytes + large + 4096u);
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
+    TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes <= (uint32_t)large + 4096u);
+    TEST_MSG("rc %d, reserve %u, fallback %u, need %u (Large alone %u)", rc, (unsigned)out.reserve_bytes,
+             (unsigned)out.fallback, (unsigned)(out.need_workspace + out.need_weights + out.reserve_bytes), large);
+    par = NULL;
+    for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_PAR) par = &out.step[i];
+    TEST_CHECK(!par || par->arg == 0); /* no helper taken */
+    /* room for both helpers beside the 16 MiB too: both taken, the same tier */
+    TEST_CHECK(!drop_resident());
+    available = (int)(live_bytes + large + two + 4096u);
+    rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
+    TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes == (uint32_t)(large + two));
+    TEST_MSG("rc %d, need %u, Large alone %u + two helpers %u", rc,
+             (unsigned)(out.need_workspace + out.need_weights + out.reserve_bytes), large, (unsigned)two);
+    r.speed = 0;
+}
+
 static void tier_jobs_open_their_models_by_tier(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -1730,9 +1769,18 @@ static void tier_jobs_open_their_models_by_tier(void)
         TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 2 && (s[0]->kind & VJO_GCHECK_CASCADE));
     }
     TEST_MSG("text '%s'", out.text);
-    /* the next job: both resident, opened again only for their stamps */
+    /* the next job, the same screen: its line comes from the line cache (API 22), so nothing is
+     * recognized; the job's model is opened for its stamp only, the cascade's is not needed */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-    TEST_CHECK(tier_opens[2] == 2 && tier_opens[3] == 2 && weight_allocations == 1 && cascade_allocations == 1);
+    TEST_CHECK(out.recognized == 1 && out.frames == 0 && tier_opens[2] == 2 && tier_opens[3] == 1 &&
+               weight_allocations == 1 && cascade_allocations == 1);
+    TEST_MSG("cached job: %u frames, opens %u/%u", (unsigned)out.frames, (unsigned)tier_opens[2], (unsigned)tier_opens[3]);
+    /* without the cache: both resident, opened again only for their stamps */
+    r.speed = VJO_GAME_OCR_S_NOCACHE;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    r.speed = 0;
+    TEST_CHECK(out.frames > 0 && tier_opens[2] == 3 && tier_opens[3] == 2 && weight_allocations == 1 &&
+               cascade_allocations == 1);
     /* Small chosen: Normal's model is its cascade */
     TEST_CHECK(!drop_resident() && !weights_live && !cascade_live); /* as when the game goes to the back */
     r.tiers = 1u;
@@ -1922,6 +1970,7 @@ TEST_LIST = {
     {"model tiers: the self-test's fallback stage runs the smallest", forced_fallback_by_tiers_runs_the_smallest},
     {"model tiers: real jobs open each size and its cascade by tier; a failed file names its tier",
      tier_jobs_open_their_models_by_tier},
+    {"API 22 + model tiers: the helpers keep the tier's reserve, never a smaller tier", helpers_keep_the_tier_reserve},
     {"model tiers: another size's resident blocks count as free and are released first",
      tier_release_counts_other_sizes_as_free},
     {"API 22: helpers and the ARM clock ride in the flags, counted and restored", helpers_and_clock_in_the_flags},

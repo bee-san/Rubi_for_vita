@@ -40,16 +40,14 @@
  * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built; 65,084 B
  * text measured at fec85af).
  * The game's partition has the room (90,177,536 B free USER the least #81 saw). */
-/* Raised again from 73,728 B by two text pages and two data/bss pages for API 22 (parallel lines,
- * the line cache, the clock): text 65,116 -> 71,164 B (the scheduler, the helper threads, the clock,
- * the cache), data/bss 5,836 -> 14,192 B (the 6,160 B VjoVocrCache, eight lines each with its shown
- * and greedy text, and the 2,080 B line queue and slots) [measured: main 72c6148 against the API 22
- * build, both on vita-vn-ocr a540027], in the same game partition. */
-/* Raised again from 90,112 B by one text page for vita-vn-ocr #85's faster W8I kernels (the runtime
- * pin): the build's vocr.c object 15,288 -> 17,952 B of code with the Vita compiler, the worker's text
- * 71,164 -> 73,836 B, 108 B over its last page [measured: the API 22 build on vita-vn-ocr a540027
- * against #85's merge], in the same game partition. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
+/* Raised again from 73,728 B for API 22 (parallel lines, the line cache, the clock) and the runtime
+ * pin, vita-vn-ocr #85's faster W8I kernels: one text page and two data/bss pages for API 22 (text
+ * 62,012 -> 67,452 B: the scheduler, the helper threads, the clock, the cache; data/bss 5,840 ->
+ * 14,200 B: the 6,160 B VjoVocrCache, eight lines each with its shown and greedy text, and the
+ * 2,080 B line queue and slots, both on vita-vn-ocr a540027), and one text page for #85 (the build's
+ * vocr.c object 15,288 -> 17,952 B of code; the worker's text 67,452 -> 70,124 B) [measured: main
+ * 8f1ec8f against the API 22 build], in the same game partition. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -108,8 +106,8 @@
 
 /* ---- the kernel's partition (ScePhyMemPartKD, 36 MiB shared by every driver; pool "kernel") ---- */
 /* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured; API 22's frame-pacing step
- * (kernel/game_ocr.c game_ocr_frame, VJO_GSTEP_PACE) takes 36,184 -> 36,456 B of text and
- * 77,720 -> 77,760 B of data/bss, the same pages: main 72c6148 against the API 22 build] */
+ * (kernel/game_ocr.c game_ocr_frame, VJO_GSTEP_PACE) takes 36,336 -> 36,608 B of text and
+ * 77,720 -> 77,768 B of data/bss, the same pages: main 8f1ec8f against the API 22 build] */
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL

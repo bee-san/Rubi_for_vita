@@ -146,14 +146,14 @@ two sources, not a console measurement). 444 MHz is the highest the API accepts;
 
 ## Memory (ledger)
 
-| item | before (main `72c6148`) | after | note |
+| item | before (main `8f1ec8f`) | after | note |
 |---|---:|---:|---|
-| OCR worker pages | 73,728 | 94,208 | +3 text pages (text 65,116 → 73,836 B: the scheduler, the cache, the helper threads and the clock, 71,164 B on main's runtime, and vita-vn-ocr #85's kernels, +2,672 B) and +2 data pages (5,836 → 14,192 B: the cache and the line queue); the game's partition [measured] |
+| OCR worker pages | 73,728 | 90,112 | +2 text pages (text 62,012 → 70,124 B: the scheduler, the cache, the helper threads and the clock, 67,452 B on main's runtime, and vita-vn-ocr #85's kernels, +2,672 B) and +2 data pages (5,840 → 14,200 B: the cache and the line queue); the game's partition [measured] |
 | VjoGameVocr workspace, worst | 618,496 | 1,191,936 | the line slots of two helpers after the LM and cascade extras, at 960×544; only when the job's check passes with them |
 | VjoGameVocrHelper stacks+TLS | 0 | 40,960 at most | per line, never between jobs |
 | game job limit | 8,105,984 | 8,720,384 | 9.7 % of the 90,177,536 B free USER #81's CLANNAD session had at the least |
-| kernel pages | 114,688 | 114,688 | the frame-pacing step: 36,184 → 36,456 B of text, 77,720 → 77,760 B of data/bss [measured] |
-| Shell pages | 299,008 | 299,008 | text 216,560 → 216,984 B (the two config keys, the request's speed word, the self-test's step names and stage words; the new config fields last in `VjoConfig`, so no other field moves), the same pages with 104 B to spare; no Shell allocation added |
+| kernel pages | 114,688 | 114,688 | the frame-pacing step: 36,336 → 36,608 B of text, 77,720 → 77,768 B of data/bss [measured] |
+| Shell pages | 294,912 | 294,912 | text 216,448 → 216,856 B, data/bss 77,624 → 77,648 B (the two config keys, the request's speed word, the self-test's step names and stage words; the new config fields last in `VjoConfig`, so no other field moves): the same pages, 232 B of text and 176 B of data to spare; no Shell allocation added |
 
 Each block still goes through the ledger wrappers (`tools/check_memory_ledger.py`: pass). CPU3: unmeasured.
 
