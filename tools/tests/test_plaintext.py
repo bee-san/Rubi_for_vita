@@ -98,10 +98,18 @@ class FrozenPlaintext(unittest.TestCase):
                 for name in ("FL10_w8.vocr", "H15_w8.vocr")}
         vocr3 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
                  for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
-        for name in (*pins, *vocr3):
+        lms = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
+               for name in ("vocr_lm_o3_500k.vlm", "vocr_lm_o3_4000k.vlm")}
+        vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
+                 for name in ("VOCR4_W20_w8.vocr",)}
+        for name in (*pins, *vocr3, *lms, *vocr4):
             (models / name).write_bytes(payload)
+        (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
+        att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
+             mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
+             mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \
              contextlib.redirect_stdout(io.StringIO()):
             release.package(base, output, models)

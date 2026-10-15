@@ -26,6 +26,9 @@ def macros():
     text = (ROOT / "include/vjo_vocr_sizes.h").read_text()
     out = {m.group(1): int(m.group(2)) for m in re.finditer(r"#define (VJO_\w+) (\d+)u", text)}
     out.update({m.group(1): m.group(2) for m in re.finditer(r'#define (VJO_\w+) "([^"]+)"', text)})
+    for m in re.finditer(r"#define (VJO_\w+) (VJO_\w+)\s*$", text, re.M):  # an alias of another macro
+        if m.group(2) in out:
+            out[m.group(1)] = out[m.group(2)]
     return out
 
 
@@ -128,7 +131,86 @@ def python_pins():
     return out
 
 
+def c_lm_table():
+    """name -> (bytes, sha256 hex, tier) from core/vocr_ocr.c's LM table."""
+    source = (ROOT / "core/vocr_ocr.c").read_text()
+    sizes = macros()
+    table = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
+    table = table[:table.index("};")]
+    out = {}
+    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d)\}", table):
+        digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
+        out[sizes[m.group(1)]] = (sizes[m.group(2)], digest, int(m.group(5)))
+    return out
+
+
 class VocrDefaults(unittest.TestCase):
+    def test_cascade_model_is_the_published_vocr4_w20(self):
+        self.assertEqual(prepare_ocr.VOCR4_TAG, "v0.2.5-vocr4.1")
+        url, size, sha = prepare_ocr.VOCR4_ASSETS[prepare_ocr.VOCR_CASCADE_MODEL]
+        self.assertTrue(url.endswith("/releases/download/v0.2.5-vocr4.1/VOCR4_W20_w8.vocr"), url)
+        # v0.2.5-vocr4.1's SHA256SUMS; F20's shape
+        self.assertEqual((size, sha), (1558016, "2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e"))
+        sizes = macros()
+        self.assertEqual(sizes["VJO_VOCR_CASCADE_NAME"], prepare_ocr.VOCR_CASCADE_MODEL)
+        self.assertEqual(sizes["VJO_VOCR_CASCADE_BYTES"], size)
+        self.assertEqual(c_table()[prepare_ocr.VOCR_CASCADE_MODEL][:2], (size, sha))
+        import package_release  # noqa: PLC0415
+        roles = {name: role for name, _, _, role in package_release.shipped_models()}
+        self.assertIn(prepare_ocr.VOCR_CASCADE_MODEL, roles)
+        self.assertIn("\nocr_cascade_ms = 2000\n", (ROOT / "docs/config.example.ini").read_text())
+
+    def test_lms_and_their_attribution_come_pinned_from_a_local_copy(self):
+        import hashlib  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "src", Path(tmp) / "out"
+            src.mkdir()
+            pins, data = {}, {}
+            for name in prepare_ocr.VOCR_LM_ASSETS:
+                data[name] = ("fixture " + name).encode()
+                pins[name] = ("https://fixture.invalid/" + name, len(data[name]), hashlib.sha256(data[name]).hexdigest())
+                (src / name).write_bytes(data[name])
+            att = b"CC BY-SA 4.0 fixture"
+            (src / prepare_ocr.VOCR_LM_ATTRIBUTION).write_bytes(att)
+            att_pin = {prepare_ocr.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/a", len(att),
+                                                         hashlib.sha256(att).hexdigest())}
+            with mock.patch.object(prepare_ocr, "VOCR_LM_ASSETS", pins), \
+                 mock.patch.object(prepare_ocr, "VOCR_LM_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                paths = prepare_ocr.fetch_lms(out, src)
+                self.assertEqual(sorted(p.name for p in paths), sorted([*pins, prepare_ocr.VOCR_LM_ATTRIBUTION]))
+                (src / prepare_ocr.VOCR_LM_ATTRIBUTION).write_bytes(b"something else")
+                (out / prepare_ocr.VOCR_LM_ATTRIBUTION).unlink()
+                with self.assertRaises(RuntimeError):
+                    prepare_ocr.fetch_lms(out, src)
+        # the real pin is the release's file
+        url, size, sha = prepare_ocr.VOCR_LM_ATTRIBUTION_PIN[prepare_ocr.VOCR_LM_ATTRIBUTION]
+        self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (2538, "1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c"))
+
+    def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
+        table = c_lm_table()
+        self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
+        for name, (size, sha, tier) in table.items():
+            url, want_size, want_sha = prepare_ocr.VOCR_LM_ASSETS[name]
+            self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/" + name), url)
+            self.assertEqual((size, sha), (want_size, want_sha), name)
+        self.assertEqual(sorted(t for _, _, t in table.values()), [1, 2, 3, 4])
+        # the kernel knows the same names and sizes by tier
+        kernel = (ROOT / "kernel/game_ocr.c").read_text()
+        for n in range(1, 5):
+            self.assertIn(f"VJO_VOCR_LM{n}_NAME", kernel)
+            self.assertIn(f"VJO_VOCR_LM{n}_BYTES", kernel)
+        # the ledger's LM block holds the largest, page-rounded
+        ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
+        budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
+        largest = max(size for size, _, _ in table.values())
+        self.assertEqual(budget, (largest + 4095) // 4096 * 4096)
+        self.assertIn("\nocr_lm = 1000k\n", (ROOT / "docs/config.example.ini").read_text())
+
+
     def test_vocr3_assets_are_the_published_release(self):
         self.assertEqual(prepare_ocr.VOCR3_TAG, "v0.2.5-vocr3.1")
         for name, size, sha in (("VOCR3_H15_w8.vocr", 1155968, VOCR3_H15_SHA256),
@@ -179,7 +261,8 @@ class VocrDefaults(unittest.TestCase):
             with self.assertRaises(AssertionError, msg=line):
                 kernel_names(add(kernel, f20, line))
         worker = (ROOT / "core/vocr_ocr.c").read_text()
-        end = "     241056, VOCR_LINES_GRAD},\n"  # F20's, the release table's last entry
+        end = ("      0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},\n"
+               "     241056, VOCR_LINES_GRAD},\n")  # VOCR4-W20's, the release table's last entry
         sha = "{" + ",".join(["0x00"] * 32) + "}"
         literal = c_table(add(worker, end, f'    {{"VOCR5_N_w8.vocr", 1155968u, {sha}, 182944u, VOCR_LINES_GRAD}},\n'))
         self.assertEqual(literal["VOCR5_N_w8.vocr"], (1155968, "00" * 32, 182944))
@@ -199,14 +282,15 @@ class VocrDefaults(unittest.TestCase):
         named VOCRn_...; the removed VOCR2 trial is pinned nowhere."""
         meta = metadata_table()
         python = python_pins()
-        self.assertEqual(len(meta), 5)
+        self.assertEqual(len(meta), 6)
         for name, (generation, shape, _) in meta.items():
             self.assertIn(name, python)
             self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[python[name][3]], name)
             if name.startswith("VOCR"):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)
-        self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3"})
+        self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
+                                                       "v0.2.5-vocr4.1": "VOCR4"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], "VOCR3")
         self.assertEqual(meta[prepare_ocr.VOCR_FALLBACK_MODEL][0], "VOCR3")
         for path in ("core/vocr_ocr.c", "core/vocr_models.c", "kernel/game_ocr.c", "include/vjo_vocr_sizes.h",

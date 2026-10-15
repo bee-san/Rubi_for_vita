@@ -24,15 +24,20 @@
 /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
- * data/bss, still these pages [measured]. */
+ * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss, still these
+ * pages [measured, 68d6dc9]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
-/* VitaJPOverlay_OCR.suprx: 53,248 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
+/* VitaJPOverlay_OCR.suprx: 61,440 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
  * Raised again from 53,248 B (45,056 + 8,192) by one text page for API 20's job policy: the
  * stable-text wait and the blank-line check (core/vocr_ocr.c), and by one more for the text
- * normalisation (core/textnorm.c, -Os), which runs here so that SceShell's pages stay as they are. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 61440u
+ * normalisation (core/textnorm.c, -Os), which runs here so that SceShell's pages stay as they are.
+ * Raised again from 61,440 B by two text pages for the beam + LM decoder: vita-vn-ocr's
+ * runtime/vocr_lm.c (the decoder and the LM scorer) and vocr.c's top-K extras, with their
+ * planning and per-line confidence in core/vocr_ocr.c, and the confidence cascade
+ * (59,692 B text measured at 68d6dc9, core/vocr_ocr.c built for size). */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 69632u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -115,9 +120,15 @@
 #define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_WEIGHTS 1560576u           /* F20, the largest accepted model, page-rounded (core/vocr_ocr.c) */
-/* F20 at a 960x544 region, page-rounded (vjo_vocr_job_bytes, host build: 245,808 B).
+/* The largest job's workspace at a 960x544 region, page-rounded (host/tests/test_ledger.c
+ * computes it): the model's own (vjo_vocr_job_bytes; F20 245,808 B, H15 186,704 B), and with
+ * the beam + LM decoder (API 20) its extras (vjo_vocr_lm_job_bytes: the top-K buffers, the
+ * decoder's structs and its workspace, bounded by VJO_VOCR_LM_WS_BYTES: 56,928 B on the host
+ * build) and the greedy text kept for the log (4,096 B), and for a model smaller than the
+ * confidence cascade's the cascade's extras (vjo_vocr_cascade_job_bytes: VOCR4-W20's arena,
+ * structs and decoder, 296,192 B): 544,912 B with H15.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
-#define VJO_BUDGET_GAME_WORKSPACE 249856u
+#define VJO_BUDGET_GAME_WORKSPACE 548864u
 /* The capture block: one strip of grey rows and, per region row, its checksum,
  * its recent states and two bits, at most 65,536 B at any region (vjo_vocr_capture_bytes,
  * VJO_VOCR_CAPTURE_LIMIT; 65,480 B at 960x544, 61,388 B at 917x125). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
@@ -130,15 +141,28 @@
  * with F20's weights, the workspace and the capture block:
  * 2,392,064 - 1,560,576 - 249,856 - 65,536 = 516,096 B; a larger band is left out and counted. */
 #define VJO_BUDGET_GAME_LINE 516096u
+/* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
+ * active one, USER_RW only: the largest tier, 3,781,072 B (include/vjo_vocr_sizes.h),
+ * page-rounded. The worker's memory check takes the largest tier the request allows
+ * that fits beside the reserve, a smaller one, or none. */
+#define VJO_BUDGET_GAME_LM 3784704u
+/* API 20: the confidence cascade's larger model (VOCR4-W20, F20's 1,558,016 B,
+ * include/vjo_vocr_sizes.h), resident like the weights, USER_RW only, page-rounded;
+ * taken only when the memory check passes with it. */
+#define VJO_BUDGET_GAME_CASCADE 1560576u
 #define VJO_GAME_RESERVE (4u * 1024u * 1024u)      /* kept free in the game before either block (game_ocr/main.c) */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
-                            VJO_BUDGET_GAME_LINE)
+                            VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE)
 /* The recognizer ceiling tier: weights <= 1,601,536 B and a full-screen
- * workspace <= 790,528 B, peak 2,392,064 B, which the preflight (free USER
- * minus the 4 MiB reserve) has to cover [vita-vn-ocr docs/vita-memory-budget.md]. */
+ * workspace <= 790,528 B [vita-vn-ocr docs/vita-memory-budget.md], and (API 20)
+ * the 4 MB LM and the cascade's larger model: a job's peak 8,036,352 B, which the
+ * preflight (free USER minus the 4 MiB reserve) has to cover. Raised from
+ * 2,392,064 B for the LM and the cascade: 9 % of the 90,177,536 B free USER, the
+ * least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log]; a game with
+ * less runs a smaller LM, no cascade, or neither (the memory check). */
 #define VJO_LIMIT_GAME_WEIGHTS 1601536u
 #define VJO_LIMIT_GAME_WORKSPACE 790528u
-#define VJO_LIMIT_GAME_JOB 2392064u
+#define VJO_LIMIT_GAME_JOB 8036352u
 
 #endif

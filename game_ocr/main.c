@@ -54,11 +54,13 @@
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
 
-static SceUID worker = -1, workspace_uid = -1, weights_uid = -1, capture_uid = -1, line_uid = -1;
+static SceUID worker = -1, workspace_uid = -1, weights_uid = -1, capture_uid = -1, line_uid = -1, lm_uid = -1;
+static SceUID cascade_uid = -1;
 /* A rows call returned BUSY: the display hook may still write into the capture
  * (or tall-line) block, so neither is freed (they go with the process). */
 static int hook_owns_capture;
-static uint32_t workspace_bytes_held, weights_bytes_held, capture_bytes_held, line_bytes_held;
+static uint32_t workspace_bytes_held, weights_bytes_held, capture_bytes_held, line_bytes_held, lm_bytes_held;
+static uint32_t cascade_bytes_held;
 static uint32_t capture_memory, workspace_memory; /* VJO_GAME_OCR_MEM_* of the blocks held */
 static void *line_base;
 
@@ -66,7 +68,7 @@ static void *line_base;
  * partition. The game has no file access, so it is read through the result
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
-enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_COUNT };
+enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_COUNT };
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -74,6 +76,8 @@ static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_WORKSPACE] = {"VjoGameVocr workspace", VJO_LEDGER_POOL_GAME},
     [GL_CAPTURE] = {"VjoGameVocrCapture", VJO_LEDGER_POOL_GAME},
     [GL_LINE] = {"VjoGameVocrLine", VJO_LEDGER_POOL_GAME},
+    [GL_LM] = {"VjoGameVocrLM", VJO_LEDGER_POOL_GAME},
+    [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
 };
 VjoLedger g_game_ledger;
 
@@ -110,16 +114,29 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
     return 0;
 }
 
-/* Blocks the worker holds: each one's FREE step keeps a slot of the step log. */
+/* The confidence under which the cascade reads a line again: the core's
+ * default (VJO_VOCR_CASCADE_CONF); host tests force it. */
+#ifndef VJO_GAME_CASCADE_CONF
+#define VJO_GAME_CASCADE_CONF 0u
+#endif
+
+/* Blocks the worker holds. Each one this job can still free keeps a slot of
+ * the step log for its FREE step: the job's own blocks, and a resident block
+ * (weights, LM, the cascade's model) only while it is not verified, since a
+ * verified one stays for the next job (blocks_kept). */
 static unsigned blocks_held;
+static unsigned blocks_kept(void);
 
 static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_t rc, uint32_t bytes,
                                 uint32_t sum, uint32_t us, int sample)
 {
     VjoGameOcrStep *s;
+    unsigned kept, reserve;
     if (!log_to || log_to->n_steps >= VJO_GAME_OCR_STEPS) return NULL;
     /* The log is full before a block's release is: another step is dropped. */
-    if (id != VJO_GSTEP_FREE && log_to->n_steps + blocks_held >= VJO_GAME_OCR_STEPS) return NULL;
+    kept = blocks_kept();
+    reserve = blocks_held > kept ? blocks_held - kept : 0u;
+    if (id != VJO_GSTEP_FREE && log_to->n_steps + reserve >= VJO_GAME_OCR_STEPS) return NULL;
     s = &log_to->step[log_to->n_steps++];
     sceClibMemset(s, 0, sizeof(*s));
     s->id = (uint8_t)id;
@@ -131,6 +148,17 @@ static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_
     s->us = us ? us : (uint32_t)(now_wide() - job_started_us);
     if (sample) free_sample(&s->free_main, &s->free_cdram, &s->free_phycont);
     return s;
+}
+
+/* The confidence cascade's step (include/vjo_game_ocr.h VJO_GSTEP_CASCADE). */
+static void cascade_step(const VjoVocrStats *st)
+{
+    step_add(VJO_GSTEP_CASCADE, st->cascade_blanked, st->cascade_lines, st->cascade_rc,
+             (st->cascade_loaded ? VJO_GLM_READ : st->cascade_cached ? VJO_GLM_RESIDENT : 0u) |
+                 (st->cascade_changed > 0x3Fu ? 0x3Fu : st->cascade_changed) << 24 |
+                 (st->cascade_skipped > 0xFFu ? 0xFFu : st->cascade_skipped) << 16 |
+                 (st->cascade_frames > 0xFFFFu ? 0xFFFFu : st->cascade_frames),
+             st->cascade_load_us, st->cascade_us + 1u, 0);
 }
 
 /* ---- memory: the one USER allocation site of the worker ---- */
@@ -194,13 +222,23 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
-/* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens. */
+/* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens;
+ * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
+static int open_cascade;
 static VjoGameOcrResult pending_result; /* never put large results on thread stacks */
 static void *weights_alloc(void *ud, size_t bytes);
 static int weights_release(void *ud);
 /* Verified weights kept between jobs while this game is the active one. */
 static VjoVocrResident resident = {weights_alloc, weights_release, NULL, NULL, NULL, 0, 0, 0};
+/* The same for the beam + LM decoder's LM (API 20). */
+static void *lm_alloc(void *ud, size_t bytes);
+static int lm_release(void *ud);
+static VjoVocrLmResident lm_res = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
+static void *cascade_alloc(void *ud, size_t bytes);
+static int cascade_release(void *ud);
+/* The confidence cascade's larger model, kept like the weights (API 20). */
+static VjoVocrResident cascade_res = {cascade_alloc, cascade_release, NULL, NULL, NULL, 0, 0, 0};
 int sceKernelGetProcessTitleId(SceUID pid, char *titleid, SceSize len);
 
 static int cancelled(void *ud)
@@ -298,6 +336,8 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
 typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
+typedef char vjo_lm_budget_check[PAGE_ROUND(VJO_VOCR_LM_MAX_BYTES) <= VJO_BUDGET_GAME_LM ? 1 : -1];
+typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_CASCADE_BYTES) <= VJO_BUDGET_GAME_CASCADE ? 1 : -1];
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
@@ -366,6 +406,19 @@ static void file_close(void *ud)
     }
 }
 
+/* Which of the request's files a path names: an LM by its pinned name (API 20),
+ * else the job's model or fallback (open_which). */
+static uint32_t which_file(const char *path)
+{
+    const char *name = path;
+    for (const char *p = path; *p; p++)
+        if (*p == '/') name = p + 1;
+    for (unsigned t = 1; t <= VJO_VOCR_LM_TIERS; t++)
+        if (!sceClibStrcmp(name, vjo_vocr_lm_tier(t)->name)) return VJO_GAME_OCR_OPEN_LM + t - 1u;
+    if (open_cascade && !sceClibStrcmp(name, VJO_VOCR_CASCADE_NAME)) return VJO_GAME_OCR_OPEN_CASCADE;
+    return open_which;
+}
+
 static int file_open(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
@@ -376,11 +429,12 @@ static int file_open(void *ud, const char *path, VjoFile *out)
     model_owned = 1;
     uint64_t started = sceKernelGetProcessTimeWide();
     VjoGameOcrModelInfo info;
+    uint32_t which = which_file(path);
     int size;
     do {
         if (cancelled(NULL)) return -1;
         sceClibMemset(&info, 0, sizeof(info));
-        size = vjoOcrModelOpen(model_seq, open_which, &info);
+        size = vjoOcrModelOpen(model_seq, which, &info);
         if (size != VJO_ERR_BUSY) break;
         if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { size = VJO_ERR_TIMEOUT; break; }
         sceKernelDelayThread(MODEL_POLL_US);
@@ -455,24 +509,177 @@ static int drop_weights(void)
     return weights_release(NULL);
 }
 
+/* VjoVocrLmResident.alloc: one page-rounded USER_RW block for the LM, under the
+ * same reserve. */
+static void *lm_alloc(void *ud, size_t bytes)
+{
+    (void)ud;
+    uint32_t rounded = PAGE_ROUND(bytes), held, mem;
+    void *base = NULL;
+    SceUID leaked;
+    if (lm_uid >= 0 || !bytes || bytes > VJO_VOCR_LM_MAX_BYTES) return NULL; /* never two blocks */
+    if (free_user_after_reserve() < (int64_t)rounded) return NULL;
+    lm_uid = game_memblock_alloc(GL_LM, VJO_GITEM_LM, "VjoGameVocrLM", rounded, LADDER_USER, &base, &leaked, &held,
+                                 &mem);
+    if (lm_uid < 0) {
+        lm_uid = leaked;
+        return NULL;
+    }
+    lm_bytes_held = held;
+    return base;
+}
+
+static int lm_release(void *ud)
+{
+    (void)ud;
+    if (lm_uid < 0) return 0;
+    if (game_memblock_free(GL_LM, VJO_GITEM_LM, lm_uid, lm_bytes_held) < 0) return -1;
+    lm_uid = -1;
+    lm_bytes_held = 0;
+    return 0;
+}
+
+/* Releases the resident LM (and a block whose base lookup failed). */
+static int drop_lm(void)
+{
+    if (vjo_vocr_lm_drop(&lm_res)) return -1;
+    return lm_release(NULL);
+}
+
+/* VjoVocrResident.alloc of the cascade's model: one page-rounded USER_RW block,
+ * under the same reserve. */
+static void *cascade_alloc(void *ud, size_t bytes)
+{
+    (void)ud;
+    uint32_t rounded = PAGE_ROUND(bytes), held, mem;
+    void *base = NULL;
+    SceUID leaked;
+    if (cascade_uid >= 0 || !bytes || bytes > VJO_VOCR_CASCADE_BYTES) return NULL; /* never two blocks */
+    if (free_user_after_reserve() < (int64_t)rounded) return NULL;
+    cascade_uid = game_memblock_alloc(GL_CASCADE, VJO_GITEM_CASCADE, "VjoGameVocrCascade", rounded, LADDER_USER,
+                                      &base, &leaked, &held, &mem);
+    if (cascade_uid < 0) {
+        cascade_uid = leaked;
+        return NULL;
+    }
+    cascade_bytes_held = held;
+    return base;
+}
+
+static int cascade_release(void *ud)
+{
+    (void)ud;
+    if (cascade_uid < 0) return 0;
+    if (game_memblock_free(GL_CASCADE, VJO_GITEM_CASCADE, cascade_uid, cascade_bytes_held) < 0) return -1;
+    cascade_uid = -1;
+    cascade_bytes_held = 0;
+    return 0;
+}
+
+static int drop_cascade(void)
+{
+    if (vjo_vocr_resident_drop(&cascade_res)) return -1;
+    return cascade_release(NULL);
+}
+
+/* Everything kept between jobs: the weights, the LM and the cascade's model. */
+static int drop_resident(void)
+{
+    int rc = drop_weights();
+    rc |= drop_lm();
+    return drop_cascade() || rc ? -1 : 0;
+}
+
+static uint32_t cascade_resident_bytes(void)
+{
+    return cascade_res.model && cascade_uid >= 0 ? PAGE_ROUND(cascade_res.model->bytes) : 0;
+}
+
+static uint32_t lm_resident_bytes(void)
+{
+    return lm_res.lm && lm_uid >= 0 ? PAGE_ROUND(lm_res.lm->bytes) : 0;
+}
+
 static uint32_t resident_bytes(void)
 {
     return resident.model && weights_uid >= 0 ? PAGE_ROUND(resident.model->bytes) : 0;
 }
 
-/* The memory check for model m and a job of job_bytes plus the capture block:
- * records what the job needs in out (its page-rounded workspace and capture
- * block, the weights unless they are resident, and resident weights of another
- * model it would release first) and returns whether that fits beside the
- * reserve in out->free_user. */
-static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes)
+/* Resident blocks with verified contents: no job frees them but on a path that
+ * drops them before its recognition, so their FREE steps need no slot. */
+static unsigned blocks_kept(void)
 {
-    out->need_workspace = PAGE_ROUND(job_bytes) + PAGE_ROUND(capture_bytes);
-    out->need_weights = resident.model == m ? 0 : PAGE_ROUND(m->bytes);
-    out->release_bytes = resident.model && resident.model != m ? resident_bytes() : 0;
+    return (resident.model && weights_uid >= 0) + (lm_res.lm && lm_uid >= 0) + (cascade_res.model && cascade_uid >= 0);
+}
+
+/* The job workspace's bytes after the model's own, with the LM (lm) and the
+ * cascade's larger model (casc): the top-K extras and the greedy text with
+ * either, the cascade's arena and decoder with it. */
+static size_t extra_job_bytes(const VjoVocrModel *m, const VjoVocrLm *lm, const VjoVocrModel *casc)
+{
+    if (!lm && !casc) return 0;
+    return vjo_vocr_lm_job_bytes(m->name) + (casc ? vjo_vocr_cascade_job_bytes(casc->name) : 0) +
+           VJO_GAME_OCR_TEXT_BYTES;
+}
+
+/* The memory check for model m (with LM lm and the cascade's model casc, each
+ * or NULL) and a job of job_bytes plus the capture block: records what the job
+ * needs in out (its page-rounded workspace and capture block; the weights, the
+ * LM and the cascade's model unless they are resident; resident ones of another
+ * model or tier, or not used, it would release first) and returns whether that
+ * fits beside the reserve in out->free_user. */
+static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
+                        const VjoVocrLm *lm, const VjoVocrModel *casc)
+{
+    out->need_workspace = PAGE_ROUND(job_bytes + extra_job_bytes(m, lm, casc)) + PAGE_ROUND(capture_bytes);
+    out->need_weights = (resident.model == m ? 0 : PAGE_ROUND(m->bytes)) +
+                        (!lm || lm_res.lm == lm ? 0 : PAGE_ROUND(lm->bytes)) +
+                        (!casc || cascade_res.model == casc ? 0 : PAGE_ROUND(casc->bytes));
+    out->release_bytes = (resident.model && resident.model != m ? resident_bytes() : 0) +
+                         (lm_res.lm && lm_res.lm != lm ? lm_resident_bytes() : 0) +
+                         (cascade_res.model && cascade_res.model != casc ? cascade_resident_bytes() : 0);
     return out->free_user >= 0 &&
            (int64_t)out->free_user + out->release_bytes - (int64_t)GAME_RESERVE >=
                (int64_t)out->need_workspace + out->need_weights;
+}
+
+/* The check with the largest LM tier up to max that fits beside model m and the
+ * cascade's casc (*lm; NULL when none does, or max is 0: then the check
+ * without one). */
+static int check_lm_tiers(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
+                          unsigned max, const VjoVocrModel *casc, const VjoVocrLm **lm)
+{
+    for (unsigned t = max; t >= 1; t--) {
+        const VjoVocrLm *c = vjo_vocr_lm_tier(t);
+        if (c && check_memory(out, m, job_bytes, capture_bytes, c, casc)) {
+            *lm = c;
+            return 1;
+        }
+    }
+    *lm = NULL;
+    return check_memory(out, m, job_bytes, capture_bytes, NULL, casc);
+}
+
+/* What fits beside model m, in the order of what each brings on the dialogue
+ * lines measured (docs/vita-vn-ocr.md): the cascade with the largest LM tier
+ * that fits, else the largest LM alone, else the cascade alone, else neither.
+ * *casc is set to NULL when the cascade does not fit. */
+static int check_with_lm(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
+                         unsigned max, const VjoVocrModel **casc, const VjoVocrLm **lm)
+{
+    if (*casc && *casc != m && check_lm_tiers(out, m, job_bytes, capture_bytes, max, *casc, lm) && (*lm || !max))
+        return 1;
+    if (check_lm_tiers(out, m, job_bytes, capture_bytes, max, NULL, lm) && (*lm || !max || !*casc)) {
+        *casc = NULL;
+        return 1;
+    }
+    if (*casc && *casc != m && check_memory(out, m, job_bytes, capture_bytes, NULL, *casc)) {
+        *lm = NULL;
+        return 1;
+    }
+    *casc = NULL;
+    *lm = NULL;
+    return check_memory(out, m, job_bytes, capture_bytes, NULL, NULL);
 }
 
 static int cleanup(void)
@@ -497,8 +704,10 @@ static int cleanup(void)
     }
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
-    /* Between jobs a weights block holds verified weights or nothing. */
+    /* Between jobs a weights (or LM) block holds verified bytes or nothing. */
     if (!resident.model && (resident.data || weights_uid >= 0) && drop_weights()) rc = VJO_E_OCR_UNAVAILABLE;
+    if (!lm_res.lm && (lm_res.data || lm_uid >= 0) && drop_lm()) rc = VJO_E_OCR_UNAVAILABLE;
+    if (!cascade_res.model && (cascade_res.data || cascade_uid >= 0) && drop_cascade()) rc = VJO_E_OCR_UNAVAILABLE;
     return rc;
 }
 
@@ -634,7 +843,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (!g_game_ledger.defs) ledger_init();
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
-    active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL;
+    active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL; open_cascade = 0;
     log_to = out;
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
@@ -667,13 +876,27 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (resident.model && resident.model != model && resident.model != fallback && drop_weights()) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
     }
+    /* The LM: the largest tier the request allows that fits (API 20); none
+     * allowed, and an LM still resident from an earlier setting goes. */
+    unsigned lm_max = (r->flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK;
+    const VjoVocrLm *lm = NULL;
+    if (lm_max > VJO_VOCR_LM_TIERS) lm_max = VJO_VOCR_LM_TIERS;
+    if (!lm_max && (lm_res.data || lm_uid >= 0) && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    /* The confidence cascade (API 20): the request's time ceiling, and the larger
+     * model beside a smaller one only; none asked for, and a resident one goes. */
+    uint32_t casc_us = ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
+                       VJO_GAME_OCR_CASCADE_UNIT_US;
+    const VjoVocrModel *casc_model = casc_us ? vjo_vocr_model(VJO_VOCR_CASCADE_NAME) : NULL;
+    const VjoVocrModel *casc = casc_model && casc_model->bytes > model->bytes ? casc_model : NULL;
+    if (!casc_us && (cascade_res.data || cascade_uid >= 0) && drop_cascade()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* Reported also when refused: each title's real free memory. */
     out->free_user = free_user();
     out->reserve_bytes = GAME_RESERVE;
     const VjoVocrModel *use = model;
     size_t use_bytes = bytes;
-    int fits = check_memory(out, model, bytes, capture_bytes);
-    step_add(VJO_GSTEP_CHECK, 0, 0, fits ? 0 : 1, out->need_workspace + out->need_weights, 0, 0, 0);
+    int fits = check_with_lm(out, model, bytes, capture_bytes, lm_max, &casc, &lm);
+    step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 0, fits ? 0 : 1,
+             out->need_workspace + out->need_weights, 0, 0, 0);
     /* The self-test runs the fallback on purpose (its FL10 stage). */
     int forced = (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK) && fallback;
     if ((!fits || forced) && fallback) {
@@ -684,19 +907,29 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         out->model_release_bytes = out->release_bytes;
         use = fallback;
         use_bytes = fallback_bytes;
-        fits = check_memory(out, fallback, fallback_bytes, capture_bytes);
+        casc = casc_model && casc_model->bytes > fallback->bytes ? casc_model : NULL;
+        fits = check_with_lm(out, fallback, fallback_bytes, capture_bytes, lm_max, &casc, &lm);
         step_add(VJO_GSTEP_FALLBACK, 0, forced ? 1u : 0u, 0, 0, 0, 0, 0);
-        step_add(VJO_GSTEP_CHECK, 0, 1, fits ? 0 : 1, out->need_workspace + out->need_weights, 0, 0, 0);
+        step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 1, fits ? 0 : 1,
+                 out->need_workspace + out->need_weights, 0, 0, 0);
     }
     stats.workspace = use_bytes;
     if (!fits) {
-        /* Too little memory: give the game back the resident weights too. */
-        if (drop_weights()) rc = VJO_E_OCR_UNAVAILABLE;
+        /* Too little memory: give the game back the resident weights and LM too. */
+        if (drop_resident()) rc = VJO_E_OCR_UNAVAILABLE;
         else rc = VJO_E_OOM;
         goto done;
     }
-    /* The check counted another model's resident weights as free: release them. */
+    /* The check counted another model's weights, or another LM (or one this job
+     * has no room for), as free: release them. */
     if (resident.model && resident.model != use && drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if ((lm_res.data || lm_uid >= 0) && lm_res.lm != lm && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if ((cascade_res.data || cascade_uid >= 0) && cascade_res.model != casc && drop_cascade()) {
+        rc = VJO_E_OCR_UNAVAILABLE; goto done;
+    }
+    size_t lm_extra = extra_job_bytes(use, lm, casc);
+    /* the core's extras end where the greedy text kept for the log begins */
+    size_t core_extra = lm_extra ? lm_extra - VJO_GAME_OCR_TEXT_BYTES : 0;
     void *capture_base = NULL, *base = NULL;
     SceUID leaked;
     uint32_t held, mem;
@@ -705,8 +938,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (capture_uid < 0) { capture_uid = leaked; rc = VJO_E_OOM; goto done; }
     capture_bytes_held = held;
     capture_memory = mem;
-    workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, "VjoGameVocr", PAGE_ROUND(use_bytes),
-                                        LADDER_ALL, &base, &leaked, &held, &mem);
+    workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, "VjoGameVocr",
+                                        PAGE_ROUND(use_bytes + lm_extra), LADDER_ALL, &base, &leaked, &held, &mem);
     if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
     workspace_bytes_held = held;
     workspace_memory = mem;
@@ -714,8 +947,23 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
     VjoVocrPolicy policy;
     request_policy(r, &policy);
+    if (lm_extra) { /* the LM (and cascade) extras and then the greedy text follow the job's workspace */
+        policy.raw = (char *)base + use_bytes + core_extra;
+        policy.raw_cap = VJO_GAME_OCR_TEXT_BYTES;
+    }
+    if (lm) {
+        policy.lm = lm;
+        policy.lm_res = &lm_res;
+    }
+    if (casc) {
+        policy.cascade = casc;
+        policy.cascade_res = &cascade_res;
+        policy.cascade_us = casc_us;
+        policy.cascade_conf = VJO_GAME_CASCADE_CONF;
+    }
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
-    rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes,
+    open_cascade = casc != NULL;
+    rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes + core_extra,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */
@@ -739,15 +987,24 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  resident_bytes(), 0, stats.load_us, 1);
     if (stats.lines)
         step_add(VJO_GSTEP_RECOGNIZE, 0, stats.recognized, rc, stats.frames, stats.tall_skipped, stats.recognize_us, 0);
+    if (lm && stats.lines) {
+        unsigned low = 0;
+        for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++)
+            low += (stats.line[i].flags & VJO_VOCR_LINE_CONF) < VJO_GAME_OCR_LOW_CONF;
+        step_add(VJO_GSTEP_LM, stats.lm ? stats.lm->tier : lm->tier, stats.lm_changed, stats.lm_rc,
+                 (stats.lm_loaded ? VJO_GLM_READ : stats.lm_cached ? VJO_GLM_RESIDENT : 0u) | low << 16 | stats.lm_lines,
+                 stats.lm_load_us, stats.lm_us + 1u, 0);
+    }
+    if (casc && stats.lines) cascade_step(&stats);
     if (!rc) {
-        /* What is shown and looked up is normalised; the recognizer's own text
-         * follows it in the same buffer, for the Shell's log. An empty text too:
+        /* What is shown and looked up is normalised; the recognizer's own (greedy)
+         * text follows it in the same buffer, for the Shell's log. An empty text too:
          * this zeroes what an earlier try of the job left after its NUL (a try
          * that read a line, then a retry that found the box empty), which the
          * Shell would otherwise log as the recognizer's text. */
         VjoTextNorm k;
         uint64_t t0 = now_wide();
-        unsigned changes = vjo_text_normalize_keep(out->text, sizeof(out->text), &k);
+        unsigned changes = vjo_text_normalize_keep(out->text, sizeof(out->text), lm_extra ? policy.raw : NULL, &k);
 #define CLAMP8(v) ((v) > 255u ? 255u : (v))
         if (out->text[0])
             step_add(VJO_GSTEP_NORM, 0, changes, 0, k.width,
@@ -768,6 +1025,7 @@ done:
         out->line[i].width = stats.line[i].width;
         out->line[i].height = stats.line[i].height;
         out->line[i].frames = stats.line[i].frames;
+        out->line[i].flags = stats.line[i].flags;
         out->line[i].us = stats.line[i].us;
     }
     if (!(r && (r->flags & VJO_GAME_OCR_F_PROBE))) {
@@ -813,7 +1071,10 @@ static int worker_main(SceSize args, void *argp)
                     vjo_game_ocr_run_request(&request, &pending_result);
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
                 }
-            } else if (registered != VJO_ERR_BUSY && (resident.data || weights_uid >= 0) && drop_weights()) {
+            } else if (registered != VJO_ERR_BUSY &&
+                       (resident.data || weights_uid >= 0 || lm_res.data || lm_uid >= 0 || cascade_res.data ||
+                        cascade_uid >= 0) &&
+                       drop_resident()) {
                 /* Not the active game (suspended, behind another app, or its
                  * title disabled): the weights go back to it. */
                 blocked = 1;
@@ -863,8 +1124,8 @@ int vjo_game_ocr_worker_stop(void)
         vjo_ledger_sub(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);
     }
     if (cleanup()) return VJO_E_OCR_UNAVAILABLE;
-    /* The game is exiting or the plugin stops: no weights stay behind. */
-    if (drop_weights()) return VJO_E_OCR_UNAVAILABLE;
+    /* The game is exiting or the plugin stops: no weights or LM stay behind. */
+    if (drop_resident()) return VJO_E_OCR_UNAVAILABLE;
     if (claim_outstanding) {
         pending_result.cleanup_status = 0; pending_result.rc = VJO_E_CANCELLED;
         sceClibMemset(pending_result.text, 0, sizeof(pending_result.text));

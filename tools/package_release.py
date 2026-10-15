@@ -9,8 +9,9 @@ import shutil
 import tempfile
 import zipfile
 
-from prepare_ocr import (VOCR_ASSETS, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_GENERATION, VOCR_TAG,
-                         VOCR3_ASSETS, VOCR3_TAG)
+from prepare_ocr import (VOCR_ASSETS, VOCR_CASCADE_MODEL, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_GENERATION,
+                         VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN, VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG,
+                         VOCR4_ASSETS, VOCR4_TAG)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -19,11 +20,18 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 
 def shipped_models():
     """(name, pins, release tag, role) of every shipped weights file: VOCR3 (the default and its
-    fallback) and v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings')."""
-    return [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
-            (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
-            ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
-            ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
+    fallback), v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings'), the beam +
+    LM decoder's four LMs and the confidence cascade's VOCR4-W20."""
+    models = [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
+              (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
+              ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
+              ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
+    # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
+    for name in VOCR_LM_ASSETS:
+        models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
+    # the confidence cascade's larger recognizer (ocr_cascade_ms)
+    models.append((VOCR_CASCADE_MODEL, VOCR4_ASSETS, VOCR4_TAG, "cascade (re-reads doubtful lines)"))
+    return models
 
 
 def one_line(value):
@@ -124,16 +132,28 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-        # The generation the Overlay app names the local engine after (core/vocr_models.c).
-        shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag, "generation": VOCR_GENERATION[tag],
+        # The generation the Overlay app names the local engine after (core/vocr_models.c): a
+        # recognizer's only; an LM is not an engine.
+        shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag,
+                         **({"generation": VOCR_GENERATION[tag]} if name.endswith(".vocr") else {}),
                          "bytes": size, "sha256": sha, "role": role}
+    # The LMs are CC BY-SA 4.0: their attribution ships with them.
+    attribution = models / VOCR_LM_ATTRIBUTION
+    if not attribution.is_file():
+        raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " is missing (release " + VOCR_LM_TAG + ")")
+    _, size, sha = VOCR_LM_ATTRIBUTION_PIN[VOCR_LM_ATTRIBUTION]
+    if attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " checksum failed: not release " + VOCR_LM_TAG + "'s")
+    assets[DATA + "ocr/LM-" + VOCR_LM_ATTRIBUTION] = attribution
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": {"ocr_backend": "vocr", "ocr_engine": shipped[VOCR_DEFAULT_MODEL]["generation"],
                              "vocr_model": VOCR_DEFAULT_MODEL,
                              "vocr_fallback_model": VOCR_FALLBACK_MODEL,
                              "dictionary": "local", "local_dictionaries": "plaintext.vjdict",
                              "japanese_only_selection": True,
-                             "ocr_mode": "auto", "log_file": True, "anki": settings.get("anki_mining") == "on"},
+                             "ocr_mode": "auto", "log_file": True, "anki": settings.get("anki_mining") == "on",
+                             "ocr_lm": settings.get("ocr_lm", "1000k"),
+                             "ocr_cascade_ms": int(settings.get("ocr_cascade_ms", "2000"))},
                 "models": shipped}
     if settings:
         # Applied by install-vita.sh after its own settings (tools/install-vita.sh).

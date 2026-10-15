@@ -18,6 +18,8 @@ static const VjoVocrModelInfo infos[] = {
     {"H15_w8.vocr", "VOCR1", "H15", VJO_VOCR_H15_BYTES},
     {"FL10_w8.vocr", "VOCR1", "FL10", VJO_VOCR_FL10_BYTES},
     {"F20_w8.vocr", "VOCR1", "F20", VJO_VOCR_F20_BYTES},
+    /* v0.2.5-vocr4.1 (vita-vn-ocr #78): the confidence cascade's larger model. */
+    {VJO_VOCR4_W20_NAME, "VOCR4", "W20", VJO_VOCR_CASCADE_BYTES},
 };
 #endif
 #define N_INFOS (sizeof(infos) / sizeof(infos[0]))

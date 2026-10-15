@@ -43,9 +43,12 @@ static void print_line(void *ud, const VjoVocrLineInfo *l)
     FILE *f = ud;
     const VjoVocrInk *k = &l->ink;
     fprintf(f, "{\"index\": %u, \"box\": [%u, %u, %u, %u], \"dark\": %u, \"ink\": {\"lo\": %u, \"hi\": %u, "
-            "\"edge\": %u, \"edges\": %u}, \"blank\": %d, \"us\": %u, \"text\": ",
-            l->index, l->x, l->y, l->w, l->h, l->dark, k->lo, k->hi, k->edge, k->edges, l->blank, (unsigned)l->us);
+            "\"edge\": %u, \"edges\": %u}, \"blank\": %d, \"us\": %u, \"flags\": %u, \"text\": ",
+            l->index, l->x, l->y, l->w, l->h, l->dark, k->lo, k->hi, k->edge, k->edges, l->blank, (unsigned)l->us,
+            l->flags);
     json_text(f, l->text);
+    fputs(", \"greedy\": ", f);
+    json_text(f, l->greedy);
     fputs("}\n", f);
 }
 
@@ -56,6 +59,21 @@ static void *line_buffer(void *ud, size_t bytes)
     (void)ud;
     if (!line_mem) line_mem = malloc(VJO_VOCR_LINE_MAX_BYTES);
     return bytes <= VJO_VOCR_LINE_MAX_BYTES ? line_mem : NULL;
+}
+
+static void *lm_mem;
+static void *lm_alloc(void *ud, size_t bytes)
+{
+    (void)ud;
+    if (lm_mem || posix_memalign(&lm_mem, 64, bytes)) return NULL;
+    return lm_mem;
+}
+static int lm_release(void *ud)
+{
+    (void)ud;
+    free(lm_mem);
+    lm_mem = NULL;
+    return 0;
 }
 
 static void *resident_mem;
@@ -70,6 +88,21 @@ static int resident_release(void *ud)
     (void)ud;
     free(resident_mem);
     resident_mem = NULL;
+    return 0;
+}
+/* The cascade's larger model: its own resident block. */
+static void *cascade_mem;
+static void *cascade_alloc(void *ud, size_t bytes)
+{
+    (void)ud;
+    if (cascade_mem || posix_memalign(&cascade_mem, 64, bytes)) return NULL;
+    return cascade_mem;
+}
+static int cascade_release(void *ud)
+{
+    (void)ud;
+    free(cascade_mem);
+    cascade_mem = NULL;
     return 0;
 }
 #endif
@@ -92,7 +125,10 @@ static int usage(void)
 {
     fprintf(stderr, "Usage: vjo-ocr [--backend ncnn|vocr] [--model FILE] MODEL_DIR WIDTH HEIGHT INPUT.rgba\n"
 #ifdef VJO_WITH_VOCR
-                    "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines\n"
+                    "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines;\n"
+                    "             [--lm vocr_lm_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
+                    "             [--cascade VOCR4_W20_w8.vocr [--cascade-conf 700] [--cascade-ms 2000]] read\n"
+                    "             lines under that confidence again with the larger model, within that time\n"
 #endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
@@ -114,8 +150,9 @@ int main(int argc, char **argv)
 #endif
     const char *model = NULL;
 #ifdef VJO_WITH_VOCR
-    const char *lines_path = NULL;
+    const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL;
     int blank = 0;
+    unsigned cascade_conf = 0, cascade_ms = 2000;
 #endif
     int i = 1;
     for (; i < argc && !strncmp(argv[i], "--", 2); i += 2) {
@@ -125,6 +162,10 @@ int main(int argc, char **argv)
 #ifdef VJO_WITH_VOCR
         else if (!strcmp(argv[i], "--lines")) lines_path = argv[i+1];
         else if (!strcmp(argv[i], "--blank")) blank = !strcmp(argv[i+1], "on");
+        else if (!strcmp(argv[i], "--lm")) lm_name = argv[i+1];
+        else if (!strcmp(argv[i], "--cascade")) cascade_name = argv[i+1];
+        else if (!strcmp(argv[i], "--cascade-conf")) cascade_conf = (unsigned)strtoul(argv[i+1], NULL, 10);
+        else if (!strcmp(argv[i], "--cascade-ms")) cascade_ms = (unsigned)strtoul(argv[i+1], NULL, 10);
 #endif
         else return usage();
     }
@@ -176,18 +217,51 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        if (lines_path || blank) {
-            /* The game worker's form: resident weights, the job policy. */
-            VjoVocrPolicy policy = {0, 0, 0, blank, 0, lines_path ? print_line : NULL, NULL, NULL};
+        if (lines_path || blank || lm_name || cascade_name) {
+            /* The game worker's form: resident weights, the job policy, the LM. */
+            VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL};
             VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
+            VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
             FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
+            size_t job = vjo_vocr_job_bytes(model, im.width, im.height);
+            void *lws = NULL;
             if (lines_path && !lf) return 2;
+            if (lm_name && !(policy.lm = vjo_vocr_lm(lm_name))) {
+                fprintf(stderr, "unsupported LM %s\n", lm_name);
+                return 2;
+            }
+            policy.lm_res = &lres;
+            VjoVocrResident cres = {cascade_alloc, cascade_release, NULL, NULL, NULL, 0, 0, 0};
+            if (cascade_name) {
+                if (!(policy.cascade = vjo_vocr_model(cascade_name))) {
+                    fprintf(stderr, "unsupported cascade model %s\n", cascade_name);
+                    return 2;
+                }
+                policy.cascade_res = &cres;
+                policy.cascade_us = cascade_ms * 1000u;
+                policy.cascade_conf = cascade_conf;
+            }
+            if (policy.lm || policy.cascade) {
+                job += vjo_vocr_lm_job_bytes(model) + (policy.cascade ? vjo_vocr_cascade_job_bytes(cascade_name) : 0);
+                if (posix_memalign(&lws, 64, job)) return 2;
+            }
             policy.ud = lf;
             grey.line_buffer = line_buffer;
-            rc = vjo_vocr_ocr_policy(&platform, argv[i], model, &grey, &res, workspace,
-                                     vjo_vocr_job_bytes(model, im.width, im.height), capture, cap, &policy, text,
-                                     sizeof(text), &st);
+            rc = vjo_vocr_ocr_policy(&platform, argv[i], model, &grey, &res, lws ? lws : workspace, job, capture, cap,
+                                     &policy, text, sizeof(text), &st);
+            if (policy.lm)
+                fprintf(stderr, "lm=%s lm_rc=%d lm_lines=%u lm_changed=%u lm_us=%u lm_load_us=%u\n",
+                        st.lm ? st.lm->name : "-", st.lm_rc, st.lm_lines, st.lm_changed, (unsigned)st.lm_us,
+                        (unsigned)st.lm_load_us);
+            if (policy.cascade)
+                fprintf(stderr, "cascade=%s cascade_rc=%d cascade_lines=%u cascade_changed=%u cascade_skipped=%u "
+                        "cascade_us=%u cascade_load_us=%u\n", st.cascade ? st.cascade->name : "-", st.cascade_rc,
+                        st.cascade_lines, st.cascade_changed, st.cascade_skipped, (unsigned)st.cascade_us,
+                        (unsigned)st.cascade_load_us);
             vjo_vocr_resident_drop(&res);
+            vjo_vocr_resident_drop(&cres);
+            vjo_vocr_lm_drop(&lres);
+            free(lws);
             if (lf) fclose(lf);
         } else {
             rc = vjo_vocr_ocr(&platform, argv[i], model, &grey, workspace, need, capture, cap, text, sizeof(text),

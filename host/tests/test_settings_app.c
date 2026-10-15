@@ -493,16 +493,20 @@ static void test_label_and_status_follow_the_configured_models(void)
     close_fails = NULL;
     check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
     /* a model this build does not run: refused, the fallback runs and names the engine */
-    card("vocr_model = VOCR4_W20_w8.vocr\n");
+    card("vocr_model = VOCR9_X_w8.vocr\n");
     run(in, 2);
     check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build; uses VOCR3-FL10.", OFF);
     /* the fallback's file missing as well: nothing runs, and the button keeps the fallback's name */
     remove_model(VJO_VOCR3_FL10_NAME);
     run(in, 2);
     check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
-    card("vocr_model = VOCR4_W20_w8.vocr\nvocr_fallback_model = none\n");
+    card("vocr_model = VOCR9_X_w8.vocr\nvocr_fallback_model = none\n");
     run(in, 2);
     check_card(1, "VOCR", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
+    /* the confidence cascade's VOCR4-W20 also runs as the job's own model (API 20) */
+    card("vocr_model = VOCR4_W20_w8.vocr\n");
+    run(in, 2);
+    check_card(1, "VOCR4", 0, LOCAL_HELP, "VOCR4-W20 found. Game OCR worker required.", DIM);
     /* the model's file missing, or not its release size: the fallback runs */
     card(NULL);
     remove_model(VJO_VOCR3_H15_NAME);

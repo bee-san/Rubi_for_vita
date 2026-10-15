@@ -51,6 +51,11 @@ typedef struct {
     int ocr_settle_ms;        /* 0..1000 */
     int ocr_settle_max_ms;    /* 100..10000 */
     int ocr_skip_blank_lines; /* 0/1 */
+    /* Local OCR (vocr): the largest character LM the beam + LM decoder may use,
+     * 1-4 (0.5, 1, 2, 4 MB), the game worker taking the largest that fits; 0: off,
+     * greedy decoding (core/vocr_ocr.h VjoVocrPolicy.lm). */
+    int ocr_lm;
+    int ocr_cascade_ms;       /* 0 (off) or 250..3750: the cascade's time ceiling per recognition */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     /* Anki (core/anki.h): one note type, Kiku, in one deck; nothing else to set. */

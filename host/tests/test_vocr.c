@@ -94,8 +94,12 @@ static void test_models_and_sizes(void)
 {
     unsigned n = 0;
     const VjoVocrModel *all = vjo_vocr_models(&n);
-    TEST_CHECK(n == 5 && all != NULL);
+    TEST_CHECK(n == 6 && all != NULL);
     for (unsigned i = 0; i < n; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
+    /* the cascade's larger model: F20's shape, so F20's size and arena */
+    const VjoVocrModel *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME), *f20 = vjo_vocr_model("F20_w8.vocr");
+    TEST_ASSERT(w20 != NULL && f20 != NULL);
+    TEST_CHECK(w20->bytes == f20->bytes && w20->arena_bytes == f20->arena_bytes && memcmp(w20->sha256, f20->sha256, 32));
     const VjoVocrModel *h15 = vjo_vocr_model(VJO_VOCR_DEFAULT_MODEL);
     TEST_ASSERT(h15 != NULL);
     TEST_CHECK(h15->bytes == 1155968 && h15->arena_bytes == 182944);

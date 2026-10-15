@@ -135,24 +135,34 @@ static void test_keep_raw(void)
     VjoTextNorm k;
     memset(b, 'x', sizeof(b));
     strcpy(b, "コ一ヒ一！");
-    TEST_CHECK(vjo_text_normalize_keep(b, sizeof(b), &k) == 3 && k.long_vowel == 2 && k.width == 1);
+    TEST_CHECK(vjo_text_normalize_keep(b, sizeof(b), NULL, &k) == 3 && k.long_vowel == 2 && k.width == 1);
     TEST_CHECK(!strcmp(b, "コーヒー!") && !strcmp(vjo_text_raw(b, sizeof(b)), "コ一ヒ一！"));
     for (size_t i = strlen(b) + 1 + strlen(vjo_text_raw(b, sizeof(b))); i < sizeof(b); i++) TEST_CHECK(!b[i]);
     /* 30 bytes of text in a 48-byte buffer: 16 bytes of copy room, cut to 15 (5 kana) */
     static char c[48];
     memset(c, 'x', sizeof(c));
     strcpy(c, "あいうえおかきくけこ");
-    TEST_CHECK(vjo_text_normalize_keep(c, sizeof(c), NULL) == 0);
+    TEST_CHECK(vjo_text_normalize_keep(c, sizeof(c), NULL, NULL) == 0);
     TEST_CHECK(!strcmp(c, "あいうえおかきくけこ") && !strcmp(vjo_text_raw(c, sizeof(c)), "あいうえお") && !c[47]);
     /* the text fills the buffer: normalised, no copy, the tail zeroed */
     static char d[8];
     memcpy(d, "ab\xEF\xBC\x81" "cd", 7); d[7] = 0; /* ab！cd */
-    TEST_CHECK(vjo_text_normalize_keep(d, sizeof(d), NULL) == 1 && !strcmp(d, "ab!cd") && !*vjo_text_raw(d, sizeof(d)));
+    TEST_CHECK(vjo_text_normalize_keep(d, sizeof(d), NULL, NULL) == 1 && !strcmp(d, "ab!cd") && !*vjo_text_raw(d, sizeof(d)));
     TEST_CHECK(!d[5] && !d[6] && !d[7]);
     /* an empty text keeps an empty copy */
     static char e[4] = {0, 'z', 'z', 'z'};
-    TEST_CHECK(vjo_text_normalize_keep(e, sizeof(e), NULL) == 0 && !e[0] && !*vjo_text_raw(e, sizeof(e)) && !e[3]);
-    TEST_CHECK(vjo_text_normalize_keep(NULL, 10, &k) == 0 && !k.width);
+    TEST_CHECK(vjo_text_normalize_keep(e, sizeof(e), NULL, NULL) == 0 && !e[0] && !*vjo_text_raw(e, sizeof(e)) && !e[3]);
+    TEST_CHECK(vjo_text_normalize_keep(NULL, 10, NULL, &k) == 0 && !k.width);
+    /* another raw text (the greedy one, with the LM): kept, cut to the room left */
+    static char f[32], g[24];
+    memset(f, 'x', sizeof(f));
+    strcpy(f, "ぼくの！");
+    TEST_CHECK(vjo_text_normalize_keep(f, sizeof(f), "ばくの！？", NULL) == 1 && !strcmp(f, "ぼくの!"));
+    TEST_CHECK(!strcmp(vjo_text_raw(f, sizeof(f)), "ばくの！？") && !f[31]);
+    memset(g, 'x', sizeof(g));
+    strcpy(g, "ぼくの！");
+    TEST_CHECK(vjo_text_normalize_keep(g, sizeof(g), "ばくの！？", NULL) == 1 && !strcmp(g, "ぼくの!"));
+    TEST_CHECK(!strcmp(vjo_text_raw(g, sizeof(g)), "ばくの") && !g[23]); /* 10 bytes of room: cut at a character */
 }
 
 TEST_LIST = {

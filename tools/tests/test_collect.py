@@ -31,11 +31,14 @@ game vocr rc=0 VOCR3_H15_w8.vocr: 917x125 at 22,400 of 960x544 fmt 0x00000000, l
 game vocr capture: hook into USER, 61440 B block, 62-row strips, 9 strips in 34 ms, 0 rows changed, sum 0x5EED0003
 game vocr memory: free USER=91226112, needs workspace 249856 + weights 1159168 + reserve 4194304: check passed, headroom 85622784
 game vocr speed: 330 frames in 820000 us, 2484 us per frame
-game vocr lines: 877x30 110f 273.3ms 870x30 110f 273.3ms 860x30 110f 273.3ms
+game vocr cascade speed: 180 frames in 550000 us, 3055 us per frame
+game vocr lines: 877x30 110f 273.3ms c912 870x30 110f 273.3ms c412* 860x30 110f 273.3ms c998 640x30 80f 273.3ms c855*^
 gstep job alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
 gstep job settle kind=- arg=4 rc=0x00000001 bytes=37 sum=0x00020006 main=0 cdram=0 phycont=0 us=183000
 gstep job blank kind=- arg=2 rc=0x00000001 bytes=19660830 sum=0x00C00014 main=0 cdram=0 phycont=0 us=310
 gstep job norm kind=- arg=4 rc=0x00000000 bytes=2 sum=0x00000121 main=0 cdram=0 phycont=0 us=41
+gstep job lm kind=2 arg=1 rc=0x00000000 bytes=2147549187 sum=0x0016E360 main=0 cdram=0 phycont=0 us=2100
+gstep job cascade kind=1 arg=1 rc=0x00000000 bytes=2164261044 sum=0x0004B000 main=0 cdram=0 phycont=0 us=550000
 game vocr text 0: コ一ヒ一！
 game vocr text 0 shown: コーヒー!
 game vocr text 1: Error 404 not found
@@ -212,6 +215,12 @@ class Collect(unittest.TestCase):
                      "blank lines skipped: 7 (300x30, 300x30, 300x30, 300x30, 300x30; edges 16-20 per 10,000)",
                      "text normalised: 1 of 1 job(s) changed: 2 full-width form(s), 0 tilde(s), 0 dash(es), "
                      "1 ellipsis(es), 2 一->ー, 1 ー->一; 41-41 us",
+                     "per CTC frame 2,484-2,484 us (the cascade's model 3,055-3,055 us)",
+                     "beam + LM: 1 job(s) (1000k x1), 3 line(s) decoded, 1 changed by the LM; 1 line(s) under 0.70 confidence "
+                     "(median 0.91); LM read 1x (1,500-1,500 ms), decoding 2-2 ms a job",
+                     "cascade: 1 job(s), 1 doubtful line(s) read again with the larger model (1 changed, 1 read as empty; its confidence "
+                     "median 0.85), 0 left for the time ceiling; its weights read 1x (307-307 ms), re-reading 550-550 ms "
+                     "a job",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",

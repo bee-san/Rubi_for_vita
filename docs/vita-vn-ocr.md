@@ -275,7 +275,8 @@ size, contrast and edges; rc: the job's total). `tools/analyse_selftest.py
 the wait's range, whether an icon toggled, and the lines skipped. A retried
 job logs its first pass and its signature once (`pass`, `sig`; `tear` counts
 the tries), and when its 20 steps run out the other steps make room for the
-`free` of every block the worker holds, so the log always shows the job's
+`free` of every block the job can still free (its own blocks, and a resident
+one only while its contents are unverified), so the log always shows the job's
 memory given back.
 
 **Measured on the console** (#81's `--collect` of v0.8.0-test.1, API 19, so
@@ -400,6 +401,150 @@ console shows moves a lot: against the references the raw text differs in 1,115 
 (H15), the normalised text in 603, exactly the scored errors. Lookups see the ー/一 changes only
 (punctuation is never looked up).
 
+## Beam + LM decoding (API 20)
+
+```ini
+ocr_lm = 1000k   ; 4000k | 2000k | 1000k | 500k | off: the largest language model a job may use
+```
+
+Each line is decoded with a CTC prefix beam search and a character n-gram language model instead
+of the recognizer's best class per frame. Both come from bee-san/vita-vn-ocr #82
+(`runtime/vocr_lm.c`, `vocr.c`'s top-K extras), with its four LM tiers from the
+[v0.2.6-ctclm.2 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.6-ctclm.2)
+(CC BY-SA 4.0, attribution shipped as `ocr/LM-ATTRIBUTION.md`; ctclm.1 is superseded: it was built
+before the protected-title filter). While the recognizer runs, it keeps each CTC frame's 8 best
+classes and the blank's score. The decoder then searches 8 beams over them, scoring each prefix
+with the LM (`core/vocr_ocr.c` `lm_opts()`: alpha 0.5, each tier's bonus per character, a gate of
+8 and the bracket weight, as #82 recommends). With the LM's weights at 0 it gives the greedy text
+bit for bit. A line the recognizer reads as empty is never decoded.
+
+The default is the 1 MB tier: with the confidence cascade (below) it reads within 0.012 points of
+the 4 MB one (0.729 % against 0.717 % on the lines measured), in a quarter of the memory and of
+the first read, as #82's calibrated costs advise for the Normal tier.
+
+**Memory.** The LM is a resident `USER_RW` block (`VjoGameVocrLM`), like the weights:
+- **Reading:** read through the kernel's file broker 32 KiB at a time, with size and SHA-256 checked
+  against the pins at its first use.
+- **Keeping:** kept between jobs while the game is the active one.
+- **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, and on exit.
+- **Tier choice:** a job takes the largest tier up to `ocr_lm` that fits the memory check (free
+  USER minus the 4 MiB reserve must cover the workspace, the weights, the LM and the cascade's
+  model), else a smaller tier, else none (greedy).
+- **Workspace:** the job's workspace holds the decoder's extras (the top-K of every frame, the LM
+  context and the beam workspace: 56,928 B, bounded for every pinned model and LM) and 4 KiB for
+  the greedy text.
+
+| LM | bytes (block, page-rounded) |
+|---|---|
+| `vocr_lm_o3_500k.vlm` | 499,824 (503,808) |
+| `vocr_lm_o3_1000k.vlm` (default) | 987,600 (991,232) |
+| `vocr_lm_o3_2000k.vlm` | 1,971,568 (1,974,272) |
+| `vocr_lm_o3_4000k.vlm` | 3,781,072 (3,784,704) |
+
+**Logs (the A/B record).**
+- `gstep job lm` per job: `kind` the tier (1 500k, 2 1000k, 3 2000k, 4 4000k), arg the lines the LM
+  changed, rc 0 or why the job read greedily; bytes: read or resident, the lines under 0.7
+  confidence, the lines decoded. It also carries the LM's load time and the decode time.
+- `gstep job check`: `kind` is what the memory check chose, the LM tier, plus 8 with the cascade.
+- `game vocr speed:` is the job's own model: its CTC frames and its recognition time (runs and
+  decodes), so its µs per frame compares with #81's API 19 figure. The cascade's re-reads are not
+  in it, nor in each line's time in `game vocr lines:`.
+- The job's 20-step log reserves a slot only for the release of a block this job can still free:
+  its capture and workspace blocks, a tall line's buffer, and a resident block (weights, LM, W20)
+  only while its contents are not verified. The self-test's first stage, the job that first reads
+  all three, then logs exactly 20 steps and keeps its `lm`, `cascade` and `norm` steps, which carry
+  their first read times. One step more (a torn read, the capture block refused by USER) drops
+  `norm`; a tall line's two drop `cascade` as well.
+- `game vocr lines:` gives each line's confidence (`c0`-`c1000`, the smallest top-class probability
+  over the frames that emit a character), `*` when the text shown differs from the greedy
+  reading, and `^` when the cascade read the line again.
+- `game vocr text N:` is the greedy text, and `... shown:` the decoded and normalised text when
+  they differ.
+- `tools/analyse_selftest.py --collect` sums them.
+
+## Confidence cascade (API 20)
+
+```ini
+ocr_cascade_ms = 2000   ; 0 (off) or 250-3750: the job's recognition time the re-reads stay within
+```
+
+A line whose confidence (above) is under 0.7, #82's mark for a doubtful line, is read again on the
+same pixels by a larger recognizer, VOCR4-W20 (vita-vn-ocr #78,
+[v0.2.5-vocr4.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.5-vocr4.1), F20's shape:
+1,558,016 B, 241,056 B arena), and decoded with the same LM. Its reading is the one shown. On the
+lines measured that is better than keeping whichever reading is more confident (0.717 % against
+0.753 % with the 4 MB LM). VOCR4-W20 does not qualify as a default under vita-vn-ocr's gates; it only reads again
+the lines the default doubts. `vocr_model = VOCR4_W20_w8.vocr` is also accepted as the job's own
+model, within the same budgets; the cascade is then off, since it needs a model larger than the
+job's.
+
+- **Time ceiling.** A doubtful line is read again only while the job's recognition (every line's
+  run and decode, the re-reads, and an estimate for the lines still to read; not the weights'
+  loads) stays within `ocr_cascade_ms`. The estimate is the line's own time on this console times
+  W20's cost over the job's model (vita-vn-ocr's A9 figures: 235 / 166 ms per 640-px line, 1.42x),
+  then what the re-reads measured. Past the ceiling the line is counted and left. The ceiling is per
+  capture attempt: a job read again after the screen changed starts it again. 2 s is the Normal
+  tier's 3-line-box ceiling (vita-vn-ocr `docs/model-tiers.md`, an estimate at 444 MHz). In #81's
+  CLANNAD log H15 took 5.0-5.2 ms per CTC frame, about 0.4 s for a full line, so a 3-line box
+  leaves room for about one re-read and a 1- or 2-line box for more (estimates).
+- **Memory.** W20's weights are a resident `USER_RW` block (`VjoGameVocrCascade`, 1,560,576 B),
+  read and SHA-256 checked at the first doubtful line (about 0.3 s through the broker at #81's
+  rate, once a session; an estimate) and kept like the job's weights. The job's workspace grows by
+  W20's arena and decoder (296,192 B). The memory check takes, in order: the cascade with the
+  largest LM tier that fits, the LM alone, the cascade alone, neither. A resident block the job
+  would give back counts as free. The block is given back when `ocr_cascade_ms = 0`, when the check
+  leaves the cascade out, when memory is refused, and when the game is no longer the active one.
+- **Logs.** `gstep job cascade` per job:
+  - `kind`: the lines W20 read as empty where the job's model read text. Those lines leave the text
+    shown, and with them their greedy reading leaves the log. Keeping the first reading in that case
+    changes nothing on the dialogue lines measured below: the `nonempty` sweep rows of
+    `lm-cer-20261014.json` give 0.717 % with the 4 MB LM either way, and a run with
+    `--lm vocr_lm_o3_1000k.vlm --sweep 700` gives 0.729 % either way. On those lines W20 empties
+    none, so the rule stays "W20's reading is shown".
+  - arg: the lines read again; rc: 0, or why the cascade could not run (W20 missing or wrong, no
+    memory).
+  - bytes: its weights read or resident, the lines it changed << 24, the doubtful lines left for the
+    ceiling << 16, and W20's CTC frames.
+  - Its load time and the re-reading time.
+
+  `game vocr cascade speed:` gives W20's frames and time, and its µs per frame. In
+  `game vocr lines:` a line read again ends in `^`, and its confidence is W20's.
+
+**Measured on the host** (`docs/benchmarks/lm-lines-20261014.json`, `lm-cer-20261014.json`):
+
+- **Parity.** The overlay's adapter (`vjo-ocr --lm`, `--cascade`) was run on the 318 linefind
+  development regions (777 found lines) with VOCR3-H15 and VOCR3-FL10, each with all four LM tiers
+  and the cascade. Against vita-vn-ocr's reference (`runtime/pyvocr.py`) on the same crops
+  it had 0 differences in greedy text, decoded text, confidence, and which lines the cascade read
+  again and what they show (`tools/lm_lines_eval.py`; 302-315 lines read again).
+- **Dialogue CER** (`tools/lm_cer_eval.py`): 1,666 dialogue lines (25,379 characters) of
+  vita-vn-ocr's development line crops (teacher_val, devnative v3 ink and finder-cut crops), scored
+  with vita-vn-ocr's `eval/metrics.py`. #82 tuned the LM's two weights on these sets, so the LM
+  columns are in-sample for them.
+
+| recognizer | greedy | 500k | 1000k | 2000k | 4000k |
+|---|---|---|---|---|---|
+| VOCR3-H15 (default) | 1.399 % | 0.969 % | 0.934 % | 0.902 % | 0.887 % |
+| VOCR3-H15 + cascade | 1.032 % | 0.776 % | **0.729 %** | 0.721 % | 0.717 % |
+| VOCR3-FL10 (fallback) | 1.407 % | 1.032 % | 0.914 % | 0.875 % | 0.859 % |
+| VOCR3-FL10 + cascade | 1.052 % | 0.796 % | 0.757 % | 0.713 % | 0.709 % |
+| VOCR4-W20 on every line (reference) | 0.965 % | 0.705 % | 0.709 % | 0.670 % | 0.666 % |
+
+- **What the cascade reads.** A confidence under 0.7 flags 21.5 % of H15's lines (22.3 % of the
+  CTC frames) and 74.7 % of the lines it misreads (FL10: 24.2 %, 74.3 %). At 0.8 it would flag
+  30 % of the lines and, with the 4 MB LM, read 0.697 %.
+- **Time (host).** The decode takes 24-36 µs a line on the host; top-K tracking happens inside the
+  recognizer's own run.
+- **Time (A9, vita-vn-ocr #82's costs calibrated to #81's H15 time).** The top-8 tracking adds
+  6-10 ms a line and the beam 0.4-0.7 ms. A re-read costs about 1.42x the line's own time.
+- **Unmeasured on the console:** the first read of the LM (~0.2 s for 1 MB, ~0.7 s for 4 MB) and of
+  W20 (~0.3 s), once per game session, from #81's 218-231 ms for H15's 1,155,968 B (estimates),
+  and the cascade's real time per line. The next build's logs measure all of these.
+- **The CER above assumes no ceiling.** The tools allow 600 s. On the console a 3-line H15 box
+  leaves room for about one re-read (estimate), and about 12 % of such boxes have two or more
+  doubtful lines (21.5 % per line, assuming independence). So 0.729 % bounds the gain; it is not a
+  forecast.
+
 ## Models
 
 **The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as
@@ -462,7 +607,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout a5d5aad68bb8e719e44e2e50b5836cf9afeae796
+git -C /path/to/vita-vn-ocr checkout 57b662286186e417325fe2b13467811121ef7239  # #82's merge: the beam + LM decoder
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
@@ -474,8 +619,9 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the four runtime files (`runtime/vocr.c`,
-`vocr.h`, `vocr_lines.c`, `vocr_lines.h`) against their SHA-256 at that commit
+`cmake/VocrOCR.cmake` checks the eight runtime files (`runtime/vocr.c`, `vocr.h`,
+`vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
+`vocr_lm.h`) against their SHA-256 at that commit
 and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
 Without `VJO_WITH_VOCR` the Shell is the Lens-only build; `ocr_backend = vocr`
@@ -494,10 +640,14 @@ steps below cover a source build or adding another model.
    python3 tools/prepare_ocr.py --backend vocr --output ocr          # VOCR3_H15_w8.vocr
    python3 tools/prepare_ocr.py --backend vocr --model VOCR3_FL10_w8.vocr --output ocr
    python3 tools/prepare_ocr.py --backend vocr --model H15_w8.vocr --output ocr   # v0.2.0
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # the cascade's
+   python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    ```
 
    While vita-vn-ocr is private this uses the GitHub CLI (`gh auth login`
    with access to it). `--from FILE` checks a copy downloaded another way.
+   `tools/package_release.py --models ocr` needs every one of these files (it
+   ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
 3. Copy the file to `ux0:data/VitaJPOverlay/ocr/`, or let the FTP installer do
    it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:

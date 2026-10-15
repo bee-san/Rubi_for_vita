@@ -110,6 +110,46 @@ const VjoVocrModel *vjo_vocr_model(const char *name);
 /* The supported models, for messages and tools; *count is set. */
 const VjoVocrModel *vjo_vocr_models(unsigned *count);
 
+/* A character language model this build accepts for the beam + LM decoder
+ * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.2.6-ctclm.2): the asset's
+ * exact size and SHA-256, and the per-character bonus its tier was tuned with;
+ * every tier shares the rest of the recommended settings (docs/ctc-lm-decode.md:
+ * beam 8, the top 8 classes a frame, LM weight 0.5, gate and bracket cost 8
+ * nats, an end-of-line term). One LM serves every model. */
+typedef struct {
+    const char *name;
+    uint32_t bytes;
+    unsigned char sha256[32];
+    int beta;          /* 1/1000 nat */
+    unsigned tier;     /* 1 (0.5 MB) .. VJO_VOCR_LM_TIERS (4 MB) */
+} VjoVocrLm;
+const VjoVocrLm *vjo_vocr_lm(const char *name);
+const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier); /* NULL for 0 or one out of range */
+
+/* LM bytes kept between jobs, as VjoVocrResident keeps the recognizer's. */
+typedef struct {
+    void *(*alloc)(void *ud, size_t bytes);
+    int (*release)(void *ud);
+    void *ud;
+    const VjoVocrLm *lm;        /* verified bytes of this LM are in data, else NULL */
+    unsigned char *data;
+    size_t capacity;
+    uint64_t size, stamp;
+} VjoVocrLmResident;
+int vjo_vocr_lm_drop(VjoVocrLmResident *resident);
+
+/* More job workspace a job on `model` needs to decode with an LM: the top-K
+ * buffers, the decoder's structs and its workspace (bounded by
+ * VJO_VOCR_LM_WS_BYTES); 0 for an unsupported model. */
+#define VJO_VOCR_LM_TOPK 8u
+#define VJO_VOCR_LM_FRAMES 129u     /* a line's most CTC frames: the 1,024-px clamp / 8, + 1 */
+#define VJO_VOCR_LM_WS_BYTES 49152u /* >= vocr_lm_workspace_bytes for every pinned model and LM (tested) */
+size_t vjo_vocr_lm_job_bytes(const char *model);
+/* The workspace the confidence cascade needs after the LM extras, to read lines
+ * again with the larger model `cascade` (its arena, structs and LM decoder); 0
+ * for a model this build does not pin. */
+size_t vjo_vocr_cascade_job_bytes(const char *cascade);
+
 /* The line finder returns at most this many lines (vocr_lines.h VOCR_LINES_MAX). */
 #define VJO_VOCR_MAX_LINES 16u
 
@@ -118,9 +158,21 @@ const VjoVocrModel *vjo_vocr_models(unsigned *count);
 typedef struct {
     uint16_t width, height;  /* crop in region pixels */
     uint16_t frames;         /* CTC frames (the resized width / 8) */
-    uint16_t reserved;
-    uint32_t us;             /* vocr_run time with VjoPlatform.now_us, else 0 */
+    uint16_t flags;          /* VJO_VOCR_LINE_*: its confidence, what the LM did */
+    uint32_t us;             /* vocr_run (and the LM decoder's) time with VjoPlatform.now_us, else 0 */
 } VjoVocrLineStat;
+/* flags: the line's confidence, the smallest softmax-max probability over the
+ * frames that write a character of its greedy text (vocr_extra.conf_min), in
+ * 1/1000 (1000 for a line read as empty), when it was read with the top-K
+ * (VJO_VOCR_LINE_CONF_NONE otherwise); whether the LM decoded it; whether the
+ * cascade's larger model read it again (VJO_VOCR_LINE_CASCADE: that reading and
+ * its confidence are the ones shown); and whether the text shown differs from
+ * the recognizer's greedy reading (by the LM or the cascade). */
+#define VJO_VOCR_LINE_CONF 0x03FFu
+#define VJO_VOCR_LINE_CONF_NONE 0x03FFu
+#define VJO_VOCR_LINE_CASCADE 0x0400u
+#define VJO_VOCR_LINE_LM 0x4000u
+#define VJO_VOCR_LINE_CHANGED 0x8000u
 
 /* A found line's ink (vjo_vocr_ink): its contrast (the 98th minus the 2nd
  * percentile grey) and its edges: the pixels from which the grey level changes
@@ -180,7 +232,9 @@ typedef struct {
     unsigned frames;         /* CTC frames recognized, all lines */
     unsigned model_loaded;   /* 1: the weights were read and verified in this job */
     unsigned model_cached;   /* 1: resident verified weights were reused (file unchanged) */
-    uint32_t find_us, load_us, recognize_us; /* with VjoPlatform.now_us, else 0 */
+    /* with VjoPlatform.now_us, else 0. recognize_us: the job's model on every line
+     * (its runs and LM decodes); the cascade's re-reads are in cascade_us. */
+    uint32_t find_us, load_us, recognize_us;
     unsigned recognized;     /* entries of line[] filled: lines vocr_run finished */
     VjoVocrLineStat line[VJO_VOCR_MAX_LINES];
     /* The stable-text wait (VjoVocrPolicy.settle_us). */
@@ -195,6 +249,27 @@ typedef struct {
     unsigned blank;          /* lines skipped: no text-like ink in their crop */
     uint32_t blank_us;       /* time spent checking */
     VjoVocrBlankStat blank_line[VJO_VOCR_BLANK_LOGGED]; /* the first ones skipped */
+    /* The beam + LM decoder (VjoVocrPolicy.lm). */
+    const VjoVocrLm *lm;     /* the LM the lines were decoded with, or NULL (greedy) */
+    int lm_rc;               /* 0, or why the job read greedily although an LM was asked for (VJO_E_*) */
+    unsigned lm_loaded;      /* 1: the LM was read and verified in this job */
+    unsigned lm_cached;      /* 1: resident verified LM bytes were reused */
+    uint32_t lm_load_us;     /* reading, checking and planning it */
+    uint32_t lm_us;          /* decoding, all lines */
+    unsigned lm_lines;       /* lines decoded with it */
+    unsigned lm_changed;     /* of those, lines whose text differs from the greedy text */
+    /* The confidence cascade (VjoVocrPolicy.cascade). */
+    const VjoVocrModel *cascade; /* the larger model lines were read again with, or NULL */
+    int cascade_rc;          /* 0, or why it could not be used (VJO_E_*: missing, wrong, no memory) */
+    unsigned cascade_loaded; /* 1: its weights were read and verified in this job */
+    unsigned cascade_cached; /* 1: its resident verified weights were reused */
+    uint32_t cascade_load_us; /* reading or checking them, and planning it */
+    uint32_t cascade_us;     /* reading lines again (its runs and decodes), all lines */
+    unsigned cascade_frames; /* its CTC frames, all lines read again */
+    unsigned cascade_lines;  /* lines read again */
+    unsigned cascade_changed; /* of those, lines whose text it changed */
+    unsigned cascade_blanked; /* of those, lines it read as empty where the job's model read text */
+    unsigned cascade_skipped; /* doubtful lines not read again: the time ceiling */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -204,9 +279,27 @@ typedef struct {
     size_t stride;
     VjoVocrInk ink;
     int blank;                    /* skipped by the blank-line check */
-    const char *text;             /* what the recognizer read ("" when skipped) */
+    const char *text;             /* what the recognizer read ("" when skipped), after the LM */
     uint32_t us;                  /* its recognition time */
+    const char *greedy;           /* its greedy text (the same as text without the LM) */
+    unsigned flags;               /* VJO_VOCR_LINE_* */
 } VjoVocrLineInfo;
+
+/* Weights kept between jobs. The caller supplies their memory: alloc returns
+ * 16-byte aligned memory for `bytes`, or NULL (the job then fails with
+ * VJO_E_OOM); release frees it and returns 0, or nonzero if it could not (the
+ * memory then stays held but is never used as weights). Zero-initialize the
+ * state fields; vocr_ocr.c maintains them. Between jobs, data is non-NULL
+ * exactly when model is: memory is held only for verified weights. */
+typedef struct {
+    void *(*alloc)(void *ud, size_t bytes);
+    int (*release)(void *ud);
+    void *ud;
+    const VjoVocrModel *model;  /* verified weights of this model are in data, else NULL */
+    unsigned char *data;        /* the memory held, or NULL */
+    size_t capacity;            /* bytes of data */
+    uint64_t size, stamp;       /* VjoFile.size and .stamp of the file they were read from */
+} VjoVocrResident;
 
 /* What a job does besides finding and recognizing the lines; a zeroed policy
  * (or NULL) is API 19's job exactly.
@@ -225,7 +318,27 @@ typedef struct {
  * text-like ink is skipped (vjo_vocr_blank; blank_edges, if set, in place of
  * VJO_VOCR_BLANK_EDGES, for tools and tests). sleep, optional: once the region
  * has been re-read without a change, the job sleeps until a re-read can be the
- * last one instead of reading passes that are too early to count. */
+ * last one instead of reading passes that are too early to count.
+ *
+ * lm: decode every line with this LM (vocr_lm.h's beam search over the top-K)
+ * instead of greedily; its bytes are read from ocr_model_dir and checked once,
+ * into lm_res, and kept between jobs while the file is unchanged, as the
+ * weights are. The workspace must hold vjo_vocr_lm_job_bytes() more. When the LM
+ * cannot be used (missing, wrong, no memory) the job reads greedily and says
+ * why in stats->lm_rc. raw, optional (raw_cap bytes): the greedy text of every
+ * line, laid out as the text is, for the log.
+ *
+ * cascade: a line whose confidence (the top-K's, VJO_VOCR_LINE_CONF) is under
+ * cascade_conf (0: VJO_VOCR_CASCADE_CONF) is read again by this larger model,
+ * decoded with the same LM, and that reading is the one shown. Its weights are
+ * read at the first such line, checked, and kept in cascade_res between jobs
+ * like the job's own. A line is read again only while the job's recognition
+ * (every line's run and decode, the re-reads, and an estimate for the lines
+ * still to read), not counting the weights' loads, stays within cascade_us: the
+ * time ceiling, per capture attempt (a job read again after the screen changed
+ * starts it again). The workspace must hold vjo_vocr_lm_job_bytes() and
+ * vjo_vocr_cascade_job_bytes() more. When the model cannot be used the job goes
+ * on without it and says why in stats->cascade_rc. */
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;
@@ -234,29 +347,25 @@ typedef struct {
     void (*line)(void *ud, const VjoVocrLineInfo *info);
     void *ud;
     void (*sleep)(uint32_t us);
+    const VjoVocrLm *lm;
+    VjoVocrLmResident *lm_res;
+    char *raw;
+    size_t raw_cap;
+    const VjoVocrModel *cascade;
+    VjoVocrResident *cascade_res;
+    uint32_t cascade_us;
+    unsigned cascade_conf;
 } VjoVocrPolicy;
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
+/* The confidence under which the cascade reads a line again (vita-vn-ocr #82:
+ * under 0.7 flags about 1 line in 5 and 3 of 4 misread lines). */
+#define VJO_VOCR_CASCADE_CONF 700u
 
 /* The ink of a w x h crop of grey rows, stride apart (either polarity).
  * Returns 1 when it holds no text-like ink (vjo_vocr_blank), else 0. */
 int vjo_vocr_ink(const unsigned char *pixels, size_t stride, unsigned w, unsigned h, VjoVocrInk *out);
 int vjo_vocr_blank(const VjoVocrInk *ink);
 
-/* Weights kept between jobs. The caller supplies their memory: alloc returns
- * 16-byte aligned memory for `bytes`, or NULL (the job then fails with
- * VJO_E_OOM); release frees it and returns 0, or nonzero if it could not (the
- * memory then stays held but is never used as weights). Zero-initialize the
- * state fields; vocr_ocr.c maintains them. Between jobs, data is non-NULL
- * exactly when model is: memory is held only for verified weights. */
-typedef struct {
-    void *(*alloc)(void *ud, size_t bytes);
-    int (*release)(void *ud);
-    void *ud;
-    const VjoVocrModel *model;  /* verified weights of this model are in data, else NULL */
-    unsigned char *data;        /* the memory held, or NULL */
-    size_t capacity;            /* bytes of data */
-    uint64_t size, stamp;       /* VjoFile.size and .stamp of the file they were read from */
-} VjoVocrResident;
 
 /* Releases the resident weights. 0, or the release callback's failure (the
  * memory is then still held, and model is NULL). */
