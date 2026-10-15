@@ -1,5 +1,6 @@
-/* End-to-end requests: Lens OCR and dictionary lookup over HTTPS, plus the
- * overlay pipeline that ties them together (same code on host and Vita). */
+/* End-to-end requests: Lens OCR over HTTPS and the dictionary lookup (local
+ * files or a Hachidori relay), plus the overlay pipeline that ties them
+ * together (same code on host and Vita). */
 #ifndef VJO_CLIENT_H
 #define VJO_CLIENT_H
 
@@ -49,20 +50,8 @@ typedef struct {
 int vjo_lens_ocr(VjoArena *a, const VjoPlatform *p, const VjoJpegSource *src,
                  VjoLensResult *res, const char **text, VjoErr *err);
 
-/* A dictionary service's network side; vjo_dict_backend(cfg->dictionary) is
- * the selected one (names and settings: VjoDictInfo in config.h). */
-typedef struct {
-    const char *host, *path;
-    const char *auth_header; /* "Name: ...%s...\r\n", %s = API key */
-    char *(*build_request)(VjoArena *a, const char *text);
-    int (*parse_response)(VjoArena *a, const char *json, size_t len, VjoDictResult *out);
-    const char *(*error_message)(VjoArena *a, const char *json, size_t len);
-} VjoDictBackend;
-
-/* Backend for a VJO_DICT_* value (jpdb for an out-of-range one). */
-const VjoDictBackend *vjo_dict_backend(int dictionary);
-
-/* Looks up text with the dictionary selected in cfg. */
+/* Looks up text with the dictionary selected in cfg: the local .vjdict files
+ * (core/local_dict.h) or a Hachidori relay (core/hachidori.h). */
 int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
                     VjoDictResult *res, VjoErr *err);
 
@@ -103,10 +92,9 @@ int vjo_overlay_from_text(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
 int vjo_overlay_from_jpeg(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                           const VjoJpegSource *src, VjoOverlayData *out);
 
-/* Opens the connections a recognition will use ahead of it, when p keeps
- * connections (p->pool): Lens, and dictionary's (a VJO_DICT_*; < 0 none),
- * each connect giving up after timeout_us. */
-void vjo_overlay_warm(const VjoPlatform *p, int dictionary, int timeout_us);
+/* Opens the Lens connection a recognition will use ahead of it, when p keeps
+ * connections (p->pool), the connect giving up after timeout_us. */
+void vjo_overlay_warm(const VjoPlatform *p, int timeout_us);
 
 /* Short user-facing description of an error. */
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err);

@@ -48,6 +48,7 @@ class ReleaseInstall(unittest.TestCase):
             (self.device / partition / "tai/config.txt").write_bytes(self.original_tai)
         self.data = self.device / "ux0/data/VitaJPOverlay"
         self.data.mkdir(parents=True)
+        # jpdb_api_key: a removed online dictionary's key (a secret) from an older build
         (self.data / "config.ini").write_text("dictionary = hachidori\nocr_backend = lens\nfont_size_ja = 24\njpdb_api_key = test-key\n")
         (self.data / "games.ini").write_text("keep existing choices")
         (self.data / "region.ini").write_text("keep existing region")
@@ -129,9 +130,12 @@ elif '-o' in a:
         self.assertNotIn("vocr_model", config)
         for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_tier = normal",
                         "log_file = on", "anki_mining = off",
-                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24", "jpdb_api_key = test-key",
+                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24",
                         "ocr_lm = 1000k", "ocr_cascade_ms = 2000"):
             self.assertIn(setting, config)
+        # the removed online dictionaries' API key is gone, its value never printed
+        self.assertNotIn("api_key", config)
+        self.assertNotIn("test-key", config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
         self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())
@@ -146,7 +150,7 @@ elif '-o' in a:
     def test_package_settings_from_the_manifest_are_applied_after_the_defaults(self):
         # A test build's own settings (package_release.py --set): anki_mining = on wins over
         # the user's earlier off, and the installer says which settings the package brings.
-        (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = FL10_w8.vocr\njpdb_api_key = test-key\n")
+        (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = FL10_w8.vocr\njiten_api_key = test-key\n")
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
         manifest["install_settings"] = {"anki_mining": "on", "anki_host": ""}
@@ -156,11 +160,11 @@ elif '-o' in a:
         self.assertIn("package settings: anki_mining=on anki_host=\n", result.stdout)
         config = (self.data / "config.ini").read_text()
         # the older model choice became its size (FL10: Small), which the installer keeps
-        for setting in ("anki_mining = on\n", "anki_host =\n", "vocr_tier = small\n",
-                        "jpdb_api_key = test-key\n"):
+        for setting in ("anki_mining = on\n", "anki_host =\n", "vocr_tier = small\n"):
             self.assertIn(setting, config)
         self.assertNotIn("vocr_model", config)
-        self.assertNotIn("test-key", result.stdout)
+        self.assertNotIn("test-key", result.stdout + config)
+        self.assertIn("config.ini: jiten_api_key removed", result.stdout)
 
     def test_an_update_keeps_the_chosen_model_size(self):
         # API 21: the Overlay app's Model size is the user's; the installer sets no size or model.
@@ -175,8 +179,9 @@ elif '-o' in a:
             self.assertNotIn("config.ini: vocr_tier", result.stdout)
 
     def test_package_settings_are_validated_again_and_keys_are_masked(self):
-        # A crafted manifest: no shell runs, a line break of any kind or an unknown key is dropped,
-        # an API key's value is never printed.
+        # A crafted manifest: no shell runs, a line break of any kind or an unknown key is dropped
+        # (a removed online dictionary's API key too: the template has none), an API key's value
+        # is never printed.
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
         canary = self.root / "canary"
@@ -190,64 +195,65 @@ elif '-o' in a:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(canary.exists())
         self.assertNotIn("pkg-secret", result.stdout + result.stderr)
-        self.assertIn("jpdb_api_key=set", result.stdout)
         shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
-        for dropped in ("log_host", "hachidori_host", "anki_host", "bad key", "not_a_setting", "anki_deck"):
+        for dropped in ("log_host", "hachidori_host", "anki_host", "bad key", "not_a_setting", "anki_deck",
+                        "jpdb_api_key"):
             self.assertNotIn(dropped, shown)
         config = (self.data / "config.ini").read_text()
         self.assertIn(f"anki_audio_url = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
-        self.assertIn("jpdb_api_key = pkg-secret\n", config)
+        self.assertNotIn("pkg-secret", config)
+        self.assertNotIn("api_key", config)
         self.assertIn("log_file = on\n", config)
         self.assertNotIn("6.6.6.6", config)
         self.assertNotIn("not_a_setting", config)
 
     def test_a_credential_comes_from_the_packages_config_and_is_never_shown(self):
-        """audit-overlay-test3-cleanup B1: a package built with --set jpdb_api_key=... or anki_audio_url=...
-        says only "set" in its manifest; the installer takes the value from the package's config.ini (the
-        file --verify checks) and prints only set or empty, the audio source's URL included."""
-        key, url = "pkg-secret-key-77", "https://audio.invalid/a?term={term}&key=pkg-url-secret"
+        """audit-overlay-test3-cleanup B1: a package built with --set anki_audio_url=... says only "set" in
+        its manifest; the installer takes the value from the package's config.ini (the file --verify
+        checks) and prints only set or empty. The removed online dictionaries' API keys are no setting of
+        the template any more: a manifest naming one is ignored, and the user's old key is dropped."""
+        url = "https://audio.invalid/a?term={term}&key=pkg-url-secret"
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
             text = (self.package / name).read_text()
-            for k, v in (("jpdb_api_key", key), ("anki_audio_url", url)):
-                self.assertEqual(text.count(f"\n{k} =\n"), 1)
-                text = text.replace(f"\n{k} =\n", f"\n{k} = {v}\n")
-            (self.package / name).write_text(text)
+            self.assertEqual(text.count("\nanki_audio_url =\n"), 1)
+            self.assertNotIn("api_key", text)
+            (self.package / name).write_text(text.replace("\nanki_audio_url =\n", f"\nanki_audio_url = {url}\n"))
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
             data = (self.package / name).read_bytes()
             manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-        manifest["install_settings"] = {"anki_mining": "on", "jpdb_api_key": "set", "anki_audio_url": "set",
+        manifest["install_settings"] = {"anki_mining": "on", "anki_audio_url": "set", "jpdb_api_key": "set",
                                         "jiten_api_key": ""}
         manifest_path.write_text(json.dumps(manifest))
         (self.data / "config.ini").write_text("anki_mining = off\njpdb_api_key = users-own-key\n")
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
-        self.assertEqual(shown, "package settings: anki_mining=on jpdb_api_key=set anki_audio_url=set "
-                                "jiten_api_key=empty")
-        for secret in (key, url, "pkg-url-secret", "audio.invalid", "users-own-key"):
+        self.assertEqual(shown, "package settings: anki_mining=on anki_audio_url=set")
+        for secret in (url, "pkg-url-secret", "audio.invalid", "users-own-key"):
             self.assertNotIn(secret, result.stdout + result.stderr)
         config = (self.data / "config.ini").read_text()
-        self.assertIn(f"\njpdb_api_key = {key}\n", config)  # the package's value, as its --set asked
         self.assertIn(f"\nanki_audio_url = {url}\n", config)
-        self.assertIn("\njiten_api_key =\n", config)
+        self.assertNotIn("api_key", config)
+        self.assertNotIn("users-own-key", config)
         self.assertNotIn("= set\n", config)
+        self.assertIn("config.ini: jpdb_api_key removed", result.stdout)
         # a manifest naming a credential "set" while the package's config.ini has none leaves the user's
-        manifest["install_settings"] = {"jpdb_api_key": "set"}
-        manifest_path.write_text(json.dumps(manifest))
+        manifest["install_settings"] = {"anki_audio_url": "set"}
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
-            text = (self.package / name).read_text().replace(f"\njpdb_api_key = {key}\n", "\njpdb_api_key =\n")
+            text = (self.package / name).read_text().replace(f"\nanki_audio_url = {url}\n", "\nanki_audio_url =\n")
             (self.package / name).write_text(text)
             data = text.encode()
             manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
         manifest_path.write_text(json.dumps(manifest))
-        (self.data / "config.ini").write_text("jpdb_api_key = users-own-key\n")
+        own = "https://own.invalid/a?term={term}&key=users-own-url"
+        (self.data / "config.ini").write_text(f"anki_audio_url = {own}\n")
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("package settings:", result.stdout)
-        self.assertIn("\njpdb_api_key = users-own-key\n", (self.data / "config.ini").read_text())
-        self.assertNotIn("users-own-key", result.stdout + result.stderr)
+        self.assertIn(f"\nanki_audio_url = {own}\n", (self.data / "config.ini").read_text())
+        self.assertNotIn("users-own-url", result.stdout + result.stderr)
 
     def test_source_install_uses_the_checkout_template(self):
         # A source checkout has its template under docs, not at the package root.
@@ -287,11 +293,38 @@ elif '-o' in a:
             config = (self.data / "config.ini").read_text()
             self.assertIn("\nocr_backend = vocr\n", config)
             self.assertNotIn("ocr_backend = " + removed, config)
-            for setting in ("vocr_tier = normal", "font_size_ja = 24", "jpdb_api_key = test-key"):
+            for setting in ("vocr_tier = normal", "font_size_ja = 24"):
                 self.assertIn(setting, config)
             self.assertNotIn("vocr_model", config)
+            self.assertNotIn("test-key", config)
             self.assertIn("config.ini: ocr_backend = vocr", result.stdout)
             self.assertNotIn("test-key", result.stdout)
+
+    def test_source_install_rewrites_a_removed_dictionary_to_local(self):
+        # jpdb.io and jiten.moe were removed: the source installer (it keeps the saved
+        # dictionary, no --set dictionary) writes local, and drops their API keys, saying so
+        # without their values.
+        (self.package / "config.ini").unlink()
+        (self.package / "docs").mkdir()
+        shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
+        build = self.package / "build/vita"
+        build.mkdir(parents=True)
+        for plugin in (self.package / "ur0/tai").iterdir():
+            shutil.copyfile(plugin, build / plugin.name)
+        shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco", build / "vitajpoverlay.rco")
+        for removed in ("jpdb", "JITEN"):
+            (self.data / "config.ini").write_text(
+                "dictionary = %s\njpdb_api_key = secret-1\njiten_api_key = secret-2\nfont_size_ja = 24\n" % removed)
+            result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            config = (self.data / "config.ini").read_text()
+            self.assertIn("\ndictionary = local\n", config)
+            self.assertIn("font_size_ja = 24", config)
+            self.assertNotIn("secret", config + result.stdout + result.stderr)
+            self.assertNotIn("api_key", config)
+            for line in ("config.ini: dictionary = local", "config.ini: jpdb_api_key removed",
+                         "config.ini: jiten_api_key removed"):
+                self.assertIn(line, result.stdout)
 
     def test_missing_source_template_stops_before_uploading_plugins(self):
         result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")

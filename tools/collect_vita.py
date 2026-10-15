@@ -57,11 +57,16 @@ PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/
 # (package_release.py SECRET).
 CREDENTIAL = re.compile(r"api_key$|^anki_audio_url$", re.I)
 CREDENTIAL_NAME = r"[A-Za-z0-9_]*api_key|anki_audio_url"
+# The removed online dictionaries' API keys (api_key: jpdb's older name): a word that only STARTS with
+# one is theirs too (a typo, "jpdb_api_keyKEY"), as core/config.c and the installer treat it.
+REMOVED_KEY = r"(?:jpdb_api_key|jiten_api_key|api_key)"
+NAME = r"(" + REMOVED_KEY + r"|(?:" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_]))"
 # A line whose first word is one of them, whatever follows it (=, :, a space: the C parser logs a
-# line without = whole, as "ignored line '...'"), is a secret line.
-SECRET = re.compile(r"^([\ufeff\s]*)(" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_])(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
+# line without = whole, as "ignored line '...'"), commented out (; or #) or not, is a secret line.
+SECRET = re.compile(r"^([\ufeff\s]*(?:[;#][;#\s]*)?)" + NAME + r"(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
 # In the logs: anything after such a name on the same line, up to a quote (config warnings).
-LOG_SECRET = re.compile(r"(?i)(" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_])[^'\n]*")
+LOG_SECRET = re.compile(r"(?i)((?<![A-Za-z0-9_])" + REMOVED_KEY + r"|(?:" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_]))"
+                        r"[^'\n]*")
 LOG_FILES = re.compile(r"/(log|log\.old|status|status\.prev|kernel|kernel\.prev)\.txt$")
 DUMP_TIMEOUT = 900  # a crash dump can be tens of MB over the Vita's Wi-Fi
 

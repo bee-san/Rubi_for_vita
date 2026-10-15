@@ -1,7 +1,9 @@
 /* Furigana: the readings of a word's kanji, as ranges of the word with a
- * reading each (the subtitles strip draws them over the text), or in Anki's
- * syntax: a space, the base, its reading in brackets (" 降[ふ]っていた"), as
- * Anki's furigana filter reads them. */
+ * reading each, or in Anki's syntax: a space, the base, its reading in
+ * brackets (" 降[ふ]っていた"), as Anki's furigana filter reads them. A queued
+ * card whose record carries its dictionary's ruby markup (made by a removed
+ * online dictionary) still sends its ExpressionFurigana through them
+ * (core/anki.c). */
 #ifndef VJO_FURIGANA_H
 #define VJO_FURIGANA_H
 
@@ -17,8 +19,8 @@ typedef struct {
 } VjoRuby;
 
 /* The readings of the kanji of the n bytes of surface (a word as written:
- * "来た") from ruby markup: the token's own (jpdb: "来[き]た") or its
- * dictionary form's (jiten: "来[く]る"). Each kanji of the surface takes the
+ * "来た") from ruby markup: the word as written ("来[き]た") or its
+ * dictionary form ("来[く]る"). Each kanji of the surface takes the
  * reading of the same kanji in the ruby, also across a line break of the
  * surface; a dictionary-form reading that changes with conjugation (来 く ->
  * き/こ, 良/好 い -> よ, 行 ゆ -> い) follows the kana after it; an auxiliary

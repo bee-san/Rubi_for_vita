@@ -871,6 +871,31 @@ class DiagnosticsNeverDecide(unittest.TestCase):
         self.assertEqual((j["ocr_result"], j["diagnostics_result"]), ("INCOMPLETE", "INCOMPLETE"))
 
 
+class GameStartLines(unittest.TestCase):
+    """log.txt's "game ... started" lines (shell/worker.c on_game_start): before the online dictionaries'
+    removal they named the API key's state, "(key set|MISSING)"; since, they do not (audit N6, M24)."""
+
+    OLD = ("game PCSG00415 started: dictionary Local dictionaries (key MISSING), trigger l+r, subtitles select+r, "
+           "ocr_mode auto\n")
+    NEW = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+    RELAY = "game NPXS10028 started: dictionary Hachidori relay, trigger select, subtitles select+l, ocr_mode on_press\n"
+
+    def test_both_forms_are_read(self):
+        for text in (self.OLD, self.NEW):
+            lg = a.summarise_log(text)
+            self.assertEqual(lg["games"], {"PCSG00415": {"starts": 1, "ocr_mode": "auto",
+                                                         "dictionary": "Local dictionaries"}}, text)
+        lg = a.summarise_log(self.OLD + self.NEW + self.RELAY)
+        self.assertEqual(lg["games"], {"PCSG00415": {"starts": 2, "ocr_mode": "auto", "dictionary": "Local dictionaries"},
+                                       "NPXS10028": {"starts": 1, "ocr_mode": "on_press",
+                                                     "dictionary": "Hachidori relay"}})
+
+    def test_the_shell_writes_the_new_form(self):
+        # the format string the analyser reads, as shell/worker.c has it
+        worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        self.assertIn('vjo_log("game %s started: dictionary %s, trigger %s, subtitles %s, ocr_mode %s"', worker)
+        self.assertNotIn("(key %s)", worker)
+
 class OverlayCloseLines(unittest.TestCase):
     """log.txt's "overlay closed" lines (shell/overlay.cpp close_page), before and after row navigation (#81)."""
 

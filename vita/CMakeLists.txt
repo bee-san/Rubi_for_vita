@@ -91,7 +91,7 @@ target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ff
 add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/lens.c ${ROOT}/core/json.c
-  ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
+  ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
   ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
@@ -107,8 +107,8 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
-  ${ROOT}/core/json.c ${ROOT}/core/hachidori.c ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/jiten.c
-  ${ROOT}/core/jpdb.c ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
+  ${ROOT}/core/json.c ${ROOT}/core/hachidori.c ${ROOT}/core/http.c ${ROOT}/core/net.c
+  ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/base64.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
@@ -371,7 +371,7 @@ if(VJO_WITH_VOCR)
 endif()
 # config.ini sits at the zip's top level (the user edits it and copies it to
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites
-# the user's API key.
+# the user's settings.
 set(STAGE ${CMAKE_CURRENT_BINARY_DIR}/release)
 set(VJO_PLAINTEXT_SOURCE "${ROOT}/.refs/plaintext-dicts" CACHE PATH "Frozen private dictionary checkout")
 add_custom_target(release

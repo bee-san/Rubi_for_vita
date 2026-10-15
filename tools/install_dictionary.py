@@ -18,6 +18,10 @@ from convert_dictionary import HEADER, MAGIC, MAGIC_V2, RECORD, PAGE_SIZE
 
 DATA_DIR = "/ux0:/data/VitaJPOverlay"
 DICT_DIR = DATA_DIR + "/dictionaries"
+# The API keys of jpdb.io and jiten.moe, the removed online dictionaries (api_key: jpdb's
+# older name): --enable drops every line that starts with one, as the overlay ignores them
+# (core/config.c removed_secret; no setting's name starts with one of them).
+REMOVED_SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 
 
 def inspect(path):
@@ -49,6 +53,8 @@ def config_with_local(text, names):
               "local_dictionaries": ",".join(names)}
     lines, used = [], set()
     for line in text.splitlines():
+        if line.lstrip().lower().startswith(REMOVED_SECRETS):
+            continue  # the removed online dictionaries' API keys (core/config.c removed_secret)
         match = re.match(r"\s*([a-zA-Z_]+)\s*=", line)
         key = match.group(1).lower() if match else None
         if key in values:
@@ -60,6 +66,15 @@ def config_with_local(text, names):
         lines.append(line)
     lines.extend(f"{key} = {value}" for key, value in values.items() if key not in used)
     return "\n".join(lines) + "\n"
+
+
+def without_secrets(raw):
+    """The config file's bytes without the removed online dictionaries' API key lines (a BOM and every
+    other byte kept): the backup --enable leaves on the Vita holds no key either."""
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    kept = [line for line in raw[len(bom):].split(b"\n")
+            if not line.decode("utf-8", "replace").lstrip().lower().startswith(REMOVED_SECRETS)]
+    return bom + b"\n".join(kept)
 
 
 def mkdirs(ftp):
@@ -88,7 +103,7 @@ def enable(ftp, names):
     text = raw.decode("utf-8-sig")
     updated = config_with_local(text, names).encode()
     backup = DATA_DIR + "/config.ini.before-local-" + str(time.time_ns())
-    ftp.storbinary("STOR " + backup, io.BytesIO(raw))
+    ftp.storbinary("STOR " + backup, io.BytesIO(without_secrets(raw)))
     ftp.storbinary("STOR " + DATA_DIR + "/config.ini.local.tmp", io.BytesIO(updated))
     # VitaShell rename can reject an existing destination. Keep the old file
     # under a second name, then restore it if the replacement fails.
@@ -99,6 +114,13 @@ def enable(ftp, names):
     except ftplib.all_errors:
         ftp.rename(previous, DATA_DIR + "/config.ini")
         raise
+    # The replaced file itself: the backup above has its settings (without a removed API key).
+    try:
+        ftp.delete(previous)
+    except ftplib.error_reply:
+        pass  # VitaShell confirms DELE with a code ftplib does not expect (as install_ftp.sh notes)
+    except ftplib.all_errors:
+        print("Could not delete " + previous + ": delete it by hand (it can hold an old API key).")
     print("Enabled local dictionaries. Previous settings: " + backup)
 
 

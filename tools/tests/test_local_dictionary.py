@@ -396,9 +396,10 @@ class LocalDictionaryTest(unittest.TestCase):
 
 
 class FakeFTP:
-    def __init__(self, files=None, fail_replace=False):
+    def __init__(self, files=None, fail_replace=False, vitashell_dele=False):
         self.files = files or {}
         self.fail_replace = fail_replace
+        self.vitashell_dele = vitashell_dele
 
     def retrbinary(self, command, callback):
         name = command[5:]
@@ -416,20 +417,48 @@ class FakeFTP:
             raise ftplib.error_perm("550 destination exists")
         self.files[dest] = self.files.pop(source)
 
+    def delete(self, name):
+        if name not in self.files:
+            raise ftplib.error_perm("550 missing")
+        del self.files[name]
+        if self.vitashell_dele:
+            raise ftplib.error_reply("226 File deleted")  # VitaShell's reply to DELE (tools/install_ftp.sh)
+
 
 class InstallerTest(unittest.TestCase):
     def test_preserve_settings_and_back_up_config(self):
-        old = b"; my config\ndictionary = hachidori\njiten_api_key = secret\nanki_host = 10.0.0.3\ndictionary = jiten\n"
+        old = (b"; my config\ndictionary = hachidori\njiten_api_key = secret\nanki_host = 10.0.0.3\ndictionary = jiten\n"
+               b"JPDB_API_KEY: secret2\napi_key = secret3\n; jpdb_api_key = a comment\njpdb_api_keysecret4 = x\n"
+               b"  jiten_api_key secret5 ; dictionary = local\n")
         key = install.DATA_DIR + "/config.ini"
         ftp = FakeFTP({key: old})
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
             install.enable(ftp, ["main.vjdict", "extra.vjdict"])
         config = ftp.files[key].decode()
-        self.assertIn("jiten_api_key = secret", config)
+        # the removed online dictionaries' API keys (secrets) go; comments stay
+        self.assertNotIn("secret", config + out.getvalue())
+        self.assertIn("; jpdb_api_key = a comment", config)
+        self.assertIn("; my config\n", config)
         self.assertIn("anki_host = 10.0.0.3", config)
         self.assertEqual(config.count("dictionary = local"), 1)
         self.assertIn("local_dictionaries = main.vjdict,extra.vjdict", config)
-        self.assertIn(old, [value for path, value in ftp.files.items() if "before-local" in path])
+        # the backup on the Vita: the old file without its key lines, every other byte kept; the
+        # replaced file itself is deleted, so no file on the card holds a key (audit N1)
+        backups = [path for path in ftp.files if "before-local" in path]
+        self.assertEqual(len(backups), 1, backups)
+        self.assertEqual(ftp.files[backups[0]],
+                         b"; my config\ndictionary = hachidori\nanki_host = 10.0.0.3\ndictionary = jiten\n"
+                         b"; jpdb_api_key = a comment\n")
+        self.assertFalse(any(b"secret" in value for value in ftp.files.values()))
+        # VitaShell confirms DELE with a reply ftplib raises error_reply for: the file is gone, no warning
+        ftp = FakeFTP({key: old}, vitashell_dele=True)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            install.enable(ftp, ["main.vjdict"])
+        self.assertFalse(any(path.endswith(".active") for path in ftp.files))
+        self.assertNotIn("Could not delete", out.getvalue())
+        # a BOM before a key on the first line: the BOM stays, the key goes
+        self.assertEqual(install.without_secrets(b"\xef\xbb\xbfjpdb_api_key = k\r\nx = 1\r\n"), b"\xef\xbb\xbfx = 1\r\n")
+        self.assertEqual(install.without_secrets(b"x = 1\n"), b"x = 1\n")
 
     def test_restore_after_failed_config_rename(self):
         key = install.DATA_DIR + "/config.ini"

@@ -19,8 +19,8 @@ target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_
 target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
-  core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c core/jpdb.c
-  core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
+  core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c
+  core/textfilter.c core/entries.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c)

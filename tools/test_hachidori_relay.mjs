@@ -20,7 +20,7 @@ const exec = promisify(execFile);
 async function run(args, env = {}) {
   try {
     const result = await exec(cli, args, { timeout: 15000,
-      env: { ...process.env, VJO_HACHIDORI_HOST: "", VJO_JPDB_KEY: "", VJO_JITEN_KEY: "", ...env } });
+      env: { ...process.env, VJO_HACHIDORI_HOST: "", ...env } });
     return { code: 0, ...result };
   } catch (error) {
     if (typeof error.code !== "number") throw error;
@@ -104,12 +104,12 @@ test("relay settings work from config.ini without CLI dictionary or API-key over
   assert.match(result.stdout, /cat/u);
 });
 
-test("explicit legacy dictionary selections still use their own key requirements", async () => {
+test("the removed online dictionaries (jpdb.io, jiten.moe) are no longer a --dict choice", async () => {
   for (const dictionary of ["jpdb", "jiten"]) {
     const result = await run(["--dict", dictionary, "--text", "猫"]);
-    assert.equal(result.code, 1);
-    assert.match(result.stdout, /API key is not set/u);
-    assert.doesNotMatch(result.stdout, /hachidori_host/iu);
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /usage: vjo-cli/u);
+    assert.doesNotMatch(result.stderr, /jpdb|jiten|API key/iu);
   }
 });
 

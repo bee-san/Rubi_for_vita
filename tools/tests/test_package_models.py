@@ -254,8 +254,8 @@ class PackageModels(unittest.TestCase):
                           "ocr_mode": "auto", "log_file": True, "anki": False})
 
     def test_package_settings_reach_the_defaults_and_credentials_do_not(self):
-        secrets = {"jpdb_api_key": "fixture-secret-key", "jiten_api_key": "fixture-jiten-key-2",
-                   "anki_audio_url": "https://a.invalid/audio?term={term}&key=fixture-url-key"}
+        # the one credential left in the template (jpdb.io's and jiten.moe's API keys were removed with them)
+        secrets = {"anki_audio_url": "https://a.invalid/audio?term={term}&key=fixture-url-key"}
         manifest, template = self.manifest({"anki_mining": "on", "highlight_mode": "character", "ocr_settle_ms": "0",
                                             "ocr_refine_lines": "off", "ocr_skip_blank_lines": "on", **secrets})
         defaults = manifest["defaults"]
@@ -277,8 +277,12 @@ class PackageModels(unittest.TestCase):
         for key, value in secrets.items():
             self.assertIn(f"\n{key} = {value}\n", template)
         # an empty credential stays empty, in both
-        manifest, _ = self.manifest({"jpdb_api_key": "", "anki_mining": "on"})
-        self.assertEqual((manifest["install_settings"]["jpdb_api_key"], manifest["defaults"]["jpdb_api_key"]), ("", ""))
+        manifest, _ = self.manifest({"anki_audio_url": "", "anki_mining": "on"})
+        self.assertEqual((manifest["install_settings"]["anki_audio_url"], manifest["defaults"]["anki_audio_url"]), ("", ""))
+        # the removed online dictionaries' API keys are no setting of the template: refused before any output
+        for key in ("jpdb_api_key", "jiten_api_key", "api_key"):
+            with self.assertRaisesRegex(ValueError, "Not a setting of the config template: " + key):
+                self.package_fixture({key: "fixture-secret-key"})
         # a value core/config.c would not read as its type is refused before any output
         for bad in ({"log_file": "yes"}, {"ocr_cascade_ms": "2s"}):
             with self.assertRaises(ValueError):

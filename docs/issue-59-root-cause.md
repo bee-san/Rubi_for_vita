@@ -112,7 +112,7 @@ charged somewhere too; its size is unknown and not counted here.
 | overlay open, local pipeline | result arena 65,536 B when a lookup runs | same | PAF heap, through the 1.5 MiB reserve guard |
 | overlay open, network dictionary or Lens | 2 × 262,144 B arenas + connection pool | same | PAF heap |
 | Anki `×`/`△` (`anki_mining = on`, off by default) | not built into the Shell | 131,072 B (393,216 B with a picture field) + a 65,536 B thread stack + 4 KiB TLS, freed after the job | PAF heap; stack from the partition |
-| strip with furigana (needs a jiten/jpdb key) | not built | `vjo_strip_ruby_tpl` text widgets, made on demand | PAF heap |
+| strip with furigana (needs a jiten/jpdb key; removed with those dictionaries since) | not built | `vjo_strip_ruby_tpl` text widgets, made on demand | PAF heap |
 
 With the default configuration used in the test (VOCR, local JMdict, Anki off) the only
 allocation after boot is the 64 KiB result arena, and it did not run: no OCR job was logged.

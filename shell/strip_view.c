@@ -4,14 +4,13 @@
 
 #include "shell.h"
 
-static int s_on, s_font_ja, s_font_en, s_room;
+static int s_on, s_font_ja, s_font_en;
 
 void vjo_strip_configure(int on, const VjoConfig *cfg)
 {
     s_on = on;
     s_font_ja = cfg->font_size_ja;
     s_font_en = cfg->font_size_en;
-    s_room = vjo_config_api_key(cfg)[0] != '\0';
 }
 
 /* Every change bumps strip_version (under the view lock). */
@@ -34,10 +33,8 @@ void vjo_strip_show(const char *text, int kind, int busy)
         sceClibMemcpy(g_view.strip_text, text, n);
         g_view.strip_text[n] = '\0';
         g_view.strip_kind = kind;
-        g_view.strip_n_ruby = 0;
         g_view.strip_text_seq++;
     }
-    g_view.strip_ruby_room = s_room;
     g_view.strip_busy = busy;
     bump();
     vjo_view_unlock();
@@ -49,27 +46,4 @@ void vjo_strip_set_busy(int busy)
     g_view.strip_busy = busy;
     bump();
     vjo_view_unlock();
-}
-
-/* The text is read unlocked: the control thread is its only writer.
- * Without room (no jpdb/jiten key: local and Hachidori lookups carry no
- * readings) none is computed, so none is kept to be drawn later. The
- * readings are staged in the control thread's scratch rather than a static
- * copy, keeping the Shell's resident .bss small (issue #42); without scratch
- * the sentence shows without them. */
-void vjo_strip_show_readings(VjoArena *scratch, const VjoEntryList *words)
-{
-    size_t mark = vjo_arena_mark(scratch);
-    VjoStripRuby *r = s_room && g_view.strip_kind == VJO_STRIP_SENTENCE
-                          ? (VjoStripRuby *)vjo_arena_alloc(scratch, sizeof(*r) * VJO_STRIP_RUBY_MAX)
-                          : NULL;
-    int n = r ? vjo_strip_rubies(scratch, g_view.strip_text, words, r, VJO_STRIP_RUBY_MAX) : 0;
-    vjo_view_lock();
-    if (n)
-        sceClibMemcpy(g_view.strip_ruby, r, sizeof(r[0]) * (size_t)n);
-    g_view.strip_n_ruby = n;
-    g_view.strip_ruby_seq++;
-    bump();
-    vjo_view_unlock();
-    vjo_arena_release(scratch, mark);
 }

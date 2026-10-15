@@ -127,13 +127,17 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        299,008       262,144
-OCR worker pages in SceShell             299,008       262,144   (0: registered per game, not loaded there)
-VjoNet thread                            368,640       192,512
-VjoControl thread (boot complete)        389,120       172,032
-game start: result memory (local)        389,120       172,032
-Anki card saved: job thread              458,752       102,400
+Shell module loaded into SceShell        286,720       274,432
+OCR worker pages in SceShell             286,720       274,432   (0: registered per game, not loaded there)
+VjoNet thread                            356,352       204,800
+VjoControl thread (boot complete)        376,832       184,320
+game start: result memory (local)        376,832       184,320
+Anki card saved: job thread              446,464       114,688
 ```
+
+(The model holds the declared module pages: the online dictionaries' removal lowered them from
+299,008 to 286,720 B, 12,288 B less at every step above; the packaged module went from 294,912 B,
+main `ba5f69a`'s, to 286,720 B [measured: the build log's module row].)
 
 What this says, and what it does not:
 

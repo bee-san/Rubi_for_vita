@@ -103,12 +103,12 @@ gives the Yomitan value each field expects; a card fills them the same way:
 | Kiku field | Filled with |
 | --- | --- |
 | `Expression` | The dictionary form |
-| `ExpressionFurigana` | `言葉[ことば]`: the dictionary's own ruby where it has one (jiten), else the word's reading |
+| `ExpressionFurigana` | `言葉[ことば]`: the word's reading over its kanji (a queued record from the removed online dictionaries carries their own ruby, which wins) |
 | `ExpressionReading` | The reading in kana |
 | `ExpressionAudio` | The word's recording from `anki_audio_url`, looked up when sent (optional, empty by default) |
 | `MainDefinition` | The entry shown, as Yomitan writes one dictionary's glossary: `<div class="yomitan-glossary"><ol><li data-dictionary="JMdict Plain">…</li></ol></div>`, so Kiku names its page after the dictionary |
 | `Sentence` | The recognized text, the word in `<b>` |
-| `SentenceFurigana` | The same with readings, when the lookup has them (else without; Kiku bolds the word from `Sentence`) |
+| `SentenceFurigana` | The same text, the word in `<b>`: no dictionary gives readings per word (only the removed online ones did; a queued record of theirs keeps them) |
 | `Picture` | The card's screenshot, when it has one (none in this build, see below) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Kiku leaves out the one `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them |
@@ -120,9 +120,11 @@ The other Kiku fields (`SelectionText`, `DefinitionPicture`,
 `Is…Card` switches) stay empty. AnkiConnect ignores a field a note type
 lacks; the connection test lists any of the filled ones a Kiku note type does
 not have. The bundled dictionary (Daijirin4 → Sankoku8 → JMdict in one file)
-has no frequency ranks, pitch accents or per-token readings: with it those
-fields stay empty, and each entry's own dictionary (one of the three) names
-its glossary item. jpdb and jiten lookups fill all of them.
+has no frequency ranks or pitch accents: with it those fields stay empty, and
+each entry's own dictionary (one of the three) names its glossary item. A
+Hachidori relay's lookup carries its frequency rank (`FreqSort`). jpdb.io and jiten.moe,
+the online dictionaries that also gave pitch accents and readings per word,
+have been removed; cards they queued before still send with all of theirs.
 
 ## The queue on the memory card
 
@@ -153,12 +155,12 @@ card can be made into a note later, by any version that reads the record:
 | Key | Content |
 | --- | --- |
 | `version` | 3 |
-| `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none) |
-| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (a local one's from its definition's first line, `[JMdict Plain]`; a service's name for jpdb, jiten or Hachidori) |
+| `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none, as every one now: only the removed online dictionaries gave one) |
+| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (a local one's from its definition's first line, `[JMdict Plain]`; `Hachidori relay` for the relay; older records may name jpdb.io or jiten.moe) |
 | `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while △ can still send the card ([below](#memory-and-network)) |
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (99999 = none) and its source, pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |
-| `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
+| `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it (the text itself now: no dictionary gives readings per word), or `null` |
 | `picture` | Whether `<id>.jpg` goes with it |
 | `misc` | MiscInfo: `CLANNAD (2026-10-14 17:12)` |
 | `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp` (`psp` for Adrenaline's shared title IDs, NPXS10028 and PSPEMUCFW, whose name is Adrenaline's; a PSP game started from its own bubble runs under the bubble's ID and is recorded as `vita`) |
@@ -227,10 +229,16 @@ In SceShell (the overlay, `shell/anki.c`):
   own steps as a dry run (the record encoded, decoded and made into the Kiku
   note beside the settings, with the exchange's 16 KiB to spare in a 128 KiB
   arena). The first that would not fit, and the ones after it, are left out
-  and log.txt says how many were kept. Measured on the host with 8 dictionaries
-  (`what_cross_saves_triangle_sends_whatever_the_dictionaries`): entries of
-  900 B all kept (an 8,273 B record); 2,700 B, 5 of 7 (17,107 B); 7,000 B, 1
-  of 7. Every such card is sent by △.
+  and log.txt says how many were kept. The dry run and the send build the
+  request alike, each field and the request cut to its text, so its size does
+  not depend on how much of the arena is free (the test below sends every card
+  its dry run passed, at ten entry sizes). Measured on the host with 8
+  dictionaries (`what_cross_saves_triangle_sends_whatever_the_dictionaries`):
+  kana entries of 900 B all kept (an 8,273 B record); 2,700 B, 6 of 7
+  (19,890 B); 7,000 B, 1 of 7; entries whose text escaping grows (`&`, `<`, `"`,
+  line breaks) of 900 B, 6 of 7 (10,895 B); 2,700 B, 1 of 7; 7,000 B, none of
+  the others. Every such card is sent by △ (with entries of 7,000 B of escaping
+  text the shown entry alone used to be too large for it).
 - △ sends to `anki_host`, or for `auto` to the address in `anki_host.txt`,
   read again on every send. SceShell does not search the network: the
   search (up to 254 hosts in batches of 32 sockets) is the Overlay app's.

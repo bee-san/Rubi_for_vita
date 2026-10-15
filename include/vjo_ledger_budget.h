@@ -21,12 +21,22 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-/* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
+/* VitaJPOverlay_Shell.suprx: 212,992 text + 73,728 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
  * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss [measured, bcd3cf0],
- * and with the finder refinement 215,256 + 77,984 [measured, fec85af], still these pages. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
+ * and with the finder refinement 215,256 + 77,984 [measured, fec85af]: 217,088 + 81,920 B of pages;
+ * API 21's model sizes (#108) made it 216,448 + 77,624, 294,912 B of pages [measured, 8f1ec8f], and
+ * API 22 (#93) 216,856 + 77,648, the same pages [measured, ba5f69a].
+ * Lowered from 299,008 B by the removal of jpdb.io and jiten.moe, the online dictionaries: their
+ * clients and the subtitle strip's furigana (only their lookups gave readings) took 6,672 B off the
+ * text segment (.text -5,544 B, .rodata -1,040 B, the import stubs -48 B, alignment) and 6,444 B off
+ * .bss (shell/worker.c -3,340 B: VjoView's strip readings and two VjoConfig copies' API keys;
+ * shell/strip.cpp -2,584 B: its copy of the readings and their widgets; shell/anki.c -512 B: a third
+ * VjoConfig's keys), so the module is 210,184 text + 71,204 data/bss [measured: the build log's
+ * module rows, main ba5f69a and this change], one text page and one data page fewer than main's
+ * 294,912 B. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 286720u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.

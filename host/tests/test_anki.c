@@ -8,8 +8,6 @@
 #include "anki.h"
 #include "base64.h"
 #include "config.h"
-#include "jiten.h"
-#include "jpdb.h"
 #include "replay.h"
 
 static uint8_t g_mem[4u << 20];
@@ -144,9 +142,9 @@ static void test_anki_fields(void)
         /* MainDefinition and Glossary as Yomitan writes them, which Kiku pages by dictionary */
         static const char *const daijirin[] = {"[Daijirin4 Plain]\nA room; a <chamber>.\nAlso a stable."};
         static const char *const jmdict[] = {"[JMdict Plain]\nroom", "chamber"};
-        static const char *const jpdb[] = {"room \"heya\"", "chamber"};
+        static const char *const jitendex[] = {"room \"heya\"", "chamber"};
         VjoAnkiGloss more[2] = {{NULL, "部屋", "へや", (const char **)jmdict, 2},
-                                {"jpdb.io", "部屋", "へや", (const char **)jpdb, 2}};
+                                {"Jitendex.org", "部屋", "へや", (const char **)jitendex, 2}};
         VjoAnkiNote n = {.spelling = "部屋", .reading = "へや", .meanings = (const char **)daijirin, .n_meanings = 1,
                          .sentence = "", .rank = VJO_NO_RANK};
         setup();
@@ -164,14 +162,14 @@ static void test_anki_fields(void)
                            "&lt;chamber&gt;.<br>Also a stable.</span></li>"
                            "<li data-dictionary=\"JMdict Plain\"><i>(JMdict Plain)</i> <span><ul><li>room</li>"
                            "<li>chamber</li></ul></span></li>"
-                           "<li data-dictionary=\"jpdb.io\"><i>(jpdb.io)</i> <span><ul><li>room &quot;heya&quot;"
+                           "<li data-dictionary=\"Jitendex.org\"><i>(Jitendex.org)</i> <span><ul><li>room &quot;heya&quot;"
                            "</li><li>chamber</li></ul></span></li></ol></div>"));
         TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n));
         /* a name of the record's own wins; none at all: no label */
         n.dictionary = "Daijirin <4>";
         TEST_CHECK(strstr(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
                           "<li data-dictionary=\"Daijirin &lt;4&gt;\"><i>(Daijirin &lt;4&gt;)</i> <span>A room;") != NULL);
-        n.meanings = (const char **)jpdb;
+        n.meanings = (const char **)jitendex;
         n.n_meanings = 2;
         n.dictionary = NULL;
         TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
@@ -179,7 +177,8 @@ static void test_anki_fields(void)
                            "room &quot;heya&quot;</li><li>chamber</li></ul></span></li></ol></div>"));
         n.n_meanings = 0;
         TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n), ""));
-        /* the dictionary's ruby in Anki's syntax, else the whole word's reading */
+        /* the dictionary's ruby in Anki's syntax (a queued record of a removed online
+         * dictionary's lookup has one), else the whole word's reading */
         n.spelling = "取り扱い";
         n.reading = "とりあつかい";
         TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
@@ -249,16 +248,32 @@ static void test_anki_pitch(void)
     }
 }
 
-/* A dictionary result for "猫が\n好き" with tricky glosses. */
+/* A dictionary result for "猫が\n好き" with tricky glosses, and its words'
+ * frequency, part of speech and pitch (fields a local dictionary or the relay
+ * may fill; its frequency list is "BCCWJ"). */
 static void anki_list(VjoEntryList *l)
 {
-    VjoDictResult r;
-    const char *jp = "{\"tokens\":[[1,0,1,[[\"猫\",\"ねこ\"]]],[0,1,1,null],[2,2,2,[[\"好\",\"す\"],\"き\"]]],"
-                     "\"vocabulary\":["
-                     "[1,2,3,\"が\",\"が\",50,[\"indicates subject\"],[\"prt\"],[\"LH\"]],"
-                     "[10,20,30,\"猫\",\"ねこ\",1500,[\"cat \\\"neko\\\"\",\"a\\\\b <&>\\nc\"],[\"n\"],[\"HLL\"]],"
-                     "[11,21,31,\"好き\",\"すき\",null,[\"liked\"],[\"adj-na\",\"n\"],[\"LHL\",\"HLL\"]]]}";
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    static const char *const ga[] = {"indicates subject"}, *const neko[] = {"cat \"neko\"", "a\\b <&>\nc"};
+    static const char *const suki[] = {"liked"}, *const prt[] = {"prt"}, *const noun[] = {"n"};
+    static const char *const na[] = {"adj-na", "n"};
+    VjoDictResult r = {0};
+    VjoVocab *v = vjo_arena_zalloc(&A, 3 * sizeof(*v));
+    VjoToken *t = vjo_arena_zalloc(&A, 3 * sizeof(*t));
+    TEST_ASSERT(v && t);
+    v[0] = (VjoVocab){.spelling = "が", .reading = "が", .rank = 50, .meanings = (const char **)ga, .n_meanings = 1,
+                      .pos = (const char **)prt, .n_pos = 1, .pitch = {0}, .n_pitch = 1};
+    v[1] = (VjoVocab){.spelling = "猫", .reading = "ねこ", .rank = 1500, .meanings = (const char **)neko,
+                      .n_meanings = 2, .pos = (const char **)noun, .n_pos = 1, .pitch = {1}, .n_pitch = 1};
+    v[2] = (VjoVocab){.spelling = "好き", .reading = "すき", .rank = VJO_NO_RANK, .meanings = (const char **)suki,
+                      .n_meanings = 1, .pos = (const char **)na, .n_pos = 2, .pitch = {2, 1}, .n_pitch = 2};
+    t[0] = (VjoToken){1, 0, 1};
+    t[1] = (VjoToken){0, 1, 1};
+    t[2] = (VjoToken){2, 2, 2};
+    r.vocab = v;
+    r.n_vocab = 3;
+    r.tokens = t;
+    r.n_tokens = 3;
+    r.source = "BCCWJ";
     TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, l) == 0);
 }
 
@@ -268,51 +283,87 @@ static void anki_list(VjoEntryList *l)
     "{\"deckName\":\"Kiku\",\"checkChildren\":false,\"checkAllModels\":false}}"
 #define TARGET "\"deckName\":\"Kiku\",\"modelName\":\"Kiku\""
 
-/* jiten: furigana lined up from the dictionary form inside the sentence;
- * an overlapping token and a word without one are skipped. */
-static void test_anki_sentence_furigana_jiten(void)
+/* A local lookup's card (the shipped default): one entry, no frequency, pitch or
+ * part of speech; SentenceFurigana is the sentence as it is, the word in bold,
+ * as Sentence (no dictionary gives readings per word); ExpressionFurigana is
+ * the word's reading. Without a highlight nothing is in bold. */
+static void test_anki_local_card(void)
 {
-    const char *js =
-        "{\"tokens\":[[{\"wordId\":1,\"readingIndex\":0,\"start\":0,\"length\":1},"
-        "{\"wordId\":2,\"readingIndex\":0,\"start\":1,\"length\":1},"
-        "{\"wordId\":3,\"readingIndex\":0,\"start\":2,\"length\":5},"
-        "{\"wordId\":4,\"readingIndex\":0,\"start\":3,\"length\":1}]],"
-        "\"vocabulary\":["
-        "{\"wordId\":1,\"readingIndex\":0,\"spelling\":\"彼\",\"reading\":\"彼[かれ]\",\"frequencyRank\":299,"
-        "\"meaningsChunks\":[[\"he\"]],\"meaningsPartOfSpeech\":[\"pn\"],\"pitchAccents\":[1]},"
-        "{\"wordId\":2,\"readingIndex\":0,\"spelling\":\"は\",\"reading\":\"は\",\"meaningsChunks\":[[\"topic\"]]},"
-        "{\"wordId\":3,\"readingIndex\":0,\"spelling\":\"来る\",\"reading\":\"来[く]る\",\"frequencyRank\":59,"
-        "\"meaningsChunks\":[[\"to come\"]],\"meaningsPartOfSpeech\":[\"vk\",\"vi\",\"vk\"],\"pitchAccents\":[1]},"
-        "{\"wordId\":4,\"readingIndex\":0,\"spelling\":\"な\",\"reading\":\"な\",\"meaningsChunks\":[[\"x\"]]},"
-        "{\"wordId\":5,\"readingIndex\":0,\"spelling\":\"雨\",\"reading\":\"雨[あめ]\",\"meaningsChunks\":[[\"rain\"]]}]}";
-    VjoDictResult r;
+    static const char *const meanings[] = {"[JMdict Plain]\nto come"};
+    VjoDictResult r = {0};
     VjoEntryList l;
     VjoAnkiNote n;
     VjoAnkiMedia none = {0};
     VjoAnkiBody b;
-    int kuru = -1, ame = -1;
     setup();
-    TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
-    TEST_ASSERT(vjo_entries_build(&A, "彼は来なかった。", &r, &l) == 0);
-    for (int i = 0; i < l.n_entries; i++) {
-        if (!strcmp(l.entries[i].vocab->spelling, "来る"))
-            kuru = i;
-        if (!strcmp(l.entries[i].vocab->spelling, "雨"))
-            ame = i;
-    }
-    TEST_ASSERT(kuru >= 0 && ame >= 0);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, kuru, &n) == 0);
+    r.vocab = vjo_arena_zalloc(&A, sizeof(VjoVocab));
+    r.tokens = vjo_arena_zalloc(&A, sizeof(VjoToken));
+    TEST_ASSERT(r.vocab && r.tokens);
+    r.vocab[0] = (VjoVocab){.spelling = "来る", .reading = "くる", .rank = VJO_NO_RANK,
+                            .meanings = (const char **)meanings, .n_meanings = 1};
+    r.tokens[0] = (VjoToken){0, 2, 1};
+    r.n_vocab = r.n_tokens = 1;
+    TEST_ASSERT(vjo_entries_build(&A, "彼は\n来なかった。", &r, &l) == 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
+    TEST_CHECK(!n.furigana && !n.source && !n.n_pitch && !n.n_pos && n.rank == VJO_NO_RANK);
+    TEST_CHECK(n.sentence_furigana && !strcmp(n.sentence_furigana, "彼は\n来なかった。") &&
+               n.sf_hl_start == n.hl_start && n.sf_hl_end == n.hl_end && n.hl_start == 7 && n.hl_end == 10);
     TEST_ASSERT(vjo_anki_add_request(&A, &n, &none, &b) == 0);
-    TEST_CHECK(strstr(b.prefix, "\"SentenceFurigana\":\"彼[かれ]は<b> 来[こ]なかった</b>。\"") != NULL);
-    /* jiten's ruby of the dictionary form, kept as the word's furigana */
-    TEST_CHECK(n.furigana && !strcmp(n.furigana, "来[く]る"));
+    TEST_CHECK(strstr(b.prefix, "\"Sentence\":\"彼は<br><b>来</b>なかった。\",\"SentenceFurigana\":\"彼は<br><b>来</b>"
+                                "なかった。\"") != NULL);
     TEST_CHECK(strstr(b.prefix, "\"ExpressionFurigana\":\"来[く]る\"") != NULL);
-    TEST_CHECK(strstr(b.prefix, "\"PitchCategories\":\"kifuku\"") != NULL);
-    TEST_CHECK(strstr(b.prefix, "<li>Jiten: 59</li>") != NULL);
+    TEST_CHECK(!strstr(b.prefix, "\"Frequency\"") && !strstr(b.prefix, "\"FreqSort\"") &&
+               !strstr(b.prefix, "\"PitchPosition\"") && !strstr(b.prefix, "\"PitchCategories\""));
     TEST_MSG("%s", b.prefix);
-    /* a word without a token: nothing in bold */
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, ame, &n) == 0);
-    TEST_CHECK(n.sf_hl_start < 0 && !strcmp(n.sentence_furigana, "彼[かれ]は 来[こ]なかった。"));
+    /* a word without a highlight: nothing in bold */
+    l.entries[0].hl_start = l.entries[0].hl_end = -1;
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
+    TEST_CHECK(n.sf_hl_start < 0 && n.sf_hl_end < 0 && !strcmp(n.sentence_furigana, "彼は\n来なかった。"));
+}
+
+/* A request takes the same bytes wherever it is built: shell/anki.c's save checks with a dry run
+ * in its own arena that △ can send the card, and the send builds it in another, emptier one. A
+ * VjoBuf grows by doubling where the arena has room and to the exact size near its end, so each
+ * field's value and the request are cut to their text: the bytes used never depend on the room
+ * (a card the save said fits was refused by the send when VjoConfig shrank; host test
+ * what_cross_saves_triangle_sends_whatever_the_dictionaries). */
+static void test_anki_request_bytes_do_not_depend_on_the_arena(void)
+{
+    static uint8_t room[512 * 1024];
+    static char text[4][5001];
+    const char *meanings[1] = {text[0]}, *more_meanings[3][1] = {{text[1]}, {text[2]}, {text[3]}};
+    VjoAnkiGloss more[3];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = 1200, .meanings = meanings, .n_meanings = 1,
+                     .sentence = "猫が\n好き", .hl_start = 10, .hl_end = 16, .sentence_furigana = "猫が\n好き",
+                     .sf_hl_start = 10, .sf_hl_end = 16, .source = "BCCWJ", .dictionary = "Daijirin"};
+    VjoAnkiMedia none = {0};
+    VjoAnkiBody b;
+    VjoArena a;
+    size_t need;
+    for (int k = 0; k < 4; k++) { /* escaping grows it: & < > " and line breaks */
+        for (int i = 0; i < 5000; i++)
+            text[k][i] = "\"&<\n>xy"[(i + k) % 7];
+        text[k][5000] = '\0';
+    }
+    for (int k = 0; k < 3; k++)
+        more[k] = (VjoAnkiGloss){"JMdict", "好き", "すき", more_meanings[k], 1};
+    n.more = more;
+    n.n_more = 3;
+    vjo_arena_init(&a, room, sizeof(room));
+    TEST_ASSERT(vjo_anki_add_request(&a, &n, &none, &b) == 0);
+    need = a.used;
+    TEST_CHECK(b.prefix_len > 40000 && need < sizeof(room) / 2);
+    TEST_MSG("request %u B, %u B used", (unsigned)b.prefix_len, (unsigned)need);
+    for (size_t size = need; size <= sizeof(room); size += 3001) {
+        vjo_arena_init(&a, room, size);
+        int ok = vjo_anki_add_request(&a, &n, &none, &b) == 0;
+        TEST_CHECK_(ok && a.used == need, "arena of %u B: %s, %u B used (%u in the others)", (unsigned)size,
+                    ok ? "built" : "refused", (unsigned)a.used, (unsigned)need);
+        if (!ok || a.used != need)
+            break;
+    }
+    vjo_arena_init(&a, room, need - 1);
+    TEST_CHECK(vjo_anki_add_request(&a, &n, &none, &b) < 0);
 }
 
 static void test_anki_requests(void)
@@ -341,20 +392,20 @@ static void test_anki_requests(void)
         vjo_anki_misc_info(misc, sizeof(misc), "Persona 4 <Golden>", &when);
     }
     n.misc = misc;
-    n.dictionary = "jpdb.io";
+    n.dictionary = "Jitendex.org";
     TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
     /* Kiku v2.1.0's field names, in its order, the media fields named empty */
     TEST_CHECK(!strcmp(b.prefix,
                        "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET ",\"fields\":{"
                        "\"Expression\":\"猫\",\"ExpressionFurigana\":\"猫[ねこ]\",\"ExpressionReading\":\"ねこ\","
                        "\"MainDefinition\":\"<div style=\\\"text-align: left;\\\" class=\\\"yomitan-glossary\\\"><ol>"
-                       "<li data-dictionary=\\\"jpdb.io\\\"><i>(jpdb.io)</i> <span><ul><li>cat &quot;neko&quot;</li>"
+                       "<li data-dictionary=\\\"Jitendex.org\\\"><i>(Jitendex.org)</i> <span><ul><li>cat &quot;neko&quot;</li>"
                        "<li>a\\\\b &lt;&amp;&gt;<br>c</li></ul></span></li></ol></div>\","
-                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"SentenceFurigana\":\"<b>猫[ねこ]</b>が<br> 好[す]き\","
+                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"SentenceFurigana\":\"<b>猫</b>が<br>好き\","
                        "\"Picture\":\"\","
                        "\"PitchPosition\":\"<span style=\\\"display:inline;\\\"><span>[</span><span>1</span>"
                        "<span>]</span></span>\",\"PitchCategories\":\"atamadaka\","
-                       "\"Frequency\":\"<ul style=\\\"text-align: left;\\\"><li>jpdb: 1500</li></ul>\","
+                       "\"Frequency\":\"<ul style=\\\"text-align: left;\\\"><li>BCCWJ: 1500</li></ul>\","
                        "\"FreqSort\":\"1500\","
                        "\"MiscInfo\":\"Persona 4 &lt;Golden&gt; (2026-10-11 09:05)\"},"
                        "\"tags\":[\"vita-jp-overlay\"]," OPTS ","
@@ -386,7 +437,7 @@ static void test_anki_requests(void)
     TEST_CHECK(!strcmp(b.prefix, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET
                                  ",\"fields\":{\"Expression\":\"好き\",\"ExpressionFurigana\":\"好[す]き\","
                                  "\"ExpressionReading\":\"すき\",\"Sentence\":\"猫が<br><b>好き</b>\","
-                                 "\"SentenceFurigana\":\"猫[ねこ]が<br><b> 好[す]き</b>\",\"PitchPosition\":\"<ol>"
+                                 "\"SentenceFurigana\":\"猫が<br><b>好き</b>\",\"PitchPosition\":\"<ol>"
                                  "<li><span style=\\\"display:inline;\\\"><span>[</span><span>2</span><span>]</span></span></li>"
                                  "<li><span style=\\\"display:inline;\\\"><span>[</span><span>1</span><span>]</span></span></li>"
                                  "</ol>\",\"PitchCategories\":\"odaka,atamadaka\"},\"tags\":[\"vita-jp-overlay\"]," OPTS "}}}"));
@@ -906,7 +957,8 @@ TEST_LIST = {
     {"anki_fields", test_anki_fields},
     {"anki_requests", test_anki_requests},
     {"anki_pitch", test_anki_pitch},
-    {"anki_sentence_furigana_jiten", test_anki_sentence_furigana_jiten},
+    {"anki_local_card", test_anki_local_card},
+    {"anki_request_bytes_do_not_depend_on_the_arena", test_anki_request_bytes_do_not_depend_on_the_arena},
     {"anki_probe", test_anki_probe},
     {"anki_check", test_anki_check},
     {"anki_add", test_anki_add},

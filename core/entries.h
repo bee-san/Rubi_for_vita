@@ -6,14 +6,12 @@
 
 #include "arena.h"
 #include "dict.h"
-#include "furigana.h"
 
 typedef struct {
     const VjoVocab *vocab;
     int pos16;              /* token position in the lookup text, -1 if none */
     int hl_start, hl_end;   /* byte range in VjoEntryList.header, -1 if none */
     const char *text;       /* "spelling (reading) rank\nmeaning..." (shared by a word's entries) */
-    const char *furigana;   /* the token's VjoToken.furigana (ruby markup), NULL if none */
 } VjoEntry;
 
 typedef struct {
@@ -29,13 +27,8 @@ typedef struct {
  * the dictionary's order). */
 int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r, VjoEntryList *out);
 
-/* The readings of the header's kanji (byte ranges in the header, in text
- * order) from the entries the header's furigana takes: those with text in
- * the header, less one overlapping the one before. Up to cap; returns the
- * number written. */
-int vjo_entries_rubies(const VjoEntryList *l, VjoRuby *out, int cap);
-
-/* Is entry i one of those? */
+/* Is entry i one of those with text in the header, less one overlapping
+ * the one before (in text order)? */
 int vjo_entry_in_text(const VjoEntryList *l, int i);
 
 /* Entry format: spelling + " (reading)" if different + " rank",

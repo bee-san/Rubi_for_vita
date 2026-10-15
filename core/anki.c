@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "base64.h"
+#include "furigana.h"
 #include "json.h"
 #include "pitch.h"
 #include "port.h"
@@ -320,35 +321,18 @@ static char *dup(VjoArena *a, const char *s)
     return vjo_arena_strndup(a, s ? s : "", s ? strlen(s) : 0);
 }
 
-/* The header with every word's furigana into out->sentence_furigana,
- * with entry target's range (if the furigana takes it). Returns 0, or -1 on
- * OOM. */
-static int sentence_furigana(VjoArena *a, const VjoEntryList *l, int target, VjoAnkiNote *out)
+/* The header with every word's furigana into out->sentence_furigana, with
+ * entry target's range (if the furigana takes it). No lookup gives readings
+ * per word any more (only the removed online dictionaries did), so it is the
+ * header itself with the word's own range: what rendering the readings of a
+ * local or Hachidori lookup, which has none, always made. */
+static void sentence_furigana(const VjoEntryList *l, int target, VjoAnkiNote *out)
 {
-    const char *h = l->header;
-    size_t len = strlen(h);
-    int cap = (int)(len / 2) + 1; /* a kanji is 3 or 4 bytes */
-    VjoRuby *r = (VjoRuby *)vjo_arena_alloc(a, sizeof(VjoRuby) * (size_t)cap);
-    int nr;
-    VjoBuf b;
-    if (!r)
-        return -1;
-    nr = vjo_entries_rubies(l, r, cap);
-    vjo_buf_init(&b, a);
+    out->sentence_furigana = out->sentence;
     if (vjo_entry_in_text(l, target)) {
-        size_t hs = (size_t)l->entries[target].hl_start, he = (size_t)l->entries[target].hl_end;
-        vjo_furigana_render(&b, h, 0, hs, r, nr, 0);
-        out->sf_hl_start = (int)b.len;
-        vjo_furigana_render(&b, h, hs, he, r, nr, 0);
-        out->sf_hl_end = (int)b.len;
-        vjo_furigana_render(&b, h, he, len, r, nr, 0);
-    } else {
-        vjo_furigana_render(&b, h, 0, len, r, nr, 0);
+        out->sf_hl_start = l->entries[target].hl_start;
+        out->sf_hl_end = l->entries[target].hl_end;
     }
-    if (b.oom)
-        return -1;
-    out->sentence_furigana = vjo_buf_cstr(&b);
-    return 0;
 }
 
 int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoAnkiNote *out)
@@ -368,16 +352,12 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     out->hl_start = e->hl_start;
     out->hl_end = e->hl_end;
     out->source = l->source;
-    out->furigana = v->ruby ? dup(a, v->ruby) : NULL;
     out->sf_hl_start = out->sf_hl_end = -1;
-    if (sentence_furigana(a, l, entry, out) < 0) {
-        out->sentence_furigana = NULL; /* added without it */
-        out->sf_hl_start = out->sf_hl_end = -1;
-    }
     m = (char **)vjo_arena_alloc(a, sizeof(char *) * (size_t)(v->n_meanings ? v->n_meanings : 1));
     p = (char **)vjo_arena_alloc(a, sizeof(char *) * (size_t)(v->n_pos ? v->n_pos : 1));
     if (!out->spelling || !out->reading || !out->sentence || !m || !p)
         return -1;
+    sentence_furigana(l, entry, out);
     for (int i = 0; i < v->n_meanings; i++)
         if (!(m[i] = dup(a, v->meanings[i])))
             return -1;
@@ -437,6 +417,18 @@ char *vjo_anki_can_add_request(VjoArena *a, const VjoEntryList *l, int n)
     for (int i = 0; i < n; i++)
         words[i] = l->entries[i].vocab->spelling;
     return can_add_request(a, words, n);
+}
+
+/* A finished buffer's text, its block (the arena's last allocation) cut to it. A VjoBuf grows by
+ * doubling where it has room and to the exact size near the arena's end, so its capacity depends
+ * on where it was built; cut to its text, a field value or the request takes the same bytes in
+ * the save's dry run as in the send (shell/anki.c sendable, request_fits). NULL on OOM. */
+static char *buf_done(VjoBuf *b)
+{
+    char *s = vjo_buf_cstr(b);
+    if (s && vjo_arena_extend_last(b->arena, b->data, b->cap, b->len + 1) == 0)
+        b->cap = b->len + 1;
+    return s;
 }
 
 static int is_media(int field)
@@ -500,7 +492,7 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
         break;
     default: break;
     }
-    return vjo_buf_cstr(&b);
+    return buf_done(&b);
 }
 
 /* "audio"/"picture":[{"filename":..,"fields":[field], then the source */
@@ -564,7 +556,7 @@ int vjo_anki_add_request(VjoArena *a, const VjoAnkiNote *n, const VjoAnkiMedia *
     }
     if (b.oom)
         return -1;
-    out->prefix = vjo_buf_cstr(&b);
+    out->prefix = buf_done(&b);
     if (!out->prefix)
         return -1;
     out->prefix_len = b.len;

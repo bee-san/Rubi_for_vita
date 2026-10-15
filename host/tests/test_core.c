@@ -9,9 +9,6 @@
 #include "foreground.h"
 #include "furigana.h"
 #include "http.h"
-#include "jiten.h"
-#include "jpdb.h"
-#include "pitch.h"
 #include "json.h"
 #include "jpegsw.h"
 #include "lens.h"
@@ -288,43 +285,11 @@ static void test_utf_character_cursor(void)
     TEST_CHECK(vjo_utf8_cursor_step(text, len, 1, -1) == 0);
 }
 
-/* ---------- json / jpdb ---------- */
+/* ---------- json ---------- */
 
-static void test_jpdb_request(void)
+static void test_json(void)
 {
-    char *j;
     setup();
-    j = vjo_jpdb_build_request(&A, "猫が\"好き\"\\\n");
-    TEST_CHECK(strstr(j, "\"text\":\"猫が\\\"好き\\\"\\\\\\n\"") != NULL);
-    TEST_CHECK(strstr(j, "\"position_length_encoding\":\"utf16\"") != NULL);
-    TEST_CHECK(strstr(j, "\"token_fields\":[\"vocabulary_index\",\"position\",\"length\",\"furigana\"]") != NULL);
-    TEST_CHECK(strstr(j, "\"vocabulary_fields\":[\"vid\",\"sid\",\"rid\",\"spelling\",\"reading\",\"frequency_rank\",\"meanings\",\"part_of_speech\",\"pitch_accent\"]") != NULL);
-}
-
-static const char *JPDB_SAMPLE =
-    "{\"tokens\":[[1,0,1,null],[0,1,1,null],[2,2,2,[[\"好\",\"す\"],\"き\"]],[1,5,1,null]],"
-    "\"vocabulary\":["
-    "[1,2,3,\"が\",\"が\",50,[\"indicates subject\"]],"
-    "[10,20,30,\"猫\",\"ねこ\",1500,[\"cat\",\"\\u732b \\ud83d\\ude00\"]],"
-    "[11,21,31,\"好き\",\"すき\",null,[\"liked\"]]"
-    "]}";
-
-static void test_jpdb_parse(void)
-{
-    VjoDictResult r;
-    setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, JPDB_SAMPLE, strlen(JPDB_SAMPLE), &r) == 0);
-    TEST_CHECK(r.n_vocab == 3 && r.n_tokens == 4);
-    TEST_CHECK(r.vocab[0].rank == 50);
-    TEST_CHECK(r.vocab[2].rank == VJO_NO_RANK);
-    TEST_CHECK(!strcmp(r.vocab[1].spelling, "猫") && !strcmp(r.vocab[1].reading, "ねこ"));
-    TEST_CHECK(r.vocab[1].n_meanings == 2 && !strcmp(r.vocab[1].meanings[1], "猫 😀"));
-    TEST_CHECK(r.tokens[2].vocab == 2 && r.tokens[2].pos16 == 2 && r.tokens[2].len16 == 2);
-    {
-        const char *eb = "{\"error\":\"bad_key\",\"error_message\":\"Invalid API key\"}";
-        const char *em = vjo_jpdb_error_message(&A, eb, strlen(eb));
-        TEST_CHECK(em && !strcmp(em, "Invalid API key"));
-    }
     {
         VjoJson j;
         VjoBuf b;
@@ -346,45 +311,51 @@ static void test_jpdb_parse(void)
         TEST_CHECK(vjo_json_int(&j, 4, &v) == -1);
         TEST_CHECK(vjo_json_int(&j, 5, &v) == 0 && v == 3);
     }
-    TEST_CHECK(vjo_jpdb_parse_response(&A, "{\"x\":1}", 7, &r) == -1);
-    TEST_CHECK(vjo_jpdb_parse_response(&A, "{", 1, &r) == -1);
+    {
+        VjoJson j;
+        const char *js = "{\"surrogates\":\"\\u732b \\ud83d\\ude00\"}";
+        TEST_ASSERT(vjo_json_parse(&A, js, strlen(js), &j) == 0);
+        TEST_CHECK(!strcmp(vjo_json_str(&A, &j, vjo_json_obj_get(&j, 0, "surrogates")), "猫 😀"));
+    }
 }
 
-/* ---------- jiten.moe ---------- */
+/* ---------- dictionary results (as the relay and local lookups make them) ---------- */
 
-static void test_jiten_ruby(void)
+typedef struct {
+    const char *spelling, *reading;
+    int rank;
+    const char *meanings[3];
+} TestWord;
+
+typedef struct {
+    int vocab, pos16, len16;
+} TestToken;
+
+/* A VjoDictResult of n words and m tokens, in A. */
+static void test_result(VjoDictResult *r, const TestWord *w, int n, const TestToken *t, int m)
 {
-    setup();
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "天[てん]気[き]"), "てんき"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "お茶[ちゃ]"), "おちゃ"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "取[と]り扱[あつか]い説[せつ]明[めい]書[しょ]"),
-                       "とりあつかいせつめいしょ"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "今日[きょう]"), "きょう"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "人々[ひとびと]"), "ひとびと"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "ドア"), "ドア"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "ＡＢ[えーびー]だ"), "えーびーだ"));
-    TEST_CHECK(!strcmp(vjo_jiten_ruby_to_kana(&A, "壊[こわ"), "壊[こわ"));
+    memset(r, 0, sizeof(*r));
+    r->vocab = vjo_arena_zalloc(&A, sizeof(VjoVocab) * (size_t)(n ? n : 1));
+    r->tokens = vjo_arena_zalloc(&A, sizeof(VjoToken) * (size_t)(m ? m : 1));
+    TEST_ASSERT(r->vocab && r->tokens);
+    for (int i = 0; i < n; i++) {
+        VjoVocab *v = &r->vocab[i];
+        v->spelling = w[i].spelling;
+        v->reading = w[i].reading;
+        v->rank = w[i].rank;
+        v->meanings = (const char **)w[i].meanings;
+        while (v->n_meanings < 3 && w[i].meanings[v->n_meanings])
+            v->n_meanings++;
+    }
+    for (int i = 0; i < m; i++)
+        r->tokens[i] = (VjoToken){t[i].vocab, t[i].pos16, t[i].len16};
+    r->n_vocab = n;
+    r->n_tokens = m;
 }
 
-static void test_jiten_request(void)
-{
-    char *j;
-    setup();
-    j = vjo_jiten_build_request(&A, "猫が\"好き\"");
-    TEST_CHECK(!strcmp(j, "{\"text\":[\"猫が\\\"好き\\\"\"]}"));
-}
-
-static void test_jpdb_pitch(void)
-{
-    TEST_CHECK(vjo_pitch_from_pattern("LHLL", 4) == 2); /* 昨日 + particle */
-    TEST_CHECK(vjo_pitch_from_pattern("LHHH", 4) == 0); /* heiban */
-    TEST_CHECK(vjo_pitch_from_pattern("HLL", 3) == 1);
-    TEST_CHECK(vjo_pitch_from_pattern("LHHL", 4) == 3); /* odaka: the drop is on the particle */
-    TEST_CHECK(vjo_pitch_from_pattern("", 0) == 0);
-}
-
-/* Readings for a word as written, from the jiten dictionary form's ruby
- * (cases from real /api/reader/parse responses). */
+/* Readings for a word as written, from its dictionary form's ruby (cases
+ * from real responses of jiten.moe, a removed online dictionary, whose
+ * queued cards still carry them: core/anki.c ExpressionFurigana). */
 static void test_furigana_align(void)
 {
     static const char *const cases[][3] = {
@@ -408,7 +379,7 @@ static void test_furigana_align(void)
         {"良かった", "良[い]い", " 良[よ]かった"}, /* 良い read いい: only the plain form */
         {"良い", "良[い]い", " 良[い]い"},
         {"良く", "良[よ]い", " 良[よ]く"},
-        {"一人で", "一[ひと]人[り]で", " 一[ひと] 人[り]で"}, /* jpdb's token furigana */
+        {"一人で", "一[ひと]人[り]で", " 一[ひと] 人[り]で"}, /* a word's own furigana (jpdb's tokens) */
         /* one token for 来て下さい: 下 has no reading in the ruby, an
          * auxiliary's is used */
         {"来て下さい", "来[く]る", " 来[き]て 下[くだ]さい"},
@@ -463,144 +434,20 @@ static void test_furigana_rubies(void)
     TEST_CHECK(vjo_furigana_rubies("猫", strlen("猫"), NULL, r, 8) == 0);
 }
 
-/* jpdb's furigana comes from the text without line breaks: a word across
- * one keeps it. */
-static void test_entry_furigana_line_break(void)
-{
-    const char *jp = "{\"tokens\":[[0,0,1,[[\"雨\",\"あめ\"]]],[1,2,3,[[\"降\",\"ふ\"],\"った\"]]],"
-                     "\"vocabulary\":[[1,2,3,\"雨\",\"あめ\",1000,[\"rain\"],[\"n\"],[\"HLL\"]],"
-                     "[4,5,6,\"降る\",\"ふる\",1300,[\"to fall\"],[\"v5r\"],[\"HLL\"]]]}";
-    VjoDictResult r;
-    VjoEntryList l;
-    VjoRuby rb[8];
-    VjoBuf b;
-    char *f;
-    setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
-    TEST_CHECK(!strcmp(r.tokens[1].furigana, "降[ふ]った") && !strcmp(r.source, "jpdb"));
-    TEST_ASSERT(vjo_entries_build(&A, "雨が降\nった", &r, &l) == 0);
-    TEST_CHECK(!strcmp(l.source, "jpdb"));
-    TEST_ASSERT(vjo_entries_rubies(&l, rb, 8) == 2);
-    TEST_CHECK(rb[1].start == 6 && rb[1].end == 9 && !memcmp(rb[1].reading, "ふ", 3));
-    vjo_buf_init(&b, &A);
-    vjo_furigana_render(&b, l.header, 0, strlen(l.header), rb, 2, 0);
-    f = vjo_buf_cstr(&b);
-    TEST_CHECK(f && !strcmp(f, "雨[あめ]が 降[ふ]\nった"));
-    TEST_MSG("%s", f ? f : "(null)");
-}
-
-/* The strip's readings: UTF-16 ranges of its (maybe cut) text. */
-static void test_strip_rubies(void)
-{
-    const char *jp = "{\"tokens\":[[0,0,2,[[\"𠮟\",\"しか\"]]],[1,2,1,[[\"雨\",\"あめ\"]]],"
-                     "[2,3,4,[[\"大人\",\"おとなおとなおとなおとな\"],\"しい\"]]],"
-                     "\"vocabulary\":[[1,2,3,\"𠮟る\",\"しかる\",1,[\"scold\"],[\"v\"],[\"HL\"]],"
-                     "[4,5,6,\"雨\",\"あめ\",1,[\"rain\"],[\"n\"],[\"HL\"]],"
-                     "[7,8,9,\"大人しい\",\"おとなしい\",1,[\"quiet\"],[\"adj\"],[\"HL\"]]]}";
-    VjoDictResult r;
-    VjoEntryList l;
-    VjoStripRuby s[8];
-    setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
-    TEST_ASSERT(vjo_entries_build(&A, "𠮟\r\n雨大人しい", &r, &l) == 0);
-    /* 𠮟 is two units, \r none; the long reading is left out */
-    TEST_ASSERT(vjo_strip_rubies(&A, l.header, &l, s, 8) == 2);
-    TEST_CHECK(s[0].start == 0 && s[0].end == 2 && !strcmp(s[0].reading, "しか"));
-    TEST_CHECK(s[1].start == 3 && s[1].end == 4 && !strcmp(s[1].reading, "あめ"));
-    /* cut text: only the readings inside it */
-    TEST_CHECK(vjo_strip_rubies(&A, "𠮟\r\n", &l, s, 8) == 1);
-    TEST_CHECK(vjo_strip_rubies(&A, "雨", &l, s, 8) == 0); /* another text */
-    TEST_CHECK(vjo_strip_rubies(&A, l.header, &l, s, 1) == 1);
-}
-
-/* The header's readings: from each word in text order, an overlapping
- * token and a word without one skipped. */
-static void test_entries_rubies(void)
-{
-    const char *js =
-        "{\"tokens\":[[{\"wordId\":1,\"readingIndex\":0,\"start\":0,\"length\":1},"
-        "{\"wordId\":3,\"readingIndex\":0,\"start\":2,\"length\":5},"
-        "{\"wordId\":1,\"readingIndex\":0,\"start\":3,\"length\":1}]],"
-        "\"vocabulary\":["
-        "{\"wordId\":1,\"readingIndex\":0,\"spelling\":\"彼\",\"reading\":\"彼[かれ]\",\"meaningsChunks\":[[\"he\"]]},"
-        "{\"wordId\":3,\"readingIndex\":0,\"spelling\":\"来る\",\"reading\":\"来[く]る\",\"meaningsChunks\":[[\"to come\"]]},"
-        "{\"wordId\":5,\"readingIndex\":0,\"spelling\":\"雨\",\"reading\":\"雨[あめ]\",\"meaningsChunks\":[[\"rain\"]]}]}";
-    VjoDictResult r;
-    VjoEntryList l;
-    VjoRuby rb[8];
-    int n;
-    setup();
-    TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
-    TEST_ASSERT(vjo_entries_build(&A, "彼は\n来なかった。", &r, &l) == 0);
-    n = vjo_entries_rubies(&l, rb, 8);
-    TEST_ASSERT(n == 2);
-    TEST_CHECK(rb[0].start == 0 && rb[0].end == 3 && !memcmp(rb[0].reading, "かれ", 6));
-    TEST_CHECK(rb[1].start == 7 && rb[1].end == 10 && !memcmp(rb[1].reading, "こ", 3));
-    TEST_CHECK(vjo_entries_rubies(&l, rb, 1) == 1);
-}
-
-static void test_jiten_parse(void)
-{
-    /* Shape of a real /api/reader/parse response (trimmed): "𠮟" is a
-     * surrogate pair, so お茶 starts at UTF-16 index 4; を repeats. */
-    const char *js =
-        "{\"tokens\":[[{\"wordId\":1002430,\"readingIndex\":0,\"start\":4,\"end\":6,\"length\":2,\"conjugations\":[]},"
-        "{\"wordId\":2029010,\"readingIndex\":0,\"start\":6,\"end\":7,\"length\":1,\"conjugations\":[]},"
-        "{\"wordId\":1169870,\"readingIndex\":0,\"start\":7,\"end\":9,\"length\":2,\"conjugations\":[\"past\"]},"
-        "{\"wordId\":2029010,\"readingIndex\":0,\"start\":10,\"end\":11,\"length\":1,\"conjugations\":[]},"
-        "{\"wordId\":4242,\"readingIndex\":3,\"start\":11,\"end\":12,\"length\":1,\"conjugations\":[]}]],"
-        "\"vocabulary\":["
-        "{\"wordId\":1002430,\"readingIndex\":0,\"spelling\":\"お茶\",\"reading\":\"お茶[ちゃ]\",\"frequencyRank\":1199,"
-        "\"partsOfSpeech\":[\"noun\"],\"meaningsChunks\":[[\"tea (usu. green)\"],[\"tea ceremony\",\"chanoyu\"]],"
-        "\"meaningsPartOfSpeech\":[\"n\"],\"knownState\":[0],\"pitchAccents\":[0],\"studyDeckIds\":[]},"
-        "{\"wordId\":2029010,\"readingIndex\":0,\"spelling\":\"を\",\"reading\":\"を\",\"frequencyRank\":4,"
-        "\"meaningsChunks\":[[\"indicates direct object of action\"]],\"knownState\":[0]},"
-        "{\"wordId\":1169870,\"readingIndex\":0,\"spelling\":\"飲む\",\"reading\":\"飲[の]む\",\"frequencyRank\":299,"
-        "\"meaningsChunks\":[[\"to drink\",\"to gulp\"],[]],\"knownState\":[1]},"
-        "{\"wordId\":2029010,\"readingIndex\":0,\"spelling\":\"を\",\"reading\":\"を\",\"frequencyRank\":4,"
-        "\"meaningsChunks\":[[\"indicates direct object of action\"]],\"knownState\":[0]}]}";
-    VjoDictResult r;
-    VjoEntryList l;
-    setup();
-    TEST_ASSERT(vjo_jiten_parse_response(&A, js, strlen(js), &r) == 0);
-    TEST_CHECK(r.n_vocab == 3); /* を deduplicated */
-    TEST_CHECK(!strcmp(r.vocab[0].reading, "おちゃ") && r.vocab[0].rank == 1199);
-    TEST_CHECK(r.vocab[0].n_meanings == 2 && !strcmp(r.vocab[0].meanings[1], "tea ceremony; chanoyu"));
-    TEST_CHECK(r.vocab[2].n_meanings == 1 && !strcmp(r.vocab[2].meanings[0], "to drink; to gulp"));
-    TEST_CHECK(!strcmp(r.vocab[0].ruby, "お茶[ちゃ]") && r.vocab[0].n_pitch == 1 && r.vocab[0].pitch[0] == 0);
-    TEST_CHECK(r.vocab[0].n_pos == 1 && !strcmp(r.vocab[0].pos[0], "n"));
-    TEST_CHECK(r.vocab[1].n_pitch == 0 && r.vocab[1].n_pos == 0);
-    TEST_CHECK(r.n_tokens == 5 && !r.tokens[0].furigana);
-    TEST_CHECK(r.tokens[1].vocab == 1 && r.tokens[3].vocab == 1);
-    TEST_CHECK(r.tokens[4].vocab == -1);
-    TEST_CHECK(r.tokens[0].pos16 == 4 && r.tokens[0].len16 == 2);
-
-    TEST_ASSERT(vjo_entries_build(&A, "𠮟る。お茶を飲み、茶を", &r, &l) == 0);
-    /* one entry per occurrence: を twice */
-    TEST_CHECK(l.n_entries == 4);
-    TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "𠮟る。【お茶】を飲み、茶を"));
-    TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "𠮟る。お茶【を】飲み、茶を"));
-    TEST_CHECK(!strcmp(l.entries[2].text, "飲む (のむ) 299\nto drink; to gulp"));
-    TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 3), "𠮟る。お茶を飲み、【茶】を"));
-    TEST_CHECK(l.entries[3].vocab == l.entries[1].vocab && l.entries[3].text == l.entries[1].text);
-
-    TEST_CHECK(vjo_jiten_parse_response(&A, "{\"tokens\":[]}", 13, &r) == -1);
-    TEST_CHECK(!strcmp(vjo_jiten_error_message(&A, "{\"title\":\"Unauthorized\",\"status\":401}", 37),
-                       "Unauthorized"));
-    TEST_CHECK(vjo_jiten_error_message(&A, "Too many requests", 17) == NULL);
-}
-
 static void test_entries(void)
 {
     VjoDictResult r;
     VjoEntryList l;
-    const char *jp = "{\"tokens\":[[1,0,1,null],[0,1,1,null],[2,2,2,null]],\"vocabulary\":["
-                     "[1,2,3,\"が\",\"が\",50,[\"indicates subject\"]],"
-                     "[10,20,30,\"猫\",\"ねこ\",1500,[\"cat\",\"feline\"]],"
-                     "[11,21,31,\"好き\",\"好き\",null,[\"liked\"]]]}";
+    static const TestWord words[] = {{"が", "が", 50, {"indicates subject"}},
+                                     {"猫", "ねこ", 1500, {"cat", "feline"}},
+                                     {"好き", "好き", VJO_NO_RANK, {"liked"}}};
+    static const TestToken tokens[] = {{1, 0, 1}, {0, 1, 1}, {2, 2, 2}};
+    static const TestWord twice[] = {{"猫", "ねこ", 1500, {"cat"}}, {"と", "と", 20, {"and"}},
+                                     {"犬", "いぬ", 900, {"dog"}}};
+    static const TestToken twice_tokens[] = {{0, 0, 1}, {1, 1, 1}, {0, 2, 1}};
     setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
-    /* jpdb text "猫が好き" came from filtered "猫が\n好き" */
+    test_result(&r, words, 3, tokens, 3);
+    /* the lookup's text "猫が好き" came from filtered "猫が\n好き" */
     TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, &l) == 0);
     TEST_CHECK(!strcmp(l.header, "猫が\n好き"));
     /* every word gets an entry, in text order */
@@ -616,11 +463,7 @@ static void test_entries(void)
 
     /* a word used twice: an entry for each, in text order; a word without
      * a token comes last */
-    jp = "{\"tokens\":[[0,0,1,null],[1,1,1,null],[0,2,1,null]],\"vocabulary\":["
-         "[10,20,30,\"猫\",\"ねこ\",1500,[\"cat\"]],"
-         "[1,2,3,\"と\",\"と\",20,[\"and\"]],"
-         "[11,21,31,\"犬\",\"いぬ\",900,[\"dog\"]]]}";
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, twice, 3, twice_tokens, 3);
     TEST_ASSERT(vjo_entries_build(&A, "猫と猫", &r, &l) == 0);
     TEST_CHECK(l.n_entries == 4);
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "【猫】と猫"));
@@ -634,33 +477,32 @@ static void test_entries_surrogates_and_trim(void)
 {
     VjoDictResult r;
     VjoEntryList l;
+    static const TestWord cat[] = {{"猫", "ねこ", 900, {NULL}}}, two[] = {{"猫", "ねこ", 900, {NULL}},
+                                                                     {"犬", "いぬ", 800, {NULL}}};
     /* "😀猫" : 猫 is at UTF-16 index 2 */
-    const char *jp = "{\"tokens\":[[0,2,1,null]],\"vocabulary\":[[1,1,1,\"猫\",\"ねこ\",900,[]]]}";
+    static const TestToken at2[] = {{0, 2, 1}}, at4[] = {{0, 4, 1}};
+    static const TestToken past[] = {{0, 4, 999999999}, {1, 999999999, 5}};
     setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, cat, 1, at2, 1);
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     /* index 2 is the emoji's high surrogate: the highlight covers whole
-     * code points (jpdb indexes the untrimmed text, 猫 is at index 4) */
+     * code points (lookups index the untrimmed text, 猫 is at index 4) */
     TEST_CHECK(l.entries[0].hl_start == 0 && l.entries[0].hl_end == 4);
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "【😀】猫"));
-    jp = "{\"tokens\":[[0,4,1,null]],\"vocabulary\":[[1,1,1,\"猫\",\"ねこ\",900,[]]]}";
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, cat, 1, at4, 1);
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     TEST_CHECK(!strcmp(l.header, "😀猫"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "😀【猫】"));
     TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) 900"));
 
     /* server positions past the text or huge lengths are clamped */
-    jp = "{\"tokens\":[[0,4,999999999,null],[1,999999999,5,null]],\"vocabulary\":"
-         "[[1,1,1,\"猫\",\"ねこ\",900,[]],[2,2,2,\"犬\",\"いぬ\",800,[]]]}";
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, two, 2, past, 2);
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "😀【猫】"));
     TEST_CHECK(l.entries[1].hl_start == -1);
     /* pos + len would overflow int (beyond what the JSON parsers accept):
      * the end saturates */
-    jp = "{\"tokens\":[[0,4,1,null]],\"vocabulary\":[[1,1,1,\"猫\",\"ねこ\",900,[]]]}";
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, cat, 1, at4, 1);
     r.tokens[0].len16 = 0x7fffffff;
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "😀【猫】"));
@@ -827,7 +669,7 @@ static void test_config(void)
 {
     VjoConfig c;
     const char *ini = "\xEF\xBB\xBF; comment\n"
-                      "dictionary = JPDB\n"
+                      "dictionary = Hachidori\n"
                       "jpdb_api_key = abc123 ; my key\n"
                       "jiten_api_key = ak_xyz\n"
                       "frequency_filter=500\n"
@@ -844,12 +686,8 @@ static void test_config(void)
     TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
                c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 1);
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.dictionary == VJO_DICT_JPDB);
-    TEST_CHECK(!strcmp(c.api_key[VJO_DICT_JPDB], "abc123") && !strcmp(c.api_key[VJO_DICT_JITEN], "ak_xyz"));
-    TEST_CHECK(!strcmp(vjo_config_api_key(&c), "abc123"));
-    c.dictionary = VJO_DICT_JITEN;
-    TEST_CHECK(!strcmp(vjo_config_api_key(&c), "ak_xyz") && !strcmp(vjo_dict_name(c.dictionary), "jiten.moe"));
-    c.dictionary = VJO_DICT_JPDB;
+    TEST_CHECK(c.dictionary == VJO_DICT_HACHIDORI && !strcmp(vjo_dict_name(c.dictionary), "Hachidori relay"));
+    TEST_CHECK(!strcmp(vjo_dict_name(VJO_DICT_LOCAL), "Local dictionaries"));
     TEST_CHECK(c.non_japanese_filter == VJO_FILTER_NONE);
     TEST_CHECK(c.font_size_ja == 18); /* invalid -> default */
     TEST_CHECK(c.font_size_en == 10);
@@ -857,9 +695,83 @@ static void test_config(void)
     TEST_CHECK(c.ocr_mode == VJO_OCR_ON_PRESS);
     TEST_CHECK(!strcmp(c.log_host, "192.168.1.5"));
     TEST_CHECK(c.log_file == 1);
-    /* font_size_ja and bogus; the removed frequency_filter is silent */
+    /* font_size_ja and bogus; the removed frequency_filter and API keys are silent */
     TEST_CHECK(c.n_warnings == 2);
     TEST_MSG("warnings: %d", c.n_warnings);
+    /* jpdb.io and jiten.moe, the removed online dictionaries: local, with a
+     * warning, in any case; their API keys (and api_key, jpdb's older name)
+     * are ignored without one, so no warning shows a key's line. */
+    {
+        static const struct { const char *ini, *warning; } removed[] = {
+            {"dictionary = jpdb\n", "dictionary: jpdb.io was removed; using local"},
+            {"dictionary = JITEN ; old\n", "dictionary: jiten.moe was removed; using local"},
+            {"Dictionary = Jpdb\r\n", "Dictionary: jpdb.io was removed; using local"},
+        };
+        for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
+            vjo_config_defaults(&c);
+            c.dictionary = VJO_DICT_HACHIDORI;
+            vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
+            TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
+            TEST_CHECK(!strcmp(c.warnings[0], removed[i].warning));
+            TEST_MSG("%s: %s", removed[i].ini, c.warnings[0]);
+        }
+        /* also a typo's line (the key glued to the name, "secret-8 ; x = y" read as the key),
+         * and one too long to read, which would otherwise warn "value too long" */
+        static char keys[2048];
+        int k = snprintf(keys, sizeof(keys), "dictionary = local\njpdb_api_key = secret-1\njiten_api_key = secret-2 ; mine\n"
+                         "api_key = secret-3\nJPDB_API_KEY=secret-4\njiten_api_key secret-5\n"
+                         "jpdb_api_key: secret-6\n  Jiten_Api_Key\tsecret-7\njpdb_api_key secret-8 ; x = y\n"
+                         "jpdb_api_keysecret-9\napi_keys = secret-10\njpdb_api_key = ");
+        memset(keys + k, 'S', 1500);
+        memcpy(keys + k + 1500, "\n", 2);
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, keys, strlen(keys));
+        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
+        TEST_MSG("%d warnings, first: %s", c.n_warnings, c.n_warnings ? c.warnings[0] : "");
+        /* nothing of them is kept anywhere: every byte is the defaults' (audit N6, M2) */
+        {
+            VjoConfig d;
+            vjo_config_defaults(&d);
+            TEST_CHECK(!memcmp(&c, &d, sizeof(c)));
+        }
+        /* another line without '=' is still quoted, another unknown key still named */
+        const char *others = "jpdb_api_key_old = x\nbogus line\nlens_api_key = y\n";
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, others, strlen(others));
+        TEST_CHECK(c.n_warnings == 2 && !strcmp(c.warnings[0], "ignored line 'bogus line'") &&
+                   !strcmp(c.warnings[1], "unknown setting 'lens_api_key'"));
+        TEST_CHECK(vjo_dict_find("jpdb") < 0 && vjo_dict_find("jiten") < 0 && vjo_dict_find("LOCAL") == VJO_DICT_LOCAL &&
+                   vjo_dict_find("hachidori") == VJO_DICT_HACHIDORI);
+        /* The IDs the self-test reports (config dictionary=) do not move. */
+        TEST_CHECK(VJO_DICT_HACHIDORI == 2 && VJO_DICT_LOCAL == 3);
+    }
+    /* The lines the Overlay app's saves rewrite (core/config.h vjo_config_removed_line). */
+    {
+        static const char *const drop[] = {"jpdb_api_key = x\n", "  JITEN_API_KEY=x", "api_key = x\r\n",
+                                           "jiten_api_key x\n", "jpdb_api_key: x\n", "jpdb_api_key =\n",
+                                           "jpdb_api_keyx\n", "jpdb_api_key_old = x\n", "api_keys = x\n",
+                                           "\tJiten_Api_Key_typo: x"};
+        static const char *const replace[] = {"dictionary = jpdb\n", "Dictionary=JITEN ; old\r\n",
+                                              "  dictionary =\tjpdb", "dictionary = jiten # x\n"};
+        static const char *const keep[] = {"dictionary = local\n", "dictionary = hachidori\n", "dictionary = jpdbx\n",
+                                           "; dictionary = jpdb\n", "dictionaryx = jpdb\n", "lens_api_key = x\n",
+                                           "my_api_key = x\n", "anki_host = jpdb\n", "jpdb_api_ke = x\n",
+                                           "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
+        const char *r;
+        for (size_t i = 0; i < sizeof(drop) / sizeof(drop[0]); i++) {
+            TEST_CHECK(vjo_config_removed_line(drop[i], strlen(drop[i]), &r) == VJO_LINE_DROP && !r);
+            TEST_MSG("%s", drop[i]);
+        }
+        for (size_t i = 0; i < sizeof(replace) / sizeof(replace[0]); i++) {
+            TEST_CHECK(vjo_config_removed_line(replace[i], strlen(replace[i]), &r) == VJO_LINE_REPLACE &&
+                       r && !strcmp(r, "dictionary = local\n"));
+            TEST_MSG("%s", replace[i]);
+        }
+        for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); i++) {
+            TEST_CHECK(vjo_config_removed_line(keep[i], strlen(keep[i]), &r) == VJO_LINE_KEEP && !r);
+            TEST_MSG("%s", keep[i]);
+        }
+    }
     vjo_config_defaults(&c);
     const char *selection_off = "japanese_only_selection = OFF\nocr_backend = LENS\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
@@ -982,10 +894,12 @@ static void test_config(void)
         vjo_config_defaults(&d);
         vjo_config_parse(&d, t, strlen(t));
         TEST_CHECK(d.n_warnings == 0);
-        TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO && d.api_key[VJO_DICT_JPDB][0] == 0 &&
+        TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO &&
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
+        /* no trace of the removed online dictionaries (jpdb.io, jiten.moe) or their keys */
+        TEST_CHECK(!strstr(t, "jpdb") && !strstr(t, "jiten") && !strstr(t, "api_key") && !strstr(t, "furigana"));
         TEST_CHECK(d.ocr_settle_ms == 150 && d.ocr_settle_max_ms == 2000 && d.ocr_skip_blank_lines == 0);
         TEST_CHECK(d.ocr_refine_lines == 2 && strstr(t, "\nocr_refine_lines = psp\n"));
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
@@ -1012,8 +926,7 @@ static void test_config(void)
         const char *old = "api_key = k1\nfont_size = 20\nhw_jpeg = on\nfrequency_filter = 3\ncombo_delay_ms = 0\n";
         vjo_config_defaults(&c);
         vjo_config_parse(&c, old, strlen(old));
-        TEST_CHECK(!strcmp(c.api_key[VJO_DICT_JPDB], "k1"));
-        TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18);
+        TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18 && c.dictionary == VJO_DICT_LOCAL);
     }
 
     /* docs/config.example.ini is the file written on first run */
@@ -1384,11 +1297,10 @@ static void test_styled(void)
     VjoEntryList l;
     VjoStyled st;
     uint32_t a, n;
-    const char *jp = "{\"tokens\":[[0,0,1,null],[1,2,2,null]],\"vocabulary\":["
-                     "[1,1,1,\"猫\",\"ねこ\",1500,[\"cat <pet>\",\"A&B\"]],"
-                     "[2,2,2,\"好き\",\"すき\",900,[\"liked\"]]]}";
+    static const TestWord words[] = {{"猫", "ねこ", 1500, {"cat <pet>", "A&B"}}, {"好き", "すき", 900, {"liked"}}};
+    static const TestToken tokens[] = {{0, 0, 1}, {1, 2, 2}};
     setup();
-    TEST_ASSERT(vjo_jpdb_parse_response(&A, jp, strlen(jp), &r) == 0);
+    test_result(&r, words, 2, tokens, 2);
     TEST_ASSERT(vjo_entries_build(&A, "猫が\r\n好き", &r, &l) == 0);
 
     /* header: one span, \r dropped; highlight ranges in UTF-16 units */
@@ -1488,18 +1400,7 @@ static void test_jpegsw(void)
     TEST_CHECK(vjo_jpeg_encode(&A, 0, 21, 0, grad_rows, &w, 90, &out) == -1);
 }
 
-/* ---------- recorded fixtures (host/fixtures/<name>/{lens.pb,jpdb.json|jiten.json,expected.txt}) ---------- */
-
-static int fixture_has(const char *dir, const char *name)
-{
-    char path[1100];
-    FILE *f;
-    snprintf(path, sizeof(path), "%s/%s", dir, name);
-    f = fopen(path, "rb");
-    if (f)
-        fclose(f);
-    return f != NULL;
-}
+/* ---------- recorded fixtures (host/fixtures/<name>/{lens.pb,expected.txt}) ---------- */
 
 static void test_fixtures(void)
 {
@@ -1526,17 +1427,12 @@ static void test_fixtures(void)
         /* same config as tools/record_fixtures.sh's vjo-cli --replay */
         vjo_config_defaults(&cfg);
         cfg.ocr_backend = VJO_OCR_LENS; /* these fixtures replay Lens responses */
-        vjo_replay_config(&cfg, dir);
         vjo_arena_init(&files, fmem, sizeof(fmem));
         TEST_CASE(e->d_name);
-        /* without one the replay fails the lookup like an offline network,
-         * and the golden would carry that error */
-        TEST_CHECK_(fixture_has(dir, "jiten.json") || fixture_has(dir, "jpdb.json"),
-                    "%s has no dictionary recording (jiten.json or jpdb.json)", e->d_name);
-        vjo_replay_overlay(&A, &files, dir, &cfg, &od);
-        TEST_CHECK(od.failed_stage != VJO_STAGE_OCR);
-        /* the subtitle (after the OCR phase) is the full overlay's header */
-        TEST_CHECK(od.sentence && !strcmp(od.sentence, od.list.header));
+        TEST_CHECK(vjo_replay_ocr(&A, &files, dir, &cfg, &od) == VJO_OK);
+        TEST_CHECK(od.failed_stage == VJO_STAGE_NONE && od.err.rc == VJO_OK);
+        /* the sentence (the subtitle, the overlay's header before a lookup) */
+        TEST_CHECK(od.sentence && od.list.header == od.sentence && !od.list.n_entries);
         got = vjo_render_overlay(&A, &od);
         TEST_CHECK(!strcmp(got, expected));
         TEST_MSG("fixture %s differs:\n--- got ---\n%s\n--- expected ---\n%s", e->d_name, got, expected);
@@ -1544,6 +1440,18 @@ static void test_fixtures(void)
     }
     closedir(d);
     TEST_CHECK_(n > 0, "%d fixtures", n);
+    /* without a recording the replay fails like an offline network */
+    setup();
+    {
+        VjoConfig cfg;
+        VjoOverlayData od;
+        vjo_config_defaults(&cfg);
+        cfg.ocr_backend = VJO_OCR_LENS;
+        vjo_arena_init(&files, fmem, sizeof(fmem));
+        TEST_CHECK(vjo_replay_ocr(&A, &files, VJO_FIXTURES "/word_lookup", &cfg, &od) == VJO_E_NET);
+        TEST_CHECK(od.failed_stage == VJO_STAGE_OCR);
+    }
+    TEST_CHECK(!strcmp(vjo_fixture_file(VJO_LENS_HOST), "lens.pb") && !vjo_fixture_file("192.168.1.20"));
 }
 
 /* kernel/triggers.c (pad masks as SCE_CTRL_*) */
@@ -2490,17 +2398,9 @@ TEST_LIST = {
     {"utf", test_utf},
     {"utf_character_cursor", test_utf_character_cursor},
     {"japanese_character_cursor", test_japanese_character_cursor},
-    {"jpdb_request", test_jpdb_request},
-    {"jpdb_parse", test_jpdb_parse},
-    {"jiten_ruby", test_jiten_ruby},
-    {"jiten_request", test_jiten_request},
-    {"jiten_parse", test_jiten_parse},
-    {"jpdb_pitch", test_jpdb_pitch},
+    {"json", test_json},
     {"furigana_align", test_furigana_align},
     {"furigana_rubies", test_furigana_rubies},
-    {"entries_rubies", test_entries_rubies},
-    {"strip_rubies", test_strip_rubies},
-    {"entry_furigana_line_break", test_entry_furigana_line_break},
     {"entries", test_entries},
     {"entries_surrogates_and_trim", test_entries_surrogates_and_trim},
     {"foreground", test_foreground},

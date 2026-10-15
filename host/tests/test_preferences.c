@@ -54,7 +54,7 @@ static const char original[] =
     "dictionary = local\nlocal_dictionaries = daijirin.vjdict,jmdict.vjdict\n"
     "local_dictionary_results = 2\n"
     "ocr_model_dir = ux0:data/custom-ocr\nvocr_model = H15_w8.vocr\n"
-    "jpdb_api_key = example-jpdb\njiten_api_key = example-jiten\n"
+    "hachidori_host = 192.168.1.20\n"
     "font_size_ja = 22\nunknown_future_setting = unchanged\n";
 
 static void put_file(const char *path, const char *data, size_t n)
@@ -86,19 +86,19 @@ static void check_choices(int backend, int japanese, int highlight_mode)
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.font_size_ja == 22);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
     TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
-    TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JPDB], "example-jpdb"));
-    TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JITEN], "example-jiten"));
+    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20") && cfg.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(arena.used == 0 && handles == 0);
 }
 static void test_patch_preserves_unrelated_bytes(void)
 {
+    /* (the removed online dictionaries' API key lines go: test_removed_dictionaries_rewritten_by_saves) */
     const char input[] = "\xEF\xBB\xBF  OCR_BACKEND=meiki\r\n"
-        "; comment about ocr_backend=x\r\njpdb_api_key = keep-this\r\n"
+        "; comment about ocr_backend=x\r\njpdb_api_key = drop-this\r\n"
         "ocr_backend = lens\njapanese_only_selection=off\n"
         "JAPANESE_ONLY_SELECTION = on\nHIGHLIGHT_MODE=character\n"
         "highlight_mode = word\nfuture = raw;#value";
     const char expected[] = "\xEF\xBB\xBFocr_backend = vocr\n"
-        "; comment about ocr_backend=x\r\njpdb_api_key = keep-this\r\n"
+        "; comment about ocr_backend=x\r\n"
         "japanese_only_selection = on\nhighlight_mode = word\nfuture = raw;#value\n"
         "local_dictionary_results = 1\nvocr_tier = normal\n";
     char out[1024];
@@ -423,7 +423,7 @@ static void test_highlight_only_switch_loads_actual_shell_without_other_changes(
         TEST_CHECK(cfg.highlight_mode == highlight_mode);
         TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-        TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JPDB], "example-jpdb"));
+        TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
         TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS);
         TEST_CHECK(shell.used == 0 && handles == 0);
     }
@@ -446,7 +446,7 @@ static void test_dictionary_results_switch_loads_actual_shell(void)
         TEST_CHECK(cfg.local_dictionary_results == results && cfg.ocr_backend == VJO_OCR_LENS);
         TEST_CHECK(cfg.japanese_only_selection == 1 && cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-        TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JPDB], "example-jpdb"));
+        TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
         TEST_CHECK(shell.used == 0 && handles == 0);
     }
     /* An out-of-range count is rejected before any write; 8 stays saved. */
@@ -474,7 +474,7 @@ static void test_backup_only_loads_actual_shell_without_default_publication(void
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
     TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
-    TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JPDB], "example-jpdb"));
+    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
     TEST_CHECK(written == writes_before && renames == renames_before);
     TEST_CHECK(shell.used == 0 && shell.peak <= sizeof(shell_mem) && handles == 0);
     char text[sizeof(original)]; int fd = open(VJO_PREFERENCES_PATH ".bak", O_RDONLY);
@@ -498,7 +498,7 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
         "dictionary = local\nlocal_dictionaries = daijirin.vjdict,jmdict.vjdict\n"
         "local_dictionary_results = 2\n"
         "ocr_model_dir = ux0:data/custom-ocr\nvocr_tier = normal\n"
-        "jpdb_api_key = example-jpdb\njiten_api_key = example-jiten\n"
+        "hachidori_host = 192.168.1.20\n"
         "font_size_ja = 22\nunknown_future_setting = unchanged\n";
     reset(); char near[VJO_CONFIG_TEXT_MAX + 1];
     memset(near, '#', sizeof(near)); memcpy(near, saved, sizeof(saved)-1);
@@ -510,7 +510,7 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
     VjoConfig cfg; vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-    TEST_CHECK(!strcmp(cfg.api_key[VJO_DICT_JITEN], "example-jiten"));
+    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
     TEST_CHECK(shell.peak == sizeof(shell_mem) && shell.used == 0 && handles == 0);
     /* Adding one byte would exceed the reader, so the original stays intact. */
     written = 0; renames = 0;
@@ -518,6 +518,163 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
     TEST_CHECK(written == 0 && renames == 0);
     vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+}
+static int read_back(const char *path, char *text, size_t cap)
+{
+    int fd = open(path, O_RDONLY);
+    ssize_t n = fd >= 0 ? read(fd, text, cap - 1) : -1;
+    if (fd >= 0) close(fd);
+    text[n > 0 ? n : 0] = 0;
+    return (int)n;
+}
+/* jpdb.io and jiten.moe, the online dictionaries, were removed: a config.ini
+ * that chose one loads as local with a warning, in the app and in the Shell,
+ * and either save of the app writes dictionary = local and drops their API
+ * keys (secrets: never kept, not in the backup either), keeping every other
+ * line. A local or relay choice stays as it is. */
+static void test_removed_dictionaries_rewritten_by_saves(void)
+{
+    static const char legacy[] =
+        "; Keep this comment\r\ndictionary = jpdb\r\nhachidori_host =\n"
+        "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings -> API key\n"
+        "jpdb_api_key = secret-jpdb\n\njiten_api_key = secret-jiten ; mine\napi_key = secret-old\n"
+        "JPDB_API_KEY: secret-colon\nocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n";
+    for (int save = 0; save < 2; save++) {
+        char text[sizeof(legacy) + 256];
+        VjoConfig cfg;
+        unsigned char shell_mem[24 * 1024]; VjoArena shell;
+        reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
+                   !strcmp(cfg.warnings[0], "dictionary: jpdb.io was removed; using local"));
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_CHECK(arena.used == 0 && handles == 0);
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
+        TEST_CHECK(!strstr(text, "secret") && !strstr(text, "api_key =") && !strstr(text, "\ndictionary = jpdb"));
+        TEST_CHECK(strstr(text, "; Keep this comment\r\ndictionary = local\nhachidori_host =\n") != NULL);
+        TEST_CHECK(strstr(text, "ocr_mode = on_press\nfont_size_ja = 22\n") != NULL);
+        /* comments are never rewritten: the old template's line stays, harmless */
+        TEST_CHECK(strstr(text, "; jpdb.io API key (needed for dictionary = jpdb)") != NULL);
+        TEST_MSG("%s", text);
+        /* the backup the save keeps (the file it replaced) has no key either */
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0);
+        TEST_CHECK(!strstr(text, "secret") && strstr(text, "dictionary = local\n") && strstr(text, "font_size_ja = 22\n"));
+        TEST_MSG("%s", text);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
+                   cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
+        TEST_CHECK(!save || (cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "auto")));
+        vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+        vjo_config_load(&cfg, &shell);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
+    }
+    /* a failed first publication leaves the old file and saves nothing */
+    reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
+    write_fail = 1;
+    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) < 0);
+    write_fail = 0;
+    {
+        char text[sizeof(legacy) + 16];
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) == (int)sizeof(legacy) - 1 &&
+                   !strcmp(text, legacy));
+    }
+    /* A UTF-8 BOM (Notepad) before a key on the very first line (audit B1): both saves find
+     * the key after the BOM, as their patches do, so neither keeps it in the backup. */
+    for (int save = 0; save < 2; save++) {
+        static const char bom[] = "\xEF\xBB\xBF" "jpdb_api_key = secret-bom\nocr_mode = on_press\nfont_size_ja = 22\n";
+        char text[256];
+        reset(); put_file(VJO_PREFERENCES_PATH, bom, sizeof(bom) - 1);
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strncmp(text, "\xEF\xBB\xBF", 3) &&
+                   !strstr(text, "secret") && strstr(text, "font_size_ja = 22\n"));
+        TEST_CHECK_(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0 && !strstr(text, "secret"),
+                    "save %d: no key in config.ini.bak after a BOM", save);
+        TEST_MSG("config.ini.bak: %s", text);
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".tmp", text, sizeof(text)) <= 0 || !strstr(text, "secret"));
+        TEST_CHECK(arena.used == 0 && handles == 0);
+    }
+    /* A one-shot fault during that first publication (its write's sync, either of its renames)
+     * fails the save and keeps the old file as it was: the save never goes on to rotate the
+     * keyed file into the backup (audit N6, M14). */
+    {
+        static const struct { int sync, rename; } first[] = {{1, 0}, {0, 1}, {0, 2}};
+        for (unsigned k = 0; k < sizeof(first) / sizeof(first[0]); k++) {
+            char text[sizeof(legacy) + 256];
+            reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
+            sync_fail = first[k].sync;
+            rename_fail = first[k].rename;
+            int rc = vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
+            sync_fail = rename_fail = 0;
+            TEST_CHECK_(rc < 0, "first-publication fault %u (sync %d, rename %d) fails the save", k, first[k].sync,
+                        first[k].rename);
+            TEST_CHECK_(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) == (int)sizeof(legacy) - 1 &&
+                        !strcmp(text, legacy), "fault %u: config.ini as it was", k);
+            TEST_CHECK_(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) <= 0 || !strstr(text, "secret"),
+                        "fault %u: no keyed backup", k);
+            TEST_CHECK(arena.used == 0 && handles == 0);
+        }
+    }
+    /* Once the key-free text is published and the keyed backup deleted (syncs 1-3,
+     * renames 1-2), a failure at any later step of the save leaves no key in any file:
+     * sync 4 is the save's own write, renames 3-4 its publication. */
+    static const struct { int sync, rename; } faults[] = {{4, 0}, {5, 0}, {0, 3}, {0, 4}};
+    for (unsigned k = 0; k < sizeof(faults) / sizeof(faults[0]); k++) {
+        static const char *const files[] = {VJO_PREFERENCES_PATH, VJO_PREFERENCES_PATH ".bak",
+                                            VJO_PREFERENCES_PATH ".tmp"};
+        char text[sizeof(legacy) + 256];
+        reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
+        put_file(VJO_PREFERENCES_PATH ".bak", legacy, sizeof(legacy) - 1); /* an older save's backup */
+        sync_fail = faults[k].sync;
+        rename_fail = faults[k].rename;
+        int rc = vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
+        TEST_CHECK_(rc < 0, "fault %u fails the save", k); /* sync 5: published, unconfirmed */
+        sync_fail = rename_fail = 0;
+        for (unsigned f = 0; f < sizeof(files) / sizeof(files[0]); f++) {
+            read_back(files[f], text, sizeof(text));
+            TEST_CHECK_(!strstr(text, "secret"), "fault %u (sync %d, rename %d): no key in %s", k, faults[k].sync,
+                        faults[k].rename, files[f]);
+        }
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && strstr(text, "font_size_ja = 22\n"));
+        TEST_CHECK(arena.used == 0 && handles == 0);
+    }
+    /* config.ini missing, its backup holding a key (recovered): the save writes a key-free
+     * file and the keyed backup goes */
+    {
+        char text[sizeof(legacy) + 256];
+        reset(); put_file(VJO_PREFERENCES_PATH ".bak", legacy, sizeof(legacy) - 1);
+        VjoConfig cfg;
+        TEST_CHECK(vjo_preferences_load(&cfg, &arena) == 1 && cfg.dictionary == VJO_DICT_LOCAL);
+        TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strstr(text, "secret") &&
+                   strstr(text, "dictionary = local\n"));
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0 && !strstr(text, "secret"));
+    }
+    /* only the dictionary is replaced; no key: one publication, the backup is the old file */
+    reset(); put_file(VJO_PREFERENCES_PATH, "dictionary = JITEN\nfont_size_ja = 22\n", 37);
+    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    {
+        char text[512];
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 &&
+                   !strncmp(text, "dictionary = local\nfont_size_ja = 22\n", 37));
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) == 37 &&
+                   !strcmp(text, "dictionary = JITEN\nfont_size_ja = 22\n"));
+    }
+    /* the relay and local choices are kept verbatim by both patches */
+    {
+        static const char *const keys[] = {"anki_mining"};
+        const char *values[] = {"on"};
+        char out[256];
+        int n = vjo_config_patch_preferences("Dictionary = Hachidori ; relay\n", 31, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+                                             VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+        TEST_CHECK(n > 0 && !strncmp(out, "Dictionary = Hachidori ; relay\n", 31));
+        n = vjo_config_patch_keys("dictionary = local\njpdb_api_key = x\n", 36, keys, values, 1, out, sizeof(out));
+        TEST_CHECK(n > 0 && !strcmp(out, "dictionary = local\nanki_mining = on\n"));
+        n = vjo_config_patch_keys("dictionary = jpdb\nx = 1", 23, NULL, NULL, 0, out, sizeof(out));
+        TEST_CHECK(n > 0 && !strcmp(out, "dictionary = local\nx = 1"));
+        TEST_MSG("%s", out);
+    }
 }
 /* A config.ini that chose a removed engine (the VOCR2 and Meiki trials, the
  * host tools' ncnn) loads as the local engine, in the app and in the Shell,
@@ -561,6 +718,7 @@ TEST_LIST = {
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"removed_engine_choice_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_rewrites_it", test_removed_engine_choice_loads_as_vocr_and_is_rewritten},
+    {"removed_jpdb_jiten_choice_loads_as_local_and_saves_drop_their_API_keys_and_backup", test_removed_dictionaries_rewritten_by_saves},
     {"dictionary_results_is_an_owned_validated_preference", test_dictionary_results_patch_and_parse},
     {"model_tier_is_owned_older_vocr_model_lines_map_to_it_and_go_on_save", test_model_tier_patch_parse_and_legacy_models},
     {"saved_backend_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},

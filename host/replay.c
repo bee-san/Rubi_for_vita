@@ -60,28 +60,7 @@ void vjo_memconn_init(VjoMemConn *m, VjoConn *c)
 
 const char *vjo_fixture_file(const char *host)
 {
-    return strstr(host, "jpdb") ? "jpdb.json" : strstr(host, "jiten") ? "jiten.json" : "lens.pb";
-}
-
-static int has_file(const char *dir, const char *name)
-{
-    char path[1024];
-    FILE *f;
-    snprintf(path, sizeof(path), "%s/%s", dir, name);
-    f = fopen(path, "rb");
-    if (f)
-        fclose(f);
-    return f != NULL;
-}
-
-void vjo_replay_config(VjoConfig *cfg, const char *dir)
-{
-    if (has_file(dir, "jiten.json"))
-        cfg->dictionary = VJO_DICT_JITEN;
-    else if (has_file(dir, "jpdb.json"))
-        cfg->dictionary = VJO_DICT_JPDB;
-    for (int i = 0; i < VJO_DICT_COUNT; i++)
-        snprintf(cfg->api_key[i], sizeof(cfg->api_key[i]), "replay");
+    return !strcmp(host, VJO_LENS_HOST) ? "lens.pb" : NULL;
 }
 
 typedef struct {
@@ -95,12 +74,14 @@ static int replay_connect(void *ud, const char *host, int port, int timeout_us, 
     Replay *r = (Replay *)ud;
     char path[1024];
     size_t len;
-    const char *body;
+    const char *body, *name = vjo_fixture_file(host);
     VjoBuf resp;
     (void)port;
     (void)timeout_us;
     (void)io_timeout_us;
-    snprintf(path, sizeof(path), "%s/%s", r->dir, vjo_fixture_file(host));
+    if (!name)
+        return VJO_E_NET;
+    snprintf(path, sizeof(path), "%s/%s", r->dir, name);
     body = vjo_read_file(r->files, path, &len);
     if (!body)
         return VJO_E_NET;
@@ -143,8 +124,7 @@ static int empty_jpeg(void *ud, uint32_t off, void *dst, uint32_t len)
     return -1;
 }
 
-int vjo_replay_overlay(VjoArena *a, VjoArena *files, const char *dir, const VjoConfig *cfg,
-                       VjoOverlayData *out)
+int vjo_replay_ocr(VjoArena *a, VjoArena *files, const char *dir, const VjoConfig *cfg, VjoOverlayData *out)
 {
     Replay r;
     VjoPlatform p;
@@ -162,5 +142,8 @@ int vjo_replay_overlay(VjoArena *a, VjoArena *files, const char *dir, const VjoC
     memset(&src, 0, sizeof(src));
     src.read = empty_jpeg;
     src.width = src.height = 1;
-    return vjo_overlay_from_jpeg(a, &p, cfg, &src, out);
+    if (vjo_overlay_ocr(a, &p, cfg, &src, out))
+        return out->err.rc;
+    out->list.header = out->sentence; /* as the overlay shows it before a lookup */
+    return VJO_OK;
 }
