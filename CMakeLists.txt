@@ -474,4 +474,21 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-alloc-sim-tests vjo_vocr)
   add_test(NAME alloc_sim COMMAND vjo-alloc-sim-tests)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
+  # The stage benchmark (docs/performance.md): every stage of an OCR job and of the Shell's
+  # lookups on the real sources. tools/bench_stages.py times it here and counts the Vita
+  # compiler's instructions under qemu-arm from a Vita build; the smoke test checks that every
+  # stage runs and gives the recorded output (no timing).
+  add_library(vjo_bench_kernel OBJECT host/bench/kernel_glue.c kernel/capture.c kernel/scene.c)
+  target_include_directories(vjo_bench_kernel PRIVATE host/tests/vita_stubs core include)
+  target_compile_definitions(vjo_bench_kernel PRIVATE VJO_HOST=1)
+  add_executable(vjo-stage-bench host/bench/bench_main.c host/bench/stage_bench.c
+    $<TARGET_OBJECTS:vjo_bench_kernel>)
+  target_link_libraries(vjo-stage-bench vjo_vocr vjo_core)
+  target_compile_options(vjo-stage-bench PRIVATE -Wall -Wextra)
+  add_test(NAME stage_bench_smoke COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bench_stages.py smoke
+    --binary $<TARGET_FILE:vjo-stage-bench> --models "${VJO_VOCR_MODEL_DIR}")
+  if(_vjo_plaintext_dir)
+    set_tests_properties(stage_bench_smoke PROPERTIES FIXTURES_REQUIRED plaintext
+      ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
+  endif()
 endif()

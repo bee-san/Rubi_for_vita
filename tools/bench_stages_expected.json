@@ -1,0 +1,29 @@
+{
+ "checks": {
+  "anki": "ce50f691ae9d300c",
+  "capture_a1b5": "c409a398540f05ca",
+  "capture_a2b10": "42a8e046f598658b",
+  "capture_abgr": "42a8e046f598658b",
+  "capture_abgr_sig": "57c8dd5523fb84bc",
+  "capture_full_abgr": "bba813e898da8726",
+  "config": "db4003991aee39a8",
+  "find": "80623443cd1ef05e",
+  "furigana": "cb44e11fb03dd38d",
+  "job_h15": "dd6569dbcaa66395",
+  "job_h15_first": "dd6569dbcaa66395",
+  "job_h15_greedy": "6ffadefbb19d0d61",
+  "job_h15_lm": "dd6569dbcaa66395",
+  "log": "a6dbe97fa5cccb86",
+  "lookup_every": "487865c8197030a2",
+  "lookup_first": "a4142e2f67d614c9",
+  "postproc": "03b3a86926a580ab",
+  "recognize_fl10": "e4344aaecdc0dc39",
+  "recognize_h15": "e4344aaecdc0dc39",
+  "recognize_w20": "e4344aaecdc0dc39",
+  "scene_sig": "1be6f203f8214077",
+  "scene_update": "0f6ac6889dc93ab4",
+  "scene_update_typing": "47a591be264574a5",
+  "sha256_h15": "dfecd73969bab9ef"
+ },
+ "note": "output checksums of tools/bench_stages.py's workloads (FNV-1a of each stage's output); a speed change must not alter them"
+}
