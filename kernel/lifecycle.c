@@ -57,9 +57,10 @@ static void fg_store(const VjoForeground *f, uint32_t iev, int ev)
      * free (the Shell blocks it again only when it opens the overlay). Held
      * buttons stay hidden from the game until released, as at
      * vjoSetInputBlock(0). */
-    if (changed && __atomic_exchange_n(&g.input_block, 0, __ATOMIC_ACQ_REL)) {
-        __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons);
-        released = log = 1;
+    if (changed && __atomic_load_n(&g.input_block, __ATOMIC_ACQUIRE)) {
+        __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons); /* first, as vjoSetInputBlock(0) */
+        released = __atomic_exchange_n(&g.input_block, 0, __ATOMIC_ACQ_REL) != 0;
+        log |= released;
     }
     game_ocr_foreground_changed_locked();
     VJO_UNLOCK();

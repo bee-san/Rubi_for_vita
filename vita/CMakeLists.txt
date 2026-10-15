@@ -51,7 +51,12 @@ target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-pa
 # The OCR job and model-file broker is a cold path (a few syscalls per job, a
 # rows call a frame at most; the row copy itself is kernel/capture.c's): built
 # for size, since every page of the kernel module is the shared kernel pool's.
-set_source_files_properties(${ROOT}/kernel/game_ocr.c PROPERTIES COMPILE_OPTIONS "-Os")
+# So are the process event hook and the foreground state machine (a few calls
+# per app switch) and the self-test's memory sample (kernel/meminfo.c, one
+# vjoMemInfo call per report). They pay for #104's release of the game's input
+# block in the hook (lifecycle.c, +464 B at -O2) within the module's pages.
+set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
+  ${ROOT}/kernel/meminfo.c PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
 target_link_libraries(VitaJPOverlay_Kernel

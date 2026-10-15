@@ -241,7 +241,22 @@ static void test_unrelated_events_keep_the_block(void)
     TEST_CHECK(faults == 1 && continue_calls == 8 && g.input_block == 1);
 }
 
+/* An app that starts and exits over SceShell, never confirmed as a game,
+ * changes the foreground twice and logs nothing: only a confirmed game's
+ * departure, a suspend, a resume or a release are worth a line. */
+static void test_unconfirmed_app_is_not_logged(void)
+{
+    reset();
+    unsigned before = n_lines;
+    procevent_patched(APP, PROCEV_STARTUP, 0, 0, NULL, 0);
+    TEST_CHECK(g.game_pid == APP && !g.game_active && ievf_bits == IEV_GAME_START);
+    procevent_patched(APP, PROCEV_EXIT, 0, 0, NULL, 0);
+    TEST_CHECK(g.game_pid == 0 && (ievf_bits & IEV_GAME_EXIT));
+    TEST_CHECK_(n_lines == before, "%u line(s): %s", n_lines - before, n_lines ? lines[(n_lines - 1) % 16] : "");
+}
+
 TEST_LIST = {
+    {"unconfirmed_app_is_not_logged", test_unconfirmed_app_is_not_logged},
     {"ps_suspend_releases_input_in_the_same_event", test_ps_suspend_releases_input_in_the_same_event},
     {"resume_starts_with_input_free", test_resume_starts_with_input_free},
     {"exit_and_switch_release_input", test_exit_and_switch_release_input},

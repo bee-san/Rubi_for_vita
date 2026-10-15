@@ -853,6 +853,17 @@ static void test_close_just_before_ps_leaves_touch_to_shell(void)
     open_over_the_game();
     control_tick(VJO_EV_TRIGGER); /* L + R closes it in game */
     TEST_CHECK(ov == OV_CLOSED && g_view.touch_handback == VJO_TOUCH_RELEASE);
+
+    /* Only the game's exit turns a close into "leave": Cancel, then a process
+     * started over the game, keeps it (audit-overlay-ps-touch A1, N2). */
+    reset();
+    open_over_the_game();
+    vjo_post_command(VJO_CMD_CLOSED, NULL);
+    control_tick(0);
+    state.game_pid = 0x1137D9;
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK_(g_view.touch_handback == VJO_TOUCH_RELEASE, "handback %d", g_view.touch_handback);
+    TEST_CHECK(!input_blocked && !g_view.open);
     mem_free();
 }
 

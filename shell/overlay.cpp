@@ -673,18 +673,25 @@ static void open_page(void)
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
 
-/* handback: the control thread's VJO_TOUCH_* for this close (worker.c close_overlay_for). */
+/* handback: the control thread's VJO_TOUCH_* for this close (worker.c
+ * close_overlay_for). The hold is given back for what is in front now
+ * (touch_hold.h, #104): the kernel's foreground, read here, changes in the
+ * process event hook itself, before the control thread handles the change. */
 static void close_page(int handback)
 {
     Plugin::PageCloseParam param;
-    int held = s_touch.held, write;
+    VjoState st;
+    int rc, write;
     if (s_mode == MODE_REGION)
         leave_region_mode();
-    write = vjo_touch_release(&s_touch, handback);
-    if (write)
-        touch_write(write);
-    else if (held)
+    sceClibMemset(&st, 0, sizeof(st));
+    st.size = sizeof(st);
+    rc = vjoGetState(&st);
+    write = vjo_touch_release(&s_touch, handback, rc, st.game_pid);
+    if (write == VJO_TOUCH_LEFT)
         vjo_log("touch region left to SceShell t=%u ms", vjo_log_ms()); /* the game left the foreground */
+    else
+        touch_write(write);
     param.fade = false;
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
