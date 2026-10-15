@@ -10,6 +10,7 @@
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
 #include <stdio.h>
 #include <string.h>
@@ -110,16 +111,22 @@ int __wrap_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
     return rc;
 }
 
+/* The exit does not come back. On a console it should not either: the caller
+ * is one of the process's threads, which the kernel ends without letting them
+ * run on (SDK Kernel-Overview, "Resource Collection When Terminating a
+ * Process"; an inference from that passage, not run on a console). Vita3K's returns
+ * (b75d5e6, SceLibKernel.cpp:1293-1297): main then returned into newlib's
+ * exit, whose _free_vita_heap frees the heap block holding libvita2d's GXM
+ * context (Vita3K builds the context in the app's hostMem, SceGxm.cpp:1985),
+ * and Vita3K's shutdown read that context to destroy it (app_init.cpp:476):
+ * SIGSEGV, exit 133, after the app's exit 0. The app leaves GXM up at exit
+ * since #112, as the release does; this keeps that exit, unchanged (#108's
+ * vita2d_fini here avoided the crash with a teardown the release never runs). */
 int __wrap_sceKernelExitProcess(int status)
 {
     write_results(status ? "exit-error" : "done");
-    /* Since #112 the app ends without vita2d_fini: as a system application it would
-     * clear a display buffer libvita2d never set. This smoke VPK is an ordinary app
-     * (vita/CMakeLists.txt), where vita2d_fini is safe, and Vita3K needs GXM torn
-     * down to shut itself down cleanly (without it: SIGSEGV after the app's exit 0).
-     * The release eboot is not linked with this file. */
-    if (!status) vita2d_fini();
-    return __real_sceKernelExitProcess(status);
+    __real_sceKernelExitProcess(status);
+    for (;;) sceKernelDelayThread(100 * 1000); /* until Vita3K ends the process */
 }
 
 static vita2d_texture *loaded(vita2d_texture *t)

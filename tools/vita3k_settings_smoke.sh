@@ -82,16 +82,63 @@ vita3k --frontend sdl "$build/vjo_settings_smoke.vpk" > "$out/vita3k.stdout" 2>&
 rc=$?
 secs=$(( $(date +%s) - t0 ))
 cp "$sbx/cache/Vita3K/vita3k.log" "$out/vita3k.log" 2>/dev/null || true
-cp "$ux0/data/vjo_settings_smoke.txt" "$out/results.txt" 2>/dev/null \
-  || fail "(Vita3K exit $rc after ${secs}s, the app wrote no results: $out/vita3k.stdout)"
+# Vita3K does not fault on an access to unmapped guest memory: it logs it with the PC and goes on,
+# a read giving 0 and a write dropped (b75d5e6 vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213,
+# 234-248); a console ends the app there. It also logs an instruction it cannot run and goes on
+# (:272-317): an undefined one, which a console faults on, or one it does not implement, its own
+# gap; either way the run says nothing past it. Any of these lines fails the run, the first quoted;
+# no passing run's log has one. A write to the app's own code or read-only data is
+# not seen: Vita3K maps the module's segments writable (load_self.cpp:651, mem.cpp:183).
+GUEST_ACCESS='Invalid (read|write|exclusive write) of uint'
+GUEST_INSN='(Unimplemented|Undefined|Unpredictable) instruction at|Decode error at|Unknown exception [0-9]+ Raised'
+# guest_fault PATTERN LOG: the first such line and the number of such lines, or nothing. An invalid
+# access is quoted with the PC, SP and LR Vita3K logs on the next line (the PC is where its JIT block
+# began: the function, not the line); an instruction with the address in its own line (Vita3K logs
+# two lines for each, so the count is twice the instructions).
+guest_fault() {
+  awk -v pat="$1" '
+    want { want = 0; if ($1 == "PC:") { pc = $0; gsub(/ +/, " ", pc); first = first " (" pc ")" } }
+    $0 ~ pat { if (!n++) { first = $0; sub(/^\[[0-9:.]+\] \|[A-Z]\| /, "", first); want = 1 } }
+    END { if (n) printf "%s, %d in all", first, n }' "$2"
+}
+guest_faults() { # guest_faults WHAT LOG: fails the run on either kind
+  local g
+  g=$(guest_fault "$GUEST_ACCESS" "$2")
+  [ -z "$g" ] || fail "($1 made an invalid memory access, which ends it on a console; Vita3K logs it and goes on: $g; $2)"
+  g=$(guest_fault "$GUEST_INSN" "$2")
+  [ -z "$g" ] || fail "(Vita3K could not run an instruction of $1 and went on, so the run says nothing past it: $g; $2)"
+}
+cp "$ux0/data/vjo_settings_smoke.txt" "$out/results.txt" 2>/dev/null
+results=$? # kept before any check fails the run
+guest_faults "the app" "$out/vita3k.stdout"
+[ "$results" -eq 0 ] || fail "(Vita3K exit $rc after ${secs}s, the app wrote no results: $out/vita3k.stdout)"
 r=$(cat "$out/results.txt")
 case $r in
   done*) ;;
   *) fail "(Vita3K exit $rc after ${secs}s, the app stopped at: $r; $out/vita3k.stdout)" ;;
 esac
 field() { echo "$r" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
+# Vita3K crashing after the app's exit 0 fails too (a crash in its own shutdown is still a crash:
+# docs/offline-testing.md section 5 has the one #112 met), and the failure says what ended it: the
+# signal, and its signal handlers' last lines. A fault outside the JIT is printed by dynarmic
+# straight to stderr ("Unhandled SIGSEGV at rip 0x..."), then handed to Vita3K's handler, which
+# logs "[signal_handler]: Unhandled access to 0x..." and raises SIGTRAP: its logger can lose that
+# line. Dynarmic's line is quoted only for a run a signal ended (a fault Vita3K handled prints it
+# too). The only |C| line of a passing run is "[translate_path]: Unknown device with path
+# gro0:app used" (settings/catalog.c lists gro0:app), so no |C| line is quoted as such.
+crash=
+if [ "$rc" -eq 124 ]; then
+  crash="a hang: timeout ended it after ${TIMEOUT:-900}s"
+elif [ "$rc" -gt 128 ] && [ "$rc" -lt 192 ]; then
+  crash="killed by SIG$(kill -l $((rc - 128)) 2>/dev/null || echo $((rc - 128)))"
+  fault=$(grep -h -o -E 'Unhandled SIG[A-Z]+ at rip 0x[0-9a-fA-F]+' "$out/vita3k.stdout" | tail -1)
+  crash="$crash${fault:+; $fault}"
+fi
+access=$(grep -h -o -E '\[signal_handler\]: Unhandled access to 0x[0-9a-fA-F]+' "$out/vita3k.stdout" \
+  "$out/vita3k.log" 2>/dev/null | tail -1)
+crash="$crash${crash:+${access:+; }}$access"
 [ "$rc" -eq 0 ] && grep -q "The app exited with code 0" "$out/vita3k.stdout" \
-  || fail "(the script finished, then Vita3K exit $rc after ${secs}s: $out/vita3k.stdout)"
+  || fail "(the script finished, then Vita3K exit $rc after ${secs}s${crash:+, $crash}: $out/vita3k.stdout)"
 [ "$(field unsafe_frees)" = 0 ] || fail "($(field unsafe_frees) textures freed while the GPU may read them: $r)"
 [ "$(field live)" = 0 ] || fail "($(field live) textures left alive at exit: $r)"
 [ "$(field loads)" -gt 0 ] && [ "$(field draws)" -gt 0 ] || fail "(no icon was loaded or drawn: $r)"
@@ -101,6 +148,7 @@ release=
 if [ -n "${RELEASE_VPK:-}" ]; then
   TIMEOUT=30 vita3k --frontend sdl "$RELEASE_VPK" > "$out/release.stdout" 2>&1
   rrc=$?
+  guest_faults "the release VPK" "$out/release.stdout"
   [ "$rrc" -eq 124 ] && ! grep -q "The app exited" "$out/release.stdout" \
     || fail "(the release VPK did not keep running for 30 s: exit $rrc, $out/release.stdout)"
   release="; the release VPK ran 30 s on its Games page"
