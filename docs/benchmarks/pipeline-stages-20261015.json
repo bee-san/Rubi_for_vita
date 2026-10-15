@@ -732,14 +732,16 @@
     "VOCR3-H15: 664 CTC frames in 10 jobs' recognize= times (the owner: 5.0-5.2 ms); vita-vn-ocr's A9 model gives 5.00 ms at its 333 MHz upper bound"
    ],
    "fs_append_ms": [
-    12.1,
-    46.0,
+    9.4,
+    47.0,
     15.7,
-    "one open/append/close of a file on ux0 with the game running, measured by the self-test's own timestamps: each stage's closing report lines (a report, a status.txt and a log.txt append each) took 12.1-46.0 ms per append, median 15.7 (5 stages)"
+    "one open/append/close of a file on ux0 with the game running. The self-test's own timestamps measure it: each stage's closing report lines (a report, a status.txt and a log.txt append each) took 12.1-46.0 ms per append, median 15.7 (5 stages). The 11 jobs agree: what their Shell time leaves after the game's job, the lookup and the polls at their mean is 9.4-47.0 ms per append they made, median 20.9 (status.txt was still under 64 KiB, so a line was two appends, for 9 of them and part of a 10th). Range 9.4-47.0, estimate 15.7 (the direct one)"
    ],
-   "job_unexplained_per_line_ms": [
-    38.3,
-    "the 11 jobs' Shell time minus the game's job, the lookup and the polls at their mean, per line the job logged: median 38.3 ms (15-94). An upper bound of a line's cost: it holds everything the model leaves out (the lowest-priority game worker's scheduling, file system contention with the game)"
+   "job_remainder_per_append_ms": [
+    20.9,
+    9.4,
+    47.0,
+    "the 11 jobs' remainder per append (median, min, max): not independent of the console check, which uses the same jobs"
    ],
    "lookup_fixed_ms": [
     15.3,
@@ -752,22 +754,29 @@
    "first_load_ms": [
     218.0,
     231.0,
-    "load= of the 4 jobs that read the weights: 1,155,968 B read and SHA-256 checked"
+    "load= of the 4 jobs that read the weights (the self-test's first stage and 3 of the 11): 1,155,968 B read and SHA-256 checked"
    ],
    "jobs": {
     "n": 11,
     "shell_ms_mean": 1392.7,
     "shell_ms_median": 1368.0,
     "game_ms_mean": 488.6,
-    "lookup_ms_mean": 88.5,
-    "unexplained_ms_mean": 823.7,
+    "lookup_ms_mean": 80.5,
+    "lookups": 10,
     "log_lines_mean": 19.1,
-    "strips_mean": 5.5,
-    "capture_ms_mean": 87.8,
+    "log_lines_range": [
+     12,
+     24
+    ],
+    "log_appends_mean": 35.9,
+    "status_full_jobs": 1,
+    "strips_mean": 5.45,
     "find_ms_mean": 104.6,
-    "frames_mean": 66.4,
-    "lines": 1,
-    "lookup_reads": 15.2,
+    "frames_mean": 60.4,
+    "lines_mean": 0.9090909090909091,
+    "lookup_reads_mean": 13.8,
+    "load_ms_mean": 61.0,
+    "weights_read_jobs": 3,
     "region": [
      883,
      112
@@ -943,6 +952,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -975,10 +989,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -994,8 +1008,8 @@
      }
     },
     "total": [
-     923.5426575685766,
-     2381.8220993825994
+     845.1555607943831,
+     2410.8543574471155
     ],
     "estimate": 1422.530357194397,
     "mean_polling_ms": 75.0
@@ -1010,6 +1024,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1042,10 +1061,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1061,8 +1080,8 @@
      }
     },
     "total": [
-     1035.2254532675013,
-     2493.504895081524
+     956.8383564933079,
+     2522.5371531460405
     ],
     "estimate": 1534.2131528933219,
     "mean_polling_ms": 75.0
@@ -1077,6 +1096,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1109,10 +1133,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1128,8 +1152,8 @@
      }
     },
     "total": [
-     1024.0366608441236,
-     2581.1594906038536
+     945.6495640699302,
+     2610.19174866837
     ],
     "estimate": 1623.945006600694,
     "mean_polling_ms": 75.0
@@ -1144,6 +1168,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1176,10 +1205,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1195,8 +1224,8 @@
      }
     },
     "total": [
-     1135.7194565430484,
-     2692.8422863027786
+     1057.3323597688548,
+     2721.8745443672947
     ],
     "estimate": 1735.6278022996187,
     "mean_polling_ms": 75.0
@@ -1211,6 +1240,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1243,10 +1277,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1268,8 +1302,8 @@
      }
     },
     "total": [
-     1327.7907197986729,
-     2810.1766974337565
+     1249.4036230244794,
+     2839.2089554982726
     ],
     "estimate": 1838.8316873350238,
     "mean_polling_ms": 75.0
@@ -1284,6 +1318,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1316,10 +1355,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1341,8 +1380,8 @@
      }
     },
     "total": [
-     1439.4735154975976,
-     2921.859493132681
+     1361.0864187234042,
+     2950.8917511971977
     ],
     "estimate": 1950.5144830339486,
     "mean_polling_ms": 75.0
@@ -1357,6 +1396,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1389,10 +1433,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1414,8 +1458,8 @@
      }
     },
     "total": [
-     1428.28472307422,
-     3009.5140886550107
+     1349.8976263000266,
+     3038.5463467195273
     ],
     "estimate": 2040.2463367413206,
     "mean_polling_ms": 75.0
@@ -1430,6 +1474,11 @@
     "frames": 93.44623655913979,
     "log_lines": 29.03225806451613,
     "cascade_frames": 35.064516129032256,
+    "status_extra": [
+     272.90322580645164,
+     1364.5161290322583,
+     455.80645161290323
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1462,10 +1511,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 351.2903225806452,
-      "high": 1335.483870967742,
+      "low": 272.90322580645164,
+      "high": 1364.5161290322583,
       "estimate": 455.80645161290323,
-      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "29 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1487,8 +1536,8 @@
      }
     },
     "total": [
-     1539.9675187731448,
-     3121.1968843539357
+     1461.5804219989511,
+     3150.229142418452
     ],
     "estimate": 2151.929132440245,
     "mean_polling_ms": 75.0
@@ -1503,6 +1552,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1529,10 +1583,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1548,8 +1602,8 @@
      }
     },
     "total": [
-     624.7794883150938,
-     1725.3621889876033
+     565.3794883150938,
+     1747.3621889876033
     ],
     "estimate": 976.4489147970552,
     "mean_polling_ms": 75.0
@@ -1564,6 +1618,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1590,10 +1649,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1609,8 +1668,8 @@
      }
     },
     "total": [
-     746.1952589244128,
-     1846.7779595969223
+     686.7952589244128,
+     1868.7779595969223
     ],
     "estimate": 1097.864685406374,
     "mean_polling_ms": 75.0
@@ -1625,6 +1684,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1651,10 +1715,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1670,8 +1734,8 @@
      }
     },
     "total": [
-     684.1875008836854,
-     1845.7578217803646
+     624.7875008836854,
+     1867.7578217803646
     ],
     "estimate": 1098.0434295263005,
     "mean_polling_ms": 75.0
@@ -1686,6 +1750,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1712,10 +1781,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1731,8 +1800,8 @@
      }
     },
     "total": [
-     805.6032714930044,
-     1967.1735923896836
+     746.2032714930044,
+     1989.1735923896836
     ],
     "estimate": 1219.4592001356195,
     "mean_polling_ms": 75.0
@@ -1747,6 +1816,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1773,10 +1847,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1798,8 +1872,8 @@
      }
     },
     "total": [
-     842.7794883150938,
-     1956.3621889876033
+     783.3794883150938,
+     1978.3621889876033
     ],
     "estimate": 1200.948914797055,
     "mean_polling_ms": 75.0
@@ -1814,6 +1888,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1840,10 +1919,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 3-6 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 3-6 µs a line"
      },
      "text post-processing": {
       "low": 0.005990653153153153,
@@ -1865,8 +1944,8 @@
      }
     },
     "total": [
-     964.1952589244128,
-     2077.7779595969223
+     904.7952589244128,
+     2099.7779595969223
     ],
     "estimate": 1322.364685406374,
     "mean_polling_ms": 75.0
@@ -1881,6 +1960,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1907,10 +1991,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1932,8 +2016,8 @@
      }
     },
     "total": [
-     902.1875008836854,
-     2076.757821780365
+     842.7875008836854,
+     2098.757821780365
     ],
     "estimate": 1322.5434295263005,
     "mean_polling_ms": 75.0
@@ -1948,6 +2032,11 @@
     "frames": 86.19086021505376,
     "log_lines": 22,
     "cascade_frames": 0.0,
+    "status_extra": [
+     206.8,
+     1034.0,
+     345.4
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -1974,10 +2063,10 @@
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
      "log.txt": {
-      "low": 266.2,
-      "high": 1012.0,
+      "low": 206.8,
+      "high": 1034.0,
       "estimate": 345.4,
-      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+      "note": "22 lines, each an open/append/close of log.txt (status.txt full); console 9.4-47.0 ms an append (estimate 15.7); formatting 4-8 µs a line"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -1999,8 +2088,8 @@
      }
     },
     "total": [
-     1023.6032714930044,
-     2198.1735923896836
+     964.2032714930044,
+     2220.1735923896836
     ],
     "estimate": 1443.9592001356195,
     "mean_polling_ms": 75.0
@@ -2012,11 +2101,16 @@
     "fps": 60,
     "kind": "api19",
     "first_job": false,
-    "strips": 5.5,
-    "lines": 1,
-    "frames": 66.4,
+    "strips": 5.45,
+    "lines": 0.9090909090909091,
+    "frames": 60.4,
     "log_lines": 19.1,
     "cascade_frames": 0.0,
+    "status_extra": [
+     179.54000000000002,
+     897.7,
+     299.87
+    ],
     "parts": {
      "take (game worker poll)": {
       "low": 0.0,
@@ -2025,16 +2119,16 @@
       "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
      },
      "capture + finder": {
-      "low": 91.66666666666667,
-      "high": 127.45441228127166,
-      "estimate": 127.45441228127166,
-      "note": "5.5 strips, one display frame each at 60 fps (92 ms); the finder's 17.5-35.8 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+      "low": 90.83333333333334,
+      "high": 126.62107894793834,
+      "estimate": 126.62107894793834,
+      "note": "5.5 strips, one display frame each at 60 fps (91 ms); the finder's 17.5-35.8 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
      },
      "recognition (VOCR3-H15)": {
-      "low": 182.91421652763876,
-      "high": 332.02400547213887,
-      "estimate": 335.7184000000001,
-      "note": "A9 estimate, 66 CTC frames (1.0 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+      "low": 166.38582346791236,
+      "high": 302.02183630296963,
+      "estimate": 305.3824,
+      "note": "A9 estimate, 60 CTC frames (0.9 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
      },
      "result (Shell poll)": {
       "low": 0.0,
@@ -2042,11 +2136,11 @@
       "estimate": 25.0,
       "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
      },
-     "log.txt": {
-      "low": 231.11,
-      "high": 878.6,
-      "estimate": 299.87,
-      "note": "19 lines, each an open/append/close (twice while status.txt < 64 KiB): console 12-46 ms an append (median 15.7); formatting 4-8 µs a line"
+     "log.txt (+ status.txt)": {
+      "low": 337.46,
+      "high": 1687.3,
+      "estimate": 563.63,
+      "note": "19.1 lines, 35.9 appends (status.txt under 64 KiB for most jobs); console 9.4-47.0 ms an append (estimate 15.7)"
      },
      "text post-processing": {
       "low": 0.007987537537537536,
@@ -2055,17 +2149,23 @@
       "note": "A9 estimate"
      },
      "first-word lookup": {
-      "low": 61.942526771771774,
-      "high": 84.97679999999998,
-      "estimate": 73.36399999999999,
-      "note": "console: 15.3 ms + 3.82 ms a read, 15.2 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+      "low": 56.25582433797434,
+      "high": 77.16829090909091,
+      "estimate": 66.62509090909091,
+      "note": "console: 15.3 ms + 3.82 ms a read, 13.8 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights read (some jobs)": {
+      "low": 61.0,
+      "high": 61.0,
+      "estimate": 61.0,
+      "note": "console: the jobs' mean load= (3 of the 11 read the weights, 218-222 ms each)"
      }
     },
     "total": [
-     567.6413975036147,
-     1573.0711928284857
+     711.9429686767576,
+     2404.1271812350737
     ],
-    "estimate": 911.4227873563468,
+    "estimate": 1198.2745449321044,
     "mean_polling_ms": 75.0
    },
    "measured": {
@@ -2073,22 +2173,29 @@
     "shell_ms_mean": 1392.7,
     "shell_ms_median": 1368.0,
     "game_ms_mean": 488.6,
-    "lookup_ms_mean": 88.5,
-    "unexplained_ms_mean": 823.7,
+    "lookup_ms_mean": 80.5,
+    "lookups": 10,
     "log_lines_mean": 19.1,
-    "strips_mean": 5.5,
-    "capture_ms_mean": 87.8,
+    "log_lines_range": [
+     12,
+     24
+    ],
+    "log_appends_mean": 35.9,
+    "status_full_jobs": 1,
+    "strips_mean": 5.45,
     "find_ms_mean": 104.6,
-    "frames_mean": 66.4,
-    "lines": 1,
-    "lookup_reads": 15.2,
+    "frames_mean": 60.4,
+    "lines_mean": 0.9090909090909091,
+    "lookup_reads_mean": 13.8,
+    "load_ms_mean": 61.0,
+    "weights_read_jobs": 3,
     "region": [
      883,
      112
     ]
    },
-   "unexplained_ms": 481.27721264365323,
-   "unexplained_per_line_ms": 25.197759824275035
+   "unexplained_ms": 194.42545506789565,
+   "unexplained_per_append_ms": 5.41575083754584
   }
  },
  "a9": {
