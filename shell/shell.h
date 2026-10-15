@@ -251,6 +251,23 @@ void vjo_log(const char *fmt, ...);
 void vjo_log_raw(const char *line, int len);
 void vjo_status_reset(void);
 void vjo_status_close(void);
+/* A log batch: until vjo_log_batch_end, the lines this thread logs are kept in
+ * buf (on its stack) and written with one open/write/close per file, the same
+ * bytes in the same order as line by line (a line another thread logs
+ * meanwhile writes them out first). For a burst of lines formatted from data
+ * at hand only, never across a wait, I/O or a call that may log at length: a
+ * crash loses the batch's unwritten lines. begin and end in one function.
+ * Returns 1 when the batch is open, 0 when another one is (lines then go out
+ * one by one, as always). */
+#define VJO_LOG_BATCH_LINES 24
+typedef struct {
+    char *buf;
+    int cap, used, n;
+    SceUID owner;
+    uint16_t len[VJO_LOG_BATCH_LINES];
+} VjoLogBatch;
+int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap);
+void vjo_log_batch_end(VjoLogBatch *b);
 
 /* files.c */
 char *vjo_file_read(VjoArena *a, const char *path, size_t *len);
