@@ -6,10 +6,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Alphabetical: ASCII letters compare without case, so "planetarian" is
+ * listed with the P titles rather than after every capital (Left/Right jump
+ * between letters); then byte order, then the title ID. */
+static int fold(unsigned char c) { return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c; }
+
 static int name_order(const void *a, const void *b)
 {
     const VjoInstalledGame *ga = a, *gb = b;
-    int n = strcmp(ga->title, gb->title);
+    const unsigned char *x = (const unsigned char *)ga->title, *y = (const unsigned char *)gb->title;
+    while (*x && fold(*x) == fold(*y)) x++, y++;
+    int n = fold(*x) - fold(*y);
+    if (!n) n = strcmp(ga->title, gb->title);
     return n ? n : strcmp(ga->id, gb->id);
 }
 
