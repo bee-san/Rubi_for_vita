@@ -109,7 +109,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 162 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 173 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
@@ -133,19 +133,20 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        262,144       299,008
-OCR worker pages in SceShell             262,144       299,008   (0: registered per game, not loaded there)
-VjoNet thread                            331,776       229,376
-VjoControl thread (boot complete)        352,256       208,896
-game start: result memory (local)        352,256       208,896
-Anki card saved: job thread              421,888       139,264
+Shell module loaded into SceShell        266,240       294,912
+OCR worker pages in SceShell             266,240       294,912   (0: registered per game, not loaded there)
+VjoNet thread                            335,872       225,280
+VjoControl thread (boot complete)        356,352       204,800
+game start: result memory (local)        356,352       204,800
+Anki card saved: job thread              425,984       135,168
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
 299,008 to 286,720 B, 12,288 B less at every step above, the Hachidori relay client's to
-282,624 B, 4,096 B less again, and AnkiConnect's to 262,144 B, 20,480 B less again; the packaged
+282,624 B, 4,096 B less again, and AnkiConnect's to 266,240 B, 16,384 B less again; the packaged
 module went from 294,912 B, main `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main
-`9824b55`; #116 kept those pages) and then to 262,144 B [measured: the build log's module row].)
+`9824b55`; #116 and #111 kept those pages) and then to 266,240 B [measured: the build log's module
+row].)
 
 What this says, and what it does not:
 

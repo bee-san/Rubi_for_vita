@@ -21,7 +21,7 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-/* VitaJPOverlay_Shell.suprx: 188,416 text + 73,728 data/bss. The fixed Kiku note (#90) took 3,488 B
+/* VitaJPOverlay_Shell.suprx: 192,512 text + 73,728 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
  * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss [measured, bcd3cf0],
@@ -44,10 +44,11 @@
  * the build log's module rows, main a5d79f2 and this change], one text page fewer: 208,896 +
  * 73,728 B of pages. Lowered again by the removal of AnkiConnect (the Shell's sender and its
  * requests, the screenshot branch, the Kiku note, the audio URL; the Overlay app exports the cards):
- * 18,184 B of text and 972 B of data/bss, so the module is 188,056 text + 70,100 data/bss [measured:
- * the build log's module rows, main c4a6ade (#116: 206,240 + 71,072, the same 282,624 B of pages)
- * and this change], five text pages fewer: 188,416 + 73,728 B of pages. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 262144u
+ * 18,192 B of text and 972 B of data/bss, so the module is 188,472 text + 70,104 data/bss [measured:
+ * the build log's module rows, main 5e68ecd (#116, #111: 206,664 + 71,076, the same 282,624 B of
+ * pages) and this change], four text pages fewer: 192,512 + 73,728 B of pages. (On main c4a6ade,
+ * before #111's 424 B of text, it was 188,056 B of text, five pages fewer.) */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 266240u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
