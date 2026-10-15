@@ -258,9 +258,11 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
              hi_ms * (1 + k_lm), (lo_ms + hi_ms) / 2 * (1 + k_lm),
              f"console: {lo_ms:.0f}-{hi_ms:.0f} ms for the 1,155,968 B weights (SHA-256 alone {fmt_range(sha)}, A9)"
              + ("" if kind == "api19" else "; the 987,600 B LM scaled by its bytes"))
-    lo = sum(p[0] for p in parts.values())
-    hi = sum(p[1] for p in parts.values())
-    est = sum(p[2] for p in parts.values())
+    # math.fsum: correctly rounded, so the totals are the same bits on every Python (3.12's sum()
+    # compensates, older ones do not)
+    lo = math.fsum(p[0] for p in parts.values())
+    hi = math.fsum(p[1] for p in parts.values())
+    est = math.fsum(p[2] for p in parts.values())
     return {"mhz": mhz, "fps": fps, "kind": kind, "first_job": first_job, "strips": strips, "lines": lines,
             "frames": frames, "log_lines": log_lines, "cascade_frames": casc_frames,
             "parts": {k: {"low": v[0], "high": v[1], "estimate": v[2], "note": v[3]} for k, v in parts.items()},

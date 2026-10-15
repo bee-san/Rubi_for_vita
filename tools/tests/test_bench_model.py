@@ -24,6 +24,22 @@ WHERE = {
 
 
 class BenchModelTest(unittest.TestCase):
+    def assert_close(self, got, want, path="jobs"):
+        """Equal structure and strings; numbers within 1e-9 relative (float sums differ in the last
+        bit between Python versions and libms)."""
+        if isinstance(want, dict):
+            self.assertEqual(set(got), set(want), path)
+            for k in want:
+                self.assert_close(got[k], want[k], f"{path}.{k}")
+        elif isinstance(want, list):
+            self.assertEqual(len(got), len(want), path)
+            for i, (g, w) in enumerate(zip(got, want)):
+                self.assert_close(g, w, f"{path}[{i}]")
+        elif isinstance(want, float) or isinstance(got, float):
+            self.assertAlmostEqual(got, want, delta=1e-9 * max(1.0, abs(want)), msg=path)
+        else:
+            self.assertEqual(got, want, path)
+
     def test_source_constants_are_the_sources(self):
         self.assertEqual(set(WHERE), set(bench_model.SOURCE))
         for key, (path, pattern, scale) in WHERE.items():
@@ -57,7 +73,7 @@ class BenchModelTest(unittest.TestCase):
         bundle = json.loads((ROOT / "docs/benchmarks/pipeline-stages-20261015.json").read_text())
         dev = {"summary": bundle["dev"]}
         report, md = bench_model.build_report(bundle["host"], bundle["a9"], dev, bench_stages.WORKLOADS)
-        self.assertEqual(report["jobs"], bundle["report"]["jobs"])
+        self.assert_close(report["jobs"], bundle["report"]["jobs"])
         chk = report["console_check"]
         measured = chk["measured"]["shell_ms_mean"]
         # the model of API 19's job at the console jobs' own means: its range holds what they took,
