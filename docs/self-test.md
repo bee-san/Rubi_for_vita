@@ -5,8 +5,9 @@ memory. The self-test answers both from one file, in the owner's two commands, a
 fleet exactly which step failed and with how much free memory in which pool.
 
 Since API 19 (#74) one run also exercises the whole in-game capture: the capture probe, the
-fallback model, the configured model, the full screen and a warm second recognition, each stage
-with its own record whether it passed or not ([ingame-capture.md](ingame-capture.md)).
+smallest model size (the fallback stage, API 21), the configured size, the full screen and a warm
+second recognition, each stage with its own record whether it passed or not
+([ingame-capture.md](ingame-capture.md)).
 
 ## Running it
 
@@ -198,7 +199,9 @@ runtime structs) + the 65,536 B capture block (today's `VJO_BUDGET_GAME_CAPTURE`
 API 19's 61,440 B) + the 516,096 B line-block ceiling, plus the tier's own reserve (4 / 8 /
 16 MiB), against the free USER the game had before the worker's first block.
 The recommendation is the largest tier whose first job fits: it is one sample in one game, and
-memory alone. The weights ceilings are the owner's of 2026-10-14 (Small under 1 MB, Normal at most
+memory alone. It prices each tier at its ceilings; the game worker checks the pinned model of
+each size (`model`, `job_bytes` in the same table), which needs less, and logs each size that did
+not fit as a `tier ... did not fit` line (the collect summary counts them). The weights ceilings are the owner's of 2026-10-14 (Small under 1 MB, Normal at most
 1.6 MB, Large at most 2.5 MB of int8 weights); the box time is each tier's limit for a typical full
 textbox, 3 lines of about 640 px on one Cortex-A9 core at 444 MHz, estimated, and wins where it is
 tighter. A table the analyser cannot read leaves the tiers out with a finding; the verdict never
