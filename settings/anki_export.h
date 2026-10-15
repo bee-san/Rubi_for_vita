@@ -47,6 +47,7 @@ typedef struct {
     int cards;       /* notes in the package */
     int moved;       /* queued cards it took out of the queue */
     int kept;        /* exported, but still queued: a move failed (the next export has them again, harmlessly) */
+    int stopped;     /* exported, but still queued: the user stopped the clearing (the same) */
     int unreadable;  /* left in the queue: damaged, edited, or a screenshot missing (log.txt) */
     int too_large;   /* left in the queue: no room in memory to make their note */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */

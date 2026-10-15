@@ -8,10 +8,11 @@ as a card in a queue on the memory card. Nothing is sent anywhere: saving
 needs no network, and the queue survives restarts. When you want the cards in
 Anki, the **Overlay** app's Anki page writes them into one file,
 `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg`, as notes of
-the [Lapis](https://github.com/donkuri/lapis) note type. Copy that file to a
-computer or phone and open it in Anki (desktop, AnkiDroid or AnkiMobile):
-the cards are then in your collection, and Anki syncs them as usual. The Vita
-never talks to Anki, AnkiWeb or any computer.
+the [Lapis](https://github.com/donkuri/lapis) note type (`N` is the number of
+notes in it). Copy that file to a computer and open it in Anki (AnkiDroid and
+AnkiMobile read the same format, but have not imported one yet): the cards
+are then in your collection, and Anki syncs them as usual. The Vita never
+talks to Anki, AnkiWeb or any computer.
 
 Mining is off by default: with it off, Enter does nothing, and the overlay
 starts no Anki thread, allocates no Anki memory and creates no queue
@@ -63,6 +64,8 @@ collection that has the earlier ones adds nothing twice.
 | `Exported 12 cards (34 KB) to ….apkg.` | Written, read back and checked; those cards left the queue |
 | `… 2 unreadable or too large stay queued.` | A damaged or edited record, one whose screenshot is missing, or (rare) one too large to make into a note: they stay, see log.txt |
 | `… 1 stay queued (see log.txt).` | The package has the card, but moving it out of the queue failed; the next export has it again, harmlessly |
+| `… Stopped while clearing: 40 stay queued, for the next export too.` | Cancel after the package was made: it has every card, and those 40 are in the next one too (Anki adds no note twice) |
+| `… 5 newer stay queued: export again.` | A package holds 20,000 cards at most: the oldest went, the newest wait (**Export all cards**: `5 newer are not in it`) |
 | `Could not write a complete file (memory card full? see log.txt). The queue is unchanged.` | No package; the queue is as it was |
 | `Stopped. No file was made; the queue is unchanged.` | Cancel during the export |
 | `No cards queued: save words in the overlay first.` | Nothing to export |
@@ -102,7 +105,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `ExpressionReading` | The reading in kana |
 | `MainDefinition` | The entry shown, as Yomitan writes one dictionary's glossary: `<div class="yomitan-glossary"><ol><li data-dictionary="JMdict">…</li></ol></div>`, so Lapis names its page after the dictionary |
 | `Sentence` | The recognized text, the word in `<b>` |
-| `SentenceFurigana` | Empty (Lapis then shows `{{furigana:Sentence}}`, as its README asks), unless the card's sentence had readings |
+| `SentenceFurigana` | Empty, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); only a card queued with the removed online dictionaries, which gave readings per word, fills it |
 | `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one (none in this build, see below) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
@@ -128,8 +131,10 @@ queue ID (the record's checksum, below): base91 of its first 64 bits, the
 alphabet Anki's own GUIDs use. So every package that has the same card has the
 same note, and Anki's import (rslib `import_export/package/apkg/import/notes.rs`)
 leaves a note it has as it is: the package's note is never newer than yours
-(its modification time is the Enter press), so your edits stay, and its card
-(and its reviews) are not added twice. A note you deleted in Anki is added again
+(its modification time is the Enter press, by the Vita's clock), so your edits
+stay, and its card (and its reviews) are not added twice. That holds while the
+Vita's clock is not ahead of the computer's: an edit made in Anki before the
+Enter time the Vita recorded would lose to the package's note. A note you deleted in Anki is added again
 by a package that has it: use **Export cards** (the queue only) for new cards,
 **Export all cards** when you want everything.
 
@@ -154,16 +159,20 @@ app. A screenshot is named by its own SHA-256 (`vitajp_<32 hex digits>.jpg`),
 so the same picture is one file, in one package and across packages (Anki
 keeps one copy of a name it has with the same content).
 
-An export is safe at every step: the package is written under
-`<name>.apkg.tmp`, flushed and closed, renamed and the memory card synced,
-then opened again and checked whole: the ZIP's directory and every entry's
-CRC-32 (computed from the bytes as they were written, so a card that does not
-read back as written fails), the database's header and tables, every note's ID
-and GUID in order, the cards and the media map. Only then do its cards move
-out of the queue into `anki_queue/exported/` (their screenshots first). A
-failure or Cancel before that removes the file and changes nothing; a stop
-after it leaves some cards still queued, which the next export takes again (the
-same notes). An interrupted export's `.tmp` file is removed by the next.
+An export is safe at every step: the package is written under a temporary
+name (`<date>_<time>.apkg.tmp`), flushed and closed, then opened again and
+checked whole: the ZIP's directory and every entry's CRC-32 (computed from the
+bytes as they were written, so a card that does not read back as written
+fails), the database's header and tables, every note's ID and GUID in order,
+the cards and the media map. Only a checked file gets its name, and the memory
+card is synced; only then do its cards move out of the queue into
+`anki_queue/exported/` (their screenshots first). So a file under an `.apkg`
+name is always a checked one. A failure or Cancel before that removes the file
+and changes nothing; a Cancel while the queue is cleared stops between two
+cards, and a stop there leaves the rest queued, which the next export takes
+again (the same notes). An interrupted export's `.tmp` file is removed by the
+next. A record already archived is kept only when it is that card's (its
+checksum is its name); a damaged one there is replaced by the queued copy.
 `host/tests/test_anki_restart.py` stops a real export in a fresh process at each
 of these steps and checks that no card is lost; `host/tests/test_apkg.py`
 imports the packages with Anki 26.09.3 itself in CI.
@@ -281,7 +290,8 @@ export (`VJO_EXPORT_MEM`: the list of cards, 32 B each for up to 20,000, the
 writers' state, about 40 KiB, and one card's work at a time) and a 64 KiB stack
 for the one worker thread that exports while the page keeps drawing. It uses no
 network. Measured on the host (`vjo-apkg-tests`, "measure:" lines): an export
-of 700 cards, some with 9 KB definitions, peaked at 187,111 B of the 2 MiB and
+of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 804,713 B of
+the 2 MiB; one of 700 cards, some with 9 KB definitions, peaked at 187,111 B and
 wrote a 606,426 B package. These are host measurements; a physical Vita has not
 run this code yet.
 

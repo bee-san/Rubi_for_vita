@@ -11,7 +11,7 @@ The release includes **Overlay**, a standalone per-game settings app. Optional
 a card in a queue on the memory card, and the Overlay app's Anki page, where it
 is also switched on, exports the queue as [Lapis](https://github.com/donkuri/lapis)
 notes into an `.apkg` file that you copy to Anki yourself (FTP, VitaShell's USB
-mode or the SD2Vita card). Nothing is sent from the Vita; there is no
+mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
 AnkiConnect or AnkiWeb sync.
 
 Open the **Overlay** app, press **Select**, and choose one of the two engines
@@ -467,10 +467,11 @@ queued)** and **Export all cards**. An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay**, into
 `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`; the page shows the
-file's name. Copy it to a computer or phone, by VitaShell's FTP or USB
-connection (Select in VitaShell starts the one set in its settings) or on the
-SD2Vita card in a card reader, and open it in Anki. Cards leave the queue only after the file is written, synced, read
-back and checked, so a full memory card or a stop loses nothing. A note's GUID
+file's name. Copy it to a computer, by VitaShell's FTP or USB connection
+(Select in VitaShell starts the one set in its settings) or, with an SD2Vita as
+`ux0:`, on its card in a card reader, and open it in Anki. Cards leave the
+queue only after the file is written, read back and checked, named and synced,
+so a full memory card or a stop loses nothing. A note's GUID
 comes from its card, so a card exported twice is one note in Anki, and a
 profile that has Lapis keeps its own note type and styling. Nothing in the
 overlay or the app uses the network for Anki. `anki_host` and

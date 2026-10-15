@@ -353,7 +353,7 @@ static int out_stopped(void *ud)
 }
 
 /* ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>[-all]-<N>cards[-k].apkg: a
- * name no file has yet. */
+ * name no file has yet. N is the notes the package holds. */
 static int package_name(const SceDateTime *t, int all, int cards, char *name, size_t cap, char *path)
 {
     for (int k = 1; k < 100; k++) {
@@ -370,10 +370,27 @@ static int package_name(const SceDateTime *t, int all, int cards, char *name, si
     return -1;
 }
 
+/* An archived record that is this card's, byte for byte: its checksum is its
+ * name (a damaged or hand-copied file is not). */
+static int archived_copy_good(VjoArena *a, const char *hex)
+{
+    char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE];
+    size_t mark = vjo_arena_mark(a), len;
+    char *json;
+    int good;
+    card_path(path, 1, hex, "json");
+    json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0);
+    if (json)
+        vjo_queue_id(json, len, actual);
+    good = json && !strcmp(actual, hex);
+    vjo_arena_release(a, mark);
+    return good;
+}
+
 /* Moves a card that is now in a verified package out of the queue: its
  * JPEG first, then its record (a card is in the queue while its record
  * is). 0, or -1 (it stays queued, harmlessly: its note's GUID is the same). */
-static int archive_card(const VjoApkgCard *c)
+static int archive_card(VjoArena *a, const VjoApkgCard *c)
 {
     char hex[VJO_QUEUE_ID_SIZE], from[VJO_EXPORT_PATH_MAX], to[VJO_EXPORT_PATH_MAX];
     SceIoStat st;
@@ -387,12 +404,20 @@ static int archive_card(const VjoApkgCard *c)
     }
     card_path(from, 0, hex, "json");
     card_path(to, 1, hex, "json");
-    if (sceIoGetstat(to, &st) >= 0) /* the same record is archived already (the same bytes) */
-        rc = sceIoRemove(from);
-    else
-        rc = sceIoRename(from, to);
-    if (rc < 0)
-        return io_fail(sceIoGetstat(to, &st) >= 0 ? "remove" : "rename", from, rc);
+    if (sceIoGetstat(to, &st) >= 0) {
+        /* the same record archived already: the queued copy goes; a damaged one there is replaced */
+        if (archived_copy_good(a, hex)) {
+            if ((rc = sceIoRemove(from)) < 0)
+                return io_fail("remove", from, rc);
+            goto picture;
+        }
+        vjo_log("anki export: %s: the archived copy is damaged: replaced by the queued one", to);
+        if ((rc = sceIoRemove(to)) < 0)
+            return io_fail("remove", to, rc);
+    }
+    if ((rc = sceIoRename(from, to)) < 0)
+        return io_fail("rename", from, rc);
+picture:
     if (c->picture) { /* a copy left beside an archived one */
         card_path(from, 0, hex, "jpg");
         if (sceIoGetstat(from, &st) >= 0)
@@ -514,12 +539,9 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
     clock.second = t.second;
     sceIoMkdir(VJO_EXPORT_DATA_DIR, 0777); /* each fails when it exists */
     sceIoMkdir(VJO_EXPORT_DIR, 0777);
-    if (package_name(&t, all, l.n, r->name, sizeof(r->name), r->path) < 0) {
-        snprintf(msg, cap, "Too many packages named for this second in %s.", VJO_EXPORT_DIR);
-        vjo_arena_release(a, base);
-        return r->rc = VJO_E_LOCAL_IO;
-    }
-    snprintf(tmp, sizeof(tmp), "%s.tmp", r->path);
+    /* (its final name, with the number of notes written, once it is checked) */
+    snprintf(tmp, sizeof(tmp), "%s/%04d-%02d-%02d_%02d%02d%02d%s.apkg.tmp", VJO_EXPORT_DIR, t.year, t.month, t.day,
+             t.hour, t.minute, t.second, all ? "-all" : "");
     o.ui = ui;
     o.total = l.n;
     if ((o.fd = sceIoOpen(tmp, SCE_O_RDWR | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) {
@@ -546,6 +568,25 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
         if (k < 0 && !rc)
             rc = io_error("close", tmp, k);
     }
+    /* 3. opened again and verified: every entry's CRC, the notes, their GUIDs, the cards, the media */
+    if (!rc) {
+        if (ui->status)
+            ui->status(ui->ud, "Checking the file…");
+        if ((o.fd = sceIoOpen(tmp, SCE_O_RDONLY, 0)) < 0) {
+            rc = io_error("open", tmp, o.fd);
+        } else {
+            SceOff size = sceIoLseek(o.fd, 0, SCE_SEEK_END);
+            rc = size < 0 ? VJO_E_LOCAL_IO : vjo_apkg_verify(a, &ops, (uint64_t)size, l.cards, l.n, &pr);
+            sceIoClose(o.fd);
+            if (rc)
+                vjo_log("anki export: %s did not verify (%d): removed, nothing cleared", tmp, rc);
+        }
+    }
+    /* 4. only a checked package gets its name; then the memory card's directory is synced */
+    if (!rc && package_name(&t, all, pr.cards, r->name, sizeof(r->name), r->path) < 0) {
+        vjo_log("anki export: %s: 99 packages are named for this second already", VJO_EXPORT_DIR);
+        rc = VJO_E_LOCAL_IO;
+    }
     if (!rc) {
         int k = sceIoRename(tmp, r->path);
         if (k < 0)
@@ -557,20 +598,6 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
         int k = sceIoSync("ux0:", 0);
         if (k < 0)
             rc = io_error("sync", "ux0:", k);
-    }
-    /* 3. opened again and verified: every entry's CRC, the notes, their GUIDs, the cards, the media */
-    if (!rc) {
-        if (ui->status)
-            ui->status(ui->ud, "Checking the file…");
-        if ((o.fd = sceIoOpen(r->path, SCE_O_RDONLY, 0)) < 0) {
-            rc = io_error("open", r->path, o.fd);
-        } else {
-            SceOff size = sceIoLseek(o.fd, 0, SCE_SEEK_END);
-            rc = size < 0 ? VJO_E_LOCAL_IO : vjo_apkg_verify(a, &ops, (uint64_t)size, l.cards, l.n, &pr);
-            sceIoClose(o.fd);
-            if (rc)
-                vjo_log("anki export: %s did not verify (%d): removed, nothing cleared", r->path, rc);
-        }
     }
     if (rc) {
         sceIoRemove(made ? r->path : tmp);
@@ -591,27 +618,39 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
     r->bytes = pr.bytes;
     vjo_log("anki export: %s: %d cards, %d screenshots, %u bytes, verified", r->path, pr.cards, pr.media,
             (unsigned)pr.bytes);
-    /* 4. its queued cards leave the queue */
+    /* 5. its queued cards leave the queue. A stop between two cards leaves the rest queued:
+     * each is in this package and goes into the next too (Anki adds no note twice). */
     sceIoMkdir(VJO_EXPORT_ARCHIVE_DIR, 0777);
-    for (int i = 0, done = 0; i < l.n; i++) {
-        if (l.cards[i].skipped) {
-            r->too_large++;
-            continue;
+    {
+        int to_move = 0, done = 0;
+        for (int i = 0; i < l.n; i++) {
+            if (l.cards[i].skipped)
+                r->too_large++;
+            else if (!l.cards[i].exported)
+                to_move++;
         }
-        if (l.cards[i].exported)
-            continue;
-        status_every(&(VjoExportUi){ui->ud, ui->status, NULL}, "Clearing the queue", ++done, l.n);
-        if (archive_card(&l.cards[i]) < 0)
-            r->kept++;
-        else
-            r->moved++;
+        for (int i = 0; i < l.n; i++) {
+            if (l.cards[i].skipped || l.cards[i].exported)
+                continue;
+            if (r->stopped || status_every(ui, "Clearing the queue", ++done, to_move) < 0) {
+                r->stopped++;
+                continue;
+            }
+            if (archive_card(a, &l.cards[i]) < 0)
+                r->kept++;
+            else
+                r->moved++;
+        }
     }
     if (sceIoSync("ux0:", 0) < 0)
         vjo_log("anki export: the final sync failed; the queue is checked again on the next export");
     vjo_arena_release(a, base);
     {
-        char size[24], extra[120] = "";
+        char size[24], extra[224] = "";
         size_text(r->bytes, size, sizeof(size));
+        if (r->stopped)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " Stopped while clearing: %d stay queued, for the next export too.", r->stopped);
         if (r->kept)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d stay queued (see log.txt).",
                      r->kept);
@@ -619,7 +658,10 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d unreadable or too large stay queued.",
                      r->unreadable + r->too_large);
         if (r->left)
-            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d newer: export again.", r->left);
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     all ? " %d newer are not in it: a package holds %d cards at most."
+                         : " %d newer stay queued: export again.",
+                     r->left, VJO_APKG_MAX_CARDS);
         snprintf(msg, cap, "Exported %d card%s (%s) to %s.%s", r->cards, r->cards == 1 ? "" : "s", size, r->name,
                  extra);
     }

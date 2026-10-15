@@ -125,6 +125,17 @@ jobs:
         env:
           VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
           VJO_REQUIRE_ANKI: '1'
+      # What Anki imported, in the log (ctest shows a passing test's output only with -V); the
+      # step fails unless the import line is there.
+      - name: The packages Anki imported
+        shell: bash
+        run: |
+          ctest --test-dir build/host -R '^apkg_packages$' -V > apkg-import.log 2>&1 || { cat apkg-import.log; exit 1; }
+          grep -E '^[0-9]+: (anki [0-9.]+:|Ran |OK)' apkg-import.log
+          grep -qE '^[0-9]+: anki [0-9.]+: [0-9]+ \+ [0-9]+ \+ [0-9]+ notes imported' apkg-import.log
+        env:
+          VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
+          VJO_REQUIRE_ANKI: '1'
       - run: python3 tools/test_jpegsw.py
       # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
       # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).

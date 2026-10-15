@@ -117,7 +117,9 @@ class SaveRestartTests(Storage):
 class ExportRestartTests(Storage):
     """The Overlay app's export: a stop anywhere loses no card and leaves no broken package."""
 
-    POINTS = ("apkg_partial", "apkg_flushed", "apkg_renamed", "verified", "moved_jpg", "moved_json", "moving")
+    # in their order: written in part, flushed, checked (still under its temporary name), given its
+    # name, the directory synced and the first card about to move, a JPEG moved, a record moved, later moves
+    POINTS = ("apkg_partial", "apkg_flushed", "checked", "apkg_renamed", "verified", "moved_jpg", "moved_json", "moving")
 
     def check_nothing_lost(self, ids):
         queued, archived = set(self.records(self.queue)), set(self.records(self.archive))
@@ -143,9 +145,12 @@ class ExportRestartTests(Storage):
                 before = self.snapshot(self.queue)
                 self.run_step(APP, "export", crash=point)
                 self.check_nothing_lost(ids)
-                if point in ("apkg_partial", "apkg_flushed", "apkg_renamed", "verified"):
+                if point in ("apkg_partial", "apkg_flushed", "checked", "apkg_renamed", "verified"):
                     # nothing was cleared: the queue is byte for byte as it was
                     self.assertEqual(self.snapshot(self.queue), before)
+                # a package under its final name is a checked one: only after "checked"
+                packages = sorted(self.exports.glob("*.apkg")) if self.exports.exists() else []
+                self.assertEqual(len(packages), 0 if point in ("apkg_partial", "apkg_flushed", "checked") else 1)
                 after_crash = self.run_step(APP, "inspect")
                 # the next export takes what is still queued; an interrupted one's temporary file goes
                 done = self.run_step(APP, "export")

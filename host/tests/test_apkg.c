@@ -66,6 +66,8 @@ static struct {
     int fail_flush, fail_close, fail_sync, fail_open_read;
     const char *fail_rename; /* a rename whose source contains this fails */
     int corrupt_read;        /* the package's reads give one changed byte (a bad memory card) */
+    int short_reads;         /* each read gives at most 1000 bytes */
+    int fail_json_read_at, json_reads; /* the Nth opening of a record for reading fails */
     int fd;                  /* the package's (the last one opened for writing) */
     int syncs;
 } io;
@@ -74,6 +76,9 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int fd;
     if (io.fail_open_read && flags == SCE_O_RDONLY && strstr(p, ".apkg"))
+        return -1;
+    if (flags == SCE_O_RDONLY && strstr(p, ".json") && io.fail_json_read_at &&
+        ++io.json_reads == io.fail_json_read_at)
         return -1;
     fd = open(p, flags, mode);
     if (fd >= 0 && (flags & O_CREAT) && strstr(p, ".apkg"))
@@ -116,7 +121,10 @@ int sceIoPwrite(int fd, const void *p, size_t n, SceOff off)
 }
 int sceIoPread(int fd, void *p, size_t n, SceOff off)
 {
-    ssize_t k = pread(fd, p, n, off);
+    ssize_t k;
+    if (io.short_reads && n > 1000)
+        n = 1000;
+    k = pread(fd, p, n, off);
     if (io.corrupt_read && k > 0 && off <= 5000 && off + k > 5000)
         ((uint8_t *)p)[5000 - off] ^= 0x40;
     return (int)k;
@@ -138,6 +146,8 @@ int sceIoRename(const char *from, const char *to)
         return -1;
     if (strstr(to, "/exported/"))
         crash_at(moves ? "moving" : "verified"); /* before the first move, and later ones */
+    if (strstr(from, ".apkg.tmp"))
+        crash_at("checked"); /* the package verified, still under its temporary name */
     rc = rename(from, to);
     if (!rc && strstr(from, ".apkg.tmp"))
         crash_at("apkg_renamed");
@@ -697,29 +707,184 @@ static void test_a_failed_write_never_clears_the_queue(void)
     TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 40 && r.moved == 40 && (long)r.bytes == size);
 }
 
-static void test_stopping_changes_nothing(void)
+/* 30 cards, every fifth with a screenshot. */
+static void queue_thirty(void)
 {
-    VjoExportResult r;
-    char msg[300], before[1 << 16];
-    reset();
     for (int i = 0; i < 30; i++) {
         Card c = dog;
         char word[16];
         snprintf(word, sizeof(word), "犬%d", i);
         c.spelling = word;
+        c.picture = i % 5 == 0 ? 3 + i : 0;
         queue_card(&c, 0);
     }
+}
+
+/* A stop at any progress step: before the package is checked and named, nothing
+ * changes; after it, the package stays, and every card is in it and either out
+ * of the queue or still queued (the clearing stops between two cards): none is
+ * lost, none is in both places. */
+static void test_a_stop_anywhere_loses_no_card(void)
+{
+    VjoExportResult r;
+    char msg[300], before[1 << 16];
+    int total, cancelled = 0, partly = 0;
+    reset();
+    queue_thirty();
     snprintf(before, sizeof(before), "%s", snapshot());
-    /* 30 cards: four statuses reading them, four writing, one checking the file; once it is
-     * verified, the queue is cleared whatever is pressed */
-    for (int at = 1; at <= 9; at += 2) {
-        statuses = 0;
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.moved == 30);
+    total = statuses;
+    for (int at = 1; at <= total + 1; at++) {
+        reset();
+        queue_thirty();
+        TEST_ASSERT(!strcmp(snapshot(), before));
         stop_at_status = at;
-        TEST_CHECK(run(0, &r, msg) == VJO_E_CANCELLED);
-        TEST_CHECK(!strcmp(snapshot(), before) && count_dir(VJO_EXPORT_DIR, ".apkg") == 0 &&
-                   count_dir(VJO_EXPORT_DIR, ".tmp") == 0);
-        TEST_MSG("stopped at status %d: %s", at, msg);
+        int rc = run(0, &r, msg);
+        int queued = count_dir(VJO_EXPORT_QUEUE_DIR, ".json"), archived = count_dir(VJO_EXPORT_ARCHIVE_DIR, ".json");
+        if (rc == VJO_E_CANCELLED) {
+            cancelled++;
+            TEST_CHECK_(!strcmp(snapshot(), before) && count_dir(VJO_EXPORT_DIR, ".apkg") == 0 &&
+                            count_dir(VJO_EXPORT_DIR, ".tmp") == 0,
+                        "stopped at status %d of %d: %s", at, total, msg);
+            continue;
+        }
+        TEST_CHECK_(rc == VJO_OK && r.cards == 30 && count_dir(VJO_EXPORT_DIR, ".apkg") == 1 &&
+                        count_dir(VJO_EXPORT_DIR, ".tmp") == 0 && r.moved + r.stopped == 30 && queued == r.stopped &&
+                        archived == r.moved && count_dir(VJO_EXPORT_QUEUE_DIR, ".jpg") +
+                                                       count_dir(VJO_EXPORT_ARCHIVE_DIR, ".jpg") == 6,
+                    "stopped at status %d of %d: rc %d, %d moved, %d stopped, %d queued, %d archived: %s", at, total,
+                    rc, r.moved, r.stopped, queued, archived, msg);
+        if (r.stopped && r.moved)
+            partly++;
     }
+    TEST_CHECK(cancelled >= 9 && partly >= 1);
+    TEST_MSG("%d statuses: %d stops changed nothing, %d stopped the clearing between cards", total, cancelled, partly);
+    stop_at_status = -1;
+}
+
+static int card_in(const char *dir, const char *id, const char *ext)
+{
+    char path[300];
+    struct stat st;
+    snprintf(path, sizeof(path), "%s/%s.%s", dir, id, ext);
+    return stat(path, &st) == 0;
+}
+
+/* A card that cannot be read again while the package is written is left out
+ * of it, and stays queued; the package's name counts the notes it holds. */
+static void test_a_card_left_out_of_the_package_stays_queued(void)
+{
+    VjoExportResult r;
+    char msg[300], ids[3][VJO_QUEUE_ID_SIZE];
+    int queued = 0, archived = 0;
+    reset();
+    snprintf(ids[0], sizeof(ids[0]), "%s", queue_card(&cat, 0));
+    snprintf(ids[1], sizeof(ids[1]), "%s", queue_card(&dog, 0));
+    snprintf(ids[2], sizeof(ids[2]), "%s", queue_card(&eat, 0));
+    /* three reads while listing, then one per card while writing: the fifth is the second written */
+    io.fail_json_read_at = 5;
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_MSG("%s\n%s", msg, logs);
+    for (int i = 0; i < 3; i++) {
+        queued += card_in(VJO_EXPORT_QUEUE_DIR, ids[i], "json");
+        archived += card_in(VJO_EXPORT_ARCHIVE_DIR, ids[i], "json");
+    }
+    TEST_CHECK(r.cards == 2 && r.too_large == 1 && r.moved == 2 && queued == 1 && archived == 2);
+    TEST_CHECK(!strcmp(r.name, "2026-10-12_093005-2cards.apkg") && strstr(msg, "1 unreadable or too large stay"));
+    TEST_MSG("%s: %s", r.name, msg);
+    /* the next export takes it */
+    io.fail_json_read_at = 0;
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 1 && r.moved == 1 && count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0);
+}
+
+/* More cards than a package holds (VJO_APKG_MAX_CARDS): the oldest go, the
+ * newest stay queued for the next export; real files, every one listed. */
+static void test_more_cards_than_a_package_holds(void)
+{
+    enum { N = VJO_APKG_MAX_CARDS + 5 };
+    VjoExportResult r;
+    char msg[300], newest[5][VJO_QUEUE_ID_SIZE];
+    reset();
+    for (int i = 0; i < N; i++) {
+        Card c = cat;
+        char word[24];
+        snprintf(word, sizeof(word), "猫%d", i);
+        c.spelling = word;
+        c.time = 1791000000 + (N - 1 - i) * 7 % N; /* saved out of order */
+        vjo_arena_init(&A, mem, sizeof(mem));
+        const char *id = queue_card(&c, 0);
+        if (c.time >= 1791000000 + VJO_APKG_MAX_CARDS)
+            snprintf(newest[c.time - 1791000000 - VJO_APKG_MAX_CARDS], VJO_QUEUE_ID_SIZE, "%s", id);
+    }
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == VJO_APKG_MAX_CARDS && r.left == 5 && r.moved == VJO_APKG_MAX_CARDS &&
+               strstr(msg, "5 newer stay queued: export again."));
+    TEST_MSG("%d cards, %d left, %d moved: %s", r.cards, r.left, r.moved, msg);
+    for (int i = 0; i < 5; i++)
+        TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, newest[i], "json"));
+    printf("measure: %d cards: %u bytes, arena peak %u of %u\n", N, (unsigned)r.bytes, (unsigned)A.peak,
+           (unsigned)sizeof(mem));
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 5 && r.left == 0 && r.moved == 5);
+    /* everything again: a package holds the oldest VJO_APKG_MAX_CARDS, and says so */
+    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == VJO_APKG_MAX_CARDS && r.left == 5 &&
+               strstr(msg, "5 newer are not in it: a package holds 20000 cards at most."));
+    TEST_MSG("%s", msg);
+}
+
+/* An interrupted export's temporary file, of any name, goes with the next. */
+static void test_an_interrupted_exports_file_goes(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    reset();
+    queue_card(&cat, 0);
+    mkdir(VJO_EXPORT_DIR, 0777);
+    put_file(VJO_EXPORT_DIR "/2026-10-12_093004.apkg.tmp", "PK", 2); /* another second's */
+    put_file(VJO_EXPORT_DIR "/2026-10-11_120000-all-3cards.apkg.tmp", "PK", 2); /* an older build's name */
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(count_dir(VJO_EXPORT_DIR, ".tmp") == 0 && count_dir(VJO_EXPORT_DIR, ".apkg") == 1);
+    TEST_CHECK(strstr(logs, "2026-10-12_093004.apkg.tmp: an interrupted export's, removed") != NULL);
+    TEST_MSG("%s", logs);
+}
+
+/* Reads that return less than asked (any memory card may): still checked whole. */
+static void test_short_reads_are_read_again(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    reset();
+    queue_thirty();
+    io.short_reads = 1;
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 30 && r.moved == 30 && r.media == 6);
+    TEST_MSG("%s\n%s", msg, logs);
+}
+
+/* A queued card whose record is archived already: the queued copy goes when the
+ * archived one is the same record; a damaged one there is replaced by it. */
+static void test_an_archived_copy_is_kept_only_when_it_is_the_card(void)
+{
+    VjoExportResult r;
+    char msg[300], id[VJO_QUEUE_ID_SIZE], path[300], actual[VJO_QUEUE_ID_SIZE];
+    FILE *f;
+    size_t n;
+    static char json[VJO_QUEUE_TEXT_MAX];
+    reset();
+    snprintf(id, sizeof(id), "%s", queue_card(&cat, 0));
+    queue_card(&cat, 1); /* the same record, archived */
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.moved == 1 && count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0);
+    reset();
+    snprintf(id, sizeof(id), "%s", queue_card(&dog, 0));
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    snprintf(path, sizeof(path), VJO_EXPORT_ARCHIVE_DIR "/%s.json", id);
+    put_file(path, "{\"damaged\":1}", 13);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.moved == 1 && count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 0 &&
+               strstr(logs, "the archived copy is damaged: replaced by the queued one") != NULL);
+    TEST_ASSERT((f = fopen(path, "rb")) != NULL);
+    n = fread(json, 1, sizeof(json), f);
+    fclose(f);
+    vjo_queue_id(json, n, actual);
+    TEST_CHECK(!strcmp(actual, id)); /* the archive holds the good record now */
 }
 
 static void test_damaged_cards_stay_and_the_rest_are_exported(void)
@@ -839,29 +1004,6 @@ static void test_large_queue(void)
 }
 
 /* Over VJO_APKG_MAX_CARDS: the oldest go now, the rest stay for the next export. */
-static void test_the_oldest_cards_first_when_there_are_too_many(void)
-{
-    VjoApkgCard c[6];
-    List l;
-    memset(&l, 0, sizeof(l));
-    l.cards = c;
-    l.cap = 3;
-    for (int i = 0; i < 6; i++) {
-        VjoApkgCard x = {{(uint8_t)i}, 100 - i * 10, 0, 0, 0};
-        if (l.n < l.cap) {
-            l.cards[l.n++] = x;
-            if (l.n == l.cap)
-                for (int k = l.n / 2 - 1; k >= 0; k--)
-                    heap_down(l.cards, l.n, k);
-        } else if (newer(&l.cards[0], &x)) {
-            l.cards[0] = x;
-            heap_down(l.cards, l.n, 0);
-        }
-    }
-    vjo_apkg_sort(c, 3);
-    TEST_CHECK(c[0].time == 50 && c[1].time == 60 && c[2].time == 70);
-}
-
 /* ---------------- packages for host/tests/test_apkg.py ---------------- */
 
 /* The package, copied out of the test's directory (in /tmp) and removed there:
@@ -964,14 +1106,80 @@ TEST_LIST = {
      test_export_writes_a_dated_verified_package_and_clears_the_queue},
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},
     {"a_failed_write_never_clears_the_queue", test_a_failed_write_never_clears_the_queue},
-    {"stopping_changes_nothing", test_stopping_changes_nothing},
+    {"a_stop_anywhere_loses_no_card", test_a_stop_anywhere_loses_no_card},
+    {"a_card_left_out_of_the_package_stays_queued", test_a_card_left_out_of_the_package_stays_queued},
+    {"more_cards_than_a_package_holds", test_more_cards_than_a_package_holds},
+    {"an_interrupted_exports_file_goes", test_an_interrupted_exports_file_goes},
+    {"short_reads_are_read_again", test_short_reads_are_read_again},
+    {"an_archived_copy_is_kept_only_when_it_is_the_card", test_an_archived_copy_is_kept_only_when_it_is_the_card},
     {"damaged_cards_stay_and_the_rest_are_exported", test_damaged_cards_stay_and_the_rest_are_exported},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"a_failed_move_keeps_the_card_queued", test_a_failed_move_keeps_the_card_queued},
     {"large_queue", test_large_queue},
-    {"the_oldest_cards_first_when_there_are_too_many", test_the_oldest_cards_first_when_there_are_too_many},
     {NULL, NULL},
 };
+
+/* ---------------- SQLite files of every tree shape, for test_apkg.py ---------------- */
+
+/* DIR: one table t(id INTEGER PRIMARY KEY, v TEXT) per file, rows-<N>-<BYTES>.sqlite: N
+ * rows of BYTES of text each. v of row r is byte i: 'a' + (r * 7 + i) % 26. 2,100-byte rows fill
+ * a leaf each (two do not fit), so N is the number of leaves: one interior page holds up to
+ * VJO_SQLW_FANOUT (273) children, so 273 and 274, 546 to 548 cover one and more interior pages
+ * on a level; rows from 4,062 bytes have overflow chains; 10,000 small rows share leaves. SQLite
+ * itself checks them (PRAGMA integrity_check). */
+static int sqlw_file_write(void *ctx, uint64_t off, const void *src, size_t n)
+{
+    FILE *f = (FILE *)ctx;
+    return fseeko(f, (off_t)off, SEEK_SET) || fwrite(src, 1, n, f) != n ? -1 : 0;
+}
+
+static int write_sqlw_shapes(const char *dir)
+{
+    static const struct {
+        int rows;
+        size_t bytes;
+    } shapes[] = {{0, 10},     {1, 10},       {1, 2100},  {272, 2100}, {273, 2100},  {274, 2100}, {275, 2100},
+                  {546, 2100}, {547, 2100},   {548, 2100}, {3, 4057},  {3, 4058},    {3, 4062},   {2, 8000},
+                  {2, 100000}, {10000, 10},   {600, 900}};
+    static VjoSqlw w;
+    static VjoSqlwTable t;
+    static char text[100000];
+    for (unsigned k = 0; k < sizeof(shapes) / sizeof(shapes[0]); k++) {
+        char path[600];
+        uint32_t pages = 0;
+        int rc;
+        FILE *f;
+        VjoSqlwOut out;
+        snprintf(path, sizeof(path), "%s/rows-%d-%u.sqlite", dir, shapes[k].rows, (unsigned)shapes[k].bytes);
+        if (!(f = fopen(path, "w+b")))
+            return 1;
+        out.ctx = f;
+        out.write = sqlw_file_write;
+        vjo_sqlw_init(&w, &out);
+        rc = vjo_sqlw_table_begin(&w, &t, "t", "CREATE TABLE t (id integer primary key, v text not null)");
+        for (int r = 1; !rc && r <= shapes[k].rows; r++) {
+            VjoSqlwVal v[2] = {{VJO_SQLW_NULL, 0, NULL, 0}, {VJO_SQLW_TEXT, 0, text, shapes[k].bytes}};
+            uint8_t *rec;
+            size_t len;
+            for (size_t i = 0; i < shapes[k].bytes; i++)
+                text[i] = (char)('a' + ((size_t)r * 7u + i) % 26u);
+            vjo_arena_init(&A, mem, sizeof(mem));
+            rc = vjo_sqlw_record(&A, v, 2, &rec, &len);
+            if (!rc)
+                rc = vjo_sqlw_row(&w, r, rec, len);
+        }
+        if (!rc)
+            rc = vjo_sqlw_table_end(&w);
+        if (!rc)
+            rc = vjo_sqlw_finish(&w, &pages);
+        if (fclose(f) || rc) {
+            fprintf(stderr, "%s: rc %d\n", path, rc);
+            return 1;
+        }
+        printf("%s %u pages\n", path, (unsigned)pages);
+    }
+    return 0;
+}
 
 /* ---------------- restart steps (test_anki_restart.py) ---------------- */
 
@@ -1055,6 +1263,8 @@ int main(int argc, char **argv)
         return restart_step(argc, argv);
     if (argc == 3 && !strcmp(argv[1], "--write") && !realpath(argv[2], out))
         return 2;
+    if (argc == 3 && !strcmp(argv[1], "--sqlw"))
+        return write_sqlw_shapes(argv[2]);
     snprintf(test_dir, sizeof(test_dir), "/tmp/vjo-apkg-tests-XXXXXX");
     if (!mkdtemp(test_dir))
         return 2;

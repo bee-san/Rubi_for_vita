@@ -85,6 +85,30 @@ class Package:
         return json.loads(self.db.execute("select models from col").fetchone()[0])
 
 
+class TestSqliteWriter(unittest.TestCase):
+    """core/sqlw.c's files of every tree shape (vjo-apkg-tests --sqlw): one-row leaves on both sides
+    of an interior page's 273 children and of two such pages, overflow chains from 4,062 bytes,
+    many small rows. SQLite itself checks each file, and every row's bytes are compared."""
+
+    def test_every_shape_is_a_valid_database(self):
+        with tempfile.TemporaryDirectory() as out:
+            subprocess.run([BINARY, "--sqlw", out], check=True, capture_output=True)
+            files = sorted(pathlib.Path(out).glob("rows-*.sqlite"))
+            self.assertEqual(len(files), 17)
+            for path in files:
+                rows, size = map(int, re.match(r"rows-(\d+)-(\d+)\.sqlite$", path.name).groups())
+                with self.subTest(path.name):
+                    conn = sqlite3.connect(path)
+                    try:
+                        self.assertEqual(conn.execute("pragma integrity_check").fetchall(), [("ok",)])
+                        got = conn.execute("select id, v from t order by id").fetchall()
+                    finally:
+                        conn.close()
+                    self.assertEqual([r for r, _ in got], list(range(1, rows + 1)))
+                    for r, v in got:
+                        self.assertEqual(v, "".join(chr(97 + (r * 7 + i) % 26) for i in range(size)), r)
+
+
 class TestPackages(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

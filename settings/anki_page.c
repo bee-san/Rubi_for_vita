@@ -37,7 +37,7 @@ static int note_error;
 /* The worker (lock): one export at a time. */
 static SceUID lock = -1, worker = -1;
 static int all, running, finished, cancelled;
-static char progress[160], result[360];
+static char progress[160], result[480];
 static int result_error;
 static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
 static int log_on;
@@ -93,7 +93,7 @@ static int worker_main(SceSize args, void *argp)
     static const VjoExportUi ui = {NULL, set_progress, stopped};
     VjoArena arena;
     VjoExportResult r;
-    char msg[260];
+    char msg[360];
     int what;
     size_t n;
     (void)args;
@@ -104,14 +104,14 @@ static int worker_main(SceSize args, void *argp)
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
     vjo_export_run(&arena, what, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
-            "%u bytes, arena peak %u",
-            what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left,
+            "%d stopped, %u bytes, arena peak %u",
+            what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
             (unsigned)r.bytes, (unsigned)arena.peak);
     sceKernelLockMutex(lock, 1, NULL);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))
-        snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB, or on the SD2Vita "
-                 "card, and open it in Anki.", VJO_EXPORT_DIR);
+        snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB (or the SD2Vita "
+                 "card, when it is ux0:) and open it in Anki.", VJO_EXPORT_DIR);
     result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large;
     progress[0] = '\0';
     finished = 1;
@@ -191,11 +191,14 @@ static void save(int mining, VjoArena *scratch)
 
 void vjo_anki_page_show(VjoArena *scratch)
 {
-    log_on = 0;
-    writable = vjo_preferences_load(&cfg, scratch) >= 0;
-    log_on = cfg.log_file;
+    /* (log_on is the worker's too: it changes only while no export runs) */
     if (!running)
+        log_on = 0;
+    writable = vjo_preferences_load(&cfg, scratch) >= 0;
+    if (!running) {
+        log_on = cfg.log_file;
         vjo_export_count(&counts);
+    }
 }
 
 /* ---------------- input and drawing ---------------- */
@@ -230,7 +233,7 @@ static void count_text(char *out, size_t cap, int n, const char *what)
 
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
-    char line[260], busy_text[160], controls[96], last[360];
+    char line[260], busy_text[160], controls[96], last[480];
     int stick = stick_move, busy = running, err = 0, total;
     stick_move = 0;
     reap();
@@ -318,7 +321,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     else
         ui->footer(408, 92, 435, 3,
                    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in "
-                   "VitaShell) or on the SD2Vita card in a card reader, then open it in Anki.",
+                   "VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.",
                    0, controls);
     vita2d_end_drawing();
     vita2d_swap_buffers();
