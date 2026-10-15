@@ -318,6 +318,7 @@ class Collect(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60, cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("press SELECT to start FTP", result.stdout)
+
     def test_the_lms_and_their_attribution_are_hashed_against_the_package(self):
         # The beam + LM decoder's LMs and their CC BY-SA attribution ship beside the weights (#89).
         # Each installed one is hashed and matches its manifest entry, a shipped one the Vita lacks
@@ -330,6 +331,11 @@ class Collect(unittest.TestCase):
             manifest["files"][ocr + name] = {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
         manifest["files"][ocr + "vocr_lm_o3_500k.vlm"] = {"bytes": 2, "sha256": hashlib.sha256(b"lm").hexdigest()}
         (self.package / "package-manifest.json").write_text(json.dumps(manifest))
+        # names the package never ships there: neither hashed nor read
+        others = ("LM-ATTRIBUTION.md.bak", "LM-notes.txt", "meiki-stream-int8.mnn", "old.vlm.txt",
+                  "VOCR3_H15_w8.vocr.part")
+        for name in others:
+            (self.device / (ocr + name)).write_bytes(b"not the package's")
         with FtpMock(self.device) as ftp:
             result = self.collect(ftp)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -339,6 +345,8 @@ class Collect(unittest.TestCase):
         for name in ("vocr_lm_o3_1000k.vlm", "vocr_lm_o3_4000k.vlm", "LM-ATTRIBUTION.md", "VOCR4_W20_w8.vocr"):
             self.assertIn(dev_ocr + name, record["hashed"])
             self.assertTrue(check[dev_ocr + name]["match"], name)
+        for name in others:
+            self.assertNotIn(dev_ocr + name, record["hashed"])
         self.assertFalse(check[dev_ocr + "vocr_lm_o3_500k.vlm"]["match"])
         self.assertTrue(check[dev_ocr + "vocr_lm_o3_500k.vlm"].get("absent"))
         with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:

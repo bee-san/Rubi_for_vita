@@ -220,9 +220,10 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
-- the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK and OCR
-  models (downloaded to a temporary file and deleted, never kept), compared with the package's
-  `package-manifest.json`; the dictionary is compared by size.
+- the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
+  models, the beam + LM decoder's LMs (`*.vlm`) and their `LM-ATTRIBUTION.md` (downloaded to a
+  temporary file and deleted, never kept), compared with the package's `package-manifest.json`; the
+  dictionary is compared by size.
 
 Each file keeps its device path in the folder (`ux0/data/VitaJPOverlay/log.txt`, ...); `COLLECT.json`
 lists every file with its bytes and SHA-256, what was not on the Vita and every error. Then
