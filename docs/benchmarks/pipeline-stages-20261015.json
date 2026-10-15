@@ -621,23 +621,24 @@
     "unit": "parse",
     "what": "Shell: config.ini parsed (every overlay open)",
     "ops_per_iter": 1,
-    "host_ms": 0.007198,
-    "a9_insns": 128179.0,
+    "host_ms": 0.007022,
+    "a9_insns": 128214.0,
     "a9_444": [
-     0.14434572072072072,
-     0.28891666666666665
+     0.14438513513513512,
+     0.28899549549549547
     ],
     "a9_333": [
-     0.19246096096096096,
-     0.38522222222222224
+     0.1925135135135135,
+     0.38532732732732733
     ],
     "l1d_misses": 0.0,
-    "libc_share": 0.09290133329172486,
+    "libc_share": 0.0931489540923768,
     "parity": true,
     "counters": {
      "bytes": 4283,
      "warnings": 0,
-     "struct_bytes": 2388
+     "struct_bytes": 2388,
+     "nondefault_warnings": 0
     },
     "counters_from": "a9",
     "memory": "4,283 B of config.ini into a 2,388 B VjoConfig"
@@ -647,25 +648,25 @@
     "unit": "line",
     "what": "Shell: formatting a job's log lines (formatting only)",
     "ops_per_iter": 27,
-    "host_ms": 0.0002508222222222222,
-    "a9_insns": 2786.6296296296296,
+    "host_ms": 0.0002537777777777778,
+    "a9_insns": 2791.8518518518517,
     "a9_444": [
-     0.003138096429763096,
-     0.006321237904571238
+     0.003143977310643977,
+     0.006332999666333
     ],
     "a9_333": [
-     0.004184128573017462,
-     0.008428317206094984
+     0.004191969747525303,
+     0.008443999555110666
     ],
     "l1d_misses": 0.0,
     "libc_share": 1.0,
     "parity": true,
     "counters": {
      "lines": 27,
-     "bytes": 2981
+     "bytes": 2985
     },
     "counters_from": "a9",
-    "memory": "110 B per line"
+    "memory": "111 B per line"
    },
    {
     "workload": "anki",
@@ -3820,16 +3821,16 @@
     "parity": true
    },
    "config": {
-    "insns_per_op": 128179.0,
+    "insns_per_op": 128214.0,
     "share": {
-     "libc": 0.08729199010758393,
-     "printf": 0.005609343184140928,
-     "plugin": 0.9070986667082751
+     "libc": 0.0876347356762912,
+     "printf": 0.0055142184160856065,
+     "plugin": 0.9068510459076232
     },
     "neon_insns_per_op": 160.0,
     "vfp_insns_per_op": 0.0,
     "mul_per_op": 21.0,
-    "ls_per_op": 27669.0,
+    "ls_per_op": 27668.0,
     "l1d_misses_per_op": 0.0,
     "l2_misses_per_op": 0.0,
     "low_bound": "dual_issue",
@@ -3844,7 +3845,7 @@
      ],
      [
       "strlen",
-      5085.0
+      5106.0
      ],
      [
       "strchr",
@@ -3877,52 +3878,53 @@
     ],
     "cycles_per_op": {
      "444": [
-      64089.5,
-      128279.0
+      64107.0,
+      128314.0
      ],
      "333": [
-      64089.5,
-      128279.0
+      64107.0,
+      128314.0
      ]
     },
     "ms_per_op": {
      "444": [
-      0.14434572072072072,
-      0.28891666666666665
+      0.14438513513513512,
+      0.28899549549549547
      ],
      "333": [
-      0.19246096096096096,
-      0.38522222222222224
+      0.1925135135135135,
+      0.38532732732732733
      ]
     },
     "stage": "config",
     "unit": "parse",
     "ops": 1,
-    "check": "afb847d247b504a2",
+    "check": "db4003991aee39a8",
     "counters": {
      "bytes": 4283,
      "warnings": 0,
-     "struct_bytes": 2388
+     "struct_bytes": 2388,
+     "nondefault_warnings": 0
     },
     "parity": true
    },
    "log": {
-    "insns_per_op": 2786.6296296296296,
+    "insns_per_op": 2791.8518518518517,
     "share": {
-     "libc": 0.1436489054878454,
-     "printf": 0.8563510945121546
+     "libc": 0.14457415760148581,
+     "printf": 0.8554258423985142
     },
     "neon_insns_per_op": 10.296296296296296,
     "vfp_insns_per_op": 0.0,
-    "mul_per_op": 35.074074074074076,
-    "ls_per_op": 916.4074074074074,
+    "mul_per_op": 35.22222222222222,
+    "ls_per_op": 916.7037037037037,
     "l1d_misses_per_op": 0.0,
     "l2_misses_per_op": 0.0,
     "low_bound": "dual_issue",
     "top_functions": [
      [
       "__printf_buffer",
-      1263.9259259259259
+      1264.4814814814815
      ],
      [
       "__printf_buffer_write",
@@ -3930,7 +3932,7 @@
      ],
      [
       "_itoa_word",
-      314.44444444444446
+      315.77777777777777
      ],
      [
       "memcpy",
@@ -3942,7 +3944,7 @@
      ],
      [
       "strlen",
-      92.55555555555556
+      95.88888888888889
      ],
      [
       "__printf_buffer_pad_1",
@@ -3963,31 +3965,31 @@
     ],
     "cycles_per_op": {
      "444": [
-      1393.3148148148148,
-      2806.6296296296296
+      1395.9259259259259,
+      2811.8518518518517
      ],
      "333": [
-      1393.3148148148148,
-      2806.6296296296296
+      1395.9259259259259,
+      2811.8518518518517
      ]
     },
     "ms_per_op": {
      "444": [
-      0.003138096429763096,
-      0.006321237904571238
+      0.003143977310643977,
+      0.006332999666333
      ],
      "333": [
-      0.004184128573017462,
-      0.008428317206094984
+      0.004191969747525303,
+      0.008443999555110666
      ]
     },
     "stage": "log",
     "unit": "line",
     "ops": 27,
-    "check": "022f2251ec5c5aef",
+    "check": "a6dbe97fa5cccb86",
     "counters": {
      "lines": 27,
-     "bytes": 2981
+     "bytes": 2985
     },
     "parity": true
    },
@@ -4526,25 +4528,26 @@
     "stage": "config",
     "unit": "parse",
     "ops": 1,
-    "check": "afb847d247b504a2",
-    "ns_per_iter": 7198.0,
-    "ms_per_op": 0.007198,
+    "check": "db4003991aee39a8",
+    "ns_per_iter": 7022.0,
+    "ms_per_op": 0.007022,
     "counters": {
      "bytes": 4283,
      "warnings": 0,
-     "struct_bytes": 2388
+     "struct_bytes": 2388,
+     "nondefault_warnings": 0
     }
    },
    "log": {
     "stage": "log",
     "unit": "line",
     "ops": 27,
-    "check": "022f2251ec5c5aef",
-    "ns_per_iter": 6772.2,
-    "ms_per_op": 0.0002508222222222222,
+    "check": "a6dbe97fa5cccb86",
+    "ns_per_iter": 6852.0,
+    "ms_per_op": 0.0002537777777777778,
     "counters": {
      "lines": 27,
-     "bytes": 2981
+     "bytes": 2985
     }
    },
    "anki": {

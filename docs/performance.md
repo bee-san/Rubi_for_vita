@@ -33,15 +33,17 @@ protected set):
 | text post-processing | < 0.1 ms | < 0.1 ms | < 0.1 ms | < 0.1 ms | 0 ms | A9 estimate |
 | first-word lookup | 59-81 ms | 59-81 ms | 59-81 ms | 59-81 ms | 70 ms | console: 15.3 ms + 3.82 ms a read, 14.3 reads |
 | **total** | **845-2411 ms** | **957-2523 ms** | **946-2610 ms** | **1057-2722 ms** | **1624 ms** | + what the model does not explain: 194 ms in #81's jobs (below) |
-| + while `status.txt` is under 64 KiB | +273-1365 ms | +273-1365 ms | +273-1365 ms | +273-1365 ms | +456 ms | a boot's first 10-20 jobs: every line is an append of `status.txt` too |
+| + while `status.txt` is under 64 KiB | +273-1365 ms | +273-1365 ms | +273-1365 ms | +273-1365 ms | +456 ms | a boot's first jobs (est. 10-20; #81's boot filled it at about the 15th OCR job): every line is an append of `status.txt` too |
 | a game's first job | 1249-2839 ms | 1361-2951 ms | 1350-3039 ms | 1462-3150 ms | 2040 ms | + the weights' and the LM's read and SHA-256: console 218-231 ms for the weights, the LM scaled by its bytes |
 
-Ranges: low is the A9 model's lower bound with no polling wait and 9.4 ms an append, high its
-upper bound with both polls at their longest and 47 ms an append. The estimate column takes the
+Ranges: low is the A9 model's lower bound with no polling wait and 9.4 ms an append (the lowest
+of #81's jobs' residuals, which carry the polls' variance; the lowest measured append is 12.1 ms),
+high its upper bound with both polls at their longest and 47 ms an append. The estimate column takes the
 compute at the A9 upper bound at 333 MHz (the bound the console matched, below), the polls at
 their mean, 15.7 ms an append (the self-test's median) and the lookup's console fit. The totals
-are for a `status.txt` already full (64 KiB, one append a line); before that, in the first 10-20
-jobs after a boot, each line is two appends (the row below them). The game worker runs at the
+are for a `status.txt` already full (64 KiB, one append a line); before that, in a boot's first
+jobs (est. 10-20; #81's boot filled it at about the 15th OCR job), each line is two appends (the
+row below them). The game worker runs at the
 lowest user priority, so a busy game stretches its share; that is not modelled. The kernel's settle
 detection before a job (a signature every 8th game frame, `kernel/vjo_kernel.h`
 `VJO_CHECK_EVERY_FRAMES`, and 300 ms without change, `kernel/scene.h` `SCENE_STABLE_US`) is policy
@@ -58,7 +60,9 @@ appends inside the Shell's job time, 61 ms of weight reads, an 883x112 region) i
 712-2404 ms, estimate 1198 ms; those jobs took 1393 ms on average (median 1368). The model leaves
 194 ms of them, 14%, unexplained (5.4 ms per append): the game worker runs at the lowest user
 priority, so the game's threads delay its wakeups and its job, and the game's own file I/O may
-slow the Shell's appends; neither is measured. This check is not independent: recognition's rate
+slow the Shell's appends; the control thread's "subtitle text ready" line falls inside every job
+(about 1.6 appends, 26 ms est.), and the kernel flushes `kernel.txt` about 3 times a job; none of
+this is measured. This check is not independent: recognition's rate
 and the lookup's fit come from the same logs (the append's cost does not: it is the self-test's).
 So main's job is estimated at about 0.5 s more than test.1's (1.6 s against 1.1 s at the dev
 means, `status.txt` full): the cascade, the wait and the log's 29 lines instead of 22 (the API 20
@@ -137,8 +141,8 @@ none, so the wait reads exactly the passes it would at that rate (and the cascad
 | `postproc` | text | 0.4 µs | 5,320 | 6-12 µs | 8-16 µs | 17% | yes |
 | `lookup_first` | lookup | 46.3 µs | 127,156 | 0.14-0.48 ms | 0.19-0.64 ms | 70% | yes |
 | `lookup_every` | lookup | 46.3 µs | 116,185 | 0.13-0.38 ms | 0.18-0.51 ms | 65% | yes |
-| `config` | parse | 7.2 µs | 128,179 | 0.14-0.29 ms | 0.19-0.39 ms | 9% | yes |
-| `log` | line | 0.3 µs | 2,787 | 3-6 µs | 4-8 µs | 100% | yes |
+| `config` | parse | 7.0 µs | 128,214 | 0.14-0.29 ms | 0.19-0.39 ms | 9% | yes |
+| `log` | line | 0.3 µs | 2,792 | 3-6 µs | 4-8 µs | 100% | yes |
 | `anki` | card | 3.6 µs | 58,578 | 0.07-0.13 ms | 0.09-0.18 ms | 35% | yes |
 | `furigana` | word | 0.1 µs | 1,715 | 2-4 µs | 3-5 µs | 51% | yes |
 
@@ -159,10 +163,10 @@ build's output checksum. *libc share*: of the counted instructions, the part in 
 | `scene_sig` | the sampled rows of the region (every 7th row and 4th pixel of the 896x156 box), copied a row at a time |
 | `find` | 31,971 B arena; 382 row reads (two passes) |
 | `recognize_h15` / `_fl10` / `_w20` | 182,944 / 124,832 / 241,056 B arena and the resident weights; 54 CTC frames per line here |
-| `job_h15` | 538,624 B workspace (the job, the LM's and the cascade's extras) + 63,000 B capture block; 13 strips (one a settle pass) and 796 row reads for a 156-row region |
+| `job_h15` | 538,624 B workspace (the job, the LM's and the cascade's extras; the game's block also holds the 4 KiB greedy text for the log: 544,768 B page-rounded) + 63,000 B capture block; 13 strips (one a settle pass) and 796 row reads for a 156-row region |
 | `job_h15_greedy` | 186,704 B workspace + 63,000 B capture block; 10 strips and 604 row reads |
 | `lookup_first` / `_every` | 1 open, 14.3 / 14.0 reads, 49.6 / 48.8 KiB per lookup; arena peak 53,552 B of the Shell's 64 KiB |
-| `config`, `log`, `anki` | 4,283 B of config.ini into a 2,388 B `VjoConfig`; 110 B per log line; 997 B per card record |
+| `config`, `log`, `anki` | 4,283 B of config.ini into a 2,388 B `VjoConfig`; 111 B per log line; 997 B per card record |
 
 Over the 372 dev regions (`bench_stages.py dev`), API 19's job reads 7.3 strips (median 8, p90
 12, max 18), 2.4 lines (median 2, p90 4) and 86 CTC frames (median 78, p90 158); every region row
@@ -179,20 +183,20 @@ In the order this repository can act on them, with what each costs a job on the 
 (estimates at 333 MHz, 60 fps, main's defaults); recognition, the largest part (505 ms), is
 vita-vn-ocr's runtime.
 
-1. **Logging: 0.46 s of a 1.6 s job** (est.; 0.27-1.37 s), twice that in a boot's first 10-20
-   jobs. Every `vjo_log` line is an open/append/close of `log.txt`, and of `status.txt` while that
-   is under 64 KiB (`shell/log_vita.c:46-66, 94-109`), so a crash keeps every line, and on the
-   console each append costs 9-47 ms ([console calibration](#console-calibration)). Main's job
-   logs 29 lines: 21 of them come from one result, back to back (`shell/worker.c` `vocr_run_one`:
-   `game vocr rc=`, `capture`, then `log_vocr_measurements`' `memory`, `speed`, `cascade speed`
-   (in 62% of the dev jobs) and `lines`, and `log_vocr_steps`' 15 steps), and one or two per
-   recognized line (`log_text_lines`). Formatting is 4-8 µs a line (A9). ds4vita (aad83c9 `log.c:8-49`) and
-   VitaGrafix (65b6ee3 `src/log.c:10-61`) keep a buffer and write it with one open/write/close.
-   The kernel's `kernel.txt` is flushed with its own open/close on every 16 ms tick that has new
-   lines (`kernel/main.c:131-160` `kernel_file_flush`, called at `:217`), about 3 per job. Fix:
-   one result's lines written with one append, the same bytes in the same order (est. 0.33 s a
-   job at 15.7 ms an append, 0.44 s at the jobs' 20.9 ms; twice that while `status.txt` is under
-   64 KiB).
+1. **Logging: 0.46 s of a 1.6 s job** (est.; 0.27-1.37 s), twice that in a boot's first jobs
+   (est. 10-20). Every `vjo_log` line is an open/append/close of `log.txt`, and of `status.txt`
+   while that is under 64 KiB (`shell/log_vita.c:46-66, 94-109`), so a crash keeps every line,
+   and on the console each append costs 9-47 ms ([console calibration](#console-calibration)).
+   Main's job logs 29 lines: 21 of them come from one result, back to back (`shell/worker.c`
+   `vocr_run_one`: `game vocr rc=`, `capture`, then `log_vocr_measurements`' `memory`, `speed`,
+   `cascade speed` (in 62% of the dev jobs) and `lines`, and `log_vocr_steps`' 15 steps), and
+   one or two per recognized line (`log_text_lines`). Formatting is 4-8 µs a line (A9). ds4vita
+   (aad83c9 `log.c:8-49`) and VitaGrafix (65b6ee3 `src/log.c:10-61`) keep a buffer and write it
+   with one open/write/close. The kernel's `kernel.txt` is flushed with its own open/close on
+   every 16 ms tick that has new lines (`kernel/main.c:131-160` `kernel_file_flush`, called at
+   `:217`), about 3 per job. Fix: one result's lines written with one append, the same bytes in
+   the same order (est. 0.33 s a job at 15.7 ms an append, 0.44 s at the jobs' 20.9 ms; twice
+   that while `status.txt` is under 64 KiB).
 2. **Polled hand-offs: 75 ms per job on average, 150 ms at worst.** The game worker sleeps 100 ms
    between `vjoOcrComplete`/`vjoOcrRegister` + `vjoOcrTake` rounds (`game_ocr/main.c:1080-1103`;
    50 ms while a claim is outstanding), so a submitted job waits 0-100 ms before the game claims
@@ -208,7 +212,10 @@ vita-vn-ocr's runtime.
 3. **The cascade: 256 ms a job** (est.; 139-253 ms A9 at 333 MHz) on these regions, where it reads
    43% of the lines again with VOCR4-W20 (1.37 times H15's cost a frame). That is the dialogue
    accuracy work's trade (vita-vn-ocr #82, `ocr_cascade_ms`), bounded by its 2 s ceiling; test.2's
-   `cascade speed` lines will say what share of real dialogue it reads again.
+   `cascade speed` lines will say what share of real dialogue it reads again. The bench's clock
+   gives recognition no time, so that ceiling never binds here; at the console's rates it would in
+   about 13 of the 372 dev regions, which hold 15.5% of the cascade frames (audit-overlay-perf-1b's
+   estimate): 256 ms is an upper estimate.
 4. **Recognition: 505 ms a job** (est.), vita-vn-ocr's runtime at 5.06 ms a frame on the console
    (112-203 ms per 54-frame line for VOCR3-H15 at 444 MHz, 63-119 ms for VOCR3-FL10), pinned here;
    its own speed work happens there. The LM adds 0.06-0.34 ms a frame (A9, 333 MHz; up to 7%).
@@ -298,7 +305,8 @@ grey bytes and the signature, the lines, the text and the greedy text, the entri
 spans, every parsed setting, the Anki record's bytes), so a speed change that alters a stage's
 output fails it. The log stage is a replica of the Shell's formatting (its format strings, a
 typical job's values), so for logging it checks the formatted bytes, not the Shell's code; the
-Shell's logger has its own tests. The `a9` lane links the Vita build's own libraries
+Shell's log lines are checked by `host/tests/test_shell_worker.c` through its own `vjo_log` stub;
+`shell/log_vita.c` itself has no host test here (the logging PR adds one). The `a9` lane links the Vita build's own libraries
 (`libvjo_core_vita.a`, `libvjo_vocr*.a`, `libvjo_bearssl.a`) and the kernel's
 `capture.c.obj`/`scene.c.obj`, so the counted instructions are the plugins' (Thumb-2, the modules'
 own flags), runs each workload with 1 and 3 iterations and keeps the difference (one steady-state

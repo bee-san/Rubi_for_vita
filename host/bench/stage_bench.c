@@ -677,12 +677,37 @@ static int stage_lookup(const BenchIn *in, unsigned iters, BenchOut *out)
 }
 
 /* config.ini, as every overlay open reads it (shell/files.c vjo_config_load). */
+/* Settings that differ from every default, parsed once untimed: docs/config.example.ini
+ * holds the defaults, so without these a parser that read nothing would keep the
+ * checksum (audit-overlay-perf-1b N2). */
+static const char nondefault_config[] =
+    "dictionary = jiten\n"
+    "local_dictionary_results = 3\n"
+    "japanese_only_selection = off\n"
+    "highlight_mode = character\n"
+    "font_size_ja = 30\n"
+    "font_size_en = 18\n"
+    "ocr_mode = on_press\n"
+    "ocr_backend = lens\n"
+    "vocr_model = VOCR3_FL10_w8.vocr\n"
+    "vocr_fallback_model = none\n"
+    "ocr_settle_ms = 0\n"
+    "ocr_settle_max_ms = 500\n"
+    "ocr_cascade_ms = 0\n"
+    "ocr_lm = off\n"
+    "ocr_refine_lines = on\n"
+    "ocr_skip_blank_lines = on\n"
+    "log_file = off\n"
+    "anki_mining = on\n";
+
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {
-    static VjoConfig cfg;
+    static VjoConfig cfg, alt;
     const char *text = in->config_text ? in->config_text : vjo_config_default_text();
     size_t len = strlen(text);
     uint64_t t0 = 0;
+    vjo_config_defaults(&alt);
+    vjo_config_parse(&alt, nondefault_config, sizeof(nondefault_config) - 1);
     for (unsigned it = 0; it <= iters; it++) {
         if (it == 1) t0 = now_ns(in);
         vjo_config_defaults(&cfg);
@@ -692,18 +717,21 @@ static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
     /* Every parsed setting: VjoConfig is ints and char arrays only (no pointer,
      * no padding), laid out alike by both compilers, and zeroed by
      * vjo_config_defaults first, so its bytes are the output. */
-    out->check = fnv64(0, &cfg, sizeof(cfg));
+    out->check = fnv64(fnv64(0, &cfg, sizeof(cfg)), &alt, sizeof(alt));
     out->ops = 1;
     out->c[0] = len;
     out->c[1] = (uint64_t)cfg.n_warnings;
     out->c[2] = sizeof(cfg);
+    out->c[3] = (uint64_t)alt.n_warnings; /* 0: every non-default setting was accepted */
     return 0;
 }
 
 /* Formatting one Auto OCR job's log lines: a copy of the Shell's own format
  * strings (shell/worker.c vocr_run_one, log_vocr_measurements, log_text_lines,
  * log_lookup; shell/selftest.c vjo_gstep_format for the game worker's steps),
- * with a typical job's values, in the order a job on main's defaults logs
+ * with synthetic values of the committed sample's job (its 896x156 region, the
+ * bench's own workspace and capture sizes, round free sizes and times; no value
+ * from a console log), in the order a job on main's defaults logs
  * them. It is a replica (the Shell's code calls the SDK), so it measures the
  * formatting only: the file system's cost per line is the console's
  * (docs/performance.md, console calibration). The checksum is the formatted
@@ -733,27 +761,27 @@ static int stage_log(const BenchIn *in, unsigned iters, BenchOut *out)
         LOGF("job start (%s)%s", "auto: screen settled", "");
         LOGF("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s "
              "resident=%u, find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-             0, "VOCR3_H15_w8.vocr", "", 883u, 112u, 46u, 416u, 960u, 544u, 0u, 1u, 186704u, "resident", 1159168u,
-             100u, 1u, 392u, 77u, 0u, 0u, 0);
+             0, "VOCR3_H15_w8.vocr", "", 896u, 156u, 32u, 362u, 960u, 544u, 0u, 2u, 186704u, "resident", 1159168u,
+             100u, 1u, 546u, 108u, 0u, 0u, 0);
         LOGF("game vocr capture: %s into %s, %u B block, %u-row strips, %u strips in %u ms, %u rows changed, sum 0x%08X",
-             "hook", "USER", 57344u, 64u, 5u, 70u, 0u, 0x1E037CFDu);
+             "hook", "USER", 65536u, 64u, 13u, 217u, 0u, 0x12345678u);
         LOGF("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s, headroom %d",
-             90177536, 245760u, 0u, 4194304u, "passed", 85737472);
-        LOGF("game vocr speed: %u frames in %u us, %u us per frame", 77u, 392000u, 5090u);
-        LOGF("%s %ux%u %uf %u.%ums c%u%s%s", "game vocr lines:", 384u, 22u, 77u, 392u, 0u, 912u, "", "");
+             90000000, 610304u, 0u, 4194304u, "passed", 85195392);
+        LOGF("game vocr speed: %u frames in %u us, %u us per frame", 108u, 546480u, 5060u);
+        LOGF("%s %ux%u %uf %u.%ums c%u%s%s", "game vocr lines:", 860u, 32u, 54u, 273u, 2u, 900u, "", "");
         for (unsigned s = 0; s < sizeof(steps) / sizeof(steps[0]); s++)
             LOGF("gstep %s %s kind=%s arg=%s rc=0x%08X bytes=%u sum=0x%08X main=%d cdram=%d phycont=%d us=%u", "job",
                  steps[s], s == 2 || s == 3 || s >= 13 ? "user" : "-",
-                 s == 2 || s == 13 ? "capture" : s == 3 || s == 14 ? "workspace" : "0", 0u, 57344u, 0u, 90177536,
-                 12582912, 27262976, 1000u * s + 17u);
+                 s == 2 || s == 13 ? "capture" : s == 3 || s == 14 ? "workspace" : "0", 0u, 65536u, 0u, 90000000,
+                 12000000, 27000000, 1000u * s + 17u);
         LOGF("game vocr text %u: %s", 0u, "\"朝ごはん、もう冷\"");
-        LOGF("result arenas Paf allocation: free=%u requested=%u reserve=%u success=%d", 2685496u, 65536u, 1572864u, 1);
+        LOGF("result arenas Paf allocation: free=%u requested=%u reserve=%u success=%d", 2600000u, 65536u, 1572864u, 1);
         LOGF("local dictionary workspace: %u bytes, %d %u-byte results, %u-byte connection pool", 65536u, 1, 65536u, 0u);
         LOGF("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
-             "first word", 0u, 2, "1/1", 1, 1, 15u, 49349u, 0, 85u, "朝ごはん、もう冷", "朝御飯", " (", "あさごはん", ")",
+             "first word", 0u, 2, "1/1", 1, 1, 15u, 61440u, 0, 73u, "朝ごはん、もう冷", "朝御飯", " (", "あさごはん", ")",
              " [", "Daijirin4 Plain", "]");
-        LOGF("subtitle text ready in %d ms", 1353);
-        LOGF("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", 0, 0, 1392, 53552u, 1, 1);
+        LOGF("subtitle text ready in %d ms", 1300);
+        LOGF("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", 0, 0, 1350, 53552u, 1, 1);
 #undef LOGF
     }
     out->ns = now_ns(in) - t0;
@@ -869,7 +897,7 @@ static const Stage stages[] = {
     {"postproc", stage_postproc, {"texts", "bytes_in", "bytes_out"}},
     {"lookup", stage_lookup, {"lookups", "entries", "opens", "reads", "read_bytes", "repeat_reads", "pages",
                               "arena_peak"}},
-    {"config", stage_config, {"bytes", "warnings", "struct_bytes"}},
+    {"config", stage_config, {"bytes", "warnings", "struct_bytes", "nondefault_warnings"}},
     {"log", stage_log, {"lines", "bytes"}},
     {"anki", stage_anki, {"cards", "json_bytes"}},
     {"furigana", stage_furigana, {"words", "bytes"}},

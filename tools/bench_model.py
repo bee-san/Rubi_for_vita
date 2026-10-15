@@ -201,7 +201,7 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
         casc_frames = d.get("cascade_frames", {}).get("mean", 0.0)
         casc_jobs = d.get("jobs_with_cascade", 0) / max(1, s.get("regions", 1))
     log_lines = g.get("log_lines", job_log_lines(kind, lines, casc_jobs))
-    # Each line is an append of log.txt, and of status.txt too while that is under 64 KiB (the first 10-20
+    # Each line is an append of log.txt, and of status.txt too while that is under 64 KiB (est. the first 10-20
     # jobs of a boot): the job takes one append a line (status.txt full), and status_extra is what a job
     # adds while it is not.
     appends = g.get("log_appends")
@@ -344,7 +344,7 @@ def build_report(host, a9, dev, workloads):
                     f" | {models[2]['parts'][part]['estimate']:.0f} ms |")
             md.append("| **total** | " + " | ".join(f"**{m['total'][0]:.0f}-{m['total'][1]:.0f} ms**" for m in models)
                       + f" | **{models[2]['estimate']:.0f} ms** |")
-            md.append("| + while status.txt is under 64 KiB (a boot's first 10-20 jobs: two appends a line) | " +
+            md.append("| + while status.txt is under 64 KiB (a boot's first jobs, est. 10-20: two appends a line) | " +
                       " | ".join(f"+{m['status_extra'][0]:.0f}-{m['status_extra'][1]:.0f} ms" for m in models) +
                       f" | +{models[2]['status_extra'][2]:.0f} ms |")
             first = [job_model(a9, dev, mhz, fps, kind=kind, first_job=True) for mhz in (444, 333) for fps in FPS]
