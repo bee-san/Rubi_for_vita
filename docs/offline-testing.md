@@ -248,7 +248,19 @@ gone when newlib's exit called the wrapper a second time, and Vita3K maps guest 
 0x400000000 (`mem.cpp:76`), so the fault is that context. #108's harness called `vita2d_fini`
 before the exit, which removed the context first, with a teardown the release never runs; the
 wrapper now runs the release's exit unchanged. A crash in Vita3K's shutdown still fails the
-run, with Vita3K's critical line.
+run, and the failure says what ended Vita3K: the signal (its exit status less 128) and dynarmic's
+"Unhandled SIGSEGV at rip 0x…", which goes straight to stderr. Vita3K's own "[signal_handler]:
+Unhandled access to 0x…" is quoted when its logger got it out; in some crashed runs the SIGTRAP
+cut it off. No other critical line is a crash: every run, passing too, logs "[translate_path]:
+Unknown device with path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`).
+
+Vita3K does not fault on a bad guest access either. It logs "Invalid write …", "Invalid read …"
+or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0 and a write
+dropped (b75d5e6 `vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213, 234-248`), and it logs an
+instruction it cannot run and goes on (`:272-317`). So a NULL write in the app's toggle, which a
+console ends the app on, passed the script (#121's audit). Any of these lines now fails the run,
+the scripted app's and the release VPK's, quoting the first with its PC, SP and LR. Of the
+fleet's 41 smoke logs on 2026-10-15 only that mutant's has one.
 
 ## 6. What only the console answers
 
