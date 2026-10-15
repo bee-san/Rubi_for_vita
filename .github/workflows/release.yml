@@ -67,7 +67,7 @@ jobs:
         with:
           repository: bee-san/vita-vn-ocr
           # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (the beam + LM decoder, vita-vn-ocr #82)
-          ref: 57b662286186e417325fe2b13467811121ef7239
+          ref: a417be9b1f77c3fd9cb6fec205fa76b0feb11c01
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -116,7 +116,7 @@ jobs:
         with:
           repository: bee-san/vita-vn-ocr
           # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (the beam + LM decoder, vita-vn-ocr #82)
-          ref: 57b662286186e417325fe2b13467811121ef7239
+          ref: a417be9b1f77c3fd9cb6fec205fa76b0feb11c01
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

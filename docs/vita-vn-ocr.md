@@ -660,7 +660,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 57b662286186e417325fe2b13467811121ef7239  # #82's merge: the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout a417be9b1f77c3fd9cb6fec205fa76b0feb11c01  # #83's head (on #82's merge): the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
@@ -672,9 +672,9 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the eight runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the ten runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`) against their SHA-256 at that commit
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`) against their SHA-256 at that commit
 and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
 Without `VJO_WITH_VOCR` the Shell is the Lens-only build; `ocr_backend = vocr`
