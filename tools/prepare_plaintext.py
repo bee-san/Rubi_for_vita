@@ -3,7 +3,10 @@
 
 Use --source /path/to/plaintext-dicts for offline builds. Otherwise use the
 CI checkout in .refs/plaintext-dicts, or authenticated gh for the pinned commit.
-No conversion, latest-branch fetch, or dictionary update happens during builds.
+No conversion, latest-branch fetch, or dictionary update happens during builds:
+the frozen file is checked against its pin, then gets the key filter
+(tools/convert_dictionary.py add_key_filter, deterministic: an index of what is
+already there) and is checked against that pin ("key_filter").
 """
 import argparse
 import hashlib
@@ -20,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FILENAME = "plaintext.vjdict"
 
 
+
 def digest(path):
     h = hashlib.sha256()
     with path.open("rb") as stream:
@@ -32,8 +36,11 @@ def load_manifest():
     return json.loads((ROOT / "docs/plaintext-dictionaries.json").read_text())
 
 
-def validate(path, manifest):
-    if path.stat().st_size != manifest["bytes"] or digest(path) != manifest["sha256"]:
+def validate(path, manifest, frozen=False):
+    """The file as released (with the key filter when the manifest pins one), or with
+    frozen the archive's file as committed."""
+    pin = manifest if frozen or "key_filter" not in manifest else manifest["key_filter"]
+    if path.stat().st_size != pin["bytes"] or digest(path) != pin["sha256"]:
         raise ValueError("Frozen plaintext dictionary checksum failed")
     with path.open("rb") as stream:
         if stream.read(8) != b"VJDICT2\0":
@@ -76,6 +83,11 @@ def prepare(output, source=None):
             extracted = tmp / FILENAME
             with zipped.open(FILENAME) as src, extracted.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
+        validate(extracted, manifest, frozen=True)
+        if "key_filter" in manifest:
+            # Deferred import: the converter is only needed for this step.
+            from convert_dictionary import add_key_filter
+            add_key_filter(extracted)
         validate(extracted, manifest)
         os.replace(extracted, output)
     output.with_suffix(".json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")

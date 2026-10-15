@@ -410,7 +410,9 @@ no dictionary updates and need no conversion or current upstream snapshot.
 Deduplication keeps a spelling and normalized reading pair from the first
 source that contains it, preserving that source's separate senses, distinct
 readings and inflection rules. The result has 485,410 entries (301,927
-Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 134 MiB on disk.
+Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 135 MiB on disk,
+904 KiB of it a key filter that answers most inflection guesses that are not
+words without an index read ([key filter](docs/local-dictionaries.md#key-filter)).
 It stays on disk and is never loaded whole into RAM. Twelve definitions carry
 a truncation notice at the existing 7,000-byte limit; 16 empty or overlong
 source rows cannot be indexed. Exact provenance and counts are in

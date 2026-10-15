@@ -6,6 +6,7 @@
 #include "acutest.h"
 #include "client.h"
 #include "local_dict.h"
+#include "utf.h"
 
 typedef struct {
     const char *key, *spelling, *reading, *meaning;
@@ -113,6 +114,39 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
         put32(f->bytes + 4100, groups);
     }
     f->size = off; put64(f->bytes + 40, off);
+}
+/* The converter's key filter (tools/convert_dictionary.py build_key_filter) over rows'
+ * keys with a given directory: a key's block is the last start at or below its first
+ * two code points. fill 0: the keys' Bloom bits; 1: every bit; 2: none (corrupt). */
+static uint32_t prefix_of(const char *key)
+{
+    size_t len = strlen(key), i = 0;
+    uint32_t c0 = vjo_utf8_next(key, len, &i), c1 = i < len ? vjo_utf8_next(key, len, &i) : 0;
+    return (c0 < 0xffff ? c0 : 0xffff) << 16 | (c1 < 0xffff ? c1 : 0xffff);
+}
+static void add_filter(Fixture *f, const Row *rows, int n, const uint32_t *starts, int blocks, int fill)
+{
+    size_t off = (f->size + 4095) / 4096 * 4096;
+    TEST_ASSERT(blocks > 0 && off + (size_t)blocks * 4096 <= sizeof(f->bytes));
+    memset(f->bytes + f->size, 0, off + (size_t)blocks * 4096 - f->size);
+    if (fill == 1) memset(f->bytes + off, 0xff, (size_t)blocks * 4096);
+    for (int i = 0; fill == 0 && i < n; i++) {
+        uint32_t prefix = prefix_of(rows[i].key);
+        uint64_t h = key_hash(rows[i].key);
+        uint32_t h1 = (uint32_t)h, h2 = (uint32_t)(h >> 32) | 1u;
+        int b = 0;
+        while (b + 1 < blocks && starts[b + 1] <= prefix) b++;
+        for (uint32_t k = 0; k < 7; k++) {
+            uint32_t bit = (h1 + k * h2) & 32767u;
+            f->bytes[off + (size_t)b * 4096 + (bit >> 3)] |= (uint8_t)(1u << (bit & 7));
+        }
+    }
+    memcpy(f->bytes + 128, "VJKF", 4); put32(f->bytes + 132, 1);
+    put32(f->bytes + 136, (uint32_t)blocks); put32(f->bytes + 140, 7);
+    put64(f->bytes + 144, off); put32(f->bytes + 152, (uint32_t)n); put32(f->bytes + 156, 0);
+    for (int b = 0; b < blocks; b++) put32(f->bytes + 256 + b * 4, starts[b]);
+    f->size = off + (size_t)blocks * 4096;
+    put64(f->bytes + 40, f->size);
 }
 static int read_file(void *ctx, uint64_t off, void *dst, size_t n)
 {
@@ -716,7 +750,110 @@ static void eight_dictionaries_only_matching_pages(void)
     TEST_CHECK(!pages.count && opened == before && !a.used);
 }
 
+/* One lookup's shown entry as text (spelling, reading, meaning, span), and its reads. */
+static int shown(const char *name, const char *text, size_t cursor, char *out, size_t cap)
+{
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+    int before = reads;
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    memset(&p, 0, sizeof(p)); p.file_open = open_file;
+    vjo_config_defaults(&cfg); cfg.dictionary = VJO_DICT_LOCAL;
+    strcpy(cfg.local_dictionary_dir, "fixture"); strcpy(cfg.local_dictionaries, name);
+    payload_reads = 0;
+    if (lookup(&a, &p, &cfg, text, cursor, &r, &e)) snprintf(out, cap, "rc %d", e.rc);
+    else if (!r.n_vocab) snprintf(out, cap, "none");
+    else snprintf(out, cap, "%s|%s|%s|%d", r.vocab[0].spelling, r.vocab[0].reading, r.vocab[0].meanings[0],
+                  r.tokens[0].len16);
+    return reads - before;
+}
+
+/* Every shown entry is the one the plain file shows. This fixture's index is one
+ * page, which the page cache keeps, so the filter can only add its own block's
+ * read; the reads it saves on larger indexes are measured by the converter's
+ * tests and tools/dict_lookup_bench.py. */
+static void key_filter_shows_what_the_plain_file_shows(void)
+{
+    const Row rows[] = {{"食べる", "食べる", "たべる", "eat", 1}, {"たべる", "食べる", "たべる", "eat", 1},
+        {"猫", "猫", "ねこ", "cat", 0}, {"猫舌", "猫舌", "ねこじた", "cat tongue", 0},
+        {"する", "する", "", "do", 4}, {"見る", "見る", "みる", "see", 1}};
+    const char *texts[] = {"食べませんでした。", "たべたくなかった", "猫舌です", "猫", "見ない", "しました", "霻霻霻"};
+    const uint32_t one[] = {0};
+    char plain[256], filtered[256];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "plain.vjdict", rows, 6, 2);
+    build(&fixtures[1], "main.vjdict", rows, 6, 2);
+    add_filter(&fixtures[1], rows, 6, one, 1, 0);
+    for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+        int plain_reads = shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
+        int filtered_reads = shown("main.vjdict", texts[t], 0, filtered, sizeof(filtered));
+        TEST_CHECK_(!strcmp(plain, filtered), "%s: %s vs %s", texts[t], plain, filtered);
+        TEST_CHECK_(filtered_reads <= plain_reads + 1, "%s: %d reads, plain %d", texts[t], filtered_reads, plain_reads);
+    }
+    TEST_CHECK(opened == closed);
+}
+
+/* No false negative: a candidate whose prefix is in another block (した -> する), a
+ * one-character candidate and a full filter all search the index as before. */
+static void key_filter_never_hides_a_key(void)
+{
+    const Row rows[] = {{"する", "する", "", "do", 4}, {"した", "下", "した", "below", 0},
+        {"猫", "猫", "ねこ", "cat", 0}, {"手", "手", "て", "hand", 0}};
+    uint32_t split[2] = {0, prefix_of("す")};
+    char plain[256], filtered[256];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "plain.vjdict", rows, 4, 2);
+    for (int fill = 0; fill < 3; fill++) {
+        const char *texts[] = {"しました", "した", "猫", "手を"};
+        build(&fixtures[1], "main.vjdict", rows, 4, 2);
+        add_filter(&fixtures[1], rows, 4, split, 2, fill);
+        for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+            shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
+            shown("main.vjdict", texts[t], 0, filtered, sizeof(filtered));
+            if (fill == 2 && !strcmp(texts[t], "した")) continue; /* a zeroed (corrupt) block hides した itself */
+            TEST_CHECK_(!strcmp(plain, filtered), "fill %d %s: %s vs %s", fill, texts[t], plain, filtered);
+        }
+    }
+    /* しました: its own block holds no する, which is found in the other block's range by the index. */
+    shown("main.vjdict", "しました", 0, filtered, sizeof(filtered));
+    TEST_CHECK_(!strncmp(filtered, "する|", strlen("する|")), "%s", filtered);
+}
+
+/* The descriptor and directory are checked when the file is opened; other bytes
+ * there (no magic) mean no filter. */
+static void key_filter_descriptor_is_validated(void)
+{
+    const Row rows[] = {{"猫舌", "猫舌", "ねこじた", "cat tongue", 0}, {"猫", "猫", "ねこ", "cat", 0}};
+    const uint32_t two[] = {0, prefix_of("猫")};
+    char out[256], want[32];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    struct { size_t at; int width; uint64_t value; } bad[] = {
+        {132, 4, 2}, {136, 4, 0}, {136, 4, 481}, {140, 4, 0}, {140, 4, 17}, {144, 8, 8193},
+        {144, 8, 4096}, {136, 4, 1}};
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, 2, 2);
+    add_filter(&fixtures[0], rows, 2, two, 2, 0);
+    shown("main.vjdict", "猫舌", 0, out, sizeof(out));
+    TEST_CHECK_(!strcmp(out, "猫舌|ねこじた|cat tongue|2"), "%s", out);
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        Fixture saved = fixtures[0];
+        uint8_t *at = fixtures[0].bytes + bad[i].at;
+        if (bad[i].width == 4) put32(at, (uint32_t)bad[i].value); else put64(at, bad[i].value);
+        shown("main.vjdict", "猫舌", 0, out, sizeof(out));
+        snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
+        TEST_CHECK_(!strcmp(out, want), "field at %zu = %llu: %s", bad[i].at, (unsigned long long)bad[i].value, out);
+        fixtures[0] = saved;
+    }
+    memcpy(fixtures[0].bytes + 128, "XXXX", 4); /* no magic: the blocks are just more data */
+    shown("main.vjdict", "猫舌", 0, out, sizeof(out));
+    TEST_CHECK_(!strcmp(out, "猫舌|ねこじた|cat tongue|2"), "%s", out);
+}
+
 TEST_LIST = {
+    {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
+    {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
+    {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},
     {"pages_follow_best_match_then_priority", pages_follow_best_match_then_priority},
     {"exact_later_dictionary_precedes_inflected_page", exact_later_dictionary_precedes_inflected_page},
     {"postings_are_ranked_by_how_the_text_is_written", postings_are_ranked_by_how_the_text_is_written},

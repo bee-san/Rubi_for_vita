@@ -416,6 +416,112 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertLess(after["arena_peak"], 112 * 1024)
 
 
+    FILTER_ROWS = (term("食べる", "たべる", ["eat"], "v1"), term("猫", "ねこ", ["cat"]), term("猫舌", "ねこじた", ["tongue"]),
+                   term("する", "", ["do"], "vs"), term("見る", "みる", ["see"], "v1"), term("行く", "いく", ["go"], "v5"),
+                   term("高い", "たかい", ["high"], "adj-i"), term("話す", "はなす", ["talk"], "v5"),
+                   term("学校", "がっこう", ["school"]), term("今日", "きょう", ["today"]))
+    FILTER_TEXT = "今日は学校に行って、猫と話しました。高くない猫舌を見ませんでした。"
+
+    def filler(self, n):
+        return [term(f"語彙{i:05d}", gloss=[f"filler {i}"]) for i in range(n)]
+
+    def shown(self, name, text=None):
+        result = subprocess.run([str(CLI), "--dict", "local", "--local-dir", str(self.directory), "--local-dicts", name,
+                                 "--text", text or self.FILTER_TEXT, "--nav"], capture_output=True, text=True, timeout=15,
+                                check=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout
+
+    def test_key_filter_layout_is_deterministic_and_shows_the_same_entries(self):
+        rows = [*self.FILTER_ROWS, *self.filler(1200)]
+        filtered, stats = self.build(rows, "filtered.vjdict")
+        convert.convert([self.archive(rows)], self.directory / "nofilter.vjdict", key_filter=False)
+        self.assertGreaterEqual(stats["hash_buckets"], convert.FILTER_MIN_BUCKETS)
+        self.assertEqual(stats["filter_keys"], stats["unique_keys"])
+        data = filtered.read_bytes()
+        self.assertEqual(len(data) % convert.PAGE_SIZE, 0)
+        self.assertEqual(struct.unpack_from("<Q", data, 40)[0], len(data))
+        magic, version, blocks, hashes, offset, keys, zero = convert.FILTER_DESCRIPTOR.unpack_from(
+            data, convert.FILTER_DESCRIPTOR_OFFSET)
+        self.assertEqual((magic, version, hashes, keys, zero), (b"VJKF", 1, 7, stats["unique_keys"], 0))
+        self.assertEqual(offset + blocks * convert.PAGE_SIZE, len(data))
+        directory = struct.unpack_from(f"<{blocks}Q", data, convert.FILTER_DIRECTORY_OFFSET)
+        self.assertEqual(directory[0], 0)
+        self.assertEqual(list(directory), sorted(set(directory)))
+        # Without the filter the file is the earlier layout, byte for byte up to the filter.
+        nofilter = (self.directory / "nofilter.vjdict").read_bytes()
+        self.assertFalse(any(nofilter[convert.FILTER_DESCRIPTOR_OFFSET:convert.PAGE_SIZE]))
+        self.assertEqual(data[convert.PAGE_SIZE:len(nofilter)], nofilter[convert.PAGE_SIZE:])
+        # Adding it to an existing file gives exactly the converter's file.
+        added = convert.add_key_filter(self.directory / "nofilter.vjdict", self.directory / "added.vjdict")
+        self.assertEqual((self.directory / "added.vjdict").read_bytes(), data)
+        self.assertEqual(added["bytes"], len(data))
+        expected = self.shown("nofilter.vjdict")
+        self.assertIn("【話しました】", expected)
+        self.assertIn("【見ませんでした】", expected)
+        for name in ("filtered.vjdict", "added.vjdict"):
+            self.assertEqual(self.shown(name), expected)
+        # A filtered and a plain file together: each file keeps its own filter state.
+        self.assertEqual(self.shown("filtered.vjdict,nofilter.vjdict"), self.shown("nofilter.vjdict,nofilter.vjdict"))
+        self.assertTrue(install.inspect(filtered).endswith(".vjdict"))
+
+    def test_key_filter_saves_index_reads(self):
+        bench = os.environ.get("VJO_DICT_BENCH")
+        if not bench:
+            self.skipTest("VJO_DICT_BENCH is set by CTest")
+        rows = [*self.FILTER_ROWS, *self.filler(4000)]
+        self.build(rows, "filtered.vjdict")
+        convert.convert([self.archive(rows)], self.directory / "plain.vjdict", key_filter=False)
+        lines = self.directory / "lines.tsv"
+        lines.write_text("# id\tmodel\t-\t-\t-\ttext\nline\tfixture\t-\t-\t-\t" + self.FILTER_TEXT + "\n")
+        def run(name):
+            proc = subprocess.run([bench, str(self.directory), name, str(lines), "words", "1"],
+                                  capture_output=True, text=True, check=True)
+            return [json.loads(row) for row in proc.stdout.splitlines() if '"summary"' not in row]
+        plain, filtered = run("plain.vjdict"), run("filtered.vjdict")
+        self.assertEqual([q["digest"] for q in plain], [q["digest"] for q in filtered])
+        index = lambda qs, kind: sum(q["reads_by"][kind] for q in qs)
+        self.assertLess(index(filtered, "index"), index(plain, "index") / 2)
+        self.assertLess(sum(q["reads"] for q in filtered), sum(q["reads"] for q in plain))
+        self.assertGreater(sum(q["filtered"] for q in filtered), 0)
+        self.assertEqual(sum(q["filtered"] for q in plain), 0)
+        self.assertLessEqual(max(q["arena_peak"] for q in filtered), 64 * 1024)
+
+    def test_key_filter_is_refused_where_it_cannot_help_or_fit(self):
+        small, stats = self.build(list(self.FILTER_ROWS), "small.vjdict")
+        self.assertNotIn("filter_blocks", stats)  # 10 keys, one bucket: no filter
+        self.assertFalse(any(small.read_bytes()[convert.FILTER_DESCRIPTOR_OFFSET:convert.PAGE_SIZE]))
+        with self.assertRaisesRegex(ValueError, "hash bucket"):
+            convert.add_key_filter(small, self.directory / "out.vjdict")
+        legacy, _ = self.build(list(self.FILTER_ROWS), "legacy.vjdict", format_version=1)
+        with self.assertRaisesRegex(ValueError, "version 2"):
+            convert.add_key_filter(legacy, self.directory / "out.vjdict")
+        filtered, _ = self.build([*self.FILTER_ROWS, *self.filler(1200)], "filtered.vjdict")
+        with self.assertRaisesRegex(ValueError, "already has"):
+            convert.add_key_filter(filtered, self.directory / "out.vjdict")
+        self.assertFalse((self.directory / "out.vjdict").exists())
+        result = subprocess.run([sys.executable, str(ROOT / "tools/convert_dictionary.py"), "--add-key-filter",
+                                 str(filtered)], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("already has a key filter", result.stderr)
+
+    def test_corrupt_key_filter_does_not_crash_runtime(self):
+        path, _ = self.build([*self.FILTER_ROWS, *self.filler(1200)])
+        original = path.read_bytes()
+        offset = struct.unpack_from("<Q", original, convert.FILTER_DESCRIPTOR_OFFSET + 16)[0]
+        rng = random.Random(23)
+        spots = [rng.randrange(convert.FILTER_DESCRIPTOR_OFFSET, convert.FILTER_DESCRIPTOR_OFFSET + 32) for _ in range(12)]
+        spots += [rng.randrange(convert.FILTER_DIRECTORY_OFFSET, convert.FILTER_DIRECTORY_OFFSET + 64) for _ in range(6)]
+        spots += [rng.randrange(offset, len(original)) for _ in range(6)]
+        for spot in spots:
+            bad = bytearray(original)
+            bad[spot] ^= 0xFF
+            path.write_bytes(bad)
+            result = subprocess.run([str(CLI), "--dict", "local", "--local-dir", str(self.directory),
+                                     "--text", self.FILTER_TEXT], capture_output=True, timeout=10, check=False)
+            self.assertIn(result.returncode, (0, 1), result.stderr)
+
+
 class FakeFTP:
     def __init__(self, files=None, fail_replace=False, vitashell_dele=False):
         self.files = files or {}
