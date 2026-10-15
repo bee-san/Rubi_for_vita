@@ -308,8 +308,100 @@ static void ocr_grey_rows_every_format(void)
     for (unsigned r = 0; r < 20; r++) TEST_CHECK(!memcmp(kstrip + r * 32, grey_out + r * 64, 32));
 }
 
+/* The OCR job's first pass (sig = 1) must leave g.capture_sig exactly the
+ * signature of the region's A8B8G8R8 words in every format, while its grey
+ * bytes stay right: the signature decides whether a job's text belongs to the
+ * screen on show (game_ocr.c scene_match, shell/worker.c shows_screen), and the
+ * A1B5G5R5 one-pass rows must never skip a row the signature samples
+ * (capture_grey_rows). The reference runs scene.c's own accumulator over the
+ * expanded region (vjo_fb_to_abgr), every row in order. Adapted from
+ * audit-overlay-perf-2's test_sig_rows.c (PR #83 audit, blocker B1): with the
+ * fast path's condition reduced to the format, off by one, or the slow path not
+ * feeding the signature, these fail. */
+#define SIG_FW 960u
+#define SIG_FH 544u
+static uint32_t sig_fb32[SIG_FW * SIG_FH];
+static uint16_t sig_fb16[SIG_FW * SIG_FH];
+static uint32_t sig_abgr_row[SIG_FW];
+static unsigned char sig_grey[64 * SIG_FW];
+
+static void sig_first_pass(uint32_t fmt, uint32_t x0, uint32_t y0, uint32_t w, uint32_t h, uint32_t strip)
+{
+    static SceneAcc ref_acc;
+    static SceneSig ref;
+    const void *base = fmt == VJO_FB_A1B5G5R5 ? (const void *)sig_fb16 : (const void *)sig_fb32;
+    unsigned bpp = vjo_fb_bpp(fmt), bad_grey = 0;
+    memset(&ref_acc, 0, sizeof(ref_acc));
+    scene_acc_begin(&ref_acc, &ref, w, h);
+    for (uint32_t r = 0; r < h; r++) {
+        vjo_fb_to_abgr(sig_abgr_row, (const uint8_t *)base + ((size_t)(y0 + r) * SIG_FW + x0) * bpp, w, fmt);
+        scene_acc_row(&ref_acc, r, sig_abgr_row);
+    }
+    /* the kernel: a first pass in strips, as vjoOcrCaptureRows arms it */
+    memset(&g.capture_sig, 0x5A, sizeof(g.capture_sig));
+    capture_sig_begin(w, h);
+    for (uint32_t y = 0; y < h; y += strip) {
+        uint32_t n = h - y < strip ? h - y : strip;
+        OcrRowsJob job = {x0, y0, w, h, SIG_FW, SIG_FH, y, n, w, (uintptr_t)sig_grey, NULL, 1};
+        TEST_ASSERT(capture_grey_rows((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &job) == (int)n);
+        for (uint32_t r = 0; r < n; r++) {
+            vjo_fb_to_abgr(sig_abgr_row, (const uint8_t *)base + ((size_t)(y0 + y + r) * SIG_FW + x0) * bpp, w, fmt);
+            for (uint32_t x = 0; x < w; x++) {
+                uint32_t v = sig_abgr_row[x];
+                bad_grey += sig_grey[r * w + x] != vjo_grey(v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF);
+            }
+        }
+    }
+    TEST_CHECK(bad_grey == 0);
+    TEST_CHECK(g.capture_sig.w == ref.w && g.capture_sig.h == ref.h && g.capture_sig.cols == ref.cols);
+    TEST_CHECK(!memcmp(g.capture_sig.hash, ref.hash, sizeof(ref.hash)));
+    TEST_MSG("fmt 0x%08X region %u,%u %ux%u strips of %u: %u grey mismatches, ystep %u", (unsigned)fmt,
+             (unsigned)x0, (unsigned)y0, (unsigned)w, (unsigned)h, (unsigned)strip, bad_grey,
+             (unsigned)capture_acc.ystep);
+}
+
+static void sig_frames(void)
+{
+    uint32_t s = 0x83u;
+    setup();
+    for (unsigned i = 0; i < SIG_FW * SIG_FH; i++) {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;
+        sig_fb32[i] = s;
+        sig_fb16[i] = (uint16_t)(s >> 9);
+    }
+}
+
+static const uint32_t sig_formats[] = {VJO_FB_A8B8G8R8, VJO_FB_A1B5G5R5, VJO_FB_A2B10G10R10};
+
+static void ocr_first_pass_signature_every_format(void)
+{
+    sig_frames();
+    for (unsigned f = 0; f < 3; f++) {
+        sig_first_pass(sig_formats[f], 4, 2, 32, 28, 5);         /* thin: every row sampled */
+        sig_first_pass(sig_formats[f], 0, 0, SIG_FW, SIG_FH, 64); /* full frame: every 16th row sampled */
+        sig_first_pass(sig_formats[f], 32, 362, 896, 156, 64);    /* a dialogue box */
+        sig_first_pass(sig_formats[f], 32, 362, 896, 156, 5);     /* sampled rows at every strip offset */
+    }
+}
+
+/* 400 random regions (even x, any size up to the frame), strip heights 1-64. */
+static void ocr_first_pass_signature_random_geometry(void)
+{
+    uint32_t s = 0x2545F491u;
+#define SIG_RND(n) (s ^= s << 13, s ^= s >> 17, s ^= s << 5, s % (n))
+    sig_frames();
+    for (unsigned it = 0; it < 400; it++) {
+        uint32_t w = 1 + SIG_RND(SIG_FW), h = 1 + SIG_RND(SIG_FH);
+        uint32_t x0 = SIG_RND(SIG_FW - w + 1) & ~1u, y0 = SIG_RND(SIG_FH - h + 1), strip = 1 + SIG_RND(64);
+        sig_first_pass(sig_formats[it % 3], x0, y0, w, h, strip);
+    }
+#undef SIG_RND
+}
+
 TEST_LIST = {
     {"OCR grey rows: every format, refusals, worker copy and kernel strip", ocr_grey_rows_every_format},
+    {"OCR first pass: g.capture_sig is the expanded region's signature, every format", ocr_first_pass_signature_every_format},
+    {"OCR first pass: random regions and strip heights", ocr_first_pass_signature_random_geometry},
     {"lazy JPEG capture and final-row release", capture_lazy_single_pass},
     {"region capture allocation and resizing", capture_region_allocation},
     {"multi-pass local OCR capture lifetime", capture_multi_pass},

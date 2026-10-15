@@ -39,7 +39,8 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 |---|---|---|
 | boot_guard | 11 | 32-bit `uint32_t`/`int` arithmetic of the record, byte-identical record text |
 | ledger | 2 | `__sync` atomics compile to LDREX/STREX; 32-bit counters |
-| kernel_capture | 9 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format; every box the region selector can save is cropped as drawn |
+| fbgrey | 4 | `core/fbgrey.h`'s word-at-a-time grey (two multiplies a pixel, the A1B5G5R5 expansion folded into the weights) against the per-channel code it replaced, for every R, G, B, alpha pattern and A1B5G5R5 value: its carries and wraps in 32-bit arithmetic |
+| kernel_capture | 11 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format; the first pass's region signature in every format, strip height and 400 random regions (the A1B5G5R5 one-pass rows never skip a sampled row); every box the region selector can save is cropped as drawn |
 | kernel_input | 14 | the trigger state machine |
 | kernel_game_ocr | 35 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |

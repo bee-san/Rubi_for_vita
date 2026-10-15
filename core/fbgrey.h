@@ -6,7 +6,9 @@
  * recognizer compute from RGBA themselves (runtime/vocr_lines.h, vocr.h), so a
  * grey copy changes nothing they see. The 16- and 10-bit formats are expanded to
  * 8 bits per channel first, exactly as the kernel's capture did before API 19
- * (kernel/capture.c convert_row), so their grey is unchanged too. */
+ * (kernel/capture.c convert_row), so their grey is unchanged too; the kernel's
+ * one-pass A1B5G5R5 rows (vjo_a1b5g5r5_to_grey) fold that expansion into the
+ * weights and give the same bytes. */
 #ifndef VJO_FBGREY_H
 #define VJO_FBGREY_H
 
