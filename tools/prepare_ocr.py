@@ -6,7 +6,9 @@ to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 
 --backend vocr fetches a vita-vn-ocr recognizer (default VOCR3_H15_w8.vocr, from
 the bee-san/vita-vn-ocr v0.2.5-vocr3.1 pre-release; H15_w8.vocr, FL10_w8.vocr and
-F20_w8.vocr from v0.2.0) instead. While that repository is private,
+F20_w8.vocr from v0.2.0) instead; --backend vocr-tiers the three model sizes'
+(tools/model_tiers.json: VOCR3_FL10_w8.vocr, VOCR3_H15_w8.vocr, VOCR4_W20_w8.vocr), which
+a package ships. While that repository is private,
 the download needs an authenticated GitHub CLI (`gh auth login`) with access to
 it; --from takes a copy downloaded by other means. Every file is checked
 against its pinned size and SHA-256.
@@ -42,7 +44,7 @@ VOCR_REPO = 'bee-san/vita-vn-ocr'
 VOCR_TAG = 'v0.2.0'
 VOCR_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_TAG}/'
 # VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
-# arenas; the default and its fallback. Pre-release v0.2.5-vocr3.1, whose
+# arenas; the Normal (default) and Small model sizes. Pre-release v0.2.5-vocr3.1, whose
 # SHA256SUMS and vocr3-assets.json list these hashes (also the VOCR3_H15 and
 # VOCR3_FL10 arms of vita-vn-ocr eval/vocr3_report_spec_20261013.json).
 VOCR3_TAG = 'v0.2.5-vocr3.1'
@@ -53,8 +55,7 @@ VOCR3_ASSETS = {
     'VOCR3_FL10_w8.vocr': (VOCR3_BASE + 'VOCR3_FL10_w8.vocr', 657664,
         '87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154'),
 }
-VOCR_DEFAULT_MODEL = 'VOCR3_H15_w8.vocr'
-VOCR_FALLBACK_MODEL = 'VOCR3_FL10_w8.vocr'
+VOCR_DEFAULT_MODEL = 'VOCR3_H15_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
 VOCR_ASSETS = {
     'H15_w8.vocr': (VOCR_BASE + 'H15_w8.vocr', 1155968,
         '316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd'),
@@ -83,16 +84,16 @@ VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
 VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 2538,
     '1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c')}
 
-# The confidence cascade's larger recognizer: VOCR4-W20 (vita-vn-ocr #78, pre-release
-# v0.2.5-vocr4.1, whose SHA256SUMS lists this hash; F20's shape). Not qualified as a
-# default; it reads again only the lines the default reads with low confidence.
+# The Large model size: VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose
+# SHA256SUMS lists this hash; F20's shape). It is also the confidence cascade's model of
+# Normal: it reads again the lines Normal reads with low confidence.
 VOCR4_TAG = 'v0.2.5-vocr4.1'
 VOCR4_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR4_TAG}/'
 VOCR4_ASSETS = {
     'VOCR4_W20_w8.vocr': (VOCR4_BASE + 'VOCR4_W20_w8.vocr', 1558016,
         '2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e'),
 }
-VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'
+VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'  # the cascade's model of a request by name (host tools)
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
@@ -100,6 +101,30 @@ VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
 VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4'}
+
+# The model sizes the Overlay app offers (config.ini vocr_tier), each a pinned recognizer above:
+# one table for the C pins' tests, the packager and the self-test analyser.
+MODEL_TIERS = Path(__file__).resolve().parent / 'model_tiers.json'
+
+
+def model_tiers():
+    """tools/model_tiers.json: its 'default' tier id and its 'tiers', smallest first, each with its
+    id and its pinned 'model', checked to be a recognizer of a release table here."""
+    data = json.loads(MODEL_TIERS.read_text(encoding='utf-8'))
+    ids = [tier['id'] for tier in data['tiers']]
+    if ids != ['small', 'normal', 'large'] or data['default'] not in ids:
+        raise ValueError(f'{MODEL_TIERS.name}: tiers {ids}, default {data["default"]!r}')
+    for tier in data['tiers']:
+        release_assets(tier['model'])
+    return data
+
+
+def release_assets(name):
+    """(asset table, release tag) of a pinned recognizer."""
+    for assets, tag in ((VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG)):
+        if name in assets:
+            return assets, tag
+    raise ValueError(f'{name} is not a pinned recognizer')
 
 
 def store(path, data):
@@ -156,11 +181,13 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
 
 
 def fetch_vocr(directory, name, source=None):
-    if name in VOCR3_ASSETS:
-        return fetch_release_asset(directory, name, VOCR3_ASSETS, VOCR3_TAG, source)
-    if name in VOCR4_ASSETS:
-        return fetch_release_asset(directory, name, VOCR4_ASSETS, VOCR4_TAG, source)
-    return fetch_release_asset(directory, name, VOCR_ASSETS, VOCR_TAG, source)
+    assets, tag = release_assets(name)
+    return fetch_release_asset(directory, name, assets, tag, source)
+
+
+def fetch_tiers(directory, source=None):
+    """The three model sizes' recognizers (tools/model_tiers.json), each pinned: what a package ships."""
+    return [fetch_vocr(directory, tier['model'], source) for tier in model_tiers()['tiers']]
 
 
 def fetch_lms(directory, source=None):
@@ -231,8 +258,9 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-lm'), default='ncnn',
-                    help="vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
+    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm'), default='ncnn',
+                    help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
+                         "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
     ap.add_argument('--ncnn-source', type=Path)
     ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
@@ -244,6 +272,11 @@ def main():
             print('Verified', path.name)
         print('LMs ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (CC BY-SA 4.0: keep',
               VOCR_LM_ATTRIBUTION, 'beside them)')
+        return
+    if args.backend == 'vocr-tiers':
+        for path in fetch_tiers(args.output, args.source):
+            print('Verified', path.name)
+        print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/')
         return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL

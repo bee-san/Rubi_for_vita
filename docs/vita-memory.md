@@ -166,7 +166,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki job 128 or 384 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
 | | | Anki thread stack 64 KiB + TLS, only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving, sending) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | `*TITLEID`, one section per game (`*ALL` up to the installer's `--title`) | module pages in each registered game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
-| | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10, VOCR3-FL10) or 1,159,168 B (H15, VOCR3-H15); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); 4 MiB reserve kept free before either block | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
+| | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10, VOCR3-FL10: Small), 1,159,168 B (H15, VOCR3-H15: Normal) or 1,560,576 B (VOCR4-W20: Large, API 21); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
@@ -292,8 +292,9 @@ Facts:
   will allocate from (`sizeMain` for `USER_RW`).
 - Allocation granularity is 4 KiB, so round every request up before comparing [SDK:
   Kernel-Reference, 'sceKernelAllocMemBlock'].
-- The game worker today: free `sizeMain` − 4 MiB reserve must cover the page-rounded weights and
-  workspace, or the job is refused before anything is allocated [`game_ocr/main.c`].
+- The game worker today: free `sizeMain` − the reserve (4, 8 or 16 MiB by model size since API 21)
+  must cover the page-rounded weights and workspace, or that size is refused before anything is
+  allocated and the next smaller one is tried [`game_ocr/main.c`].
 
 Rules:
 

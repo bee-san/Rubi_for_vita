@@ -49,6 +49,10 @@ gstep job blank kind=- arg=1 rc=0x00000006 bytes=19660830 sum=0x00C00011 main=0 
 gstep job blank kind=- arg=3 rc=0x00000006 bytes=19660830 sum=0x00C00012 main=0 cdram=0 phycont=0 us=410
 gstep job blank kind=- arg=4 rc=0x00000006 bytes=19660830 sum=0x00C00013 main=0 cdram=0 phycont=0 us=410
 gstep job load kind=resident arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+tier large did not fit in PCSG00415 (need 18649088, free 5000000); trying normal
+tier normal did not fit in PCSG00415 (need 9801728, free 5000000); trying small
+tier small did not fit in PCSG00415 (need 5050368, free 5000000); no smaller tier: not enough memory
+tier large did not fit in PCSB00123 (need 19000000, free 12000000); using normal
 game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too): 917x125 at 22,400 of 960x544 fmt 0x00000000, lines=0 USER workspace=0 weights=none resident=0, find=0 ms load=0 ms recognize=0 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
 game vocr memory: free USER=5000000, needs workspace 245760 + weights 659456 + reserve 4194304: check refused, headroom -99520
 gstep job alloc kind=user arg=workspace rc=0x80024302 bytes=188416 sum=0x00000000 main=5000000 cdram=0 phycont=0 us=40
@@ -210,6 +214,12 @@ class Collect(unittest.TestCase):
                      "models VOCR3_H15_w8.vocr x1, VOCR3_FL10_w8.vocr (fallback) x1",
                      "times (ms): find 9-9, load 1,050-1,050 (1 read), recognize 820-820; per line 273-273",
                      "capture: hook into USER x1",
+                     # API 21: the model sizes that did not fit, from their log lines (no UI shows them)
+                     "model sizes that did not fit (log only, never shown): large in PCSG00415 x1 (need 18,649,088 B, "
+                     "free as low as 5,000,000 B; then normal x1); normal in PCSG00415 x1 (need 9,801,728 B, free as low "
+                     "as 5,000,000 B; then small x1); small in PCSG00415 x1 (need 5,050,368 B, free as low as 5,000,000 B; "
+                     "then none x1); large in PCSB00123 x1 (need 19,000,000 B, free as low as 12,000,000 B; then normal x1)",
+                     "vocr_model=VOCR3_H15_w8.vocr, vocr_fallback_model=VOCR3_FL10_w8.vocr",  # an older build's config
                      "stable-text wait: 1 job(s): rows held still in 1, the limit reached in 0, no line to wait for in 0; "
                      "waited 183-183 ms (4-4 passes); 37 row change(s) seen while waiting (text typing out); rows toggling "
                      "(an icon) in 1 job(s)",

@@ -301,7 +301,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     }
     if (next.size != sizeof(next) || !next.model[0] || next.model[sizeof(next.model)-1] != 0 ||
         !next.model_dir[0] || next.model_dir[sizeof(next.model_dir)-1] != 0 ||
-        next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL)) {
+        next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL) ||
+        (next.tiers & ~VJO_VOCR_TIERS_ALL)) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -338,9 +339,9 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         claimed = cancelled = completed = 0;
         rc = (int)request.seq;
         if (g.mevf > 0) ksceKernelSetEventFlag(g.mevf, MEV_JOB); /* a waiting vjoOcrTake claims it now */
-        klog("ocr job %u: %ux%u at %u,%u of %ux%u, capture %u, flags 0x%X, %s / %s", request.seq,
+        klog("ocr job %u: %ux%u at %u,%u of %ux%u, capture %u, flags 0x%X, tiers 0x%X, %s / %s", request.seq,
              request.width, request.height, request.x, request.y, fw, fh, request.capture_seq,
-             request.flags, request.model, request.fallback[0] ? request.fallback : "-");
+             request.flags, request.tiers, request.model, request.fallback[0] ? request.fallback : "-");
     }
     VJO_UNLOCK();
 out:
@@ -731,6 +732,26 @@ static uint32_t lm_size(uint32_t tier)
     return sizes[tier - 1u];
 }
 
+/* API 21: the pinned model of a model tier (1..VJO_VOCR_TIERS), by its name. */
+static const char *tier_name(uint32_t tier)
+{
+    static const char *const names[VJO_VOCR_TIERS] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME};
+    return names[tier - 1u];
+}
+
+/* Whether a request by tiers may open tier t: one of its tiers, or with a
+ * cascade ceiling the tier above its largest (the cascade reads with the next
+ * tier up of the job's). A request by name (tiers 0) opens none. */
+static int tier_allowed(const VjoGameOcrRequest *r, uint32_t t)
+{
+    uint32_t top = 0;
+    if (!r->tiers || !t || t > VJO_VOCR_TIERS) return 0;
+    if (r->tiers & (1u << (t - 1u))) return 1;
+    for (uint32_t i = 1; i <= VJO_VOCR_TIERS; i++)
+        if (r->tiers & (1u << (i - 1u))) top = i;
+    return t == top + 1u && ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK);
+}
+
 static int model_caller_locked(SceUID pid, uint32_t seq, int cleanup)
 {
     sync_locked();
@@ -794,13 +815,19 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     }
     /* Only the two names the Shell submitted for this job, each a pinned model,
      * or (API 20) a pinned LM up to the tier the request allows, or the
-     * cascade's pinned model when the request gives it a time ceiling. */
+     * cascade's pinned model when the request gives it a time ceiling; or (API 21,
+     * a request by tiers) the pinned model of one of its tiers, or of the tier
+     * above them for the cascade, by its tier. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
-    if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
+    uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
+                          ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
+    if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
+        lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
+    else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
+    else if (request.tiers) return VJO_ERR_ARG; /* a request by tiers names no model of its own */
+    else if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
     else if (which == VJO_GAME_OCR_OPEN_FALLBACK) name = request.fallback;
-    else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
-             lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;

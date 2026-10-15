@@ -88,16 +88,16 @@ static int publish(const char *next, int len, int primary)
     return sceIoSync("ux0:", 0) < 0 ? -1 : 0;
 }
 
-int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
+int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
     if (current_text(a, &old, &bytes, &primary) < 0) goto done;
-    size_t cap = bytes + 128;
+    size_t cap = bytes + 192; /* the five owned lines, appended or longer than before */
     char *next = vjo_arena_alloc(a, cap);
-    int len = next ? vjo_config_patch_preferences(old, bytes, backend, japanese_only,
+    int len = next ? vjo_config_patch_preferences(old, bytes, backend, vocr_tier, japanese_only,
                                                  highlight_mode, dictionary_results, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     rc = publish(next, len, primary);

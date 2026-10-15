@@ -97,11 +97,10 @@ the memory routes) are measurements to send back, not failures.
 - Run it **once**. Don't keep rebooting to retry; send what you have.
 
 ## Models
-VOCR3-H15 (`VOCR3_H15_w8.vocr`) is the default and VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) its automatic
-fallback when the game has too little free memory; both have the sizes and memory of v0.2.0's H15 and
-FL10, which are installed too. To switch, edit `ux0:data/VitaJPOverlay/config.ini` with VitaShell:
-`vocr_model = H15_w8.vocr` and `vocr_fallback_model = FL10_w8.vocr` for v0.2.0,
-`vocr_model = VOCR3_FL10_w8.vocr` for the smaller model only. It applies when the overlay next opens.
+The Overlay app's OCR page has the **Model size**: Small (VOCR3-FL10), Normal (VOCR3-H15, the
+default) and Large (VOCR4-W20). When the game has too little free memory for the chosen size a job
+runs the next smaller one; the screen does not say so, `log.txt` does (`tier large did not fit in
+PCSG00415 (need N, free F); using normal`). It applies when the overlay next opens.
 
 ## Anki (optional)
 `anki_mining = on` in the test build: Enter in the overlay saves the shown word and its sentence as a card

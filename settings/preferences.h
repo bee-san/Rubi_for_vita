@@ -7,8 +7,9 @@
 /* 0 = primary/missing; 1 = recovered backup; -1 = unreadable. */
 int vjo_preferences_load(VjoConfig *cfg, VjoArena *scratch);
 /* Re-read the file, preserve unrelated keys, checked temp write + sync +
- * backup + rename. A failed final publication restores the old primary. */
-int vjo_preferences_save(int backend, int japanese_only, int highlight_mode,
+ * backup + rename. A failed final publication restores the old primary.
+ * vocr_tier: VJO_VOCR_TIER_* (an older build's vocr_model lines go). */
+int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *scratch);
 /* The Anki page's two settings, saved the same way: anki_mining on/off
  * and anki_host (IP[:port], auto, or ""; validated by the caller). */

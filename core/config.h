@@ -41,10 +41,15 @@ typedef struct {
     int ocr_backend;          /* VJO_OCR_VOCR | VJO_OCR_LENS */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
-    char vocr_model[64];      /* the local engine's weights in ocr_model_dir */
-    /* Smaller weights run instead when the game's free memory has no room
-     * for vocr_model (the game worker decides per job); "" = none. */
-    char vocr_fallback_model[64];
+    /* The local engine's model size (API 21): VJO_VOCR_TIER_SMALL, _NORMAL (the
+     * default) or _LARGE of include/vjo_vocr_sizes.h; config.ini vocr_tier = small |
+     * normal | large. Each is a pinned model (vjo_vocr_tier_model). A job runs it,
+     * or the next smaller one the game's free memory has room for (the game worker
+     * decides per job). An older file's vocr_model sets it when vocr_tier is absent
+     * (the FL10 family small, H15 normal, F20/W20 large); vocr_fallback_model is
+     * no longer read. */
+    int vocr_tier;
+    int vocr_tier_explicit;   /* 1: a vocr_tier line set it (an older vocr_model line no longer does) */
     /* Local OCR (vocr): the region's rows hold still this long before a job
      * reads its lines (0 = off), waiting at most ocr_settle_max_ms per job; and
      * found lines without text-like ink are skipped (core/vocr_ocr.h). */
@@ -74,13 +79,26 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* Default file written on first run (with comments). */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's four OCR/lookup preferences, retaining every other INI
- * line verbatim. Duplicate owned keys are collapsed. Input/output must not
- * overlap. Returns output bytes (not including NUL), or -1 for invalid
- * choices, embedded NUL, or insufficient capacity. */
-int vjo_config_patch_preferences(const char *text, size_t len, int backend,
+/* Changes only the app's five OCR/lookup preferences (ocr_backend, vocr_tier,
+ * japanese_only_selection, highlight_mode, local_dictionary_results), retaining
+ * every other INI line verbatim but the vocr_model and vocr_fallback_model
+ * lines of older builds, which vocr_tier replaces. Duplicate owned keys are
+ * collapsed. Input/output must not overlap. Returns output bytes (not
+ * including NUL), or -1 for invalid choices, embedded NUL, or insufficient
+ * capacity. */
+int vjo_config_patch_preferences(const char *text, size_t len, int backend, int vocr_tier,
                                  int japanese_only, int highlight_mode,
                                  int dictionary_results, char *out, size_t cap);
+
+/* The model tiers (include/vjo_vocr_sizes.h VJO_VOCR_TIER_*): a tier's
+ * config.ini value ("small" | "normal" | "large", NULL outside 1..VJO_VOCR_TIERS),
+ * the tier of a value (any case; 0 for none), the tier's pinned model file in
+ * ocr_model_dir (NULL outside), and the tier an older build's vocr_model file
+ * belongs to by its shape (FL10 small, H15 normal, F20 or W20 large; 0: none). */
+const char *vjo_vocr_tier_id(int tier);
+int vjo_vocr_tier_parse(const char *id);
+const char *vjo_vocr_tier_model(int tier);
+int vjo_vocr_tier_of_model(const char *name);
 
 const char *vjo_trigger_name(int trigger);
 

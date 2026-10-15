@@ -27,7 +27,8 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("ocr_backend = vocr\n", text)
         self.assertNotIn("meiki", text.lower())
         self.assertIn("ocr_mode = on_press\n", text)
-        self.assertIn("vocr_model = H15_w8.vocr\n", text)
+        self.assertIn("vocr_tier = normal\n", text)  # H15: Normal
+        self.assertNotIn("vocr_model", text)
         self.assertIn("jpdb_api_key = secret-key\n", text)
         self.assertIn("config.ini: ocr_backend = vocr", report)
         self.assertNotIn("secret-key", report)
@@ -39,7 +40,7 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_backend = vocr\n", text, old)
             self.assertNotIn("ocr_backend = " + old, text)
             self.assertEqual(text.count("ocr_backend ="), 1)
-            self.assertIn("vocr_model = H15_w8.vocr\n", text)
+            self.assertIn("vocr_tier = normal\n", text)
             self.assertIn("ocr_mode = on_press\n", text)
             self.assertIn("config.ini: ocr_backend = vocr", report)
 
@@ -53,26 +54,55 @@ class MigrateConfig(unittest.TestCase):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
         self.assertIn("ocr_backend = lens\n", text)
 
-    def test_previous_release_config_gains_the_fl10_fallback(self):
-        # v0.7.12's installer wrote vocr_model = FL10_w8.vocr; a source install
-        # keeps that choice and adds the fallback key with its default.
-        text, _ = self.migrate("ocr_backend = vocr\nvocr_model = FL10_w8.vocr\n")
-        self.assertIn("vocr_model = FL10_w8.vocr\n", text)
-        self.assertIn("vocr_fallback_model = VOCR3_FL10_w8.vocr\n", text)
-        # The release installer selects the new default and its fallback.
-        text, _ = self.migrate("vocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\n",
-                               "vocr_model=VOCR3_H15_w8.vocr", "vocr_fallback_model=VOCR3_FL10_w8.vocr")
-        self.assertIn("vocr_model = VOCR3_H15_w8.vocr\n", text)
-        self.assertIn("vocr_fallback_model = VOCR3_FL10_w8.vocr\n", text)
-        text, _ = self.migrate("vocr_fallback_model = none\n")
-        self.assertIn("vocr_fallback_model = none\n", text)
-        self.assertEqual(text.count("vocr_fallback_model ="), 1)
+    def test_older_model_choices_become_their_model_size(self):
+        # API 21: vocr_model and vocr_fallback_model became one model size, vocr_tier. Each older
+        # model by its family: FL10 (v0.7.12's installer wrote FL10_w8.vocr, the VOCR2 trial was
+        # FL10-sized) Small, H15 Normal, F20 and W20 Large; both lines go.
+        for model, tier in (("FL10_w8.vocr", "small"), ("VOCR3_FL10_w8.vocr", "small"),
+                            ("VOCR2_FL10_w8.vocr", "small"), ("H15_w8.vocr", "normal"),
+                            ("VOCR3_H15_w8.vocr", "normal"), ("F20_w8.vocr", "large"),
+                            ("VOCR4_W20_w8.vocr", "large")):
+            text, report = self.migrate("ocr_backend = vocr\nvocr_model = %s\nvocr_fallback_model = none\n" % model)
+            self.assertIn("\nvocr_tier = %s\n" % tier, text, model)
+            self.assertEqual(text.count("vocr_tier ="), 1)
+            self.assertNotIn("vocr_model", text)
+            self.assertNotIn("vocr_fallback_model", text)
+            self.assertIn("config.ini: vocr_model removed", report)
+            self.assertIn("config.ini: vocr_fallback_model removed", report)
+            self.assertIn("config.ini: vocr_tier = " + tier, report)
+        # an unknown name keeps the template's size, Normal
+        text, _ = self.migrate("vocr_model = VOCR9_X_w8.vocr\n")
+        self.assertIn("\nvocr_tier = normal\n", text)
+        self.assertNotIn("vocr_model", text)
+        # a file that names its size keeps it, whatever an older line says
+        text, _ = self.migrate("vocr_tier = large\nvocr_model = FL10_w8.vocr\n")
+        self.assertIn("\nvocr_tier = large\n", text)
+        text, report = self.migrate("vocr_tier = small\n")
+        self.assertIn("\nvocr_tier = small\n", text)
+        self.assertNotIn("vocr_tier", report)  # unchanged
+        # a fresh install: the template's Normal, no model line
+        text, _ = self.migrate("")
+        self.assertIn("\nvocr_tier = normal\n", text)
+        self.assertNotIn("vocr_model", text)
 
-    def test_release_installer_sets_vocr3_h15_with_vocr3_fl10_fallback(self):
+    def test_an_older_installers_model_settings_set_the_size(self):
+        # tools/install_ftp.sh --set vocr_model=... of an older checkout: its size, explicitly
+        text, _ = self.migrate("vocr_tier = normal\n", "vocr_model=FL10_w8.vocr", "vocr_fallback_model=none")
+        self.assertIn("\nvocr_tier = small\n", text)
+        self.assertNotIn("vocr_model", text)
+        self.assertNotIn("vocr_fallback_model", text)
+        # a vocr_tier setting wins over a vocr_model one
+        text, _ = self.migrate("", "vocr_model=FL10_w8.vocr", "vocr_tier=large")
+        self.assertIn("\nvocr_tier = large\n", text)
+        self.assertEqual(text.count("vocr_tier ="), 1)
+
+    def test_release_installer_keeps_the_chosen_model_size(self):
+        # The Overlay app's Model size is the user's: the installer sets no size and no model, so an
+        # update keeps the choice; a first install gets the template's Normal.
         script = (ROOT / "tools/install-vita.sh").read_text()
-        self.assertIn("--set vocr_model=VOCR3_H15_w8.vocr", script)
-        self.assertIn("--set vocr_fallback_model=VOCR3_FL10_w8.vocr", script)
-        self.assertNotIn("vocr_model=FL10_w8.vocr", script)
+        self.assertNotIn("vocr_model", script)
+        self.assertNotIn("vocr_fallback_model", script)
+        self.assertNotIn("--set vocr_tier", script)
         self.assertIn("--set log_file=on", script)
 
     def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):

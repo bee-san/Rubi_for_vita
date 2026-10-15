@@ -230,6 +230,23 @@ static int psp_title;
  * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
 static int open_cascade;
+/* API 21: the job is a request by tiers (its models open by their tier), and the
+ * reserve its memory check kept (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*),
+ * which its resident blocks' allocations keep too. */
+static int tiered;
+static uint32_t job_reserve = GAME_RESERVE;
+/* The model tiers' pinned models (include/vjo_vocr_sizes.h), smallest first. */
+static const char *const tier_names[VJO_VOCR_TIERS] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME,
+                                                       VJO_VOCR_TIER3_NAME};
+/* A model the job may run: its pins, its tier (0: a request by name), how the
+ * kernel opens it, and the job's bytes with it (vjo_vocr_job_bytes + refinement). */
+typedef struct {
+    const VjoVocrModel *m;
+    unsigned tier;
+    uint32_t which;
+    size_t bytes;
+} Candidate;
+#define CANDIDATES (VJO_VOCR_TIERS > 2u ? VJO_VOCR_TIERS : 2u)
 static VjoGameOcrResult pending_result; /* never put large results on thread stacks */
 static void *weights_alloc(void *ud, size_t bytes);
 static int weights_release(void *ud);
@@ -419,6 +436,13 @@ static uint32_t which_file(const char *path)
         if (*p == '/') name = p + 1;
     for (unsigned t = 1; t <= VJO_VOCR_LM_TIERS; t++)
         if (!sceClibStrcmp(name, vjo_vocr_lm_tier(t)->name)) return VJO_GAME_OCR_OPEN_LM + t - 1u;
+    if (tiered) {
+        /* API 21: a request by tiers opens each model by its tier (the job's and its
+         * cascade's); the kernel checks the request allows it. */
+        for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++)
+            if (!sceClibStrcmp(name, tier_names[t - 1u])) return VJO_GAME_OCR_OPEN_TIER + t - 1u;
+        return VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS; /* no tier's: the kernel refuses it */
+    }
     if (open_cascade && !sceClibStrcmp(name, VJO_VOCR_CASCADE_NAME)) return VJO_GAME_OCR_OPEN_CASCADE;
     return open_which;
 }
@@ -468,11 +492,12 @@ static int32_t free_user(void)
     return main_bytes < 0 ? 0 : main_bytes;
 }
 
-/* USER bytes free after keeping the game reserve, or -1 if unknown. */
+/* USER bytes free after keeping the job's reserve (its tier's, chosen by the
+ * memory check; GAME_RESERVE before it and for a request by name), or -1 if unknown. */
 static int64_t free_user_after_reserve(void)
 {
     int32_t free_bytes = free_user();
-    return free_bytes < 0 ? -1 : (int64_t)free_bytes - (int64_t)GAME_RESERVE;
+    return free_bytes < 0 ? -1 : (int64_t)free_bytes - (int64_t)job_reserve;
 }
 
 /* VjoVocrResident.alloc: one page-rounded USER_RW block for the weights, under
@@ -626,15 +651,27 @@ static size_t extra_job_bytes(const VjoVocrModel *m, const VjoVocrLm *lm, const 
            VJO_GAME_OCR_TEXT_BYTES;
 }
 
-/* The memory check for model m (with LM lm and the cascade's model casc, each
- * or NULL) and a job of job_bytes plus the capture block: records what the job
- * needs in out (its page-rounded workspace and capture block; the weights, the
- * LM and the cascade's model unless they are resident; resident ones of another
- * model or tier, or not used, it would release first) and returns whether that
- * fits beside the reserve in out->free_user. */
-static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
-                        const VjoVocrLm *lm, const VjoVocrModel *casc)
+/* The reserve a job of model tier `tier` keeps (include/vjo_ledger_budget.h): the
+ * largest tier it holds, so the cascade's (the next tier up) when it has one; a
+ * request by name (tier 0) keeps the flat GAME_RESERVE. */
+static uint32_t check_reserve(unsigned tier, const VjoVocrModel *casc)
 {
+    unsigned held = casc && tier ? tier + 1u : tier;
+    return !held ? GAME_RESERVE : held >= VJO_VOCR_TIER_LARGE ? VJO_GAME_RESERVE_LARGE
+         : held == VJO_VOCR_TIER_NORMAL ? VJO_GAME_RESERVE_NORMAL : VJO_GAME_RESERVE_SMALL;
+}
+
+/* The memory check for model m of tier `tier` (0: a request by name), with LM
+ * lm and the cascade's model casc (each or NULL), and a job of job_bytes plus the
+ * capture block: records what the job needs in out (its page-rounded workspace
+ * and capture block; the weights, the LM and the cascade's model unless they are
+ * resident; resident ones of another model or tier, or not used, it would
+ * release first) and the reserve it keeps, and returns whether that fits beside
+ * the reserve in out->free_user. */
+static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
+                        const VjoVocrLm *lm, const VjoVocrModel *casc, unsigned tier)
+{
+    out->reserve_bytes = check_reserve(tier, casc);
     out->need_workspace = PAGE_ROUND(job_bytes + extra_job_bytes(m, lm, casc)) + PAGE_ROUND(capture_bytes);
     out->need_weights = (resident.model == m ? 0 : PAGE_ROUND(m->bytes)) +
                         (!lm || lm_res.lm == lm ? 0 : PAGE_ROUND(lm->bytes)) +
@@ -643,7 +680,7 @@ static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job
                          (lm_res.lm && lm_res.lm != lm ? lm_resident_bytes() : 0) +
                          (cascade_res.model && cascade_res.model != casc ? cascade_resident_bytes() : 0);
     return out->free_user >= 0 &&
-           (int64_t)out->free_user + out->release_bytes - (int64_t)GAME_RESERVE >=
+           (int64_t)out->free_user + out->release_bytes - (int64_t)out->reserve_bytes >=
                (int64_t)out->need_workspace + out->need_weights;
 }
 
@@ -651,17 +688,17 @@ static int check_memory(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job
  * cascade's casc (*lm; NULL when none does, or max is 0: then the check
  * without one). */
 static int check_lm_tiers(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
-                          unsigned max, const VjoVocrModel *casc, const VjoVocrLm **lm)
+                          unsigned max, const VjoVocrModel *casc, unsigned tier, const VjoVocrLm **lm)
 {
     for (unsigned t = max; t >= 1; t--) {
         const VjoVocrLm *c = vjo_vocr_lm_tier(t);
-        if (c && check_memory(out, m, job_bytes, capture_bytes, c, casc)) {
+        if (c && check_memory(out, m, job_bytes, capture_bytes, c, casc, tier)) {
             *lm = c;
             return 1;
         }
     }
     *lm = NULL;
-    return check_memory(out, m, job_bytes, capture_bytes, NULL, casc);
+    return check_memory(out, m, job_bytes, capture_bytes, NULL, casc, tier);
 }
 
 /* What fits beside model m, in the order of what each brings on the dialogue
@@ -669,21 +706,44 @@ static int check_lm_tiers(VjoGameOcrResult *out, const VjoVocrModel *m, size_t j
  * that fits, else the largest LM alone, else the cascade alone, else neither.
  * *casc is set to NULL when the cascade does not fit. */
 static int check_with_lm(VjoGameOcrResult *out, const VjoVocrModel *m, size_t job_bytes, size_t capture_bytes,
-                         unsigned max, const VjoVocrModel **casc, const VjoVocrLm **lm)
+                         unsigned max, unsigned tier, const VjoVocrModel **casc, const VjoVocrLm **lm)
 {
-    if (*casc && *casc != m && check_lm_tiers(out, m, job_bytes, capture_bytes, max, *casc, lm) && (*lm || !max))
+    if (*casc && *casc != m && check_lm_tiers(out, m, job_bytes, capture_bytes, max, *casc, tier, lm) &&
+        (*lm || !max))
         return 1;
-    if (check_lm_tiers(out, m, job_bytes, capture_bytes, max, NULL, lm) && (*lm || !max || !*casc)) {
+    if (check_lm_tiers(out, m, job_bytes, capture_bytes, max, NULL, tier, lm) && (*lm || !max || !*casc)) {
         *casc = NULL;
         return 1;
     }
-    if (*casc && *casc != m && check_memory(out, m, job_bytes, capture_bytes, NULL, *casc)) {
+    if (*casc && *casc != m && check_memory(out, m, job_bytes, capture_bytes, NULL, *casc, tier)) {
         *lm = NULL;
         return 1;
     }
     *casc = NULL;
     *lm = NULL;
-    return check_memory(out, m, job_bytes, capture_bytes, NULL, NULL);
+    return check_memory(out, m, job_bytes, capture_bytes, NULL, NULL, tier);
+}
+
+/* Whether m is one of the job's models (its resident weights may serve it). */
+static int candidate_of(const Candidate *cand, unsigned n, const VjoVocrModel *m)
+{
+    for (unsigned i = 0; i < n; i++)
+        if (cand[i].m == m) return 1;
+    return 0;
+}
+
+/* The cascade's model for candidate c, when the request gives the cascade a time
+ * ceiling: a request by name has VOCR4-W20 read again beside a smaller model; one
+ * by tiers the next tier up (API 21), unless that tier is one the request leaves
+ * out below its largest (a tier the Shell found unusable). Larger than c's own. */
+static const VjoVocrModel *cascade_of(const Candidate *c, const VjoGameOcrRequest *r, unsigned top, uint32_t casc_us)
+{
+    const VjoVocrModel *m;
+    if (!casc_us) return NULL;
+    if (!c->tier) m = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    else if (c->tier >= VJO_VOCR_TIERS || (!(r->tiers & (1u << c->tier)) && c->tier + 1u <= top)) m = NULL;
+    else m = vjo_vocr_model(tier_names[c->tier]);
+    return m && m->bytes > c->m->bytes ? m : NULL;
 }
 
 static int cleanup(void)
@@ -848,6 +908,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
     active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL; open_cascade = 0;
+    tiered = 0; job_reserve = GAME_RESERVE;
     log_to = out;
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
@@ -857,7 +918,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
-        refine_mode > VJO_GAME_OCR_REFINE_PSP ||
+        refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         !r->fb_width || r->fb_width > VJO_OCR_MAX_WIDTH || !r->fb_height || r->fb_height > VJO_OCR_MAX_HEIGHT ||
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
@@ -869,24 +930,44 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
-    const VjoVocrModel *model = vjo_vocr_model(r->model);
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;
     size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
-    size_t bytes = vjo_vocr_job_bytes(r->model, r->width, r->height);
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
-    if (!bytes || !capture_bytes) { rc = model ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
-    bytes += refine_bytes;
-    /* A fallback is used only if it is another pinned model needing less memory. */
-    const VjoVocrModel *fallback = r->fallback[0] ? vjo_vocr_model(r->fallback) : NULL;
-    size_t fallback_bytes = fallback ? vjo_vocr_job_bytes(r->fallback, r->width, r->height) : 0;
-    if (fallback_bytes) fallback_bytes += refine_bytes;
-    if (!fallback_bytes || fallback == model ||
-        PAGE_ROUND(fallback_bytes) + PAGE_ROUND(fallback->bytes) >= PAGE_ROUND(bytes) + PAGE_ROUND(model->bytes))
-        fallback = NULL;
+    /* The models this job may run, in the order it tries them (API 21): a request
+     * by tiers names its tiers, the largest first; one by name its model, then its
+     * fallback, used only if it is another pinned model needing less memory. */
+    Candidate cand[CANDIDATES];
+    unsigned n = 0, top = 0;
+    tiered = r->tiers != 0;
+    if (tiered) {
+        for (unsigned t = VJO_VOCR_TIERS; t >= 1u; t--)
+            if (r->tiers & (1u << (t - 1u))) {
+                if (!top) top = t;
+                cand[n++] = (Candidate){vjo_vocr_model(tier_names[t - 1u]), t, VJO_GAME_OCR_OPEN_TIER + t - 1u, 0};
+            }
+    } else {
+        cand[n++] = (Candidate){vjo_vocr_model(r->model), 0, VJO_GAME_OCR_OPEN_MODEL, 0};
+        if (r->fallback[0])
+            cand[n++] = (Candidate){vjo_vocr_model(r->fallback), 0, VJO_GAME_OCR_OPEN_FALLBACK, 0};
+    }
+    for (unsigned i = 0; i < n; i++) {
+        cand[i].bytes = cand[i].m ? vjo_vocr_job_bytes(cand[i].m->name, r->width, r->height) : 0;
+        if (cand[i].bytes) cand[i].bytes += refine_bytes;
+        else if (tiered) { rc = VJO_E_OCR_MODEL; goto done; } /* a tier this build's runtime does not pin */
+    }
+    if (!cand[0].bytes || !capture_bytes) { rc = cand[0].m ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
+    if (n == 2 && !tiered &&
+        (!cand[1].bytes || cand[1].m == cand[0].m ||
+         PAGE_ROUND(cand[1].bytes) + PAGE_ROUND(cand[1].m->bytes) >= PAGE_ROUND(cand[0].bytes) + PAGE_ROUND(cand[0].m->bytes)))
+        n = 1;
+    /* The self-test runs the fallback on purpose (its FL10 stage): the model's
+     * check, for the record, then the smallest one's. */
+    int forced = (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK) && n > 1;
+    if (forced) { cand[1] = cand[n - 1u]; n = 2; }
     /* Weights of a model this job cannot use: useless now, and two are never held. */
-    if (resident.model && resident.model != model && resident.model != fallback && drop_weights()) {
+    if (resident.model && !candidate_of(cand, n, resident.model) && drop_weights()) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
     }
     /* The LM: the largest tier the request allows that fits (API 20); none
@@ -895,39 +976,51 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     const VjoVocrLm *lm = NULL;
     if (lm_max > VJO_VOCR_LM_TIERS) lm_max = VJO_VOCR_LM_TIERS;
     if (!lm_max && (lm_res.data || lm_uid >= 0) && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-    /* The confidence cascade (API 20): the request's time ceiling, and the larger
-     * model beside a smaller one only; none asked for, and a resident one goes. */
+    /* The confidence cascade (API 20): the request's time ceiling, and a larger
+     * model beside the job's (cascade_of); none asked for, and a resident one goes. */
     uint32_t casc_us = ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
                        VJO_GAME_OCR_CASCADE_UNIT_US;
-    const VjoVocrModel *casc_model = casc_us ? vjo_vocr_model(VJO_VOCR_CASCADE_NAME) : NULL;
-    const VjoVocrModel *casc = casc_model && casc_model->bytes > model->bytes ? casc_model : NULL;
+    const VjoVocrModel *casc = NULL;
     if (!casc_us && (cascade_res.data || cascade_uid >= 0) && drop_cascade()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-    /* Reported also when refused: each title's real free memory. */
+    /* Reported also when refused: each title's real free memory. Each model is
+     * checked in turn, its cascade and LM first (check_with_lm); the first that
+     * fits runs. The first one's need stays in model_need_* when another runs. */
     out->free_user = free_user();
-    out->reserve_bytes = GAME_RESERVE;
-    const VjoVocrModel *use = model;
-    size_t use_bytes = bytes;
-    int fits = check_with_lm(out, model, bytes, capture_bytes, lm_max, &casc, &lm);
-    step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 0, fits ? 0 : 1,
-             out->need_workspace + out->need_weights, 0, 0, 0);
-    /* The self-test runs the fallback on purpose (its FL10 stage). */
-    int forced = (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK) && fallback;
-    if ((!fits || forced) && fallback) {
-        /* The configured model does not fit this game now; the smaller one may. */
-        out->fallback = 1;
-        out->model_need_workspace = out->need_workspace;
-        out->model_need_weights = out->need_weights;
-        out->model_release_bytes = out->release_bytes;
-        use = fallback;
-        use_bytes = fallback_bytes;
-        casc = casc_model && casc_model->bytes > fallback->bytes ? casc_model : NULL;
-        fits = check_with_lm(out, fallback, fallback_bytes, capture_bytes, lm_max, &casc, &lm);
-        /* The fallback's check (arg 1) is the record that the fallback runs, and its sum
-         * says whether the self-test forced it: no FALLBACK step, so the first job of a
-         * PSP game (the refinement's step besides the LM's and the cascade's) fits the log. */
-        step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 1, fits ? 0 : 1,
-                 out->need_workspace + out->need_weights, forced ? 1u : 0u, 0, 0);
+    unsigned used = 0;
+    int fits = 0;
+    uint32_t first_workspace = 0, first_weights = 0, first_release = 0;
+    for (unsigned i = 0; i < n; i++) {
+        casc = cascade_of(&cand[i], r, top, casc_us);
+        fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);
+        /* Each check is a step (include/vjo_game_ocr.h VJO_GSTEP_CHECK). A smaller
+         * model's (arg 1) is the record that it runs when it passed; for a request
+         * by name its sum says whether the self-test forced it (no FALLBACK step,
+         * so the first job of a PSP game, the refinement's step besides the LM's
+         * and the cascade's, fits the log); by tiers its kind names the tier and
+         * its sum the own blocks counted as free. */
+        step_add(VJO_GSTEP_CHECK,
+                 (lm ? lm->tier : 0u) | (casc ? VJO_GCHECK_CASCADE : 0u) |
+                     (tiered ? cand[i].tier << 4 | (forced && i ? VJO_GCHECK_FORCED : 0u) : 0u),
+                 i ? 1u : 0u, fits ? 0 : 1, out->need_workspace + out->need_weights,
+                 tiered ? out->release_bytes : forced && i ? 1u : 0u, 0, 0);
+        used = i;
+        if (!i) {
+            first_workspace = out->need_workspace;
+            first_weights = out->need_weights;
+            first_release = out->release_bytes;
+        }
+        if (fits && !(forced && !i)) break; /* the model's check passed, or a smaller one runs */
     }
+    if (used) {
+        /* The first model did not fit this game now (or the self-test skipped it); a smaller one runs. */
+        out->fallback = tiered ? top - cand[used].tier : 1u;
+        out->model_need_workspace = first_workspace;
+        out->model_need_weights = first_weights;
+        out->model_release_bytes = first_release;
+    }
+    const VjoVocrModel *use = cand[used].m;
+    size_t use_bytes = cand[used].bytes;
+    job_reserve = out->reserve_bytes; /* the blocks the job allocates keep its reserve too */
     stats.workspace = use_bytes;
     if (!fits) {
         /* Too little memory: give the game back the resident weights and LM too. */
@@ -977,7 +1070,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
     policy.refine = refine;
-    open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
+    open_which = cand[used].which;
     open_cascade = casc != NULL;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes + core_extra,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);

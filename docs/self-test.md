@@ -36,8 +36,8 @@ with its own record whether it passed or not ([ingame-capture.md](ingame-capture
 
 | stage | job | what it shows |
 |---|---|---|
-| `fallback` | your region, the fallback model forced | the fallback (VOCR3-FL10 by default) read from the card and recognizing |
-| `textbox` | your region, the configured model | the configured model (VOCR3-H15 by default) read from the card (its load time), the strip capture, the finder and the recognizer |
+| `fallback` | your region, the smallest model size forced | the smallest size's model (VOCR3-FL10) read from the card and recognizing; with Small configured, Small itself (there is none smaller: the config record's `fallback=-`) |
+| `textbox` | your region, the configured model size | the configured size's model (VOCR3-H15 for the default, Normal) read from the card (its load time), the strip capture, the finder and the recognizer |
 | `fullscreen` | the whole frame | the full screen through the strips, the configured model kept resident |
 | `probe` | each capture path into each memory type, one strip | whether the display hook can write the game's `USER_RW`, `CDRAM` and `PHYCONT` memory, the kernel strip, and a user-mode `sceDisplayGetFrameBuf` read; each with its rc and the rows' checksum |
 | `textbox2` | your region again | the warm time; its text is the job's result |
@@ -184,7 +184,8 @@ INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result` (`PAS
 
 After the diagnostics the analyser prints each OCR stage's **headroom**: the game's free USER
 memory at the job's memory check, plus another model's resident weights the job released first,
-minus the 4 MiB reserve, the job's workspace and capture block and the weights it had to load. A
+minus the model size's reserve (4, 8 or 16 MiB for Small, Normal and Large since API 21; 4 MiB
+before), the job's workspace and capture block and the weights it had to load. A
 negative headroom is a refused job. The Shell's `game vocr memory:` log line carries the same figure
 for every OCR job, not only the self-test's.
 

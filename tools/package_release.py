@@ -9,9 +9,8 @@ import shutil
 import tempfile
 import zipfile
 
-from prepare_ocr import (VOCR_ASSETS, VOCR_CASCADE_MODEL, VOCR_DEFAULT_MODEL, VOCR_FALLBACK_MODEL, VOCR_GENERATION,
-                         VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN, VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG,
-                         VOCR4_ASSETS, VOCR4_TAG)
+from prepare_ocr import (VOCR_ASSETS, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN,
+                         VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -28,19 +27,28 @@ NUMBERS = ("local_dictionary_results", "font_size_ja", "font_size_en", "ocr_sett
 SECRET = re.compile(r"api_key$|^anki_audio_url$")
 
 
+def tier_release(name):
+    """(asset table, release tag) of a model size's recognizer, by the tables this module sees."""
+    for assets, tag in ((VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG)):
+        if name in assets:
+            return assets, tag
+    raise ValueError("Not a pinned recognizer: " + name)
+
+
 def shipped_models():
-    """(name, pins, release tag, role) of every shipped weights file: VOCR3 (the default and its
-    fallback), v0.2.0's H15 and FL10 (kept as a documented fallback, README 'Settings'), the beam +
-    LM decoder's four LMs and the confidence cascade's VOCR4-W20."""
-    models = [(VOCR_DEFAULT_MODEL, VOCR3_ASSETS, VOCR3_TAG, "default"),
-              (VOCR_FALLBACK_MODEL, VOCR3_ASSETS, VOCR3_TAG, "fallback"),
-              ("H15_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable"),
-              ("FL10_w8.vocr", VOCR_ASSETS, VOCR_TAG, "v0.2.0, selectable")]
+    """(name, pins, release tag, role) of every shipped weights file: the three model sizes'
+    recognizers (tools/model_tiers.json, smallest first: Small, Normal the default, Large; each
+    reads its doubtful lines again with the next size up, the confidence cascade), and the beam +
+    LM decoder's four LMs. A later generation's three blobs replace the sizes' through the pins."""
+    tiers = model_tiers()
+    models = []
+    for tier in tiers["tiers"]:
+        assets, tag = tier_release(tier["model"])
+        models.append((tier["model"], assets, tag,
+                       tier["name"] + " model size" + (" (default)" if tier["id"] == tiers["default"] else "")))
     # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
     for name in VOCR_LM_ASSETS:
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
-    # the confidence cascade's larger recognizer (ocr_cascade_ms)
-    models.append((VOCR_CASCADE_MODEL, VOCR4_ASSETS, VOCR4_TAG, "cascade (re-reads doubtful lines)"))
     return models
 
 
@@ -88,8 +96,9 @@ def template_settings(text):
 def manifest_defaults(text, shipped):
     """The manifest's defaults: every setting of the package's config template (its --set settings
     applied), the on | off switches as true/false, the numbers as integers and a credential only as
-    "set" or ""; then ocr_engine, the generation of its vocr_model (the local engine's name in the
-    Overlay app), and anki, anki_mining's value under its earlier name."""
+    "set" or ""; then ocr_engine, the generation of its vocr_tier's model (tools/model_tiers.json; the
+    table's default size when the template names none): the local engine's name in the Overlay app;
+    and anki, anki_mining's value under its earlier name."""
     defaults = {}
     for key, value in template_settings(text).items():
         if SECRET.search(key):
@@ -103,9 +112,14 @@ def manifest_defaults(text, shipped):
                 raise ValueError(f"{key}: expected a number, not {value!r}")
             value = int(value)
         defaults[key] = value
-    generation = shipped.get(defaults.get("vocr_model"), {}).get("generation")
+    tiers = model_tiers()
+    tier = str(defaults.get("vocr_tier", tiers["default"])).lower()
+    model = {t["id"]: t["model"] for t in tiers["tiers"]}.get(tier)
+    if model is None:
+        raise ValueError(f"vocr_tier: {tier!r} is not a model size of tools/model_tiers.json")
+    generation = shipped.get(model, {}).get("generation")
     if generation is None:
-        raise ValueError(f"vocr_model: {defaults.get('vocr_model')!r} is not one of the package's recognizers")
+        raise ValueError(f"vocr_tier: {tier}'s model {model!r} is not one of the package's recognizers")
     return {**defaults, "ocr_engine": generation, "anki": defaults.get("anki_mining") is True}
 
 
@@ -170,6 +184,8 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
 
 def write_package(base, output, models, assets, conversion, version, source_revision, settings):
     shipped = {}
+    tiers = model_tiers()
+    tier_of = {tier["model"]: tier["id"] for tier in tiers["tiers"]}
     for name, pins, tag, role in shipped_models():
         path = models / name
         if not path.is_file():
@@ -179,9 +195,10 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
         # The generation the Overlay app names the local engine after (core/vocr_models.c): a
-        # recognizer's only; an LM is not an engine.
+        # recognizer's only; an LM is not an engine. A model size's recognizer also names its tier.
         shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag,
                          **({"generation": VOCR_GENERATION[tag]} if name.endswith(".vocr") else {}),
+                         **({"tier": tier_of[name]} if name in tier_of else {}),
                          "bytes": size, "sha256": sha, "role": role}
     # The LMs are CC BY-SA 4.0: their attribution ships with them.
     attribution = models / VOCR_LM_ATTRIBUTION

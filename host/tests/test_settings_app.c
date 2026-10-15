@@ -1,5 +1,5 @@
-/* The Overlay app's OCR engine card through its actual input and draw loop
- * (settings/main.c), on the host. The SDK boundary (vita2d, controller, touch
+/* The Overlay app's OCR engine card and its Model size row (API 21) through its
+ * actual input and draw loop (settings/main.c), on the host. The SDK boundary (vita2d, controller, touch
  * screen, display) is scripted and records what each frame draws; config.ini,
  * games.ini and the model files are real files in a temporary directory, read
  * and written by the app's own settings/preferences.c, settings/engine.c and
@@ -34,15 +34,28 @@
 
 int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harness */
 
-/* settings/main.c's layout: the OCR card and its two engine buttons. */
+/* settings/main.c's layout: the OCR card, its two engine buttons and under the
+ * local engine its three Model size buttons, then the card's status line. */
 #define OCR_Y 112
-#define BUTTON_Y (OCR_Y + 42)
+#define OCR_H 146
+#define BUTTON_Y (OCR_Y + 6)
 #define BUTTON_H 48
 #define BUTTON_TEXT_Y (BUTTON_Y + BUTTON_H / 2 + 9)
-#define HELP_Y (OCR_Y + 111)
+#define ENGINE_X 232
+#define ENGINE_W 337
+#define ENGINE_PITCH 349
+#define SIZE_Y (OCR_Y + 58)
+#define SIZE_H 54
+#define SIZE_W 220
+#define SIZE_PITCH 233
+#define SIZE_NAME_Y (SIZE_Y + 24)
+#define SIZE_DETAIL_Y (SIZE_Y + 47)
 #define STATUS_Y (OCR_Y + 137)
 #define ACCENT RGBA8(91, 220, 207, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
+#define CARD RGBA8(21, 31, 44, 255)
+#define WHITE RGBA8(238, 244, 255, 255)
+#define BG_COLOR RGBA8(9, 15, 23, 255)
 #define DIM RGBA8(193, 207, 222, 255)
 #define OFF RGBA8(244, 160, 167, 255)
 #define MODEL_DIR "ux0:data/VitaJPOverlay/ocr"
@@ -81,13 +94,15 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
 
 /* ---- the scripted controller, touch screen and display ---- */
 typedef struct { unsigned buttons; int touch, x, y; } Input; /* x, y in screen pixels */
-#define MAX_FRAMES 48
+#define MAX_FRAMES 64
 typedef struct { int x, y; unsigned color; float scale; char text[128]; } Text;
 typedef struct { int x, y, w, h; unsigned color; } Rect;
 typedef struct {
     Text text[160]; int texts;
     Rect rect[96]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame */
+    char tier[16];    /* its vocr_tier value */
+    int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
 /* Each run is one process of the app, as on the console: settings/main.c keeps
  * its state in statics, so it runs in a forked child, and the frames it shows
@@ -131,26 +146,41 @@ int sceTouchPeek(int port, SceTouchData *data, int count)
     return 1;
 }
 
-/* config.ini's ocr_backend value, or "" */
-static void saved_backend(char out[16])
+/* config.ini's value of key (its first line), or "" */
+static void saved_value(const char *key, char out[16])
 {
-    char text[8192];
+    char text[8192], line_key[48];
     out[0] = 0;
     FILE *f = fopen(VJO_PREFERENCES_PATH, "rb");
     if (!f) return;
     size_t n = fread(text, 1, sizeof(text) - 1, f);
     fclose(f);
     text[n] = 0;
-    const char *value = !strncmp(text, "ocr_backend = ", 14) ? text + 14 : NULL;
-    const char *line = value ? NULL : strstr(text, "\nocr_backend = ");
-    if (line) value = line + 15;
+    snprintf(line_key, sizeof(line_key), "%s = ", key);
+    const char *value = !strncmp(text, line_key, strlen(line_key)) ? text + strlen(line_key) : NULL;
+    snprintf(line_key, sizeof(line_key), "\n%s = ", key);
+    const char *line = value ? NULL : strstr(text, line_key);
+    if (line) value = line + strlen(line_key);
     if (value) sscanf(value, "%15[a-z0-9]", out);
+}
+static void saved_backend(char out[16]) { saved_value("ocr_backend", out); }
+static int has_model_line(void)
+{
+    char text[8192];
+    FILE *f = fopen(VJO_PREFERENCES_PATH, "rb");
+    if (!f) return 0;
+    size_t n = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[n] = 0;
+    return strstr(text, "vocr_model") != NULL || strstr(text, "vocr_fallback_model") != NULL;
 }
 int sceDisplayWaitVblankStart(void)
 {
     if (frame < MAX_FRAMES) {
         shown[frame] = drawing;
         saved_backend(shown[frame].backend);
+        saved_value("vocr_tier", shown[frame].tier);
+        shown[frame].model_line = has_model_line();
     }
     frame++;
     return 0;
@@ -317,33 +347,43 @@ static const Text *text_at(int f, int y, int x_min, int x_max)
     }
     return NULL;
 }
-typedef struct { int count; Rect rect[4]; const Text *label[4]; } Buttons;
-static Buttons engine_buttons(int f)
+static int shows(int f, const char *needle)
+{
+    for (int i = 0; i < shown[f].texts; i++)
+        if (strstr(shown[f].text[i].text, needle)) return 1;
+    return 0;
+}
+typedef struct { int count; Rect rect[4]; const Text *label[4], *detail[4]; } Buttons;
+/* Frame f's buttons of one row: filled rectangles of the row's height (an
+ * outline's sides are 2 pixels wide), with the text in them. */
+static Buttons row_buttons(int f, int y, int h, int w, int label_y, int detail_y)
 {
     Buttons b = {0};
     for (int i = 0; i < shown[f].rects; i++) {
         const Rect *r = &shown[f].rect[i];
-        if (r->y != BUTTON_Y || r->h != BUTTON_H) continue;
+        if (r->y != y || r->h != h || r->w != w) continue;
         if (b.count < 4) {
             b.rect[b.count] = *r;
-            b.label[b.count] = text_at(f, BUTTON_TEXT_Y, r->x, r->x + r->w);
+            b.label[b.count] = text_at(f, label_y, r->x, r->x + r->w);
+            b.detail[b.count] = detail_y ? text_at(f, detail_y, r->x, r->x + r->w) : NULL;
         }
         b.count++;
     }
     return b;
 }
+static Buttons engine_buttons(int f) { return row_buttons(f, BUTTON_Y, BUTTON_H, ENGINE_W, BUTTON_TEXT_Y, 0); }
+static Buttons size_buttons(int f) { return row_buttons(f, SIZE_Y, SIZE_H, SIZE_W, SIZE_NAME_Y, SIZE_DETAIL_Y); }
 static int width(const Text *t)
 {
     return vita2d_pvf_text_width(NULL, t->scale, t->text);
 }
-/* Frame f's engine card: two buttons, local (label, active?) and Lens, then help and status. */
-static void check_card(int f, const char *local, int lens_active, const char *help, const char *status,
-                       unsigned status_color)
+/* Frame f's engine card: two engine buttons, local (label, active?) and Lens; then its status line. */
+static void check_card(int f, const char *local, int lens_active, const char *status, unsigned status_color)
 {
     Buttons b = engine_buttons(f);
     TEST_CHECK_(b.count == 2, "frame %d: %d engine buttons", f, b.count);
     if (b.count != 2) return;
-    TEST_CHECK(b.rect[0].x == 42 && b.rect[0].w == 432 && b.rect[1].x == 486 && b.rect[1].w == 432);
+    TEST_CHECK(b.rect[0].x == ENGINE_X && b.rect[1].x == ENGINE_X + ENGINE_PITCH);
     TEST_CHECK(b.rect[1].x + b.rect[1].w <= 932 - 14); /* inside the card, as the tab row's edges */
     TEST_CHECK_(b.label[0] && !strcmp(b.label[0]->text, local), "frame %d: local button '%s'", f,
                 b.label[0] ? b.label[0]->text : "(none)");
@@ -353,69 +393,118 @@ static void check_card(int f, const char *local, int lens_active, const char *he
                 b.rect[1].color == (lens_active ? ACCENT : SELECTED), "frame %d: active button", f);
     for (int i = 0; i < 2; i++) /* each label is centred in its button */
         if (b.label[i]) TEST_CHECK(b.label[i]->x == b.rect[i].x + (b.rect[i].w - width(b.label[i])) / 2);
-    const Text *h = text_at(f, HELP_Y, 0, 960), *s = text_at(f, STATUS_Y, 0, 960);
-    TEST_CHECK_(h && !strcmp(h->text, help), "frame %d: help '%s'", f, h ? h->text : "(none)");
+    const Text *s = text_at(f, STATUS_Y, 0, 960), *title = text_at(f, BUTTON_TEXT_Y, 0, ENGINE_X);
+    TEST_CHECK_(title && !strcmp(title->text, "OCR engine") && title->x + width(title) < ENGINE_X,
+                "frame %d: the row's title", f);
     TEST_CHECK_(s && !strcmp(s->text, status) && s->color == status_color, "frame %d: status '%s' colour %08X", f,
                 s ? s->text : "(none)", s ? s->color : 0);
-    if (h) TEST_CHECK(h->x + width(h) <= 912); /* within the card's text width (stub metrics) */
-    if (s) TEST_CHECK(s->x + width(s) <= 912);
+    if (s) TEST_CHECK(s->x + width(s) <= 912); /* within the card's text width (stub metrics) */
+}
+/* Frame f's Model size row (API 21): its title, the three sizes in order with
+ * their estimates (names[i], details[i]), the chosen one (1-3; 0: none) filled,
+ * or outlined only and the others dimmed while Google Lens is the engine (muted). */
+static void check_sizes(int f, int chosen, int muted, const char *const names[3], const char *const details[3])
+{
+    Buttons b = size_buttons(f);
+    const Text *title = text_at(f, SIZE_NAME_Y, 0, ENGINE_X), *sub = text_at(f, SIZE_DETAIL_Y, 0, ENGINE_X);
+    TEST_CHECK_(b.count == 3, "frame %d: %d size buttons", f, b.count);
+    TEST_CHECK_(title && !strcmp(title->text, "Model size") && title->x + width(title) < ENGINE_X - 20,
+                "frame %d: the row's title", f);
+    TEST_CHECK(sub && !strcmp(sub->text, "estimated") && sub->x + width(sub) < ENGINE_X - 40);
+    if (b.count != 3) return;
+    for (int i = 0; i < 3; i++) {
+        int active = chosen == i + 1 && !muted;
+        TEST_CHECK_(b.rect[i].x == ENGINE_X + i * SIZE_PITCH && b.rect[i].x + b.rect[i].w <= 918,
+                    "frame %d: size %d at %d", f, i, b.rect[i].x);
+        TEST_CHECK_(b.rect[i].color == (active ? ACCENT : SELECTED), "frame %d: size %d colour %08X", f, i,
+                    b.rect[i].color);
+        TEST_CHECK_(b.label[i] && !strcmp(b.label[i]->text, names[i]) &&
+                    b.label[i]->color == (active ? BG_COLOR : muted ? DIM : WHITE),
+                    "frame %d: size %d label '%s'", f, i, b.label[i] ? b.label[i]->text : "(none)");
+        TEST_CHECK_(b.detail[i] && !strcmp(b.detail[i]->text, details[i]), "frame %d: size %d detail '%s'", f, i,
+                    b.detail[i] ? b.detail[i]->text : "(none)");
+        for (int k = 0; k < 2; k++) { /* centred in the button, inside it */
+            const Text *t = k ? b.detail[i] : b.label[i];
+            if (t) TEST_CHECK(t->x == b.rect[i].x + (b.rect[i].w - width(t)) / 2 && width(t) <= SIZE_W - 8);
+        }
+    }
+    /* the chosen size outlined while muted: four 2-pixel accent sides around it */
+    int outline = 0;
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->color == ACCENT && chosen && r->x >= ENGINE_X + (chosen - 1) * SIZE_PITCH &&
+            r->x < ENGINE_X + (chosen - 1) * SIZE_PITCH + SIZE_W && r->y >= SIZE_Y && r->y < SIZE_Y + SIZE_H &&
+            (r->w == 2 || r->h == 2))
+            outline++;
+    }
+    TEST_CHECK_(outline == (muted && chosen ? 4 : 0), "frame %d: %d outline sides", f, outline);
+}
+/* No frame says anything about running a smaller size (owner 2026-10-15 04:54Z). */
+static void check_no_fallback_hint(int frames)
+{
+    static const char *const hints[] = {"fallback", "falls back", "fall back", "smaller", "uses VOCR", "instead",
+                                        "not fit", "too little", "short on memory"};
+    for (int f = 0; f < frames && f < MAX_FRAMES; f++)
+        for (unsigned i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
+            TEST_CHECK_(!shows(f, hints[i]), "frame %d shows '%s'", f, hints[i]);
 }
 
 #define TAP(x, y) {0, 1, (x), (y)}, {0, 0, 0, 0}
 #define PRESS(button) {(button), 0, 0, 0}, {0, 0, 0, 0}
 #define OCR_PAGE PRESS(SCE_CTRL_SELECT) /* Games -> OCR & lookup, the page after the first */
-#define LOCAL_BUTTON TAP(200, 170)
-#define LENS_BUTTON TAP(700, 170)
-#define CARD_TITLE TAP(300, 130)  /* the card outside its buttons: focus only */
+#define LOCAL_BUTTON TAP(400, 140)
+#define LENS_BUTTON TAP(700, 140)
+#define CARD_TITLE TAP(100, 140)  /* the engine row's title: focus only */
 
-static const char *const LOCAL_HELP = "Local OCR: dialogue region, automatic or manual.";
+static const char *const SIZES[3] = {"Small", "Normal", "Large"};
 
 #ifndef VJO_VOCR_MODEL_INFO_TEST
-static int shows(int f, const char *needle)
-{
-    for (int i = 0; i < shown[f].texts; i++)
-        if (strstr(shown[f].text[i].text, needle)) return 1;
-    return 0;
-}
-static const char *const LENS_HELP = "Wi-Fi required. Sends the selected image to Google.";
-static const char *const LENS_STATUS = "No model file needed. Uses your chosen dictionary.";
+static const char *const LENS_STATUS = "Wi-Fi required. Sends the selected image to Google.";
+static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR3-H15 found.";
+/* This package's estimates (core/vocr_models.c): VOCR3-FL10, VOCR3-H15, VOCR4-W20. */
+static const char *const DETAILS[3] = {"0.7 s, 0.9 MB", "1.3 s, 1.4 MB", "1.7 s, 1.9 MB"};
 
-/* This package: exactly two engines, VOCR3 (its default model's generation) and Google Lens. */
+/* This package: exactly two engines, VOCR3 (its default model's generation) and
+ * Google Lens; under the local one its Model size, Normal chosen, each size with
+ * its estimates from the models' metadata. */
 static void test_two_engines_local_named_after_its_generation(void)
 {
     card(NULL); /* first run: no config.ini, the defaults */
     static const Input in[] = {OCR_PAGE};
     TEST_ASSERT(run(in, 2) == 2); /* each scripted frame drawn; Circle then exits */
-    check_card(0, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 found. Game OCR worker required.", DIM);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 found. Game OCR worker required.", DIM);
-    for (int f = 0; f < 2; f++) TEST_CHECK(!shows(f, "VOCR2") && !shows(f, "Custom engine"));
-    TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
+    for (int f = 0; f < 2; f++) {
+        check_card(f, "VOCR3", 0, NORMAL_STATUS, DIM);
+        check_sizes(f, VJO_VOCR_TIER_NORMAL, 0, SIZES, DETAILS);
+        TEST_CHECK(!shows(f, "VOCR2") && !shows(f, "Custom engine"));
+    }
+    check_no_fallback_hint(2);
+    TEST_CHECK(!shown[1].backend[0] && !shown[1].tier[0]); /* looking saves nothing */
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0);
 }
 
-/* Touching a button chooses that engine and saves it; the card follows. Every
- * button edge and the gaps around them: each tap comes where a hit on the wrong
- * side would change the saved engine. */
+/* Touching an engine button chooses that engine and saves it; the card follows.
+ * Every button edge and the gaps around them: each tap comes where a hit on the
+ * wrong side would change the saved engine. */
 static void test_touch_chooses_and_saves_each_engine(void)
 {
     static const struct { int x, y; const char *backend; } taps[] = {
-        {700, 202, "vocr"},  /* the row below the buttons */
-        {700, 153, "vocr"},  /* the row above them */
-        {485, 170, "vocr"},  /* the gap, beside Google Lens */
-        {918, 170, "vocr"},  /* right of Google Lens */
-        {486, 154, "lens"},  /* Google Lens, top-left pixel */
-        {474, 170, "lens"},  /* the gap, beside the local engine */
-        {41, 170, "lens"},   /* left of the local engine */
-        {200, 153, "lens"},
-        {200, 202, "lens"},
-        {473, 201, "vocr"},  /* the local engine, bottom-right pixel */
-        {917, 201, "lens"},  /* Google Lens, bottom-right pixel */
-        {917, 170, "lens"},  /* the selected engine again */
-        {42, 154, "vocr"},   /* the local engine, top-left pixel */
-        {300, 130, "vocr"},  /* the card's title: focus only */
-        {700, 170, "lens"},
-        {700, 170, "lens"},
-        {200, 170, "vocr"},
+        {700, 166, "vocr"},  /* the row below the buttons */
+        {700, 117, "vocr"},  /* the row above them */
+        {580, 140, "vocr"},  /* the gap, beside Google Lens */
+        {918, 140, "vocr"},  /* right of Google Lens */
+        {581, 118, "lens"},  /* Google Lens, top-left pixel */
+        {569, 140, "lens"},  /* the gap, beside the local engine */
+        {231, 140, "lens"},  /* left of the local engine: the row's title */
+        {400, 117, "lens"},
+        {400, 166, "lens"},
+        {568, 165, "vocr"},  /* the local engine, bottom-right pixel */
+        {917, 165, "lens"},  /* Google Lens, bottom-right pixel */
+        {917, 140, "lens"},  /* the selected engine again */
+        {232, 118, "vocr"},  /* the local engine, top-left pixel */
+        {100, 140, "vocr"},  /* the card's title: focus only */
+        {700, 140, "lens"},
+        {700, 140, "lens"},
+        {400, 140, "vocr"},
     };
     enum { N = sizeof(taps) / sizeof(taps[0]) };
     static Input in[2 + 2 * N] = {OCR_PAGE};
@@ -426,17 +515,18 @@ static void test_touch_chooses_and_saves_each_engine(void)
         int f = 2 + 2 * i, lens = !strcmp(taps[i].backend, "lens");
         TEST_CHECK_(!strcmp(shown[f].backend, taps[i].backend), "tap %d at %d,%d: saved %s, want %s", i,
                     taps[i].x, taps[i].y, shown[f].backend, taps[i].backend);
-        check_card(f + 1, "VOCR3", lens, lens ? LENS_HELP : LOCAL_HELP,
-                   lens ? LENS_STATUS : "VOCR3-H15 found. Game OCR worker required.", DIM);
+        check_card(f + 1, "VOCR3", lens, lens ? LENS_STATUS : NORMAL_STATUS, DIM);
+        check_sizes(f + 1, VJO_VOCR_TIER_NORMAL, lens, SIZES, DETAILS);
     }
-    /* every other setting survived the saves */
+    /* every other setting survived the saves, and the size was saved with them */
     FILE *f = fopen(VJO_PREFERENCES_PATH, "rb");
     TEST_ASSERT(f != NULL);
     char text[4096];
     size_t n = fread(text, 1, sizeof(text) - 1, f);
     fclose(f);
     text[n] = 0;
-    TEST_CHECK(strstr(text, "ocr_mode = on_press\n") && strstr(text, "font_size_ja = 22\n"));
+    TEST_CHECK(strstr(text, "ocr_mode = on_press\n") && strstr(text, "font_size_ja = 22\n") &&
+               strstr(text, "vocr_tier = normal\n"));
 }
 
 /* Controller: Left chooses the local engine, Right Google Lens, Cross the other one. */
@@ -445,21 +535,128 @@ static void test_controller_left_right_choose_and_cross_toggles(void)
     card("ocr_backend = lens\n");
     static const Input in[] = {OCR_PAGE, CARD_TITLE, PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_LEFT),
                                PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
-                               PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_UP),
+                               PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_DOWN),
                                PRESS(SCE_CTRL_CROSS)};
     run(in, (int)(sizeof(in) / sizeof(in[0])));
-    check_card(3, "VOCR3", 1, LENS_HELP, LENS_STATUS, DIM);
+    check_card(3, "VOCR3", 1, LENS_STATUS, DIM);
     static const struct { int frame; const char *backend; } want[] = {
         {4, "vocr"}, {6, "vocr"}, {8, "lens"}, {10, "lens"}, {12, "vocr"}, {14, "lens"},
-        {16, "lens"}, {18, "lens"}, {20, "vocr"}, /* Down and Up leave the card and come back */
+        {16, "lens"}, {18, "lens"}, {20, "vocr"}, /* Up and Down leave the row and come back */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame, lens = !strcmp(want[i].backend, "lens");
         TEST_CHECK_(!strcmp(shown[f].backend, want[i].backend), "frame %d: saved %s, want %s", f,
                     shown[f].backend, want[i].backend);
-        check_card(f, "VOCR3", lens, lens ? LENS_HELP : LOCAL_HELP,
-                   lens ? LENS_STATUS : "VOCR3-H15 found. Game OCR worker required.", DIM);
+        check_card(f, "VOCR3", lens, lens ? LENS_STATUS : NORMAL_STATUS, DIM);
+        TEST_CHECK_(!strcmp(shown[f].tier, "normal"), "frame %d: size %s", f, shown[f].tier); /* unchanged */
     }
+}
+
+/* API 21: the Model size under the local engine. Touch a size to choose and save
+ * it (its edges and the gaps between them only focus the row); the controller
+ * reaches it with Down from the engine row, Left and Right step through the sizes,
+ * Enter (× here) goes round them. The local engine's name follows the size's model: VOCR4 for
+ * Large, this package's VOCR4-W20. */
+static void test_model_size_touch_keys_and_save(void)
+{
+    /* Each edge tap comes when it would change the saved size were that edge a pixel off: an
+     * inside pixel from another size, an outside one with a neighbour chosen. Small spans x 232-451,
+     * Normal 465-684, Large 698-917, each y 170-223. */
+    static const struct { int x, y; const char *tier; } taps[] = {
+        {451, 223, "small"},  /* Small, bottom-right pixel (from Normal) */
+        {465, 170, "normal"}, /* Normal, top-left pixel */
+        {452, 200, "normal"}, /* the gap right of Small */
+        {698, 170, "large"},  /* Large, top-left pixel */
+        {464, 200, "large"},  /* the gap left of Normal */
+        {684, 223, "normal"}, /* Normal, bottom-right pixel */
+        {697, 200, "normal"}, /* the gap left of Large */
+        {917, 223, "large"},  /* Large, bottom-right pixel */
+        {685, 200, "large"},  /* the gap right of Normal */
+        {232, 170, "small"},  /* Small, top-left pixel */
+        {918, 200, "small"},  /* right of Large */
+        {500, 169, "small"},  /* the row above the buttons: focus only */
+        {500, 224, "small"},  /* below them, the status line: focus only */
+        {300, 223, "small"},
+        {500, 200, "normal"},
+        {231, 200, "normal"}, /* left of Small: the row's title */
+        {100, 200, "normal"},
+        {451, 170, "small"},  /* Small, top-right pixel */
+    };
+    enum { N = sizeof(taps) / sizeof(taps[0]) };
+    static Input in[2 + 2 * N] = {OCR_PAGE};
+    card("ocr_backend = vocr\nvocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\nfont_size_ja = 22\n");
+    for (int i = 0; i < N; i++) in[2 + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
+    TEST_ASSERT(run(in, 2 + 2 * N) == 2 + 2 * N);
+    /* an older build's vocr_model = H15_w8.vocr shows as Normal until a choice; the first save
+     * writes vocr_tier and drops the vocr_model and vocr_fallback_model lines */
+    check_sizes(1, VJO_VOCR_TIER_NORMAL, 0, SIZES, DETAILS);
+    TEST_CHECK(!shown[1].tier[0] && shown[1].model_line);
+    static const char *const status[] = {"", "Small: fastest. VOCR3-FL10 found.", NORMAL_STATUS,
+                                         "Large: most accurate. VOCR4-W20 found."};
+    for (int i = 0; i < N; i++) {
+        int f = 2 + 2 * i, t = vjo_vocr_tier_parse(taps[i].tier);
+        TEST_CHECK_(!strcmp(shown[f].tier, taps[i].tier), "tap %d at %d,%d: saved '%s', want %s", i, taps[i].x,
+                    taps[i].y, shown[f].tier, taps[i].tier);
+        TEST_CHECK_(!shown[f].model_line, "tap %d: an older model line is left", i);
+        TEST_CHECK(!strcmp(shown[f].backend, "vocr"));
+        check_card(f + 1, t == VJO_VOCR_TIER_LARGE ? "VOCR4" : "VOCR3", 0, status[t], DIM);
+        check_sizes(f + 1, t, 0, SIZES, DETAILS);
+    }
+    check_no_fallback_hint(2 + 2 * N);
+    /* the controller: Down to the size row, Left/Right step, Enter goes round, Up back to the engines */
+    card("vocr_tier = small\nocr_mode = on_press\n");
+    static const Input keys[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_RIGHT),
+                                 PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
+                                 PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_UP),
+                                 PRESS(SCE_CTRL_RIGHT)};
+    run(keys, (int)(sizeof(keys) / sizeof(keys[0])));
+    static const struct { int frame; const char *tier, *backend; } want[] = {
+        {2, "small", ""},        /* Down: the size row, nothing saved */
+        {4, "small", ""},        /* Left at Small: nothing smaller */
+        {6, "normal", "vocr"}, {8, "large", "vocr"},
+        {10, "large", "vocr"},   /* Right at Large: nothing larger */
+        {12, "small", "vocr"},   /* Enter: round to Small */
+        {14, "normal", "vocr"}, {16, "small", "vocr"},
+        {18, "small", "vocr"},   /* Up: the engine row */
+        {20, "small", "lens"},   /* Right there chooses Google Lens, the size kept */
+    };
+    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        int f = want[i].frame;
+        TEST_CHECK_(!strcmp(shown[f].tier, want[i].tier) && !strcmp(shown[f].backend, want[i].backend),
+                    "frame %d: saved %s/%s, want %s/%s", f, shown[f].tier, shown[f].backend, want[i].tier,
+                    want[i].backend);
+    }
+    check_sizes(9, VJO_VOCR_TIER_LARGE, 0, SIZES, DETAILS);
+    check_card(9, "VOCR4", 0, "Large: most accurate. VOCR4-W20 found.", DIM);
+    check_sizes(21, VJO_VOCR_TIER_SMALL, 1, SIZES, DETAILS); /* Lens: muted, Small outlined */
+    check_card(21, "VOCR3", 1, LENS_STATUS, DIM);
+    /* the focus bar is beside the selected row only */
+    int bar_size = 0, bar_engine = 0;
+    for (int i = 0; i < shown[3].rects; i++) {
+        const Rect *r = &shown[3].rect[i];
+        if (r->x == 24 && r->w == 4 && r->color == ACCENT) {
+            bar_size += r->y == OCR_Y + 56;
+            bar_engine += r->y == OCR_Y;
+        }
+    }
+    TEST_CHECK(bar_size == 1 && !bar_engine);
+}
+
+/* With Google Lens as the engine the size row stays, muted (the local engine's
+ * choice), and a touch still chooses a size without changing the engine. */
+static void test_lens_keeps_the_model_size(void)
+{
+    card("ocr_backend = lens\nvocr_tier = large\n");
+    static const Input in[] = {OCR_PAGE, TAP(300, 200), TAP(500, 200)};
+    run(in, (int)(sizeof(in) / sizeof(in[0])));
+    check_card(1, "VOCR4", 1, LENS_STATUS, DIM);
+    check_sizes(1, VJO_VOCR_TIER_LARGE, 1, SIZES, DETAILS);
+    TEST_CHECK(!strcmp(shown[2].tier, "small") && !strcmp(shown[2].backend, "lens"));
+    check_card(3, "VOCR3", 1, LENS_STATUS, DIM);
+    check_sizes(3, VJO_VOCR_TIER_SMALL, 1, SIZES, DETAILS);
+    TEST_CHECK(!strcmp(shown[4].tier, "normal") && !strcmp(shown[4].backend, "lens"));
+    const Text *title = text_at(1, SIZE_NAME_Y, 0, ENGINE_X);
+    TEST_CHECK(title && title->color == DIM); /* the row's title too */
 }
 
 /* A config.ini that chose a removed engine shows the local engine selected
@@ -473,113 +670,105 @@ static void test_removed_engine_shows_local_and_next_save_rewrites_it(void)
         card(config);
         static const Input in[] = {OCR_PAGE, CARD_TITLE, PRESS(SCE_CTRL_LEFT)};
         run(in, (int)(sizeof(in) / sizeof(in[0])));
-        check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 found. Game OCR worker required.", DIM);
+        check_card(1, "VOCR3", 0, NORMAL_STATUS, DIM);
         TEST_CHECK_(!strcmp(shown[3].backend, removed[i]), "%s: unchanged until a choice", removed[i]);
         TEST_CHECK_(!strcmp(shown[4].backend, "vocr"), "%s: rewritten as '%s'", removed[i], shown[4].backend);
         for (int f = 0; f < 6; f++) TEST_CHECK(!shows(f, "VOCR2"));
     }
 }
 
-/* The local engine is named after the generation of the model the game worker
- * would load; the line under it reports that file, or what is missing. */
+/* The local engine is named after the generation of the model that loads: the
+ * chosen size's when its file is there at its release size, else the next
+ * smaller one found (a job leaves a missing tier out); the status line names the
+ * chosen size's model, or reports it missing in red, never what runs instead. */
 static void test_label_and_status_follow_the_configured_models(void)
 {
     static const Input in[] = {OCR_PAGE};
-    card("vocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\n");
+    /* an older build's vocr_model, in each family: its size */
+    static const struct { const char *ini, *label, *status; int tier; } older[] = {
+        {"vocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\n", "VOCR3", NORMAL_STATUS, 2},
+        {"vocr_model = FL10_w8.vocr\n", "VOCR3", "Small: fastest. VOCR3-FL10 found.", 1},
+        {"vocr_model = VOCR3_FL10_w8.vocr\nvocr_fallback_model = none\n", "VOCR3", "Small: fastest. VOCR3-FL10 found.", 1},
+        {"vocr_model = F20_w8.vocr\n", "VOCR4", "Large: most accurate. VOCR4-W20 found.", 3},
+        {"vocr_model = VOCR4_W20_w8.vocr\n", "VOCR4", "Large: most accurate. VOCR4-W20 found.", 3},
+        {"vocr_model = VOCR9_X_w8.vocr\n", "VOCR3", NORMAL_STATUS, 2}, /* not a known shape: the default */
+        {"vocr_tier = small\nvocr_model = VOCR4_W20_w8.vocr\n", "VOCR3", "Small: fastest. VOCR3-FL10 found.", 1},
+    };
+    for (unsigned i = 0; i < sizeof(older) / sizeof(older[0]); i++) {
+        card(older[i].ini);
+        run(in, 2);
+        check_card(1, older[i].label, 0, older[i].status, DIM);
+        check_sizes(1, older[i].tier, 0, SIZES, DETAILS);
+        TEST_MSG("%s", older[i].ini);
+    }
+    /* the chosen size's file missing, or not its release size: the next smaller one loads */
+    card("vocr_tier = large\n");
+    remove_model(VJO_VOCR4_W20_NAME);
     run(in, 2);
-    check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 found. Game OCR worker required.", DIM);
-    /* the configured model names the engine, not its fallback of another generation */
-    card("vocr_model = H15_w8.vocr\n");
+    check_card(1, "VOCR3", 0, "VOCR4-W20 missing. Reinstall the package.", OFF);
+    put_model(VJO_VOCR4_W20_NAME, VJO_VOCR_F20_BYTES - 1);
     run(in, 2);
-    check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 found. Game OCR worker required.", DIM);
-    /* until its file is missing or not its release size: the worker refuses it and
-     * runs the fallback, which then names the engine */
-    remove_model("H15_w8.vocr");
+    check_card(1, "VOCR3", 0, "VOCR4-W20 missing. Reinstall the package.", OFF);
+    /* Large's and Normal's both missing: Small loads */
+    remove_model(VJO_VOCR3_H15_NAME);
     run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR1-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    put_model("H15_w8.vocr", VJO_VOCR_H15_BYTES + 1);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR1-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    /* with the fallback's file missing too nothing runs: the configured model's name, a red line */
+    check_card(1, "VOCR3", 0, "VOCR4-W20 missing. Reinstall the package.", OFF);
+    /* nothing at or below the chosen size: nothing runs; the chosen size's name, a red line */
     remove_model(VJO_VOCR3_FL10_NAME);
     run(in, 2);
-    check_card(1, "VOCR1", 0, LOCAL_HELP, "VOCR1-H15 missing. Game OCR worker required.", OFF);
+    check_card(1, "VOCR4", 0, "VOCR4-W20 missing. Reinstall the package.", OFF);
+    /* a larger size's file missing does not matter to a smaller choice */
+    card("vocr_tier = normal\n");
+    remove_model(VJO_VOCR4_W20_NAME);
+    run(in, 2);
+    check_card(1, "VOCR3", 0, NORMAL_STATUS, DIM);
+    /* Normal's file missing: Small loads, Normal named missing */
+    card(NULL);
+    remove_model(VJO_VOCR3_H15_NAME);
+    run(in, 2);
+    check_card(1, "VOCR3", 0, "VOCR3-H15 missing. Reinstall the package.", OFF);
     /* a model file that cannot be closed again is not counted as found */
     card(NULL);
     close_fails = VJO_VOCR3_H15_NAME;
     run(in, 2);
     close_fails = NULL;
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    /* a model this build does not run: refused, the fallback runs and names the engine */
-    card("vocr_model = VOCR9_X_w8.vocr\n");
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build; uses VOCR3-FL10.", OFF);
-    /* the fallback's file missing as well: nothing runs, and the button keeps the fallback's name */
-    remove_model(VJO_VOCR3_FL10_NAME);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
-    card("vocr_model = VOCR9_X_w8.vocr\nvocr_fallback_model = none\n");
-    run(in, 2);
-    check_card(1, "VOCR", 0, LOCAL_HELP, "vocr_model is not in this build. Set it in config.ini.", OFF);
-    /* the confidence cascade's VOCR4-W20 also runs as the job's own model (API 20) */
-    card("vocr_model = VOCR4_W20_w8.vocr\n");
-    run(in, 2);
-    check_card(1, "VOCR4", 0, LOCAL_HELP, "VOCR4-W20 found. Game OCR worker required.", DIM);
-    /* the model's file missing, or not its release size: the fallback runs */
-    card(NULL);
-    remove_model(VJO_VOCR3_H15_NAME);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    card(NULL);
-    put_model(VJO_VOCR3_H15_NAME, VJO_VOCR_H15_BYTES - 1);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    /* both missing, or no fallback configured */
-    remove_model(VJO_VOCR3_FL10_NAME);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing. Game OCR worker required.", OFF);
-    card("vocr_fallback_model = none\n");
-    remove_model(VJO_VOCR3_H15_NAME);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing. Game OCR worker required.", OFF);
-    /* a fallback naming the model itself is no fallback */
-    card("vocr_fallback_model = VOCR3_H15_w8.vocr\n");
-    remove_model(VJO_VOCR3_H15_NAME);
-    run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 missing. Game OCR worker required.", OFF);
+    check_card(1, "VOCR3", 0, "VOCR3-H15 missing. Reinstall the package.", OFF);
     /* Google Lens needs no model file, whatever is missing */
     card("ocr_backend = lens\n");
     remove_model(VJO_VOCR3_H15_NAME);
     remove_model(VJO_VOCR3_FL10_NAME);
     run(in, 2);
-    check_card(1, "VOCR3", 1, LENS_HELP, LENS_STATUS, DIM);
+    check_card(1, "VOCR3", 1, LENS_STATUS, DIM);
+    check_no_fallback_hint(2);
 }
 
 /* An unreadable config.ini: nothing is selected and nothing can be saved. */
 static void test_unreadable_config_selects_and_saves_nothing(void)
 {
     card(NULL);
-    put_file(VJO_PREFERENCES_PATH, "ocr_backend = lens\n");
+    put_file(VJO_PREFERENCES_PATH, "ocr_backend = lens\nvocr_tier = large\n");
     TEST_ASSERT(chmod(VJO_PREFERENCES_PATH, 0) == 0);
     if (access(VJO_PREFERENCES_PATH, R_OK) == 0) { /* running as root: permissions do not apply */
         chmod(VJO_PREFERENCES_PATH, 0644);
         TEST_SKIP("the file stays readable (root)");
         return;
     }
-    static const Input in[] = {OCR_PAGE, LOCAL_BUTTON};
+    static const Input in[] = {OCR_PAGE, LOCAL_BUTTON, TAP(300, 200)};
     run(in, (int)(sizeof(in) / sizeof(in[0])));
-    Buttons b = engine_buttons(3);
+    Buttons b = engine_buttons(3), s = size_buttons(5);
     TEST_CHECK(b.count == 2 && b.rect[0].color == SELECTED && b.rect[1].color == SELECTED);
-    const Text *h = text_at(3, HELP_Y, 0, 960), *s = text_at(3, STATUS_Y, 0, 960);
-    TEST_CHECK(h && !strcmp(h->text, "Cannot read the saved OCR choice."));
-    TEST_CHECK(s && !strcmp(s->text, "Repair config.ini before changing settings.") && s->color == OFF);
+    TEST_CHECK(s.count == 3 && s.rect[0].color == SELECTED && s.rect[1].color == SELECTED && s.rect[2].color == SELECTED);
+    const Text *st = text_at(5, STATUS_Y, 0, 960);
+    TEST_CHECK(st && !strcmp(st->text, "Cannot read config.ini. Repair it before changing settings.") &&
+               st->color == OFF);
     chmod(VJO_PREFERENCES_PATH, 0644);
-    char backend[16];
+    char backend[16], tier[16];
     saved_backend(backend);
-    TEST_CHECK(!strcmp(backend, "lens")); /* the file was never written */
+    saved_value("vocr_tier", tier);
+    TEST_CHECK(!strcmp(backend, "lens") && !strcmp(tier, "large")); /* the file was never written */
 }
 
-/* engine.c on its own: the button order and the backends a parsed file can hold. */
+/* engine.c on its own: the button order, the backends a parsed file can hold, the sizes' lines. */
 static void test_engine_buttons_and_backends(void)
 {
     TEST_CHECK(vjo_engine_backend(0) == VJO_OCR_VOCR && vjo_engine_backend(1) == VJO_OCR_LENS);
@@ -590,7 +779,7 @@ static void test_engine_buttons_and_backends(void)
     memset(&c, 0, sizeof(c));
     strcpy(c.local, "VOCR3");
     TEST_CHECK(!strcmp(vjo_engine_name(&c, 0), "VOCR3") && !strcmp(vjo_engine_name(&c, 1), "Google Lens"));
-    TEST_CHECK(!strcmp(vjo_engine_description(0), LOCAL_HELP) && !strcmp(vjo_engine_description(1), LENS_HELP));
+    TEST_CHECK(!strcmp(vjo_engine_description(1), LENS_STATUS));
     /* every config.ini engine value lands on one of the two buttons */
     static const char *const values[] = {"vocr", "lens", "vocr2", "meiki", "ncnn", "other"};
     for (unsigned i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
@@ -602,6 +791,14 @@ static void test_engine_buttons_and_backends(void)
         TEST_CHECK_(cfg.ocr_backend == vjo_engine_backend(vjo_engine_index(cfg.ocr_backend)), "%s", values[i]);
         TEST_CHECK_(vjo_engine_index(cfg.ocr_backend) == !strcmp(values[i], "lens"), "%s", values[i]);
     }
+    /* each size's line from its model's metadata; none outside the three */
+    char line[32];
+    for (int t = 1; t <= 3; t++) {
+        TEST_CHECK(vjo_engine_tier_detail(t, line, sizeof(line)) > 0 && !strcmp(line, DETAILS[t - 1]));
+        TEST_MSG("tier %d: %s", t, line);
+    }
+    TEST_CHECK(vjo_engine_tier_detail(0, line, sizeof(line)) == 0 && !line[0]);
+    TEST_CHECK(vjo_engine_tier_detail(4, line, sizeof(line)) == 0 && !line[0]);
 }
 
 /* The app leaves by ending its process, never through vita2d_fini: as a system
@@ -624,6 +821,8 @@ TEST_LIST = {
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},
     {"touching_a_button_chooses_and_saves_that_engine_gaps_only_focus", test_touch_chooses_and_saves_each_engine},
     {"left_right_choose_local_or_lens_cross_toggles", test_controller_left_right_choose_and_cross_toggles},
+    {"model_size_by_touch_and_keys_saved_as_vocr_tier_the_label_follows_its_model", test_model_size_touch_keys_and_save},
+    {"google_lens_keeps_the_model_size_muted_and_choosable", test_lens_keeps_the_model_size},
     {"removed_engine_VOCR2_Meiki_ncnn_shows_local_and_next_save_writes_vocr", test_removed_engine_shows_local_and_next_save_rewrites_it},
     {"label_and_status_follow_the_configured_models_and_files", test_label_and_status_follow_the_configured_models},
     {"unreadable_config_selects_and_saves_nothing", test_unreadable_config_selects_and_saves_nothing},
@@ -631,48 +830,48 @@ TEST_LIST = {
     {NULL, NULL}
 };
 #else
-/* A later package (test table): VOCR5 pinned and made the default. */
+/* A later package (test table): VOCR5's three blobs pinned as its tiers. */
+static const char *const DETAILS5[3] = {"0.9 s, 1.1 MB", "1.0 s, 1.8 MB", "2.6 s, 2.9 MB"};
 static void test_later_generation_is_named_from_its_metadata(void)
 {
     static const Input in[] = {OCR_PAGE};
-    card("vocr_model = VOCR5_N_w8.vocr\nvocr_fallback_model = VOCR5_S_w8.vocr\n");
-    run(in, 2);
-    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
-    remove_model("VOCR5_N_w8.vocr");
-    run(in, 2);
-    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR5-S. Game OCR worker required.", DIM);
-    /* the same app with an older config.ini still names that file's generation */
     card(NULL);
     run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR3-H15 found. Game OCR worker required.", DIM);
+    check_card(1, "VOCR5", 0, "Normal: default, balanced. VOCR5-N found.", DIM);
+    check_sizes(1, VJO_VOCR_TIER_NORMAL, 0, SIZES, DETAILS5);
+    card("vocr_tier = large\n");
+    run(in, 2);
+    check_card(1, "VOCR5", 0, "Large: most accurate. VOCR5-L found.", DIM);
+    remove_model("VOCR5_L_w8.vocr");
+    run(in, 2);
+    check_card(1, "VOCR5", 0, "VOCR5-L missing. Reinstall the package.", OFF);
+    /* the same app with an older config.ini: its model's size, this package's model of it */
+    card("vocr_model = VOCR3_H15_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
+    run(in, 2);
+    check_card(1, "VOCR5", 0, "Normal: default, balanced. VOCR5-N found.", DIM);
+    check_sizes(1, VJO_VOCR_TIER_NORMAL, 0, SIZES, DETAILS5);
 }
-/* VOCR5 the default with an older generation's fallback: while the VOCR5 file is
- * missing or only partly uploaded, the game worker runs VOCR3-FL10, and the
- * button names VOCR3, not the VOCR5 it refuses. */
+/* Nothing of the chosen size or below on the card (a partly uploaded package):
+ * nothing runs; the chosen size's model is named missing, never another one. */
 static void test_mixed_generations_name_the_model_that_loads(void)
 {
     static const Input in[] = {OCR_PAGE};
-    card("vocr_model = VOCR5_N_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
-    run(in, 2);
-    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
+    card("vocr_tier = normal\n");
     remove_model("VOCR5_N_w8.vocr");
     run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    put_model("VOCR5_N_w8.vocr", 3000000 - 32768); /* one 32 KiB piece short */
+    check_card(1, "VOCR5", 0, "VOCR5-N missing. Reinstall the package.", OFF); /* VOCR5-S loads */
+    put_model("VOCR5_N_w8.vocr", 1500000 - 32768); /* one 32 KiB piece short */
+    remove_model("VOCR5_S_w8.vocr");
     run(in, 2);
-    check_card(1, "VOCR3", 0, LOCAL_HELP, "VOCR5-N missing; uses VOCR3-FL10. Game OCR worker required.", DIM);
-    /* neither file there: nothing runs; the configured model's name and a red line */
-    remove_model(VJO_VOCR3_FL10_NAME);
+    check_card(1, "VOCR5", 0, "VOCR5-N missing. Reinstall the package.", OFF);
+    /* its file back: it runs again */
+    put_model("VOCR5_N_w8.vocr", 1500000);
     run(in, 2);
-    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N missing. Game OCR worker required.", OFF);
-    /* the VOCR5 file back: it runs again, whatever its fallback */
-    put_model("VOCR5_N_w8.vocr", 3000000);
-    run(in, 2);
-    check_card(1, "VOCR5", 0, LOCAL_HELP, "VOCR5-N found. Game OCR worker required.", DIM);
+    check_card(1, "VOCR5", 0, "Normal: default, balanced. VOCR5-N found.", DIM);
 }
 TEST_LIST = {
     {"a_later_generation_VOCR5_is_named_from_its_pinned_metadata_without_app_changes", test_later_generation_is_named_from_its_metadata},
-    {"VOCR5_missing_with_a_VOCR3_fallback_names_VOCR3_the_model_that_loads", test_mixed_generations_name_the_model_that_loads},
+    {"VOCR5_missing_the_chosen_size_names_it_missing_and_never_another", test_mixed_generations_name_the_model_that_loads},
     {NULL, NULL}
 };
 #endif

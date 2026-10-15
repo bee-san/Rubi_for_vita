@@ -28,6 +28,7 @@
 #include "../core/boot_guard.h"
 #include "../include/vjo_import.h"
 #include "../include/vjo_ledger_budget.h"
+#include "../include/vjo_vocr_sizes.h"
 #include "shell.h"
 
 #define MARKER VJO_DATA_DIR "/selftest.txt"
@@ -151,8 +152,13 @@ void vjo_selftest_init(const VjoConfig *cfg)
     if (IMPORT_READY(vjoBootInfo) && vjoBootInfo(&b) == 0)
         report("boot seq=%u mode=%d prev=%d/%d/%d/%d failures=%d write=0x%08X", (unsigned)b.seq, b.mode,
                b.prev_mode, b.prev_stage, b.prev_inert, b.prev_fault, b.failures, (unsigned)b.write_status);
-    report("config backend=%d model=%s fallback=%s dictionary=%d anki=%d", cfg->ocr_backend, cfg->vocr_model,
-           cfg->vocr_fallback_model, cfg->dictionary, cfg->anki_mining);
+    /* model: the configured tier's (API 21); fallback: the smallest tier's, which
+     * the fallback stage runs ("-": the configured tier is the smallest). */
+    report("config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", cfg->ocr_backend,
+           vjo_vocr_tier_model(cfg->vocr_tier) ? vjo_vocr_tier_model(cfg->vocr_tier) : "-",
+           cfg->vocr_tier > (int)VJO_VOCR_TIER_SMALL ? vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL) : "-",
+           vjo_vocr_tier_id(cfg->vocr_tier) ? vjo_vocr_tier_id(cfg->vocr_tier) : "-", cfg->dictionary,
+           cfg->anki_mining);
     report("step boot t=%lld", (long long)ms_since_start());
     sample("boot");
 }

@@ -19,22 +19,29 @@ static int found(const char *dir, const VjoVocrModelInfo *info)
     return closed && bytes == (SceOff)info->bytes;
 }
 
+static const VjoVocrModelInfo *tier_model(int tier)
+{
+    const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
+    return t ? vjo_vocr_model_info(t->model) : NULL;
+}
+
 void vjo_engine_card(const VjoConfig *cfg, VjoEngineCard *card)
 {
-    const VjoVocrModelInfo *named;
     memset(card, 0, sizeof(*card));
-    card->model = vjo_vocr_model_info(cfg->vocr_model);
-    card->fallback = vjo_vocr_model_info(cfg->vocr_fallback_model); /* NULL for "" (none) */
-    card->model_found = card->model && found(cfg->ocr_model_dir, card->model);
-    card->fallback_found = card->fallback && found(cfg->ocr_model_dir, card->fallback);
-    /* Named after the model that loads. The game worker refuses a vocr_model
-     * file that is missing or not its release size (kernel/game_ocr.c), or a
-     * name this build does not run, and the Shell then asks for the fallback
-     * (shell/worker.c run_vocr). With neither file there nothing runs: the
-     * button keeps the configured model's name, or the fallback's, and the
-     * status line is red. */
-    named = card->model_found ? card->model : card->fallback_found ? card->fallback
-          : card->model ? card->model : card->fallback;
+    card->tier = cfg->vocr_tier >= 1 && cfg->vocr_tier <= (int)VJO_VOCR_TIERS ? cfg->vocr_tier
+                                                                             : (int)VJO_VOCR_TIER_DEFAULT;
+    card->model = tier_model(card->tier);
+    for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++) {
+        const VjoVocrModelInfo *m = tier_model(t);
+        card->found[t] = m && found(cfg->ocr_model_dir, m);
+    }
+    /* Named after the model that loads: a job leaves a tier whose file is missing
+     * or not its release size out and runs the next smaller one (kernel/game_ocr.c
+     * refuses it, shell/worker.c run_vocr). With no file there nothing runs: the
+     * button keeps the chosen tier's name and the status line is red. */
+    for (int t = card->tier; t >= 1 && !card->runs; t--)
+        if (card->found[t]) card->runs = tier_model(t);
+    const VjoVocrModelInfo *named = card->runs ? card->runs : card->model;
     snprintf(card->local, sizeof(card->local), "%s", named ? named->generation : "VOCR");
 }
 
@@ -61,27 +68,34 @@ const char *vjo_engine_description(int index)
 
 int vjo_engine_status(const VjoConfig *cfg, const VjoEngineCard *card, char *out, size_t cap)
 {
-    char model[24], fallback[24];
+    const VjoVocrTierInfo *tier = vjo_vocr_tier_info((unsigned)card->tier);
+    char model[24];
     if (vjo_engine_index(cfg->ocr_backend)) {
-        snprintf(out, cap, "No model file needed. Uses your chosen dictionary.");
+        snprintf(out, cap, "%s", vjo_engine_description(1));
         return 0;
+    }
+    if (!tier || !card->model) {
+        snprintf(out, cap, "This model size is not in this build.");
+        return 1;
     }
     vjo_vocr_model_label(card->model, model, sizeof(model));
-    vjo_vocr_model_label(card->fallback, fallback, sizeof(fallback));
-    if (card->model_found) {
-        snprintf(out, cap, "%s found. Game OCR worker required.", model);
+    if (!card->found[card->tier]) {
+        /* A broken install, not a memory fallback: named, never what runs instead. */
+        snprintf(out, cap, "%s missing. Reinstall the package.", model);
+        return 1;
+    }
+    snprintf(out, cap, "%s: %s. %s found.", tier->name, tier->tagline, model);
+    return 0;
+}
+
+int vjo_engine_tier_detail(int tier, char *out, size_t cap)
+{
+    const VjoVocrModelInfo *m = tier_model(tier);
+    /* tenths, rounded: ms to s, bytes to MB (10^6, as the tiers' ceilings are given) */
+    unsigned s10 = m ? (m->box_ms + 50u) / 100u : 0u, mb10 = m ? (m->job_bytes + 50000u) / 100000u : 0u;
+    if (!m || !m->box_ms || !m->job_bytes) {
+        if (cap) out[0] = '\0';
         return 0;
     }
-    if (card->fallback_found && card->model) {
-        /* The worker reads the fallback when the model's file is absent or the wrong size. */
-        snprintf(out, cap, "%s missing; uses %s. Game OCR worker required.", model, fallback);
-        return 0;
-    }
-    if (card->fallback_found)
-        snprintf(out, cap, "vocr_model is not in this build; uses %s.", fallback);
-    else if (card->model)
-        snprintf(out, cap, "%s missing. Game OCR worker required.", model);
-    else
-        snprintf(out, cap, "vocr_model is not in this build. Set it in config.ini.");
-    return 1;
+    return snprintf(out, cap, "%u.%u s, %u.%u MB", s10 / 10u, s10 % 10u, mb10 / 10u, mb10 % 10u);
 }

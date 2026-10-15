@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "../include/vjo_vocr_sizes.h"
 #include "port.h"
 #include "local_dict.h"
 #include "textfilter.h"
@@ -72,9 +73,8 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_backend = VJO_OCR_VOCR;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
-    /* VOCR3-H15 is the default where the game's memory allows; VOCR3-FL10 runs otherwise. */
-    vjo_snprintf(c->vocr_model, sizeof(c->vocr_model), "VOCR3_H15_w8.vocr");
-    vjo_snprintf(c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "VOCR3_FL10_w8.vocr");
+    /* Normal (VOCR3-H15) where the game's memory allows; a smaller tier otherwise. */
+    c->vocr_tier = VJO_VOCR_TIER_DEFAULT;
     c->ocr_settle_ms = 150;
     c->ocr_settle_max_ms = 2000;
     c->ocr_skip_blank_lines = 0;
@@ -145,12 +145,9 @@ const char *vjo_config_default_text(void)
            "; Local OCR never falls back to uploading the screen.\n"
            "ocr_backend = vocr\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
-           "; vocr weights in ocr_model_dir: VOCR3_H15_w8.vocr (default) | VOCR3_FL10_w8.vocr\n"
-           "; (smaller) | v0.2.0's H15_w8.vocr, FL10_w8.vocr | F20_w8.vocr (larger)\n"
-           "vocr_model = VOCR3_H15_w8.vocr\n"
-           "; Smaller weights used automatically for a job when the game has too little free\n"
-           "; memory for vocr_model: VOCR3_FL10_w8.vocr | FL10_w8.vocr | none\n"
-           "vocr_fallback_model = VOCR3_FL10_w8.vocr\n"
+           "; vocr model size (the Overlay app's Model size): small (fastest) | normal\n"
+           "; (the default, balanced) | large (most accurate)\n"
+           "vocr_tier = normal\n"
            "; vocr: read text once still this long (ms, 0 = off), waiting at most the max\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
@@ -159,7 +156,7 @@ const char *vjo_config_default_text(void)
            "ocr_skip_blank_lines = off\n"
            "; vocr: largest LM: 4000k | 2000k | 1000k | 500k | off\n"
            "ocr_lm = 1000k\n"
-           "; vocr: re-read doubtful lines with a larger model within (ms, 0 = off)\n"
+           "; vocr: re-read doubtful lines with the next model size up within (ms, 0 = off)\n"
            "ocr_cascade_ms = 2000\n"
            "; vocr: refine lines: psp | on | off\n"
            "ocr_refine_lines = psp\n"
@@ -370,12 +367,12 @@ static const char *removed_engine(const char *v)
     return NULL;
 }
 
-/* vocr_model: a plain file name in ocr_model_dir, ending in .vocr (which
- * models a build accepts is checked when it loads one). */
+/* An older build's vocr_model: a plain file name ending in .vocr, as those
+ * builds accepted it (now only its tier is read from it). */
 static int valid_vocr_model(const char *v)
 {
     size_t n = strlen(v);
-    if (n <= 5 || n >= sizeof(((VjoConfig *)0)->vocr_model) || strcmp(v + n - 5, ".vocr"))
+    if (n <= 5 || n >= 64 || strcmp(v + n - 5, ".vocr"))
         return 0;
     for (size_t i = 0; i < n; i++) {
         char ch = v[i];
@@ -384,6 +381,41 @@ static int valid_vocr_model(const char *v)
             return 0;
     }
     return 1;
+}
+
+/* ---- the model tiers (include/vjo_vocr_sizes.h) ---- */
+static const char *const tier_ids[VJO_VOCR_TIERS] = {"small", "normal", "large"};
+static const char *const tier_models[VJO_VOCR_TIERS] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME,
+                                                        VJO_VOCR_TIER3_NAME};
+
+const char *vjo_vocr_tier_id(int tier)
+{
+    return tier >= 1 && tier <= (int)VJO_VOCR_TIERS ? tier_ids[tier - 1] : NULL;
+}
+
+int vjo_vocr_tier_parse(const char *id)
+{
+    for (int t = 1; id && t <= (int)VJO_VOCR_TIERS; t++)
+        if (vjo_ieq(id, tier_ids[t - 1]))
+            return t;
+    return 0;
+}
+
+const char *vjo_vocr_tier_model(int tier)
+{
+    return tier >= 1 && tier <= (int)VJO_VOCR_TIERS ? tier_models[tier - 1] : NULL;
+}
+
+/* An older build's vocr_model by the shape its name carries: every release
+ * named its recognizers by shape (FL10_w8.vocr, VOCR3_H15_w8.vocr, the VOCR2
+ * trial's VOCR2_FL10_w8.vocr, F20_w8.vocr, VOCR4_W20_w8.vocr). */
+int vjo_vocr_tier_of_model(const char *name)
+{
+    if (!name) return 0;
+    if (strstr(name, "FL10")) return VJO_VOCR_TIER_SMALL;
+    if (strstr(name, "H15")) return VJO_VOCR_TIER_NORMAL;
+    if (strstr(name, "W20") || strstr(name, "F20")) return VJO_VOCR_TIER_LARGE;
+    return 0;
 }
 
 /* Plain string settings. Paths and the audio URL may contain ';' and '#'
@@ -548,18 +580,22 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         }
         else
             warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "vocr_tier")) {
+        int t = vjo_vocr_tier_parse(val);
+        if (t) {
+            c->vocr_tier = t;
+            c->vocr_tier_explicit = 1;
+        } else
+            warn(c, "%s: invalid value '%s' (small, normal or large)", key, val);
     } else if (vjo_ieq(key, "vocr_model")) {
-        if (valid_vocr_model(val))
-            set_str(c, key, val, c->vocr_model, sizeof(c->vocr_model));
-        else
-            warn(c, "%s: invalid value '%s' (a .vocr file name in ocr_model_dir)", key, val);
+        /* An older build's model choice: its tier, unless a vocr_tier line says otherwise. */
+        int t = valid_vocr_model(val) ? vjo_vocr_tier_of_model(val) : 0;
+        if (!t)
+            warn(c, "%s: '%s' is not a model of this build; using vocr_tier", key, val);
+        else if (!c->vocr_tier_explicit)
+            c->vocr_tier = t;
     } else if (vjo_ieq(key, "vocr_fallback_model")) {
-        if (!val[0] || vjo_ieq(val, "none"))
-            c->vocr_fallback_model[0] = '\0';
-        else if (valid_vocr_model(val))
-            set_str(c, key, val, c->vocr_fallback_model, sizeof(c->vocr_fallback_model));
-        else
-            warn(c, "%s: invalid value '%s' (a .vocr file name in ocr_model_dir, or none)", key, val);
+        /* removed: a job falls back to the next smaller tier (tools/migrate_config.py REMOVED) */
     } else if (vjo_ieq(key, "ocr_settle_ms")) {
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
@@ -618,6 +654,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     }
 }
 
+#define DROPPED_PREFERENCE (-2) /* a line the app's save removes (preference_key) */
+
 static int preference_key(const char *line, size_t n)
 {
     size_t begin = 0, end;
@@ -634,24 +672,27 @@ static int preference_key(const char *line, size_t n)
     return vjo_ieq(key, "ocr_backend") ? 0 :
            vjo_ieq(key, "japanese_only_selection") ? 1 :
            vjo_ieq(key, "highlight_mode") ? 2 :
-           vjo_ieq(key, "local_dictionary_results") ? 3 : -1;
+           vjo_ieq(key, "local_dictionary_results") ? 3 :
+           vjo_ieq(key, "vocr_tier") ? 4 :
+           /* an older build's model choice, which vocr_tier replaces: dropped */
+           vjo_ieq(key, "vocr_model") || vjo_ieq(key, "vocr_fallback_model") ? DROPPED_PREFERENCE : -1;
 }
 
-#define OWNED_PREFERENCES 4
+#define OWNED_PREFERENCES 5
 
-int vjo_config_patch_preferences(const char *text, size_t len, int backend,
+int vjo_config_patch_preferences(const char *text, size_t len, int backend, int vocr_tier,
                                  int japanese_only, int highlight_mode,
                                  int dictionary_results, char *out, size_t cap)
 {
     const char *values[OWNED_PREFERENCES];
-    char results_line[40];
+    char results_line[40], tier_line[32];
     size_t i = 0, used = 0;
     unsigned seen = 0;
     static const char *const backend_values[] = {
         [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_VOCR] = "ocr_backend = vocr\n"
     };
     if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend != VJO_OCR_LENS && backend != VJO_OCR_VOCR) ||
+        (backend != VJO_OCR_LENS && backend != VJO_OCR_VOCR) || !vjo_vocr_tier_id(vocr_tier) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||
@@ -663,6 +704,8 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
         ? "highlight_mode = word\n" : "highlight_mode = character\n";
     vjo_snprintf(results_line, sizeof(results_line), "local_dictionary_results = %d\n", dictionary_results);
     values[3] = results_line;
+    vjo_snprintf(tier_line, sizeof(tier_line), "vocr_tier = %s\n", vjo_vocr_tier_id(vocr_tier));
+    values[4] = tier_line;
     /* Keep a BOM even when the first line is an owned preference. */
     if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
         if (cap <= 3) return -1;
@@ -675,6 +718,7 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend,
         if (i < len) i++;
         const char *line = text + begin;
         size_t bytes = i - begin;
+        if (key == DROPPED_PREFERENCE) continue;
         if (key >= 0) {
             if (seen & (1u << key)) continue;
             seen |= 1u << key;
