@@ -14,7 +14,9 @@
  * read through a small kernel strip instead: each rung's native result is in
  * the job's step log, so one console run says which works. */
 #include "main.h"
+#include "net_game.h"
 #include "../core/fbgrey.h"
+#include "../core/lens_job.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -56,6 +58,12 @@
 
 static SceUID worker = -1, workspace_uid = -1, weights_uid = -1, capture_uid = -1, line_uid = -1, lm_uid = -1;
 static SceUID cascade_uid = -1;
+/* A Lens job's block (run_lens); kept, never freed, when libnet may still use the
+ * pool in it (its sceNetTerm failed): the worker then takes no more jobs. */
+static SceUID lens_uid = -1;
+static uint32_t lens_bytes_held;
+static int lens_pool_held;
+static int lens_release(void);
 /* A rows call returned BUSY: the display hook may still write into the capture
  * (or tall-line) block, so neither is freed (they go with the process). */
 static int hook_owns_capture;
@@ -68,7 +76,7 @@ static void *line_base;
  * partition. The game has no file access, so it is read through the result
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
-enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_COUNT };
+enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_LENS, GL_COUNT };
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -78,6 +86,7 @@ static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_LINE] = {"VjoGameVocrLine", VJO_LEDGER_POOL_GAME},
     [GL_LM] = {"VjoGameVocrLM", VJO_LEDGER_POOL_GAME},
     [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
+    [GL_LENS] = {"VjoGameLens", VJO_LEDGER_POOL_GAME},
 };
 VjoLedger g_game_ledger;
 
@@ -342,6 +351,11 @@ typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LI
 typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 typedef char vjo_lm_budget_check[PAGE_ROUND(VJO_VOCR_LM_MAX_BYTES) <= VJO_BUDGET_GAME_LM ? 1 : -1];
 typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_CASCADE_BYTES) <= VJO_BUDGET_GAME_CASCADE ? 1 : -1];
+/* A Lens job's block at the largest region (run_lens), and its strip. */
+#define LENS_BLOCK_MAX (VJO_OCR_MAX_WIDTH * 4u * 16u + 8192u + ((VJO_OCR_MAX_HEIGHT * 4u + 7u) & ~7u) + \
+                        VJO_OCR_MAX_WIDTH * VJO_OCR_MAX_HEIGHT * 3u / 4u + VJO_LENS_NET_ROOM + VJO_GAME_NET_POOL)
+typedef char vjo_lens_budget_check[PAGE_ROUND(LENS_BLOCK_MAX) <= VJO_BUDGET_GAME_LENS ? 1 : -1];
+typedef char vjo_lens_strip_check[VJO_VOCR_STRIP_MAX_ROWS * VJO_OCR_MAX_WIDTH <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
@@ -706,6 +720,7 @@ static int cleanup(void)
         if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, line_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { line_uid = -1; line_bytes_held = 0; line_base = NULL; }
     }
+    if (lens_uid >= 0 && lens_release()) rc = VJO_E_OCR_UNAVAILABLE;
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     /* Between jobs a weights (or LM) block holds verified bytes or nothing. */
@@ -841,6 +856,114 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->sleep = policy_sleep;
 }
 
+/* ---- Google Lens (API 21, docs/shell-slim.md): the region as a JPEG, posted from the game ---- */
+
+/* The Lens block goes back, unless libnet may still use the pool in it. */
+static int lens_release(void)
+{
+    if (lens_uid < 0) return 0;
+    if (lens_pool_held) return -1;
+    if (game_memblock_free(GL_LENS, VJO_GITEM_LENS, lens_uid, lens_bytes_held) < 0) return -1;
+    lens_uid = -1;
+    lens_bytes_held = 0;
+    return 0;
+}
+
+/* The network's lines after the text's NUL (VJO_GAME_OCR_LENS): what fits, whole
+ * lines, the buffer's last byte left 0. */
+static void lens_keep_log(char *text, size_t cap, const VjoGameNet *net)
+{
+    size_t at = 0, room, n = 0;
+    while (at < cap && text[at]) at++;
+    if (at + 2 >= cap) return;
+    room = cap - at - 2;
+    while (n < net->log_used && n < room) {
+        size_t line = n;
+        while (line < net->log_used && net->log[line] != '\n') line++;
+        if (line >= net->log_used || line + 1 > room) break;
+        n = line + 1;
+    }
+    sceClibMemcpy(text + at + 1, net->log, n);
+    sceClibMemset(text + at + 1 + n, 0, cap - at - 1 - n);
+}
+
+/* A failed Lens job's text is empty: its network lines move up behind the empty text. */
+static void lens_clear_text(char *text, size_t cap)
+{
+    size_t n = 0, m = 0;
+    while (n < cap && text[n]) n++;
+    if (n + 1 < cap)
+        while (n + 1 + m < cap && text[n + 1 + m]) m++;
+    if (n) sceClibMemmove(text + 1, text + n + 1, m);
+    text[0] = 0;
+    sceClibMemset(text + 1 + m, 0, cap - 1 - m);
+}
+
+/* One Lens job on the request's region: the local engine's resident blocks go
+ * back first (useless to Lens), then the memory check, the strip (the ladder,
+ * as the local engine's capture), the block (USER_RW only: libnet and TLS work
+ * in it), the game's network for this job only, the JPEG and the request. The
+ * steps say which way the network was found and how the request went. */
+static int run_lens(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capture *capture, VjoVocrStats *stats)
+{
+    static VjoGameNet net; /* the log (640 B) and state: not on the stack */
+    unsigned rows = vjo_lens_strip_rows(r->width, VJO_VOCR_CAPTURE_LIMIT);
+    size_t job = vjo_lens_job_bytes(r->width, r->height);
+    uint32_t strip_bytes = PAGE_ROUND(rows * r->width), block = PAGE_ROUND(job + VJO_GAME_NET_POOL), held, mem;
+    void *strip = NULL, *base = NULL;
+    SceUID leaked;
+    VjoLensJobStats st;
+    VjoErr err;
+    VjoPlatform platform;
+    uint64_t t0;
+    int rc, fits, close_rc;
+    sceClibMemset(&st, 0, sizeof(st));
+    sceClibMemset(&err, 0, sizeof(err));
+    if (!job || !rows) return VJO_E_OCR_REGION;
+    if (drop_resident()) return VJO_E_OCR_UNAVAILABLE;
+    out->free_user = free_user();
+    out->reserve_bytes = GAME_RESERVE;
+    out->need_workspace = strip_bytes + block;
+    fits = out->free_user >= 0 && (int64_t)out->free_user - (int64_t)GAME_RESERVE >= (int64_t)strip_bytes + block;
+    step_add(VJO_GSTEP_CHECK, 0, 0, fits ? 0 : 1, strip_bytes + block, 0, 0, 0);
+    if (!fits) return VJO_E_OOM;
+    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, "VjoGameVocrCapture", strip_bytes, LADDER_ALL,
+                                      &strip, &leaked, &held, &mem);
+    if (capture_uid < 0) { capture_uid = leaked; return VJO_E_OOM; }
+    capture_bytes_held = held;
+    capture_memory = mem;
+    lens_uid = game_memblock_alloc(GL_LENS, VJO_GITEM_LENS, "VjoGameLens", block, LADDER_USER, &base, &leaked,
+                                   &held, &mem);
+    if (lens_uid < 0) { lens_uid = leaked; return VJO_E_OOM; }
+    lens_bytes_held = held;
+    stats->workspace = held;
+    t0 = now_wide();
+    rc = vjo_game_net_open(&net, (unsigned char *)base + job, VJO_GAME_NET_POOL, cancelled, NULL);
+    uint32_t open_us = (uint32_t)(now_wide() - t0) + 1u;
+    if (!rc) {
+        VjoGreySource image = {capture, r->width, r->height, strip_source, cancelled, NULL};
+        vjo_game_net_platform(&net, &platform);
+        rc = vjo_lens_job(&platform, &image, strip, strip_bytes, base, job, VJO_LENS_JPEG_QUALITY, out->text,
+                          sizeof(out->text), &err, &st);
+    }
+    close_rc = vjo_game_net_close(&net);
+    if (close_rc < 0) lens_pool_held = 1; /* the block stays: cleanup reports it and the worker stops */
+    step_add(VJO_GSTEP_NET, (unsigned)net.sysmodule, (unsigned)net.libnet,
+             net.sysmodule == VJO_GNET_FAILED ? net.sysmodule_rc : net.init_rc, VJO_GAME_NET_POOL,
+             (uint32_t)net.term_rc, open_us, 0);
+    step_add(VJO_GSTEP_LENS, st.tries, st.tears, rc, st.jpeg_bytes,
+             (uint32_t)(err.http_status & 0xFFFF) << 16 | ((uint32_t)err.tls_error & 0xFFFFu), st.request_us + 1u, 0);
+    stats->strips = st.strips;
+    stats->strip_rows = st.strip_rows;
+    stats->capture_us = st.capture_us;
+    stats->tears = st.tears;
+    stats->region_sum = st.region_sum;
+    if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error: its code is in the PASS step */
+    if (rc) out->text[0] = 0;
+    lens_keep_log(out->text, sizeof(out->text), &net);
+    return rc;
+}
+
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
@@ -850,10 +973,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL; open_cascade = 0;
     log_to = out;
     job_started_us = now_wide();
-    int rc = VJO_E_SOURCE;
+    int rc = VJO_E_SOURCE, lens = 0;
     VjoVocrStats stats = {0};
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
-    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || lens_uid >= 0 || model_owned) {
+        rc = VJO_E_OCR_UNAVAILABLE; goto done;
+    }
     /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
@@ -869,6 +994,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
+    if (!sceClibStrcmp(r->model, VJO_GAME_OCR_LENS)) { lens = 1; rc = run_lens(r, out, &capture, &stats); goto done; }
     const VjoVocrModel *model = vjo_vocr_model(r->model);
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
@@ -1068,7 +1194,8 @@ done:
     out->stat_error = stat_error;
     if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
     else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
-    if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
+    if (rc && lens) lens_clear_text(out->text, sizeof(out->text)); /* its network lines stay for the log */
+    else if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
     out->rc = rc; active_seq = 0;
     log_to = NULL;
     return rc;

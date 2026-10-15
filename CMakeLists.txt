@@ -21,7 +21,7 @@ target_compile_options(bearssl PRIVATE -w)
 set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c core/jpdb.c
   core/textfilter.c core/entries.c core/jiten.c core/config.c core/regions.c
-  core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
+  core/http.c core/tls.c core/tls_roots.c core/client.c core/lens_client.c core/lens_job.c core/styled.c core/jpegsw.c
   core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
@@ -85,6 +85,25 @@ target_include_directories(vjo-lens-transport-tests PRIVATE third_party/acutest/
 target_link_libraries(vjo-lens-transport-tests vjo_host)
 target_compile_options(vjo-lens-transport-tests PRIVATE -Wall -Wextra)
 add_test(NAME lens_transport COMMAND vjo-lens-transport-tests)
+# The game worker's Google Lens job (core/lens_job.c) and its network in the game
+# process (game_ocr/net_game.c): docs/shell-slim.md.
+add_executable(vjo-lens-job-tests host/tests/test_lens_job.c)
+target_include_directories(vjo-lens-job-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-lens-job-tests PRIVATE VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures")
+target_compile_options(vjo-lens-job-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-lens-job-tests vjo_host)
+add_test(NAME lens_job COMMAND vjo-lens-job-tests)
+# game_ocr/net_game.c with weak default SDK stand-ins (a Lens job fails cleanly): for
+# the worker tests that include game_ocr/main.c and run no Lens job.
+add_library(vjo_game_net_host STATIC game_ocr/net_game.c host/tests/game_net_stubs.c)
+target_include_directories(vjo_game_net_host PRIVATE host/tests/game_stubs core include)
+target_compile_definitions(vjo_game_net_host PRIVATE VJO_HOST=1)
+target_compile_options(vjo_game_net_host PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_executable(vjo-game-net-tests host/tests/test_game_net.c)
+target_include_directories(vjo-game-net-tests PRIVATE third_party/acutest/include host/tests/game_stubs core include)
+target_compile_definitions(vjo-game-net-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-game-net-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME game_net COMMAND vjo-game-net-tests)
 add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
   core/region_select.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
@@ -447,8 +466,15 @@ if(VJO_WITH_VOCR)
   target_include_directories(vjo-game-vocr-tests PRIVATE third_party/acutest/include host/tests/game_stubs)
   target_compile_options(vjo-game-vocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
-  target_link_libraries(vjo-game-vocr-tests vjo_vocr)
+  target_link_libraries(vjo-game-vocr-tests vjo_vocr vjo_game_net_host)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
+  # API 21: a Google Lens job through the real worker and its game network (docs/shell-slim.md).
+  add_executable(vjo-game-lens-tests host/tests/test_game_lens.c)
+  target_include_directories(vjo-game-lens-tests PRIVATE third_party/acutest/include host/tests/game_stubs host)
+  target_compile_options(vjo-game-lens-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-lens-tests PRIVATE VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures")
+  target_link_libraries(vjo-game-lens-tests vjo_vocr vjo_host)
+  add_test(NAME game_lens_worker COMMAND vjo-game-lens-tests)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
   add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c)
@@ -459,7 +485,7 @@ if(VJO_WITH_VOCR)
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
     vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
-  target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
+  target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host vjo_game_net_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
     host/tests/kernel_model_broker_boundary.c kernel/capture_request.c kernel/buffers.c kernel/capture.c
@@ -469,7 +495,7 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-model-broker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-model-broker-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
     VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
-  target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
+  target_link_libraries(vjo-game-model-broker-tests vjo_vocr vjo_game_net_host)
   # #74 preflight: the real worker and kernel under the console's measured pool limits.
   add_executable(vjo-alloc-sim-tests host/tests/test_alloc_sim.c host/tests/kernel_model_broker_boundary.c
     kernel/capture_request.c kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
@@ -478,7 +504,7 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-alloc-sim-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-alloc-sim-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
     VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
-  target_link_libraries(vjo-alloc-sim-tests vjo_vocr)
+  target_link_libraries(vjo-alloc-sim-tests vjo_vocr vjo_game_net_host)
   add_test(NAME alloc_sim COMMAND vjo-alloc-sim-tests)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
   # The stage benchmark (docs/performance.md): every stage of an OCR job and of the Shell's

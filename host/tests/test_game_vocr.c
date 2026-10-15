@@ -113,7 +113,7 @@ int sceKernelFreeMemBlock(SceUID uid)
     memory_live = 0; frees++; live_bytes -= job_block; return 0;
 }
 SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
-{ TEST_CHECK(stack == 32*1024 && entry == worker_main && p == 0x10000100 + 31 && cpu == 0x70000); thread_creates++; return 20; }
+{ TEST_CHECK(stack == VJO_STACK_GAME && entry == worker_main && p == 0x10000100 + 31 && cpu == 0x70000); thread_creates++; return 20; }
 int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return start_failure ? -1 : 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return join_failure ? -1 : 0; }
 int sceKernelDeleteThread(SceUID uid) { return delete_failure ? -1 : 0; }

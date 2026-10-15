@@ -46,6 +46,8 @@ typedef struct {
 #define VJO_LENS_MAX_RESPONSE (256u * 1024u)
 #define VJO_DICT_MAX_RESPONSE (192u * 1024u)
 
+/* One Lens recognition of the JPEG in src (core/lens_client.c): the game
+ * worker's (core/lens_job.c) and the host tools'; the Shell posts none. */
 int vjo_lens_ocr(VjoArena *a, const VjoPlatform *p, const VjoJpegSource *src,
                  VjoLensResult *res, const char **text, VjoErr *err);
 
@@ -67,7 +69,7 @@ int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, con
                     VjoDictResult *res, VjoErr *err);
 
 /* A recognition in two phases (the sentence is ready before the lookup):
- * vjo_overlay_ocr: JPEG -> Lens -> filter, sets ocr_text, filtered and
+ * vjo_overlay_ocr (core/lens_client.c, host tools): JPEG -> Lens -> filter, sets ocr_text, filtered and
  * sentence; vjo_overlay_lookup: dictionary -> entries (list), after a
  * successful vjo_overlay_ocr. Both return VJO_OK or the error, also in
  * out->err with out->failed_stage. */
@@ -103,10 +105,6 @@ int vjo_overlay_from_text(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
 int vjo_overlay_from_jpeg(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                           const VjoJpegSource *src, VjoOverlayData *out);
 
-/* Opens the connections a recognition will use ahead of it, when p keeps
- * connections (p->pool): Lens, and dictionary's (a VJO_DICT_*; < 0 none),
- * each connect giving up after timeout_us. */
-void vjo_overlay_warm(const VjoPlatform *p, int dictionary, int timeout_us);
 
 /* Short user-facing description of an error. */
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err);

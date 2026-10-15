@@ -22,6 +22,7 @@ typedef struct { unsigned size; int size_user, size_cdram, size_phycont; } SceKe
 #define sceClibMemset memset
 #define sceClibStrcmp strcmp
 #define sceClibMemcpy memcpy
+#define sceClibMemmove memmove
 #define sceClibMemcmp memcmp
 #define sceClibSnprintf snprintf
 #define sceClibVsnprintf vsnprintf

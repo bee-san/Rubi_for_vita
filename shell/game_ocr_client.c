@@ -50,7 +50,13 @@ int vjo_game_ocr_exchange(const VjoGameOcrClient *client,
                 !memchr(result->text, 0, sizeof(result->text)) || result->rc > 0 ||
                 result->cleanup_status) { rc = VJO_E_OCR_INFERENCE; break; }
             rc = result->rc;
-            if (rc) memset(result->text, 0, sizeof(result->text));
+            /* A failed result's text is empty; what follows its NUL (a Lens job's
+             * network lines, include/vjo_game_ocr.h VJO_GAME_OCR_LENS) stays for the log. */
+            if (rc) {
+                size_t n = 0; /* the Shell links no libc (shell/libc_shim.c): no strnlen */
+                while (n < sizeof(result->text) && result->text[n]) n++;
+                memset(result->text, 0, n);
+            }
             if (cancelled && cancelled(cancel_ud)) {
                 memset(result->text, 0, sizeof(result->text));
                 return VJO_E_CANCELLED;

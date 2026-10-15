@@ -1,6 +1,7 @@
 /* Control thread (kernel events, overlay state, auto/on-press policy) and
- * network thread (capture -> JPEG -> Lens, or capture -> local vita-vn-ocr;
- * then the dictionary). */
+ * network thread (a job of the game worker: local vita-vn-ocr, or Google Lens
+ * posted from the game's own network since API 21, docs/shell-slim.md; then the
+ * dictionary). */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/processmgr.h>
@@ -29,23 +30,21 @@
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
-#define POOL_SLOTS        2 /* Lens and the dictionary */
+#define POOL_SLOTS        1 /* a network dictionary's (Lens's requests are the game worker's since API 21) */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
 #define MEM_SIZE          (2 * RESULT_ARENA_SIZE + POOL_SIZE)
 /* Well within the servers' (jiten closes an idle connection after 3
  * minutes, Lens after 4), and short enough that one a network dropped
  * silently (a hotspot's NAT) is rarely met: that costs a read timeout. */
 #define NET_IDLE_US       (60 * 1000 * 1000)
-/* Connections are readied when the region starts changing (for this long),
- * this often at most: a region that never settles readies them once. */
-#define WARM_WINDOW_MS    3000u
-#define WARM_GAP_US       2000000LL
-#define WARM_CONNECT_US   5000000
 
 #define POLL_TIMEOUT_US   50000
 #define BACKOFF_MIN_US    2000000LL
 #define BACKOFF_MAX_US    60000000LL
-#define JPEG_QUALITY      80
+/* A Lens job: the region's strips, its JPEG and the request in the game; the
+ * request alone may take its reads' 20 s (game_ocr/net_game.h) after a slow
+ * connect. */
+#define LENS_EXCHANGE_US  (60 * 1000 * 1000)
 #define SUBTITLE_GAP_US   1000000LL /* between subtitle jobs */
 #define UNSETTLED_US      2000000LL /* subtitles: a region that keeps changing is recognized this often */
 /* The open overlay's quiet refresh (#81 request 4): at most one per settled
@@ -158,7 +157,6 @@ static int64_t job_started_us;
 /* network job */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
-#define NET_EV_WARM 4u
 static volatile int job_running;
 static volatile int job_done;
 static volatile int job_idx;
@@ -184,11 +182,6 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
  * is dropped. */
 static volatile int job_cancelled;
 static VjoNetCancel net_cancel = {-1, -1, 0}; /* the network thread's requests */
-/* The network thread opens the connections for the next job (warm_dictionary:
- * VJO_DICT_*, or -1 for Lens only). */
-static volatile int warm_running;
-static volatile int warm_dictionary;
-static int64_t warm_asked_us;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
@@ -535,27 +528,12 @@ static void view_show_cache(void)
 
 /* ---------------- network thread ---------------- */
 
-typedef struct {
-    const uint8_t *data;
-} MemJpeg;
-
-static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
-{
-    sceClibMemcpy(dst, ((MemJpeg *)ud)->data + off, len);
-    return 0;
-}
-
 /* ---- local OCR: vita-vn-ocr (ocr_backend = vocr) ---- */
 
 /* Out-of-memory advice, by where the memory ran out (#53). Each fits the
  * status line after "Text recognition failed: not enough memory. ". */
-#define OOM_KERNEL_CAPTURE "The kernel could not allocate this region's screen capture (kernel memory " \
-    "shared by all plugins); the OCR model does not affect it. Select a tighter dialogue region with Square, " \
-    "or restart the Vita."
 #define OOM_SHELL_RESULTS "The Shell has too little memory for the overlay's results; the region and " \
     "the OCR model do not affect it. Restart the Vita and try again."
-#define OOM_SCREENSHOT "The screenshot did not fit the overlay's result memory. Select a tighter " \
-    "dialogue region with Square."
 #define OOM_TEXT_BUFFER "The recognized text did not fit the overlay's text buffer. Select a tighter " \
     "dialogue region with Square."
 #define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
@@ -571,8 +549,6 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
     "passed. Try again."
 #define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
-/* Any other OCR-stage shortage (Lens result arena, recognized text). */
-#define OOM_OCR_OTHER "Select a tighter dialogue region with Square."
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -779,9 +755,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
                          (uint32_t)(job_cfg.ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
     }
-    vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
-    vjo_capture_release();
     vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
@@ -977,6 +951,126 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     }
     return vjo_overlay_ocr_text(a, &job_cfg, result.text, out);
 }
+
+/* ---- Google Lens: a job of the game worker since API 21 (docs/shell-slim.md) ----
+ * The worker reads the region, encodes it and posts it to Lens from the game's
+ * own network; the Shell holds no image, no TLS and no connection. Its text then
+ * takes the network pipeline as before (the filter, then the dictionary). */
+
+/* The job's Lens step (include/vjo_game_ocr.h VJO_GSTEP_LENS), or NULL. */
+static const VjoGameOcrStep *lens_step(const VjoGameOcrResult *r)
+{
+    for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (r->step[i].id == VJO_GSTEP_LENS) return &r->step[i];
+    return NULL;
+}
+
+/* The worker's network lines (after its text's NUL) into the log, one each. */
+static void log_lens_net(const VjoGameOcrResult *r)
+{
+    const char *p = vjo_text_raw(r->text, sizeof(r->text));
+    char line[200];
+    while (*p) {
+        size_t n = 0, k;
+        while (p[n] && p[n] != '\n') n++;
+        k = n < sizeof(line) - 1 ? n : sizeof(line) - 1;
+        sceClibMemcpy(line, p, k);
+        line[k] = 0;
+        vjo_log("game lens: %s", line);
+        p += n + (p[n] == '\n');
+    }
+}
+
+/* Where a Lens job's memory ran out: its strip and block against the game's free memory. */
+static const char *lens_oom_detail(const VjoGameOcrResult *r)
+{
+    int64_t free_bytes = r->free_user;
+    if (!r->reserve_bytes) return NULL; /* not from the memory check */
+    if (r->free_user < 0) return OOM_GAME_UNKNOWN;
+    if (free_bytes < (int64_t)r->reserve_bytes) return OOM_GAME_NONE;
+    if (free_bytes < (int64_t)r->reserve_bytes + r->need_workspace) return OOM_GAME_REGION;
+    return OOM_GAME_ALLOCATION;
+}
+
+/* One Lens job: request (no model is opened; the kernel needs a directory
+ * named), exchange, logs. The capture is published as a local engine's is. */
+static int lens_run_one(VjoGameOcrResult *result)
+{
+    VjoGameOcrRequest request = {.size = sizeof(request)};
+    VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
+    static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
+    static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
+    const VjoGameOcrStep *ls;
+    VjoLogBatch batch;
+    char batch_buf[3072];
+    VjoState st0;
+    int rc;
+    sceClibSnprintf(request.model, sizeof(request.model), "%s", VJO_GAME_OCR_LENS);
+    sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s",
+                    job_cfg.ocr_model_dir[0] ? job_cfg.ocr_model_dir : "-");
+    st0.size = sizeof(st0);
+    if (vjoGetState(&st0) < 0) st0.done_seq = 0;
+    vocr_done_before = st0.done_seq;
+    vocr_capture_fixed = 0;
+    rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, LENS_EXCHANGE_US);
+    vocr_note_capture();
+    ls = lens_step(result);
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
+    /* a failed request's HTTP status (non-2xx) and BearSSL error, from its step */
+    vjo_log("game lens rc=%d: %ux%u at %u,%u of %ux%u fmt 0x%08X, jpeg %u B, %u tries (%u rows changed), "
+            "request %u ms (http %u, tls %u), USER block %u, cleanup=%d", rc, result->width, result->height,
+            result->region_x, result->region_y, result->fb_width, result->fb_height, (unsigned)result->fb_format,
+            ls ? (unsigned)ls->bytes : 0u, ls ? (unsigned)ls->kind : 0u, ls ? (unsigned)ls->arg : 0u,
+            ls ? (unsigned)(ls->us / 1000u) : 0u, ls ? (unsigned)(ls->sum >> 16) : 0u,
+            ls ? (unsigned)(ls->sum & 0xFFFFu) : 0u, (unsigned)result->workspace_bytes, result->cleanup_status);
+    vjo_log("game lens capture: %s into %s, %u B block, %u-row strips, %u strips in %u ms, sum 0x%08X",
+            result->source < 4 ? sources[result->source] : "?",
+            result->capture_memory < 5 ? memories[result->capture_memory] : "?", (unsigned)result->capture_bytes,
+            (unsigned)result->strip_rows, (unsigned)result->captures, (unsigned)(result->capture_us / 1000),
+            (unsigned)result->region_sum);
+    if (result->reserve_bytes)
+        vjo_log("game lens memory: free USER=%d, needs %u + reserve %u: check %s", (int)result->free_user,
+                (unsigned)result->need_workspace, (unsigned)result->reserve_bytes,
+                result->free_user >= 0 && (int64_t)result->free_user >=
+                    (int64_t)result->need_workspace + result->reserve_bytes ? "passed" : "refused");
+    log_vocr_steps("lens", result);
+    vjo_log_batch_end(&batch);
+    log_lens_net(result);
+    return rc;
+}
+
+/* A Lens job's text (or its error, with the HTTP status and TLS error of its
+ * request) for the network pipeline. */
+static int run_lens(VjoArena *a, VjoOverlayData *out)
+{
+    /* the job's result arena holds the worker's result (4.6 KB) for the job: no .bss of its own */
+    VjoGameOcrResult *result = (VjoGameOcrResult *)vjo_arena_alloc(a, sizeof(*result));
+    const VjoGameOcrStep *ls;
+    char *text;
+    if (!result) {
+        out->failed_stage = VJO_STAGE_OCR;
+        out->err.detail = OOM_SHELL_RESULTS;
+        return out->err.rc = VJO_E_OOM;
+    }
+    out->err.rc = lens_run_one(result);
+    if (out->err.rc != VJO_OK) {
+        ls = lens_step(result);
+        if (ls) {
+            out->err.http_status = (int)(ls->sum >> 16);
+            out->err.tls_error = (int)(ls->sum & 0xFFFFu);
+        }
+        if (out->err.rc == VJO_E_OOM) out->err.detail = lens_oom_detail(result);
+        if (out->err.rc == VJO_E_SOURCE) out->err.detail = "The game's screen could not be read (see log.txt).";
+        return out->err.rc;
+    }
+    text = vjo_arena_strndup(a, result->text, sceClibStrnlen(result->text, sizeof(result->text)));
+    if (!text) {
+        out->failed_stage = VJO_STAGE_OCR;
+        out->err.detail = OOM_TEXT_BUFFER;
+        return out->err.rc = VJO_E_OOM;
+    }
+    return vjo_overlay_ocr_text(a, &job_cfg, text, out);
+}
 #else
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
@@ -985,15 +1079,17 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
                       "or set ocr_backend = lens.";
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
 }
+
+static int run_lens(VjoArena *a, VjoOverlayData *out)
+{
+    (void)a;
+    out->err.detail = "This build has no game OCR worker, which posts Google Lens's requests.";
+    return out->err.rc = VJO_E_OCR_UNAVAILABLE;
+}
 #endif
 
 static int run_job(VjoArena *a, VjoOverlayData *out)
 {
-    VjoState st;
-    VjoJpegSource src;
-    VjoBuf jb;
-    MemJpeg mem;
-
     sceClibMemset(out, 0, sizeof(*out));
     out->list.header = "";
     /* Warm connections may still own the old pool when a configuration change
@@ -1023,29 +1119,13 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
         }
         goto recognized;
     }
-    vjo_buf_init(&jb, a);
-    st.capture_scene = 0;
-    st.capture_result = 0;
-    if ((out->err.rc = vjo_capture_jpeg(a, 0, JPEG_QUALITY, &jb, &st)) != VJO_OK) {
-        out->failed_stage = VJO_STAGE_OCR;
-        if (out->err.rc == VJO_E_OOM)
-            out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE : OOM_SCREENSHOT;
-        return out->err.rc;
-    }
-    job_capture_scene = st.capture_scene;
-    job_capture_seq = st.region_seq;
-    __sync_synchronize(); /* the scene is visible before job_captured */
-    job_captured = 1;
-    sceClibMemset(&src, 0, sizeof(src));
-    src.width = st.width;
-    src.height = st.height;
-    mem.data = jb.data;
-    src.ud = &mem;
-    src.read = mem_jpeg_read;
-    src.size = (uint32_t)jb.len;
-    if (vjo_overlay_ocr(a, &plat, &job_cfg, &src, out)) {
-        if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail)
-            out->err.detail = OOM_OCR_OTHER;
+    /* Google Lens: the game worker reads, encodes and posts the region (API 21). */
+    if (run_lens(a, out) != VJO_OK) {
+        if (!out->failed_stage)
+            out->failed_stage = VJO_STAGE_OCR;
+        if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
+            out->err.detail = "Google Lens runs in the game OCR worker, which is unavailable here. Register it for "
+                              "this game (install --title) and reboot.";
         return out->err.rc;
     }
 recognized:
@@ -1121,16 +1201,10 @@ static int net_main(SceSize args, void *argp)
     (void)argp;
     while (running) {
         unsigned int bits = 0;
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_WARM | NET_EV_QUIT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
         if (bits & NET_EV_QUIT)
             break;
-        if ((bits & NET_EV_WARM) && !(bits & NET_EV_JOB)) /* a job opens them itself */
-            vjo_overlay_warm(&plat, warm_dictionary, WARM_CONNECT_US);
-        if (bits & NET_EV_WARM) {
-            __sync_synchronize();
-            warm_running = 0;
-        }
         if (bits & NET_EV_JOB) {
             int idx = job_idx;
             int64_t t0 = now_us();
@@ -1150,7 +1224,7 @@ static int net_main(SceSize args, void *argp)
 static int net_busy(void)
 {
     __sync_synchronize();
-    return job_running || warm_running;
+    return job_running;
 }
 
 /* lookup = 0: OCR only (the subtitles' sentence). refresh: the open
@@ -1167,8 +1241,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
         retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
             view_publish(1, NULL, "Recognizing…", 0);
-        if (!warm_running)
-            mem_free();
+        mem_free();
     }
     vjo_log("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
     job_refresh = refresh;
@@ -2094,32 +2167,6 @@ static void background_open(void)
         start_job_kind("auto: screen settled", 0, 1);
 }
 
-/* When the region starts changing, the network thread readies the next
- * job's connections (keeping usable ones), so its requests skip the
- * handshakes. */
-static void warm_connections(void)
-{
-    VjoState st;
-    int lookup;
-    if (!game_active() || !has_result_memory() || net_busy() || now_us() - warm_asked_us < WARM_GAP_US)
-        return;
-    if (cfg.ocr_backend != VJO_OCR_LENS) /* local OCR opens no Lens connection */
-        return;
-    lookup = vjo_config_dict_ready(&cfg);
-    if (!lookup && !subtitles)
-        return;
-    st.size = sizeof(st);
-    vjoGetState(&st);
-    if (!st.unsettled_ms || st.unsettled_ms > WARM_WINDOW_MS)
-        return;
-    warm_asked_us = now_us();
-    warm_dictionary = lookup ? cfg.dictionary : -1;
-    vjo_net_cancel_clear(&net_cancel);
-    warm_running = 1;
-    __sync_synchronize();
-    sceKernelSetEventFlag(net_evf, NET_EV_WARM);
-}
-
 /* Boot guard: this boot counts as complete once the control thread has run
  * for a minute (core/boot_guard.h). The kernel may answer BUSY while its
  * own uptime is shorter; a few spaced retries cover that. */
@@ -2186,7 +2233,6 @@ static void control_tick(uint32_t bits)
     }
     auto_prefetch();
     background_open();
-    warm_connections();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
@@ -2224,7 +2270,7 @@ int vjo_worker_start(void)
     view_lock = sceKernelCreateMutex("VjoView", 0, 0, NULL);
     cmd_lock = sceKernelCreateMutex("VjoCmd", 0, 0, NULL);
     net_evf = sceKernelCreateEventFlag("VjoNetEv", 0, 0, NULL);
-    if (view_lock < 0 || cmd_lock < 0 || vjo_capture_init() < 0 || net_evf < 0 || vjo_net_cancel_init(&net_cancel) < 0) {
+    if (view_lock < 0 || cmd_lock < 0 || net_evf < 0 || vjo_net_cancel_init(&net_cancel) < 0) {
         vjo_worker_stop();
         return -1;
     }
@@ -2282,8 +2328,8 @@ int vjo_worker_stop(void)
     if (ctl_thread >= 0)
         vjo_shell_thread_delete(VJO_SL_CTL_STACK, ctl_thread, VJO_STACK_SHELL_CTL);
     net_thread = ctl_thread = -1;
-    /* An Anki job uses the view and capture locks: it is cancelled and
-     * joined before they are deleted (the control thread no longer reaps it). */
+    /* An Anki job uses the view lock: it is cancelled and joined before the
+     * lock is deleted (the control thread no longer reaps it). */
     if (vjo_anki_stop() < 0)
         return -1;
     mem_free();
@@ -2291,7 +2337,6 @@ int vjo_worker_stop(void)
         sceKernelDeleteEventFlag(net_evf);
     if (cmd_lock >= 0)
         sceKernelDeleteMutex(cmd_lock);
-    vjo_capture_fini();
     if (view_lock >= 0)
         sceKernelDeleteMutex(view_lock);
     if (net_cancel.lock >= 0)

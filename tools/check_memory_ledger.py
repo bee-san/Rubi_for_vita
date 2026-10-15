@@ -57,7 +57,9 @@ POOLS = (
     ("shell paf", "VJO_WORST_SHELL_PAF_PERMANENT", "VJO_WORST_SHELL_PAF", "VJO_LIMIT_SHELL_PAF", ()),
     ("kernel", "VJO_WORST_KERNEL_PERMANENT", "VJO_WORST_KERNEL", "VJO_LIMIT_KERNEL", ()),
     ("game", "VJO_WORST_GAME_PERMANENT", "VJO_WORST_GAME_JOB", "VJO_LIMIT_GAME_JOB",
-     (("VJO_BUDGET_GAME_WEIGHTS", "VJO_LIMIT_GAME_WEIGHTS"), ("VJO_BUDGET_GAME_WORKSPACE", "VJO_LIMIT_GAME_WORKSPACE"))),
+     (("VJO_BUDGET_GAME_WEIGHTS", "VJO_LIMIT_GAME_WEIGHTS"), ("VJO_BUDGET_GAME_WORKSPACE", "VJO_LIMIT_GAME_WORKSPACE"),
+      # a Lens job holds its strip and block only, never with a local engine's (not in the sum)
+      ("VJO_WORST_GAME_LENS_JOB", "VJO_LIMIT_GAME_JOB"))),
 )
 # Opt-in configurations whose worst case is checked against the same limit but
 # whose overshoot the runtime reserve guard turns into a survivable refusal
@@ -74,8 +76,10 @@ ITEMS = {
     # VJO_BUDGET_KERNEL_OCR_STRIP is never held with the capture (kernel/buffers.c): not in the sum
     "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE",
                "VJO_BUDGET_KERNEL_OCR_STRIP"),
+    # VJO_BUDGET_GAME_LENS is never held with the local engine's blocks (game_ocr/main.c run_lens): not in the sum
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
-             "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE"),
+             "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE",
+             "VJO_BUDGET_GAME_LENS"),
 }
 # Packaged module -> the macro its pages must not exceed.
 MODULE_BUDGETS = {

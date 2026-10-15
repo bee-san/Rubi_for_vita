@@ -19,7 +19,7 @@ static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled 
 static uint8_t storage[2 * 1024 * 1024];
 /* Separate simulated game process workspace. Shell allocator must never own it. */
 static uint8_t vocr_storage[2 * 1024 * 1024] __attribute__((aligned(64)));
-static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs, jpeg_captures;
+static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs, lens_jobs; /* lens_jobs: requests for Google Lens (API 21) */
 static int fail_vocr_user, fail_vocr_paf;
 static int phases_checked, vocr_live, fail_join;
 static unsigned char raw_region[200 * 60 * 4];
@@ -228,19 +228,6 @@ void vjo_net_cancel_clear(VjoNetCancel *c) { c->cancelled = 0; }
 int vjo_capture_init(void) { return 0; }
 void vjo_capture_fini(void) {}
 /* The capture lock: a local OCR job holds it from submission to result. */
-static int capture_held_now, capture_holds;
-void vjo_capture_hold(void) { TEST_CHECK(!capture_held_now); capture_held_now = 1; capture_holds++; }
-void vjo_capture_release(void) { TEST_CHECK(capture_held_now); capture_held_now = 0; }
-/* capture.c's contract: a failed capture leaves the kernel's error in
- * s->capture_result; VJO_ERR_NO_MEMORY means its buffer was refused. */
-static int capture_kernel_oom, jpeg_encoder_oom;
-int vjo_capture_jpeg(VjoArena *a, uint32_t f, int q, VjoBuf *b, VjoState *s)
-{
-    jpeg_captures++;
-    if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
-    if (jpeg_encoder_oom) { s->capture_result = 0; return VJO_E_OOM; }
-    return VJO_E_SOURCE;
-}
 int vjo_title_id(SceUID pid, char *out, int cap) { return -1; }
 int vjo_title_game_mode(const char *id) { return VJO_GAME; }
 int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
@@ -264,12 +251,21 @@ static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED 
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
+/* A Lens job's outcome (fake_lens_text NULL: VJO_E_SOURCE), its LENS step's HTTP status and
+ * TLS error, and network lines after the worker's own. */
+static const char *fake_lens_text, *fake_lens_log;
+static int fake_lens_rc;
+static unsigned fake_lens_http, fake_lens_tls;
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     TEST_CHECK(!open_batch); /* no log batch is held across the game's exchange */
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
-    TEST_CHECK(capture_held_now); /* the game captures with the Shell's capture lock held */
+    if (!strcmp(r->model, VJO_GAME_OCR_LENS)) {
+        lens_jobs++;
+        /* a Lens job asks for no model, fallback or local-engine policy */
+        TEST_CHECK(!r->fallback[0] && !r->flags && r->model_dir[0]);
+    }
     if (submits < 8) selftest_flags_seen[submits] = r->flags;
     submits++;
     fake_game_request.seq = 12;
@@ -293,6 +289,39 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         if (republish_reads++ == 0) state.region_seq = 0;
         else { captured_while_void = job_captured; state.capture_scene = state.scene = state.region_scene = 3; state.region_seq = 5; }
         return 1;
+    }
+    if (!strcmp(fake_game_request.model, VJO_GAME_OCR_LENS)) {
+        /* The worker's Lens job (game_ocr/main.c run_lens): the text, or the error with the
+         * request's HTTP status and TLS error in its LENS step; its network lines after the
+         * text's NUL. A test that sets no outcome gets VJO_E_SOURCE, the answer of the Shell's
+         * capture stub before API 21 (the region could not be read). */
+        VjoGameOcrStep *ls = &fake_game_result.step[fake_game_result.n_steps++];
+        size_t n;
+        memset(ls, 0, sizeof(*ls));
+        ls->id = VJO_GSTEP_LENS;
+        ls->kind = 1;
+        ls->bytes = 10070;
+        ls->sum = (uint32_t)fake_lens_http << 16 | (uint32_t)fake_lens_tls;
+        ls->us = 278000;
+        fake_game_result.workspace_bytes = 516096;
+        fake_game_result.capture_bytes = 61440;
+        fake_game_result.capture_memory = VJO_GAME_OCR_MEM_USER;
+        fake_game_result.source = VJO_GAME_OCR_SRC_HOOK;
+        fake_game_result.strip_rows = 64;
+        fake_game_result.captures = 4;
+        fake_game_result.rc = fake_lens_text ? fake_lens_rc : VJO_E_SOURCE;
+        ls->rc = fake_game_result.rc;
+        if (fake_game_result.rc == VJO_E_OOM) {
+            fake_game_result.free_user = fake_free_user;
+            fake_game_result.need_workspace = 577536;
+            fake_game_result.reserve_bytes = fake_reserve;
+        }
+        n = fake_game_result.rc == VJO_OK ? (size_t)snprintf(fake_game_result.text, sizeof(fake_game_result.text),
+                                                             "%s", fake_lens_text) : 0;
+        snprintf(fake_game_result.text + n + 1, sizeof(fake_game_result.text) - n - 1,
+                 "Lens image=917x125 jpeg=10070 protobuf=10159\n%s", fake_lens_log ? fake_lens_log : "");
+        *out = fake_game_result;
+        return 0;
     }
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
@@ -421,7 +450,7 @@ static void reset(void)
     fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
     game_enabled = 1;
     running = 1; threads_started = 0;
-    vocr_allocs = vocr_frees = vocr_paf_allocs = jpeg_captures = 0;
+    vocr_allocs = vocr_frees = vocr_paf_allocs = lens_jobs = 0;
     fail_vocr_user = fail_vocr_paf = 0;
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
@@ -439,7 +468,9 @@ static void reset(void)
     vocr_unusable[0] = 0; vocr_unusable_generation = 0; vocr_fallback_requested = 0;
     vocr_retry_with_fallback = 0;
     log_count = 0;
-    capture_kernel_oom = jpeg_encoder_oom = 0;
+    fake_lens_text = fake_lens_log = NULL;
+    fake_lens_rc = VJO_OK;
+    fake_lens_http = fake_lens_tls = 0;
     fake_screen_changes = 0;
 #endif
     selftest_waits = 0;
@@ -462,7 +493,7 @@ static void reset(void)
     ov = OV_CLOSED;
     active = -1;
     game_generation = job_generation = 0;
-    cache_ok = subtitles = stable_pending = warm_running = job_running = job_cancelled = 0;
+    cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
@@ -745,7 +776,7 @@ static void test_vocr_never_uses_lens(void)
     reset();
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     int rc = run_vocr_job();
-    TEST_CHECK(jpeg_captures == 0);
+    TEST_CHECK(lens_jobs == 0);
 #ifdef VJO_WITH_VOCR
     /* An empty region: no line, no model read, the workspace is released. */
     TEST_CHECK(rc == VJO_OK && cache_data[0].failed_stage == VJO_STAGE_NONE);
@@ -781,7 +812,7 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         TEST_CHECK(local_pipeline(&cfg) && background_wanted());
         TEST_CHECK_(logged(warning[i]) != NULL, "%s", warning[i]);
         int rc = run_vocr_job();
-        TEST_CHECK(!jpeg_captures);
+        TEST_CHECK(!lens_jobs);
 #ifdef VJO_WITH_VOCR
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
         TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
@@ -791,8 +822,6 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
         TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
 #endif
-        warm_connections();
-        TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
         mem_free();
     }
 }
@@ -864,19 +893,69 @@ static void test_vocr_config(void)
     TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
 }
 
-static void test_vocr_warms_no_lens_connection(void)
+/* The whole status line the user sees for an OCR-stage error. */
+static const char *ocr_error_text(void)
+{
+    static char memory[512]; VjoArena arena;
+    vjo_arena_init(&arena, memory, sizeof(memory));
+    return vjo_err_text(&arena, cache_data[0].failed_stage, &cache_data[0].err);
+}
+
+/* API 21 (docs/shell-slim.md): Google Lens is a job of the game worker. The Shell
+ * captures nothing, encodes nothing and opens no connection (its platform has
+ * no connect here: any request of its own would crash); it asks the worker for
+ * a Lens job, takes its text through the network pipeline and logs the route:
+ * the job line, the capture, the steps and the worker's network lines. */
+static void test_lens_runs_in_the_game(void)
 {
     reset();
-    TEST_ASSERT(mem_alloc() == 0);
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    state.unsettled_ms = 100;
-    warm_connections();
-    TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
-    cfg.ocr_backend = VJO_OCR_LENS;
-    warm_connections();
-    TEST_CHECK((posted & NET_EV_WARM) && warm_running);
-    warm_running = 0;
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && !local_pipeline(&cfg) && !plat.connect);
+    fake_lens_text = "猫が\nいる";
+    fake_lens_log = "lensfrontend-pa.googleapis.com:443 /v1/crupload -> rc=0 status=200 tls=0 body=2321 "
+                    "(connect 31 ms, tls 182 ms, request 240 ms)\n";
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(lens_jobs == 1 && !strcmp(fake_game_request.model, VJO_GAME_OCR_LENS));
+    TEST_CHECK(!strcmp(fake_game_request.model_dir, cfg.ocr_model_dir));
+    /* the network pipeline as before: the filtered sentence in the job's arena, the capture published */
+    TEST_CHECK(cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫が\nいる"));
+    TEST_CHECK(cache_data[0].ocr_text && cache_data[0].ocr_text != fake_game_result.text);
+    TEST_CHECK(job_captured && !mem_local && results[0].size == RESULT_ARENA_SIZE);
+    TEST_CHECK(logged("game lens rc=0: ") != NULL && logged("jpeg 10070 B, 1 tries (0 rows changed), request 278 ms (http 0, tls 0)") != NULL);
+    TEST_CHECK(logged("game lens capture: hook into USER, 61440 B block, 64-row strips, 4 strips") != NULL);
+    char lens_step_line[48];
+    snprintf(lens_step_line, sizeof(lens_step_line), "gstep lens %u rc=0x00000000", (unsigned)VJO_GSTEP_LENS);
+    TEST_CHECK(logged(lens_step_line) != NULL); /* the LENS step (this file's vjo_gstep_format) */
+    TEST_CHECK(logged("game lens: Lens image=917x125 jpeg=10070 protobuf=10159") != NULL);
+    TEST_CHECK(logged("game lens: lensfrontend-pa.googleapis.com:443 /v1/crupload -> rc=0 status=200") != NULL);
+    /* the recognized text is not logged (as the Shell's Lens path, docs/lens-performance.md) */
+    TEST_CHECK(logged("猫") == NULL);
     mem_free();
+    /* the request's errors keep their messages: the HTTP status and the TLS error ride in the LENS step */
+    const struct { int rc; unsigned http, tls; const char *must; } errors[] = {
+        {VJO_E_NET, 0, 0, "Text recognition failed: no network connection"},
+        {VJO_E_TLS, 0, 62, "secure connection error (TLS 62). Check the date/time."},
+        {VJO_E_STATUS, 503, 0, "Text recognition failed: HTTP 503"},
+        {VJO_E_PARSE, 200, 0, "Text recognition failed: unexpected response"},
+        {VJO_E_SOURCE, 0, 0, "The game's screen could not be read"},
+    };
+    for (unsigned i = 0; i < sizeof(errors) / sizeof(errors[0]); i++) {
+        reset();
+        fake_lens_text = "";
+        fake_lens_rc = errors[i].rc;
+        fake_lens_http = errors[i].http;
+        fake_lens_tls = errors[i].tls;
+        fake_lens_log = "net: resolve lensfrontend-pa.googleapis.com failed 0x804101E2\n";
+        log_count = 0;
+        TEST_CHECK(run_vocr_job() == errors[i].rc);
+        TEST_CASE_("error %d", errors[i].rc);
+        TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_OCR);
+        TEST_CHECK(cache_data[0].err.http_status == (int)errors[i].http && cache_data[0].err.tls_error == (int)errors[i].tls);
+        TEST_CHECK_(strstr(ocr_error_text(), errors[i].must) != NULL, "%s", ocr_error_text());
+        /* a failed job's network lines are logged too */
+        TEST_CHECK(logged("game lens: net: resolve lensfrontend-pa.googleapis.com failed 0x804101E2") != NULL);
+        mem_free();
+    }
 }
 
 static void test_vocr_model_change_invalidates_cache(void)
@@ -1273,13 +1352,6 @@ static void test_vocr_request_carries_the_job_policy(void)
     }
 }
 
-/* The whole status line the user sees for an OCR-stage error. */
-static const char *ocr_error_text(void)
-{
-    static char memory[512]; VjoArena arena;
-    vjo_arena_init(&arena, memory, sizeof(memory));
-    return vjo_err_text(&arena, cache_data[0].failed_stage, &cache_data[0].err);
-}
 static void check_oom_message(const char *advice, const char *must, const char *must_not)
 {
     const char *text = ocr_error_text();
@@ -1331,27 +1403,33 @@ static void test_vocr_oom_advice_names_the_stage(void)
      * (API 19): the game reads its own screen, so the job still runs. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    capture_kernel_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 1 && !lens_jobs);
     mem_free();
-    /* Lens shares the kernel capture; its own JPEG encoding uses Shell memory. */
-    reset();
-    cfg.ocr_backend = VJO_OCR_LENS;
-    capture_kernel_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM && jpeg_captures == 1);
-    check_oom_message(OOM_KERNEL_CAPTURE, "screen capture", "FL10");
-    mem_free();
-    reset();
-    cfg.ocr_backend = VJO_OCR_LENS;
-    jpeg_encoder_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    check_oom_message(OOM_SCREENSHOT, "screenshot did not fit", "FL10");
-    mem_free();
+    /* API 21: a Lens job's memory is the game's too (its strip and block), never the
+     * Shell's or the kernel's: the advice comes from the worker's memory check. */
+    const struct { int32_t free_user; uint32_t reserve; const char *advice, *must; } lens_cases[] = {
+        {4000000, 4194304, OOM_GAME_NONE, "any OCR right now"},          /* below the reserve */
+        {4500000, 4194304, OOM_GAME_REGION, "tighter dialogue region"},  /* the region's strip and block */
+        {9000000, 4194304, OOM_GAME_ALLOCATION, "although the memory check passed"},
+        {(int32_t)0x80020001u, 4194304, OOM_GAME_UNKNOWN, "could not be checked"},
+        {9000000, 0, NULL, "not enough memory"},                         /* not the check's */
+    };
+    for (unsigned i = 0; i < sizeof(lens_cases) / sizeof(lens_cases[0]); i++) {
+        reset();
+        fake_lens_text = "";
+        fake_lens_rc = VJO_E_OOM;
+        fake_free_user = lens_cases[i].free_user;
+        fake_reserve = lens_cases[i].reserve;
+        TEST_CHECK(run_vocr_job() == VJO_E_OOM && lens_jobs == 1);
+        TEST_CASE_("lens memory check %u", i);
+        check_oom_message(lens_cases[i].advice, lens_cases[i].must, "FL10");
+        mem_free();
+    }
     /* A network dictionary's result memory in the Shell, before any capture. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR; cfg.dictionary = VJO_DICT_JPDB;
     job_cfg = cfg; job_cancelled = 0; job_captured = 0; fail_alloc = 1;
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !jpeg_captures);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !lens_jobs);
     check_oom_message(OOM_SHELL_RESULTS, "Restart the Vita", "FL10");
     fail_alloc = 0;
     mem_free();
@@ -1630,7 +1708,7 @@ static void cursor_saved_text(void)
     finish_current_job();
     TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥"));
     TEST_CHECK(!has_result_memory() && !cursor_opens && !user_allocs && !heap_allocs);
-    TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && !jpeg_captures);
+    TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && !lens_jobs);
 }
 static void check_current_definition(const char *meaning, uint32_t cursor)
 {
@@ -1901,7 +1979,7 @@ static void test_character_coalesces_and_drops_inflight_definition(void)
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 6);
     TEST_CHECK(g_view.cursor_byte == 6 && !g_view.list->n_entries);
     finish_current_job(); check_current_definition("bird", 6);
-    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1 && !lens_jobs);
 }
 static void test_character_close_reopen_and_retirement(void)
 {
@@ -2123,7 +2201,7 @@ static void test_dictionary_pages_read_one_entry_each(void)
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     check_page("extra cat", 0, 1, 3);
     /* Paging never reallocates, recaptures, or needs lookup scratch. */
-    TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1 && !lens_jobs);
     TEST_CHECK(results[0].peak <= first_peak && results[0].size == 64 * 1024 && !results[1].size);
     TEST_CHECK(local_text_generation == generation);
 
@@ -2172,7 +2250,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     close_overlay(); loaded.local_dictionary_results = 2;
     open_overlay(); finish_current_job();
     check_page("main. cat", 0, 0, 2);
-    TEST_CHECK(vocr_allocs == 1 && !jpeg_captures && local_text_generation == generation);
+    TEST_CHECK(vocr_allocs == 1 && !lens_jobs && local_text_generation == generation);
     /* An unchanged count keeps the cached page. */
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     close_overlay(); open_overlay();
@@ -2198,7 +2276,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     TEST_CHECK(!job_running && !cache_ok);
     open_overlay(); TEST_ASSERT(job_running && job_cursor_only);
     finish_current_job(); check_page("main. cat", 0, 0, 2);
-    TEST_CHECK(vocr_allocs == 3 && !jpeg_captures);
+    TEST_CHECK(vocr_allocs == 3 && !lens_jobs);
     close_overlay(); mem_free();
 }
 
@@ -2365,20 +2443,16 @@ static void test_local_lookup_single_arena_and_network_double_buffers(void)
     mem_free();
 }
 
-static void test_local_switch_drains_warm_pool(void)
+static void test_local_switch_frees_network_memory(void)
 {
     reset();
-    TEST_ASSERT(mem_alloc() == 0 && pool.n > 0);
-    uint8_t *base = results[0].base;
-    warm_running = 1;
+    TEST_ASSERT(mem_alloc() == 0 && pool.n == POOL_SLOTS);
     cfg.ocr_backend = VJO_OCR_VOCR;
     active = 0; /* old network result must not select local result1 */
-    start_job("switch from warm Lens to local OCR", 0);
+    start_job("switch from Lens to local OCR", 0);
     TEST_CHECK(job_idx == 0);
-    /* The control thread must not free a pool still used by the worker. */
-    TEST_CHECK(has_result_memory() && results[0].base == base && pool.n > 0);
-    TEST_CHECK(job_cached_text == NULL);
-    warm_running = 0;
+    /* no warm-up holds the pool any more (API 21): the network memory goes before the job */
+    TEST_CHECK(!has_result_memory() && pool.n == 0 && job_cached_text == NULL);
     phases_checked = 1;
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     TEST_CHECK(!has_result_memory() && pool.n == 0 && !results[0].size && !results[1].size);
@@ -2386,8 +2460,8 @@ static void test_local_switch_drains_warm_pool(void)
     job_running = 0;
     cfg.ocr_backend = VJO_OCR_LENS;
     start_job("switch from local OCR to Lens", 0);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_SOURCE);
-    TEST_CHECK(!mem_local && pool.n > 0 && results[0].size == RESULT_ARENA_SIZE);
+    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_SOURCE && lens_jobs == 1);
+    TEST_CHECK(!mem_local && pool.n == POOL_SLOTS && results[0].size == RESULT_ARENA_SIZE);
     job_running = 0;
     mem_free();
 }
@@ -2475,7 +2549,7 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 8192 &&
-               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 580080);
+               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 8192 + 548096);
 #else
     TEST_CHECK(mem_alloc() == 0);
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == ((VJO_BUDGET_PAF_RESULTS_NET + 0xFFF) & ~0xFFFu));
@@ -2524,11 +2598,10 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     reset();
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
-    selftest_begins = selftest_ends = submits = 0; capture_holds = 0;
+    selftest_begins = selftest_ends = submits = 0;
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
-    TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
     /* The stage's own flags, and the job policy every stage carries (API 20):
      * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
      * ms); blank lines are kept by default. */
@@ -3135,7 +3208,7 @@ TEST_LIST = {
     {"Shell_result_OOM_preserves_maximum_filtered_worker_text", test_shell_result_oom_keeps_max_worker_text},
     {"local_lookup_uses_one_arena_and_network_keeps_two", test_local_lookup_single_arena_and_network_double_buffers},
     {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
-    {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
+    {"local_switch_frees_network_memory", test_local_switch_frees_network_memory},
 #endif
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
 #ifdef VJO_WITH_VOCR
@@ -3146,7 +3219,7 @@ TEST_LIST = {
     {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},
     {"engine_cache_tracks_backend_local_models_and_storage", test_engine_cache_tracks_backend_models_and_storage},
     {"vocr_config_parses_and_validates", test_vocr_config},
-    {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
+    {"lens_runs_in_the_game", test_lens_runs_in_the_game},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},

@@ -75,7 +75,10 @@
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
 #define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
-#define VJO_BUDGET_PAF_RESULTS_NET 571888u         /* 2 x 262,144 arenas + 47,600 connection pool (worker.c MEM_SIZE) */
+/* 2 x 262,144 arenas + the connection pool (worker.c MEM_SIZE): one slot since API 21, a network
+ * dictionary's (Lens's requests are the game worker's), 23,808 B on the host (asserted in
+ * test_shell_worker.c; 23,312 B in the Vita build); two slots (47,600 B) before. */
+#define VJO_BUDGET_PAF_RESULTS_NET 548096u
 /* An Anki job (anki.c ANKI_TEXT_MEM): a text-only card. The Picture field is off in the
  * build (VJO_ANKI_SCREENSHOT 0): its screenshot would be the kernel's 2,088,960 B full-frame
  * capture (VJO_BUDGET_KERNEL_CAPTURE), which #74's console refused, and 393,216 B here (a
@@ -120,7 +123,11 @@
 
 /* ---- the game's partition (ScePhyMemPartGame, 256 MiB minus the game's own use; pool "game") ---- */
 #define VJO_BUDGET_GAME_MODULE_PAGES VJO_BUDGET_WORKER_MODULE_PAGES
-#define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
+/* VjoGameVocr. Its deepest chains: the line finder's 6,512 B; since API 21 a Google Lens
+ * job's (docs/shell-slim.md) 6,988 B, BearSSL's handshake through its deepest indirect
+ * target (an RSA signature check) included [measured: arm-vita-eabi-gcc -fstack-usage
+ * -fcallgraph-info=su of the worker's sources]. */
+#define VJO_STACK_GAME 32768u
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_WEIGHTS 1560576u           /* F20, the largest accepted model, page-rounded (core/vocr_ocr.c) */
 /* The largest job's workspace at a 960x544 region, page-rounded (host/tests/test_ledger.c
@@ -154,6 +161,17 @@
  * include/vjo_vocr_sizes.h), resident like the weights, USER_RW only, page-rounded;
  * taken only when the memory check passes with it. */
 #define VJO_BUDGET_GAME_CASCADE 1560576u
+/* API 21: a Google Lens job's block (docs/shell-slim.md), USER_RW only, per job: the
+ * JPEG encoder's state and 16-row RGBA band, the rows' checksums, the JPEG's room
+ * (three quarters of a byte per pixel), the request and reply (TLS state and buffer,
+ * the 256 KiB reply and its parse: 320 KiB) and libnet's 32 KiB pool, at 960x544:
+ * 8,192 + 61,440 + 2,176 + 391,680 + 327,680 + 32,768 = 823,936 B, page-rounded
+ * (core/lens_job.h vjo_lens_job_bytes; game_ocr/net_game.h). With its strip
+ * (VJO_BUDGET_GAME_CAPTURE) it is a Lens job's whole memory: a Lens job first gives
+ * back the local engine's weights, LM and cascade model (useless to it), and one job
+ * runs at a time, so it is never held with them and is not in the sum below. */
+#define VJO_BUDGET_GAME_LENS 827392u
+#define VJO_WORST_GAME_LENS_JOB (VJO_BUDGET_GAME_CAPTURE + VJO_BUDGET_GAME_LENS)
 #define VJO_GAME_RESERVE (4u * 1024u * 1024u)      /* kept free in the game before either block (game_ocr/main.c) */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \

@@ -22,6 +22,12 @@
 /* The kernel's one staging buffer, and the most one model Read copies: the
  * game reads and hashes the weights in pieces of this size. */
 #define VJO_GAME_OCR_MODEL_CHUNK 32768u
+/* API 21: VjoGameOcrRequest.model of a Google Lens job (docs/shell-slim.md):
+ * the worker posts the region as a JPEG from the game's network instead of
+ * recognizing it; no model file is opened (the kernel opens only pinned names).
+ * Its result's text is Lens's, and after its NUL, also on failure, the job's
+ * network lines (each ended by a newline) for the Shell's log. */
+#define VJO_GAME_OCR_LENS "lens"
 
 /* VjoGameOcrRequest.flags (the Shell sets them; normal jobs use 0). */
 #define VJO_GAME_OCR_F_FULL 0x1u           /* the whole frame, whatever the region */
@@ -148,6 +154,14 @@ enum {
                             lines they became, rc 0 or the first refusal (VOCR_LINES_E_*: that box kept as found),
                             bytes = boxes refined << 16 | boxes not split for the 16-line cap << 8 | boxes split,
                             sum the rows read, us the time */
+    VJO_GSTEP_NET,       /* API 21, a Lens job's network (game_ocr/net_game.h): kind how SCE_SYSMODULE_NET was found,
+                            arg how libnet was (VJO_GNET_*: 1 the game's, 2 the worker's, 3 failed), rc the failed
+                            one's native error (else sceNetInit's: 0, or 0x80410110 EBUSY for the game's), bytes the
+                            pool, sum sceNetTerm's rc (the worker's libnet only), us the time to ready it */
+    VJO_GSTEP_LENS,      /* API 21, a Lens job's request: kind the tries (encoding passes), arg the rows the last
+                            comparison found changed, rc the job's (VJO_E_*), bytes the JPEG sent, sum = the HTTP
+                            status << 16 | the TLS error (BearSSL, 16 bits), us the request (DNS, connect, TLS,
+                            upload, reply) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -165,7 +179,8 @@ enum {
 #define VJO_GITEM_LINE 5u      /* "VjoGameVocrLine": a line taller than a strip, read whole */
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
-#define VJO_GITEM_COUNT 8u
+#define VJO_GITEM_LENS 8u      /* "VjoGameLens": a Lens job's JPEG, TLS, reply and libnet pool (API 21) */
+#define VJO_GITEM_COUNT 9u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */

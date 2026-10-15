@@ -62,18 +62,20 @@ class MemoryLedgerCheck(unittest.TestCase):
         self.assertEqual(as_json["warnings"], [])
         self.assertNotIn("WARNING", result.stderr)
         net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (network dictionary)")
-        self.assertEqual(net["worst"], 8192 + 571888 + 131072 + 20480)
+        # one connection slot since API 21 (Lens posts from the game worker)
+        self.assertEqual(net["worst"], 8192 + 548096 + 131072 + 20480)
 
     def test_a_soft_overshoot_is_a_warning_with_the_bytes(self):
-        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) put the network configuration over
+        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) put the two-slot network configuration
+        # over by 8,688 B; with one slot (API 21) a 416 KiB arena does: 8,192 + 548,096 + 425,984 + 20,480
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"
-        budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u",
+        budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 425984u",
                                  budget.read_text()))
         result = run("--root", str(tmp))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("WARNING: shell paf (network dictionary): worst case 993,776 B exceeds the limit 985,088 B "
-                      "by 8,688 B", result.stderr)
+        self.assertIn("WARNING: shell paf (network dictionary): worst case 1,002,752 B exceeds the limit 985,088 B "
+                      "by 17,664 B", result.stderr)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()

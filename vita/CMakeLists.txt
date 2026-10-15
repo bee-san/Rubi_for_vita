@@ -88,12 +88,14 @@ target_compile_definitions(vjo_bearssl PRIVATE BR_USE_URANDOM=0 BR_USE_GETENTROP
   BR_USE_WIN32_RAND=0 BR_USE_WIN32_TIME=0 BR_RDRAND=0)
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
+# Google Lens, its protobuf and the JPEG encoder are the game worker's since API 21
+# (docs/shell-slim.md): not in this list.
 add_library(vjo_core_vita STATIC
-  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
-  ${ROOT}/core/lens.c ${ROOT}/core/json.c
+  ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
+  ${ROOT}/core/json.c
   ${ROOT}/core/jpdb.c ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c ${ROOT}/core/jiten.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
-  ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
+  ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c)
@@ -134,7 +136,6 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/strip.cpp
   ${ROOT}/shell/strip_view.c
   ${ROOT}/shell/worker.c
-  ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
   ${ROOT}/shell/anki.c
@@ -168,7 +169,7 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/s
 # inlined copies of it shrink).
 set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
   ${ROOT}/shell/files.c ${ROOT}/shell/game.c ${ROOT}/shell/worker.c
-  ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
+  ${ROOT}/shell/strip_view.c ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
@@ -227,17 +228,26 @@ add_custom_target(vjo_syscall_abi ALL
 
 # ---------------- game-process vocr worker ----------------
 if(VJO_WITH_VOCR)
+  # API 21: Google Lens is the worker's (docs/shell-slim.md): the region's JPEG, BearSSL's TLS
+  # and the HTTP client, over the game's own libnet (game_ocr/net_game.c).
   add_executable(VitaJPOverlay_OCR
-    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c)
+    ${ROOT}/game_ocr/main.c ${ROOT}/game_ocr/net_game.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c
+    ${ROOT}/core/lens_job.c ${ROOT}/core/lens_client.c ${ROOT}/core/lens.c ${ROOT}/core/pb.c ${ROOT}/core/jpegsw.c
+    ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/tls.c ${ROOT}/core/tls_roots.c ${ROOT}/core/arena.c
+    ${ROOT}/core/utf.c ${ROOT}/shell/libc_shim.c)
+  target_include_directories(VitaJPOverlay_OCR PRIVATE ${ROOT}/third_party/bearssl/inc)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
+  # Weak: libnet is bound once SCE_SYSMODULE_NET is loaded (by the game or the worker, at the first
+  # Lens job); every call is checked first (include/vjo_import.h). SceRtcUser is SceDriverUser's.
   target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
     SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak
-    SceIofilemgr_stub SceAppMgr_stub_weak SceDisplay_stub_weak gcc)
+    SceIofilemgr_stub SceAppMgr_stub_weak SceDisplay_stub_weak SceSysmodule_stub_weak SceNet_stub_weak
+    SceRtc_stub_weak vjo_bearssl gcc)
   set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
   set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
   vita_create_self(VitaJPOverlay_OCR.suprx VitaJPOverlay_OCR UNSAFE CONFIG ${ROOT}/game_ocr/exports.yml)
