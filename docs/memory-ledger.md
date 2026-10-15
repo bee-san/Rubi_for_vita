@@ -208,9 +208,9 @@ a pointer to a constant string in the view model. The config warnings are compar
 load's in the two `VjoConfig` copies `apply_config` already has. SceShell no longer writes a default
 `config.ini` when there is none (the installer, the package and the Overlay app do), so the 4,338 B
 commented template is not linked into the Shell any more, which pays for the check: the build log's
-module row goes from 216,448 to 213,176 B of text and from 77,624 to 77,640 B of data and `.bss`
-(+16 B of state); the module stays at 294,912 B, with 3,912 B left in its last code page instead of 640 B
-[measured: the Vita builds of main `8f1ec8f` and of this change].
+module row goes from 216,856 to 213,480 B of text and from 77,648 to 77,664 B of data and `.bss`
+(+16 B of state); the module stays at 294,912 B, with 3,608 B left in its last code page instead of 232 B
+[measured: the Vita builds of main `ba5f69a` and of this change].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
