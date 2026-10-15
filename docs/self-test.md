@@ -106,7 +106,7 @@ step done t=155499
 | `mem` | `sceKernelGetFreeMemorySize` in SceShell | SceShell's budget as the user API reports it: each figure is the free size minus a system margin [SDK: Kernel-Reference], so a negative one (#74: `-2097152` after boot) is under the margin, 0 B free above it, not an error (`valid=0`); `paf_free` is the PAF heap's `GetFreeSize()` |
 | `ledger` | the Shell ledger ([memory-ledger.md](memory-ledger.md)) | current/peak bytes we hold in SceShell's partition and in its PAF heap |
 | `kmem` | `vjoMemInfo` (`kernel/meminfo.c`), one line per route | `route=block`: FindMemBlockByAddr (size 0) → MemBlockGetInfoEx → PhyMemPartInfoCore for the kernel's own block (`part=kernel`, ScePhyMemPartKD when the total is 36 MiB) and the caller's (`part=shell`); `step` names where a route stopped (0 read; 1 find; 2 block or address-space info; 3 a pointer outside the kernel range, below 0x40000000; 4 in no kernel memory block; 5 InfoCore). `route=cas`: the caller's address-space block at +328/+332/+316 (main/CDRAM/phycont), as PSVshell and PSVshellPlus read it. `route=as`: the kernel process's address-space partitions (SceSysmemForKernel_C3EF4055), as faps-coredump reads them, or the caller's (`part=shell`) when the kernel's is refused; `skipped`: partitions not read, `step` the reason. Every route reports its own rc |
-| `kernel` | `vjoMemInfo` | the kernel ledger and the capture block held (Lens/Anki only; OCR holds none) |
+| `kernel` | `vjoMemInfo` | the kernel ledger and the capture block held (Lens only; OCR and Anki hold none) |
 | `stage` | the Shell | `begin` with the model and flags; `end` with the rc, time, region, frame (size/pitch/format), model, fallback, lines; `wait` (first stage only) when that screen had no line in your region (rc 0) or changed under every read (rc -120): its time, rc and `screens=k/30`; the stages run on a later settled screen |
 | `gstep` | the game worker's step log | each step of the job, at most 20: `mem`, `check`, `alloc`/`free` (memory type, block, native rc, bytes; the `free` of every block the job can still free keeps a slot), `pass` (the job's first capture pass, or a failed one), `sig`, `find`, `load`, `recognize`, `fb`, `probe` (API 19 also logged `fallback`; since API 20 the fallback's `check`, `arg=1`, says it runs, with `sum=1` when the self-test forced it), and since API 20 `settle` (the stable-text wait), `blank` (a skipped line, [vita-vn-ocr.md](vita-vn-ocr.md#stable-text-and-blank-lines-api-20)), `norm` (the text normalised, [vita-vn-ocr.md](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)), `lm` (the beam + LM decoder: its tier as `kind`, lines changed and doubtful, [vita-vn-ocr.md](vita-vn-ocr.md#beam--lm-decoding-api-20)), `cascade` (the doubtful lines read again, W20's frames, [vita-vn-ocr.md](vita-vn-ocr.md#confidence-cascade-api-20)) and `refine` (the finder's boxes refined, its mode as `kind`, [vita-vn-ocr.md](vita-vn-ocr.md#finder-refinement-api-20)); `check`'s `kind` is the LM tier it chose, plus 8 with the cascade; and since API 22 `par` (parallel lines and the line cache), `clock` (`ocr_boost_clock`) and `pace` (the game's frame pacing, added by the kernel; [ocr-speed.md](ocr-speed.md#what-the-log-shows-api-22)), each with the game's free main/CDRAM/phycont after it (`pace` uses those three fields for the frames before the job) |
 | `line` | the game worker | each recognized line: size, CTC frames, time |
@@ -239,9 +239,12 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
   marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
   `kernel.prev.txt`, `config.ini` with every `*api_key` and `anki_audio_url` value (an audio source
-  URL can carry a key) replaced by its length before anything is written (also a commented-out
-  one, a word that starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without
-  `=`; the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
+  URL can carry a key; the setting was removed with AnkiConnect, but an older `config.ini` can still
+  hold it) replaced by its length before anything is written (also a commented-out one, a word that
+  starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;
+  the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
+  the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
+  `anki/`, the Overlay app's `.apkg` packages;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
@@ -259,7 +262,7 @@ removed engine's model, is listed as not in this package), the configuration, wh
 each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the dictionary jobs, the overlay's
-slowest frame, Anki saves and sends, the lines that report a problem, the Anki queue, crash dumps, the
+slowest frame, Anki saves and exports, the lines that report a problem, the Anki queue, crash dumps, the
 model tier from each free-memory sample, the full self-test analysis when a report is there, and what
 it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.
 

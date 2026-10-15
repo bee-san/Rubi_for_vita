@@ -76,7 +76,7 @@ static void test_budget_table_is_consistent(void)
     TEST_CHECK(VJO_WORST_SHELL_PAF <= VJO_LIMIT_SHELL_PAF);
     /* the opt-in network configuration may go over the limit only by the
      * reserve guard's refusal, never by more than one of its items; with
-     * text-only Anki cards (shell/anki.c VJO_ANKI_SCREENSHOT 0) it fits */
+     * text-only Anki cards (shell/anki.c takes no screenshot) it fits */
     TEST_CHECK(VJO_WORST_SHELL_PAF_NET < VJO_LIMIT_SHELL_PAF + VJO_BUDGET_PAF_UI);
     TEST_CHECK(VJO_WORST_SHELL_PAF_NET <= VJO_LIMIT_SHELL_PAF);
     /* the overlay's text arena holds what overlay.cpp allocates from it:

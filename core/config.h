@@ -72,10 +72,8 @@ typedef struct {
     int ocr_refine_lines;     /* 0 off, 1 on, 2 PSP games only (VJO_GAME_OCR_REFINE_*) */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
-    /* Anki (core/anki.h): one note type, Kiku, in one deck; nothing else to set. */
-    int anki_mining;          /* 0/1: × saves cards to the offline queue, △ sends it */
-    char anki_host[64];       /* see vjo_anki_endpoint */
-    char anki_audio_url[256]; /* "" = no word audio; see vjo_anki_audio_endpoint */
+    /* Anki (docs/anki.md): the Overlay app exports the queue as Lapis notes; nothing else to set. */
+    int anki_mining;          /* 0/1: enter saves the shown word to the offline queue */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
     /* Local OCR (vocr, API 22): ocr_threads, the threads that recognize a
@@ -126,28 +124,19 @@ int vjo_vocr_tier_of_model(const char *name);
  * feature, which the Overlay app's saves rewrite as they patch the file:
  * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line
  * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
- * older name, in any case, with or without '='), VJO_LINE_REPLACE with
- * *replacement ("dictionary = local\n") for dictionary = jpdb, jiten or
- * hachidori, else VJO_LINE_KEEP. */
+ * older name, in any case, with or without '=') and for the removed Anki
+ * settings (vjo_config_removed_anki_key: anki_audio_url's URL can hold a key),
+ * VJO_LINE_REPLACE with *replacement ("dictionary = local\n") for dictionary =
+ * jpdb, jiten or hachidori, else VJO_LINE_KEEP. */
 enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2 };
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement);
 
 const char *vjo_trigger_name(int trigger);
 
-/* anki_host (or the saved anki_host.txt), where △ sends the queue: "" =
- * nowhere (× still saves cards), "auto" = search the network, or
- * host[:port]. For VJO_ANKI_MANUAL, host (cap bytes) and port
- * are set. Returns -1 for an invalid value. */
-#define VJO_ANKI_PORT 8765
-enum { VJO_ANKI_OFF = 0, VJO_ANKI_AUTO = 1, VJO_ANKI_MANUAL = 2 };
-int vjo_anki_endpoint(const char *setting, char *host, size_t cap, int *port);
-
-/* anki_audio_url: a Yomitan custom audio source,
- * http(s)://host[:port][/path][?query] with {term} (and usually {reading})
- * in it. Sets host (VJO_HOST_MAX bytes), port, tls and the path template
- * (in url, from the '/' or '?' after the host; "" for none). Returns 0, or
- * -1 for an invalid or empty value. */
-#define VJO_HOST_MAX 128
-int vjo_anki_audio_endpoint(const char *url, char *host, int *port, int *tls, const char **path);
+/* A removed Anki setting (anki_host, anki_audio_url, the old field mapping):
+ * 1 when key is one, which loads without a warning on every path (a line
+ * without '=', a value too long). The installer and the Overlay app's next
+ * save (vjo_config_removed_line) remove it from config.ini. */
+int vjo_config_removed_anki_key(const char *key);
 
 #endif

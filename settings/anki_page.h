@@ -1,7 +1,8 @@
-/* The Overlay app's Anki page: card mining on/off, AnkiConnect's address
- * (typed with the system keyboard: IP[:port], or auto to search the
- * network), a connection test and "send the queued cards now". The cards
- * are Kiku notes in the Kiku deck (core/anki.h); nothing else is set up. */
+/* The Overlay app's Anki page: card mining on/off, and the export of the
+ * queued cards (or all of them) as Lapis notes in a new .apkg file under
+ * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
+ * on any computer or phone. Nothing is sent anywhere: the app uses no
+ * network. */
 #ifndef VJO_SETTINGS_ANKI_PAGE_H
 #define VJO_SETTINGS_ANKI_PAGE_H
 #include <stddef.h>
@@ -23,7 +24,7 @@ typedef struct {
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
 } VjoAnkiUi;
 
-/* The page is shown (Select or its tab): reloads the settings and counts the queue. */
+/* The page is shown (Select or its tab): reloads the settings and counts the cards. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
@@ -32,11 +33,9 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
  * 0 none; core/stick_scroll.h): it stops at the first and last row, where
  * Up/Down wrap round. */
 void vjo_anki_page_stick(int move);
-/* The keyboard is open: main.c leaves every button to it. */
-int vjo_anki_page_modal(void);
-/* A test or a send is running: cancel stops it instead of leaving the app. */
+/* An export is running: cancel stops it instead of leaving the app. */
 int vjo_anki_page_busy(void);
-/* Leaving the app: cancels and joins the running action, ends the network. */
+/* Leaving the app: cancels and joins a running export (the queue is left as it was). */
 void vjo_anki_page_quit(void);
 /* The app's lines in log.txt, "overlay app: " and the text (anki_page.c,
  * below the Shell's 1 MiB rotation): written while config.ini's log_file is

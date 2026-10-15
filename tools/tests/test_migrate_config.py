@@ -227,36 +227,38 @@ class MigrateConfig(unittest.TestCase):
         self.assertNotIn("--set vocr_tier", script)
         self.assertIn("--set log_file=on", script)
 
-    def test_anki_settings_are_kept_and_mining_stays_off_until_set(self):
-        # A config from the LAN-only release: anki_host alone used to send.
-        text, _ = self.migrate("anki_host = 192.168.1.23\nanki_audio_url = http://h/?t={term};k\n")
+    def test_ankiconnect_settings_are_removed_and_mining_is_kept(self):
+        # AnkiConnect is gone (the Overlay app exports .apkg files): its address and the word
+        # audio source go, each with a line saying why; anki_mining stays as it was.
+        text, out = self.migrate("anki_host = 192.168.1.23\nanki_audio_url = http://h/?t={term};k\n")
         self.assertIn("anki_mining = off\n", text)
-        self.assertIn("anki_host = 192.168.1.23\n", text)
-        self.assertIn("anki_audio_url = http://h/?t={term};k\n", text)
-        text, _ = self.migrate("anki_mining = on\nanki_host = auto\n")
+        self.assertNotIn("anki_host", text)
+        self.assertNotIn("anki_audio_url", text)
+        self.assertIn("config.ini: anki_host removed (AnkiConnect was removed: the Overlay app exports the cards "
+                      "as an .apkg)", out)
+        self.assertIn("config.ini: anki_audio_url removed (AnkiConnect was removed", out)
+        text, out = self.migrate("anki_mining = on\nANKI_HOST = auto\n")
         self.assertIn("anki_mining = on\n", text)
         self.assertEqual(text.count("anki_mining"), 1)
+        self.assertNotIn("anki_host", text.lower())
 
-    def test_a_credential_is_reported_only_as_set_or_empty(self):
-        # the audio source's URL, which can carry a key (audit-overlay-test3-cleanup B1); the removed online
-        # dictionaries' API keys, old or --set, are dropped, named, never their values
+    def test_a_credential_is_reported_only_by_name(self):
+        # no credential is a setting any more: the audio source's URL, which can carry a key
+        # (audit-overlay-test3-cleanup B1), went with AnkiConnect and the API keys with the online
+        # dictionaries; an old one or a --set one is dropped and named, never its value
         url = "https://audio.invalid/a?term={term}&key=url-secret-99"
-        text, report = self.migrate("jpdb_api_key = old-key-1\n", f"anki_audio_url={url}", "jiten_api_key=new-key-2")
-        self.assertIn(f"anki_audio_url = {url}\n", text)
+        text, report = self.migrate(f"jpdb_api_key = old-key-1\nanki_audio_url = {url}\n", "jiten_api_key=new-key-2")
         self.assertNotIn("api_key", text)
-        self.assertIn("config.ini: anki_audio_url = set", report)
+        self.assertNotIn("anki_audio_url", text)
+        self.assertIn("config.ini: anki_audio_url removed (AnkiConnect was removed", report)
         self.assertIn("config.ini: jpdb_api_key removed", report)
         self.assertIn("config.ini: jiten_api_key is no longer a setting, not set", report)
         for secret in ("url-secret-99", "audio.invalid", "new-key-2", "old-key-1"):
             self.assertNotIn(secret, report)
-        for key in ("new-key-2", "old-key-1"):
-            self.assertNotIn(key, text)
-        _, report = self.migrate(f"anki_audio_url = {url}\n", "anki_audio_url=")
-        self.assertIn("config.ini: anki_audio_url = empty", report)
-        self.assertNotIn("url-secret-99", report)
+            self.assertNotIn(secret, text)
 
     def test_the_field_mapping_of_earlier_builds_is_removed(self):
-        # Kiku is the one note type now: no deck, note type, tags or fields to set.
+        # One fixed note type (Lapis): no deck, note type, tags or fields to set.
         old = ("anki_host = auto\nanki_deck = Mining #1 ; main\nanki_note_type = Lapis\nanki_tags = a b\n"
                + "".join("anki_field_%s = X\n" % f for f in (
                    "word", "reading", "furigana", "definition", "sentence", "picture", "frequency", "audio",
@@ -267,7 +269,7 @@ class MigrateConfig(unittest.TestCase):
         self.assertNotIn("anki_note_type", text)
         self.assertNotIn("anki_tags", text)
         self.assertNotIn("anki_field_", text)
-        self.assertIn("anki_host = auto\n", text)
+        self.assertNotIn("anki_host", text)
         self.assertIn("config.ini: anki_deck removed", out)
         self.assertIn("config.ini: anki_field_misc_info removed", out)
         self.assertIn("config.ini: anki_field_wrod removed", out)

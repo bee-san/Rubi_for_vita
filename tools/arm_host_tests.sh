@@ -22,6 +22,11 @@
 # host/fixtures/word_lookup on ARM and natively (HOST_CC, default cc), and the
 # two outputs must be identical (host/tests/word_lookup_parity.c).
 #
+# The Overlay app's .apkg export (host/tests/test_apkg.c: the SQLite and ZIP
+# writers, the Lapis notes and every storage step, with BearSSL's SHA-1 and
+# SHA-256 only) runs here too, and the packages it writes (--write) must be
+# the same bytes on ARM as natively (HOST_CC).
+#
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
 # libc). The defaults below are those package names; the fleet box sets both
@@ -70,8 +75,15 @@ build settings_layout host/tests/test_settings_layout.c settings/text_layout.c s
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 
+# The Overlay app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets.
+BS=third_party/bearssl/src
+APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/anki_queue.c core/json.c
+      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
+      "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
+build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
+
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_meminfo region_select)
-TESTS+=(touch_hold text_rows settings_layout shell_log)
+TESTS+=(touch_hold text_rows settings_layout shell_log apkg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
@@ -89,6 +101,15 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
 fi
 
 fail=0
+"${HOST_CC:-cc}" -O2 -Wall -Wextra -Wno-unused-parameter -I third_party/acutest/include -I host/tests/vita_stubs -I core \
+  -I include -I third_party/bearssl/inc -I "$BS" -DVJO_HOST=1 -o "$OUT/apkg_host" "${APKG[@]}"
+rm -rf "$OUT/apkg.arm" "$OUT/apkg.host" && mkdir -p "$OUT/apkg.arm" "$OUT/apkg.host"
+if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
+   "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 && diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
+  echo "arm apkg packages: $(ls "$OUT/apkg.arm" | grep -c '\.apkg$') .apkg files, identical to the host's"
+else
+  echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; fail=1
+fi
 if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
   WL=(host/tests/word_lookup_parity.c core/local_dict.c core/utf.c core/arena.c)
   WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)

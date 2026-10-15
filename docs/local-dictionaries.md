@@ -265,8 +265,8 @@ The matched original text length is retained in the entry, while the UI
 highlights the complete match by default. Overlay app → OCR & lookup → Highlight
 can instead highlight the selected character. Tapping the recognized header
 selects a character and uses the same bounded lookup as the arrows. Neither
-option introduces sentence tokenization. With `anki_host` set, × sends the
-match at the cursor to [Anki](anki.md).
+option introduces sentence tokenization. With card mining on, Enter saves
+the match at the cursor as an [Anki](anki.md) card.
 Part-of-speech rules from the dictionary filter deinflected candidates.
 At the selected position the longest source span takes precedence. At that
 span, an entry written the way the text is written wins over a homograph:

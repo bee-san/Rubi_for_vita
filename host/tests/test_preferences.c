@@ -266,68 +266,87 @@ static void test_save_switch_reload_retains_other_settings(void)
     TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
 }
 /* An OCR choice saved by the app keeps every anki_* line verbatim, and the
- * field-mapping settings of older builds (anki_deck, anki_note_type,
- * anki_field_*: Kiku is fixed now) load without a warning. */
-static void test_settings_save_keeps_anki_settings(void)
+ * removed settings of older builds (AnkiConnect's anki_host, the field
+ * mapping's anki_deck, anki_note_type, anki_field_*) load without a warning. */
+static int read_back(const char *path, char *text, size_t cap);
+
+/* The removed Anki settings (AnkiConnect's address and audio source, the old
+ * field mapping) load without a warning, and either save of the app drops
+ * their lines (core/config.h vjo_config_removed_line), the backup included:
+ * anki_audio_url's URL can hold a key. anki_mining and every other line stay. */
+static void test_settings_save_drops_removed_anki_settings(void)
 {
     static const char anki[] =
-        "ocr_backend = vocr\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
-        "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n";
-    char out[sizeof(anki) + 128];
-    VjoConfig cfg;
-    reset(); put_file(VJO_PREFERENCES_PATH, anki, sizeof(anki)-1);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
-    int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
-    ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
-    TEST_CHECK(strstr(out, "\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
-                           "anki_note_type = Lapis;v2\nanki_field_picture =\nanki_field_word = Word\n") != NULL);
-    TEST_MSG("%s", out);
-    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.local_dictionary_results == 3 && cfg.anki_mining == 1 &&
-               !strcmp(cfg.anki_host, "192.168.1.23:8766") && cfg.n_warnings == 0);
-    TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
+        "; mine\nocr_backend = vocr\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+        "anki_note_type = Lapis;v2\nanki_field_picture =\nANKI_FIELD_WORD = Word\n"
+        "anki_audio_url = https://a.invalid/?term={term}&key=secret-url\nanki_audio_url https://a.invalid/?k=secret-2\n"
+        "font_size_ja = 22\n";
+    for (int save = 0; save < 2; save++) {
+        char out[sizeof(anki) + 256];
+        VjoConfig cfg;
+        reset(); put_file(VJO_PREFERENCES_PATH, anki, sizeof(anki)-1);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.n_warnings == 0 && cfg.anki_mining == 1);
+        TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
+                          : vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, 3,
+                                                 &arena)) == 0);
+        TEST_CHECK(arena.used == 0 && handles == 0);
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
+        TEST_CHECK(!strstr(out, "anki_host") && !strstr(out, "anki_deck") && !strstr(out, "anki_note_type") &&
+                   !strstr(out, "anki_field_") && !strstr(out, "ANKI_FIELD_") && !strstr(out, "anki_audio_url") &&
+                   !strstr(out, "secret"));
+        TEST_CHECK(strstr(out, "; mine\n") && strstr(out, "anki_mining = on\n") && strstr(out, "font_size_ja = 22\n"));
+        TEST_MSG("save %d: %s", save, out);
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH ".bak", out, sizeof(out)) > 0);
+        TEST_CHECK_(!strstr(out, "secret") && !strstr(out, "anki_audio_url"), "save %d: config.ini.bak: %s", save, out);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 0 && cfg.font_size_ja == 22 &&
+                   (save || (cfg.ocr_backend == VJO_OCR_LENS && cfg.local_dictionary_results == 3)));
+    }
 }
-/* The Anki page's save: anki_mining and anki_host replaced where they are,
- * a duplicate dropped, a missing one appended; every other byte kept. */
+
+/* The patch the Anki page's save uses: its keys replaced where they are, a
+ * duplicate dropped, a missing one appended; every other byte kept. */
 static void test_anki_page_save(void)
 {
     static const char before[] =
         "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = off ; old\r\nocr_backend = vocr\n"
-        "ANKI_HOST=10.0.0.1\nanki_audio_url = http://h/?t={term};x\nanki_mining = on\nfont_size_ja = 22";
-    static const char *const keys[] = {"anki_mining", "anki_host"};
-    const char *values[] = {"on", "auto"};
+        "LOG_FILE=on\nlog_host = 10.0.0.1;x\nanki_mining = on\nfont_size_ja = 22";
+    static const char *const keys[] = {"anki_mining", "log_file"};
+    const char *values[] = {"on", "off"};
     char out[512];
     VjoConfig cfg;
     int len = vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, sizeof(out));
     TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\nocr_backend = vocr\n"
-                                       "anki_host = auto\nanki_audio_url = http://h/?t={term};x\nfont_size_ja = 22"));
+                                       "log_file = off\nlog_host = 10.0.0.1;x\nfont_size_ja = 22"));
     TEST_MSG("%s", out);
     /* a BOM right before the first line's key: kept, and that line replaced (no stale duplicate) */
     len = vjo_config_patch_keys("\xEF\xBB\xBF" "anki_mining = off\nx = 1\n", 27, keys, values, 2, out, sizeof(out));
-    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF" "anki_mining = on\nx = 1\nanki_host = auto\n"));
+    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF" "anki_mining = on\nx = 1\nlog_file = off\n"));
     TEST_MSG("%s", out);
     /* missing keys go at the end, after a line break */
     len = vjo_config_patch_keys("a = 1", 5, keys, values, 2, out, sizeof(out));
-    TEST_CHECK(len > 0 && !strcmp(out, "a = 1\nanki_mining = on\nanki_host = auto\n"));
+    TEST_CHECK(len > 0 && !strcmp(out, "a = 1\nanki_mining = on\nlog_file = off\n"));
     len = vjo_config_patch_keys("", 0, keys, values, 2, out, sizeof(out));
-    TEST_CHECK(len > 0 && !strcmp(out, "anki_mining = on\nanki_host = auto\n"));
+    TEST_CHECK(len > 0 && !strcmp(out, "anki_mining = on\nlog_file = off\n"));
     /* refused: no room, a line break in a value, an embedded NUL */
     TEST_CHECK(vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, 40) == -1);
-    values[1] = "auto\nanki_mining = off";
+    values[1] = "off\nanki_mining = off";
     TEST_CHECK(vjo_config_patch_keys("", 0, keys, values, 2, out, sizeof(out)) == -1);
-    values[1] = "auto";
+    values[1] = "off";
     TEST_CHECK(vjo_config_patch_keys("a\0b", 3, keys, values, 2, out, sizeof(out)) == -1);
     /* through the file: what the overlay then loads */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
-    TEST_ASSERT(vjo_preferences_save_anki(1, "192.168.1.23:8766", &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     /* (the fixture's one warning is its unknown_future_setting) */
-    TEST_CHECK(cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "192.168.1.23:8766") && cfg.n_warnings == 1 &&
-               cfg.font_size_ja == 22 && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
-    TEST_MSG("mining %d host %s warnings %d: %s", cfg.anki_mining, cfg.anki_host, cfg.n_warnings, cfg.warnings[0]);
-    TEST_ASSERT(vjo_preferences_save_anki(0, "", &arena) == 0);
+    TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 1 && cfg.font_size_ja == 22 &&
+               cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
+    TEST_MSG("mining %d warnings %d: %s", cfg.anki_mining, cfg.n_warnings, cfg.warnings[0]);
+    TEST_ASSERT(vjo_preferences_save_anki(0, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.anki_mining == 0 && !cfg.anki_host[0] && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
+    TEST_CHECK(cfg.anki_mining == 0 && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
     {
         char text[sizeof(original) + 160];
         int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
@@ -336,16 +355,16 @@ static void test_anki_page_save(void)
         TEST_ASSERT(n > 0);
         text[n] = 0;
         TEST_CHECK(!strncmp(text, original, sizeof(original) - 1) &&
-                   !strcmp(text + sizeof(original) - 1, "anki_mining = off\nanki_host = \n"));
+                   !strcmp(text + sizeof(original) - 1, "anki_mining = off\n"));
         TEST_MSG("%s", text);
     }
     /* a failed write leaves the old file */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     write_fail = 1;
-    TEST_CHECK(vjo_preferences_save_anki(1, "auto", &arena) < 0);
+    TEST_CHECK(vjo_preferences_save_anki(1, &arena) < 0);
     write_fail = 0;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(!cfg.anki_mining && !cfg.anki_host[0]);
+    TEST_CHECK(!cfg.anki_mining);
 }
 static void test_save_failure_preserves_or_recovers_actual_choices(void)
 {
@@ -547,7 +566,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
                    !strcmp(cfg.warnings[0], "dictionary: jpdb.io was removed; using local"));
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
                           : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
@@ -564,7 +583,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
                    cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
-        TEST_CHECK(!save || (cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "auto")));
+        TEST_CHECK(!save || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
@@ -585,7 +604,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         static const char bom[] = "\xEF\xBB\xBF" "jpdb_api_key = secret-bom\nocr_mode = on_press\nfont_size_ja = 22\n";
         char text[256];
         reset(); put_file(VJO_PREFERENCES_PATH, bom, sizeof(bom) - 1);
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
                           : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strncmp(text, "\xEF\xBB\xBF", 3) &&
                    !strstr(text, "secret") && strstr(text, "font_size_ja = 22\n"));
@@ -685,8 +704,9 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
  * without one), in the app and in the Shell; either save of the app writes
  * dictionary = local, in one publication (no secret: the backup is the file it
  * replaced, byte for byte), and keeps every other line as written, the
- * hachidori_host line too, as every other removed setting's (the installer,
- * tools/migrate_config.py, drops it). */
+ * hachidori_host line too (the installer, tools/migrate_config.py, drops it):
+ * a save drops only the lines that may hold a key, the API keys' and the
+ * removed Anki settings' (test_settings_save_drops_removed_anki_settings). */
 static void test_removed_relay_rewritten_by_saves(void)
 {
     static const char legacy[] =
@@ -705,7 +725,7 @@ static void test_removed_relay_rewritten_by_saves(void)
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 && shell.used == 0);
         renames = 0;
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
                           : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0 && renames == 2); /* one publication */
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
@@ -718,7 +738,7 @@ static void test_removed_relay_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
                    cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
-        TEST_CHECK(!save || (cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "auto")));
+        TEST_CHECK(!save || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
@@ -762,7 +782,7 @@ static void test_removed_engine_choice_loads_as_vocr_and_is_rewritten(void)
     }
 }
 TEST_LIST = {
-    {"settings_save_keeps_anki_settings_verbatim", test_settings_save_keeps_anki_settings},
+    {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"removed_engine_choice_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_rewrites_it", test_removed_engine_choice_loads_as_vocr_and_is_rewritten},

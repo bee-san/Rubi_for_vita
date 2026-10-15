@@ -104,7 +104,7 @@ static int pages_limit;
 
 static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
-static int anki_on;        /* vjo_anki_configure(&cfg): × saves cards, △ sends them */
+static int anki_on;        /* vjo_anki_configure(&cfg): enter saves cards to the queue */
 static VjoPlatform plat;
 static VjoNetPool pool; /* plat's; network thread only, except mem_free while it idles */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
@@ -841,7 +841,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     }
     /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
-    vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
+    vjo_capture_hold(); /* no Lens capture while the game captures for this job */
     int64_t t0 = now_us();
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
     job_game_us += now_us() - t0;

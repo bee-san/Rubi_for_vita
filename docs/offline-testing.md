@@ -27,7 +27,10 @@ blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation 
 failed joins, cancelled jobs and crashes between steps are injected there. 34 ctest suites
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out); `test_jpegsw.py`
-completes it (the Hachidori relay's contract test went with the relay client).
+completes it (the Hachidori relay's contract test went with the relay client). The Overlay app's `.apkg` packages are imported there by Anki itself:
+the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
+venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
+AnkiDroid and AnkiMobile have not imported one.
 
 ### CI's Vita build in its container
 
@@ -102,10 +105,11 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | text_rows | 11 | the overlay arrows' row walk (`core/text_rows.c`, #81): float cell edges and 32-bit offsets on the Vita's FPU |
 | settings_layout | 12 | the Overlay app's text layouts, icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
 | shell_log | 13 | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
+| apkg | 17 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure; the four packages it writes (`--write`) are byte-identical to the host build's |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 156 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 173 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
@@ -129,26 +133,29 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        282,624       278,528
-OCR worker pages in SceShell             282,624       278,528   (0: registered per game, not loaded there)
-VjoNet thread                            352,256       208,896
-VjoControl thread (boot complete)        372,736       188,416
-game start: result memory (local)        372,736       188,416
-Anki card saved: job thread              442,368       118,784
+Shell module loaded into SceShell        266,240       294,912
+OCR worker pages in SceShell             266,240       294,912   (0: registered per game, not loaded there)
+VjoNet thread                            335,872       225,280
+VjoControl thread (boot complete)        356,352       204,800
+game start: result memory (local)        356,352       204,800
+Anki card saved: job thread              425,984       135,168
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
-299,008 to 286,720 B, 12,288 B less at every step above, and the Hachidori relay client's to
-282,624 B, 4,096 B less again; the packaged module went from 294,912 B, main `ba5f69a`'s, to
-286,720 B (main `a5d79f2`) and then to 282,624 B [measured: the build log's module row].)
+299,008 to 286,720 B, 12,288 B less at every step above, the Hachidori relay client's to
+282,624 B, 4,096 B less again, and AnkiConnect's to 266,240 B, 16,384 B less again; the packaged
+module went from 294,912 B, main `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main
+`9824b55`; #116 and #111 kept those pages) and then to 266,240 B [measured: the build log's module
+row].)
 
 What this says, and what it does not:
 
 - Before the fix (main at `ae94879`) the build held 532,480 B at the end of boot and would have
   left 28,672 B in that session: seven pages, less than the 65,544 B change that broke the boot
   in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
-  the overlay's text arena out of `.bss`) holds 389,120 B, 73,728 B below the v0.7.4 build that
-  ran beside a game, and leaves 172,032 B at the end of boot in the same session.
+  the overlay's text arena out of `.bss`) held 389,120 B, 73,728 B below the v0.7.4 build that
+  ran beside a game, and left 172,032 B at the end of boot in the same session; without
+  AnkiConnect the build holds 372,736 B and leaves 188,416 B.
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily

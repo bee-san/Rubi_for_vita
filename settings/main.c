@@ -1,5 +1,5 @@
-/* Standalone LiveArea settings app: no plugin imports. Its only network use
- * is the Anki page's (anki_page.c: AnkiConnect on the LAN). */
+/* Standalone LiveArea settings app: no plugin imports and no network. Its
+ * Anki page (anki_page.c) exports the queued cards as an .apkg file. */
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
@@ -816,25 +816,12 @@ int main(void)
         log_frame_rate(now);
         /* The left stick moves the selection as Up/Down would (core/stick_scroll.h),
          * stopping at a list's first and last row, by the clock: held, as many
-         * rows a second at 30 Hz as at 60. Counted every frame; the keyboard and
-         * a page change latch it, so a stick still pushed then moves nothing
-         * until it is let go, as a held button is no new press. */
+         * rows a second at 30 Hz as at 60. Counted every frame; a page change
+         * latches it, so a stick still pushed then moves nothing until it is
+         * let go, as a held button is no new press. */
         int stick = vjo_stick_scroll(&stick_state, pad.ly, now);
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-        if (page == 2 && vjo_anki_page_modal()) {
-            /* The system keyboard has every button and the touch screen; a
-             * finger, button or stick still down when it closes is no new press. */
-            SceTouchData held;
-            memset(&held, 0, sizeof(held));
-            sceTouchPeek(SCE_TOUCH_PORT_FRONT, &held, 1);
-            touched = held.reportNum != 0;
-            previous = pad.buttons;
-            vjo_stick_latch(&stick_state);
-            vjo_anki_page_frame(&anki_ui, 0, -1, -1, &scratch);
-            sceDisplayWaitVblankStart();
-            continue;
-        }
         if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy())) break;
         if (pressed & SCE_CTRL_SELECT) {
             page = (page + 1) % PAGES;

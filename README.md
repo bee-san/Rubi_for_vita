@@ -7,11 +7,12 @@ text and shows Japanese dictionary entries over your game. **The v0.7.12 release
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes **Overlay**, a standalone per-game settings app. Optional
-[Anki card mining](docs/anki.md) saves the shown word as a card in an offline
-queue on the memory card, with or without Wi-Fi, and sends the queue to
-AnkiConnect on a computer on your local network, as [Kiku](https://github.com/youyoumu/kiku)
-notes in the deck Kiku, when you press Triangle or **Send queued cards now** in
-the Overlay app's Anki page, where it is also switched on. There is no AnkiWeb sync.
+[Anki card mining](docs/anki.md) is fully offline: Enter saves the shown word as
+a card in a queue on the memory card, and the Overlay app's Anki page, where it
+is also switched on, exports the queue as [Lapis](https://github.com/donkuri/lapis)
+notes into an `.apkg` file that you copy to Anki yourself (FTP, VitaShell's USB
+mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
+AnkiConnect or AnkiWeb sync.
 
 Open the **Overlay** app, press **Select**, and choose one of the two engines
 in the OCR engine row: the local engine, named after the generation of the
@@ -170,7 +171,6 @@ app when it starts.
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](docs/anki.md)) |
-| Triangle | Send the queued cards to AnkiConnect, as Kiku notes |
 | Cancel | Close the overlay |
 
 Pressing PS with the overlay open closes it: the game's controls are released
@@ -192,8 +192,7 @@ background and replaces the text quietly only when it reads a different one
 shows nothing and is retried quietly. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
-memory card, even with Wi-Fi off or Anki closed; Triangle sends the queue to
-AnkiConnect. The card has no screenshot yet: the old full-frame capture is the
+memory card; the Overlay app exports the queue as an `.apkg`. The card has no screenshot yet: the old full-frame capture is the
 kernel buffer #74's console refused, and one from the game's own strips is
 not built yet ([Anki](docs/anki.md#the-record-version-3)).
 
@@ -235,7 +234,7 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup) settings |
+| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup-and-use) pages |
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
@@ -463,21 +462,22 @@ dictionary's name, the other dictionaries' entries, the whole recognized text
 with the word's offsets, the game, its title ID and platform, the time, and
 the OCR engine and model.
 
-The cards become notes of one note type, [Kiku](https://github.com/youyoumu/kiku)
-(its v2.1.0 fields), in one deck, **Kiku**: there is no deck, note type or
-field mapping to set. On the computer, install AnkiConnect, set its
-`webBindAddress` to `0.0.0.0` and import `Kiku_v2.1.0.apkg`. On the Vita, the
-Overlay app's **Anki** page has the rest: card mining ON/OFF, AnkiConnect's
-address (your computer's IP, `IP:port`, or `auto` to search the local
-network), **Test connection** (AnkiConnect, the Kiku note type's fields and
-the Kiku deck) and **Send queued cards now**. Triangle in the overlay sends
-too. Cards go one at a time; a card leaves the queue only when Anki confirms
-it, so a failed or interrupted send can be repeated without duplicates.
-Records of the earlier queue (v0.8.0-test.1's and #5's) still send.
-`anki_audio_url` in `config.ini` optionally adds word audio from a Yomitan
-audio source. AnkiConnect is unauthenticated plain HTTP: use it only on a
-trusted network. See [docs/anki.md](docs/anki.md) for the queue, the Kiku
-fields, messages and memory bounds.
+The Overlay app's **Anki** page has card mining ON/OFF, **Export cards (N
+queued)** and **Export all cards**. An export writes the cards as
+notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
+templates bundled unchanged), in the deck **Vita JP Overlay**, into
+`ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`; the page shows the
+file's name. Copy it to a computer, by VitaShell's FTP or USB connection
+(Select in VitaShell starts the one set in its settings) or, with an SD2Vita as
+`ux0:`, on its card in a card reader, and open it in Anki. Cards leave the
+queue only after the file is written, read back and checked, named and synced,
+so a full memory card or a stop loses nothing. A note's GUID
+comes from its card, so a card exported twice is one note in Anki, and a
+profile that has Lapis keeps its own note type and styling. Nothing in the
+overlay or the app uses the network for Anki. `anki_host` and
+`anki_audio_url` (AnkiConnect, removed) are ignored, and the installer and the
+app's next save remove them. See [docs/anki.md](docs/anki.md) for the fields, the queue, the package
+and memory.
 
 ## Memory and troubleshooting
 
@@ -553,10 +553,10 @@ together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 282,624 B
-of SceShell's partition (286,720 B before the Hachidori relay client's removal,
-294,912 B before the online dictionaries', of 299,008 B declared then; 405,504 B
-in 0.7.12's successor builds): the
+64 KiB result arena and no TLS pool for local lookup. Its module holds 266,240 B
+of SceShell's partition (282,624 B before AnkiConnect was removed, 286,720 B before
+the Hachidori relay client's removal, 294,912 B before the online dictionaries', of
+299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle
@@ -571,13 +571,13 @@ retain two result arenas and one kept connection. Paf allocations preserve a 1.5
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
-With `anki_mining = on`, saving a card (Enter) or sending the queue (△) takes one
+With `anki_mining = on`, saving a card (Enter) takes one
 bounded Paf allocation through the same reserve guard (128 KiB: cards are
 text-only, no screenshot and no kernel capture) and a 64 KiB thread stack; both
 are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
-and refused memory never touch the recognized text. SceShell never searches
-the network for Anki: `auto` uses the address the Overlay app's search found.
+and refused memory never touch the recognized text. Nothing in SceShell or
+the Overlay app uses the network for Anki.
 The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
@@ -697,14 +697,14 @@ OOM recovery, failed joins, 50 local OCR-only lifetimes, cursor coalescing,
 close/reopen during lookup, scene/region invalidation, Unicode navigation and
 100 game-worker
 allocation/free cycles, bounded model reads and stale-job isolation. The Shell
-Anki miner is tested with its real capture path and its offline queue on real
-files: saves without a host or network, restarts, Japanese text and escaping,
-failed and short writes, temp and damaged files, AnkiConnect requests and the
-Kiku note, every record version, other dictionaries' entries, lost replies and
-retries, duplicates, refused memory, cancellation and 50 card lifetimes;
-crash/restart tests run each step in a fresh process. The Overlay app's Anki
-page logic (the search, the connection test, Send now) runs against the same
-queue storage and a fake AnkiConnect. Real
+Anki miner is tested with its offline queue on real files: saves, restarts,
+Japanese text and escaping, failed and short writes, temp and damaged files,
+every record version, other dictionaries' entries, duplicates, refused memory,
+cancellation and 50 card lifetimes. The Overlay app's `.apkg` export runs on
+the same queue storage, with failures injected at every write, flush, rename,
+sync and read-back, and its packages are opened with Python's `zipfile` and
+`sqlite3` and imported by Anki itself (the pinned `anki` package); crash/restart
+tests stop each save and export step in a fresh process. Real
 model tests also run the actual game worker through the actual kernel broker
 with FL10/H15, unavailable game storage, short reads, corrupt weights and
 failed cleanup. The integration tests model the observed syscall return

@@ -1,14 +1,14 @@
-/* Anki: base64, note fields, AnkiConnect requests and replies (over a fake
- * network), word audio, the anki_* settings. */
+/* Anki cards: the HTML of the Lapis fields a card fills (core/anki.c), a card
+ * made from the shown lookup (vjo_anki_note_from_entry), and the removed
+ * anki_* settings. The export of whole notes is host/tests/test_apkg.c. */
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "acutest.h"
 #include "anki.h"
-#include "base64.h"
 #include "config.h"
-#include "replay.h"
 
 static uint8_t g_mem[4u << 20];
 static VjoArena A;
@@ -20,35 +20,7 @@ static void setup(void)
     vjo_arena_init(&A, g_mem, sizeof(g_mem));
 }
 
-static void test_base64(void)
-{
-    static const char *const vec[][2] = {{"", ""},        {"f", "Zg=="},        {"fo", "Zm8="},
-                                         {"foo", "Zm9v"}, {"foob", "Zm9vYg=="}, {"fooba", "Zm9vYmE="},
-                                         {"foobar", "Zm9vYmFy"}};
-    uint8_t data[1000];
-    char one[1400], chunked[1400];
-    size_t o = 0;
-    for (unsigned i = 0; i < sizeof(vec) / sizeof(vec[0]); i++) {
-        char out[16] = {0};
-        size_t n = strlen(vec[i][0]);
-        TEST_CHECK(vjo_base64_len(n) == strlen(vec[i][1]));
-        vjo_base64_encode((const uint8_t *)vec[i][0], n, out);
-        TEST_CHECK(!strcmp(out, vec[i][1]));
-        TEST_MSG("'%s' -> '%s'", vec[i][0], out);
-    }
-    /* chunks of a multiple of 3 bytes, then the rest: same as one shot */
-    for (int i = 0; i < 1000; i++)
-        data[i] = (uint8_t)(i * 37 + 11);
-    vjo_base64_encode(data, sizeof(data), one);
-    for (size_t off = 0; off < sizeof(data); off += 99) {
-        size_t n = sizeof(data) - off < 99 ? sizeof(data) - off : 99;
-        vjo_base64_encode(data + off, n, chunked + o);
-        o += vjo_base64_len(n);
-    }
-    TEST_CHECK(o == vjo_base64_len(sizeof(data)) && !memcmp(one, chunked, o));
-}
-
-static void test_anki_fields(void)
+static void test_anki_sentence_and_furigana(void)
 {
     VjoBuf b;
     char *s;
@@ -67,10 +39,10 @@ static void test_anki_fields(void)
     BUF(vjo_anki_sentence(&b, "猫", 0, 99)); /* out of range: no bold */
     TEST_CHECK(!strcmp(s, "猫"));
 
-    /* Yomitan's {furigana-plain}, which Kiku's install guide asks for: each
-     * kanji run takes its part of the reading; a space before a base that
-     * follows other text, so Kiku's parser (and Anki's filter) read only that
-     * run: お茶[おちゃ] would put おちゃ over 茶 in Kiku */
+    /* Yomitan's {furigana-plain}, which Lapis's README asks for: each kanji run
+     * takes its part of the reading; a space before a base that follows other
+     * text, so Anki's furigana filter reads only that run: お茶[おちゃ] would put
+     * おちゃ over お茶 */
     {
         static const char *const cases[][3] = {
             {"言葉", "ことば", "言葉[ことば]"},
@@ -84,7 +56,7 @@ static void test_anki_fields(void)
             {"大人しい", "おとなしい", "大人[おとな]しい"},
             {"時々", "ときどき", "時々[ときどき]"},
             {"ブラック企業", "ぶらっくきぎょう", "ブラック 企業[きぎょう]"}, /* katakana as hiragana */
-            {"一ヶ月", "いっかげつ", " 一ヶ月[いっかげつ]"},             /* ヶ: kana to Kiku */
+            {"一ヶ月", "いっかげつ", " 一ヶ月[いっかげつ]"},             /* ヶ: kana to a ruby parser */
             /* the kana do not line up, or line up two ways: the whole word, after a space */
             {"今日は", "きょうわ", " 今日は[きょうわ]"},
             {"物の怪", "もののけ", " 物の怪[もののけ]"},   /* も|のけ or もの|け */
@@ -121,7 +93,6 @@ static void test_anki_fields(void)
         TEST_CHECK(s[0] == ' ' && strstr(s, "茶x[のの") != NULL);
         TEST_MSG("%.40s", s);
     }
-
 #undef BUF
     {
         /* a local definition's first line names its dictionary (tools/convert_dictionary.py) */
@@ -138,72 +109,57 @@ static void test_anki_fields(void)
             TEST_MSG("%s", plain[i]);
         }
     }
-    {
-        /* MainDefinition and Glossary as Yomitan writes them, which Kiku pages by dictionary */
-        static const char *const daijirin[] = {"[Daijirin4 Plain]\nA room; a <chamber>.\nAlso a stable."};
-        static const char *const jmdict[] = {"[JMdict Plain]\nroom", "chamber"};
-        static const char *const jitendex[] = {"room \"heya\"", "chamber"};
-        VjoAnkiGloss more[2] = {{NULL, "部屋", "へや", (const char **)jmdict, 2},
-                                {"Jitendex.org", "部屋", "へや", (const char **)jitendex, 2}};
-        VjoAnkiNote n = {.spelling = "部屋", .reading = "へや", .meanings = (const char **)daijirin, .n_meanings = 1,
-                         .sentence = "", .rank = VJO_NO_RANK};
-        setup();
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
-                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
-                           "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
-                           "&lt;chamber&gt;.<br>Also a stable.</span></li></ol></div>"));
-        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n));
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n), "")); /* one dictionary: none */
-        n.more = more;
-        n.n_more = 2;
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n),
-                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
-                           "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
-                           "&lt;chamber&gt;.<br>Also a stable.</span></li>"
-                           "<li data-dictionary=\"JMdict Plain\"><i>(JMdict Plain)</i> <span><ul><li>room</li>"
-                           "<li>chamber</li></ul></span></li>"
-                           "<li data-dictionary=\"Jitendex.org\"><i>(Jitendex.org)</i> <span><ul><li>room &quot;heya&quot;"
-                           "</li><li>chamber</li></ul></span></li></ol></div>"));
-        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_GLOSSARY, &n));
-        /* a name of the record's own wins; none at all: no label */
-        n.dictionary = "Daijirin <4>";
-        TEST_CHECK(strstr(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
-                          "<li data-dictionary=\"Daijirin &lt;4&gt;\"><i>(Daijirin &lt;4&gt;)</i> <span>A room;") != NULL);
-        n.meanings = (const char **)jitendex;
-        n.n_meanings = 2;
-        n.dictionary = NULL;
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n),
-                           "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol><li><span><ul><li>"
-                           "room &quot;heya&quot;</li><li>chamber</li></ul></span></li></ol></div>"));
-        n.n_meanings = 0;
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_MAIN_DEFINITION, &n), ""));
-        /* the dictionary's ruby in Anki's syntax (a queued record of a removed online
-         * dictionary's lookup has one), else the whole word's reading */
-        n.spelling = "取り扱い";
-        n.reading = "とりあつかい";
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
-        n.furigana = "取[と]り扱[あつか]い";
-        TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
-        TEST_MSG("%s", vjo_anki_field_value(&A, VJO_KIKU_EXPRESSION_FURIGANA, &n));
-    }
+}
 
-    {
-        char name[40];
-        vjo_anki_media_name(name, sizeof(name), 1791158400007ull, "jpg");
-        TEST_CHECK(!strcmp(name, "vitajp_1791158400007.jpg"));
-    }
-    {
-        uint32_t c[300];
-        int n = vjo_anki_scan_candidates(0xC0A8011Eu, 0xFFFFFF00u, c, 300); /* 192.168.1.30/24 */
-        TEST_CHECK(n == 253 && c[0] == 0xC0A80101u && c[252] == 0xC0A801FEu);
-        for (int i = 0; i < n; i++)
-            TEST_CHECK(c[i] != 0xC0A8011Eu);
-        n = vjo_anki_scan_candidates(0x0A000105u, 0xFFFF0000u, c, 300); /* a /16: its /24 only */
-        TEST_CHECK(n == 253 && c[0] == 0x0A000101u);
-        n = vjo_anki_scan_candidates(0xC0A80182u, 0xFFFFFF80u, c, 300); /* a /25 */
-        TEST_CHECK(n == 125 && c[0] == 0xC0A80181u && c[124] == 0xC0A801FEu);
-        TEST_CHECK(vjo_anki_scan_candidates(0xC0A8011Eu, 0xFFFFFF00u, c, 10) == 10);
-    }
+/* MainDefinition and Glossary as Yomitan writes them, which Lapis pages by
+ * dictionary (data-dictionary), hiding in Glossary those MainDefinition has. */
+static void test_anki_glossaries(void)
+{
+    static const char *const daijirin[] = {"[Daijirin4 Plain]\nA room; a <chamber>.\nAlso a stable."};
+    static const char *const jmdict[] = {"[JMdict Plain]\nroom", "chamber"};
+    static const char *const jitendex[] = {"room \"heya\"", "chamber"};
+    VjoAnkiGloss more[2] = {{NULL, "部屋", "へや", (const char **)jmdict, 2},
+                            {"Jitendex.org", "部屋", "へや", (const char **)jitendex, 2}};
+    VjoAnkiNote n = {.spelling = "部屋", .reading = "へや", .meanings = (const char **)daijirin, .n_meanings = 1,
+                     .sentence = "", .rank = VJO_NO_RANK};
+    setup();
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_MAIN_DEFINITION, &n),
+                       "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                       "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
+                       "&lt;chamber&gt;.<br>Also a stable.</span></li></ol></div>"));
+    TEST_MSG("%s", vjo_anki_field_value(&A, VJO_LAPIS_MAIN_DEFINITION, &n));
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_GLOSSARY, &n), "")); /* one dictionary: none */
+    n.more = more;
+    n.n_more = 2;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_GLOSSARY, &n),
+                       "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                       "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>A room; a "
+                       "&lt;chamber&gt;.<br>Also a stable.</span></li>"
+                       "<li data-dictionary=\"JMdict Plain\"><i>(JMdict Plain)</i> <span><ul><li>room</li>"
+                       "<li>chamber</li></ul></span></li>"
+                       "<li data-dictionary=\"Jitendex.org\"><i>(Jitendex.org)</i> <span><ul><li>room &quot;heya&quot;"
+                       "</li><li>chamber</li></ul></span></li></ol></div>"));
+    TEST_MSG("%s", vjo_anki_field_value(&A, VJO_LAPIS_GLOSSARY, &n));
+    /* a name of the record's own wins; none at all: no label */
+    n.dictionary = "Daijirin <4>";
+    TEST_CHECK(strstr(vjo_anki_field_value(&A, VJO_LAPIS_MAIN_DEFINITION, &n),
+                      "<li data-dictionary=\"Daijirin &lt;4&gt;\"><i>(Daijirin &lt;4&gt;)</i> <span>A room;") != NULL);
+    n.meanings = (const char **)jitendex;
+    n.n_meanings = 2;
+    n.dictionary = NULL;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_MAIN_DEFINITION, &n),
+                       "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol><li><span><ul><li>"
+                       "room &quot;heya&quot;</li><li>chamber</li></ul></span></li></ol></div>"));
+    n.n_meanings = 0;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_MAIN_DEFINITION, &n), ""));
+    /* the dictionary's ruby in Anki's syntax (a queued record of an earlier
+     * build's online lookup has one), else the whole word's reading */
+    n.spelling = "取り扱い";
+    n.reading = "とりあつかい";
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
+    n.furigana = "取[と]り扱[あつか]い";
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_EXPRESSION_FURIGANA, &n), "取[と]り 扱[あつか]い"));
+    TEST_MSG("%s", vjo_anki_field_value(&A, VJO_LAPIS_EXPRESSION_FURIGANA, &n));
 }
 
 static void test_anki_pitch(void)
@@ -248,17 +204,94 @@ static void test_anki_pitch(void)
     }
 }
 
-/* A dictionary result for "猫が\n好き" with tricky glosses, and its words'
- * frequency, part of speech and pitch (fields a dictionary result may fill;
- * its frequency list is "BCCWJ"). */
-static void anki_list(VjoEntryList *l)
+/* Every Lapis field of a full card, as Yomitan fills it for the fields Lapis's
+ * README lists; the ones a card has nothing for stay empty. */
+static void test_anki_lapis_fields(void)
+{
+    static const char *const neko[] = {"[JMdict]\ncat \"neko\"", "a\\b <&>\nc"}, *const noun[] = {"n"};
+    VjoAnkiNote n = {.spelling = "猫", .reading = "ねこ", .rank = 1500, .meanings = (const char **)neko,
+                     .n_meanings = 2, .sentence = "猫が\n好き", .hl_start = 0, .hl_end = 3,
+                     .sentence_furigana = "猫[ねこ]が\n 好[す]き", .sf_hl_start = 0, .sf_hl_end = 11,
+                     .source = "BCCWJ", .pitch = {1}, .n_pitch = 1, .pos = (const char **)noun, .n_pos = 1,
+                     .misc = "Persona 4 <Golden> (2026-10-11 09:05)"};
+    static const struct {
+        int field;
+        const char *want;
+    } want[] = {
+        {VJO_LAPIS_EXPRESSION, "猫"},
+        {VJO_LAPIS_EXPRESSION_FURIGANA, "猫[ねこ]"},
+        {VJO_LAPIS_EXPRESSION_READING, "ねこ"},
+        {VJO_LAPIS_EXPRESSION_AUDIO, ""},
+        {VJO_LAPIS_SELECTION_TEXT, ""},
+        {VJO_LAPIS_MAIN_DEFINITION, "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                                    "<li data-dictionary=\"JMdict\"><i>(JMdict)</i> <span><ul><li>cat &quot;neko&quot;"
+                                    "</li><li>a\\b &lt;&amp;&gt;<br>c</li></ul></span></li></ol></div>"},
+        {VJO_LAPIS_DEFINITION_PICTURE, ""},
+        {VJO_LAPIS_SENTENCE, "<b>猫</b>が<br>好き"},
+        {VJO_LAPIS_SENTENCE_FURIGANA, "<b>猫[ねこ]</b>が<br> 好[す]き"},
+        {VJO_LAPIS_SENTENCE_AUDIO, ""},
+        {VJO_LAPIS_PICTURE, ""}, /* core/lapis.c names the card's screenshot */
+        {VJO_LAPIS_GLOSSARY, ""},
+        {VJO_LAPIS_HINT, ""},
+        {VJO_LAPIS_IS_WORD_AND_SENTENCE_CARD, ""},
+        {VJO_LAPIS_IS_CLICK_CARD, ""},
+        {VJO_LAPIS_IS_SENTENCE_CARD, ""},
+        {VJO_LAPIS_IS_AUDIO_CARD, ""},
+        {VJO_LAPIS_PITCH_POSITION, "<span style=\"display:inline;\"><span>[</span><span>1</span><span>]</span></span>"},
+        {VJO_LAPIS_PITCH_CATEGORIES, "atamadaka"},
+        {VJO_LAPIS_FREQUENCY, "<ul style=\"text-align: left;\"><li>BCCWJ: 1500</li></ul>"},
+        {VJO_LAPIS_FREQ_SORT, "1500"},
+        {VJO_LAPIS_MISC_INFO, "Persona 4 &lt;Golden&gt; (2026-10-11 09:05)"},
+    };
+    setup();
+    TEST_CHECK(sizeof(want) / sizeof(want[0]) == VJO_LAPIS_FIELDS);
+    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        const char *v = vjo_anki_field_value(&A, want[i].field, &n);
+        TEST_CHECK(v && !strcmp(v, want[i].want));
+        TEST_MSG("field %d: '%s', want '%s'", want[i].field, v, want[i].want);
+    }
+    /* no frequency: FreqSort 9999999, as Yomitan writes {frequency-harmonic-rank}, and no Frequency */
+    n.rank = VJO_NO_RANK;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQ_SORT, &n), "9999999"));
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQUENCY, &n), ""));
+    /* a rank without a source: FreqSort only */
+    n.rank = 7;
+    n.source = NULL;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQ_SORT, &n), "7") &&
+               !strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQUENCY, &n), ""));
+    /* SentenceFurigana with no readings beyond the sentence's: empty, so Lapis
+     * shows {{furigana:Sentence}} (its README asks for it empty); none at all: empty */
+    n.sentence_furigana = n.sentence;
+    n.sf_hl_start = n.hl_start;
+    n.sf_hl_end = n.hl_end;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_SENTENCE_FURIGANA, &n), ""));
+    n.sentence_furigana = NULL;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_SENTENCE_FURIGANA, &n), ""));
+    /* no pitch: no PitchPosition, no categories; no MiscInfo */
+    n.n_pitch = 0;
+    n.misc = NULL;
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_PITCH_POSITION, &n), "") &&
+               !strcmp(vjo_anki_field_value(&A, VJO_LAPIS_PITCH_CATEGORIES, &n), "") &&
+               !strcmp(vjo_anki_field_value(&A, VJO_LAPIS_MISC_INFO, &n), ""));
+}
+
+/* A card of the shown lookup: the entry's word, meanings, frequency, part of
+ * speech and pitch copied out of the result memory, the whole text and the
+ * word's place in it. */
+static void test_anki_note_from_entry(void)
 {
     static const char *const ga[] = {"indicates subject"}, *const neko[] = {"cat \"neko\"", "a\\b <&>\nc"};
     static const char *const suki[] = {"liked"}, *const prt[] = {"prt"}, *const noun[] = {"n"};
     static const char *const na[] = {"adj-na", "n"};
     VjoDictResult r = {0};
-    VjoVocab *v = vjo_arena_zalloc(&A, 3 * sizeof(*v));
-    VjoToken *t = vjo_arena_zalloc(&A, 3 * sizeof(*t));
+    VjoEntryList l;
+    VjoAnkiNote n;
+    VjoVocab *v;
+    VjoToken *t;
+    int cat = -1;
+    setup();
+    v = vjo_arena_zalloc(&A, 3 * sizeof(*v));
+    t = vjo_arena_zalloc(&A, 3 * sizeof(*t));
     TEST_ASSERT(v && t);
     v[0] = (VjoVocab){.spelling = "が", .reading = "が", .rank = 50, .meanings = (const char **)ga, .n_meanings = 1,
                       .pos = (const char **)prt, .n_pos = 1, .pitch = {0}, .n_pitch = 1};
@@ -274,696 +307,130 @@ static void anki_list(VjoEntryList *l)
     r.tokens = t;
     r.n_tokens = 3;
     r.source = "BCCWJ";
-    TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, l) == 0);
+    TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, &l) == 0);
+    for (int i = 0; i < l.n_entries; i++)
+        if (!strcmp(l.entries[i].vocab->spelling, "猫"))
+            cat = i;
+    TEST_ASSERT(cat >= 0);
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, cat, &n) == 0);
+    TEST_CHECK(!strcmp(n.spelling, "猫") && !strcmp(n.reading, "ねこ") && n.rank == 1500 && n.n_meanings == 2 &&
+               !strcmp(n.meanings[1], "a\\b <&>\nc") && n.n_pos == 1 && !strcmp(n.pos[0], "n") && n.n_pitch == 1 &&
+               n.pitch[0] == 1 && !strcmp(n.source, "BCCWJ"));
+    TEST_CHECK(!strcmp(n.sentence, "猫が\n好き") && n.hl_start == 0 && n.hl_end == 3);
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_SENTENCE, &n), "<b>猫</b>が<br>好き"));
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&A, VJO_LAPIS_FREQUENCY, &n),
+                       "<ul style=\"text-align: left;\"><li>BCCWJ: 1500</li></ul>"));
+    /* the copies are the card's own: the result memory may go */
+    TEST_CHECK(n.spelling != v[1].spelling && n.meanings[0] != v[1].meanings[0]);
+    TEST_CHECK(vjo_anki_note_from_entry(&A, &l, l.n_entries, &n) == -1);
 }
-
-/* The one target: Kiku notes in the Kiku deck, duplicates checked there. */
-#define OPTS                                                                                                  \
-    "\"options\":{\"allowDuplicate\":false,\"duplicateScope\":\"deck\",\"duplicateScopeOptions\":"            \
-    "{\"deckName\":\"Kiku\",\"checkChildren\":false,\"checkAllModels\":false}}"
-#define TARGET "\"deckName\":\"Kiku\",\"modelName\":\"Kiku\""
-
-/* A local lookup's card (the shipped default): one entry, no frequency, pitch or
- * part of speech; SentenceFurigana is the sentence as it is, the word in bold,
- * as Sentence (no dictionary gives readings per word); ExpressionFurigana is
- * the word's reading. Without a highlight nothing is in bold. */
-static void test_anki_local_card(void)
-{
-    static const char *const meanings[] = {"[JMdict Plain]\nto come"};
-    VjoDictResult r = {0};
-    VjoEntryList l;
-    VjoAnkiNote n;
-    VjoAnkiMedia none = {0};
-    VjoAnkiBody b;
-    setup();
-    r.vocab = vjo_arena_zalloc(&A, sizeof(VjoVocab));
-    r.tokens = vjo_arena_zalloc(&A, sizeof(VjoToken));
-    TEST_ASSERT(r.vocab && r.tokens);
-    r.vocab[0] = (VjoVocab){.spelling = "来る", .reading = "くる", .rank = VJO_NO_RANK,
-                            .meanings = (const char **)meanings, .n_meanings = 1};
-    r.tokens[0] = (VjoToken){0, 2, 1};
-    r.n_vocab = r.n_tokens = 1;
-    TEST_ASSERT(vjo_entries_build(&A, "彼は\n来なかった。", &r, &l) == 0);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
-    TEST_CHECK(!n.furigana && !n.source && !n.n_pitch && !n.n_pos && n.rank == VJO_NO_RANK);
-    TEST_CHECK(n.sentence_furigana && !strcmp(n.sentence_furigana, "彼は\n来なかった。") &&
-               n.sf_hl_start == n.hl_start && n.sf_hl_end == n.hl_end && n.hl_start == 7 && n.hl_end == 10);
-    TEST_ASSERT(vjo_anki_add_request(&A, &n, &none, &b) == 0);
-    TEST_CHECK(strstr(b.prefix, "\"Sentence\":\"彼は<br><b>来</b>なかった。\",\"SentenceFurigana\":\"彼は<br><b>来</b>"
-                                "なかった。\"") != NULL);
-    TEST_CHECK(strstr(b.prefix, "\"ExpressionFurigana\":\"来[く]る\"") != NULL);
-    TEST_CHECK(!strstr(b.prefix, "\"Frequency\"") && !strstr(b.prefix, "\"FreqSort\"") &&
-               !strstr(b.prefix, "\"PitchPosition\"") && !strstr(b.prefix, "\"PitchCategories\""));
-    TEST_MSG("%s", b.prefix);
-    /* a word without a highlight: nothing in bold */
-    l.entries[0].hl_start = l.entries[0].hl_end = -1;
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
-    TEST_CHECK(n.sf_hl_start < 0 && n.sf_hl_end < 0 && !strcmp(n.sentence_furigana, "彼は\n来なかった。"));
-}
-
-/* A request takes the same bytes wherever it is built: shell/anki.c's save checks with a dry run
- * in its own arena that △ can send the card, and the send builds it in another, emptier one. A
- * VjoBuf grows by doubling where the arena has room and to the exact size near its end, so each
- * field's value and the request are cut to their text: the bytes used never depend on the room
- * (a card the save said fits was refused by the send when VjoConfig shrank; host test
- * what_cross_saves_triangle_sends_whatever_the_dictionaries). */
-static void test_anki_request_bytes_do_not_depend_on_the_arena(void)
-{
-    static uint8_t room[512 * 1024];
-    static char text[4][5001];
-    const char *meanings[1] = {text[0]}, *more_meanings[3][1] = {{text[1]}, {text[2]}, {text[3]}};
-    VjoAnkiGloss more[3];
-    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = 1200, .meanings = meanings, .n_meanings = 1,
-                     .sentence = "猫が\n好き", .hl_start = 10, .hl_end = 16, .sentence_furigana = "猫が\n好き",
-                     .sf_hl_start = 10, .sf_hl_end = 16, .source = "BCCWJ", .dictionary = "Daijirin"};
-    VjoAnkiMedia none = {0};
-    VjoAnkiBody b;
-    VjoArena a;
-    size_t need;
-    for (int k = 0; k < 4; k++) { /* escaping grows it: & < > " and line breaks */
-        for (int i = 0; i < 5000; i++)
-            text[k][i] = "\"&<\n>xy"[(i + k) % 7];
-        text[k][5000] = '\0';
-    }
-    for (int k = 0; k < 3; k++)
-        more[k] = (VjoAnkiGloss){"JMdict", "好き", "すき", more_meanings[k], 1};
-    n.more = more;
-    n.n_more = 3;
-    vjo_arena_init(&a, room, sizeof(room));
-    TEST_ASSERT(vjo_anki_add_request(&a, &n, &none, &b) == 0);
-    need = a.used;
-    TEST_CHECK(b.prefix_len > 40000 && need < sizeof(room) / 2);
-    TEST_MSG("request %u B, %u B used", (unsigned)b.prefix_len, (unsigned)need);
-    for (size_t size = need; size <= sizeof(room); size += 3001) {
-        vjo_arena_init(&a, room, size);
-        int ok = vjo_anki_add_request(&a, &n, &none, &b) == 0;
-        TEST_CHECK_(ok && a.used == need, "arena of %u B: %s, %u B used (%u in the others)", (unsigned)size,
-                    ok ? "built" : "refused", (unsigned)a.used, (unsigned)need);
-        if (!ok || a.used != need)
-            break;
-    }
-    vjo_arena_init(&a, room, need - 1);
-    TEST_CHECK(vjo_anki_add_request(&a, &n, &none, &b) < 0);
-}
-
-static void test_anki_requests(void)
-{
-    VjoEntryList l;
-    VjoAnkiNote n;
-    VjoAnkiMedia m = {(const uint8_t *)"jpeg", 4, "vitajp_1.jpg", NULL, NULL};
-    VjoAnkiBody b;
-    char *s, misc[96];
-    setup();
-    anki_list(&l);
-
-    s = vjo_anki_can_add_request(&A, &l, 99);
-    TEST_CHECK(s && !strcmp(s, "{\"action\":\"canAddNotesWithErrorDetail\",\"version\":6,\"params\":{\"notes\":["
-                               "{" TARGET ",\"fields\":{\"Expression\":\"猫\"}," OPTS "},"
-                               "{" TARGET ",\"fields\":{\"Expression\":\"が\"}," OPTS "},"
-                               "{" TARGET ",\"fields\":{\"Expression\":\"好き\"}," OPTS "}]}}"));
-    TEST_MSG("%s", s);
-    s = vjo_anki_can_add_request(&A, &l, 1); /* the first n only */
-    TEST_CHECK(s && strstr(s, "猫") && !strstr(s, "が"));
-
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
-    TEST_CHECK(vjo_anki_note_from_entry(&A, &l, 3, &n) < 0);
-    {
-        VjoAnkiDate when = {2026, 10, 11, 9, 5};
-        vjo_anki_misc_info(misc, sizeof(misc), "Persona 4 <Golden>", &when);
-    }
-    n.misc = misc;
-    n.dictionary = "Jitendex.org";
-    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
-    /* Kiku v2.1.0's field names, in its order, the media fields named empty */
-    TEST_CHECK(!strcmp(b.prefix,
-                       "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET ",\"fields\":{"
-                       "\"Expression\":\"猫\",\"ExpressionFurigana\":\"猫[ねこ]\",\"ExpressionReading\":\"ねこ\","
-                       "\"MainDefinition\":\"<div style=\\\"text-align: left;\\\" class=\\\"yomitan-glossary\\\"><ol>"
-                       "<li data-dictionary=\\\"Jitendex.org\\\"><i>(Jitendex.org)</i> <span><ul><li>cat &quot;neko&quot;</li>"
-                       "<li>a\\\\b &lt;&amp;&gt;<br>c</li></ul></span></li></ol></div>\","
-                       "\"Sentence\":\"<b>猫</b>が<br>好き\",\"SentenceFurigana\":\"<b>猫</b>が<br>好き\","
-                       "\"Picture\":\"\","
-                       "\"PitchPosition\":\"<span style=\\\"display:inline;\\\"><span>[</span><span>1</span>"
-                       "<span>]</span></span>\",\"PitchCategories\":\"atamadaka\","
-                       "\"Frequency\":\"<ul style=\\\"text-align: left;\\\"><li>BCCWJ: 1500</li></ul>\","
-                       "\"FreqSort\":\"1500\","
-                       "\"MiscInfo\":\"Persona 4 &lt;Golden&gt; (2026-10-11 09:05)\"},"
-                       "\"tags\":[\"vita-jp-overlay\"]," OPTS ","
-                       "\"picture\":[{\"filename\":\"vitajp_1.jpg\",\"fields\":[\"Picture\"],\"data\":\""));
-    TEST_MSG("%s", b.prefix);
-    TEST_CHECK(b.prefix_len == strlen(b.prefix) && !strcmp(b.suffix, "\"}]}}}") && b.suffix_len == 6);
-    TEST_CHECK(b.picture == m.picture && b.picture_len == 4);
-
-    /* the word's audio, for Anki to download, before the picture; the queue's tag */
-    m.audio_url = "https://example.com/a \"b\".opus";
-    m.audio_name = "vitajp_1.opus";
-    n.queue_tag = "vita_queue_00ff";
-    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
-    /* media fields are named, empty: the rewritten AnkiConnect fills only named ones */
-    TEST_CHECK(strstr(b.prefix, "\"ExpressionReading\":\"ねこ\",\"ExpressionAudio\":\"\",\"MainDefinition\"") &&
-               strstr(b.prefix, "\"Picture\":\"\",\"PitchPosition\""));
-    TEST_CHECK(strstr(b.prefix, "\"tags\":[\"vita-jp-overlay\",\"vita_queue_00ff\"]," OPTS
-                                ",\"audio\":[{\"filename\":\"vitajp_1.opus\",\"fields\":[\"ExpressionAudio\"],"
-                                "\"url\":\"https://example.com/a \\\"b\\\".opus\"}],"
-                                "\"picture\":[{\"filename\":\"vitajp_1.jpg\"") != NULL);
-    TEST_MSG("%s", b.prefix);
-
-    /* nothing to fill is left out: no rank, no meanings, no picture or audio */
-    m = (VjoAnkiMedia){0};
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 2, &n) == 0);
-    n.meanings = NULL;
-    n.n_meanings = 0;
-    TEST_ASSERT(vjo_anki_add_request(&A, &n, &m, &b) == 0);
-    TEST_CHECK(!strcmp(b.prefix, "{\"action\":\"addNote\",\"version\":6,\"params\":{\"note\":{" TARGET
-                                 ",\"fields\":{\"Expression\":\"好き\",\"ExpressionFurigana\":\"好[す]き\","
-                                 "\"ExpressionReading\":\"すき\",\"Sentence\":\"猫が<br><b>好き</b>\","
-                                 "\"SentenceFurigana\":\"猫が<br><b>好き</b>\",\"PitchPosition\":\"<ol>"
-                                 "<li><span style=\\\"display:inline;\\\"><span>[</span><span>2</span><span>]</span></span></li>"
-                                 "<li><span style=\\\"display:inline;\\\"><span>[</span><span>1</span><span>]</span></span></li>"
-                                 "</ol>\",\"PitchCategories\":\"odaka,atamadaka\"},\"tags\":[\"vita-jp-overlay\"]," OPTS "}}}"));
-    TEST_MSG("%s", b.prefix);
-    TEST_CHECK(b.suffix_len == 0 && b.picture_len == 0);
-}
-
-/* ---------- AnkiConnect over a fake network ---------- */
-
-/* A VjoPlatform that serves canned HTTP responses in turn (NULL = nothing
- * listening) and records what was sent. */
-typedef struct {
-    const char *responses[4];
-    int n_responses, next;
-    VjoMemConn conn;
-    char sent[4][8192];
-    int port, timeout_us, io_timeout_us;
-} FakeNet;
-
-static int fake_connect(void *ud, const char *host, int port, int timeout_us, int io_timeout_us, VjoConn *out)
-{
-    FakeNet *f = (FakeNet *)ud;
-    int k = f->next;
-    (void)host;
-    if (k >= f->n_responses || !f->responses[k])
-        return VJO_E_NET;
-    f->next++;
-    f->port = port;
-    f->timeout_us = timeout_us;
-    f->io_timeout_us = io_timeout_us;
-    memset(&f->conn, 0, sizeof(f->conn));
-    f->conn.in = f->responses[k];
-    f->conn.len = strlen(f->responses[k]);
-    f->conn.out = f->sent[k];
-    f->conn.out_cap = sizeof(f->sent[k]) - 1;
-    vjo_memconn_init(&f->conn, out);
-    return VJO_OK;
-}
-
-static void fake_disconnect(void *ud, VjoConn *c)
-{
-    FakeNet *f = (FakeNet *)ud;
-    (void)c;
-    f->sent[f->next - 1][f->conn.out_len] = '\0';
-}
-
-static void fake_net(FakeNet *f, VjoPlatform *p, int n, ...)
-{
-    va_list ap;
-    memset(f, 0, sizeof(*f));
-    memset(p, 0, sizeof(*p));
-    p->ud = f;
-    p->connect = fake_connect;
-    p->disconnect = fake_disconnect;
-    va_start(ap, n);
-    for (int i = 0; i < n; i++)
-        f->responses[i] = va_arg(ap, const char *);
-    va_end(ap);
-    f->n_responses = n;
-}
-
-/* A 200 response with a JSON body (one of 4 static buffers). */
-static const char *ok(const char *json)
-{
-    static char bufs[4][1024];
-    static int k;
-    char *b = bufs[k++ % 4];
-    snprintf(b, sizeof(bufs[0]), "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n%s",
-             (unsigned long)strlen(json), json);
-    return b;
-}
-
-#define DUPLICATE "cannot create note because it is a duplicate"
-
-static void test_anki_probe(void)
-{
-    FakeNet f;
-    VjoPlatform p;
-    VjoErr err;
-    setup();
-    /* plain HTTP to the port, Content-Length, a connect timeout */
-    fake_net(&f, &p, 1, ok("{\"result\": 6, \"error\": null}"));
-    TEST_CHECK(vjo_anki_probe(&A, &p, "192.168.1.23", 8765, &err) == VJO_OK);
-    TEST_CHECK(f.port == 8765 && f.timeout_us > 0);
-    TEST_CHECK(!strcmp(f.sent[0], "POST / HTTP/1.1\r\nHost: 192.168.1.23:8765\r\nContent-Type: application/json\r\n"
-                                  "Content-Length: 32\r\nConnection: close\r\n\r\n"
-                                  "{\"action\":\"version\",\"version\":6}"));
-    TEST_MSG("%s", f.sent[0]);
-    /* something else on the port; then nothing listening */
-    fake_net(&f, &p, 3, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi", ok("{\"result\": 6}"),
-             ok("[6]"));
-    TEST_CHECK(vjo_anki_probe(&A, &p, "h", 8765, &err) == VJO_E_PARSE);
-    TEST_CHECK(vjo_anki_probe(&A, &p, "h", 8765, &err) == VJO_E_PARSE); /* no "error" */
-    TEST_CHECK(vjo_anki_probe(&A, &p, "h", 8765, &err) == VJO_E_PARSE);
-    TEST_CHECK(vjo_anki_probe(&A, &p, "h", 8765, &err) == VJO_E_NET);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki offline"));
-}
-
-static void test_anki_check(void)
-{
-    FakeNet f;
-    VjoPlatform p;
-    VjoEntryList l;
-    VjoErr err;
-    uint8_t marks[4];
-    const char *req;
-    setup();
-    anki_list(&l);
-    req = vjo_anki_can_add_request(&A, &l, 3);
-    TEST_ASSERT(req != NULL);
-    /* only a duplicate is marked: a missing deck (even one named after
-     * duplicates) or note type is not */
-    fake_net(&f, &p, 1,
-             ok("{\"result\": [{\"canAdd\": false, \"error\": \"" DUPLICATE "\"}, {\"canAdd\": true}, "
-                "{\"canAdd\": false, \"error\": \"deck was not found: Duplicates\"}], \"error\": null}"));
-    memset(marks, 7, sizeof(marks));
-    TEST_CHECK(vjo_anki_check(&A, &p, "h", 8765, req, marks, 3, &err) == VJO_OK);
-    TEST_CHECK(marks[0] == 1 && marks[1] == 0 && marks[2] == 0 && marks[3] == 7);
-    TEST_CHECK(strstr(f.sent[0], "\"Expression\":\"が\"") != NULL);
-    /* the rewritten AnkiConnect (2026) words a duplicate differently */
-    fake_net(&f, &p, 1,
-             ok("{\"result\": [{\"canAdd\": false, \"error\": \"A matching note exists.\"}, {\"canAdd\": true}, "
-                "{\"canAdd\": false, \"error\": \"Deck not found: {'name': 'Duplicates'}\"}], \"error\": null}"));
-    TEST_CHECK(vjo_anki_check(&A, &p, "h", 8765, req, marks, 3, &err) == VJO_OK);
-    TEST_CHECK(marks[0] == 1 && marks[1] == 0 && marks[2] == 0);
-    /* malformed: the wrong count, a non-boolean canAdd, an old AnkiConnect */
-    fake_net(&f, &p, 3, ok("{\"result\": [{\"canAdd\": true}], \"error\": null}"),
-             ok("{\"result\": [{\"canAdd\": \"false\"}, {\"canAdd\": true}, {\"canAdd\": true}], \"error\": null}"),
-             ok("{\"result\": null, \"error\": \"unsupported action\"}"));
-    TEST_CHECK(vjo_anki_check(&A, &p, "h", 8765, req, marks, 3, &err) == VJO_E_PARSE);
-    TEST_CHECK(vjo_anki_check(&A, &p, "h", 8765, req, marks, 3, &err) == VJO_E_PARSE);
-    TEST_CHECK(vjo_anki_check(&A, &p, "h", 8765, req, marks, 3, &err) == VJO_E_ANKI);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: unsupported action"));
-}
-
-static void test_anki_add(void)
-{
-    FakeNet f;
-    VjoPlatform p;
-    VjoEntryList l;
-    VjoAnkiNote n;
-    VjoErr err;
-    VjoAnkiMedia m = {0}, none = {0};
-    uint8_t jpeg[100];
-    char b64[200] = {0};
-    const char *body;
-
-    setup();
-    anki_list(&l);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
-    for (int i = 0; i < 100; i++)
-        jpeg[i] = (uint8_t)(255 - i);
-    vjo_base64_encode(jpeg, sizeof(jpeg), b64);
-
-    /* one addNote, the picture streamed as base64 with an exact length */
-    fake_net(&f, &p, 1, ok("{\"result\": 1700000000001, \"error\": null}"));
-    m.picture = jpeg;
-    m.picture_len = sizeof(jpeg);
-    m.picture_name = "vitajp_1.jpg";
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &m, &err) == VJO_OK);
-    TEST_CHECK(f.next == 1);
-    body = strstr(f.sent[0], "\r\n\r\n");
-    TEST_ASSERT(body != NULL);
-    body += 4;
-    {
-        char cl[64];
-        const char *data = strstr(body, "\"data\":\"");
-        snprintf(cl, sizeof(cl), "Content-Length: %lu\r\n", (unsigned long)strlen(body));
-        TEST_CHECK(strstr(f.sent[0], cl) != NULL);
-        TEST_MSG("%s", f.sent[0]);
-        TEST_ASSERT(data != NULL);
-        data += 8;
-        TEST_CHECK(!strncmp(data, b64, strlen(b64)) && !strcmp(data + strlen(b64), "\"}]}}}"));
-        TEST_CHECK(!strncmp(body, "{\"action\":\"addNote\"", 19));
-    }
-
-    /* a new deck: created, then the note again */
-    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"deck was not found: Kiku\"}"),
-             ok("{\"result\": 1, \"error\": null}"), ok("{\"result\": 2, \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_OK);
-    TEST_CHECK(f.next == 3 && strstr(f.sent[2], "\"action\":\"addNote\""));
-    TEST_CHECK(strstr(f.sent[1], "{\"action\":\"createDeck\",\"version\":6,\"params\":{\"deck\":\"Kiku\"}}"));
-    TEST_CHECK(!strstr(f.sent[2], "\"picture\"")); /* no JPEG: no picture */
-
-    /* AnkiConnect refusals and their messages */
-#define REFUSED(error, rc, text)                                                                               \
-    do {                                                                                                       \
-        fake_net(&f, &p, 1, ok("{\"result\": null, \"error\": \"" error "\"}"));                             \
-        TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == (rc));                   \
-        TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), text));                                                \
-        TEST_MSG("%s -> %s", error, vjo_anki_err_text(&A, &err));                                              \
-    } while (0)
-    REFUSED(DUPLICATE, VJO_E_ANKI_DUPLICATE, "Already in Anki");
-#define NO_KIKU "Kiku note type not found in Anki: import Kiku (docs/anki.md)"
-    REFUSED("model was not found: Kiku", VJO_E_ANKI, NO_KIKU);
-    /* a note type named after duplicates is not one */
-    REFUSED("model was not found: duplicate-kiku", VJO_E_ANKI, NO_KIKU);
-    REFUSED("cannot create note because it is empty", VJO_E_ANKI, "Anki: cannot create note because it is empty");
-    REFUSED("collection is not available", VJO_E_ANKI, "Anki: collection is not available");
-    REFUSED("Notetype not found: {'name': 'Kiku'}", VJO_E_ANKI, NO_KIKU);
-#undef REFUSED
-
-    /* The rewritten AnkiConnect (2026): a new deck is "Deck not found" */
-    fake_net(&f, &p, 3, ok("{\"result\": null, \"error\": \"Deck not found: {'name': 'Kiku'}\"}"),
-             ok("{\"result\": 1, \"error\": null}"), ok("{\"result\": 2, \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_OK);
-    TEST_CHECK(f.next == 3 && strstr(f.sent[1], "\"action\":\"createDeck\""));
-    /* ... and a refused note names no reason: asked with canAddNotesWithErrorDetail */
-#define VALIDATION "{\"result\": null, \"error\": \"One or more notes failed validation.\"}"
-    fake_net(&f, &p, 2, ok(VALIDATION),
-             ok("{\"result\": [{\"canAdd\": false, \"error\": \"A matching note exists.\"}], \"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI_DUPLICATE);
-    TEST_CHECK(f.next == 2 && strstr(f.sent[1], "\"action\":\"canAddNotesWithErrorDetail\""));
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Already in Anki"));
-    fake_net(&f, &p, 2, ok(VALIDATION),
-             ok("{\"result\": [{\"canAdd\": false, \"error\": \"Anki field validation: emptyFirstField\"}], "
-                "\"error\": null}"));
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: Anki field validation: emptyFirstField"));
-    fake_net(&f, &p, 1, ok(VALIDATION)); /* the question fails too: the refusal as it is */
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_ANKI);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki: One or more notes failed validation."));
-#undef VALIDATION
-
-    fake_net(&f, &p, 1, "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
-    TEST_CHECK(vjo_anki_add(&A, &p, "h", 8765, &n, &none, &err) == VJO_E_STATUS);
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki refused the request (HTTP 403)"));
-    err.rc = VJO_E_NOT_FOUND;
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), "Anki not found: test the connection in the Overlay app"));
-    err.rc = VJO_OK;
-    TEST_CHECK(!strcmp(vjo_anki_err_text(&A, &err), ""));
-
-    /* a saved host is searched for again unless AnkiConnect itself answered */
-    TEST_CHECK(vjo_anki_host_stale(VJO_E_NET) && vjo_anki_host_stale(VJO_E_PARSE) &&
-               vjo_anki_host_stale(VJO_E_HTTP) && vjo_anki_host_stale(VJO_E_STATUS));
-    TEST_CHECK(!vjo_anki_host_stale(VJO_OK) && !vjo_anki_host_stale(VJO_E_ANKI) &&
-               !vjo_anki_host_stale(VJO_E_ANKI_DUPLICATE) && !vjo_anki_host_stale(VJO_E_OOM));
-}
-
-/* ---------- word audio ---------- */
-
-#define AUDIO_LIST                                                                                            \
-    "{\"type\":\"audioSourceList\",\"audioSources\":["                                                           \
-    "{\"name\":\"NHK16 ネコ＼ [1]\",\"url\":\"https://raw.example.com/x/audio/1.opus\"},"                         \
-    "{\"name\":\"TTS 1\",\"url\":\"https://audio.example.workers.dev/tts/a+b/c=\"}]}"
-
-static void test_anki_audio_parts(void)
-{
-    const char *url;
-    VjoConfig cfg;
-    setup();
-
-    vjo_config_defaults(&cfg);
-    TEST_CHECK(!vjo_anki_audio_enabled(&cfg)); /* no URL by default */
-    snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), "https://h/?t={term}");
-    TEST_CHECK(vjo_anki_audio_enabled(&cfg));
-
-    /* the template with {term} and {reading} percent-encoded (no reading: the term) */
-    TEST_CHECK(!strcmp(vjo_anki_audio_path(&A, "/audio/list?term={term}&reading={reading}&apiKey=k", "猫", "ねこ"),
-                       "/audio/list?term=%E7%8C%AB&reading=%E3%81%AD%E3%81%93&apiKey=k"));
-    TEST_CHECK(!strcmp(vjo_anki_audio_path(&A, "?t={term}&r={reading}&l={language}&x={other}", "a&b c", ""),
-                       "/?t=a%26b%20c&r=a%26b%20c&l=ja&x={other}"));
-    TEST_CHECK(!strcmp(vjo_anki_audio_path(&A, "?t={term}&r={reading}", "a", NULL), "/?t=a&r=a"));
-    TEST_CHECK(!strcmp(vjo_anki_audio_path(&A, "", "a", "b"), "/"));
-
-    /* the first http(s) URL; entries without one are skipped */
-    TEST_CHECK(vjo_anki_audio_parse(&A, AUDIO_LIST, strlen(AUDIO_LIST), &url) == VJO_OK && url &&
-               !strcmp(url, "https://raw.example.com/x/audio/1.opus"));
-#define PARSE(json, rc) (vjo_anki_audio_parse(&A, json, strlen(json), &url) == (rc))
-    TEST_CHECK(PARSE("{\"audioSources\":[{\"name\":\"x\"},\"y\",3,{\"url\":\"data:audio/mp3;base64,AA\"},"
-                     "{\"url\":7},{\"url\":\"http://h/2.ogg\"}]}",
-                     VJO_OK) &&
-               url && !strcmp(url, "http://h/2.ogg"));
-    TEST_CHECK(PARSE("{\"type\":\"audioSourceList\",\"audioSources\":[]}", VJO_OK) && !url);
-    TEST_CHECK(PARSE("{\"audioSources\":[{\"url\":\"file:///etc/passwd\"}]}", VJO_OK) && !url);
-    TEST_CHECK(PARSE("{\"error\":\"x\"}", VJO_E_PARSE) && !url);
-    TEST_CHECK(PARSE("{\"audioSources\":{}}", VJO_E_PARSE) && PARSE("[]", VJO_E_PARSE) &&
-               PARSE("<html>", VJO_E_PARSE));
-#undef PARSE
-
-    /* a known audio extension of the path, else mp3 (text-to-speech) */
-#define EXT(u, e)                                                                                             \
-    do {                                                                                                      \
-        TEST_CHECK(!strcmp(vjo_anki_audio_ext(u), e));                                                        \
-        TEST_MSG("%s -> %s", u, vjo_anki_audio_ext(u));                                                       \
-    } while (0)
-    EXT("https://h/x/audio/1.opus", "opus");
-    EXT("https://h/a.b/1.OGG?x=y.wav#z.m4a", "ogg");
-    EXT("https://audio.example.workers.dev/tts/a+b/c=", "mp3");
-    EXT("https://audio.example.com", "mp3");     /* the host's dot */
-    EXT("https://audio.example.com?f=a.opus", "mp3"); /* the query's */
-    EXT("https://h/tts.php?t=x", "mp3");
-    EXT("https://h/x.opus/1", "mp3");
-    EXT("https://h/1.opus2", "mp3");
-    EXT("h/1.wav", "wav");
-#undef EXT
-}
-
-/* A response bigger than ok()'s buffers. */
-static const char *big_response(size_t body_len)
-{
-    static char buf[64 * 1024];
-    int n = snprintf(buf, sizeof(buf), "HTTP/1.1 200 OK\r\nContent-Length: %lu\r\n\r\n", (unsigned long)body_len);
-    TEST_ASSERT(n > 0 && (size_t)n + body_len < sizeof(buf));
-    memset(buf + n, ' ', body_len);
-    buf[n + body_len] = '\0';
-    return buf;
-}
-
-static void test_anki_find_audio(void)
-{
-    FakeNet f;
-    VjoPlatform p;
-    VjoConfig cfg;
-    VjoEntryList l;
-    VjoAnkiNote n;
-    VjoAnkiMedia m;
-    VjoErr err;
-    size_t mark;
-    char long_term[200 * 3 + 1];
-    const uint64_t now = 1791158400007ull;
-    setup();
-    vjo_config_defaults(&cfg);
-    anki_list(&l);
-    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, 0, &n) == 0);
-#define FIND() vjo_anki_find_audio(&A, &p, &cfg, &n, now, &m, &err)
-#define WORKER "https://my-audio.example.workers.dev/audio/list?term={term}&reading={reading}&apiKey=k"
-    snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), WORKER);
-
-    /* a GET to the URL's host (HTTPS: 443, short timeouts); only the URL
-     * and its file name stay in the arena */
-    fake_net(&f, &p, 1, ok(AUDIO_LIST));
-    p.plain_http = 1;
-    mark = vjo_arena_mark(&A);
-    TEST_CHECK(FIND() == VJO_OK && m.audio_url && !strcmp(m.audio_url, "https://raw.example.com/x/audio/1.opus") &&
-               !strcmp(m.audio_name, "vitajp_1791158400007.opus"));
-    TEST_CHECK(vjo_arena_mark(&A) - mark < 128);
-    TEST_CHECK(f.port == 443 && f.timeout_us > 0 && f.io_timeout_us > 0);
-    TEST_CHECK(!strcmp(f.sent[0], "GET /audio/list?term=%E7%8C%AB&reading=%E3%81%AD%E3%81%93&apiKey=k HTTP/1.1\r\n"
-                                  "Host: my-audio.example.workers.dev\r\nConnection: close\r\n\r\n"));
-    TEST_MSG("%s", f.sent[0]);
-
-    /* plain HTTP on another port: the port in Host; a chunked reply */
-    snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), "http://192.168.1.5:5050?term={term}");
-    fake_net(&f, &p, 1,
-             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-             "10\r\n{\"audioSources\":\r\n1b\r\n[{\"url\":\"http://h/a.mp3\"}]}\r\n0\r\n\r\n");
-    TEST_CHECK(FIND() == VJO_OK && m.audio_url && !strcmp(m.audio_url, "http://h/a.mp3") && f.port == 5050);
-    TEST_CHECK(!strcmp(f.sent[0], "GET /?term=%E7%8C%AB HTTP/1.1\r\nHost: 192.168.1.5:5050\r\n"
-                                  "Connection: close\r\n\r\n"));
-    TEST_MSG("%s", f.sent[0]);
-
-    /* no recording; then errors, with nothing left on the note or in the arena */
-    snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), WORKER);
-    fake_net(&f, &p, 4, ok("{\"audioSources\":[]}"), "HTTP/1.1 401 No\r\nContent-Length: 0\r\n\r\n",
-             ok("<html>"), NULL);
-    p.plain_http = 1;
-    mark = vjo_arena_mark(&A);
-    TEST_CHECK(FIND() == VJO_OK && !m.audio_url && !m.audio_name);
-    TEST_CHECK(!strcmp(vjo_anki_audio_err_text(&A, &err), "no recording"));
-    TEST_CHECK(FIND() == VJO_E_STATUS && !m.audio_url && !strcmp(vjo_anki_audio_err_text(&A, &err), "HTTP 401"));
-    TEST_CHECK(FIND() == VJO_E_PARSE && !m.audio_url &&
-               !strcmp(vjo_anki_audio_err_text(&A, &err), "not an audio source list"));
-    TEST_CHECK(FIND() == VJO_E_NET && !m.audio_url &&
-               !strcmp(vjo_anki_audio_err_text(&A, &err), "audio source offline"));
-    vjo_arena_release(&A, mark); /* (the error texts) */
-
-    /* a reply over the limit; a term too long for the request line */
-    fake_net(&f, &p, 1, big_response(VJO_ANKI_AUDIO_MAX_RESPONSE + 1));
-    p.plain_http = 1;
-    TEST_CHECK(FIND() == VJO_E_TOO_LARGE && !m.audio_url &&
-               !strcmp(vjo_anki_audio_err_text(&A, &err), "reply too large"));
-    for (int i = 0; i < 200; i++)
-        memcpy(long_term + i * 3, "猫", 3);
-    long_term[200 * 3] = '\0';
-    n.spelling = long_term;
-    fake_net(&f, &p, 1, ok(AUDIO_LIST));
-    p.plain_http = 1;
-    TEST_CHECK(FIND() == VJO_E_HTTP && !m.audio_url);
-
-    /* an invalid URL (validated at load, so only by hand) */
-    snprintf(cfg.anki_audio_url, sizeof(cfg.anki_audio_url), "ftp://x/{term}");
-    TEST_CHECK(FIND() == VJO_E_PARSE && !m.audio_url);
-#undef WORKER
-#undef FIND
-}
-
-/* ---------- settings ---------- */
 
 static void test_anki_config(void)
 {
     VjoConfig c;
-    char host[64];
-    int port = 0;
-    /* ';' and '#' kept in the audio URL, inline comments allowed after
-     * anki_host; the field mapping's settings, which a fixed Kiku note
-     * replaced, are ignored without a warning (in any case) */
+    /* AnkiConnect's address and the word audio source went with AnkiConnect,
+     * and the field mapping before them: all ignored without a warning, in any
+     * case, as an older config.ini has them; anki_mining stays */
     const char *ini = "anki_host = auto ; LAN\n"
+                      "anki_audio_url = https://w.dev/audio/list?term={term}&reading={reading}&apiKey=a;b\n"
+                      "ANKI_HOST = 192.168.1.5:8766\n"
                       "anki_deck = Mining #1 ; main\n"
                       "anki_note_type = Lapis;v2\n"
                       "anki_tags = a b\n"
                       "anki_field_picture =\n"
-                      "anki_field_audio =\n"
-                      "anki_audio_url = https://w.dev/audio/list?term={term}&reading={reading}&apiKey=a;b\n"
                       "Anki_Field_Word = Word\n"
-                      "ANKI_DECK = x\n";
+                      "anki_mining = on\n";
     vjo_config_defaults(&c);
-    TEST_CHECK(!c.anki_host[0] && !c.anki_audio_url[0] && !c.anki_mining);
+    TEST_CHECK(!c.anki_mining);
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.n_warnings == 0);
+    TEST_CHECK(c.n_warnings == 0 && c.anki_mining == 1);
     TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
-    TEST_CHECK(!strcmp(c.anki_host, "auto"));
-    TEST_CHECK(!strcmp(c.anki_audio_url, "https://w.dev/audio/list?term={term}&reading={reading}&apiKey=a;b"));
-    TEST_MSG("%s", c.anki_audio_url);
+    TEST_CHECK(vjo_config_removed_anki_key("anki_host") && vjo_config_removed_anki_key("Anki_Audio_URL") &&
+               vjo_config_removed_anki_key("anki_field_x") && !vjo_config_removed_anki_key("anki_mining"));
+    /* also silent where a setting's line would warn: no '=' (the line would be logged, and an
+     * audio URL can carry a key), a value too long for any setting, a line too long to read */
+    {
+        static char big[3000];
+        int k = snprintf(big, sizeof(big), "anki_audio_url https://w.dev/a?apiKey=SECRET1\n"
+                                           "ANKI_HOST 10.0.0.2\nanki_field_word Word\nanki_audio_url = https://w.dev/b?k=");
+        memset(big + k, 'x', 600);
+        k += 600;
+        k += snprintf(big + k, sizeof(big) - (size_t)k, "\nanki_audio_url = ");
+        memset(big + k, 'y', 1500);
+        k += 1500;
+        snprintf(big + k, sizeof(big) - (size_t)k, "\nanki_mining = on\n");
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, big, strlen(big));
+        TEST_CHECK(c.n_warnings == 0 && c.anki_mining == 1);
+        TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
+        /* a setting that is not removed still warns there */
+        const char *other = "local_dictionary_dir\nlog_host 10.0.0.2\n";
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, other, strlen(other));
+        TEST_CHECK(c.n_warnings == 2 && strstr(c.warnings[0], "ignored line 'local_dictionary_dir'"));
+        TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
+    }
     /* only those names: a near miss is still an unknown setting */
-    ini = "anki_decks = x\nanki_field = x\nanki_tag = x\n";
+    ini = "anki_decks = x\nanki_field = x\nanki_tag = x\nanki_hosts = x\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.n_warnings == 3 && strstr(c.warnings[1], "unknown setting 'anki_field'"));
-    TEST_MSG("%s", c.warnings[1]);
+    TEST_CHECK(c.n_warnings == 4 && strstr(c.warnings[1], "unknown setting 'anki_field'") &&
+               strstr(c.warnings[3], "unknown setting 'anki_hosts'"));
+    TEST_MSG("%s", c.warnings[3]);
+    ini = "anki_mining = maybe\n";
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, ini, strlen(ini));
+    TEST_CHECK(c.n_warnings == 1 && !c.anki_mining && strstr(c.warnings[0], "anki_mining: invalid value"));
+    /* the template the overlay writes has no AnkiConnect settings */
+    TEST_CHECK(strstr(vjo_config_default_text(), "anki_mining = off") && !strstr(vjo_config_default_text(), "anki_host") &&
+               !strstr(vjo_config_default_text(), "anki_audio_url") && !strstr(vjo_config_default_text(), "AnkiConnect"));
+}
 
-    ini = "anki_host = 192.168.1.5:99999\nanki_deck =\nanki_host2 = x\n";
-    vjo_config_defaults(&c);
-    vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.n_warnings == 2 && !c.anki_host[0]);
-    TEST_CHECK(!strcmp(c.warnings[0], "anki_host: invalid value '192.168.1.5:99999' (empty, auto, or IP[:port])"));
-    TEST_MSG("%s", c.warnings[0]);
-    /* anki_audio_url: one warning for each invalid value, and no audio */
-    {
-        static const char *const bad[] = {
-            "ftp://x/{term}", "https://", "https:///?t={term}", "https://h:0/{term}", "https://h/{term} b",
-            "https://h/{term}#x", "https://h/?t=%s", "https://h/{term}\x7f", "https://h/{term}\xe7\x8c\xab",
-            "https://h_h/{term}", "http//h/{term}",
-        };
-        for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
-            char line[256];
-            snprintf(line, sizeof(line), "anki_audio_url = %s\n", bad[i]);
-            vjo_config_defaults(&c);
-            vjo_config_parse(&c, line, strlen(line));
-            TEST_CHECK(c.n_warnings == 1 && !c.anki_audio_url[0]);
-            TEST_MSG("%s", bad[i]);
-        }
-        TEST_CHECK(strstr(c.warnings[0], "anki_audio_url: invalid value") == c.warnings[0]);
-        TEST_MSG("%s", c.warnings[0]);
+/* A field value takes the same bytes wherever it is built (#117's buf_done in core/anki.c): a
+ * VjoBuf grows by doubling where the arena has room and to the exact size near its end, so each
+ * value is cut to its text. The export (core/lapis.c) builds them card after card in one arena. */
+static void test_anki_field_bytes_do_not_depend_on_the_arena(void)
+{
+    static uint8_t room[256 * 1024];
+    static char text[3][5001];
+    const char *meanings[1] = {text[0]}, *more_meanings[2][1] = {{text[1]}, {text[2]}};
+    VjoAnkiGloss more[2];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = 1200, .meanings = meanings, .n_meanings = 1,
+                     .sentence = "猫が\n好き", .hl_start = 7, .hl_end = 13, .source = "BCCWJ", .dictionary = "Daijirin"};
+    VjoArena a;
+    for (int k = 0; k < 3; k++) { /* escaping grows them: & < > " and line breaks */
+        for (int i = 0; i < 5000; i++)
+            text[k][i] = "\"&<\n>xy"[(i + k) % 7];
+        text[k][5000] = '\0';
     }
-    /* a host of up to 127 bytes, a value of up to 255 */
-    {
-        char line[600], fill[300];
-        memset(fill, 'h', sizeof(fill));
-        fill[127] = '\0';
-        snprintf(line, sizeof(line), "anki_audio_url = https://%s/?t={term}\n", fill);
-        vjo_config_defaults(&c);
-        vjo_config_parse(&c, line, strlen(line));
-        TEST_CHECK(c.n_warnings == 0 && strlen(c.anki_audio_url) == strlen("https:///?t={term}") + 127);
-        fill[127] = 'h';
-        fill[128] = '\0';
-        snprintf(line, sizeof(line), "anki_audio_url = https://%s/?t={term}\n", fill);
-        vjo_config_defaults(&c);
-        vjo_config_parse(&c, line, strlen(line));
-        TEST_CHECK(c.n_warnings == 1 && !c.anki_audio_url[0]);
-
-        memset(fill, 'k', sizeof(fill));
-        fill[255 - strlen("https://h/?t={term}&k=")] = '\0';
-        snprintf(line, sizeof(line), "anki_audio_url = https://h/?t={term}&k=%s\n", fill);
-        vjo_config_defaults(&c);
-        vjo_config_parse(&c, line, strlen(line));
-        TEST_CHECK(c.n_warnings == 0 && strlen(c.anki_audio_url) == 255);
-        /* longer: a warning, not a URL cut short (and so a wrong API key) */
-        snprintf(line, sizeof(line), "anki_audio_url = https://h/?t={term}&k=%sk\n", fill);
-        vjo_config_defaults(&c);
-        vjo_config_parse(&c, line, strlen(line));
-        TEST_CHECK(c.n_warnings == 1 && !c.anki_audio_url[0] && strstr(c.warnings[0], "value too long"));
-        /* a long inline comment after a short value: only the comment is cut */
-        {
-            static char comment[2000];
-            memset(comment, 'x', sizeof(comment));
-            memcpy(comment, "anki_host = auto ; ", 19);
-            comment[sizeof(comment) - 2] = '\n';
-            comment[sizeof(comment) - 1] = '\0';
-            vjo_config_defaults(&c);
-            vjo_config_parse(&c, comment, strlen(comment));
-            TEST_CHECK(c.n_warnings == 0 && !strcmp(c.anki_host, "auto"));
-        }
-        /* a line longer than the line buffer: the same */
-        {
-            static char longline[2000];
-            memset(longline, 'k', sizeof(longline));
-            memcpy(longline, "anki_audio_url = https://h/?t={term}&k=", 39);
-            longline[sizeof(longline) - 2] = '\n';
-            longline[sizeof(longline) - 1] = '\0';
-            vjo_config_defaults(&c);
-            vjo_config_parse(&c, longline, strlen(longline));
-            TEST_CHECK(c.n_warnings == 1 && !c.anki_audio_url[0] && strstr(c.warnings[0], "value too long"));
+    for (int k = 0; k < 2; k++)
+        more[k] = (VjoAnkiGloss){"JMdict", "好き", "すき", more_meanings[k], 1};
+    n.more = more;
+    n.n_more = 2;
+    for (int f = 0; f < VJO_LAPIS_FIELDS; f++) {
+        size_t need;
+        vjo_arena_init(&a, room, sizeof(room));
+        TEST_ASSERT(vjo_anki_field_value(&a, f, &n) != NULL);
+        need = a.used;
+        for (size_t size = need; size <= sizeof(room); size += 2003) {
+            const char *v;
+            vjo_arena_init(&a, room, size);
+            v = vjo_anki_field_value(&a, f, &n);
+            TEST_CHECK_(v && a.used == need, "field %d, arena of %u B: %s, %u B used (%u in the others)", f,
+                        (unsigned)size, v ? "built" : "refused", (unsigned)a.used, (unsigned)need);
+            if (!v || a.used != need)
+                break;
         }
     }
-    ini = "anki_host = 192.168.1.5:8766\n";
-    vjo_config_defaults(&c);
-    vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.n_warnings == 0 && !strcmp(c.anki_host, "192.168.1.5:8766"));
-
-    TEST_CHECK(vjo_anki_endpoint("", host, sizeof(host), &port) == VJO_ANKI_OFF);
-    TEST_CHECK(vjo_anki_endpoint("Auto", host, sizeof(host), &port) == VJO_ANKI_AUTO);
-    TEST_CHECK(vjo_anki_endpoint("192.168.1.23", host, sizeof(host), &port) == VJO_ANKI_MANUAL &&
-               !strcmp(host, "192.168.1.23") && port == 8765);
-    TEST_CHECK(vjo_anki_endpoint("my-pc.local:9000", host, sizeof(host), &port) == VJO_ANKI_MANUAL &&
-               !strcmp(host, "my-pc.local") && port == 9000);
-    TEST_CHECK(vjo_anki_endpoint("1.2.3.4:", host, sizeof(host), &port) < 0);
-    TEST_CHECK(vjo_anki_endpoint("1.2.3.4:70000", host, sizeof(host), &port) < 0);
-    TEST_CHECK(vjo_anki_endpoint("1.2.3.4:0", host, sizeof(host), &port) < 0);
-    TEST_CHECK(vjo_anki_endpoint("http://x", host, sizeof(host), &port) < 0);
-    TEST_CHECK(vjo_anki_endpoint(":8765", host, sizeof(host), &port) < 0);
-    TEST_CHECK(vjo_anki_endpoint("a b", host, sizeof(host), &port) < 0);
 }
 
 TEST_LIST = {
-    {"base64", test_base64},
-    {"anki_fields", test_anki_fields},
-    {"anki_requests", test_anki_requests},
+    {"anki_sentence_and_furigana", test_anki_sentence_and_furigana},
+    {"anki_glossaries", test_anki_glossaries},
     {"anki_pitch", test_anki_pitch},
-    {"anki_local_card", test_anki_local_card},
-    {"anki_request_bytes_do_not_depend_on_the_arena", test_anki_request_bytes_do_not_depend_on_the_arena},
-    {"anki_probe", test_anki_probe},
-    {"anki_check", test_anki_check},
-    {"anki_add", test_anki_add},
-    {"anki_audio_parts", test_anki_audio_parts},
-    {"anki_find_audio", test_anki_find_audio},
+    {"anki_lapis_fields", test_anki_lapis_fields},
+    {"anki_note_from_entry", test_anki_note_from_entry},
     {"anki_config", test_anki_config},
+    {"anki_field_bytes_do_not_depend_on_the_arena", test_anki_field_bytes_do_not_depend_on_the_arena},
     {NULL, NULL},
 };

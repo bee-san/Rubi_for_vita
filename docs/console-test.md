@@ -80,7 +80,7 @@ installed files' hashes) into one folder and zip under `build/device/collect/`, 
 Vita, and prints the analysis. Send the zip it names (`Send this one file: ...`) and one line per step
 saying what you saw ("overlay showed", "no OCR", "crash at step 3"...). Send it privately, not on a
 public issue: API keys are removed, but it holds your queued Anki cards' sentences (text of a
-copyrighted game), your PC's LAN address (`anki_host`), your taiHEN plugin list, your games' title
+copyrighted game), your taiHEN plugin list, your games' title
 IDs and any crash dump (a memory image of the crashed process). Keep the photos private too.
 
 The analysis's self-test verdict is decided by the OCR rows alone; diagnostics marked WARN (the probe,
@@ -108,10 +108,11 @@ PCSG00415 (need N, free F); using normal`). It applies when the overlay next ope
 
 ## Anki (optional)
 `anki_mining = on` in the test build: Enter in the overlay saves the shown word and its sentence as a card
-in `ux0:data/VitaJPOverlay/anki_queue/`, with Wi-Fi off or Anki closed. △ sends the queue to
-AnkiConnect on your PC: in Anki's AnkiConnect settings set `"webBindAddress": "0.0.0.0"`, and in
-`config.ini` set `anki_host = PC_IP` (or `auto` to search the local network once). Cards have no
-screenshot in this build: its full-frame capture is the kernel buffer #74's console refused.
+in `ux0:data/VitaJPOverlay/anki_queue/`; nothing uses the network. In the Overlay app's Anki page,
+**Export cards** writes them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: note the
+time the page shows it took and the file's size, copy the file to your computer (VitaShell's FTP or USB
+mode, or the SD2Vita card) and open it in Anki. Cards have no screenshot in this build: its full-frame
+capture is the kernel buffer #74's console refused. See [anki.md](anki.md).
 
 ## What it tells us
 - **The capture in the game:** whether the display hook can write the game's own memory, per

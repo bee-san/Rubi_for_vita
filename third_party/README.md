@@ -2,6 +2,8 @@ Vendored sources:
 - bearssl  https://www.bearssl.org/git/BearSSL  7bea48e5e850ab4cafbe68d3765cdaba13a86d6f (MIT)
 - jsmn     https://github.com/zserge/jsmn       25647e692c7906b96ffd2b05ca54c097948e879c (MIT)
 - acutest  https://github.com/mity/acutest      31751b4089c93b46a9fd8a8183a695f772de66de (MIT)
+- lapis    https://github.com/donkuri/lapis       38238d0b1c072fe7d7cd121e1e4c838a959f8d6b, tag 1.7.0 (GPL-3.0):
+           the Anki note type the Overlay app's .apkg export embeds (lapis/README.md)
 
 The standalone Settings app builds libpng 1.6.58 from
 https://codeload.github.com/pnggroup/libpng/tar.gz/refs/tags/v1.6.58,

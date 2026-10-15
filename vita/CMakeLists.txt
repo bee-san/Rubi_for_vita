@@ -99,7 +99,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
-  ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
@@ -118,7 +118,7 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c ${ROOT}/core/http.c ${ROOT}/core/net.c
   ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
-  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/base64.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
+  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
   ${ROOT}/core/jpegsw.c ${ROOT}/core/utf.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
@@ -287,25 +287,25 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 
 # ---------------- standalone game settings VPK ----------------
 include(${ROOT}/cmake/SettingsPNG.cmake)
-# The Anki page (settings/anki_page.c): the Kiku notes, the queue's storage
-# (shell/anki_queue.c, the Shell's own) and AnkiConnect over the app's SceNet.
+# The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
+# notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
 set(VJO_SETTINGS_ANKI_SRC
-  ${ROOT}/settings/anki_page.c ${ROOT}/settings/net.c ${ROOT}/shell/anki_queue.c
-  ${ROOT}/core/anki.c ${ROOT}/core/anki_app.c ${ROOT}/core/anki_queue.c ${ROOT}/core/json.c
-  ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/tls.c ${ROOT}/core/tls_roots.c ${ROOT}/core/base64.c
-  ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
+  ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
+  ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${VJO_SETTINGS_ANKI_SRC})
-# vjo_bearssl (SHA-256 for the queue's IDs, TLS for an https audio source) is
-# the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
+# vjo_bearssl (SHA-256 for the queue's IDs and the screenshots' names, SHA-1 for Anki's field
+# checksum) is the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
 set(VJO_SETTINGS_LIBS
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
-  SceAppMgr_stub SceAppUtil_stub SceNet_stub SceNetCtl_stub SceRtc_stub SceRegistryMgr_stub vjo_bearssl)
+  SceAppMgr_stub SceAppUtil_stub SceRtc_stub SceRegistryMgr_stub vjo_bearssl)
 add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)

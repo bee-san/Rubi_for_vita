@@ -253,36 +253,25 @@ class PackageModels(unittest.TestCase):
                           "local_dictionaries": "plaintext.vjdict", "japanese_only_selection": True,
                           "ocr_mode": "auto", "log_file": True, "anki": False})
 
-    def test_package_settings_reach_the_defaults_and_credentials_do_not(self):
-        # the one credential left in the template (jpdb.io's and jiten.moe's API keys were removed with them)
-        secrets = {"anki_audio_url": "https://a.invalid/audio?term={term}&key=fixture-url-key"}
+    def test_package_settings_reach_the_defaults_and_no_credential_is_one(self):
         manifest, template = self.manifest({"anki_mining": "on", "highlight_mode": "character", "ocr_settle_ms": "0",
-                                            "ocr_refine_lines": "off", "ocr_skip_blank_lines": "on", **secrets})
+                                            "ocr_refine_lines": "off", "ocr_skip_blank_lines": "on"})
         defaults = manifest["defaults"]
         self.assertEqual({k: defaults[k] for k in ("anki_mining", "anki", "highlight_mode", "ocr_settle_ms",
                                                    "ocr_refine_lines", "ocr_skip_blank_lines")},
                          {"anki_mining": True, "anki": True, "highlight_mode": "character", "ocr_settle_ms": 0,
                           "ocr_refine_lines": "off", "ocr_skip_blank_lines": True})
-        self.assertEqual({k: defaults[k] for k in secrets}, {k: "set" for k in secrets})
-        # audit-overlay-test3-cleanup B1: no credential's value is anywhere in the manifest, which
-        # install_ftp.sh --collect copies into the zip the owner sends: install_settings says "set"
         self.assertEqual(manifest["install_settings"], {"anki_mining": "on", "highlight_mode": "character",
                                                         "ocr_settle_ms": "0", "ocr_refine_lines": "off",
-                                                        "ocr_skip_blank_lines": "on",
-                                                        **{k: "set" for k in secrets}})
-        whole = json.dumps(manifest)
-        for value in (*secrets.values(), "fixture-url-key", "a.invalid"):
-            self.assertNotIn(value, whole)
-        # the values are in both config.ini copies, which install-vita.sh takes them from
-        for key, value in secrets.items():
-            self.assertIn(f"\n{key} = {value}\n", template)
-        # an empty credential stays empty, in both
-        manifest, _ = self.manifest({"anki_audio_url": "", "anki_mining": "on"})
-        self.assertEqual((manifest["install_settings"]["anki_audio_url"], manifest["defaults"]["anki_audio_url"]), ("", ""))
-        # the removed online dictionaries' API keys are no setting of the template: refused before any output
-        for key in ("jpdb_api_key", "jiten_api_key", "api_key"):
+                                                        "ocr_skip_blank_lines": "on"})
+        # audit-overlay-test3-cleanup B1, after the removals: the template has no credential left
+        # (jpdb.io's and jiten.moe's API keys went with them, anki_audio_url, whose URL can carry a
+        # key, with AnkiConnect): each is refused before any output, so none can reach the manifest
+        self.assertNotIn("api_key", template)
+        self.assertNotIn("anki_audio_url", template)
+        for key in ("jpdb_api_key", "jiten_api_key", "api_key", "anki_audio_url"):
             with self.assertRaisesRegex(ValueError, "Not a setting of the config template: " + key):
-                self.package_fixture({key: "fixture-secret-key"})
+                self.package_fixture({key: "https://a.invalid/audio?term={term}&key=fixture-secret-key"})
         # a value core/config.c would not read as its type is refused before any output
         for bad in ({"log_file": "yes"}, {"ocr_cascade_ms": "2s"}):
             with self.assertRaises(ValueError):
