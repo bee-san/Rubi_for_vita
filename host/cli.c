@@ -1,6 +1,6 @@
 /* vjo-cli: runs the Vita JP Overlay pipeline on the Mac.
  *
- *   vjo-cli IMAGE.jpg [--dict local|hachidori] [--config config.ini]
+ *   vjo-cli IMAGE.jpg [--dict local] [--config config.ini]
  *           [--filter lines|none] [--record DIR] [--nav] [-v]
  *   vjo-cli --text "日本語" ...
  *   vjo-cli --replay DIR [--filter lines|none]
@@ -134,9 +134,8 @@ static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoCo
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: vjo-cli IMAGE.jpg [--dict local|hachidori] [--config FILE]\n"
+            "usage: vjo-cli IMAGE.jpg [--dict local] [--config FILE]\n"
             "               [--local-dir DIR] [--local-dicts main.vjdict,extra.vjdict]\n"
-            "               [--hachidori HOST[:PORT]] (plain HTTP, trusted LAN)\n"
             "               [--filter lines|none] [--record DIR] [--nav] [--stats] [-v]\n"
             "       vjo-cli --text TEXT [options]\n"
             "       vjo-cli --replay DIR [options]\n"
@@ -154,7 +153,7 @@ int main(int argc, char **argv)
     VjoOverlayData d;
     const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *dict = NULL;
     const char *anki = NULL, *picture = NULL, *game = NULL;
-    const char *hachidori = NULL, *local_dir = NULL, *local_dicts = NULL;
+    const char *local_dir = NULL, *local_dicts = NULL;
     int nav = 0, stats = 0, anki_add = 0, rc;
 
     memset(mem, 0xA5, sizeof(mem)); /* like a reused arena on the Vita */
@@ -172,8 +171,6 @@ int main(int argc, char **argv)
             local_dir = argv[++i];
         else if (!strcmp(s, "--local-dicts") && more)
             local_dicts = argv[++i];
-        else if (!strcmp(s, "--hachidori") && more)
-            hachidori = argv[++i];
         else if (!strcmp(s, "--filter") && more)
             cfg.non_japanese_filter = strcmp(argv[++i], "none") ? 1 : 0;
         else if (!strcmp(s, "--record") && more)
@@ -221,21 +218,8 @@ int main(int argc, char **argv)
     }
     if ((anki_add || picture || game) && !anki)
         usage();
-    if (dict) {
-        cfg.dictionary = vjo_dict_find(dict);
-        if (cfg.dictionary < 0)
-            usage();
-    }
-    if (hachidori) {
-        char host[64];
-        int port;
-        if (strlen(hachidori) >= sizeof(cfg.hachidori_host) ||
-            vjo_hachidori_endpoint(hachidori, host, sizeof(host), &port) < 0) {
-            fprintf(stderr, "--hachidori: expected HOST[:PORT], not a URL\n");
-            return 2;
-        }
-        snprintf(cfg.hachidori_host, sizeof(cfg.hachidori_host), "%s", hachidori);
-    }
+    if (dict && strcmp(dict, "local")) /* the local dictionaries are the only ones */
+        usage();
     if (local_dir) {
         if (strlen(local_dir) >= sizeof(cfg.local_dictionary_dir)) usage();
         snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", local_dir);

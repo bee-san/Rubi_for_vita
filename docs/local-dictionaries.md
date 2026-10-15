@@ -1,10 +1,11 @@
 # Local dictionaries on PS Vita
 
 Local lookup reads dictionaries from the Vita's storage. It needs no running
-computer, Hachidori Relay, or dictionary network request. The online
-dictionaries jpdb.io and jiten.moe have been removed; Jitendex and every other
-Yomitan dictionary are converted and looked up locally as below, and a saved
-`dictionary = jpdb` or `jiten` loads as `local` (README, Settings and dictionaries).
+computer or dictionary network request; the local dictionaries are the only
+ones. The online dictionaries jpdb.io and jiten.moe and the Hachidori relay on
+a computer have been removed; Jitendex and every other Yomitan dictionary are
+converted and looked up locally as below, and a saved `dictionary = jpdb`,
+`jiten` or `hachidori` loads as `local` (README, Settings and dictionaries).
 The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
 JMdict already converted and enabled. Recognition and lookup are offline.
 Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards
@@ -211,7 +212,7 @@ no dictionary-sized persistent allocation is added.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
-| Network worker result arenas (Google Lens or the Hachidori relay) | Two 256 KiB arenas, plus connection pool |
+| Network worker result arenas (Google Lens) | Two 256 KiB arenas, plus a one-connection pool |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
 | Input text | Up to 4,095 UTF-8 bytes plus NUL |
@@ -301,7 +302,7 @@ signal would be the real fix
 ([word lookup](touch-lookup.md#word-lookup-on-recognized-text)).
 The caps above can omit lower-priority matches or unusually complex inflections.
 Missing or corrupt enabled files fail the lookup with an actionable error;
-there is no automatic relay/cloud fallback.
+there is no network or cloud fallback.
 
 A selected-entry allocation or file error is reported explicitly. Lookup does
 not grow the worker arena or silently display a partial definition. The older

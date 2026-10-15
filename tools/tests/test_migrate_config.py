@@ -65,12 +65,29 @@ class MigrateConfig(unittest.TestCase):
                      "config.ini: api_key removed", "config.ini: jpdb_api_key is no longer a setting, not set"):
             self.assertEqual(report.count(line + "\n"), 1, line)
 
-    def test_the_two_dictionaries_are_unchanged(self):
-        for dictionary in ("local", "hachidori"):
-            text, report = self.migrate("dictionary = %s\nhachidori_host = 192.168.1.20\n" % dictionary)
-            self.assertIn("\ndictionary = %s\n" % dictionary, text)
-            self.assertIn("hachidori_host = 192.168.1.20\n", text)
-            self.assertNotIn("config.ini: dictionary", report)
+    def test_the_local_dictionary_is_unchanged(self):
+        text, report = self.migrate("dictionary = local\nocr_mode = on_press\n")
+        self.assertIn("\ndictionary = local\n", text)
+        self.assertNotIn("config.ini: dictionary", report)
+
+    def test_the_removed_relay_becomes_local_and_its_host_goes(self):
+        # The Hachidori relay on a computer was removed: dictionary = hachidori becomes local and
+        # hachidori_host, its computer, is dropped (core/config.c ignores it); the template has neither.
+        for old in ("hachidori", "Hachidori", "HACHIDORI"):
+            text, report = self.migrate("dictionary = %s\nhachidori_host = 192.168.1.20:19633 ; LAN\n"
+                                        "ocr_mode = on_press\n" % old)
+            self.assertIn("\ndictionary = local\n", text, old)
+            self.assertEqual(text.count("dictionary ="), 1)
+            self.assertIn("ocr_mode = on_press\n", text)
+            self.assertNotIn("achidori", text)
+            self.assertNotIn("19633", text)
+            self.assertIn("config.ini: dictionary = local", report)
+            self.assertIn("config.ini: hachidori_host removed", report)
+        # tools/install_ftp.sh --set: the relay is replaced, its host not set
+        text, report = self.migrate("ocr_mode = auto\n", "dictionary=hachidori", "hachidori_host=192.168.1.20")
+        self.assertIn("\ndictionary = local\n", text)
+        self.assertNotIn("achidori", text)
+        self.assertIn("config.ini: hachidori_host is no longer a setting, not set", report)
 
     def test_an_explicit_removed_setting_is_not_set(self):
         # tools/install_ftp.sh --set: a removed online dictionary is replaced, its key not set
@@ -79,11 +96,13 @@ class MigrateConfig(unittest.TestCase):
         self.assertNotIn("secret-9", text + report)
         self.assertIn("config.ini: jiten_api_key is no longer a setting, not set", report)
 
-    def test_template_has_no_online_dictionary(self):
+    def test_template_has_no_online_dictionary_or_relay(self):
         template = (ROOT / "docs/config.example.ini").read_text(encoding="utf-8")
         self.assertNotIn("jpdb", template)
         self.assertNotIn("jiten", template)
         self.assertNotIn("api_key", template)
+        self.assertNotIn("achidori", template)
+        self.assertNotIn("19633", template)
         self.assertIn("\ndictionary = local\n", template)
 
     def test_removed_engines_become_vocr_and_keep_other_values(self):

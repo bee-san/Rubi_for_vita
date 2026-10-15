@@ -125,18 +125,6 @@ jobs:
             echo "::notice title=arm word_lookup skipped::no private dictionary in this run"
           fi
           ARM_CC=arm-linux-gnueabihf-gcc-14 QEMU=qemu-arm-static VJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr bash tools/arm_host_tests.sh build/arm-tests
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Check out the compatible Hachidori relay test server
-        uses: actions/checkout@v4
-        with:
-          repository: bee-san/hachidori-anki
-          # v0.0.5, pinned so the HTTP contract test cannot drift.
-          ref: beffaca1cab2584608a25c276d81b17b0f27088f
-          path: .refs/hachidori-anki
-      - name: Test the CLI through the real relay HTTP API
-        run: node --test tools/test_hachidori_relay.mjs
 
   vita:
     needs: changes

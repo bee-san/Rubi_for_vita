@@ -64,7 +64,7 @@ POOLS = (
 # (shell/memory.cpp; host tests): reported as a warning with the exact bytes,
 # never hidden, never a build failure.
 SOFT = (
-    ("shell paf (network dictionary)", "VJO_WORST_SHELL_PAF_NET", "VJO_LIMIT_SHELL_PAF"),
+    ("shell paf (Google Lens)", "VJO_WORST_SHELL_PAF_NET", "VJO_LIMIT_SHELL_PAF"),
 )
 ITEMS = {
     "shell pages": ("VJO_BUDGET_SHELL_MODULE_PAGES", "VJO_BUDGET_WORKER_IN_SHELL_PAGES", "VJO_BUDGET_SHELL_NET_STACK",

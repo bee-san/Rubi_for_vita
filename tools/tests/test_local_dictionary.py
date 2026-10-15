@@ -73,6 +73,27 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertIn("猫 (ねこ)", self.lookup("ネコ").stdout)
         self.assertIn("【猫】", self.lookup("😀\n猫\nを見た").stdout)
 
+    def test_local_is_the_only_dictionary(self):
+        # The removed dictionaries are no --dict choice: the online ones (jpdb.io, jiten.moe) and the
+        # Hachidori relay on a computer; --hachidori is no option any more. A config.ini that chose one
+        # loads as local with one warning and looks words up in the local files.
+        self.build([term("猫", "ねこ", ["cat"])])
+        for args in (["--dict", "jpdb"], ["--dict", "jiten"], ["--dict", "hachidori"], ["--dict", "relay"],
+                     ["--hachidori", "127.0.0.1:19633"]):
+            result = subprocess.run([str(CLI), *args, "--text", "猫"], capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 2, args)
+            self.assertIn("usage: vjo-cli", result.stderr)
+            self.assertNotRegex(result.stderr, r"(?i)achidori|jpdb|jiten|relay|API key")
+        config = self.directory / "config.ini"
+        config.write_text("dictionary = hachidori\nhachidori_host = 127.0.0.1:19633\n", encoding="utf-8")
+        result = subprocess.run([str(CLI), "--config", str(config), "--local-dir", str(self.directory),
+                                 "--local-dicts", "main.vjdict", "--text", "猫", "--nav"],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr, "config: dictionary: the Hachidori relay was removed; using local\n")
+        self.assertIn("cat", result.stdout)
+        self.assertIn("【猫】", result.stdout)
+
     def test_longest_match_and_rule_filter(self):
         self.build([term("猫"), term("猫舌", "ねこじた", ["sensitive to hot food"]),
                     term("食べる", "たべる", ["wrong part of speech"], ""),

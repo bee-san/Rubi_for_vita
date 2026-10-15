@@ -32,8 +32,6 @@ int vjo_json_int(const VjoJson *j, int i, long *out);
 /* Unescaped, NUL-terminated copy of a string token (or the raw text of a
  * primitive, like Java's toString()). */
 char *vjo_json_str(VjoArena *a, const VjoJson *j, int i);
-/* Appends the same text to b. Returns 0, or -1 on a bad index / OOM. */
-int vjo_json_append_str(VjoBuf *b, const VjoJson *j, int i);
 /* The string elements of array arr (*n_out = 0 when it is not one; other
  * elements skipped), each once with dedup. Returns 0, or -1 on OOM. */
 int vjo_json_str_array(VjoArena *a, const VjoJson *j, int arr, int dedup, const char ***out, int *n_out);

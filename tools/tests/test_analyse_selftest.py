@@ -891,10 +891,16 @@ class GameStartLines(unittest.TestCase):
                                                      "dictionary": "Hachidori relay"}})
 
     def test_the_shell_writes_the_new_form(self):
-        # the format string the analyser reads, as shell/worker.c has it
+        # the format string the analyser reads, as shell/worker.c has it: the dictionary's name is
+        # core/config.h's VJO_DICT_NAME, the only dictionary since the Hachidori relay's removal
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        self.assertIn('vjo_log("game %s started: dictionary %s, trigger %s, subtitles %s, ocr_mode %s"', worker)
+        self.assertIn('vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s"',
+                      worker)
+        self.assertIn('#define VJO_DICT_NAME "Local dictionaries"\n', (ROOT / "core/config.h").read_text(encoding="utf-8"))
         self.assertNotIn("(key %s)", worker)
+        line = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+        self.assertEqual(a.summarise_log(line)["games"],
+                         {"PCSG00415": {"starts": 1, "ocr_mode": "auto", "dictionary": "Local dictionaries"}})
 
 class OverlayCloseLines(unittest.TestCase):
     """log.txt's "overlay closed" lines (shell/overlay.cpp close_page), before and after row navigation (#81)."""

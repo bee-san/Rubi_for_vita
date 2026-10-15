@@ -913,8 +913,9 @@ LOG = {
     "tier": re.compile(r"^tier (\w+) did not fit in (\S+) \(need (\d+), free (-?\d+)\); "
                        r"(?:(?:using|trying) (\w+)|no smaller tier: not enough memory)"),
     "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
-    # shell/worker.c: the dictionary's display name (core/config.c), "Local dictionaries" by default;
-    # builds before the online dictionaries' removal add its API key's state, "(key set|MISSING)"
+    # shell/worker.c: the dictionary's display name, "Local dictionaries" (core/config.h VJO_DICT_NAME;
+    # builds with the removed Hachidori relay could say "Hachidori relay"); builds before the online
+    # dictionaries' removal add its API key's state, "(key set|MISSING)"
     "game": re.compile(r"^game (\S+) started: dictionary (.+?)(?: \(key (\S+)\))?, trigger (\S+), subtitles (\S+), "
                        r"ocr_mode (\S+)"),
     "disabled": re.compile(r"^(\S+): JP Overlay disabled"),

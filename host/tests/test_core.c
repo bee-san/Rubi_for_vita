@@ -292,13 +292,9 @@ static void test_json(void)
     setup();
     {
         VjoJson j;
-        VjoBuf b;
         const char *js = "[\"a\\u732b\\n\",12]";
         TEST_ASSERT(vjo_json_parse(&A, js, strlen(js), &j) == 0);
-        vjo_buf_init(&b, &A);
-        TEST_CHECK(vjo_json_append_str(&b, &j, 1) == 0 && vjo_json_append_str(&b, &j, 2) == 0);
-        TEST_CHECK(vjo_json_append_str(&b, &j, 9) == -1);
-        TEST_CHECK(!strcmp(vjo_buf_cstr(&b), "a猫\n12"));
+        TEST_CHECK(!strcmp(vjo_json_str(&A, &j, 1), "a猫\n") && !strcmp(vjo_json_str(&A, &j, 2), "12"));
     }
     {
         VjoJson j;
@@ -319,7 +315,7 @@ static void test_json(void)
     }
 }
 
-/* ---------- dictionary results (as the relay and local lookups make them) ---------- */
+/* ---------- dictionary results (as the local lookups make them) ---------- */
 
 typedef struct {
     const char *spelling, *reading;
@@ -669,7 +665,8 @@ static void test_config(void)
 {
     VjoConfig c;
     const char *ini = "\xEF\xBB\xBF; comment\n"
-                      "dictionary = Hachidori\n"
+                      "dictionary = Local\n"
+                      "hachidori_host = 192.168.1.20\n"
                       "jpdb_api_key = abc123 ; my key\n"
                       "jiten_api_key = ak_xyz\n"
                       "frequency_filter=500\n"
@@ -686,8 +683,7 @@ static void test_config(void)
     TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
                c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 1);
     vjo_config_parse(&c, ini, strlen(ini));
-    TEST_CHECK(c.dictionary == VJO_DICT_HACHIDORI && !strcmp(vjo_dict_name(c.dictionary), "Hachidori relay"));
-    TEST_CHECK(!strcmp(vjo_dict_name(VJO_DICT_LOCAL), "Local dictionaries"));
+    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && !strcmp(VJO_DICT_NAME, "Local dictionaries"));
     TEST_CHECK(c.non_japanese_filter == VJO_FILTER_NONE);
     TEST_CHECK(c.font_size_ja == 18); /* invalid -> default */
     TEST_CHECK(c.font_size_en == 10);
@@ -695,21 +691,27 @@ static void test_config(void)
     TEST_CHECK(c.ocr_mode == VJO_OCR_ON_PRESS);
     TEST_CHECK(!strcmp(c.log_host, "192.168.1.5"));
     TEST_CHECK(c.log_file == 1);
-    /* font_size_ja and bogus; the removed frequency_filter and API keys are silent */
+    /* font_size_ja and bogus; the removed frequency_filter, hachidori_host and API keys are silent */
     TEST_CHECK(c.n_warnings == 2);
     TEST_MSG("warnings: %d", c.n_warnings);
-    /* jpdb.io and jiten.moe, the removed online dictionaries: local, with a
-     * warning, in any case; their API keys (and api_key, jpdb's older name)
-     * are ignored without one, so no warning shows a key's line. */
+    /* jpdb.io and jiten.moe, the removed online dictionaries, and the removed
+     * Hachidori relay: local, with one warning, in any case; the online ones'
+     * API keys (and api_key, jpdb's older name) are ignored without one, so no
+     * warning shows a key's line, and so is the relay's hachidori_host. */
     {
         static const struct { const char *ini, *warning; } removed[] = {
             {"dictionary = jpdb\n", "dictionary: jpdb.io was removed; using local"},
             {"dictionary = JITEN ; old\n", "dictionary: jiten.moe was removed; using local"},
             {"Dictionary = Jpdb\r\n", "Dictionary: jpdb.io was removed; using local"},
+            {"dictionary = hachidori\nhachidori_host = 192.168.1.20:19633\n",
+             "dictionary: the Hachidori relay was removed; using local"},
+            {"hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori\n",
+             "DICTIONARY: the Hachidori relay was removed; using local"},
+            {"dictionary = hachidori\nhachidori_host = http://not a host\n",
+             "dictionary: the Hachidori relay was removed; using local"},
         };
         for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
             vjo_config_defaults(&c);
-            c.dictionary = VJO_DICT_HACHIDORI;
             vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
             TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
             TEST_CHECK(!strcmp(c.warnings[0], removed[i].warning));
@@ -740,10 +742,18 @@ static void test_config(void)
         vjo_config_parse(&c, others, strlen(others));
         TEST_CHECK(c.n_warnings == 2 && !strcmp(c.warnings[0], "ignored line 'bogus line'") &&
                    !strcmp(c.warnings[1], "unknown setting 'lens_api_key'"));
-        TEST_CHECK(vjo_dict_find("jpdb") < 0 && vjo_dict_find("jiten") < 0 && vjo_dict_find("LOCAL") == VJO_DICT_LOCAL &&
-                   vjo_dict_find("hachidori") == VJO_DICT_HACHIDORI);
-        /* The IDs the self-test reports (config dictionary=) do not move. */
-        TEST_CHECK(VJO_DICT_HACHIDORI == 2 && VJO_DICT_LOCAL == 3);
+        /* local in any case, without a warning; another value is invalid and stays local */
+        static const char *const values[] = {"dictionary = LOCAL\n", "dictionary = hachidorix\n",
+                                             "dictionary = relay\n"};
+        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+            vjo_config_defaults(&c);
+            vjo_config_parse(&c, values[i], strlen(values[i]));
+            TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == (i ? 1 : 0));
+            TEST_CHECK(!i || strstr(c.warnings[0], "invalid value") != NULL);
+            TEST_MSG("%s", values[i]);
+        }
+        /* The ID the self-test reports (config dictionary=) does not move. */
+        TEST_CHECK(VJO_DICT_LOCAL == 3);
     }
     /* The lines the Overlay app's saves rewrite (core/config.h vjo_config_removed_line). */
     {
@@ -752,8 +762,11 @@ static void test_config(void)
                                            "jpdb_api_keyx\n", "jpdb_api_key_old = x\n", "api_keys = x\n",
                                            "\tJiten_Api_Key_typo: x"};
         static const char *const replace[] = {"dictionary = jpdb\n", "Dictionary=JITEN ; old\r\n",
-                                              "  dictionary =\tjpdb", "dictionary = jiten # x\n"};
-        static const char *const keep[] = {"dictionary = local\n", "dictionary = hachidori\n", "dictionary = jpdbx\n",
+                                              "  dictionary =\tjpdb", "dictionary = jiten # x\n",
+                                              "dictionary = hachidori\n", "DICTIONARY = Hachidori ; relay\r\n",
+                                              "dictionary=HACHIDORI"};
+        static const char *const keep[] = {"dictionary = local\n", "dictionary = hachidorix\n", "dictionary = jpdbx\n",
+                                           "hachidori_host = 192.168.1.20\n", "dictionary = hachidori-relay\n",
                                            "; dictionary = jpdb\n", "dictionaryx = jpdb\n", "lens_api_key = x\n",
                                            "my_api_key = x\n", "anki_host = jpdb\n", "jpdb_api_ke = x\n",
                                            "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
@@ -898,8 +911,11 @@ static void test_config(void)
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
-        /* no trace of the removed online dictionaries (jpdb.io, jiten.moe) or their keys */
+        /* no trace of the removed online dictionaries (jpdb.io, jiten.moe) or their keys, or of
+         * the removed Hachidori relay (hachidori_host, its port) */
         TEST_CHECK(!strstr(t, "jpdb") && !strstr(t, "jiten") && !strstr(t, "api_key") && !strstr(t, "furigana"));
+        TEST_CHECK(!strstr(t, "achidori") && !strstr(t, "relay") && !strstr(t, "19633") &&
+                   strstr(t, "\ndictionary = local\n"));
         TEST_CHECK(d.ocr_settle_ms == 150 && d.ocr_settle_max_ms == 2000 && d.ocr_skip_blank_lines == 0);
         TEST_CHECK(d.ocr_refine_lines == 2 && strstr(t, "\nocr_refine_lines = psp\n"));
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&

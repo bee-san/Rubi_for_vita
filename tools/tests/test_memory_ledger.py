@@ -54,26 +54,36 @@ class MemoryLedgerCheck(unittest.TestCase):
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")
         self.assertEqual({p["pool"] for p in as_json["pools"]},
-                         {"shell pages", "shell paf", "shell paf (network dictionary)", "kernel", "game"})
+                         {"shell pages", "shell paf", "shell paf (Google Lens)", "kernel", "game"})
         for pool in as_json["pools"]:
             if not pool.get("soft"):
                 self.assertLessEqual(pool["worst"], pool["limit"])
-        # Anki cards are text-only (VJO_ANKI_SCREENSHOT 0): the opt-in network configuration fits too
+        # Anki cards are text-only (VJO_ANKI_SCREENSHOT 0): the opt-in network configuration (Google Lens) fits too
         self.assertEqual(as_json["warnings"], [])
         self.assertNotIn("WARNING", result.stderr)
-        net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (network dictionary)")
-        self.assertEqual(net["worst"], 8192 + 571888 + 131072 + 20480)
+        net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (Google Lens)")
+        self.assertEqual(net["worst"], 8192 + 548096 + 131072 + 20480)
 
     def test_a_soft_overshoot_is_a_warning_with_the_bytes(self):
-        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) put the network configuration over
-        tmp = self.copy_tree()
-        budget = tmp / "include/vjo_ledger_budget.h"
-        budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u",
-                                 budget.read_text()))
-        result = run("--root", str(tmp))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("WARNING: shell paf (network dictionary): worst case 993,776 B exceeds the limit 985,088 B "
-                      "by 8,688 B", result.stderr)
+        # a picture card's 384 KiB arena (VJO_ANKI_SCREENSHOT 1) fits beside Google Lens's one-slot pool
+        # (969,984 B), but put the network configuration over while the pool had a second slot for the
+        # removed Hachidori relay (571,888 B of results)
+        for results, warning in ((None, None),
+                                 ("571888u", "WARNING: shell paf (Google Lens): worst case 993,776 B exceeds the limit "
+                                             "985,088 B by 8,688 B")):
+            tmp = self.copy_tree()
+            budget = tmp / "include/vjo_ledger_budget.h"
+            text = re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u", budget.read_text())
+            if results:
+                text = re.sub(r"#define VJO_BUDGET_PAF_RESULTS_NET \d+u", "#define VJO_BUDGET_PAF_RESULTS_NET " + results,
+                              text)
+            budget.write_text(text)
+            result = run("--root", str(tmp))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if warning:
+                self.assertIn(warning, result.stderr)
+            else:
+                self.assertNotIn("WARNING", result.stderr)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()

@@ -548,10 +548,20 @@ static void test_config_cache(void)
     strcpy(loaded.local_dictionary_dir, "ux0:data/other");
     apply_config();
     TEST_CHECK(!cache_ok);
-    loaded.dictionary = VJO_DICT_HACHIDORI;
-    strcpy(loaded.hachidori_host, "192.168.1.2");
-    apply_config();
-    TEST_CHECK(want_lookup());
+    /* the removed Hachidori relay's choice loads as local: the same pipeline, the cache kept */
+    {
+        const char *old = "dictionary = hachidori\nhachidori_host = 192.168.1.2\nocr_backend = lens\n"
+                          "local_dictionary_dir = ux0:data/other\n"
+                          "local_dictionaries = daijirin.vjdict,main.vjdict\n";
+        VjoConfig c;
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, old, strlen(old));
+        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
+        cache_ok = 1;
+        loaded = c;
+        apply_config();
+        TEST_CHECK(cache_ok && want_lookup());
+    }
 }
 
 static void test_cached_scene(void)
@@ -594,22 +604,27 @@ static void test_background_local(void)
     mem_free();
 }
 
-/* The relay without a valid host: the overlay opens with the relay's host message (the
- * branch that once also showed the online dictionaries' missing API key) and no job starts
- * (audit N6, M27). */
-static void test_relay_without_host_says_so(void)
+/* The removed Hachidori relay: a config.ini that chose it, with any hachidori_host (none, not a
+ * host, a valid one), loads as local, and the overlay opens as with the local dictionaries: no
+ * relay host message (the relay without a valid host once showed one, and no job started;
+ * #117's audit N6, M27), a job starts. */
+static void test_removed_relay_opens_as_local(void)
 {
-    static const char *const hosts[] = {"", "http://192.168.1.2"};
+    static const char *const hosts[] = {"", "http://192.168.1.2", "192.168.1.2:19633"};
     for (unsigned i = 0; i < sizeof(hosts) / sizeof(hosts[0]); i++) {
+        char ini[128];
         reset();
-        loaded.dictionary = VJO_DICT_HACHIDORI;
-        snprintf(loaded.hachidori_host, sizeof(loaded.hachidori_host), "%s", hosts[i]);
+        snprintf(ini, sizeof(ini), "dictionary = hachidori\nhachidori_host = %s\n", hosts[i]);
+        vjo_config_defaults(&loaded);
+        loaded.ocr_backend = VJO_OCR_LENS; /* reset()'s Lens policy matrix */
+        vjo_config_parse(&loaded, ini, strlen(ini));
+        TEST_CHECK(loaded.dictionary == VJO_DICT_LOCAL && loaded.n_warnings == 1);
         cfg = loaded;
         open_overlay();
-        TEST_CHECK(!vjo_config_dict_ready(&cfg) && !want_lookup());
-        TEST_CHECK_(g_view.open && g_view.status_is_error && strstr(g_view.status, "hachidori_host") != NULL &&
-                    !strstr(g_view.status, "API key"), "host '%s': %s", hosts[i], g_view.status);
-        TEST_CHECK(!job_running && !(posted & NET_EV_JOB));
+        TEST_CHECK_(g_view.open && !g_view.status_is_error && !strstr(g_view.status, "achidori"),
+                    "host '%s': %s", hosts[i], g_view.status);
+        TEST_CHECK(job_running && job_lookup && (posted & NET_EV_JOB) && want_lookup());
+        job_running = 0;
         close_overlay();
         mem_free();
     }
@@ -652,7 +667,6 @@ static void test_changed_dictionary_drops_running_result(void)
     TEST_ASSERT(mem_alloc() == 0);
     active = 0;
     cache_ok = 1;
-    cache_dictionary = cfg.dictionary;
     cache_data[0].filtered = "日本語";
     start_job("test", 1);
     ov = OV_OPEN_OLD_JOB;
@@ -674,7 +688,6 @@ static void test_game_exit_drains_previous_job(void)
     TEST_ASSERT(mem_alloc() == 0);
     active = 0;
     cache_ok = 1;
-    cache_dictionary = cfg.dictionary;
     cache_data[0].filtered = "日本語";
     cache_scene = state.scene;
     cache_seq = state.region_seq;
@@ -701,7 +714,6 @@ static void test_game_start_rejects_previous_generation(void)
     TEST_ASSERT(mem_alloc() == 0);
     active = 0;
     cache_ok = 1;
-    cache_dictionary = cfg.dictionary;
     cache_data[0].filtered = "日本語";
     cache_scene = state.scene;
     cache_seq = state.region_seq;
@@ -1481,10 +1493,10 @@ static void test_vocr_oom_advice_names_the_stage(void)
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     check_oom_message(OOM_SCREENSHOT, "screenshot did not fit", "FL10");
     mem_free();
-    /* A network dictionary's result memory in the Shell, before any capture. */
+    /* Lens's result memory in the Shell, before any capture (local OCR's dictionary
+     * arena comes after recognition: the text stays, test_*_oom_keeps_text). */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.dictionary = VJO_DICT_HACHIDORI;
-    strcpy(cfg.hachidori_host, "192.168.1.2");
+    cfg.ocr_backend = VJO_OCR_LENS;
     job_cfg = cfg; job_cancelled = 0; job_captured = 0; fail_alloc = 1;
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !jpeg_captures);
     check_oom_message(OOM_SHELL_RESULTS, "Restart the Vita", "FL10");
@@ -1532,27 +1544,26 @@ static void test_vocr_storage_errors_are_specific(void)
 
 #endif
 
-/* The subtitle strip shows the recognized text alone, with any dictionary:
- * its readings came only from the removed online dictionaries (jpdb.io,
- * jiten.moe). Subtitle jobs stay OCR-only while the overlay is closed (no
- * lookup, no result arena for a local dictionary), and a strip's sentence is
- * the job's text as recognized. */
+/* The subtitle strip shows the recognized text alone: its readings came only
+ * from the removed online dictionaries (jpdb.io, jiten.moe). Subtitle jobs
+ * stay OCR-only while the overlay is closed (no lookup, no result arena for a
+ * local dictionary), and a strip's sentence is the job's text as recognized. */
 static void test_subtitles_are_ocr_only(void)
 {
     reset();
     cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
     subtitles = 1;
     TEST_CHECK(!want_lookup()); /* local dictionary: OCR only while the overlay is closed */
-    cfg.dictionary = loaded.dictionary = VJO_DICT_HACHIDORI;
-    strcpy(cfg.hachidori_host, "192.168.1.2");
-    loaded = cfg;
-    TEST_CHECK(vjo_config_dict_ready(&cfg) && !want_lookup());
-    /* a removed online dictionary in config.ini loads as local: still OCR only */
-    {
-        const char *old = "dictionary = jiten\njiten_api_key = test-key\nocr_mode = on_press\n";
+    /* a removed dictionary in config.ini (the online ones, the Hachidori relay) loads as
+     * local: still OCR only */
+    static const char *const olds[] = {
+        "dictionary = jiten\njiten_api_key = test-key\nocr_mode = on_press\n",
+        "dictionary = hachidori\nhachidori_host = 192.168.1.2\nocr_mode = on_press\n",
+    };
+    for (size_t i = 0; i < sizeof(olds) / sizeof(olds[0]); i++) {
         VjoConfig c;
         vjo_config_defaults(&c);
-        vjo_config_parse(&c, old, strlen(old));
+        vjo_config_parse(&c, olds[i], strlen(olds[i]));
         TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
         cfg = loaded = c;
         TEST_CHECK(!want_lookup());
@@ -2568,8 +2579,8 @@ static void test_boot_guard_ok_after_a_stable_minute(void)
 }
 
 /* The ledger's static table must describe this code: the network result
- * memory is MEM_SIZE, the local arena LOCAL_RESULT_ARENA_SIZE, and every
- * allocation is counted in and out of the pool it comes from. */
+ * memory (Google Lens) is MEM_SIZE, the local arena LOCAL_RESULT_ARENA_SIZE,
+ * and every allocation is counted in and out of the pool it comes from. */
 static void test_ledger_counts_result_memory_against_the_budget(void)
 {
     TEST_CHECK_(MEM_SIZE == VJO_BUDGET_PAF_RESULTS_NET, "MEM_SIZE %u", (unsigned)MEM_SIZE);
@@ -2583,8 +2594,7 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
     mem_free();
     fail_alloc = 0;
-    loaded.dictionary = VJO_DICT_HACHIDORI; loaded.ocr_backend = VJO_OCR_LENS;
-    strcpy(loaded.hachidori_host, "192.168.1.2");
+    loaded.ocr_backend = VJO_OCR_LENS;
     cfg = loaded;
 #ifdef VJO_PAF_ALLOC
     TEST_CHECK(mem_alloc() == 0);
@@ -2596,7 +2606,7 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 8192 &&
-               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 580080);
+               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 556288); /* 8,192 + 548,096 */
 #else
     TEST_CHECK(mem_alloc() == 0);
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == ((VJO_BUDGET_PAF_RESULTS_NET + 0xFFF) & ~0xFFFu));
@@ -3238,7 +3248,7 @@ TEST_LIST = {
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitles_are_ocr_only", test_subtitles_are_ocr_only},
-    {"relay_without_host_says_so", test_relay_without_host_says_so},
+    {"removed_relay_opens_as_local", test_removed_relay_opens_as_local},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},

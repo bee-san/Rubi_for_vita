@@ -472,9 +472,9 @@ static void do_save(unsigned seq, int entry)
     }
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1, 0);
     card_facts(&note, misc, sizeof(misc));
-    /* The shown entry's dictionary: a local definition names it; else the service. */
+    /* The shown entry's dictionary: a local definition names it (none: no name). */
     vjo_anki_meaning_source(note.n_meanings ? note.meanings[0] : "", name, sizeof(name));
-    note.dictionary = *name ? keep_str(name) : acfg->dictionary == VJO_DICT_LOCAL ? NULL : vjo_dict_name(acfg->dictionary);
+    note.dictionary = *name ? keep_str(name) : NULL;
     sceClibMemset(&media, 0, sizeof(media));
     if (wanted && !stopping()) /* the frame of the × press */
         picture = take_screenshot(&media);

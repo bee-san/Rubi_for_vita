@@ -1,5 +1,4 @@
-/* Dictionary lookup result shared by the local dictionaries (local_dict.h)
- * and the Hachidori relay (hachidori.h). */
+/* The dictionary lookup's result (the local dictionaries, local_dict.h). */
 #ifndef VJO_DICT_H
 #define VJO_DICT_H
 
