@@ -639,7 +639,7 @@ int main(void)
         "Choices save automatically. Turn OFF games that need L+R.");
     if (vita2d_init() < 0) { sceKernelExitProcess(1); return 1; }
     font = vita2d_load_default_pvf();
-    if (!font) { vita2d_fini(); sceKernelExitProcess(1); return 1; }
+    if (!font) { sceKernelExitProcess(1); return 1; } /* no vita2d_fini: see the end of main */
     const char *em_samples[] = {"あ", "漢", "Ｗ"};
     int em_width = 0;
     for (int i = 0; i < 3; i++) {
@@ -776,7 +776,11 @@ int main(void)
     vita2d_wait_rendering_done();
     clear_icons();
     vita2d_free_pvf(font);
-    vita2d_fini();
+    /* No vita2d_fini. In a system application libvita2d draws into the shared
+     * framebuffer's two buffers and never sets its third display buffer, but
+     * vita2d_fini clears all three: a 2 MiB memset at address 0 (libvita2d
+     * a8f15ab, vita2d.c:259-260 and 758-765). Ending the process frees what
+     * libvita2d holds, as closing the app from its LiveArea page does. */
     sceKernelExitProcess(0);
     return 0;
 }
