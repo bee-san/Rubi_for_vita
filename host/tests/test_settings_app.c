@@ -845,6 +845,7 @@ static void test_later_generation_is_named_from_its_metadata(void)
     remove_model("VOCR5_L_w8.vocr");
     run(in, 2);
     check_card(1, "VOCR5", 0, "VOCR5-L missing. Reinstall the package.", OFF);
+    check_no_fallback_hint(2); /* VOCR5-N would run: the card never says so */
     /* the same app with an older config.ini: its model's size, this package's model of it */
     card("vocr_model = VOCR3_H15_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
     run(in, 2);
@@ -860,10 +861,12 @@ static void test_mixed_generations_name_the_model_that_loads(void)
     remove_model("VOCR5_N_w8.vocr");
     run(in, 2);
     check_card(1, "VOCR5", 0, "VOCR5-N missing. Reinstall the package.", OFF); /* VOCR5-S loads */
+    check_no_fallback_hint(2);
     put_model("VOCR5_N_w8.vocr", 1500000 - 32768); /* one 32 KiB piece short */
     remove_model("VOCR5_S_w8.vocr");
     run(in, 2);
     check_card(1, "VOCR5", 0, "VOCR5-N missing. Reinstall the package.", OFF);
+    check_no_fallback_hint(2);
     /* its file back: it runs again */
     put_model("VOCR5_N_w8.vocr", 1500000);
     run(in, 2);

@@ -4,7 +4,8 @@
 # VJO_SETTINGS_SMOKE), over synthetic installed games (tools/make_settings_smoke_games.py).
 # The script scrolls the Games list down and back, pages with L/R (pressed and held), jumps
 # letters with Left/Right, toggles games, cycles the filters, rescans with Start, visits the
-# other pages and leaves with Circle. It fails on a crash, a hang, an unsafe texture free or a
+# other pages and leaves with Cancel (○ and × as the console's setting has them, #106). It fails
+# on a crash, a hang, an unsafe texture free or a
 # texture left alive. A crash check of the app's own code under Vita3K's libgxm and the real
 # libvita2d/libpng, headless under Xvfb; not evidence about the console
 # (docs/offline-testing.md section 5, AGENTS.md rule 5).

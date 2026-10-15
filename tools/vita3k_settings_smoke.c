@@ -5,15 +5,16 @@
  * after being drawn with no GPU wait in between is counted as unsafe (libvita2d #28).
  * The results go to ux0:data/vjo_settings_smoke.txt: a progress line every 60 frames
  * (a crash shows where it was) and the totals when the app exits after the script's
- * cancel. A crash check of the app's own code in Vita3K, not evidence about the
+ * Cancel. A crash check of the app's own code in Vita3K, not evidence about the
  * console (docs/offline-testing.md). Never part of the release. */
-#include "../vita/buttons_vita.h"
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "../vita/buttons_vita.h"
 
 int __real_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count);
 int __real_sceKernelExitProcess(int status);
@@ -23,12 +24,14 @@ void __real_vita2d_free_texture(vita2d_texture *texture);
 void __real_vita2d_wait_rendering_done(void);
 void __real_vita2d_draw_texture_scale(const vita2d_texture *texture, float x, float y, float x_scale, float y_scale);
 
-/* The script: frames to hold each set of buttons (0: none). In it SCE_CTRL_CROSS
- * stands for the console's enter button and SCE_CTRL_CIRCLE for its cancel button
- * (core/buttons.h); the controller wrapper presses the ones button_assign makes them,
- * as the app reads it (Vita3K's own setting makes ○ enter). */
+/* The script: frames to hold each set of buttons (0: none). ENTER and CANCEL
+ * are the console's enter and cancel buttons (core/buttons.h), read from the
+ * same setting as the app (vita/buttons_vita.c): ○ and × trade places with it
+ * (#106), and results.txt says which one entered. */
 typedef struct { unsigned short frames; unsigned buttons; } Step;
 #define TAP(b, gap) {1, (b)}, {(gap), 0}
+#define ENTER 0x01000000u  /* no SceCtrl button has this bit: replaced by the enter button */
+#define CANCEL 0x02000000u /* nor this one: replaced by the cancel button */
 static const Step script[] = {
     {90, 0},                                         /* the window's icons load, one a frame */
     {300, SCE_CTRL_DOWN}, {30, 0}, {300, SCE_CTRL_UP}, {30, 0},  /* down about 47 rows, back */
@@ -38,13 +41,13 @@ static const Step script[] = {
     TAP(SCE_CTRL_LTRIGGER, 14), TAP(SCE_CTRL_LTRIGGER, 14), {240, SCE_CTRL_LTRIGGER}, {20, 0},
     TAP(SCE_CTRL_RIGHT, 8), TAP(SCE_CTRL_RIGHT, 8), TAP(SCE_CTRL_RIGHT, 8), TAP(SCE_CTRL_RIGHT, 1),
     {120, SCE_CTRL_RIGHT}, {20, 0}, {120, SCE_CTRL_LEFT}, {20, 0},      /* letters, held */
-    TAP(SCE_CTRL_CROSS, 20), TAP(SCE_CTRL_DOWN, 10), TAP(SCE_CTRL_CROSS, 20), /* two games off */
+    TAP(ENTER, 20), TAP(SCE_CTRL_DOWN, 10), TAP(ENTER, 20),             /* two games off */
     TAP(SCE_CTRL_SQUARE, 30), TAP(SCE_CTRL_SQUARE, 30), TAP(SCE_CTRL_SQUARE, 30), /* the filters */
-    TAP(SCE_CTRL_CROSS, 20), TAP(SCE_CTRL_UP, 10), TAP(SCE_CTRL_CROSS, 20),  /* both on again */
+    TAP(ENTER, 20), TAP(SCE_CTRL_UP, 10), TAP(ENTER, 20),               /* both on again */
     {60, SCE_CTRL_DOWN}, TAP(SCE_CTRL_START, 60),                /* a rescan away from the top */
     TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 60), /* OCR, Anki, Games */
     {200, SCE_CTRL_DOWN}, TAP(SCE_CTRL_LEFT, 30),
-    TAP(SCE_CTRL_CIRCLE, 0),
+    TAP(CANCEL, 0),
 };
 
 #if VJO_SMOKE_PAD > 0
@@ -53,6 +56,7 @@ static const unsigned char smoke_pad[VJO_SMOKE_PAD] = {1};
 #endif
 
 static unsigned frame;
+static VjoButtons smoke_btn; /* the console's enter and cancel, read at the first pad call */
 static int loads, failed_loads, frees, other_frees, waits, draws, unsafe_frees, live, max_live;
 /* Textures alive, and whether each was drawn since the GPU was last waited for. */
 #define TRACKED 64
@@ -70,8 +74,9 @@ static void write_results(const char *state)
 {
     char line[256];
     int n = snprintf(line, sizeof(line), "%s frames=%u script=%u loads=%d failed=%d frees=%d other_frees=%d waits=%d "
-                     "draws=%d unsafe_frees=%d live=%d max_live=%d\n", state, frame, script_frames(), loads,
-                     failed_loads, frees, other_frees, waits, draws, unsafe_frees, live, max_live);
+                     "draws=%d unsafe_frees=%d live=%d max_live=%d enter=%s\n", state, frame, script_frames(), loads,
+                     failed_loads, frees, other_frees, waits, draws, unsafe_frees, live, max_live,
+                     smoke_btn.enter == VJO_BUTTON_CIRCLE ? "circle" : "cross");
 #if VJO_SMOKE_PAD > 0
     if (((const volatile unsigned char *)smoke_pad)[0] != 1) return; /* kept by the reference */
 #endif
@@ -90,25 +95,16 @@ static unsigned scripted(unsigned f)
         if (f < at + script[i].frames) return script[i].buttons;
         at += script[i].frames;
     }
-    return SCE_CTRL_CIRCLE; /* past the end: leave */
-}
-
-/* The script's enter (×) and cancel (○) as the console's buttons. */
-static unsigned console_buttons(unsigned scripted_buttons)
-{
-    static int read;
-    static VjoButtons b;
-    if (!read) { b = vjo_buttons_read(); read = 1; }
-    unsigned out = scripted_buttons & ~(unsigned)(SCE_CTRL_CROSS | SCE_CTRL_CIRCLE);
-    if (scripted_buttons & SCE_CTRL_CROSS) out |= b.enter;
-    if (scripted_buttons & SCE_CTRL_CIRCLE) out |= b.cancel;
-    return out;
+    return CANCEL; /* past the end: leave */
 }
 
 int __wrap_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
 {
     int rc = __real_sceCtrlPeekBufferPositive(port, pad, count);
-    pad->buttons = console_buttons(scripted(frame));
+    unsigned b = scripted(frame);
+    if (!frame)
+        smoke_btn = vjo_buttons_read(); /* as the app read it at its start */
+    pad->buttons = (b & ~(ENTER | CANCEL)) | (b & ENTER ? smoke_btn.enter : 0) | (b & CANCEL ? smoke_btn.cancel : 0);
     if (frame % 60 == 0) write_results("running");
     frame++;
     return rc;
