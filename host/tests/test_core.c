@@ -861,9 +861,9 @@ static void test_config(void)
     TEST_CHECK(c.n_warnings == 2);
     TEST_MSG("warnings: %d", c.n_warnings);
     vjo_config_defaults(&c);
-    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = vocr2\n";
+    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = LENS\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
-    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_VOCR2);
+    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_LENS && c.n_warnings == 0);
     /* Anki mining is off unless anki_mining says on (an anki_host alone is not) */
     vjo_config_defaults(&c);
     TEST_CHECK(!c.anki_mining);
@@ -876,13 +876,46 @@ static void test_config(void)
     mining = "anki_mining = yes\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(!c.anki_mining && c.n_warnings == 1);
-    /* A choice saved by the removed Meiki trial falls back to vocr and says so. */
-    vjo_config_defaults(&c);
-    c.ocr_backend = VJO_OCR_LENS;
-    const char *removed_meiki = "ocr_backend = Meiki\n";
-    vjo_config_parse(&c, removed_meiki, strlen(removed_meiki));
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
-    TEST_CHECK(strstr(c.warnings[0], "Meiki was removed") != NULL);
+    /* Two engines: vocr and lens. A choice of a removed engine (the VOCR2 and Meiki
+     * trials, ncnn of the host tools) loads as vocr and says so, in any case. */
+    {
+        static const struct { const char *ini, *warning; } removed[] = {
+            {"ocr_backend = vocr2\n", "ocr_backend: VOCR2 was removed; using vocr"},
+            {"ocr_backend = VOCR2\n", "ocr_backend: VOCR2 was removed; using vocr"},
+            {"ocr_backend = Meiki\n", "ocr_backend: Meiki was removed; using vocr"},
+            {"OCR_BACKEND = meiki ; old\n", "OCR_BACKEND: Meiki was removed; using vocr"},
+            {"ocr_backend = ncnn\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
+            {"ocr_backend = NCNN\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
+        };
+        for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
+            vjo_config_defaults(&c);
+            c.ocr_backend = VJO_OCR_LENS;
+            vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
+            TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
+            TEST_CHECK(!strcmp(c.warnings[0], removed[i].warning));
+            TEST_MSG("%s: %s", removed[i].ini, c.warnings[0]);
+        }
+        /* Anything else is not an engine: the value before it stays, with a warning. */
+        static const char *const invalid[] = {"ocr_backend = vocr3\n", "ocr_backend = google\n",
+                                              "ocr_backend =\n", "ocr_backend = vocr22\n"};
+        for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+            vjo_config_defaults(&c);
+            c.ocr_backend = VJO_OCR_LENS;
+            vjo_config_parse(&c, invalid[i], strlen(invalid[i]));
+            TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && c.n_warnings == 1);
+            TEST_CHECK(strstr(c.warnings[0], "invalid value") != NULL);
+            TEST_MSG("%s: %s", invalid[i], c.warnings[0]);
+        }
+        const char *engines = "ocr_backend = Lens\n";
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, engines, strlen(engines));
+        TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && !c.n_warnings);
+        engines = "ocr_backend = VOCR\n";
+        vjo_config_parse(&c, engines, strlen(engines));
+        TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !c.n_warnings);
+        /* The IDs the self-test reports (config backend=) do not move. */
+        TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_VOCR == 2);
+    }
     vjo_config_defaults(&c);
     const char *invalid_selection = "japanese_only_selection = maybe\n";
     vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
@@ -965,10 +998,10 @@ static void test_highlight_config(void)
     vjo_config_defaults(&c);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD);
     /* Existing saved configs gain word highlighting without changing choices. */
-    const char old[] = "ocr_backend = vocr2\njapanese_only_selection = off\n";
+    const char old[] = "ocr_backend = lens\njapanese_only_selection = off\n";
     vjo_config_parse(&c, old, sizeof(old) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR2 && !c.japanese_only_selection);
+    TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && !c.japanese_only_selection);
     const char character[] = "HIGHLIGHT_MODE = CHARACTER\n";
     vjo_config_parse(&c, character, sizeof(character) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_CHARACTER && c.n_warnings == 0);

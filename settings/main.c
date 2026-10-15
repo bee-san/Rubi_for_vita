@@ -10,10 +10,10 @@
 #include <string.h>
 #include "anki_page.h"
 #include "catalog.h"
+#include "engine.h"
 #include "preferences.h"
 #include "../core/local_dict.h"
 #include "../core/utf.h"
-#include "../include/vjo_vocr_sizes.h"
 #include "../vita/games_storage.h"
 
 #define ROWS 3
@@ -26,11 +26,12 @@
 #define GAME_PITCH 88
 #define OCR_Y 112
 #define OCR_H 146
+/* Two engine buttons (settings/engine.h) across the card, 12 pixels apart. */
 #define OCR_CHOICE_X 42
 #define OCR_CHOICE_Y (OCR_Y + 42)
-#define OCR_CHOICE_W 284
+#define OCR_CHOICE_W 432
 #define OCR_CHOICE_H 48
-#define OCR_CHOICE_PITCH 296
+#define OCR_CHOICE_PITCH 444
 /* The three compact preference cards share one layout: title and choices on
  * the first row, help on the second. */
 #define CARD_H 68
@@ -73,33 +74,9 @@ static int icons_offset = -1, writable = 1;
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
-static int model_found[3];
+static VjoEngineCard engine; /* the OCR engine card: the local engine's name, its model files */
 static char preference_status[160];
 static int status_error, preference_error;
-static const struct {
-    int backend;
-    const char *name;
-    const char *description;
-} ocr_choices[] = {
-    {VJO_OCR_VOCR, "VOCR", "Local OCR: dialogue region, automatic or manual."},
-    {VJO_OCR_VOCR2, "VOCR2", "Experimental local OCR. Trial results vary by game."},
-    {VJO_OCR_LENS, "Google Lens", "Wi-Fi required. Sends the selected image to Google."}
-};
-#define OCR_CHOICES ((int)(sizeof(ocr_choices) / sizeof(ocr_choices[0])))
-
-static int ocr_choice_index(int backend)
-{
-    for (int i = 0; i < OCR_CHOICES; i++)
-        if (ocr_choices[i].backend == backend) return i;
-    return -1;
-}
-
-static int next_ocr_choice(int direction)
-{
-    int index = ocr_choice_index(preferences.ocr_backend);
-    if (index < 0) return VJO_OCR_VOCR;
-    return ocr_choices[(index + direction + OCR_CHOICES) % OCR_CHOICES].backend;
-}
 
 static float text_scale(float pixels) { return pixels / font_em; }
 
@@ -297,21 +274,9 @@ static void move(int delta)
 
 static void check_models(void)
 {
-    /* VOCR, VOCR2, and VOCR's fallback (used when the game has too little
-     * memory for vocr_model, or vocr_model is unusable). */
-    const char *names[] = {preferences.vocr_model, VJO_VOCR2_MODEL_NAME, preferences.vocr_fallback_model};
-    for (int i = 0; i < 3; i++) {
-        char path[256];
-        model_found[i] = 0;
-        if (!names[i][0]) continue;
-        int n = snprintf(path, sizeof(path), "%s/%s", preferences.ocr_model_dir, names[i]);
-        if (n < 0 || n >= (int)sizeof(path)) continue;
-        SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
-        if (fd < 0) continue;
-        SceOff bytes = sceIoLseek(fd, 0, SCE_SEEK_END);
-        model_found[i] = bytes > 0 && sceIoClose(fd) >= 0;
-        if (bytes <= 0) sceIoClose(fd);
-    }
+    /* The local engine's model and its fallback (used when the game has too
+     * little memory for vocr_model, or vocr_model is unusable). */
+    vjo_engine_card(&preferences, &engine);
 }
 
 static void load_preferences(void)
@@ -359,20 +324,21 @@ static void toggle_preference(void)
         return;
     }
     change_preference(preference_selected == 0
-        ? next_ocr_choice(1)
+        ? vjo_engine_backend(!vjo_engine_index(preferences.ocr_backend)) /* the other engine */
         : preferences.ocr_backend,
         preference_selected == 1 ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == 2 ? !preferences.highlight_mode : preferences.highlight_mode,
         preferences.local_dictionary_results);
 }
 
+/* Left/Right choose the left/right option of the selected card. */
 static void set_preference(int right)
 {
     if (preference_selected == 3) {
         set_dictionary_results(preferences.local_dictionary_results + (right ? 1 : -1));
         return;
     }
-    change_preference(preference_selected == 0 ? next_ocr_choice(right ? 1 : -1)
+    change_preference(preference_selected == 0 ? vjo_engine_backend(right)
                                                : preferences.ocr_backend,
         preference_selected == 1 ? right : preferences.japanese_only_selection,
         preference_selected == 2 ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -382,7 +348,7 @@ static void set_preference(int right)
 
 static void draw_preferences(void)
 {
-    int choice = ocr_choice_index(preferences.ocr_backend);
+    int choice = vjo_engine_index(preferences.ocr_backend);
     vita2d_start_drawing();
     vita2d_clear_screen();
     header();
@@ -390,33 +356,19 @@ static void draw_preferences(void)
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, OCR_Y + 2, 932, OCR_Y + OCR_H - 2);
     text(42, OCR_Y + 31, WHITE, 28, "OCR engine");
-    for (int i = 0; i < OCR_CHOICES; i++)
+    for (int i = 0; i < VJO_ENGINES; i++)
         badge(OCR_CHOICE_X + i * OCR_CHOICE_PITCH, OCR_CHOICE_Y,
-              OCR_CHOICE_W, OCR_CHOICE_H, ocr_choices[i].name,
+              OCR_CHOICE_W, OCR_CHOICE_H, vjo_engine_name(&engine, i),
               preferences_writable && choice == i);
     text(42, OCR_Y + 111, DIM, 24, !preferences_writable
-         ? "Cannot read the saved OCR choice."
-         : choice < 0 ? "Custom engine configured. Select an engine above."
-                      : ocr_choices[choice].description);
+         ? "Cannot read the saved OCR choice." : vjo_engine_description(choice));
     char label[120];
     unsigned color = DIM;
     if (!preferences_writable) {
         snprintf(label, sizeof(label), "Repair config.ini before changing settings.");
         color = OFF;
-    } else if (choice < 0) {
-        snprintf(label, sizeof(label), "Left/Right or X chooses VOCR first.");
-    } else if (preferences.ocr_backend == VJO_OCR_LENS) {
-        snprintf(label, sizeof(label), "No model file needed. Uses your chosen dictionary.");
-    } else {
-        int model = preferences.ocr_backend == VJO_OCR_VOCR2 ? 1 : 0;
-        if (!model && !model_found[0] && model_found[2])
-            snprintf(label, sizeof(label), "%s model missing; uses %s. Game OCR worker required.",
-                     ocr_choices[choice].name, preferences.vocr_fallback_model);
-        else {
-            snprintf(label, sizeof(label), "%s model %s. Game OCR worker required.",
-                     ocr_choices[choice].name, model_found[model] ? "found" : "missing");
-            if (!model_found[model]) color = OFF;
-        }
+    } else if (vjo_engine_status(&preferences, &engine, label, sizeof(label))) {
+        color = OFF;
     }
     wrapped_text(42, OCR_Y + 137, 870, color, 24, 26, 1, label);
     vita2d_disable_clipping();
@@ -611,10 +563,10 @@ int main(void)
             else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 preference_selected = 0;
                 if (y >= OCR_CHOICE_Y && y < OCR_CHOICE_Y + OCR_CHOICE_H) {
-                    for (int i = 0; i < OCR_CHOICES; i++) {
+                    for (int i = 0; i < VJO_ENGINES; i++) {
                         int left = OCR_CHOICE_X + i * OCR_CHOICE_PITCH;
                         if (x >= left && x < left + OCR_CHOICE_W)
-                            change_preference(ocr_choices[i].backend,
+                            change_preference(vjo_engine_backend(i),
                                               preferences.japanese_only_selection, preferences.highlight_mode,
                                               preferences.local_dictionary_results);
                     }

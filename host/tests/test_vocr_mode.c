@@ -83,15 +83,14 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
         reset(0);
         TEST_CHECK(vjo_vocr_ocr(&platform, "absent", models[i].name, &image, workspace, size, capture, cap,
                                 text, sizeof(text), &stats) == VJO_OK);
-        int expected = !strcmp(models[i].name, VJO_VOCR2_ARTIFACT_NAME) ? 2 : 0;
-        TEST_CHECK(finder_calls == 1 && selected_mode == expected && !model_opens);
+        /* the model's own finder (every pinned model uses the gradient finder, 0) */
+        int expected = (int)models[i].finder_mode;
+        TEST_CHECK(expected == 0 && finder_calls == 1 && selected_mode == expected && !model_opens);
         TEST_CHECK(stats.workspace == size && stats.capture == cap && !stats.model_loaded && !text[0]);
         /* One strip holds the region: read once (the first pass, whole: FIRST and LAST),
          * then once more to see that it did not change; the finder's passes hit the strip. */
         TEST_CHECK(strips == 2 && first_flags == 1 && last_flags == 1 && stats.strips == 2 && !stats.tears);
         for (unsigned y = 0; y < HEIGHT; y++) TEST_CHECK(row_reads[y] == 2);
-        if (expected == 2)
-            TEST_CHECK(size == vjo_vocr_workspace_bytes("FL10_w8.vocr", WIDTH, HEIGHT));
         /* A detected line must request this exact artifact and refuse a missing
          * file without publishing text or changing the arena. */
         reset(1);

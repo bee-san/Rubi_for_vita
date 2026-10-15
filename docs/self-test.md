@@ -227,7 +227,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
 Each file keeps its device path in the folder (`ux0/data/VitaJPOverlay/log.txt`, ...); `COLLECT.json`
 lists every file with its bytes and SHA-256, what was not on the Vita and every error. Then
 `analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
-the summary: whether the installed files match the package, the configuration, where taiHEN loads
+the summary: whether the installed files match the package (a file it does not ship, such as a
+removed engine's model, is listed as not in this package), the configuration, where taiHEN loads
 each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the dictionary jobs, the overlay's

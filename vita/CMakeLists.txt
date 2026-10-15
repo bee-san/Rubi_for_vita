@@ -269,9 +269,9 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/tls.c ${ROOT}/core/tls_roots.c ${ROOT}/core/base64.c
   ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 add_executable(VitaJPOverlay_Settings
-  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c
+  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
-  ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${VJO_SETTINGS_ANKI_SRC})
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)

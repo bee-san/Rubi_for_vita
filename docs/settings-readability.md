@@ -7,16 +7,17 @@ unchanged.
 
 The 960 × 544 layout now shows three 80-pixel game cards. Game titles have two
 measured-width lines; their IDs occupy a separate right column below a clear
-ON/OFF badge. The page tabs and direct VOCR/VOCR2/Google Lens buttons have
-48-pixel touch heights. The focused card has a bright border. Save failures have a distinct
+ON/OFF badge. The page tabs and the two direct engine buttons (the local
+engine, named after its model's generation, and Google Lens) have 48-pixel
+touch heights. The focused card has a bright border. Save failures have a distinct
 error color, and status messages have two lines above the control hints.
 Only three icon textures are held at once, retaining the existing unload-on-scroll
 ownership.
 
 Games-page controls keep their existing actions. Touch can select either page,
 toggle a game or setting, or choose
-VOCR, VOCR2 or Google Lens directly. Left/Right cycles backward/forward through
-the engines; Cross selects the next engine. Touching the OCR heading, help text
+the local engine or Google Lens directly. Left chooses the local engine, Right
+Google Lens; Cross switches to the other one. Touching the OCR heading, help text
 or gaps only focuses that row, so it cannot accidentally enable online OCR.
 The selected engine's description identifies local/manual behavior or Lens's
 Wi-Fi requirement and image upload. Model availability is shown only for the
@@ -90,10 +91,19 @@ Lens remains selectable without local model files, and its help identifies the
 Wi-Fi requirement and image upload without reporting missing local weights.
 Approximate host previews of all three choices fit the card and viewport;
 firmware rendering and live Google Lens recognition remain unverified.
-After v0.7.12 the Meiki choice was removed. The row now has three
-284-pixel buttons, VOCR, VOCR2 and Google Lens, with the same left and right
-edges; a saved `ocr_backend = meiki` loads as VOCR with a config warning.
-These scenarios, previews and the native checks below predate that change.
+After v0.7.12 the Meiki choice was removed, and after v0.8.0-test.1 (#81) the
+VOCR2 trial. The row now has two 432-pixel buttons, 12 pixels apart, with the
+same left and right edges as before: the local engine, labelled with the
+generation of the model it runs (VOCR3; `core/vocr_models.c`), and Google Lens.
+A saved `ocr_backend = vocr2`, `meiki` or `ncnn` loads as the local engine with a
+config warning, and the next save writes `vocr`. `host/tests/test_settings_app.c`
+runs the actual input/draw loop with a scripted controller, touch screen and
+vita2d, and real files: both buttons, their edges and the gaps (focus only), Left,
+Right and Cross, the removed values, missing and wrong-sized models, an
+unreadable config.ini, and a later model table whose VOCR5 the app names unchanged
+(and VOCR3 while a missing VOCR5 file leaves a VOCR3 fallback to run).
+Its text widths are stub metrics, not firmware fonts. These scenarios, previews
+and the native checks below predate that change.
 The native Settings build, PNG ABI/assets checks and existing Lens transport
 tests are separate checks. This change does not deploy anything to a Vita.
 

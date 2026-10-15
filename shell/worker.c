@@ -402,7 +402,7 @@ static int has_result_memory(void)
 
 static int game_ocr_backend(int backend)
 {
-    return backend == VJO_OCR_VOCR || backend == VJO_OCR_VOCR2;
+    return backend == VJO_OCR_VOCR;
 }
 
 static int local_pipeline(const VjoConfig *c)
@@ -725,9 +725,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     VjoState st0;
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? VJO_VOCR2_MODEL_NAME : job_cfg.vocr_model;
-    /* VOCR2's pinned model is already FL10-sized: no fallback. */
-    const char *fallback = job_cfg.ocr_backend == VJO_OCR_VOCR2 ? "" : job_cfg.vocr_fallback_model;
+    const char *model = job_cfg.vocr_model;
+    const char *fallback = job_cfg.vocr_fallback_model;
     vocr_fallback_requested = 0;
     if (fallback[0] && !sceClibStrcmp(fallback, model)) fallback = "";
     if (force_model) {
@@ -851,10 +850,6 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     static VjoGameOcrResult result;
     const char *ran = "?";
     int local = local_pipeline(&job_cfg);
-    if (job_cfg.ocr_backend == VJO_OCR_VOCR2 && !VJO_VOCR2_MODEL_NAME[0]) {
-        out->err.detail = "VOCR2 weights are unavailable in this build.";
-        return out->err.rc = VJO_E_OCR_MODEL;
-    }
     sceClibMemset(&result, 0, sizeof(result));
     vocr_fallback_requested = 0;
     if (vjo_selftest_stages())

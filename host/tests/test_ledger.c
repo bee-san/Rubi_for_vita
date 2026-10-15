@@ -104,14 +104,15 @@ static void test_budget_table_is_consistent(void)
  * accepted model at the largest region. */
 static void test_game_workspace_budget_matches_the_layout(void)
 {
-    static const char *const models[] = {"FL10_w8.vocr", "H15_w8.vocr", "F20_w8.vocr", VJO_VOCR2_MODEL_NAME};
+    unsigned n = 0;
+    const VjoVocrModel *models = vjo_vocr_models(&n); /* every model the game worker accepts */
     size_t largest = 0;
-    for (unsigned i = 0; i < sizeof(models) / sizeof(models[0]); i++) {
-        size_t bytes = vjo_vocr_job_bytes(models[i], VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT);
-        TEST_CHECK_(bytes > 0, "%s", models[i]);
+    TEST_CHECK(n >= 5);
+    for (unsigned i = 0; i < n; i++) {
+        size_t bytes = vjo_vocr_job_bytes(models[i].name, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT);
+        TEST_CHECK_(bytes > 0, "%s", models[i].name);
         if (bytes > largest) largest = bytes;
-        const VjoVocrModel *m = vjo_vocr_model(models[i]);
-        TEST_CHECK(m && (m->bytes + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE <= VJO_BUDGET_GAME_WEIGHTS);
+        TEST_CHECK((models[i].bytes + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE <= VJO_BUDGET_GAME_WEIGHTS);
     }
     TEST_CHECK_((largest + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE == VJO_BUDGET_GAME_WORKSPACE,
                 "largest full-screen job %zu B", largest);

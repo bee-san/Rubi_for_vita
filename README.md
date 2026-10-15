@@ -11,21 +11,32 @@ AnkiConnect on a computer on your local network, as [Kiku](https://github.com/yo
 notes in the deck Kiku, when you press Triangle or **Send queued cards now** in
 the Overlay app's Anki page, where it is also switched on. There is no AnkiWeb sync.
 
-Open the **Overlay** app, press **Select**, and choose **VOCR**,
-**[VOCR2](docs/vita-vn-ocr.md#experimental-vocr2-trial)**, or **Google Lens**
-in the OCR engine row.
-Tap an engine directly, or use **Left/Right** or **Cross** to cycle the choices.
-VOCR is the default and supports automatic or manual local OCR. Google Lens requires
+Open the **Overlay** app, press **Select**, and choose one of the two engines
+in the OCR engine row: the local engine, named after the generation of the
+model it runs (**VOCR3** in this package), or **Google Lens**.
+Tap an engine directly, or use **Left** (local) and **Right** (Lens); **Cross**
+switches to the other one.
+The local engine is the default and supports automatic or manual OCR on the
+Vita, offline. When a game has too little free memory for its model, a job
+runs the smaller fallback model (VOCR3-FL10) by itself. Google Lens requires
 Wi-Fi and sends the selected image to Google, using the original
 [upstream implementation](https://github.com/Dartv/vita-jp-overlay).
 The release stores the local models; choosing an engine keeps them installed
 and applies when you next open the overlay.
 
-The optional VOCR2 trial pairs a separately trained FL10-sized model with a
-textbox finder. Shared screenshot totals improved on PSP and Vita, but some
-games regressed by one or two characters and its strict promotion guard failed.
-It is experimental, has no physical-device validation, and must be selected
-explicitly in the Overlay app; VOCR remains the default. The
+The engine's name comes from the pinned metadata of the model it runs
+(`core/vocr_models.c`, also written per model into the package's
+`package-manifest.json`), not from the app: a release that pins a new
+generation's model and makes it the default (`vocr_model`) shows that
+generation's name, for example VOCR5, with no change to the app. A `.vocr` file
+itself carries no generation. v0.2.0's models are generation VOCR1.
+
+The experimental VOCR2 trial (a separately trained FL10-sized model with a
+textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
+has been removed. A saved `ocr_backend = vocr2` now loads as the local engine
+with a config warning, the app's next save writes `vocr`, and the installer
+rewrites it; so does `ncnn`, which only the host tools run. The no-longer-used
+`ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted. The
 [`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
 carried the optional Meiki engine. Earlier releases remain available.
@@ -68,7 +79,7 @@ Download `VitaJPOverlay-0.7.12.zip` from this fork's
 extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
 int8 models including the opt-in VOCR2 model, and the complete converted
 JMdict snapshot. The 0.7.12 archive also still carries the Meiki recognizer and
-engine, which have since been removed. Python 3.9+, bash,
+engine and the VOCR2 model, which have since been removed. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
 Close games, open VitaShell, press Select to start FTP, and run from the
@@ -196,8 +207,10 @@ On the **OCR & lookup** page, select a card with Up/Down. Cross
 or touch a card changes its choice: OCR engine, Japanese-only selection,
 whole-word/character highlighting, or how many dictionaries are shown.
 Touch an engine button or a number to choose it directly;
-Left/Right cycle the three engine choices on the model card, OFF/ON on the selection card,
+Left/Right choose the local engine or Google Lens on the engine card, OFF/ON on the selection card,
 Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown.
+The engine card's last line names the model file that runs (`VOCR3-H15 found`),
+or the fallback a missing one leaves (`VOCR3-H15 missing; uses VOCR3-FL10`).
 Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -406,8 +419,8 @@ because the game or system uses memory concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
-only the two VOCR3 model names, the three original VOCR model names and the
-separate pinned VOCR2 trial model in `ux0:data/VitaJPOverlay/ocr`, checks
+only the two VOCR3 model names and the three original VOCR model names
+in `ux0:data/VitaJPOverlay/ocr`, checks
 their lengths, reports their modification time, and copies at most 32 KiB per
 request into game-owned memory. Each model call waits (at most 50 ms, without
 the kernel lock) for the kernel worker instead of polling with a 1 ms sleep.

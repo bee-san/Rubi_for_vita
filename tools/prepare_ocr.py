@@ -64,14 +64,12 @@ VOCR_ASSETS = {
         'f8c1abe4743a71a742e718523f4206f992d3bd4fb69de321997b2bd6f16779c0'),
 }
 
-# VOCR2 has its own trained FL10-sized recognizer and native textbox finder.
-# Experimental opt-in trial: the strict per-title promotion guard failed.
-VOCR2_ENABLED = True
-VOCR2_MODEL = 'VOCR2_FL10_w8.vocr'
-VOCR2_TAG = 'v0.2.3-vocr2.1'
-VOCR2_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR2_TAG}/'
-VOCR2_ASSETS = {VOCR2_MODEL: (VOCR2_BASE + VOCR2_MODEL, 657664,
-    'd3adc52e5cf62b548af04c5ab07a2f57cf0419386bbdf49ba19c9703be6e1766')}
+# The model generation of each release: vita-vn-ocr's name for the family of models a release
+# publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
+# the pins carry it: core/vocr_models.c per file (the Overlay app names the local OCR engine
+# after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
+# was removed from the overlay after v0.8.0-test.1.
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3'}
 
 
 def store(path, data):
@@ -132,12 +130,6 @@ def fetch_vocr(directory, name, source=None):
         return fetch_release_asset(directory, name, VOCR3_ASSETS, VOCR3_TAG, source)
     return fetch_release_asset(directory, name, VOCR_ASSETS, VOCR_TAG, source)
 
-
-def fetch_vocr2(directory, source=None):
-    """Fetch the separately pinned trained VOCR2 asset, never legacy FL10."""
-    if not VOCR2_ENABLED:
-        raise RuntimeError('VOCR2 runtime integration is not enabled in this build')
-    return fetch_release_asset(directory, VOCR2_MODEL, VOCR2_ASSETS, VOCR2_TAG, source)
 
 
 def binary_param(text, layer_types):
@@ -200,22 +192,13 @@ def generate(directory, ncnn_source):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr2'), default='ncnn')
+    ap.add_argument('--backend', choices=('ncnn', 'vocr'), default='ncnn')
     ap.add_argument('--ncnn-source', type=Path)
     ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()
-    if args.backend == 'vocr2' and not VOCR2_ENABLED:
-        ap.error('VOCR2 runtime integration is not enabled in this build')
-    if args.backend == 'vocr2' and args.model is not None:
-        ap.error('VOCR2 has one pinned recognizer; omit --model')
     args.output.mkdir(parents=True, exist_ok=True)
-    if args.backend == 'vocr2':
-        model = fetch_vocr2(args.output, args.source)
-        print('Verified', model.name, '(trained FL10-sized recognizer; native textbox finder)')
-        print('Model ready in', args.output, '- copy', model.name, 'to ux0:data/VitaJPOverlay/ocr/')
-        return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL
         fetch_vocr(args.output, model, args.source)

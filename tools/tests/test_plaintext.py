@@ -102,7 +102,6 @@ class FrozenPlaintext(unittest.TestCase):
             (models / name).write_bytes(payload)
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
-             mock.patch.object(release, "VOCR2_ENABLED", False), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \
              contextlib.redirect_stdout(io.StringIO()):
             release.package(base, output, models)

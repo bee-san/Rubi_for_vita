@@ -624,9 +624,6 @@ static uint32_t model_size(const char *name)
     if (!strcmp(name, "FL10_w8.vocr")) return VJO_VOCR_FL10_BYTES;
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;
-#if VJO_VOCR2_ENABLED
-    if (!strcmp(name, VJO_VOCR2_ARTIFACT_NAME)) return VJO_VOCR2_BYTES;
-#endif
     return 0;
 }
 

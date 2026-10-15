@@ -8,6 +8,7 @@
 #include "net_posix.h"
 #include "vocr.h"
 #include "vocr_ocr.h"
+#include "vocr_models.h"
 #include "vocr_lines.h"
 #include "../../core/fbgrey.h"
 #include "../../include/vjo_vocr_sizes.h"
@@ -93,8 +94,8 @@ static void test_models_and_sizes(void)
 {
     unsigned n = 0;
     const VjoVocrModel *all = vjo_vocr_models(&n);
-    TEST_CHECK(n == 5 + VJO_VOCR2_ENABLED && all != NULL);
-    for (unsigned i = 0; i < 5; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
+    TEST_CHECK(n == 5 && all != NULL);
+    for (unsigned i = 0; i < n; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
     const VjoVocrModel *h15 = vjo_vocr_model(VJO_VOCR_DEFAULT_MODEL);
     TEST_ASSERT(h15 != NULL);
     TEST_CHECK(h15->bytes == 1155968 && h15->arena_bytes == 182944);
@@ -133,20 +134,48 @@ static void test_models_and_sizes(void)
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 10, 545));
     TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 0, 10));
     TEST_CHECK(!vjo_vocr_workspace_bytes("other.vocr", 100, 10));
-#if VJO_VOCR2_ENABLED
-    const VjoVocrModel *old = vjo_vocr_model("FL10_w8.vocr");
-    const VjoVocrModel *next = vjo_vocr_model(VJO_VOCR2_ARTIFACT_NAME);
-    TEST_ASSERT(next != NULL);
-    TEST_CHECK(next->finder_mode == VOCR_LINES_TEXTBOX && next->finder_mode == 2);
-    TEST_CHECK(next->bytes == old->bytes && next->arena_bytes == old->arena_bytes);
-    TEST_CHECK(memcmp(next->sha256, old->sha256, sizeof(old->sha256)) != 0);
-    TEST_CHECK(!strcmp(VJO_VOCR2_MODEL_NAME, VJO_VOCR2_ARTIFACT_NAME));
-    TEST_CHECK(vjo_vocr_workspace_bytes(next->name, 960, 544) == vjo_vocr_workspace_bytes(old->name, 960, 544));
-    TEST_CHECK(vjo_vocr_workspace_bytes(next->name, 761, 160) == vjo_vocr_workspace_bytes(old->name, 761, 160));
-#else
-    TEST_CHECK(!vjo_vocr_model(VJO_VOCR2_ARTIFACT_NAME));
-    TEST_CHECK(!vjo_vocr_workspace_bytes(VJO_VOCR2_ARTIFACT_NAME, W, H));
-#endif
+    /* The VOCR2 trial was removed: its model file is no longer one the worker runs. */
+    TEST_CHECK(!vjo_vocr_model("VOCR2_FL10_w8.vocr"));
+    TEST_CHECK(!vjo_vocr_workspace_bytes("VOCR2_FL10_w8.vocr", W, H));
+}
+
+/* core/vocr_models.c names exactly the models the worker pins, at the same
+ * sizes, each with a generation (the local engine's name in the Overlay app)
+ * and a shape; the default is VOCR3. */
+static void test_model_metadata_matches_the_pins(void)
+{
+    unsigned n = 0, infos = 0;
+    const VjoVocrModel *all = vjo_vocr_models(&n);
+    const VjoVocrModelInfo *info = vjo_vocr_model_infos(&infos);
+    char label[24];
+    TEST_CHECK(infos == n && info != NULL);
+    for (unsigned i = 0; i < n; i++) {
+        const VjoVocrModelInfo *m = vjo_vocr_model_info(all[i].name);
+        TEST_CHECK_(m != NULL && m->bytes == all[i].bytes, "%s", all[i].name);
+        TEST_CHECK_(m && !strncmp(m->generation, "VOCR", 4) && m->generation[4] >= '1' && m->generation[4] <= '9' &&
+                    m->shape[0], "%s", all[i].name);
+        /* a file named VOCRn_... belongs to generation VOCRn */
+        if (m && !strncmp(all[i].name, "VOCR", 4)) {
+            size_t g = strlen(m->generation);
+            TEST_CHECK_(!strncmp(all[i].name, m->generation, g) && all[i].name[g] == '_', "%s", all[i].name);
+        }
+    }
+    for (unsigned i = 0; i < infos; i++) TEST_CHECK_(vjo_vocr_model(info[i].name) != NULL, "%s", info[i].name);
+    const VjoVocrModelInfo *def = vjo_vocr_model_info(VJO_VOCR_DEFAULT_MODEL);
+    TEST_ASSERT(def != NULL);
+    TEST_CHECK(!strcmp(def->generation, "VOCR3") && !strcmp(def->shape, "H15"));
+    TEST_CHECK(vjo_vocr_model_label(def, label, sizeof(label)) == 9 && !strcmp(label, "VOCR3-H15"));
+    TEST_CHECK(vjo_vocr_model_label(vjo_vocr_model_info(VJO_VOCR3_FL10_NAME), label, sizeof(label)) == 10 &&
+               !strcmp(label, "VOCR3-FL10"));
+    TEST_CHECK(vjo_vocr_model_label(vjo_vocr_model_info("FL10_w8.vocr"), label, sizeof(label)) > 0 &&
+               !strcmp(label, "VOCR1-FL10"));
+    TEST_CHECK(vjo_vocr_model_label(def, label, 9) < 0 && !label[0]); /* does not fit: nothing */
+    TEST_CHECK(vjo_vocr_model_label(def, label, 10) == 9 && !strcmp(label, "VOCR3-H15"));
+    TEST_CHECK(vjo_vocr_model_label(NULL, label, sizeof(label)) < 0 && !label[0]);
+    TEST_CHECK(vjo_vocr_model_label(def, NULL, 8) < 0 && vjo_vocr_model_label(def, label, 0) < 0);
+    TEST_CHECK(!vjo_vocr_model_info("VOCR2_FL10_w8.vocr") && !vjo_vocr_model_info("other.vocr") &&
+               !vjo_vocr_model_info("") && !vjo_vocr_model_info(NULL));
+    TEST_CHECK(vjo_vocr_model_infos(NULL) == info);
 }
 
 static void test_empty_region_reads_no_model(void)
@@ -425,6 +454,7 @@ static void test_default_model_and_ceiling(void)
 TEST_LIST = {
     {"default_is_vocr3_h15_with_vocr3_fl10_fallback_v020_kept_within_the_ceiling", test_default_model_and_ceiling},
     {"models_and_workspace_sizes", test_models_and_sizes},
+    {"model_metadata_names_every_pinned_model_with_its_generation", test_model_metadata_matches_the_pins},
     {"empty_region_reads_strips_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},
     {"wrong_size_or_hash_is_refused", test_wrong_or_corrupt_weights},
