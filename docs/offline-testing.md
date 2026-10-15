@@ -26,7 +26,7 @@ The host suites compile the plugin sources themselves (`#include "../../shell/wo
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
 failed joins, cancelled jobs and crashes between steps are injected there. 34 ctest suites
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
-word lookup on real recognized lines and the step that unpacks the dictionary for it); `test_jpegsw.py` and the Hachidori relay
+word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out); `test_jpegsw.py` and the Hachidori relay
 contract test complete it.
 
 ## 3. ARM under qemu-arm: the same C on the Vita's CPU
