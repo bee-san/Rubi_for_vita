@@ -28,6 +28,10 @@ void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
+/* The left stick's move for the next frame (-1 up a row, 1 down, 0 none;
+ * core/stick_scroll.h): it stops at the first and last row, where Up/Down
+ * wrap round. */
+void vjo_anki_page_stick(int move);
 /* The keyboard is open: main.c leaves every button to it. */
 int vjo_anki_page_modal(void);
 /* A test or a send is running: cancel stops it instead of leaving the app. */

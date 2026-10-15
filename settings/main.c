@@ -662,11 +662,13 @@ int main(void)
     for (;;) {
         SceCtrlData pad;
         memset(&pad, 0, sizeof(pad));
-        sceCtrlPeekBufferPositive(0, &pad, 1);
+        if (sceCtrlPeekBufferPositive(0, &pad, 1) < 1)
+            pad.ly = VJO_STICK_CENTER; /* a failed read: no buttons and the stick at rest, not pushed up */
         uint32_t pressed = pad.buttons & ~previous;
-        /* The left stick moves the selection as Up/Down would (core/stick_scroll.h).
-         * Counted every frame, also under the keyboard, so a stick still held
-         * when it closes is no new move. */
+        /* The left stick moves the selection as Up/Down would (core/stick_scroll.h),
+         * stopping at a list's first and last row. Counted every frame; the
+         * keyboard and a page change latch it, so a stick still pushed then
+         * moves nothing until it is let go, as a held button is no new press. */
         int stick = vjo_stick_scroll(&stick_state, pad.ly);
         uint32_t stick_key = stick < 0 ? SCE_CTRL_UP : stick > 0 ? SCE_CTRL_DOWN : 0;
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
@@ -674,12 +676,13 @@ int main(void)
         uint64_t now = sceKernelGetProcessTimeWide();
         if (page == 2 && vjo_anki_page_modal()) {
             /* The system keyboard has every button and the touch screen; a
-             * finger or button still down when it closes is no new press. */
+             * finger, button or stick still down when it closes is no new press. */
             SceTouchData held;
             memset(&held, 0, sizeof(held));
             sceTouchPeek(SCE_TOUCH_PORT_FRONT, &held, 1);
             touched = held.reportNum != 0;
             previous = pad.buttons;
+            vjo_stick_latch(&stick_state);
             vjo_anki_page_frame(&anki_ui, 0, -1, -1, &scratch);
             sceDisplayWaitVblankStart();
             continue;
@@ -688,14 +691,20 @@ int main(void)
         if (pressed & SCE_CTRL_SELECT) {
             page = (page + 1) % PAGES;
             repeat_at = now + 350000;
+            /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
+            vjo_stick_latch(&stick_state);
+            stick = 0;
+            stick_key = 0;
             if (page == 2) vjo_anki_page_show(&scratch);
         }
         if (page == 2) {
             /* anki_page.c reads its own buttons and touches */
         } else if (page) {
-            if ((pressed | stick_key) & SCE_CTRL_UP)
-                preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
-            if ((pressed | stick_key) & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
+            if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
+            if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
+            /* The d-pad first; the stick stops at the first and last card. */
+            if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)))
+                preference_selected = vjo_stick_step(preference_selected, PREFERENCES, stick);
             if (pressed & buttons.enter) toggle_preference();
             if (pressed & SCE_CTRL_LEFT) set_preference(0);
             if (pressed & SCE_CTRL_RIGHT) set_preference(1);
@@ -711,7 +720,7 @@ int main(void)
             list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
         } else if (!page && stick_key) {
-            list_key(stick_key); /* the d-pad first, as in VitaShell */
+            list_key(stick_key); /* the d-pad first (VitaShell takes Up first, from either) */
         }
         previous = pad.buttons;
         SceTouchData touch;
@@ -724,6 +733,10 @@ int main(void)
                       ? (x - 24) / 304 : -1;
             if (tab >= 0) {
                 if (tab == 2 && page != 2) vjo_anki_page_show(&scratch);
+                if (tab != page) { /* as Select */
+                    vjo_stick_latch(&stick_state);
+                    stick = 0;
+                }
                 page = tab;
             }
             else if (page == 2) { touch_x = x; touch_y = y; }
@@ -771,7 +784,10 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page == 2) vjo_anki_page_frame(&anki_ui, pressed | stick_key, touch_x, touch_y, &scratch);
+        if (page == 2) {
+            vjo_anki_page_stick(stick);
+            vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
+        }
         else if (page) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }

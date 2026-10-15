@@ -65,6 +65,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define HINT_Y 535
 #define STATUS_Y 467
 #define SELECTED RGBA8(35, 56, 70, 255)
+#define ACCENT RGBA8(91, 220, 207, 255)
 #define CDRAM_BLOCK (256 * 1024)
 
 /* ---- what a frame showed and cost ---- */
@@ -75,6 +76,8 @@ typedef struct {
     int counter_x;                                           /* where the counter starts */
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
     int focus;                                               /* the focused card, -1 */
+    int bar_y;                                               /* the focus bar's y (any page), -1 */
+    int anki_rows;                                           /* the stick's moves given to the Anki page so far */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
     long ns;
 } Frame;
@@ -184,7 +187,14 @@ int sceRegMgrGetKeyInt(const char *category, const char *name, int *buf)
 }
 #define ENTER (vjo_buttons(button_assign).enter)
 #define CANCEL (vjo_buttons(button_assign).cancel)
-int sceCtrlSetSamplingMode(int mode) { (void)mode; return 0; }
+/* Buttons-only sampling, the default, reports the sticks at rest (kernel/input.c's
+ * note); the app asks for analog. */
+static int sampling_mode = SCE_CTRL_MODE_DIGITAL;
+int sceCtrlSetSamplingMode(int mode) { int old = sampling_mode; sampling_mode = mode; return old; }
+/* A test's failed read (e.g. 0x80340020): the SDK leaves the caller's pad as it was. */
+static int peek_error;
+/* The Anki page stub's record (settings_stubs/anki_page_stub.c). */
+extern int vjo_anki_stub_rows, vjo_anki_stub_modal;
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 static int live_textures(void);
 /* The loop reads the pad first: a frame starts here. */
@@ -196,11 +206,13 @@ int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
     int scans = cur.scans; /* the scan before the first frame belongs to it */
     memset(&cur, 0, sizeof(cur));
     cur.scans = frame ? 0 : scans;
-    cur.focus = -1;
+    cur.focus = cur.bar_y = -1;
     clock_gettime(CLOCK_MONOTONIC, &frame_start);
+    if (peek_error) return peek_error;
     pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : CANCEL;
     pad->lx = pad->rx = pad->ry = 128;
-    pad->ly = (unsigned char)(128 + (frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].stick : 0));
+    pad->ly = (unsigned char)(128 + (frame < script_frames && frame < MAX_FRAMES - 1 && sampling_mode != SCE_CTRL_MODE_DIGITAL
+                                     ? script[frame].stick : 0));
     return 1;
 }
 int sceTouchPeek(int port, SceTouchData *data, int count)
@@ -218,6 +230,7 @@ int sceDisplayWaitVblankStart(void)
 {
     cur.ns = since(&frame_start);
     cur.live = live_textures();
+    cur.anki_rows = vjo_anki_stub_rows;
     if (frame < MAX_FRAMES) session->shown[frame] = cur;
     frame++;
     return 0;
@@ -351,6 +364,7 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
     for (int r = 0; r < ROWS; r++)
         if ((int)x == 24 && (int)w == 912 && (int)h == GAME_H && (int)y == GAMES_Y + r * GAME_PITCH && color == SELECTED)
             cur.focus = r;
+    if ((int)x == 24 && (int)w == 4 && color == ACCENT) cur.bar_y = (int)y; /* focus_card's left edge */
 }
 vita2d_pvf *vita2d_load_default_pvf(void) { return (vita2d_pvf *)&font_dummy; }
 void vita2d_free_pvf(vita2d_pvf *font) { (void)font; }
@@ -627,6 +641,8 @@ static void hold(unsigned buttons, int n) { for (int i = 0; i < n && at < MAX_FR
 static void tap(unsigned buttons, int gap) { hold(buttons, 1); hold(0, gap); }
 /* The left stick held n frames, offset from its centre (-128 top .. 127 bottom). */
 TEST_ONLY static void hold_stick(int stick, int n) { for (int i = 0; i < n && at < MAX_FRAMES - 2; i++) script[at++] = (Input){0, 0, 0, 0, stick}; }
+/* One frame of buttons with the left stick pushed. */
+TEST_ONLY static void with_stick(unsigned buttons, int stick) { if (at < MAX_FRAMES - 2) script[at++] = (Input){buttons, 0, 0, 0, stick}; }
 
 /* ---- scenarios (shared by the tests and the benchmark) ---- */
 #define DOWN SCE_CTRL_DOWN
@@ -1162,6 +1178,191 @@ static void list_keys_only_on_the_games_page(void)
                 selected_of(before), selected_of(after), top_of(after));
 }
 
+/* The left stick stops at the first and last card of the OCR & lookup page, as
+ * VitaShell's lists do (core/stick_scroll.h): held down, the focus only goes
+ * down and stays on the last card; held up, it only goes up and stays on the
+ * first. The d-pad still wraps round there. */
+static void stick_stops_at_the_first_and_last_card(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    tap(SCE_CTRL_SELECT, 8); /* OCR & lookup */
+    int first_at = at - 1, down = at;
+    hold_stick(127, 30);
+    hold(0, 4);
+    int up = at;
+    hold_stick(-128, 30);
+    hold(0, 4);
+    int keys = at;
+    tap(UP, 8);   /* from the first card */
+    tap(DOWN, 8); /* from the last */
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    const Frame *f = session->shown;
+    int first = f[first_at].bar_y, last = f[up - 1].bar_y;
+    TEST_CHECK_(first >= 0 && last > first, "first card at %d, last at %d", first, last);
+    TEST_CHECK_(f[down].bar_y > first, "the push moves: %d", f[down].bar_y);
+    for (int i = down + 1; i < down + 10; i++) /* nine quiet frames */
+        TEST_CHECK_(f[i].bar_y == f[down].bar_y, "frame %d: %d", i - down, f[i].bar_y);
+    for (int i = down; i < up; i++) /* never back to the top */
+        TEST_CHECK_(f[i].bar_y >= f[i - 1].bar_y, "down, frame %d: %d after %d", i - down, f[i].bar_y, f[i - 1].bar_y);
+    for (int i = down + 20; i < up; i++) /* runs to the last card and stays */
+        TEST_CHECK_(f[i].bar_y == last, "down, frame %d: %d", i - down, f[i].bar_y);
+    for (int i = up; i < keys; i++)
+        TEST_CHECK_(f[i].bar_y <= f[i - 1].bar_y, "up, frame %d: %d after %d", i - up, f[i].bar_y, f[i - 1].bar_y);
+    for (int i = up + 20; i < keys; i++)
+        TEST_CHECK_(f[i].bar_y == first, "up, frame %d: %d", i - up, f[i].bar_y);
+    TEST_CHECK_(f[keys].bar_y == last, "the d-pad's Up wraps to the last card: %d", f[keys].bar_y);
+    TEST_CHECK_(f[keys + 9].bar_y == first, "the d-pad's Down wraps to the first: %d", f[keys + 9].bar_y);
+}
+
+/* settings/main.c's OCR_Y: the OCR & lookup page's first card, focused when the app starts. */
+#define OCR_FIRST_Y 112
+static int keyboard_from, keyboard_to;
+static void keyboard_frames(int f) { vjo_anki_stub_modal = f >= keyboard_from && f < keyboard_to; }
+
+/* A stick still pushed through a page change or the system keyboard moves
+ * nothing until it is let go, as a held button is no new press: not on the
+ * Select frame and not after it. A new push moves again. The stick reaches
+ * the Anki page (anki_page.c stops it at its ends), and never the Games list
+ * from another page. */
+static void a_page_change_or_the_keyboard_latch_the_stick(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    hold_stick(127, 15); /* Games: a row, nine quiet frames, then five */
+    int games = at - 1;
+    with_stick(SCE_CTRL_SELECT, 127); /* OCR & lookup, the stick still down */
+    int ocr = at - 1;
+    hold_stick(127, 30);
+    int ocr_held = at - 1;
+    hold(0, 4);
+    hold_stick(127, 1); /* let go, then pushed: a card */
+    int ocr_push = at - 1;
+    hold(0, 4);
+    with_stick(SCE_CTRL_SELECT, 127); /* Anki, the stick still down */
+    int anki = at - 1;
+    hold_stick(127, 30);
+    hold(0, 4);
+    int anki_rest = at - 1;
+    hold_stick(127, 1);
+    hold(0, 4);
+    int anki_push = at - 1;
+    keyboard_from = at;
+    hold_stick(-128, 20); /* pushed while the keyboard is open */
+    keyboard_to = at;
+    hold_stick(-128, 20); /* and still when it closes */
+    int closed_held = at - 1;
+    hold(0, 4);
+    hold_stick(-128, 1);
+    hold(0, 4);
+    int closed_push = at - 1;
+    with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick up */
+    hold_stick(-128, 30);
+    int games_held = at - 1;
+    hold(0, 4);
+    frame_hook = keyboard_frames;
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    const Frame *f = session->shown;
+    TEST_CHECK_(selected_of(games) == 6, "Games, the stick held 15 frames: %d", selected_of(games));
+    for (int i = ocr; i <= ocr_held; i++)
+        TEST_CHECK_(f[i].bar_y == OCR_FIRST_Y, "OCR & lookup, frame %d after Select: %d", i - ocr, f[i].bar_y);
+    TEST_CHECK_(f[ocr_push].bar_y > OCR_FIRST_Y, "a new push moves a card: %d", f[ocr_push].bar_y);
+    TEST_CHECK_(f[anki_rest].anki_rows == f[anki - 1].anki_rows, "Anki: %d rows from the stick held through Select",
+                f[anki_rest].anki_rows - f[anki - 1].anki_rows);
+    TEST_CHECK_(f[anki_push].anki_rows == f[anki_rest].anki_rows + 1, "Anki: a push gives %d",
+                f[anki_push].anki_rows - f[anki_rest].anki_rows);
+    TEST_CHECK_(f[closed_held].anki_rows == f[anki_push].anki_rows, "Anki: %d rows from the stick held through the keyboard",
+                f[closed_held].anki_rows - f[anki_push].anki_rows);
+    TEST_CHECK_(f[closed_push].anki_rows == f[anki_push].anki_rows - 1, "Anki: a push up after it gives %d",
+                f[closed_push].anki_rows - f[anki_push].anki_rows);
+    TEST_CHECK_(selected_of(games_held) == 6, "Games, back with the stick held up: %d", selected_of(games_held));
+}
+
+/* A touched tab changes the page as Select does: a stick still pushed moves
+ * nothing on the new page until it is let go. */
+static void a_touched_tab_latches_the_stick(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    hold_stick(127, 15);
+    script[at++] = (Input){0, 1, 24 + 304 + 100, 52 + 20, 127}; /* the OCR & lookup tab, the stick still down */
+    int tab = at - 1;
+    hold_stick(127, 30);
+    int held = at - 1;
+    hold(0, 4);
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    const Frame *f = session->shown;
+    for (int i = tab; i <= held; i++)
+        TEST_CHECK_(f[i].bar_y == OCR_FIRST_Y, "OCR & lookup, frame %d after the tab: %d", i - tab, f[i].bar_y);
+}
+
+/* The d-pad acts first in a frame: a press while the stick's repeat is also
+ * due moves one row, not two; with the d-pad held, the stick moves again. The
+ * same on the OCR & lookup page, where the stick is held up at the first card. */
+static void the_dpad_acts_first_in_a_frame(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    hold_stick(127, 12); /* rows on frames 1, 11 and 12 */
+    int before = at - 1;
+    with_stick(DOWN, 127); /* both due */
+    int both = at - 1;
+    with_stick(DOWN, 127); /* the d-pad held, its repeat 350 ms away: the stick's row */
+    int held = at - 1;
+    hold(0, 4);
+    tap(SCE_CTRL_SELECT, 4); /* OCR & lookup, its first card */
+    hold_stick(-128, 12);    /* up at the first card: it stays */
+    int ocr_before = at - 1;
+    with_stick(DOWN, -128); /* the d-pad's Down and the stick's up both due: Down */
+    int ocr_both = at - 1;
+    with_stick(DOWN, -128); /* the d-pad held: the stick's up */
+    int ocr_held = at - 1;
+    hold(0, 4);
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    const Frame *f = session->shown;
+    TEST_CHECK_(selected_of(before) == 3, "%d", selected_of(before));
+    TEST_CHECK_(selected_of(both) == 4 && selected_of(held) == 5, "both due: %d, then %d", selected_of(both),
+                selected_of(held));
+    TEST_CHECK_(f[ocr_before].bar_y == OCR_FIRST_Y && f[ocr_both].bar_y > OCR_FIRST_Y &&
+                f[ocr_held].bar_y == OCR_FIRST_Y, "OCR & lookup: %d, %d, %d", f[ocr_before].bar_y, f[ocr_both].bar_y,
+                f[ocr_held].bar_y);
+}
+
+/* A failed read (sceCtrlPeekBufferPositive below 1) is no buttons and the
+ * stick at rest: the app's zeroed pad would read as the stick pushed up. */
+static int failing_from, failing_to;
+static void failing_reads(int f) { peek_error = f >= failing_from && f < failing_to ? (int)0x80340020 : 0; }
+static void a_failed_read_moves_nothing(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    for (int i = 0; i < 10; i++) tap(DOWN, 1);
+    int before = at - 1;
+    failing_from = at;
+    hold(0, 40);
+    failing_to = at;
+    hold(0, 4);
+    frame_hook = failing_reads;
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    TEST_CHECK_(selected_of(before) == 10 && selected_of(at - 1) == 10, "%d, then %d after 40 failed reads",
+                selected_of(before), selected_of(at - 1));
+}
+
 /* The hints keep 140 px for the counter, which is right-aligned at the card edge:
  * with Latin glyphs wide enough that the hints need more than 912 - 140 px, they
  * are cut with "..." there and never reach the counter. */
@@ -1448,6 +1649,11 @@ TEST_LIST = {
     {"held_keys_repeat_and_new_presses_act", held_keys_repeat_and_new_presses_act},
     {"list_keys_only_on_the_games_page", list_keys_only_on_the_games_page},
     {"stick_scrolls_like_vitashell", stick_scrolls_like_vitashell},
+    {"stick_stops_at_the_first_and_last_card", stick_stops_at_the_first_and_last_card},
+    {"a_page_change_or_the_keyboard_latch_the_stick", a_page_change_or_the_keyboard_latch_the_stick},
+    {"a_touched_tab_latches_the_stick", a_touched_tab_latches_the_stick},
+    {"the_dpad_acts_first_in_a_frame", the_dpad_acts_first_in_a_frame},
+    {"a_failed_read_moves_nothing", a_failed_read_moves_nothing},
     {"hints_leave_room_for_the_counter", hints_leave_room_for_the_counter},
     {"titles_are_laid_out_ahead_one_a_frame", titles_are_laid_out_ahead_one_a_frame},
     {"toggles_and_filters_keep_icons", toggles_and_filters_keep_icons},
