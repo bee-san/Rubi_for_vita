@@ -204,12 +204,14 @@ Vita build checks the eboot it packages for that (`tools/check_settings_self.py`
 control info and process parameters, the ELF's heap and thread calls; `tools/tests/test_settings_self.py`
 on synthetic files), which is a check of the file, not of what a console does with it. The
 smoke target below is built as an ordinary app (`vita-make-fself -c`: no attribute, no budget).
-libvita2d picks its system-application path when `sceAppMgrGetBudgetInfo` succeeds, and which
-path it takes under Vita3K was not checked. Either way a pass is not evidence for the
-system-application path on a console: the shared framebuffer, the VSH GXM initialisation, the
-50 MiB budget, or the exit through `vita2d_fini` that would crash it (#112: found in libvita2d's
-source and the pinned `.a`, not run on a console). Whether Vita3K runs the release VPK as a
-system application has not been checked either.
+libvita2d picks its system-application path when `sceAppMgrGetBudgetInfo` succeeds, and
+Vita3K's is a stub that returns -1, "not system mode" (Vita3K b75d5e6,
+`SceAppMgrUser.cpp:234-238`; the logs of the smoke app's run and of the release VPK's show it
+called), so under Vita3K libvita2d takes its ordinary path for any SELF. A pass is not evidence
+for the system-application path on a console: the shared framebuffer, the VSH GXM
+initialisation, the 50 MiB budget, or the exit through `vita2d_fini` that would crash it (#112:
+found in libvita2d's source and the pinned `.a`, not run on a console). What else Vita3K does
+with the release SELF's attribute has not been checked.
 `tools/vita3k_settings_smoke.sh` builds the app's sources unchanged with a scripted controller
 and counted textures (`tools/vita3k_settings_smoke.c`, linked by `-Wl,--wrap`; the
 `VJO_SETTINGS_SMOKE` target of `vita/CMakeLists.txt`, never in the release), installs 120
@@ -230,6 +232,23 @@ reads it, so that is counted, not observed: main `7ed16d8`'s app freed 365 of it
 textures so, with 66 failed reloads of broken icons, and exited 0.) If `vita-elf-create` refuses
 the smoke app's ELF ("segment 1 overlaps": its code segment ends too close to the data
 segment), the script rebuilds it with 4 KiB of padding (`VJO_SETTINGS_SMOKE_PAD`).
+
+The harness's `sceKernelExitProcess` does not return, as on the console, where the kernel ends
+the process's threads "without being allowed to be executed to completion"
+(`SDK_doc__System__Kernel-Overview_e.txt`, "Resource Collection When Terminating a Process").
+Vita3K's returns (b75d5e6, `SceLibKernel.cpp:1293-1297`), and since #112 the app exits with GXM
+still up, as the release does. Its `main` then returned into newlib's exit, whose
+`_free_vita_heap` frees the heap block that holds libvita2d's GXM context (Vita3K builds the
+context in the app's host memory, `SceGxm.cpp:1985-1988`), and Vita3K's shutdown read that
+context to destroy it (`app_init.cpp:476`): SIGSEGV, "Unhandled access to 0x481800008", exit
+133 after the app's exit 0, which failed the "Vita3K app" row until #108. The core dump's
+stack is `destroy_gxm_context` ← `gxm::destroy_all_contexts` ← `app::shutdown_app_runtime`; a
+diagnostic run found the context at 0x81800008 in the app's 8 MiB heap block at 0x81800000,
+gone when newlib's exit called the wrapper a second time, and Vita3K maps guest memory from
+0x400000000 (`mem.cpp:76`), so the fault is that context. #108's harness called `vita2d_fini`
+before the exit, which removed the context first, with a teardown the release never runs; the
+wrapper now runs the release's exit unchanged. A crash in Vita3K's shutdown still fails the
+run, with Vita3K's critical line.
 
 ## 6. What only the console answers
 

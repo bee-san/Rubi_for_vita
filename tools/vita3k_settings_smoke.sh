@@ -90,8 +90,11 @@ case $r in
   *) fail "(Vita3K exit $rc after ${secs}s, the app stopped at: $r; $out/vita3k.stdout)" ;;
 esac
 field() { echo "$r" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
+# Vita3K crashing after the app's exit 0 fails too, with its critical line (a crash in its own
+# shutdown is still a crash: docs/offline-testing.md section 5 has the one #112 met).
+crit=$(grep -m1 -o '|C| .*' "$out/vita3k.stdout")
 [ "$rc" -eq 0 ] && grep -q "The app exited with code 0" "$out/vita3k.stdout" \
-  || fail "(the script finished, then Vita3K exit $rc after ${secs}s: $out/vita3k.stdout)"
+  || fail "(the script finished, then Vita3K exit $rc after ${secs}s${crit:+, \"$crit\"}: $out/vita3k.stdout)"
 [ "$(field unsafe_frees)" = 0 ] || fail "($(field unsafe_frees) textures freed while the GPU may read them: $r)"
 [ "$(field live)" = 0 ] || fail "($(field live) textures left alive at exit: $r)"
 [ "$(field loads)" -gt 0 ] && [ "$(field draws)" -gt 0 ] || fail "(no icon was loaded or drawn: $r)"
