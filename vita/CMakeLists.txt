@@ -103,7 +103,9 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, requests, parsers, queue files): built for
 # size, since every page of the Shell module is SceShell's. Lookup, OCR text
-# handling, JPEG and TLS stay at -O2.
+# handling, JPEG and TLS stay at -O2. The property is the directory's, so the
+# kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
+# are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c ${ROOT}/core/hachidori.c ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/jiten.c
   ${ROOT}/core/jpdb.c ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c

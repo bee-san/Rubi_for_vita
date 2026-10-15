@@ -456,7 +456,8 @@ the first read, as #82's calibrated costs advise for the Normal tier.
   it keeps its `lm`, `cascade` and `norm` steps, which carry their first read times. The fallback
   that stage forces needs no step of its own: its `check` (arg 1) records it. A step more than the
   log holds (a torn read, the capture block refused by USER, a tall line's two) drops the last of
-  them, `norm` first.
+  them, `norm` first; in a PSP game a normal first job with a tall line also drops its `norm`
+  (audit-overlay-dialogue-7's step-log cases).
 - `game vocr lines:` gives each line's confidence (`c0`-`c1000`, the smallest top-class probability
   over the frames that emit a character), `*` when the text shown differs from the greedy
   reading, and `^` when the cascade read the line again.
@@ -561,44 +562,86 @@ text rows into one line each. A box never grows and no line is dropped.
 
 - **No reads.** The job refines each box on the pixels it already holds for it, before it reads
   the box: its strip (the box made strip-relative), or a tall line's own block. So the refinement
-  adds no strip read. finder-tighten's console figures put a strip read at 11-26 ms, the
-  refinement's own work at 0.5-1.1 ms per line at 444 MHz (estimate).
-- **The same lines as #83's.** A host test checks this on 251 procedural regions of one strip and
-  of several (frames, panels, close rows, cursors, slabs, 23 tall lines): per box on the job's
-  pixels equals #83's whole-set refinement of the whole region, line for line.
-- **The 16-line cap.** A box whose split would take the job past 16 lines is kept as found.
+  adds no strip read (a strip read took 11-26 ms on the console, #81).
+- **The same lines as #83's.** A host test (`test_vocr_policy.c`) refines per box on the job's
+  pixels and compares with #83's whole-set refinement of the whole region, line for line: 251
+  procedural regions of one strip and of several (frames, panels, close rows, cursors, slabs, 23
+  tall lines) and 120 crowded ones, in 93 of which the splits would pass 16 lines (436 boxes not
+  split for the cap), 0 differences. Each line is read from the region's own pixels.
+- **The 16-line cap**, as #83's: a box may become as many lines as keep the job within 16, one kept
+  for each box still to come. A split past that is not made, and the box is refined without it: its
+  main text band, tightened. No development region below reaches the cap.
 - **Memory.** The refinement's arena (`vjo_vocr_refine_bytes`: 16,768 B at 883×112, 72,400 B at
-  960×544) is part of the job's workspace when it is on. Off, nothing changes: the lines are the
-  finder's, exactly, and nothing is read or allocated for it.
+  960×544) is part of the job's workspace when it is on, before the LM extras. Off, nothing
+  changes: the lines are the finder's, exactly, and nothing is read or allocated for it.
 
-**Why `psp` by default.** #83's measurement on vita-vn-ocr's protected sets (once, after its rule
-was frozen):
-- whole dialogue gains on PSP text (−2.19 to −2.90 points);
-- native Vita text is level or slightly worse (−0.13 to +0.50, intervals include 0);
-- CLANNAD, a native Vita title, is worse for five of six models.
+**What it costs: recognition, mostly.** A refined line is shorter, so the recognizer scales it to a
+larger width and reads more CTC frames: on the development regions below, +22.7 % on psp_dev
+(10,867 → 13,338 frames, 7.4 more per found box), +8.9 % on vita_dev (16,581 → 18,051, 3.3 more),
+and +12.1 % on psp_dev as the overlay captures PSP games (2× bilinear, below: 12,763 → 14,313, 4.4
+more). The host job time rises about as much (+22 %, +9 % and +12 % in that run; host times vary
+from run to run, frames do not). At the console's measured 4.94-5.22 ms per VOCR3-H15
+frame (#81) that is about **37-39 ms more per box** at 480×272, **22-23 ms** at 2× and **16-17 ms**
+on Vita text (estimates). The refinement's own work is small beside that: #83 estimates 0.53-1.07
+ms per finder line at 444 MHz from qemu-arm instruction counts of the Vita build, an estimate, not a
+console figure, and its console calibration (the finder's measured time) puts it near the top of
+its 333 MHz range, about 1-1.5 ms per line. #83 counted with the finder's arena; the overlay gives
+the refinement its minimum (`vjo_vocr_refine_bytes`), with which a box whose grey pixels do not fit
+beside its mask is read twice from memory (it read 38.9 rows per PSP box and 53.9 per Vita box
+here): expect the top of that range or a little above (estimate). The host takes 0.06 ms a PSP
+region and 0.14 ms a Vita region.
 
-The worker decides by its own title: Adrenaline's PSP games run as `NPXS10028`, or from a
-`PSPEMU*` bubble. `on` refines in every game, `off` in none.
+**What was measured where.**
 
-**Logs.** `gstep job refine` per job: arg the lines the boxes became, rc 0 or the first refusal
-(that box kept as found), bytes the boxes refined and split, sum the rows read (from memory), us
-the time. `tools/analyse_selftest.py --collect` sums them.
+| what | where | screens | result |
+|---|---|---|---|
+| dialogue CER, whole dialogue (body text) | #83, once, on vita-vn-ocr's protected psp-test | native 480×272 PSP frames | −2.19 to −2.90 points; the VN-cluster 95 % intervals are below 0 for three of six models (VOCR3-H15, VOCR3-W20, VOCR4-W20) and include 0 for the other three |
+| | #83, once, on vita-test | native 960×544 Vita frames | level or worse, −0.13 to +0.50 (intervals include 0) |
+| | #83, once, on CLANNAD's long run | native 960×544 | worse for five of six models, +0.07 to +0.43 points (four resolved) |
+| box fit (IoU of a line with its hand-marked box) | this PR, host, psp_dev | 480×272, as #83 measured | 0.559 → **0.591** |
+| | this PR, host, psp_dev | **the overlay's PSP capture**: 480×272 shown 2× through the emulator's bilinear filter | 0.608 → **0.604**, level (2× nearest: 0.611 → 0.604) |
+| | this PR, host, vita_dev | 960×544 | 0.594 → **0.594**, level |
+| dialogue CER at the overlay's PSP capture | nowhere | 2× bilinear | **untested** |
 
-**Measured on the host** (`tools/refine_eval.py`, `docs/benchmarks/refine-20261014.json`): the
+The display hook gets a PSP game as Adrenaline shows it, its 480×272 frame shown 2× through the
+emulator's bilinear filter ([stable text and blank lines](#stable-text-and-blank-lines-api-20)).
+That puts its text at about twice PSP's pixel size, like native Vita text, where the protected sets
+show no gain, and there the box-fit gain measured at 480×272 is gone. #83 recommends deciding by the
+text size the overlay captures and checking it in the test build's A/B logs before the refinement
+becomes a default. So `psp` is the next test build's trial, not a measured gain at the overlay's
+scale, and that build's logs decide whether it stays. The worker decides by its own title (`core/games.c`
+`vjo_game_is_psp`, the rule Anki's platform field uses too): Adrenaline's PSP games run as
+`NPXS10028`, or from a `PSPEMU*` bubble. `on` refines in every game, `off` in none.
+
+**Logs, and the A/B.** `gstep job refine` per job: kind the mode, arg the lines the boxes became, rc
+0 or the first refusal (that box kept as found), bytes the boxes refined << 16 | those not split for
+the cap << 8 | those split, sum the rows read (from memory), us the time. `tools/analyse_selftest.py
+--collect` sums them and counts the modes. With them, `game vocr lines:` gives each line's size, CTC
+frames, time and confidence beside the text shown. No job reads both forms: the A/B #83 asks for is
+a PSP game's jobs with `psp` against the same screens with `off` (a backlog, a reloaded save).
+
+**Measured on the host** (`tools/refine_eval.py`, `docs/benchmarks/refine-20261015.json`): the
 linefind development regions, read by the job as shipped (VOCR3-H15, the 1 MB LM, the cascade) with
-and without the refinement. The manifests mark each line's box by hand but hold no text, so this
-measures the boxes against the hand-marked ones (IoU); the text accuracy is #83's.
+and without the refinement, and psp_dev's also as the overlay captures PSP games (`--how
+x2-bilinear`, `x2-nearest`: the frame shown 2×, the region and the marked boxes with it). The
+manifests mark each line's box by hand but hold no text, so this measures the boxes against the
+hand-marked ones (IoU); the text accuracy is #83's.
 
-| regions | regions read | lines read (boxes split) | mean IoU of a line with its marked box | marked lines covered (IoU ≥ 0.5) | regions whose text changed | refinement, all regions (host) |
-|---|---|---|---|---|---|---|
-| PSP (psp_dev) | 145 | 332 → 338 (6 split) | 0.559 → **0.591** | 65.5 → 69.3 % | 66 | 8.8 ms |
-| PSP, tight | 59 | 148 → 151 (3 split) | 0.678 → **0.707** | 70.9 → 72.8 % | 32 | 3.7 ms |
-| PSP, loose | 59 | 154 → 157 (3 split) | 0.553 → **0.591** | 60.1 → 65.8 % | 31 | 4.3 ms |
-| Vita (vita_dev) | 173 | 445 → 450 (5 split) | 0.594 → **0.594** | 78.5 → 79.8 % | 65 | 24.1 ms |
-| Vita, tight | 75 | 206 → 206 (0 split) | 0.716 → **0.721** | 80.8 → 81.8 % | 28 | 10.2 ms |
-| Vita, loose | 68 | 193 → 196 (3 split) | 0.606 → **0.605** | 75.9 → 77.6 % | 30 | 10.9 ms |
+| regions | regions read | lines read (boxes split) | mean IoU of a line with its marked box | marked lines covered (IoU ≥ 0.5) | CTC frames | regions whose text changed | refinement, all regions (host) |
+|---|---|---|---|---|---|---|---|
+| PSP (psp_dev) | 145 | 332 → 338 (6 split) | 0.559 → **0.591** | 65.5 → 69.3 % | +22.7 % | 66 | 9.0 ms |
+| PSP, tight | 59 | 148 → 151 (3 split) | 0.678 → **0.707** | 70.9 → 72.8 % | +24.9 % | 32 | 3.8 ms |
+| PSP, loose | 59 | 154 → 157 (3 split) | 0.553 → **0.591** | 60.1 → 65.8 % | +23.4 % | 31 | 4.4 ms |
+| PSP shown 2×, bilinear (the overlay's) | 145 | 350 → 356 (6 split) | 0.608 → **0.604** | 73.4 → 74.7 % | +12.1 % | 43 | 24.1 ms |
+| PSP shown 2×, nearest | 145 | 362 → 368 (6 split) | 0.611 → **0.604** | 77.9 → 77.9 % | +13.1 % | 44 | 22.9 ms |
+| Vita (vita_dev) | 173 | 445 → 450 (5 split) | 0.594 → **0.594** | 78.5 → 79.8 % | +8.9 % | 65 | 24.5 ms |
+| Vita, tight | 75 | 206 → 206 (0 split) | 0.716 → **0.721** | 80.8 → 81.8 % | +4.2 % | 28 | 10.4 ms |
+| Vita, loose | 68 | 193 → 196 (3 split) | 0.606 → **0.605** | 75.9 → 77.6 % | +8.8 % | 30 | 11.0 ms |
 
-On PSP regions the refined boxes fit the marked lines better (mean IoU +0.032, 3.8 points more of the marked lines covered); on Vita regions they are level (mean IoU 0.594 both ways, +1.3 points covered), as #83 found for the text. The refinement takes about 0.06 ms a region on the host.
+At 480×272 the refined boxes fit the marked lines better (mean IoU +0.031, 3.8 points more of the
+marked lines covered); shown 2×, as the overlay captures them, and on Vita regions they are level
+(−0.004 to −0.008 and −0.0003; +0 to +1.3 points covered), as #83 found for the text on Vita. The
+strips read are the same with and without the refinement.
 
 ## Models
 
@@ -662,7 +705,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout a417be9b1f77c3fd9cb6fec205fa76b0feb11c01  # #83's head (on #82's merge): the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout a540027f90a640fd7c4d99b8389973b85a1cc057  # #83's merge (after #82's): the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
