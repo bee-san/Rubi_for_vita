@@ -104,9 +104,10 @@ guest_faults() { # guest_faults WHAT LOG: fails the run on either kind
   g=$(guest_fault "$GUEST_INSN" "$2")
   [ -z "$g" ] || fail "(Vita3K could not run an instruction of $1 and went on, so the run says nothing past it: $g; $2)"
 }
+cp "$ux0/data/vjo_settings_smoke.txt" "$out/results.txt" 2>/dev/null
+results=$? # kept before any check fails the run
 guest_faults "the app" "$out/vita3k.stdout"
-cp "$ux0/data/vjo_settings_smoke.txt" "$out/results.txt" 2>/dev/null \
-  || fail "(Vita3K exit $rc after ${secs}s, the app wrote no results: $out/vita3k.stdout)"
+[ "$results" -eq 0 ] || fail "(Vita3K exit $rc after ${secs}s, the app wrote no results: $out/vita3k.stdout)"
 r=$(cat "$out/results.txt")
 case $r in
   done*) ;;
@@ -119,8 +120,8 @@ field() { echo "$r" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 # straight to stderr ("Unhandled SIGSEGV at rip 0x..."), then handed to Vita3K's handler, which
 # logs "[signal_handler]: Unhandled access to 0x..." and raises SIGTRAP: its logger can lose that
 # line. Dynarmic's line is quoted only for a run a signal ended (a fault Vita3K handled prints it
-# too). No other |C| line is a crash: every run logs "[translate_path]: Unknown device with path
-# gro0:app used" (settings/catalog.c lists gro0:app).
+# too). The only |C| line of a passing run is "[translate_path]: Unknown device with path
+# gro0:app used" (settings/catalog.c lists gro0:app), so no |C| line is quoted as such.
 crash=
 if [ "$rc" -eq 124 ]; then
   crash="a hang: timeout ended it after ${TIMEOUT:-900}s"

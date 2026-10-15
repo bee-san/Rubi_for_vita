@@ -233,9 +233,11 @@ textures so, with 66 failed reloads of broken icons, and exited 0.) If `vita-elf
 the smoke app's ELF ("segment 1 overlaps": its code segment ends too close to the data
 segment), the script rebuilds it with 4 KiB of padding (`VJO_SETTINGS_SMOKE_PAD`).
 
-The harness's `sceKernelExitProcess` does not return, as on the console, where the kernel ends
-the process's threads "without being allowed to be executed to completion"
-(`SDK_doc__System__Kernel-Overview_e.txt`, "Resource Collection When Terminating a Process").
+The harness's `sceKernelExitProcess` does not return. On a console it should not either: the
+caller is one of the process's threads, which the kernel ends "without being allowed to be
+executed to completion" (`SDK_doc__System__Kernel-Overview_e.txt`, "Resource Collection When
+Terminating a Process"; an inference from that passage, not run on a console, since the call's
+own reference says only that it exits the process).
 Vita3K's returns (b75d5e6, `SceLibKernel.cpp:1293-1297`), and since #112 the app exits with GXM
 still up, as the release does. Its `main` then returned into newlib's exit, whose
 `_free_vita_heap` frees the heap block that holds libvita2d's GXM context (Vita3K builds the
@@ -251,8 +253,9 @@ wrapper now runs the release's exit unchanged. A crash in Vita3K's shutdown stil
 run, and the failure says what ended Vita3K: the signal (its exit status less 128) and dynarmic's
 "Unhandled SIGSEGV at rip 0x…", which goes straight to stderr. Vita3K's own "[signal_handler]:
 Unhandled access to 0x…" is quoted when its logger got it out; in some crashed runs the SIGTRAP
-cut it off. No other critical line is a crash: every run, passing too, logs "[translate_path]:
-Unknown device with path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`).
+cut it off. The only critical line of a passing run is "[translate_path]: Unknown device with
+path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`), which the failure used to
+quote as the crash.
 
 Vita3K does not fault on an access to unmapped guest memory either. It logs "Invalid write …",
 "Invalid read …" or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0

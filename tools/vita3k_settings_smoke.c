@@ -111,9 +111,10 @@ int __wrap_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
     return rc;
 }
 
-/* The exit does not come back, as on the console, where the kernel ends a
- * process's threads without letting them run on (SDK Kernel-Overview,
- * "Resource Collection When Terminating a Process"). Vita3K's returns
+/* The exit does not come back. On a console it should not either: the caller
+ * is one of the process's threads, which the kernel ends without letting them
+ * run on (SDK Kernel-Overview, "Resource Collection When Terminating a
+ * Process"; an inference from that passage, not run on a console). Vita3K's returns
  * (b75d5e6, SceLibKernel.cpp:1293-1297): main then returned into newlib's
  * exit, whose _free_vita_heap frees the heap block holding libvita2d's GXM
  * context (Vita3K builds the context in the app's hostMem, SceGxm.cpp:1985),
