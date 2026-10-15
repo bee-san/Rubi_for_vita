@@ -1,5 +1,6 @@
 #include "catalog.h"
 #include "letter.h"
+#include "psp.h"
 #include "../core/sfo.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -41,11 +42,12 @@ static void read_title(const char *path, char *out, size_t cap)
 int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
 {
     const char *roots[] = {"ux0:app", "ur0:app", "gro0:app"};
-    int count = 0;
+    int count = 0, ux0_listed = 0;
     *truncated = 0;
     for (unsigned r = 0; r < sizeof(roots) / sizeof(roots[0]); r++) {
         SceUID dir = sceIoDopen(roots[r]);
         if (dir < 0) continue;
+        ux0_listed |= r == 0;
         SceIoDirent e;
         memset(&e, 0, sizeof(e));
         while (sceIoDread(dir, &e) > 0) {
@@ -56,24 +58,32 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
             if (count >= capacity) { *truncated = 1; continue; }
             VjoInstalledGame *g = &out[count++];
             /* Candidate validation has already bounded the complete title ID. */
+            memset(g, 0, sizeof(*g));
             memcpy(g->id, e.d_name, strlen(e.d_name) + 1);
             snprintf(g->title, sizeof(g->title), "%s", g->id);
             snprintf(g->icon, sizeof(g->icon), "%s/%s/sce_sys/icon0.png", roots[r], g->id);
             char path[160];
             snprintf(path, sizeof(path), "%s/%s/sce_sys/param.sfo", roots[r], g->id);
             read_title(path, g->title, sizeof(g->title));
+            /* AdrBubbleBooter looks for bubbles in ux0:app only. */
+            if (r == 0) vjo_psp_scan_app(g);
         }
         sceIoDclose(dir);
     }
-    /* Adrenaline can be installed under a homebrew ID but runs NPXS10028. */
+    /* Adrenaline can be installed under a homebrew ID but runs NPXS10028: the
+     * row for PSP games without a row of their own. */
     int psp = 0;
-    for (int i = 0; i < count; i++) if (!strcmp(out[i].id, "NPXS10028")) psp = 1;
+    for (int i = 0; i < count; i++) if (!strcmp(out[i].id, VJO_PSP_EMULATOR)) psp = 1;
     if (!psp && count < capacity) {
         VjoInstalledGame *g = &out[count++];
         memset(g, 0, sizeof(*g));
-        strcpy(g->id, "NPXS10028");
-        strcpy(g->title, "Adrenaline / PSP games (shared setting)");
+        strcpy(g->id, VJO_PSP_EMULATOR);
+        strcpy(g->title, VJO_CATALOG_PSP_TITLE);
+        g->kind = VJO_ROW_PSP_SHARED;
     }
+    vjo_psp_scan_tai(out, count);
+    /* Only a complete list of ux0:app's bubbles says which descriptions are stale. */
+    if (ux0_listed && !*truncated) vjo_psp_prune(out, count);
     qsort(out, count, sizeof(*out), name_order);
     return count;
 }

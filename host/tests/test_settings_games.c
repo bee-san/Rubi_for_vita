@@ -35,8 +35,10 @@
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
+#include <psp2/io/devctl.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/registrymgr.h>
 #include <psp2/touch.h>
@@ -44,6 +46,7 @@
 #include "../../core/buttons.h"
 #include <dirent.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +56,8 @@
 #include <time.h>
 #include <unistd.h>
 #include "../../core/games.h"
+#include "../../settings/catalog.h"
+#include "../../core/pspbubble.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
 
@@ -73,6 +78,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define MAX_FRAMES 4200
 typedef struct {
     char title[ROWS][2][128], id[ROWS][16], icon[ROWS][16]; /* icon: the texture's game, "JP", or "" */
+    unsigned tag[ROWS];                                      /* a PSP card's tag: its color, 0 for none */
     char hints[128], counter[24], status[2][128];
     int counter_x;                                           /* where the counter starts */
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
@@ -91,6 +97,7 @@ typedef struct {
     long max_cdram;
     long startup_ns;
     unsigned short attempts[MAX_FRAMES]; /* icon0.png opens tried, by game number (VJOTnnnnn) */
+    int description_writes;              /* opens for writing in ux0:data/VitaJPOverlay/psp (settings/psp.c) */
     Frame shown[MAX_FRAMES];
 } Session;
 static Session *session;
@@ -99,6 +106,14 @@ static Session *session;
 static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
 static Frame cur;
 static int icon_fd[1024];
+/* A test's faults: an append to a taiHEN configuration that fails after this
+ * many bytes (-1: none), and ux0:app that cannot be listed. Set before run(). */
+static long tai_append_fails_after = -1;
+/* The card's free space for sceIoDevctl (-1: the call fails) and a
+ * sceIoChstat that refuses to change a size, likewise. */
+static long long card_free = 1LL << 30;
+static int chstat_fails, tai_rewrite_fails; /* tai_rewrite_fails: config.txt cannot be written whole again */
+static int tai_append_fd[1024], app_dir_fails;
 static int is_icon(const char *p)
 {
     size_t n = strlen(p);
@@ -106,32 +121,53 @@ static int is_icon(const char *p)
 }
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
+    if (tai_rewrite_fails && (flags & O_TRUNC) && strstr(p, "tai/config.txt") && !strstr(p, ".vjo"))
+        return (int)(0x80010000u | ENOSPC);
     int fd = native(open(p, flags, mode)), game;
-    if (fd >= 0 && fd < 1024) icon_fd[fd] = is_icon(p);
+    if (fd >= 0 && fd < 1024) {
+        icon_fd[fd] = is_icon(p);
+        tai_append_fd[fd] = (flags & O_APPEND) && strstr(p, "tai/config.txt") && !strstr(p, ".vjo");
+    }
+    if ((flags & (O_WRONLY | O_RDWR)) && strstr(p, "VitaJPOverlay/psp/")) session->description_writes++;
     if (is_icon(p)) {
         cur.icon_opens++;
         if (sscanf(p, "ux0:app/VJOT%5d", &game) == 1 && game >= 0 && game < MAX_FRAMES) session->attempts[game]++;
     }
     return fd;
 }
-int sceIoClose(int fd) { if (fd >= 0 && fd < 1024) icon_fd[fd] = 0; return native(close(fd)); }
+int sceIoClose(int fd) { if (fd >= 0 && fd < 1024) icon_fd[fd] = tai_append_fd[fd] = 0; return native(close(fd)); }
 int sceIoRead(int fd, void *p, size_t len)
 {
     if (fd >= 0 && fd < 1024 && icon_fd[fd]) cur.icon_reads++;
     return native((int)read(fd, p, len));
 }
-int sceIoWrite(int fd, const void *p, size_t len) { return native((int)write(fd, p, len)); }
+int sceIoWrite(int fd, const void *p, size_t len)
+{
+    if (fd >= 0 && fd < 1024 && tai_append_fd[fd] && tai_append_fails_after >= 0) {
+        size_t n = len < (size_t)tai_append_fails_after ? len : (size_t)tai_append_fails_after;
+        if (!n) return (int)(0x80010000u | ENOSPC); /* the card is full */
+        tai_append_fails_after -= (long)n;
+        return native((int)write(fd, p, n));
+    }
+    return native((int)write(fd, p, len));
+}
 SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
 int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
 { struct stat st; int rc = stat(p, &st); if (!rc) out->st_mode = st.st_mode; return native(rc); }
 int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
+int sceIoChstat(const char *p, SceIoStat *st, int bits)
+{
+    if (bits != SCE_CST_SIZE || chstat_fails) return (int)0x80010016u;
+    return native(truncate(p, st->st_size));
+}
 int sceIoRemove(const char *p) { return native(unlink(p)); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 static DIR *dirs[8];
 static char dir_path[8][64];
 int sceIoDopen(const char *p)
 {
+    if (app_dir_fails && !strcmp(p, "ux0:app")) return (int)0x80010013u;
     if (!strcmp(p, "ux0:app")) cur.scans++;
     for (int i = 0; i < 8; i++)
         if (!dirs[i]) {
@@ -194,6 +230,18 @@ int sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo *info)
     info->app_mode = 2;
     info->total_user_rw_mem = 0xC800u * 1024u;
     info->free_user_rw = 0xC800u * 1024u - 23u * 1024u * 1024u - (unsigned)frame * 4096u;
+    return 0;
+}
+int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *out, int outlen)
+{
+    (void)in; (void)inlen;
+    if (strcmp(dev, "ur0:") && strcmp(dev, "ux0:")) return (int)0x80010013u;
+    if (cmd != 0x3001 || !out || outlen < (int)sizeof(SceIoDevInfo) || card_free < 0) return (int)0x80010016u;
+    SceIoDevInfo *info = out;
+    memset(info, 0, sizeof(*info));
+    info->max_size = 1LL << 34;
+    info->free_size = card_free;
+    info->cluster_size = 32768;
     return 0;
 }
 /* The console's /CONFIG/SYSTEM/button_assign: × enters unless a test sets ○. */
@@ -408,11 +456,12 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 /* What each card shows, by where main.c draws it. */
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
-    (void)font; (void)color; (void)scale;
+    (void)font; (void)scale;
     for (int r = 0; r < ROWS; r++) {
         int top = GAMES_Y + r * GAME_PITCH;
         if (x == 120 && y == top + 30) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
         else if (x == 120 && y == top + 62) copy(cur.title[r][1], sizeof(cur.title[r][1]), text);
+        else if (y == top + 70 && x > 700 && !strcmp(text, "PSP")) cur.tag[r] = color;
         else if (y == top + 70 && x > 700) copy(cur.id[r], sizeof(cur.id[r]), text);
         else if (y == top + 47 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
     }
@@ -575,7 +624,7 @@ static void card(int n, int (*kind)(int))
     }
     /* settings/catalog.c's synthetic entry, which has no icon */
     snprintf(games[n].id, sizeof(games[n].id), "NPXS10028");
-    snprintf(games[n].title, sizeof(games[n].title), "Adrenaline / PSP games (shared setting)");
+    snprintf(games[n].title, sizeof(games[n].title), VJO_CATALOG_PSP_TITLE);
     games[n].icon = ICON_NONE;
 }
 
@@ -1648,7 +1697,7 @@ static void rescan_only_on_start(void)
     games[game_count].icon = ICON_OK;
     game_count++;
     snprintf(games[game_count].id, sizeof(games[0].id), "NPXS10028");
-    snprintf(games[game_count].title, sizeof(games[0].title), "Adrenaline / PSP games (shared setting)");
+    snprintf(games[game_count].title, sizeof(games[0].title), VJO_CATALOG_PSP_TITLE);
     games[game_count].icon = ICON_NONE;
     spec_list();
     frame_hook = install_new_game;
@@ -1747,6 +1796,675 @@ static void touch_toggles_the_touched_card(void)
     TEST_CHECK(sum_loads(16, frames) == 0);
 }
 
+/* ---- Adrenaline bubbles (settings/psp.c, core/psptarget.c, core/taicfg.c) ---- */
+
+#define DIM_COLOR RGBA8(193, 207, 222, 255)
+static void put_le32(uint8_t *p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }
+/* A PARAM.SFO with TITLE and DISC_ID; stale: TITLE's length field left at 1,
+ * as Adrenaline Bubble Manager before 01fd277 wrote a bubble's. */
+static size_t psp_sfo(uint8_t *sfo, const char *title, const char *disc, int stale)
+{
+    uint32_t tn = (uint32_t)strlen(title) + 1, dn = (uint32_t)strlen(disc) + 1;
+    memset(sfo, 0, 512);
+    memcpy(sfo, "\0PSF", 4); put_le32(sfo + 4, 0x101);
+    put_le32(sfo + 8, 52); put_le32(sfo + 12, 68); put_le32(sfo + 16, 2); /* keys at 52, values at 68 */
+    sfo[22] = 4; sfo[23] = 2; put_le32(sfo + 24, dn); put_le32(sfo + 28, 16); put_le32(sfo + 32, 0); /* DISC_ID */
+    sfo[36] = 8; sfo[38] = 4; sfo[39] = 2; put_le32(sfo + 40, stale ? 1 : tn); put_le32(sfo + 44, 128);
+    put_le32(sfo + 48, 16); /* TITLE */
+    memcpy(sfo + 52, "DISC_ID\0TITLE\0", 14);
+    memcpy(sfo + 68, disc, dn);
+    memcpy(sfo + 84, title, tn);
+    return 68 + 16 + 128;
+}
+static void dir_rec(uint8_t *at, uint32_t lba, uint32_t size, int dir, const char *name)
+{
+    size_t n = strlen(name) ? strlen(name) : 1;
+    at[0] = (uint8_t)(33 + n + !(n & 1));
+    put_le32(at + 2, lba); put_le32(at + 10, size);
+    at[25] = dir ? 2 : 0;
+    at[32] = (uint8_t)n;
+    memcpy(at + 33, name, strlen(name));
+}
+/* A synthetic UMD image: the volume descriptor, the root, /PSP_GAME, PARAM.SFO. */
+static void put_iso(const char *path, const char *title, const char *disc)
+{
+    static uint8_t img[21 * 2048];
+    uint8_t sfo[512];
+    size_t n = psp_sfo(sfo, title, disc, 0);
+    memset(img, 0, sizeof(img));
+    uint8_t *pvd = img + 16 * 2048;
+    pvd[0] = 1; memcpy(pvd + 1, "CD001", 5); pvd[6] = 1; pvd[128] = 0; pvd[129] = 8; /* 2048-byte blocks */
+    dir_rec(pvd + 156, 17, 2048, 1, "");
+    dir_rec(img + 17 * 2048, 18, 2048, 1, "PSP_GAME");
+    dir_rec(img + 18 * 2048, 19, (uint32_t)n, 0, "PARAM.SFO;1");
+    memcpy(img + 19 * 2048, sfo, n);
+    put_file(path, img, sizeof(img));
+}
+static void put_pbp(const char *path, const char *title, const char *disc)
+{
+    uint8_t pbp[0x28 + 512] = {0}, sfo[512];
+    size_t n = psp_sfo(sfo, title, disc, 0);
+    memcpy(pbp, "\0PBP", 4); put_le32(pbp + 4, 0x10000);
+    put_le32(pbp + 8, 0x28);
+    for (int i = 1; i < 8; i++) put_le32(pbp + 8 + 4 * i, (uint32_t)(0x28 + n));
+    memcpy(pbp + 0x28, sfo, n);
+    put_file(path, pbp, 0x28 + n);
+}
+/* ux0:app/<id>: its own param.sfo and, for a bubble, data/boot.bin (the
+ * magic, the target's path at 0x40) or data/boot.inf (inf). */
+static void put_app(const char *id, const char *own_title, int stale, const char *target, int inf)
+{
+    char p[160];
+    uint8_t sfo[512], boot[0x140] = {0};
+    snprintf(p, sizeof(p), "ux0:app/%s", id); mkdir(p, 0777);
+    snprintf(p, sizeof(p), "ux0:app/%s/sce_sys", id); mkdir(p, 0777);
+    snprintf(p, sizeof(p), "ux0:app/%s/sce_sys/param.sfo", id);
+    put_file(p, sfo, psp_sfo(sfo, own_title, id, stale));
+    if (!target) return;
+    snprintf(p, sizeof(p), "ux0:app/%s/data", id); mkdir(p, 0777);
+    if (inf) {
+        char text[300];
+        int n = snprintf(text, sizeof(text), "# synthetic\r\nPATH=ms0:%s\r\n", target);
+        snprintf(p, sizeof(p), "ux0:app/%s/data/boot.inf", id);
+        put_file(p, text, (size_t)n);
+        return;
+    }
+    memcpy(boot, "ABB", 4);
+    boot[0x0C] = 1;
+    memcpy(boot + 0x40, target, strlen(target));
+    snprintf(p, sizeof(p), "ux0:app/%s/data/boot.bin", id);
+    put_file(p, boot, sizeof(boot));
+}
+static const char *const tai_base = "*KERNEL\nur0:tai/VitaJPOverlay_Kernel.skprx\n*main\nur0:tai/VitaJPOverlay_Shell.suprx\n"
+                                    "*PCSG00415\nur0:tai/VitaJPOverlay_OCR.suprx\n*PSPEMUCFW\nur0:tai/VitaJPOverlay_OCR.suprx\n";
+static char *slurp(const char *path, size_t *len)
+{
+    static char text[8][16384];
+    static int next;
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    char *t = text[next++ % 8];
+    size_t n = fread(t, 1, sizeof(text[0]) - 1, f);
+    fclose(f);
+    t[n] = '\0';
+    if (len) *len = n;
+    return t;
+}
+static void add_game(const char *id, const char *title)
+{
+    games[game_count + 1] = games[game_count]; /* the shared PSP row stays last */
+    snprintf(games[game_count].id, sizeof(games[0].id), "%s", id);
+    snprintf(games[game_count].title, sizeof(games[0].title), "%s", title);
+    games[game_count].icon = ICON_NONE;
+    game_count++;
+}
+/* Four Vita games, three bubbles (an ISO, an EBOOT.PBP, a missing target), an
+ * old boot.inf bubble, Adrenaline (registered) and ur0's taiHEN configuration. */
+static void bubble_card(void)
+{
+    card(4, NULL);
+    mkdir("ur0:tai", 0777);
+    put_file("ur0:tai/config.txt", tai_base, strlen(tai_base));
+    mkdir("ux0:pspemu", 0777); mkdir("ux0:pspemu/ISO", 0777); mkdir("ux0:pspemu/PSP", 0777);
+    mkdir("ux0:pspemu/PSP/GAME", 0777); mkdir("ux0:pspemu/PSP/GAME/NPJH90001", 0777);
+    put_app("ULJS00378", "Old Bubble Name", 1, "ux0:pspemu/ISO/Synthetic.iso", 0);
+    put_iso("ux0:pspemu/ISO/Synthetic.iso", "合成テスト PSP", "ULJS00378");
+    add_game("ULJS00378", "合成テスト PSP");
+    put_app("PSPEMU005", "Bubble Five", 0, "ux0:pspemu/PSP/GAME/NPJH90001/EBOOT.PBP", 0);
+    put_pbp("ux0:pspemu/PSP/GAME/NPJH90001/EBOOT.PBP", "Synthetic PBP Game", "NPJH90001");
+    add_game("PSPEMU005", "Synthetic PBP Game");
+    put_app("PSPEMU006", "Unreadable Six", 1, "ux0:pspemu/ISO/MISSING.ISO", 0);
+    add_game("PSPEMU006", "Unreadable Six");
+    put_app("OLDINF001", "Old Inf Bubble", 0, "/ISO/OLD.ISO", 1);
+    put_iso("ux0:pspemu/ISO/OLD.ISO", "Synthetic Old Game", "ULJM05001");
+    add_game("OLDINF001", "Synthetic Old Game");
+    put_app("PSPEMUCFW", "Adrenaline", 0, NULL, 0);
+    add_game("PSPEMUCFW", "Adrenaline");
+    spec_list();
+}
+/* The app's lines in the card's log.txt (the Anki page stub's vjo_log, as
+ * settings/anki_page.c writes them: "overlay app: " and the text). */
+#define APP_LOG "ux0:data/VitaJPOverlay/log.txt"
+static const char *app_logged(const char *needle)
+{
+    static char line[512];
+    FILE *f = fopen(APP_LOG, "r");
+    const char *found = NULL;
+    while (f && !found && fgets(line, sizeof(line), f))
+        if (strstr(line, needle)) found = line;
+    if (f) fclose(f);
+    return found;
+}
+/* The frame's card for id: its row, or -1. */
+static int card_of(int f, const char *id)
+{
+    for (int r = 0; r < ROWS; r++) if (!strcmp(session->shown[f].id[r], id)) return r;
+    return -1;
+}
+static void goto_row(const char *id)
+{
+    int index = list_index(id);
+    TEST_ASSERT(index >= 0);
+    for (int i = 0; i < index; i++) tap(DOWN, 3);
+    hold(0, 4);
+}
+
+static void bubbles_are_named_tagged_and_described(void)
+{
+    bubble_card();
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    int frames = run(at), last = frames - 1;
+    check_rules();
+    /* Every card shows its game's title: a bubble's target's, else its own
+     * (a stale SFO length read), Adrenaline's, the shared PSP row's. */
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    int r = card_of(last, "ULJS00378");
+    TEST_ASSERT(r >= 0);
+    TEST_CHECK(session->shown[last].tag[r] == DIM_COLOR);
+    for (int f = 0; f < frames; f++)
+        for (int k = 0; k < ROWS; k++) {
+            const char *id = session->shown[f].id[k];
+            if (!id[0]) continue;
+            int psp = !strcmp(id, "ULJS00378") || !strncmp(id, "PSPEMU", 6) || !strcmp(id, "OLDINF001") ||
+                      !strcmp(id, "NPXS10028");
+            TEST_CHECK_(!!session->shown[f].tag[k] == psp, "frame %d %s tag 0x%08X", f, id, session->shown[f].tag[k]);
+            if (!strcmp(id, "PSPEMUCFW") || !strcmp(id, "NPXS10028")) TEST_CHECK(session->shown[f].tag[k] == ACCENT);
+        }
+    /* The hints say what Enter does on an unregistered bubble that is ON. */
+    TEST_CHECK(!strcmp(session->shown[last].hints, "×: register for local OCR   L/R: page   ○: exit"));
+    TEST_MSG("%s", session->shown[last].hints);
+    char both[300];
+    snprintf(both, sizeof(both), "%s %s", session->shown[25].status[0], session->shown[25].status[1]);
+    TEST_CHECK(strstr(both, "4 PSP games are ON but not registered for local OCR: press × on each.") != NULL);
+    TEST_MSG("%s", both);
+    /* The Shell's descriptions: disc ID, title, target. */
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/psp/ULJS00378.txt", NULL),
+                       "ULJS00378\n合成テスト PSP\nux0:pspemu/ISO/Synthetic.iso\n"));
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/psp/PSPEMU005.txt", NULL),
+                       "NPJH90001\nSynthetic PBP Game\nux0:pspemu/PSP/GAME/NPJH90001/EBOOT.PBP\n"));
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/psp/PSPEMU006.txt", NULL), "\nUnreadable Six\nux0:pspemu/ISO/MISSING.ISO\n"));
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/psp/OLDINF001.txt", NULL),
+                       "ULJM05001\nSynthetic Old Game\nux0:pspemu/ISO/OLD.ISO\n"));
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/psp/PSPEMUCFW.txt", NULL) && !slurp("ux0:data/VitaJPOverlay/psp/NPXS10028.txt", NULL));
+    /* The log names each bubble, its target and what it found there. */
+    TEST_CHECK(app_logged("games: bubble ULJS00378 (boot.bin): ux0:pspemu/ISO/Synthetic.iso: ISO, disc ULJS00378, "
+                          "\"合成テスト PSP\" in ") != NULL);
+    TEST_CHECK(app_logged("games: bubble PSPEMU005 (boot.bin): ux0:pspemu/PSP/GAME/NPJH90001/EBOOT.PBP: PBP, disc NPJH90001") != NULL);
+    TEST_CHECK(app_logged("games: bubble PSPEMU006 (boot.bin): ux0:pspemu/ISO/MISSING.ISO: unreadable, disc ?") != NULL);
+    TEST_CHECK(app_logged("games: bubble OLDINF001 (boot.inf): ux0:pspemu/ISO/OLD.ISO: ISO, disc ULJM05001") != NULL);
+    TEST_CHECK(app_logged("games: PSPEMUCFW: Adrenaline") != NULL);
+    const char *all = slurp(APP_LOG, NULL);
+    TEST_MSG("log.txt:\n%s", all ? all : "(none)");
+    /* The first run wrote the four descriptions; a second rewrites none
+     * (unchanged) and logs no bubble line (a console append costs 12-46 ms). */
+    TEST_CHECK_(session->description_writes == 4, "%d description writes", session->description_writes);
+    unlink(APP_LOG);
+    at = 0;
+    hold(0, 5);
+    run(at);
+    TEST_CHECK_(session->description_writes == 0, "%d description writes", session->description_writes);
+    TEST_CHECK(!app_logged("games: bubble") && app_logged("games: PSPEMUCFW: Adrenaline"));
+    TEST_CHECK(slurp("ux0:data/VitaJPOverlay/psp/ULJS00378.txt", NULL) != NULL);
+}
+
+static void enter_registers_a_bubble_once(void)
+{
+    bubble_card();
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    int registered_at = at;
+    tap(SCE_CTRL_CROSS, 6);  /* ON, not registered: registers it */
+    int off_at = at;
+    tap(SCE_CTRL_CROSS, 6);  /* OFF */
+    int on_at = at;
+    tap(SCE_CTRL_CROSS, 6);  /* ON again: already registered */
+    hold(0, 4);
+    int frames = run(at), last = frames - 1;
+    check_rules();
+    size_t n, bn;
+    const char *config = slurp("ur0:tai/config.txt", &n), *backup = slurp("ur0:tai/config.txt.vjo-app-bak", &bn);
+    const char *block = "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
+                        "*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n";
+    TEST_ASSERT(config && backup);
+    TEST_CHECK(n == strlen(tai_base) + strlen(block) && !strncmp(config, tai_base, strlen(tai_base)) &&
+               !strcmp(config + strlen(tai_base), block));
+    TEST_CHECK(!strcmp(backup, tai_base));
+    char both[300];
+    snprintf(both, sizeof(both), "%s %s", session->shown[registered_at + 2].status[0], session->shown[registered_at + 2].status[1]);
+    TEST_CHECK(strstr(both, "ULJS00378 registered for local OCR") != NULL);
+    TEST_MSG("%s", both);
+    int r = card_of(registered_at + 2, "ULJS00378");
+    TEST_CHECK(r >= 0 && session->shown[registered_at + 2].tag[r] == ACCENT);
+    TEST_CHECK(!strcmp(session->shown[registered_at + 2].hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
+    /* The registration changed no ON/OFF choice; then OFF and ON were saved. */
+    TEST_CHECK(!strncmp(session->shown[off_at + 2].status[0], "Saved.", 6));
+    TEST_CHECK(!strncmp(session->shown[on_at + 2].status[0], "Saved.", 6));
+    const char *ini = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK(ini && strstr(ini, "ULJS00378 = enabled"));
+    TEST_MSG("%s", ini);
+    TEST_CHECK(app_logged("taiHEN: *ULJS00378 added to ur0:tai/config.txt (backup ur0:tai/config.txt.vjo-app-bak)") != NULL);
+    TEST_CHECK(card_of(last, "ULJS00378") >= 0 && session->shown[last].tag[card_of(last, "ULJS00378")] == ACCENT);
+}
+
+/* With ux0:tai/config.txt (the one taiHEN reads) both are registered, as the
+ * PC installer patches both; *ALL's old worker line is no reason to add one;
+ * a configuration taiHEN would stop reading before its end is not touched,
+ * and the game can still be turned OFF. */
+static void registration_edge_cases(void)
+{
+    char both[300];
+    bubble_card();
+    mkdir("ux0:tai", 0777);
+    put_file("ux0:tai/config.txt", "*main\r\nux0:tai/x.suprx\r\n", 24);
+    at = 0;
+    hold(0, 20);
+    goto_row("PSPEMU005");
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    const char *ux0 = slurp("ux0:tai/config.txt", NULL), *ur0 = slurp("ur0:tai/config.txt", NULL);
+    TEST_CHECK(ux0 && strstr(ux0, "*main\r\nux0:tai/x.suprx\r\n# VitaJPOverlay") && strstr(ux0, "\r\n*PSPEMU005\r\n"));
+    TEST_CHECK(ur0 && strstr(ur0, "\n*PSPEMU005\nur0:tai/VitaJPOverlay_OCR.suprx\n"));
+    TEST_CHECK(slurp("ux0:tai/config.txt.vjo-app-bak", NULL) && slurp("ur0:tai/config.txt.vjo-app-bak", NULL));
+    /* An old *ALL worker line already loads it: nothing is added, the tag says so. */
+    bubble_card();
+    put_file("ur0:tai/config.txt", "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n", 37);
+    at = 0;
+    hold(0, 20);
+    goto_row("PSPEMU006");
+    tap(SCE_CTRL_CROSS, 6);
+    int frames = run(at);
+    TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt", NULL), "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n"));
+    int r = card_of(frames - 1, "PSPEMU006");
+    TEST_CHECK(r >= 0 && session->shown[frames - 1].tag[r] == ACCENT);
+    TEST_CHECK(!strncmp(session->shown[frames - 1].status[0], "Saved.", 6)); /* Enter turned it OFF */
+    /* *ALL loads it from ur0's, but ux0's has no worker: only ux0's gets the section. */
+    bubble_card();
+    put_file("ur0:tai/config.txt", "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n", 37);
+    mkdir("ux0:tai", 0777);
+    put_file("ux0:tai/config.txt", "*main\nux0:tai/x.suprx\n", 22);
+    at = 0;
+    hold(0, 20);
+    goto_row("PSPEMU006");
+    int all_at = at;
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt", NULL), "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n"));
+    TEST_CHECK(strstr(slurp("ux0:tai/config.txt", NULL), "\n*PSPEMU006\nur0:tai/VitaJPOverlay_OCR.suprx\n") != NULL);
+    snprintf(both, sizeof(both), "%s %s", session->shown[all_at + 2].status[0], session->shown[all_at + 2].status[1]);
+    TEST_CHECK(strstr(both, "PSPEMU006 registered for local OCR") != NULL);
+    TEST_MSG("%s", both);
+    /* A line of 256 characters: taiHEN stops there, so nothing is appended;
+     * Enter says why once, then turns the game OFF. */
+    bubble_card();
+    char long_config[400];
+    memset(long_config, 'x', sizeof(long_config));
+    memcpy(long_config, "*main\n", 6);
+    long_config[sizeof(long_config) - 1] = '\n';
+    put_file("ur0:tai/config.txt", long_config, sizeof(long_config));
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    int tried = at;
+    tap(SCE_CTRL_CROSS, 6);
+    int toggled = at;
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    size_t n;
+    TEST_CHECK(slurp("ur0:tai/config.txt", &n) && n == sizeof(long_config));
+    snprintf(both, sizeof(both), "%s %s", session->shown[tried + 2].status[0], session->shown[tried + 2].status[1]);
+    TEST_CHECK(strstr(both, "Not registered: ur0:tai/config.txt: taiHEN stops reading it early") != NULL);
+    TEST_MSG("%s", both);
+    TEST_CHECK(!strncmp(session->shown[toggled + 2].status[0], "Saved.", 6));
+    const char *ini = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK(ini && strstr(ini, "ULJS00378 = disabled"));
+}
+
+/* AdrBubbleBooter reads a boot.bin of exactly 0x140 bytes as its layout
+ * (the path at 0x40) and any other size as the older one (at 0x20): one of
+ * 0x150 bytes is the older layout, so the app reads one byte past 0x140. */
+static void a_longer_boot_bin_is_the_older_layout(void)
+{
+    uint8_t boot[0x150] = {0};
+    bubble_card();
+    put_app("PSPEMU007", "Bubble Seven", 0, "ux0:pspemu/ISO/UNUSED.ISO", 0);
+    memcpy(boot, "ABB", 4);
+    memcpy(boot + 0x20, "ux0:pspemu/ISO/OLD.ISO", 22);
+    put_file("ux0:app/PSPEMU007/data/boot.bin", boot, sizeof(boot));
+    add_game("PSPEMU007", "Synthetic Old Game");
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/psp/PSPEMU007.txt", NULL), "ULJM05001\nSynthetic Old Game\nux0:pspemu/ISO/OLD.ISO\n"));
+}
+
+/* ur0:tai/config.txt of exactly size bytes: tai_base, then comment lines. */
+static void put_tai_of_size(size_t size)
+{
+    static char text[16384];
+    size_t n = strlen(tai_base);
+    TEST_ASSERT(size >= n + 2 && size < sizeof(text));
+    memcpy(text, tai_base, n);
+    while (n < size) {
+        size_t line = size - n > 81 ? 80 : size - n - 1; /* the last line takes what is left */
+        if (size - n - line - 1 == 1) line--;            /* never leave a 1-byte remainder */
+        text[n] = '#';
+        memset(text + n + 1, 'x', line - 1);
+        text[n + line] = '\n';
+        n += line + 1;
+    }
+    put_file("ur0:tai/config.txt", text, size);
+}
+
+/* An append the card refuses part way (full: it cuts at a cluster, a multiple
+ * of 4096 B, the one size taiHEN reads past): the configuration goes back to
+ * its old text, by cutting it back to its length or, where the file system
+ * refuses that, by writing it again; the status says so and the next Enter
+ * turns the game OFF instead of trying again. */
+static void a_failed_append_puts_the_old_text_back(void)
+{
+    static const struct { size_t base; long cut; int chstat_fails; } cases[] = {
+        {0, 0, 0}, {0, 30, 0}, {0, 90, 1}, {4046, 50, 0}, {8122, 70, 0}, {4046, 50, 1}, {4000, 96, 0}};
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        bubble_card();
+        if (cases[c].base) put_tai_of_size(cases[c].base);
+        size_t base_n;
+        char *base = strdup(slurp("ur0:tai/config.txt", &base_n));
+        tai_append_fails_after = cases[c].cut;
+        chstat_fails = cases[c].chstat_fails;
+        at = 0;
+        hold(0, 20);
+        goto_row("ULJS00378");
+        int tried = at;
+        tap(SCE_CTRL_CROSS, 6);
+        int toggled = at;
+        tap(SCE_CTRL_CROSS, 6);
+        run(at);
+        tai_append_fails_after = -1;
+        chstat_fails = 0;
+        size_t n;
+        const char *config = slurp("ur0:tai/config.txt", &n);
+        TEST_ASSERT(config != NULL);
+        TEST_CHECK_(n == base_n && !memcmp(config, base, n), "case %u: %zu B, was %zu", c, n, base_n);
+        TEST_CHECK_(n % 4096, "case %u: %zu B", c, n);
+        TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt.vjo-app-bak", NULL), base));
+        char both[300];
+        snprintf(both, sizeof(both), "%s %s", session->shown[tried + 2].status[0], session->shown[tried + 2].status[1]);
+        TEST_CHECK_(strstr(both, "Not registered: ur0:tai/config.txt: the write was not confirmed; it is as it was") != NULL,
+                    "case %u: %s", c, both);
+        TEST_CHECK(!strncmp(session->shown[toggled + 2].status[0], "Saved.", 6));
+        const char *ini = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+        TEST_CHECK(ini && strstr(ini, "ULJS00378 = disabled"));
+        TEST_CHECK_(app_logged("taiHEN: *ULJS00378 not confirmed in ur0:tai/config.txt") &&
+                    app_logged("its old text is back"), "case %u", c);
+        free(base);
+    }
+}
+
+/* When neither cutting the file back nor writing it again works, the status
+ * says what to do with the copy, and the log says it was not put back. */
+static void an_append_that_cannot_be_undone_says_so(void)
+{
+    bubble_card();
+    tai_append_fails_after = 30;
+    chstat_fails = tai_rewrite_fails = 1;
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    int tried = at;
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    tai_append_fails_after = -1;
+    chstat_fails = tai_rewrite_fails = 0;
+    size_t n;
+    const char *config = slurp("ur0:tai/config.txt", &n);
+    TEST_CHECK(config && n == strlen(tai_base) + 30 && !strncmp(config, tai_base, strlen(tai_base)));
+    TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt.vjo-app-bak", NULL), tai_base));
+    char both[300];
+    snprintf(both, sizeof(both), "%s %s", session->shown[tried + 2].status[0], session->shown[tried + 2].status[1]);
+    TEST_CHECK_(strstr(both, "the write failed: copy config.txt.vjo-app-bak back over it") != NULL, "%s", both);
+    TEST_CHECK(app_logged("NOT put back") != NULL);
+}
+
+/* Start reads the catalog again into the same rows: a row that was a bubble
+ * keeps nothing of it when a Vita game takes its place (kind, taiHEN state,
+ * a failed registration, a disc ID). Here every PSP app goes and Vita games
+ * come, so each of them lands where an old row was. */
+static void remove_tree_at(const char *path) { remove_tree(path); }
+static void bubbles_become_games(int f)
+{
+    if (f != 40) return;
+    static const char *const gone[] = {"ULJS00378", "PSPEMU005", "PSPEMU006", "OLDINF001", "PSPEMUCFW"};
+    char p[64];
+    for (unsigned i = 0; i < sizeof(gone) / sizeof(gone[0]); i++) {
+        snprintf(p, sizeof(p), "ux0:app/%s", gone[i]);
+        remove_tree_at(p);
+    }
+    for (int i = 4; i < 9; i++) {
+        Game g;
+        memset(&g, 0, sizeof(g));
+        snprintf(g.id, sizeof(g.id), "VJOT%05d", i);
+        make_title(i, g.title, sizeof(g.title));
+        g.icon = ICON_NONE;
+        install(&g, i);
+    }
+}
+static void a_rescan_keeps_nothing_of_old_rows(void)
+{
+    bubble_card();
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    tap(SCE_CTRL_CROSS, 6); /* registered: the row's taiHEN state is set */
+    hold(0, 40 - at > 0 ? 40 - at : 1);
+    int start = at;
+    tap(SCE_CTRL_START, 10);
+    for (int i = 0; i < 12; i++) tap(DOWN, 3);
+    hold(0, 4);
+    frame_hook = bubbles_become_games;
+    int frames = run(at);
+    frame_hook = NULL;
+    int vita_cards = 0, tagged = 0;
+    for (int f = start + 2; f < frames; f++)
+        for (int r = 0; r < ROWS; r++) {
+            const char *id = session->shown[f].id[r];
+            if (!strncmp(id, "VJOT", 4)) {
+                vita_cards++;
+                if (session->shown[f].tag[r]) tagged++;
+            }
+            if (!strcmp(id, "NPXS10028")) TEST_CHECK_(session->shown[f].tag[r] == ACCENT, "frame %d", f);
+            TEST_CHECK_(strcmp(id, "ULJS00378") && strcmp(id, "PSPEMUCFW"), "frame %d: %s still listed", f, id);
+        }
+    TEST_CHECK_(vita_cards > 9 && !tagged, "%d Vita cards, %d tagged", vita_cards, tagged);
+    /* The status is no stale registration message, and the gone bubbles' descriptions went. */
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/psp/ULJS00378.txt", NULL) && !slurp("ux0:data/VitaJPOverlay/psp/PSPEMU005.txt", NULL));
+}
+
+/* A bubble whose own SFO has a title too long for the description beside a
+ * long target path (only a hand-made SFO has one): its description is still
+ * written, with the title cut at a whole character. */
+static void a_long_title_is_cut_to_fit(void)
+{
+    char title[256], target[256], p[300];
+    bubble_card();
+    memset(title, 0, sizeof(title));
+    for (int i = 0; i < 85; i++) memcpy(title + 3 * i, "\xE3\x81\x82", 3); /* 85 x あ, 255 B */
+    snprintf(target, sizeof(target), "ux0:pspemu/ISO/");
+    memset(target + 15, 'L', 240); /* 255 B, the most a boot.bin holds: 513 B with the title, over 512 */
+    target[255] = '\0';
+    put_app("PSPEMU009", "x", 0, target, 0); /* the target does not exist: its own title is used */
+    snprintf(p, sizeof(p), "ux0:app/PSPEMU009/sce_sys/param.sfo");
+    put_sfo(p, title);
+    add_game("PSPEMU009", title);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    size_t n;
+    const char *d = slurp("ux0:data/VitaJPOverlay/psp/PSPEMU009.txt", &n);
+    TEST_ASSERT(d != NULL);
+    const char *t = strchr(d, '\n') + 1, *e = strchr(t, '\n');
+    TEST_ASSERT(e != NULL);
+    TEST_CHECK_(n < VJO_PSP_INFO_MAX && (size_t)(e - t) % 3 == 0 && e - t > 0 && !strncmp(t, title, (size_t)(e - t)) &&
+                !strncmp(e + 1, target, strlen(target)) && e[1 + strlen(target)] == '\n', "%zu B: %.*s", n, (int)(e - t), t);
+}
+
+/* A configuration already a multiple of 4096 B long (taiHEN reads past it)
+ * or empty is not copied or added to, and the status says why. */
+static void a_4k_or_empty_configuration_is_not_touched(void)
+{
+    static const size_t sizes[] = {4096, 8192, 0};
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        bubble_card();
+        if (sizes[i]) put_tai_of_size(sizes[i]);
+        else put_file("ur0:tai/config.txt", "", 0);
+        size_t before_n;
+        char *before = strdup(slurp("ur0:tai/config.txt", &before_n));
+        at = 0;
+        hold(0, 20);
+        goto_row("ULJS00378");
+        int tried = at;
+        tap(SCE_CTRL_CROSS, 6);
+        run(at);
+        size_t n;
+        const char *config = slurp("ur0:tai/config.txt", &n);
+        TEST_CHECK_(config && n == before_n && !memcmp(config, before, n), "%zu B", sizes[i]);
+        TEST_CHECK_(!slurp("ur0:tai/config.txt.vjo-app-bak", NULL), "%zu B: copied", sizes[i]);
+        char both[300];
+        snprintf(both, sizeof(both), "%s %s", session->shown[tried + 2].status[0], session->shown[tried + 2].status[1]);
+        TEST_CHECK_(strstr(both, sizes[i] ? "taiHEN cannot read it safely at this length" : "ur0:tai/config.txt: it is empty") != NULL,
+                    "%zu B: %s", sizes[i], both);
+        free(before);
+    }
+}
+
+/* A card that is (nearly) full: nothing is written, not even the copy, and
+ * the status says why. A card that does not report its space is written as
+ * usual (and put back as above should the append fail). */
+static void a_full_card_is_not_written(void)
+{
+    bubble_card();
+    card_free = 64 * 1024;
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    int tried = at;
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    card_free = 1LL << 30;
+    TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt", NULL), tai_base));
+    TEST_CHECK(!slurp("ur0:tai/config.txt.vjo-app-bak", NULL));
+    char both[300];
+    snprintf(both, sizeof(both), "%s %s", session->shown[tried + 2].status[0], session->shown[tried + 2].status[1]);
+    TEST_CHECK_(strstr(both, "Not registered: ur0:tai/config.txt: its memory card is full") != NULL, "%s", both);
+    bubble_card();
+    card_free = -1;
+    at = 0;
+    hold(0, 20);
+    goto_row("ULJS00378");
+    tap(SCE_CTRL_CROSS, 6);
+    run(at);
+    card_free = 1LL << 30;
+    TEST_CHECK(strstr(slurp("ur0:tai/config.txt", NULL), "\n*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n") != NULL);
+}
+
+/* Folders named ALL or KERNEL (taiHEN's reserved sections) or anything that
+ * is not a title ID, even with a bubble's files, are listed as they are and
+ * never registered: Enter only turns them ON or OFF. */
+static void reserved_names_are_never_registered(void)
+{
+    static const char *const ids[] = {"ALL", "KERNEL", "PSPEMU01"};
+    bubble_card();
+    put_app("ALL", "All Folder", 0, "/ISO/OLD.ISO", 1);
+    add_game("ALL", "All Folder");
+    put_app("KERNEL", "Kernel Folder", 0, "ux0:pspemu/ISO/OLD.ISO", 0);
+    add_game("KERNEL", "Kernel Folder");
+    put_app("PSPEMU01", "Not Quite", 0, "ux0:pspemu/ISO/OLD.ISO", 0);
+    add_game("PSPEMU01", "Not Quite");
+    spec_list();
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        put_file("ur0:tai/config.txt", tai_base, strlen(tai_base));
+        at = 0;
+        hold(0, 20);
+        goto_row(ids[i]);
+        int before = at - 1, tried = at;
+        tap(SCE_CTRL_CROSS, 6);
+        int frames = run(at);
+        TEST_CHECK_(!strcmp(slurp("ur0:tai/config.txt", NULL), tai_base), "%s", ids[i]);
+        TEST_CHECK_(!slurp("ur0:tai/config.txt.vjo-app-bak", NULL), "%s", ids[i]);
+        TEST_CHECK_(!strncmp(session->shown[tried + 2].status[0], "Saved.", 6), "%s: %s", ids[i],
+                    session->shown[tried + 2].status[0]);
+        int r = card_of(before, ids[i]), r2 = card_of(frames - 1, ids[i]);
+        TEST_CHECK_(r >= 0 && r2 >= 0 && !session->shown[before].tag[r] && !session->shown[frames - 1].tag[r2],
+                    "%s tagged", ids[i]);
+        char file[96];
+        snprintf(file, sizeof(file), "ux0:data/VitaJPOverlay/psp/%s.txt", ids[i]);
+        TEST_CHECK_(!slurp(file, NULL), "%s described", ids[i]);
+    }
+}
+
+/* Registered means in both configurations when ux0 has one (taiHEN reads
+ * either at boot): a bubble in only one of them is not, and Enter adds it to
+ * the other only. */
+static void registered_in_one_configuration_only(void)
+{
+    static const char *const block = "*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n";
+    for (int ux0_has_it = 0; ux0_has_it < 2; ux0_has_it++) {
+        bubble_card();
+        char with[1024];
+        snprintf(with, sizeof(with), "%s%s", tai_base, block);
+        mkdir("ux0:tai", 0777);
+        put_file(ux0_has_it ? "ux0:tai/config.txt" : "ur0:tai/config.txt", with, strlen(with));
+        if (ux0_has_it) put_file("ur0:tai/config.txt", tai_base, strlen(tai_base));
+        else put_file("ux0:tai/config.txt", tai_base, strlen(tai_base));
+        at = 0;
+        hold(0, 20);
+        goto_row("ULJS00378");
+        int before = at - 1;
+        tap(SCE_CTRL_CROSS, 6);
+        int frames = run(at);
+        int r = card_of(before, "ULJS00378");
+        TEST_CHECK_(r >= 0 && session->shown[before].tag[r] == DIM_COLOR, "ux0 has it: %d", ux0_has_it);
+        r = card_of(frames - 1, "ULJS00378");
+        TEST_CHECK_(r >= 0 && session->shown[frames - 1].tag[r] == ACCENT, "ux0 has it: %d", ux0_has_it);
+        const char *had = slurp(ux0_has_it ? "ux0:tai/config.txt" : "ur0:tai/config.txt", NULL);
+        const char *got = slurp(ux0_has_it ? "ur0:tai/config.txt" : "ux0:tai/config.txt", NULL);
+        TEST_CHECK(had && !strcmp(had, with)); /* the one that had it is unchanged */
+        TEST_CHECK(got && !strncmp(got, tai_base, strlen(tai_base)) && strstr(got + strlen(tai_base), block) &&
+                   !strstr(strstr(got, block) + 1, "*ULJS00378"));
+        TEST_CHECK(!slurp(ux0_has_it ? "ux0:tai/config.txt.vjo-app-bak" : "ur0:tai/config.txt.vjo-app-bak", NULL));
+    }
+}
+
+/* A description tells the Shell an ID is a bubble's: those of IDs that are
+ * no bubble's now go at the scan (a deleted bubble, an ID used by a Vita app),
+ * the bubbles' stay, and other files are left alone. */
+static void stale_descriptions_are_removed(void)
+{
+    bubble_card();
+    mkdir("ux0:data/VitaJPOverlay/psp", 0777);
+    put_file("ux0:data/VitaJPOverlay/psp/GONE00001.txt", "ULJS00001\nGone\nux0:pspemu/ISO/GONE.ISO\n", 38);
+    put_file("ux0:data/VitaJPOverlay/psp/VJOT00001.txt", "\nNot a bubble\nux0:x\n", 21);
+    put_file("ux0:data/VitaJPOverlay/psp/notes.md", "kept", 4);
+    /* ux0:app not listed: no bubble is known, so none is removed. */
+    app_dir_fails = 1;
+    at = 0;
+    hold(0, 5);
+    run(at);
+    app_dir_fails = 0;
+    TEST_CHECK(slurp("ux0:data/VitaJPOverlay/psp/GONE00001.txt", NULL) && slurp("ux0:data/VitaJPOverlay/psp/VJOT00001.txt", NULL));
+    at = 0;
+    hold(0, 5);
+    run(at);
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/psp/GONE00001.txt", NULL) && !slurp("ux0:data/VitaJPOverlay/psp/VJOT00001.txt", NULL));
+    TEST_CHECK(slurp("ux0:data/VitaJPOverlay/psp/notes.md", NULL) && slurp("ux0:data/VitaJPOverlay/psp/ULJS00378.txt", NULL) &&
+               slurp("ux0:data/VitaJPOverlay/psp/OLDINF001.txt", NULL));
+    TEST_CHECK(app_logged("games: ux0:data/VitaJPOverlay/psp/GONE00001.txt removed: no bubble has that ID now") != NULL);
+}
+
 TEST_LIST = {
     {"idle_window_fills_then_costs_nothing", idle_window_fills_then_costs_nothing},
     {"scrolling_loads_one_icon_a_frame_and_never_reloads_the_window",
@@ -1775,6 +2493,19 @@ TEST_LIST = {
     {"rescan_only_on_start", rescan_only_on_start},
     {"many_games_bounded", many_games_bounded},
     {"touch_toggles_the_touched_card", touch_toggles_the_touched_card},
+    {"bubbles_are_named_tagged_and_described", bubbles_are_named_tagged_and_described},
+    {"enter_registers_a_bubble_once", enter_registers_a_bubble_once},
+    {"registration_edge_cases", registration_edge_cases},
+    {"a_longer_boot_bin_is_the_older_layout", a_longer_boot_bin_is_the_older_layout},
+    {"a_failed_append_puts_the_old_text_back", a_failed_append_puts_the_old_text_back},
+    {"an_append_that_cannot_be_undone_says_so", an_append_that_cannot_be_undone_says_so},
+    {"a_rescan_keeps_nothing_of_old_rows", a_rescan_keeps_nothing_of_old_rows},
+    {"a_long_title_is_cut_to_fit", a_long_title_is_cut_to_fit},
+    {"a_4k_or_empty_configuration_is_not_touched", a_4k_or_empty_configuration_is_not_touched},
+    {"a_full_card_is_not_written", a_full_card_is_not_written},
+    {"reserved_names_are_never_registered", reserved_names_are_never_registered},
+    {"registered_in_one_configuration_only", registered_in_one_configuration_only},
+    {"stale_descriptions_are_removed", stale_descriptions_are_removed},
     {NULL, NULL}
 };
 

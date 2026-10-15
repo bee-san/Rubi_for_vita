@@ -17,14 +17,20 @@ SHELL = "ur0:tai/VitaJPOverlay_Shell.suprx"
 TEXT = "ur0:tai/VitaJPOverlay_Text.suprx"
 OCR = "ur0:tai/VitaJPOverlay_OCR.suprx"
 DISABLED = "# Mainline OCR: "
-# The PSP emulator's ID, which the overlay uses for Adrenaline's PSP games
-# (core/games.c); README 'Install' explains PSPEMUCFW, Adrenaline's own ID.
+# The line the Overlay app writes before a section it adds for an Adrenaline
+# bubble (core/taicfg.c vjo_tai_worker_block).
+APP_NOTE = "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)"
+# The PSP emulator's ID, which the overlay's Shell sees for Adrenaline's PSP
+# games (core/games.c). taiHEN loads plugins by the process's title ID, which
+# is PSPEMUCFW for Adrenaline and a bubble's own ID for its game (README
+# 'Install'); NPXS10028 stays accepted for configurations that name it.
 PSP_EMULATOR = "NPXS10028"
 # Title IDs have the XXXXYYYYY form (taiHEN README, 'config.txt'), e.g. PCSG00415.
 TITLE_ID = re.compile(r"[A-Z0-9]{9}")
 NO_TITLES = ("No game is registered for the OCR worker (VitaJPOverlay_OCR.suprx), and it is never "
              "registered under *ALL. Name each game with --title TITLEID, for example "
-             "--title PCSG00415 (CLANNAD); for Adrenaline's PSP games see README 'Install' (NPXS10028).")
+             "--title PCSG00415 (CLANNAD); for Adrenaline's PSP games see README 'Install' (PSPEMUCFW, "
+             "each bubble's ID).")
 
 
 class TitleError(ValueError):
@@ -114,7 +120,20 @@ def patch(raw: bytes, extra_kernel=(), uninstall=False, titles=(), keep_from=())
     lines = source.splitlines()
     if uninstall:
         lines = [line for line in lines if line.strip() not in (KERNEL, SHELL, TEXT, OCR)]
-        return (newline.join(lines) + newline).encode("utf-8")
+        # The Overlay app's note goes, and the section header after it when
+        # nothing is left under it; a section with other plugins keeps its header.
+        kept, i = [], 0
+        while i < len(lines):
+            if lines[i].strip() == APP_NOTE:
+                header = i + 1 < len(lines) and lines[i + 1].strip().startswith("*")
+                j = i + 2  # the section's next line that is no blank or comment
+                while j < len(lines) and (not lines[j].strip() or lines[j].strip().startswith("#")):
+                    j += 1
+                i += 2 if header and (j >= len(lines) or lines[j].strip().startswith("*")) else 1
+                continue
+            kept.append(lines[i])
+            i += 1
+        return (newline.join(kept) + newline).encode("utf-8")
     games = games_for(lines, titles, keep_from)
     if not games:
         raise TitleError(NO_TITLES)

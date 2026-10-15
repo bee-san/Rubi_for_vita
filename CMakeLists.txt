@@ -24,7 +24,8 @@ set(CORE_SRC
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
-  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c)
+  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
+  core/pspbubble.c core/psptarget.c core/taicfg.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -399,6 +400,28 @@ target_include_directories(vjo-games-tests PRIVATE third_party/acutest/include h
 target_link_libraries(vjo-games-tests vjo_host)
 target_compile_options(vjo-games-tests PRIVATE -Wall -Wextra)
 add_test(NAME games COMMAND vjo-games-tests)
+# Adrenaline's PSP games (core/pspbubble.c, core/psptarget.c, core/taicfg.c):
+# synthetic bubble files, PSP images and taiHEN configurations. With zlib the
+# CSO images' deflate blocks are compressed and read back too.
+find_package(ZLIB QUIET)
+add_executable(vjo-psp-tests host/tests/test_psp.c)
+target_include_directories(vjo-psp-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-psp-tests vjo_core)
+target_compile_options(vjo-psp-tests PRIVATE -Wall -Wextra)
+if(ZLIB_FOUND)
+  target_compile_definitions(vjo-psp-tests PRIVATE VJO_TEST_ZLIB=1)
+  target_link_libraries(vjo-psp-tests ZLIB::ZLIB)
+endif()
+add_test(NAME psp COMMAND vjo-psp-tests)
+# The Shell's foreground classification (shell/game.c) with AppMgr, the
+# process title and the memory card stubbed: bubbles, Adrenaline, the
+# emulator's NPXS10028, disc IDs and Vita games.
+add_executable(vjo-shell-game-tests host/tests/test_shell_game.c shell/game.c vita/games_storage.c)
+target_include_directories(vjo-shell-game-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-shell-game-tests PRIVATE VJO_TEST_APPMGR_STUBS=1)
+target_compile_options(vjo-shell-game-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-shell-game-tests vjo_host)
+add_test(NAME shell_game COMMAND vjo-shell-game-tests)
 add_executable(vjo-preferences-tests host/tests/test_preferences.c settings/preferences.c shell/files.c)
 target_include_directories(vjo-preferences-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_link_libraries(vjo-preferences-tests vjo_host)
@@ -452,7 +475,7 @@ foreach(_vjo_games IN ITEMS tests bench)
     set(_vjo_target vjo-settings-bench)
     set(_vjo_main ${VJO_SETTINGS_BENCH_MAIN})
   endif()
-  add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/engine.c
+  add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     vita/games_storage.c
     vita/buttons_vita.c

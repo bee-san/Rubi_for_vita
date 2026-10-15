@@ -16,10 +16,16 @@ int vjo_sfo_string(const void *data, size_t len, const char *key, char *out, siz
         uint32_t ko = u16(e), n = u32(e + 4), capacity = u32(e + 8), off = u32(e + 12);
         if (ko >= values - keys || !memchr(p + keys + ko, 0, values - keys - ko)) return -1;
         if (strcmp((const char *)p + keys + ko, key)) continue;
-        if (u16(e + 2) != 0x0204 || !n || n > capacity || off > len - values ||
+        if (u16(e + 2) != 0x0204 || !capacity || n > capacity || off > len - values ||
             capacity > len - values - off) return -1;
         const char *s = (const char *)p + values + off;
-        const char *end = memchr(s, 0, n);
+        /* The string ends at a NUL within its length; Adrenaline Bubble
+         * Manager before 01fd277 (2026-08-24) wrote a bubble's title without
+         * updating the length its template has (1), so a NUL within the
+         * entry's capacity is accepted as well, as VitaShell reads it
+         * (81af709 sfo.c:49-67). */
+        const char *end = n ? memchr(s, 0, n) : NULL;
+        if (!end) end = memchr(s, 0, capacity);
         if (!end || (size_t)(end - s) >= cap) return -1;
         memcpy(out, s, (size_t)(end - s) + 1);
         return 0;

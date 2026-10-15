@@ -2068,9 +2068,11 @@ static void check_app(void)
             prc);
 }
 
-static void activate_game(SceUID pid, const char *tid, int mode)
+static void activate_game(SceUID pid, const VjoGameId *id)
 {
-    if (!vjo_game_enabled(tid, &scratch)) {
+    const char *tid = id->key;
+    int mode = id->mode;
+    if (!vjo_game_enabled(tid, id->psp, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
         vjo_log("%s: JP Overlay disabled; game input passes through", tid);
@@ -2081,7 +2083,8 @@ static void activate_game(SceUID pid, const char *tid, int mode)
     {
         char name[128];
         vjo_title_name(pid, tid, name, sizeof(name)); /* "" for an unreadable title */
-        vjo_anki_set_game(tid, name);                 /* recorded on Anki cards */
+        /* recorded on Anki cards: a PSP game's disc ID and title when the Overlay app described it */
+        vjo_anki_set_game(id->disc[0] ? id->disc : tid, id->name[0] ? id->name : name, id->psp);
     }
     apply_config();
     if (!net_busy() && !local_pipeline(&cfg))
@@ -2100,22 +2103,23 @@ static void activate_game(SceUID pid, const char *tid, int mode)
 
 static void classify_pending(void)
 {
-    char tid[32];
+    VjoGameId id;
     SceUID pid = pending_pid;
-    int ret = vjo_title_id(pid, tid, sizeof(tid));
+    int ret = vjo_game_identify(pid, &id);
     if (ret == 0) {
         pending_pid = 0;
-        int mode = vjo_title_game_mode(tid);
-        if (mode == VJO_GAME_NONE) {
-            vjo_log("%s: system app, not a game", tid);
+        if (id.mode == VJO_GAME_NONE) {
+            vjo_log("%s: system app, not a game", id.key);
             vjoSetGameActive(pid, VJO_GAME_NONE);
         } else {
-            activate_game(pid, tid, mode);
+            activate_game(pid, &id);
         }
     } else if (now_us() - pending_since > CLASSIFY_TIMEOUT_US) {
         pending_pid = 0;
         vjo_log("no title ID for 0x%X (0x%08X): treating it as a game", pid, ret);
-        activate_game(pid, "GAME", VJO_GAME);
+        sceClibMemcpy(id.key, "GAME", 5); /* the rest is zero (vjo_game_identify) */
+        id.mode = VJO_GAME;
+        activate_game(pid, &id);
     }
 }
 
@@ -2151,7 +2155,7 @@ static void on_game_exit(void)
     if (!net_busy())
         mem_free();
     title_id[0] = '\0';
-    vjo_anki_set_game("", "");
+    vjo_anki_set_game("", "", 0);
     vjo_ledger_shell_log("exit");
     vjo_selftest_step("exit");
 }

@@ -132,6 +132,22 @@ class AnalyseV1(unittest.TestCase):
         self.assertIn("Model I/O error 0x80010013 (ENODEV", r.stdout)
         self.assertIn("could not free its memory", r.stdout)
 
+    def test_psp_launches_are_listed_once_each(self):
+        """shell/game.c's psp: line: the IDs the console reports for a PSP game, its key and its game."""
+        log = ('psp: NPXS10028 ULJS00378 -> ULJS00378; disc ULJS00378; boots ux0:pspemu/ISO/S.iso; "Synthetic"\n'
+               'game ULJS00378 started: dictionary Local dictionaries (key MISSING), trigger l+r, subtitles select+r, '
+               'ocr_mode auto\n'
+               'psp: NPXS10028 ULJS00378 -> ULJS00378; disc ULJS00378; boots ux0:pspemu/ISO/S.iso; "Synthetic"\n'
+               'psp: NPXS10028 PSPEMU006 -> PSPEMU006; disc ; boots ?; ""\n'
+               'psp: NPXS10028 PSPEMU007 -> PSPEMU007; disc ULJS00385; boots ux0:pspemu/ISO/A long path.iso; "A title cut\n')
+        lg = a.summarise_log(log)
+        self.assertEqual([p["key"] for p in lg["psp"]], ["ULJS00378", "PSPEMU006", "PSPEMU007"])
+        self.assertEqual(lg["psp"][0], {"title_id": "NPXS10028", "app": "ULJS00378", "key": "ULJS00378",
+                                        "disc": "ULJS00378", "title": "Synthetic", "target": "ux0:pspemu/ISO/S.iso"})
+        self.assertEqual((lg["psp"][1]["disc"], lg["psp"][1]["target"], lg["psp"][1]["title"]), ("", "?", ""))
+        self.assertEqual((lg["psp"][2]["target"], lg["psp"][2]["title"]), ("ux0:pspemu/ISO/A long path.iso", "A title cut"))
+        self.assertEqual(lg["games"]["ULJS00378"]["starts"], 1)
+
     def test_kernel_capture_failure_and_disabled_game(self):
         text = (HEADER + "step boot t=12\n" + sample("boot") + "step ok t=60012\n" + sample("ok")
                 + "step game t=95000 title=PCSG00415 enabled=1 mode=1 region=full\n" + sample("game")

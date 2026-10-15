@@ -919,6 +919,10 @@ LOG = {
     "game": re.compile(r"^game (\S+) started: dictionary (.+?)(?: \(key (\S+)\))?, trigger (\S+), subtitles (\S+), "
                        r"ocr_mode (\S+)"),
     "disabled": re.compile(r"^(\S+): JP Overlay disabled"),
+    # shell/game.c vjo_game_identify: a PSP game's start (the process's title ID, AppMgr's app name, the
+    # key games.ini and region.ini use; the disc ID, title and target from the Overlay app's description)
+    # (the title last and in quotes; a line the Shell cut at 254 B may lose its end)
+    "psp": re.compile(r'^psp: (\S*) (\S*) -> (\S+); disc (\S*); boots (.*?)(?:; "(.*?)"?)?$'),
     "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
     # builds with row navigation (#81) add the arrow keys' row changes, wraps and presses before a layout
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"
@@ -1212,7 +1216,7 @@ def summarise_log(text):
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
-                    "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
+                    "psp", "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
                     "gstep"):
             m = LOG[key].match(line)
             if not m:
@@ -1242,6 +1246,11 @@ def summarise_log(text):
                 g["starts"] += 1
             elif key == "disabled":
                 s["disabled"].add(m.group(1))
+            elif key == "psp":
+                p = {"title_id": m.group(1), "app": m.group(2), "key": m.group(3), "disc": m.group(4),
+                     "title": m.group(6) or "", "target": m.group(5)}
+                if p not in s.setdefault("psp", []):
+                    s["psp"].append(p)
             elif key == "done":
                 s["dictionary_ms"].append(int(m.group(3)))
                 s.setdefault("job_rc", {})
@@ -1523,6 +1532,9 @@ def render_collect(c):
             L.append("  games: " + ", ".join(f"{t} x{g['starts']} (ocr_mode {g['ocr_mode']}, {g['dictionary']})"
                                             for t, g in lg["games"].items())
                      + (f"; disabled: {', '.join(lg['disabled'])}" if lg["disabled"] else ""))
+        for p in lg.get("psp", [])[:8]:
+            L.append(f"  psp: {p['key']} (title ID {p['title_id'] or '-'}, app {p['app'] or '-'}): "
+                     f"disc {p['disc'] or '?'} \"{p['title']}\", boots {p['target']}")
         jobs = lg["jobs"]
         if jobs:
             rcs = {}

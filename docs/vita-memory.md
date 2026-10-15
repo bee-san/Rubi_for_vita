@@ -198,9 +198,14 @@ under `*PCSG00415`, keeps the games registered by an earlier install, and commen
 those games, never into SceShell or a system app [source: taihen-parser `parser.c`,
 `taihen_config_parse`], which removes the load itself, not only its pages. `NO_RESIDENT` stays
 as the guard for a configuration edited by hand. For Adrenaline's PSP games the README names
-both `NPXS10028` (the overlay's ID for them) and `PSPEMUCFW` (the process Adrenaline's kernel
-module patches) [source: Adrenaline `kernel/main.c`, `ksceKernelStartPreloadedModulesPatched`];
-which one taiHEN matches is unmeasured. A game added later needs `--title` and a reboot.
+`PSPEMUCFW` and each bubble's own ID, the title IDs of the processes Adrenaline's kernel module
+and AdrBubbleBooter's patch [source: Adrenaline `kernel/main.c`, `ksceKernelStartPreloadedModulesPatched`;
+AdrBubbleBooter-oss `integration/adrenaline-v7/overlay/kernel/main.c:123-145`]; that taiHEN matches
+them is inferred from those sources, not measured. A bubble's `*TITLEID` also loads the worker into the
+bubble's own starter app (AdrBubbleBooter's eboot, an ordinary process under that ID) when it runs,
+where the worker stays idle until it exits [inference]. The Overlay app appends such a `*TITLEID` section
+for a bubble the user turns ON (`settings/psp.c`, `core/taicfg.c`), never `*ALL`. A game added later
+needs `--title` (or the app) and a reboot.
 
 Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 299,008 B, the two
 thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at
@@ -425,8 +430,9 @@ measured on the console]:
 | newlib heap (reserved whole) | 8 MiB |
 | Icon textures | at most 2.25 MiB |
 | Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
+| PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
 | Code, stacks, PVF atlas | about 2 MiB |
-| **Total** | **about 24 MiB of 50 MiB** |
+| **Total** | **about 25 MiB of 50 MiB** |
 
 Not in the table: libgxm's own memory for the render target (libvita2d passes no driver memory
 block, `driverMemBlock = -1`) is unmeasured, and where `sceGxmVshInitialize` places the 2 MiB

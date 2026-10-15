@@ -16,8 +16,10 @@
 #include "icons.h"
 #include "letter.h"
 #include "preferences.h"
+#include "psp.h"
 #include "text_layout.h"
 #include "../core/local_dict.h"
+#include "../core/taicfg.h"
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
 #include "../vita/buttons_vita.h"
@@ -219,7 +221,7 @@ static void footer(const char *message, int error, const char *controls)
 
 /* The console's enter and cancel buttons (read once at start) and the hints that name them. */
 static VjoButtons buttons;
-static char preference_hints[96], game_hints[96], games_empty_hints[96];
+static char preference_hints[96], game_hints[96], games_empty_hints[96], register_hints[96];
 
 static void read_buttons(void)
 {
@@ -230,6 +232,8 @@ static void read_buttons(void)
              buttons.enter_glyph, buttons.cancel_glyph);
     snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: page   %s: exit",
              buttons.cancel_glyph);
+    snprintf(register_hints, sizeof(register_hints), "%s: register for local OCR   L/R: page   %s: exit",
+             buttons.enter_glyph, buttons.cancel_glyph);
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
@@ -318,11 +322,28 @@ static void prepare_window(void)
         }
 }
 
+/* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row. */
+static int row_on(const VjoInstalledGame *g) { return vjo_games_enabled_as(&policy, g->id, g->kind != VJO_ROW_GAME); }
+
+/* The OCR worker loads in it: registered, or the shared row (not registrable). */
+static int registered(const VjoInstalledGame *g)
+{ return !vjo_catalog_registrable(g) || g->tai == VJO_TAI_PRESENT || g->tai == VJO_TAI_UNDER_ALL; }
+/* A PSP game that is ON but whose taiHEN configuration does not load the OCR
+ * worker: Enter registers it (settings/psp.c), once until the next scan; after
+ * a failed attempt Enter turns it OFF again. */
+static int needs_registration(const VjoInstalledGame *g)
+{ return writable && vjo_catalog_registrable(g) && !registered(g) && !g->register_failed && row_on(g); }
+static void register_row(VjoInstalledGame *g)
+{
+    status_error = vjo_psp_register(g, status, sizeof(status)) < 0;
+    g->register_failed = (unsigned char)status_error;
+}
+
 static void rebuild(void)
 {
     count = 0;
     for (int i = 0; i < total; i++) {
-        int on = vjo_games_enabled(&policy, library[i].id);
+        int on = row_on(&library[i]);
         if (!filter || (filter == 1 && on) || (filter == 2 && !on)) visible[count++] = i;
     }
     if (selected >= count) selected = count ? count - 1 : 0;
@@ -351,16 +372,25 @@ static void save(void)
     rebuild();
 }
 
+/* Enter: a PSP game that is ON but not registered for the OCR worker is
+ * registered; otherwise the game is turned ON or OFF, and a PSP game turned
+ * ON is registered too. */
 static void toggle(void)
 {
     if (!count) return;
-    const char *id = library[visible[selected]].id;
-    if (vjo_games_set(&policy, id, !vjo_games_enabled(&policy, id)) < 0) {
+    VjoInstalledGame *g = &library[visible[selected]];
+    if (needs_registration(g)) {
+        register_row(g);
+        return;
+    }
+    int on = row_on(g);
+    if (vjo_games_set(&policy, g->id, !on) < 0) {
         status_error = 1;
         snprintf(status, sizeof(status), "Settings are full (512 title overrides). No change saved.");
         return;
     }
     save();
+    if (!on && !status_error && needs_registration(g)) register_row(g);
 }
 
 static void toggle_default(void)
@@ -387,6 +417,14 @@ static void scan(void)
     total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated);
     rebuild();
     if (truncated) { status_error = 0; snprintf(status, sizeof(status), "Showing the first 512 installed titles."); }
+    int unregistered = 0;
+    for (int i = 0; i < total; i++) unregistered += needs_registration(&library[i]);
+    if (unregistered == 1 && !status_error)
+        snprintf(status, sizeof(status), "1 PSP game is ON but not registered for local OCR: select it and press %s.",
+                 buttons.enter_glyph);
+    else if (unregistered && !status_error)
+        snprintf(status, sizeof(status), "%d PSP games are ON but not registered for local OCR: press %s on each.",
+                 unregistered, buttons.enter_glyph);
 }
 
 static void move(int delta)
@@ -691,7 +729,7 @@ static void draw(void)
     for (int r = 0; r < ROWS && offset + r < count; r++) {
         int index = offset + r, y = GAMES_Y + r * GAME_PITCH;
         const VjoInstalledGame *g = &library[visible[index]];
-        int on = vjo_games_enabled(&policy, g->id);
+        int on = row_on(g);
         vita2d_texture *icon = vjo_icon_cache_get(&icon_cache, g->id);
         focus_card(y, GAME_H, index == selected);
         if (icon) vita2d_draw_texture_scale(icon, 38, y + 8,
@@ -706,6 +744,9 @@ static void draw(void)
         draw_rows(120, y + 30, WHITE, 26, 32, g->title, title_rows(visible[index]));
         vita2d_disable_clipping();
         badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
+        /* PSP games: the tag, dim while the OCR worker is not registered for it. */
+        if (g->kind != VJO_ROW_GAME)
+            text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, registered(g) ? ACCENT : DIM, 24, "PSP");
         text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
@@ -714,7 +755,8 @@ static void draw(void)
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
         status_box(440, 64, 467, 2, status, status_error);
-        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, game_hints);
+        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1,
+                     needs_registration(&library[visible[selected]]) ? register_hints : game_hints);
         snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
         text(936 - text_width(24, counter), 535, DIM, 24, counter);
     } else footer(status, status_error, games_empty_hints);

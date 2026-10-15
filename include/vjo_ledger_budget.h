@@ -48,7 +48,13 @@
  * the build log's module rows, main 5e68ecd (#116, #111: 206,664 + 71,076, the same 282,624 B of
  * pages) and this change], four text pages fewer: 192,512 + 73,728 B of pages. (On main c4a6ade,
  * before #111's 424 B of text, it was 188,056 B of text, five pages fewer.) #123's key filter makes it
- * 189,104 text, the same pages [measured: the build log's module row, main c641bdf]. */
+ * 189,104 text, the same pages [measured: the build log's module row, main c641bdf]. #122's
+ * removal of the default config.ini template makes it 186,416 + 70,112, one text page fewer:
+ * 262,144 B packaged (docs/memory-ledger.md). #127's frequency ranks make it 187,552 + 70,128, the
+ * same pages (docs/memory-ledger.md). #124's identification of Adrenaline's PSP games (shell/game.c:
+ * AppMgr's app name and one description read per launch; core/games.c's shared PSP row) makes it
+ * 188,000 + 70,132, the same 262,144 B [measured: the build log's module rows, main 9f92bc6 and
+ * #124]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 266240u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,

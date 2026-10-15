@@ -71,6 +71,7 @@ build region_select host/tests/test_region_select.c core/region_select.c core/re
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
+build psp host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c core/games.c core/sfo.c
 # The Shell's logger (shell/log_vita.c) on an in-memory file system: batched appends, 32-bit sizes.
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
@@ -83,7 +84,7 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_meminfo region_select)
-TESTS+=(touch_hold text_rows settings_layout shell_log apkg)
+TESTS+=(touch_hold text_rows settings_layout shell_log apkg psp)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
