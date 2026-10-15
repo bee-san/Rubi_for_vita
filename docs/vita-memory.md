@@ -305,9 +305,17 @@ Rules:
   more than one game), allocate the whole job's memory in as few blocks as possible, free it when
   the job ends, and treat a failed `sceKernelAllocMemBlock` after a passed preflight as normal
   (the game moved first).
-- Resident data (weights) must be dropped when the game is no longer in front, when the title is
-  disabled, and on any refused allocation [existing behaviour, README 'Memory and
-  troubleshooting'].
+- Resident data (the weights, the LM, the cascade's model) must be dropped once the game has not
+  been the active one for 5 s of its running time (`game_ocr/main.c` `inactive_long`: another app in
+  front of a running game, the title disabled, the Shell restarted), on any refused allocation and
+  at exit [README 'Memory and troubleshooting']. The 5 s are process time, which stops while the
+  process is suspended [SDK: Kernel-Reference, `sceKernelGetProcessTimeWide`: "Process time stops
+  during process suspension and system suspension periods"], so a suspend and resume keeps them,
+  as a moment's change of foreground does; they stay in the game's own budget, which system apps
+  and the common dialogs do not draw on (their own budgets: sections 5.4 and 3.1). Before
+  test.3 they went at once, and #81's run read H15 four times in one game process
+  (docs/first-ocr.md). A job that found no line reads them if the job's memory check allowed it
+  (the cascade's model included, before any line is doubted): they are held from then on.
 - Never use the host game's `malloc` or libc heap (256 KiB default) [SDK:
   Memory_Management-Tutorial, 'Configuring the libc Default Heap'].
 - Worker threads: default priority and `SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT` put a thread
@@ -560,9 +568,10 @@ troubleshooting').
   callbacks, but a game process only receives a reduced mask of them while system processes get
   the full set [wiki: SceSysmem, 'SysEvent'; wiki: ScePower, 'Power callbacks'].
 - For the overlay: a job is tied to its game, capture sequence and foreground generation, and
-  suspend invalidates old work (README). Resident weights are released when the game is no longer
-  the active one. Nothing may assume the frame it captured is still the one on screen after a
-  resume.
+  suspend invalidates old work (README). Resident weights, the LM and the cascade's model are
+  released once the game has not been the active one for 5 s of its running time (the rule in
+  section 5.2; the time stops while the process is suspended, so a resume keeps them). Nothing may
+  assume the frame it captured is still the one on screen after a resume.
 
 ## 11. Threads
 

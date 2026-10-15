@@ -48,6 +48,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_refine_lines = 2;
     c->ocr_helpers = 2; /* ocr_threads = 3 */
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
+    c->ocr_settle_press_ms = 1000; /* a job the open overlay waits for (docs/first-ocr.md) */
     c->log_file = 1; /* log.txt is on unless log_file = off */
 }
 
@@ -103,9 +104,11 @@ const char *vjo_config_default_text(void)
            "; vocr model size (the Overlay app's Model size): small (fastest) | normal\n"
            "; (the default, balanced) | large (most accurate)\n"
            "vocr_tier = normal\n"
-           "; vocr: read text once still this long (ms, 0 = off), waiting at most the max\n"
+           "; vocr: read text once still this long (ms, 0 = off), waiting at most the max,\n"
+           "; or the press max when the open overlay waits\n"
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
+           "ocr_settle_press_ms = 1000\n"
            "; vocr: skip found lines with no ink (an even area, a smooth gradient): on | off\n"
            "; (off: it finds next to none at native resolution; see docs/vita-vn-ocr.md)\n"
            "ocr_skip_blank_lines = off\n"
@@ -557,6 +560,13 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
         set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
+    } else if (vjo_ieq(key, "ocr_settle_press_ms")) {
+        int keep = c->ocr_settle_press_ms; /* 0, or 100..10000: under 25 ms the request's 50 ms field is 0, the 2 s default */
+        set_ms(c, key, val, &c->ocr_settle_press_ms, 0, 10000);
+        if (c->ocr_settle_press_ms && c->ocr_settle_press_ms < 100) {
+            c->ocr_settle_press_ms = keep;
+            warn(c, "%s: invalid value '%s' (ms, out of range)", key, val);
+        }
     } else if (vjo_ieq(key, "ocr_cascade_ms")) {
         set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
     } else if (vjo_ieq(key, "ocr_lm")) {

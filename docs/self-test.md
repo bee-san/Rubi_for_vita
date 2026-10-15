@@ -15,14 +15,20 @@ second recognition, each stage with its own record whether it passed or not
    one empty file, `ux0:data/VitaJPOverlay/selftest.txt`.
 2. Reboot. Wait for the LiveArea and leave the Vita alone for a minute (the boot guard's `ok`).
 3. Start the game to test. Reach a screen with dialogue text and wait about 30 seconds without
-   pressing anything: on the first settled screen with text in your region, one OCR job runs every
-   stage below in turn. Screens before it with no line in your region, or that change under every
-   read, are waited past: the game's logos and notices (#81's run began 2 s after the game
+   pressing anything: once an OCR job has read text in your region, the stages below run in a
+   background job of their own on that screen, after 2 s with the overlay closed and nothing
+   else running. Your own scans never run them (test.2's first scans did, beside them, and took
+   9-15 s: [first-ocr.md](first-ocr.md)): the first scans are as fast as later ones, except one
+   made while the stages run, which waits for them to stop (about 0.2 s, at most about 0.5 s, est.),
+   and the self-test's job shows nothing. Opening the overlay or a new screen stops it; its stages run
+   again, from the first, after the next scan that reads text. Screens without a line in your
+   region are not tested: the game's logos and notices (#81's run began 2 s after the game
    started, on CLANNAD's opening notice, whose five lines lay above the region, and all three
-   region stages found nothing), menus, black screens. Each closes the first stage's `begin` with
-   a `stage fallback wait` record; after 30 such screens the stages run anyway, and the analyser
-   says when they then found no text. OCR runs automatically while the test is armed, whatever
-   `ocr_mode` says; the region is
+   region stages found nothing), menus, black screens. A first stage that still finds no line,
+   or whose screen changes under every read, closes its `begin` with a `stage fallback wait`
+   record; after 30 such screens the stages run anyway, and the analyser says when they then
+   found no text. OCR runs automatically while the test is armed, whatever `ocr_mode` says; the
+   region is
    **yours** (draw it with Square first if you have not; with none, the full screen). The game
    needs the OCR worker registered for it (installed with `--title TITLEID`, README 'Install');
    otherwise the stages report `rc=-117` (`ocr unavailable`).
@@ -41,7 +47,7 @@ second recognition, each stage with its own record whether it passed or not
 | `textbox` | your region, the configured model size | the configured size's model (VOCR3-H15 for the default, Normal) read from the card (its load time), the strip capture, the finder and the recognizer |
 | `fullscreen` | the whole frame | the full screen through the strips, the configured model kept resident |
 | `probe` | each capture path into each memory type, one strip | whether the display hook can write the game's `USER_RW`, `CDRAM` and `PHYCONT` memory, the kernel strip, and a user-mode `sceDisplayGetFrameBuf` read; each with its rc and the rows' checksum |
-| `textbox2` | your region again, serially | the warm time on one thread (API 22: textbox ran with `ocr_threads`' helpers); its text is the job's result |
+| `textbox2` | your region again, serially | the warm time on one thread (API 22: textbox ran with `ocr_threads`' helpers); it leaves the configured size's model resident for your next scan |
 
 No stage uses the line cache (API 22: each stage's request carries `VJO_GAME_OCR_S_NOCACHE`), so every stage
 recognizes what it reads; the `stage … begin` record gives each stage's request word as `speed=`, the
@@ -50,7 +56,8 @@ recognizes what it reads; the `stage … begin` record gives each stage's reques
 The marker is removed after the last stage, so one arming is one run, failed stages included
 (#74: the API 18 test removed it only after a successful recognition, stayed armed after the
 capture failed, and kept forcing the full-screen region). If the screen changes during the
-stages, the job is cancelled and they run again on the next settled screen. A run that stopped
+stages, or the overlay opens, the job is cancelled and they run again after the next scan that
+reads text. A run that stopped
 part way (a crash, the power) leaves the marker: the next boot runs the test again, the report
 shows the stage that began and never wrote its record, and `status.txt` keeps the previous boot's
 copy as `status.prev.txt`.
@@ -260,9 +267,12 @@ it cannot decide, with where in the zip the data to decide it is. The zip is the
 
 - Shell module pages: 299,008 B, unchanged by API 19 (the stages share the job's one result
   buffer; `vjo_capture_raw` was removed).
-- The report is capped at 48 KiB and written line by line; it is also copied into `status.txt`.
+- The report is capped at 48 KiB and written a record at a time, one append per file (a stage's
+  end, about 25 lines, in one or two; test.2 wrote it line by line, each line appended to the
+  report and `log.txt` in turn: 0.4-2.4 s a stage record, 13.5 s over its 17 stage runs,
+  [first-ocr.md](first-ocr.md)); it is also copied into `status.txt` and `log.txt`.
 - It does not launch the game: the owner does (the expert's rule against automating risky
-  actions). It runs one job of five stages, once per arming.
+  actions). It runs one job of five stages, once per arming, after your first scan with text.
 - The game's exact partition figure is not sampled by the kernel; the game's free `USER`, CDRAM
   and phycont come from the worker's own `sceKernelGetFreeMemorySize` before and after each
   allocation (`gstep ... main= cdram= phycont=`).

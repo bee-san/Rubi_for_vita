@@ -180,6 +180,27 @@ goes from 571,888 to 548,096 B (`VJO_BUDGET_PAF_RESULTS_NET`; the host's `sizeof
 731,632 to 707,840 B. The local path (one 64 KiB arena) is unchanged. No TLS root was the relay's:
 it spoke plain HTTP.
 
+The first scan's fixes (docs/first-ocr.md: the self-test's own background job, its records written
+a record at a time, the press's settle cap, the done line's exchange and log times) take no
+allocation and no item. A self-test record's group is a 2 KiB buffer on the stack of the thread
+that writes it, and no thread's deepest chain changes: on VjoNet `vjo_selftest_stage_end`'s frame
+is 2,432 B, called by `run_selftest_stages` after `vocr_run_one` (5,000 B) has returned; on
+VjoControl the game record's chain is 3,324 B (`ctl_main` 136, `activate_game` 160,
+`vjo_selftest_game` 2,120, `sample` 408, `report` 276, the group's flush and the logger's append
+below it 224) of its 16 KiB, under the same thread's
+config load (136 + 160 + `apply_config` 1,720 + `vjo_config_load` 128 + `vjo_config_parse`
+1,760 = 3,904 B); `vjo_selftest_init`'s 3,148 B chain runs on the boot's thread after the same
+config load [measured: `arm-vita-eabi-gcc -Os -fstack-usage -fcallgraph-info=su` with the build's
+flags, the SDK's calls counted as 0]. The Shell's text goes from 206,192 to
+206,240 B and its data and `.bss` from 71,020 to 71,072 B (the last text job's capture, the idle
+time, the log's append counters), the same 282,624 B of pages: object text `shell/worker.c` +834,
+`shell/selftest.c` +280, `shell/log_vita.c` +88, `core/config.c` +175 (the new key and its range),
+paid for by building `core/jpegsw.c` (Lens's encoder, −888) and `core/utf.c` (−396; the Overlay
+app's copy −392, not a plugin) with `-Os`. The worker's text goes from 70,124 to 70,812 B
+(`game_ocr/main.c` +252, `core/vocr_ocr.c` +440: the warm-up and its steps, the NO_GAME grace, the
+TEAR step's retry time) and its data and `.bss` from 14,200 to 14,208 B, the same 90,112 B of pages
+[measured: the build log's module rows, main `f85b5d9` and this change, vita-vn-ocr `d214a05`].
+
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
 | item | bytes | what | source |
@@ -199,7 +220,7 @@ it spoke plain HTTP.
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
 | VjoGameVocr workspace | 1,191,936 at most | per job, at any region, page-rounded: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544); since API 20 with the beam + LM decoder's extras (the top-K of every frame, the LM context and the beam workspace, 56,928 B), 4 KiB for the greedy text, and for a model smaller than the cascade's its extras (VOCR4-W20's arena, structs and decoder, 296,192 B), and with the finder's boxes refined its arena (72,400 B at 960 × 544, 16,768 B at 883 × 112): 617,312 B with H15; since API 22 ended by the line slots of the job's helpers (`ocr_threads`, at most two: the worker's own slot, 68,160 B, and per helper its recognizer arena, context and slot, 253,104 B for H15), taken only when the memory check passes with them: 1,191,680 B with H15 and two | `vjo_vocr_job_bytes` + `vjo_vocr_refine_bytes` + `vjo_vocr_lm_job_bytes` + `vjo_vocr_cascade_job_bytes` + `vjo_vocr_helpers_bytes`; asserted in `test_ledger.c` |
 | VjoGameVocrHelper stacks+TLS | 40,960 at most | API 22: 16,384 + 4,096 per helper thread, at most two, each created for one line and deleted when its line is placed; none between jobs | `game_ocr/main.c` `pool_run` |
-| VjoGameVocrCascade | 1,560,576 | the confidence cascade's larger model, the next model size up of the job's since API 21 (VOCR4-W20, F20's 1,558,016 B, for Normal; VOCR3-H15 for Small; Large has none), page-rounded; `USER_RW` only, resident between jobs like the weights, read at the first doubtful line, taken only when the memory check passes with it | `include/vjo_vocr_sizes.h`; `test_ledger.c` |
+| VjoGameVocrCascade | 1,560,576 | the confidence cascade's larger model, the next model size up of the job's since API 21 (VOCR4-W20, F20's 1,558,016 B, for Normal; VOCR3-H15 for Small; Large has none), page-rounded; `USER_RW` only, resident between jobs like the weights, read at the first doubtful line or by a job that found no line (the warm-up), taken only when the memory check passes with it | `include/vjo_vocr_sizes.h`; `test_ledger.c` |
 | VjoGameVocrLM | 3,784,704 at most | the largest pinned LM (`vocr_lm_o3_4000k.vlm`, 3,781,072 B), page-rounded; `USER_RW` only, resident between jobs like the weights, taken only when the memory check passes with it (a smaller tier, or none, otherwise) | `include/vjo_vocr_sizes.h`; `tools/tests/test_vocr_defaults.py` |
 | VjoGameVocrCapture | 65,536 at most | one strip of grey rows and, per region row, its checksum, its recent states (16, or as many as fit) and two bits: at most 65,536 B at any region (`VJO_VOCR_CAPTURE_LIMIT`; 65,480 B at 960 × 544, 61,388 B at 917 × 125), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
 | VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |

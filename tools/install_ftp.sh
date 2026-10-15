@@ -136,6 +136,8 @@ if [ $COLLECT = 1 ]; then
   verdict=0
   python3 tools/analyse_selftest.py --collect "$OUT" > "$OUT/analysis.txt" 2>&1 || verdict=$?
   python3 tools/analyse_selftest.py --collect "$OUT" --json > "$OUT/analysis.json" 2>/dev/null || true
+  # each job's timeline, stage by stage (docs/first-ocr.md): numbers only, no recognized text
+  [ -f tools/analyse_timeline.py ] && { python3 tools/analyse_timeline.py --collect "$OUT" --jobs > "$OUT/timeline.txt" 2>&1 || true; }
   python3 - "$OUT" <<'PY'
 import sys, zipfile
 from pathlib import Path

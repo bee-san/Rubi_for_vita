@@ -3,21 +3,26 @@
  * it follows the next boot and the first game started: at each step it
  * writes lines to ux0:data/VitaJPOverlay/selftest-report.txt, with the free
  * memory of every pool we can read, by every route, and the ledger. The report
- * is appended line by line, so a crash leaves the steps reached; the report is
- * what the owner copies back for tools/analyse_selftest.py.
+ * is appended a record at a time (one append per file, see Group), so a crash
+ * leaves the records written; the report is what the owner copies back for
+ * tools/analyse_selftest.py.
  *
- * v2 (API 19): on the first settled screen of the game with text in the
- * user's region (vjo_selftest_stage_wait waits for one, at most
- * VJO_SELFTEST_WAITS screens), one job runs every stage in turn: the user's
- * region with the fallback model forced (FL10 read
- * from the card), the user's region with the configured model (H15 read), the
- * full screen through the strips (weights kept), the capture probe (each
- * capture path and memory type, one strip each), and the user's region again
- * (the warm time; its text is the job's). Each stage ends with its own record,
- * passed or not, then the next one starts; after the last the test is done and
- * the marker removed, so a failure never leaves it armed
- * (#74: the API 18 test stayed armed after a failed capture and kept forcing
- * the full-screen region). It changes one thing while armed: OCR runs
+ * v2 (API 19): once a job of the game has read text in the user's region, a
+ * background job of its own (shell/worker.c selftest_job_due) runs every stage
+ * in turn on that screen, with the overlay closed: the user's region with the
+ * fallback model forced (FL10 read from the card), the user's region with the
+ * configured model, the full screen through the strips (weights kept), the
+ * capture probe (each capture path and memory type, one strip each), and the
+ * user's region again (the warm time). It shows nothing: the user's text and
+ * its lookup are the earlier job's. Opening the overlay or a new screen stops
+ * it, and the stages run again from the first after the next job that reads
+ * text: the user's scans never wait for them (test.2's first scans did, 9-15 s:
+ * docs/first-ocr.md). A first stage that still finds no line waits
+ * (vjo_selftest_stage_wait, at most VJO_SELFTEST_WAITS screens). Each stage
+ * ends with its own record, passed or not, then the next one starts; after the
+ * last the test is done and the marker removed, so a failure never leaves it
+ * armed (#74: the API 18 test stayed armed after a failed capture and kept
+ * forcing the full-screen region). It changes one thing while armed: OCR runs
  * automatically. The region is the user's. */
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -47,13 +52,42 @@ static int finished;     /* every stage has its record: the test is complete */
 static int report_bytes; /* -1: the report could not be opened */
 static int64_t t0;
 
-static void report(const char *fmt, ...)
+/* A record's lines (a stage's end, a memory sample) go out with one append per
+ * file (the report, status.txt, log.txt), not one per line: an append costs the
+ * console 12-46 ms (#81's self-test timestamps), and test.2's stage records,
+ * each line appended to the three files in turn, took 0.4-2.4 s each, in the
+ * job's thread (docs/first-ocr.md). A crash loses at most the record being
+ * written. The group lives on its caller's stack. */
+#define GROUP_BYTES 2048
+typedef struct {
+    int used;
+    char buf[GROUP_BYTES];
+} Group;
+
+/* On the stack of the thread that writes a record: the chains in docs/memory-ledger.md count it. */
+typedef char vjo_selftest_group_on_the_stack[sizeof(Group) <= 2048 + sizeof(int) ? 1 : -1];
+
+static void flush(Group *g)
+{
+    SceUID fd;
+    if (!g->used)
+        return;
+    if ((fd = sceIoOpen(REPORT, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666)) >= 0) {
+        if (sceIoWrite(fd, g->buf, g->used) == g->used)
+            report_bytes += g->used;
+        sceIoClose(fd);
+    }
+    vjo_log_raw(g->buf, g->used); /* status.txt and log.txt too */
+    g->used = 0;
+}
+
+/* One line of the report into g; a full group goes out first. */
+static void report(Group *g, const char *fmt, ...)
 {
     char line[256];
     va_list ap;
-    SceUID fd;
     int n;
-    if (!armed || report_bytes < 0 || report_bytes > REPORT_CAP)
+    if (!armed || report_bytes < 0 || report_bytes + g->used > REPORT_CAP)
         return;
     va_start(ap, fmt);
     n = sceClibVsnprintf(line, sizeof(line) - 1, fmt, ap);
@@ -63,13 +97,10 @@ static void report(const char *fmt, ...)
     if (n > (int)sizeof(line) - 2)
         n = sizeof(line) - 2;
     line[n++] = '\n';
-    fd = sceIoOpen(REPORT, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
-    if (fd < 0)
-        return;
-    if (sceIoWrite(fd, line, n) == n)
-        report_bytes += n;
-    sceIoClose(fd);
-    vjo_log_raw(line, n); /* status.txt too */
+    if (g->used + n > GROUP_BYTES)
+        flush(g);
+    sceClibMemcpy(g->buf + g->used, line, n);
+    g->used += n;
 }
 
 static int64_t ms_since_start(void)
@@ -83,30 +114,31 @@ static int64_t ms_since_start(void)
  * -2097152, i.e. nothing free above a 2 MiB margin), not an error. Then the
  * PAF heap, the Shell ledger, and every kernel route (kernel/meminfo.c), each
  * with its own result. */
-static void sample(const char *step)
+static void sample(Group *g, const char *step)
 {
     SceKernelFreeMemorySizeInfo f = {.size = sizeof(f)};
     VjoMemInfo m;
     const VjoLedger *l = &g_shell_ledger;
     int rc = sceKernelGetFreeMemorySize(&f);
-    report("mem %s rc=0x%08X main=%d cdram=%d phycont=%d valid=%d paf_free=%u", step, (unsigned)rc,
+    report(g, "mem %s rc=0x%08X main=%d cdram=%d phycont=%d valid=%d paf_free=%u", step, (unsigned)rc,
            rc < 0 ? 0 : f.size_user, rc < 0 ? 0 : f.size_cdram, rc < 0 ? 0 : f.size_phycont,
            rc >= 0 && f.size_user >= 0 && f.size_cdram >= 0 && f.size_phycont >= 0,
            (unsigned)vjo_shell_heap_free_size());
-    report("ledger %s pages=%u/%u paf=%u/%u", step,
+    report(g, "ledger %s pages=%u/%u paf=%u/%u", step,
            (unsigned)l->pool_current[VJO_LEDGER_POOL_SHELL_PAGES], (unsigned)l->pool_peak[VJO_LEDGER_POOL_SHELL_PAGES],
            (unsigned)l->pool_current[VJO_LEDGER_POOL_SHELL_PAF], (unsigned)l->pool_peak[VJO_LEDGER_POOL_SHELL_PAF]);
+    flush(g); /* a crash in the kernel's memory routes (#75's B1 broke them once) keeps the lines before */
     sceClibMemset(&m, 0, sizeof(m));
     m.size = sizeof(m);
     if (!IMPORT_READY(vjoMemInfo) || (rc = vjoMemInfo(&m)) < 0) {
-        report("kmem %s route=none rc=0x%08X", step, (unsigned)rc);
+        report(g, "kmem %s route=none rc=0x%08X", step, (unsigned)rc);
         return;
     }
-    report("kmem %s route=block part=kernel rc=0x%08X step=%d total=%u free=%u", step, (unsigned)m.kernel_rc,
+    report(g, "kmem %s route=block part=kernel rc=0x%08X step=%d total=%u free=%u", step, (unsigned)m.kernel_rc,
            (int)m.kernel_step, (unsigned)m.kernel_total, (unsigned)m.kernel_free);
-    report("kmem %s route=block part=shell rc=0x%08X step=%d total=%u free=%u", step, (unsigned)m.caller_rc,
+    report(g, "kmem %s route=block part=shell rc=0x%08X step=%d total=%u free=%u", step, (unsigned)m.caller_rc,
            (int)m.caller_step, (unsigned)m.caller_total, (unsigned)m.caller_free);
-    report("kmem %s route=cas part=shell rc=0x%08X step=%d main=%u/%u cdram=%u/%u phycont=%u/%u", step,
+    report(g, "kmem %s route=cas part=shell rc=0x%08X step=%d main=%u/%u cdram=%u/%u phycont=%u/%u", step,
            (unsigned)m.cas_rc, (int)m.cas_step, (unsigned)m.cas_main_free, (unsigned)m.cas_main_total,
            (unsigned)m.cas_cdram_free, (unsigned)m.cas_cdram_total, (unsigned)m.cas_phycont_free,
            (unsigned)m.cas_phycont_total);
@@ -120,11 +152,11 @@ static void sample(const char *step)
             if (w < 0 || (size_t)w >= sizeof(parts) - n) break;
             n += (size_t)w;
         }
-        report("kmem %s route=as part=%s rc=0x%08X step=%d parts=%u skipped=%u%s", step,
+        report(g, "kmem %s route=as part=%s rc=0x%08X step=%d parts=%u skipped=%u%s", step,
                m.as_caller ? "shell" : "kernel", (unsigned)m.as_rc, (int)m.as_step, (unsigned)m.as_parts,
                (unsigned)m.as_skipped, parts);
     }
-    report("kernel %s ledger=%u/%u limit=%u capture=%u", step, (unsigned)m.ledger_current, (unsigned)m.ledger_peak,
+    report(g, "kernel %s ledger=%u/%u limit=%u capture=%u", step, (unsigned)m.ledger_current, (unsigned)m.ledger_peak,
            (unsigned)m.ledger_limit, (unsigned)m.capture_bytes);
 }
 
@@ -138,6 +170,7 @@ void vjo_selftest_init(const VjoConfig *cfg)
     SceIoStat st;
     VjoBootInfo b = {.size = sizeof(b)};
     SceUID fd;
+    Group g;
     t0 = (int64_t)sceKernelGetProcessTimeWide();
     if (sceIoGetstat(MARKER, &st) < 0)
         return;
@@ -149,37 +182,45 @@ void vjo_selftest_init(const VjoConfig *cfg)
         return;
     }
     sceIoClose(fd);
-    report("selftest v2 api=%d", VJO_API_VERSION);
+    g.used = 0;
+    report(&g, "selftest v2 api=%d", VJO_API_VERSION);
     if (IMPORT_READY(vjoBootInfo) && vjoBootInfo(&b) == 0)
-        report("boot seq=%u mode=%d prev=%d/%d/%d/%d failures=%d write=0x%08X", (unsigned)b.seq, b.mode,
+        report(&g, "boot seq=%u mode=%d prev=%d/%d/%d/%d failures=%d write=0x%08X", (unsigned)b.seq, b.mode,
                b.prev_mode, b.prev_stage, b.prev_inert, b.prev_fault, b.failures, (unsigned)b.write_status);
     /* model: the configured tier's (API 21); fallback: the smallest tier's, which
      * the fallback stage runs ("-": the configured tier is the smallest). */
-    report("config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", cfg->ocr_backend,
+    report(&g, "config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", cfg->ocr_backend,
            vjo_vocr_tier_model(cfg->vocr_tier) ? vjo_vocr_tier_model(cfg->vocr_tier) : "-",
            cfg->vocr_tier > (int)VJO_VOCR_TIER_SMALL ? vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL) : "-",
            vjo_vocr_tier_id(cfg->vocr_tier) ? vjo_vocr_tier_id(cfg->vocr_tier) : "-", cfg->dictionary,
            cfg->anki_mining);
-    report("step boot t=%lld", (long long)ms_since_start());
-    sample("boot");
+    report(&g, "step boot t=%lld", (long long)ms_since_start());
+    sample(&g, "boot");
+    flush(&g);
 }
 
 void vjo_selftest_step(const char *step)
 {
+    Group g;
     if (!armed || finished)
         return;
-    report("step %s t=%lld", step, (long long)ms_since_start());
-    sample(step);
+    g.used = 0;
+    report(&g, "step %s t=%lld", step, (long long)ms_since_start());
+    sample(&g, step);
+    flush(&g);
 }
 
 void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region)
 {
+    Group g;
     if (!armed || finished)
         return;
-    report("step game t=%lld title=%s enabled=%d mode=%d region=%s rect=%u,%u,%u,%u", (long long)ms_since_start(),
+    g.used = 0;
+    report(&g, "step game t=%lld title=%s enabled=%d mode=%d region=%s rect=%u,%u,%u,%u", (long long)ms_since_start(),
            title, enabled, mode, region && region->w ? "user" : "none", region ? region->x : 0u,
            region ? region->y : 0u, region ? region->w : 0u, region ? region->h : 0u);
-    sample("game");
+    sample(&g, "game");
+    flush(&g);
 }
 
 /* ---- the stages ---- */
@@ -187,8 +228,9 @@ static const struct {
     const char *name;
     uint32_t flags;
 } stages[] = {
-    /* In this order: the last stage's result is the job's (shell/worker.c); the
-     * probe, which also reads the frame from user mode, after the main stages.
+    /* In this order: the last stage leaves the configured size's model resident, so the
+     * user's next job reads no weights; the probe, which also reads the frame
+     * from user mode, after the main stages.
      * No stage uses the line cache, so each recognizes what it reads; textbox2
      * (STAGE_SERIAL) reads textbox's screen again serially, with the weights
      * resident, so the pair compares the configured helpers (ocr_threads) with
@@ -223,11 +265,14 @@ uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured)
 
 void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed)
 {
+    Group g;
     if (!vjo_selftest_armed())
         return;
-    report("stage %s begin t=%lld flags=0x%X model=%s fallback=%s speed=0x%X", vjo_selftest_stage_name(i),
+    g.used = 0;
+    report(&g, "stage %s begin t=%lld flags=0x%X model=%s fallback=%s speed=0x%X", vjo_selftest_stage_name(i),
            (long long)ms_since_start(), (unsigned)vjo_selftest_stage_flags(i), model, fallback[0] ? fallback : "-",
            (unsigned)speed);
+    flush(&g);
 }
 
 /* #81's run began 2 s after the game started, on its opening notice: the five
@@ -240,12 +285,15 @@ static int waits; /* settled screens the stages waited past */
 
 int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 {
+    Group g;
     if (!vjo_selftest_armed() || i != 0 || !((rc == VJO_OK && !r->lines) || rc == VJO_E_SCREEN_CHANGED) ||
         waits >= VJO_SELFTEST_WAITS)
         return 0;
     waits++;
-    report("stage %s wait t=%lld rc=%d screens=%d/%d", vjo_selftest_stage_name(i), (long long)ms_since_start(), rc,
+    g.used = 0;
+    report(&g, "stage %s wait t=%lld rc=%d screens=%d/%d", vjo_selftest_stage_name(i), (long long)ms_since_start(), rc,
            waits, VJO_SELFTEST_WAITS);
+    flush(&g);
     return 1;
 }
 
@@ -297,45 +345,51 @@ void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint3
     static const char *const weights[] = {"none", "read", "resident"};
     const char *name = vjo_selftest_stage_name(i);
     char line[256];
+    Group g;
     if (!vjo_selftest_armed())
         return;
+    g.used = 0;
     for (uint32_t k = 0; k < r->n_steps && k < VJO_GAME_OCR_STEPS; k++) {
         if (vjo_gstep_format(line, sizeof(line), name, &r->step[k]) > 0)
-            report("%s", line);
+            report(&g, "%s", line);
     }
     for (uint32_t k = 0; k < r->recognized && k < VJO_GAME_OCR_LINES; k++)
-        report("line %s i=%u w=%u h=%u frames=%u us=%u", name, (unsigned)k, r->line[k].width, r->line[k].height,
+        report(&g, "line %s i=%u w=%u h=%u frames=%u us=%u", name, (unsigned)k, r->line[k].width, r->line[k].height,
                r->line[k].frames, (unsigned)r->line[k].us);
     {   /* text: FNV-1a of the shown text, so two stages' readings compare without the text */
         uint32_t h = VJO_FNV_INIT;
         for (const unsigned char *t = (const unsigned char *)r->text; t < (const unsigned char *)r->text +
              sizeof(r->text) && *t; t++)
             h = (h ^ *t) * 16777619u;
-        report("stage %s end rc=%d t=%lld ms=%u region=%ux%u+%u+%u fb=%ux%u/%u/0x%08X model=%s fallback=%u lines=%u "
+        report(&g, "stage %s end rc=%d t=%lld ms=%u region=%ux%u+%u+%u fb=%ux%u/%u/0x%08X model=%s fallback=%u lines=%u "
                "recognized=%u frames=%u text=0x%08X", name, rc, (long long)ms_since_start(), (unsigned)ms,
                (unsigned)r->width, (unsigned)r->height, (unsigned)r->region_x, (unsigned)r->region_y,
                (unsigned)r->fb_width, (unsigned)r->fb_height, (unsigned)r->fb_pitch, (unsigned)r->fb_format, model,
                (unsigned)r->fallback, (unsigned)r->lines, (unsigned)r->recognized, (unsigned)r->frames, (unsigned)h);
     }
-    report("result %s source=%s mem=%s capture=%u strip_rows=%u strips=%u tears=%u capture_ms=%u workspace=%u "
+    report(&g, "result %s source=%s mem=%s capture=%u strip_rows=%u strips=%u tears=%u capture_ms=%u workspace=%u "
            "resident=%u weights=%s find_ms=%u load_ms=%u recognize_ms=%u", name,
            r->source < 4 ? src_names[r->source] : "?", r->capture_memory < 5 ? mem_names[r->capture_memory] : "?",
            (unsigned)r->capture_bytes, (unsigned)r->strip_rows, (unsigned)r->captures, (unsigned)r->tears,
            (unsigned)(r->capture_us / 1000), (unsigned)r->workspace_bytes, (unsigned)r->resident_bytes,
            r->weights < 3 ? weights[r->weights] : "?", (unsigned)(r->find_us / 1000), (unsigned)(r->load_us / 1000),
            (unsigned)(r->recognize_us / 1000));
-    report("memory %s free_user=%d reserve=%u need_workspace=%u need_weights=%u release=%u io=0x%08X stat=0x%08X "
+    report(&g, "memory %s free_user=%d reserve=%u need_workspace=%u need_weights=%u release=%u io=0x%08X stat=0x%08X "
            "cleanup=%d sum=0x%08X", name, (int)r->free_user, (unsigned)r->reserve_bytes, (unsigned)r->need_workspace,
            (unsigned)r->need_weights, (unsigned)r->release_bytes, (unsigned)r->io_error, (unsigned)r->stat_error,
            r->cleanup_status, (unsigned)r->region_sum);
+    flush(&g);
 }
 
 void vjo_selftest_done(void)
 {
+    Group g;
     if (!vjo_selftest_armed())
         return;
-    sample("done");
-    report("step done t=%lld", (long long)ms_since_start());
+    g.used = 0;
+    sample(&g, "done");
+    report(&g, "step done t=%lld", (long long)ms_since_start());
+    flush(&g);
     finished = 1;
     sceIoRemove(MARKER); /* one run per arming */
 }

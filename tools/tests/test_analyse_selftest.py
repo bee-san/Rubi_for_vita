@@ -446,6 +446,42 @@ class AnalyseV2(unittest.TestCase):
                                  f"vjo-selftest-writer DIR {name}")
                 # the marker is removed when (and only when) the run finished
                 self.assertEqual((Path(tmp) / "selftest.txt").exists(), name in ("incomplete", "waiting"))
+                if name == "pass":
+                    # ocr-first: a record is one append of the report (two for a stage's end of more than
+                    # 2 KiB, and a memory sample's record two: before and after the kernel's routes), not
+                    # one a line (this run: 21 for its 132 lines, line by line 132): boot, ok, game, 5
+                    # begins, 5 ends, done (docs/first-ocr.md)
+                    appends = int(done.stdout.split("report appends ")[1].split(",")[0])
+                    self.assertLessEqual(appends, 2 * 3 + 5 + 2 * 5 + 2, done.stdout)
+                    self.assertGreaterEqual(got.count("\n"), 5 * appends)
+                    # every report line is also logged (status.txt, log.txt), as line by line
+                    self.assertEqual(int(done.stdout.split("log bytes ")[1].split(",")[0]), len(got.encode()),
+                                     done.stdout)
+                    # every sample's lines are written before the kernel's memory routes run (a crash there
+                    # keeps them, as line by line did: audit-overlay-first-ocr)
+                    self.assertEqual(int(done.stdout.split("unflushed samples ")[1]), 0, done.stdout)
+
+    @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
+    def test_the_report_stops_at_its_cap_as_line_by_line(self):
+        # shell/selftest.c REPORT_CAP (48 KiB) with records written a group at a time: a line is written
+        # while the bytes before it (the group's included) are at most the cap, as line by line, so the
+        # report ends with the first line that crosses it, whole, and the logs got the same lines
+        # (capN puts the cap in another place of a record: in a group, between two, ...)
+        cap = 48 * 1024
+        for shift in range(8):
+            with tempfile.TemporaryDirectory() as tmp:
+                done = subprocess.run([os.environ["VJO_SELFTEST_WRITER"], tmp, f"cap{shift}"], capture_output=True,
+                                      text=True, check=False)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                data = (Path(tmp) / "selftest-report.txt").read_bytes()
+            lines = data.split(b"\n")
+            self.assertEqual(lines[-1], b"", shift)  # whole lines only
+            last = lines[-2] + b"\n"
+            self.assertGreater(len(data), cap, shift)
+            self.assertLessEqual(len(data) - len(last), cap, shift)
+            self.assertEqual(int(done.stdout.split("log bytes ")[1].split(",")[0]), len(data), done.stdout)
+            self.assertEqual(int(done.stdout.split("unflushed samples ")[1]), 0, done.stdout)
+
 
 
 # A tier table in a report and in --collect's, the line for the game's tier, and the finding a report

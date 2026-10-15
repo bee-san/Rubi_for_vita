@@ -27,6 +27,7 @@ static unsigned live_bytes, peak_bytes, job_block, weights_block;
 static int job_live, weights_live, job_alloc_failure, weights_alloc_failure, weights_free_failure;
 static unsigned job_allocs, job_frees, weights_allocs, weights_frees;
 static int registered_rc, quit_after_delay, cancel_now, cancel_at_open, cancel_after_reads;
+static unsigned quit_delays; /* the worker loop quits after this many sleeps (0: quit_after_delay decides) */
 static const char *served;        /* the model the kernel would open for this job */
 static int open_failure, size_delta, stat_failure, corrupt;
 static uint64_t mtime;
@@ -95,7 +96,11 @@ int scePowerSetArmClockFrequency(int mhz) { (void)mhz; return 0; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return 0; }
 int sceKernelDeleteThread(SceUID uid) { return 0; }
 int sceKernelDelayThread(unsigned us)
-{ delays++; clock_value += us; if (quit_after_delay) quitting = 1; return 0; }
+{
+    delays++; clock_value += us;
+    if (quit_after_delay || (quit_delays && !--quit_delays)) quitting = 1;
+    return 0;
+}
 int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size) { snprintf(out, size, "PCSG00415"); return 0; }
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
 SceUID sceIoOpen(const char *path, int flags, unsigned mode) { return (int)0x80010013u; }
@@ -223,6 +228,7 @@ static void reset(void)
     job_allocs = job_frees = weights_allocs = weights_frees = 0;
     registered_rc = quit_after_delay = cancel_now = cancel_at_open = cancel_after_reads = 0;
     take_calls = take_wait_us = take_quit = 0; take_job = take_perm = 0; complete_failures = 0;
+    quit_delays = 0;
     open_failure = size_delta = stat_failure = corrupt = 0; mtime = 0x12345678;
     opens = closes = reads = bytes_read = loads = delays = 0; file_open_now = 0;
     spy_lines = 1; free_query_error = 0;
@@ -382,13 +388,25 @@ static void inactive_game_and_stop_release_weights(void)
 {
     reset(); VjoGameOcrResult out;
     TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_live);
-    registered_rc = VJO_ERR_BUSY; quit_after_delay = 1; /* another claim pending: keep them */
+    registered_rc = VJO_ERR_BUSY; quit_delays = 60; /* another claim pending, 6 s: the active game's, keep them */
     worker_main(0, NULL);
     TEST_CHECK(weights_live && !blocked);
-    quitting = 0; registered_rc = VJO_ERR_NO_GAME; /* suspended, backgrounded or disabled */
+    /* ocr-first: not the active game for a moment (a system dialog, the Shell placing the
+     * game again after a resume) keeps them; INACTIVE_DROP_US of it (process time) gives
+     * them back to the game (suspended, backgrounded or disabled). */
+    quitting = 0; quit_after_delay = 0; registered_rc = VJO_ERR_NO_GAME;
+    quit_delays = 10; /* 1 s */
+    worker_main(0, NULL);
+    TEST_CHECK(weights_live && resident.model && !blocked);
+    quitting = 0; registered_rc = 0; quit_delays = 1; /* active again: the time starts over */
+    worker_main(0, NULL);
+    quitting = 0; registered_rc = VJO_ERR_NO_GAME; quit_delays = 45; /* 4.5 s */
+    worker_main(0, NULL);
+    TEST_CHECK(weights_live && resident.model && !blocked);
+    quitting = 0; quit_delays = 10; /* 5.5 s in all */
     worker_main(0, NULL);
     TEST_CHECK(!weights_live && !resident.model && !blocked);
-    quitting = 0; registered_rc = 0; quit_after_delay = 0;
+    quitting = 0; registered_rc = 0; quit_after_delay = 0; quit_delays = 0;
     TEST_CHECK(!run("FL10_w8.vocr", &out) && weights_live && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !resident.model);
 }
@@ -432,6 +450,105 @@ static void worker_loop_keeps_its_pace(void)
     TEST_CHECK(take_calls == 2 && delays == 2);
     reset();
 }
+
+/* ocr-first (docs/first-ocr.md): a job that finds no line (a title screen, a box
+ * between two lines) reads the weights the session's first job with text would
+ * otherwise read while the user waits; that job then finds them resident, and
+ * another job without a line opens nothing. The self-test's forced fallback on a
+ * screen without text reads nothing and keeps the configured model resident;
+ * with text it reads the fallback in its place, never two. A cancelled warm-up
+ * keeps no partial bytes, and a missing file fails no job that read no line. */
+static uint32_t load_step_arg(const VjoGameOcrResult *out)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == VJO_GSTEP_LOAD) return out->step[i].arg | 0x100u;
+    return 0;
+}
+static void a_job_without_lines_warms_the_weights(void)
+{
+    reset(); VjoGameOcrResult out;
+    spy_lines = 0;
+    TEST_CHECK(!run("H15_w8.vocr", &out) && !out.lines && !out.text[0]);
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && weights_live && bytes_read == TEST_H15_BYTES && !loads);
+    TEST_CHECK(load_step_arg(&out) == (0x100u | 1u)); /* the LOAD step, arg 1: the warm-up's */
+    spy_lines = 1;
+    TEST_CHECK(!run("H15_w8.vocr", &out) && !strcmp(out.text, "猫") && out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT);
+    TEST_CHECK(bytes_read == TEST_H15_BYTES && loads == 1 && load_step_arg(&out) == 0x100u);
+    unsigned o = opens;
+    spy_lines = 0;
+    TEST_CHECK(!run("H15_w8.vocr", &out) && opens == o && bytes_read == TEST_H15_BYTES && !load_step_arg(&out));
+    /* the self-test's fallback stage on a screen without text: H15 stays, FL10 is not read */
+    VjoGameOcrRequest r = request_with("H15_w8.vocr", "FL10_w8.vocr");
+    r.flags = VJO_GAME_OCR_F_FORCE_FALLBACK; current = r;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && out.fallback && !out.lines);
+    TEST_CHECK(resident.model == vjo_vocr_model("H15_w8.vocr") && weights_live && !weights_frees);
+    TEST_CHECK(bytes_read == TEST_H15_BYTES && out.weights == VJO_GAME_OCR_WEIGHTS_NONE && !job_live && !capture_live);
+    /* with text it reads FL10 in H15's place: never two blocks (the alloc stub checks) */
+    spy_lines = 1;
+    r = request_with("H15_w8.vocr", "FL10_w8.vocr");
+    r.flags = VJO_GAME_OCR_F_FORCE_FALLBACK; current = r;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && out.fallback && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
+    TEST_CHECK(resident.model == vjo_vocr_model("FL10_w8.vocr") && weights_frees == 1);
+    TEST_CHECK(bytes_read == TEST_H15_BYTES + TEST_FL10_BYTES);
+    /* cancelled half-way: nothing partial is kept */
+    reset(); spy_lines = 0; cancel_after_reads = 3;
+    TEST_CHECK(run("H15_w8.vocr", &out) == VJO_E_CANCELLED && !weights_live && !resident.model);
+    /* a missing model file: the job without a line succeeds, the error is reported */
+    reset(); spy_lines = 0; open_failure = (int)0x80010002u;
+    TEST_CHECK(!run("H15_w8.vocr", &out) && !weights_live && out.io_error == open_failure && !out.text[0]);
+    open_failure = 0;
+    TEST_CHECK(!run("H15_w8.vocr", &out) && weights_live && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
+}
+
+/* The job's other model's weights (its fallback's, or the model's when the
+ * fallback runs) stay while the job fits beside them, until it reads its own
+ * (ocr-first), and go before the job's own blocks when it does not (the memory
+ * check counted them as released): never two weight blocks either way. */
+static int step_index(const VjoGameOcrResult *out, unsigned id, unsigned arg)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == id && out->step[i].arg == arg) return (int)i;
+    return -1;
+}
+static void another_models_weights_go_when_the_job_needs_them(void)
+{
+    reset(); VjoGameOcrResult out;
+    const uint32_t h15 = PAGE_ROUND(vjo_vocr_job_bytes("H15_w8.vocr", W, H)) + PAGE_ROUND(vjo_vocr_capture_bytes(W, H)) +
+                         PAGE_ROUND(TEST_H15_BYTES);
+    available = GAME_RESERVE + h15 - 1; /* FL10 runs: H15 does not fit */
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback);
+    TEST_CHECK(resident.model == vjo_vocr_model("FL10_w8.vocr"));
+    /* Room for H15 beside FL10's block: FL10 stays until H15 is read (a screen without a
+     * line here: the warm-up reads it), after the job's own blocks. */
+    available = 64*1024*1024; spy_lines = 0;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !out.fallback && weights_frees == 1);
+    TEST_CHECK(resident.model == vjo_vocr_model("H15_w8.vocr") && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
+    int freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS),
+        workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
+    TEST_CHECK(freed > workspace && workspace >= 0);
+    TEST_MSG("ample: weights freed at step %d, workspace allocated at step %d", freed, workspace);
+    /* back to FL10 (H15 no longer fits), then room for H15 beside FL10's block, to the byte:
+     * FL10 stays until H15 is read */
+    available = GAME_RESERVE + h15 - 1; spy_lines = 1;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback && weights_frees == 2);
+    available = GAME_RESERVE + h15 + PAGE_ROUND(TEST_FL10_BYTES); /* FL10 is live: free = available - FL10 */
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !out.fallback && weights_frees == 3);
+    freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS);
+    workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
+    TEST_CHECK(freed > workspace && workspace >= 0);
+    TEST_MSG("exact: weights freed at step %d, workspace allocated at step %d", freed, workspace);
+    /* one byte less: FL10's block goes before the job's own blocks */
+    available = GAME_RESERVE + h15 - 1;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback && weights_frees == 4);
+    available = GAME_RESERVE + h15 + PAGE_ROUND(TEST_FL10_BYTES) - 1;
+    TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && !out.fallback && weights_frees == 5);
+    TEST_CHECK(out.release_bytes == PAGE_ROUND(TEST_FL10_BYTES) && resident.model == vjo_vocr_model("H15_w8.vocr"));
+    freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS);
+    workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
+    TEST_CHECK(freed >= 0 && freed < workspace);
+    TEST_MSG("tight: weights freed at step %d, workspace allocated at step %d", freed, workspace);
+}
+
 static void failed_release_blocks_until_stop_retries(void)
 {
     reset(); VjoGameOcrResult out;
@@ -586,6 +703,8 @@ static void fallback_file_failure_and_other_resident_model(void)
 }
 
 TEST_LIST = {
+    {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},
+    {"another model's weights go when the job needs their memory", another_models_weights_go_when_the_job_needs_them},
     {"the fallback runs only when the configured model does not fit", fallback_runs_only_when_the_model_does_not_fit},
     {"a resident fallback is kept, and upgraded or downgraded within one job", resident_fallback_is_kept_and_upgraded_when_memory_returns},
     {"a fallback must be another, smaller pinned model", fallback_must_be_another_smaller_pinned_model},

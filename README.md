@@ -345,7 +345,8 @@ dictionary results.
 Text that types out is read once it is whole: a job recognizes nothing until
 every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 `0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
-and a blinking "next" icon does not hold it up. `ocr_skip_blank_lines = on`
+or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
+for it ([first-ocr.md](docs/first-ocr.md)), and a blinking "next" icon does not hold it up. `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
 nothing to skip in the test screenshots. Both are logged per job; see
@@ -499,9 +500,13 @@ worker frees each job's workspace before returning text. The verified weights st
 (657,664 B for VOCR3-FL10, 1,155,968 B for VOCR3-H15 and 1,558,016 B for
 VOCR4-W20, held as 659,456, 1,159,168 and 1,560,576 B page-rounded blocks) and are read and
 SHA-256 checked again only when the model file's size or modification time
-changes, or the model changes. They are released when a job's memory check
-fails, when the file is missing or wrong, when the worker finds the game is
-no longer the active one (suspend, another app in front, title disabled) and
+changes, or the model changes. A job that finds no line (a title screen, a
+box between two lines) reads them, and the LM and the cascade's model, if they
+are not resident yet, so the first scan with text does not wait for them
+([first-ocr.md](docs/first-ocr.md)). They are released when a job's memory check
+fails, when the file is missing or wrong, when the game has not been the active
+one for 5 s of its running time (another app in front of it, title disabled; the
+time stops while the game is suspended, so a suspend and resume keeps them) and
 on exit. A job
 then needs only its region-sized workspace. The worker leaves free USER memory
 for the game beside what the job holds: 4 MiB with Small, 8 MiB with Normal and
@@ -594,10 +599,11 @@ installed files' hashes, and prints its analysis
 fetches just the bootstrap logs. Recognition timings and memory attempts are in
 `log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
-start a game and reach a text screen: on the first settled screen with text in your
-saved region (it waits past logos and notices, at most 30 screens) one job runs
+start a game and reach a text screen: once a scan has read text in your saved
+region, a background job of the self-test's own (your scans never wait for it;
+the overlay or a new screen stops it until a later scan with text) runs
 the smallest model size, the configured size, the full screen, the capture probe and
-the configured model again, in your saved region, each stage with its own record,
+the configured size again, in your saved region, each stage with its own record,
 and the report has every pool's free memory at each step by every query route;
 `--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL
 row per stage (NOTEXT for a region stage that found no line: no proof of recognition)

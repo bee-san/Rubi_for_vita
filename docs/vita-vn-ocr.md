@@ -265,9 +265,13 @@ records the game worker's OCR timings, workspace, whether the weights were
 read or already resident, the resident bytes, I/O and stat errors and cleanup
 status. The workspace is freed before results return to the Shell. The
 verified weights are released when a job's memory check fails, when the file is
-missing, changed in size or corrupt, when another model is selected, when the
-game stops being the active one (suspend, another app, title disabled) and when
-the game exits. If the kernel cannot read the file's modification time, every
+missing, changed in size or corrupt, when another model's job needs their memory or
+reads its own, when the game has not been the active one for 5 s of its running
+time (another app in front, title disabled; the process time stops while the game
+is suspended, so a resume keeps them: docs/vita-memory.md section 5.2) and when
+the game exits. A job that finds no line reads them (and the LM and the cascade's
+model) if they are not resident, so the first job with text does not wait for them
+(docs/first-ocr.md). If the kernel cannot read the file's modification time, every
 job reads and checks the weights again, as before. Local
 lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
 view/cache is retired before a local job begins, so a second arena is unnecessary;
@@ -521,8 +525,11 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 **Memory.** The LM is a resident `USER_RW` block (`VjoGameVocrLM`), like the weights:
 - **Reading:** read through the kernel's file broker 32 KiB at a time, with size and SHA-256 checked
   against the pins at its first use.
-- **Keeping:** kept between jobs while the game is the active one.
-- **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, and on exit.
+- **Keeping:** kept between jobs while the game is the active one, and through 5 s of its running
+  time without being it (docs/vita-memory.md section 5.2). A job that finds no line reads it, so the
+  first job with text does not.
+- **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, after those 5 s, and
+  on exit.
 - **Tier choice:** a job takes the largest tier up to `ocr_lm` that fits the memory check (free
   USER minus the job's reserve (4, 8 or 16 MiB: the largest size it holds) must cover the workspace, the weights, the LM and the cascade's
   model), else a smaller tier, else none (greedy).
@@ -587,12 +594,15 @@ with the next size up of the job's: VOCR4-W20 for Normal, VOCR3-H15 for Small, n
   CLANNAD log H15 took 5.0-5.2 ms per CTC frame, about 0.4 s for a full line, so a 3-line box
   leaves room for about one re-read and a 1- or 2-line box for more (estimates).
 - **Memory.** W20's weights are a resident `USER_RW` block (`VjoGameVocrCascade`, 1,560,576 B),
-  read and SHA-256 checked at the first doubtful line (about 0.3 s through the broker at #81's
-  rate, once a session; an estimate) and kept like the job's weights. The job's workspace grows by
+  read and SHA-256 checked at the first doubtful line, or (test.3 on) by the first job that finds no
+  line when its memory check takes the cascade, before any line is doubted: from then on the block is
+  held whether or not a line is ever doubted (299-307 ms through the broker in test.2, once a game
+  process), and kept like the job's weights. The job's workspace grows by
   W20's arena and decoder (296,192 B). The memory check takes, in order: the cascade with the
   largest LM tier that fits, the LM alone, the cascade alone, neither. A resident block the job
   would give back counts as free. The block is given back when `ocr_cascade_ms = 0`, when the check
-  leaves the cascade out, when memory is refused, and when the game is no longer the active one.
+  leaves the cascade out, when memory is refused, and when the game has not been the active one for
+  5 s of its running time.
 - **Logs.** `gstep job cascade` per job:
   - `kind`: the lines W20 read as empty where the job's model read text. Those lines leave the text
     shown, and with them their greedy reading leaves the log. Keeping the first reading in that case

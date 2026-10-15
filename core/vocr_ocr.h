@@ -294,6 +294,9 @@ typedef struct {
     unsigned cached;         /* lines whose text came from the cache */
     uint32_t key_us;         /* time spent hashing lines for the cache */
     unsigned stuck;          /* 1: a helper could not be joined: it may still run in the workspace */
+    /* ocr-first (docs/first-ocr.md). */
+    uint32_t retry_at;       /* VjoPlatform.now_us when the last capture attempt began (tries > 1) */
+    unsigned warmed;         /* 1: vjo_vocr_warm read what the job had not (its loaded/load_us fields) */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -548,6 +551,22 @@ int vjo_vocr_ocr_policy(const VjoPlatform *platform, const char *model_dir, cons
                         const VjoGreySource *image, VjoVocrResident *resident,
                         void *workspace, size_t workspace_size, void *capture, size_t capture_size,
                         const VjoVocrPolicy *policy, char *text, size_t text_cap, VjoVocrStats *stats);
+
+/* ocr-first (docs/first-ocr.md): after a job that read no line (a title screen,
+ * a box between two lines, every line blank), what its recognition would have
+ * read and verified, in this order: model's weights into resident, the
+ * policy's LM into lm_res and the cascade's model into cascade_res, each only
+ * if not held already (no file is opened for one that is), so the session's
+ * first job with text reads none of them while the user waits. Nothing is
+ * parsed or recognized; the memory is the same blocks a recognition takes,
+ * which the job's memory check allowed. Stops at the first that fails, which
+ * it drops as a recognition's own read would, and returns its rc (VJO_OK,
+ * VJO_E_CANCELLED, VJO_E_OCR_UNAVAILABLE for memory that could not be
+ * released, VJO_E_OCR_MODEL, VJO_E_OOM), also in stats->lm_rc or cascade_rc;
+ * sets stats->warmed and the loaded and load_us fields of what it read. */
+int vjo_vocr_warm(const VjoPlatform *platform, const char *model_dir, const char *model,
+                  const VjoGreySource *image, VjoVocrResident *resident, const VjoVocrPolicy *policy,
+                  VjoVocrStats *stats);
 
 /* The one-shot form: the weights are read into the front of workspace (at
  * least vjo_vocr_workspace_bytes()) for this job only, as the host tools do. */

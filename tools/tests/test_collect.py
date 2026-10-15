@@ -88,7 +88,8 @@ class Collect(unittest.TestCase):
         self.root = Path(tmp.name)
         self.package = self.root / "package"
         (self.package / "tools").mkdir(parents=True)
-        for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "model_tiers.json", "package_release.py",
+        for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "analyse_timeline.py",
+                     "model_tiers.json", "package_release.py",
                      "prepare_ocr.py", "prepare_plaintext.py", "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
@@ -170,8 +171,9 @@ class Collect(unittest.TestCase):
             self.assertIn(d + rel, names)
         for rel in ("ur0/data/VitaJPOverlay/boot.txt", "ur0/tai/config.txt", "ur0/tai/config.txt.vjo-bak",
                     "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp", "COLLECT.json", "analysis.txt",
-                    "analysis.json"):
+                    "analysis.json", "timeline.txt"):
             self.assertIn(folder.name + "/" + rel, names)
+        self.assertIn("sessions (game starts):", (folder / "timeline.txt").read_text())
         self.assertTrue(any(n.startswith(folder.name + "/listings/") for n in names))
         self.assertIn(d + "anki_queue/a  b#c%20d?.json", names)
         # no API key is in any file of the zip, also one written without = (the C parser logs that line

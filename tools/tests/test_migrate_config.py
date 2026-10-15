@@ -133,6 +133,17 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_boost_clock = %s\n" % value, text)
             self.assertEqual(text.count("ocr_boost_clock ="), 1)
 
+    def test_the_press_wait_cap_is_added_and_kept(self):
+        # ocr_settle_press_ms (docs/first-ocr.md): a config from before it gains the default, a value is kept.
+        text, report = self.migrate("ocr_backend = vocr\nocr_settle_max_ms = 3000\n")
+        self.assertIn("\nocr_settle_press_ms = 1000\n", text)
+        self.assertIn("\nocr_settle_max_ms = 3000\n", text)
+        self.assertIn("config.ini: ocr_settle_press_ms = 1000", report)
+        for value in ("0", "400"):
+            text, _ = self.migrate("ocr_backend = vocr\nocr_settle_press_ms = %s\n" % value)
+            self.assertIn("\nocr_settle_press_ms = %s\n" % value, text)
+            self.assertEqual(text.count("ocr_settle_press_ms ="), 1)
+
     def test_explicit_setting_still_wins(self):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
         self.assertIn("ocr_backend = lens\n", text)

@@ -865,6 +865,22 @@ static void test_config(void)
     settle = "ocr_settle_ms = 1000\nocr_settle_max_ms = 10000\n";
     vjo_config_parse(&c, settle, strlen(settle));
     TEST_CHECK(c.ocr_settle_ms == 1000 && c.ocr_settle_max_ms == 10000 && c.n_warnings == 0);
+    /* The press's limit (docs/first-ocr.md): 1 s by default; 0 (the job's own limit) or
+     * 100-10,000 ms: under 25 ms its 50 ms request field would be 0, the 2 s default. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_settle_press_ms == 1000);
+    static const struct { const char *val; int want, warns; } press[] = {
+        {"0", 0, 0}, {"100", 100, 0}, {"10000", 10000, 0}, {"1", 1000, 1}, {"24", 1000, 1}, {"99", 1000, 1},
+        {"10001", 1000, 1}, {"-5", 1000, 1}, {"soon", 1000, 1}};
+    for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
+        char line[64];
+        vjo_config_defaults(&c);
+        snprintf(line, sizeof(line), "ocr_settle_press_ms = %s\n", press[i].val);
+        vjo_config_parse(&c, line, strlen(line));
+        TEST_CHECK(c.ocr_settle_press_ms == press[i].want && c.n_warnings == press[i].warns);
+        TEST_MSG("ocr_settle_press_ms = %s: %d, %d warning(s)", press[i].val, c.ocr_settle_press_ms, c.n_warnings);
+        if (press[i].warns) TEST_CHECK(strstr(c.warnings[0], "ocr_settle_press_ms") != NULL);
+    }
     /* The beam + LM decoder's largest LM (1000k by default, tiers 1-4, off) and the
      * confidence cascade's time ceiling (2 s by default, 0 = off, at most 3,750 ms). */
     vjo_config_defaults(&c);
