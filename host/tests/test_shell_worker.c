@@ -310,9 +310,15 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
  * the worker waits and reads again) and then publishes the retry's (scene 3,
  * capture 5), as API 20's worker does. */
 static int fake_republish, republish_reads, captured_while_void;
+/* shell/log_vita.c's counter of file appends and their time: each read 3 ms and 2
+ * appends on from the last, as if a batch went out to both files meanwhile. */
+static unsigned log_io_calls;
+uint32_t vjo_log_io(uint32_t *appends) { log_io_calls++; *appends = 2u * log_io_calls; return 3000u * log_io_calls; }
+static uint32_t fake_exchange_us; /* the game worker's time for a job, as the Shell's read waits for it */
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     TEST_CHECK(seq == 12);
+    test_now += fake_exchange_us;
     TEST_CHECK(!open_batch);
     if (fake_republish && republish_reads < 2) {
         if (republish_reads++ == 0) state.region_seq = 0;
@@ -492,6 +498,13 @@ static void reset(void)
 #endif
     selftest_waits = 0;
     job_refresh = 0;
+    job_selftest = 0;
+#ifdef VJO_WITH_VOCR
+    fake_exchange_us = 0;
+#endif
+    job_prepares = 1; /* run_vocr_job: an Auto job, the overlay closed */
+    text_generation = 0;
+    idle_since_us = 0;
     job_started_us = 0;
     refresh_pending = open_retry = 0;
     refresh_after_us = lookup_us = 0;
@@ -1409,6 +1422,27 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("%d ms / %d ms: flags 0x%08X", units[i].ms, units[i].max_ms, (unsigned)fake_game_request.flags);
         mem_free();
     }
+    /* ocr-first: a job the open overlay waits for (not Auto's, a refresh's or the self-test's)
+     * waits at most ocr_settle_press_ms (1 s by default), ocr_settle_max_ms if that is less;
+     * 0 is the job's own limit. */
+    static const struct { int press, max_ms, prepares, refresh; unsigned max; } press[] = {
+        {1000, 2000, 0, 0, 20}, {1000, 2000, 1, 0, 40}, {1000, 2000, 0, 1, 40}, {0, 2000, 0, 0, 40},
+        {1000, 500, 0, 0, 10}, {300, 2000, 0, 0, 6}};
+    for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
+        reset();
+        cfg.ocr_backend = VJO_OCR_VOCR;
+        cfg.ocr_settle_press_ms = press[i].press;
+        cfg.ocr_settle_max_ms = press[i].max_ms;
+        job_prepares = press[i].prepares;
+        job_refresh = press[i].refresh;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == press[i].max);
+        TEST_MSG("press %d ms, max %d ms, prepares %d, refresh %d: flags 0x%08X", press[i].press, press[i].max_ms,
+                 press[i].prepares, press[i].refresh, (unsigned)fake_game_request.flags);
+        job_refresh = 0;
+        mem_free();
+    }
 }
 
 /* The whole status line the user sees for an OCR-stage error. */
@@ -1747,10 +1781,9 @@ static void cursor_setup(void)
 static void finish_current_job(void)
 {
     TEST_ASSERT(job_running);
-    int idx = job_idx;
-    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
-                            : run_job(&results[idx], &cache_data[idx]);
-    job_done = 1; on_job_done();
+    net_job(); /* as the network thread: job_idx's slot and arena, the done line, job_done */
+    TEST_ASSERT(job_done);
+    on_job_done();
 }
 static void cursor_saved_text(void)
 {
@@ -2648,8 +2681,9 @@ static void test_selftest_keeps_the_user_region_and_auto_ocr(void)
 }
 
 #ifdef VJO_WITH_VOCR
-/* One job runs every stage in turn, each with its record, a failed stage
- * included, and then ends the test; the textbox stage's text is the job's. */
+/* The self-test's job (job_selftest) runs every stage in turn, each with its
+ * record, a failed stage included, and then ends the test. It shows nothing:
+ * neither its text nor a lookup reaches the overlay's text or result. */
 static void test_selftest_stages_run_in_one_job_and_finish(void)
 {
     reset();
@@ -2657,6 +2691,7 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
     selftest_begins = selftest_ends = submits = 0; capture_holds = 0;
     fake_recognized_text = "猫";
+    job_selftest = 1;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
     TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
@@ -2683,7 +2718,8 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
         TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
         TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);
     }
-    TEST_CHECK(!strcmp(cache_data[0].sentence, "猫")); /* the last stage's text is the job's */
+    TEST_CHECK(!cache_data[0].sentence && !cache_data[0].ocr_text && !local_text_valid && !job_text_ready);
+    TEST_CHECK(!text_generation); /* nor is its text the screen's for a later self-test */
     TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages()); /* done: the next job is a normal one */
     mem_free();
     /* A failing stage still gets its record and the test still finishes. */
@@ -2691,6 +2727,7 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_begins = selftest_ends = submits = 0;
     fail_vocr_user = 1; fake_free_user = 1000; fake_need_weights = 659456; fake_reserve = 4194304;
+    job_selftest = 1;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     TEST_CHECK(selftest_ends == 5 && selftest_rcs[0] == VJO_E_OOM && selftest_rcs[1] == VJO_E_OOM && selftest_done);
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
@@ -2711,16 +2748,17 @@ static void test_selftest_waits_for_text_in_the_region(void)
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
     selftest_begins = selftest_ends = submits = 0;
+    job_selftest = 1;
     TEST_CHECK(run_vocr_job() == VJO_OK); /* an empty region: no line */
     TEST_CHECK(selftest_begins == 1 && !selftest_ends && submits == 1 && selftest_waits == 1 && !selftest_done);
-    TEST_CHECK(vjo_selftest_stages() == 5 && cache_data[0].sentence && !cache_data[0].sentence[0]);
+    TEST_CHECK(vjo_selftest_stages() == 5 && !cache_data[0].sentence);
     TEST_CHECK((selftest_flags_seen[0] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK);
     mem_free();
     fake_screen_changes = 1; /* typing text: the screen changed under every read */
     TEST_CHECK(run_vocr_job() == VJO_E_SCREEN_CHANGED && selftest_waits == 2 && !selftest_ends && !selftest_done);
     mem_free();
     fake_recognized_text = "猫"; /* dialogue in the region: every stage, then done */
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+    TEST_CHECK(run_vocr_job() == VJO_OK && !cache_data[0].sentence);
     TEST_CHECK(selftest_begins == 2 + 5 && selftest_ends == 5 && submits == 2 + 5 && selftest_done);
     TEST_CHECK((selftest_flags_seen[2] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
                (selftest_flags_seen[4] & stage) == VJO_GAME_OCR_F_FULL);
@@ -2730,13 +2768,14 @@ static void test_selftest_waits_for_text_in_the_region(void)
     cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
     selftest_begins = selftest_ends = submits = 0;
+    job_selftest = 1;
     for (int i = 0; i < VJO_SELFTEST_WAITS; i++) {
         TEST_CHECK(run_vocr_job() == VJO_OK && !selftest_done);
         mem_free();
     }
     TEST_CHECK(selftest_waits == VJO_SELFTEST_WAITS && !selftest_ends);
     TEST_CHECK(run_vocr_job() == VJO_OK && selftest_ends == 5 && selftest_done && selftest_rcs[0] == VJO_OK);
-    selftest_armed = 0; selftest_stage_count = 0;
+    selftest_armed = 0; selftest_stage_count = 0; job_selftest = 0;
     mem_free();
 }
 
@@ -3208,26 +3247,381 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     close_overlay(); mem_free();
 }
 
-/* While the self-test is armed the open overlay runs no refresh: the stages
- * run in the overlay's own jobs and in Auto's, as on main, never inside a
- * refresh a lookup may cancel half way. */
-static void test_no_refresh_while_the_selftest_is_armed(void)
+/* Subtitles turned on while the self-test's job runs show "Recognizing…" and
+ * wait for a job's result, which that job never brings: once it ends, the strip
+ * shows the screen's cached sentence, or a job reads a screen the cache is not
+ * for (audit-overlay-first-ocr S1). */
+static void test_subtitles_on_during_the_selftest_job(void)
 {
     cursor_setup();
-    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 0; /* armed, its stages not counted here */
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
+    apply_config();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job();
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    set_subtitles(1);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_STATUS && g_view.strip_busy && job_selftest);
+    finish_current_job();
+    TEST_CHECK(!job_running && g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    TEST_CHECK(!g_view.strip_busy);
+    set_subtitles(0);
+    /* ... on a screen the cache is not for (the next line, settled after the stages began): a job reads it */
+    selftest_done = 0; selftest_begins = 0;
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    set_subtitles(1);
+    next_scene(41); /* no event yet: the stages run on */
+    fake_recognized_text = "鳥";
+    finish_current_job();
+    TEST_ASSERT(job_running && !job_selftest && logged("job start (subtitles on)") != NULL);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "鳥"));
+    set_subtitles(0);
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    mem_free();
+}
+
+/* A job's done line (net_job): the time in exchanges with the game worker, each
+ * job's own, and the log's appends meanwhile, in the format tools/analyse_timeline.py
+ * reads (docs/first-ocr.md). */
+static void test_the_done_line_has_the_exchange_and_log_times(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_exchange_us = 7000;
+    for (int k = 0; k < 2; k++) {
+        int idx = -1, rc = -1, ms = -1, page = -1, pages = -1, end = -1;
+        unsigned peak = 0, game = 0, log_ms = 0, appends = 0;
+        const char *line;
+        raw_state.done_seq = 11;
+        job_cfg = cfg;
+        job_idx = 0; job_cursor_only = 0; job_cancelled = job_captured = 0; job_done = 0;
+        net_job();
+        TEST_CHECK(job_done && job_rc == VJO_OK);
+        line = logged("job 0 done rc=0 in ");
+        TEST_ASSERT(line != NULL);
+        TEST_CHECK(sscanf(line, "job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, "
+                          "log %u ms in %u appends%n", &idx, &rc, &ms, &peak, &page, &pages, &game, &log_ms,
+                          &appends, &end) == 9);
+        TEST_CHECK(end > 0 && (line[end] == '\0' || line[end] == '\n')); /* to its last word */
+        TEST_CHECK(idx == 0 && !rc && ms >= 7 && game == 7 && log_ms == 3 && appends == 2); /* each job's own */
+        TEST_MSG("%s", line);
+        log_count = 0;
+        mem_free();
+    }
+}
+
+/* The self-test's stages publish captures of their own, so the kernel's
+ * region_seq moves on: a shown text that matched the screen only through its
+ * capture (an icon masked after it, a new scene id without an event) is tagged
+ * with the scene first, so a press after the stages still looks it up instead
+ * of recognizing the screen again (audit-overlay-first-ocr). */
+static void test_selftest_keeps_the_shown_texts_screen(void)
+{
+  for (int word = 0; word < 2; word++) {
+    cursor_setup();
+    if (!word) /* Character mode: no cached lookup; Whole word: a cached lookup, retagged too */
+        cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    apply_config();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job();
+    TEST_ASSERT(local_text_valid);
+    state.scene = state.region_scene = 9; /* the icon masked: a new id, the same capture */
+    TEST_CHECK(shows_screen(local_text_scene, local_text_capture_seq, &state) && local_text_scene != 9);
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    finish_current_job();
+    TEST_CHECK(selftest_done);
+    state.region_seq += 5; /* its stages' captures */
+    unsigned n = submits;
+    open_overlay();
+    if (word) {
+        TEST_CHECK(!job_running && submits == n && logged("open: saved local word") != NULL); /* at once */
+    } else {
+        TEST_ASSERT(job_running && job_cursor_only && submits == n); /* a lookup of the shown text, no OCR */
+        finish_current_job();
+    }
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay();
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    mem_free();
+  }
+}
+
+/* The overlay opened during the self-test's job keeps its text when the job ends,
+ * whatever the screen did meanwhile (#81 request 4): with subtitles on, the strip
+ * shows that text and starts no job of its own (one would retire the text and show
+ * "Recognizing…"); a new screen is the quiet refresh's, whose text the strip then
+ * shows (audit-overlay-first-ocr-b RB1, its PROBE7). */
+static void test_selftest_end_keeps_the_open_overlays_text(void)
+{
+    for (int same = 0; same < 2; same++) {
+        cursor_setup(); /* Whole word: the saved word shows at once */
+        game_generation = 1;
+        selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
+        apply_config();
+        stable_pending = 1; control_tick(0);
+        TEST_ASSERT(job_running && !job_selftest);
+        finish_current_job();
+        TEST_ASSERT(local_text_valid && cache_ok);
+        set_subtitles(1);
+        TEST_CHECK(!job_running && g_view.strip_kind == VJO_STRIP_SENTENCE);
+        test_now += SELFTEST_IDLE_US; control_tick(0);
+        TEST_ASSERT(job_running && job_selftest);
+        open_overlay(); /* it yields; the saved word shows at once */
+        TEST_CHECK(job_cancelled && logged("open: saved local word") != NULL);
+        check_shown("猫犬鳥", "cat", 0);
+        next_scene(41);
+        control_tick(VJO_EV_REGION_STABLE); /* a new screen settles before the stage ends */
+        fake_recognized_text = same ? "猫犬鳥" : "犬猫";
+        finish_current_job(); /* the self-test's job ends */
+        TEST_CHECK(!job_running && !logged("job start (subtitles on)"));
+        TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥") && strcmp(g_view.status, "Recognizing…"));
+        check_shown("猫犬鳥", "cat", 0);
+        TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy &&
+                   !strcmp(g_view.strip_text, "猫犬鳥"));
+        test_now += REFRESH_GAP_US + REFRESH_IDLE_US; control_tick(0);
+        TEST_ASSERT(job_running && job_refresh && !job_lookup); /* the quiet refresh */
+        finish_current_job();
+        TEST_CHECK(local_text_valid && !strcmp(local_text, same ? "猫犬鳥" : "犬猫"));
+        TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, same ? "猫犬鳥" : "犬猫"));
+        TEST_MSG("same %d: strip [%s], overlay [%s]", same, g_view.strip_text, local_text);
+        while (job_running) finish_current_job(); /* the new text's first word */
+        close_overlay();
+        set_subtitles(0);
+        selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+        mem_free();
+    }
+}
+
+/* Subtitles turned on during the self-test's job wait in "Recognizing…"; an overlay
+ * opened next on a text without its lookup (Character mode) waits for the job too.
+ * When the job ends, the lookup runs and the strip shows the overlay's text at once,
+ * not after the stages run again (audit-overlay-first-ocr-b, its PROBE10). */
+static void test_selftest_end_shows_the_open_overlays_text_in_the_strip(void)
+{
+    cursor_setup();
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
+    apply_config();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job();
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    set_subtitles(1);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_STATUS && g_view.strip_busy);
+    unsigned n = submits;
+    open_overlay(); /* it yields; the lookup waits for the job */
+    TEST_CHECK(job_cancelled && cursor_waiting);
+    finish_current_job(); /* the self-test's job ends: the lookup runs */
+    TEST_ASSERT(job_running && job_cursor_only);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "猫犬鳥"));
+    n = submits;
+    finish_current_job();
+    TEST_CHECK(submits == n && !job_running); /* a lookup, no OCR */
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay();
+    set_subtitles(0);
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    mem_free();
+}
+
+/* The self-test's job keeps the capture of the text it runs on: the stages'
+ * own captures (published by the kernel as any job's) never stand in for it,
+ * so a new screen still stops the job, whichever capture a stage published or
+ * voided last. */
+static void test_selftest_job_keeps_the_texts_capture(void)
+{
+    reset();
+    job_capture_scene = 7; job_capture_seq = 9; job_captured = 1;
+    job_selftest = 1;
+    vocr_capture_fixed = 0;
+    state.done_seq = vocr_done_before + 1; /* a stage's first pass is in */
+    state.capture_scene = 12; state.region_seq = 13;
+    vocr_note_capture();
+    TEST_CHECK(job_capture_scene == 7 && job_capture_seq == 9 && job_captured);
+    state.region_seq = 0; /* a stage's try voided its capture */
+    vocr_note_capture();
+    TEST_CHECK(job_captured && job_capture_scene == 7);
+    job_selftest = 0; /* any other job takes the published capture */
+    state.region_seq = 13;
+    vocr_note_capture();
+    TEST_CHECK(job_capture_scene == 12 && job_capture_seq == 13 && job_captured);
+}
+
+/* The open overlay's refresh runs while the self-test is armed: the stages run
+ * in the self-test's own job only (job_selftest), never in a job the overlay
+ * waits for or in a refresh, and never while the overlay is open. */
+static void test_refresh_while_the_selftest_is_armed(void)
+{
+    cursor_setup();
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
     open_overlay(); finish_current_job();
     check_shown("猫犬鳥", "cat", 0);
-    unsigned inferences = vocr_allocs;
+    TEST_CHECK(!selftest_begins); /* the overlay's own job ran no stage */
     next_scene(8);
     test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
-    TEST_CHECK(!job_running && vocr_allocs == inferences);
-    selftest_done = 1; /* the test finished */
-    next_scene(9);
-    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
-    TEST_CHECK(job_running && job_refresh);
+    TEST_ASSERT(job_running && job_refresh && !job_selftest);
     finish_current_job();
-    selftest_armed = selftest_done = 0;
+    TEST_CHECK(!selftest_begins && logged("refresh rc=0: same text") != NULL);
+    check_shown("猫犬鳥", "cat", 0);
+    for (int i = 0; i < 3; i++) {
+        test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+        TEST_CHECK(!job_selftest && !selftest_begins); /* never with the overlay open */
+        if (job_running) finish_current_job();
+    }
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
     close_overlay(); mem_free();
+}
+
+/* test.2's first scans ran beside the self-test's stages and took 9-15 s
+ * (docs/first-ocr.md). The user's jobs never run them now: the first settled
+ * screen gets a plain job, and once a job read text the stages run in a
+ * background job of their own on that screen, with the overlay closed and the
+ * Shell idle for SELFTEST_IDLE_US; it changes neither the text nor its lookup.
+ * Opening the overlay stops it at once (the saved word shows without waiting
+ * for it), and so does a new screen, whose own job then comes first; the stages
+ * run again later, from the first. */
+static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
+{
+    cursor_setup();
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    selftest_begins = selftest_ends = submits = 0;
+    apply_config();
+    stable_pending = 1; control_tick(0); /* the first settled screen: a plain Auto job */
+    TEST_ASSERT(job_running && !job_selftest && job_lookup);
+    finish_current_job();
+    TEST_CHECK(submits == 1 && !selftest_begins && local_text_valid && !strcmp(local_text, "猫犬鳥") && cache_ok);
+    TEST_CHECK(text_generation == game_generation);
+    uint32_t generation = local_text_generation, cursor_seq = local_cursor_seq;
+    control_tick(0);
+    TEST_CHECK(!job_running); /* not before the Shell has been idle SELFTEST_IDLE_US */
+    test_now += SELFTEST_IDLE_US - 1; control_tick(0);
+    TEST_CHECK(!job_running);
+    test_now += 1; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest && !job_lookup && job_idx == 1);
+    TEST_CHECK(logged("job start (self-test)") != NULL);
+    int64_t started = job_started_us;
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(job_started_us == started); /* never a second job while one runs */
+    finish_current_job();
+    TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 1 + 5 && selftest_done && !job_running);
+    for (unsigned i = 0; i < 1 + 5; i++) /* Auto's job and every stage: the 2 s limit, not a press's 1 s */
+        TEST_CHECK((selftest_flags_seen[i] >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == 40u);
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥") && local_text_generation == generation);
+    TEST_CHECK(local_cursor_seq == cursor_seq && cache_ok && active == 0);
+    unsigned n = submits;
+    open_overlay(); /* the prepared word, at once: no job */
+    TEST_CHECK(logged("open: saved local word") != NULL && !job_running && submits == n);
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay();
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running); /* done: once a boot */
+
+    /* Armed again: the overlay opened while the stages run stops them, and the saved
+     * word shows at once; they wait while it is open and run again after it closes. */
+    selftest_done = 0; selftest_begins = selftest_ends = submits = 0;
+    next_scene(30); control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job();
+    state.stable = 0; next_scene(33); /* the next line typing out: not settled, not read */
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running); /* never on a screen the last job did not read */
+    state.stable = 1; next_scene(30); /* the box shows the text read again */
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    open_overlay();
+    TEST_CHECK(job_cancelled && logged("self-test: stopped for the overlay") != NULL);
+    TEST_CHECK(logged("open: saved local word") != NULL);
+    check_shown("猫犬鳥", "cat", 0);
+    finish_current_job();
+    TEST_CHECK(!job_running && !selftest_done && !selftest_begins && submits == 1);
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running); /* not while the overlay is open */
+    close_overlay();
+    control_tick(0);
+    TEST_CHECK(!job_running); /* idle first */
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest); /* again, on the same screen */
+
+    /* A new screen stops it; that screen's own job runs first, then the stages. */
+    next_scene(31); control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_cancelled);
+    finish_current_job();
+    TEST_CHECK(!job_running && !selftest_done);
+    control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest); /* scene 31's plain job */
+    finish_current_job();
+    TEST_CHECK(!selftest_begins);
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    finish_current_job();
+    TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && selftest_done);
+
+    /* With Google Lens chosen meanwhile it never runs: its stages are the local engine's, and
+     * its job must never upload the screen. */
+    selftest_done = 0; selftest_begins = 0;
+    cfg.ocr_backend = VJO_OCR_LENS;
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running && !selftest_begins && !jpeg_captures);
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest); /* the screen read last is still shown */
+    finish_current_job();
+    TEST_CHECK(selftest_done);
+
+    /* The overlay opened while the stages run on a screen the shown text is not
+     * from (the next line, not settled yet): it waits for its own recognition,
+     * which starts once the self-test's job has stopped. */
+    selftest_done = 0; selftest_begins = 0;
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    state.stable = 0; next_scene(34);
+    fake_recognized_text = "鳥";
+    open_overlay();
+    TEST_CHECK(job_cancelled && ov == OV_OPEN_OLD_JOB && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job();
+    TEST_ASSERT(job_running && !job_selftest && job_lookup && ov == OV_OPEN);
+    state.stable = 1;
+    finish_current_job();
+    check_shown("鳥", "bird", 0);
+    close_overlay();
+    /* ... and on the text's own screen with its lookup gone: the lookup waits for the
+     * stopped job, then runs. */
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest);
+    cache_ok = 0;
+    open_overlay();
+    TEST_CHECK(job_cancelled && cursor_waiting && ov == OV_OPEN);
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job();
+    check_shown("鳥", "bird", 0);
+    close_overlay();
+    TEST_CHECK(!selftest_done && !selftest_begins);
+
+    /* No text in the region: the self-test waits for a job that reads some. */
+    selftest_done = 0; selftest_begins = 0;
+    fake_recognized_text = "";
+    next_scene(32); control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job();
+    TEST_CHECK(!text_generation);
+    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running && !selftest_begins);
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    mem_free();
 }
 #endif
 
@@ -3243,7 +3637,14 @@ TEST_LIST = {
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
-    {"no_refresh_while_the_selftest_is_armed", test_no_refresh_while_the_selftest_is_armed},
+    {"refresh_while_the_selftest_is_armed", test_refresh_while_the_selftest_is_armed},
+    {"selftest_job_keeps_the_texts_capture", test_selftest_job_keeps_the_texts_capture},
+    {"subtitles_on_during_the_selftest_job", test_subtitles_on_during_the_selftest_job},
+    {"selftest_keeps_the_shown_texts_screen", test_selftest_keeps_the_shown_texts_screen},
+    {"selftest_end_keeps_the_open_overlays_text", test_selftest_end_keeps_the_open_overlays_text},
+    {"selftest_end_shows_the_open_overlays_text_in_the_strip", test_selftest_end_shows_the_open_overlays_text_in_the_strip},
+    {"the_done_line_has_the_exchange_and_log_times", test_the_done_line_has_the_exchange_and_log_times},
+    {"selftest_runs_after_the_first_text_in_its_own_job", test_selftest_runs_after_the_first_text_in_its_own_job},
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},

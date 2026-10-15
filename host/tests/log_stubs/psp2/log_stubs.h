@@ -39,6 +39,7 @@ int sceKernelDeleteMutex(SceUID uid);
 int sceKernelLockMutex(SceUID uid, int count, unsigned *timeout);
 int sceKernelUnlockMutex(SceUID uid, int count);
 SceUID sceKernelGetThreadId(void);
+uint64_t sceKernelGetProcessTimeWide(void);
 
 typedef struct {
     uint32_t s_addr;

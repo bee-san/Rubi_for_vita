@@ -145,10 +145,13 @@ enum {
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
     VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
-    VJO_GSTEP_TEAR,      /* a row read differently than before: arg the row, rc the retry */
+    VJO_GSTEP_TEAR,      /* rows read differently than before: arg how many, rc the tries, bytes when the last
+                            try began (us since the job started; 0 with one try), us when it was logged,
+                            after the tries */
     VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
-    VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes */
+    VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
+                            line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
     VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,

@@ -58,8 +58,12 @@ by an empty `ux0:data/VitaJPOverlay/selftest.txt` (what `--self-test` uploads); 
 2. Start CLANNAD and go to a dialogue screen. Keep your saved textbox region; with none, draw it
    first: L+R, Square, drag around the text, Enter, Cancel. Wait 1 minute without pressing anything:
    the self-test runs its five stages (VOCR3-FL10, VOCR3-H15, full screen, capture probe, VOCR3-H15
-   again) on the first settled screen with text in your region (it waits past screens without
-   any, such as the game's opening notice, at most 30) and finishes by itself.
+   again) once, on this first launch, in the background, after the first scan that reads text in
+   your region, and finishes by itself (screens without text, such as the game's opening notice,
+   are not tested). It shows nothing and your scans never wait for it: opening the overlay or
+   moving to the next line stops it, and it runs again later. A scan made while it runs waits for
+   it to stop: about 0.2 s, at most about half a second (est.); v0.8.0-test.2 ran the
+   stages inside your first scans, which took 9-15 s ([first-ocr.md](first-ocr.md)).
 3. Read about 10 pages, pausing about 3 s on each. On 3 of them open the overlay (L+R), take a phone
    photo of the screen, then press Cancel. Optional: on one of them press Enter to save the word as an
    Anki card (it is saved offline on the card). Note any slowdown, stutter or crash.
@@ -118,4 +122,7 @@ screenshot in this build: its full-frame capture is the kernel buffer #74's cons
   SceShell's and the kernel pool's free memory by each of three query routes, from boot into the
   game and back.
 - **Speed:** VOCR3-H15's and VOCR3-FL10's load and recognition times on a console (est. until
-  measured), the warm second recognition, and the time per line and per CTC frame of every job.
+  measured), the warm second recognition, and the time per line and per CTC frame of every job;
+  each job's timeline (`python3 tools/analyse_timeline.py --collect DIR --jobs`: the game's job
+  stage by stage, its exchange with the Shell, the log's appends, the first scan of each game
+  start).

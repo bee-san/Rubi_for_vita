@@ -1214,8 +1214,15 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         goto done;
     }
     /* The check counted another model's weights, or another LM (or one this job
-     * has no room for), as free: release them. */
-    if (resident.model && resident.model != use && drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+     * has no room for), as free: release them. Another model's weights stay
+     * while the job fits beside them with its own reserve (its size's since API
+     * 21, out->reserve_bytes), until it reads its own (never two: the core drops
+     * them first), so a job that reads no line keeps them: the self-test's
+     * fallback stage on a screen without text keeps the user's model
+     * (docs/first-ocr.md). */
+    if (resident.model && resident.model != use &&
+        (int64_t)out->free_user - (int64_t)out->reserve_bytes < (int64_t)out->need_workspace + out->need_weights &&
+        drop_weights()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if ((lm_res.data || lm_uid >= 0) && lm_res.lm != lm && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     if ((cascade_res.data || cascade_uid >= 0) && cascade_res.model != casc && drop_cascade()) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
@@ -1276,10 +1283,21 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    /* ocr-first: a job that read no line (or only blank ones) reads what the
+     * session's first job with text would otherwise read while the user waits
+     * (docs/first-ocr.md), as its check allowed; not the self-test's forced
+     * fallback, which would put the fallback in the user's model's place. Best
+     * effort, so its rc is not the job's: a cancellation ends the job below,
+     * a block it could not release is cleanup()'s, a file it could not read the
+     * next text job's (io_error says which). */
+    if (!rc && !stats.model_loaded && !stats.model_cached && !forced)
+        vjo_vocr_warm(&platform, r->model_dir, use->name, &image, &resident, &policy, &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */
     if (rc < -199) rc = VJO_E_SOURCE;
-    if (stats.tears) step_add(VJO_GSTEP_TEAR, 0, stats.tears, (int32_t)stats.tries, 0, 0, 0, 0);
+    if (stats.tears) /* bytes: when the last try began (us since the job's start), its tears before it */
+        step_add(VJO_GSTEP_TEAR, 0, stats.tears, (int32_t)stats.tries,
+                 stats.tries > 1 ? stats.retry_at - (uint32_t)job_started_us : 0u, 0, 0, 0);
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
@@ -1297,12 +1315,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         step_add(VJO_GSTEP_REFINE, refine_mode, stats.refine_lines, stats.refine_rc,
                  stats.refine_boxes << 16 | (stats.refine_capped & 0xFFu) << 8 | (stats.refine_split & 0xFFu),
                  (uint32_t)stats.refine_rows, stats.refine_us + 1u, 0);
-    if (stats.model_loaded || stats.model_cached)
-        step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
-                 resident_bytes(), 0, stats.load_us, 1);
+    if (stats.model_loaded || stats.model_cached) /* arg 1: read by the warm-up */
+        step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT,
+                 stats.warmed, 0, resident_bytes(), 0, stats.load_us, 1);
     if (stats.lines)
         step_add(VJO_GSTEP_RECOGNIZE, 0, stats.recognized, rc, stats.frames, stats.tall_skipped, stats.recognize_us, 0);
-    if (lm && stats.lines) {
+    if (lm && (stats.lines || stats.lm_loaded || (stats.warmed && stats.lm_rc))) { /* also the warm-up's read */
         unsigned low = 0;
         for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++)
             low += (stats.line[i].flags & VJO_VOCR_LINE_CONF) < VJO_GAME_OCR_LOW_CONF;
@@ -1310,7 +1328,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  (stats.lm_loaded ? VJO_GLM_READ : stats.lm_cached ? VJO_GLM_RESIDENT : 0u) | low << 16 | stats.lm_lines,
                  stats.lm_load_us, stats.lm_us + 1u, 0);
     }
-    if (casc && stats.lines) cascade_step(&stats);
+    if (casc && (stats.lines || stats.cascade_loaded || (stats.warmed && stats.cascade_rc))) cascade_step(&stats);
     if (!rc) {
         /* What is shown and looked up is normalised; the recognizer's own (greedy)
          * text follows it in the same buffer, for the Shell's log. An empty text too:
@@ -1398,6 +1416,30 @@ done:
  * 100 ms sleep, as before, so the loop never spins. */
 #define TAKE_WAITED_US 50000u
 
+/* ocr-first: the resident weights, LM and cascade model go back to a game that
+ * is not the active one (another app in front of it, its title disabled, the
+ * Shell restarted) once that has lasted INACTIVE_DROP_US of its running time; a
+ * suspended game's time stops, so a suspend and resume keeps them. A moment's
+ * change of foreground (a system dialog, the Shell placing the game again after
+ * a resume) dropped them
+ * and the next job read them all again: #81's run read H15 four times in one
+ * game process (docs/first-ocr.md). 0 and BUSY are the active game's answers.
+ * The process time stops while the process is suspended [SDK: Kernel-Reference,
+ * sceKernelGetProcessTimeWide], so only time the game runs counts. */
+#define INACTIVE_DROP_US 5000000u
+static uint64_t inactive_since;
+
+static int inactive_long(int registered)
+{
+    uint64_t now = now_wide();
+    if (!registered || registered == VJO_ERR_BUSY) {
+        inactive_since = 0;
+        return 0;
+    }
+    if (!inactive_since) inactive_since = now;
+    return now - inactive_since >= INACTIVE_DROP_US;
+}
+
 static int worker_main(SceSize args, void *argp)
 {
     (void)args; (void)argp;
@@ -1406,7 +1448,7 @@ static int worker_main(SceSize args, void *argp)
         if (claim_outstanding) {
             if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
         } else {
-            int registered = vjoOcrRegister();
+            int registered = vjoOcrRegister(), gone = inactive_long(registered);
             if (!registered) {
                 static VjoGameOcrRequest request; /* not on the 32 KiB stack */
                 uint64_t asked = now_wide();
@@ -1422,12 +1464,12 @@ static int worker_main(SceSize args, void *argp)
                 } else if (now_wide() - asked >= TAKE_WAITED_US) {
                     nap = 0; /* the kernel held the take: its wait was the pace */
                 }
-            } else if (registered != VJO_ERR_BUSY &&
+            } else if (gone &&
                        (resident.data || weights_uid >= 0 || lm_res.data || lm_uid >= 0 || cascade_res.data ||
                         cascade_uid >= 0) &&
                        drop_resident()) {
-                /* Not the active game (suspended, behind another app, or its
-                 * title disabled): the weights go back to it. */
+                /* Not the active game for INACTIVE_DROP_US of its running time (behind
+                 * another app, its title disabled): the weights go back to it. */
                 blocked = 1;
             }
         }

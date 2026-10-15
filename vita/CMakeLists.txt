@@ -103,13 +103,18 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, requests, parsers, queue files): built for
 # size, since every page of the Shell module is SceShell's. Lookup, OCR text
-# handling, JPEG and TLS stay at -O2. The property is the directory's, so the
+# handling and TLS stay at -O2. The JPEG encoder (core/jpegsw.c, Lens only: one
+# region a request, seconds of network beside it) and the UTF-8 helpers
+# (core/utf.c: a few microseconds a text or a key) are built for size since the
+# self-test's own job and the first-scan timings (docs/first-ocr.md): 3,802 ->
+# 2,914 and 1,532 -> 1,136 B. The property is the directory's, so the
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c ${ROOT}/core/http.c ${ROOT}/core/net.c
   ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/base64.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
+  ${ROOT}/core/jpegsw.c ${ROOT}/core/utf.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -384,7 +389,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/

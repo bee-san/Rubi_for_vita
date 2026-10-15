@@ -170,6 +170,17 @@ static volatile int job_lookup;     /* the job looks the words up (else OCR only
  * result (cache_data[1].ocr_text) until on_refresh_done compares the two. */
 static volatile int job_refresh;
 static const char *refresh_model; /* the model that read the refresh's text (job_cfg's, or a constant) */
+/* The job is the self-test's (shell/selftest.c, selftest_job_due): its stages
+ * run on the screen the last job read text from, with the overlay closed, and
+ * it shows nothing: the shown text, its lookup and the result arenas stay, and
+ * its captures do not stand in for the shown text's (vocr_note_capture). */
+static volatile int job_selftest;
+/* The last OCR job that read text in the region: its capture, and the game it
+ * was read in (0: the last job read none). Network thread; read once its job
+ * is done. */
+static uint32_t text_scene, text_seq, text_generation;
+static int64_t idle_since_us; /* the last job's end or the overlay's close */
+static int64_t job_game_us;   /* the job's exchanges with the game worker (network thread) */
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
@@ -718,7 +729,7 @@ static int vocr_capture_fixed; /* full-frame and probe jobs: theirs is not the r
 static void vocr_note_capture(void)
 {
     VjoState st;
-    if (vocr_capture_fixed) return;
+    if (vocr_capture_fixed || job_selftest) return;
     st.size = sizeof(st);
     if (vjoGetState(&st) < 0 || st.done_seq == vocr_done_before) return;
     if (!st.region_seq) {
@@ -811,14 +822,21 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     }
     if (job_cfg.ocr_settle_ms > 0) {
         uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
+        /* A job the open overlay waits for (not Auto's, a refresh or the self-test's)
+         * waits at most ocr_settle_press_ms: test.2's waited up to 1.5 s (docs/first-ocr.md). */
+        int wait_max = job_cfg.ocr_settle_max_ms;
+        if (!job_prepares && !job_refresh && job_cfg.ocr_settle_press_ms > 0 && job_cfg.ocr_settle_press_ms < wait_max)
+            wait_max = job_cfg.ocr_settle_press_ms;
         request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
-                         (uint32_t)(job_cfg.ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+                         (uint32_t)(wait_max + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
     }
     /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
+    int64_t t0 = now_us();
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
+    job_game_us += now_us() - t0;
     vjo_capture_release();
     vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
@@ -885,15 +903,14 @@ static void log_text_lines(const char *text, size_t cap)
     vjo_log_batch_end(&batch);
 }
 
-/* The self-test (docs/self-test.md): every stage on this settled screen in
- * turn, each with its record, a failed one included. They share the job's one
- * result (the Shell's pages may only shrink): the last stage, the user's
- * region again, leaves the job's text. The first stage also decides whether
- * this screen is one to test: #81's ran on the first settled screen after the
- * game started, its opening notice, whose five lines lay outside the region,
- * so every region stage found nothing. With no line in the region (or a screen
- * that changed under every read) the stages wait for the next settled screen
- * (shell/selftest.c bounds the wait) and the job's result is that stage's. */
+/* The self-test (docs/self-test.md), its job's only work (selftest_job_due):
+ * every stage on the screen the last job read text from, in turn, each with
+ * its record, a failed one included. They share the job's one result (the
+ * Shell's pages may only shrink), which nothing shows. The first stage also
+ * decides whether this screen is one to test: #81's ran on the game's opening
+ * notice, whose five lines lay outside the region, so every region stage found
+ * nothing. With no line in the region (or a screen that changed under every
+ * read) the stages wait for a later screen (shell/selftest.c bounds the wait). */
 static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigned *ran)
 {
     unsigned n = vjo_selftest_stages(), top = vocr_top_tier(tiers), low = 0;
@@ -920,10 +937,9 @@ static int run_vocr(VjoOverlayData *out)
     static VjoGameOcrResult result;
     unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
     sceClibMemset(&result, 0, sizeof(result));
-    if (vjo_selftest_stages())
-        out->err.rc = run_selftest_stages(&result, tiers, &ran);
-    else
-        out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
+    if (job_selftest) /* its records are its result: nothing is shown */
+        return out->err.rc = run_selftest_stages(&result, tiers, &ran);
+    out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
@@ -946,6 +962,11 @@ static int run_vocr(VjoOverlayData *out)
         sceClibMemset(&result, 0, sizeof(result));
         out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
     }
+    /* The self-test's job runs on the screen of the last job that read text in the region
+     * (a failed job's text is empty: the worker and the exchange clear it). */
+    text_generation = result.text[0] ? job_generation : 0;
+    text_scene = job_capture_scene;
+    text_seq = job_capture_seq;
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
@@ -963,8 +984,7 @@ static int run_vocr(VjoOverlayData *out)
     /* The worker returns the text normalised (core/textnorm.h: one form of each
      * mark, ー or 一 by context); the recognizer's own text goes to the log. */
     log_text_lines(result.text, sizeof(result.text));
-    /* The model on this text's Anki cards: the tier's that ran (a self-test job's
-     * last stage is the configured one's). A constant string. */
+    /* The model on this text's Anki cards: the tier's that ran. A constant string. */
     const char *read_by = vjo_vocr_tier_model((int)ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
     if (job_refresh) {
@@ -1032,9 +1052,9 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     out->list.header = "";
     /* Warm connections may still own the old pool when a configuration change
      * requests a job. Only this thread can retire it once that work finishes.
-     * A refresh keeps the arena: the open overlay's entry lives in it. */
+     * A refresh and the self-test's job keep the arena: the overlay's entry lives in it. */
     if (local_pipeline(&job_cfg)) {
-        if (!job_refresh)
+        if (!job_refresh && !job_selftest)
             mem_free();
     } else if (mem_alloc_for(&job_cfg) < 0) {
         out->failed_stage = VJO_STAGE_OCR;
@@ -1051,6 +1071,8 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
                 out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
             return out->err.rc;
         }
+        if (job_selftest)
+            return VJO_OK;
         goto recognized;
     }
     vjo_buf_init(&jb, a);
@@ -1145,6 +1167,27 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     return rc;
 }
 
+/* One job on the network thread, then its done line: with the time in exchanges with
+ * the game worker and in the log's file appends meanwhile (every thread's); the rest is
+ * the Shell's own and the lookup (docs/first-ocr.md; tools/analyse_timeline.py reads it). */
+static void net_job(void)
+{
+    int idx = job_idx;
+    int64_t t0 = now_us();
+    uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
+    job_game_us = 0;
+    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
+                             : run_job(&results[idx], &cache_data[idx]);
+    log_us1 = vjo_log_io(&appends1);
+    vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "
+            "appends", idx, job_rc, (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
+            cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]),
+            (unsigned)(job_game_us / 1000), (unsigned)((log_us1 - log_us0) / 1000),
+            (unsigned)(appends1 - appends0));
+    __sync_synchronize(); /* results are visible before job_done */
+    job_done = 1;
+}
+
 static int net_main(SceSize args, void *argp)
 {
     (void)args;
@@ -1161,17 +1204,8 @@ static int net_main(SceSize args, void *argp)
             __sync_synchronize();
             warm_running = 0;
         }
-        if (bits & NET_EV_JOB) {
-            int idx = job_idx;
-            int64_t t0 = now_us();
-            job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
-                                     : run_job(&results[idx], &cache_data[idx]);
-            vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", idx, job_rc,
-                    (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
-                    cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]));
-            __sync_synchronize(); /* results are visible before job_done */
-            job_done = 1;
-        }
+        if (bits & NET_EV_JOB)
+            net_job();
     }
     return 0;
 }
@@ -1411,6 +1445,10 @@ static void open_overlay(void)
     }
     clear_input_block_error();
     ov = OV_OPEN;
+    if (job_selftest && !job_cancelled) { /* set only while its job runs */
+        job_cancelled = 1; /* the self-test yields: its stages run again later */
+        vjo_log("self-test: stopped for the overlay");
+    }
     apply_config(); /* settings are re-read on every open */
     if (anki_on)
         vjo_anki_post_count(); /* the queue line's count (Anki's thread, no allocation) */
@@ -1426,7 +1464,7 @@ static void open_overlay(void)
         /* Reopening a completed lookup must not replace its word with the
          * pending character and repeat disk I/O. Cursor/text generations
          * exclude a result superseded before its next job has started. */
-        if (!job_running && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
+        if ((!job_running || job_selftest) && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
             job_text_generation == local_text_generation && claim_cache_for(&st)) {
             vjo_log("open: saved local word");
             view_show_cache();
@@ -1472,6 +1510,7 @@ static void close_overlay(void)
     if (ov == OV_CLOSED)
         return;
     ov = OV_CLOSED;
+    idle_since_us = now_us();
     cursor_waiting = 0;
     refresh_pending = open_retry = 0;
     /* A lookup's or a refresh's result is for the open overlay only; with the
@@ -1678,10 +1717,29 @@ static void on_refresh_done(void)
         start_cursor_job(); /* the new text's first word, or a lookup that waited */
 }
 
+/* The self-test's job ended (selftest_job_due): it showed nothing. Done, or
+ * stopped by the overlay or a new screen, when its stages run again after a
+ * later job's text; an overlay opened meanwhile gets what it waits for. */
+static void subtitles_show(const VjoState *st);
+static void on_selftest_done(void)
+{
+    VjoState st = {.size = sizeof(st)};
+    __sync_synchronize(); /* pairs with the network thread's barrier */
+    job_running = job_done = job_text_ready = job_selftest = job_cancelled = 0;
+    if (restart_old_job(0))
+        return;
+    if (cursor_waiting && ov != OV_CLOSED)
+        start_cursor_job();
+    if (subtitles && vjoGetState(&st) >= 0)
+        subtitles_show(&st); /* turned on while it ran: it brought no result to show */
+}
+
 static void on_job_done(void)
 {
+    idle_since_us = now_us();
     if (job_cursor_only) { on_cursor_done(); return; }
     if (job_refresh) { on_refresh_done(); return; }
+    if (job_selftest) { on_selftest_done(); return; }
     int idx = job_idx, ocr_failed;
     VjoOverlayData *d = &cache_data[idx];
     __sync_synchronize(); /* pairs with the network thread's barrier */
@@ -1817,11 +1875,33 @@ static void on_job_text(void)
     }
 }
 
+/* The subtitle strip for the screen in st: the cached result's sentence when it
+ * is this screen's and no job runs; with the overlay open, the text it shows,
+ * which stays whatever the screen does (#81 request 4: a new screen is the quiet
+ * refresh's, whose text the strip then shows, on_refresh_done), never a job of
+ * the strip's that would retire it (audit-overlay-first-ocr-b RB1); else
+ * "Recognizing…" and a job (a running one brings its result: on_job_done). */
+static void subtitles_show(const VjoState *st)
+{
+    const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
+    if (!job_running && d && d->sentence && shows_screen(cache_scene, cache_seq, st)) {
+        vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
+        return;
+    }
+    if (ov != OV_CLOSED) {
+        const char *text = local_text_valid ? local_text : d ? d->sentence : NULL;
+        if (text && text[0])
+            vjo_strip_show(text, VJO_STRIP_SENTENCE, 0);
+        return;
+    }
+    vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+    start_job("subtitles on", want_lookup()); /* if one runs, its result comes */
+}
+
 static void set_subtitles(int on)
 {
     if (on) apply_config();
     VjoState st;
-    const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
     subtitles = on;
     vjo_strip_configure(on, &cfg);
     vjo_log("subtitles %s", on ? "on" : "off");
@@ -1840,12 +1920,7 @@ static void set_subtitles(int on)
         vjo_strip_show("Not enough memory to capture the screen", VJO_STRIP_ERROR, 0);
         return;
     }
-    if (!job_running && d && d->sentence && shows_screen(cache_scene, cache_seq, &st)) {
-        vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
-        return;
-    }
-    vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
-    start_job("subtitles on", want_lookup()); /* if one runs, its result comes */
+    subtitles_show(&st);
 }
 
 /* subtitle_button: from the full overlay, everything closes. */
@@ -2083,9 +2158,8 @@ static void background_open(void)
         return;
     refresh_pending = 0;
     /* Local text is valid only for this game's local pipeline (retired at every
-     * change). ocr_mode = on_press recognizes only when the overlay opens; an
-     * armed self-test runs its stages in the overlay's own jobs, as on main. */
-    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && !vjo_selftest_armed() && vjoGetState(&st) >= 0 &&
+     * change). ocr_mode = on_press recognizes only when the overlay opens. */
+    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && vjoGetState(&st) >= 0 &&
         (st.stable || st.quiet) && !shows_screen(local_text_scene, local_text_capture_seq, &st))
         start_job_kind("auto: screen settled", 0, 1);
 }
@@ -2109,6 +2183,47 @@ static void warm_connections(void)
     warm_running = 1;
     __sync_synchronize();
     sceKernelSetEventFlag(net_evf, NET_EV_WARM);
+}
+
+/* The self-test's stages run in a background job of their own, never in a
+ * job the user waits for (test.2's first scans took 9-15 s beside them,
+ * docs/first-ocr.md): once the last job read text in the region, while its
+ * screen is shown, the overlay is closed and nothing has run for
+ * SELFTEST_IDLE_US; the local engine only (never a Lens upload). It shows
+ * nothing (job_selftest). Its job's capture stays the last job's, the text's
+ * (job_capture_*: a lookup's is the shown text's, the same; vocr_note_capture
+ * leaves it), so a new screen stops it as any job (cancel_outdated_job), and
+ * opening the overlay does too. */
+#define SELFTEST_IDLE_US 2000000LL
+static void selftest_job_due(void)
+{
+    VjoState st = {.size = sizeof(st)};
+    /* text_generation is this game's only after a job of it read text (run_vocr clears it after a
+     * failure or a changed screen, and a game change moves game_generation on), so the game is the
+     * active one and no OCR backoff or retry pace holds; a settled screen not read yet is Auto's
+     * (auto_prefetch runs first: its job makes net_busy()). */
+    if (!vjo_selftest_stages() || ov != OV_CLOSED || net_busy() || text_generation != game_generation ||
+        !game_ocr_backend(cfg.ocr_backend) || now_us() - idle_since_us < SELFTEST_IDLE_US ||
+        vjoGetState(&st) < 0 || !shows_screen(text_scene, text_seq, &st))
+        return;
+    /* Its stages publish their own captures (the kernel's region_seq moves on): a shown text and
+     * a cached lookup that show this screen are tagged with its scene, so they still do after. */
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (local_text_valid && shows_screen(local_text_scene, local_text_capture_seq, &st))
+        local_text_scene = st.scene;
+    sceKernelUnlockMutex(cmd_lock, 1);
+    claim_cache_for(&st);
+    vjo_log("job start (self-test)");
+    job_selftest = job_prepares = 1;
+    job_refresh = job_lookup = job_cursor_only = job_cancelled = 0;
+    job_idx = active == 0 ? 1 : 0; /* never the shown result's */
+    job_cfg = cfg;
+    job_generation = game_generation;
+    job_done = job_text_ready = 0;
+    job_running = 1;
+    job_started_us = now_us();
+    __sync_synchronize();
+    sceKernelSetEventFlag(net_evf, NET_EV_JOB);
 }
 
 /* Boot guard: this boot counts as complete once the control thread has run
@@ -2177,6 +2292,7 @@ static void control_tick(uint32_t bits)
     }
     auto_prefetch();
     background_open();
+    selftest_job_due();
     warm_connections();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)

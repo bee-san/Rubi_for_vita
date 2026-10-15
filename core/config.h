@@ -87,6 +87,10 @@ typedef struct {
      * size). */
     int ocr_helpers;          /* 0..2 */
     int ocr_boost_clock;      /* 0/1 */
+    /* Local OCR (vocr): the most a job the open overlay waits for spends waiting
+     * for the rows to hold still (0: ocr_settle_max_ms as for any job); the
+     * smaller of the two applies (docs/first-ocr.md). */
+    int ocr_settle_press_ms;  /* 0 or 100..10000 */
 } VjoConfig;
 
 void vjo_config_defaults(VjoConfig *c);

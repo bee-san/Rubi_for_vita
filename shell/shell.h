@@ -271,6 +271,8 @@ typedef struct {
 } VjoLogBatch;
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap);
 void vjo_log_batch_end(VjoLogBatch *b);
+/* The microseconds spent in log file appends since boot (every thread's), and their count. */
+uint32_t vjo_log_io(uint32_t *appends);
 
 /* files.c */
 char *vjo_file_read(VjoArena *a, const char *path, size_t *len);

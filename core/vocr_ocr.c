@@ -1942,6 +1942,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         st.cover_next = 0;
         stats->tries = attempt;
         stats->region_sum = VJO_FNV_INIT;
+        if (attempt > 1) stats->retry_at = clock_us(platform); /* the screen changed under the one before */
         if (wait && settle_wait(&st) < 0) {
             rc = stream_error(&st, VJO_E_SOURCE);
             break;
@@ -2090,4 +2091,45 @@ void vjo_grey_source_rgba(const VjoRgbaImage *img, VjoGreySource *out)
     out->width = img->width;
     out->height = img->height;
     out->strip = rgba_strip;
+}
+
+/* ---- ocr-first: the session's reads, done by a job that read no line ---- */
+int vjo_vocr_warm(const VjoPlatform *p, const char *dir, const char *model, const VjoGreySource *im,
+                  VjoVocrResident *res, const VjoVocrPolicy *pol, VjoVocrStats *st)
+{
+    const VjoVocrModel *mi = vjo_vocr_model(model);
+    uint32_t t0;
+    int rc;
+    if (!p || !dir || !mi || !im || !res || !st)
+        return VJO_E_SOURCE;
+    if (!pol)
+        pol = &no_policy;
+    if (res->model != mi || !res->data) {
+        st->warmed = 1;
+        t0 = clock_us(p);
+        rc = resident_weights(p, dir, mi, res, im, &st->model_loaded, &st->model_cached);
+        st->load_us = clock_us(p) - t0;
+        if (rc)
+            return rc;
+    }
+    if (pol->lm && pol->lm_res && (pol->lm_res->lm != pol->lm || !pol->lm_res->data)) {
+        st->warmed = 1;
+        t0 = clock_us(p);
+        rc = resident_lm(p, dir, pol->lm, pol->lm_res, im, st);
+        st->lm_load_us = clock_us(p) - t0;
+        if (rc)
+            return st->lm_rc = rc;
+        st->lm = pol->lm;
+    }
+    if (pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi &&
+        (pol->cascade_res->model != pol->cascade || !pol->cascade_res->data)) {
+        st->warmed = 1;
+        t0 = clock_us(p);
+        rc = resident_weights(p, dir, pol->cascade, pol->cascade_res, im, &st->cascade_loaded, &st->cascade_cached);
+        st->cascade_load_us = clock_us(p) - t0;
+        if (rc)
+            return st->cascade_rc = rc;
+        st->cascade = pol->cascade;
+    }
+    return VJO_OK;
 }

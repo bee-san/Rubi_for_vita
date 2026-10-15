@@ -8,6 +8,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
 #include <stdarg.h>
@@ -26,6 +27,23 @@ static SceOff file_size = -1;
 /* The open batch, or NULL; under log_mutex (it lives on its thread's stack). */
 static VjoLogBatch *batch;
 static void batch_flush_locked(void);
+/* The time spent in file appends (log.txt, status.txt) and their count, since
+ * boot: a job's done line says what logging cost it (docs/first-ocr.md).
+ * Written under log_mutex (status.txt's appends before configure, at boot, by
+ * the one thread then), read without it: a diagnostic. */
+static uint32_t io_us, io_appends;
+
+uint32_t vjo_log_io(uint32_t *appends)
+{
+    *appends = io_appends;
+    return io_us;
+}
+
+static void io_note(uint64_t t0)
+{
+    io_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+    io_appends++;
+}
 
 void vjo_log_configure(const VjoConfig *cfg)
 {
@@ -52,12 +70,14 @@ void vjo_log_configure(const VjoConfig *cfg)
 
 static void file_write(const char *p, int bytes)
 {
+    uint64_t t0 = sceKernelGetProcessTimeWide();
     SceUID fd = sceIoOpen(VJO_LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
-    if (fd < 0)
-        return;
-    if (sceIoWrite(fd, p, bytes) == bytes)
-        file_size += bytes;
-    sceIoClose(fd);
+    if (fd >= 0) {
+        if (sceIoWrite(fd, p, bytes) == bytes)
+            file_size += bytes;
+        sceIoClose(fd);
+        io_note(t0); /* an append made, as status.txt's */
+    }
 }
 
 /* lines[0..n) of len[] bytes each, back to back at p: appended to log.txt as
@@ -139,6 +159,7 @@ static void status_append_lines(const char *p, const uint16_t *len, int n)
     SceUID fd = -1;
     const char *run = p;
     int k, bytes = 0;
+    uint64_t t0 = sceKernelGetProcessTimeWide();
     if (status_size < 0)
         return;
     if (status_mutex >= 0)
@@ -156,8 +177,10 @@ static void status_append_lines(const char *p, const uint16_t *len, int n)
     }
     if (bytes)
         status_write(&fd, run, bytes);
-    if (fd >= 0)
+    if (fd >= 0) {
         sceIoClose(fd);
+        io_note(t0);
+    }
     if (status_mutex >= 0)
         sceKernelUnlockMutex(status_mutex, 1);
 }

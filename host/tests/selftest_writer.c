@@ -34,6 +34,7 @@ typedef struct {
 
 static char out_dir[512];
 static uint64_t now_us = 1000;
+static unsigned report_appends; /* opens of the report to append: one a record (ocr-first) */
 static int memory_routes_fail;
 static int diagnostics_warn; /* "diagnostics": every diagnostic a passing run can warn does, OCR works */
 
@@ -46,6 +47,7 @@ int sceIoOpen(const char *path, int flags, unsigned mode)
 {
     char p[1024];
     host_path(path, p, sizeof(p));
+    if ((flags & SCE_O_APPEND) && strstr(path, "selftest-report.txt")) report_appends++;
     return open(p, flags, mode);
 }
 int sceIoClose(int fd) { return close(fd); }
@@ -79,7 +81,8 @@ int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *f)
 
 VjoLedger g_shell_ledger;
 uint32_t vjo_shell_heap_free_size(void) { return 2346312; }
-void vjo_log_raw(const char *line, int n) { (void)line; (void)n; }
+static unsigned log_bytes; /* what the report mirrored into status.txt and log.txt */
+void vjo_log_raw(const char *line, int n) { (void)line; log_bytes += (unsigned)n; }
 void vjo_log(const char *fmt, ...) { (void)fmt; }
 int vjoBootInfo(VjoBootInfo *b)
 {
@@ -88,8 +91,29 @@ int vjoBootInfo(VjoBootInfo *b)
     b->seq = 2;
     return 0;
 }
+/* The record so far is in the report before the kernel's memory routes run (a crash in
+ * them keeps it): its last line is the sample's ledger line. */
+static unsigned unflushed_samples;
+static void check_flushed_before_meminfo(void)
+{
+    char p[1024], buf[65536];
+    FILE *f;
+    size_t n;
+    host_path("selftest-report.txt", p, sizeof(p));
+    f = fopen(p, "rb");
+    n = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+    if (f) fclose(f);
+    buf[n] = 0;
+    while (n && buf[n - 1] == '\n') buf[--n] = 0;
+    {
+        const char *last = strrchr(buf, '\n');
+        last = last ? last + 1 : buf;
+        if (strncmp(last, "ledger ", 7)) unflushed_samples++;
+    }
+}
 int vjoMemInfo(VjoMemInfo *m)
 {
+    check_flushed_before_meminfo();
     m->ledger_current = m->ledger_peak = 131072;
     m->ledger_limit = 2220032;
     if (diagnostics_warn) { /* #75's first guard on a console: every kernel object refused at step 3 */
@@ -313,6 +337,20 @@ int main(int argc, char **argv)
         now_us += 4000000;
     }
     if (!strcmp(scenario, "waiting")) return 0; /* the marker stays: the stages still wait */
+    if (!strncmp(scenario, "cap", 3)) { /* the 48 KiB cap: more stage records than fit (records of about 3.7 KB);
+                                           capN: N step records of about 1 KB first, to move where the cap falls */
+        for (int k = 0; k < (scenario[3] >= '0' && scenario[3] <= '9' ? scenario[3] - '0' : 0); k++)
+            vjo_selftest_step("ok");
+        for (unsigned k = 0; k < 20; k++) {
+            vjo_selftest_stage_begin(1, "H15_w8.vocr", "FL10_w8.vocr", vjo_selftest_stage_speed(1, 2u));
+            region_job(&result, 0, 1, 0, 0, 0, 0, 0);
+            now_us += 2500000;
+            vjo_selftest_stage_end(1, result.rc, &result, 2500, "H15_w8.vocr");
+        }
+        printf("report appends %u, log bytes %u, unflushed samples %u\n", report_appends, log_bytes,
+               unflushed_samples);
+        return 0;
+    }
     for (unsigned i = 0; i < vjo_selftest_stages(); i++) {
         const char *name = vjo_selftest_stage_name(i);
         int fallback = !strcmp(name, "fallback"), full = !strcmp(name, "fullscreen");
@@ -332,5 +370,7 @@ int main(int argc, char **argv)
         vjo_selftest_stage_end(i, result.rc, &result, 2500, fallback ? "FL10_w8.vocr" : "H15_w8.vocr");
     }
     vjo_selftest_done();
+    printf("report appends %u, log bytes %u, unflushed samples %u\n", report_appends, log_bytes,
+           unflushed_samples); /* the fixtures' test reads them */
     return 0;
 }

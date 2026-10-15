@@ -161,6 +161,9 @@ static void lock_check(void)
     TEST_MSG("%u mutex errors", mutex_errors);
 }
 SceUID sceKernelGetThreadId(void) { return (SceUID)thread; }
+/* The process clock: 1 ms more at every read, so every append takes 1 ms here. */
+static uint64_t clock_us;
+uint64_t sceKernelGetProcessTimeWide(void) { return clock_us += 1000; }
 
 static char udp[1 << 20];
 static size_t udp_used;
@@ -431,6 +434,42 @@ static void a_batch_is_one_open_per_file(void)
     vjo_log_batch_end(&b);
     TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 1600 + 10 * (2 * VJO_LOG_BATCH_LINES + 3));
     TEST_CHECK(opens[lookup(VJO_LOG_PATH, 0) - files] == 1 + 3);
+    lock_check();
+}
+
+/* ocr-first: every file append (log.txt, status.txt) is counted with its time, for
+ * a job's done line (shell/worker.c): a batch of 16 lines is one append per file. */
+static void appends_are_counted_with_their_time(void)
+{
+    VjoConfig cfg;
+    VjoLogBatch b;
+    char buf[2048], line[256];
+    uint32_t n0, n1, n2, us0, us1, us2;
+    fs_reset();
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.log_file = 1;
+    log_mutex = -1; udp_fd = -1; batch = NULL;
+    vjo_status_reset();
+    vjo_log_configure(&cfg);
+    us0 = vjo_log_io(&n0);
+    vjo_log_raw(line, make_line(line, 0, 100)); /* log.txt and status.txt: two appends */
+    us1 = vjo_log_io(&n1);
+    TEST_CHECK(n1 - n0 == 2);
+    TEST_CHECK(us1 - us0 >= 2000); /* the fake clock: 1 ms a read, two reads an append */
+    TEST_CHECK(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+    for (unsigned i = 0; i < 16; i++) vjo_log_raw(line, make_line(line, i, 100));
+    vjo_log_batch_end(&b);
+    us2 = vjo_log_io(&n2);
+    TEST_CHECK(n2 - n1 == 2); /* one per file */
+    TEST_CHECK(us2 > us1);
+    status_size = 64 * 1024; /* status.txt full: no append, none counted */
+    vjo_log_raw(line, make_line(line, 1, 100));
+    TEST_CHECK(vjo_log_io(&n0) > us2 && n0 - n2 == 1);
+    fail_opens = 1; /* log.txt does not open (status.txt is still full): no append, none counted */
+    vjo_log_raw(line, make_line(line, 2, 100));
+    vjo_log_io(&n1);
+    TEST_CHECK(n1 == n0);
+    fail_opens = 0;
     lock_check();
 }
 
@@ -752,6 +791,7 @@ static void sinks_decide_whether_vjo_log_formats(void)
 }
 
 TEST_LIST = {
+    {"appends_are_counted_with_their_time", appends_are_counted_with_their_time},
     {"batches_write_the_same_bytes", batches_write_the_same_bytes},
     {"a_batch_is_one_open_per_file", a_batch_is_one_open_per_file},
     {"before_configure_and_without_sinks", before_configure_and_without_sinks},

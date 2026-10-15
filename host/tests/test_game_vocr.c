@@ -20,6 +20,8 @@ static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
 /* The capture block and the memory-type ladder: which types refuse. */
 static int capture_live, refuse_user, refuse_cdram, refuse_phycont, rows_error, hook_write_error;
+static int lm_bad_size; /* the LM files report one byte more than they hold (a wrong file) */
+static int cascade_bad_size; /* the same for the cascade's model */
 static int busy_unarmed, busy_armed, allow_capture_held; /* rows calls that answer BUSY, before / after arming */
 static unsigned capture_block, capture_allocs, capture_frees, rows_calls, kstrip_calls, last_type;
 static unsigned allocations, frees, reads_count, bytes_read, thread_creates, weight_allocations, weight_frees;
@@ -283,6 +285,8 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
     }
     TEST_ASSERT(!fseek(model, 0, SEEK_END));
     int size = (int)ftell(model);
+    if (lm_bad_size && which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE) size++;
+    if (cascade_bad_size && which >= VJO_GAME_OCR_OPEN_CASCADE) size++;
     if (info) *info = (VjoGameOcrModelInfo){sizeof(*info), (uint32_t)size, model_stat_error, 0,
                                             model_stat_error ? 0 : model_mtime};
     return size;
@@ -306,6 +310,7 @@ static VjoGameOcrRequest setup(void)
     if (model) { fclose(model); model = NULL; }
     worker = workspace_uid = weights_uid = capture_uid = line_uid = -1;
     capture_live = refuse_user = refuse_cdram = refuse_phycont = rows_error = hook_write_error = 0;
+    lm_bad_size = cascade_bad_size = 0;
     busy_unarmed = busy_armed = allow_capture_held = 0; hook_owns_capture = 0;
     capture_block = capture_allocs = capture_frees = rows_calls = kstrip_calls = 0;
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
@@ -338,7 +343,8 @@ static VjoGameOcrRequest setup(void)
     arm_mhz = 333; arm_sets = arm_set_last = 0; arm_gets = arm_game_at = 0; arm_game_mhz = 0;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
-    /* Blank images never open weights, but requests still need a valid directory.
+    /* Blank images open no weights but the warm-up's (a job that found no line reads the
+     * weights it would run, best effort), and requests still need a valid directory.
      * CI intentionally has no private release assets in its source checkout. */
     snprintf(r.model_dir, sizeof(r.model_dir), "%s",
              VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : "unused-model-dir");
@@ -359,7 +365,10 @@ static void repeated_jobs_and_reserve(void)
     }
     TEST_CHECK(allocations == 100 && frees == 100 && capture_allocs == 100 && capture_frees == 100 && !capture_live);
     /* the ledger saw every block in and out, and its peak fits the budget */
-    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_WORKSPACE) == 0 && vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == 0);
+    /* ... and the weights the first job warmed (ocr-first: it read no line) stay, read once */
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_WORKSPACE) == 0 &&
+               vjo_ledger_current(&g_game_ledger, GL_WEIGHTS) == resident_bytes());
+    TEST_CHECK(!VJO_VOCR_MODEL_DIR[0] || (weights_live && weight_allocations == 1));
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) > 0 && vjo_ledger_peak(&g_game_ledger, GL_WORKSPACE) <= VJO_BUDGET_GAME_WORKSPACE);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_CAPTURE) == 0 && vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) == 16384); /* 200x60: 12,000 B strip + 8 B and 3 bits per row */
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) <= VJO_BUDGET_GAME_CAPTURE);
@@ -1136,6 +1145,7 @@ static void an_inactive_game_gets_the_cascade_block_back(void)
     TEST_CHECK(weights_live && cascade_live && !lm_live);
     TEST_CHECK(!drop_weights() && !weights_live && cascade_live); /* say a later job's model failed to open */
     quit_on_delay = 1;
+    inactive_since = now_wide() - INACTIVE_DROP_US; /* not the active game for that long (ocr-first) */
     worker_main(0, NULL); /* vjoOcrRegister: not the active game */
     quit_on_delay = 0;
     quitting = 0;
@@ -1278,6 +1288,143 @@ static void lm_jobs(void)
     TEST_MSG("lm_live %d lm %p recognized %u flags 0x%x free %d need %u+%u", lm_live, (void *)lm_res.lm, out.recognized,
              out.line[0].flags, out.free_user, out.need_workspace, out.need_weights);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !lm_live);
+}
+
+/* ocr-first (docs/first-ocr.md): a job that finds no line reads the weights, the
+ * LM and the cascade's model (as its memory check allowed) with their steps, so
+ * the session's first job with text reads none of them while the user waits:
+ * test.2's first text job read all three, 223 + 201 + 299 ms. That job finds them
+ * resident; a later job without a line opens no file. */
+static void a_job_without_lines_reads_the_weights_lm_and_cascade(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    char lm2[600], w20[600];
+    FILE *f;
+    snprintf(lm2, sizeof(lm2), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_LM2_NAME);
+    snprintf(w20, sizeof(w20), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_CASCADE_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(lm2, "rb"))) { TEST_SKIP("no LM beside the release weights"); return; }
+    fclose(f);
+    if (!(f = fopen(w20, "rb"))) { TEST_SKIP("no VOCR4-W20 beside the release weights"); return; }
+    fclose(f);
+    available = 64 * 1024 * 1024;
+    test_cascade_conf = 1001; /* every line read again by the cascade */
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT; /* an empty region */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(!out.lines && !out.text[0] && out.weights == VJO_GAME_OCR_WEIGHTS_READ);
+    TEST_CHECK(weights_live && lm_live && cascade_live && lm_res.lm == vjo_vocr_lm_tier(2) && cascade_res.model);
+    unsigned load = 0, lm = 0, casc = 0;
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        load += out.step[i].id == VJO_GSTEP_LOAD && out.step[i].arg == 1 && out.step[i].kind == VJO_GAME_OCR_WEIGHTS_READ;
+        lm += out.step[i].id == VJO_GSTEP_LM && (out.step[i].bytes & VJO_GLM_READ) && !(out.step[i].bytes & 0xFFFFu);
+        casc += out.step[i].id == VJO_GSTEP_CASCADE && (out.step[i].bytes & VJO_GLM_READ) && !out.step[i].arg;
+    }
+    TEST_CHECK(load == 1 && lm == 1 && casc == 1 && out.n_steps <= VJO_GAME_OCR_STEPS);
+    TEST_CHECK(out.step[out.n_steps - 1].id == VJO_GSTEP_FREE); /* the job's own releases are still logged */
+    unsigned weights = weight_allocations, lms = lm_allocations, cascades = cascade_allocations;
+    line(); /* text: everything resident, nothing read again */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && out.recognized >= 1 && out.text[0]);
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT && weight_allocations == weights);
+    TEST_CHECK(lm_allocations == lms && cascade_allocations == cascades);
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        if (out.step[i].id == VJO_GSTEP_LM) TEST_CHECK(out.step[i].bytes & VJO_GLM_RESIDENT);
+        if (out.step[i].id == VJO_GSTEP_CASCADE) TEST_CHECK(out.step[i].bytes & VJO_GLM_RESIDENT);
+    }
+    memset(pixels, 0, sizeof(pixels)); /* no line again: no file opened */
+    unsigned opened = lm_opens + cascade_opens, reads = reads_count;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.lines);
+    TEST_CHECK(lm_opens + cascade_opens == opened && reads_count == reads && out.weights == VJO_GAME_OCR_WEIGHTS_NONE);
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live && !cascade_live);
+    /* The model file missing: the job without a line still succeeds and says why; the LM and
+     * the cascade's model are not read for weights that cannot run; a text job then fails as before. */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    snprintf(model_path, sizeof(model_path), "%s/no-such-model.vocr", r.model_dir);
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.lines && !out.text[0]);
+    TEST_CHECK(out.io_error == -123 && !weights_live && !lm_live && !cascade_live && !lm_opens && !cascade_opens);
+    line();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_MODEL && !weights_live && !lm_live);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    /* Weights of the wrong size: nothing else is read either (the warm-up stops at its first failure). */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    virtual_file = 1;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.lines);
+    TEST_CHECK(!weights_live && !lm_live && !cascade_live && !lm_opens && !cascade_opens);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    /* An LM of the wrong size: the weights stay read and verified, the cascade's model is not read. */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    lm_bad_size = 1;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.lines);
+    TEST_CHECK(weights_live && resident.model && !lm_live && !lm_res.lm && lm_opens == 1 && !cascade_opens);
+    { /* its LM step says why, in the job that tried (audit-overlay-first-ocr nit) */
+        const VjoGameOcrStep *lms = NULL;
+        for (unsigned i = 0; i < out.n_steps; i++)
+            if (out.step[i].id == VJO_GSTEP_LM) lms = &out.step[i];
+        TEST_CHECK(lms && lms->rc == VJO_E_OCR_MODEL && !(lms->bytes & (VJO_GLM_READ | VJO_GLM_RESIDENT)));
+    }
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    /* A cascade model of the wrong size: the weights and the LM stay read, its CASCADE step says why. */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    cascade_bad_size = 1;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.lines);
+    TEST_CHECK(weights_live && lm_live && !cascade_live && cascade_opens == 1);
+    {
+        const VjoGameOcrStep *cs = NULL;
+        for (unsigned i = 0; i < out.n_steps; i++)
+            if (out.step[i].id == VJO_GSTEP_CASCADE) cs = &out.step[i];
+        TEST_CHECK(cs && cs->rc == VJO_E_OCR_MODEL && !(cs->bytes & (VJO_GLM_READ | VJO_GLM_RESIDENT)));
+        TEST_MSG("cascade step %s, rc %d", cs ? "present" : "missing", cs ? (int)cs->rc : 0);
+    }
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    /* A job that failed (its screen could not be read) reads nothing for later jobs. */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    rows_error = VJO_ERR_TIMEOUT;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !out.lines);
+    TEST_CHECK(!weights_live && !lm_live && !cascade_live && !lm_opens && !cascade_opens);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    /* Jobs that read text read only what their lines need: no doubtful line, no cascade model,
+     * whether the weights were read for the job or resident. */
+    r = setup();
+    available = 64 * 1024 * 1024;
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    test_cascade_conf = 1; /* no line under 0.001 */
+    line();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && out.recognized >= 1);
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && lm_live && !cascade_live && !cascade_opens);
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && out.recognized >= 1);
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT && !cascade_live && !cascade_opens);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
+/* The TEAR step says when the job's last try began (bytes: us since the job's
+ * start): its tears happened before that, the retry ran from there to the end
+ * (test.2's "tear re-read 2.3 s" was its us, the job's end, misread). */
+static void the_tear_step_says_when_the_retry_began(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    line();
+    frame_us = 16667;
+    change_at_rows = 2; /* during the finder's second pass of the first try */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    const VjoGameOcrStep *tear = NULL;
+    uint32_t end = 0;
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        if (out.step[i].id == VJO_GSTEP_TEAR) tear = &out.step[i];
+        if (out.step[i].id == VJO_GSTEP_FREE && out.step[i].us > end) end = out.step[i].us;
+    }
+    TEST_ASSERT(tear != NULL);
+    TEST_CHECK(tear->rc >= 2 && tear->bytes > 0 && tear->bytes < tear->us && tear->bytes <= end);
+    TEST_CHECK(tear->bytes >= 2u * 16667u); /* after the first try's strips */
+    TEST_MSG("retry began at %u us, the tear step at %u us, the job's end %u us", tear->bytes, tear->us, end);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
 /* API 20, the confidence cascade: a request with a time ceiling and room for
@@ -1557,7 +1704,9 @@ static const uint32_t tier_reserve[] = {0, VJO_GAME_RESERVE_SMALL, VJO_GAME_RESE
  * down, and refuses only when none fits. Each tier tried is a CHECK step (its tier
  * in the kind, refused or passed, what it needed, the own blocks it counted as
  * free); the result says how many tiers down the job went, with the largest's need.
- * A blank region: no model file is opened. */
+ * A blank region: only the size that ran is opened, by the job's warm-up (ocr-first:
+ * a job that found no line reads the weights it would run, within its check), and a
+ * refused job opens none. */
 static void tier_ladder_takes_the_largest_size_that_fits(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -1592,7 +1741,10 @@ static void tier_ladder_takes_the_largest_size_that_fits(void)
             TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes == need[last]);
             if (last < 3u) TEST_CHECK(out.model_need_workspace + out.model_need_weights + tier_reserve[3] == need[3]);
             else TEST_CHECK(!out.model_need_workspace && !out.model_need_weights);
-            TEST_CHECK(!tier_opens[1] && !tier_opens[2] && !tier_opens[3] && !memory_live && !capture_live);
+            for (unsigned t = 1; t <= 3; t++)
+                TEST_CHECK_(tier_opens[t] == (t == ran ? 1u : 0u), "free %d: tier %u opened %u times", available, t,
+                            tier_opens[t]); /* the warm-up's read of the size that ran */
+            TEST_CHECK(!memory_live && !capture_live);
             TEST_CHECK(allocations == (ran ? 1u : 0u)); /* a job that fits takes its workspace */
             if (!ran) break;
         }
@@ -1942,7 +2094,48 @@ static void tier_release_counts_other_sizes_as_free(void)
     test_cascade_conf = 0;
 }
 
+/* ocr-first with model sizes: another size's resident weights stay while the job
+ * fits beside them with its own size's reserve (8 MiB for Normal), not the flat
+ * 4 MiB. Small's weights resident, a Normal job on a screen with a line: with
+ * exactly Normal's need free beside Small's block, that block goes only when the
+ * core reads Normal's weights, after the job's workspace; 4 KiB less, before it. */
+static void another_sizes_weights_stay_beside_its_reserve(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    for (unsigned t = 1; t <= 2; t++) {
+        char path[600];
+        FILE *f;
+        snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, tier_names[t - 1u]);
+        if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(path, "rb"))) { TEST_SKIP("no %s beside the release weights", tier_names[t - 1u]); return; }
+        fclose(f);
+    }
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *h15 = vjo_vocr_model(VJO_VOCR_TIER2_NAME);
+    line();
+    r.flags = 0; /* no LM, no cascade: each job holds its own size only */
+    r.speed = VJO_GAME_OCR_S_NOCACHE;
+    for (int tight = 0; tight < 2; tight++) {
+        TEST_CHECK(!drop_resident());
+        available = 64 * 1024 * 1024;
+        r.tiers = 1u; /* Small: its weights resident */
+        snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER1_NAME);
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && out.text[0] && resident.model == fl10);
+        r.tiers = 3u; /* Normal chosen */
+        snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+        available = (int)(live_bytes + tier_need(&r, 2, 0) - (tight ? 4096u : 0u));
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+        TEST_CHECK(out.text[0] && !out.fallback && resident.model == h15 && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+        int freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS),
+            workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
+        TEST_CHECK(workspace >= 0 && freed >= 0 && (tight ? freed < workspace : freed > workspace));
+        TEST_MSG("%s: Small's block freed at step %d, the workspace allocated at step %d", tight ? "tight" : "exact",
+                 freed, workspace);
+    }
+    r.speed = 0;
+}
+
 TEST_LIST = {
+    {"a job without lines reads the weights, the LM and the cascade (ocr-first)", a_job_without_lines_reads_the_weights_lm_and_cascade},
+    {"the TEAR step says when the retry began", the_tear_step_says_when_the_retry_began},
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},
     {"allocation base free failure and retry", memory_failure_and_retry},
     {"cancel before allocation and wire validation", cancel_and_wire},
@@ -1978,6 +2171,8 @@ TEST_LIST = {
     {"model tiers: the self-test's fallback stage runs the smallest", forced_fallback_by_tiers_runs_the_smallest},
     {"model tiers: real jobs open each size and its cascade by tier; a failed file names its tier",
      tier_jobs_open_their_models_by_tier},
+    {"ocr-first + model tiers: another size's weights stay while the job fits beside them with its own reserve",
+     another_sizes_weights_stay_beside_its_reserve},
     {"API 22 + model tiers: the helpers keep the tier's reserve, never a smaller tier", helpers_keep_the_tier_reserve},
     {"model tiers: another size's resident blocks count as free and are released first",
      tier_release_counts_other_sizes_as_free},
