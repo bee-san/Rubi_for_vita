@@ -923,6 +923,10 @@ LOG = {
     # builds with row navigation (#81) add the arrow keys' row changes, wraps and presses before a layout
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"
                           r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout(?:, slowest key (\d+) us)?)?"),
+    # #104 (shell/worker.c close_overlay_for, shell/overlay.cpp close_page): why each close happened, and the
+    # touch region given back over the game or left to SceShell's LiveArea
+    "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
+    "touch_left": re.compile(r"^touch region left to SceShell t=(\d+) ms"),
     "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (\d+)-byte screenshot, (\d+) ms"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
@@ -1132,7 +1136,7 @@ def summarise_log(text):
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
-                    "done", "overlay", "anki_save", "anki_queue", "anki_sent", "gstep"):
+                    "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "gstep"):
             m = LOG[key].match(line)
             if not m:
                 continue
@@ -1175,6 +1179,14 @@ def summarise_log(text):
                         ar[k] += int(m.group(g))
                     if m.group(8) is not None:
                         ar["slowest_key_us"] = max(ar["slowest_key_us"] or 0, int(m.group(8)))
+            elif key == "close_why":
+                c = s.setdefault("closes", {"in game": 0, "game left": 0, "foreground changed": 0, "touch_left": 0,
+                                            "block_fail": 0})
+                c[m.group(1)] += 1
+                c["block_fail"] += int(m.group(3)) < 0
+            elif key == "touch_left":
+                s.setdefault("closes", {"in game": 0, "game left": 0, "foreground changed": 0, "touch_left": 0,
+                                        "block_fail": 0})["touch_left"] += 1
             elif key == "anki_save":
                 s["anki"]["saves"] += 1
                 s["anki"]["save_fail"] += int(m.group(2)) < 0
@@ -1213,6 +1225,11 @@ def overlay_summary(lg):
         t += (f"; arrows ({ar['closes']} of them): {ar['row_moves']} row changes, {ar['wraps']} row wraps, "
               f"{ar['without_layout']} before the header's layout"
               + (f", slowest key {ar['slowest_key_us']:,} us" if ar["slowest_key_us"] is not None else ""))
+    c = lg.get("closes")
+    if c:  # #104: a close with the game gone must leave SceShell's touch region alone
+        t += (f"; closed {c['in game']}x in game, {c['game left']}x as the game left (PS or exit; touch region "
+              f"left to SceShell {c['touch_left']}x), {c['foreground changed']}x for another process in front"
+              + (f", {c['block_fail']} input block release(s) refused" if c["block_fail"] else ""))
     return t
 
 

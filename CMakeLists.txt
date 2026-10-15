@@ -107,6 +107,18 @@ target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/in
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_input COMMAND vjo-kernel-input-tests)
+# #104: the process event hook releases the game's input block in the same event
+# (kernel/lifecycle.c with the real foreground state machine).
+add_executable(vjo-kernel-lifecycle-tests host/tests/test_kernel_lifecycle.c kernel/foreground.c)
+target_include_directories(vjo-kernel-lifecycle-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-lifecycle-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-lifecycle-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_lifecycle COMMAND vjo-kernel-lifecycle-tests)
+# #104: the overlay page's hold on SceShell's front touch region (shell/touch_hold.h).
+add_executable(vjo-touch-hold-tests host/tests/test_touch_hold.c)
+target_include_directories(vjo-touch-hold-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-touch-hold-tests PRIVATE -Wall -Wextra)
+add_test(NAME touch_hold COMMAND vjo-touch-hold-tests)
 # Memory ledger: the counters, the budget table against the real sizing code,
 # and the CI check (allocation sites, worst cases against limits).
 add_executable(vjo-ledger-tests host/tests/test_ledger.c)

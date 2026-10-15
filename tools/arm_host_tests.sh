@@ -56,6 +56,9 @@ build ledger host/tests/test_ledger.c core/ledger.c
 build fbgrey host/tests/test_fbgrey.c
 build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c core/region_select.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
+# #104: the process event hook's input release (LDREX/STREX exchange) and the page's touch hold.
+build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
+build touch_hold host/tests/test_touch_hold.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
 build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
@@ -67,8 +70,8 @@ build settings_layout host/tests/test_settings_layout.c settings/text_layout.c s
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
-TESTS+=(text_rows settings_layout shell_log)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_meminfo region_select)
+TESTS+=(touch_hold text_rows settings_layout shell_log)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

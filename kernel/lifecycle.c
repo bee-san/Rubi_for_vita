@@ -1,6 +1,7 @@
 /* Foreground game tracking via the process event handler (as PSVshell and
  * reVita do); the state machine is in foreground.c. Buffer allocation is
- * deferred to the worker thread. */
+ * deferred to the worker thread. A change of the foreground also releases the
+ * game's input block, in the same handler (#104; fg_store). */
 #include <psp2kern/kernel/sysclib.h>
 #include <taihen.h>
 
@@ -25,18 +26,47 @@ static VjoForeground fg_load(void)
     return f;
 }
 
-static void fg_store(const VjoForeground *f, uint32_t iev)
+/* ev: the process event (PROCEV_*), or 0 for the Shell's verdict. Out of
+ * line: one copy of the call, not one per path of fg_store. */
+static void __attribute__((noinline)) fg_log(SceUID was, SceUID now, int ev, int released)
 {
+    static const char *const why[] = {"shell", "startup", "event 2", "exit", "suspend", "resume"};
+    klog("foreground 0x%X -> 0x%X (%s) t=%u ms%s", was, now, ev >= 0 && ev <= PROCEV_RESUME ? why[ev] : "event",
+         klog_ms(), released ? ": input released" : "");
+}
+
+static void fg_store(const VjoForeground *f, uint32_t iev, int ev)
+{
+    SceUID was;
+    int changed, log, released = 0;
     VJO_LOCK();
-    if (g.game_pid != f->game_pid || g.game_active != f->game_active)
+    was = g.game_pid;
+    changed = was != f->game_pid || g.game_active != f->game_active;
+    /* a confirmed game left, or an app was suspended or resumed */
+    log = changed && (g.game_active || ev == PROCEV_SUSPEND || ev == PROCEV_RESUME);
+    if (changed)
         __atomic_add_fetch(&g.ocr_epoch, 1, __ATOMIC_RELEASE);
     g.game_active = f->game_active;
     g.game_pid = f->game_pid;
     g.prev_game_pid = f->prev;
+    /* #104: the input block belongs to the foreground it was set for. Any
+     * change releases it here, in the change's own handler (the game
+     * suspended by PS, its exit, a process in front of it, the Shell's
+     * verdict), not when the Shell gets round to it: nothing blocked reaches
+     * whatever comes to the front, and a resumed game starts with its input
+     * free (the Shell blocks it again only when it opens the overlay). Held
+     * buttons stay hidden from the game until released, as at
+     * vjoSetInputBlock(0). */
+    if (changed && __atomic_exchange_n(&g.input_block, 0, __ATOMIC_ACQ_REL)) {
+        __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons);
+        released = log = 1;
+    }
     game_ocr_foreground_changed_locked();
     VJO_UNLOCK();
     if (iev)
         ksceKernelSetEventFlag(g.ievf, iev);
+    if (log)
+        fg_log(was, f->game_pid, ev, released);
 }
 
 static int procevent_patched(int pid, int ev, int a3, int a4, int *a5, int a6)
@@ -54,7 +84,7 @@ static int procevent_patched(int pid, int ev, int a3, int a4, int *a5, int a6)
     iev = fg_process_event(&f, pid, ev);
     if ((iev & IEV_GAME_EXIT) && (iev & IEV_GAME_START))
         klog("pid 0x%X gone: back to game pid 0x%X", pid, f.game_pid);
-    fg_store(&f, iev);
+    fg_store(&f, iev, ev);
     if (ev == PROCEV_EXIT) game_ocr_process_gone(pid);
     ksceKernelUnlockMutex(g.game_lock, 1);
 out:
@@ -73,10 +103,11 @@ int lifecycle_set_game_active(SceUID pid, int mode)
         ret = VJO_ERR_NO_GAME;
     } else {
         if (mode)
-            klog("game pid 0x%X active%s", pid, mode == VJO_GAME_STATIC_FB ? " (static framebuffer)" : "");
+            klog("game pid 0x%X active%s t=%u ms", pid, mode == VJO_GAME_STATIC_FB ? " (static framebuffer)" : "",
+                 klog_ms());
         else if (iev & IEV_GAME_START)
             klog("pid 0x%X is not a game: back to game pid 0x%X", pid, f.game_pid);
-        fg_store(&f, iev);
+        fg_store(&f, iev, 0);
     }
     ksceKernelUnlockMutex(g.game_lock, 1);
     return ret;

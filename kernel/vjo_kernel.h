@@ -79,7 +79,7 @@ typedef struct {
     /* input */
     volatile int trigger[TRIG_COUNT]; /* enum VjoTrigger, by TRIG_* */
     volatile uint32_t trigger_gen;    /* bumped when trigger changes */
-    volatile int input_block;
+    volatile int input_block;         /* the Shell's (vjoSetInputBlock); any foreground change releases it (lifecycle.c) */
     volatile SceUID shell_pid;
     volatile uint32_t suppress_mask; /* combo buttons hidden until released */
     volatile uint32_t raw_buttons;
@@ -94,6 +94,7 @@ void input_trace_reset(void);
 
 /* log.c: ring buffer, flushed to kernel.txt by the worker */
 void klog(const char *fmt, ...);
+unsigned klog_ms(void); /* the system clock in ms: the t= of transition lines */
 /* Atomically claims a pending capture; only the winner copies. */
 static inline int capture_claim(void)
 {

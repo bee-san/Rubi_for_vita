@@ -962,6 +962,26 @@ class OverlayCloseLines(unittest.TestCase):
                                                 "9 row changes, 4 row wraps, 2 before the header's layout, "
                                                 "slowest key 1,250 us")
 
+    # #104: shell/worker.c close_overlay_for's reason and shell/overlay.cpp's hand-back of the touch region
+    PS = ("overlay close (game left) t=1791614286 ms: input block off rc=0\n"
+          "touch region left to SceShell t=1791614299 ms\n" + OLD)
+    CIRCLE = ("overlay close (in game) t=1791620000 ms: input block off rc=0\n"
+              "touch region off: 0x0 t=1791620016 ms\n" + OLD)
+    SWITCH = "overlay close (foreground changed) t=1791630000 ms: input block off rc=-1073741816\n" + OLD
+
+    def test_closes_are_counted_by_reason(self):
+        lg = a.summarise_log(self.PS + self.CIRCLE + self.PS + self.SWITCH)
+        self.assertEqual(lg["closes"], {"in game": 1, "game left": 2, "foreground changed": 1, "touch_left": 2,
+                                        "block_fail": 1})
+        self.assertEqual(a.overlay_summary(lg), "  overlay opened 4x, slowest frame 2 ms; closed 1x in game, "
+                                                "2x as the game left (PS or exit; touch region left to SceShell 2x), "
+                                                "1x for another process in front, 1 input block release(s) refused")
+
+    def test_a_build_before_104_has_no_close_reasons(self):
+        lg = a.summarise_log("touch region off: 0x0\n" + self.OLD)
+        self.assertNotIn("closes", lg)
+        self.assertEqual(a.overlay_summary(lg), "  overlay opened 1x, slowest frame 2 ms")
+
 
 if __name__ == "__main__":
     unittest.main()

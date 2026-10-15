@@ -20,6 +20,7 @@
 #include "../include/vjo_vocr_sizes.h"
 #endif
 #include "shell.h"
+#include "touch_hold.h"
 
 /* Network memory (Google Lens): two result arenas (the overlay shows one while
  * the worker fills the other) and a kept connection. Local OCR retires its
@@ -326,6 +327,13 @@ int vjo_post_page(int page, uint32_t text_generation)
 static int64_t now_us(void)
 {
     return (int64_t)sceKernelGetProcessTimeWide();
+}
+
+/* The system clock in ms, kernel.txt's (the kernel logs ksceKernelGetSystemTimeWide):
+ * the foreground transitions in both logs line up (#104). */
+unsigned vjo_log_ms(void)
+{
+    return (unsigned)(sceKernelGetSystemTimeWide() / 1000);
 }
 
 /* Dictionary file reads since the last lookup began (platform_vita.c counts). */
@@ -1432,7 +1440,7 @@ static void open_overlay(void)
 {
     VjoState st;
     int block_rc = vjoSetInputBlock(1);
-    vjo_log("input block on rc=%d (%08X)", block_rc, block_rc);
+    vjo_log("input block on rc=%d (%08X) t=%u ms", block_rc, block_rc, vjo_log_ms());
     if (block_rc < 0) {
         input_block_error = 1;
         ov = OV_CLOSED;
@@ -1505,10 +1513,24 @@ static void open_overlay(void)
     }
 }
 
-static void close_overlay(void)
+/* Why the overlay closes (close_overlay_for): logged, and it decides what the
+ * page does with SceShell's front touch region (touch_hold.h). */
+enum { CLOSE_IN_GAME = 0, CLOSE_GAME_LEFT, CLOSE_FOREGROUND };
+
+static void close_overlay_for(int why)
 {
-    if (ov == OV_CLOSED)
+    static const char *const names[] = {"in game", "game left", "foreground changed"};
+    int rc;
+    if (ov == OV_CLOSED) {
+        /* Closed in game a moment ago: if the page has not closed yet, it
+         * leaves the region to SceShell as well (a later close sets it again). */
+        if (why == CLOSE_GAME_LEFT) {
+            vjo_view_lock();
+            g_view.touch_handback = VJO_TOUCH_LEAVE;
+            vjo_view_unlock();
+        }
         return;
+    }
     ov = OV_CLOSED;
     idle_since_us = now_us();
     cursor_waiting = 0;
@@ -1517,14 +1539,24 @@ static void close_overlay(void)
      * overlay closed, Auto recognizes settled screens itself. */
     if (job_running && (job_cursor_only || job_refresh)) job_cancelled = 1;
     view_waiting = view_job_text = 0;
-    vjoSetInputBlock(0);
+    rc = vjoSetInputBlock(0); /* the kernel already dropped it if the foreground changed */
     vjo_view_lock();
     __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE);
+    /* #104: with SceShell itself in front (the game suspended by PS, or gone)
+     * its LiveArea owns the region; the page must not deactivate it then. */
+    g_view.touch_handback = why == CLOSE_GAME_LEFT ? VJO_TOUCH_LEAVE : VJO_TOUCH_RELEASE;
     /* The next job may reuse the shown arena; an open republishes it. */
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
     g_view.version++;
     vjo_view_unlock();
+    vjo_log("overlay close (%s) t=%u ms: input block off rc=%d", names[why], vjo_log_ms(), rc);
+}
+
+/* Cancel, L + R, Select + R, a saved region...: its game is still in front. */
+static void close_overlay(void)
+{
+    close_overlay_for(CLOSE_IN_GAME);
 }
 
 static void backoff_note(Backoff *b, int failed)
@@ -2059,9 +2091,14 @@ static void invalidate_game_work(void)
 
 static void on_game_exit(void)
 {
+    /* The foreground now: none is SceShell itself (the game suspended by PS,
+     * or gone); a process means the kernel went back to one behind it.
+     * kernel.txt logs the transition itself (t=, the same clock). */
+    VjoState st = {.size = sizeof(st)};
+    vjoGetState(&st);
     invalidate_game_work();
     pending_pid = 0;
-    close_overlay();
+    close_overlay_for(st.game_pid ? CLOSE_FOREGROUND : CLOSE_GAME_LEFT);
     if (subtitles)
         set_subtitles(0);
     clear_input_block_error();
@@ -2074,12 +2111,13 @@ static void on_game_exit(void)
     vjo_selftest_step("exit");
 }
 
-/* A new foreground process: classified by classify_pending. */
+/* A new foreground process: classified by classify_pending. The overlay is
+ * closed, whatever it is: a resumed game starts with it closed. */
 static void on_game_start(void)
 {
     VjoState st;
     invalidate_game_work();
-    close_overlay();
+    close_overlay_for(CLOSE_FOREGROUND);
     if (subtitles) /* over a game, without its exit: the strip goes */
         set_subtitles(0);
     clear_input_block_error();

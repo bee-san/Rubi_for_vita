@@ -52,3 +52,10 @@ int klog_read(char *dst, int len)
     ksceKernelSpinlockLowUnlockCpuResumeIntr(&lock, st);
     return n;
 }
+
+/* The t= of a transition line: the system clock in ms, the clock the Shell's
+ * log.txt uses for its own (#104), so the two files line up. */
+unsigned klog_ms(void)
+{
+    return (unsigned)(ksceKernelGetSystemTimeWide() / 1000);
+}
