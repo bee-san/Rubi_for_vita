@@ -16,6 +16,7 @@
 #include "net.h"
 #include "preferences.h"
 #include "../core/anki_app.h"
+#include "../core/stick_scroll.h"
 #include "../shell/anki_queue.h"
 /* As in main.c: no vita2d_fini in the system application. */
 #pragma GCC poison vita2d_fini
@@ -38,6 +39,7 @@ enum { ACT_NONE = 0, ACT_TEST, ACT_SEND };
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static int writable, selected, queued = -1;
+static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static char saved_host[64];     /* anki_host.txt, for auto */
 static char note[200];          /* the page's own status (saves, keyboard) */
 static int note_error;
@@ -381,10 +383,16 @@ static void address_text(char *out, size_t cap)
         snprintf(out, cap, "Not set");
 }
 
+void vjo_anki_page_stick(int move)
+{
+    stick_move = move;
+}
+
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
     char line[240], busy_text[200], controls[96];
-    int busy_kind = -1;
+    int busy_kind = -1, stick = stick_move;
+    stick_move = 0;
     enter_glyph = ui->buttons->enter_glyph;
     reap();
     if (ime_open) {
@@ -394,6 +402,9 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
             selected = (selected + ROWS - 1) % ROWS;
         if (pressed & SCE_CTRL_DOWN)
             selected = (selected + 1) % ROWS;
+        /* The d-pad first; the stick stops at the first and last row. */
+        if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN)))
+            selected = vjo_stick_step(selected, ROWS, stick);
         if (pressed & ui->buttons->enter)
             activate(selected, scratch);
         if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == 0 && !running &&
