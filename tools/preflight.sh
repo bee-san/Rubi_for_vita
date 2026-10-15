@@ -12,7 +12,8 @@
 #                        the capture parity test on the dev eval crops
 #   VITASDK              the Vita build: module pages, memory ledger, syscall ABI, kernel FPU check
 #   ARM_CC, QEMU         the ARMv7 lane under qemu-arm
-#   VITA3K               the Vita3K smoke (tools/vita3k_smoke.sh)
+#   VITA3K               the Vita3K smoke (tools/vita3k_smoke.sh); with VITA3K_FIRMWARE and
+#                        VITA3K_FONTS (Sony's PUPs) also the Overlay app's (tools/vita3k_settings_smoke.sh)
 #   BUILD                host build directory (default build/preflight)
 # A check whose input is missing prints SKIP; GO needs every check that ran to pass and the
 # required ones (host suites, #74 replay, simulator, parity, Vita build) to have run.
@@ -225,6 +226,18 @@ if [ -n "${VITA3K:-}" ]; then
   esac
 else
   skip "Vita3K smoke (not evidence)" "VITA3K unset"
+fi
+if [ -n "${VITA3K:-}" ] && [ -n "${VITA3K_FIRMWARE:-}" ] && [ -n "${VITA3K_FONTS:-}" ]; then
+  vpk=; [ -f "$BUILD-vita/JPOverlaySettings.vpk" ] && vpk=$root/$BUILD-vita/JPOverlaySettings.vpk
+  v3=$(VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR RELEASE_VPK=$vpk bash tools/vita3k_settings_smoke.sh \
+       "$BUILD-vita3k-settings" 2>&1 | tail -1)
+  case $v3 in
+    *": PASS"*) pass "Vita3K app (not evidence)" "${v3#vita3k settings smoke: PASS }" ;;
+    *": SKIPPED"*) skip "Vita3K app (not evidence)" "${v3#vita3k settings smoke: SKIPPED }" ;;
+    *) fail "Vita3K app (not evidence)" "${v3#vita3k settings smoke: }" ;;
+  esac
+else
+  skip "Vita3K app (not evidence)" "VITA3K, VITA3K_FIRMWARE or VITA3K_FONTS unset"
 fi
 
 cat <<'EOF'

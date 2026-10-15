@@ -272,21 +272,24 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/core/anki.c ${ROOT}/core/anki_app.c ${ROOT}/core/anki_queue.c ${ROOT}/core/json.c
   ${ROOT}/core/http.c ${ROOT}/core/net.c ${ROOT}/core/tls.c ${ROOT}/core/tls_roots.c ${ROOT}/core/base64.c
   ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
-add_executable(VitaJPOverlay_Settings
+set(VJO_SETTINGS_SRC
   ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
+  ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${VJO_SETTINGS_ANKI_SRC})
-target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
-target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
-target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
 # vjo_bearssl (SHA-256 for the queue's IDs, TLS for an https audio source) is
 # the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
-target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning)
-target_link_libraries(VitaJPOverlay_Settings
+set(VJO_SETTINGS_LIBS
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
   SceAppMgr_stub SceAppUtil_stub SceNet_stub SceNetCtl_stub SceRtc_stub vjo_bearssl)
+add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
+target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
+target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
+target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
+target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning)
+target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_png_abi.py
@@ -310,6 +313,32 @@ add_custom_target(vjo_settings_assets ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_assets.py
     ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk
   DEPENDS JPOverlaySettings.vpk-vpk)
+# The Overlay app's Vita3K crash check (tools/vita3k_settings_smoke.sh): the same sources
+# with a scripted controller and counted textures (tools/vita3k_settings_smoke.c, linked in
+# by -Wl,--wrap). Off by default, never in the release, and not evidence about the console.
+option(VJO_SETTINGS_SMOKE "Build the Overlay app's Vita3K smoke VPK (vjo_settings_smoke.vpk)" OFF)
+if(VJO_SETTINGS_SMOKE)
+  # vita-elf-create needs a few KiB after the code segment for its SCE data; a code segment
+  # that ends just below the data segment fails ("segment 1 overlaps"). The smoke script then
+  # rebuilds with this many bytes of padding in .rodata.
+  set(VJO_SETTINGS_SMOKE_PAD 0 CACHE STRING "Padding bytes in the smoke app's code segment")
+  add_executable(vjo_settings_smoke ${VJO_SETTINGS_SRC} ${ROOT}/tools/vita3k_settings_smoke.c)
+  target_compile_definitions(vjo_settings_smoke PRIVATE VJO_STANDALONE=1 VJO_SMOKE_PAD=${VJO_SETTINGS_SMOKE_PAD})
+  target_include_directories(vjo_settings_smoke PRIVATE ${ROOT}/third_party/bearssl/inc)
+  target_compile_options(vjo_settings_smoke PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
+  target_link_options(vjo_settings_smoke PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
+    -Wl,--wrap=sceCtrlPeekBufferPositive,--wrap=sceKernelExitProcess,--wrap=vita2d_load_PNG_buffer
+    -Wl,--wrap=vita2d_load_PNG_file,--wrap=vita2d_free_texture,--wrap=vita2d_wait_rendering_done
+    -Wl,--wrap=vita2d_draw_texture_scale)
+  target_link_libraries(vjo_settings_smoke ${VJO_SETTINGS_LIBS})
+  vita_create_self(vjo_settings_smoke.self vjo_settings_smoke UNSAFE)
+  # vita_create_vpk (a macro) appends to these: start again, not from the Settings VPK's.
+  set(VITA_MKSFOEX_FLAGS "")
+  set(VITA_PACK_VPK_FLAGS "")
+  vita_create_vpk(vjo_settings_smoke.vpk VJOSMK002 vjo_settings_smoke.self
+    VERSION "01.00" NAME "VJO settings smoke"
+    FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png)
+endif()
 
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)

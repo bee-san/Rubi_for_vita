@@ -11,7 +11,9 @@
 #include "anki_page.h"
 #include "catalog.h"
 #include "engine.h"
+#include "icons.h"
 #include "preferences.h"
+#include "text_layout.h"
 #include "../core/local_dict.h"
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
@@ -68,9 +70,21 @@ static vita2d_pvf *font;
 /* Calibrated from full-width glyph advances, not PVF's nominal line height.
  * This is an em target; firmware glyph bearings/bitmap bounds can differ. */
 static float font_em = 18.0f;
-static vita2d_texture *icons[ROWS];
+/* Icons are kept by title ID for the window: the visible rows, a page below
+ * and a page above. A frame loads at most one (settings/icons.c); a game
+ * whose icon cannot be loaded shows the placeholder until the next scan. */
+#define ICON_WINDOW (3 * ROWS)
+typedef char icon_window_fits_the_cache[ICON_WINDOW <= VJO_ICON_SLOTS ? 1 : -1];
+static VjoIconCache icon_cache;
+static unsigned char icon_failed[VJO_GAMES_MAX];
+static unsigned char icon_file[VJO_ICON_FILE_MAX + VJO_ICON_FILE_PAD];
+/* Each game's title rows, laid out once a scan; other wrapped text once per
+ * distinct string (settings/text_layout.c). */
+static VjoTextLayout title_layout[VJO_GAMES_MAX];
+static unsigned char title_ready[VJO_GAMES_MAX];
+static VjoTextMemo text_memo;
 static int visible[VJO_GAMES_MAX], total, count, selected, offset, filter, truncated;
-static int icons_offset = -1, writable = 1;
+static int scroll_direction = 1, writable = 1; /* the way the list last moved: 1 down, -1 up */
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
@@ -86,45 +100,25 @@ static void text(int x, int y, unsigned color, float pixels, const char *s)
 static int text_width(float pixels, const char *s)
 { return vita2d_pvf_text_width(font, text_scale(pixels), s); }
 
-/* A line ends only at a decoded UTF-8 boundary. PVF advances, rather than
- * byte counts, decide how many Japanese/Latin glyphs fit in the card. */
-static size_t fit_line(const char *s, float pixels, int width, char out[512])
+static void draw_rows(int x, int y, unsigned color, float pixels, int line_height, const char *s,
+                      const VjoTextLayout *layout)
 {
-    size_t len = strlen(s), end = 0, space = 0;
-    for (size_t i = 0; i < len;) {
-        size_t begin = i;
-        uint32_t cp = vjo_utf8_next(s, len, &i);
-        if (cp == '\n' || i > 508) break; /* Reserve the final "..." and NUL. */
-        memcpy(out, s, i);
-        out[i] = 0;
-        if (text_width(pixels, out) > width) break;
-        end = i;
-        if (cp == ' ') space = begin;
+    char line[512];
+    for (int r = 0; r < layout->rows; r++) {
+        vjo_text_layout_row(s, layout, r, line);
+        text(x, y + r * line_height, color, pixels, line);
     }
-    if (s[end] && s[end] != '\n' && space) end = space;
-    memcpy(out, s, end);
-    out[end] = 0;
-    return end;
 }
 
+/* s in at most `lines` rows of `width` pixels, the last cut with "...". The
+ * layout measures every prefix of a row, so it is made once per distinct
+ * text and kept (settings/text_layout.c); the drawn rows are the same. */
 static void wrapped_text(int x, int y, int width, unsigned color,
                          float pixels, int line_height, int lines, const char *s)
 {
-    char line[512];
-    for (int row = 0; row < lines && *s; row++) {
-        while (*s == ' ' || *s == '\r') s++;
-        size_t end = fit_line(s, pixels, width, line);
-        const char *remaining = s + end;
-        while (*remaining == ' ' || *remaining == '\r' || *remaining == '\n') remaining++;
-        if (row == lines - 1 && *remaining) {
-            end = fit_line(s, pixels, width - text_width(pixels, "..."), line);
-            strcat(line, "...");
-        }
-        text(x, y + row * line_height, color, pixels, line);
-        if (!end && *s != '\n') break; /* Even one glyph can exceed a tiny region. */
-        s += end;
-        if (*s == '\n') s++;
-    }
+    VjoTextLayout scratch;
+    draw_rows(x, y, color, pixels, line_height, s,
+              vjo_text_memo_layout(&text_memo, s, width, pixels, lines, text_width, &scratch));
 }
 
 static void centered_text(int x, int y, int width, unsigned color,
@@ -165,15 +159,21 @@ static void header(void)
     }
 }
 
-/* Status box (first baseline text_y, lines of 28 px) and the control hints. */
-static void footer_at(int y, int height, int text_y, int lines, const char *message, int error,
-                      const char *controls)
+/* Status box (first baseline text_y, lines of 28 px). */
+static void status_box(int y, int height, int text_y, int lines, const char *message, int error)
 {
     vita2d_draw_rectangle(24, y, 912, height, CARD);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(24, y + 2, 936, y + height);
     wrapped_text(40, text_y, 880, error ? OFF : WHITE, 24, 28, lines, message);
     vita2d_disable_clipping();
+}
+
+/* Status box and the control hints. */
+static void footer_at(int y, int height, int text_y, int lines, const char *message, int error,
+                      const char *controls)
+{
+    status_box(y, height, text_y, lines, message, error);
     wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls);
 }
 
@@ -185,13 +185,87 @@ static void footer(const char *message, int error, const char *controls)
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
                                   WHITE, DIM, ACCENT, OFF};
 
-static void free_icons(void)
+static void release_icon(void *texture) { vita2d_free_texture(texture); }
+
+/* Frees every cached icon once the GPU has finished the frames that drew them. */
+static void clear_icons(void)
 {
-    for (int i = 0; i < ROWS; i++) {
-        if (icons[i]) vita2d_free_texture(icons[i]);
-        icons[i] = NULL;
+    if (vjo_icon_cache_count(&icon_cache)) vita2d_wait_rendering_done();
+    vjo_icon_cache_clear(&icon_cache, release_icon);
+}
+
+/* An icon file as a texture, or NULL: read whole in one bounded read,
+ * checked (settings/icons.c), then decoded by libvita2d from memory. */
+static vita2d_texture *load_icon(const char *path)
+{
+    long size = path[0] ? vjo_icon_read(path, icon_file) : VJO_ICON_ABSENT;
+    if (size < 0 || vjo_icon_png_check(icon_file, (size_t)size, NULL, NULL) != VJO_ICON_OK) return NULL;
+    vita2d_texture *texture = vita2d_load_PNG_buffer(icon_file);
+    /* libvita2d mallocs a texture without clearing it, and a plain one never
+     * sets these two: vita2d_free_texture would destroy a stale render
+     * target or free a stale block left in that memory (libvita2d #28). */
+    if (texture) {
+        texture->gxm_rtgt = NULL;
+        texture->depth_UID = 0;
     }
-    icons_offset = -1;
+    return texture;
+}
+
+/* Each game's title in two rows of 620 pixels, laid out on first use. */
+static const VjoTextLayout *title_rows(int game)
+{
+    if (!title_ready[game]) {
+        vjo_text_layout(library[game].title, 620, 26, 2, text_width, &title_layout[game]);
+        title_ready[game] = 1;
+    }
+    return &title_layout[game];
+}
+
+/* The window's library entries, most wanted first: the visible rows, then
+ * the page the list last moved towards, then the other, nearest row first. */
+static int icon_window(int out[ICON_WINDOW])
+{
+    int n = 0;
+    for (int r = 0; r < ROWS && offset + r < count; r++) out[n++] = visible[offset + r];
+    for (int side = 0; side < 2; side++) {
+        int down = (side == 0) == (scroll_direction > 0);
+        for (int r = 0; r < ROWS; r++) {
+            int i = down ? offset + ROWS + r : offset - 1 - r;
+            if (i >= 0 && i < count) out[n++] = visible[i];
+        }
+    }
+    return n;
+}
+
+/* A Games frame's work before it draws: at most one icon load, for the first
+ * window entry without one. When the cache is full, the least recently used
+ * icon outside the window is freed first, after the GPU has finished with
+ * it. With no icon to load, one title of the window is laid out instead. */
+static void prepare_window(void)
+{
+    int window[ICON_WINDOW], n = icon_window(window);
+    const char *keep[ICON_WINDOW];
+    for (int i = 0; i < n; i++) keep[i] = library[window[i]].id;
+    for (int i = 0; i < n; i++) {
+        const VjoInstalledGame *g = &library[window[i]];
+        if (icon_failed[window[i]] || vjo_icon_cache_get(&icon_cache, g->id)) continue;
+        if (vjo_icon_cache_count(&icon_cache) == VJO_ICON_SLOTS) {
+            void *old = vjo_icon_cache_evict(&icon_cache, keep, n);
+            if (!old) return; /* not reached: the window fits the cache */
+            vita2d_wait_rendering_done();
+            vita2d_free_texture(old);
+        }
+        vita2d_texture *texture = load_icon(g->icon);
+        if (!texture) icon_failed[window[i]] = 1;
+        else if (vjo_icon_cache_put(&icon_cache, g->id, texture) < 0)
+            vita2d_free_texture(texture); /* not reached; never drawn */
+        return;
+    }
+    for (int i = 0; i < n; i++)
+        if (!title_ready[window[i]]) {
+            title_rows(window[i]);
+            return;
+        }
 }
 
 static void rebuild(void)
@@ -205,7 +279,6 @@ static void rebuild(void)
     if (selected < offset) offset = selected;
     if (selected >= offset + ROWS) offset = selected - ROWS + 1;
     if (!count) offset = 0;
-    free_icons();
 }
 
 static void save(void)
@@ -250,11 +323,17 @@ static void change_filter(void)
 {
     filter = (filter + 1) % 3;
     selected = offset = 0;
+    scroll_direction = 1;
     rebuild();
 }
 
+/* The catalog is read here only: at start and on Start. Icons and title
+ * layouts belong to the old list and go with it. */
 static void scan(void)
 {
+    clear_icons();
+    memset(icon_failed, 0, sizeof(icon_failed));
+    memset(title_ready, 0, sizeof(title_ready));
     total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated);
     rebuild();
     if (truncated) { status_error = 0; snprintf(status, sizeof(status), "Showing the first 512 installed titles."); }
@@ -266,10 +345,86 @@ static void move(int delta)
     selected += delta;
     if (selected < 0) selected = 0;
     if (selected >= count) selected = count - 1;
-    int prev = offset;
     if (selected < offset) offset = selected;
     if (selected >= offset + ROWS) offset = selected - ROWS + 1;
-    if (prev != offset) free_icons();
+    scroll_direction = delta < 0 ? -1 : 1;
+}
+
+/* L/R: the view moves a page and the selection keeps its row. Where the view
+ * cannot move further, the selection goes to the first or last game. */
+static void page_jump(int direction)
+{
+    if (!count) return;
+    int last = count > ROWS ? count - ROWS : 0, top = offset + direction * ROWS;
+    if (top > last) top = last;
+    if (top < 0) top = 0;
+    scroll_direction = direction;
+    if (direction > 0 ? top <= offset : top >= offset) {
+        selected = direction > 0 ? count - 1 : 0;
+        if (selected < offset) offset = selected;
+        if (selected >= offset + ROWS) offset = selected - ROWS + 1;
+        return;
+    }
+    selected += top - offset;
+    offset = top;
+}
+
+/* The letter a title is listed under, for Left/Right: an ASCII letter in
+ * upper case; '#' for any other ASCII start (digits, symbols); for kana, the
+ * first kana of its gojuon row (か for が and ご, カ for ガ); else the first
+ * character itself. */
+static uint32_t initial(const char *title)
+{
+    static const uint16_t row_start[] = {0x3041, 0x304B, 0x3055, 0x305F, 0x306A, 0x306F,
+                                         0x307E, 0x3083, 0x3089, 0x308E, 0x3094, 0x3095};
+    static const uint16_t row_head[] = {0x3042, 0x304B, 0x3055, 0x305F, 0x306A, 0x306F,
+                                        0x307E, 0x3084, 0x3089, 0x308F, 0x3042, 0x304B};
+    size_t at = 0, len = strlen(title);
+    uint32_t c = len ? vjo_utf8_next(title, len, &at) : 0;
+    if (c >= 'a' && c <= 'z') return c - 'a' + 'A';
+    if (c < 0x80) return c >= 'A' && c <= 'Z' ? c : '#';
+    uint32_t kana = c >= 0x30A1 && c <= 0x30F6 ? c - 0x60 : c; /* katakana as hiragana */
+    if (kana < 0x3041 || kana > 0x3096) return c;
+    int row = 0;
+    while (row + 1 < (int)(sizeof(row_start) / sizeof(row_start[0])) && kana >= row_start[row + 1]) row++;
+    return row_head[row] + (kana != c ? 0x60 : 0);
+}
+
+static uint32_t initial_at(int index) { return initial(library[visible[index]].title); }
+
+/* Left/Right: the first game of the previous or next letter (the list is in
+ * alphabetical order, settings/catalog.c), shown at the top. Left inside a
+ * letter goes to that letter's first game; Right in the last letter goes to
+ * the last game. */
+static void letter_jump(int direction)
+{
+    if (!count) return;
+    uint32_t letter = initial_at(selected);
+    int i = selected, last = count > ROWS ? count - ROWS : 0;
+    if (direction > 0) {
+        while (i < count && initial_at(i) == letter) i++;
+        if (i == count) i = count - 1;
+    } else {
+        while (i > 0 && initial_at(i - 1) == letter) i--;
+        if (i == selected && i > 0) {
+            letter = initial_at(--i);
+            while (i > 0 && initial_at(i - 1) == letter) i--;
+        }
+    }
+    scroll_direction = direction;
+    selected = i;
+    offset = selected < last ? selected : last;
+}
+
+/* A list key just pressed, or held long enough to repeat: one move a frame. */
+static void list_key(uint32_t keys)
+{
+    if (keys & SCE_CTRL_UP) move(-1);
+    else if (keys & SCE_CTRL_DOWN) move(1);
+    else if (keys & SCE_CTRL_LTRIGGER) page_jump(-1);
+    else if (keys & SCE_CTRL_RTRIGGER) page_jump(1);
+    else if (keys & SCE_CTRL_LEFT) letter_jump(-1);
+    else if (keys & SCE_CTRL_RIGHT) letter_jump(1);
 }
 
 static void check_models(void)
@@ -420,17 +575,14 @@ static void draw_preferences(void)
     vita2d_swap_buffers();
 }
 
+/* The Games page's hints, and the room kept at their right for "512/512". */
+#define GAME_HINTS "X: toggle   L/R: page   Left/Right: letter   O: exit"
+#define COUNTER_W 140
+
 static void draw(void)
 {
     const char *filters[] = {"All games", "Enabled", "Disabled"};
-    if (icons_offset != offset) {
-        free_icons();
-        for (int r = 0; r < ROWS && offset + r < count; r++) {
-            const char *path = library[visible[offset + r]].icon;
-            if (path[0]) icons[r] = vita2d_load_PNG_file(path);
-        }
-        icons_offset = offset;
-    }
+    prepare_window();
     vita2d_start_drawing();
     vita2d_clear_screen();
     header();
@@ -446,9 +598,10 @@ static void draw(void)
         int index = offset + r, y = GAMES_Y + r * GAME_PITCH;
         const VjoInstalledGame *g = &library[visible[index]];
         int on = vjo_games_enabled(&policy, g->id);
+        vita2d_texture *icon = vjo_icon_cache_get(&icon_cache, g->id);
         focus_card(y, GAME_H, index == selected);
-        if (icons[r]) vita2d_draw_texture_scale(icons[r], 38, y + 8,
-            64.0f / vita2d_texture_get_width(icons[r]), 64.0f / vita2d_texture_get_height(icons[r]));
+        if (icon) vita2d_draw_texture_scale(icon, 38, y + 8,
+            64.0f / vita2d_texture_get_width(icon), 64.0f / vita2d_texture_get_height(icon));
         else {
             vita2d_draw_rectangle(38, y + 8, 64, 64, SELECTED);
             centered_text(38, y + 47, 64, ACCENT, 26, "JP");
@@ -456,18 +609,21 @@ static void draw(void)
         /* Titles and IDs have separate columns, including on two-line titles. */
         vita2d_enable_clipping();
         vita2d_set_clip_rectangle(120, y + 4, 748, y + GAME_H - 4);
-        wrapped_text(120, y + 30, 620, WHITE, 26, 32, 2, g->title);
+        draw_rows(120, y + 30, WHITE, 26, 32, g->title, title_rows(visible[index]));
         vita2d_disable_clipping();
         badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
         text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
                              "No games in this filter. Press Square to change it.");
-    char controls[120];
     if (count) {
-        snprintf(controls, sizeof(controls), "%d/%d   D-pad: move   X: toggle   L/R: page   O: exit", selected + 1, count);
-    } else snprintf(controls, sizeof(controls), "Square: filter   Start: refresh   Select: page   O: exit");
-    footer(status, status_error, controls);
+        /* The counter changes on every move; drawn apart, the hints' layout is kept. */
+        char counter[16];
+        status_box(440, 64, 467, 2, status, status_error);
+        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, GAME_HINTS);
+        snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
+        text(936 - text_width(24, counter), 535, DIM, 24, counter);
+    } else footer(status, status_error, "Square: filter   Start: refresh   Select: page   O: exit");
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
@@ -505,7 +661,8 @@ int main(void)
         memset(&pad, 0, sizeof(pad));
         sceCtrlPeekBufferPositive(0, &pad, 1);
         uint32_t pressed = pad.buttons & ~previous;
-        uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN);
+        uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
+                                            SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
         uint64_t now = sceKernelGetProcessTimeWide();
         if (page == 2 && vjo_anki_page_modal()) {
             /* The system keyboard has every button and the touch screen; a
@@ -539,11 +696,10 @@ int main(void)
             if (pressed & SCE_CTRL_TRIANGLE) toggle_default();
             if (pressed & SCE_CTRL_SQUARE) change_filter();
             if (pressed & SCE_CTRL_START) scan();
-            if (pressed & SCE_CTRL_LTRIGGER) move(-ROWS);
-            if (pressed & SCE_CTRL_RTRIGGER) move(ROWS);
         }
         if (!page && direction && ((pressed & direction) || now >= repeat_at)) {
-            move(direction & SCE_CTRL_UP ? -1 : 1);
+            /* A key just pressed acts at once; one held repeats. */
+            list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
         }
         previous = pad.buttons;
@@ -610,7 +766,7 @@ int main(void)
     }
     vjo_anki_page_quit();
     vita2d_wait_rendering_done();
-    free_icons();
+    clear_icons();
     vita2d_free_pvf(font);
     vita2d_fini();
     sceKernelExitProcess(0);

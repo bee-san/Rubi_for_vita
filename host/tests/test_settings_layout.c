@@ -1,0 +1,547 @@
+/* The Overlay app's text layouts and icon helpers, on their own:
+ * - settings/text_layout.c lays rows out exactly as main.c's wrapped_text
+ *   drew them before it (the reference below is that code, verbatim but for
+ *   drawing into a list), over generated text and several measure rules;
+ * - its memo returns the same layouts and keeps a bounded number;
+ * - settings/icons.c's PNG check lets only files whose every chunk lies
+ *   inside the buffer through (libvita2d's buffer reader has no length), at
+ *   every truncation and byte flip of a real icon file, and its file read is
+ *   bounded; the icon cache evicts the least recently used icon outside the
+ *   window and never one in it.
+ * Built for the host (ctest settings_layout) and, as a pure-C suite, for the
+ * Vita's CPU under qemu-arm (tools/arm_host_tests.sh). */
+#include "acutest.h"
+#include <psp2/io/fcntl.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "../../core/utf.h"
+#include "../../settings/icons.h"
+#include "../../settings/text_layout.h"
+#include "settings_png_fixture.h"
+#include "settings_wrap_reference.h"
+
+/* ---- the file calls, over real files (vjo_icon_read) ---- */
+static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
+static int short_reads; /* sceIoRead returns at most this many bytes when set */
+int sceIoOpen(const char *p, int flags, unsigned mode) { return native(open(p, flags, mode)); }
+int sceIoClose(int fd) { return native(close(fd)); }
+int sceIoRead(int fd, void *p, size_t len)
+{
+    if (short_reads && len > (size_t)short_reads) len = (size_t)short_reads;
+    return native((int)read(fd, p, len));
+}
+
+/* ---- measure rules ---- */
+static int measured; /* glyphs measured */
+/* The settings harness's: 10 units an ASCII character, 18 any other, per 18-unit em. */
+static int stub_width(float pixels, const char *s)
+{
+    int units = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+        if (*p < 0x80) units += 10, measured++;
+        else if ((*p & 0xC0) != 0x80) units += 18, measured++;
+    return (int)(units * (pixels / 18.0f) + 0.5f);
+}
+/* Proportional widths with kerning: a string is not the sum of its parts. */
+static int kerned_width(float pixels, const char *s)
+{
+    int w = 0;
+    unsigned prev = 0;
+    for (size_t i = 0, n = strlen(s); i < n;) {
+        uint32_t cp = vjo_utf8_next(s, n, &i);
+        w += cp < 0x80 ? (int)(4 + cp % 9) : cp < 0x3000 ? 13 : 19;
+        if ((prev == 'A' && cp == 'V') || (prev == 'T' && cp == 'o')) w -= 3;
+        prev = cp;
+    }
+    return (int)(w * pixels / 24.0f);
+}
+/* Any deterministic rule will do: a hash of the text. */
+static int hashed_width(float pixels, const char *s)
+{
+    uint32_t h = 2166136261u;
+    size_t n = strlen(s);
+    for (size_t i = 0; i < n; i++) h = (h ^ (unsigned char)s[i]) * 16777619u;
+    return (int)(n * pixels / 2.5f) + (int)(h % 23) - 11;
+}
+static VjoTextMeasure measure_rule;
+
+/* ---- generated text ---- */
+static uint32_t rng = 12345;
+static uint32_t next(void) { rng = rng * 1103515245u + 12345u; return rng >> 8; }
+static size_t put(char *out, size_t at, size_t cap, const char *piece)
+{
+    size_t n = strlen(piece);
+    if (at + n >= cap) return at;
+    memcpy(out + at, piece, n);
+    return at + n;
+}
+/* Words, runs of spaces, CR/LF, kana and kanji, 4-byte characters, lone and
+ * truncated UTF-8 bytes, and words longer than any row. */
+static void gen_text(char *out, size_t cap)
+{
+    static const char *pieces[] = {
+        "a", "Wo", "AV", "To", "Synthetic", "title", "edition", "-", ":", "1/2", "...", "…",
+        " ", " ", " ", "  ", "   ", "\r", "\n", "\r\n", "\n\n",
+        "あ", "テスト", "の", "漢字", "長い", "タイトル", "ー", "・", "　", "〜",
+        "\xF0\x9F\x8E\xAE", "\xF0\xA0\x80\x8B", "\x80", "\xC3", "\xE3\x81", "\xFF",
+        "Supercalifragilisticexpialidocious", "とてもとてもとてもとてもとてもとても長い単語"};
+    size_t n = next() % 40, at = 0;
+    if (next() % 6 == 0) n = 60 + next() % 120; /* long: past two rows, past 508 bytes */
+    for (size_t i = 0; i < n; i++) at = put(out, at, cap, pieces[next() % (sizeof(pieces) / sizeof(pieces[0]))]);
+    out[at] = 0;
+}
+
+static int same_as_reference(const char *s, int width, float pixels, int lines, int *rows_out)
+{
+    VjoTextLayout layout;
+    char row[512];
+    ref_measure = measure_rule;
+    ref_wrapped_text(0, 100, width, pixels, 30, lines, s);
+    vjo_text_layout(s, width, pixels, lines, measure_rule, &layout);
+    *rows_out = layout.rows;
+    if (ref_rows != layout.rows) return 0;
+    for (int r = 0; r < layout.rows; r++) {
+        vjo_text_layout_row(s, &layout, r, row);
+        if (ref_row[r].y != 100 + r * 30 || strcmp(ref_row[r].text, row)) return 0;
+    }
+    return 1;
+}
+
+static void layout_matches_wrapped_text(void)
+{
+    static const VjoTextMeasure rules[] = {stub_width, kerned_width, hashed_width};
+    static const int widths[] = {-5, 0, 1, 9, 40, 90, 300, 500, 620, 772, 870, 880, 912, 4000};
+    static const float sizes[] = {22, 24, 26, 28, 32};
+    char s[2048];
+    long cases = 0, rows = 0, ellipses = 0, mismatches = 0;
+    for (int rule = 0; rule < 3; rule++) {
+        measure_rule = rules[rule];
+        for (int i = 0; i < 4000; i++) {
+            gen_text(s, sizeof(s));
+            for (int w = 0; w < (int)(sizeof(widths) / sizeof(widths[0])); w++) {
+                int lines = 1 + (int)(next() % VJO_TEXT_ROWS), n = 0;
+                float px = sizes[next() % 5];
+                if (!same_as_reference(s, widths[w], px, lines, &n)) {
+                    if (mismatches++ < 5) TEST_MSG("rule %d width %d px %.0f lines %d: \"%s\"", rule, widths[w], px, lines, s);
+                }
+                VjoTextLayout l;
+                vjo_text_layout(s, widths[w], px, lines, measure_rule, &l);
+                for (int r = 0; r < l.rows; r++) ellipses += l.row[r].ellipsis;
+                rows += n;
+                cases++;
+            }
+        }
+    }
+    TEST_CHECK_(mismatches == 0, "%ld of %ld layouts differ from wrapped_text's rows", mismatches, cases);
+    TEST_CHECK(rows > cases && ellipses > cases / 20); /* the cases wrap and cut, not only fit */
+    TEST_MSG("%ld layouts, %ld rows, %ld cut with \"...\"", cases, rows, ellipses);
+}
+
+/* Titles as the Games page draws them: 620 px, 26 px text, two rows. */
+static void layout_game_titles(void)
+{
+    static const char *titles[] = {
+        "", " ", "A", "Short title", "A synthetic title that is long enough to need two rows of the card, and more",
+        "テスト用のとても長い日本語のタイトルで、二行に収まらない場合は最後に省略記号が付きます",
+        "Word\nbreak", "Trailing spaces    ", "    Leading spaces", "\r\n\r\n", "OneVeryLongWordWithoutAnySpaceToBreakAtAtAllEvenOnTheSecondRow"};
+    measure_rule = stub_width;
+    for (int i = 0; i < (int)(sizeof(titles) / sizeof(titles[0])); i++) {
+        int n;
+        TEST_CHECK_(same_as_reference(titles[i], 620, 26, 2, &n), "title %d", i);
+    }
+    /* Long leading whitespace: row offsets are 32-bit. */
+    static char spaces[70000 + 8];
+    memset(spaces, ' ', 70000);
+    memcpy(spaces + 70000, "abc", 4);
+    int n;
+    TEST_CHECK(same_as_reference(spaces, 620, 26, 2, &n) && n == 1);
+}
+
+static int same_layout(const VjoTextLayout *a, const VjoTextLayout *b)
+{
+    if (a->rows != b->rows) return 0;
+    for (int r = 0; r < a->rows; r++)
+        if (a->row[r].start != b->row[r].start || a->row[r].bytes != b->row[r].bytes ||
+            a->row[r].ellipsis != b->row[r].ellipsis) return 0;
+    return 1;
+}
+
+static void memo_reuses_layouts(void)
+{
+    static VjoTextMemo memo;
+    VjoTextLayout scratch, fresh;
+    measure_rule = stub_width;
+    vjo_text_memo_clear(&memo);
+    const char *status = "Choices save automatically. Turn OFF games that need L+R.";
+    measured = 0;
+    const VjoTextLayout *a = vjo_text_memo_layout(&memo, status, 880, 24, 2, stub_width, &scratch);
+    int first = measured;
+    measured = 0;
+    const VjoTextLayout *b = vjo_text_memo_layout(&memo, status, 880, 24, 2, stub_width, &scratch);
+    TEST_CHECK(first > 100 && measured == 0 && a == b && memo.hits == 1 && memo.misses == 1);
+    vjo_text_layout(status, 880, 24, 2, stub_width, &fresh);
+    TEST_CHECK(same_layout(a, &fresh));
+    /* Each key part makes another entry. */
+    TEST_CHECK(vjo_text_memo_layout(&memo, status, 879, 24, 2, stub_width, &scratch) != a);
+    TEST_CHECK(vjo_text_memo_layout(&memo, status, 880, 26, 2, stub_width, &scratch) != a);
+    TEST_CHECK(vjo_text_memo_layout(&memo, status, 880, 24, 1, stub_width, &scratch) != a);
+    TEST_CHECK(memo.misses == 4);
+    char copy[128];
+    snprintf(copy, sizeof(copy), "%s", status); /* the same text elsewhere: a hit */
+    TEST_CHECK(vjo_text_memo_layout(&memo, copy, 880, 24, 2, stub_width, &scratch) == a && memo.hits == 2);
+    /* Bounded: 16 entries, the least recently used goes. */
+    vjo_text_memo_clear(&memo);
+    char texts[40][32];
+    for (int i = 0; i < 40; i++) {
+        snprintf(texts[i], sizeof(texts[i]), "text %d", i);
+        vjo_text_memo_layout(&memo, texts[i], 300, 24, 1, stub_width, &scratch);
+    }
+    TEST_CHECK(memo.misses == 40 && memo.hits == 0);
+    vjo_text_memo_layout(&memo, texts[39], 300, 24, 1, stub_width, &scratch);
+    vjo_text_memo_layout(&memo, texts[24], 300, 24, 1, stub_width, &scratch);
+    TEST_CHECK(memo.hits == 2);
+    vjo_text_memo_layout(&memo, texts[23], 300, 24, 1, stub_width, &scratch);
+    TEST_CHECK(memo.misses == 41);
+    /* Too long to keep: laid out into scratch each time, still right. */
+    char long_text[400];
+    memset(long_text, 'x', sizeof(long_text) - 1);
+    long_text[sizeof(long_text) - 1] = 0;
+    const VjoTextLayout *l = vjo_text_memo_layout(&memo, long_text, 300, 24, 2, stub_width, &scratch);
+    vjo_text_layout(long_text, 300, 24, 2, stub_width, &fresh);
+    TEST_CHECK(l == &scratch && same_layout(l, &fresh));
+    /* lines above VJO_TEXT_ROWS are clamped, never past the row array */
+    l = vjo_text_memo_layout(&memo, "a b c d e f g h i j k l m n o p", 10, 24, 9, stub_width, &scratch);
+    TEST_CHECK(l->rows <= VJO_TEXT_ROWS);
+}
+
+/* ---- the PNG check ---- */
+/* A 128 x 128 icon as installed games have, and a 24 x 24 one for the
+ * exhaustive loops (every truncation, every byte), which cost its size squared. */
+static uint8_t icon[64 * 1024], small[4096];
+static size_t icon_size, small_size;
+static void make_icon(void)
+{
+    if (!icon_size) icon_size = fx_png(icon, sizeof(icon), 128, 128, 1, 7, "PCSG00001");
+    if (!small_size) small_size = fx_png(small, sizeof(small), 24, 24, 1, 5, "PCSG00002");
+    TEST_ASSERT(icon_size > 100 && small_size > 100);
+}
+/* A chunk type the PNG spec allows (four ASCII letters, the third upper case) whose
+ * first letter is lower case: ancillary. Written from the spec, not from icons.c. */
+static int spec_ancillary_name(const uint8_t *t)
+{
+    for (int i = 0; i < 4; i++)
+        if (!((t[i] >= 'A' && t[i] <= 'Z') || (t[i] >= 'a' && t[i] <= 'z'))) return 0;
+    return t[2] >= 'A' && t[2] <= 'Z' && t[0] >= 'a' && t[0] <= 'z';
+}
+/* The check on an exact-size heap copy, so a read past the end is an ASan error. */
+static int check_copy(const uint8_t *p, size_t n, unsigned side)
+{
+    uint8_t *copy = malloc(n ? n : 1);
+    TEST_ASSERT(copy != NULL);
+    if (n) memcpy(copy, p, n);
+    unsigned w = 0, h = 0;
+    int rc = vjo_icon_png_check(copy, n, &w, &h);
+    if (rc == VJO_ICON_OK) TEST_CHECK(w == side && h == side);
+    free(copy);
+    return rc;
+}
+
+/* The small icon's chunks, by type: its offset in the file (0 when absent). */
+static size_t chunk_at(const uint8_t *png, size_t size, const char *type)
+{
+    for (size_t at = 8; at + 12 <= size; at += 12 + (size_t)fx_get32(png + at))
+        if (!memcmp(png + at + 4, type, 4)) return at;
+    return 0;
+}
+
+/* CRCs: an ancillary chunk's may be wrong (libpng warns and loads), a critical one's not. */
+static void png_check_crc_rules(void)
+{
+    uint8_t png[8192];
+    make_icon();
+    size_t text = chunk_at(small, small_size, "tEXt"), plte = chunk_at(small, small_size, "PLTE"),
+           idat = chunk_at(small, small_size, "IDAT");
+    TEST_ASSERT(text && plte && idat);
+    memcpy(png, small, small_size);
+    png[text + 8 + fx_get32(small + text) + 3] ^= 1; /* tEXt's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_OK);
+    png[text + 9] ^= 0x40; /* and its text */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_OK);
+    memcpy(png, small, small_size);
+    png[plte + 8 + fx_get32(small + plte) + 3] ^= 1; /* PLTE's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+    memcpy(png, small, small_size);
+    png[idat + 20] ^= 4; /* IDAT's data */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+    memcpy(png, small, small_size);
+    png[small_size - 1] ^= 1; /* IEND's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+}
+
+/* The image data is one run of IDATs, after a palette image's PLTE. */
+static void png_check_chunk_order(void)
+{
+    uint8_t png[8192];
+    make_icon();
+    size_t plte = chunk_at(small, small_size, "PLTE"), idat = chunk_at(small, small_size, "IDAT"),
+           iend = chunk_at(small, small_size, "IEND");
+    uint32_t n = fx_get32(small + idat);
+    const uint8_t *data = small + idat + 8;
+    TEST_ASSERT(plte && idat && iend && n > 20);
+    /* IDAT split in two, back to back: one run. */
+    size_t at = idat;
+    memcpy(png, small, idat);
+    at += fx_chunk(png + at, "IDAT", data, 10);
+    at += fx_chunk(png + at, "IDAT", data + 10, n - 10);
+    memcpy(png + at, small + iend, small_size - iend);
+    size_t split = at + small_size - iend;
+    TEST_CHECK(vjo_icon_png_check(png, split, NULL, NULL) == VJO_ICON_OK);
+    /* a chunk between the two halves: refused (libpng would fail mid-image) */
+    at = idat;
+    at += fx_chunk(png + at, "IDAT", data, 10);
+    at += fx_chunk(png + at, "tIME", (const uint8_t *)"\x07\xea\x0a\x0f\0\0\0", 7);
+    at += fx_chunk(png + at, "IDAT", data + 10, n - 10);
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_BAD_ORDER);
+    /* an ancillary chunk after the image data, before IEND: fine (libvita2d never reads it) */
+    at = idat + 12 + n;
+    memcpy(png, small, at);
+    at += fx_chunk(png + at, "tIME", (const uint8_t *)"\x07\xea\x0a\x0f\0\0\0", 7);
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_OK);
+    /* a palette image's IDAT before its PLTE */
+    at = plte;
+    memcpy(png, small, plte);
+    memcpy(png + at, small + idat, 12 + n);
+    at += 12 + n;
+    memcpy(png + at, small + plte, idat - plte);
+    at += idat - plte;
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_BAD_ORDER);
+    /* an RGBA image has no PLTE */
+    uint8_t rgba[80 * 1024];
+    size_t size = fx_png(rgba, sizeof(rgba), 16, 16, 0, 2, NULL);
+    TEST_CHECK(size && !chunk_at(rgba, size, "PLTE") && vjo_icon_png_check(rgba, size, NULL, NULL) == VJO_ICON_OK);
+}
+
+static void png_check_accepts_icons(void)
+{
+    uint8_t png[300 * 1024];
+    unsigned w, h;
+    make_icon();
+    TEST_CHECK(check_copy(icon, icon_size, 128) == VJO_ICON_OK);
+    TEST_CHECK(check_copy(small, small_size, 24) == VJO_ICON_OK);
+    size_t n = fx_png(png, sizeof(png), 256, 256, 0, 3, NULL); /* the largest allowed, RGBA */
+    TEST_CHECK(n && vjo_icon_png_check(png, n, &w, &h) == VJO_ICON_OK && w == 256 && h == 256);
+    n = fx_png(png, sizeof(png), 1, 1, 1, 3, NULL);
+    TEST_CHECK(n && vjo_icon_png_check(png, n, &w, &h) == VJO_ICON_OK && w == 1 && h == 1);
+    /* Bytes after IEND are not read. */
+    memcpy(png, icon, icon_size);
+    memset(png + icon_size, 0xA5, 32);
+    TEST_CHECK(vjo_icon_png_check(png, icon_size + 32, NULL, NULL) == VJO_ICON_OK);
+}
+
+static void png_check_refuses_damage(void)
+{
+    uint8_t png[300 * 1024];
+    make_icon();
+    long refused = 0;
+    /* Every truncation: never OK (IEND is the last 12 bytes), never past the end (ASan). */
+    for (size_t n = 0; n < small_size; n++) {
+        int rc = check_copy(small, n, 24);
+        TEST_CHECK_(rc != VJO_ICON_OK, "truncated to %zu bytes", n);
+        refused += rc != VJO_ICON_OK;
+    }
+    for (size_t n = 0; n < icon_size; n += 97) TEST_CHECK(check_copy(icon, n, 128) != VJO_ICON_OK);
+    /* Every single-bit change. The oracle, from the PNG spec and libpng's defaults: a
+     * change inside an ancillary chunk's data or CRC still loads (libpng warns on the
+     * CRC), as does one that leaves an ancillary chunk's type another valid ancillary
+     * type (libpng skips unknown ancillary chunks); any other change is refused. */
+    memcpy(png, small, small_size);
+    int accepted = 0;
+    for (size_t i = 0; i < small_size; i++) {
+        uint8_t keep = png[i];
+        png[i] ^= (uint8_t)(1u << (i % 8));
+        int rc = check_copy(png, small_size, 24), want_ok = 0;
+        for (size_t at = 8; at + 12 <= small_size;) { /* the original file's chunks */
+            uint32_t n = fx_get32(small + at);
+            int ancillary = small[at + 4] & 0x20;
+            if (ancillary && i >= at + 8 && i < at + 12 + n) want_ok = 1;
+            if (ancillary && i >= at + 4 && i < at + 8) want_ok = spec_ancillary_name(png + at + 4);
+            at += 12 + (size_t)n;
+        }
+        png[i] = keep;
+        TEST_CHECK_((rc == VJO_ICON_OK) == want_ok, "byte %zu changed: %d", i, rc);
+        refused += rc != VJO_ICON_OK;
+        accepted += rc == VJO_ICON_OK;
+    }
+    TEST_CHECK(accepted > 8 && refused > (long)small_size); /* both kinds were met */
+    TEST_MSG("%ld damaged files refused", refused);
+    /* Lengths that would wrap a 32-bit size_t, with valid CRCs over what is there. */
+    static const uint32_t lengths[] = {0x7FFFFFFFu, 0x80000000u, 0xFFFFFFF0u, 0xFFFFFFFFu, 0x10000u};
+    for (int k = 0; k < 5; k++) {
+        memcpy(png, icon, 33); /* signature and IHDR */
+        fx_be32(png + 33, lengths[k]);
+        memcpy(png + 37, "tEXt", 4);
+        TEST_CHECK(vjo_icon_png_check(png, 33 + 12 + 16, NULL, NULL) == VJO_ICON_TRUNCATED);
+    }
+    /* Sizes, header and order. */
+    size_t n = fx_png(png, sizeof(png), 257, 4, 1, 1, NULL);
+    TEST_CHECK(n && vjo_icon_png_check(png, n, NULL, NULL) == VJO_ICON_BAD_SIZE);
+    n = fx_png(png, sizeof(png), 4, 257, 1, 1, NULL);
+    TEST_CHECK(n && vjo_icon_png_check(png, n, NULL, NULL) == VJO_ICON_BAD_SIZE);
+    memcpy(png, icon, icon_size);
+    fx_be32(png + 16, 0);
+    fx_chunk(png + 8, "IHDR", png + 16, 13);
+    TEST_CHECK(vjo_icon_png_check(png, icon_size, NULL, NULL) == VJO_ICON_BAD_SIZE);
+    uint8_t first[64];
+    size_t at = 8;
+    memcpy(first, icon, 8);
+    at += fx_chunk(first + at, "tEXt", (const uint8_t *)"Comment\0x", 9);
+    TEST_CHECK(vjo_icon_png_check(first, at, NULL, NULL) == VJO_ICON_BAD_HEADER);
+    /* A 13-byte first chunk that is not IHDR, even with plausible "sizes", then an image. */
+    static const uint8_t fake[13] = {0, 0, 0, 16, 0, 0, 0, 16, 8, 3, 0, 0, 0};
+    size_t ihdr_end = 33;
+    at = 8 + fx_chunk(png + 8, "tEXt", fake, 13);
+    memcpy(png + at, small + ihdr_end, small_size - ihdr_end);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - ihdr_end, NULL, NULL) == VJO_ICON_BAD_HEADER);
+    /* IHDR, then IEND: no image data. */
+    memcpy(first, icon, 33);
+    at = 33 + fx_chunk(first + 33, "IEND", NULL, 0);
+    TEST_CHECK(vjo_icon_png_check(first, at, NULL, NULL) == VJO_ICON_NO_IMAGE);
+    /* No IEND at all. */
+    TEST_CHECK(vjo_icon_png_check(icon, icon_size - 12, NULL, NULL) == VJO_ICON_TRUNCATED);
+    /* Chunk names libpng refuses: a digit, the third letter lower case. */
+    memcpy(png, small, 33);
+    at = 33 + fx_chunk(png + 33, "t3Xt", (const uint8_t *)"x", 1);
+    memcpy(png + at, small + 33, small_size - 33);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - 33, NULL, NULL) == VJO_ICON_BAD_CHUNK);
+    at = 33 + fx_chunk(png + 33, "tExt", (const uint8_t *)"x", 1);
+    memcpy(png + at, small + 33, small_size - 33);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - 33, NULL, NULL) == VJO_ICON_BAD_CHUNK);
+    TEST_CHECK(vjo_icon_png_check((const uint8_t *)"GIF89a....", 10, NULL, NULL) == VJO_ICON_NOT_PNG);
+}
+
+/* The harness's decoder (settings_png_fixture.h) gives back the image the
+ * fixture encoded, through its Sub/Up filters, the palette and the tag. */
+static void fixture_round_trip(void)
+{
+    static uint8_t png[80 * 1024], rgba[128 * 128 * 4];
+    char id[16];
+    for (int palette = 0; palette < 2; palette++) {
+        size_t n = fx_png(png, sizeof(png), 128, 128, palette, 11, "VJOT00042");
+        TEST_ASSERT(n > 0);
+        TEST_CHECK(vjo_icon_png_check(png, n, NULL, NULL) == VJO_ICON_OK);
+        TEST_CHECK(fx_png_decode(png, n, rgba, id, sizeof(id)) == 0 && !strcmp(id, "VJOT00042"));
+        int same = 1;
+        for (unsigned y = 0; y < 128; y++)
+            for (unsigned x = 0; x < 128; x++)
+                for (unsigned c = 0; c < 3; c++) {
+                    uint8_t v = (uint8_t)((x * 7u + y * 3u + 11u * 13u + (palette ? 0 : c * 41u)) ^ ((x * y) >> 4) ^ ((x ^ 11u) & 15u));
+                    uint8_t want = palette ? (uint8_t)(c == 0 ? v : c == 1 ? 255 - v : v * 5 + 11) : v;
+                    same &= rgba[(y * 128 + x) * 4 + c] == want;
+                }
+        TEST_CHECK_(same, "palette %d", palette);
+    }
+}
+
+static char dir[64];
+static void in_temp_dir(void)
+{
+    if (dir[0]) return;
+    snprintf(dir, sizeof(dir), "/tmp/vjo-settings-layout-XXXXXX");
+    TEST_ASSERT(mkdtemp(dir) != NULL);
+    TEST_ASSERT(chdir(dir) == 0);
+}
+static void put_file(const char *path, const uint8_t *data, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT(f != NULL);
+    TEST_ASSERT(fwrite(data, 1, n, f) == n);
+    TEST_ASSERT(fclose(f) == 0);
+}
+
+static void icon_read_is_bounded(void)
+{
+    static uint8_t buf[VJO_ICON_FILE_MAX + VJO_ICON_FILE_PAD], big[VJO_ICON_FILE_MAX + 1];
+    in_temp_dir();
+    make_icon();
+    put_file("icon.png", icon, icon_size);
+    memset(buf, 0xEE, sizeof(buf));
+    TEST_CHECK(vjo_icon_read("icon.png", buf) == (long)icon_size);
+    TEST_CHECK(!memcmp(buf, icon, icon_size));
+    int pad = 1;
+    for (int i = 0; i < VJO_ICON_FILE_PAD; i++) pad &= buf[icon_size + i] == 0;
+    TEST_CHECK(pad);
+    short_reads = 1000; /* the card returns short reads: still whole */
+    memset(buf, 0, sizeof(buf));
+    TEST_CHECK(vjo_icon_read("icon.png", buf) == (long)icon_size && !memcmp(buf, icon, icon_size));
+    short_reads = 0;
+    TEST_CHECK(vjo_icon_read("missing.png", buf) == VJO_ICON_ABSENT);
+    put_file("empty.png", big, 0);
+    TEST_CHECK(vjo_icon_read("empty.png", buf) == 0);
+    put_file("max.png", big, VJO_ICON_FILE_MAX);
+    TEST_CHECK(vjo_icon_read("max.png", buf) == VJO_ICON_FILE_MAX);
+    put_file("big.png", big, VJO_ICON_FILE_MAX + 1);
+    TEST_CHECK(vjo_icon_read("big.png", buf) == VJO_ICON_TOO_BIG);
+    mkdir("a-directory", 0777);
+    TEST_CHECK(vjo_icon_read("a-directory", buf) == VJO_ICON_ABSENT);
+    unlink("icon.png"); unlink("empty.png"); unlink("max.png"); unlink("big.png"); rmdir("a-directory");
+    if (chdir("/") == 0) rmdir(dir);
+    dir[0] = 0;
+}
+
+/* ---- the icon cache ---- */
+static int released;
+static void release(void *t) { (void)t; released++; }
+static void icon_cache_lru(void)
+{
+    static VjoIconCache cache;
+    static int tex[VJO_ICON_SLOTS + 2];
+    char id[VJO_ICON_SLOTS + 2][VJO_TITLE_ID_SIZE];
+    memset(&cache, 0, sizeof(cache));
+    for (int i = 0; i < VJO_ICON_SLOTS + 2; i++) snprintf(id[i], sizeof(id[i]), "PCSG%05d", i);
+    TEST_CHECK(vjo_icon_cache_get(&cache, id[0]) == NULL && vjo_icon_cache_count(&cache) == 0);
+    for (int i = 0; i < VJO_ICON_SLOTS; i++) TEST_CHECK(vjo_icon_cache_put(&cache, id[i], &tex[i]) == 0);
+    TEST_CHECK(vjo_icon_cache_count(&cache) == VJO_ICON_SLOTS);
+    TEST_CHECK(vjo_icon_cache_put(&cache, id[VJO_ICON_SLOTS], &tex[VJO_ICON_SLOTS]) == -1);
+    for (int i = 0; i < VJO_ICON_SLOTS; i++) TEST_CHECK(vjo_icon_cache_get(&cache, id[i]) == &tex[i]);
+    /* Use 0 again: 1 is now the least recently used. */
+    vjo_icon_cache_get(&cache, id[0]);
+    TEST_CHECK(vjo_icon_cache_evict(&cache, NULL, 0) == &tex[1] && vjo_icon_cache_count(&cache) == VJO_ICON_SLOTS - 1);
+    TEST_CHECK(vjo_icon_cache_get(&cache, id[1]) == NULL);
+    /* The window is never evicted: with 2..5 kept, 6 goes (0 was used after 6). */
+    const char *keep[] = {id[2], id[3], id[4], id[5]};
+    TEST_CHECK(vjo_icon_cache_evict(&cache, keep, 4) == &tex[6]);
+    /* Everything kept: nothing to evict. */
+    const char *all[VJO_ICON_SLOTS];
+    int n = 0;
+    for (int i = 0; i < VJO_ICON_SLOTS; i++) if (vjo_icon_cache_get(&cache, id[i])) all[n++] = id[i];
+    TEST_CHECK(n == VJO_ICON_SLOTS - 2 && vjo_icon_cache_evict(&cache, all, n) == NULL);
+    /* An 11-character ID (the longest) is kept whole. */
+    TEST_CHECK(vjo_icon_cache_put(&cache, "ABCDEFGHIJK", &tex[VJO_ICON_SLOTS]) == 0);
+    TEST_CHECK(vjo_icon_cache_get(&cache, "ABCDEFGHIJK") == &tex[VJO_ICON_SLOTS]);
+    TEST_CHECK(vjo_icon_cache_get(&cache, "ABCDEFGHIJ") == NULL);
+    released = 0;
+    vjo_icon_cache_clear(&cache, release);
+    TEST_CHECK(released == VJO_ICON_SLOTS - 1 && vjo_icon_cache_count(&cache) == 0);
+    TEST_CHECK(vjo_icon_cache_get(&cache, id[0]) == NULL);
+}
+
+TEST_LIST = {
+    {"layout_matches_wrapped_text", layout_matches_wrapped_text},
+    {"layout_game_titles", layout_game_titles},
+    {"memo_reuses_layouts", memo_reuses_layouts},
+    {"png_check_accepts_icons", png_check_accepts_icons},
+    {"png_check_refuses_damage", png_check_refuses_damage},
+    {"png_check_crc_rules", png_check_crc_rules},
+    {"png_check_chunk_order", png_check_chunk_order},
+    {"fixture_round_trip", fixture_round_trip},
+    {"icon_read_is_bounded", icon_read_is_bounded},
+    {"icon_cache_lru", icon_cache_lru},
+    {NULL, NULL}
+};

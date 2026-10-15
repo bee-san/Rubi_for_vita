@@ -189,17 +189,24 @@ not tested yet.
 ## Per-game settings
 
 The **Overlay** app shows three large game cards at a time, with wrapped
-titles, visible IDs and clear ON/OFF badges. Tap the **Games**, **OCR & lookup**
+titles, visible IDs and clear ON/OFF badges. Games are listed alphabetically,
+capital and small letters together. Tap the **Games**, **OCR & lookup**
 or **Anki** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
+Icons load one per frame, the cards on screen first, and stay loaded for those
+cards and a page either side, so scrolling back does not reload them; a card
+shows **JP** until its icon is loaded, or for good when the icon is missing or
+unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 
 | Control | Action |
 | --- | --- |
-| D-pad / L or R | Select a game / move a page |
+| Up / Down | Select a game (held: repeats) |
+| L / R | Page up / page down; the selection keeps its row (held: repeats) |
+| Left / Right | First game of the previous / next letter: A–Z, kana by row (か for が), others by first character |
 | Cross or touch a game | Toggle OCR and overlay input for that game |
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
-| Start | Refresh the installed-title list |
+| Start | Refresh the installed-title list (the only time it is read, with the app's start) |
 | Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup) settings |
 | Circle | Exit |
 

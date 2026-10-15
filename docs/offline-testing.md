@@ -41,14 +41,15 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | ledger | 2 | `__sync` atomics compile to LDREX/STREX; 32-bit counters |
 | kernel_capture | 9 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format; every box the region selector can save is cropped as drawn |
 | kernel_input | 14 | the trigger state machine |
-| kernel_game_ocr | 33 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
+| kernel_game_ocr | 35 | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine |
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |
 | region_select | 14 | the region selector's stick cursor (`core/region_select.c`): its 1/256-pixel position, speed and timer arithmetic in 32 bits |
 | text_rows | 11 | the overlay arrows' row walk (`core/text_rows.c`, #81): float cell edges and 32-bit offsets on the Vita's FPU |
+| settings_layout | 10 | the Overlay app's text layouts and icon PNG check (`settings/text_layout.c`, `settings/icons.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 102 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 114 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-arm-linux-gnueabihf`, `qemu-user-static`). It
 is not a Vita: no firmware, no taiHEN, no SceShell, no budgets; a pass here says the C is
@@ -128,6 +129,26 @@ weights and an in-process stand-in for the kernel's syscalls. It passes when eve
 and the app and the emulator exit 0: it catches crashes in that code, and is not evidence of
 anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.
+
+The Overlay app is an ordinary homebrew app, so Vita3K can run it as it ships.
+`tools/vita3k_settings_smoke.sh` builds the app's sources unchanged with a scripted controller
+and counted textures (`tools/vita3k_settings_smoke.c`, linked by `-Wl,--wrap`; the
+`VJO_SETTINGS_SMOKE` target of `vita/CMakeLists.txt`, never in the release), installs 120
+synthetic games (`tools/make_settings_smoke_games.py`: generated titles and icons, some
+missing, damaged, oversized or not PNG) and runs the script: the Games list scrolled down and
+back, paged with L/R pressed and held, letters with Left/Right, toggles, the filters, a Start
+rescan, the other pages, Circle. It fails on a crash, a hang, an icon texture freed after a
+draw with no GPU wait in between, or one left alive. Given `RELEASE_VPK`, the release
+`JPOverlaySettings.vpk` must also keep running for 30 s over the same games. The app draws
+text with the firmware's PVF library, which this Vita3K does not emulate (`scePvfNewLib` is
+unimplemented): it needs Sony's 3.74 system software and font package
+(`VITA3K_FIRMWARE`, `VITA3K_FONTS`), which Vita3K then loads as the real modules. A pass
+says the app's own code survives that script under Vita3K's GPU emulation; its timings are
+the host's dynarec and are not used. (Vita3K does not fault on a texture freed while the GPU
+reads it, so that is counted, not observed: main `7ed16d8`'s app freed 365 of its 366 icon
+textures so, with 66 failed reloads of broken icons, and exited 0.) If `vita-elf-create` refuses
+the smoke app's ELF ("segment 1 overlaps": its code segment ends too close to the data
+segment), the script rebuilds it with 4 KiB of padding (`VJO_SETTINGS_SMOKE_PAD`).
 
 ## 6. What only the console answers
 

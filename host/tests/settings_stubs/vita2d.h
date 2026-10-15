@@ -5,7 +5,16 @@
 #include <stdint.h>
 #define RGBA8(r, g, b, a) ((((a) & 0xFFu) << 24) | (((b) & 0xFFu) << 16) | (((g) & 0xFFu) << 8) | ((r) & 0xFFu))
 typedef struct vita2d_pvf vita2d_pvf;
-typedef struct vita2d_texture vita2d_texture;
+/* libvita2d's struct has these two fields, which settings/main.c clears after
+ * a load (the rest of it is the GPU's); the harness keeps its own after them. */
+typedef struct vita2d_texture {
+    void *gxm_rtgt;
+    int depth_UID;
+    unsigned width, height;
+    char id[16];        /* the title ID tagged in the icon's tEXt chunk */
+    int live, in_flight; /* allocated; drawn since the GPU was last waited for */
+    unsigned char *pixels;
+} vita2d_texture;
 int vita2d_init(void);
 int vita2d_fini(void);
 void vita2d_set_clear_color(unsigned int color);
@@ -23,6 +32,7 @@ void vita2d_free_pvf(vita2d_pvf *font);
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text);
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text);
 vita2d_texture *vita2d_load_PNG_file(const char *filename);
+vita2d_texture *vita2d_load_PNG_buffer(const void *buffer);
 void vita2d_free_texture(vita2d_texture *texture);
 unsigned int vita2d_texture_get_width(const vita2d_texture *texture);
 unsigned int vita2d_texture_get_height(const vita2d_texture *texture);
