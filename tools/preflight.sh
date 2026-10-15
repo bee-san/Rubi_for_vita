@@ -94,9 +94,10 @@ fi
 # 2b. the offline Anki queue as shipped (anki_mining = on in the test build): text-only cards, so
 # × never asks the kernel for its 2,088,960 B capture (#74's refusal); the job's arena and stack are
 # the ledger's, and the Shell budget model replays them against the console's measured SceShell
-ab=$BUILD/vjo-shell-anki-build-tests
-if [ -x "$ab" ] && "$ab" > "$log/anki-build.log" 2>&1 \
-   && "$PY" host/tests/test_anki_restart.py "$ab" > "$log/anki-restart.log" 2>&1; then
+ab=$BUILD/vjo-shell-anki-tests
+ae=$BUILD/vjo-apkg-tests
+if [ -x "$ab" ] && [ -x "$ae" ] && "$ab" > "$log/anki-build.log" 2>&1 \
+   && "$PY" host/tests/test_anki_restart.py "$ab" "$ae" > "$log/anki-restart.log" 2>&1; then
   am=$("$PY" tools/shell_budget_model.py --anki --json 2>/dev/null | "$PY" -c '
 import json, sys
 r = json.load(sys.stdin)
@@ -107,20 +108,23 @@ print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/
   arena=$(grep -E '^#define VJO_BUDGET_PAF_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
   if [ -n "$am_head" ] && [ "$am_head" -gt 0 ] && [ "$arena" = 131072 ] \
      && "$PY" tools/check_memory_ledger.py > "$log/ledger-src.log" 2>&1 && ! grep -q WARNING "$log/ledger-src.log"; then
-    pass "Anki offline queue (Shell)" "text-only cards, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); restart/Kiku $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
+    pass "Anki offline queue (Shell)" "text-only cards, no network, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); saves and exports stopped at every storage boundary $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
   else
     fail "Anki offline queue (Shell)" "budget/model check (arena ${arena:-?}, headroom ${am_head:-?}; $log/ledger-src.log)"
   fi
 else
   fail "Anki offline queue (Shell)" "$log/anki-build.log $log/anki-restart.log"
 fi
-# 2c. the Overlay app's Anki page (core/anki_app.c): the LAN search, the connection test (version,
-# the Kiku note type's fields, the Kiku deck) and Send now, on the queue's real storage
-aa=$BUILD/vjo-anki-app-tests
-if [ -x "$aa" ] && "$aa" > "$log/anki-app.log" 2>&1; then
-  pass "Anki page (Overlay app)" "$(grep -c '\[ OK \]' "$log/anki-app.log") cases: Kiku notes in the deck Kiku from record versions 1-3, test, auto search, send once"
+# 2c. the Overlay app's .apkg export (settings/anki_export.c, core/apkg.c): Lapis notes in a package
+# written, flushed, renamed, read back and verified before the queue is cleared; the packages opened
+# with Python's zipfile and sqlite3, and imported by Anki itself where the anki package is
+# installed (VJO_ANKI_PYTHON, tools/requirements-anki.txt)
+if [ -x "$ae" ] && "$ae" > "$log/apkg.log" 2>&1 && "$PY" host/tests/test_apkg.py "$ae" > "$log/apkg-py.log" 2>&1; then
+  if grep -q "skipped 'the anki package" "$log/apkg-py.log"; then imported="not imported (no anki package)"; else
+    imported="imported by $(grep -o 'anki [0-9][0-9.]*' "$log/apkg-py.log" | head -1)"; fi
+  pass "Anki export (Overlay app)" "$(grep -c '\[ OK \]' "$log/apkg.log") cases (no clear on any failed write); packages: $(grep -o 'Ran [0-9]* tests' "$log/apkg-py.log"), $imported"
 else
-  fail "Anki page (Overlay app)" "$aa ($log/anki-app.log)"
+  fail "Anki export (Overlay app)" "$ae ($log/apkg.log $log/apkg-py.log)"
 fi
 
 # 2c. the one-command collect (install_ftp.sh --collect: the real script, curl and ftplib against a
@@ -269,14 +273,15 @@ assumptions the console still has to confirm (none of these is measured yet):
   - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
     and relocations only.
   - Anki (anki_mining = on in the test build): every Anki job holds a 69,632 B thread stack in
-    SceShell's partition while it runs (a count of the queue on every overlay open, a save, a
-    send), and a save or send a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
+    SceShell's partition while it runs (a count of the queue on every overlay open, a save),
+    and a save a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
     beside a game were measured once at 98,304 B with an older, larger build; the model's
     headroom at that step is an estimate, and a refused thread or arena is survived (host
     tests), the card is then not saved and the overlay says so. Cards carry no screenshot.
-  - The Overlay app's Anki page (its SceNet, the system keyboard, the LAN search) and a real
-    AnkiConnect with Kiku v2.1.0 have run on the host only (a fake AnkiConnect); no console has
-    run them.
+  - The Overlay app's .apkg export (its 2 MiB arena, sceIoPwrite/sceIoPread on ux0:, the
+    memory card's speed for a large queue) has run on the host only; its packages were imported
+    by Anki 26.09.3 on a computer (tools/requirements-anki.txt), not yet by AnkiDroid or
+    AnkiMobile, and no console has written one.
   - CPU3 load and the hook's cost per frame: unmeasured (AGENTS.md rule 8).
   - Vita3K is not evidence: it cannot load the kernel plugin and has no KD, SceShell or taiHEN.
 EOF

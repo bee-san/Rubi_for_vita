@@ -132,88 +132,11 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
            "log_file = on\n"
            "\n"
-           "; ---- Anki (optional): set it up in the Overlay app's Anki page ----\n"
+           "; ---- Anki (optional): the Overlay app's Anki page turns it on and exports the cards ----\n"
            "; on: enter (× or ○, as the Vita's settings assign it) in the overlay saves the\n"
-           "; shown word as a card in a queue on the memory card, even with Wi-Fi off; △ or\n"
-           "; the Overlay app sends the queue to AnkiConnect (Kiku note type, deck Kiku;\n"
-           "; docs/anki.md). off: enter and △ do nothing.\n"
-           "anki_mining = off\n"
-           "; AnkiConnect's computer: IP[:port] (default 8765), or auto: the Overlay app finds it\n"
-           "anki_host =\n"
-           "; Optional word audio when sending: a Yomitan audio source URL with {term}\n"
-           "anki_audio_url =\n";
-}
-
-/* host[:port], the n bytes at s: a name or IP address, and a port
- * (default_port when there is none). Returns 0, or -1 when invalid. */
-static int host_port(const char *s, size_t n, char *host, size_t cap, int default_port, int *port)
-{
-    const char *colon = memchr(s, ':', n);
-    size_t hn = colon ? (size_t)(colon - s) : n;
-    int v = 0;
-    if (hn == 0 || hn >= cap)
-        return -1;
-    for (size_t i = 0; i < hn; i++) {
-        char ch = s[i];
-        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '.' ||
-              ch == '-'))
-            return -1;
-    }
-    if (colon) {
-        const char *p = colon + 1, *end = s + n;
-        if (p == end)
-            return -1;
-        for (; p < end; p++) {
-            if (*p < '0' || *p > '9')
-                return -1;
-            v = v * 10 + (*p - '0');
-            if (v > 65535)
-                return -1;
-        }
-        if (v == 0)
-            return -1;
-    }
-    *port = colon ? v : default_port;
-    memcpy(host, s, hn);
-    host[hn] = '\0';
-    return 0;
-}
-
-int vjo_anki_endpoint(const char *setting, char *host, size_t cap, int *port)
-{
-    if (!*setting)
-        return VJO_ANKI_OFF;
-    if (vjo_ieq(setting, "auto"))
-        return VJO_ANKI_AUTO;
-    if (host_port(setting, strlen(setting), host, cap, VJO_ANKI_PORT, port) < 0)
-        return -1;
-    return VJO_ANKI_MANUAL;
-}
-
-int vjo_anki_audio_endpoint(const char *url, char *host, int *port, int *tls, const char **path)
-{
-    size_t n = 0;
-    int term = 0;
-    if (!strncmp(url, "https://", 8)) {
-        *tls = 1;
-        url += 8;
-    } else if (!strncmp(url, "http://", 7)) {
-        *tls = 0;
-        url += 7;
-    } else {
-        return -1;
-    }
-    while (url[n] && url[n] != '/' && url[n] != '?')
-        n++;
-    for (const char *s = url + n; *s; s++) {
-        if ((unsigned char)*s <= ' ' || (unsigned char)*s >= 0x7F || *s == '#')
-            return -1; /* not one URL (a space, a fragment), or not ASCII */
-        term |= !strncmp(s, "{term}", 6);
-    }
-    if (!term || host_port(url, n, host, VJO_HOST_MAX, *tls ? 443 : 80, port) < 0)
-        return -1;
-    *path = url + n;
-    return 0;
+           "; shown word as a card in a queue on the memory card; the Overlay app exports the\n"
+           "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
+           "anki_mining = off\n";
 }
 
 static void warn(VjoConfig *c, const char *fmt, const char *a, const char *b)
@@ -269,6 +192,8 @@ static int removed_secret(const char *s, size_t n)
     return 0;
 }
 
+static int removed_anki_name(const char *s, size_t n);
+
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement)
 {
     size_t b = 0, e, v;
@@ -278,6 +203,9 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
         return VJO_LINE_DROP;
     e = b;
     while (e < n && line[e] != '=' && !is_space(line[e])) e++;
+    /* a removed Anki setting goes too (anki_audio_url's URL can hold a key) */
+    if (removed_anki_name(line + b, e - b))
+        return VJO_LINE_DROP;
     v = e;
     while (v < n && is_space(line[v])) v++;
     if (e - b != 10 || !vjo_ieq_prefix(line + b, "dictionary") || v >= n || line[v] != '=')
@@ -295,21 +223,6 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
         }
     }
     return VJO_LINE_KEEP;
-}
-
-static int valid_anki_host(const char *v)
-{
-    char host[64];
-    int port;
-    return vjo_anki_endpoint(v, host, sizeof(host), &port) >= 0;
-}
-
-static int valid_audio_url(const char *v)
-{
-    char host[VJO_HOST_MAX];
-    const char *path;
-    int port, tls;
-    return !*v || vjo_anki_audio_endpoint(v, host, &port, &tls, &path) == 0;
 }
 
 /* An ocr_backend value of a removed engine: why it no longer runs (the config
@@ -400,8 +313,6 @@ static const StrSetting str_settings[] = {
     STR_SETTING(ocr_model_dir, 1, 1),
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
     STR_SETTING(log_host, 0, 0),
-    CHECKED_SETTING(anki_host, 0, valid_anki_host, "empty, auto, or IP[:port]", 0),
-    CHECKED_SETTING(anki_audio_url, 1, valid_audio_url, "empty, or http(s)://host[:port]/path with {term}", 1),
 };
 #define N_STR_SETTINGS ((int)(sizeof(str_settings) / sizeof(str_settings[0])))
 
@@ -413,12 +324,26 @@ static const StrSetting *find_str_setting(const char *key)
     return NULL;
 }
 
-/* Settings of the Anki field mapping, which a fixed Kiku note replaced:
- * anki_deck, anki_note_type, anki_tags, anki_field_* (any case). */
-static int removed_anki_key(const char *key)
+/* Removed Anki settings (any case), ignored without a warning: the field
+ * mapping a fixed note type replaced (anki_deck, anki_note_type, anki_tags,
+ * anki_field_*), and AnkiConnect's address and the word audio source
+ * (anki_host, anki_audio_url), gone with AnkiConnect: the Overlay app exports
+ * the cards as an .apkg. The installer (tools/migrate_config.py) removes them
+ * from config.ini and says so, and the Overlay app's next save drops their
+ * lines (vjo_config_removed_line). The n bytes at s are the name: a line's
+ * first word. */
+static int removed_anki_name(const char *s, size_t n)
 {
-    return vjo_ieq(key, "anki_deck") || vjo_ieq(key, "anki_note_type") || vjo_ieq(key, "anki_tags") ||
-           vjo_ieq_prefix(key, "anki_field_");
+    static const char *const names[] = {"anki_deck", "anki_note_type", "anki_tags", "anki_host", "anki_audio_url"};
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+        if (n == strlen(names[i]) && vjo_ieq_prefix(s, names[i]))
+            return 1;
+    return n >= 11 && vjo_ieq_prefix(s, "anki_field_");
+}
+
+int vjo_config_removed_anki_key(const char *key)
+{
+    return removed_anki_name(key, strlen(key));
 }
 
 static int keeps_comment_chars(const char *key)
@@ -487,7 +412,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (!vjo_ieq(val, "local"))
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || removed_anki_key(key) ||
+               vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || vjo_config_removed_anki_key(key) ||
                removed_secret(key, strlen(key))) {
         /* removed settings (tools/migrate_config.py REMOVED): no warning (the relay's
          * hachidori_host too: dictionary = hachidori's warning is the relay's one line) */
@@ -745,6 +670,16 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
             s++;
         if (s == n || line[s] == ';' || line[s] == '#')
             continue;
+        {
+            /* A removed Anki setting's line, whatever follows its name ('=', a space, a
+             * URL that can hold a key, a value too long), is ignored before anything of
+             * it could reach a warning. */
+            size_t w = s;
+            while (w < n && line[w] != '=' && !is_space(line[w]))
+                w++;
+            if (removed_anki_name(line + s, w - s))
+                continue;
+        }
         {
             char *p = strchr(line + s, '=');
             if (!p) {

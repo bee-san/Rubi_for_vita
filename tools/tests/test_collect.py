@@ -62,8 +62,10 @@ gstep job alloc kind=user arg=workspace rc=0x80024302 bytes=188416 sum=0x0000000
 overlay closed: 120 frames, 3 word moves, stick 0, slowest frame 33 ms
 anki: Picture field off in this build: no screenshot, no kernel capture buffer
 anki: save 猫 rc=0, 0-byte screenshot, 45 ms
+anki: save 犬 rc=0, 12 ms
 anki: queue 1 card(s)
 anki: sent 0, 0 duplicates, 0 unreadable, 0 too large, 1 pending, 30 ms
+overlay app: anki: export (queued) rc=0: 3 cards, 3 moved, 0 kept, 0 unreadable, 0 too large, 0 left, 40960 bytes, arena peak 1000
 thread VjoAnki refused 0x80024302: 69632 B; SceShell free 28672 (0x00000000), held 389120
 anki: count not started 0x80024302
 """.replace("{SECRET2}", SECRET2)
@@ -110,7 +112,10 @@ class Collect(unittest.TestCase):
         (data / "config.ini").write_text(CONFIG, encoding="utf-8")
         (data / "games.ini").write_text("default = on\n")
         (data / "region.ini").write_text("PCSG00415 = 1536,48188,62600,15059\n")
-        (data / "anki_host.txt").write_text("192.168.1.23:8765\n")
+        (data / "anki_queue/exported").mkdir()
+        (data / "anki_queue/exported/00112233445566778899aabbccddeeff.json").write_text('{"version":3}\n')
+        (data / "anki").mkdir()
+        (data / "anki/2026-10-15_143000-3cards.apkg").write_bytes(b"PK" + bytes(40))
         (data / "anki_queue/0123456789abcdef0123456789abcdef.json").write_text('{"version":2,"spelling":"猫"}\n',
                                                                                 encoding="utf-8")
         (data / "anki_queue/fedcba9876543210fedcba9876543210.json.tmp").write_text("{")
@@ -165,8 +170,9 @@ class Collect(unittest.TestCase):
             blob = b"".join(z.read(n) for n in names)
         d = folder.name + "/ux0/data/VitaJPOverlay/"
         for rel in ("log.txt", "log.old.txt", "selftest-report.txt", "status.txt", "kernel.txt", "kernel.prev.txt",
-                    "config.ini", "games.ini", "region.ini", "anki_host.txt",
+                    "config.ini", "games.ini", "region.ini",
                     "anki_queue/0123456789abcdef0123456789abcdef.json",
+                    "anki_queue/exported/00112233445566778899aabbccddeeff.json",
                     "anki_queue/fedcba9876543210fedcba9876543210.json.tmp"):
             self.assertIn(d + rel, names)
         for rel in ("ur0/data/VitaJPOverlay/boot.txt", "ur0/tai/config.txt", "ur0/tai/config.txt.vjo-bak",
@@ -248,8 +254,9 @@ class Collect(unittest.TestCase):
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",
-                     "Anki: 1 save(s) (0 failed), queue 1, 0 sent, Picture off in this build",
-                     "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); anki_host.txt 192.168.1.23:8765",
+                     "Anki: 2 save(s) (0 failed), queue 1, 1 export(s) (0 failed) of 3 card(s), Picture off in this build",
+                     "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); 1 exported card(s), "
+                     "1 .apkg package(s) in anki/",
                      "crash dumps: psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (4,096 B)",
                      "free game USER before the self-test's first block (selftest-report.txt): 91,226,112 B",
                      "recommendation: Large (the largest tier",

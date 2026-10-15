@@ -110,7 +110,7 @@ static ui::Widget *s_panel, *s_region_layer, *s_region_rect;
 
 static unsigned s_seen_version, s_seen_anki_version;
 static unsigned s_list_seq; /* the shown list (Anki requests name it) */
-static int s_anki_enabled;  /* enter sends the shown word to Anki */
+static int s_anki_enabled;  /* enter saves the shown word to the Anki queue */
 static int s_selected;
 /* Copied from the view under its lock, so nothing outside render() reads
  * the result memory (the control thread frees it when a game exits) and no
@@ -380,15 +380,15 @@ static void render(int new_content)
         else if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
         if (s_anki_enabled) {
-            /* the offline queue: what △ sends */
+            /* the offline queue: what the Overlay app exports */
             char queue[80];
             if (g_view.anki_pending == -1)
                 sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
             else if (g_view.anki_pending < 0)
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue · %s", g_view.anki_sending ? "sending…" : "△ send");
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue · export in the Overlay app");
             else
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · %s", g_view.anki_pending,
-                                g_view.anki_sending ? "sending…" : "△ send");
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · export in the Overlay app",
+                                g_view.anki_pending);
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
             vjo_styled_puts(&body, queue, g_view.anki_pending == -1 ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
@@ -436,7 +436,7 @@ static void render(int new_content)
             : "◀ ▶ ▲ ▼ word";
         char anki[32] = "";
         if (s_anki_enabled)
-            sceClibSnprintf(anki, sizeof(anki), "%s queue · △ send · ", s_btn.enter_glyph);
+            sceClibSnprintf(anki, sizeof(anki), "%s queue · ", s_btn.enter_glyph);
         sceClibSnprintf(hint, sizeof(hint),
                         "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · %s close</font>", nav, anki,
                         s_btn.cancel_glyph);
@@ -867,11 +867,9 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
     /* Enter saves the shown word (in a character lookup, the match at the
-     * cursor) to the offline queue; △ sends the queue, also without one. */
+     * cursor) to the offline queue; the Overlay app exports it. */
     if ((pressed & s_btn.enter) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
-    if ((pressed & SCE_CTRL_TRIANGLE) && s_anki_enabled)
-        vjo_anki_post_send();
     if (pressed & s_btn.cancel)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
     if (pressed & SCE_CTRL_SQUARE)

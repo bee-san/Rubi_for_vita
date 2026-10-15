@@ -21,9 +21,12 @@ import sys
 
 RENAMED = {}
 REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
-           # Anki's field mapping: the note is Kiku's, in the deck Kiku (docs/anki.md); with every
-           # anki_field_* key (REMOVED_PREFIXES), as core/config.c ignores them.
+           # Anki's field mapping, which one fixed note type replaced; with every anki_field_* key
+           # (REMOVED_PREFIXES), as core/config.c ignores them.
            "anki_deck", "anki_note_type", "anki_tags",
+           # AnkiConnect's address and the word audio source: AnkiConnect was removed, the
+           # Overlay app exports the cards as an .apkg file instead (docs/anki.md).
+           "anki_host", "anki_audio_url",
            # API 21: the model and its fallback became one model size (vocr_tier, MODEL_TIER below).
            "vocr_model", "vocr_fallback_model",
            # The Hachidori relay's computer (dictionary = hachidori, removed): core/config.c ignores it.
@@ -33,6 +36,9 @@ REMOVED_PREFIXES = ("anki_field_",)
 # that starts with one is dropped, and reported by that name only, as its line's text may hold the
 # key (core/config.c removed_secret; no setting's name starts with one of them).
 SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
+# Why a removed setting went, printed beside it (the log line the installer shows).
+REMOVED_WHY = {"anki_host": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg",
+               "anki_audio_url": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg"}
 # Values whose feature was removed, with their replacement. ocr_backend offers two engines,
 # vocr and lens; the others load as vocr already (core/config.c removed_engine). dictionary
 # offers local only; jpdb, jiten and hachidori load as local (core/config.c removed_dictionary).
@@ -157,7 +163,7 @@ def main():
     report = []
     for k in sorted(set(old or {}) | set(new)):
         if old is not None and k in old and k not in new:
-            report.append("config.ini: %s removed" % name(k))
+            report.append("config.ini: %s removed%s" % (name(k), " (%s)" % REMOVED_WHY[k] if k in REMOVED_WHY else ""))
         elif old is None or old.get(k) != new.get(k):
             report.append("config.ini: %s = %s" % (name(k), show(k, new.get(k, ""))))
     for k in sorted(set(vals) - used):

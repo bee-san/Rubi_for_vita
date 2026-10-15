@@ -10,15 +10,14 @@ int vjo_preferences_load(VjoConfig *cfg, VjoArena *scratch);
  * backup + rename. A failed final publication restores the old primary.
  * vocr_tier: VJO_VOCR_TIER_* (an older build's vocr_model lines go).
  * Both saves also rewrite a removed feature's lines (vjo_config_removed_line:
- * the removed online dictionaries' API keys go, dictionary = jpdb or jiten
- * becomes local); a file with such a key is first published without them
- * and the keyed backup that leaves is deleted, so that no file keeps a key,
- * even when the save itself then fails. */
+ * the removed online dictionaries' API keys and the removed Anki settings go,
+ * dictionary = jpdb, jiten or hachidori becomes local); a file with such a
+ * key is first published without them and the keyed backup that leaves is
+ * deleted, so that no file keeps a key, even when the save itself then fails. */
 int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *scratch);
-/* The Anki page's two settings, saved the same way: anki_mining on/off
- * and anki_host (IP[:port], auto, or ""; validated by the caller). */
-int vjo_preferences_save_anki(int mining, const char *host, VjoArena *scratch);
+/* The Anki page's setting, saved the same way: anki_mining on/off. */
+int vjo_preferences_save_anki(int mining, VjoArena *scratch);
 /* text with a `key = value` line for each of the n (0-8, lowercase) keys:
  * a key's first line is replaced, its later duplicates dropped, a missing
  * key appended; every other line kept verbatim but a removed feature's

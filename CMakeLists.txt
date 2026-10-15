@@ -22,8 +22,9 @@ set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c
   core/textfilter.c core/entries.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
-  core/base64.c core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c)
+  core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
+  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c
+  core/sqlw.c core/zipw.c core/lapis.c core/apkg.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -222,27 +223,21 @@ add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)
 add_test(NAME anki COMMAND vjo-anki-tests)
-# Real Shell Anki miner, offline file queue (real files) and screenshot capture;
-# Vita SDK substituted. This binary builds the screenshot path (VJO_ANKI_SCREENSHOT 1),
-# which the Vita build leaves out (shell/anki.c); vjo-shell-anki-build-tests is the
-# shipped, text-only configuration.
+# The real Shell Anki miner and its offline file queue (real files); Vita SDK substituted.
 add_executable(vjo-shell-anki-tests host/tests/test_shell_anki.c)
 target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_definitions(vjo-shell-anki-tests PRIVATE VJO_ANKI_SCREENSHOT=1)
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
-# The Overlay app's Anki page: core/anki_app.c with the queue's real storage.
-add_executable(vjo-anki-app-tests host/tests/test_anki_app.c)
-target_include_directories(vjo-anki-app-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_options(vjo-anki-app-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(vjo-anki-app-tests vjo_host)
-add_test(NAME anki_app COMMAND vjo-anki-app-tests)
-add_executable(vjo-shell-anki-build-tests host/tests/test_shell_anki.c)
-target_include_directories(vjo-shell-anki-build-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_options(vjo-shell-anki-build-tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-unused-function)
-target_link_libraries(vjo-shell-anki-build-tests vjo_host)
-add_test(NAME shell_anki_build COMMAND vjo-shell-anki-build-tests)
+# The Overlay app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
+# writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
+# and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
+# VJO_ANKI_PYTHON names a Python that has it, VJO_REQUIRE_ANKI=1 makes its absence a failure (CI).
+add_executable(vjo-apkg-tests host/tests/test_apkg.c)
+target_include_directories(vjo-apkg-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-apkg-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-apkg-tests vjo_host)
+add_test(NAME apkg COMMAND vjo-apkg-tests)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
 # writes the same bytes in the same order as line by line, with one append per file.
@@ -281,13 +276,14 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md).
 add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py)
-# Each step is a fresh process; the AnkiConnect HTTP double survives client restarts.
-add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-tests>)
-add_test(NAME anki_restart_build COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py $<TARGET_FILE:vjo-shell-anki-build-tests>)
-set_tests_properties(anki_restart PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=1")
-set_tests_properties(anki_restart_build PROPERTIES ENVIRONMENT "VJO_EXPECT_ANKI_SCREENSHOT=0")
+# Each step is a fresh process: the overlay's saves and the Overlay app's exports, stopped at each
+# storage boundary, never lose a card.
+add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py
+  $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests>)
+add_test(NAME apkg_packages COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_apkg.py
+  $<TARGET_FILE:vjo-apkg-tests>)
+# The Lapis note type in core/lapis_notetype.inc is third_party/lapis's, generated by tools/gen_lapis.py.
+add_test(NAME lapis_notetype COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_lapis.py --check)
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)

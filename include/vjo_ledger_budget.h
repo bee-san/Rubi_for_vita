@@ -42,8 +42,8 @@
  * (the 64 B hachidori_host of three VjoConfig copies and shell/worker.c's 4 B cached dictionary
  * ID, 196 B, less 12 B of alignment), so the module is 206,192 text + 71,020 data/bss [measured:
  * the build log's module rows, main a5d79f2 and this change], one text page fewer: 208,896 +
- * 73,728 B of pages. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 282624u
+ * 73,728 B of pages. @@LEDGER_TAIL@@ */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 282624u /* @@SHELL_PAGES_U@@ */
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
@@ -74,7 +74,7 @@
 #define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
 #define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
-                                                    * of the queue on every overlay open, a save (×), a send (△) */
+                                                    * of the queue on every overlay open, a save (Enter) */
 #define VJO_BUDGET_SHELL_NET_STACK (VJO_STACK_SHELL_NET + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_CTL_STACK (VJO_STACK_SHELL_CTL + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_ANKI_STACK (VJO_STACK_SHELL_ANKI + VJO_LEDGER_TLS)
@@ -103,10 +103,11 @@
  * sizeof(VjoNetSlot), 23,800 B, rounded to 16; arm-vita-eabi-gcc's is 23,312 B). The removed Hachidori
  * relay's second slot made it 571,888 B. */
 #define VJO_BUDGET_PAF_RESULTS_NET 548096u
-/* An Anki job (anki.c ANKI_TEXT_MEM): a text-only card. The Picture field is off in the
- * build (VJO_ANKI_SCREENSHOT 0): its screenshot would be the kernel's 2,088,960 B full-frame
- * capture (VJO_BUDGET_KERNEL_CAPTURE), which #74's console refused, and 393,216 B here (a
- * picture card's arena, ANKI_PICTURE_MEM). anki.c checks its arena against this at compile time. */
+/* An Anki job (anki.c ANKI_TEXT_MEM): saving a text-only card to the queue. The Shell takes no
+ * screenshot: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
+ * and a 393,216 B arena here) was removed with AnkiConnect. A save with 8 dictionaries' entries
+ * peaks at 103,880 B [measured, host, test_shell_anki.c]. anki.c checks its arena against this at
+ * compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
@@ -115,7 +116,7 @@
 #define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* The opt-in network path, Google Lens (two arenas and a connection pool), with
  * the same overlay and Anki card: 707,840 B. A picture card's 384 KiB arena
- * (VJO_ANKI_SCREENSHOT 1) put it over the best-case limit by 8,688 B while the
+ * (the screenshot branch, removed with AnkiConnect) put it over the best-case limit by 8,688 B while the
  * pool kept a second slot for the removed Hachidori relay (the checker warns;
  * the runtime reserve guard refuses the last allocation, which the code
  * survives); with one slot it is 969,984 B, 15,104 B under. */
@@ -133,7 +134,7 @@
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
-/* The Shell's JPEG capture (Lens; an Anki screenshot only with VJO_ANKI_SCREENSHOT) at a full frame, KERNEL_RW,
+/* The Shell's JPEG capture (Lens only: Anki takes no screenshot) at a full frame, KERNEL_RW,
  * per request. Local OCR takes no kernel block since API 19 (#74: on the owner's
  * 3.65 this 2,088,960 B request failed with 0x80024302 at every attempt). */
 #define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u)

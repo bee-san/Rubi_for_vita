@@ -22,14 +22,14 @@ extern "C" {
 #define VJO_LOG_PATH    VJO_DATA_DIR "/log.txt"
 #define VJO_LOG_OLD_PATH VJO_DATA_DIR "/log.old.txt"
 #define VJO_STATUS_PATH VJO_DATA_DIR "/status.txt"
-#define VJO_ANKI_HOST_PATH VJO_DATA_DIR "/anki_host.txt" /* found by anki_host = auto */
 #define VJO_ANKI_QUEUE_DIR VJO_DATA_DIR "/anki_queue"     /* offline cards, see anki_queue.h */
+#define VJO_ANKI_EXPORTED_DIR VJO_ANKI_QUEUE_DIR "/exported" /* the cards the Overlay app exported */
 #define VJO_RCO_PATH    "ur0:data/VitaJPOverlay/vitajpoverlay.rco"
 
 #define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
 
 enum { VJO_ANKI_STATUS_DIM = 0, VJO_ANKI_STATUS_ERROR = 1 };
-/* VjoView.anki_mark: the word is in Anki (√), or saved in the offline queue */
+/* VjoView.anki_mark: the word's card was exported before (√), or is in the offline queue */
 enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2 };
 /* VjoView.strip_kind */
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
@@ -58,13 +58,12 @@ typedef struct {
     int enter_circle;         /* ○ enters and × cancels (core/buttons.h), as read when the overlay opened */
     /* Anki (anki.c): changes bump anki_version only, so the overlay keeps
      * the header, the selection and the definition's scroll */
-    int anki_enabled;         /* anki_mining is on: enter saves the shown word, △ sends the queue */
+    int anki_enabled;         /* anki_mining is on: enter saves the shown word to the queue */
     unsigned anki_version;
     int anki_pending;         /* cards in the offline queue; -1 unreadable, -2 not counted yet */
-    int anki_sending;         /* △ is sending them */
-    char anki_status[128];    /* "Saved for Anki", "Sending to Anki…", an error, or "" */
+    char anki_status[128];    /* "Saved for Anki", an error, or "" */
     int anki_status_kind;     /* VJO_ANKI_STATUS_* */
-    unsigned anki_status_seq; /* list_seq the status is for; 0 = any (a send's) */
+    unsigned anki_status_seq; /* list_seq the status is for; 0 = any */
     unsigned anki_marks_seq;  /* list_seq the marks are for */
     uint8_t anki_mark[VJO_MAX_ENTRIES]; /* VJO_ANKI_MARK_* */
     /* subtitles: a strip at the top while the overlay is closed; changes
@@ -180,17 +179,15 @@ int vjo_anki_start(void);
  * if the join fails, so stop can be retried. */
 int vjo_anki_stop(void);
 /* Settings for the next job (control thread, after each config load).
- * Returns 1 when × and △ work (anki_mining is on). */
+ * Returns 1 when enter saves cards (anki_mining is on). */
 int vjo_anki_configure(const VjoConfig *cfg);
 /* The running game's title ID and name for its cards ("" = none; control thread). */
 void vjo_anki_set_game(const char *tid, const char *name);
 /* The OCR model of the last recognition, recorded on its cards (network thread). */
 void vjo_anki_set_ocr_model(const char *model);
-/* Saves entry `entry` of list list_seq to the queue (overlay, × pressed).
- * Ignored while anki_mining is off. */
+/* Saves entry `entry` of list list_seq to the queue (overlay, enter
+ * pressed). Ignored while anki_mining is off. */
 void vjo_anki_post_add(unsigned list_seq, int entry);
-/* Sends the queue to anki_host (overlay, △ pressed). */
-void vjo_anki_post_send(void);
 /* Counts the queue for the overlay (control thread, overlay opened). */
 void vjo_anki_post_count(void);
 /* Joins the thread of a job that is done (control thread, each wakeup). */

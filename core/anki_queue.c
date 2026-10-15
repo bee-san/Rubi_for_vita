@@ -235,6 +235,18 @@ int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, 
     if (opt_string(a, &j, 0, "furigana", &n->furigana) || opt_string(a, &j, 0, "dictionary", &n->dictionary) ||
         more(a, &j, n))
         return -1;
+    {
+        /* when the card was saved (its note's creation and modification
+         * time): digits written with %u, read without a 32-bit long */
+        int k = vjo_json_obj_get(&j, 0, "time");
+        int64_t t = 0;
+        if (k >= 0 && vjo_json_is_type(&j, k, JSMN_PRIMITIVE) && j.t[k].end - j.t[k].start <= 10) {
+            for (int i = j.t[k].start; i < j.t[k].end && t >= 0; i++)
+                t = json[i] >= '0' && json[i] <= '9' ? t * 10 + (json[i] - '0') : -1;
+            if (t > 0)
+                n->unix_time = t;
+        }
+    }
     return version;
 }
 

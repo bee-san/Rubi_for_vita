@@ -156,14 +156,14 @@ elif '-o' in a:
         (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = FL10_w8.vocr\njiten_api_key = test-key\n")
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["install_settings"] = {"anki_mining": "on", "anki_host": ""}
+        manifest["install_settings"] = {"anki_mining": "on", "log_host": ""}
         manifest_path.write_text(json.dumps(manifest))
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("package settings: anki_mining=on anki_host=\n", result.stdout)
+        self.assertIn("package settings: anki_mining=on log_host=\n", result.stdout)
         config = (self.data / "config.ini").read_text()
         # the older model choice became its size (FL10: Small), which the installer keeps
-        for setting in ("anki_mining = on\n", "anki_host =\n", "vocr_tier = small\n"):
+        for setting in ("anki_mining = on\n", "log_host =\n", "vocr_tier = small\n"):
             self.assertIn(setting, config)
         self.assertNotIn("vocr_model", config)
         self.assertNotIn("test-key", result.stdout + config)
@@ -189,74 +189,58 @@ elif '-o' in a:
         manifest = json.loads(manifest_path.read_text())
         canary = self.root / "canary"
         manifest["install_settings"] = {
-            "anki_audio_url": f"$(touch {canary}) `touch {canary}` 'q' \"dq\"",
+            "local_dictionary_dir": f"$(touch {canary}) `touch {canary}` 'q' \"dq\"",
             "log_host": "line1\nlog_file = off", "hachidori_host": "a\u2028anki_host = 6.6.6.6",
-            "anki_host": "x\x85y", "bad key": "1", "not_a_setting": "on", "anki_deck": "removed",
-            "jpdb_api_key": "pkg-secret"}
+            "ocr_mode": "x\x85y", "bad key": "1", "not_a_setting": "on", "anki_deck": "removed",
+            "anki_host": "192.168.1.5", "jpdb_api_key": "pkg-secret"}
         manifest_path.write_text(json.dumps(manifest))
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(canary.exists())
         self.assertNotIn("pkg-secret", result.stdout + result.stderr)
         shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
-        for dropped in ("log_host", "hachidori_host", "anki_host", "bad key", "not_a_setting", "anki_deck",
-                        "jpdb_api_key"):
+        # (anki_host, AnkiConnect's address, and the removed online dictionaries' API keys are no
+        # settings any more: dropped as unknown)
+        for dropped in ("log_host", "hachidori_host", "ocr_mode", "bad key", "not_a_setting", "anki_deck",
+                        "anki_host", "jpdb_api_key"):
             self.assertNotIn(dropped, shown)
         config = (self.data / "config.ini").read_text()
-        self.assertIn(f"anki_audio_url = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
+        self.assertIn(f"local_dictionary_dir = $(touch {canary}) `touch {canary}` 'q' \"dq\"\n", config)
+        self.assertNotIn("anki_host", config)
         self.assertNotIn("pkg-secret", config)
         self.assertNotIn("api_key", config)
         self.assertIn("log_file = on\n", config)
         self.assertNotIn("6.6.6.6", config)
         self.assertNotIn("not_a_setting", config)
 
-    def test_a_credential_comes_from_the_packages_config_and_is_never_shown(self):
-        """audit-overlay-test3-cleanup B1: a package built with --set anki_audio_url=... says only "set" in
-        its manifest; the installer takes the value from the package's config.ini (the file --verify
-        checks) and prints only set or empty. The removed online dictionaries' API keys are no setting of
-        the template any more: a manifest naming one is ignored, and the user's old key is dropped."""
-        url = "https://audio.invalid/a?term={term}&key=pkg-url-secret"
+    def test_no_credential_is_a_package_setting_and_an_old_one_goes_unshown(self):
+        """audit-overlay-test3-cleanup B1, after the removals: jpdb.io's and jiten.moe's API keys went
+        with them and anki_audio_url (whose URL can carry a key) with AnkiConnect, so the template has
+        no credential left. A manifest naming one "set" is ignored, and the user's old values are
+        removed, each named in one line, never shown."""
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
             text = (self.package / name).read_text()
-            self.assertEqual(text.count("\nanki_audio_url =\n"), 1)
             self.assertNotIn("api_key", text)
-            (self.package / name).write_text(text.replace("\nanki_audio_url =\n", f"\nanki_audio_url = {url}\n"))
+            self.assertNotIn("anki_audio_url", text)
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
-        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
-            data = (self.package / name).read_bytes()
-            manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
         manifest["install_settings"] = {"anki_mining": "on", "anki_audio_url": "set", "jpdb_api_key": "set",
                                         "jiten_api_key": ""}
         manifest_path.write_text(json.dumps(manifest))
-        (self.data / "config.ini").write_text("anki_mining = off\njpdb_api_key = users-own-key\n")
+        own = "https://own.invalid/a?term={term}&key=users-own-url"
+        (self.data / "config.ini").write_text(f"anki_mining = off\njpdb_api_key = users-own-key\nanki_audio_url = {own}\n")
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
-        self.assertEqual(shown, "package settings: anki_mining=on anki_audio_url=set")
-        for secret in (url, "pkg-url-secret", "audio.invalid", "users-own-key"):
+        self.assertEqual(shown, "package settings: anki_mining=on")
+        for secret in ("users-own-key", "users-own-url", "own.invalid"):
             self.assertNotIn(secret, result.stdout + result.stderr)
         config = (self.data / "config.ini").read_text()
-        self.assertIn(f"\nanki_audio_url = {url}\n", config)
-        self.assertNotIn("api_key", config)
-        self.assertNotIn("users-own-key", config)
-        self.assertNotIn("= set\n", config)
+        for gone in ("api_key", "anki_audio_url", "users-own", "= set\n"):
+            self.assertNotIn(gone, config)
+        self.assertIn("\nanki_mining = on\n", config)
         self.assertIn("config.ini: jpdb_api_key removed", result.stdout)
-        # a manifest naming a credential "set" while the package's config.ini has none leaves the user's
-        manifest["install_settings"] = {"anki_audio_url": "set"}
-        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
-            text = (self.package / name).read_text().replace(f"\nanki_audio_url = {url}\n", "\nanki_audio_url =\n")
-            (self.package / name).write_text(text)
-            data = text.encode()
-            manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-        manifest_path.write_text(json.dumps(manifest))
-        own = "https://own.invalid/a?term={term}&key=users-own-url"
-        (self.data / "config.ini").write_text(f"anki_audio_url = {own}\n")
-        result = self.install("install-vita.sh", "--title", "PCSG00415")
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("package settings:", result.stdout)
-        self.assertIn(f"\nanki_audio_url = {own}\n", (self.data / "config.ini").read_text())
-        self.assertNotIn("users-own-url", result.stdout + result.stderr)
+        self.assertIn("config.ini: anki_audio_url removed (AnkiConnect was removed", result.stdout)
 
     def test_source_install_uses_the_checkout_template(self):
         # A source checkout has its template under docs, not at the package root.

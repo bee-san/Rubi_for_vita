@@ -88,8 +88,9 @@ static int publish(const char *next, int len, int primary)
     return sceIoSync("ux0:", 0) < 0 ? -1 : 0;
 }
 
-/* The removed online dictionaries' API keys (core/config.h
- * vjo_config_removed_line) are secrets. A save drops them, but it keeps the
+/* The removed online dictionaries' API keys and the removed Anki settings
+ * (core/config.h vjo_config_removed_line: anki_audio_url's URL can hold a
+ * key) are secrets. A save drops them, but it keeps the
  * file it replaces as the backup, so a file holding one is first published
  * without them (every other line as it is) and the backup, which is the
  * keyed file now (or was the source when the primary was missing), is
@@ -205,10 +206,10 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
     return used > VJO_CONFIG_TEXT_MAX ? -1 : (int)used;
 }
 
-int vjo_preferences_save_anki(int mining, const char *host, VjoArena *a)
+int vjo_preferences_save_anki(int mining, VjoArena *a)
 {
-    static const char *const keys[] = {"anki_mining", "anki_host"};
-    const char *values[] = {mining ? "on" : "off", host};
+    static const char *const keys[] = {"anki_mining"};
+    const char *values[] = {mining ? "on" : "off"};
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
@@ -216,7 +217,7 @@ int vjo_preferences_save_anki(int mining, const char *host, VjoArena *a)
         goto done;
     size_t cap = bytes + bytes / 4 + 160;
     char *next = vjo_arena_alloc(a, cap);
-    int len = next ? vjo_config_patch_keys(old, bytes, keys, values, 2, next, cap) : -1;
+    int len = next ? vjo_config_patch_keys(old, bytes, keys, values, 1, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     rc = publish(next, len, primary);
 done:

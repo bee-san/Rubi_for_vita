@@ -927,7 +927,9 @@ LOG = {
     # touch region given back over the game or left to SceShell's LiveArea
     "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
     "touch_left": re.compile(r"^touch region left to SceShell t=(\d+) ms"),
-    "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (\d+)-byte screenshot, (\d+) ms"),
+    # (an earlier build's line also names the screenshot's bytes)
+    "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
+    "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
@@ -985,7 +987,8 @@ def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
     s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
-         "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
+         "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
+                  "exported": 0, "export_fail": 0}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
@@ -1136,7 +1139,8 @@ def summarise_log(text):
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
-                    "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "gstep"):
+                    "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
+                    "gstep"):
             m = LOG[key].match(line)
             if not m:
                 continue
@@ -1194,6 +1198,10 @@ def summarise_log(text):
                 s["anki"]["queue"] = int(m.group(1))
             elif key == "anki_sent":
                 s["anki"]["sent"] += int(m.group(1))
+            elif key == "anki_export":
+                s["anki"]["exports"] += 1
+                s["anki"]["export_fail"] += int(m.group(2)) != 0
+                s["anki"]["exported"] += int(m.group(3))
             elif key == "gstep" and s32(int(m.group(5), 16)) < 0:
                 k = f"{m.group(2)} {m.group(3)}/{m.group(4)} {native(int(m.group(5), 16))}"
                 s["gstep_fail"][k] = s["gstep_fail"].get(k, 0) + 1
@@ -1308,9 +1316,6 @@ def summarise_collect(folder):
     for k in ("vocr_model", "vocr_fallback_model"):  # an older build's model choice (API 20 and before)
         if k in cfg:
             out["config"][k] = cfg[k]
-    out["config"]["anki_host"] = "set" if cfg.get("anki_host") else "empty"
-    # (an audio source URL can carry an API key: only whether it is set)
-    out["config"]["anki_audio_url"] = "set" if cfg.get("anki_audio_url") else "empty"
     out["tai"] = {}
     for dev in ("ur0", "ux0"):
         t = _read(folder, f"{dev}/tai/config.txt")
@@ -1333,11 +1338,14 @@ def summarise_collect(folder):
     # the Anki queue on the card
     q = folder / (data + "anki_queue")
     names = [p.name for p in q.iterdir()] if q.is_dir() else []
+    exported = q / "exported"
+    listing = _read(folder, "listings/ux0_data_VitaJPOverlay_anki.txt") or ""
     out["anki_queue"] = {"cards": sum(n.endswith(".json") and not n.endswith(".duplicate.json") and ".tmp" not in n
                                       for n in names),
                          "duplicates": sum(n.endswith(".duplicate.json") for n in names),
                          "pictures": sum(n.endswith(".jpg") for n in names), "temp": sum(n.endswith(".tmp") for n in names),
-                         "anki_host_txt": (_read(folder, data + "anki_host.txt") or "").strip() or None}
+                         "exported": sum(p.name.endswith(".json") for p in exported.iterdir()) if exported.is_dir() else 0,
+                         "packages": len(re.findall(r"\.apkg\s*$", listing, re.M))}
     out["dumps"] = sorted((p.name, p.stat().st_size) for p in (folder / "ux0/data").glob("*.psp2dmp")) \
         if (folder / "ux0/data").is_dir() else []
     # the self-test
@@ -1549,7 +1557,9 @@ def render_collect(c):
             L.append(overlay_summary(lg))
         a = lg["anki"]
         L.append(f"  Anki: {a['saves']} save(s) ({a['save_fail']} failed), queue {a['queue'] if a['queue'] is not None else '-'}"
-                 f", {a['sent']} sent" + (", Picture off in this build" if a["picture_off"] else ""))
+                 + (f", {a['sent']} sent (AnkiConnect, an earlier build)" if a["sent"] else "")
+                 + f", {a['exports']} export(s) ({a['export_fail']} failed) of {a['exported']} card(s)"
+                 + (", Picture off in this build" if a["picture_off"] else ""))
         if lg["config_warnings"]:
             L.append("  config warnings: " + "; ".join(lg["config_warnings"][:5]))
         if lg["trouble"]:
@@ -1560,7 +1570,7 @@ def render_collect(c):
         L.append("  log.txt: (none: log_file off, or nothing logged)")
     q = c["anki_queue"]
     L.append(f"  anki_queue on the card: {q['cards']} card(s), {q['duplicates']} duplicate(s), {q['pictures']} picture(s), "
-             f"{q['temp']} temp file(s); anki_host.txt {q['anki_host_txt'] or '(none)'}")
+             f"{q['temp']} temp file(s); {q['exported']} exported card(s), {q['packages']} .apkg package(s) in anki/")
     L.append("  crash dumps: " + (", ".join(f"{n} ({b:,} B)" for n, b in c["dumps"]) if c["dumps"] else "none"))
     for t in c.get("tiers_all") or []:
         L += [""] + render_tiers(t, t["where"])

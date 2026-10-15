@@ -1779,8 +1779,7 @@ static void test_anki_mining_enables_cross_in_view(void)
     TEST_CHECK(anki_configured == 1 && !anki_on);
     view_publish(1, NULL, NULL, 0);
     TEST_CHECK(!g_view.anki_enabled);
-    snprintf(loaded.anki_host, sizeof(loaded.anki_host), "192.168.1.20"); /* a host alone: still off */
-    apply_config();
+    apply_config(); /* a reload alone: still off */
     TEST_CHECK(!anki_on);
     open_overlay();
     TEST_CHECK(anki_counts == 0);

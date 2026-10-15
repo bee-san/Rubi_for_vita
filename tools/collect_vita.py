@@ -7,8 +7,9 @@ Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the ins
   ux0:data/VitaJPOverlay/  log.txt log.old.txt selftest-report.txt selftest.txt status.txt
                            status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
                            the audio source URL redacted before anything is written) games.ini
-                           region.ini anki_host.txt
-                           anki_queue/* (every card, screenshot, temp and duplicate file)
+                           region.ini anki_queue/* (every card, screenshot, temp and duplicate file)
+                           and anki_queue/exported/* (the cards the Overlay app exported); anki/ (its
+                           .apkg packages) is listed only
   ur0:data/VitaJPOverlay/  boot.txt
   ur0:tai/, ux0:tai/       config.txt and the installer's config.txt.vjo-bak
   ux0:data/                every *.psp2dmp crash dump
@@ -39,13 +40,14 @@ from pathlib import Path
 DATA = "ux0:/data/VitaJPOverlay"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
-                                  "region.ini", "anki_host.txt")]
+                                  "region.ini")]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
 # The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89) and
 # their attribution, LM-ATTRIBUTION.md (package_release.py).
-DIRS = [(f"{DATA}/anki_queue", "keep", None), (DATA, None, None),
+DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "keep", None),
+        (f"{DATA}/anki", None, None), (DATA, None, None),
         (f"{DATA}/ocr", "hash", re.compile(r"\.(vocr|vlm)$|^LM-ATTRIBUTION\.md$")),
         (f"{DATA}/dictionaries", None, None), ("ux0:/data", "keep", re.compile(r"\.psp2dmp$", re.I)),
         ("ur0:/tai", "hash", re.compile(r"^VitaJPOverlay_.*\.(skprx|suprx)$")),
@@ -54,7 +56,8 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (DATA, None, None),
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",
                  f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/JPOverlaySettings.vpk": "JPOverlaySettings.vpk"}
 # The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
-# (package_release.py SECRET).
+# (package_release.py SECRET). anki_audio_url was removed with AnkiConnect, but a config.ini the
+# installer has not rewritten can still hold it, so it stays redacted.
 CREDENTIAL = re.compile(r"api_key$|^anki_audio_url$", re.I)
 CREDENTIAL_NAME = r"[A-Za-z0-9_]*api_key|anki_audio_url"
 # The removed online dictionaries' API keys (api_key: jpdb's older name): a word that only STARTS with

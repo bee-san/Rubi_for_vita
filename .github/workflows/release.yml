@@ -107,7 +107,24 @@ jobs:
           sparse-checkout: processed
       - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
       - run: cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
+      # Anki itself imports the Overlay app's .apkg packages (host/tests/test_apkg.py): the anki
+      # package (Anki 26.09.3), hash-pinned for Python 3.12, in a venv of its own. This Python is
+      # not put on PATH, so CMake's Python and the image tests' Pillow stay the system's.
+      - name: Python 3.12 for the Anki import (not on PATH)
+        id: anki-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          update-environment: false
+      - name: The pinned anki package
+        run: |
+          "${{ steps.anki-python.outputs.python-path }}" -m venv .venv-anki
+          .venv-anki/bin/pip install --require-hashes --only-binary=:all: -r tools/requirements-anki.txt
+      # VJO_REQUIRE_ANKI: the import tests fail, not skip, if the anki package cannot be imported.
       - run: ctest --test-dir build/host --output-on-failure
+        env:
+          VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
+          VJO_REQUIRE_ANKI: '1'
       - run: python3 tools/test_jpegsw.py
       # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
       # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).

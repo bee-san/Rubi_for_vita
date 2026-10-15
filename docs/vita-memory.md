@@ -159,12 +159,12 @@ SceShell is a user-mode system application spawned with the system-application b
 | Component | Context | What | Pool | Size | Source |
 |---|---|---|---|---|---|
 | `VitaJPOverlay_Kernel.skprx` | `*KERNEL` | module pages (`.bss` 78,128 B at API 16, up from 53,008 B at API 13) | KD | about 0.1 MiB [measured] | [PR #60, `docs/issue-59-root-cause.md` section 4] |
-| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens/Anki JPEG (OCR takes none: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
+| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens JPEG (OCR and Anki take none: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
 | | | `VjoNet` stack 65,536 B + 4,096 B TLS; `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 90,112 B permanent [measured] | same |
-| | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki job 128 or 384 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
-| | | Anki thread stack 64 KiB + TLS, only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving, sending) | Shell partition | transient | [`shell/anki.c`] |
+| | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
+| | | Anki thread stack 64 KiB + TLS, only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | `*TITLEID`, one section per game (`*ALL` up to the installer's `--title`) | module pages in each registered game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
 | | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10, VOCR3-FL10: Small), 1,159,168 B (H15, VOCR3-H15: Normal) or 1,560,576 B (VOCR4-W20: Large, API 21); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
 
@@ -173,7 +173,7 @@ the 36,864 B growth coincides with the build that stopped booting (#59) [measure
 `docs/issue-59-root-cause.md` section 3.1].
 
 **API 19 (#74).** OCR's capture moved into the game: the kernel's `VjoCapture` serves only the
-Lens/Anki JPEG, and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
+Lens JPEG, and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
 CDRAM, else phycont) instead of a region-sized grey plane in its workspace. The H15 workspace is
 188,416 B at any region (712,704 B at 960×544 and 303,104 B at 917×125 before); a line taller
 than a strip takes its own block only when it occurs. The worker's module is 61,440 B
@@ -206,8 +206,8 @@ Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 2
 thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at
 v0.7.4, the last build that ran beside a game [measured: `docs/memory-ledger.md`]. Removing the
 online dictionaries (jpdb.io, jiten.moe) brought it to 376,832 B (Shell module 286,720 B), and
-removing the Hachidori relay client to 372,736 B (Shell module 282,624 B) [measured: the build
-log's module row]. The ledger
+removing the Hachidori relay client to 372,736 B (Shell module 282,624 B) and AnkiConnect to
+@@VM_TAIL@@ [measured: the build log's module row]. The ledger
 ([memory-ledger.md](memory-ledger.md)) fails CI if any of these grow.
 
 ### 4.4 How other plugins stay inside the budgets
@@ -424,9 +424,9 @@ measured on the console]:
 | GXM rings (VDM 128 KiB, vertex 2 MiB, fragment 512 KiB, fragment USSE 16 KiB), depth and stencil (2 x 2,088,960 B), shader patcher (3 x 64 KiB), index and clear buffers (132 KiB), parameter buffer (2 MiB), temporary pool (1 MiB): 10,424,320 B | about 9.9 MiB |
 | newlib heap (reserved whole) | 8 MiB |
 | Icon textures | at most 2.25 MiB |
-| Anki arena, SceNet pool, config scratch, game list | about 0.9 MiB |
+| Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | Code, stacks, PVF atlas | about 2 MiB |
-| **Total** | **about 23 MiB of 50 MiB** |
+| **Total** | **about 24 MiB of 50 MiB** |
 
 Not in the table: libgxm's own memory for the render target (libvita2d passes no driver memory
 block, `driverMemBlock = -1`) is unmeasured, and where `sceGxmVshInitialize` places the 2 MiB

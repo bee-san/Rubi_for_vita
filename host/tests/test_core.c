@@ -760,7 +760,11 @@ static void test_config(void)
         static const char *const drop[] = {"jpdb_api_key = x\n", "  JITEN_API_KEY=x", "api_key = x\r\n",
                                            "jiten_api_key x\n", "jpdb_api_key: x\n", "jpdb_api_key =\n",
                                            "jpdb_api_keyx\n", "jpdb_api_key_old = x\n", "api_keys = x\n",
-                                           "\tJiten_Api_Key_typo: x"};
+                                           "\tJiten_Api_Key_typo: x",
+                                           /* the removed Anki settings (AnkiConnect's, the field mapping) */
+                                           "anki_host = jpdb\n", "ANKI_HOST=10.0.0.2", "anki_audio_url = https://a/?k=1\n",
+                                           "anki_audio_url https://a/?k=1\n", "anki_deck = Mining\n",
+                                           "Anki_Field_Word = Word\n"};
         static const char *const replace[] = {"dictionary = jpdb\n", "Dictionary=JITEN ; old\r\n",
                                               "  dictionary =\tjpdb", "dictionary = jiten # x\n",
                                               "dictionary = hachidori\n", "DICTIONARY = Hachidori ; relay\r\n",
@@ -768,7 +772,8 @@ static void test_config(void)
         static const char *const keep[] = {"dictionary = local\n", "dictionary = hachidorix\n", "dictionary = jpdbx\n",
                                            "hachidori_host = 192.168.1.20\n", "dictionary = hachidori-relay\n",
                                            "; dictionary = jpdb\n", "dictionaryx = jpdb\n", "lens_api_key = x\n",
-                                           "my_api_key = x\n", "anki_host = jpdb\n", "jpdb_api_ke = x\n",
+                                           "my_api_key = x\n", "anki_mining = on\n", "anki_hosts = x\n",
+                                           "anki_field = x\n", "jpdb_api_ke = x\n",
                                            "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
         const char *r;
         for (size_t i = 0; i < sizeof(drop) / sizeof(drop[0]); i++) {
@@ -789,12 +794,13 @@ static void test_config(void)
     const char *selection_off = "japanese_only_selection = OFF\nocr_backend = LENS\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
     TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_LENS && c.n_warnings == 0);
-    /* Anki mining is off unless anki_mining says on (an anki_host alone is not) */
+    /* Anki mining is off unless anki_mining says on; an older file's anki_host
+     * (AnkiConnect's, removed) is ignored without a warning */
     vjo_config_defaults(&c);
     TEST_CHECK(!c.anki_mining);
     const char *mining = "anki_host = 192.168.1.23\nanki_mining = ON\n";
     vjo_config_parse(&c, mining, strlen(mining));
-    TEST_CHECK(c.anki_mining == 1 && !strcmp(c.anki_host, "192.168.1.23") && c.n_warnings == 0);
+    TEST_CHECK(c.anki_mining == 1 && c.n_warnings == 0);
     mining = "anki_mining = off\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(!c.anki_mining && c.n_warnings == 0);
@@ -926,7 +932,7 @@ static void test_config(void)
         TEST_CHECK(d.dictionary == VJO_DICT_LOCAL && d.ocr_mode == VJO_OCR_AUTO &&
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
-        TEST_CHECK(!d.anki_mining && !d.anki_host[0] && strstr(t, "\nanki_mining = off\n"));
+        TEST_CHECK(!d.anki_mining && strstr(t, "\nanki_mining = off\n") && !strstr(t, "anki_host"));
         /* no trace of the removed online dictionaries (jpdb.io, jiten.moe) or their keys, or of
          * the removed Hachidori relay (hachidori_host, its port) */
         TEST_CHECK(!strstr(t, "jpdb") && !strstr(t, "jiten") && !strstr(t, "api_key") && !strstr(t, "furigana"));

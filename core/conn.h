@@ -28,9 +28,7 @@ enum {
     VJO_E_STATUS = -106,    /* non-2xx HTTP status */
     /* -107 was VJO_E_NO_KEY, the removed online dictionaries' missing API key */
     VJO_E_SOURCE = -108,    /* JPEG source read failed */
-    VJO_E_ANKI = -109,      /* AnkiConnect reported an error (VjoErr.detail) */
-    VJO_E_NOT_FOUND = -110, /* no AnkiConnect found on the network */
-    VJO_E_ANKI_DUPLICATE = -111, /* AnkiConnect: the note is already in the deck */
+    /* -109 to -111 were AnkiConnect's (removed): not reused, so an older log's codes stay unambiguous */
     VJO_E_LOCAL_IO = -113, /* cannot open/read a local dictionary */
     VJO_E_LOCAL_FORMAT = -114, /* incompatible/corrupt .vjdict */
     /* -112 was VJO_E_NO_HOST, the removed Hachidori relay's unset or invalid host */

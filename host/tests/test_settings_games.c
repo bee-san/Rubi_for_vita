@@ -213,7 +213,7 @@ int sceCtrlSetSamplingMode(int mode) { int old = sampling_mode; sampling_mode = 
 /* A test's failed read (e.g. 0x80340020): the SDK leaves the caller's pad as it was. */
 static int peek_error;
 /* The Anki page stub's record (settings_stubs/anki_page_stub.c). */
-extern int vjo_anki_stub_rows, vjo_anki_stub_modal;
+extern int vjo_anki_stub_rows;
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 static int live_textures(void);
 /* The loop reads the pad first: a frame starts here. */
@@ -1342,15 +1342,12 @@ static void stick_stops_at_the_first_and_last_card(void)
 
 /* settings/main.c's OCR_Y: the OCR & lookup page's first card, focused when the app starts. */
 #define OCR_FIRST_Y 112
-static int keyboard_from, keyboard_to;
-static void keyboard_frames(int f) { vjo_anki_stub_modal = f >= keyboard_from && f < keyboard_to; }
-
-/* A stick still pushed through a page change or the system keyboard moves
- * nothing until it is let go, as a held button is no new press: not on the
- * Select frame and not after it. A new push moves again. The stick reaches
- * the Anki page (anki_page.c stops it at its ends), and never the Games list
- * from another page. */
-static void a_page_change_or_the_keyboard_latch_the_stick(void)
+/* A stick still pushed through a page change moves nothing until it is let
+ * go, as a held button is no new press: not on the Select frame and not
+ * after it. A new push moves again. The stick reaches the Anki page
+ * (anki_page.c stops it at its ends), and never the Games list from another
+ * page. */
+static void a_page_change_latches_the_stick(void)
 {
     card(30, NULL);
     spec_list();
@@ -1374,20 +1371,13 @@ static void a_page_change_or_the_keyboard_latch_the_stick(void)
     hold_stick(127, 1);
     hold(0, 4);
     int anki_push = at - 1;
-    keyboard_from = at;
-    hold_stick(-128, 20); /* pushed while the keyboard is open */
-    keyboard_to = at;
-    hold_stick(-128, 20); /* and still when it closes */
-    int closed_held = at - 1;
+    hold_stick(-128, 1); /* pushed up */
     hold(0, 4);
-    hold_stick(-128, 1);
-    hold(0, 4);
-    int closed_push = at - 1;
+    int up_push = at - 1;
     with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick up */
     hold_stick(-128, 30);
     int games_held = at - 1;
     hold(0, 4);
-    frame_hook = keyboard_frames;
     int frames = run(at);
     TEST_CHECK(frames == at);
     const Frame *f = session->shown;
@@ -1399,10 +1389,8 @@ static void a_page_change_or_the_keyboard_latch_the_stick(void)
                 f[anki_rest].anki_rows - f[anki - 1].anki_rows);
     TEST_CHECK_(f[anki_push].anki_rows == f[anki_rest].anki_rows + 1, "Anki: a push gives %d",
                 f[anki_push].anki_rows - f[anki_rest].anki_rows);
-    TEST_CHECK_(f[closed_held].anki_rows == f[anki_push].anki_rows, "Anki: %d rows from the stick held through the keyboard",
-                f[closed_held].anki_rows - f[anki_push].anki_rows);
-    TEST_CHECK_(f[closed_push].anki_rows == f[anki_push].anki_rows - 1, "Anki: a push up after it gives %d",
-                f[closed_push].anki_rows - f[anki_push].anki_rows);
+    TEST_CHECK_(f[up_push].anki_rows == f[anki_push].anki_rows - 1, "Anki: a push up gives %d",
+                f[up_push].anki_rows - f[anki_push].anki_rows);
     TEST_CHECK_(selected_of(games_held) == 6, "Games, back with the stick held up: %d", selected_of(games_held));
 }
 
@@ -1775,7 +1763,7 @@ TEST_LIST = {
     {"the_start_line_names_the_budget_and_the_heap", the_start_line_names_the_budget_and_the_heap},
     {"the_frame_interval_is_logged_once", the_frame_interval_is_logged_once},
     {"stick_stops_at_the_first_and_last_card", stick_stops_at_the_first_and_last_card},
-    {"a_page_change_or_the_keyboard_latch_the_stick", a_page_change_or_the_keyboard_latch_the_stick},
+    {"a_page_change_latches_the_stick", a_page_change_latches_the_stick},
     {"a_touched_tab_latches_the_stick", a_touched_tab_latches_the_stick},
     {"the_dpad_acts_first_in_a_frame", the_dpad_acts_first_in_a_frame},
     {"a_failed_read_moves_nothing", a_failed_read_moves_nothing},

@@ -9,6 +9,7 @@ typedef struct { mode_t st_mode; } SceIoStat;
 typedef struct { SceIoStat d_stat; char d_name[256]; } SceIoDirent;
 #define SCE_O_RDONLY O_RDONLY
 #define SCE_O_WRONLY O_WRONLY
+#define SCE_O_RDWR O_RDWR
 #define SCE_O_CREAT O_CREAT
 #define SCE_O_TRUNC O_TRUNC
 #define SCE_O_APPEND O_APPEND
@@ -20,6 +21,8 @@ int sceIoOpen(const char *path, int flags, unsigned mode);
 int sceIoClose(int fd);
 int sceIoRead(int fd, void *data, size_t len);
 int sceIoWrite(int fd, const void *data, size_t len);
+int sceIoPread(int fd, void *data, size_t len, SceOff off);
+int sceIoPwrite(int fd, const void *data, size_t len, SceOff off);
 SceOff sceIoLseek(int fd, SceOff off, int whence);
 int sceIoMkdir(const char *path, unsigned mode);
 int sceIoGetstat(const char *path, SceIoStat *st);
