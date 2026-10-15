@@ -261,7 +261,8 @@ class VocrDefaults(unittest.TestCase):
             with self.assertRaises(AssertionError, msg=line):
                 kernel_names(add(kernel, f20, line))
         worker = (ROOT / "core/vocr_ocr.c").read_text()
-        end = "     241056, VOCR_LINES_GRAD},\n"  # F20's, the release table's last entry
+        end = ("      0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},\n"
+               "     241056, VOCR_LINES_GRAD},\n")  # VOCR4-W20's, the release table's last entry
         sha = "{" + ",".join(["0x00"] * 32) + "}"
         literal = c_table(add(worker, end, f'    {{"VOCR5_N_w8.vocr", 1155968u, {sha}, 182944u, VOCR_LINES_GRAD}},\n'))
         self.assertEqual(literal["VOCR5_N_w8.vocr"], (1155968, "00" * 32, 182944))
