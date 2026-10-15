@@ -308,9 +308,9 @@ No stage measures these; the job model leaves them out or takes them from the co
 From the Vita build of `main` (bcb780e; [memory-ledger.md](memory-ledger.md)): the Shell module
 holds 299,008 B, with 1,832 B left in its last code page (215,256 of 217,088) and 3,936 B in its
 data pages; a Shell change that adds a page breaks AGENTS.md rule 1. Without the online
-dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `8f1ec8f` with API 21's model
-sizes), with 3,216 B left in its code pages (209,776 of 212,992) and 2,548 B in its data pages
-[measured: the build log's module row]. The kernel module has
+dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `ba5f69a`, with API 21's model
+sizes and API 22), with 2,808 B left in its code pages (210,184 of 212,992) and 2,524 B in its data
+pages [measured: the build log's module row]. The kernel module has
 1,248 B (code) and 112 B (data) left, the game worker 452 B and 2,356 B.
 
 ## Reproduce

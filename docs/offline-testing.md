@@ -137,7 +137,7 @@ Anki card saved: job thread              446,464       114,688
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
 299,008 to 286,720 B, 12,288 B less at every step above; the packaged module went from 294,912 B,
-main `8f1ec8f`'s, to 286,720 B [measured: the build log's module row].)
+main `ba5f69a`'s, to 286,720 B [measured: the build log's module row].)
 
 What this says, and what it does not:
 

@@ -229,10 +229,16 @@ In SceShell (the overlay, `shell/anki.c`):
   own steps as a dry run (the record encoded, decoded and made into the Kiku
   note beside the settings, with the exchange's 16 KiB to spare in a 128 KiB
   arena). The first that would not fit, and the ones after it, are left out
-  and log.txt says how many were kept. Measured on the host with 8 dictionaries
-  (`what_cross_saves_triangle_sends_whatever_the_dictionaries`): entries of
-  900 B all kept (an 8,273 B record); 2,700 B, 5 of 7 (17,107 B); 7,000 B, 1
-  of 7. Every such card is sent by △.
+  and log.txt says how many were kept. The dry run and the send build the
+  request alike, each field and the request cut to its text, so its size does
+  not depend on how much of the arena is free (the test below sends every card
+  its dry run passed, at ten entry sizes). Measured on the host with 8
+  dictionaries (`what_cross_saves_triangle_sends_whatever_the_dictionaries`):
+  kana entries of 900 B all kept (an 8,273 B record); 2,700 B, 6 of 7
+  (19,890 B); 7,000 B, 1 of 7; entries whose text escaping grows (`&`, `<`, `"`,
+  line breaks) of 900 B, 6 of 7 (10,895 B); 2,700 B, 1 of 7; 7,000 B, none of
+  the others. Every such card is sent by △ (with entries of 7,000 B of escaping
+  text the shown entry alone used to be too large for it).
 - △ sends to `anki_host`, or for `auto` to the address in `anki_host.txt`,
   read again on every send. SceShell does not search the network: the
   search (up to 254 hosts in batches of 32 sockets) is the Overlay app's.
