@@ -174,11 +174,20 @@ int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_
         return VJO_ERR_FORMAT; /* the frame is not the one the job was armed for */
     for (uint32_t r = 0; r < job->n; r++) {
         uint32_t row = job->y + r;
-        if (read_row(scratch_row, scratch_tmp, base + ((job->y0 + row) * pitch + job->x0) * bpp, job->w, fmt) < 0)
-            return VJO_ERR_COPY;
-        if (job->sig)
-            scene_acc_row(&capture_acc, row, (const uint32_t *)scratch_row);
-        vjo_abgr_to_grey(scratch_tmp, (const uint32_t *)scratch_row, job->w);
+        uintptr_t src = base + ((job->y0 + row) * pitch + job->x0) * bpp;
+        if (fmt == VJO_FB_A1B5G5R5 && !(job->sig && row == scene_acc_next_row(&capture_acc))) {
+            /* The PSP emulator's 16-bit rows straight to grey, one pass (core/fbgrey.h);
+             * a row the capture's signature samples hashes A8B8G8R8 words below. */
+            if (copy_from_game(scratch_row, src, job->w * 2) < 0)
+                return VJO_ERR_COPY;
+            vjo_a1b5g5r5_to_grey(scratch_tmp, (const uint16_t *)scratch_row, job->w);
+        } else {
+            if (read_row(scratch_row, scratch_tmp, src, job->w, fmt) < 0)
+                return VJO_ERR_COPY;
+            if (job->sig)
+                scene_acc_row(&capture_acc, row, (const uint32_t *)scratch_row);
+            vjo_abgr_to_grey(scratch_tmp, (const uint32_t *)scratch_row, job->w);
+        }
         if (job->dst_kernel)
             memcpy(job->dst_kernel + r * job->stride, scratch_tmp, job->w);
         else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch_tmp, job->w) < 0)
