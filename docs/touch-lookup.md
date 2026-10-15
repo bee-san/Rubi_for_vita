@@ -60,9 +60,10 @@ Hangul has no effect when it is ON. A held finger produces one request; it must
 be released before another tap. Touch already held while opening is ignored.
 
 The overlay keeps Shell's front touch region active through normal and crop
-modes and releases it on close. Its existing game input block still filters
-game touch calls. Entering or leaving the crop editor does not briefly hand
-front touches back to the game. Failed region activation is not marked active.
+modes. Its existing game input block still filters game touch calls. Entering
+or leaving the crop editor does not briefly hand front touches back to the
+game. Failed region activation is not marked active. How a close gives the
+region back depends on what is in front then ([PS and resume](#ps-suspend-and-resume-104)).
 
 Hit testing allocates no memory and runs only on a new touch. It uses the
 header's measured PAF character starts, line count, content height and current
@@ -90,6 +91,92 @@ These tests establish the explicit refresh contract, not native PAF behavior.
 These checks validate the portable helper and worker/config integration. Native
 PAF font geometry, finger hit accuracy and game touch routing require hardware
 validation and are recorded separately from host results.
+
+## PS, suspend and resume (#104)
+
+SceTouch gives a touch to the frontmost process whose active region holds it
+(SDK Touch Overview, "Ownership of Touch Data"). SceShell keeps its default
+front region inactive while a game is in front, so the game has the panel, and
+active while its LiveArea is (this project's model since 0.1, in
+`shell/overlay.cpp`'s notes; inferred, not read from SceShell). The open
+overlay activates it to read taps (for the whole overlay since v0.7.9, for the
+crop editor before). Every close deactivated it. Pressing PS with the overlay
+open closes the overlay too, but only after the game's suspend has reached the
+Shell: the kernel's worker, the Shell's control thread, then the page's next
+frame (within a frame or two, estimated and unmeasured; longer while the
+control thread is inside a log append, 12-46 ms each on the console, #81).
+test.1's `log.txt` shows
+that order (`touch region off` after the game's exit ledger lines). The
+deactivation then lands on the LiveArea's region, which SceShell has activated
+for itself by that time (the inference from #104's symptom: nothing else of
+ours reaches SceShell's input), and the LiveArea has no touch until SceShell
+next sets it.
+
+Now:
+
+- **The game's input** is released in the kernel's process event hook itself,
+  in the suspend's (or exit's, or any foreground change's) own call, before the
+  firmware's handler runs (`kernel/lifecycle.c` `fg_store`). Held buttons stay
+  hidden from the game until released, as at a normal close. The block only
+  ever applied to the game's own pad and touch calls; SceShell's input was
+  never filtered.
+- **The overlay** closes in the Shell's next wakeup on the kernel's game-exit
+  event (log.txt says why: `in game`, `game left` or `foreground changed`).
+  If the game has left and SceShell is in front (PS, or the game exited), the
+  page leaves SceShell's touch region alone: SceShell's own switch to the
+  LiveArea owns it. Closed in game (Cancel, L + R, Select + R, a saved
+  region), or when another process comes in front of the game, it deactivates
+  the region as before, the state SceShell had over the game. Two signals say
+  the game left, and either is enough (`shell/touch_hold.h`): the control
+  thread's hand-back with the close (`shell/worker.c` `close_overlay_for`; the
+  game's exit also turns an in-game close the page has not carried out yet
+  into "leave it"), and the kernel's foreground as the page closes
+  (`shell/overlay.cpp` `close_page` asks `vjoGetState`: no process in front).
+  The kernel's foreground changes in the process event hook itself, so Cancel
+  then PS before the page's next frame is covered too, with the control thread
+  still behind. That assumes the kernel's suspend comes before SceShell's
+  switch to the LiveArea: the hook runs in the suspend's own event, but
+  SceShell's order is not measured.
+- **Resume** starts closed: the overlay and the kernel's block (a confirmed
+  game starts with its input free) are off until the next L + R, the subtitle
+  strip until the next Select + R; SceShell's own switch back to the game
+  gives the game the panel.
+
+Each transition is logged with the system clock in ms (`t=`), the same clock in
+both files, so a console run lines them up. A PS and resume with the overlay
+open (illustrative numbers):
+
+```
+kernel.txt  foreground 0x62C03 -> 0x0 (suspend) t=1791614284 ms: input released
+            game exit
+log.txt     overlay close (game left) t=1791614286 ms: input block off rc=0
+            touch region left to SceShell t=1791614299 ms
+            overlay closed: 11269 frames, 6 word moves, ...
+kernel.txt  foreground 0x0 -> 0x62C03 (resume) t=1791616400 ms
+            game pid 0x62C03 active t=1791616410 ms
+log.txt     game PCSG00415 started: dictionary ...
+```
+
+`overlay close (in game)` and `touch region off` follow a Cancel; `foreground
+changed` a process starting over the game. The kernel's `input block=` lines
+and the Shell's `input block on` carry `t=` too.
+
+Host checks: `host/tests/test_kernel_lifecycle.c` runs the real process event
+hook and foreground state machine (released before the firmware's handler
+runs; SceShell's own and other processes' events keep an open overlay's block;
+a block set while nothing was in front goes with the next game's
+confirmation; an app never confirmed as a game logs nothing);
+`test_shell_worker.c` runs PS, a stale L + R over the LiveArea, resume, Cancel,
+a process over the game, and Cancel with PS through the real control thread;
+`test_touch_hold.c` runs the page's rule against a model of the region in which
+the old rule reproduces #104 and the new one leaves the LiveArea its touch
+whichever of SceShell's switch and the page's close comes first, also when
+Cancel's close reaches the page before the control thread has handled PS, and
+when a process starts over the LiveArea before the page closes. The model is an
+assumption about SceShell, the one that explains both the working header taps
+over a game and #104. Whether the LiveArea's touch now
+works at once, and the game's after a resume (SceShell's own switch back to the
+game is what deactivates the region then), is for the console run.
 
 ## Rows and arrow keys
 

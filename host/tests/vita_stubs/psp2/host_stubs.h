@@ -20,6 +20,7 @@ typedef unsigned int SceSize;
 #define sceClibStrcmp strcmp
 #define sceClibStrncmp strncmp
 uint64_t sceKernelGetProcessTimeWide(void);
+uint64_t sceKernelGetSystemTimeWide(void); /* the log's clock (kernel.txt's): defined by the test that uses it */
 int sceKernelDelayThread(unsigned us);
 static inline int sceKernelPowerTick(int type) { return 0; }
 int sceKernelSetEventFlag(SceUID uid, unsigned int bits);

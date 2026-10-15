@@ -38,6 +38,7 @@ enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 /* ---- view model read by the overlay (under vjo_view_lock) ---- */
 typedef struct {
     int open;                 /* overlay should be visible (stored atomically) */
+    int touch_handback;       /* VJO_TOUCH_* (touch_hold.h): what the page's close does with SceShell's touch region */
     unsigned version;         /* bumps whenever content changes */
     unsigned list_seq;        /* bumps with every published list */
     const VjoEntryList *list; /* NULL while recognizing / on error */
@@ -101,6 +102,8 @@ int vjo_post_page(int page, uint32_t text_generation);
 /* worker.c */
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
+/* The system clock in ms (kernel.txt's): the t= of the foreground and touch transitions (#104). */
+unsigned vjo_log_ms(void);
 
 /* selftest.c: the on-device self-test (docs/self-test.md). */
 #include "../include/vjo_game_ocr.h"

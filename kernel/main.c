@@ -383,8 +383,8 @@ int vjoSetInputBlock(int on)
     if (!on && g.input_block) /* e.g. the ○ that closed the overlay */
         __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons);
     __atomic_store_n(&g.input_block, on ? 1 : 0, __ATOMIC_RELEASE);
-    klog("input block=%d pid=%X game=%X raw=%08X", g.input_block,
-         ksceKernelGetProcessId(), g.game_pid, g.raw_buttons);
+    klog("input block=%d pid=%X game=%X raw=%08X t=%u ms", g.input_block,
+         ksceKernelGetProcessId(), g.game_pid, g.raw_buttons, klog_ms());
     return 0;
 }
 

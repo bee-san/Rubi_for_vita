@@ -32,6 +32,8 @@ static int view_invariant, view_invariant_checks;
 static uint32_t invariant_generation;
 static unsigned invariant_seq;
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
+/* The log's clock (kernel.txt's): system time, here 3 s ahead of SceShell's process time. */
+uint64_t sceKernelGetSystemTimeWide(void) { return test_now + 3000000; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
 int sceKernelSetEventFlag(SceUID id, unsigned bits) { posted |= bits; return 0; }
 int vjoGetState(VjoState *out) { *out = state; return 0; }
@@ -756,6 +758,112 @@ static void test_game_start_rejects_previous_generation(void)
     TEST_CHECK(!job_cached_text && !job_same_text && !cache_ok);
     TEST_CHECK(!g_view.list);
     job_running = 0;
+    mem_free();
+}
+
+/* ---- #104: PS with the overlay open ---- */
+
+#define PS_GAME_PID 0x62C03
+/* The overlay open over the game in front, from a cached result (no job). */
+static void open_over_the_game(void)
+{
+    if (!has_result_memory()) TEST_ASSERT(mem_alloc() == 0);
+    state.game_pid = PS_GAME_PID;
+    active = 0;
+    cache_ok = 1;
+    cache_scene = state.scene;
+    cache_seq = state.region_seq;
+    cache_data[0].list.header = "日本語";
+    control_tick(VJO_EV_TRIGGER); /* L + R */
+    TEST_ASSERT(ov == OV_OPEN && input_blocked && g_view.open && !job_running);
+}
+
+/* open -> PS -> released: the kernel's GAME_EXIT with no process in front
+ * (SceShell's LiveArea is) closes the overlay in the same wakeup, releases the
+ * game's input, and tells the page to leave SceShell's touch region alone; a
+ * stale L + R does not open it over the LiveArea. resume -> closed: the game
+ * comes back with the overlay closed and its input free, and only the next
+ * L + R opens it, which Cancel closes in game, giving the region back. */
+static void test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_shell(void)
+{
+    reset();
+    open_over_the_game();
+    state.game_pid = 0;                              /* PS: the game suspended, SceShell in front */
+    control_tick(VJO_EV_GAME_EXIT | VJO_EV_TRIGGER); /* L + R a moment before PS: one wakeup */
+    TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open && !game_active());
+    TEST_CHECK(g_view.touch_handback == VJO_TOUCH_LEAVE);
+    TEST_CHECK(logged("overlay close (game left) t=13000 ms: input block off rc=0") != NULL);
+    control_tick(VJO_EV_TRIGGER); /* over the LiveArea */
+    TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked);
+
+    test_now += 2000000;
+    state.game_pid = PS_GAME_PID; /* resume */
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked && pending_pid == PS_GAME_PID);
+    pending_pid = 0;
+    activate_game(PS_GAME_PID, "PCSG00415", VJO_GAME); /* classify_pending's verdict */
+    control_tick(0);
+    TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked && game_active());
+
+    open_over_the_game();
+    TEST_CHECK(logged("input block on rc=0 (00000000) t=15000 ms") != NULL);
+    vjo_post_command(VJO_CMD_CLOSED, NULL); /* Cancel */
+    control_tick(0);
+    TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open);
+    TEST_CHECK(g_view.touch_handback == VJO_TOUCH_RELEASE);
+    TEST_CHECK(logged("overlay close (in game) t=15000 ms: input block off rc=0") != NULL);
+    mem_free();
+}
+
+/* Any other way out of the game's foreground keeps the in-game hand-back
+ * (deactivate): a process started over the game (the game stays in front),
+ * or the kernel going back to a game behind the one that left. */
+static void test_foreground_switch_gives_the_touch_region_back(void)
+{
+    reset();
+    open_over_the_game();
+    state.game_pid = 0x1137D9; /* a system app starts over the game */
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open);
+    TEST_CHECK(g_view.touch_handback == VJO_TOUCH_RELEASE);
+    TEST_CHECK(logged("overlay close (foreground changed) t=13000 ms") != NULL);
+
+    reset();
+    open_over_the_game();
+    state.game_pid = 0x7000; /* the game left, the kernel is back at the game behind it */
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK(ov == OV_CLOSED && !input_blocked && g_view.touch_handback == VJO_TOUCH_RELEASE);
+    mem_free();
+}
+
+/* Cancel and PS together: the in-game close a moment before the game left is
+ * turned into "leave it" while the page may still be open; a later close sets
+ * its own hand-back again. */
+static void test_close_just_before_ps_leaves_touch_to_shell(void)
+{
+    reset();
+    open_over_the_game();
+    vjo_post_command(VJO_CMD_CLOSED, NULL);
+    control_tick(0);
+    TEST_CHECK(ov == OV_CLOSED && g_view.touch_handback == VJO_TOUCH_RELEASE);
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK(ov == OV_CLOSED && !input_blocked && g_view.touch_handback == VJO_TOUCH_LEAVE);
+    activate_game(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    open_over_the_game();
+    control_tick(VJO_EV_TRIGGER); /* L + R closes it in game */
+    TEST_CHECK(ov == OV_CLOSED && g_view.touch_handback == VJO_TOUCH_RELEASE);
+
+    /* Only the game's exit turns a close into "leave": Cancel, then a process
+     * started over the game, keeps it (audit-overlay-ps-touch A1, N2). */
+    reset();
+    open_over_the_game();
+    vjo_post_command(VJO_CMD_CLOSED, NULL);
+    control_tick(0);
+    state.game_pid = 0x1137D9;
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK_(g_view.touch_handback == VJO_TOUCH_RELEASE, "handback %d", g_view.touch_handback);
+    TEST_CHECK(!input_blocked && !g_view.open);
     mem_free();
 }
 
@@ -3711,5 +3819,9 @@ TEST_LIST = {
     {"changed_dictionary_drops_inflight_cached_result", test_changed_dictionary_drops_running_result},
     {"game_exit_drains_previous_job_without_reviving_cache", test_game_exit_drains_previous_job},
     {"game_start_rejects_previous_generation_and_restarts", test_game_start_rejects_previous_generation},
+    {"ps_with_the_overlay_open_releases_input_and_leaves_touch_to_shell",
+     test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_shell},
+    {"foreground_switch_gives_the_touch_region_back", test_foreground_switch_gives_the_touch_region_back},
+    {"close_just_before_ps_leaves_touch_to_shell", test_close_just_before_ps_leaves_touch_to_shell},
     {NULL, NULL}
 };

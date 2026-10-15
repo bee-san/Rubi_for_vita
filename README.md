@@ -173,6 +173,12 @@ app when it starts.
 | Triangle | Send the queued cards to AnkiConnect, as Kiku notes |
 | Cancel | Close the overlay |
 
+Pressing PS with the overlay open closes it: the game's controls are released
+in the suspend's own event, the overlay no longer turns off the LiveArea's
+touch region on its way out (#104), and the game resumes with the overlay
+closed. Host tests cover this; the console run is still to confirm it
+([PS and resume](docs/touch-lookup.md#ps-suspend-and-resume-104)).
+
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
 recognition errors. Regions are saved per game. Automatic mode recognizes
 settled dialogue in the background and prepares its first local match in Whole

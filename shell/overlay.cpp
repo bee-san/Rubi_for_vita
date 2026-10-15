@@ -20,10 +20,13 @@
  * is closed.
  *
  * Touch: SceTouch routes the front panel by region, and while a game is in
- * front SceShell's regions are inactive. The region selector activates
- * SceShell's default touch region while it is open (as SceShell's own menus
- * over a game must) and reads the touches through paf's input device. It is
- * also drawn with the left stick and the d-pad (#81): a cursor, enter for each
+ * front SceShell's regions are inactive. The open page activates SceShell's
+ * default touch region (as SceShell's own menus over a game must) and reads
+ * the touches through paf's input device: header taps and the region
+ * selector. Closing gives it back as SceShell wants it for what is in front
+ * (touch_hold.h, #104): deactivated over the game, untouched once the game
+ * has left the foreground to SceShell's LiveArea. The selector is also drawn
+ * with the left stick and the d-pad (#81): a cursor, enter for each
  * corner (core/region_select.c holds the state; this file draws it). */
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/ctrl.h>
@@ -31,6 +34,7 @@
 
 #include "paf_ui.h"
 #include "header_highlight.h"
+#include "touch_hold.h"
 #include "word_navigation.h"
 extern "C" {
 #include "../core/utf.h"
@@ -142,7 +146,7 @@ static int s_follow_frames;           /* frames left to scroll the header to the
 static int s_highlight_retry_frames;  /* bounded retries while text layout catches up */
 
 /* region selection (screen pixels) */
-static int s_touch_region_on; /* SceShell's default front touch region activated by us */
+static VjoTouchHold s_touch; /* SceShell's default front touch region, activated by the page (touch_hold.h) */
 static VjoRegionSelect s_rsel;
 static ui::Widget *s_region_cursor;
 static int s_region_drawn[6];          /* cursor x, y; box x, y, w, h (w 0: none) as drawn */
@@ -544,22 +548,23 @@ static void region_hint(int force)
     set_rich(s_region_hint, hint);
 }
 
-/* Front touches go to SceShell while on (and not to the game). */
-static void touch_region(int on)
+/* Makes a write of touch_hold.h's rules: front touches go to SceShell while
+ * the page holds the region (and not to the game). */
+static void touch_write(int action)
 {
     int rc;
-    if (on == s_touch_region_on)
+    if (action == VJO_TOUCH_NO_WRITE)
         return;
-    rc = inputdevice::touchscreen::ActivateDefaultRegion(inputdevice::touchscreen::PORT_FRONT, on != 0);
-    if (rc >= 0)
-        s_touch_region_on = on;
-    vjo_log("touch region %s: 0x%X", on ? "on" : "off", rc);
+    rc = inputdevice::touchscreen::ActivateDefaultRegion(inputdevice::touchscreen::PORT_FRONT,
+                                                         action == VJO_TOUCH_ACTIVATE);
+    vjo_touch_written(&s_touch, action, rc);
+    vjo_log("touch region %s: 0x%X t=%u ms", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc, vjo_log_ms());
 }
 
 static void enter_region_mode(void)
 {
     s_mode = MODE_REGION;
-    touch_region(1);
+    touch_write(vjo_touch_hold(&s_touch));
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
@@ -665,15 +670,28 @@ static void open_page(void)
     s_stick_max = 0;
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_prev_touch = 1;
-    touch_region(1); /* own front input throughout the overlay, not just crops */
+    touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
 
-static void close_page(void)
+/* handback: the control thread's VJO_TOUCH_* for this close (worker.c
+ * close_overlay_for). The hold is given back for what is in front now
+ * (touch_hold.h, #104): the kernel's foreground, read here, changes in the
+ * process event hook itself, before the control thread handles the change. */
+static void close_page(int handback)
 {
     Plugin::PageCloseParam param;
+    VjoState st;
+    int rc, write;
     if (s_mode == MODE_REGION)
         leave_region_mode();
-    touch_region(0);
+    sceClibMemset(&st, 0, sizeof(st));
+    st.size = sizeof(st);
+    rc = vjoGetState(&st);
+    write = vjo_touch_release(&s_touch, handback, rc, st.game_pid);
+    if (write == VJO_TOUCH_LEFT)
+        vjo_log("touch region left to SceShell t=%u ms", vjo_log_ms()); /* the game left the foreground */
+    else
+        touch_write(write);
     param.fade = false;
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
@@ -755,7 +773,7 @@ static void input_header_touch(void)
                     pd->state != inputdevice::touchscreen::Data::STATE_RELEASE;
     int pressed = down && !s_prev_touch;
     s_prev_touch = down;
-    if (!pressed || !s_touch_region_on || !s_local_cursor_mode || !s_header.text || !s_header_has_text)
+    if (!pressed || !s_touch.held || !s_local_cursor_mode || !s_header.text || !s_header_has_text)
         return;
     float x = 0, y = 0;
     uint32_t lines = 0;
@@ -931,7 +949,7 @@ static void frame_body(unsigned version, unsigned anki_version);
 
 static void frame(void *arg)
 {
-    int want_open, want_strip;
+    int want_open, want_strip, handback;
     unsigned version, anki_version, strip_version;
     (void)arg;
 
@@ -943,6 +961,7 @@ static void frame(void *arg)
         return;
     vjo_view_lock();
     want_open = g_view.open;
+    handback = g_view.touch_handback;
     version = g_view.version;
     anki_version = g_view.anki_version;
     want_strip = g_view.strip_on && g_view.strip_text[0] && !want_open;
@@ -964,7 +983,7 @@ static void frame(void *arg)
         s_seen_version = version - 1;
         s_seen_anki_version = anki_version;
     } else if (!want_open && s_page) {
-        close_page();
+        close_page(handback);
         return;
     }
     if (!s_page)
