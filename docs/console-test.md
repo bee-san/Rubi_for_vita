@@ -56,12 +56,12 @@ by an empty `ux0:data/VitaJPOverlay/selftest.txt` (what `--self-test` uploads); 
 ## 3. Run it (once)
 1. Reboot. Wait for the LiveArea, then leave the Vita alone for 1 minute.
 2. Start CLANNAD and go to a dialogue screen. Keep your saved textbox region; with none, draw it
-   first: L+R, Square, drag around the text, Cross, Circle. Wait 1 minute without pressing anything:
+   first: L+R, Square, drag around the text, Enter, Cancel. Wait 1 minute without pressing anything:
    the self-test runs its five stages (VOCR3-FL10, VOCR3-H15, full screen, capture probe, VOCR3-H15
    again) on the first settled screen with text in your region (it waits past screens without
    any, such as the game's opening notice, at most 30) and finishes by itself.
 3. Read about 10 pages, pausing about 3 s on each. On 3 of them open the overlay (L+R), take a phone
-   photo of the screen, then press Circle. Optional: on one of them press × to save the word as an
+   photo of the screen, then press Cancel. Optional: on one of them press Enter to save the word as an
    Anki card (it is saved offline on the card). Note any slowdown, stutter or crash.
 4. Close CLANNAD, go back to the LiveArea and wait 30 s.
 
@@ -104,7 +104,7 @@ FL10, which are installed too. To switch, edit `ux0:data/VitaJPOverlay/config.in
 `vocr_model = VOCR3_FL10_w8.vocr` for the smaller model only. It applies when the overlay next opens.
 
 ## Anki (optional)
-`anki_mining = on` in the test build: × in the overlay saves the shown word and its sentence as a card
+`anki_mining = on` in the test build: Enter in the overlay saves the shown word and its sentence as a card
 in `ux0:data/VitaJPOverlay/anki_queue/`, with Wi-Fi off or Anki closed. △ sends the queue to
 AnkiConnect on your PC: in Anki's AnkiConnect settings set `"webBindAddress": "0.0.0.0"`, and in
 `config.ini` set `anki_host = PC_IP` (or `auto` to search the local network once). Cards have no

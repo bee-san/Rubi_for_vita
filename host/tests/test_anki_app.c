@@ -17,6 +17,7 @@
 #include "acutest.h"
 #undef main
 #include "anki_app.h"
+#include "buttons.h"
 #include "../../shell/anki_queue.h"
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -293,7 +294,8 @@ static void app_status(void *ud, const char *msg)
     statuses++;
     snprintf(last_status, sizeof(last_status), "%s", msg);
 }
-static const VjoAnkiAppOps ops = {NULL, local_ipv4, probe, load_host, save_host, app_stopped, app_status};
+/* enter_glyph: set by reset() from core/buttons.h, × unless a test assigns ○ */
+static VjoAnkiAppOps ops = {NULL, local_ipv4, probe, load_host, save_host, app_stopped, app_status, NULL};
 
 /* ---------------- fixtures ---------------- */
 
@@ -325,6 +327,7 @@ static void clear_queue(void)
 
 static void reset(void)
 {
+    ops.enter_glyph = vjo_buttons(VJO_BUTTON_ASSIGN_CROSS).enter_glyph;
     memset(&anki, 0, sizeof(anki));
     anki.at = 0xC0A80117u; /* 192.168.1.23 */
     anki.port = VJO_ANKI_PORT;
@@ -521,6 +524,9 @@ static void test_send(void)
     reset();
     TEST_CHECK(vjo_anki_app_send(&A, &P, &ops, &cfg, &s, msg, sizeof(msg)) == VJO_OK && !anki.connections);
     TEST_CHECK(!strcmp(msg, "No cards queued. × in the overlay saves the word shown."));
+    ops.enter_glyph = vjo_buttons(VJO_BUTTON_ASSIGN_CIRCLE).enter_glyph; /* a console that enters with ○ */
+    TEST_CHECK(vjo_anki_app_send(&A, &P, &ops, &cfg, &s, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK(!strcmp(msg, "No cards queued. ○ in the overlay saves the word shown."));
     /* three cards: a v3 one, the test build's v2 one, #5's v1 one; Kiku notes, oldest ID first */
     reset();
     queue_card("猫", "ねこ", "[JMdict Plain]\ncat");

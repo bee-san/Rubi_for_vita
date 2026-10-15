@@ -23,7 +23,7 @@
  * front SceShell's regions are inactive. The region selector activates
  * SceShell's default touch region while it is open (as SceShell's own menus
  * over a game must) and reads the touches through paf's input device. It is
- * also drawn with the left stick and the d-pad (#81): a cursor, × for each
+ * also drawn with the left stick and the d-pad (#81): a cursor, enter for each
  * corner (core/region_select.c holds the state; this file draws it). */
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/ctrl.h>
@@ -39,10 +39,21 @@ extern "C" {
 }
 
 #include "../core/region_select.h"
-/* The region selector takes the pad's own button bits. */
+#include "../vita/buttons_vita.h"
+/* The region selector and the enter/cancel buttons take the pad's own button bits. */
 static_assert(VJO_RSEL_UP == SCE_CTRL_UP && VJO_RSEL_RIGHT == SCE_CTRL_RIGHT && VJO_RSEL_DOWN == SCE_CTRL_DOWN &&
-              VJO_RSEL_LEFT == SCE_CTRL_LEFT && VJO_RSEL_CIRCLE == SCE_CTRL_CIRCLE &&
-              VJO_RSEL_CROSS == SCE_CTRL_CROSS, "region selector buttons are SCE_CTRL_* bits");
+              VJO_RSEL_LEFT == SCE_CTRL_LEFT && VJO_BUTTON_CIRCLE == SCE_CTRL_CIRCLE &&
+              VJO_BUTTON_CROSS == SCE_CTRL_CROSS, "region selector buttons are SCE_CTRL_* bits");
+/* The console's enter and cancel buttons: read at start and whenever the
+ * overlay opens (zero until then; nothing reads them before). Not a dynamic
+ * initializer: this module has no C++ runtime to run one. */
+static VjoButtons s_btn;
+
+static void read_buttons(void)
+{
+    s_btn = vjo_buttons_read();
+    __atomic_store_n(&g_view.enter_circle, s_btn.enter == VJO_BUTTON_CIRCLE, __ATOMIC_RELEASE);
+}
 
 using namespace paf;
 
@@ -95,7 +106,7 @@ static ui::Widget *s_panel, *s_region_layer, *s_region_rect;
 
 static unsigned s_seen_version, s_seen_anki_version;
 static unsigned s_list_seq; /* the shown list (Anki requests name it) */
-static int s_anki_enabled;  /* × sends the shown word to Anki */
+static int s_anki_enabled;  /* enter sends the shown word to Anki */
 static int s_selected;
 /* Copied from the view under its lock, so nothing outside render() reads
  * the result memory (the control thread frees it when a game exits) and no
@@ -136,7 +147,7 @@ static VjoRegionSelect s_rsel;
 static ui::Widget *s_region_cursor;
 static int s_region_drawn[6];          /* cursor x, y; box x, y, w, h (w 0: none) as drawn */
 static int s_hint_box[3];              /* the region hint's corner set, w, h */
-static int s_refused[2];               /* the box size × was refused for: too small */
+static int s_refused[2];               /* the box size enter was refused for: too small */
 static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
@@ -419,9 +430,12 @@ static void render(int new_content)
             ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ word"
                : s_japanese_only_selection ? "Tap / ◀▶▲▼ Japanese letter" : "Tap / ◀▶▲▼ character")
             : "◀ ▶ ▲ ▼ word";
+        char anki[32] = "";
+        if (s_anki_enabled)
+            sceClibSnprintf(anki, sizeof(anki), "%s queue · △ send · ", s_btn.enter_glyph);
         sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · ○ close</font>", nav,
-                        s_anki_enabled ? "× queue · △ send · " : "");
+                        "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · %s close</font>", nav, anki,
+                        s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
     if (rebuild_header) {
@@ -499,8 +513,8 @@ static void show_region(void)
     s_region_rect->Show();
 }
 
-/* What × and ○ do next, and the box's size: under the 32 x 32 a region
- * needs it says so, red once × was refused. A changing size is redrawn at
+/* What enter and cancel do next, and the box's size: under the 32 x 32 a region
+ * needs it says so, red once enter was refused. A changing size is redrawn at
  * most ten times a second. */
 static void region_hint(int force)
 {
@@ -515,16 +529,18 @@ static void region_hint(int force)
     s_hint_box[2] = h;
     s_hint_us = now;
     if (!corner)
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · × first corner · "
-                                            "or drag on screen · ○ cancel · hold □ full screen</font>");
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
+                                            "or drag on screen · %s cancel · hold □ full screen</font>",
+                        s_btn.enter_glyph, s_btn.cancel_glyph);
     else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
         sceClibSnprintf(hint, sizeof(hint), "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
-                        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · ○ undo corner</font>",
+                        "<font color=\"#ffffff\"> · stick / ◀▶▲▼ opposite corner · %s undo corner</font>",
                         w == s_refused[0] && h == s_refused[1] ? "#ff8a80" : "#b8c0cc", w, h, VJO_RSEL_MIN,
-                        VJO_RSEL_MIN);
+                        VJO_RSEL_MIN, s_btn.cancel_glyph);
     else
         sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffd24a\">Box %d x %d</font><font color=\"#ffffff\">"
-                        " · stick / ◀▶▲▼ opposite corner · × save · ○ undo corner</font>", w, h);
+                        " · stick / ◀▶▲▼ opposite corner · %s save · %s undo corner</font>", w, h,
+                        s_btn.enter_glyph, s_btn.cancel_glyph);
     set_rich(s_region_hint, hint);
 }
 
@@ -569,6 +585,7 @@ static void leave_region_mode(void)
 static void open_page(void)
 {
     Plugin::PageOpenParam param;
+    read_buttons(); /* the setting can change between openings */
     if (!s_ui_mem) {
         s_ui_mem = (uint8_t *)vjo_shell_heap_alloc_for(VJO_SL_PAF_UI, UI_MEM_BYTES);
         if (!s_ui_mem) {
@@ -628,7 +645,11 @@ static void open_page(void)
         }
     }
     {
-        set_rich(s_hint, "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · ○ close</font>");
+        char hint[128]; /* 93 B with a 3-byte glyph */
+        sceClibSnprintf(hint, sizeof(hint),
+                        "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · %s close</font>",
+                        s_btn.cancel_glyph);
+        set_rich(s_hint, hint);
     }
     s_mode = MODE_OVERLAY;
     s_selected = 0;
@@ -827,13 +848,13 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         s_stick_max = dy < 0 ? -dy : dy;
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
-    /* × saves the shown word (in a character lookup, the match at the
+    /* Enter saves the shown word (in a character lookup, the match at the
      * cursor) to the offline queue; △ sends the queue, also without one. */
-    if ((pressed & SCE_CTRL_CROSS) && s_anki_enabled && s_selected < s_n_entries)
+    if ((pressed & s_btn.enter) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
     if ((pressed & SCE_CTRL_TRIANGLE) && s_anki_enabled)
         vjo_anki_post_send();
-    if (pressed & SCE_CTRL_CIRCLE)
+    if (pressed & s_btn.cancel)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
     if (pressed & SCE_CTRL_SQUARE)
         enter_region_mode();
@@ -858,6 +879,8 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
     s_prev_touch = ri.touch;
     ri.held = held;
     ri.pressed = pressed;
+    ri.enter = s_btn.enter;
+    ri.cancel = s_btn.cancel;
     ri.lx = in->lx;
     ri.ly = in->ly;
     ri.now_us = sceKernelGetProcessTimeWide();
@@ -889,8 +912,8 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         leave_region_mode();
         return;
     }
-    if (ev == VJO_RSEL_CORNER) /* by ×, or by a new touch */
-        vjo_log("region corner %d,%d%s", x, y, pressed & SCE_CTRL_CROSS ? "" : " (touch)");
+    if (ev == VJO_RSEL_CORNER) /* by enter, or by a new touch */
+        vjo_log("region corner %d,%d%s", x, y, pressed & s_btn.enter ? "" : " (touch)");
     else if (ev == VJO_RSEL_BACK)
         vjo_log("region corner undone");
     else if (ev == VJO_RSEL_SMALL) {
@@ -1001,6 +1024,7 @@ static void frame_body(unsigned version, unsigned anki_version)
 extern "C" void vjo_overlay_init(void *plugin)
 {
     s_plugin = (Plugin *)plugin;
+    read_buttons(); /* before Anki's first message names the enter button */
     vjo_arena_init(&s_ui, NULL, 0); /* allocated when the page opens */
     common::MainThreadCallList::Register(frame, NULL);
 }

@@ -365,6 +365,7 @@ foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
+    vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
@@ -404,6 +405,7 @@ foreach(_vjo_games IN ITEMS tests bench)
   endif()
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
+    vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)

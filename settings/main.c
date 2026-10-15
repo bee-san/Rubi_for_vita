@@ -18,6 +18,7 @@
 #include "../core/local_dict.h"
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
+#include "../vita/buttons_vita.h"
 
 #define ROWS 3
 #define TAB_Y 52
@@ -183,8 +184,23 @@ static void footer(const char *message, int error, const char *controls)
     footer_at(440, 64, 467, 2, message, error, controls);
 }
 
+/* The console's enter and cancel buttons (read once at start) and the hints that name them. */
+static VjoButtons buttons;
+static char preference_hints[96], game_hints[96], games_empty_hints[96];
+
+static void read_buttons(void)
+{
+    buttons = vjo_buttons_read();
+    snprintf(preference_hints, sizeof(preference_hints), "Up/Down: setting   Left/Right or %s: choose   %s: exit",
+             buttons.enter_glyph, buttons.cancel_glyph);
+    snprintf(game_hints, sizeof(game_hints), "%s: toggle   L/R: page   Left/Right: letter   %s: exit",
+             buttons.enter_glyph, buttons.cancel_glyph);
+    snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: page   %s: exit",
+             buttons.cancel_glyph);
+}
+
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
-                                  WHITE, DIM, ACCENT, OFF};
+                                  WHITE, DIM, ACCENT, OFF, &buttons};
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -445,7 +461,7 @@ static void change_preference(int backend, int japanese_only, int highlight_mode
         : "Saved. Resume your game, then reopen the overlay.");
 }
 
-/* Dictionaries shown: Cross cycles 1..8; Left/Right step within it. */
+/* Dictionaries shown: enter cycles 1..8; Left/Right step within it. */
 static void set_dictionary_results(int results)
 {
     if (results < 1 || results > VJO_LOCAL_MAX_DICTS || results == preferences.local_dictionary_results) return;
@@ -551,13 +567,12 @@ static void draw_preferences(void)
     text(42, RESULTS_Y + CARD_HELP_Y, DIM, 24, results_help);
     vita2d_disable_clipping();
     footer_at(PREFERENCE_FOOTER_Y, PREFERENCE_FOOTER_H, PREFERENCE_FOOTER_Y + 22, 1,
-              preference_status, preference_error, "Up/Down: setting   Left/Right or X: choose   O: exit");
+              preference_status, preference_error, preference_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
 
-/* The Games page's hints, and the room kept at their right for "512/512". */
-#define GAME_HINTS "X: toggle   L/R: page   Left/Right: letter   O: exit"
+/* The room kept at the right of the Games page's hints for "512/512". */
 #define COUNTER_W 140
 
 static void draw(void)
@@ -601,16 +616,17 @@ static void draw(void)
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
         status_box(440, 64, 467, 2, status, status_error);
-        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, GAME_HINTS);
+        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, game_hints);
         snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
         text(936 - text_width(24, counter), 535, DIM, 24, counter);
-    } else footer(status, status_error, "Square: filter   Start: refresh   Select: page   O: exit");
+    } else footer(status, status_error, games_empty_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
 }
 
 int main(void)
 {
+    read_buttons();
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     int load = vjo_games_file_load(&policy, &scratch);
     writable = load >= 0;
@@ -657,7 +673,7 @@ int main(void)
             sceDisplayWaitVblankStart();
             continue;
         }
-        if ((pressed & SCE_CTRL_CIRCLE) && !(page == 2 && vjo_anki_page_busy())) break;
+        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy())) break;
         if (pressed & SCE_CTRL_SELECT) {
             page = (page + 1) % PAGES;
             repeat_at = now + 350000;
@@ -668,12 +684,12 @@ int main(void)
         } else if (page) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
-            if (pressed & SCE_CTRL_CROSS) toggle_preference();
+            if (pressed & buttons.enter) toggle_preference();
             if (pressed & SCE_CTRL_LEFT) set_preference(0);
             if (pressed & SCE_CTRL_RIGHT) set_preference(1);
             if (pressed & SCE_CTRL_START) load_preferences();
         } else {
-            if (pressed & SCE_CTRL_CROSS) toggle();
+            if (pressed & buttons.enter) toggle();
             if (pressed & SCE_CTRL_TRIANGLE) toggle_default();
             if (pressed & SCE_CTRL_SQUARE) change_filter();
             if (pressed & SCE_CTRL_START) scan();

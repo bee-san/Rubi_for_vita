@@ -16,7 +16,7 @@ the Overlay app's Anki page, where it is also switched on. There is no AnkiWeb s
 Open the **Overlay** app, press **Select**, and choose one of the two engines
 in the OCR engine row: the local engine, named after the generation of the
 model it runs (**VOCR3** in this package), or **Google Lens**.
-Tap an engine directly, or use **Left** (local) and **Right** (Lens); **Cross**
+Tap an engine directly, or use **Left** (local) and **Right** (Lens); **Enter**
 switches to the other one.
 The local engine is the default and supports automatic or manual OCR on the
 Vita, offline. When a game has too little free memory for its model, a job
@@ -141,6 +141,12 @@ ur0:tai/VitaJPOverlay_OCR.suprx
 
 ## Use in a game
 
+**Enter** and **Cancel** are the Vita's own: × enters and ○ cancels on most
+consoles, the other way round on Japanese ones, and HENkaku can swap them on
+any console. The overlay, its hints and the Overlay app follow that setting
+(`/CONFIG/SYSTEM/button_assign`): the overlay reads it each time it opens, the
+app when it starts.
+
 | Control | Action |
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
@@ -151,9 +157,9 @@ ur0:tai/VitaJPOverlay_OCR.suprx
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
-| Cross | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](docs/anki.md)) |
+| Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](docs/anki.md)) |
 | Triangle | Send the queued cards to AnkiConnect, as Kiku notes |
-| Circle | Close the overlay |
+| Cancel | Close the overlay |
 
 Choose a tight dialogue region first: smaller regions need less RAM and reduce
 recognition errors. Regions are saved per game. Automatic mode recognizes
@@ -166,7 +172,7 @@ open, its text stays usable for lookups and Anki whatever the screen does, with 
 background and replaces the text quietly only when it reads a different one
 ([touch lookup](docs/touch-lookup.md)). A job that read a screen changing under it
 shows nothing and is retried quietly. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. With card mining on, Cross saves the shown word,
+when opening the overlay. With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card, even with Wi-Fi off or Anki closed; Triangle sends the queue to
 AnkiConnect. The card has no screenshot yet: the old full-frame capture is the
@@ -177,14 +183,14 @@ not built yet ([Anki](docs/anki.md#the-record-version-3)).
 
 Square dims the game and shows a cursor in the middle of the screen. Move it
 with the left stick, which speeds up while you hold it, or one pixel per press
-with the d-pad (held, the d-pad repeats). Press Cross at one corner of the text
+with the d-pad (held, the d-pad repeats). Press Enter at one corner of the text
 box, then move to the opposite corner: the box follows the cursor, and the line
-at the top shows its size in screen pixels. Cross saves it as this game's
+at the top shows its size in screen pixels. Enter saves it as this game's
 region. A box smaller than 32 × 32 pixels, the capture's minimum, is not saved.
-Circle takes the first corner back; with no first corner it leaves without
+Cancel takes the first corner back; with no first corner it leaves without
 saving. A touch drag still draws the box: the first corner is where the finger
 lands, and after it lifts the stick or the d-pad can still move the opposite
-corner before Cross. Hold Square for one second for the full screen. The cursor
+corner before Enter. Hold Square for one second for the full screen. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
@@ -206,14 +212,14 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Up / Down | Select a game (held: repeats) |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
-| Cross or touch a game | Toggle OCR and overlay input for that game |
+| Enter or touch a game | Toggle OCR and overlay input for that game |
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
 | Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup) settings |
-| Circle | Exit |
+| Cancel | Exit |
 
-On the **OCR & lookup** page, select a card with Up/Down. Cross
+On the **OCR & lookup** page, select a card with Up/Down. Enter
 or touch a card changes its choice: OCR engine, Japanese-only selection,
 whole-word/character highlighting, or how many dictionaries are shown.
 Touch an engine button or a number to choose it directly;
@@ -389,7 +395,7 @@ cloud fallback.
 
 ### Anki
 
-Card mining is off by default (the test builds turn it on). With it on, Cross
+Card mining is off by default (the test builds turn it on). With it on, Enter
 saves cards as readable JSON files, text only (this build takes no
 screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts
 and need no network. Each record (version 3) keeps everything known at the
@@ -484,7 +490,7 @@ retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
-With `anki_mining = on`, saving a card (×) or sending the queue (△) takes one
+With `anki_mining = on`, saving a card (Enter) or sending the queue (△) takes one
 bounded Paf allocation through the same reserve guard (128 KiB: cards are
 text-only, no screenshot and no kernel capture) and a 64 KiB thread stack; both
 are released when the job is done. Counting the queue when the

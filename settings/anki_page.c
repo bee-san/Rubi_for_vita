@@ -41,6 +41,8 @@ static int note_error;
 
 /* The worker (lock): one action at a time. */
 static SceUID lock = -1, worker = -1;
+/* The console's enter button, as the worker's messages name it (set by every frame, before any job). */
+static const char *enter_glyph;
 static int action, running, finished;
 static VjoConfig job_cfg;
 static char progress[200], result[2][240]; /* result[0]: test, [1]: send */
@@ -138,7 +140,7 @@ static int worker_main(SceSize args, void *argp)
     VjoArena arena;
     VjoPlatform p;
     VjoAnkiAppOps ops = {NULL, vjo_app_net_local_ipv4, vjo_app_net_probe, load_host, save_host, stopped,
-                         set_progress};
+                         set_progress, enter_glyph};
     char msg[240];
     int what, rc, err = 1, k;
     (void)args;
@@ -376,8 +378,9 @@ static void address_text(char *out, size_t cap)
 
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
-    char line[240], busy_text[200];
+    char line[240], busy_text[200], controls[96];
     int busy_kind = -1;
+    enter_glyph = ui->buttons->enter_glyph;
     reap();
     if (ime_open) {
         ime_poll(scratch);
@@ -386,12 +389,12 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
             selected = (selected + ROWS - 1) % ROWS;
         if (pressed & SCE_CTRL_DOWN)
             selected = (selected + 1) % ROWS;
-        if (pressed & SCE_CTRL_CROSS)
+        if (pressed & ui->buttons->enter)
             activate(selected, scratch);
         if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == 0 && !running &&
             !!(pressed & SCE_CTRL_RIGHT) != cfg.anki_mining)
             save(!!(pressed & SCE_CTRL_RIGHT), cfg.anki_host, scratch);
-        if ((pressed & SCE_CTRL_CIRCLE) && running)
+        if ((pressed & ui->buttons->cancel) && running)
             vjo_app_net_cancel();
         if (touch_y >= 0 && touch_x >= 24 && touch_x < 936) {
             static const int top[ROWS] = {MINING_Y, HOST_Y, TEST_Y, SEND_Y};
@@ -418,13 +421,17 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     ui->text(42, MINING_Y + 30, ui->white, 28, "Card mining");
     ui->badge(812, MINING_Y + 6, 108, 34, !writable ? "--" : cfg.anki_mining ? "ON" : "OFF",
               writable && cfg.anki_mining);
-    ui->text(42, MINING_Y + 60, ui->dim, 24, "× in the overlay saves the word to a queue on the memory card.");
+    snprintf(line, sizeof(line), "%s in the overlay saves the word to a queue on the memory card.",
+             ui->buttons->enter_glyph);
+    ui->text(42, MINING_Y + 60, ui->dim, 24, line);
     /* AnkiConnect address */
     ui->card(HOST_Y, CARD_H, selected == 1);
     ui->text(42, HOST_Y + 30, ui->white, 28, "AnkiConnect address");
     address_text(line, sizeof(line));
     ui->wrapped(420, HOST_Y + 30, 500, cfg.anki_host[0] ? ui->accent : ui->off, 26, 28, 1, line);
-    ui->text(42, HOST_Y + 60, ui->dim, 24, "X: type your computer's IP[:port], or auto to search the network.");
+    snprintf(line, sizeof(line), "%s: type your computer's IP[:port], or auto to search the network.",
+             ui->buttons->enter_glyph);
+    ui->text(42, HOST_Y + 60, ui->dim, 24, line);
     /* Test connection */
     ui->card(TEST_Y, ACTION_H, selected == 2);
     ui->text(42, TEST_Y + 30, ui->white, 28, "Test connection");
@@ -448,10 +455,14 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     else
         ui->wrapped(42, SEND_Y + 60, 870, result[1][0] && result_error[1] ? ui->off : ui->dim, 22, 24, 2,
                     result[1][0] ? result[1] : "As Kiku notes into the deck Kiku. △ in the overlay sends them too.");
+    if (running)
+        snprintf(controls, sizeof(controls), "%s: cancel   Select: page", ui->buttons->cancel_glyph);
+    else
+        snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: page   %s: exit",
+                 ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
     ui->footer(472, 36, 497, 1,
                note[0] ? note : "Anki needs AnkiConnect with webBindAddress 0.0.0.0, on a trusted home network.",
-               note[0] && note_error,
-               running ? "O: cancel   Select: page" : "Up/Down: choose   X: select   Select: page   O: exit");
+               note[0] && note_error, controls);
     vita2d_end_drawing();
     if (ime_open)
         vita2d_common_dialog_update();

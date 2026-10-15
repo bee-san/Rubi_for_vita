@@ -37,8 +37,10 @@
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/registrymgr.h>
 #include <psp2/touch.h>
 #include <vita2d.h>
+#include "../../core/buttons.h"
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -172,6 +174,16 @@ static long since(const struct timespec *t)
 }
 uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * 16667u; }
 int sceKernelExitProcess(int status) { session->exited = status; return 0; }
+/* The console's /CONFIG/SYSTEM/button_assign: × enters unless a test sets ○. */
+static int button_assign = VJO_BUTTON_ASSIGN_CROSS;
+int sceRegMgrGetKeyInt(const char *category, const char *name, int *buf)
+{
+    if (strcmp(category, "/CONFIG/SYSTEM") || strcmp(name, "button_assign")) return (int)0x800D0003;
+    *buf = button_assign;
+    return 0;
+}
+#define ENTER (vjo_buttons(button_assign).enter)
+#define CANCEL (vjo_buttons(button_assign).cancel)
 int sceCtrlSetSamplingMode(int mode) { (void)mode; return 0; }
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 static int live_textures(void);
@@ -186,7 +198,7 @@ int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
     cur.scans = frame ? 0 : scans;
     cur.focus = -1;
     clock_gettime(CLOCK_MONOTONIC, &frame_start);
-    pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : SCE_CTRL_CIRCLE;
+    pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : CANCEL;
     return 1;
 }
 int sceTouchPeek(int port, SceTouchData *data, int count)
@@ -634,7 +646,7 @@ static void scenario_pages(void)
     hold(SCE_CTRL_RTRIGGER, 150);
     hold(0, 20);
 }
-/* Cross on cards (each saves games.ini and rebuilds the list): the first and
+/* Enter on cards (each saves games.ini and rebuilds the list): the first and
  * second games off, the third off, on, off and on; then Square through the
  * Enabled, Disabled and All filters. */
 #define TOGGLE_FRAMES (20 + 8 * 11)
@@ -642,8 +654,8 @@ static void scenario_toggle(void)
 {
     at = 0;
     hold(0, 20);
-    tap(SCE_CTRL_CROSS, 10); tap(DOWN, 10); tap(SCE_CTRL_CROSS, 10); tap(DOWN, 10);
-    for (int i = 0; i < 4; i++) tap(SCE_CTRL_CROSS, 10);
+    tap(ENTER, 10); tap(DOWN, 10); tap(ENTER, 10); tap(DOWN, 10);
+    for (int i = 0; i < 4; i++) tap(ENTER, 10);
     for (int i = 0; i < 3; i++) tap(SCE_CTRL_SQUARE, 15);
     hold(0, 20);
 }
@@ -886,7 +898,7 @@ static void page_jumps_keep_the_row_and_prefetch(void)
                                                        strcmp(session->shown[g].id[r], "NPXS10028");
     TEST_CHECK_(placeholders == 0, "%d placeholders while paging", placeholders);
     /* The hints name the new controls, and the counter is drawn apart. */
-    TEST_CHECK(!strcmp(session->shown[25].hints, "X: toggle   L/R: page   Left/Right: letter   O: exit"));
+    TEST_CHECK(!strcmp(session->shown[25].hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
     char counter[24];
     snprintf(counter, sizeof(counter), "%d/%d", selected_of(25) + 1, list_count);
     TEST_CHECK(!strcmp(session->shown[25].counter, counter));
@@ -1203,6 +1215,27 @@ static void toggles_and_filters_keep_icons(void)
     TEST_CHECK_(sum_loads(TOGGLE_FRAMES, frames) <= 2, "%d loads through the filters", sum_loads(TOGGLE_FRAMES, frames));
 }
 
+/* A console that enters with ○ (Japan's default): ○ toggles, × leaves, and the
+ * hints say so; the same toggles as on a × console. */
+static void circle_console_toggles_with_circle(void)
+{
+    button_assign = VJO_BUTTON_ASSIGN_CIRCLE;
+    card(60, NULL);
+    spec_list();
+    scenario_toggle();
+    int frames = run(at);
+    check_rules();
+    TEST_CHECK(!strncmp(session->shown[TOGGLE_FRAMES - 1].status[0], "Saved.", 6));
+    int enabled = TOGGLE_FRAMES + 15, disabled = enabled + 16;
+    TEST_CHECK(selected_of(enabled) == 2 && top_of(enabled) == 2);
+    TEST_CHECK(!strcmp(session->shown[disabled].id[0], list[0].id) && !strcmp(session->shown[disabled].id[1], list[1].id)
+               && !session->shown[disabled].id[2][0]);
+    TEST_CHECK(!strcmp(session->shown[25].hints, "○: toggle   L/R: page   Left/Right: letter   ×: exit"));
+    TEST_MSG("%s", session->shown[25].hints);
+    TEST_CHECK(session->exited == 0 && frames < MAX_FRAMES - 1); /* × at the script's end left the app */
+    button_assign = VJO_BUTTON_ASSIGN_CROSS;
+}
+
 static void broken_icons_show_the_placeholder_once_tried(void)
 {
     card(60, kind_mixed);
@@ -1377,6 +1410,7 @@ TEST_LIST = {
     {"hints_leave_room_for_the_counter", hints_leave_room_for_the_counter},
     {"titles_are_laid_out_ahead_one_a_frame", titles_are_laid_out_ahead_one_a_frame},
     {"toggles_and_filters_keep_icons", toggles_and_filters_keep_icons},
+    {"circle_console_toggles_with_circle", circle_console_toggles_with_circle},
     {"broken_icons_show_the_placeholder_once_tried", broken_icons_show_the_placeholder_once_tried},
     {"rescan_only_on_start", rescan_only_on_start},
     {"many_games_bounded", many_games_bounded},

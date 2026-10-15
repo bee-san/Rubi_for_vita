@@ -2234,7 +2234,7 @@ int vjo_worker_start(void)
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
     if (vjo_anki_start() < 0)
-        vjo_log("anki: mailbox unavailable: × saves no cards");
+        vjo_log("anki: mailbox unavailable: no card can be saved");
     apply_config(); /* logging, triggers and Anki are set up before the first game */
     vjo_selftest_init(&cfg);
     if (vjo_selftest_armed())

@@ -1,6 +1,9 @@
 # Anki card mining with an offline queue
 
-With card mining on, × in the open overlay saves the shown dictionary entry
+Enter and Cancel below are the Vita's own buttons: × and ○ on most consoles,
+○ and × on Japanese ones or after a HENkaku swap ([README](../README.md#use-in-a-game)).
+
+With card mining on, Enter in the open overlay saves the shown dictionary entry
 as a card in a queue on the memory card. Saving needs no network: it works
 with Wi-Fi off, Anki closed or no computer set, and the queue survives
 restarts. The cards go to [AnkiConnect](https://ankiweb.net/shared/info/2055492159)
@@ -11,7 +14,7 @@ app. Anki then syncs them to AnkiWeb as usual; the Vita never talks to
 AnkiWeb and stores no login.
 
 There is nothing else to set up: no deck, note type or field mapping to
-choose. Mining is off by default: with it off, × and △ do nothing, and the
+choose. Mining is off by default: with it off, Enter and △ do nothing, and the
 overlay starts no Anki thread, allocates no Anki memory and creates no
 queue directory.
 
@@ -31,8 +34,8 @@ On the computer:
 On the Vita, open the **Overlay** app and its **Anki** page (Select, or tap
 the tab):
 
-1. **Card mining**: ON (Cross, or Left/Right).
-2. **AnkiConnect address**: Cross opens the keyboard. Type your computer's IP
+1. **Card mining**: ON (Enter, or Left/Right).
+2. **AnkiConnect address**: Enter opens the keyboard. Type your computer's IP
    address, such as `192.168.1.23` (`IP:port` if you changed AnkiConnect's
    port; `http://` and a trailing `/` are accepted and dropped), or `auto` to
    let the app search your local network. A new address is tested at once
@@ -49,15 +52,15 @@ line. The overlay reads them when it next opens.
 
 ## Use
 
-Open the overlay, select a word and press ×. The status line shows
+Open the overlay, select a word and press Enter. The status line shows
 `Saving card…`, then `Saved for Anki`, and the entry shows `Queued for Anki`
-(on every occurrence of that word in the sentence). Pressing × again on it
-says `Already queued`. In a local character lookup, × saves the match at the
+(on every occurrence of that word in the sentence). Pressing Enter again on it
+says `Already queued`. In a local character lookup, Enter saves the match at the
 cursor. A line above the entry shows the queue: `Anki queue: 3 · △ send`.
 
 To send the queue: press △ in the overlay, from any overlay screen (no word
 needs to be shown), or **Send queued cards now** on the Overlay app's Anki
-page, which shows how many cards are queued and its progress (Circle
+page, which shows how many cards are queued and its progress (Cancel
 stops it; the rest stay queued). Cards are sent in a fixed order, one at a
 time. In the overlay the queue line shows `sending…` and the status
 `Sending to Anki… 1 sent, 2 left`, then `Sent 3 to Anki`, and the queued
@@ -110,7 +113,7 @@ gives the Yomitan value each field expects; a card fills them the same way:
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Kiku leaves out the one `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them |
 | `Frequency`, `FreqSort` | The frequency rank (with its source), when the dictionary has one |
-| `MiscInfo` | The game's name and the local date and time of the × press |
+| `MiscInfo` | The game's name and the local date and time of the Enter press |
 
 The other Kiku fields (`SelectionText`, `DefinitionPicture`,
 `SentenceTranslation`, `SentenceAudio`, `RelatedExpression`, `Hint` and the
@@ -127,12 +130,12 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
 
 - `<id>.json`: the card, readable UTF-8 JSON (below). The ID is the first 128
   bits of the record's SHA-256, so the same card saved twice in the same
-  minute has the same name (the record holds the minute of the × press).
+  minute has the same name (the record holds the minute of the Enter press).
 - `<id>.jpg`: its screenshot, for a card of an earlier build that took one.
 - `<id>.duplicate.json`: a card Anki already had, kept for review.
 
 A card is written to a temp file, flushed and renamed (after its screenshot,
-if any), and the memory card's directory is synced before × reports it; an
+if any), and the memory card's directory is synced before Enter reports it; an
 interrupted save leaves no card or the complete one, never a partial one. A
 card leaves the queue only after AnkiConnect returns its note ID. Each note
 carries a stable `vita_queue_<id>` tag, and each send first asks Anki
@@ -144,7 +147,7 @@ than sent. Delete a card's `.json` (and `.jpg`) to drop it.
 
 ### The record (version 3)
 
-× records everything it knows about the card when it is pressed, so that a
+Enter records everything it knows about the card when it is pressed, so that a
 card can be made into a note later, by any version that reads the record:
 
 | Key | Content |
@@ -161,7 +164,7 @@ card can be made into a note later, by any version that reads the record:
 | `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp` (`psp` for Adrenaline's shared title IDs, NPXS10028 and PSPEMUCFW, whose name is Adrenaline's; a PSP game started from its own bubble runs under the bubble's ID and is recorded as `vita`) |
 | `ocr_engine`, `ocr_model` | `vocr` or `lens`, and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
-| `time` | When × was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC) |
+| `time` | When Enter was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC) |
 
 A record is at most 32 KiB. Records of version 2
 (#49, v0.8.0-test.1: the same keys up to `misc`) and version 1 (#5) still load
@@ -180,7 +183,7 @@ Not in the record, and why:
   development build that has a JPEG sends it from the Overlay app; △ sends it
   without the picture, as v0.8.0-test.1 does.
 - **The previous and next dialogue.** The Shell keeps only the text on screen
-  (one 4 KiB copy); the next line is not known when × is pressed. The record
+  (one 4 KiB copy); the next line is not known when Enter is pressed. The record
   has the whole textbox, every line of it.
 
 ### Duplicates
@@ -205,8 +208,8 @@ downloads it).
 In SceShell (the overlay, `shell/anki.c`):
 
 - One job at a time: counting the queue (the overlay opens), saving a card
-  (×) or sending the queue (△). A job runs on a short-lived thread with a
-  64 KiB stack, which the control thread joins once it ends. × while the
+  (Enter) or sending the queue (△). A job runs on a short-lived thread with a
+  64 KiB stack, which the control thread joins once it ends. Enter while the
   queue is being sent says so and saves nothing; △ pressed during a save
   sends right after it.
 - Saving or sending takes one bounded allocation from the Shell's Paf heap,
@@ -216,11 +219,11 @@ In SceShell (the overlay, `shell/anki.c`):
   only reads the directory, on the thread's stack, with no heap allocation.
   Nothing Anki-related stays allocated between jobs, and the queue is never
   read into memory whole: each step scans the directory once or reads one card.
-- With Dictionaries shown above 1, × reads each other dictionary's entry for
+- With Dictionaries shown above 1, Enter reads each other dictionary's entry for
   the word from its file into that arena, one at a time (at most 8,448 B each,
   `VJO_LOCAL_SELECTED_BUDGET`, then compacted to the entry's own strings),
   after copying the 208-byte page locators under the view lock. An entry is
-  kept only while △ can still send the card: after each one, × runs the send's
+  kept only while △ can still send the card: after each one, Enter runs the send's
   own steps as a dry run (the record encoded, decoded and made into the Kiku
   note beside the settings, with the exchange's 16 KiB to spare in a 128 KiB
   arena). The first that would not fit, and the ones after it, are left out
@@ -235,7 +238,7 @@ In SceShell (the overlay, `shell/anki.c`):
   anything is written; the result memory is never read during file or
   network I/O. If memory is refused, a write fails or a request fails, only
   the Anki status line changes: the recognized text, its lookup and the
-  overlay stay usable, the queued cards stay, and × or △ can be pressed again.
+  overlay stay usable, the queued cards stay, and Enter or △ can be pressed again.
 - AnkiConnect replies are limited to 64 KiB, audio source replies to 32 KiB.
   Connecting to Anki gives up after 3 seconds; an audio source has a 5-second
   read timeout.

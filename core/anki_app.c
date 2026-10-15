@@ -250,7 +250,7 @@ int vjo_anki_app_send(VjoArena *a, const VjoPlatform *p, const VjoAnkiAppOps *op
         return s->rc = VJO_E_PARSE;
     }
     if (!s->queued) {
-        vjo_snprintf(msg, cap, "No cards queued. × in the overlay saves the word shown.");
+        vjo_snprintf(msg, cap, "No cards queued. %s in the overlay saves the word shown.", ops->enter_glyph);
         return s->rc = VJO_OK;
     }
     rc = vjo_anki_app_endpoint(a, p, ops, cfg->anki_host, host, sizeof(host), &port, &searched);

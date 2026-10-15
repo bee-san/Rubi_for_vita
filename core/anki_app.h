@@ -20,8 +20,9 @@ typedef struct {
      * text into line (0), or < 0 when there is none; and writing it. */
     int (*load_host)(void *ud, char *line, size_t cap);
     void (*save_host)(void *ud, const char *line);
-    int (*stopped)(void *ud);               /* the user cancelled (Circle) */
+    int (*stopped)(void *ud);               /* the user cancelled (the cancel button) */
     void (*status)(void *ud, const char *msg); /* progress, for the screen */
+    const char *enter_glyph; /* the console's enter button (core/buttons.h), as messages name it */
 } VjoAnkiAppOps;
 
 /* What was typed for AnkiConnect's address, as anki_host: trimmed,
