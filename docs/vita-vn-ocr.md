@@ -50,7 +50,8 @@ without the helper threads of `ocr_threads` (API 22), which a job takes only whe
 game also has room for them beside the same reserve, and never runs a smaller size for.
 Both columns describe one recognizer thread on the code of v0.8.0-test.1: with
 vita-vn-ocr #85's kernels (the pin since API 22) the same box is estimated at 0.56-0.59
-times those times on one core at the same clock (greedy: FL10 0.56, H15 0.57, W20 0.59), less again at 444 MHz (`ocr_boost_clock`) and
+times those times on one core at the same clock (greedy: FL10 0.56, H15 0.57, W20 0.59; 0.64-0.70 without
+credit for #85's weight prefetch), less again at 444 MHz (`ocr_boost_clock`) and
 with free cores ([OCR speed](ocr-speed.md)), so the buttons' times are upper estimates
 until test.3's logs recalibrate them. The app's buttons show the time and that memory
 (`1.3 s, 1.4 MB`). Each size is within
