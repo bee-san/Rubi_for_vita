@@ -41,6 +41,12 @@ bash tools/media.sh                 # media/: the two films, the poster, the GIF
 renders in under two minutes on this project's build host. After changing on-screen text, run
 `python3 tools/fonts.py` (`pip install -r tools/requirements-fonts.txt`).
 
+The music, the sound effects and the night sky are generated, and their outputs are committed. With
+Python 3.11 or newer, `pip install -r tools/requirements-audio.txt && python3 tools/make_audio.py`
+writes `assets/audio/`. With numpy 2.3.3 and FFmpeg n8.1.3 that gives the committed files byte for
+byte. `python3 tools/make_stars.py` (standard library only) rewrites the generated parts of
+`assets/vn/vn-bg.svg` and `vn-livearea.svg`.
+
 | Path | What it is |
 | --- | --- |
 | `src/promo.template.html` | the markup of every scene and screen |
