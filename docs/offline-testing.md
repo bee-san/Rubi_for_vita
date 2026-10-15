@@ -144,7 +144,11 @@ text with the firmware's PVF library, which this Vita3K does not emulate (`scePv
 unimplemented): it needs Sony's 3.74 system software and font package
 (`VITA3K_FIRMWARE`, `VITA3K_FONTS`), which Vita3K then loads as the real modules. A pass
 says the app's own code survives that script under Vita3K's GPU emulation; its timings are
-the host's dynarec and are not used.
+the host's dynarec and are not used. (Vita3K does not fault on a texture freed while the GPU
+reads it, so that is counted, not observed: main `7ed16d8`'s app freed 365 of its 366 icon
+textures so, with 66 failed reloads of broken icons, and exited 0.) If `vita-elf-create` refuses
+the smoke app's ELF ("segment 1 overlaps": its code segment ends too close to the data
+segment), the script rebuilds it with 4 KiB of padding (`VJO_SETTINGS_SMOKE_PAD`).
 
 ## 6. What only the console answers
 

@@ -318,8 +318,12 @@ add_custom_target(vjo_settings_assets ALL
 # by -Wl,--wrap). Off by default, never in the release, and not evidence about the console.
 option(VJO_SETTINGS_SMOKE "Build the Overlay app's Vita3K smoke VPK (vjo_settings_smoke.vpk)" OFF)
 if(VJO_SETTINGS_SMOKE)
+  # vita-elf-create needs a few KiB after the code segment for its SCE data; a code segment
+  # that ends just below the data segment fails ("segment 1 overlaps"). The smoke script then
+  # rebuilds with this many bytes of padding in .rodata.
+  set(VJO_SETTINGS_SMOKE_PAD 0 CACHE STRING "Padding bytes in the smoke app's code segment")
   add_executable(vjo_settings_smoke ${VJO_SETTINGS_SRC} ${ROOT}/tools/vita3k_settings_smoke.c)
-  target_compile_definitions(vjo_settings_smoke PRIVATE VJO_STANDALONE=1)
+  target_compile_definitions(vjo_settings_smoke PRIVATE VJO_STANDALONE=1 VJO_SMOKE_PAD=${VJO_SETTINGS_SMOKE_PAD})
   target_include_directories(vjo_settings_smoke PRIVATE ${ROOT}/third_party/bearssl/inc)
   target_compile_options(vjo_settings_smoke PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
   target_link_options(vjo_settings_smoke PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning

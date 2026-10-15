@@ -36,9 +36,14 @@ command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
 PY=${PYTHON:-python3}
 
 build=$root/build/vita3k-settings-smoke
-cmake -S "$root/vita" -B "$build" -DVJO_SETTINGS_SMOKE=ON -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
-  -DPython3_EXECUTABLE="$(command -v "$PY")" > "$build.config.log" 2>&1 \
-  && cmake --build "$build" --target vjo_settings_smoke.vpk-vpk -j4 > "$build.build.log" 2>&1 \
+mkdir -p "$root/build"
+make_app() { # make_app PAD
+  cmake -S "$root/vita" -B "$build" -DVJO_SETTINGS_SMOKE=ON -DVJO_SETTINGS_SMOKE_PAD="$1" \
+    -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" -DPython3_EXECUTABLE="$(command -v "$PY")" > "$build.config.log" 2>&1 \
+    && cmake --build "$build" --target vjo_settings_smoke.vpk-vpk -j4 > "$build.build.log" 2>&1
+}
+# vita-elf-create refuses a code segment that ends just below the data segment: move it.
+make_app 0 || { grep -q "segment 1 overlaps" "$build.build.log" && make_app 4096; } \
   || fail "(the app did not build: $build.config.log, $build.build.log)"
 mkdir -p "$out"
 sbx=$(mktemp -d "${TMPDIR:-/tmp}/vjo-vita3k-settings.XXXXXX")

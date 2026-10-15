@@ -43,6 +43,11 @@ static const Step script[] = {
     TAP(SCE_CTRL_CIRCLE, 0),
 };
 
+#if VJO_SMOKE_PAD > 0
+/* Moves the code segment's end (vita/CMakeLists.txt VJO_SETTINGS_SMOKE_PAD). */
+static const unsigned char smoke_pad[VJO_SMOKE_PAD] = {1};
+#endif
+
 static unsigned frame;
 static int loads, failed_loads, frees, other_frees, waits, draws, unsafe_frees, live, max_live;
 /* Textures alive, and whether each was drawn since the GPU was last waited for. */
@@ -63,6 +68,9 @@ static void write_results(const char *state)
     int n = snprintf(line, sizeof(line), "%s frames=%u script=%u loads=%d failed=%d frees=%d other_frees=%d waits=%d "
                      "draws=%d unsafe_frees=%d live=%d max_live=%d\n", state, frame, script_frames(), loads,
                      failed_loads, frees, other_frees, waits, draws, unsafe_frees, live, max_live);
+#if VJO_SMOKE_PAD > 0
+    if (((const volatile unsigned char *)smoke_pad)[0] != 1) return; /* kept by the reference */
+#endif
     /* Removed first: Vita3K's sceIoOpen does not truncate. */
     sceIoRemove("ux0:data/vjo_settings_smoke.txt");
     SceUID fd = sceIoOpen("ux0:data/vjo_settings_smoke.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
