@@ -576,7 +576,9 @@ cmake --build build/vita --target release
 
 Check out the exact `plaintext-dicts` commit recorded in
 `docs/plaintext-dictionaries.json` and point `VJO_PLAINTEXT_SOURCE` at that
-checkout. CI uses a read-only deploy key and the same exact commit. To prepare
+checkout. CI uses a read-only deploy key and the same exact commit; a pull
+request from a fork gets no secrets, so its CI leaves out the dictionary, the
+tests on it and the release zip, and runs every other build and test. To prepare
 the dictionary separately, run `python3 tools/prepare_plaintext.py --source
 /path/to/plaintext-dicts -o plaintext.vjdict`; without `--source`, authenticated
 GitHub CLI access can fetch the pinned archive. Both the archive and unpacked
