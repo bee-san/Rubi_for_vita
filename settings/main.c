@@ -12,6 +12,7 @@
 #include "catalog.h"
 #include "engine.h"
 #include "icons.h"
+#include "letter.h"
 #include "preferences.h"
 #include "text_layout.h"
 #include "../core/local_dict.h"
@@ -369,33 +370,13 @@ static void page_jump(int direction)
     offset = top;
 }
 
-/* The letter a title is listed under, for Left/Right: an ASCII letter in
- * upper case; '#' for any other ASCII start (digits, symbols); for kana, the
- * first kana of its gojuon row (か for が and ご, カ for ガ); else the first
- * character itself. */
-static uint32_t initial(const char *title)
-{
-    static const uint16_t row_start[] = {0x3041, 0x304B, 0x3055, 0x305F, 0x306A, 0x306F,
-                                         0x307E, 0x3083, 0x3089, 0x308E, 0x3094, 0x3095};
-    static const uint16_t row_head[] = {0x3042, 0x304B, 0x3055, 0x305F, 0x306A, 0x306F,
-                                        0x307E, 0x3084, 0x3089, 0x308F, 0x3042, 0x304B};
-    size_t at = 0, len = strlen(title);
-    uint32_t c = len ? vjo_utf8_next(title, len, &at) : 0;
-    if (c >= 'a' && c <= 'z') return c - 'a' + 'A';
-    if (c < 0x80) return c >= 'A' && c <= 'Z' ? c : '#';
-    uint32_t kana = c >= 0x30A1 && c <= 0x30F6 ? c - 0x60 : c; /* katakana as hiragana */
-    if (kana < 0x3041 || kana > 0x3096) return c;
-    int row = 0;
-    while (row + 1 < (int)(sizeof(row_start) / sizeof(row_start[0])) && kana >= row_start[row + 1]) row++;
-    return row_head[row] + (kana != c ? 0x60 : 0);
-}
+/* The letter of the list's index-th game (settings/letter.c). */
+static uint32_t initial_at(int index) { return vjo_title_letter(library[visible[index]].title); }
 
-static uint32_t initial_at(int index) { return initial(library[visible[index]].title); }
-
-/* Left/Right: the first game of the previous or next letter (the list is in
- * alphabetical order, settings/catalog.c), shown at the top. Left inside a
- * letter goes to that letter's first game; Right in the last letter goes to
- * the last game. */
+/* Left/Right: the first game of the previous or next letter (the catalog
+ * lists each letter's games together, settings/letter.c), shown at the top.
+ * Left inside a letter goes to that letter's first game; Right in the last
+ * letter goes to the last game. */
 static void letter_jump(int direction)
 {
     if (!count) return;

@@ -5,9 +5,12 @@
  * - its memo returns the same layouts and keeps a bounded number;
  * - settings/icons.c's PNG check lets only files whose every chunk lies
  *   inside the buffer through (libvita2d's buffer reader has no length), at
- *   every truncation and byte flip of a real icon file, and its file read is
- *   bounded; the icon cache evicts the least recently used icon outside the
- *   window and never one in it.
+ *   every truncation and byte flip of a real icon file, each checked in a
+ *   copy that ends at an unmapped page, so an over-read faults without a
+ *   sanitizer; its file read is bounded; the icon cache evicts the least
+ *   recently used icon outside the window and never one in it;
+ * - settings/letter.c files each title under its letter, against a gojuon
+ *   table written here, and orders the catalog so that each letter is one run.
  * Built for the host (ctest settings_layout) and, as a pure-C suite, for the
  * Vita's CPU under qemu-arm (tools/arm_host_tests.sh). */
 #include "acutest.h"
@@ -16,10 +19,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "../../core/utf.h"
 #include "../../settings/icons.h"
+#include "../../settings/letter.h"
 #include "../../settings/text_layout.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
@@ -213,9 +218,130 @@ static void memo_reuses_layouts(void)
     const VjoTextLayout *l = vjo_text_memo_layout(&memo, long_text, 300, 24, 2, stub_width, &scratch);
     vjo_text_layout(long_text, 300, 24, 2, stub_width, &fresh);
     TEST_CHECK(l == &scratch && same_layout(l, &fresh));
+    /* The edge: 255 bytes are kept, 256 are laid out into scratch each time. */
+    char edge[VJO_TEXT_MEMO_TEXT + 1];
+    for (int len = VJO_TEXT_MEMO_TEXT - 1; len <= VJO_TEXT_MEMO_TEXT; len++) {
+        memset(edge, 'w', (size_t)len);
+        edge[len] = 0;
+        vjo_text_memo_clear(&memo);
+        const VjoTextLayout *e1 = vjo_text_memo_layout(&memo, edge, 300, 24, 2, stub_width, &scratch);
+        const VjoTextLayout *e2 = vjo_text_memo_layout(&memo, edge, 300, 24, 2, stub_width, &scratch);
+        vjo_text_layout(edge, 300, 24, 2, stub_width, &fresh);
+        if (len < VJO_TEXT_MEMO_TEXT) TEST_CHECK_(e1 == e2 && e1 != &scratch && memo.hits == 1, "%d bytes kept", len);
+        else TEST_CHECK_(e1 == &scratch && e2 == &scratch && memo.hits == 0 && memo.misses == 2, "%d bytes", len);
+        TEST_CHECK(same_layout(e2, &fresh));
+    }
     /* lines above VJO_TEXT_ROWS are clamped, never past the row array */
     l = vjo_text_memo_layout(&memo, "a b c d e f g h i j k l m n o p", 10, 24, 9, stub_width, &scratch);
     TEST_CHECK(l->rows <= VJO_TEXT_ROWS);
+}
+
+/* ---- the titles' letters and order (settings/letter.c) ---- */
+/* The gojuon rows, from the kana chart (not from letter.c): each row's
+ * hiragana, small and voiced ones included, and the letter it is filed under.
+ * ゔ is a voiced う, ゕ and ゖ small か and け. */
+static uint32_t chart_letter(uint32_t c)
+{
+    static const struct { const char *members; uint32_t head; } rows[] = {
+        {"ぁあぃいぅうぇえぉおゔ", 0x3042}, {"かがきぎくぐけげこごゕゖ", 0x304B}, {"さざしじすずせぜそぞ", 0x3055},
+        {"ただちぢっつづてでとど", 0x305F}, {"なにぬねの", 0x306A}, {"はばぱひびぴふぶぷへべぺほぼぽ", 0x306F},
+        {"まみむめも", 0x307E}, {"ゃやゅゆょよ", 0x3084}, {"らりるれろ", 0x3089}, {"ゎわゐゑをん", 0x308F}};
+    int katakana = c >= 0x30A1 && c <= 0x30F6;
+    uint32_t k = katakana ? c - 0x60 : c;
+    for (unsigned r = 0; r < sizeof(rows) / sizeof(rows[0]); r++)
+        for (size_t i = 0, n = strlen(rows[r].members); i < n;)
+            if (vjo_utf8_next(rows[r].members, n, &i) == k) return rows[r].head + (katakana ? 0x60 : 0);
+    if (c < 0x80) return c >= 'a' && c <= 'z' ? c - 0x20 : c >= 'A' && c <= 'Z' ? c : '#';
+    return c;
+}
+
+static void title_letters(void)
+{
+    static const struct { const char *title; uint32_t letter; } cases[] = {
+        {"abc", 'A'}, {"Zed", 'Z'}, {"3D Room", '#'}, {"{Curly}", '#'}, {"~", '#'}, {" lead", '#'}, {"", '#'},
+        {"が", 0x304B}, {"ご", 0x304B}, {"ゔ", 0x3042}, {"ゕ", 0x304B}, {"ゖ", 0x304B}, {"ぁ", 0x3042}, {"ん", 0x308F},
+        {"ガ", 0x30AB}, {"ヴ", 0x30A2}, {"ヵ", 0x30AB}, {"ヶ", 0x30AB}, {"ン", 0x30EF}, {"ヷ", 0x30F7}, {"ー", 0x30FC},
+        {"ゝ", 0x309D}, {"ｶ", 0xFF76}, {"漢", 0x6F22}, {"é", 0xE9}, {"\xF0\x9F\x8E\xAE", 0x1F3AE},
+        {"\xFF Broken", 0xFFFD}, {"\xE3\x81", 0xFFFD}, {"\xC3", 0xFFFD}};
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        TEST_CHECK_(vjo_title_letter(cases[i].title) == cases[i].letter, "case %u: U+%04X, want U+%04X", i,
+                    (unsigned)vjo_title_letter(cases[i].title), (unsigned)cases[i].letter);
+    /* Every kana and ASCII character as a title's first, against the chart. */
+    int bad = 0;
+    for (uint32_t c = 1; c < 0x3100; c++) {
+        if (c >= 0x80 && c < 0x3040) continue;
+        char t[8];
+        int n = vjo_utf8_encode(c, t);
+        t[n] = 'x';
+        t[n + 1] = 0;
+        if (vjo_title_letter(t) != chart_letter(c) && bad++ < 5)
+            TEST_MSG("U+%04X: U+%04X, the chart U+%04X", (unsigned)c, (unsigned)vjo_title_letter(t),
+                     (unsigned)chart_letter(c));
+    }
+    TEST_CHECK(bad == 0);
+}
+
+typedef struct { char title[64], id[12]; } Entry;
+static int entry_order(const void *a, const void *b)
+{
+    const Entry *x = a, *y = b;
+    return vjo_title_order(x->title, x->id, y->title, y->id);
+}
+static int sign(int v) { return (v > 0) - (v < 0); }
+
+static void title_order(void)
+{
+    static const char *const starts[] = {
+        "a", "A", "b", "z", "Z", "0", "8", "[", "{", "~", " ", "あ", "お", "ゔ", "か", "が", "ゕ", "ゖ", "ん", "ア",
+        "ヴ", "カ", "ガ", "ヵ", "ヶ", "ン", "ヷ", "ー", "ｶ", "漢", "空", "é", "\xF0\x9F\x8E\xAE", "\xFF", "\xC3"};
+    static const char *const tails[] = {"", "x", "X", "bc", "Bc", "の旅", " 2", "ab", "AB"};
+    static Entry e[3000];
+    int n = 0;
+    for (unsigned s = 0; s < sizeof(starts) / sizeof(starts[0]); s++)
+        for (unsigned t = 0; t < sizeof(tails) / sizeof(tails[0]); t++)
+            for (int k = 0; k < 3 && n < 3000; k++, n++) {
+                snprintf(e[n].title, sizeof(e[n].title), "%s%s", starts[s], tails[t]);
+                snprintf(e[n].id, sizeof(e[n].id), "VJOT%05d", (int)(next() % 100000));
+            }
+    for (int i = n - 1; i > 0; i--) { /* shuffled */
+        int j = (int)(next() % (unsigned)(i + 1));
+        Entry tmp = e[i]; e[i] = e[j]; e[j] = tmp;
+    }
+    qsort(e, (size_t)n, sizeof(e[0]), entry_order);
+    /* Each letter is one run, and the letters go up: '#', A-Z, then by code point. */
+    int runs = 1, bad = 0;
+    for (int i = 1; i < n; i++) {
+        uint32_t a = vjo_title_letter(e[i - 1].title), b = vjo_title_letter(e[i].title);
+        runs += a != b;
+        if (a > b && bad++ < 5) TEST_MSG("U+%04X before U+%04X", (unsigned)a, (unsigned)b);
+    }
+    TEST_CHECK(bad == 0);
+    int letters = 0;
+    for (int i = 0; i < n; i++) {
+        int seen = 0;
+        for (int j = 0; j < i && !seen; j++) seen = vjo_title_letter(e[j].title) == vjo_title_letter(e[i].title);
+        letters += !seen;
+    }
+    TEST_CHECK_(runs == letters, "%d runs, %d letters", runs, letters);
+    /* A total order: antisymmetric, transitive, an entry only equal to itself. */
+    for (int k = 0; k < 20000; k++) {
+        const Entry *a = &e[next() % (unsigned)n], *b = &e[next() % (unsigned)n], *c = &e[next() % (unsigned)n];
+        int ab = sign(entry_order(a, b)), bc = sign(entry_order(b, c)), ac = sign(entry_order(a, c));
+        TEST_CHECK(ab == -sign(entry_order(b, a)));
+        if (ab <= 0 && bc <= 0) TEST_CHECK(ac <= 0);
+        if (!ab) TEST_CHECK(!strcmp(a->title, b->title) && !strcmp(a->id, b->id));
+    }
+    /* Case: letters fold, then a capital comes first; equal titles go by ID. */
+    static const Entry cased[] = {{"abc", "B"}, {"aBc", "A"}, {"ABC", "D"}, {"Abc", "C"}, {"abc", "A"},
+                                  {"ab", "Z"}, {"Abd", "E"}, {"echo", "F"}, {"Fish", "G"}, {"Echo", "H"}};
+    static const char *const want[] = {"ab", "ABC", "Abc", "aBc", "abc", "abc", "Abd", "Echo", "echo", "Fish"};
+    static const char *const want_id[] = {"Z", "D", "C", "A", "A", "B", "E", "H", "F", "G"};
+    Entry c[10];
+    memcpy(c, cased, sizeof(c));
+    qsort(c, 10, sizeof(c[0]), entry_order);
+    for (int i = 0; i < 10; i++)
+        TEST_CHECK_(!strcmp(c[i].title, want[i]) && !strcmp(c[i].id, want_id[i]), "%d: %s %s, want %s %s", i,
+                    c[i].title, c[i].id, want[i], want_id[i]);
 }
 
 /* ---- the PNG check ---- */
@@ -237,16 +363,20 @@ static int spec_ancillary_name(const uint8_t *t)
         if (!((t[i] >= 'A' && t[i] <= 'Z') || (t[i] >= 'a' && t[i] <= 'z'))) return 0;
     return t[2] >= 'A' && t[2] <= 'Z' && t[0] >= 'a' && t[0] <= 'z';
 }
-/* The check on an exact-size heap copy, so a read past the end is an ASan error. */
+/* The check on a copy that ends where an unmapped page begins: a read past the
+ * end faults in any build, not only under ASan (CI runs none). */
 static int check_copy(const uint8_t *p, size_t n, unsigned side)
 {
-    uint8_t *copy = malloc(n ? n : 1);
-    TEST_ASSERT(copy != NULL);
+    size_t page = (size_t)sysconf(_SC_PAGESIZE), data = (n + page - 1) / page * page;
+    uint8_t *map = mmap(NULL, data + page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    TEST_ASSERT(map != MAP_FAILED);
+    TEST_ASSERT(mprotect(map + data, page, PROT_NONE) == 0);
+    uint8_t *copy = map + data - n;
     if (n) memcpy(copy, p, n);
     unsigned w = 0, h = 0;
     int rc = vjo_icon_png_check(copy, n, &w, &h);
     if (rc == VJO_ICON_OK) TEST_CHECK(w == side && h == side);
-    free(copy);
+    munmap(map, data + page);
     return rc;
 }
 
@@ -535,6 +665,8 @@ static void icon_cache_lru(void)
 TEST_LIST = {
     {"layout_matches_wrapped_text", layout_matches_wrapped_text},
     {"layout_game_titles", layout_game_titles},
+    {"title_letters", title_letters},
+    {"title_order", title_order},
     {"memo_reuses_layouts", memo_reuses_layouts},
     {"png_check_accepts_icons", png_check_accepts_icons},
     {"png_check_refuses_damage", png_check_refuses_damage},

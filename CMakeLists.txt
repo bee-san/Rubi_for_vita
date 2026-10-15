@@ -352,7 +352,7 @@ add_test(NAME preferences COMMAND vjo-preferences-tests)
 foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c vita/games_storage.c
+    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
@@ -365,8 +365,10 @@ set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=
 target_sources(vjo-settings-vocr5-tests PRIVATE core/vocr_models.c)
 target_compile_definitions(vjo-settings-vocr5-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr5_models.h")
 # The Overlay app's text layouts (settings/text_layout.c, against main.c's old
-# wrapped_text) and its icon file check and cache (settings/icons.c).
-add_executable(vjo-settings-layout-tests host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c)
+# wrapped_text), its icon file check and cache (settings/icons.c) and the
+# titles' letters and order (settings/letter.c).
+add_executable(vjo-settings-layout-tests host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c
+  settings/letter.c)
 target_include_directories(vjo-settings-layout-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-settings-layout-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-layout-tests vjo_host)
@@ -389,7 +391,7 @@ foreach(_vjo_games IN ITEMS tests bench)
     set(_vjo_main ${VJO_SETTINGS_BENCH_MAIN})
   endif()
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c vita/games_storage.c
+    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
