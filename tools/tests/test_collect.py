@@ -315,6 +315,36 @@ class Collect(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60, cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("press SELECT to start FTP", result.stdout)
+    def test_the_lms_and_their_attribution_are_hashed_against_the_package(self):
+        # The beam + LM decoder's LMs and their CC BY-SA attribution ship beside the weights (#89).
+        # Each installed one is hashed and matches its manifest entry, a shipped one the Vita lacks
+        # is absent, and none of them is kept in the zip.
+        ocr, dev_ocr = "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/VitaJPOverlay/ocr/"
+        manifest = json.loads((self.package / "package-manifest.json").read_text())
+        for name, body in (("vocr_lm_o3_1000k.vlm", b"lm 1000k"), ("vocr_lm_o3_4000k.vlm", b"lm 4000k"),
+                           ("LM-ATTRIBUTION.md", b"# attribution"), ("VOCR4_W20_w8.vocr", b"w20 weights")):
+            (self.device / (ocr + name)).write_bytes(body)
+            manifest["files"][ocr + name] = {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+        manifest["files"][ocr + "vocr_lm_o3_500k.vlm"] = {"bytes": 2, "sha256": hashlib.sha256(b"lm").hexdigest()}
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest))
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        record = json.loads((folder / "COLLECT.json").read_text())
+        check = record["package_check"]
+        for name in ("vocr_lm_o3_1000k.vlm", "vocr_lm_o3_4000k.vlm", "LM-ATTRIBUTION.md", "VOCR4_W20_w8.vocr"):
+            self.assertIn(dev_ocr + name, record["hashed"])
+            self.assertTrue(check[dev_ocr + name]["match"], name)
+        self.assertFalse(check[dev_ocr + "vocr_lm_o3_500k.vlm"]["match"])
+        self.assertTrue(check[dev_ocr + "vocr_lm_o3_500k.vlm"].get("absent"))
+        with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
+            self.assertEqual([n for n in z.namelist() if n.endswith((".vocr", ".vlm", "LM-ATTRIBUTION.md"))], [])
+        # setUp's 8 package files (VOCR3-FL10's differs) and these 5; VOCR2 is not in the package
+        self.assertIn("installed files: 11 of 13 match the package; DIFFER or absent: "
+                      "ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr, ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm; "
+                      "not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
+                      (folder / "analysis.txt").read_text())
 
 
 if __name__ == "__main__":
