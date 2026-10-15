@@ -117,6 +117,8 @@ def enable(ftp, names):
     # The replaced file itself: the backup above has its settings (without a removed API key).
     try:
         ftp.delete(previous)
+    except ftplib.error_reply:
+        pass  # VitaShell confirms DELE with a code ftplib does not expect (as install_ftp.sh notes)
     except ftplib.all_errors:
         print("Could not delete " + previous + ": delete it by hand (it can hold an old API key).")
     print("Enabled local dictionaries. Previous settings: " + backup)

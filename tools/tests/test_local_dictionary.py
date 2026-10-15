@@ -396,9 +396,10 @@ class LocalDictionaryTest(unittest.TestCase):
 
 
 class FakeFTP:
-    def __init__(self, files=None, fail_replace=False):
+    def __init__(self, files=None, fail_replace=False, vitashell_dele=False):
         self.files = files or {}
         self.fail_replace = fail_replace
+        self.vitashell_dele = vitashell_dele
 
     def retrbinary(self, command, callback):
         name = command[5:]
@@ -420,6 +421,8 @@ class FakeFTP:
         if name not in self.files:
             raise ftplib.error_perm("550 missing")
         del self.files[name]
+        if self.vitashell_dele:
+            raise ftplib.error_reply("226 File deleted")  # VitaShell's reply to DELE (tools/install_ftp.sh)
 
 
 class InstallerTest(unittest.TestCase):
@@ -447,6 +450,12 @@ class InstallerTest(unittest.TestCase):
                          b"; my config\ndictionary = hachidori\nanki_host = 10.0.0.3\ndictionary = jiten\n"
                          b"; jpdb_api_key = a comment\n")
         self.assertFalse(any(b"secret" in value for value in ftp.files.values()))
+        # VitaShell confirms DELE with a reply ftplib raises error_reply for: the file is gone, no warning
+        ftp = FakeFTP({key: old}, vitashell_dele=True)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            install.enable(ftp, ["main.vjdict"])
+        self.assertFalse(any(path.endswith(".active") for path in ftp.files))
+        self.assertNotIn("Could not delete", out.getvalue())
         # a BOM before a key on the first line: the BOM stays, the key goes
         self.assertEqual(install.without_secrets(b"\xef\xbb\xbfjpdb_api_key = k\r\nx = 1\r\n"), b"\xef\xbb\xbfx = 1\r\n")
         self.assertEqual(install.without_secrets(b"x = 1\n"), b"x = 1\n")
