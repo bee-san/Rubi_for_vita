@@ -109,14 +109,57 @@ int sceClibVsnprintf(char *dst, SceSize cap, const char *fmt, va_list ap)
     formats++;
     return vsnprintf(dst, cap, fmt, ap);
 }
+/* The two mutexes (VjoLog, VjoStatus), each held by at most one thread: a lock of a mutex
+ * the caller holds already (the SDK's are not recursive), an unlock of one it does not hold,
+ * or one still held when a logger call returns (lock_check) fails the test. */
+static SceUID next_mutex = 41;
+static struct { SceUID uid; SceUID holder; } mutexes[4];
+static unsigned mutex_errors;
+static int mutex_slot(SceUID uid)
+{
+    for (int i = 0; i < 4; i++)
+        if (mutexes[i].uid == uid) return i;
+    return -1;
+}
 SceUID sceKernelCreateMutex(const char *name, unsigned attr, int count, void *opt)
 {
     (void)name; (void)attr; (void)count; (void)opt;
-    return 41;
+    for (int i = 0; i < 4; i++)
+        if (!mutexes[i].uid) { mutexes[i].uid = next_mutex; mutexes[i].holder = 0; return next_mutex++; }
+    return -1;
 }
-int sceKernelDeleteMutex(SceUID uid) { (void)uid; return 0; }
-int sceKernelLockMutex(SceUID uid, int count, unsigned *timeout) { (void)uid; (void)count; (void)timeout; return 0; }
-int sceKernelUnlockMutex(SceUID uid, int count) { (void)uid; (void)count; return 0; }
+int sceKernelDeleteMutex(SceUID uid)
+{
+    int i = mutex_slot(uid);
+    if (i < 0 || mutexes[i].holder) mutex_errors++;
+    if (i >= 0) mutexes[i].uid = 0;
+    return 0;
+}
+int sceKernelLockMutex(SceUID uid, int count, unsigned *timeout)
+{
+    int i = mutex_slot(uid);
+    (void)timeout;
+    if (count != 1) mutex_errors++;
+    if (i < 0 || mutexes[i].holder) { mutex_errors++; return -1; } /* a deadlock on the console */
+    mutexes[i].holder = (SceUID)thread;
+    return 0;
+}
+int sceKernelUnlockMutex(SceUID uid, int count)
+{
+    int i = mutex_slot(uid);
+    if (count != 1) mutex_errors++;
+    if (i < 0 || mutexes[i].holder != (SceUID)thread) { mutex_errors++; return -1; }
+    mutexes[i].holder = 0;
+    return 0;
+}
+/* After every logger call: nothing held, nothing misused. */
+static void lock_check(void)
+{
+    for (int i = 0; i < 4; i++)
+        if (mutexes[i].uid && mutexes[i].holder) mutex_errors++;
+    TEST_CHECK(mutex_errors == 0);
+    TEST_MSG("%u mutex errors", mutex_errors);
+}
 SceUID sceKernelGetThreadId(void) { return (SceUID)thread; }
 
 static char udp[1 << 20];
@@ -197,14 +240,18 @@ typedef struct {
     unsigned log_opens, status_opens, datagrams;
 } Snapshot;
 
+static void lock_check(void);
 static void fs_reset(void)
 {
+    lock_check(); /* the previous scenario's lock use, before its record is cleared */
     for (int i = 0; i < FILES; i++) {
         free(files[i].data);
         memset(&files[i], 0, sizeof(files[i]));
     }
     memset(fds, 0, sizeof(fds));
     memset(opens, 0, sizeof(opens));
+    memset(mutexes, 0, sizeof(mutexes));
+    mutex_errors = 0;
     udp_used = datagrams = writes = renames = formats = log_path_opens = status_path_opens = status_writes = 0;
     fail_writes = fail_opens = 0;
     thread = 1;
@@ -318,6 +365,7 @@ static void run(unsigned lines, size_t prefill, int file_on_, int udp_on, int th
     }
     snap(got);
     free(fill);
+    lock_check();
 }
 
 static void check_same(const Snapshot *ref, const Snapshot *got, int udp_on)
@@ -354,6 +402,7 @@ static void batches_write_the_same_bytes(void)
     check_same(&ref, &got, 0);
     TEST_CHECK(got.log_n == 0);
     snap_free(&ref); snap_free(&got);
+    lock_check();
 }
 
 static void a_batch_is_one_open_per_file(void)
@@ -382,6 +431,7 @@ static void a_batch_is_one_open_per_file(void)
     vjo_log_batch_end(&b);
     TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 1600 + 10 * (2 * VJO_LOG_BATCH_LINES + 3));
     TEST_CHECK(opens[lookup(VJO_LOG_PATH, 0) - files] == 1 + 3);
+    lock_check();
 }
 
 static void before_configure_and_without_sinks(void)
@@ -399,6 +449,7 @@ static void before_configure_and_without_sinks(void)
     formats = 0;
     vjo_log("not formatted %d", 2);
     TEST_CHECK(formats == 0);
+    lock_check();
 }
 
 /* A fresh logger (log_file on) after fs_reset, log.txt holding `prefill` bytes. */
@@ -445,6 +496,7 @@ static void edge_run(const unsigned *lens, unsigned n, unsigned from, unsigned t
     snap(&got);
     check_same(&ref, &got, 0);
     snap_free(&ref); snap_free(&got);
+    lock_check();
 }
 
 /* Lines that bring log.txt or status.txt to exactly their cap are written (not rotated,
@@ -480,6 +532,7 @@ static void lines_at_the_caps(void)
     lens[n++] = 60; lens[n++] = 40;
     edge_run(lens, n, n - 2, n, 0);
     TEST_CHECK(lookup(VJO_STATUS_PATH, 0)->size == STATUS_CAP);
+    lock_check();
 }
 
 /* A batch whose run fails to write just under the cap: the next line is judged against
@@ -502,6 +555,7 @@ static void a_failed_run_at_the_cap(void)
     TEST_CHECK(file_size == LOG_FILE_CAP - 100 && lookup(VJO_LOG_PATH, 0)->size == LOG_FILE_CAP - 100);
     vjo_log_raw(line, make_line(line, 2, 100));
     TEST_CHECK(!lookup(VJO_LOG_OLD_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == LOG_FILE_CAP);
+    lock_check();
 }
 
 /* status.txt: a batch that reaches the cap exactly is one write, not one per line. */
@@ -520,6 +574,7 @@ static void status_runs_are_one_write(void)
     vjo_log_batch_end(&b);
     TEST_CHECK(lookup(VJO_STATUS_PATH, 0)->size == STATUS_CAP && status_writes == 1);
     TEST_MSG("status.txt %zu B in %u writes", lookup(VJO_STATUS_PATH, 0)->size, status_writes);
+    lock_check();
 }
 
 /* A configuration change inside a batch: the lines logged before it go out under the old
@@ -540,6 +595,7 @@ static void configure_inside_a_batch(void)
     vjo_log_batch_end(&b);
     TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 80);
     TEST_CHECK(lookup(VJO_STATUS_PATH, 0)->size == 120);
+    lock_check();
 }
 
 /* Another thread's line during a batch is written at once, after the batch's lines so far;
@@ -560,6 +616,7 @@ static void another_thread_is_not_held(void)
     TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 120); /* held again */
     vjo_log_batch_end(&b);
     TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 150);
+    lock_check();
 }
 
 /* The batch never writes past its line table or its buffer: with guards after both, more
@@ -594,6 +651,7 @@ static void a_batch_stays_inside_its_memory(void)
     for (unsigned i = 0; i < 16; i++) TEST_CHECK(tb.guard[i] == 0xA5A5A5A5u);
     for (unsigned i = 0; i < sizeof(mem.guard); i++)
         if (mem.guard[i] != 0x5A) { TEST_CHECK(mem.guard[i] == 0x5A); TEST_MSG("guard byte %u", i); break; }
+    lock_check();
 }
 
 /* Writes and opens that fail for a while, inside and outside batches: the
@@ -634,6 +692,63 @@ static void failures_lose_lines_but_not_the_sizes(void)
     size_t before = lookup(VJO_LOG_PATH, 0)->size;
     vjo_log_raw("after\n", 6);
     TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == before + 6);
+    lock_check();
+}
+
+/* A begin refused because another thread's batch is open (VjoControl's ledger table while VjoNet
+ * formats a job's lines), and that thread's end: neither touches the open batch, neither holds a
+ * mutex after it returns; the open batch's lines go out at its own end, after the other
+ * thread's line (written at once, flushing the batch so far first). */
+static void a_refused_begin_leaves_the_open_batch(void)
+{
+    VjoLogBatch a, b;
+    char abuf[1024], bbuf[1024], line[256];
+    fresh_logger(0);
+    TEST_ASSERT(vjo_log_batch_begin(&a, abuf, sizeof(abuf)) == 1);
+    vjo_log_raw(line, make_line(line, 0, 30));
+    thread = 2;
+    TEST_CHECK(vjo_log_batch_begin(&b, bbuf, sizeof(bbuf)) == 0);
+    lock_check();
+    vjo_log_raw(line, make_line(line, 1, 40)); /* thread 2's line: the open batch's goes first */
+    vjo_log_batch_end(&b);                      /* refused: not the open batch */
+    lock_check();
+    thread = 1;
+    TEST_CHECK(batch == &a);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 70);
+    vjo_log_raw(line, make_line(line, 2, 20));
+    vjo_log_batch_end(&a);
+    TEST_CHECK(!batch && lookup(VJO_LOG_PATH, 0)->size == 90);
+    lock_check();
+}
+
+/* Whether vjo_log formats a line: with log.txt on, or UDP on, it does even once status.txt is
+ * full; with neither and status.txt full (or closed) it does not; with one byte of status.txt
+ * left it still does (audit-overlay-perf-3: dropping file_on or udp_fd from the check silenced
+ * log.txt and UDP once status.txt was full). */
+static void sinks_decide_whether_vjo_log_formats(void)
+{
+    VjoConfig cfg;
+    fresh_logger(0); /* log_file on, no UDP */
+    status_size = STATUS_CAP; /* full */
+    formats = 0;
+    vjo_log("to log.txt %d", 1);
+    TEST_CHECK(formats == 1 && lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 13);
+    TEST_CHECK(lookup(VJO_STATUS_PATH, 0) && lookup(VJO_STATUS_PATH, 0)->size == 0);
+    memset(&cfg, 0, sizeof(cfg)); /* log_file off, UDP on */
+    snprintf(cfg.log_host, sizeof(cfg.log_host), "192.168.1.2");
+    vjo_log_configure(&cfg);
+    formats = 0; datagrams = 0;
+    vjo_log("to udp %d", 2);
+    TEST_CHECK(formats == 1 && datagrams == 1 && lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 13);
+    memset(&cfg, 0, sizeof(cfg)); /* neither */
+    vjo_log_configure(&cfg);
+    formats = 0; datagrams = 0;
+    vjo_log("nowhere %d", 3);
+    TEST_CHECK(formats == 0 && datagrams == 0);
+    status_size = STATUS_CAP - 1; /* one byte left: a sink still */
+    vjo_log("%s", "");
+    TEST_CHECK(formats == 1 && lookup(VJO_STATUS_PATH, 0) && lookup(VJO_STATUS_PATH, 0)->size == 1);
+    lock_check();
 }
 
 TEST_LIST = {
@@ -647,5 +762,7 @@ TEST_LIST = {
     {"a_batch_stays_inside_its_memory", a_batch_stays_inside_its_memory},
     {"a_failed_run_at_the_cap", a_failed_run_at_the_cap},
     {"status_runs_are_one_write", status_runs_are_one_write},
+    {"sinks_decide_whether_vjo_log_formats", sinks_decide_whether_vjo_log_formats},
+    {"a_refused_begin_leaves_the_open_batch", a_refused_begin_leaves_the_open_batch},
     {NULL, NULL},
 };
