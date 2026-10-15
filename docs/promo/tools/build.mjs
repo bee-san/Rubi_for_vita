@@ -8,7 +8,7 @@
 // fails when a committed output is out of date.
 //
 // The Overlay app pages are drawn here as SVG with the same geometry, colours
-// and strings as settings/main.c and settings/engine.c draw them with vita2d
+// and strings as settings/main.c and settings/anki_page.c draw them with vita2d
 // (text y is the baseline, as vita2d_pvf_draw_text takes it).
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -143,48 +143,6 @@ function gamesPage(id, { games, selected, offset = 0, defaultOn = true, filter =
   return p.svg(id);
 }
 
-// draw_preferences(): the OCR & lookup page (settings/main.c, settings/engine.c).
-function ocrPage(id, { lens = false, selected = 0, status }) {
-  const p = new Page();
-  header(p, 1);
-  const OCR_Y = 112;
-  focusCard(p, OCR_Y, 146, selected === 0);
-  p.text(42, OCR_Y + 31, C.WHITE, 28, "OCR engine");
-  badge(p, 42, OCR_Y + 42, 432, 48, "VOCR3", !lens);
-  badge(p, 42 + 444, OCR_Y + 42, 432, 48, "Google Lens", lens);
-  p.text(
-    42,
-    OCR_Y + 111,
-    C.DIM,
-    24,
-    lens ? "Wi-Fi required. Sends the selected image to Google." : "Local OCR: dialogue region, automatic or manual.",
-  );
-  p.text(
-    42,
-    OCR_Y + 137,
-    C.DIM,
-    24,
-    lens ? "No model file needed. Uses your chosen dictionary." : "VOCR3-H15 found. Game OCR worker required.",
-  );
-  const card = (y, focus) => focusCard(p, y, 68, focus);
-  card(262, selected === 1);
-  p.text(42, 262 + 30, C.WHITE, 28, "Japanese characters only");
-  badge(p, 812, 262 + 6, 108, 34, "ON", true);
-  p.text(42, 262 + 60, C.DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
-  card(334, selected === 2);
-  p.text(42, 334 + 30, C.WHITE, 28, "Highlight");
-  badge(p, 532, 334 + 6, 176, 34, "Whole word", true);
-  badge(p, 724, 334 + 6, 196, 34, "Character", false);
-  p.text(42, 334 + 60, C.DIM, 24, "Word skips matched text. Character moves one character.");
-  card(406, selected === 3);
-  p.text(42, 406 + 30, C.WHITE, 28, "Dictionaries shown");
-  for (let i = 0; i < 8; i++) badge(p, 540 + i * 48, 406 + 6, 44, 34, String(i + 1), i === 0);
-  p.text(42, 406 + 60, C.DIM, 24, "Best match only. 1 dictionary enabled.");
-  statusBox(p, 478, 30, 478 + 22, status, false);
-  p.text(24, 535, C.DIM, 24, `Up/Down: setting   Left/Right or ${ENTER}: choose   ${CANCEL}: exit`);
-  return p.svg(id);
-}
-
 // The installed titles the Games page lists (fictional games; the catalog's
 // order: letters A-Z, then other characters, settings/letter.c).
 const GAMES = [
@@ -212,9 +170,7 @@ function appPages() {
     selected: 1,
     status: "Saved. Resume or restart your game to apply.",
   });
-  const ocrLocal = ocrPage("app-ocr-a", { lens: false, selected: 0, status: "Changes apply when you next open the overlay." });
-  const ocrLens = ocrPage("app-ocr-b", { lens: true, selected: 0, status: "Saved. Resume your game, then reopen the overlay." });
-  return [before, moved, off, ocrLocal, ocrLens].join("\n");
+  return [before, moved, off].join("\n");
 }
 
 // The Anki page (settings/anki_page.c after the .apkg export, #118): card
@@ -277,8 +233,10 @@ const ICONS = {
   tablet: `<svg viewBox="0 0 96 96" width="96" height="96" fill="none" stroke="#c1cfde" stroke-width="5" stroke-linejoin="round"><rect x="6" y="6" width="84" height="84" rx="10"/><rect x="30" y="28" width="36" height="40" rx="5" stroke="#ffd24a"/></svg>`,
 };
 
-// Typewriter characters: one span per character.
-const chars = (s) => [...s].map((c) => `<span class="c">${esc(c)}</span>`).join("");
+// Typewriter characters: one span per character (the game's are covered by the
+// overlay's panel on purpose: data-layout-allow-occlusion).
+const chars = (s, attr = "") => [...s].map((c) => `<span class="c"${attr}>${esc(c)}</span>`).join("");
+const gameChars = (s) => chars(s, " data-layout-allow-occlusion");
 // Caption words: each word in a span, tags kept.
 const words = (html) =>
   html
@@ -306,7 +264,9 @@ function sfx() {
 function device() {
   // The device SVG inline (the timeline presses its buttons by id); its
   // comments are kept, the XML prolog (none) is not needed.
-  return read("assets/device/vita-white.svg").replace(/<svg /, '<svg id="device-art" ');
+  // data-layout-ignore: the drawing is decoration (its only text, SELECT and
+  // START, is embossed grey on white plastic, not text to read).
+  return read("assets/device/vita-white.svg").replace(/<svg /, '<svg id="device-art" data-layout-ignore ');
 }
 
 function build(layout) {
@@ -330,9 +290,9 @@ function build(layout) {
     ICON_PHONE: ICONS.phone,
     ICON_TABLET: ICONS.tablet,
     TERMINAL: terminal(),
-    VN_LINE_1: chars(S.VN.line1),
-    VN_LINE_2: chars(S.VN.line2),
-    VN_LINE_3: chars(S.VN.line3),
+    VN_LINE_1: gameChars(S.VN.line1),
+    VN_LINE_2: gameChars(S.VN.line2),
+    VN_LINE_3: gameChars(S.VN.line3),
     OV_QUEUE_LINE_2: `<div class="en">${esc(S.OVERLAY.queueBefore)}</div>`,
     OV_QUEUE_LINE_3: `<div class="en">${esc(S.OVERLAY.queueAfter)}</div>`,
     OV_HINT: esc(S.OVERLAY.hint),

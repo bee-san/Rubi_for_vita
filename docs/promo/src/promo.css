@@ -496,6 +496,19 @@
         height: 158px;
         display: block;
       }
+      .gate-label {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 6px 0 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 24px;
+        color: #fff;
+        background: linear-gradient(180deg, rgba(20, 20, 40, 0), rgba(20, 20, 40, 0.65));
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+      }
       .la-gate-game {
         left: 120px;
         top: 330px;
@@ -611,6 +624,23 @@
       }
       .vs-dialog p {
         line-height: 1.5;
+      }
+      .vs-dialog .vs-small {
+        margin-top: 8px;
+        font-size: 19px;
+        line-height: 1.45;
+        color: #d7deea;
+      }
+      .vs-dialog.vs-wide {
+        left: 170px;
+        top: 120px;
+        width: 620px;
+      }
+      .vs-btns span {
+        min-width: 120px;
+        padding: 4px 18px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.08);
       }
       .vs-btns {
         margin-top: 18px;
@@ -1009,15 +1039,19 @@
       .tm-bar span {
         margin-left: 10px;
       }
+      /* 80 columns of 9 px (JetBrains Mono at 15 px), 17 rows of 22 px */
       .tm-body {
-        height: 420px;
+        height: 406px;
         padding: 16px 20px;
         font-family: "Promo Mono", monospace;
-        font-size: 17px;
-        line-height: 1.55;
+        font-size: 15px;
+        line-height: 22px;
         color: #c9d4e8;
-        white-space: pre;
         overflow: hidden;
+      }
+      .tm-body .l {
+        white-space: pre;
+        height: 22px;
       }
       .tm-body .l {
         display: block;

@@ -7,8 +7,8 @@
         const tl = gsap.timeline({ paused: true });
         const q = (s) => document.querySelector(s);
 
-        // Scene starts in seconds (tools/build.mjs places the sound effects from
-        // the same table). The music is 120 BPM: a bar is 2 s.
+        // Scene starts in seconds (src/script.mjs; tools/build.mjs fills it in and
+        // places the sound effects from the same table). The music is 120 BPM.
         const T = /*{{TIMES}}*/ null;
 
         // ------------------------------------------------------------ helpers
@@ -20,6 +20,10 @@
         function swap(from, to, t, dur = 0.16) {
           if (to) fade(to, t, 0, 1, dur);
           if (from) fade(from, t + dur * 0.5, 1, 0, dur);
+        }
+        // A screen layer opens as the console opens one: it grows in from s0.
+        function open(sel, t, s0 = 0.92, dur = 0.25) {
+          tl.fromTo(sel, { opacity: 0, scale: s0 }, { opacity: 1, scale: 1, duration: dur, ease: "power2.out", immediateRender: false }, t);
         }
         // The device's camera: its centre and scale on the frame.
         let cam = null;
@@ -43,7 +47,7 @@
             tl.fromTo(el, { scale: sink }, { scale: 1, transformOrigin: "50% 50%", duration: 0.16, ease: "power1.out", immediateRender: false }, t + 0.16);
           }
           fade(el + " .glow", t, 0, 0.9, 0.06);
-          fade(el + " .glow", t + 0.2, 0.9, 0, 0.35);
+          fade(el + " .glow", t + 0.2, 0.9, 0, 0.24);
         }
         // A fingertip taps the screen at (x, y) (screen pixels) at time t.
         function tap(t, x, y, fromX = x + 70, fromY = y + 90) {
@@ -52,6 +56,16 @@
           tl.fromTo("#finger", { scale: 0.82 }, { scale: 1, duration: 0.14, ease: "power1.out", immediateRender: false }, t + 0.08);
           tl.fromTo("#ripple", { scale: 1, opacity: 0.9 }, { scale: 2.4, opacity: 0, duration: 0.45, ease: "power2.out", immediateRender: false }, t);
           fade("#finger", t + 0.3, 1, 0, 0.18);
+        }
+        // A fingertip flicks across the screen from x0 to x1 (at y) between t and t + dur.
+        function flick(t, x0, x1, y, dur = 0.34) {
+          tl.fromTo("#finger", { x: x0, y, opacity: 0, scale: 1.1 }, { opacity: 1, scale: 0.9, duration: 0.14, ease: "power1.out", immediateRender: false }, t - 0.16);
+          tl.fromTo("#finger", { x: x0 }, { x: x1, duration: dur, ease: "power2.inOut", immediateRender: false }, t);
+          fade("#finger", t + dur, 1, 0, 0.16);
+        }
+        // Pages slide sideways as the console's screens do when flicked.
+        function slide(sel, t, x0, x1, dur = 0.34) {
+          tl.fromTo(sel, { x: x0 }, { x: x1, duration: dur, ease: "power2.inOut", immediateRender: false }, t);
         }
         // Captions: words rise in one after another; the group fades out.
         function caption(id, tin, tout) {
@@ -128,12 +142,12 @@
         // ============================================================ S1: title
         tl.fromTo("#device", { rotationX: 24, opacity: 0 }, { rotationX: 0, opacity: 1, duration: 1.6, ease: "power3.out", immediateRender: false }, 0.05);
         camTo(0.05, CAM.center, 1.6, "power3.out");
-        caption("cap1", 0.35, 3.65);
+        caption("cap1", 0.35, T.s2 - 0.35);
         type("#vn-text-1 .vn-line:nth-child(1)", 0.9, 0.06);
         type("#vn-text-1 .vn-line:nth-child(2)", 2.15, 0.06);
         fade("#vn-next", 3.2, 0, 1, 0.1);
 
-        // ============================================================ S2: lookup, offline
+        // ============================================================ S2: a lookup, offline
         caption("cap2", T.s2 + 0.1, T.s3 - 0.4);
         press(T.s2 + 0.25, "btn-l");
         press(T.s2 + 0.25, "btn-r");
@@ -141,14 +155,14 @@
         fade("#scr-overlay", T.s2 + 0.42, 0, 1, 0.12);
         fade("#ovb-kira", T.s2 + 0.42, 0, 1, 0.01);
         camTo(T.s2 + 0.3, CAM.zoom, 0.9);
-        // the tap: 一緒に in the header's second line (x 209..290, line centre y 69)
+        // a tap on 一緒に in the header's second line (x 209..290, line centre y 69)
         tap(T.s2 + 2.75, 252, 70);
         tl.set("#hl-kira", { color: "#ffffff" }, T.s2 + 2.8);
         tl.set("#hl-issho", { color: "#ffd24a" }, T.s2 + 2.8);
         fade("#ovb-kira", T.s2 + 2.8, 1, 0, 0.01);
         fade("#ovb-issho", T.s2 + 2.8, 0, 1, 0.01);
 
-        // ============================================================ S3: mining
+        // ============================================================ S3: mining a card
         caption("cap3", T.s3 + 0.1, T.s4 - 0.4);
         camTo(T.s3, CAM.queue, 0.8);
         card("#queue-chip", T.s3 + 0.5, T.s4 - 0.35, 40, 0);
@@ -192,7 +206,7 @@
           tl.fromTo(s, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out", immediateRender: false }, T.s4b + 2.2 + i * 0.15);
         });
 
-        // ============================================================ S5: when it runs
+        // ============================================================ S5: when it reads
         caption("cap5", T.s5 + 0.1, T.s6 - 0.35);
         swap("#app-anki-c", "#scr-vn", T.s5, 0.2);
         tl.set("#vn-text-1", { opacity: 0 }, T.s5 + 0.2);
@@ -204,7 +218,6 @@
         type("#vn-text-2 .vn-line", T.s5 + 0.6, 0.075);
         light("#st-typing", T.s5 + 1.95, false);
         light("#st-read", T.s5 + 2.05, true);
-        tl.fromTo("#region-note", { boxShadow: "0 0 0 0 rgba(91,220,207,0)" }, { boxShadow: "0 0 0 10px rgba(91,220,207,0.0)", duration: 0.5, immediateRender: false }, T.s5 + 2.05);
         tl.fromTo("#region-note", { backgroundColor: "rgba(91,220,207,0.28)" }, { backgroundColor: "rgba(91,220,207,0)", duration: 0.6, ease: "power2.out", immediateRender: false }, T.s5 + 2.05);
         light("#st-read", T.s5 + 2.75, false);
         light("#st-idle", T.s5 + 2.85, true);
@@ -213,29 +226,41 @@
         // ============================================================ S6: install
         caption("cap6", T.s6 + 0.1, T.s7 - 0.35);
         camTo(T.s6, CAM.install, 0.8);
-        swap("#scr-vn", "#scr-shell", T.s6 + 0.2);
-        fade("#vs-ftp", T.s6 + 0.35, 0, 1, 0.15);
+        swap("#scr-vn", "#scr-shell", T.s6 + 0.05);
+        // VitaShell: Select starts the FTP server; × (OK) keeps it in the background
+        press(T.s6 + 0.3, "btn-select");
+        fade("#vs-ftp", T.s6 + 0.38, 0, 1, 0.12);
+        press(T.s6 + 1.0, "btn-cross");
+        fade("#vs-ftp", T.s6 + 1.08, 1, 0, 0.1);
+        // the computer: install-vita.sh over FTP (its output scrolls as a terminal's does)
         card("#terminal", T.s6 + 0.4, T.s7 - 0.3, P ? 0 : -60, P ? 40 : 0);
         card("#steps", T.s6 + 0.5, T.s7 - 0.3, P ? 0 : -40, P ? 30 : 0);
         light("#step1", T.s6 + 0.6, true);
-        type("#tm-body .cmd", T.s6 + 0.7, 0.016);
-        tl.fromTo("#tm-body .out", { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: 0.085, immediateRender: false }, T.s6 + 1.75);
-        fade("#vs-ftp", T.s6 + 3.15, 1, 0, 0.12);
-        light("#step1", T.s6 + 3.2, false);
-        light("#step2", T.s6 + 3.2, true);
-        fade("#vs-ask", T.s6 + 3.35, 0, 1, 0.12);
-        press(T.s6 + 3.75, "btn-cross");
-        fade("#vs-ask", T.s6 + 3.85, 1, 0, 0.08);
-        fade("#vs-prog", T.s6 + 3.85, 0, 1, 0.08);
-        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power1.inOut", immediateRender: false }, T.s6 + 3.9);
-        fade("#vs-prog", T.s6 + 4.55, 1, 0, 0.08);
-        fade("#vs-done", T.s6 + 4.55, 0, 1, 0.1);
-        light("#step2", T.s6 + 4.9, false);
-        light("#step3", T.s6 + 4.9, true);
-        swap("#scr-shell", "#scr-boot", T.s6 + 5.0, 0.12);
-        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, T.s6 + 5.0);
+        type("#tm-inner .cmd", T.s6 + 0.62, 0.011);
+        {
+          const lines = document.querySelectorAll("#tm-inner .l");
+          const LH = 22, VISIBLE = 17, t0 = T.s6 + 1.3, per = 0.058;
+          tl.fromTo("#tm-inner .out", { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: per, immediateRender: false }, t0);
+          for (let i = VISIBLE; i < lines.length; i++)
+            tl.fromTo("#tm-inner", { y: -(i - VISIBLE) * LH }, { y: -(i - VISIBLE + 1) * LH, duration: 0.01, immediateRender: false }, t0 + (i - 1) * per);
+        }
+        light("#step1", T.s6 + 3.3, false);
+        light("#step2", T.s6 + 3.3, true);
+        // VitaShell: × on JPOverlaySettings.vpk, Yes, Yes to the permissions notice, Installing...
+        press(T.s6 + 3.4, "btn-cross");
+        fade("#vs-ask", T.s6 + 3.48, 0, 1, 0.1);
+        press(T.s6 + 3.85, "btn-cross");
+        swap("#vs-ask", "#vs-warn", T.s6 + 3.93, 0.08);
+        press(T.s6 + 4.4, "btn-cross");
+        swap("#vs-warn", "#vs-prog", T.s6 + 4.48, 0.08);
+        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power1.inOut", immediateRender: false }, T.s6 + 4.52);
+        fade("#vs-prog", T.s6 + 5.0, 1, 0, 0.08);
+        light("#step2", T.s6 + 5.05, false);
+        light("#step3", T.s6 + 5.05, true);
+        swap("#scr-shell", "#scr-boot", T.s6 + 5.1, 0.1);
+        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, T.s6 + 5.1);
 
-        // ============================================================ S7: L + R
+        // ============================================================ S7: L + R in the game
         caption("cap7", T.s7 + 0.1, T.s8 - 0.35);
         camTo(T.s7 - 0.1, CAM.center, 0.8);
         tl.set("#vn-text-2", { opacity: 0 }, T.s7);
@@ -257,38 +282,40 @@
         camTo(T.s7 + 1.7, CAM.zoom, 0.8);
 
         // ============================================================ S8: the Overlay app, beside the game
-        caption("cap8", T.s8 + 0.1, T.s9 - 0.35);
-        camTo(T.s8, CAM.center, 0.6);
-        press(T.s8 + 0.3, "btn-ps");
-        fade("#scr-overlay", T.s8 + 0.35, 1, 0, 0.1);
-        tl.fromTo("#scr-home", { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, T.s8 + 0.4);
-        fade("#scr-vn", T.s8 + 0.55, 1, 0, 0.1);
-        tap(T.s8 + 1.2, 740, 146);
-        tl.fromTo("#scr-la-app", { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, T.s8 + 1.35);
-        fade("#scr-home", T.s8 + 1.55, 1, 0, 0.05);
-        tap(T.s8 + 2.0, 480, 293);
-        tl.fromTo("#app-games-a", { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, T.s8 + 2.15);
-        fade("#scr-la-app", T.s8 + 2.35, 1, 0, 0.05);
-        press(T.s8 + 2.65, "dpad-down");
-        swap("#app-games-a", "#app-games-b", T.s8 + 2.72, 0.04);
-        press(T.s8 + 3.15, "btn-cross");
-        swap("#app-games-b", "#app-games-c", T.s8 + 3.22, 0.04);
-        press(T.s8 + 4.0, "btn-ps");
-        tl.fromTo("#scr-la-game", { opacity: 0, scale: 1.05 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, T.s8 + 4.1);
-        fade("#app-games-c", T.s8 + 4.3, 1, 0, 0.05);
-        tap(T.s8 + 4.65, 260, 385);
-        swap("#scr-la-game", "#scr-vn", T.s8 + 4.8, 0.2);
-
-        // ============================================================ S9: the OCR engine
-        caption("cap9", T.s9 + 0.1, T.end - 0.3);
-        swap("#scr-vn", "#app-ocr-a", T.s9 + 0.05, 0.16);
-        camTo(T.s9, CAM.zoom, 0.7);
-        tap(T.s9 + 1.05, 702, 178);
-        swap("#app-ocr-a", "#app-ocr-b", T.s9 + 1.1, 0.04);
-
-        // portrait: the name and address under the film, from S2 to the end card
-        fade("#brand", T.s2 + 0.3, 0, 1, 0.4);
-        fade("#brand", T.end - 0.15, 1, 0, 0.3);
+        // ○ closes the overlay; PS goes to the game's LiveArea (the game stays
+        // suspended); a flick goes to the home screen, left of every LiveArea
+        // page; the Overlay bubble opens its LiveArea and Start opens the app.
+        // Back: PS to the app's LiveArea, then the game's LiveArea (shown as a
+        // cut: the order of open LiveArea pages is not drawn) and Continue.
+        const s8 = T.s8;
+        caption("cap8", s8 + 0.1, T.end - 0.35);
+        camTo(s8, CAM.center, 0.6);
+        press(s8 + 0.25, "btn-circle");
+        fade("#scr-overlay", s8 + 0.32, 1, 0, 0.1);
+        press(s8 + 0.75, "btn-ps");
+        open("#scr-la-game", s8 + 0.82, 1.06);
+        fade("#scr-vn", s8 + 1.0, 1, 0, 0.05);
+        flick(s8 + 1.4, 300, 720, 270);
+        slide("#scr-la-game", s8 + 1.4, 0, 960);
+        tl.fromTo("#scr-home", { opacity: 1, x: -960 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.inOut", immediateRender: false }, s8 + 1.4);
+        tap(s8 + 2.15, 740, 146);
+        open("#scr-la-app", s8 + 2.28, 0.9);
+        fade("#scr-home", s8 + 2.5, 1, 0, 0.05);
+        tap(s8 + 2.85, 480, 293);
+        open("#app-games-a", s8 + 2.98, 0.94);
+        fade("#scr-la-app", s8 + 3.2, 1, 0, 0.05);
+        press(s8 + 3.55, "dpad-down");
+        swap("#app-games-a", "#app-games-b", s8 + 3.62, 0.04);
+        press(s8 + 4.05, "btn-cross");
+        swap("#app-games-b", "#app-games-c", s8 + 4.12, 0.04);
+        press(s8 + 4.95, "btn-ps");
+        tl.fromTo("#scr-la-app", { opacity: 0, scale: 1.06, x: 0 }, { opacity: 1, scale: 1, x: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s8 + 5.02);
+        fade("#app-games-c", s8 + 5.2, 1, 0, 0.05);
+        tl.set("#scr-la-game", { x: 0 }, s8 + 5.45);
+        swap("#scr-la-app", "#scr-la-game", s8 + 5.5, 0.22);
+        tap(s8 + 6.2, 260, 385);
+        tl.set("#vn-text-1", { opacity: 1 }, s8 + 6.2);
+        swap("#scr-la-game", "#scr-vn", s8 + 6.32, 0.2);
 
         // ============================================================ end card
         tl.fromTo("#stage", { opacity: 1 }, { opacity: 0, duration: 0.35, ease: "power2.in", immediateRender: false }, T.end - 0.15);
@@ -296,6 +323,9 @@
         fade("#endcard", T.end + 0.1, 0, 1, 0.01);
         tl.fromTo("#endcard img", { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5, ease: "back.out(1.7)", immediateRender: false }, T.end + 0.1);
         tl.fromTo("#endcard h2, #endcard p", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.09, ease: "power3.out", immediateRender: false }, T.end + 0.25);
+        // portrait: the name and address under the film, from S2 to the end card
+        fade("#brand", T.s2 + 0.3, 0, 1, 0.4);
+        fade("#brand", T.end - 0.15, 1, 0, 0.3);
 
         window.__timelines["main"] = tl;
       })();

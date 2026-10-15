@@ -68,7 +68,7 @@
         </div>
         <div class="cap" id="cap3">
           <h1>Create flashcards of <em>words you don't know</em></h1>
-          <p>{{ENTER_GLYPH}} saves the word to a card queue on the memory card</p>
+          <p>With card mining on, {{ENTER_GLYPH}} saves the word to a queue on the memory card</p>
         </div>
         <div class="cap" id="cap4">
           <h1>{{CAP4_H}}</h1>
@@ -92,10 +92,6 @@
         <div class="cap p-low" id="cap8">
           <h1>Turn it off for specific games, <em>so it doesn't get in the way</em></h1>
           <p>The Overlay app opens beside your game, which stays suspended</p>
-        </div>
-        <div class="cap p-low" id="cap9">
-          <h1>Or choose <em>Google's model</em> (requires internet)</h1>
-          <p>Google Lens needs Wi-Fi and sends the selected image to Google</p>
         </div>
       </div>
 
@@ -144,7 +140,7 @@
         <!-- S6: the computer side of the install -->
         <div class="terminal" id="terminal">
           <div class="tm-bar"><i></i><i></i><i></i><span>VitaJPOverlay (release folder)</span></div>
-          <pre class="tm-body" id="tm-body">{{TERMINAL}}</pre>
+          <div class="tm-body"><div id="tm-inner">{{TERMINAL}}</div></div>
         </div>
         <div class="steps" id="steps">
           <div class="step" id="step1"><b>1</b>Run <code>install-vita.sh</code> on your computer</div>
@@ -163,8 +159,10 @@
             <div id="scr-vn" class="scr">
               <img class="vn-layer" src="assets/vn/vn-bg.svg" alt="" />
               <img class="vn-layer" id="vn-char" src="assets/vn/vn-char.svg" alt="" />
+              <!-- the overlay's 90% black panel covers the game's text on purpose, as on the console:
+                   each text element carries data-layout-allow-occlusion -->
               <div class="vn-box">
-                <div class="vn-name">ひかり</div>
+                <div class="vn-name" data-layout-allow-occlusion>ひかり</div>
                 <div class="vn-text" id="vn-text-1">
                   <div class="vn-line">{{VN_LINE_1}}</div>
                   <div class="vn-line">{{VN_LINE_2}}</div>
@@ -172,8 +170,8 @@
                 <div class="vn-text" id="vn-text-2">
                   <div class="vn-line">{{VN_LINE_3}}</div>
                 </div>
-                <div class="vn-next" id="vn-next">▼</div>
-                <div class="vn-menu">AUTO&#8195;SKIP&#8195;LOG&#8195;SAVE&#8195;LOAD</div>
+                <div class="vn-next" id="vn-next" data-layout-allow-occlusion>▼</div>
+                <div class="vn-menu" data-layout-allow-occlusion>AUTO&#8195;SKIP&#8195;LOG&#8195;SAVE&#8195;LOAD</div>
               </div>
             </div>
 
@@ -231,8 +229,8 @@
             <!-- the Overlay app's LiveArea page: its own bg.png and startup.png -->
             <div id="scr-la-app" class="scr la">
               <div class="la-frame"><img src="assets/app/bg.png" alt="" /></div>
-              <div class="la-title"><img src="assets/app/icon0.png" alt="" /><span>Overlay</span></div>
-              <div class="la-gate" id="gate-app"><img src="assets/app/startup.png" alt="" /></div>
+              <div class="la-title" data-layout-allow-overlap><img src="assets/app/icon0.png" alt="" /><span data-layout-allow-overlap>Overlay</span></div>
+              <div class="la-gate" id="gate-app"><img src="assets/app/startup.png" alt="" /><span class="gate-label">Start</span></div>
             </div>
 
             <!-- the game's LiveArea page (suspended: Continue) -->
@@ -255,22 +253,25 @@
                 <div class="vs-row"><i class="fold"></i>VitaJPOverlay/</div>
                 <div class="vs-row vs-sel"><i class="pkg"></i>JPOverlaySettings.vpk</div>
               </div>
+              <!-- VitaShell's own strings (TheOfficialFloW/VitaShell, resources/english_us.txt) -->
               <div class="vs-dialog" id="vs-ftp">
                 <p>FTP server is now running at</p>
                 <p><b>ftp://192.168.1.42:1337</b></p>
-                <div class="vs-btns"><span>○ Close</span></div>
+                <p class="vs-small">Select 'OK' to keep it in background.<br />Select 'Cancel' to disconnect.</p>
+                <div class="vs-btns"><span class="vs-yes">OK</span><span>Cancel</span></div>
               </div>
               <div class="vs-dialog" id="vs-ask">
-                <p>Install JPOverlaySettings.vpk?</p>
-                <div class="vs-btns"><span class="vs-yes">× Yes</span><span>○ No</span></div>
+                <p>Do you want to install this package?</p>
+                <div class="vs-btns"><span class="vs-yes">Yes</span><span>No</span></div>
+              </div>
+              <div class="vs-dialog vs-wide" id="vs-warn">
+                <p class="vs-small">This package requests extended permissions.<br />It will have access to your personal information.<br />If you did not obtain it from a trusted source,<br />please proceed at your own caution.</p>
+                <p class="vs-small">Would you like to continue the install?</p>
+                <div class="vs-btns"><span class="vs-yes">Yes</span><span>No</span></div>
               </div>
               <div class="vs-dialog" id="vs-prog">
-                <p>Installing…</p>
+                <p>Installing...</p>
                 <div class="vs-bar-out"><div class="vs-bar-in" id="vs-bar-in"></div></div>
-              </div>
-              <div class="vs-dialog" id="vs-done">
-                <p>Done. The Overlay app is installed.</p>
-                <div class="vs-btns"><span>○ OK</span></div>
               </div>
             </div>
 
@@ -296,14 +297,14 @@
       <div id="endcard">
         <img src="assets/app/icon0.png" alt="" />
         <h2>Vita JP Overlay</h2>
-        <p class="ec-tag">Free and open source · GPL-3.0</p>
+        <p class="ec-tag">Free · fully offline · open source (GPL-3.0)</p>
         <p class="ec-url">github.com/bee-san/vita-jp-overlay</p>
         <p class="ec-fine">{{ENDCARD_FINE}}</p>
       </div>
       <div id="flash"></div>
 
       <!-- ============================================================ sound -->
-      <audio id="music" src="assets/audio/promo-music.m4a" data-start="0" data-duration="44" data-track-index="10" data-volume="0.85"></audio>
+      <audio id="music" src="assets/audio/promo-music.m4a" data-start="0" data-duration="44" data-track-index="10" data-volume="1"></audio>
 {{SFX}}
     </div>
     <script>
