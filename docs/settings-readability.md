@@ -123,10 +123,11 @@ both take one block, so the cache holds at most 9 × 256 KiB = 2,304 KiB
 libvita2d falls back to `USER_RW` and then phycont. These figures are from the
 source; the console's free CDRAM in the app has not been measured. In the
 app's own memory (`.bss`, Vita build): the file buffer 262,160 B, the title
-rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, 1,024 B of failure
-and layout flags and 184 B for the cache's slots: the Settings ELF's `.bss`
-goes from 1,308,448 to 1,596,336 B (text 471,076 to 474,340 B). The app runs
-in its own process; no plugin and no SceShell memory changes.
+rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, the PNG CRC table
+1,024 B, 1,024 B of failure and layout flags and 184 B for the cache's slots:
+the Settings ELF's `.bss` goes from 1,308,464 to 1,596,352 B and its text from
+471,276 to 474,548 B (main `8cf4f3a`). The app runs in its own process; no
+plugin and no SceShell memory changes.
 
 ### Measurements (host)
 
