@@ -1,3 +1,5 @@
+
+
 # Vita JP Overlay — local Japanese OCR
 
 This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
@@ -635,6 +637,10 @@ pressure of 255. Host checks cover mixed APIs, held suppression and contended
 reads; physical validation of this input repair remains required.
 
 ## Credits and license
+
+This was made heavily with the help of [Shoui](https://github.com/shoui520)
+
+Shoui is one of the smartest people I know, an expert in Windows and PS Vita lowlevels. She advised the design of the program and helped debug issues, while I simply vibe coded what she suggested. This project would not be possible wihtout her.
 
 Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
 Thanks to [meikidroid](https://github.com/rtr46/meikidroid),
