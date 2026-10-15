@@ -353,6 +353,40 @@ Rules:
   source: PSVshell `src/perf.c`]. The self-test (vita-memory-deep item 5) is where that sample
   belongs.
 
+### 5.4 The Overlay app: a system application
+
+The Overlay app (`settings/`, `VJOSET001`) is its own process, not a plugin. Its SELF is a system
+application (`vita-make-fself -at 0x0E -m 0xC800`, `vita/CMakeLists.txt`), as
+[VitaShell-sysapp](https://github.com/shoui520/VitaShell-sysapp),
+[jmdict-vita](https://github.com/shoui520/jmdict-vita) and
+[vita-content-manager-pro](https://github.com/shoui520/vita-content-manager-pro) are: it starts
+beside a suspended game instead of ending it. Such a process gets its own main partition of the requested size, with
+CDRAM only when it asks for it [psp2: `kd/processmgr/source/budget.c`, `_CreateBudget`,
+`PROCESS_TYPE_MINI_APP`]. The SELF requests 50 MiB and no CDRAM.
+
+- **CPU and priority.** The main thread runs on CPU3 (`SCE_KERNEL_CPU_MASK_SYSTEM`) at priority
+  `0x10000100`, set in `settings/sysapp.c`; the Anki worker asks for the same. CPU3 use is
+  unmeasured (rule 8).
+- **Heap.** newlib's default heap is 128 MiB [measured: `_init_vita_heap` in the toolchain's
+  `libc.a`], which does not fit; `settings/sysapp.c` fixes it at 8 MiB. The app's own code does
+  not `malloc`; the heap serves libvita2d, libpng and the PVF glyph atlas.
+- **Graphics.** libvita2d detects the system-application budget (`sceAppMgrGetBudgetInfo`), draws
+  to the shared framebuffer through `sceGxmVshInitialize`, and allocates its textures in
+  `USER_RW` [libvita2d `vita2d.c`, `vita2d_init_internal`]. The app's icon textures (at most 9 of
+  at most 256 KiB, `settings/icons.h`) therefore come from main memory, not CDRAM.
+
+Main memory, by source [estimate: libvita2d's buffer sizes and the app's static arrays, not
+measured on the console]:
+
+| Use | Size |
+| --- | ---: |
+| GXM rings (VDM 128 KiB, vertex 2 MiB, fragment 512 KiB), depth and stencil (2 x 2 MiB), parameter buffer (2 MiB), temporary pool (1 MiB) | about 9.6 MiB |
+| newlib heap (reserved whole) | 8 MiB |
+| Icon textures | at most 2.25 MiB |
+| Anki arena, SceNet pool, config scratch, game list | about 0.9 MiB |
+| Code, stacks, PVF atlas | about 2 MiB |
+| **Total** | **about 23 MiB of 50 MiB** |
+
 ## 6. Game memory modes, free memory, and the PS TV
 
 ### 6.1 Memory modes

@@ -123,6 +123,13 @@ builds, including 0.7.12, call it **JP Overlay Settings**; the title ID
 (`VJOSET001`) and VPK file name are unchanged, so the new VPK installs over it.
 The settings app itself is always excluded from the overlay.
 
+The Overlay app is a system application, like the Music or Video app: it
+opens beside a running game, which stays suspended behind it, so there is no
+need to close the game first. Games turned ON or OFF there take effect when the
+game next starts or resumes; preferences apply when the overlay next opens. A
+game that uses extended memory (`ATTRIBUTE2` in its `param.sfo`) may still have
+to close first, as for other system applications.
+
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
 and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
 copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
