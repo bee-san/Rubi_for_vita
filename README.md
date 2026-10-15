@@ -314,7 +314,12 @@ v0.2.0 H15's 2.21%, VOCR3-FL10 2.13% against v0.2.0 FL10's 3.82%; neither passed
 that repository's promotion gate ([models](docs/vita-vn-ocr.md#models)). Their
 estimated times for a 3-line textbox are 0.7 s (Small), 1.3 s (Normal) and
 1.7 s (Large), calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame on the
-console; only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console. A job runs the chosen size when the
+console (v0.8.0-test.1). v0.8.0-test.2's logs have VOCR3-FL10 at 3.0-3.7 ms per
+frame (the self-test's fallback stage, five one-line jobs) and VOCR4-W20 at
+7.4-7.8 ms (five lines re-read as the confidence cascade), near the estimates'
+2.8-3.1 and 7.1-7.2 ms; VOCR4-W20 has not run as the chosen size on a console, and
+v0.2.0's FL10 (Small's shape) read lines in older builds, without frame counts.
+A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
 fit in PCSG00415 (need N, free F); using normal`, and so does the `--collect`

@@ -34,7 +34,15 @@ models and estimates); the self-test analyser reads it, and
 The times are estimates: vita-vn-ocr `docs/ctc-lm-decode.md`'s `vita/a9_cycles.py`
 figures for a greedy box of 3 lines of about 640 px (main 57b6622, high bound),
 calibrated so that VOCR3-H15 costs its measured 5.0-5.2 ms per CTC frame (the
-v0.8.0-test.1 console logs: 1,027 frames over 11 jobs; only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console). "Game memory a
+v0.8.0-test.1 console logs: 1,027 frames over 11 jobs). v0.8.0-test.2's logs (API 20;
+the installed files' SHA-256 are the pins) have VOCR3-FL10 recognizing at 3.0-3.7 ms per
+frame (the self-test's fallback stage: five jobs of one line, 37-77 frames each) and
+VOCR4-W20 re-reading lines as the confidence cascade at 7.4-7.8 ms per frame (five
+lines), near the estimates' 2.8-3.1 and 7.1-7.2 ms (all three read 32-px lines at
+stride 8, so a 640-px line is 80 frames); VOCR3-H15 there ran at 5.21 ms per frame
+pooled over 47 speed lines (3,134 frames; median 5.17 ms). VOCR4-W20 has not run as
+the chosen size on a console; v0.2.0's FL10
+(Small's shape) recognized lines in older builds, without frame counts. "Game memory a
 job takes" is a job's page-rounded weights, workspace and capture block at the full
 screen (the game worker's memory check), without the character LM, the cascade's
 model or the PSP refinement, which a job leaves out first when memory is short. The
@@ -746,7 +754,9 @@ vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0
 for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
 repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
 dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
-and only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console: they are the sizes of the test builds by the owner's
+and on the console VOCR3-H15 has run as the default (v0.8.0-test.1 and test.2), VOCR3-FL10 in
+test.2's self-test fallback stage and VOCR4-W20 there as the confidence cascade
+([model sizes](#model-sizes-small-normal-large-api-21)): they are the sizes of the test builds by the owner's
 choice (2026-10-14, Normal the default 2026-10-15). VOCR4-W20 (vita-vn-ocr #78, F20's shape) did
 not qualify as a default under that repository's gates either; it is the Large size and Normal's
 confidence cascade. The v0.2.0 models are no longer shipped or selectable (no size names them),
