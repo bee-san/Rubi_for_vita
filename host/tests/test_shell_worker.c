@@ -41,7 +41,11 @@ static VjoRect saved_region; /* w != 0: a saved region for every game */
 static int regions_set, last_region_full;
 int vjoSetRegion(const VjoRect *r) { regions_set++; last_region_full = r == NULL; return 0; }
 int vjoSetTriggers(int a, int b) { return 0; }
-int vjoSetGameActive(int pid, int mode) { return 0; }
+/* The order of a game start's steps, one letter each: A vjoSetGameActive (a game), C a config load, S a
+ * stamp read (the Overlay app check). */
+static char start_order[64];
+static void start_step(char c) { size_t n = strlen(start_order); if (n + 1 < sizeof(start_order)) start_order[n] = c, start_order[n + 1] = 0; }
+int vjoSetGameActive(int pid, int mode) { if (mode != VJO_GAME_NONE) start_step('A'); return 0; }
 int vjoSetInputBlock(int on) { if (on && fail_input_block) return -123; input_blocked = on; return 0; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
@@ -122,7 +126,7 @@ void vjo_shell_heap_free(int item, void *p, size_t bytes)
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
 }
 uint32_t vjo_shell_heap_free_size(void) { return 2557952; }
-void vjo_config_load(VjoConfig *out, VjoArena *a) { *out = loaded; }
+void vjo_config_load(VjoConfig *out, VjoArena *a) { start_step('C'); *out = loaded; }
 void vjo_log_configure(const VjoConfig *c) {}
 /* The last log lines, for the game OCR measurement tests. */
 static char log_lines[32][256];
@@ -195,6 +199,7 @@ int vjo_file_line(const char *path, char *buf, int cap)
 {
     int installed = !strcmp(path, VJO_APP_STAMP_INSTALLED);
     TEST_CHECK_(installed || !strcmp(path, VJO_APP_STAMP_PACKAGE), "read %s", path);
+    start_step('S');
     int rc = installed ? app_installed_rc : app_record_rc;
     snprintf(buf, (size_t)cap, "%s", rc >= 0 ? (installed ? app_installed : app_record) : "");
     return rc;
@@ -3801,11 +3806,18 @@ static void test_config_warnings_are_logged_once_per_change(void)
     apply_config();
     apply_config();
     TEST_CHECK(config_warning_logs == 3 && warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 2);
+    /* another warning in its place, the same count: a new set, logged once */
+    vjo_config_defaults(&loaded);
+    vjo_config_parse(&loaded, "ocr_backend = meiki\n", 20);
+    TEST_ASSERT(loaded.n_warnings == 1);
+    apply_config();
+    apply_config();
+    TEST_CHECK(config_warning_logs == 4 && warnings_logged("ocr_backend: Meiki was removed; using vocr") == 1);
     /* repaired (the app's next save writes vocr): nothing more is logged or shown */
     vjo_config_defaults(&loaded);
     apply_config();
     open_overlay();
-    TEST_CHECK(config_warning_logs == 3 && !g_view.n_warnings);
+    TEST_CHECK(config_warning_logs == 4 && !g_view.n_warnings);
     close_overlay();
     mem_free();
 }
@@ -3822,12 +3834,11 @@ static void app_files(int installed_rc, const char *installed, int eboot, int re
 #define STAMP_20 "vjoapp1 api=20 build=fedcba9876543210"
 #define NOENT ((int)0x80010002u)
 
-/* overlay.cpp's render: the open overlay's body says the notice, if any, and
- * marks it drawn (under the view lock, which the harness does not model). */
+/* overlay.cpp's render: an open overlay's body takes the notice through vjo_view_notice, which marks
+ * it drawn (the view lock is render's own). */
 static const char *overlay_draws(void)
 {
-    if (g_view.open && g_view.notice) g_view.notice_shown = 1;
-    return g_view.open ? g_view.notice : NULL;
+    return g_view.open ? vjo_view_notice() : NULL;
 }
 static int notice_is(const char *shown, const char *text) { return shown && !strcmp(shown, text); }
 static void next_game(void)
@@ -3919,6 +3930,25 @@ static void test_overlay_app_mismatch_is_logged_and_said_once(void)
     mem_free();
 }
 
+/* The check runs after the game is active and after the config load: its file reads never delay
+ * the game's input or capture, and its log lines follow the start's own. */
+static void test_overlay_app_check_runs_after_the_game_is_active(void)
+{
+    reset();
+    app_files(37, STAMP_21, 1, 37, STAMP_21);
+    start_order[0] = 0;
+    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    TEST_CHECK_(!strcmp(start_order, "CASS"), "order %s", start_order);
+    TEST_CHECK(logged("game PCSG00415 started") && app_logs == 1);
+    /* a disabled game: no config load before it is refused, and no stamp read */
+    start_order[0] = 0;
+    game_enabled = 0;
+    on_game_exit();
+    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    TEST_CHECK_(!strchr(start_order, 'S') && !strchr(start_order, 'A'), "order %s", start_order);
+    mem_free();
+}
+
 /* Nothing to compare, or nothing installed, is no mismatch: an older package
  * brings no record, the README lets the app be deleted, and a file the Shell
  * cannot read says nothing about the app. */
@@ -3960,6 +3990,7 @@ TEST_LIST = {
     {"config_warnings_are_logged_once_per_change", test_config_warnings_are_logged_once_per_change},
     {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
+    {"overlay_app_check_runs_after_the_game_is_active", test_overlay_app_check_runs_after_the_game_is_active},
     {"selftest_keeps_the_user_region_and_auto_ocr", test_selftest_keeps_the_user_region_and_auto_ocr},
 #ifdef VJO_WITH_VOCR
     {"selftest_stages_run_in_one_job_each_recorded_then_finish", test_selftest_stages_run_in_one_job_and_finish},

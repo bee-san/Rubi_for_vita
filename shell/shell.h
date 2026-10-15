@@ -87,6 +87,9 @@ void vjo_view_unlock(void);
 /* Under the view lock: the shown local result's dictionary page locators and
  * the page shown, or NULL (worker.c; anki.c saves every dictionary's entry). */
 const VjoLocalPages *vjo_view_pages(int *page);
+/* Under the view lock: the Overlay app notice the open overlay's body says, or
+ * NULL, marked as drawn, so closing that overlay drops it (worker.c check_app). */
+const char *vjo_view_notice(void);
 
 /* ---- overlay -> control thread commands ---- */
 enum {

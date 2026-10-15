@@ -373,11 +373,10 @@ static void render(int new_content)
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
         vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
-        if (g_view.notice) { /* the Overlay app is not the plugins' (once, worker.c check_app) */
+        if (const char *notice = vjo_view_notice()) { /* the Overlay app is not the plugins' (once) */
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
-            vjo_styled_puts(&body, g_view.notice, VJO_RGB_ERROR, en);
-            g_view.notice_shown = 1; /* drawn: closing this overlay drops it (worker.c close_overlay) */
+            vjo_styled_puts(&body, notice, VJO_RGB_ERROR, en);
         }
         if ((!cursor_matches || g_view.status[0]) && body.len)
             vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);

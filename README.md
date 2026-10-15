@@ -132,14 +132,15 @@ test.1's app ran beside test.2's plugins, showed VOCR2, had no Anki page and
 wrote `ocr_backend = vocr2`. The installer uploads the VPK with the plugins and
 ends with a box that says whether the Vita's app is this package's;
 `bash install-vita.sh --check-app VITA_IP` asks again, read-only. Each build's
-app carries a version stamp (`ux0:app/VJOSET001/vjo_app.txt`, the API and its
+app carries a version stamp (`vjo_app.txt` in the VPK, which VitaShell installs as
+`ux0:app/VJOSET001/vjo_app.txt`, not yet checked on a console; the API and its
 eboot.bin's hash) and the plugins a record of the app they came with
 (`ux0:data/VitaJPOverlay/vjo_app.txt`). When the two differ, the Shell plugin
 logs it at the next game start and says so once, in red under the recognized
 text of the first overlay opened in a game (`Overlay app is out of date: reinstall
 ux0:data/JPOverlaySettings.vpk in VitaShell.`); the app shows a red banner in
 place of its title when its stamp, the plugins' record or the Shell plugin that
-last started (`status.txt`) is another build's. Apps from before the
+last started (its API in `status.txt`) is another build's. Apps from before the
 stamps (0.8.0-test.2 and older) cannot show the banner, but the plugins still
 notice them.
 Open **Overlay** from LiveArea to enable or disable individual games. Older
@@ -672,8 +673,9 @@ The Vita build stamps the Overlay app: `tools/app_stamp.py` writes `vjo_app.txt`
 into the VPK and, the same bytes, into the release's `ux0/data/VitaJPOverlay/`
 as the record of the app these plugins come with ([core/app_stamp.h](core/app_stamp.h)).
 `package_release.py` refuses a base zip whose two copies differ and writes the
-stamp and the eboot's SHA-256 into the manifest (`app`), which `--check-app` and
-`--collect` compare with the Vita's app.
+stamp and the eboot's SHA-256 into the manifest (`app`). `--check-app` compares the
+Vita's app with the package's stamp file and its VPK's `eboot.bin`, `--collect`'s
+analysis with the record and the manifest's `app`.
 
 The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
 ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed

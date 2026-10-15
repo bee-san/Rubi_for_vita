@@ -102,15 +102,20 @@ def verdict(package, installed_text, installed_eboot=None, package_eboot_sha256=
     return "mismatch", why + eboot_note
 
 
-def steps(command, after_install=False):
+WHY_OLDER = ("An older app shows engines and pages that are gone and saves settings the plugins no longer use "
+             "(test.2's run had test.1's app writing ocr_backend = vocr2, #101).")
+WHY_NEWER = ("A newer app saves settings these plugins do not know yet. Installing this package's VPK goes back "
+             "to its app; to keep the newer one, install the package it came with instead.")
+
+
+def steps(command, after_install=False, newer=False):
     first = "Do it now, before you reboot: in VitaShell" if after_install else "In VitaShell"
     return [(f"{first}, press OK on the FTP dialog to keep FTP running, open ux0:data/, select "
              "JPOverlaySettings.vpk, press the confirm button (x on most consoles, o on Japanese ones) and confirm "
              "the install."),
             f"Then check it from here, with VitaShell's FTP still running: {command}"
             + (", then reboot." if after_install else ""),
-            ("An older app shows engines and pages that are gone and saves settings the plugins no longer use "
-             "(test.2's run had test.1's app writing ocr_backend = vocr2, #101).")]
+            WHY_NEWER if newer else WHY_OLDER]
 
 
 def box(title, paragraphs, width=78):
@@ -125,7 +130,7 @@ def box(title, paragraphs, width=78):
     return "\n".join(rows)
 
 
-def report(state, lines, command, after_install):
+def report(state, lines, command, after_install, newer=False):
     if state == "ok":
         return box("Overlay app: up to date", lines)
     if state == "unknown":
@@ -133,7 +138,7 @@ def report(state, lines, command, after_install):
                                                          "be sure it is this package's.")])
     title = "ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)" if after_install else \
         "Overlay app: NOT this package's"
-    return box(title, lines + steps(command, after_install))
+    return box(title, lines + steps(command, after_install, newer))
 
 
 def read(path, binary=False):
@@ -169,9 +174,11 @@ def main():
     if vpk and vpk["stamp"] and package and parse(package) and vpk["stamp"]["line"] != parse(package)["line"]:
         print(f"error: the package's {args.package} and its VPK's vjo_app.txt differ", file=sys.stderr)
         return 2
-    state, lines = verdict(package, read(args.installed), read(args.installed_eboot, binary=True),
+    installed = read(args.installed)
+    state, lines = verdict(package, installed, read(args.installed_eboot, binary=True),
                            vpk["eboot_sha256"] if vpk else None)
-    print(report(state, lines, args.command, args.after_install))
+    pkg, inst = parse(package), parse(installed)
+    print(report(state, lines, args.command, args.after_install, bool(pkg and inst and inst["api"] > pkg["api"])))
     return {"ok": 0, "mismatch": 1}.get(state, 2)
 
 

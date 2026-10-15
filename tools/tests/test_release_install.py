@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 
@@ -216,6 +217,54 @@ elif '-o' in a:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Overlay app: up to date", result.stdout.split("Installed. Reboot the Vita", 1)[1])
 
+    def test_the_prompt_waits_only_in_a_terminal(self):
+        """In a terminal, a missing app makes the installer wait for Enter and check again; without one
+        (stdin or stdout not a tty, as in CI and every other test here) or with VJO_NO_PROMPT it never waits."""
+        import pty
+        import select
+        eboot, stamp = self.stamped_package()
+        self.device_app(b"test.2's eboot.bin")
+        plain = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertNotIn("Press Enter", plain.stdout)
+        # without a terminal the check runs once: no prompt, so no second check after it
+        self.assertEqual(plain.stdout.count("ONE MORE STEP"), 1, plain.stdout)
+        self.assertNotIn("Overlay app: NOT this package's", plain.stdout)
+
+        def in_pty(extra_env, then_install):
+            pid, fd = pty.fork()
+            if pid == 0:  # the child: the installer on the pty's both ends
+                env = dict(self.environment, **extra_env)
+                os.execvpe("bash", ["bash", str(self.package / "install-vita.sh"),
+                                    "127.0.0.1:" + str(self.listener.getsockname()[1])], env)
+            out, deadline = b"", time.monotonic() + 60
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select([fd], [], [], 0.5)
+                if ready:
+                    try:
+                        chunk = os.read(fd, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    out += chunk
+                    if b"Press Enter once the app is installed" in out and then_install:
+                        then_install()
+                        then_install = None
+                        os.write(fd, b"\n")
+            os.close(fd)
+            _, status = os.waitpid(pid, 0)
+            return out.decode("utf-8", "replace"), os.waitstatus_to_exitcode(status)
+
+        out, rc = in_pty({}, lambda: self.device_app(eboot, stamp))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Press Enter once the app is installed", out)
+        self.assertIn("Overlay app: up to date", out.split("Press Enter once the app is installed", 1)[1])
+        self.device_app(b"test.2's eboot.bin")
+        out, rc = in_pty({"VJO_NO_PROMPT": "1"}, None)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Press Enter", out)
+        self.assertIn("ONE MORE STEP", out)
+
     def test_check_app_answers_for_each_app_and_never_writes(self):
         eboot, stamp = self.stamped_package()
         cases = ((None, None, 1, "No Overlay app is installed on the Vita"),
@@ -242,6 +291,16 @@ elif '-o' in a:
         self.assertIn("(curl exit 7)", result.stdout)
         self.assertIn("bash install-vita.sh --check-app 127.0.0.1", result.stdout)
         self.assertNotIn("No Overlay app is installed", result.stdout)
+        # nothing listening at all (VitaShell's FTP not started, a wrong address): cannot tell either
+        closed = socket.socket()
+        closed.bind(("127.0.0.1", 0))
+        port = closed.getsockname()[1]
+        closed.close()  # bound once, now nobody listens on it
+        for script in ("install-vita.sh", "tools/install_ftp.sh"):
+            result = subprocess.run(["bash", str(self.package / script), "--check-app", f"127.0.0.1:{port}"],
+                                    env=self.environment, capture_output=True, text=True, timeout=60, check=False)
+            self.assertEqual(result.returncode, 2, script + ": " + result.stdout + result.stderr)
+            self.assertIn("Cannot reach 127.0.0.1", result.stdout)
         # a package from before the stamps cannot tell
         (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").unlink()
         result = self.install("install-vita.sh", "--check-app")

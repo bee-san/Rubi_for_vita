@@ -164,7 +164,10 @@ app_check() {
 
 python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5).close()' \
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
-  echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."; exit 1; }
+  echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."
+  # --check-app: a Vita that cannot be reached is "cannot tell" (2), never "not this package's app" (1).
+  [ $CHECKAPP = 1 ] && exit 2
+  exit 1; }
 
 if [ $CHECKAPP = 1 ]; then
   app_rc=0

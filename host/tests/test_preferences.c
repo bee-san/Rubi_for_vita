@@ -798,8 +798,8 @@ static size_t read_fixture(const char *name, char *out, size_t cap)
  * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
  * vocr2). Today's Shell and app read it as the local engine with one warning
  * and no unknown setting (its vocr_model gives the Normal size), and the app's
- * next save writes vocr and vocr_tier in place of vocr2 and the two model
- * lines, keeping every other byte. */
+ * next save writes vocr and vocr_tier, drops the two model lines and the empty
+ * jpdb/jiten key lines (#117), and keeps every other byte. */
 static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
 {
     static char fixture[8192], expect[8192], out[8192];
@@ -820,27 +820,44 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     TEST_CHECK(shell.used == 0 && handles == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
-    /* the app's next save: vocr in place of vocr2, the two model lines gone, vocr_tier added; every other
-     * byte kept (core/config.c vjo_config_patch_preferences) */
+    /* the app's next save: vocr in place of vocr2, the two model lines gone and vocr_tier added (API 21),
+     * the lines of removed features dropped or replaced as core/config.c vjo_config_removed_line says (since
+     * #117 the online dictionaries' empty key lines); every other byte kept */
     TEST_ASSERT(vjo_preferences_save(cfg.ocr_backend, cfg.vocr_tier, cfg.japanese_only_selection, cfg.highlight_mode,
                                      cfg.local_dictionary_results, &arena) == 0);
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     ssize_t got = read(fd, out, sizeof(out) - 1); close(fd);
     TEST_ASSERT(got > 0); out[got] = 0;
-    static const char *const swap[][2] = {{"\nocr_backend = vocr2\n", "\nocr_backend = vocr\n"},
-                                          {"\nvocr_model = VOCR3_H15_w8.vocr\n", "\n"},
-                                          {"\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n", "\n"}};
-    snprintf(expect, sizeof(expect), "%s", fixture);
-    for (unsigned i = 0; i < 3; i++) {
-        static char next[8192];
-        char *at = strstr(expect, swap[i][0]);
-        TEST_ASSERT_(at != NULL, "fixture line %s", swap[i][0] + 1);
-        snprintf(next, sizeof(next), "%.*s%s%s", (int)(at - expect), expect, swap[i][1], at + strlen(swap[i][0]));
-        snprintf(expect, sizeof(expect), "%s", next);
+    size_t used = 0, dropped = 0;
+    for (const char *line = fixture; *line;) {
+        const char *nl = strchr(line, '\n'), *replacement = NULL;
+        size_t len = nl ? (size_t)(nl - line) + 1 : strlen(line);
+        int kind = vjo_config_removed_line(line, len, &replacement);
+        if (!strncmp(line, "ocr_backend = vocr2\n", len)) {
+            used += (size_t)snprintf(expect + used, sizeof(expect) - used, "ocr_backend = vocr\n");
+        } else if (!strncmp(line, "vocr_model = ", 13) || !strncmp(line, "vocr_fallback_model = ", 22)) {
+            dropped++;
+        } else if (kind == VJO_LINE_DROP) {
+            dropped++;
+        } else if (kind == VJO_LINE_REPLACE) {
+            used += (size_t)snprintf(expect + used, sizeof(expect) - used, "%s", replacement);
+        } else {
+            used += (size_t)snprintf(expect + used, sizeof(expect) - used, "%.*s", (int)len, line);
+        }
+        line += len;
     }
-    strncat(expect, "vocr_tier = normal\n", sizeof(expect) - strlen(expect) - 1);
+    snprintf(expect + used, sizeof(expect) - used, "vocr_tier = normal\n");
+    TEST_CHECK(dropped >= 4); /* the two model lines and (since #117) the two empty key lines at least */
     TEST_CHECK(!strcmp(out, expect));
     TEST_MSG("saved:\n%s", out);
+    /* whatever the removed features, the user's own settings survive the save */
+    static const char *const kept[] = {"\nanki_mining = on\n", "\nhighlight_mode = word\n", "\nfont_size_ja = 18\n",
+                                       "\nlocal_dictionaries = plaintext.vjdict\n", "\nocr_lm = 1000k\n",
+                                       "\nocr_refine_lines = psp\n", "\n; Vita JP Overlay settings."};
+    for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
+        TEST_CHECK_(strstr(out, kept[i]) != NULL, "kept: %s", kept[i] + 1);
+    TEST_CHECK(!strstr(out, "\nocr_backend = vocr2\n") && !strstr(out, "\nvocr_model =") &&
+               !strstr(out, "\nvocr_fallback_model =") && strstr(out, "\nocr_backend = vocr\n"));
     vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0);
 }
@@ -865,6 +882,16 @@ static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
     TEST_CHECK(written == 0 && renames == 0 && handles == 0 && shell.used == 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_PREFERENCES_PATH ".tmp", F_OK) != 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) != 0);
+    /* what creates it: the Overlay app's first save publishes the commented template with the choice */
+    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    static char saved[VJO_CONFIG_TEXT_MAX + 1];
+    int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
+    TEST_ASSERT(fd >= 0);
+    ssize_t n = read(fd, saved, sizeof(saved) - 1); close(fd);
+    TEST_ASSERT(n > 0); saved[n] = 0;
+    TEST_CHECK(!strncmp(saved, vjo_config_default_text(), 40) && strstr(saved, "\njapanese_only_selection = off\n"));
+    vjo_config_load(&cfg, &shell);
+    TEST_CHECK(!cfg.japanese_only_selection && cfg.n_warnings == 0 && shell.used == 0);
 }
 
 /* The Shell's reads of the Overlay app's stamps (shell/files.c): the first

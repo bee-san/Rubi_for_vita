@@ -2038,6 +2038,13 @@ static int64_t pending_since;
  * page (an overlay refused Paf memory for it keeps the notice for the next). */
 static int app_state = -1;
 
+const char *vjo_view_notice(void)
+{
+    if (g_view.notice)
+        g_view.notice_shown = 1; /* drawn: closing this overlay drops it (close_overlay) */
+    return g_view.notice;
+}
+
 static void check_app(void)
 {
     char installed[VJO_APP_STAMP_MAX], package[VJO_APP_STAMP_MAX];

@@ -103,6 +103,10 @@ class AppStamp(unittest.TestCase):
         self.assertIn("JPOverlaySettings.vpk", flat)
         self.assertIn(command, flat)
         self.assertIn("Overlay app: NOT this package's", app_stamp.report("mismatch", ["x"], command, False))
+        # an app newer than the package: the advice is not "an older app"
+        newer = " ".join(app_stamp.report("mismatch", ["x"], command, True, newer=True).replace("|", " ").split())
+        self.assertIn("A newer app saves settings these plugins do not know yet", newer)
+        self.assertNotIn("An older app", newer)
         self.assertIn("Overlay app: up to date", app_stamp.report("ok", ["x"], command, True))
         self.assertIn("Overlay app: not checked", app_stamp.report("unknown", ["x"], command, True))
 

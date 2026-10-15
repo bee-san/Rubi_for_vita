@@ -44,8 +44,9 @@ bash install-vita.sh --title PCSG00415 VITA_IP:1337
 {RUN_STEPS}
 
 ## 4. Send back one zip
-Start VitaShell's FTP again, then in `vjo`: `bash tools/install_ftp.sh --collect VITA_IP`. Its analysis's
-second line says whether the Overlay app was this build's (`Overlay app: the plugins' (…)`). Send the zip
+Start VitaShell's FTP again, then in `vjo`: `bash tools/install_ftp.sh --collect VITA_IP`. Its analysis has
+a line saying whether the Overlay app was this build's (`Overlay app: the plugins' (…)`), after the
+package and installed-files lines. Send the zip
 privately ([console-test.md](console-test.md#4-send-back-one-zip) says what it holds).
 
 ## If something goes wrong
