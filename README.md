@@ -217,6 +217,7 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Control | Action |
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
+| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, one row a frame after a moment; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Enter or touch a game | Toggle OCR and overlay input for that game |

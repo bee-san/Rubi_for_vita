@@ -115,6 +115,7 @@ int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
 {
     (void)port; (void)count;
     pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : SCE_CTRL_CIRCLE;
+    pad->lx = pad->ly = pad->rx = pad->ry = 128; /* the sticks at rest */
     return 1;
 }
 int sceTouchPeek(int port, SceTouchData *data, int count)

@@ -160,7 +160,7 @@ int sceIoDclose(int d)
 }
 
 /* ---- the scripted controller, touch screen and display ---- */
-typedef struct { unsigned buttons; int touch, x, y; } Input;
+typedef struct { unsigned buttons; int touch, x, y, stick; } Input; /* stick: the left stick's y from its centre */
 static Input script[MAX_FRAMES];
 static int script_frames, frame;
 /* Called at the start of each frame (the app's process): a test changes the card there. */
@@ -199,6 +199,8 @@ int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
     cur.focus = -1;
     clock_gettime(CLOCK_MONOTONIC, &frame_start);
     pad->buttons = frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].buttons : CANCEL;
+    pad->lx = pad->rx = pad->ry = 128;
+    pad->ly = (unsigned char)(128 + (frame < script_frames && frame < MAX_FRAMES - 1 ? script[frame].stick : 0));
     return 1;
 }
 int sceTouchPeek(int port, SceTouchData *data, int count)
@@ -621,8 +623,10 @@ static int run(int n)
 }
 /* Script builders: n frames of buttons held (0: none); a tap is one frame down, one up. */
 static int at;
-static void hold(unsigned buttons, int n) { for (int i = 0; i < n && at < MAX_FRAMES - 2; i++) script[at++] = (Input){buttons, 0, 0, 0}; }
+static void hold(unsigned buttons, int n) { for (int i = 0; i < n && at < MAX_FRAMES - 2; i++) script[at++] = (Input){buttons, 0, 0, 0, 0}; }
 static void tap(unsigned buttons, int gap) { hold(buttons, 1); hold(0, gap); }
+/* The left stick held n frames, offset from its centre (-128 top .. 127 bottom). */
+TEST_ONLY static void hold_stick(int stick, int n) { for (int i = 0; i < n && at < MAX_FRAMES - 2; i++) script[at++] = (Input){0, 0, 0, 0, stick}; }
 
 /* ---- scenarios (shared by the tests and the benchmark) ---- */
 #define DOWN SCE_CTRL_DOWN
@@ -1094,6 +1098,42 @@ static void held_keys_repeat_and_new_presses_act(void)
                 "Down held 40 frames: %d; then R: %d", selected_of(q - 1), selected_of(q));
 }
 
+/* The left stick moves the selection as VitaShell's lists do (core/stick_scroll.h):
+ * a row on the push, nine quiet frames, then a row every frame; a push under
+ * half way does nothing; the d-pad acts first. */
+static void stick_scrolls_like_vitashell(void)
+{
+    card(60, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    hold_stick(64, 20); /* 64 from the centre: not a push */
+    int p = at;
+    hold_stick(127, 40);
+    hold(0, 10);
+    int q = at;
+    hold_stick(-128, 15);
+    hold(0, 10);
+    int r = at;
+    hold(DOWN, 1);
+    for (int i = 0; i < 4; i++) script[at++] = (Input){DOWN, 0, 0, 0, 127}; /* Down held with the stick */
+    hold(0, 10);
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    TEST_CHECK(selected_of(p - 1) == 0);
+    int sel = 0, bad = 0;
+    for (int f = p; f < p + 40; f++) {
+        if (f == p || f >= p + 10) sel++;
+        if (selected_of(f) != sel && bad++ < 5) TEST_MSG("frame %d: selection %d, want %d", f - p, selected_of(f), sel);
+    }
+    TEST_CHECK(bad == 0);
+    TEST_CHECK_(selected_of(q - 1) == 31, "after 40 frames down: %d", selected_of(q - 1));
+    TEST_CHECK_(selected_of(r - 1) == 25, "after 15 frames up: %d", selected_of(r - 1));
+    /* Down pressed (one row), then held with the stick: the stick's push adds one,
+     * the d-pad's repeat is not due for 350 ms */
+    TEST_CHECK_(selected_of(r) == 26 && selected_of(r + 4) == 27, "%d, %d", selected_of(r), selected_of(r + 4));
+}
+
 /* The list keys act on the Games page only: on the OCR & lookup and Anki pages
  * Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
@@ -1386,7 +1426,7 @@ static void touch_toggles_the_touched_card(void)
     spec_list();
     at = 0;
     hold(0, 15);
-    script[at++] = (Input){0, 1, 400, GAMES_Y + GAME_PITCH + 40}; /* the second card */
+    script[at++] = (Input){0, 1, 400, GAMES_Y + GAME_PITCH + 40, 0}; /* the second card */
     hold(0, 15);
     int frames = run(at);
     check_rules();
@@ -1407,6 +1447,7 @@ TEST_LIST = {
     {"moving_up_prefetches_the_page_above", moving_up_prefetches_the_page_above},
     {"held_keys_repeat_and_new_presses_act", held_keys_repeat_and_new_presses_act},
     {"list_keys_only_on_the_games_page", list_keys_only_on_the_games_page},
+    {"stick_scrolls_like_vitashell", stick_scrolls_like_vitashell},
     {"hints_leave_room_for_the_counter", hints_leave_room_for_the_counter},
     {"titles_are_laid_out_ahead_one_a_frame", titles_are_laid_out_ahead_one_a_frame},
     {"toggles_and_filters_keep_icons", toggles_and_filters_keep_icons},
