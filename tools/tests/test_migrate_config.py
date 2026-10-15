@@ -85,6 +85,20 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("anki_mining = on\n", text)
         self.assertEqual(text.count("anki_mining"), 1)
 
+    def test_a_credential_is_reported_only_as_set_or_empty(self):
+        # an API key, and the audio source's URL, which can carry one (audit-overlay-test3-cleanup B1)
+        url = "https://audio.invalid/a?term={term}&key=url-secret-99"
+        text, report = self.migrate("jpdb_api_key = old-key-1\n", f"anki_audio_url={url}", "jiten_api_key=new-key-2")
+        self.assertIn(f"anki_audio_url = {url}\n", text)
+        self.assertIn("jiten_api_key = new-key-2\n", text)
+        self.assertIn("config.ini: anki_audio_url = set", report)
+        self.assertIn("config.ini: jiten_api_key = set", report)
+        for secret in ("url-secret-99", "audio.invalid", "new-key-2", "old-key-1"):
+            self.assertNotIn(secret, report)
+        _, report = self.migrate(f"anki_audio_url = {url}\n", "anki_audio_url=")
+        self.assertIn("config.ini: anki_audio_url = empty", report)
+        self.assertNotIn("url-secret-99", report)
+
     def test_the_field_mapping_of_earlier_builds_is_removed(self):
         # Kiku is the one note type now: no deck, note type, tags or fields to set.
         old = ("anki_host = auto\nanki_deck = Mining #1 ; main\nanki_note_type = Lapis\nanki_tags = a b\n"

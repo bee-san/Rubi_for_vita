@@ -33,8 +33,9 @@ same table for their steps (boot, ok, game, ocr, done).
 
 After the diagnostics come each stage's memory headroom (free USER, plus another
 model's weights it released, minus the reserve and what the job needed) and the
-recognizer tier (vita-vn-ocr #74's Small/Normal/Large proposal) that the game's
-measured free memory allows.
+recognizer tier (Small / Normal / Large at today's ceilings and box time limits,
+from tools/model_tiers.json, which the Overlay app's tier choice reads too) that
+the game's measured free memory allows.
 
 --collect DIR reads a folder written by `install_ftp.sh --collect` (tools/collect_vita.py):
 the installed files against the package, config.ini (API keys already redacted),
@@ -71,14 +72,18 @@ DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-m
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
-# The recognizer tiers vita-vn-ocr #74 proposes (docs/model-tiers.md, its section 1.5: a spec, not
-# final): the free game USER a first job of a tier needs is page(weights) + page(max(the line finder's
-# arena at 960x544, the tier's W8I arena) + the runtime's structs) + the capture block + the line-block
-# ceiling, and the tier keeps its own reserve. Here each tier is priced at its ceiling.
-TIER_FINDER_ARENA, TIER_RUNTIME_STRUCTS = 83_323, 3_760     # model-tiers.json "overlay" (main 64b5726)
-TIER_CAPTURE, TIER_LINE = 61_440, 516_096                   # VJO_BUDGET_GAME_CAPTURE page, VJO_VOCR_LINE_MAX_BYTES
-TIERS = (("Large", 9_000_000, 1_310_720, 16 * 1024 * 1024), ("Normal", 4_000_000, 262_144, 8 * 1024 * 1024),
-         ("Small", 999_999, 131_072, 4 * 1024 * 1024))     # (name, weights ceiling, arena ceiling, reserve)
+# The recognizer tiers, Small / Normal / Large: tools/model_tiers.json, the one table the Overlay app's
+# tier choice reads too, so the two cannot drift apart (audit-test-build-2 N2). The free game USER a
+# first job of a tier needs is page(weights) + page(max(the line finder's arena at 960x544, the tier's
+# W8I arena) + the runtime's structs) + the capture block + the line-block ceiling (vita-vn-ocr
+# docs/model-tiers.md, section 1.5), and the tier keeps its own reserve. Here each tier is priced at
+# its ceilings. The capture block is today's (that section has API 19's 61,440 B); a test ties it and
+# the line block to include/vjo_ledger_budget.h and core/vocr_ocr.h.
+TIER_FINDER_ARENA, TIER_RUNTIME_STRUCTS = 83_323, 3_760     # vita-vn-ocr docs/model-tiers.json "overlay" (main 64b5726)
+TIER_CAPTURE, TIER_LINE = 65_536, 516_096                   # VJO_BUDGET_GAME_CAPTURE, VJO_VOCR_LINE_MAX_BYTES
+TIERS_FILE = Path(__file__).resolve().parent / "model_tiers.json"  # shipped beside this tool
+TIER_KEYS = ("weights_max_bytes", "box_ms_under", "arena_max_bytes", "reserve_bytes")
+BOX_KEYS = ("lines", "line_px", "cores", "mhz")
 GAME_STEPS_MAX = 20                                         # include/vjo_game_ocr.h VJO_GAME_OCR_STEPS
 LM_TIERS = {"1": "500k", "2": "1000k", "3": "2000k", "4": "4000k"}  # the lm step's kind (core/vocr_ocr.c lms[])
 
@@ -87,30 +92,95 @@ def page(n):
     return (n + 4095) & ~4095
 
 
+def load_tiers(path=TIERS_FILE):
+    """The shared tier table: its tiers largest first (the order a fit is tried in), each with its id,
+    name, ceilings, reserve and 3-line-box time limit, then the default tier's id and what a box is.
+    Keys this tool does not use (the Overlay app's) are ignored. A table it cannot use raises
+    ValueError, one it cannot read OSError."""
+    name = Path(path).name
+    try:
+        table = json.loads(Path(path).read_text(encoding="utf-8"))
+    except ValueError as e:  # not JSON, or not UTF-8
+        raise ValueError(f"{name}: not JSON ({e})") from None
+    table = table if isinstance(table, dict) else {}
+    tiers, box, default = table.get("tiers"), table.get("box"), table.get("default")
+    if not isinstance(tiers, list) or not tiers or not all(isinstance(t, dict) for t in tiers) or not isinstance(box, dict):
+        raise ValueError(f"{name}: not a tier table (tiers: a list of objects; box: an object)")
+
+    def count(v):
+        return isinstance(v, int) and not isinstance(v, bool) and v > 0
+
+    def label(v):
+        return isinstance(v, str) and v != "" and v.isprintable()
+
+    rows = []
+    for n, t in enumerate(tiers, 1):
+        if not (label(t.get("id")) and label(t.get("name"))):
+            raise ValueError(f"{name}: tier {n}: id and name must be non-empty one-line strings")
+        if not all(count(t.get(k)) for k in TIER_KEYS):
+            raise ValueError(f"{name}: tier {t['id']}: {', '.join(TIER_KEYS)} must be positive integers")
+        rows.append({"id": t["id"], "name": t["name"], **{k: t[k] for k in TIER_KEYS}})
+    if not all(count(box.get(k)) for k in BOX_KEYS):
+        raise ValueError(f"{name}: box: {', '.join(BOX_KEYS)} must be positive integers")
+    ids = [r["id"] for r in rows]
+    if len(set(ids)) != len(ids) or not label(default) or default not in ids:
+        raise ValueError(f"{name}: the tier ids must be unique and include the default")
+    # smallest first: each ceiling, limit and reserve at least the previous tier's
+    if any(b[k] < a[k] for a, b in zip(rows, rows[1:]) for k in TIER_KEYS):
+        raise ValueError(f"{name}: the tiers must be smallest first, each ceiling, limit and reserve at least "
+                         f"the previous tier's")
+    return tuple(reversed(rows)), default, {k: box[k] for k in BOX_KEYS}
+
+
+def tiers_error(e):
+    """Why the table was not loaded, in one line and without the path (the analysis is sent on)."""
+    if isinstance(e, OSError):
+        return f"{TIERS_FILE.name} cannot be read ({e.strerror or type(e).__name__})"
+    return str(e) if isinstance(e, ValueError) else f"{TIERS_FILE.name}: {type(e).__name__}: {e}"
+
+
+# The tier table is a diagnostic: without it, or with anything wrong in it, the report and its verdict
+# are the same, less the tier table, with a finding that says why.
+try:
+    TIERS, TIER_DEFAULT, TIER_BOX = load_tiers()
+    TIERS_ERROR = None
+except Exception as e:  # noqa: BLE001
+    TIERS, TIER_DEFAULT, TIER_BOX, TIERS_ERROR = (), None, None, tiers_error(e)
+
+
 def tier_need(weights, arena):
     return page(weights) + page(max(TIER_FINDER_ARENA, arena) + TIER_RUNTIME_STRUCTS) + TIER_CAPTURE + TIER_LINE
 
 
 def tier_table(free_user):
-    """Each tier at its ceiling against one measured free USER figure; the recommendation is the largest that fits."""
+    """Each tier at its ceilings against one measured free USER figure; the recommendation is the largest that fits.
+    Each row also carries the tier's 3-line-box time limit, which the fit does not use."""
     rows = []
-    for name, weights, arena, reserve in TIERS:
-        need = tier_need(weights, arena)
-        rows.append({"tier": name, "weights": weights, "arena": arena, "need": need, "reserve": reserve,
-                     "margin": free_user - reserve - need, "fits": free_user - reserve >= need})
+    for t in TIERS:
+        need, reserve = tier_need(t["weights_max_bytes"], t["arena_max_bytes"]), t["reserve_bytes"]
+        rows.append({"tier": t["name"], "id": t["id"], "weights": t["weights_max_bytes"], "arena": t["arena_max_bytes"],
+                     "box_ms": t["box_ms_under"], "need": need, "reserve": reserve, "margin": free_user - reserve - need,
+                     "fits": free_user - reserve >= need})
     best = next((r["tier"] for r in rows if r["fits"]), None)
     return {"free_user": free_user, "rows": rows, "recommendation": best}
 
 
 def render_tiers(t, where):
-    lines = [f"model tiers (vita-vn-ocr #74's proposal, docs/model-tiers.md; priced at each tier's ceiling, an estimate)",
+    box = TIER_BOX or {}
+    lines = [f"model tiers ({TIERS_FILE.parent.name}/{TIERS_FILE.name}; each priced at its ceilings, an estimate)",
              f"  free game USER {where}: {t['free_user']:,} B",
-             f"  {'tier':7} {'weights':>11} {'arena':>10} {'first job needs':>16} {'reserve':>11} {'margin':>13} fits"]
+             f"  {'tier':7} {'weights':>11} {'box time':>9} {'arena':>10} {'first job needs':>16} {'reserve':>11} "
+             f"{'margin':>13} fits"]
     for r in t["rows"]:
-        lines.append(f"  {r['tier']:7} {r['weights']:>11,} {r['arena']:>10,} {r['need']:>16,} {r['reserve']:>11,} "
-                     f"{r['margin']:>13,} {'yes' if r['fits'] else 'no'}")
-    lines.append(f"  recommendation: {t['recommendation'] or 'none: not even Small fits'} "
+        lines.append(f"  {r['tier']:7} {r['weights']:>11,} {'< %g s' % (r['box_ms'] / 1000):>9} {r['arena']:>10,} "
+                     f"{r['need']:>16,} {r['reserve']:>11,} {r['margin']:>13,} {'yes' if r['fits'] else 'no'}")
+    smallest = t["rows"][-1]["tier"] if t["rows"] else "the smallest tier"
+    lines.append(f"  recommendation: {t['recommendation'] or f'none: not even {smallest} fits'} "
                  "(the largest tier whose first job fits beside its reserve; one sample, this game)")
+    cores = box.get("cores", "?")
+    lines.append(f"  box time: the tier's limit for a typical full textbox ({box.get('lines', '?')} lines of about "
+                 f"{box.get('line_px', '?')} px, {cores} core{'' if cores == 1 else 's'} at {box.get('mhz', '?')} MHz), "
+                 "estimated; the recommendation is memory alone")
     return lines
 
 
@@ -434,9 +504,11 @@ def analyse_v2(records):
     # the tier the measured free memory allows (before the worker's first block)
     if gmem:
         good = [gs for gs in gmem if s32(gs.get("rc", 0)) >= 0 and isinstance(gs.get("main"), int) and gs["main"] >= 0]
-        if good:
+        if good and TIERS:
             out["tiers"] = tier_table(good[0]["main"])
             out["tiers"]["where"] = "before the worker's first block"
+        elif good:
+            findings.append(f"The model tiers were not priced: {TIERS_ERROR}.")
     full = [n for n in STAGES if len(stages.get(n, {}).get("gsteps", [])) >= GAME_STEPS_MAX]
     if full:
         findings.append(f"The game worker's step log is full ({GAME_STEPS_MAX} steps) in: {', '.join(full)}; that "
@@ -835,6 +907,18 @@ TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|S
 SHELL_REFUSAL = re.compile(r"Paf reserve guard|Paf allocation: .*success=0|^thread \S+ refused|^anki: \w+ not started")
 
 
+# The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
+# (package_release.py SECRET, collect_vita.py CREDENTIAL).
+CREDENTIAL = re.compile(r"api_key$|^anki_audio_url$", re.I)
+
+
+def masked(settings):
+    """A package's settings with each credential only as "set" or "" (collect_vita.py masked)."""
+    if not isinstance(settings, dict):
+        return settings
+    return {k: ("set" if v not in ("", None) else "") if CREDENTIAL.search(str(k)) else v for k, v in settings.items()}
+
+
 def _read(folder, rel):
     p = folder / rel
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
@@ -1098,6 +1182,10 @@ def summarise_collect(folder):
     out = {"folder": folder.name, "record": {k: record.get(k) for k in ("collected_at", "host", "missing", "errors",
                                                                           "redacted_keys", "package")},
            "undecided": []}
+    # an older COLLECT.json copied a package's credentials as they were: only whether each is set
+    if isinstance(out["record"]["package"], dict):
+        out["record"]["package"] = {k: masked(v) if k in ("defaults", "install_settings") else v
+                                    for k, v in out["record"]["package"].items()}
     # the installed files against the package
     checks = record.get("package_check") or {}
     out["package_check"] = {"checked": len(checks), "match": sorted(k for k, v in checks.items() if v.get("match")),
@@ -1162,12 +1250,14 @@ def summarise_collect(folder):
     samples = ([("before the self-test's first block (selftest-report.txt)", st_free)] if st_free else []) + \
               ([("the lowest any job in log.txt saw (refused jobs included; weights may be resident then)", min(frees))]
                if frees else [])
-    out["tiers_all"] = [dict(tier_table(v), where=w) for w, v in samples]
+    out["tiers_all"] = [dict(tier_table(v), where=w) for w, v in samples] if TIERS else []
     if out["tiers_all"]:
-        order = [t[0] for t in TIERS] + [None]
+        order = [t["name"] for t in TIERS] + [None]
         out["tiers"] = max(out["tiers_all"], key=lambda t: order.index(t["recommendation"]))
     # what the analyser cannot decide, and where in the zip the data to decide it is
     und = out["undecided"]
+    if samples and not TIERS:
+        und.append(f"the model tiers were not priced ({TIERS_ERROR}): the free USER figures are in log.txt")
     for e in record.get("errors") or []:
         und.append(f"a file could not be collected ({e}); its directory listing is in listings/")
     if out.get("selftest_error"):

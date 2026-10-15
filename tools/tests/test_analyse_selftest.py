@@ -9,15 +9,19 @@ with VJO_SELFTEST_WRITER set the writer runs again and must reproduce them.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools/analyse_selftest.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+TIERS_JSON = ROOT / "tools/model_tiers.json"
 sys.path.insert(0, str(ROOT / "tools"))
 import analyse_selftest as a  # noqa: E402
 
@@ -237,14 +241,23 @@ class AnalyseV2(unittest.TestCase):
         self.assertNotIn("probe", heads)  # the probe makes no memory check
         t = as_json["tiers"]
         self.assertEqual((t["free_user"], t["recommendation"]), (91_226_112, "Large"))
-        # the formula of vita-vn-ocr docs/model-tiers.md 1.5, at each tier's ceiling
-        self.assertEqual([row["need"] for row in t["rows"]], [10_895_360, 4_845_568, 1_716_224])
+        # the formula of vita-vn-ocr docs/model-tiers.md 1.5 (with today's 65,536 B capture block), at each
+        # tier's ceilings of tools/model_tiers.json
+        self.assertEqual([row["need"] for row in t["rows"]], [4_399_104, 2_449_408, 1_720_320])
+        self.assertEqual([row["weights"] for row in t["rows"]], [2_500_000, 1_600_000, 999_999])
         self.assertEqual([row["reserve"] for row in t["rows"]], [16 << 20, 8 << 20, 4 << 20])
+        self.assertEqual([row["box_ms"] for row in t["rows"]], [3000, 2000, 1000])
+        self.assertEqual([row["id"] for row in t["rows"]], ["large", "normal", "small"])
         self.assertIn("recommendation: Large", r.stdout)
+        self.assertIn("  Large     2,500,000     < 3 s  1,310,720        4,399,104  16,777,216    70,049,792 yes\n",
+                      r.stdout)
+        self.assertIn("box time: the tier's limit for a typical full textbox (3 lines of about 640 px, 1 core at "
+                      "444 MHz), estimated; the recommendation is memory alone", r.stdout)
 
     def test_the_tier_falls_with_the_free_memory(self):
-        for free, want in ((27_672_576, "Large"), (27_672_575, "Normal"), (13_234_176, "Normal"), (13_234_175, "Small"),
-                           (5_910_528, "Small"), (5_910_527, None)):
+        # each tier's first job (above) plus its reserve, and one byte less
+        for free, want in ((21_176_320, "Large"), (21_176_319, "Normal"), (10_838_016, "Normal"), (10_838_015, "Small"),
+                           (5_914_624, "Small"), (5_914_623, None)):
             self.assertEqual(a.tier_table(free)["recommendation"], want, free)
         # a refused stage has a negative headroom and says so: the textbox stage in a game with 5,000,000 B free
         text = (FIXTURES / "selftest-v2-pass.txt").read_text()
@@ -401,6 +414,283 @@ class AnalyseV2(unittest.TestCase):
                                  f"vjo-selftest-writer DIR {name}")
                 # the marker is removed when (and only when) the run finished
                 self.assertEqual((Path(tmp) / "selftest.txt").exists(), name in ("incomplete", "waiting"))
+
+
+# A tier table in a report and in --collect's, the line for the game's tier, and the finding a report
+# without the table has instead.
+TIER_BLOCK = re.compile(r"\n\nmodel tiers \(.*?\n  box time: [^\n]*", re.S)
+GAME_TIER_LINE = re.compile(r"\n  recommendation for this game: [^\n]*")
+NOT_PRICED = re.compile(r"\n  - [Tt]he model tiers were not priced[^\n]*")
+
+
+def compiled_ints(path):
+    """Every integer constant of a Python file, as compiled (spelling and constant arithmetic folded)."""
+    out = set()
+
+    def walk(consts):
+        for c in consts:
+            if isinstance(c, types.CodeType):
+                walk(c.co_consts)
+            elif isinstance(c, (tuple, frozenset)):
+                walk(c)
+            elif isinstance(c, int) and not isinstance(c, bool):
+                out.add(c)
+
+    walk(compile(Path(path).read_text(encoding="utf-8"), str(path), "exec").co_consts)
+    return out
+
+
+def without_tiers(out):
+    """A --json object with the fields the tier table *fills* removed (a report's or a --collect's
+    self-test "tiers", --collect's "tiers") and the 'not priced' finding dropped, so what is left must
+    be the same with the table and without it. "tiers_all" is kept: without the table it must be [],
+    which the caller checks, so dropping it there is caught."""
+    out = json.loads(json.dumps(out))  # a copy
+    not_priced = "The model tiers were not priced: "
+
+    def strip(node):
+        if isinstance(node, dict):
+            node.pop("tiers", None)
+            if isinstance(node.get("findings"), list):
+                node["findings"] = [f for f in node["findings"] if not f.startswith(not_priced)]
+            if isinstance(node.get("undecided"), list):
+                node["undecided"] = [u for u in node["undecided"] if "model tiers were not priced" not in u]
+            for v in node.values():
+                strip(v)
+        elif isinstance(node, list):
+            for v in node:
+                strip(v)
+
+    strip(out)
+    return out
+
+
+def collect_folder(root):
+    """A minimal --collect folder: the PASS self-test report and one job's memory line in log.txt."""
+    folder = root / "vjo-collect-20261015-000000Z"
+    data = folder / "ux0/data/VitaJPOverlay"
+    data.mkdir(parents=True)
+    shutil.copyfile(FIXTURES / "selftest-v2-pass.txt", data / "selftest-report.txt")
+    (data / "log.txt").write_text("game vocr memory: free USER=50000000, needs workspace 249856 + weights 1159168 + "
+                                  "reserve 4194304: check passed, headroom 44396672\n", encoding="utf-8")
+    (folder / "COLLECT.json").write_text(json.dumps({"collected_at": "2026-10-15T00:00:00Z", "host": "192.0.2.1",
+                                                     "files": {}, "missing": [], "errors": [], "redacted_keys": []}))
+    return folder
+
+
+class SharedTierTable(unittest.TestCase):
+    """tools/model_tiers.json is the only copy of the tiers (audit-test-build-2 N2): the analyser prices
+    its tiers and nothing of its own, it holds today's ceilings and box time limits, the Overlay app's
+    extra keys change nothing here, and the release ships it beside the analyser."""
+
+    def table(self):
+        return json.loads(TIERS_JSON.read_text(encoding="utf-8"))
+
+    def test_the_analyser_prices_the_shared_tables_tiers(self):
+        table = self.table()
+        self.assertIsNone(a.TIERS_ERROR)
+        self.assertEqual(a.TIERS_FILE, TIERS_JSON)
+        self.assertEqual(list(a.TIERS), [{k: t[k] for k in ("id", "name", *a.TIER_KEYS)}
+                                         for t in reversed(table["tiers"])])
+        self.assertEqual((a.TIER_DEFAULT, a.TIER_BOX), (table["default"], table["box"]))
+        # no ceiling of its own, in any spelling: 9000000, 9_000_000 and 9 * 10**6 compile to the same
+        # constant. None of the table's ceilings and reserves, nor the superseded 9 MB / 4 MB / 1 MB ones,
+        # is a constant of the tool; 262,144 is (KERNEL_TXT_CAP, kernel.txt's 256 KiB), not as a tier's.
+        forbidden = {t[k] for t in table["tiers"] for k in ("weights_max_bytes", "arena_max_bytes", "reserve_bytes")}
+        forbidden |= {9_000_000, 4_000_000, 1_000_000}
+        self.assertEqual(a.KERNEL_TXT_CAP, 262_144)
+        self.assertEqual(forbidden & (compiled_ints(SCRIPT) - {a.KERNEL_TXT_CAP}), set())
+
+    def test_the_formulas_blocks_are_todays(self):
+        """The capture block and the line-block ceiling of the first-job formula are the game worker's
+        own (the vita-vn-ocr formula's 61,440 B capture block is API 19's)."""
+        ledger = (ROOT / "include/vjo_ledger_budget.h").read_text(encoding="utf-8")
+        vocr = (ROOT / "core/vocr_ocr.h").read_text(encoding="utf-8")
+        self.assertEqual(a.TIER_CAPTURE, int(re.search(r"#define VJO_BUDGET_GAME_CAPTURE (\d+)u", ledger).group(1)))
+        self.assertEqual(a.TIER_LINE, int(re.search(r"#define VJO_VOCR_LINE_MAX_BYTES (\d+)u", vocr).group(1)))
+        self.assertEqual(a.tier_need(999_999, 131_072), 1_003_520 + 135_168 + 65_536 + 516_096)
+
+    def test_the_tiers_are_todays_ceilings_and_box_time_limits(self):
+        # Weights: the owner's ceilings of 2026-10-14 18:09Z, kept by the conductor's correction of
+        # 2026-10-15 05:56Z; box time: the owner's limits of 07:33Z, a typical full textbox (3 lines of
+        # about 640 px) on one A9 core at 444 MHz; default Normal (owner, 2026-10-15 04:52Z).
+        table = self.table()
+        self.assertEqual([(t["id"], t["name"], t["weights_max_bytes"], t["box_ms_under"]) for t in table["tiers"]],
+                         [("small", "Small", 999_999, 1000), ("normal", "Normal", 1_600_000, 2000),
+                          ("large", "Large", 2_500_000, 3000)])
+        self.assertEqual(table["box"], {"lines": 3, "line_px": 640, "cores": 1, "mhz": 444})
+        self.assertEqual(table["default"], "normal")
+        # vita-vn-ocr docs/model-tiers.md 1.3 and 1.5: the W8I arena ceilings and the per-tier reserve
+        self.assertEqual([(t["arena_max_bytes"], t["reserve_bytes"]) for t in table["tiers"]],
+                         [(131_072, 4 << 20), (262_144, 8 << 20), (1_310_720, 16 << 20)])
+
+    def test_other_keys_are_ignored_and_a_table_it_cannot_use_is_refused(self):
+        table = self.table()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "model_tiers.json"
+
+            def load(t):
+                path.write_text(json.dumps(t), encoding="utf-8")
+                return a.load_tiers(path)
+
+            # the keys the Overlay app's tier choice adds (overlay-ux-tiers) change nothing here
+            extra = json.loads(json.dumps(table))
+            extra["est_box_basis"] = "the shipped model at the console's measured ms per CTC frame"
+            for t, model in zip(extra["tiers"], ("VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr")):
+                t.update(model=model, tagline="fastest", est_box_ms=700, need_bytes=6_000_000)
+            self.assertEqual(load(extra), (a.TIERS, a.TIER_DEFAULT, a.TIER_BOX))
+            for broken in (lambda t: t["tiers"][1].pop("reserve_bytes"),
+                           lambda t: t["tiers"][0].update(weights_max_bytes="999999"),
+                           lambda t: t["tiers"][0].update(box_ms_under=True),
+                           lambda t: t["tiers"][2].update(arena_max_bytes=0),
+                           lambda t: t["tiers"].reverse(),               # largest first
+                           lambda t: t["tiers"][2].update(box_ms_under=1500),  # a larger tier's limit below Normal's
+                           lambda t: t["tiers"][2].update(id="normal"),
+                           lambda t: t.update(default="medium"),
+                           lambda t: t.update(tiers=[]),
+                           lambda t: t["box"].pop("mhz"),
+                           lambda t: t.pop("tiers"),
+                           lambda t: t["tiers"][2].update(id=["large"]),  # unhashable: crashed at import before
+                           lambda t: t["tiers"][0].update(name=None),     # crashed the table's rendering before
+                           lambda t: t["tiers"][1].update(name=["Normal"]),
+                           lambda t: t["tiers"][1].update(name="Nor\nmal"),
+                           lambda t: t["tiers"][0].update(id=""),
+                           lambda t: t.update(default=["normal"]),
+                           lambda t: t.update(tiers={"small": t["tiers"][0]}),
+                           lambda t: t["tiers"].append(7),
+                           lambda t: t["box"].update(lines="3"),
+                           lambda t: t.update(box=[3, 640, 1, 444])):
+                copy = json.loads(json.dumps(table))
+                broken(copy)
+                with self.assertRaises(ValueError):
+                    load(copy)
+            for text in ("{not json", "", "null", "[]", '"tiers"', "\udcff"):
+                path.write_text(text, encoding="utf-8", errors="surrogateescape")
+                with self.assertRaises(ValueError, msg=text):
+                    a.load_tiers(path)
+            with self.assertRaises(OSError):
+                a.load_tiers(Path(d) / "missing.json")
+
+    def test_without_the_table_the_verdict_stands_and_says_why(self):
+        text = (FIXTURES / "selftest-v2-pass.txt").read_text()
+        with mock.patch.object(a, "TIERS", ()), mock.patch.object(a, "TIERS_ERROR", "model_tiers.json: missing"):
+            out = a.analyse(text)
+            shown = a.render(out)
+        self.assertEqual((out["ocr_result"], out["diagnostics_result"]), ("PASS", "PASS"))
+        self.assertNotIn("tiers", out)
+        self.assertIn("The model tiers were not priced: model_tiers.json: missing.", out["findings"])
+        self.assertNotIn("model tiers (", shown)
+        self.assertTrue(shown.endswith("PASS: every stage completed; the figures above are this console's."))
+
+    def test_without_the_table_or_with_a_broken_one_the_report_is_the_rest_unchanged(self):
+        """The real tool, run from a copy of tools/ as a release has it, on the PASS fixture and on a
+        --collect folder: with tools/model_tiers.json missing or broken, the exit status and every line
+        of the report are what they are with it, less the tier tables, plus the finding that says why."""
+        good = TIERS_JSON.read_text(encoding="utf-8")
+
+        def edited(edit):
+            table = json.loads(good)
+            edit(table)
+            return json.dumps(table)
+
+        variants = {"missing": None, "not JSON": "{not json", "empty": "",
+                    "a null name": edited(lambda t: t["tiers"][0].update(name=None)),
+                    "a list id": edited(lambda t: t["tiers"][2].update(id=["large"])),
+                    "a list name": edited(lambda t: t["tiers"][1].update(name=["Normal"])),
+                    "tiers an object": edited(lambda t: t.update(tiers={"small": t["tiers"][0]})),
+                    "a string reserve": edited(lambda t: t["tiers"][1].update(reserve_bytes="8388608"))}
+        with tempfile.TemporaryDirectory() as d:
+            tools, folder = Path(d) / "tools", collect_folder(Path(d))
+            tools.mkdir()
+            shutil.copyfile(SCRIPT, tools / SCRIPT.name)
+
+            def runs():
+                out = []
+                for args in ([FIXTURES / "selftest-v2-pass.txt"], [FIXTURES / "selftest-v2-pass.txt", "--json"],
+                             ["--collect", folder], ["--collect", folder, "--json"]):
+                    r = subprocess.run([sys.executable, str(tools / SCRIPT.name), *map(str, args)],
+                                       capture_output=True, text=True, timeout=60)
+                    out.append(r)
+                return out
+
+            shutil.copyfile(TIERS_JSON, tools / TIERS_JSON.name)
+            plain, as_json, collected, collect_json = runs()
+            for r in (plain, as_json, collected, collect_json):
+                self.assertEqual((r.returncode, r.stderr), (0, ""))
+            # the reference, less its tier tables: one in the report; in --collect two samples and the self-test's
+            want_plain, n = TIER_BLOCK.subn("", plain.stdout)
+            self.assertEqual(n, 1)
+            want_collect, n = TIER_BLOCK.subn("", collected.stdout)
+            self.assertEqual(n, 3)
+            want_collect, n = GAME_TIER_LINE.subn("", want_collect)
+            self.assertEqual(n, 1)
+            # the reference --json, less what the tier table adds (its "tiers", and in --collect the
+            # self-test's "tiers"/"tiers_all" and the finding), so a dropped field (stages, tiers_all)
+            # fails per variant below, not only the verdict
+            self.assertIn("tiers", json.loads(as_json.stdout))
+            want_plain_json = without_tiers(json.loads(as_json.stdout))
+            # --collect --json: "tiers_all" is [] without a table; set the reference's to [] and check each
+            # variant's is [] too, so dropping it (or making it null) fails
+            want_collect_json = without_tiers(json.loads(collect_json.stdout))
+            self.assertTrue(want_collect_json.get("tiers_all"))  # the reference has samples
+            want_collect_json["tiers_all"] = []
+            for name, text in variants.items():
+                with self.subTest(name):
+                    if text is None:
+                        (tools / TIERS_JSON.name).unlink(missing_ok=True)
+                    else:
+                        (tools / TIERS_JSON.name).write_text(text, encoding="utf-8")
+                    plain, as_json, collected, collect_json = runs()
+                    for r in (plain, as_json, collected, collect_json):
+                        self.assertEqual((r.returncode, r.stderr), (0, ""))
+                        self.assertNotIn("model tiers (", r.stdout)
+                        self.assertNotIn("recommendation", r.stdout)
+                        self.assertNotIn(d, r.stdout)  # the reason names the file, not where it is
+                    self.assertTrue(plain.stdout.rstrip().endswith("PASS: every stage completed; the figures above "
+                                                                   "are this console's."))
+                    got, n = NOT_PRICED.subn("", plain.stdout)
+                    self.assertEqual((got, n), (want_plain, 1))
+                    got, n = NOT_PRICED.subn("", collected.stdout)
+                    self.assertEqual((got, n), (want_collect, 2))  # the self-test's finding, and "not decided here"
+                    out = json.loads(as_json.stdout)
+                    self.assertEqual((out["ocr_result"], out["diagnostics_result"]), ("PASS", "PASS"))
+                    self.assertNotIn("tiers", out)
+                    self.assertEqual(sum(f.startswith("The model tiers were not priced: ") for f in out["findings"]), 1)
+                    # the whole --json, not just the verdict and finding: dropping stages or tiers_all fails here
+                    self.assertEqual(without_tiers(out), want_plain_json)
+                    collect_out = json.loads(collect_json.stdout)
+                    self.assertEqual(collect_out["tiers_all"], [])  # [] without a table, not null
+                    self.assertEqual(without_tiers(collect_out), want_collect_json)
+            # a fault of any other kind while the table loads (here json.loads raising) is caught the same way
+            shutil.copyfile(TIERS_JSON, tools / TIERS_JSON.name)
+            runner = Path(d) / "with_a_fault.py"
+            runner.write_text("import json, runpy, sys\n"
+                              "def fault(*args, **kwargs):\n"
+                              "    raise RuntimeError('a fault of another kind')\n"
+                              "json.loads = fault\n"
+                              "sys.argv = sys.argv[1:]\n"
+                              "runpy.run_path(sys.argv[0], run_name='__main__')\n", encoding="utf-8")
+            r = subprocess.run([sys.executable, str(runner), str(tools / SCRIPT.name), str(FIXTURES / "selftest-v2-pass.txt")],
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual((r.returncode, r.stderr), (0, ""))
+            self.assertIn("\n  - The model tiers were not priced: model_tiers.json: RuntimeError: a fault of another kind.\n",
+                          r.stdout)
+            self.assertEqual(NOT_PRICED.subn("", r.stdout), (want_plain, 1))
+
+    def test_the_release_ships_the_table_beside_the_analyser(self):
+        cmake = (ROOT / "vita/CMakeLists.txt").read_text(encoding="utf-8")
+        copy = [line for line in cmake.splitlines() if "${ROOT}/tools/analyse_selftest.py" in line]
+        self.assertEqual(len(copy), 1, copy)
+        self.assertIn(" ${ROOT}/tools/model_tiers.json ", copy[0])
+        self.assertTrue(copy[0].rstrip().endswith(" ${STAGE}/tools/"), copy[0])
+
+    def test_the_self_test_doc_shows_the_analysers_table(self):
+        doc = (ROOT / "docs/self-test.md").read_text(encoding="utf-8")
+        for r in a.tier_table(0)["rows"]:
+            row = (f"| {r['tier']} | {r['weights']:,} B | < {r['box_ms'] / 1000:g} s | {r['arena']:,} B | "
+                   f"{r['need']:,} B | {r['reserve'] >> 20} MiB | {r['need'] + r['reserve']:,} B |")
+            if row not in doc:
+                self.fail(f"docs/self-test.md's tier table has no row {row!r}")
 
 
 # The kernel memory routes exactly as #75's first guard (7bba2aa: only pointers at or above 0x40000000

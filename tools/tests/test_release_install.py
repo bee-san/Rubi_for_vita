@@ -24,7 +24,8 @@ class ReleaseInstall(unittest.TestCase):
                        "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries"):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
         for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py",
-                     "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py"):
+                     "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py",
+                     "model_tiers.json"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
@@ -184,6 +185,54 @@ elif '-o' in a:
         self.assertIn("log_file = on\n", config)
         self.assertNotIn("6.6.6.6", config)
         self.assertNotIn("not_a_setting", config)
+
+    def test_a_credential_comes_from_the_packages_config_and_is_never_shown(self):
+        """audit-overlay-test3-cleanup B1: a package built with --set jpdb_api_key=... or anki_audio_url=...
+        says only "set" in its manifest; the installer takes the value from the package's config.ini (the
+        file --verify checks) and prints only set or empty, the audio source's URL included."""
+        key, url = "pkg-secret-key-77", "https://audio.invalid/a?term={term}&key=pkg-url-secret"
+        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
+            text = (self.package / name).read_text()
+            for k, v in (("jpdb_api_key", key), ("anki_audio_url", url)):
+                self.assertEqual(text.count(f"\n{k} =\n"), 1)
+                text = text.replace(f"\n{k} =\n", f"\n{k} = {v}\n")
+            (self.package / name).write_text(text)
+        manifest_path = self.package / "package-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
+            data = (self.package / name).read_bytes()
+            manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        manifest["install_settings"] = {"anki_mining": "on", "jpdb_api_key": "set", "anki_audio_url": "set",
+                                        "jiten_api_key": ""}
+        manifest_path.write_text(json.dumps(manifest))
+        (self.data / "config.ini").write_text("anki_mining = off\njpdb_api_key = users-own-key\n")
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        shown = next(l for l in result.stdout.splitlines() if l.startswith("package settings:"))
+        self.assertEqual(shown, "package settings: anki_mining=on jpdb_api_key=set anki_audio_url=set "
+                                "jiten_api_key=empty")
+        for secret in (key, url, "pkg-url-secret", "audio.invalid", "users-own-key"):
+            self.assertNotIn(secret, result.stdout + result.stderr)
+        config = (self.data / "config.ini").read_text()
+        self.assertIn(f"\njpdb_api_key = {key}\n", config)  # the package's value, as its --set asked
+        self.assertIn(f"\nanki_audio_url = {url}\n", config)
+        self.assertIn("\njiten_api_key =\n", config)
+        self.assertNotIn("= set\n", config)
+        # a manifest naming a credential "set" while the package's config.ini has none leaves the user's
+        manifest["install_settings"] = {"jpdb_api_key": "set"}
+        manifest_path.write_text(json.dumps(manifest))
+        for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
+            text = (self.package / name).read_text().replace(f"\njpdb_api_key = {key}\n", "\njpdb_api_key =\n")
+            (self.package / name).write_text(text)
+            data = text.encode()
+            manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        manifest_path.write_text(json.dumps(manifest))
+        (self.data / "config.ini").write_text("jpdb_api_key = users-own-key\n")
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("package settings:", result.stdout)
+        self.assertIn("\njpdb_api_key = users-own-key\n", (self.data / "config.ini").read_text())
+        self.assertNotIn("users-own-key", result.stdout + result.stderr)
 
     def test_source_install_uses_the_checkout_template(self):
         # A source checkout has its template under docs, not at the package root.
