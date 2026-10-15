@@ -32,7 +32,7 @@ npm ci                              # hyperframes 0.8.162 and gsap 3.14.2, both 
 npx hyperframes browser ensure      # the chrome-headless-shell HyperFrames renders with
 npm run build                       # src/ -> index.html (the landscape composition)
 npx hyperframes lint . && npx hyperframes check .
-npm run render                      # renders/promo-1920x1080.mp4
+npm run render                      # renders/promo-1920x1080.mp4 (CRF 20)
 npm run render:vertical             # renders/promo-1080x1920.mp4 (builds the portrait index.html, renders, restores)
 bash tools/media.sh                 # media/: the two films, the poster, the GIF and the stills
 ```
@@ -69,7 +69,7 @@ renders in under two minutes on this project's build host. After changing on-scr
 
 ## What the video claims
 
-Every caption was checked against the code on `main` (8f1ec8f, plus #125 for the Anki export).
+Every caption was checked against the code on `main` (e53d9fb, which has the Anki export, #125).
 Where the original script said something that is not true of today's code, the video says what is
 true instead. Those lines are marked **changed**.
 
@@ -77,16 +77,18 @@ true instead. Those lines are marked **changed**.
 | --- | --- | --- |
 | 1 | Free | GPL-3.0; the release bundles the dictionary and the models. |
 | 2 | Entirely offline; recognition and the dictionary run on the Vita | The default engine (`ocr_backend = vocr`) runs in the game's process (`game_ocr/`), and the bundled `plaintext.vjdict` is read from the memory card (`core/local_dict.c`). The lookups shown are the ones `vjo_overlay_lookup_at` returns from the bundled dictionary for the mock line at those characters: キラキラ and 一緒に, both JMdict entries. |
-| 3 | × saves the word to a queue | With card mining on (off by default; the Overlay app's Anki page turns it on), the enter button queues the word on the memory card, offline (`shell/anki.c`, `shell/overlay.cpp`: "Queued for Anki"). |
+| 3 | × saves the word to a queue | With card mining on (off by default; the Overlay app's Anki page turns it on), the enter button queues the word on the memory card, offline (`shell/anki.c`: "Saved for Anki"; `shell/overlay.cpp`: "Queued for Anki", "Anki queue: N · export in the Overlay app"). |
 | 4 | **changed**: the script said "With screenshots" | This build takes no card screenshots (`VJO_ANKI_SCREENSHOT` is 0 in `shell/anki.c`), so the card's Picture field is empty. The caption names the fields that are filled: the word, its reading, the sentence and the definition. |
-| 4b | A dated .apkg file; import it into Anki | `settings/anki_page.c` writes `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg` and clears the queue only after the file is written and checked (#125). The size in the result line, 85 KB, is what that export wrote for three text-only cards in its host test (`host/tests/test_apkg.c`, 86,234 B), not a console measurement. Anki's desktop and mobile apps import .apkg files ([Anki manual](https://docs.ankiweb.net/manual/importing/packaged-decks), [AnkiMobile](https://github.com/ankitects/ankimobile-docs/blob/main/src/collection-transfer.md)). |
-| 5 | **changed**: the script said "It only runs when you go to look up words, so battery isn't wasted" | With `ocr_mode = auto`, the default, a game that is turned on has each new settled screen recognized without a press. So the caption says what the code does. A game turned off is never made active (`shell/worker.c` `activate_game`), so the kernel computes no region checks (`kernel/display.c`) and no recognition runs. In a game that is on, the kernel checks the region every 8th frame (`VJO_CHECK_EVERY_FRAMES`) and the Shell starts one job per settled new screen (`auto_prefetch`). `ocr_mode = on_press` in `config.ini` recognizes only when the overlay opens. Battery and CPU use are not measured. |
+| 4b | A dated .apkg file; import it into Anki | `settings/anki_page.c` writes `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg` and clears the queue only after the file is written and checked (#125). The size in the result line, 85 KB, is what that export wrote for three text-only cards in its host test (`host/tests/test_apkg.c` on e53d9fb, 86,234 B), not a console measurement. Anki's desktop and mobile apps import .apkg files ([Anki manual](https://docs.ankiweb.net/manual/importing/packaged-decks), [AnkiMobile](https://github.com/ankitects/ankimobile-docs/blob/main/src/collection-transfer.md)). |
+| 5 | **changed**: the script said "It only runs when you go to look up words, so battery isn't wasted" | With `ocr_mode = auto`, the default, a game that is turned on has each new settled screen recognized without a press. So the caption says what the code does. A game turned off is never made active (`shell/worker.c` `activate_game`), so the kernel computes no region checks (`kernel/display.c`) and no recognition runs. In a game that is on, the kernel checks the region every 8th frame (`VJO_CHECK_EVERY_FRAMES`) and the Shell starts one job per settled new screen (`auto_prefetch`). `ocr_mode = on_press` in `config.ini` recognizes only when the overlay opens. Since #93 a job also raises the ARM clock to 444 MHz while it reads (`ocr_boost_clock = on`, the default). Battery and CPU use are not measured. |
 | 6 | **changed**: the script said "as easy as clicking install in VitaShell" | Today's install needs `install-vita.sh` on a computer over VitaShell's FTP server, then the VPK in VitaShell and a reboot (README, "Install"). The terminal shows the script's real output: `tools/install_ftp.sh`'s lines, and the diff `tools/patch_tai_config.py` makes of a stock HENkaku `config.txt`. The VitaShell dialogs use VitaShell's own strings. What a one-click install would need is [#119](https://github.com/bee-san/vita-jp-overlay/issues/119). |
 | 7 | L + R | The default `toggle_button` is `l+r` (`core/config.c`). |
 | 8 | Turn it off per game; the app opens beside the suspended game | The Overlay app is a system application since #109. The Games page saves a game's ON/OFF to `games.ini`, and a game turned off gets no overlay capture or input filtering. The status line is the app's own: "Saved. Resume or restart your game to apply." |
 
 By the owner's decisions of 2026-10-15, the video shows only what stays: the overlay is going
-offline only, and the script's scene 9 (choosing an OCR engine) was dropped.
+offline only, and the script's scene 9 (choosing an OCR engine) was dropped. The end card's "fully
+offline" follows that decision: until the change that removes it merges, Google Lens is still an
+opt-in engine on `main` (`ocr_backend = lens`); the default engine and every dictionary are local.
 
 ## Licences
 

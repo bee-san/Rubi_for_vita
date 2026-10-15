@@ -44,20 +44,20 @@ export const OVERLAY = {
   hint: `Tap / ◀▶▲▼ word · ${ENTER} queue · stick scroll · □ region · ○ close`,
 };
 
-// The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125).
+// The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125, merged as e53d9fb).
 // The size is what that export wrote for three text-only cards in its host
-// test (host/tests/test_apkg.c: 86,234 B, shown as 85 KB); measured on the
-// host, not on a console.
+// test on main e53d9fb (host/tests/test_apkg.c: 86,234 B, shown as 85 KB);
+// measured on the host, not on a console.
 export const APKG = {
   dir: "ux0:data/VitaJPOverlay/anki/",
   name: "2026-10-15_142530-3cards.apkg",
   progress: "Writing the cards… 2 of 3",
   result:
     "Exported 3 cards (85 KB) to 2026-10-15_142530-3cards.apkg. Copy it from ux0:data/VitaJPOverlay/anki/ " +
-    "by VitaShell's FTP or USB, or on the SD2Vita card, and open it in Anki.",
+    "by VitaShell's FTP or USB (or the SD2Vita card, when it is ux0:) and open it in Anki.",
   copy:
-    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell) " +
-    "or on the SD2Vita card in a card reader, then open it in Anki.",
+    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell), " +
+    "or with an SD2Vita as ux0: its card in a reader, then open it in Anki.",
 };
 
 // install-vita.sh's output for one game, in order (tools/install-vita.sh,

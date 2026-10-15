@@ -78,7 +78,9 @@ def used_text():
 
 
 def make_subset(data, chars):
-    font = TTFont(io.BytesIO(data))
+    # recalcTimestamp=False: keep the source's head.modified, so the same input
+    # always gives the same bytes (--check depends on it).
+    font = TTFont(io.BytesIO(data), recalcTimestamp=False)
     opts = subset.Options()
     opts.flavor = "woff2"
     opts.layout_features = ["*"]

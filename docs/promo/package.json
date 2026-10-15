@@ -11,8 +11,8 @@
     "build": "node tools/build.mjs",
     "fonts": "python3 tools/fonts.py",
     "check": "node tools/build.mjs --check && python3 tools/fonts.py --check && hyperframes lint . && hyperframes check .",
-    "render": "node tools/build.mjs && hyperframes render . -o renders/promo-1920x1080.mp4",
-    "render:vertical": "node tools/build.mjs --layout portrait && hyperframes render . -o renders/promo-1080x1920.mp4; node tools/build.mjs"
+    "render": "node tools/build.mjs && hyperframes render . -o renders/promo-1920x1080.mp4 --crf 20",
+    "render:vertical": "node tools/build.mjs --layout portrait && hyperframes render . -o renders/promo-1080x1920.mp4 --crf 20; s=$?; node tools/build.mjs && exit $s"
   },
   "dependencies": {
     "gsap": "3.14.2",
