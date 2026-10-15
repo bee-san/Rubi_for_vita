@@ -190,6 +190,7 @@ int ksceIoClose(SceUID fd)
 static void model_tick(void)
 { SceUID saved = caller; caller = 0; game_ocr_model_tick(); caller = saved; }
 static int record_unlocks, unlock_waiters[8], lock_waiters[8];
+static void (*after_unlock)(void); /* another thread, just after a syscall's unlock (once) */
 static unsigned unlock_count, lock_count;
 int ksceKernelLockMutex(SceUID uid, int count, void *timeout)
 {
@@ -206,6 +207,11 @@ int ksceKernelUnlockMutex(SceUID uid, int count)
 {
     (void)count; TEST_CHECK(uid == g.lock && locks == 1); locks--;
     if (record_unlocks && syscall_depth == 1 && unlock_count < 8) unlock_waiters[unlock_count++] = waiters;
+    if (after_unlock && syscall_depth == 1) {
+        void (*fn)(void) = after_unlock;
+        SceUID saved = caller; unsigned depth = syscall_depth;
+        after_unlock = NULL; syscall_depth = 0; fn(); caller = saved; syscall_depth = depth;
+    }
     return 0;
 }
 int taiGetModuleInfoForKernel(SceUID pid, const char *name, tai_module_info_t *info)
@@ -553,6 +559,118 @@ static void stop_drains_its_waiters(void)
     }
 }
 
+/* API 22 (ocr-speed): the game's frame pacing per job, as one step the kernel adds
+ * to the job's result: the frames during the job (from its claim to its
+ * completion) and those since the job before, their longest gap, their sum, the
+ * gaps over VJO_PACE_SLOW_US. */
+static void frame_pacing_step(void)
+{
+    setup();
+    uint32_t seq = submit();
+    int64_t t = 1000000;
+    for (unsigned i = 0; i < 10; i++) game_ocr_frame(t += 16667); /* before the job: 60 fps */
+    take(seq);
+    for (unsigned i = 0; i < 6; i++) game_ocr_frame(t += 16667);
+    game_ocr_frame(t += 50001); /* one dropped frame (two at 60 fps) during the job */
+    game_ocr_frame(t += 16667);
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0);
+    TEST_ASSERT(message.n_steps == 1);
+    const VjoGameOcrStep *p = &message.step[0];
+    TEST_CHECK(p->id == VJO_GSTEP_PACE && p->arg == 8 && p->rc == 50001 && p->sum == 1);
+    TEST_CHECK(p->bytes == 7u * 16667u + 50001u);
+    TEST_CHECK(p->us == 9 && p->free_main == 9 * 16667 && p->free_cdram == 16667 && p->free_phycont == 0);
+    TEST_MSG("pace: job %u frames, max %d, sum %u, slow %u; before %u frames, sum %d, max %d", p->arg, (int)p->rc,
+             (unsigned)p->bytes, (unsigned)p->sum, (unsigned)p->us, (int)p->free_main, (int)p->free_cdram);
+    /* the next job's window starts again; a full step log gets no pacing step */
+    seq = submit();
+    game_ocr_frame(t += 16667);
+    take(seq);
+    message.n_steps = VJO_GAME_OCR_STEPS;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0 && message.n_steps == VJO_GAME_OCR_STEPS);
+    /* with #102's hand-off: a read waiting for the result (MEV_RESULT) wakes to the result with its
+     * pacing step already in it (the step is written before the bit is set, under the lock) */
+    setup(); seq = submit();
+    game_ocr_frame(t += 16667);
+    take(seq);
+    game_ocr_frame(t += 16667);
+    game_ocr_frame(t += 16667);
+    memset(&message, 0, sizeof(message)); message.size = sizeof(message); message.seq = seq;
+    during_event_wait = game_completes; caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &message) == 0 && result_waits == 1 && result_events == 1);
+    TEST_CHECK(message.n_steps == 1 && message.step[0].id == VJO_GSTEP_PACE && message.step[0].arg == 2);
+    TEST_MSG("%u steps, the first id %u arg %u", (unsigned)message.n_steps, (unsigned)message.step[0].id,
+             (unsigned)message.step[0].arg);
+}
+
+/* API 22: the pacing windows follow the claim, not every take (#102's takes run about every
+ * 100 ms while the worker is idle); a cancelled job ends its window as a finished one does;
+ * and the step is in the result before any other thread can read it (it is written under
+ * g.lock, before vjoOcrComplete unlocks). (audit-ocr-speed-2-c K-S1) */
+static uint32_t read_steps_at_unlock, read_rc_at_unlock;
+static void shell_reads_now(void)
+{
+    VjoGameOcrResult got;
+    caller = 3;
+    memset(&got, 0, sizeof(got));
+    read_rc_at_unlock = (uint32_t)vjoOcrRead(request.seq, &got);
+    read_steps_at_unlock = got.n_steps;
+}
+static void pacing_windows_follow_the_claim(void)
+{
+    VjoGameOcrRequest r = {0};
+    int64_t t = 1000000;
+    /* frames, then an idle take (nothing queued: the bounded wait, rc 1), more frames, then the job */
+    setup();
+    for (unsigned i = 0; i < 5; i++) game_ocr_frame(t += 16667);
+    caller = 7;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1);
+    for (unsigned i = 0; i < 4; i++) game_ocr_frame(t += 16667);
+    uint32_t seq = submit();
+    take(seq);
+    game_ocr_frame(t += 16667);
+    game_ocr_frame(t += 16667);
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0);
+    TEST_ASSERT(message.n_steps == 1 && message.step[0].id == VJO_GSTEP_PACE);
+    /* before the job: 9 frames, 8 gaps, the idle take's included; during it: the 2 after the claim */
+    TEST_CHECK(message.step[0].us == 8 && message.step[0].free_main == 8 * 16667);
+    TEST_CHECK(message.step[0].arg == 2 && message.step[0].bytes == 2u * 16667u);
+    TEST_MSG("before %u frames (sum %d), during %u (sum %u)", (unsigned)message.step[0].us,
+             (int)message.step[0].free_main, (unsigned)message.step[0].arg, (unsigned)message.step[0].bytes);
+    /* a cancelled job: its window ends at its completion as a finished job's does, so the next
+     * job's "before" holds only the frames after it */
+    seq = submit();
+    take(seq);
+    for (unsigned i = 0; i < 3; i++) game_ocr_frame(t += 16667);
+    caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    for (unsigned i = 0; i < 6; i++) game_ocr_frame(t += 50000);
+    seq = submit();
+    take(seq);
+    game_ocr_frame(t += 16667);
+    memset(&message, 0, sizeof(message)); message.size = sizeof(message); message.seq = seq;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0);
+    TEST_ASSERT(message.n_steps == 1 && message.step[0].id == VJO_GSTEP_PACE);
+    TEST_CHECK(message.step[0].us == 6 && message.step[0].free_main == 6 * 50000 && message.step[0].free_phycont == 6);
+    TEST_CHECK(message.step[0].arg == 1);
+    TEST_MSG("after the cancelled job: before %u frames, sum %d, slow %d; during %u", (unsigned)message.step[0].us,
+             (int)message.step[0].free_main, (int)message.step[0].free_phycont, (unsigned)message.step[0].arg);
+    /* a read that runs at vjoOcrComplete's unlock already gets the step */
+    seq = submit();
+    take(seq);
+    game_ocr_frame(t += 16667);
+    memset(&message, 0, sizeof(message)); message.size = sizeof(message); message.seq = seq;
+    read_steps_at_unlock = 99; read_rc_at_unlock = 99;
+    caller = 7; after_unlock = shell_reads_now;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    after_unlock = NULL;
+    TEST_CHECK(read_rc_at_unlock == 0 && read_steps_at_unlock == 1);
+    TEST_MSG("read at the unlock: rc %u, %u step(s)", read_rc_at_unlock, read_steps_at_unlock);
+}
+
 static void registration_and_permissions(void)
 {
     setup(); caller = 8;
@@ -690,6 +808,8 @@ static void invalid_capture_and_wire(void)
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 14-15 are still unknown */
     r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
+    r.speed = 0x10; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
+    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache: known */
     /* A Lens/Anki capture in flight: the OCR job waits for it. */
     g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY);
     g.capture_state = CAPTURE_IDLE; uint32_t seq = submit(); take(seq);
@@ -1371,6 +1491,9 @@ TEST_LIST = {
     {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
     {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
+    {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
+    {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",
+     pacing_windows_follow_the_claim},
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},
     {"queued and claimed capture pins", capture_pins_queued_and_claimed},

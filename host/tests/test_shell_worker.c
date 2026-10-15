@@ -175,7 +175,7 @@ static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
  * one job runs, recorded here. */
 static int selftest_armed, selftest_games, selftest_steps, selftest_done;
 static unsigned selftest_begins, selftest_ends, selftest_stage_count;
-static uint32_t selftest_flags_seen[8];
+static uint32_t selftest_flags_seen[8], selftest_speed_seen[8];
 static int selftest_rcs[8];
 static VjoRect selftest_region;
 /* shell/selftest.c's order: the last stage's result is the job's */
@@ -190,7 +190,12 @@ void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *
 unsigned vjo_selftest_stages(void) { return vjo_selftest_armed() ? selftest_stage_count : 0; }
 const char *vjo_selftest_stage_name(unsigned i) { return i < 5 ? selftest_names[i] : "?"; }
 uint32_t vjo_selftest_stage_flags(unsigned i) { return i < 5 ? selftest_stage_flags_tab[i] : 0; }
-void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback) { selftest_begins++; }
+static uint32_t selftest_begin_speed[8];
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed)
+{ if (i < 8) selftest_begin_speed[i] = speed; selftest_begins++; }
+/* shell/selftest.c's rule: no stage uses the line cache, textbox2 (stage 4) runs without helpers */
+uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured)
+{ return (i == 4 ? configured & VJO_GAME_OCR_S_BOOST : configured) | VJO_GAME_OCR_S_NOCACHE; }
 /* shell/selftest.c's rule (its report lines are host/tests/selftest_writer.c's). */
 static int selftest_waits;
 int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
@@ -291,7 +296,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
     TEST_CHECK(capture_held_now); /* the game captures with the Shell's capture lock held */
-    if (submits < 8) selftest_flags_seen[submits] = r->flags;
+    if (submits < 8) selftest_flags_seen[submits] = r->flags, selftest_speed_seen[submits] = r->speed;
     submits++;
     fake_game_request.seq = 12;
     fake_game_request.width = raw_state.width; fake_game_request.height = raw_state.height;
@@ -737,19 +742,19 @@ static void test_vocr_ran_names_outlive_the_job(void)
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg;
     fake_memory_fallback = 1; /* the game ran the next smaller tier */
-    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     TEST_CHECK(fake_game_request.tiers == 3u && !strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") &&
                !fake_game_request.fallback[0]);
     TEST_CHECK(result.fallback && ran == VJO_VOCR_TIER_SMALL && !strcmp(vjo_vocr_tier_model((int)ran), "VOCR3_FL10_w8.vocr"));
     fake_memory_fallback = 0;
-    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     TEST_CHECK(!result.fallback && ran == VJO_VOCR_TIER_NORMAL);
     /* each size asks for itself and every smaller one */
     static const unsigned want[] = {0, 1u, 3u, 7u};
     static const char *const model[] = {"", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr"};
     for (int t = 1; t <= 3; t++) {
         job_cfg.vocr_tier = t;
-        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
         TEST_CHECK_(fake_game_request.tiers == want[t] && !strcmp(fake_game_request.model, model[t]) && ran == (unsigned)t,
                     "tier %d: tiers 0x%X model %s ran %u", t, fake_game_request.tiers, fake_game_request.model, ran);
     }
@@ -2654,6 +2659,12 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
                (selftest_flags_seen[3] & stage_bits) == VJO_GAME_OCR_F_PROBE &&
                (selftest_flags_seen[4] & stage_bits) == 0);
     for (unsigned i = 0; i < 5; i++) {
+        /* API 22: the default ocr_threads = 3 (two helpers), the default ocr_boost_clock = on (444 MHz while
+         * recognizing), no line cache in any stage; textbox2 (the last) serially, to compare with textbox,
+         * with the clock kept; the begin record says so */
+        const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE;
+        TEST_CHECK(selftest_speed_seen[i] == (i == 4 ? boost : 2u | boost));
+        TEST_CHECK(selftest_begin_speed[i] == selftest_speed_seen[i]);
         TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
         TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);
     }

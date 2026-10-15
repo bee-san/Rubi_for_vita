@@ -45,8 +45,15 @@ the chosen size on a console; v0.2.0's FL10
 (Small's shape) recognized lines in older builds, without frame counts. "Game memory a
 job takes" is a job's page-rounded weights, workspace and capture block at the full
 screen (the game worker's memory check), without the character LM, the cascade's
-model or the PSP refinement, which a job leaves out first when memory is short. The
-app's buttons show the time and that memory (`1.3 s, 1.4 MB`). Each size is within
+model or the PSP refinement, which a job leaves out first when memory is short, and
+without the helper threads of `ocr_threads` (API 22), which a job takes only when the
+game also has room for them beside the same reserve, and never runs a smaller size for.
+Both columns describe one recognizer thread on the code of v0.8.0-test.1: with
+vita-vn-ocr #85's kernels (the pin since API 22) the same box is estimated at 0.56-0.59
+times those times on one core at the same clock (greedy: FL10 0.56, H15 0.57, W20 0.59), less again at 444 MHz (`ocr_boost_clock`) and
+with free cores ([OCR speed](ocr-speed.md)), so the buttons' times are upper estimates
+until test.3's logs recalibrate them. The app's buttons show the time and that memory
+(`1.3 s, 1.4 MB`). Each size is within
 the owner's ceilings of 2026-10-14 (weights Small < 1 MB, Normal <= 1.6 MB, Large
 <= 2.5 MB; box time Small < 1 s, Normal < 2 s, Large < 3 s).
 
@@ -796,7 +803,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout a540027f90a640fd7c4d99b8389973b85a1cc057  # #83's merge (after #82's): the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
@@ -976,8 +983,11 @@ copied, and the settings above. Close other apps first.
 - Horizontal text only; vertical text is not read.
 - Adjacent lines 1-2 px apart can merge on PSP-sized text, and decorated
   frames can add a stray line; tight regions read best.
-- Recognition runs on a low-priority thread in the enabled game process at
-  the game's clock. The overlay does not change the CPU clock or memory mode.
+- Recognition runs on low-priority threads in the enabled game process. While
+  a job recognizes, the ARM clock is 444 MHz (`ocr_boost_clock = on`, the
+  default; a clock already at 444 MHz or more is left as it is) and is put
+  back after ([OCR speed](ocr-speed.md#the-arm-clock-ocr_boost_clock-on)); the
+  bus and GPU clocks and the memory mode are never changed.
 - Only the pinned files listed under [Models](#models) load. A new release needs its sizes, hashes
   and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
   `tools/prepare_ocr.py`); `python3 tools/docs_model_names.py` then writes the new names into those

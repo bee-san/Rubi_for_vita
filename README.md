@@ -314,7 +314,9 @@ v0.2.0 H15's 2.21%, VOCR3-FL10 2.13% against v0.2.0 FL10's 3.82%; neither passed
 that repository's promotion gate ([models](docs/vita-vn-ocr.md#models)). Their
 estimated times for a 3-line textbox are 0.7 s (Small), 1.3 s (Normal) and
 1.7 s (Large), calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame on the
-console (v0.8.0-test.1). v0.8.0-test.2's logs have VOCR3-FL10 at 3.0-3.7 ms per
+console (v0.8.0-test.1): one recognizer thread on that build's code, so upper
+estimates now that the runtime has vita-vn-ocr #85's faster kernels and a job reads
+lines in parallel at 444 MHz ([OCR speed](docs/ocr-speed.md)). v0.8.0-test.2's logs have VOCR3-FL10 at 3.0-3.7 ms per
 frame (the self-test's fallback stage, five one-line jobs) and VOCR4-W20 at
 7.4-7.8 ms (five lines re-read as the confidence cascade), near the estimates'
 2.8-3.1 and 7.1-7.2 ms; VOCR4-W20 has not run as the chosen size on a console, and
@@ -374,6 +376,18 @@ trial, which that build's logs decide. Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](docs/vita-vn-ocr.md#finder-refinement-api-20)).
+Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
+after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
+decode, the cascade's re-read and its place in the text still follow line order on the job's own
+thread, so the text is the serial job's (except where the cascade's time ceiling decides: a job that
+recognizes its lines sooner may read more doubtful ones again). A line whose pixels are unchanged
+since an earlier job gets that job's text without being recognized again. `ocr_boost_clock = on`
+(the default; `off` keeps the game's clock) raises the ARM clock to 444 MHz while a job recognizes and
+puts it back after; a clock already at 444 MHz or more, such as PSVshell's 500, is left as it is, and
+the bus and GPU clocks are never changed. The
+log shows each job's helpers, its lines' share of a core, the clock, and the game's frame pacing
+during the job against the time before it ([OCR speed](docs/ocr-speed.md); estimates until a
+console run).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
@@ -509,7 +523,7 @@ previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three plugins of one build
-together (API 21 since the model sizes) and reboot; older plugin versions
+together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one

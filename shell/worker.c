@@ -747,6 +747,13 @@ static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
             vjo_log("%s", line);
 }
 
+/* The game worker's speed word from the config (API 22): the helpers (0-2, bits
+ * 0-1), the clock (bit 2: VJO_GAME_OCR_S_BOOST). */
+static uint32_t config_speed(void)
+{
+    return (uint32_t)job_cfg.ocr_helpers | (uint32_t)job_cfg.ocr_boost_clock << 2;
+}
+
 /* The memory check's tiers (API 21): a log line for each tier that did not fit
  * this game, with what it needed (its workspace and weights, and the reserve it
  * keeps) against what was free (free USER and the worker's own blocks it would
@@ -775,8 +782,9 @@ static void log_tier_checks(const VjoGameOcrResult *r)
 
 /* One job: request (flags: VJO_GAME_OCR_F_*; tiers: the model tiers it may run,
  * bit t - 1 for tier t), exchange, logs. *ran: the tier the worker chose (or
- * whose check refused it last). */
-static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers, unsigned *ran)
+ * whose check refused it last). stage: the self-test stage the job is (its speed
+ * word, vjo_selftest_stage_speed), or -1. */
+static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers, unsigned *ran, int stage)
 {
     VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags, .tiers=tiers};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
@@ -808,6 +816,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
                          (uint32_t)(job_cfg.ocr_settle_max_ms + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
     }
+    /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
+    request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     vjo_capture_hold(); /* no Lens/Anki capture while the game captures for this job */
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
     vjo_capture_release();
@@ -893,9 +903,10 @@ static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigne
     for (unsigned i = 0; i < n && !vocr_cancelled(NULL); i++) {
         int64_t t = now_us();
         vjo_selftest_stage_begin(i, vjo_vocr_tier_model((int)top),
-                                 low + 1u < top ? vjo_vocr_tier_model((int)low + 1) : "");
+                                 low + 1u < top ? vjo_vocr_tier_model((int)low + 1) : "",
+                                 vjo_selftest_stage_speed(i, config_speed()));
         sceClibMemset(result, 0, sizeof(*result));
-        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), tiers, ran);
+        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), tiers, ran, (int)i);
         if (vjo_selftest_stage_wait(i, rc, result))
             return rc;
         vjo_selftest_stage_end(i, rc, result, (uint32_t)((now_us() - t) / 1000), vjo_vocr_tier_model((int)*ran));
@@ -914,7 +925,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     if (vjo_selftest_stages())
         out->err.rc = run_selftest_stages(&result, tiers, &ran);
     else
-        out->err.rc = vocr_run_one(&result, 0, tiers, &ran);
+        out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
@@ -935,7 +946,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         if (!below) break;
         tiers = below;
         sceClibMemset(&result, 0, sizeof(result));
-        out->err.rc = vocr_run_one(&result, 0, tiers, &ran);
+        out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
     }
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {

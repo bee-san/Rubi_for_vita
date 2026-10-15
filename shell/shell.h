@@ -117,7 +117,10 @@ void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *
 unsigned vjo_selftest_stages(void);
 const char *vjo_selftest_stage_name(unsigned i);
 uint32_t vjo_selftest_stage_flags(unsigned i);
-void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback);
+/* Stage i's VjoGameOcrRequest.speed (API 22) from the configured one: no stage
+ * uses the line cache (VJO_GAME_OCR_S_NOCACHE), and textbox2 runs without helpers. */
+uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured);
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed);
 /* After stage i ran (before its record): 1 when the stages wait for another
  * settled screen instead, because this one had no text in the region (rc 0, no
  * line) or changed under every read; the wait is recorded, and the job ends

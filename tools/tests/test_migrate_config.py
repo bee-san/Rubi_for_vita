@@ -50,6 +50,17 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_backend = %s\n" % backend, text)
             self.assertNotIn("config.ini: ocr_backend", report)
 
+    def test_the_clock_is_on_unless_set_off(self):
+        # ocr_boost_clock = on is the default (the owner, 2026-10-15): a config that never set it gains it, an
+        # explicit off (or on) is kept.
+        text, report = self.migrate("ocr_backend = vocr\nocr_mode = on_press\n")
+        self.assertIn("\nocr_boost_clock = on\n", text)
+        self.assertIn("config.ini: ocr_boost_clock = on", report)
+        for value in ("off", "on"):
+            text, _ = self.migrate("ocr_backend = vocr\nocr_boost_clock = %s\n" % value)
+            self.assertIn("\nocr_boost_clock = %s\n" % value, text)
+            self.assertEqual(text.count("ocr_boost_clock ="), 1)
+
     def test_explicit_setting_still_wins(self):
         text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
         self.assertIn("ocr_backend = lens\n", text)

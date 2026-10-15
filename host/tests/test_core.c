@@ -962,6 +962,18 @@ static void test_config(void)
     vjo_config_parse(&c, lm, strlen(lm));
     TEST_CHECK(c.ocr_lm == 2 && c.ocr_cascade_ms == 2000 && c.n_warnings == 3);
     TEST_MSG("%u warnings", c.n_warnings);
+    /* API 22: lines read at once (1-3, default 3) and the 444 MHz clock (default on) */
+    vjo_config_defaults(&c);
+    /* the defaults: ocr_threads = 3 (two helpers), ocr_boost_clock = on (the owner, 2026-10-15) */
+    TEST_CHECK(c.ocr_helpers == 2 && c.ocr_boost_clock == 1);
+    const char *speed = "ocr_threads = 1\nocr_boost_clock = OFF\n";
+    vjo_config_parse(&c, speed, strlen(speed));
+    TEST_CHECK(c.ocr_helpers == 0 && c.ocr_boost_clock == 0 && c.n_warnings == 0); /* an explicit off is kept */
+    speed = "ocr_threads = 2\nocr_threads = 0\nocr_threads = 4\nocr_threads = x\nocr_boost_clock = on\n"
+            "ocr_boost_clock = maybe\n";
+    vjo_config_parse(&c, speed, strlen(speed));
+    TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
+    TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
     {

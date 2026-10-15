@@ -129,8 +129,10 @@ static VjoGameOcrStep *add(VjoGameOcrResult *r, unsigned id, unsigned kind, unsi
 /* A region job's result: the capture in strips through the hook into USER;
  * kstrip: through the kernel strip after the hook could not write (the ladder's
  * last rung); cdram: USER_RW refused the capture block, CDRAM gave one. */
+/* serial: textbox2, which the self-test runs without helpers (shell/selftest.c); the other
+ * region stages have the configured two helpers and log their PAR step. */
 static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback, int fail_workspace, int kstrip,
-                       int cdram)
+                       int cdram, int serial)
 {
     unsigned w = full ? 960 : 917, h = full ? 544 : 125, rows = full ? 59 : 62;
     unsigned cap = full ? 61440 : 61440, ws = 188416, lines = full ? 5 : 3;
@@ -171,7 +173,9 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     add(r, VJO_GSTEP_SIG, src, 0, 0, 960, freem, 0)->sum = 960u << 16 | 544u;
     add(r, VJO_GSTEP_FIND, 0, lines, 0, 0, freem, full ? 48000 : 9000);
     if (weights == 1) add(r, VJO_GSTEP_LOAD, 0, 0, 0, r->need_weights, freem, fallback ? 610000 : 1050000);
-    add(r, VJO_GSTEP_RECOGNIZE, 0, lines, 0, 0, freem, full ? 1400000 : 820000);
+    add(r, VJO_GSTEP_RECOGNIZE, 0, lines, 0, 0, freem, serial ? 1500000 : full ? 1400000 : 820000);
+    if (!serial) /* two helpers, two lines on them, 95-98 % of a core each */
+        add(r, VJO_GSTEP_PAR, 0, 2, 2, 548864, freem, serial ? 1500000 : full ? 1400000 : 820000)->sum = 95u << 8 | 98u;
     add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, 0, ws, freem += (int32_t)ws, 0);
     if (cdram) add(r, VJO_GSTEP_FREE, cmem, VJO_GITEM_CAPTURE, 0, held, freem, 0);
     else add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, 0, cap, freem += (int32_t)cap, 0);
@@ -181,7 +185,8 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     r->weights = (uint32_t)weights; r->fallback = (uint32_t)fallback;
     r->lines = lines; r->recognized = lines; r->frames = 110 * lines;
     r->find_us = full ? 48000 : 9000; r->load_us = weights == 1 ? (fallback ? 610000 : 1050000) : 0;
-    r->recognize_us = full ? 1400000 : 820000; r->region_sum = 0x5EED0000u | lines;
+    r->recognize_us = serial ? 1500000 : full ? 1400000 : 820000; r->region_sum = 0x5EED0000u | lines;
+    snprintf(r->text, sizeof(r->text), "%s", full ? "full screen" : fallback ? "fallback text" : "region text");
     for (unsigned i = 0; i < lines; i++) {
         r->line[i].width = (uint16_t)(w - 40 - 60 * i); r->line[i].height = 30;
         r->line[i].frames = 110; r->line[i].us = (r->recognize_us / lines);
@@ -294,7 +299,7 @@ int main(int argc, char **argv)
     now_us = 143000000;
     vjo_selftest_game("PCSG00415", 1, 1, &region);
     for (int k = 0; k < empty_screens; k++) { /* as shell/worker.c run_selftest_stages: the first stage, then the gate */
-        vjo_selftest_stage_begin(0, "H15_w8.vocr", "FL10_w8.vocr");
+        vjo_selftest_stage_begin(0, "H15_w8.vocr", "FL10_w8.vocr", vjo_selftest_stage_speed(0, 2u));
         empty_region_job(&result, 1, 0);
         if (k == 1 && !no_text) { /* text typing out: the screen changed under every read */
             result.rc = VJO_E_SCREEN_CHANGED;
@@ -311,14 +316,14 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < vjo_selftest_stages(); i++) {
         const char *name = vjo_selftest_stage_name(i);
         int fallback = !strcmp(name, "fallback"), full = !strcmp(name, "fullscreen");
-        vjo_selftest_stage_begin(i, "H15_w8.vocr", "FL10_w8.vocr");
+        vjo_selftest_stage_begin(i, "H15_w8.vocr", "FL10_w8.vocr", vjo_selftest_stage_speed(i, 2u)); /* ocr_threads 3 */
         if (stop_in_fullscreen && full) return 0; /* nothing after the begin line */
         if (!strcmp(name, "probe")) probe_job(&result, diagnostics_warn);
         else if (no_text && !full) empty_region_job(&result, fallback, !strcmp(name, "textbox2"));
         else region_job(&result, full,
                         fallback || !strcmp(name, "textbox") ? 1 : 2, fallback,
                         !strcmp(scenario, "fail") && !strcmp(name, "textbox"), diagnostics_warn,
-                        diagnostics_warn && full);
+                        diagnostics_warn && full, !strcmp(name, "textbox2"));
         now_us += 2500000;
         if (vjo_selftest_stage_wait(i, result.rc, &result)) {
             fprintf(stderr, "stage %s waited\n", name);

@@ -29,8 +29,12 @@
  * may name the tiers its job may run (VjoGameOcrRequest.tiers, a new last
  * field) instead of a model and its fallback: the worker runs the largest that
  * fits beside that tier's reserve, and Open opens a tier's pinned model by its
- * tier (VJO_GAME_OCR_OPEN_TIER). */
-#define VJO_API_VERSION 21
+ * tier (VJO_GAME_OCR_OPEN_TIER).
+ * 22: VjoGameOcrRequest.speed (VJO_GAME_OCR_S_*: helper threads for parallel
+ * lines, the 444 MHz clock while recognizing, no line cache), a word of its own
+ * after flags; three new step kinds (parallel lines, the clock, the game's frame
+ * pacing, which the kernel appends). The request grows by that word. */
+#define VJO_API_VERSION 22
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {

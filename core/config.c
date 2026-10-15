@@ -81,6 +81,8 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_lm = 2;
     c->ocr_cascade_ms = 2000;
     c->ocr_refine_lines = 2;
+    c->ocr_helpers = 2; /* ocr_threads = 3 */
+    c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
     c->log_file = 1; /* log.txt is on unless log_file = off */
 }
 
@@ -160,6 +162,9 @@ const char *vjo_config_default_text(void)
            "ocr_cascade_ms = 2000\n"
            "; vocr: refine lines: psp | on | off\n"
            "ocr_refine_lines = psp\n"
+           "; vocr: lines read at once (1-3), 444 MHz while reading (on | off)\n"
+           "ocr_threads = 3\n"
+           "ocr_boost_clock = on\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -612,6 +617,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;
         else warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "ocr_threads")) {
+        static const char *const threads[] = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
+        set_choice(c, key, val, &c->ocr_helpers, threads);
+    } else if (vjo_ieq(key, "ocr_boost_clock")) {
+        static const char *const off_on[] = {"off", "on", NULL};
+        set_choice(c, key, val, &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

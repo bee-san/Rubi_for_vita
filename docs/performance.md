@@ -131,7 +131,7 @@ on a console; test.2's logs will check its estimate, line by line (`game vocr ca
 `host/bench/stage_bench.c` runs each stage with the real code: the display hook's grey rows and
 signature (`kernel/capture.c`, `kernel/scene.c`), the game worker's job (`core/vocr_ocr.c`
 `vjo_vocr_ocr_policy` with the game worker's policy and vita-vn-ocr's finder, recognizer and LM
-decoder at the pinned commit, a540027), the weights' SHA-256 (BearSSL), the Shell's text handling,
+decoder at a540027, the pin this baseline was measured on), the weights' SHA-256 (BearSSL), the Shell's text handling,
 word lookup (`core/client.c`, `core/local_dict.c` with the bundled `plaintext.vjdict`), config
 parsing, the Anki card record, furigana, and a replica of the Shell's log formatting. Inputs are
 committed: the synthetic screen `host/samples/vn_textbox.jpg` (its 896x156 dialogue box, two lines)
@@ -171,10 +171,15 @@ none, so the wait reads exactly the passes it would at that rate (and the cascad
 nine of 59 and one of 13), so a full 64-row strip costs about 23% more than these per-strip means
 (the work is the same for every row). *job_h15*: the job on main's defaults (`stage_job` mode 14:
 the wait, beam + LM, the cascade); `job_h15_lm` the LM alone, `job_h15_greedy` API 19's job (the
-previous baseline's `job_h15`: 145,456,441 instructions at 4a7ae4d, now 146,857,280 with the
-pinned runtime a540027). On this sample no line is under the cascade's confidence (0.7), so
+previous baseline's `job_h15`: 145,456,441 instructions at 4a7ae4d, 146,857,280 with a540027's
+runtime). On this sample no line is under the cascade's confidence (0.7), so
 `job_h15` reads none again; the dev regions do. *Parity*: the Vita compiler's build gave the host
-build's output checksum. *libc share*: of the counted instructions, the part in glibc's
+build's output checksum. *The pin since #93* (vita-vn-ocr #85's bit-identical kernels): `recognize_h15` takes
+41,947,853 instructions in this lane instead of 63,151,996, `job_h15` 111,325,628, with the same output checksums.
+The lane gives its cache model no `PLD` sites (`tools/bench_stages.py`), so its cycles for #85's code are the bound
+without the prefetch: 1.51x on H15's upper bound. The tables stay the a540027 baseline, and a report on the new pin
+must keep the console factor against a540027's rows (5.06 ms a frame against the model's 5.00, the code the console
+ran): `tools/bench_model.py` takes it against the bundle's own `recognize_h15` row. *libc share*: of the counted instructions, the part in glibc's
 `memcpy`/`memset`/`strlen`/`vsnprintf`..., which stand in for the firmware's (`sceClib*`,
 `SceSysclibForDriver`); their real cost is unknown.
 

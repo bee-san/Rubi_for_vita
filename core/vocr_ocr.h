@@ -91,7 +91,9 @@ typedef struct {
     void *ud;
     unsigned width, height;
     int (*strip)(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags);
-    int (*cancelled)(void *ud); /* optional; checked between strips and lines */
+    int (*cancelled)(void *ud); /* optional; checked between strips and lines, and by helper
+                                 * threads (VjoVocrPool) between tiles, which may still call it
+                                 * after a failed join: it must not depend on the caller's stack */
     void *(*line_buffer)(void *ud, size_t bytes);
 } VjoGreySource;
 
@@ -162,6 +164,11 @@ typedef struct {
     uint16_t frames;         /* CTC frames (the resized width / 8) */
     uint16_t flags;          /* VJO_VOCR_LINE_*: its confidence, what the LM did */
     uint32_t us;             /* vocr_run (and the LM decoder's) time with VjoPlatform.now_us, else 0 */
+    /* API 22 (ocr-speed) */
+    uint8_t slot;            /* who recognized it: 0 the caller's thread, 1.. a helper (VjoVocrPool) */
+    uint8_t cached;          /* 1: its pixels were unchanged since a job read them (VjoVocrCache): no vocr_run */
+    uint16_t pad;
+    uint32_t cpu_us;         /* the recognizing thread's run time for it (VjoVocrPool.thread_us), else 0 */
 } VjoVocrLineStat;
 /* flags: the line's confidence, the smallest softmax-max probability over the
  * frames that write a character of its greedy text (vocr_extra.conf_min), in
@@ -280,6 +287,13 @@ typedef struct {
     int refine_rc;           /* 0, or the first refusal (VOCR_LINES_E_*, the box then kept as found) */
     unsigned long refine_rows; /* rows the refinement read (from memory: the strip or the line's block) */
     uint32_t refine_us;      /* refining, all boxes */
+    /* Parallel lines and the line cache (VjoVocrPool, VjoVocrCache; API 22). */
+    unsigned helpers;        /* helper threads the job could use (VjoVocrPool.helpers, 0 serial) */
+    unsigned dispatched;     /* lines a helper recognized */
+    unsigned run_failures;   /* helpers that could not start: their line ran on the caller's thread */
+    unsigned cached;         /* lines whose text came from the cache */
+    uint32_t key_us;         /* time spent hashing lines for the cache */
+    unsigned stuck;          /* 1: a helper could not be joined: it may still run in the workspace */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -357,7 +371,79 @@ typedef struct {
  * into one line each, the same lines as vocr_refine_lines() on the whole region:
  * a split that would take the job past VJO_VOCR_MAX_LINES lines is not made (the
  * box keeps its main band). The workspace must hold vjo_vocr_refine_bytes() more,
- * before the LM extras. */
+ * before the LM extras.
+ *
+ * pool, cache, cache_variant, busy: parallel lines, the line cache and the busy
+ * callback (API 22), below. NULL / 0 is API 20's serial job exactly. */
+
+/* Parallel lines (API 22): the lines of a region are independent, so a job may
+ * recognize up to 1 + helpers of them at once (vocr_run, with the top-K when the
+ * job has the LM extras), each on its own vocr_ctx and arena over the one shared,
+ * read-only model. The caller's thread keeps all the rest in line order: each
+ * line's fetch from the strip and every row check, the refinement, the blank-line
+ * check, the cache, and, as each line's turn comes, its LM decode, the cascade's
+ * re-read, the stats and the text. A line run while an earlier one is still out
+ * is first copied out of the strip (the next fetch rewrites it), and a line runs
+ * on the caller's thread when no helper is free; the last one always does. The
+ * text, the frames and every line's result are the serial job's: vocr_run and
+ * the decoder are deterministic, nothing but the read-only weights and LM is
+ * shared, and everything after vocr_run is done in line order on the caller's
+ * thread, with the serial job's capacity rule (VJO_E_TOO_LARGE exactly when the
+ * serial job gives it). Only the cascade's time ceiling depends on time: a job
+ * that recognizes its lines sooner may read more of them again.
+ * run(ud, slot, fn, arg) runs fn(arg) on another thread (slot 1..helpers, at
+ * most one at a time per slot) and returns 0, or < 0 when it cannot (that line
+ * then runs on the caller's thread). join(ud, slot) returns 0 once that fn has
+ * returned, or < 0 when it cannot tell: the job then fails with
+ * VJO_E_OCR_UNAVAILABLE (stats->stuck), and the workspace must stay allocated
+ * and no other job may run in the process (the helper may still be running in
+ * it; this module refuses every later job). thread_us, optional: the calling
+ * thread's run time so far in microseconds (each line's cpu_us). A per-line
+ * callback (VjoVocrPolicy.line) keeps the job serial. The helpers' memory ends
+ * the workspace, after every other part: vjo_vocr_helpers_bytes(). */
+typedef struct {
+    unsigned helpers;        /* 0..VJO_VOCR_HELPERS_MAX */
+    int (*run)(void *ud, unsigned slot, void (*fn)(void *arg), void *arg);
+    int (*join)(void *ud, unsigned slot);
+    uint64_t (*thread_us)(void *ud);
+    void *ud;
+} VjoVocrPool;
+#define VJO_VOCR_HELPERS_MAX 2u
+
+/* The line cache (API 22): a line whose grey pixels, size, polarity and model
+ * are those of a line recognized before, under the same VjoVocrPolicy.cache_variant,
+ * gets that line's shown and greedy text and its VjoVocrLineStat.flags without
+ * being recognized again. The key is a 64-bit FNV-1a of the crop's rows, its
+ * size, its polarity and the variant. cache_variant names everything else that
+ * decides a line's text (the LM, the cascade and their settings): jobs that
+ * differ in it share no entry. A line is kept only when its text is the one an
+ * unhurried serial job gives it anywhere in the text: read with the LM the
+ * policy asks for, read again by the cascade when its confidence asks for it
+ * (not skipped for time), and placed without a shorter fallback near the
+ * capacity; a hit that would not fit as it was read makes the job read the
+ * region again without the cache. Caller-owned, zero-initialized, kept between
+ * jobs; entries of another model never match, and any job that reads the
+ * weights from the file again empties it. A job adds its lines once it has
+ * succeeded. */
+#define VJO_VOCR_CACHE_LINES 8u
+#define VJO_VOCR_CACHE_TEXT 368u /* longer line texts are not kept */
+typedef struct {
+    uint64_t key;            /* 0: empty */
+    const VjoVocrModel *model;
+    uint32_t used;           /* the cache's tick when last used (least recently used goes first) */
+    uint16_t frames, len;    /* the line's CTC frames; its shown text's bytes */
+    uint16_t flags;          /* the line's VjoVocrLineStat.flags */
+    uint16_t greedy_len;     /* its greedy text's bytes */
+    uint16_t need;           /* the longest text the job placed for it (greedy, LM, cascade) */
+    uint16_t pad;
+    char text[VJO_VOCR_CACHE_TEXT];
+    char greedy[VJO_VOCR_CACHE_TEXT];
+} VjoVocrCacheLine;
+typedef struct {
+    VjoVocrCacheLine line[VJO_VOCR_CACHE_LINES];
+    uint32_t tick, hits, misses;
+} VjoVocrCache;
+
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;
@@ -375,6 +461,16 @@ typedef struct {
     uint32_t cascade_us;
     unsigned cascade_conf;
     unsigned refine;
+    /* API 22 (ocr-speed) */
+    const VjoVocrPool *pool;
+    VjoVocrCache *cache;
+    uint32_t cache_variant;   /* see VjoVocrCache */
+    /* busy(ud, 1) just before the first line is recognized, busy(ud, 0) once the
+     * last one is (helpers joined, re-reads done); never for a job whose lines all
+     * come from the cache or are skipped. The game worker raises the ARM clock in
+     * between, when the job asks for it (ocr_boost_clock). */
+    void (*busy)(void *ud, int on);
+    void *busy_ud;
 } VjoVocrPolicy;
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
 /* VjoVocrPolicy.refine: every step of vita-vn-ocr's refinement
@@ -401,6 +497,21 @@ int vjo_vocr_resident_drop(VjoVocrResident *resident);
  * model or region. Neither includes the capture block. */
 size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height);
 size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height);
+/* Parallel lines (VjoVocrPool): what one helper takes with `model` (its
+ * recognizer arena and context, and a line's slot: its pixels, at most
+ * VJO_VOCR_STRIP_BYTES for a line inside a strip, its greedy text,
+ * VJO_OCR_TEXT_CAP, and its top-K), and what `helpers` of them take at the end of
+ * a job's workspace, with the caller's own line slot (0 for none, or an
+ * unsupported model). vjo_vocr_job_bytes_helpers() is vjo_vocr_job_bytes() plus
+ * vjo_vocr_helpers_bytes(): a job without the refinement, LM or cascade extras. */
+size_t vjo_vocr_helper_bytes(const char *model);
+size_t vjo_vocr_helpers_bytes(const char *model, unsigned helpers);
+size_t vjo_vocr_job_bytes_helpers(const char *model, unsigned width, unsigned height, unsigned helpers);
+/* After a job returned stats->stuck every later job fails with
+ * VJO_E_OCR_UNAVAILABLE (the helper may still run in that job's state). A caller
+ * that has since seen every helper end (a host test that joined its threads)
+ * lifts that; the game worker never does (it stops taking jobs). */
+void vjo_vocr_unstick(void);
 /* Rows per strip for a region of this size, and the capture block's exact
  * bytes (0 for an unsupported region), never more than VJO_VOCR_CAPTURE_LIMIT;
  * the recent states it keeps per row. */
@@ -427,7 +538,7 @@ unsigned vjo_vocr_state_slots(unsigned width, unsigned height);
  * weights), VJO_E_OCR_REGION, the source's error (VJO_E_SOURCE when it gave no
  * code), VJO_E_SCREEN_CHANGED, VJO_E_CANCELLED, VJO_E_TOO_LARGE (text),
  * VJO_E_OCR_INFERENCE, or VJO_E_OCR_UNAVAILABLE (resident memory could not be
- * released). text is "" on error. */
+ * released, or a helper could not be joined: stats->stuck). text is "" on error. */
 int vjo_vocr_ocr_resident(const VjoPlatform *platform, const char *model_dir, const char *model,
                           const VjoGreySource *image, VjoVocrResident *resident,
                           void *workspace, size_t workspace_size, void *capture, size_t capture_size,

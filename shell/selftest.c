@@ -26,6 +26,7 @@
 #include <psp2/kernel/sysmem.h>
 
 #include "../core/boot_guard.h"
+#include "../core/fbgrey.h"
 #include "../include/vjo_import.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -187,13 +188,18 @@ static const struct {
     uint32_t flags;
 } stages[] = {
     /* In this order: the last stage's result is the job's (shell/worker.c); the
-     * probe, which also reads the frame from user mode, after the main stages. */
+     * probe, which also reads the frame from user mode, after the main stages.
+     * No stage uses the line cache, so each recognizes what it reads; textbox2
+     * (STAGE_SERIAL) reads textbox's screen again serially, with the weights
+     * resident, so the pair compares the configured helpers (ocr_threads) with
+     * one thread (vjo_selftest_stage_speed). */
     {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model (FL10 read) */
     {"textbox", 0},                           /* the user's region; the configured model's weights read (H15) */
     {"fullscreen", VJO_GAME_OCR_F_FULL},      /* the whole frame, through the strips; the weights kept */
     {"probe", VJO_GAME_OCR_F_PROBE},          /* each capture path and memory type, one strip each */
-    {"textbox2", 0},                          /* the user's region again: the warm time; the job's text */
+    {"textbox2", 0},                          /* the user's region again, serially: the warm time; the job's text */
 };
+#define STAGE_SERIAL 4u /* textbox2 */
 
 unsigned vjo_selftest_stages(void)
 {
@@ -210,12 +216,18 @@ uint32_t vjo_selftest_stage_flags(unsigned i)
     return i < sizeof(stages) / sizeof(stages[0]) ? stages[i].flags : 0u;
 }
 
-void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback)
+uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured)
+{
+    return (i == STAGE_SERIAL ? configured & ~VJO_GAME_OCR_S_HELPERS_MASK : configured) | VJO_GAME_OCR_S_NOCACHE;
+}
+
+void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed)
 {
     if (!vjo_selftest_armed())
         return;
-    report("stage %s begin t=%lld flags=0x%X model=%s fallback=%s", vjo_selftest_stage_name(i),
-           (long long)ms_since_start(), (unsigned)vjo_selftest_stage_flags(i), model, fallback[0] ? fallback : "-");
+    report("stage %s begin t=%lld flags=0x%X model=%s fallback=%s speed=0x%X", vjo_selftest_stage_name(i),
+           (long long)ms_since_start(), (unsigned)vjo_selftest_stage_flags(i), model, fallback[0] ? fallback : "-",
+           (unsigned)speed);
 }
 
 /* #81's run began 2 s after the game started, on its opening notice: the five
@@ -239,7 +251,7 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 
 static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
-    "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine"};
+    "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade"};
@@ -294,11 +306,17 @@ void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint3
     for (uint32_t k = 0; k < r->recognized && k < VJO_GAME_OCR_LINES; k++)
         report("line %s i=%u w=%u h=%u frames=%u us=%u", name, (unsigned)k, r->line[k].width, r->line[k].height,
                r->line[k].frames, (unsigned)r->line[k].us);
-    report("stage %s end rc=%d t=%lld ms=%u region=%ux%u+%u+%u fb=%ux%u/%u/0x%08X model=%s fallback=%u lines=%u "
-           "recognized=%u frames=%u", name, rc, (long long)ms_since_start(), (unsigned)ms, (unsigned)r->width,
-           (unsigned)r->height, (unsigned)r->region_x, (unsigned)r->region_y, (unsigned)r->fb_width,
-           (unsigned)r->fb_height, (unsigned)r->fb_pitch, (unsigned)r->fb_format, model, (unsigned)r->fallback,
-           (unsigned)r->lines, (unsigned)r->recognized, (unsigned)r->frames);
+    {   /* text: FNV-1a of the shown text, so two stages' readings compare without the text */
+        uint32_t h = VJO_FNV_INIT;
+        for (const unsigned char *t = (const unsigned char *)r->text; t < (const unsigned char *)r->text +
+             sizeof(r->text) && *t; t++)
+            h = (h ^ *t) * 16777619u;
+        report("stage %s end rc=%d t=%lld ms=%u region=%ux%u+%u+%u fb=%ux%u/%u/0x%08X model=%s fallback=%u lines=%u "
+               "recognized=%u frames=%u text=0x%08X", name, rc, (long long)ms_since_start(), (unsigned)ms,
+               (unsigned)r->width, (unsigned)r->height, (unsigned)r->region_x, (unsigned)r->region_y,
+               (unsigned)r->fb_width, (unsigned)r->fb_height, (unsigned)r->fb_pitch, (unsigned)r->fb_format, model,
+               (unsigned)r->fallback, (unsigned)r->lines, (unsigned)r->recognized, (unsigned)r->frames, (unsigned)h);
+    }
     report("result %s source=%s mem=%s capture=%u strip_rows=%u strips=%u tears=%u capture_ms=%u workspace=%u "
            "resident=%u weights=%s find_ms=%u load_ms=%u recognize_ms=%u", name,
            r->source < 4 ? src_names[r->source] : "?", r->capture_memory < 5 ? mem_names[r->capture_memory] : "?",
