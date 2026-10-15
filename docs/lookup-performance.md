@@ -122,12 +122,12 @@ letter. A per-screen sum and a console estimate from the owner's logs come with 
 golden check fails on any change in what is shown (`tools/dict_lookup_golden.tsv`, CTest
 `dict_lookup_golden`).
 
-On main 0023e8a with the bundled `plaintext.vjdict`, a lookup makes 12.6-16.0 reads:
-- 6.8-9.6 index pages for deinflection candidates that are not keys;
-- 2.6-4.0 payload heads to rank entries;
-- a header, a key group and the shown payload.
+On main 8f1ec8f with the bundled `plaintext.vjdict`, a lookup makes 12.6-16.0 reads:
+- 5.8-8.5 for deinflection candidates that are not keys, nearly all of them index pages;
+- the found key's bucket page, its key group, 2.6-4.0 payload heads to rank its entries, a
+  header and the shown payload.
 
-The console estimate is 55-73 ms at p50. The analysis, hoshidicts' design, the method and all
+The console estimate is 56-74 ms at p50. The analysis, hoshidicts' design, the method and all
 results are in [reports/dict-lookup-speed.md](../reports/dict-lookup-speed.md), with the raw
 numbers in [dict-lookup-baseline-20261015.json](benchmarks/dict-lookup-baseline-20261015.json).
 

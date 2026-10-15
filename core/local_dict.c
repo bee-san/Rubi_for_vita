@@ -465,13 +465,13 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
         STAT(miss_cached);
         return VJO_OK;
     }
-    READ_KIND(VJO_READ_INDEX);
     for (unsigned chain = 0; ; chain++) {
         uint8_t header[16], slot[24];
         uint32_t count, lo = 0, hi;
         uint64_t next;
         if (chain >= MAX_HASH_CHAIN || page < PAGE_SIZE || page >= d->data || page % PAGE_SIZE)
             return VJO_E_LOCAL_FORMAT;
+        READ_KIND(VJO_READ_INDEX); /* also an overflow page after a key group's read */
         if ((rc = cached_read(w, d, page, header, sizeof(header)))) return rc;
         count = u32(header + 4); next = u64(header + 8);
         if (memcmp(header, "VJHP", 4) || count > HASH_PAGE_RECORDS ||
@@ -527,7 +527,7 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     q->preferred = preferred_for(cand->key);
     STAT(probes);
 #ifdef VJO_LOCAL_STATS
-    if (vjo_local_trace) {
+    {
         VjoLocalStats before = vjo_local_stats;
         int rc = w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit)
                                            : find_matches_v1(w, di, cand, q, limit);
@@ -535,7 +535,10 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
                     : vjo_local_stats.hash_present > before.hash_present ? VJO_PROBE_HASH
                     : vjo_local_stats.filtered > before.filtered ? VJO_PROBE_FILTERED
                     : vjo_local_stats.miss_cached > before.miss_cached ? VJO_PROBE_CACHED : VJO_PROBE_ABSENT;
-        vjo_local_trace(di, c, cand->depth, cand->key, outcome);
+        if (outcome != VJO_PROBE_FOUND)
+            vjo_local_stats.absent_reads += vjo_local_stats.reads[VJO_READ_INDEX] - before.reads[VJO_READ_INDEX] +
+                                            vjo_local_stats.reads[VJO_READ_GROUP] - before.reads[VJO_READ_GROUP];
+        if (vjo_local_trace) vjo_local_trace(di, c, cand->depth, cand->key, outcome);
         return rc;
     }
 #endif

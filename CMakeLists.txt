@@ -364,7 +364,7 @@ target_link_libraries(vjo-local-bench vjo_host)
 
 # The Shell's word lookups over real recognized lines, every read attributed
 # (tools/dict_lookup_bench.py): its own local_dict.c with the counters on.
-add_executable(vjo-dict-bench host/dict_bench.c core/local_dict.c)
+add_executable(vjo-dict-bench host/dict_bench.c core/local_dict.c core/textnorm.c)
 target_compile_definitions(vjo-dict-bench PRIVATE VJO_LOCAL_STATS=1)
 target_link_libraries(vjo-dict-bench vjo_host)
 target_compile_options(vjo-dict-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)

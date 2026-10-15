@@ -26,9 +26,13 @@ typedef struct {
     uint64_t probes;       /* candidate x dictionary searches */
     uint64_t filtered;     /* probes a key filter answered (absent) without an index read */
     uint64_t miss_cached;  /* probes the per-request absent-hash cache answered */
-    uint64_t hash_present; /* probes whose hash is in the index */
-    uint64_t found;        /* probes whose full key is in the index */
+    /* v2: probes whose hash is in the index (rule-compatible or not); v1: not counted */
+    uint64_t hash_present;
+    /* v2: probes that found the full key with fitting rules; v1: the key is in the
+     * index, whatever its rules (take_postings filters them) */
+    uint64_t found;
     uint64_t ranked;       /* postings ranked (a payload head each) */
+    uint64_t absent_reads; /* index and group reads of probes that found no key */
     uint64_t reads[VJO_READ_KINDS], bytes[VJO_READ_KINDS];
 } VjoLocalStats;
 extern VjoLocalStats vjo_local_stats;

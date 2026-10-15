@@ -4,21 +4,26 @@
  *   vjo-dict-bench DIR FILES LINES MODE ROUNDS
  *
  * LINES: host/fixtures/word_lookup/vocr_lines.tsv's layout (id, model, two
- * checksums, region, text with "\n" escaped; '#' comments). Each line becomes
- * the overlay's sentence (vjo_overlay_ocr_text, as the Shell keeps it) and is
- * looked up as the Shell does with the release defaults (Whole word,
- * Japanese-only, one dictionary page): MODE first = the first word only (what
- * Auto OCR prepares), words = then Right after each match to the end of the
- * text (core/text_rows.c vjo_word_step), letters = every selectable letter
- * (Character mode, or a tap on each). Every lookup gets a fresh 64 KiB arena,
- * the Shell's result arena, and starts with empty application caches, as in
- * the Shell; the host OS file cache stays warm.
+ * checksums, region, text with "\n" escaped; '#' comments). Each line is
+ * normalised as the game worker returns recognized text (core/textnorm.c
+ * vjo_text_normalize), becomes the overlay's sentence (vjo_overlay_ocr_text, as
+ * the Shell keeps it) and is looked up as the Shell does with the release
+ * defaults (Whole word, Japanese-only, one dictionary page): MODE first = the
+ * first word only (what Auto OCR prepares), words = then Right after each match
+ * to the end of the text, every word in reading order as one row
+ * (core/text_rows.c vjo_word_step without the header's rows), letters = every
+ * selectable letter (Character mode, or a tap on each). Every lookup gets a
+ * fresh 64 KiB arena, the Shell's result arena, and starts with empty
+ * application caches, as in the Shell; the host OS file cache stays warm.
  *
  * Round 0 counts: reads by what they fetch (core/local_dict.c, built here with
  * VJO_LOCAL_STATS), bytes, distinct 4 KiB pages, nonsequential reads, the
  * deinflection candidates generated, searched and found, and the arena peak.
- * Rounds 1..ROUNDS-1 time each lookup again in the same order; the printed
- * time is its median. One JSON line per lookup, then one summary line. */
+ * Rounds 1..ROUNDS-1 time each lookup again in the same order (without the
+ * page bookkeeping) and fail if one shows something else; the printed time is
+ * its median. One JSON line per lookup, then one summary line.
+ * VJO_DICT_BENCH_CHANGE_ROUND=N (tests only) alters round N's result, which
+ * that check must catch. */
 #define _POSIX_C_SOURCE 200809L
 #include <inttypes.h>
 #include <stdio.h>
@@ -29,6 +34,7 @@
 #include "local_dict.h"
 #include "net_posix.h"
 #include "text_rows.h"
+#include "textnorm.h"
 #include "utf.h"
 
 #define ARENA_BYTES (64u * 1024u) /* the Shell's local result arena */
@@ -45,6 +51,7 @@ static TrackedFile files[VJO_LOCAL_MAX_DICTS];
 static uint64_t n_reads, n_bytes, n_seeks, n_opens, n_closes, n_excess;
 static uint64_t pages[MAX_PAGES];
 static unsigned n_pages, pages_overflow;
+static int track_pages = 1; /* round 0 only: the timed rounds skip the bookkeeping */
 static int (*inner_open)(void *, const char *, VjoFile *);
 
 static void note_page(int file, uint64_t page)
@@ -64,7 +71,7 @@ static int tracked_read(void *ctx, uint64_t off, void *dst, size_t n)
     if (n > 4096) n_excess += n - 4096; /* beyond one 4 KiB page: the console model's bound */
     if (off != f->last_end) n_seeks++;
     f->last_end = off + n;
-    for (uint64_t p = off >> 12; n && p <= (off + n - 1) >> 12; p++) note_page((int)(f - files), p);
+    for (uint64_t p = off >> 12; track_pages && n && p <= (off + n - 1) >> 12; p++) note_page((int)(f - files), p);
     return f->inner.read(f->inner.ctx, off, dst, n);
 }
 
@@ -154,6 +161,7 @@ static int load_lines(const char *path, Line *lines, int max)
             else *out++ = *s;
         }
         *out = 0;
+        vjo_text_normalize(lines[n].text, NULL); /* as the game worker returns it */
         n++;
     }
     fclose(f);
@@ -301,7 +309,9 @@ int main(int argc, char **argv)
     if (trace_file) fclose(trace_file);
     for (size_t k = 0; k < n_queries; k++)
         queries[k].us = calloc((size_t)rounds, sizeof(double));
+    track_pages = 0;
     for (int r = 1; r < rounds; r++) {
+        const char *change = getenv("VJO_DICT_BENCH_CHANGE_ROUND");
         for (size_t k = 0; k < n_queries; k++) {
             Query *q = &queries[k];
             VjoArena a;
@@ -314,6 +324,7 @@ int main(int argc, char **argv)
             t0 = now_ns();
             rc = vjo_overlay_lookup_at(&a, &p, &cfg, q->cursor, &d);
             q->us[r - 1] = (double)(now_ns() - t0) / 1000.0;
+            if (change && atoi(change) == r && k == 0) rc ^= 1; /* the check below must catch this */
             if (digest(rc, &d) != q->digest) {
                 fprintf(stderr, "%s at %zu: result changed between rounds\n", lines[q->line].id, q->cursor);
                 return 1;
@@ -334,13 +345,14 @@ int main(int argc, char **argv)
                ",\"bytes\":%" PRIu64 ",\"excess_bytes\":%" PRIu64 ",\"pages\":%" PRIu64 ",\"nonsequential\":%" PRIu64 ",\"arena_peak\":%" PRIu64
                ",\"spans\":%" PRIu64 ",\"candidates\":%" PRIu64 ",\"probes\":%" PRIu64 ",\"filtered\":%" PRIu64
                ",\"miss_cached\":%" PRIu64 ",\"hash_present\":%" PRIu64 ",\"found\":%" PRIu64 ",\"ranked\":%" PRIu64
+               ",\"absent_reads\":%" PRIu64
                ",\"reads_by\":{\"header\":%" PRIu64 ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64
                ",\"payload\":%" PRIu64 ",\"filter\":%" PRIu64 "},\"bytes_by\":{\"header\":%" PRIu64
                ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64 ",\"payload\":%" PRIu64
                ",\"filter\":%" PRIu64 "}}\n",
                q->line, lines[q->line].id, lines[q->line].model, k, q->cursor, q->rc, q->entries, q->end, q->digest,
                us, q->opens, q->reads, q->bytes, q->excess, q->pages, q->seeks, q->arena_peak, st->spans, st->candidates,
-               st->probes, st->filtered, st->miss_cached, st->hash_present, st->found, st->ranked,
+               st->probes, st->filtered, st->miss_cached, st->hash_present, st->found, st->ranked, st->absent_reads,
                st->reads[VJO_READ_HEADER], st->reads[VJO_READ_INDEX], st->reads[VJO_READ_GROUP],
                st->reads[VJO_READ_HEAD], st->reads[VJO_READ_PAYLOAD], st->reads[VJO_READ_FILTER],
                st->bytes[VJO_READ_HEADER], st->bytes[VJO_READ_INDEX], st->bytes[VJO_READ_GROUP],

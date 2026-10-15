@@ -14,11 +14,13 @@ Lines: host/fixtures/word_lookup/vocr_lines.tsv (50 real VOCR lines, committed) 
 kept, non-name lines, grouped by screenshot, ordered by sha256 of the seed and the shot id),
 leaving out every VN of reserved.json's "test" (vita-test, psp-test, the CLANNAD family and
 their shared releases); the text stays in a temporary file and is never written elsewhere.
+The report records each pool file's sha256: a pool that changed gives other screens.
 
 Host times have a warm OS file cache. The console figures are a model, not a measurement:
-CONSOLE below, a least-squares fit of the lookup log lines of the v0.8.0-test.1 and test.2
-console logs (90 lookups, private; only the fit is quoted), plus a bound for reads above
-4 KiB, which those lookups never made (the model weights' 32 KiB broker reads bound it).
+CONSOLE below, a least-squares fit of the 57 distinct lookup log lines of the owner's
+v0.8.0-test.2 console log (private; only the fit is quoted; its first 4,966 lines are
+test.1's whole log, so test.1 adds none), plus a bound for reads above 4 KiB, which those
+lookups never made (the model weights' 32 KiB broker reads bound it).
 """
 import argparse
 import hashlib
@@ -32,16 +34,18 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 LINES = ROOT / "host/fixtures/word_lookup/vocr_lines.tsv"
 CONSOLE = {
-    "fixed_ms": 21.0,       # open, size seek and close per lookup (fit intercept)
-    "read_ms": 3.73,        # one read call, up to 4 KiB (fit slope; R^2 0.56)
+    "fixed_ms": 21.9,       # per lookup (fit intercept): the open, size seek and close, and waits
+    "read_ms": 3.73,        # one read call, up to 4 KiB (fit slope)
     "excess_kib_ms": 0.146,  # bound per KiB a read takes beyond 4 KiB
-    "source": ("estimate: least-squares fit over the 90 lookups of the v0.8.0-test.1 and test.2 console "
-               "log.txt (ms = 21.0 + 3.73 x reads, R^2 0.56; docs/performance.md's 30-lookup fit: "
-               "15.3 + 3.82); a read's bytes beyond 4 KiB at most 0.146 ms/KiB: the 1,155,968 B of "
-               "VOCR3-H15 weights in 32 KiB reads took at most 165 ms (load 218-231 ms less SHA-256)"),
+    "source": ("estimate: least-squares fit over the 57 distinct lookups of the v0.8.0-test.2 console "
+               "log.txt, whose first 4,966 lines are test.1's whole log (ms = 21.9 + 3.73 x reads, R^2 0.52, "
+               "reads 5-33). By kind: cursor (n 35) 11.2 + 3.76 x reads, R^2 0.85; first word and on open "
+               "(n 22) 35.4 + 3.91 x reads, R^2 0.27. docs/performance.md's 30-lookup fit: 15.3 + 3.82. "
+               "A read's bytes beyond 4 KiB at most 0.146 ms/KiB: the 1,155,968 B of VOCR3-H15 weights in "
+               "32 KiB reads took at most 165 ms (load 218-231 ms less the A9 SHA-256 estimate)"),
 }
 COUNTS = ("reads", "bytes", "excess_bytes", "pages", "nonsequential", "spans", "candidates", "probes",
-          "filtered", "miss_cached", "hash_present", "found", "ranked")
+          "filtered", "miss_cached", "hash_present", "found", "ranked", "absent_reads")
 KINDS = ("header", "index", "group", "head", "payload", "filter")
 
 
@@ -79,9 +83,17 @@ def write_tsv(rows, path, model="pool"):
             out.write(f"{ident}\t{model}\t-\t-\t-\t{escaped}\n")
 
 
-def run(binary, directory, dicts, lines, mode, rounds):
+def file_digest(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def run(binary, directory, dicts, lines, mode, rounds, env=None):
     result = subprocess.run([str(binary), str(directory), dicts, str(lines), mode, str(rounds)],
-                            capture_output=True, text=True, timeout=3600, check=False)
+                            capture_output=True, text=True, timeout=3600, check=False, env=env)
     if result.returncode:
         raise RuntimeError(f"{binary} {mode}: {result.stderr.strip()}")
     rows = [json.loads(line) for line in result.stdout.splitlines()]
@@ -202,7 +214,8 @@ def main(argv=None):
             write_tsv(pool, path)
             name = f"pool:{labels.parent.name}/{labels.name}:{len(pool)} screens"
             sets.append((name, path, True))
-            report["pools"].append({"set": name, "labels": str(labels), "screens": len(pool),
+            report["pools"].append({"set": name, "labels": str(labels), "labels_sha256": file_digest(labels),
+                                    "screens": len(pool),
                                     "lines": sum(t.count("\n") + 1 for _, t in pool),
                                     "selection_sha256": hashlib.sha256("\n".join(s for s, _ in pool).encode()).hexdigest()})
         for name, path, is_pool in sets:
