@@ -94,7 +94,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
-  ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/hachidori.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/base64.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
@@ -107,7 +107,7 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
-  ${ROOT}/core/json.c ${ROOT}/core/hachidori.c ${ROOT}/core/http.c ${ROOT}/core/net.c
+  ${ROOT}/core/json.c ${ROOT}/core/http.c ${ROOT}/core/net.c
   ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/base64.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
   PROPERTIES COMPILE_OPTIONS "-Os")
@@ -178,7 +178,7 @@ endif()
 # The Shell imports only the bounded job transport. No vocr inference is linked here.
 # More cold code built for size, which pays for the open overlay's quiet refresh
 # (#81 request 4) within the module's pages: the module and Paf allocator entry
-# points (once per boot or allocation), the network dictionaries' entry lists,
+# points (once per boot or allocation), the entry lists of a Google Lens job's sentence lookup,
 # the per-tap hit test, the overlay's text styling (once per render) and
 # games.ini storage (the Settings app's copy too). Measured -O2 -> -Os: 54 + 176 + 279 + 108 + 454 + 133 B.
 set_source_files_properties(${ROOT}/shell/main.cpp ${ROOT}/shell/memory.cpp ${ROOT}/core/entries.c

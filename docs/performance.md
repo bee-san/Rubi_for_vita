@@ -310,7 +310,8 @@ holds 299,008 B, with 1,832 B left in its last code page (215,256 of 217,088) an
 data pages; a Shell change that adds a page breaks AGENTS.md rule 1. Without the online
 dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `ba5f69a`, with API 21's model
 sizes and API 22), with 2,808 B left in its code pages (210,184 of 212,992) and 2,524 B in its data
-pages [measured: the build log's module row]. The kernel module has
+pages, and without the Hachidori relay client 282,624 B, with 2,704 B left in its code pages
+(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]. The kernel module has
 1,248 B (code) and 112 B (data) left, the game worker 452 B and 2,356 B.
 
 ## Reproduce

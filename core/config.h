@@ -16,13 +16,17 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
 enum { VJO_OCR_LENS = 0, VJO_OCR_VOCR = 2 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
-/* dictionary: the local .vjdict files or a Hachidori relay. The self-test
- * reports the value (config dictionary=); keep the IDs unchanged. 0 and 1
- * were jpdb.io and jiten.moe, the online dictionaries with an API key, removed
- * after v0.8.0-test.2: a config.ini naming them loads as local with a warning,
- * and the Overlay app's next save and the installer write local and drop
- * their API keys (vjo_config_removed_line, tools/migrate_config.py). */
-enum { VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3 };
+/* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
+ * messages and the log). The self-test reports the value (config
+ * dictionary=); keep the ID unchanged. The removed ones' IDs stay unused: 0
+ * and 1 jpdb.io and jiten.moe, the online dictionaries with an API key
+ * (removed after v0.8.0-test.2), 2 the Hachidori relay on a computer
+ * (hachidori_host, removed after them). A config.ini naming one loads as
+ * local with a warning; the Overlay app's next save and the installer write
+ * local, and drop the API keys (vjo_config_removed_line, tools/
+ * migrate_config.py); hachidori_host is ignored, and the installer drops it. */
+enum { VJO_DICT_LOCAL = 3 };
+#define VJO_DICT_NAME "Local dictionaries"
 
 #define VJO_CONFIG_MAX_WARNINGS 4
 /* The Shell reads the text plus NUL into its existing 24 KiB scratch arena.
@@ -30,8 +34,7 @@ enum { VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3 };
 #define VJO_CONFIG_TEXT_MAX (24 * 1024 - 1)
 
 typedef struct {
-    int dictionary;           /* VJO_DICT_* */
-    char hachidori_host[64];   /* required host[:port], default port 19633 */
+    int dictionary;           /* VJO_DICT_LOCAL, the only one */
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
     int local_dictionary_results; /* 1..8: dictionaries paged with an L/R tap per selected word */
@@ -120,20 +123,12 @@ int vjo_vocr_tier_of_model(const char *name);
  * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line
  * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
  * older name, in any case, with or without '='), VJO_LINE_REPLACE with
- * *replacement ("dictionary = local\n") for dictionary = jpdb or jiten, else
- * VJO_LINE_KEEP. */
+ * *replacement ("dictionary = local\n") for dictionary = jpdb, jiten or
+ * hachidori, else VJO_LINE_KEEP. */
 enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2 };
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement);
 
 const char *vjo_trigger_name(int trigger);
-
-/* A dictionary's display name: "Local dictionaries" | "Hachidori relay". */
-const char *vjo_dict_name(int dictionary);
-/* VJO_DICT_* for a config.ini dictionary / CLI --dict value ("local" |
- * "hachidori", any case), or -1. */
-int vjo_dict_find(const char *id);
-/* Local lookup is always schedulable (worker checks files); the relay needs its host. */
-int vjo_config_dict_ready(const VjoConfig *c);
 
 /* anki_host (or the saved anki_host.txt), where △ sends the queue: "" =
  * nowhere (× still saves cards), "auto" = search the network, or
@@ -142,11 +137,6 @@ int vjo_config_dict_ready(const VjoConfig *c);
 #define VJO_ANKI_PORT 8765
 enum { VJO_ANKI_OFF = 0, VJO_ANKI_AUTO = 1, VJO_ANKI_MANUAL = 2 };
 int vjo_anki_endpoint(const char *setting, char *host, size_t cap, int *port);
-
-/* Relay requires a hostname/IPv4 address, optionally :port (not a URL or auto).
- * Returns 0 on success, -1 if unset or invalid. */
-#define VJO_HACHIDORI_PORT 19633
-int vjo_hachidori_endpoint(const char *setting, char *host, size_t cap, int *port);
 
 /* anki_audio_url: a Yomitan custom audio source,
  * http(s)://host[:port][/path][?query] with {term} (and usually {reading})

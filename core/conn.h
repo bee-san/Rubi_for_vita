@@ -33,7 +33,7 @@ enum {
     VJO_E_ANKI_DUPLICATE = -111, /* AnkiConnect: the note is already in the deck */
     VJO_E_LOCAL_IO = -113, /* cannot open/read a local dictionary */
     VJO_E_LOCAL_FORMAT = -114, /* incompatible/corrupt .vjdict */
-    VJO_E_NO_HOST = -112,   /* relay host unset or invalid */
+    /* -112 was VJO_E_NO_HOST, the removed Hachidori relay's unset or invalid host */
     VJO_E_OCR_MODEL = -115, /* missing/incomplete/unexpected local OCR weights */
     VJO_E_OCR_REGION = -116, /* unsupported/oversized dialogue region */
     VJO_E_OCR_UNAVAILABLE = -117, /* build has no local OCR */

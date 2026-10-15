@@ -249,8 +249,8 @@ static void test_anki_pitch(void)
 }
 
 /* A dictionary result for "猫が\n好き" with tricky glosses, and its words'
- * frequency, part of speech and pitch (fields a local dictionary or the relay
- * may fill; its frequency list is "BCCWJ"). */
+ * frequency, part of speech and pitch (fields a dictionary result may fill;
+ * its frequency list is "BCCWJ"). */
 static void anki_list(VjoEntryList *l)
 {
     static const char *const ga[] = {"indicates subject"}, *const neko[] = {"cat \"neko\"", "a\\b <&>\nc"};

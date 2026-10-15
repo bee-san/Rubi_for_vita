@@ -121,10 +121,12 @@ The other Kiku fields (`SelectionText`, `DefinitionPicture`,
 lacks; the connection test lists any of the filled ones a Kiku note type does
 not have. The bundled dictionary (Daijirin4 → Sankoku8 → JMdict in one file)
 has no frequency ranks or pitch accents: with it those fields stay empty, and
-each entry's own dictionary (one of the three) names its glossary item. A
-Hachidori relay's lookup carries its frequency rank (`FreqSort`). jpdb.io and jiten.moe,
-the online dictionaries that also gave pitch accents and readings per word,
-have been removed; cards they queued before still send with all of theirs.
+each entry's own dictionary (one of the three) names its glossary item. No
+local dictionary imports frequency ranks or pitch accents
+([local dictionaries](local-dictionaries.md)). jpdb.io and jiten.moe, the
+online dictionaries that also gave pitch accents and readings per word, and
+the Hachidori relay, whose lookups carried a frequency rank (`FreqSort`), have
+been removed; cards they queued before still send with all of theirs.
 
 ## The queue on the memory card
 
@@ -156,7 +158,7 @@ card can be made into a note later, by any version that reads the record:
 | --- | --- |
 | `version` | 3 |
 | `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none, as every one now: only the removed online dictionaries gave one) |
-| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (a local one's from its definition's first line, `[JMdict Plain]`; `Hachidori relay` for the relay; older records may name jpdb.io or jiten.moe) |
+| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (from its definition's first line, `[JMdict Plain]`, or `null` without one; older records may name the removed jpdb.io, jiten.moe or `Hachidori relay`) |
 | `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while △ can still send the card ([below](#memory-and-network)) |
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (99999 = none) and its source, pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |
@@ -262,13 +264,15 @@ work while the page keeps drawing.
 
 Measured on the host with the actual `shell/anki.c`, `shell/anki_queue.c`
 (`ctest -R shell_anki -V`, "measure:" lines): a save with two other
-dictionaries' entries read from their files peaked at 12,032 of 131,072 bytes;
-a text card with audio sent at 10,400; 100 text cards in one send at 10,408. The
+dictionaries' entries read from their files peaked at 10,856 of 131,072 bytes;
+a text card with audio sent at 6,720; 100 text cards in one send at 6,672. The
 host build of the screenshot path (`vjo-shell-anki-tests`): saving a card
-with its 62,686-byte JPEG peaked at 133,712 of 393,216 bytes, sending it at
-77,200. The app's send of the four version-2 records of the v0.8.0-test.1
-console's queue peaked at 39,960 bytes on the host (`test_anki_app`). These
-are host measurements; a physical Vita has not run this code yet.
+with its 62,686-byte JPEG peaked at 132,536 of 393,216 bytes, sending it at
+73,568. Each is 64 bytes less than before the Hachidori relay's removal (the
+`hachidori_host` of the job's copy of the settings). The app's send of the four
+version-2 records of the v0.8.0-test.1 console's queue peaked at 37,056 bytes on
+the host (`test_anki_app`). These are host measurements; a physical Vita has not
+run this code yet.
 
 ## Security
 

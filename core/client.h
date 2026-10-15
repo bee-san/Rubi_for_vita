@@ -1,6 +1,6 @@
-/* End-to-end requests: Lens OCR over HTTPS and the dictionary lookup (local
- * files or a Hachidori relay), plus the overlay pipeline that ties them
- * together (same code on host and Vita). */
+/* End-to-end requests: Lens OCR over HTTPS and the dictionary lookup (the
+ * local .vjdict files), plus the overlay pipeline that ties them together
+ * (same code on host and Vita). */
 #ifndef VJO_CLIENT_H
 #define VJO_CLIENT_H
 
@@ -45,13 +45,12 @@ typedef struct {
 } VjoOverlayData;
 
 #define VJO_LENS_MAX_RESPONSE (256u * 1024u)
-#define VJO_DICT_MAX_RESPONSE (192u * 1024u)
 
 int vjo_lens_ocr(VjoArena *a, const VjoPlatform *p, const VjoJpegSource *src,
                  VjoLensResult *res, const char **text, VjoErr *err);
 
-/* Looks up text with the dictionary selected in cfg: the local .vjdict files
- * (core/local_dict.h) or a Hachidori relay (core/hachidori.h). */
+/* Looks up text in the local .vjdict files (core/local_dict.h), the only
+ * dictionaries: no lookup uses the network. */
 int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
                     VjoDictResult *res, VjoErr *err);
 

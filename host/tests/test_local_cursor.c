@@ -349,10 +349,9 @@ static void normalized_source_span_and_invalid_input(void)
     int before = opened;
     TEST_CHECK(lookup(&a, &p, &cfg, too_long, 0, &r, &e) == VJO_E_TOO_LARGE);
     TEST_CHECK(opened == before && a.used == 0);
-    VjoOverlayData out = {.sentence = "猫"};
-    cfg.dictionary = VJO_DICT_HACHIDORI; /* cursor lookups are local only */
+    VjoOverlayData out = {.sentence = NULL}; /* no recognized sentence: nothing to look up */
     TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_PARSE);
-    TEST_CHECK(out.failed_stage == VJO_STAGE_DICT && out.list.header == out.sentence);
+    TEST_CHECK(out.failed_stage == VJO_STAGE_DICT && out.err.dict == VJO_DICT_LOCAL && a.used == 0);
 }
 
 static void every_file_read_failure_closes_and_rolls_back(void)

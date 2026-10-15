@@ -35,8 +35,15 @@
  * shell/strip.cpp -2,584 B: its copy of the readings and their widgets; shell/anki.c -512 B: a third
  * VjoConfig's keys), so the module is 210,184 text + 71,204 data/bss [measured: the build log's
  * module rows, main ba5f69a and this change], one text page and one data page fewer than main's
- * 294,912 B. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 286720u
+ * 294,912 B.
+ * Lowered from 286,720 B by the removal of the Hachidori relay client (core/hachidori.c, its
+ * dictionary branches, hachidori_host and its validation, the relay's error text, the JSON helper
+ * only it used): 3,992 B off the text segment (.text -3,344 B, .rodata -648 B) and 184 B off .bss
+ * (the 64 B hachidori_host of three VjoConfig copies and shell/worker.c's 4 B cached dictionary
+ * ID, 196 B, less 12 B of alignment), so the module is 206,192 text + 71,020 data/bss [measured:
+ * the build log's module rows, main a5d79f2 and this change], one text page fewer: 208,896 +
+ * 73,728 B of pages. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 282624u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
@@ -92,7 +99,10 @@
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
 #define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
-#define VJO_BUDGET_PAF_RESULTS_NET 571888u         /* 2 x 262,144 arenas + 47,600 connection pool (worker.c MEM_SIZE) */
+/* Google Lens: 2 x 262,144 arenas + a 23,808 B one-slot connection pool (worker.c MEM_SIZE; the host's
+ * sizeof(VjoNetSlot), 23,800 B, rounded to 16; arm-vita-eabi-gcc's is 23,312 B). The removed Hachidori
+ * relay's second slot made it 571,888 B. */
+#define VJO_BUDGET_PAF_RESULTS_NET 548096u
 /* An Anki job (anki.c ANKI_TEXT_MEM): a text-only card. The Picture field is off in the
  * build (VJO_ANKI_SCREENSHOT 0): its screenshot would be the kernel's 2,088,960 B full-frame
  * capture (VJO_BUDGET_KERNEL_CAPTURE), which #74's console refused, and 393,216 B here (a
@@ -103,10 +113,12 @@
 /* The shipped default (local JMdict): one 64 KiB arena, the overlay open, an
  * Anki card being saved. */
 #define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
-/* The opt-in network dictionary (two arenas and a connection pool) with the
- * same overlay and Anki card. With a picture card's 384 KiB arena this was over
- * the best-case limit by 8,688 B (the checker warned; the runtime reserve guard
- * refuses the last allocation, which the code survives); a text-only card fits. */
+/* The opt-in network path, Google Lens (two arenas and a connection pool), with
+ * the same overlay and Anki card: 707,840 B. A picture card's 384 KiB arena
+ * (VJO_ANKI_SCREENSHOT 1) put it over the best-case limit by 8,688 B while the
+ * pool kept a second slot for the removed Hachidori relay (the checker warns;
+ * the runtime reserve guard refuses the last allocation, which the code
+ * survives); with one slot it is 969,984 B, 15,104 B under. */
 #define VJO_WORST_SHELL_PAF_NET (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_NET + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free

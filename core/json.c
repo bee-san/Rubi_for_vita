@@ -210,21 +210,6 @@ char *vjo_json_str(VjoArena *a, const VjoJson *j, int i)
     return out;
 }
 
-int vjo_json_append_str(VjoBuf *b, const VjoJson *j, int i)
-{
-    const jsmntok_t *t;
-    size_t n, start = b->len;
-    if (i < 0 || i >= j->n)
-        return -1;
-    t = &j->t[i];
-    n = (size_t)(t->end - t->start);
-    if (vjo_buf_append(b, j->js + t->start, n) < 0)
-        return -1;
-    if (t->type == JSMN_STRING)
-        b->len = start + unescape((char *)b->data + start, n, (char *)b->data + start);
-    return 0;
-}
-
 int vjo_json_write_string(VjoBuf *b, const char *s)
 {
     return vjo_json_write_stringn(b, s, strlen(s));

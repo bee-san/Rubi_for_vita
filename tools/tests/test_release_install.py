@@ -48,8 +48,10 @@ class ReleaseInstall(unittest.TestCase):
             (self.device / partition / "tai/config.txt").write_bytes(self.original_tai)
         self.data = self.device / "ux0/data/VitaJPOverlay"
         self.data.mkdir(parents=True)
-        # jpdb_api_key: a removed online dictionary's key (a secret) from an older build
-        (self.data / "config.ini").write_text("dictionary = hachidori\nocr_backend = lens\nfont_size_ja = 24\njpdb_api_key = test-key\n")
+        # jpdb_api_key: a removed online dictionary's key (a secret) from an older build; the removed
+        # Hachidori relay's choice and its computer (hachidori_host)
+        (self.data / "config.ini").write_text("dictionary = hachidori\nhachidori_host = 192.168.1.20\nocr_backend = lens\n"
+                                              "font_size_ja = 24\njpdb_api_key = test-key\n")
         (self.data / "games.ini").write_text("keep existing choices")
         (self.data / "region.ini").write_text("keep existing region")
         binary = self.root / "bin"
@@ -133,9 +135,10 @@ elif '-o' in a:
                         "local_dictionaries = plaintext.vjdict", "font_size_ja = 24",
                         "ocr_lm = 1000k", "ocr_cascade_ms = 2000"):
             self.assertIn(setting, config)
-        # the removed online dictionaries' API key is gone, its value never printed
+        # the removed online dictionaries' API key is gone, its value never printed; so is the relay
         self.assertNotIn("api_key", config)
         self.assertNotIn("test-key", config)
+        self.assertNotIn("achidori", config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
         self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())

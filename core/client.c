@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "hachidori.h"
 #include "local_dict.h"
 #include "port.h"
 #include "textfilter.h"
@@ -94,15 +93,8 @@ int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, con
                     VjoDictResult *res, VjoErr *err)
 {
     memset(err, 0, sizeof(*err));
-    memset(res, 0, sizeof(*res));
-    err->dict = cfg->dictionary;
-    if (cfg->dictionary == VJO_DICT_HACHIDORI) {
-        int rc = vjo_hachidori_lookup(a, p, cfg, text, res, err);
-        if (rc)
-            memset(res, 0, sizeof(*res));
-        return rc;
-    }
-    return vjo_local_lookup(a, p, cfg, text, res, err);
+    err->dict = VJO_DICT_LOCAL;
+    return vjo_local_lookup(a, p, cfg, text, res, err); /* it clears res */
 }
 
 static int is_blank(const char *s)
@@ -208,7 +200,7 @@ int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     local_lookup_begin(out);
     out->pages = NULL;
     out->page = 0;
-    if (!out->sentence || cfg->dictionary != VJO_DICT_LOCAL) {
+    if (!out->sentence) {
         rc = VJO_E_PARSE;
         goto failed;
     }
@@ -244,7 +236,7 @@ int vjo_overlay_lookup_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *
     int rc;
 
     local_lookup_begin(out);
-    if (!pages || !out->sentence || cfg->dictionary != VJO_DICT_LOCAL ||
+    if (!pages || !out->sentence ||
         (uint8_t *)pages < a->base || (size_t)((uint8_t *)(pages + 1) - a->base) > a->used ||
         page < 0 || page >= pages->count) {
         out->failed_stage = VJO_STAGE_DICT;
@@ -313,24 +305,14 @@ void vjo_overlay_warm(const VjoPlatform *p, int timeout_us)
 
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
 {
-    const char *dict = vjo_dict_name(err->dict);
-    char what[48];
+    /* Lookups are the local dictionaries': only text recognition (Lens) uses the network. */
+    const char *what = stage == VJO_STAGE_OCR ? "Text recognition" : VJO_DICT_NAME " lookup";
     VjoBuf b;
-    if (stage == VJO_STAGE_OCR)
-        vjo_snprintf(what, sizeof(what), "Text recognition");
-    else
-        vjo_snprintf(what, sizeof(what), "%s lookup", dict);
     vjo_buf_init(&b, a);
     switch (err->rc) {
     case VJO_OK:
         return "";
     case VJO_E_NET:
-    case VJO_E_NO_HOST:
-        if (err->rc == VJO_E_NO_HOST) {
-            vjo_buf_puts(&b, "Hachidori relay host is not set or invalid. Set hachidori_host = HOST[:PORT] in "
-                             "ux0:data/VitaJPOverlay/config.ini (default port 19633; trusted LAN only).");
-            break;
-        }
         vjo_buf_printf(&b, "%s failed: no network connection", what);
         break;
     case VJO_E_TLS:
@@ -373,17 +355,14 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         vjo_buf_puts(&b, "Local OCR failed. Try a smaller dialogue region; see log.txt for details.");
         break;
     case VJO_E_TOO_LARGE:
-        if (stage == VJO_STAGE_DICT && err->dict == VJO_DICT_LOCAL) {
+        if (stage == VJO_STAGE_DICT) {
             vjo_buf_puts(&b, "Local lookup exceeds the text/result limit. Select a smaller OCR region or enable fewer dictionaries.");
             break;
         }
         vjo_buf_printf(&b, "%s failed: response too large", what);
         break;
     case VJO_E_STATUS:
-        if (stage == VJO_STAGE_DICT && err->http_status == 429)
-            vjo_buf_printf(&b, "%s rate limit reached (HTTP 429). Try again shortly.", dict);
-        else
-            vjo_buf_printf(&b, "%s failed: HTTP %d", what, err->http_status);
+        vjo_buf_printf(&b, "%s failed: HTTP %d", what, err->http_status);
         if (err->detail) {
             vjo_buf_puts(&b, " - ");
             vjo_buf_puts(&b, err->detail);

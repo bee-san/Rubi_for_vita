@@ -41,7 +41,7 @@ def steps(v, shell_pages=None, worker_pages=None, network=False, anki=False):
         ("Paf plugin and RCO", 0, v["VJO_BUDGET_PAF_PLUGIN"]),
         ("VjoNet thread", v["VJO_BUDGET_SHELL_NET_STACK"], 0),
         ("VjoControl thread (boot complete)", v["VJO_BUDGET_SHELL_CTL_STACK"], 0),
-        ("game start: result memory (%s)" % ("network: two arenas + pool" if network else "local: one arena"), 0, arena),
+        ("game start: result memory (%s)" % ("Google Lens: two arenas + pool" if network else "local: one arena"), 0, arena),
     ]
     if anki:
         out.append(("Anki card saved: job thread", v["VJO_BUDGET_SHELL_ANKI_STACK"], 0))
@@ -117,7 +117,7 @@ def main():
     ap.add_argument("--shell-pages", type=int, help="model a build whose Shell module has this many bytes of pages")
     ap.add_argument("--worker-pages", type=int, help="model a build whose OCR worker holds this many bytes in SceShell "
                     "(an *ALL registration; 0: not loaded there, or NO_RESIDENT)")
-    ap.add_argument("--network", action="store_true", help="a network dictionary (two arenas and a pool) instead of the local one")
+    ap.add_argument("--network", action="store_true", help="Google Lens (two arenas and a pool) instead of local OCR's one arena")
     ap.add_argument("--anki", action="store_true", help="include an Anki card save (text-only: no screenshot)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()

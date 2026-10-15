@@ -165,7 +165,7 @@ app when it starts.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Move along the displayed row: skip matched words in Whole word mode, one character in Character mode; Right from the row's last wraps to its first, Left from its first to its last |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position; navigate words with a network dictionary |
+| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position; with Google Lens, move to the looked-up word above or below |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
@@ -249,7 +249,7 @@ Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
 paths and capture mode, are preserved; only the lines of removed features are
 rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
-API keys go, and `dictionary = jpdb` or `jiten` becomes `local`).
+API keys go, and `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`).
 
 Japanese-only selection is **ON by default**. The initial cursor and the
 arrows skip Latin text, digits, punctuation and Hangul while selecting kana
@@ -421,13 +421,12 @@ it displays the preferred source; add separate dictionaries to page through
 other definitions. Only the page on screen is held in memory.
 
 Google Lens can also be selected with `ocr_backend = lens`; it uploads the
-selected image to Google and works with the configured dictionary, including
-local JMdict. Selecting an OCR engine preserves the dictionary, OCR mode and
-other settings. `dictionary = hachidori` uses Hachidori Relay on
-your trusted LAN (`hachidori_host = COMPUTER_IP`, port 19633). The subtitle
-strip (Select + R) shows the recognized text, without readings, and adds no
-lookups for it. Local defaults make no OCR or dictionary network requests and
-have no cloud fallback.
+selected image to Google and looks the words up in the same local
+dictionaries. Selecting an OCR engine preserves the dictionaries, OCR mode and
+other settings. The subtitle strip (Select + R) shows the recognized text,
+without readings, and adds no lookups for it. Dictionary lookup never uses the
+network: the local dictionaries are the only ones. Local defaults make no OCR
+or dictionary network requests and have no cloud fallback.
 
 The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
 been removed (the local Jitendex and every other Yomitan dictionary still
@@ -438,6 +437,13 @@ delete the `jpdb_api_key`, `jiten_api_key` and older `api_key` lines (the
 app's save leaves none in `config.ini.bak` either; the installer names each
 removed key, never its value). The subtitle strip's furigana, which only
 those two services gave, went with them.
+
+The Hachidori relay, which looked words up in the Hachidori app on a computer
+on your local network (`dictionary = hachidori`, `hachidori_host`), has been
+removed from the overlay too; the Hachidori app itself is unaffected. A saved
+`dictionary = hachidori` now loads as `local` with one config warning, and the
+Overlay app's next save and the installer write `local`; `hachidori_host` is
+ignored, and the installer drops it.
 
 ### Anki
 
@@ -536,9 +542,10 @@ together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 286,720 B
-of SceShell's partition (294,912 B before the online dictionaries' removal, of
-299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
+64 KiB result arena and no TLS pool for local lookup. Its module holds 282,624 B
+of SceShell's partition (286,720 B before the Hachidori relay client's removal,
+294,912 B before the online dictionaries', of 299,008 B declared then; 405,504 B
+in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle
@@ -548,8 +555,8 @@ reads only the selected position and shows zero or one entry. With Dictionaries
 shown above 1 it also keeps a 208-byte table locating the other dictionaries'
 entries in the same arena; an L or R tap releases the shown entry and reads one
 other payload, so several definitions are never resident together.
-The previous local result is retired before either is reused; network jobs
-retain two result arenas. Paf allocations preserve a 1.5 MiB UI reserve. If a
+The previous local result is retired before either is reused; Google Lens jobs
+retain two result arenas and one kept connection. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.

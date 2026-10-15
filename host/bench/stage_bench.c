@@ -681,8 +681,6 @@ static int stage_lookup(const BenchIn *in, unsigned iters, BenchOut *out)
  * holds the defaults, so without these a parser that read nothing would keep the
  * checksum (audit-overlay-perf-1b N2). */
 static const char nondefault_config[] =
-    "dictionary = hachidori\n"
-    "hachidori_host = 192.168.1.20\n"
     "local_dictionary_results = 3\n"
     "japanese_only_selection = off\n"
     "highlight_mode = character\n"

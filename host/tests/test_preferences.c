@@ -54,7 +54,7 @@ static const char original[] =
     "dictionary = local\nlocal_dictionaries = daijirin.vjdict,jmdict.vjdict\n"
     "local_dictionary_results = 2\n"
     "ocr_model_dir = ux0:data/custom-ocr\nvocr_model = H15_w8.vocr\n"
-    "hachidori_host = 192.168.1.20\n"
+    "hachidori_host = 192.168.1.20\n" /* the removed relay's: ignored, kept as written */
     "font_size_ja = 22\nunknown_future_setting = unchanged\n";
 
 static void put_file(const char *path, const char *data, size_t n)
@@ -86,7 +86,7 @@ static void check_choices(int backend, int japanese, int highlight_mode)
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.font_size_ja == 22);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
     TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
-    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20") && cfg.dictionary == VJO_DICT_LOCAL);
+    TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(arena.used == 0 && handles == 0);
 }
 static void test_patch_preserves_unrelated_bytes(void)
@@ -423,7 +423,7 @@ static void test_highlight_only_switch_loads_actual_shell_without_other_changes(
         TEST_CHECK(cfg.highlight_mode == highlight_mode);
         TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-        TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
+        TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
         TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS);
         TEST_CHECK(shell.used == 0 && handles == 0);
     }
@@ -446,7 +446,7 @@ static void test_dictionary_results_switch_loads_actual_shell(void)
         TEST_CHECK(cfg.local_dictionary_results == results && cfg.ocr_backend == VJO_OCR_LENS);
         TEST_CHECK(cfg.japanese_only_selection == 1 && cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-        TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
+        TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
         TEST_CHECK(shell.used == 0 && handles == 0);
     }
     /* An out-of-range count is rejected before any write; 8 stays saved. */
@@ -474,7 +474,7 @@ static void test_backup_only_loads_actual_shell_without_default_publication(void
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
     TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
-    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
+    TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.font_size_ja == 22);
     TEST_CHECK(written == writes_before && renames == renames_before);
     TEST_CHECK(shell.used == 0 && shell.peak <= sizeof(shell_mem) && handles == 0);
     char text[sizeof(original)]; int fd = open(VJO_PREFERENCES_PATH ".bak", O_RDONLY);
@@ -498,7 +498,7 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
         "dictionary = local\nlocal_dictionaries = daijirin.vjdict,jmdict.vjdict\n"
         "local_dictionary_results = 2\n"
         "ocr_model_dir = ux0:data/custom-ocr\nvocr_tier = normal\n"
-        "hachidori_host = 192.168.1.20\n"
+        "hachidori_host = 192.168.1.20\n" /* the removed relay's: kept as written */
         "font_size_ja = 22\nunknown_future_setting = unchanged\n";
     reset(); char near[VJO_CONFIG_TEXT_MAX + 1];
     memset(near, '#', sizeof(near)); memcpy(near, saved, sizeof(saved)-1);
@@ -510,7 +510,7 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
     VjoConfig cfg; vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-    TEST_CHECK(!strcmp(cfg.hachidori_host, "192.168.1.20"));
+    TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
     TEST_CHECK(shell.peak == sizeof(shell_mem) && shell.used == 0 && handles == 0);
     /* Adding one byte would exceed the reader, so the original stays intact. */
     written = 0; renames = 0;
@@ -531,7 +531,7 @@ static int read_back(const char *path, char *text, size_t cap)
  * that chose one loads as local with a warning, in the app and in the Shell,
  * and either save of the app writes dictionary = local and drops their API
  * keys (secrets: never kept, not in the backup either), keeping every other
- * line. A local or relay choice stays as it is. */
+ * line. A local choice stays as it is (the relay's: test_removed_relay_*). */
 static void test_removed_dictionaries_rewritten_by_saves(void)
 {
     static const char legacy[] =
@@ -661,19 +661,67 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) == 37 &&
                    !strcmp(text, "dictionary = JITEN\nfont_size_ja = 22\n"));
     }
-    /* the relay and local choices are kept verbatim by both patches */
+    /* a local choice is kept verbatim by both patches; the removed relay's is replaced */
     {
         static const char *const keys[] = {"anki_mining"};
         const char *values[] = {"on"};
         char out[256];
-        int n = vjo_config_patch_preferences("Dictionary = Hachidori ; relay\n", 31, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+        int n = vjo_config_patch_preferences("Dictionary = Local ; mine\n", 25, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
                                              VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
-        TEST_CHECK(n > 0 && !strncmp(out, "Dictionary = Hachidori ; relay\n", 31));
+        TEST_CHECK(n > 0 && !strncmp(out, "Dictionary = Local ; mine\n", 25));
+        n = vjo_config_patch_preferences("Dictionary = Hachidori ; relay\n", 31, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+                                         VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+        TEST_CHECK(n > 0 && !strncmp(out, "dictionary = local\n", 19));
+        TEST_MSG("%s", out);
         n = vjo_config_patch_keys("dictionary = local\njpdb_api_key = x\n", 36, keys, values, 1, out, sizeof(out));
         TEST_CHECK(n > 0 && !strcmp(out, "dictionary = local\nanki_mining = on\n"));
         n = vjo_config_patch_keys("dictionary = jpdb\nx = 1", 23, NULL, NULL, 0, out, sizeof(out));
         TEST_CHECK(n > 0 && !strcmp(out, "dictionary = local\nx = 1"));
         TEST_MSG("%s", out);
+    }
+}
+/* The Hachidori relay on a computer was removed too: dictionary = hachidori
+ * loads as local with one warning (hachidori_host, its computer, is ignored
+ * without one), in the app and in the Shell; either save of the app writes
+ * dictionary = local, in one publication (no secret: the backup is the file it
+ * replaced, byte for byte), and keeps every other line as written, the
+ * hachidori_host line too, as every other removed setting's (the installer,
+ * tools/migrate_config.py, drops it). */
+static void test_removed_relay_rewritten_by_saves(void)
+{
+    static const char legacy[] =
+        "; Keep this comment\r\nDictionary = Hachidori ; relay\r\nhachidori_host = 192.168.1.20:19633\n"
+        "ocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n";
+    for (int save = 0; save < 2; save++) {
+        char text[sizeof(legacy) + 256];
+        VjoConfig cfg;
+        unsigned char shell_mem[24 * 1024]; VjoArena shell;
+        reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
+                   !strcmp(cfg.warnings[0], "Dictionary: the Hachidori relay was removed; using local"));
+        TEST_MSG("%d warnings, first: %s", cfg.n_warnings, cfg.n_warnings ? cfg.warnings[0] : "");
+        vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+        vjo_config_load(&cfg, &shell);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 && shell.used == 0);
+        renames = 0;
+        TEST_ASSERT((save ? vjo_preferences_save_anki(1, "auto", &arena)
+                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_CHECK(arena.used == 0 && handles == 0 && renames == 2); /* one publication */
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
+        TEST_CHECK(strstr(text, "; Keep this comment\r\ndictionary = local\nhachidori_host = 192.168.1.20:19633\n"
+                                "ocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n") != NULL);
+        TEST_CHECK(!strstr(text, "achidori ;") && !strstr(text, "Dictionary = "));
+        TEST_MSG("%s", text);
+        TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) == (int)sizeof(legacy) - 1 &&
+                   !strcmp(text, legacy));
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
+                   cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
+        TEST_CHECK(!save || (cfg.anki_mining == 1 && !strcmp(cfg.anki_host, "auto")));
+        vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+        vjo_config_load(&cfg, &shell);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
     }
 }
 /* A config.ini that chose a removed engine (the VOCR2 and Meiki trials, the
@@ -719,6 +767,7 @@ TEST_LIST = {
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"removed_engine_choice_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_rewrites_it", test_removed_engine_choice_loads_as_vocr_and_is_rewritten},
     {"removed_jpdb_jiten_choice_loads_as_local_and_saves_drop_their_API_keys_and_backup", test_removed_dictionaries_rewritten_by_saves},
+    {"removed_Hachidori_relay_choice_loads_as_local_with_one_warning_and_saves_write_local", test_removed_relay_rewritten_by_saves},
     {"dictionary_results_is_an_owned_validated_preference", test_dictionary_results_patch_and_parse},
     {"model_tier_is_owned_older_vocr_model_lines_map_to_it_and_go_on_save", test_model_tier_patch_parse_and_legacy_models},
     {"saved_backend_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},

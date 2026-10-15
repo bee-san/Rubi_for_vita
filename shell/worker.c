@@ -21,15 +21,16 @@
 #endif
 #include "shell.h"
 
-/* Network memory: two result arenas (the overlay shows one while the worker
- * fills the other) and kept connections. Local lookup retires its prior view
- * before OCR, so it needs only one arena. OCR-only local jobs use bounded
- * static text. Control-thread config/region/messages use separate scratch. */
+/* Network memory (Google Lens): two result arenas (the overlay shows one while
+ * the worker fills the other) and a kept connection. Local OCR retires its
+ * prior view before OCR, so its lookup needs only one arena. OCR-only local
+ * jobs use bounded static text. Control-thread config/region/messages use
+ * separate scratch. */
 #define RESULT_ARENA_SIZE (256 * 1024)
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
-#define POOL_SLOTS        2 /* Lens and the Hachidori relay */
+#define POOL_SLOTS        1 /* Lens, the only host the Shell's jobs connect to */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
 #define MEM_SIZE          (2 * RESULT_ARENA_SIZE + POOL_SIZE)
 /* Well within Lens's (it closes an idle connection after 4 minutes), and
@@ -80,7 +81,6 @@ static int active = -1;               /* results[] index shown/cached */
 static uint32_t cache_scene; /* VjoState.scene of the cached result, 0 = unknown */
 static uint32_t cache_seq;   /* VjoState.region_seq of its capture */
 static int cache_ok;
-static int cache_dictionary; /* the cached lookup's VJO_DICT_* */
 static VjoOverlayData cache_data[2];
 /* Local text outlives the single dictionary arena. Only an OCR job rewrites it,
  * after start_job has detached its prior view. Cursor jobs only read it. */
@@ -404,10 +404,11 @@ static int game_ocr_backend(int backend)
     return backend == VJO_OCR_VOCR;
 }
 
+/* The local pipeline: OCR in the game, the local dictionaries' cursor lookups
+ * in one arena. Google Lens is the network path (two arenas and the pool). */
 static int local_pipeline(const VjoConfig *c)
 {
-    return game_ocr_backend(c->ocr_backend) &&
-           c->dictionary == VJO_DICT_LOCAL;
+    return game_ocr_backend(c->ocr_backend);
 }
 
 static int mem_alloc_for(const VjoConfig *c)
@@ -914,11 +915,10 @@ static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigne
     return rc;
 }
 
-static int run_vocr(VjoArena *a, VjoOverlayData *out)
+static int run_vocr(VjoOverlayData *out)
 {
     static VjoGameOcrResult result;
     unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
-    int local = local_pipeline(&job_cfg);
     sceClibMemset(&result, 0, sizeof(result));
     if (vjo_selftest_stages())
         out->err.rc = run_selftest_stages(&result, tiers, &ran);
@@ -967,7 +967,7 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
      * last stage is the configured one's). A constant string. */
     const char *read_by = vjo_vocr_tier_model((int)ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
-    if (local && job_refresh) {
+    if (job_refresh) {
         /* The open overlay shows local_text, its lookup and Anki card: this
          * job changes none of them. The control thread compares its text
          * with the shown one once it is done (on_refresh_done), and gives
@@ -977,48 +977,44 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
         return VJO_OK;
     }
     vjo_anki_set_ocr_model(read_by);
-    if (local) {
-        VjoArena text_arena;
-        vjo_arena_init(&text_arena, local_text, sizeof(local_text));
-        out->ocr_text = result.text;
-        out->filtered = vjo_filter_lines(&text_arena, result.text, job_cfg.non_japanese_filter);
-        /* Filtering only removes bytes, so one complete worker text fits. */
-        out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
-        if (!out->sentence) {
-            out->failed_stage = VJO_STAGE_OCR;
-            out->err.detail = OOM_TEXT_BUFFER;
-            return out->err.rc = VJO_E_OOM;
-        }
-        /* Cursor byte0 is the trimmed sentence, not discarded whitespace. */
-        size_t len = sceClibStrnlen(out->sentence, sizeof(local_text) - 1);
-        sceClibMemmove(local_text, out->sentence, len + 1);
-        out->filtered = out->sentence = local_text;
-        out->list.header = out->sentence ? out->sentence : "";
-        sceKernelLockMutex(cmd_lock, 1, NULL);
-        job_text_generation = advance_generation(&local_text_generation);
-        job_cursor_seq = advance_generation(&local_cursor_seq);
-        local_page = job_page = 0;
-        local_cursor_byte = job_cursor_byte = job_cfg.japanese_only_selection
-            ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
-        local_text_game_generation = job_generation;
-        local_text_scene = job_capture_scene;
-        local_text_capture_seq = job_capture_seq;
-        __sync_synchronize();
-        local_text_valid = 1;
-        sceKernelUnlockMutex(cmd_lock, 1);
-        if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc_for(&job_cfg) == 0)
-            return VJO_OK;
-        out->failed_stage = VJO_STAGE_DICT;
-        out->err.dict = VJO_DICT_LOCAL;
-        out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+    VjoArena text_arena;
+    vjo_arena_init(&text_arena, local_text, sizeof(local_text));
+    out->ocr_text = result.text;
+    out->filtered = vjo_filter_lines(&text_arena, result.text, job_cfg.non_japanese_filter);
+    /* Filtering only removes bytes, so one complete worker text fits. */
+    out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
+    if (!out->sentence) {
+        out->failed_stage = VJO_STAGE_OCR;
+        out->err.detail = OOM_TEXT_BUFFER;
         return out->err.rc = VJO_E_OOM;
     }
-    return vjo_overlay_ocr_text(a, &job_cfg, result.text, out);
+    /* Cursor byte0 is the trimmed sentence, not discarded whitespace. */
+    size_t len = sceClibStrnlen(out->sentence, sizeof(local_text) - 1);
+    sceClibMemmove(local_text, out->sentence, len + 1);
+    out->filtered = out->sentence = local_text;
+    out->list.header = out->sentence ? out->sentence : "";
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    job_text_generation = advance_generation(&local_text_generation);
+    job_cursor_seq = advance_generation(&local_cursor_seq);
+    local_page = job_page = 0;
+    local_cursor_byte = job_cursor_byte = job_cfg.japanese_only_selection
+        ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
+    local_text_game_generation = job_generation;
+    local_text_scene = job_capture_scene;
+    local_text_capture_seq = job_capture_seq;
+    __sync_synchronize();
+    local_text_valid = 1;
+    sceKernelUnlockMutex(cmd_lock, 1);
+    if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc_for(&job_cfg) == 0)
+        return VJO_OK;
+    out->failed_stage = VJO_STAGE_DICT;
+    out->err.dict = VJO_DICT_LOCAL;
+    out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+    return out->err.rc = VJO_E_OOM;
 }
 #else
-static int run_vocr(VjoArena *a, VjoOverlayData *out)
+static int run_vocr(VjoOverlayData *out)
 {
-    (void)a;
     out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR, "
                       "or set ocr_backend = lens.";
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
@@ -1048,15 +1044,11 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     vjo_arena_reset(a);
     if (game_ocr_backend(job_cfg.ocr_backend)) {
         /* On the console only: no image or connection leaves it. */
-        if (run_vocr(a, out) != VJO_OK) {
+        if (run_vocr(out) != VJO_OK) {
             if (!out->failed_stage)
                 out->failed_stage = VJO_STAGE_OCR;
             if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
                 out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
-            /* The text filter's arena (network dictionaries): the text was too long. */
-            if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail &&
-                out->ocr_text)
-                out->err.detail = OOM_TEXT_BUFFER;
             return out->err.rc;
         }
         goto recognized;
@@ -1219,8 +1211,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_generation = game_generation;
     sceClibMemcpy(job_title, title_id, sizeof(job_title));
     job_title[sizeof(job_title) - 1] = '\0';
-    job_cached_text = !local_pipeline(&cfg) && cache_ok && cache_dictionary == cfg.dictionary
-                      ? cache_data[active].filtered : NULL;
+    job_cached_text = !local_pipeline(&cfg) && cache_ok ? cache_data[active].filtered : NULL;
     job_same_text = 0;
     job_captured = 0;
     job_capture_scene = 0;
@@ -1297,7 +1288,7 @@ static void start_cursor_job(void)
 
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
 {
-    if (a->dictionary != b->dictionary || a->ocr_backend != b->ocr_backend ||
+    if (a->ocr_backend != b->ocr_backend ||
         a->non_japanese_filter != b->non_japanese_filter ||
         a->japanese_only_selection != b->japanese_only_selection)
         return 0;
@@ -1307,8 +1298,6 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
          a->ocr_refine_lines != b->ocr_refine_lines ||
          (a->ocr_backend == VJO_OCR_VOCR && a->vocr_tier != b->vocr_tier)))
         return 0;
-    if (a->dictionary == VJO_DICT_HACHIDORI)
-        return !sceClibStrcmp(a->hachidori_host, b->hachidori_host);
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
 }
@@ -1427,13 +1416,6 @@ static void open_overlay(void)
         vjo_anki_post_count(); /* the queue line's count (Anki's thread, no allocation) */
     if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
         view_publish(1, NULL, "Not enough memory for the overlay", 1);
-        return;
-    }
-    if (!vjo_config_dict_ready(&cfg)) { /* the relay without a valid host */
-        VjoErr e = {VJO_E_NO_HOST, 0, 0, NULL, cfg.dictionary};
-        size_t mark = vjo_arena_mark(&scratch);
-        view_publish(1, NULL, vjo_err_text(&scratch, VJO_STAGE_DICT, &e), 1);
-        vjo_arena_release(&scratch, mark);
         return;
     }
     st.size = sizeof(st);
@@ -1568,7 +1550,6 @@ static void on_cursor_done(void)
     if (valid && !newer) {
         active = 0;
         cache_ok = cache_data[0].err.rc == VJO_OK;
-        cache_dictionary = job_cfg.dictionary;
         cache_scene = job_capture_scene;
         cache_seq = job_capture_seq;
         local_page = cache_data[0].page; /* a missing page falls back to the best match */
@@ -1779,7 +1760,6 @@ static void on_job_done(void)
     /* The overlay needs the lookup, made with the current page count. */
     cache_ok = d->err.rc == VJO_OK && job_lookup &&
                (!local || job_cfg.local_dictionary_results == cfg.local_dictionary_results);
-    cache_dictionary = job_cfg.dictionary;
     cache_scene = job_capture_scene;
     cache_seq = job_capture_seq;
     vjo_view_unlock();
@@ -1804,8 +1784,7 @@ static void on_job_done(void)
  * for a local dictionary. */
 static int want_lookup(void)
 {
-    return vjo_config_dict_ready(&cfg) &&
-           (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
+    return (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
               (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD))) &&
            now_us() >= dict_backoff.until;
 }
@@ -1960,8 +1939,8 @@ static void activate_game(SceUID pid, const char *tid, int mode)
     backoff_note(&ocr_backoff, 0);
     backoff_note(&dict_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary %s, trigger %s, subtitles %s, ocr_mode %s", title_id,
-            vjo_dict_name(cfg.dictionary), vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s", title_id,
+            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
@@ -2120,8 +2099,6 @@ static void warm_connections(void)
     if (!game_active() || !has_result_memory() || net_busy() || now_us() - warm_asked_us < WARM_GAP_US)
         return;
     if (cfg.ocr_backend != VJO_OCR_LENS) /* local OCR opens no Lens connection */
-        return;
-    if (!vjo_config_dict_ready(&cfg) && !subtitles)
         return;
     st.size = sizeof(st);
     vjoGetState(&st);

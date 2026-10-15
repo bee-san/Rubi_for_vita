@@ -26,8 +26,8 @@ The host suites compile the plugin sources themselves (`#include "../../shell/wo
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
 failed joins, cancelled jobs and crashes between steps are injected there. 34 ctest suites
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
-word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out); `test_jpegsw.py` and the Hachidori relay
-contract test complete it.
+word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out); `test_jpegsw.py`
+completes it (the Hachidori relay's contract test went with the relay client).
 
 ### CI's Vita build in its container
 
@@ -127,17 +127,18 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        286,720       274,432
-OCR worker pages in SceShell             286,720       274,432   (0: registered per game, not loaded there)
-VjoNet thread                            356,352       204,800
-VjoControl thread (boot complete)        376,832       184,320
-game start: result memory (local)        376,832       184,320
-Anki card saved: job thread              446,464       114,688
+Shell module loaded into SceShell        282,624       278,528
+OCR worker pages in SceShell             282,624       278,528   (0: registered per game, not loaded there)
+VjoNet thread                            352,256       208,896
+VjoControl thread (boot complete)        372,736       188,416
+game start: result memory (local)        372,736       188,416
+Anki card saved: job thread              442,368       118,784
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
-299,008 to 286,720 B, 12,288 B less at every step above; the packaged module went from 294,912 B,
-main `ba5f69a`'s, to 286,720 B [measured: the build log's module row].)
+299,008 to 286,720 B, 12,288 B less at every step above, and the Hachidori relay client's to
+282,624 B, 4,096 B less again; the packaged module went from 294,912 B, main `ba5f69a`'s, to
+286,720 B (main `a5d79f2`) and then to 282,624 B [measured: the build log's module row].)
 
 What this says, and what it does not:
 

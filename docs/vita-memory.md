@@ -205,8 +205,9 @@ which one taiHEN matches is unmeasured. A game added later needs `--title` and a
 Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 299,008 B, the two
 thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at
 v0.7.4, the last build that ran beside a game [measured: `docs/memory-ledger.md`]. Removing the
-online dictionaries (jpdb.io, jiten.moe) brought it to 376,832 B (Shell module 286,720 B)
-[measured: the build log's module row]. The ledger
+online dictionaries (jpdb.io, jiten.moe) brought it to 376,832 B (Shell module 286,720 B), and
+removing the Hachidori relay client to 372,736 B (Shell module 282,624 B) [measured: the build
+log's module row]. The ledger
 ([memory-ledger.md](memory-ledger.md)) fails CI if any of these grow.
 
 ### 4.4 How other plugins stay inside the budgets

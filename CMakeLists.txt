@@ -22,7 +22,7 @@ set(CORE_SRC
   core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c
   core/textfilter.c core/entries.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
-  core/base64.c core/anki.c core/anki_queue.c core/net.c core/hachidori.c core/local_dict.c core/ocr_lines.c
+  core/base64.c core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
@@ -225,10 +225,6 @@ target_include_directories(vjo-shell-anki-build-tests PRIVATE third_party/acutes
 target_compile_options(vjo-shell-anki-build-tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-unused-function)
 target_link_libraries(vjo-shell-anki-build-tests vjo_host)
 add_test(NAME shell_anki_build COMMAND vjo-shell-anki-build-tests)
-add_executable(vjo-hachidori-tests host/tests/test_hachidori.c)
-target_include_directories(vjo-hachidori-tests PRIVATE third_party/acutest/include)
-target_link_libraries(vjo-hachidori-tests vjo_host)
-add_test(NAME hachidori COMMAND vjo-hachidori-tests)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
 # shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
 # writes the same bytes in the same order as line by line, with one append per file.

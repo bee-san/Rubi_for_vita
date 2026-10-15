@@ -325,7 +325,7 @@ static char *dup(VjoArena *a, const char *s)
  * entry target's range (if the furigana takes it). No lookup gives readings
  * per word any more (only the removed online dictionaries did), so it is the
  * header itself with the word's own range: what rendering the readings of a
- * local or Hachidori lookup, which has none, always made. */
+ * local lookup, which has none, always made. */
 static void sentence_furigana(const VjoEntryList *l, int target, VjoAnkiNote *out)
 {
     out->sentence_furigana = out->sentence;

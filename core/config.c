@@ -20,27 +20,6 @@ const char *vjo_trigger_name(int trigger)
     return trigger_names[trigger];
 }
 
-const char *vjo_dict_name(int dictionary)
-{
-    return dictionary == VJO_DICT_HACHIDORI ? "Hachidori relay" : "Local dictionaries";
-}
-
-int vjo_dict_find(const char *id)
-{
-    return vjo_ieq(id, "local") ? VJO_DICT_LOCAL : vjo_ieq(id, "hachidori") ? VJO_DICT_HACHIDORI : -1;
-}
-
-int vjo_config_dict_ready(const VjoConfig *c)
-{
-    /* File availability is checked by the worker, without blocking the UI thread. */
-    if (c->dictionary == VJO_DICT_HACHIDORI) {
-        char host[64];
-        int port;
-        return vjo_hachidori_endpoint(c->hachidori_host, host, sizeof(host), &port) == 0;
-    }
-    return 1;
-}
-
 void vjo_config_defaults(VjoConfig *c)
 {
     memset(c, 0, sizeof(*c));
@@ -76,13 +55,8 @@ const char *vjo_config_default_text(void)
 {
     return "; Vita JP Overlay settings. Changes apply the next time the overlay opens.\n"
            "\n"
-           "; Dictionary used for word lookups: local | hachidori\n"
+           "; Dictionary used for word lookups: local (the files below)\n"
            "dictionary = local\n"
-           "\n"
-           "; Hachidori relay computer: host[:port], default port 19633\n"
-           "; Plain HTTP: use only on a trusted LAN. Anki and a sharing Hachidori host\n"
-           "; with dictionaries must be running; enable Sharing > Also with my other computers.\n"
-           "hachidori_host =\n"
            "\n"
            "; Local Yomitan dictionaries: convert on a computer, then copy .vjdict files here.\n"
            "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
@@ -213,35 +187,6 @@ int vjo_anki_endpoint(const char *setting, char *host, size_t cap, int *port)
     return VJO_ANKI_MANUAL;
 }
 
-int vjo_hachidori_endpoint(const char *setting, char *host, size_t cap, int *port)
-{
-    int rc;
-    size_t label = 0;
-    if (!setting || vjo_ieq(setting, "auto"))
-        return -1;
-    rc = vjo_anki_endpoint(setting, host, cap, port);
-    if (rc != VJO_ANKI_MANUAL)
-        return -1;
-    /* DNS labels must not be empty or start/end with a hyphen. */
-    for (size_t i = 0; ; i++) {
-        char ch = host[i];
-        if (ch == '.' || ch == '\0') {
-            if (!label || host[i - 1] == '-')
-                return -1;
-            label = 0;
-            if (!ch)
-                break;
-        } else {
-            if (!label && ch == '-')
-                return -1;
-            label++;
-        }
-    }
-    if (!strchr(setting, ':'))
-        *port = VJO_HACHIDORI_PORT;
-    return 0;
-}
-
 int vjo_anki_audio_endpoint(const char *url, char *host, int *port, int *tls, const char **path)
 {
     size_t n = 0;
@@ -294,13 +239,15 @@ static int parse_int(const char *s, int *out)
     return 0;
 }
 
-/* A dictionary value of a removed online service: its name, for the config
- * warning, or NULL. Such a file loads as local; the Overlay app's next save
- * (vjo_config_removed_line) and the installer (tools/migrate_config.py
- * REPLACED_VALUES) write local. */
+/* A dictionary value of a removed service: its name, for the config
+ * warning, or NULL: jpdb.io and jiten.moe, the online dictionaries, and the
+ * Hachidori relay on a computer. Such a file loads as local; the Overlay
+ * app's next save (vjo_config_removed_line) and the installer
+ * (tools/migrate_config.py REPLACED_VALUES) write local. */
 static const char *removed_dictionary(const char *v)
 {
-    return vjo_ieq(v, "jpdb") ? "jpdb.io" : vjo_ieq(v, "jiten") ? "jiten.moe" : NULL;
+    return vjo_ieq(v, "jpdb") ? "jpdb.io" : vjo_ieq(v, "jiten") ? "jiten.moe"
+         : vjo_ieq(v, "hachidori") ? "the Hachidori relay" : NULL;
 }
 
 /* The API keys of the removed online dictionaries (api_key: jpdb's older
@@ -335,18 +282,16 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
     for (v++; v < n && is_space(line[v]); v++) {}
     /* the value up to an inline comment, a space or the line's end */
     for (e = v; e < n && line[e] != '\n' && line[e] != ';' && line[e] != '#' && !is_space(line[e]); e++) {}
-    if ((e - v == 4 && vjo_ieq_prefix(line + v, "jpdb")) || (e - v == 5 && vjo_ieq_prefix(line + v, "jiten"))) {
-        *replacement = "dictionary = local\n";
-        return VJO_LINE_REPLACE;
+    if (e - v < 16) { /* longer than any removed dictionary's value */
+        char value[16];
+        memcpy(value, line + v, e - v);
+        value[e - v] = '\0';
+        if (removed_dictionary(value)) {
+            *replacement = "dictionary = local\n";
+            return VJO_LINE_REPLACE;
+        }
     }
     return VJO_LINE_KEEP;
-}
-
-static int valid_hachidori_host(const char *v)
-{
-    char host[64];
-    int port;
-    return !*v || vjo_hachidori_endpoint(v, host, sizeof(host), &port) == 0;
 }
 
 static int valid_anki_host(const char *v)
@@ -448,7 +393,6 @@ typedef struct {
 #define CHECKED_SETTING(name, raw, valid, expected, quiet) \
     {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), 0, raw, valid, expected, quiet}
 static const StrSetting str_settings[] = {
-    CHECKED_SETTING(hachidori_host, 0, valid_hachidori_host, "host[:port], not a URL", 0),
     STR_SETTING(local_dictionary_dir, 1, 1),
     STR_SETTING(ocr_model_dir, 1, 1),
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
@@ -532,20 +476,18 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
-    int d;
     if (vjo_ieq(key, "dictionary")) {
-        const char *removed;
-        d = vjo_dict_find(val);
-        if (d >= 0)
-            c->dictionary = d;
-        else if ((removed = removed_dictionary(val)) != NULL) {
-            c->dictionary = VJO_DICT_LOCAL;
+        /* the local dictionaries are the only ones: c->dictionary stays VJO_DICT_LOCAL */
+        const char *removed = removed_dictionary(val);
+        if (removed)
             warn(c, "%s: %s was removed; using local", key, removed);
-        } else
+        else if (!vjo_ieq(val, "local"))
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms") || removed_anki_key(key) || removed_secret(key, strlen(key))) {
-        /* removed settings (tools/migrate_config.py REMOVED): no warning */
+               vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || removed_anki_key(key) ||
+               removed_secret(key, strlen(key))) {
+        /* removed settings (tools/migrate_config.py REMOVED): no warning (the relay's
+         * hachidori_host too: dictionary = hachidori's warning is the relay's one line) */
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
             c->non_japanese_filter = VJO_FILTER_LINES;
