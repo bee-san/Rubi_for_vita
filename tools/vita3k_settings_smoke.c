@@ -5,8 +5,9 @@
  * after being drawn with no GPU wait in between is counted as unsafe (libvita2d #28).
  * The results go to ux0:data/vjo_settings_smoke.txt: a progress line every 60 frames
  * (a crash shows where it was) and the totals when the app exits after the script's
- * Circle. A crash check of the app's own code in Vita3K, not evidence about the
+ * cancel. A crash check of the app's own code in Vita3K, not evidence about the
  * console (docs/offline-testing.md). Never part of the release. */
+#include "../vita/buttons_vita.h"
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
@@ -22,7 +23,10 @@ void __real_vita2d_free_texture(vita2d_texture *texture);
 void __real_vita2d_wait_rendering_done(void);
 void __real_vita2d_draw_texture_scale(const vita2d_texture *texture, float x, float y, float x_scale, float y_scale);
 
-/* The script: frames to hold each set of buttons (0: none). */
+/* The script: frames to hold each set of buttons (0: none). In it SCE_CTRL_CROSS
+ * stands for the console's enter button and SCE_CTRL_CIRCLE for its cancel button
+ * (core/buttons.h); the controller wrapper presses the ones button_assign makes them,
+ * as the app reads it (Vita3K's own setting makes ○ enter). */
 typedef struct { unsigned short frames; unsigned buttons; } Step;
 #define TAP(b, gap) {1, (b)}, {(gap), 0}
 static const Step script[] = {
@@ -89,10 +93,22 @@ static unsigned scripted(unsigned f)
     return SCE_CTRL_CIRCLE; /* past the end: leave */
 }
 
+/* The script's enter (×) and cancel (○) as the console's buttons. */
+static unsigned console_buttons(unsigned scripted_buttons)
+{
+    static int read;
+    static VjoButtons b;
+    if (!read) { b = vjo_buttons_read(); read = 1; }
+    unsigned out = scripted_buttons & ~(unsigned)(SCE_CTRL_CROSS | SCE_CTRL_CIRCLE);
+    if (scripted_buttons & SCE_CTRL_CROSS) out |= b.enter;
+    if (scripted_buttons & SCE_CTRL_CIRCLE) out |= b.cancel;
+    return out;
+}
+
 int __wrap_sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)
 {
     int rc = __real_sceCtrlPeekBufferPositive(port, pad, count);
-    pad->buttons = scripted(frame);
+    pad->buttons = console_buttons(scripted(frame));
     if (frame % 60 == 0) write_results("running");
     frame++;
     return rc;

@@ -198,7 +198,9 @@ and counted textures (`tools/vita3k_settings_smoke.c`, linked by `-Wl,--wrap`; t
 synthetic games (`tools/make_settings_smoke_games.py`: generated titles and icons, some
 missing, damaged, oversized or not PNG) and runs the script: the Games list scrolled down and
 back, paged with L/R pressed and held, letters with Left/Right, toggles, the filters, a Start
-rescan, the other pages, Circle. It fails on a crash, a hang, an icon texture freed after a
+rescan, the other pages, cancel. The script's enter and cancel are pressed as the console's
+buttons, as the app reads them from `button_assign` (Vita3K's own setting makes ○ enter;
+#106). It fails on a crash, a hang, an icon texture freed after a
 draw with no GPU wait in between, or one left alive. Given `RELEASE_VPK`, the release
 `JPOverlaySettings.vpk` must also keep running for 30 s over the same games. The app draws
 text with the firmware's PVF library, which this Vita3K does not emulate (`scePvfNewLib` is
