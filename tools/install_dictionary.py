@@ -68,6 +68,15 @@ def config_with_local(text, names):
     return "\n".join(lines) + "\n"
 
 
+def without_secrets(raw):
+    """The config file's bytes without the removed online dictionaries' API key lines (a BOM and every
+    other byte kept): the backup --enable leaves on the Vita holds no key either."""
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    kept = [line for line in raw[len(bom):].split(b"\n")
+            if not line.decode("utf-8", "replace").lstrip().lower().startswith(REMOVED_SECRETS)]
+    return bom + b"\n".join(kept)
+
+
 def mkdirs(ftp):
     for directory in ("/ux0:/data", DATA_DIR, DICT_DIR):
         try:
@@ -94,7 +103,7 @@ def enable(ftp, names):
     text = raw.decode("utf-8-sig")
     updated = config_with_local(text, names).encode()
     backup = DATA_DIR + "/config.ini.before-local-" + str(time.time_ns())
-    ftp.storbinary("STOR " + backup, io.BytesIO(raw))
+    ftp.storbinary("STOR " + backup, io.BytesIO(without_secrets(raw)))
     ftp.storbinary("STOR " + DATA_DIR + "/config.ini.local.tmp", io.BytesIO(updated))
     # VitaShell rename can reject an existing destination. Keep the old file
     # under a second name, then restore it if the replacement fails.
@@ -105,6 +114,11 @@ def enable(ftp, names):
     except ftplib.all_errors:
         ftp.rename(previous, DATA_DIR + "/config.ini")
         raise
+    # The replaced file itself: the backup above has its settings (without a removed API key).
+    try:
+        ftp.delete(previous)
+    except ftplib.all_errors:
+        print("Could not delete " + previous + ": delete it by hand (it can hold an old API key).")
     print("Enabled local dictionaries. Previous settings: " + backup)
 
 

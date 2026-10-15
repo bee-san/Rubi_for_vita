@@ -89,11 +89,18 @@ static void test_relay_missing_host(void)
 {
     VjoDictResult r; VjoErr e;
     net_setup(); C.hachidori_host[0] = '\0';
+    /* not ready: the Shell shows the host message instead of starting a job (audit N6, M27) */
+    TEST_CHECK(!vjo_config_dict_ready(&C));
     TEST_CHECK(vjo_dict_lookup(&A, &P, &C, "猫", &r, &e) != VJO_OK);
     TEST_CHECK(F.next == 0 && e.rc == VJO_E_NO_HOST);
     TEST_CHECK(strstr(vjo_err_text(&A, VJO_STAGE_DICT, &e), "hachidori_host") != NULL);
     strcpy(C.hachidori_host, "h\r\nX:1");
+    TEST_CHECK(!vjo_config_dict_ready(&C));
     TEST_CHECK(vjo_dict_lookup(&A, &P, &C, "猫", &r, &e) != VJO_OK && F.next == 0);
+    strcpy(C.hachidori_host, "anki.local");
+    TEST_CHECK(vjo_config_dict_ready(&C));
+    C.dictionary = VJO_DICT_LOCAL; C.hachidori_host[0] = '\0';
+    TEST_CHECK(vjo_config_dict_ready(&C)); /* local: the worker checks the files */
 }
 static void test_relay_scan(void)
 {

@@ -419,6 +419,18 @@ char *vjo_anki_can_add_request(VjoArena *a, const VjoEntryList *l, int n)
     return can_add_request(a, words, n);
 }
 
+/* A finished buffer's text, its block (the arena's last allocation) cut to it. A VjoBuf grows by
+ * doubling where it has room and to the exact size near the arena's end, so its capacity depends
+ * on where it was built; cut to its text, a field value or the request takes the same bytes in
+ * the save's dry run as in the send (shell/anki.c sendable, request_fits). NULL on OOM. */
+static char *buf_done(VjoBuf *b)
+{
+    char *s = vjo_buf_cstr(b);
+    if (s && vjo_arena_extend_last(b->arena, b->data, b->cap, b->len + 1) == 0)
+        b->cap = b->len + 1;
+    return s;
+}
+
 static int is_media(int field)
 {
     return field == VJO_KIKU_PICTURE || field == VJO_KIKU_EXPRESSION_AUDIO;
@@ -480,7 +492,7 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
         break;
     default: break;
     }
-    return vjo_buf_cstr(&b);
+    return buf_done(&b);
 }
 
 /* "audio"/"picture":[{"filename":..,"fields":[field], then the source */
@@ -544,7 +556,7 @@ int vjo_anki_add_request(VjoArena *a, const VjoAnkiNote *n, const VjoAnkiMedia *
     }
     if (b.oom)
         return -1;
-    out->prefix = vjo_buf_cstr(&b);
+    out->prefix = buf_done(&b);
     if (!out->prefix)
         return -1;
     out->prefix_len = b.len;

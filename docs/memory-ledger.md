@@ -28,9 +28,9 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   game                                126,976    8,720,384    8,720,384            0
   shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
-      VitaJPOverlay_Kernel      114,688 B of    114,688 B declared (KERNEL_ROW)
-      VitaJPOverlay_Shell       286,720 B of    286,720 B declared (SHELL_ROW)
-      VitaJPOverlay_OCR          73,728 B of     73,728 B declared (OCR_ROW)
+      VitaJPOverlay_Kernel      114,688 B of    114,688 B declared (36,336->36,864 + 77,720->77,824)
+      VitaJPOverlay_Shell       286,720 B of    286,720 B declared (209,776->212,992 + 71,180->73,728)
+      VitaJPOverlay_OCR          73,728 B of     73,728 B declared (62,012->65,536 + 5,840->8,192)
 ```
 
 The last row is the opt-in network path (Google Lens, or the Hachidori relay as the dictionary)
@@ -48,7 +48,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 286,720 | `VitaJPOverlay_Shell.suprx`: 212,992 text + 73,728 data/bss, permanent; 294,912 B (217,088 + 77,824; 299,008 B declared) until the online dictionaries' removal (below) (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #88's normalised text and its log make it 214,816 B of text (main `94d608e`); #92's quiet refresh makes it 214,672 B of text and 77,956 B of data/bss (2,416 and 3,964 B free); #85's two engines and #89's A/B log (the LM tier, the cascade's speed line) make it 215,216 B of text and 77,980 B of data/bss [`bcd3cf0`]; the finder refinement's step and key make it 215,256 B and 77,984 B [`fec85af`], still the same pages (1,832 and 3,936 B free); API 21's model sizes (#108) take `VjoConfig`'s two 64-byte model names from its three copies, so data/bss is 77,624 B in 77,824 B of pages and the module **294,912 B** of the 299,008 B declared, text 216,448 B with #102 [the build log's module row, main `0023e8a` and this change]; without jpdb.io and jiten.moe it is REMOVAL_ROW | packaged SELF segments [measured] |
+| Shell module pages | 286,720 | `VitaJPOverlay_Shell.suprx`: 212,992 text + 73,728 data/bss, permanent; 294,912 B (217,088 + 77,824; 299,008 B declared) until the online dictionaries' removal (below) (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #88's normalised text and its log make it 214,816 B of text (main `94d608e`); #92's quiet refresh makes it 214,672 B of text and 77,956 B of data/bss (2,416 and 3,964 B free); #85's two engines and #89's A/B log (the LM tier, the cascade's speed line) make it 215,216 B of text and 77,980 B of data/bss [`bcd3cf0`]; the finder refinement's step and key make it 215,256 B and 77,984 B [`fec85af`], still the same pages (1,832 and 3,936 B free); API 21's model sizes (#108) take `VjoConfig`'s two 64-byte model names from its three copies, so data/bss is 77,624 B in 77,824 B of pages and the module **294,912 B** of the 299,008 B declared, text 216,448 B with #102 [the build log's module row, main `0023e8a` and this change]; without jpdb.io and jiten.moe (main `8f1ec8f` and this change) it is 209,776 B of text and 71,180 B of data/bss, one text page and one data page fewer (3,216 and 2,548 B free), and the declared budget is lowered to the packaged pages, **286,720 B** | packaged SELF segments [measured] |
 | OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is registered per game (one `*TITLEID` section each, the installer's `--title`), never under `*ALL`, so taiHEN does not load it into SceShell. Were it loaded there (an older install's `*ALL` line, a hand edit), its `module_start` returns `NO_RESIDENT`, which unloads it at once (it held 45,056 B there before PR #68) | `tools/patch_tai_config.py`; `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
@@ -137,19 +137,19 @@ pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,116 B
 goes from 214,816 to 214,672 B of text and from 77,908 to 77,956 B of data and `.bss` (+48 B of
 state) [measured: `.refs/ci.sh … vita` on main 94d608e and on this change].
 
-Removing jpdb.io and jiten.moe, the online dictionaries with an API key, gives SceShell back three
-pages: the module goes from 299,008 to 286,720 B (`VJO_BUDGET_SHELL_MODULE_PAGES` lowered with it),
-so the pool's permanent pages go from 389,120 to 376,832 B and its worst case from 458,752 to
-446,464 B. The packaged text segment loses 6,656 B (216,560 to 209,904 B: `.text` 148,752 to
-143,208 B, `.rodata` 63,232 to 62,192 B): the two clients (`core/jiten.c`, `core/jpdb.c`, 3,203 B
-of object text before the link drops unused code), their request, auth and error paths in
-`core/client.c` and `core/config.c`, and the subtitle strip's furigana (`shell/strip.cpp`,
-`vjo_strip_rubies`, `vjo_entries_rubies`; only those two services gave readings). `.bss` loses
-6,444 B (77,856 to 71,412 B): `shell/worker.c` 3,340 B (`VjoView`'s 64 strip readings and the API
-keys, 512 B, of the `cfg` and `job_cfg` copies of `VjoConfig`), `shell/strip.cpp` 2,584 B (its copy
-of the readings and their 64 text widgets' pointers), `shell/anki.c` 512 B (`next_cfg`'s keys)
-[measured: the build log's module rows and `arm-vita-eabi-size` of the objects, main `0023e8a`
-(`72f3550` for the objects) and this change]. The PAF items are unchanged: the network path's two 256 KiB arenas and two-slot
+Removing jpdb.io and jiten.moe, the online dictionaries with an API key, takes the packaged module
+from 294,912 to 286,720 B, two pages (main `8f1ec8f`, which declared 299,008 B), and lowers
+`VJO_BUDGET_SHELL_MODULE_PAGES` from 299,008 to 286,720 B, so the pool's permanent pages go from
+389,120 to 376,832 B and its worst case from 458,752 to 446,464 B. The packaged text segment loses
+6,672 B (216,448 to 209,776 B: `.text` 149,136 to 143,584 B, `.rodata` 62,736 to 61,696 B): the two
+clients (`core/jiten.c`, `core/jpdb.c`, 3,203 B of object text before the link drops unused code),
+their request, auth and error paths in `core/client.c` and `core/config.c`, and the subtitle strip's
+furigana (`shell/strip.cpp`, `vjo_strip_rubies`, `vjo_entries_rubies`; only those two services gave
+readings). `.bss` loses 6,444 B (77,472 to 71,028 B): `shell/worker.c` 3,340 B (`VjoView`'s 64 strip
+readings and the API keys, 512 B, of the `cfg` and `job_cfg` copies of `VjoConfig`),
+`shell/strip.cpp` 2,584 B (its copy of the readings and their 64 text widgets' pointers),
+`shell/anki.c` 512 B (`next_cfg`'s keys) [measured: the build log's module rows and
+`arm-vita-eabi-size` of the module and its objects, main `8f1ec8f` and this change]. The PAF items are unchanged: the network path's two 256 KiB arenas and two-slot
 connection pool stay for Google Lens (its response is up to 256 KiB) and the Hachidori relay, and a
 local lookup still takes one 64 KiB arena. Every TLS root stays: none was used only by the two
 services (`api.jiten.moe` and `jpdb.io` chain to ISRG Root X1, which HTTPS audio sources such as

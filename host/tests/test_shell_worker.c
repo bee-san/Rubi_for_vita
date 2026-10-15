@@ -594,6 +594,27 @@ static void test_background_local(void)
     mem_free();
 }
 
+/* The relay without a valid host: the overlay opens with the relay's host message (the
+ * branch that once also showed the online dictionaries' missing API key) and no job starts
+ * (audit N6, M27). */
+static void test_relay_without_host_says_so(void)
+{
+    static const char *const hosts[] = {"", "http://192.168.1.2"};
+    for (unsigned i = 0; i < sizeof(hosts) / sizeof(hosts[0]); i++) {
+        reset();
+        loaded.dictionary = VJO_DICT_HACHIDORI;
+        snprintf(loaded.hachidori_host, sizeof(loaded.hachidori_host), "%s", hosts[i]);
+        cfg = loaded;
+        open_overlay();
+        TEST_CHECK(!vjo_config_dict_ready(&cfg) && !want_lookup());
+        TEST_CHECK_(g_view.open && g_view.status_is_error && strstr(g_view.status, "hachidori_host") != NULL &&
+                    !strstr(g_view.status, "API key"), "host '%s': %s", hosts[i], g_view.status);
+        TEST_CHECK(!job_running && !(posted & NET_EV_JOB));
+        close_overlay();
+        mem_free();
+    }
+}
+
 static void test_alloc_failure(void)
 {
     reset();
@@ -3217,6 +3238,7 @@ TEST_LIST = {
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
     {"subtitles_are_ocr_only", test_subtitles_are_ocr_only},
+    {"relay_without_host_says_so", test_relay_without_host_says_so},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},

@@ -728,6 +728,12 @@ static void test_config(void)
         vjo_config_parse(&c, keys, strlen(keys));
         TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 0);
         TEST_MSG("%d warnings, first: %s", c.n_warnings, c.n_warnings ? c.warnings[0] : "");
+        /* nothing of them is kept anywhere: every byte is the defaults' (audit N6, M2) */
+        {
+            VjoConfig d;
+            vjo_config_defaults(&d);
+            TEST_CHECK(!memcmp(&c, &d, sizeof(c)));
+        }
         /* another line without '=' is still quoted, another unknown key still named */
         const char *others = "jpdb_api_key_old = x\nbogus line\nlens_api_key = y\n";
         vjo_config_defaults(&c);

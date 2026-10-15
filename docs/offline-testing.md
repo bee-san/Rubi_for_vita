@@ -135,8 +135,9 @@ game start: result memory (local)        376,832       184,320
 Anki card saved: job thread              446,464       114,688
 ```
 
-(The online dictionaries' removal took 12,288 B off the Shell module: 299,008 B before it, so
-every step above held that much more.)
+(The model holds the declared module pages: the online dictionaries' removal lowered them from
+299,008 to 286,720 B, 12,288 B less at every step above; the packaged module went from 294,912 B,
+main `8f1ec8f`'s, to 286,720 B [measured: the build log's module row].)
 
 What this says, and what it does not:
 

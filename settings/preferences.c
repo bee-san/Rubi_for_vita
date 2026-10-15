@@ -103,6 +103,8 @@ static int publish_without_secrets(const char *old, size_t bytes, int *primary, 
     int found = 0, len, rc;
     char *clean;
     SceIoStat st;
+    /* after a BOM, as both patches read the first line's key (audit B1) */
+    if (bytes >= 3 && !memcmp(old, "\xEF\xBB\xBF", 3)) i = 3;
     while (i < bytes && !found) {
         size_t begin = i;
         while (i < bytes && old[i] != '\n') i++;

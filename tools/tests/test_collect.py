@@ -322,6 +322,26 @@ class Collect(unittest.TestCase):
                                "lens_api_keyx = keep\r\n")
         self.assertEqual(keys, ["jpdb_api_key", "jpdb_api_key"])
 
+    def test_commented_and_mistyped_removed_keys_are_redacted(self):
+        # audit N3: a commented-out key, a key glued to its name and a longer name that starts with one
+        # (the parser and the installer drop such lines); an ordinary comment and lens_api_keyx stay
+        sys.path.insert(0, str(ROOT / "tools"))
+        import collect_vita
+        text, keys = collect_vita.redact("; jpdb_api_key = KEY1\n#jiten_api_key=KEY2\njpdb_api_keyKEY3\n"
+                                         "jpdb_api_key_old = KEY4\napi_keys = KEY5\n; a comment\nlens_api_keyx = keep\n"
+                                         "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings\n")
+        for secret in ("KEY1", "KEY2", "KEY3", "KEY4", "KEY5"):
+            self.assertNotIn(secret, text)
+        self.assertEqual(text.splitlines()[:3], ["; jpdb_api_key = <redacted: 4 characters>",
+                                                 "#jiten_api_key=<redacted: 4 characters>",
+                                                 "jpdb_api_key<redacted: 4 characters>"])
+        self.assertIn("; a comment\nlens_api_keyx = keep\n; jpdb.io API key (needed for dictionary = jpdb)", text)
+        self.assertEqual(keys, ["jpdb_api_key", "jiten_api_key", "jpdb_api_key", "jpdb_api_key", "api_key"])
+        # an older build's warning quoted a line without "=" whole
+        data, n = collect_vita.redact_log(b"config warning: ignored line 'jpdb_api_keyKEY6'\nunknown setting 'lens_api_keyx'\n")
+        self.assertNotIn(b"KEY6", data)
+        self.assertIn(b"ignored line 'jpdb_api_key <redacted>'", data)
+        self.assertIn(b"unknown setting 'lens_api_keyx'", data)
     def test_no_credential_reaches_the_zip(self):
         """audit-overlay-test3-cleanup B1: the zip holds no credential's value. The audio source's URL (it can
         carry a key) is redacted in config.ini and in the logs' config warnings like an API key, and the

@@ -232,7 +232,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
   marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
   `kernel.prev.txt`, `config.ini` with every `*api_key` and `anki_audio_url` value (an audio source
-  URL can carry a key) replaced by its length before anything is written (also a key line without
+  URL can carry a key) replaced by its length before anything is written (also a commented-out
+  one, a word that starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without
   `=`; the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;

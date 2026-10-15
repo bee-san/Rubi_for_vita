@@ -321,6 +321,51 @@ static void test_anki_local_card(void)
     TEST_CHECK(n.sf_hl_start < 0 && n.sf_hl_end < 0 && !strcmp(n.sentence_furigana, "彼は\n来なかった。"));
 }
 
+/* A request takes the same bytes wherever it is built: shell/anki.c's save checks with a dry run
+ * in its own arena that △ can send the card, and the send builds it in another, emptier one. A
+ * VjoBuf grows by doubling where the arena has room and to the exact size near its end, so each
+ * field's value and the request are cut to their text: the bytes used never depend on the room
+ * (a card the save said fits was refused by the send when VjoConfig shrank; host test
+ * what_cross_saves_triangle_sends_whatever_the_dictionaries). */
+static void test_anki_request_bytes_do_not_depend_on_the_arena(void)
+{
+    static uint8_t room[512 * 1024];
+    static char text[4][5001];
+    const char *meanings[1] = {text[0]}, *more_meanings[3][1] = {{text[1]}, {text[2]}, {text[3]}};
+    VjoAnkiGloss more[3];
+    VjoAnkiNote n = {.spelling = "好き", .reading = "すき", .rank = 1200, .meanings = meanings, .n_meanings = 1,
+                     .sentence = "猫が\n好き", .hl_start = 10, .hl_end = 16, .sentence_furigana = "猫が\n好き",
+                     .sf_hl_start = 10, .sf_hl_end = 16, .source = "BCCWJ", .dictionary = "Daijirin"};
+    VjoAnkiMedia none = {0};
+    VjoAnkiBody b;
+    VjoArena a;
+    size_t need;
+    for (int k = 0; k < 4; k++) { /* escaping grows it: & < > " and line breaks */
+        for (int i = 0; i < 5000; i++)
+            text[k][i] = "\"&<\n>xy"[(i + k) % 7];
+        text[k][5000] = '\0';
+    }
+    for (int k = 0; k < 3; k++)
+        more[k] = (VjoAnkiGloss){"JMdict", "好き", "すき", more_meanings[k], 1};
+    n.more = more;
+    n.n_more = 3;
+    vjo_arena_init(&a, room, sizeof(room));
+    TEST_ASSERT(vjo_anki_add_request(&a, &n, &none, &b) == 0);
+    need = a.used;
+    TEST_CHECK(b.prefix_len > 40000 && need < sizeof(room) / 2);
+    TEST_MSG("request %u B, %u B used", (unsigned)b.prefix_len, (unsigned)need);
+    for (size_t size = need; size <= sizeof(room); size += 3001) {
+        vjo_arena_init(&a, room, size);
+        int ok = vjo_anki_add_request(&a, &n, &none, &b) == 0;
+        TEST_CHECK_(ok && a.used == need, "arena of %u B: %s, %u B used (%u in the others)", (unsigned)size,
+                    ok ? "built" : "refused", (unsigned)a.used, (unsigned)need);
+        if (!ok || a.used != need)
+            break;
+    }
+    vjo_arena_init(&a, room, need - 1);
+    TEST_CHECK(vjo_anki_add_request(&a, &n, &none, &b) < 0);
+}
+
 static void test_anki_requests(void)
 {
     VjoEntryList l;
@@ -913,6 +958,7 @@ TEST_LIST = {
     {"anki_requests", test_anki_requests},
     {"anki_pitch", test_anki_pitch},
     {"anki_local_card", test_anki_local_card},
+    {"anki_request_bytes_do_not_depend_on_the_arena", test_anki_request_bytes_do_not_depend_on_the_arena},
     {"anki_probe", test_anki_probe},
     {"anki_check", test_anki_check},
     {"anki_add", test_anki_add},
