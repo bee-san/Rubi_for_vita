@@ -283,7 +283,7 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
-  ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${VJO_SETTINGS_ANKI_SRC})
+  ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${VJO_SETTINGS_ANKI_SRC})
 # vjo_bearssl (SHA-256 for the queue's IDs, TLS for an https audio source) is
 # the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
 set(VJO_SETTINGS_LIBS
@@ -294,7 +294,8 @@ add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
 target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
-target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning)
+target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
+  -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
@@ -306,7 +307,10 @@ add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
 # Plugin CONFIG exports must not leak into the standalone application's ELF.
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
-vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE)
+# A system application (attribute 0x0E) with a 50 MiB budget (0xC800 KiB), as
+# vita-content-manager-pro: it starts beside a suspended game instead of closing
+# it, in the system-application memory and without CDRAM (settings/sysapp.c).
+vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE ATTRIBUTE 0x0E MEMSIZE 0xC800)
 # LiveArea title (param.sfo TITLE/STITLE) is "Overlay". The title ID, the VPK file name and every
 # plugin, path and config name keep their old names, so installing over JP Overlay Settings is an update.
 vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin

@@ -6,6 +6,7 @@
 #include <psp2/ime_dialog.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/cpu.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -195,7 +196,9 @@ static void start(int what)
     finished = 0;
     snprintf(progress, sizeof(progress), "%s", what == ACT_TEST ? "Testing the connection…" : "Sending…");
     vjo_app_net_clear();
-    worker = sceKernelCreateThread("VjoAnkiApp", worker_main, 0x10000100, WORKER_STACK, 0, 0, NULL);
+    /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
+    worker = sceKernelCreateThread("VjoAnkiApp", worker_main, 0x10000100, WORKER_STACK, 0,
+                                   SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
     int rc = worker < 0 ? worker : sceKernelStartThread(worker, 0, NULL);
     if (rc < 0) {
         if (worker >= 0)

@@ -7,9 +7,9 @@
 #include "../core/games.h"
 
 /* An icon file is at most 256 KiB and its image at most 256 x 256 pixels, so
- * its texture is at most 256 KiB: one CDRAM block, the size vita2d rounds
- * every CDRAM texture up to (a 128 x 128 icon's 64 KiB included). A larger or
- * broken file shows the placeholder. */
+ * its texture is at most 256 KiB (a 128 x 128 icon's is 64 KiB), in main
+ * memory: the app is a system application without CDRAM (settings/sysapp.c).
+ * A larger or broken file shows the placeholder. */
 #define VJO_ICON_FILE_MAX (256 * 1024)
 #define VJO_ICON_SIDE_MAX 256
 /* Bytes after the file that vjo_icon_read clears; its buffer has
