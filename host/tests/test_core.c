@@ -764,7 +764,9 @@ static void test_config(void)
                                            /* the removed Anki settings (AnkiConnect's, the field mapping) */
                                            "anki_host = jpdb\n", "ANKI_HOST=10.0.0.2", "anki_audio_url = https://a/?k=1\n",
                                            "anki_audio_url https://a/?k=1\n", "anki_deck = Mining\n",
-                                           "Anki_Field_Word = Word\n"};
+                                           "Anki_Field_Word = Word\n",
+                                           /* a removed name alone on its line (audit-overlay-apkg-b D5) */
+                                           "anki_host\n", "anki_audio_url\n", "ANKI_TAGS", "anki_deck\r\n"};
         static const char *const replace[] = {"dictionary = jpdb\n", "Dictionary=JITEN ; old\r\n",
                                               "  dictionary =\tjpdb", "dictionary = jiten # x\n",
                                               "dictionary = hachidori\n", "DICTIONARY = Hachidori ; relay\r\n",
@@ -773,7 +775,7 @@ static void test_config(void)
                                            "hachidori_host = 192.168.1.20\n", "dictionary = hachidori-relay\n",
                                            "; dictionary = jpdb\n", "dictionaryx = jpdb\n", "lens_api_key = x\n",
                                            "my_api_key = x\n", "anki_mining = on\n", "anki_hosts = x\n",
-                                           "anki_field = x\n", "jpdb_api_ke = x\n",
+                                           "anki_field = x\n", "anki_hosts\n", "anki_mining\n", "jpdb_api_ke = x\n",
                                            "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
         const char *r;
         for (size_t i = 0; i < sizeof(drop) / sizeof(drop[0]); i++) {

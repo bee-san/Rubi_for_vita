@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define main acutest_main
@@ -762,6 +763,63 @@ static void test_a_stop_anywhere_loses_no_card(void)
     stop_at_status = -1;
 }
 
+/* A package that does not read back as written never gets its final name: it is checked
+ * under its temporary name first (audit-overlay-apkg-b D1; the order before N2's fix renamed,
+ * synced, then checked). A child process stops at the rename of the .apkg.tmp, should it come. */
+static void test_a_package_that_reads_back_wrong_never_gets_its_name(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    for (int bad = 0; bad < 2; bad++) {
+        pid_t pid;
+        int status = 0;
+        reset();
+        queue_card(&cat, 0);
+        queue_card(&dog, 0);
+        fflush(stdout);
+        if ((pid = fork()) == 0) {
+            io.corrupt_read = bad == 0;
+            io.fail_open_read = bad == 1;
+            crash_point = "apkg_renamed";
+            vjo_export_run(&A, 0, &ui, &r, msg, sizeof(msg));
+            _exit(0);
+        }
+        TEST_ASSERT(pid > 0 && waitpid(pid, &status, 0) == pid);
+        TEST_CHECK_(WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                    "%s: the package was renamed to its final name before it was checked (exit %d)",
+                    bad ? "the read-back cannot be opened" : "a byte reads back changed", WEXITSTATUS(status));
+        TEST_CHECK(count_dir(VJO_EXPORT_DIR, ".apkg") == 0 && count_dir(VJO_EXPORT_DIR, ".tmp") == 0 &&
+                   count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 2);
+    }
+}
+
+/* A Cancel at any progress step before the clearing (reading, writing, checking) makes no
+ * file: none leaves a package of which no card left the queue, which a Cancel during the check
+ * would, were the check to ignore it and only the clearing honour it (audit-overlay-apkg-b D2). */
+static void test_a_cancel_while_checking_makes_no_file(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    int total, cancelled = 0;
+    reset();
+    queue_card(&cat, 0);
+    queue_card(&dog, 0);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    total = statuses;
+    for (int k = 1; k <= total + 1; k++) {
+        reset();
+        queue_card(&cat, 0);
+        queue_card(&dog, 0);
+        stop_at_status = k;
+        int rc = run(0, &r, msg);
+        cancelled += rc == VJO_E_CANCELLED;
+        TEST_CHECK_(!(rc == VJO_OK && r.cards == 2 && r.moved == 0 && r.stopped == 2),
+                    "stop at status %d of %d: a package was made, and both cards stay queued: %s", k, total, msg);
+    }
+    TEST_CHECK(cancelled > 0);
+    stop_at_status = -1;
+}
+
 static int card_in(const char *dir, const char *id, const char *ext)
 {
     char path[300];
@@ -1107,6 +1165,8 @@ TEST_LIST = {
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},
     {"a_failed_write_never_clears_the_queue", test_a_failed_write_never_clears_the_queue},
     {"a_stop_anywhere_loses_no_card", test_a_stop_anywhere_loses_no_card},
+    {"a_package_that_reads_back_wrong_never_gets_its_name", test_a_package_that_reads_back_wrong_never_gets_its_name},
+    {"a_cancel_while_checking_makes_no_file", test_a_cancel_while_checking_makes_no_file},
     {"a_card_left_out_of_the_package_stays_queued", test_a_card_left_out_of_the_package_stays_queued},
     {"more_cards_than_a_package_holds", test_more_cards_than_a_package_holds},
     {"an_interrupted_exports_file_goes", test_an_interrupted_exports_file_goes},

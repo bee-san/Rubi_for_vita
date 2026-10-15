@@ -111,7 +111,7 @@
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a text-only card to the queue. The Shell takes no
  * screenshot: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
  * and a 393,216 B arena here) was removed with AnkiConnect. A save with 8 dictionaries' entries
- * peaks at 103,880 B [measured, host, test_shell_anki.c]. anki.c checks its arena against this at
+ * peaks at 102,680 B [measured, host, test_shell_anki.c, main e53d9fb]. anki.c checks its arena against this at
  * compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */

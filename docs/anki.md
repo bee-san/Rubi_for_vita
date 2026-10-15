@@ -244,7 +244,7 @@ Not in the record, and why:
 went with AnkiConnect: the overlay and the app ignore them without a warning,
 the installer removes them from `config.ini` and says so
 (`config.ini: anki_host removed (AnkiConnect was removed: …)`), the Overlay
-app's next save drops their lines (and keeps none in `config.ini.bak`: an
+app's next save drops their lines (and, once it completes, keeps none in `config.ini.bak`: an
 audio source's URL can carry a key), and
 `anki_host.txt` (where the app's network search kept AnkiConnect's address) is
 no longer read or written; delete it if you like. Earlier builds had a field
@@ -275,7 +275,7 @@ In SceShell (the overlay, `shell/anki.c`):
   kept. Measured on the host with 8 dictionaries
   (`what_enter_saves_whatever_the_dictionaries`): entries of 2,700 B of kana all
   kept (a 22,673 B record); 7,000 B, 3 of 7; text that JSON escaping grows keeps
-  fewer. The arena's peak stayed under 104 KiB of the 128.
+  fewer. The arena's peak was 102,680 B of the 128 KiB (7,000 B entries of kana).
 - The note is copied out of the shown lookup under the view lock before
   anything is written; the result memory is never read during file I/O. If
   memory is refused or a write fails, only the Anki status line changes: the
