@@ -24,8 +24,13 @@
  * 20: the job's policy rides in VjoGameOcrRequest.flags (the stable-text wait,
  * its limit, waiting first, blank lines skipped); two new step kinds (settle,
  * blank). A job may publish its first pass, void it (a VJO_ROWS_SIG read from
- * row 0 it does not finish) and publish its retry's. Sizes are unchanged. */
-#define VJO_API_VERSION 20
+ * row 0 it does not finish) and publish its retry's. Sizes are unchanged.
+ * 21: model tiers (Small, Normal, Large; include/vjo_vocr_sizes.h). A request
+ * may name the tiers its job may run (VjoGameOcrRequest.tiers, a new last
+ * field) instead of a model and its fallback: the worker runs the largest that
+ * fits beside that tier's reserve, and Open opens a tier's pinned model by its
+ * tier (VJO_GAME_OCR_OPEN_TIER). */
+#define VJO_API_VERSION 21
 
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {

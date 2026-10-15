@@ -208,6 +208,29 @@ class AnalyseV2(unittest.TestCase):
     def analyse(self, name, *args):
         return run((FIXTURES / f"selftest-v2-{name}.txt").read_text(), *args)
 
+    def test_the_smallest_size_configured_passes_its_fallback_stage_with_itself(self):
+        """API 21: the fallback stage runs the smallest model size. With Small configured there is none
+        smaller (the config record says fallback=-), so the stage runs Small itself: a pass, not "the
+        fallback model was not used"; with a larger size it still has to run a smaller one."""
+        text = (FIXTURES / "selftest-v2-pass.txt").read_text()
+        config = "config backend=2 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr tier=normal dictionary=3 anki=0"
+        self.assertIn(config, text)
+        self.assertIn(" model=FL10_w8.vocr fallback=1 ", text)
+        small = text.replace(config, "config backend=2 model=VOCR3_FL10_w8.vocr fallback=- tier=small dictionary=3 anki=0")
+        small = small.replace(" model=FL10_w8.vocr fallback=1 ", " model=FL10_w8.vocr fallback=0 ")
+        r = run(small)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(rows(r.stdout)["fallback"], "PASS")
+        self.assertIn("Configured the small model size (VOCR3_FL10_w8.vocr); the fallback stage runs it too: it is "
+                      "the smallest.", r.stdout)
+        normal = text.replace(" model=FL10_w8.vocr fallback=1 ", " model=FL10_w8.vocr fallback=0 ")
+        r = run(normal)
+        self.assertEqual(rows(r.stdout)["fallback"], "FAIL")
+        self.assertIn("the fallback model was not used", r.stdout)
+        r = run(text)
+        self.assertIn("Configured the normal model size (VOCR3_H15_w8.vocr); the fallback stage runs the smallest, "
+                      "VOCR3_FL10_w8.vocr.", r.stdout)
+
     def test_a_complete_run_passes_every_row(self):
         r = self.analyse("pass")
         self.assertEqual(r.returncode, 0, r.stdout)

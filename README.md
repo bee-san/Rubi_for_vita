@@ -19,8 +19,12 @@ model it runs (**VOCR3** in this package), or **Google Lens**.
 Tap an engine directly, or use **Left** (local) and **Right** (Lens); **Enter**
 switches to the other one.
 The local engine is the default and supports automatic or manual OCR on the
-Vita, offline. When a game has too little free memory for its model, a job
-runs the smaller fallback model (VOCR3-FL10) by itself. Google Lens requires
+Vita, offline. Under it, **Model size** chooses its recognizer: **Small**
+(fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
+shown with its estimated time per textbox and the game memory it takes
+([model sizes](docs/vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). When
+a game has too little free memory for the chosen size, a job runs the next
+smaller one by itself; only `log.txt` says so. Google Lens requires
 Wi-Fi and sends the selected image to Google, using the original
 [upstream implementation](https://github.com/Dartv/vita-jp-overlay).
 The release stores the local models; choosing an engine keeps them installed
@@ -28,10 +32,11 @@ and applies when you next open the overlay.
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
-`package-manifest.json`), not from the app: a release that pins a new
-generation's model and makes it the default (`vocr_model`) shows that
-generation's name, for example VOCR5, with no change to the app. A `.vocr` file
-itself carries no generation. v0.2.0's models are generation VOCR1.
+`package-manifest.json`), not from the app: VOCR3 for this package's Small and
+Normal, VOCR4 for its Large. A release that pins a new generation's three
+models as the sizes shows that generation's name, for example VOCR5, with no
+change to the app. A `.vocr` file itself carries no generation. v0.2.0's models
+are generation VOCR1.
 
 The experimental VOCR2 trial (a separately trained FL10-sized model with a
 textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
@@ -227,15 +232,19 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup) settings |
 | Cancel | Exit |
 
-On the **OCR & lookup** page, select a card with Up/Down. Enter
-or touch a card changes its choice: OCR engine, Japanese-only selection,
-whole-word/character highlighting, or how many dictionaries are shown.
-Touch an engine button or a number to choose it directly;
-Left/Right choose the local engine or Google Lens on the engine card, OFF/ON on the selection card,
-Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown.
-The engine card's last line names the model file that runs (`VOCR3-H15 found`),
-or the fallback a missing one leaves (`VOCR3-H15 missing; uses VOCR3-FL10`).
-Choices save automatically to `config.ini` and apply when the overlay next opens.
+On the **OCR & lookup** page, select a row with Up/Down. Enter
+or touch a row changes its choice: OCR engine, the local engine's Model size,
+Japanese-only selection, whole-word/character highlighting, or how many
+dictionaries are shown. Touch an engine button, a size or a number to choose it
+directly; Left/Right choose the local engine or Google Lens on the engine row,
+the next smaller or larger size on the Model size row (Enter goes round them),
+OFF/ON on the selection card, Whole word/Character on the Highlight card, or 1–8
+on Dictionaries shown. Each size button shows its estimated time for a 3-line
+textbox and the game memory a job of it takes (`1.3 s, 1.4 MB` for Normal), from
+the models' pinned metadata; with Google Lens chosen the row stays, dimmed. The
+card's last line names the size and its model file (`Normal: default, balanced.
+VOCR3-H15 found.`), or reports that file missing; it never says that a game ran a
+smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
 paths, capture mode and API keys, are preserved.
@@ -291,32 +300,37 @@ local_dictionary_results = 1
 text_source = ocr
 ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-vocr_model = VOCR3_H15_w8.vocr
-vocr_fallback_model = VOCR3_FL10_w8.vocr
+vocr_tier = normal
 ocr_mode = auto
 japanese_only_selection = on
 log_file = on
 ```
 
-VOCR3-H15 (`VOCR3_H15_w8.vocr`, vita-vn-ocr #67) is the default recognizer and
-VOCR3-FL10 its fallback: H15's and FL10's shapes retrained, the same sizes and
-game memory as v0.2.0's H15 and FL10. On vita-vn-ocr's hand-checked host test
-lines VOCR3-H15 has 1.73% CER against v0.2.0 H15's 2.21%, VOCR3-FL10 2.13%
-against v0.2.0 FL10's 3.82%; neither passed that repository's promotion gate
-and no console has run them ([models](docs/vita-vn-ocr.md#models)). When a game
-has too little free memory for VOCR3-H15, that job runs VOCR3-FL10 instead,
-automatically; if `VOCR3_H15_w8.vocr` is missing or corrupt, the game's jobs use
-the fallback as well. The v0.2.0 `H15_w8.vocr` and `FL10_w8.vocr` are still
-installed: set `vocr_model = H15_w8.vocr` and `vocr_fallback_model = FL10_w8.vocr`
-to go back to them, `vocr_model = VOCR3_FL10_w8.vocr` to always use the smaller
-model, or `vocr_fallback_model = none` to never fall back. `install-vita.sh` sets
-the package's default models each time it runs, so set the choice again after a
-reinstall. Console speed and
-accuracy are not measured yet
-(see [the checklist](docs/vita-vn-ocr.md#on-console-checklist)). A memory
+`vocr_tier` is the local engine's model size, the Overlay app's Model size:
+`small` runs VOCR3-FL10, `normal` (the default) VOCR3-H15 (vita-vn-ocr #67: H15's
+and FL10's shapes retrained) and `large` VOCR4-W20 (vita-vn-ocr #78, F20's shape).
+On vita-vn-ocr's hand-checked host test lines VOCR3-H15 has 1.73% CER against
+v0.2.0 H15's 2.21%, VOCR3-FL10 2.13% against v0.2.0 FL10's 3.82%; neither passed
+that repository's promotion gate ([models](docs/vita-vn-ocr.md#models)). Their
+estimated times for a 3-line textbox are 0.7 s (Small), 1.3 s (Normal) and
+1.7 s (Large), calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame on the
+console (v0.8.0-test.1). v0.8.0-test.2's logs have VOCR3-FL10 at 3.0-3.7 ms per
+frame (the self-test's fallback stage, five one-line jobs) and VOCR4-W20 at
+7.4-7.8 ms (five lines re-read as the confidence cascade), near the estimates'
+2.8-3.1 and 7.1-7.2 ms; VOCR4-W20 has not run as the chosen size on a console, and
+v0.2.0's FL10 (Small's shape) read lines in older builds, without frame counts.
+A job runs the chosen size when the
+game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
+else the next smaller size, silently: `log.txt` has a line `tier large did not
+fit in PCSG00415 (need N, free F); using normal`, and so does the `--collect`
+summary, but nothing on screen. A size whose model file is missing or corrupt
+is left out for that game the same way. An older `config.ini`'s `vocr_model`
+becomes its size (the FL10 family Small, H15 Normal, F20 and W20 Large), and
+`vocr_fallback_model` is no longer read; the app's next save and the installer
+rewrite them. `install-vita.sh` keeps the chosen size on an update. A memory
 error names where the memory ran out: the game's memory for this region
-(a tighter region helps) or for the model's weights (VOCR3-FL10 and FL10 are
-the smallest), or the Shell's memory for results (restart the Vita). Local OCR
+(a tighter region helps) or for the smallest size's weights, or the Shell's
+memory for results (restart the Vita). Local OCR
 takes no kernel memory for the screen since API 19: the game reads its own
 screen ([in-game capture](docs/ingame-capture.md)). Google Lens still uses the
 kernel's capture buffer, where a tighter region helps; Anki cards take no
@@ -341,7 +355,8 @@ Each line is decoded with a beam search and a character language model
 (`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is
 vita-vn-ocr's, CC BY-SA 4.0. The game keeps the largest LM that fits its memory
 resident, and reads greedily when none does. A line read with low confidence
-is read again by the larger VOCR4-W20, whose reading is shown, while the job
+is read again by the next model size up (VOCR4-W20 for Normal, VOCR3-H15 for
+Small; Large has none), when its model fits too, whose reading is shown, while the job
 stays within `ocr_cascade_ms` (2000; `0` turns it off). On the host's
 development dialogue lines the two bring VOCR3-H15 from 1.40 % to 0.73 % CER.
 The greedy reading, each line's confidence and what the cascade read again are
@@ -452,16 +467,19 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](docs/ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(657,664 B for FL10 and VOCR3-FL10 and 1,155,968 B for H15 and VOCR3-H15,
-held as 659,456 and 1,159,168 B page-rounded blocks) and are read and
+(657,664 B for VOCR3-FL10, 1,155,968 B for VOCR3-H15 and 1,558,016 B for
+VOCR4-W20, held as 659,456, 1,159,168 and 1,560,576 B page-rounded blocks) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. They are released when a job's memory check
 fails, when the file is missing or wrong, when the worker finds the game is
 no longer the active one (suspend, another app in front, title disabled) and
 on exit. A job
-then needs only its region-sized workspace. The worker leaves a 4 MiB free
-USER memory reserve before allocating either block; allocation can still fail
-because the game or system uses memory concurrently.
+then needs only its region-sized workspace. The worker leaves free USER memory
+for the game beside what the job holds: 4 MiB with Small, 8 MiB with Normal and
+16 MiB with Large (the largest size the job holds, the cascade's included;
+vita-vn-ocr docs/model-tiers.md proposes them, an estimate), before allocating
+any block; allocation can still fail because the game or system uses memory
+concurrently.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
@@ -471,12 +489,14 @@ v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release
 v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the character
 LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
 `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
-A job opens only its own model and fallback, the LMs up to the tier its request
-allows and, when the request sets a cascade ceiling, the cascade's model. The
-broker checks their lengths, reports their modification time, and copies at
-most 32 KiB per request into game-owned memory. Each model call waits (at most
-50 ms, without the kernel lock) for the kernel worker instead of polling with a
-1 ms sleep.
+Since API 21 a job asks by model size: the broker opens its sizes' models and,
+when the request sets a cascade ceiling, the next size up, each by its size,
+never by a name or a path. A request by name (the host tools) opens only its own
+model and fallback and, with a cascade ceiling, the cascade's model. Either opens
+the LMs up to the tier its request allows. The broker checks their lengths,
+reports their modification time, and copies at most 32 KiB per request into
+game-owned memory. Each model call waits (at most 50 ms, without the kernel
+lock) for the kernel worker instead of polling with a 1 ms sleep.
 The game then checks SHA-256 and runs inference. A job is handed over the same
 way: the game worker's take waits (at most 100 ms) for the Shell's submission
 and the Shell's read (at most 50 ms) for the game's result, so neither waits
@@ -489,12 +509,13 @@ previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three plugins of one build
-together (API 20 since the job policy below) and reboot; older plugin versions
+together (API 21 since the model sizes) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B
-of SceShell's partition (down from 405,504 B in 0.7.12's successor builds): the
+64 KiB result arena and no TLS pool for local lookup. Its module holds 294,912 B
+of SceShell's partition, of the 299,008 B declared (down from 405,504 B in 0.7.12's
+successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle
@@ -545,7 +566,7 @@ fetches just the bootstrap logs. Recognition timings and memory attempts are in
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
 start a game and reach a text screen: on the first settled screen with text in your
 saved region (it waits past logos and notices, at most 30 screens) one job runs
-the fallback model, the configured model, the full screen, the capture probe and
+the smallest model size, the configured size, the full screen, the capture probe and
 the configured model again, in your saved region, each stage with its own record,
 and the report has every pool's free memory at each step by every query route;
 `--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL

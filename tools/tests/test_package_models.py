@@ -48,7 +48,7 @@ class PackageModels(unittest.TestCase):
                                           side_effect=AssertionError("No test network access")))
 
     def write_models(self, attribution=None):
-        for name in ("FL10_w8.vocr", "H15_w8.vocr"):
+        for name in ("FL10_w8.vocr", "H15_w8.vocr"):  # v0.2.0's, which a package no longer ships
             (self.models / name).write_bytes(self.legacy)
         for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"):
             (self.models / name).write_bytes(self.vocr3)
@@ -81,47 +81,91 @@ class PackageModels(unittest.TestCase):
             release.package(base, output, self.models, dictionary, license_file, settings=settings)
         return output
 
-    def test_bundle_ships_vocr3_as_default_and_v020_as_fallback(self):
+    def test_bundle_ships_the_three_model_sizes(self):
+        """API 21: each model size's pinned recognizer (tools/model_tiers.json: VOCR3-FL10 Small,
+        VOCR3-H15 Normal, the default, VOCR4-W20 Large) and the LMs; v0.2.0's H15 and FL10, which
+        no setting selects any more, are not shipped."""
         package = self.package_fixture()
         with zipfile.ZipFile(package) as archive:
             manifest = json.loads(archive.read("package-manifest.json"))
-            for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr"):
+            for name in ("VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
             self.assertEqual(sorted(manifest["models"]),
-                             sorted(["FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr",
-                                     *prepare.VOCR_LM_ASSETS, *prepare.VOCR4_ASSETS]))
+                             sorted(["VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr",
+                                     *prepare.VOCR_LM_ASSETS]))
+            for name in ("FL10_w8.vocr", "H15_w8.vocr"):
+                self.assertNotIn(release.DATA + "ocr/" + name, manifest["files"])
             self.assertIn(release.DATA + "ocr/LM-" + prepare.VOCR_LM_ATTRIBUTION, manifest["files"])
-            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr3.1")
-            self.assertEqual(manifest["models"]["VOCR3_H15_w8.vocr"]["role"], "default")
-            self.assertEqual(manifest["models"]["H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.0")
-            self.assertEqual(manifest["defaults"]["vocr_model"], "VOCR3_H15_w8.vocr")
-            self.assertEqual(manifest["defaults"]["vocr_fallback_model"], "VOCR3_FL10_w8.vocr")
+            models = manifest["models"]
+            self.assertEqual({name: (m.get("tier"), m["role"]) for name, m in models.items() if m.get("tier")},
+                             {"VOCR3_FL10_w8.vocr": ("small", "Small model size"),
+                              "VOCR3_H15_w8.vocr": ("normal", "Normal model size (default)"),
+                              "VOCR4_W20_w8.vocr": ("large", "Large model size")})
+            self.assertEqual(models["VOCR3_H15_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr3.1")
+            self.assertEqual(models["VOCR4_W20_w8.vocr"]["release"], "bee-san/vita-vn-ocr v0.2.5-vocr4.1")
+            self.assertEqual(manifest["defaults"]["vocr_tier"], "normal")
+            for key in ("vocr_model", "vocr_fallback_model"):
+                self.assertNotIn(key, manifest["defaults"])
             self.assertTrue(manifest["defaults"]["log_file"])
             self.assertFalse(manifest["defaults"]["anki"])
             self.assertNotIn("install_settings", manifest)
-            # both template copies are the source template: logging on, Anki off
+            # both template copies are the source template: logging on, Anki off, the Normal size
             for name in ("config.ini", release.DATA + "config.ini"):
                 text = archive.read(name).decode()
                 self.assertIn("\nlog_file = on\n", text)
                 self.assertIn("\nanki_mining = off\n", text)
-                self.assertIn("\nvocr_model = VOCR3_H15_w8.vocr\n", text)
+                self.assertIn("\nvocr_tier = normal\n", text)
+                self.assertNotIn("vocr_model", text)
+
+    def test_the_shipped_sizes_are_the_tier_table(self):
+        """The packager reads its sizes from tools/model_tiers.json: another table's models are what
+        it ships, so a later generation's three blobs replace them through the pins."""
+        tiers = prepare.model_tiers()
+        self.assertEqual([t["model"] for t in tiers["tiers"]],
+                         [name for name, _, _, role in release.shipped_models() if role.endswith(("size", "(default)"))])
+        changed = json.loads(prepare.MODEL_TIERS.read_text())
+        changed["tiers"][0]["model"] = "FL10_w8.vocr"  # Small as v0.2.0's FL10, say
+        table = self.root / "model_tiers.json"
+        table.write_text(json.dumps(changed))
+        with mock.patch.object(prepare, "MODEL_TIERS", table):
+            names = [name for name, _, _, _ in release.shipped_models()]
+            self.assertEqual(names[:3], ["FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr"])
+            # a model no release table pins is refused
+            changed["tiers"][2]["model"] = "VOCR9_L_w8.vocr"
+            table.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError, "VOCR9_L_w8.vocr is not a pinned recognizer"):
+                release.shipped_models()
+            # and so is a table without the three sizes, or another default
+            changed["tiers"] = changed["tiers"][:2]
+            table.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):
+                release.shipped_models()
+
+    def test_a_package_may_start_with_another_size(self):
+        package = self.package_fixture({"vocr_tier": "large"})
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            self.assertIn("\nvocr_tier = large\n", archive.read("config.ini").decode())
+        self.assertEqual((manifest["defaults"]["vocr_tier"], manifest["defaults"]["ocr_engine"]), ("large", "VOCR4"))
+        self.assertEqual(manifest["install_settings"], {"vocr_tier": "large"})
+        with self.assertRaisesRegex(ValueError, "'huge' is not a model size"):
+            self.package_fixture({"vocr_tier": "huge"})
 
     def test_manifest_names_each_model_generation_and_the_local_engine(self):
         """The bundled metadata the Overlay app's label comes from: each model's generation (by its
-        release), and the local engine's name for the package's default, VOCR3."""
+        release), and the local engine's name for the package's default size, VOCR3."""
         package = self.package_fixture()
         with zipfile.ZipFile(package) as archive:
             manifest = json.loads(archive.read("package-manifest.json"))
         self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items() if "generation" in entry},
-                         {"VOCR3_H15_w8.vocr": "VOCR3", "VOCR3_FL10_w8.vocr": "VOCR3",
-                          "H15_w8.vocr": "VOCR1", "FL10_w8.vocr": "VOCR1", "VOCR4_W20_w8.vocr": "VOCR4"})
+                         {"VOCR3_H15_w8.vocr": "VOCR3", "VOCR3_FL10_w8.vocr": "VOCR3", "VOCR4_W20_w8.vocr": "VOCR4"})
         for name in prepare.VOCR_LM_ASSETS:  # an LM is no recognizer: no generation
             self.assertNotIn("generation", manifest["models"][name])
         self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
         self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR3")
-        self.assertEqual(manifest["defaults"]["ocr_engine"],
-                         manifest["models"][manifest["defaults"]["vocr_model"]]["generation"])
+        default = next(n for n, m in manifest["models"].items() if m.get("tier") == manifest["defaults"]["vocr_tier"])
+        self.assertEqual(manifest["defaults"]["ocr_engine"], manifest["models"][default]["generation"])
         # a later release's generation reaches the manifest through its tag
         with mock.patch.dict(prepare.VOCR_GENERATION, {prepare.VOCR3_TAG: "VOCR5"}), \
              mock.patch.dict(release.VOCR_GENERATION, {prepare.VOCR3_TAG: "VOCR5"}):
@@ -131,7 +175,7 @@ class PackageModels(unittest.TestCase):
                 manifest = json.loads(archive.read("package-manifest.json"))
         self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR5")
         self.assertEqual(manifest["models"]["VOCR3_FL10_w8.vocr"]["generation"], "VOCR5")
-        self.assertEqual(manifest["models"]["H15_w8.vocr"]["generation"], "VOCR1")
+        self.assertEqual(manifest["models"]["VOCR4_W20_w8.vocr"]["generation"], "VOCR4")
 
     def test_removed_vocr2_is_neither_shipped_nor_claimed(self):
         # a VOCR2 file left in the models directory is not packaged
@@ -201,11 +245,11 @@ class PackageModels(unittest.TestCase):
                          {"ocr_settle_ms": 150, "ocr_settle_max_ms": 2000, "ocr_skip_blank_lines": False,
                           "ocr_refine_lines": "psp", "ocr_lm": "1000k", "ocr_cascade_ms": 2000})
         # what the manifest said before is still said the same way
-        self.assertEqual({k: defaults[k] for k in ("ocr_backend", "ocr_engine", "vocr_model", "vocr_fallback_model",
+        self.assertEqual({k: defaults[k] for k in ("ocr_backend", "ocr_engine", "vocr_tier",
                                                    "dictionary", "local_dictionaries", "japanese_only_selection",
                                                    "ocr_mode", "log_file", "anki")},
-                         {"ocr_backend": "vocr", "ocr_engine": "VOCR3", "vocr_model": "VOCR3_H15_w8.vocr",
-                          "vocr_fallback_model": "VOCR3_FL10_w8.vocr", "dictionary": "local",
+                         {"ocr_backend": "vocr", "ocr_engine": "VOCR3", "vocr_tier": "normal",
+                          "dictionary": "local",
                           "local_dictionaries": "plaintext.vjdict", "japanese_only_selection": True,
                           "ocr_mode": "auto", "log_file": True, "anki": False})
 
@@ -242,7 +286,9 @@ class PackageModels(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sets ocr_lm twice"):
             release.template_settings("ocr_lm = 1000k\nocr_lm = off\n")
         with self.assertRaisesRegex(ValueError, "not one of the package's recognizers"):
-            release.manifest_defaults("vocr_model = VOCR9_w8.vocr\n", {})
+            release.manifest_defaults("vocr_tier = normal\n", {})
+        with self.assertRaisesRegex(ValueError, "not a model size"):
+            release.manifest_defaults("vocr_tier = huge\n", {"VOCR3_H15_w8.vocr": {"generation": "VOCR3"}})
 
     def test_bundle_refuses_an_attribution_that_is_not_the_pinned_one(self):
         # Another release's ATTRIBUTION.md (ctclm.1's lacks the protected-title paragraph) is refused.

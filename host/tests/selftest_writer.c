@@ -287,8 +287,7 @@ int main(int argc, char **argv)
     sceIoClose(fd);
     memset(&cfg, 0, sizeof(cfg));
     cfg.ocr_backend = 2; cfg.dictionary = 3;
-    snprintf(cfg.vocr_model, sizeof(cfg.vocr_model), "H15_w8.vocr");
-    snprintf(cfg.vocr_fallback_model, sizeof(cfg.vocr_fallback_model), "FL10_w8.vocr");
+    cfg.vocr_tier = VJO_VOCR_TIER_NORMAL; /* the config record names its model and the smallest tier's */
     vjo_selftest_init(&cfg);
     now_us = 61000000;
     vjo_selftest_step("ok");

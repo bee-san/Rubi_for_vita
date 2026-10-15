@@ -107,6 +107,7 @@ static int anki_on;        /* vjo_anki_configure(&cfg): × saves cards, △ send
 static VjoPlatform plat;
 static VjoNetPool pool; /* plat's; network thread only, except mem_free while it idles */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
+static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */
 static uint32_t game_generation;
@@ -560,14 +561,10 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
     "dialogue region with Square."
 #define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
     "dialogue region with Square."
-#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a 4 MiB " \
-    "reserve). Try again later in the game, or restart it."
-#define OOM_GAME_MODEL_FITS "The game has too little free memory for this OCR model's weights; " \
-    "VOCR3_FL10_w8.vocr, the smallest model, would fit this region."
-#define OOM_GAME_MODEL "The game has too little free memory for this OCR model's weights. Select " \
-    "VOCR3_FL10_w8.vocr, the smallest model, and a tighter dialogue region with Square."
-#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights, already " \
-    "the smallest. Select a tighter dialogue region with Square, or try again later."
+#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a " \
+    "reserve for the game). Try again later in the game, or restart it."
+#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights. Select " \
+    "a tighter dialogue region with Square, or try again later."
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
     "passed. Try again."
 #define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
@@ -576,22 +573,23 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
- * beside the reserve; the region's job workspace; the model's weights (the
- * smallest model's, or a larger one's, and whether FL10's would fit); an
- * allocation after a passed check; or the check itself. */
+ * beside the reserve; the region's job workspace; the model's weights; an
+ * allocation after a passed check; or the check itself. A job asks by tiers
+ * (API 21): its last check is its smallest tier's. The advice names no model,
+ * size or reserve: the screen never says which size ran or was tried (owner
+ * 2026-10-15 04:54Z); log.txt has the tier lines. */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
-    int64_t job, free_bytes, fl10 = ((int64_t)VJO_VOCR_FL10_BYTES + 4095) & ~(int64_t)4095;
+    int64_t job, free_bytes;
     if (!r->reserve_bytes) return NULL; /* not from the memory check: no specific advice */
     if (r->free_user < 0) return OOM_GAME_UNKNOWN;
-    /* With a fallback, need_* are the fallback's: the last, smallest check. */
+    /* With a smaller tier, need_* are its own: the last, smallest check. */
     free_bytes = (int64_t)r->free_user + r->release_bytes;
     job = (int64_t)r->reserve_bytes + r->need_workspace;
     if (free_bytes >= job + r->need_weights) return OOM_GAME_ALLOCATION;
     if (free_bytes < (int64_t)r->reserve_bytes) return OOM_GAME_NONE;
     if (free_bytes < job) return OOM_GAME_REGION;
-    if (r->need_weights <= fl10) return OOM_GAME_SMALLEST;
-    return free_bytes >= job + fl10 ? OOM_GAME_MODEL_FITS : OOM_GAME_MODEL;
+    return OOM_GAME_SMALLEST;
 }
 #endif
 
@@ -675,8 +673,8 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
     }
 }
 
-/* The game worker's memory check for the job it reported (with a fallback,
- * the fallback's) refused it. */
+/* The game worker's memory check for the job it reported (with a smaller tier,
+ * that tier's) refused it. */
 static int fallback_check_refused(const VjoGameOcrResult *r)
 {
     return r->reserve_bytes && (r->free_user < 0 ||
@@ -684,12 +682,30 @@ static int fallback_check_refused(const VjoGameOcrResult *r)
                (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes);
 }
 
-/* The configured VOCR model failed to open or verify in this game (missing,
- * wrong or corrupt file): later jobs of the same game ask for the fallback. */
-static char vocr_unusable[VJO_GAME_OCR_MODEL_BYTES];
+/* Model tiers whose file failed to open or verify in this game (missing, wrong
+ * or corrupt): bit t - 1 for tier t. Later jobs of the same game leave them out
+ * (vocr_tiers). */
+static unsigned vocr_unusable;
 static uint32_t vocr_unusable_generation;
-static int vocr_fallback_requested;  /* the last request carried a fallback */
-static int vocr_retry_with_fallback; /* this job's retry: request the fallback itself */
+
+/* The tiers a job may run: the configured one and every smaller one, less the
+ * ones found unusable in this game. */
+static unsigned vocr_tiers(void)
+{
+    int top = job_cfg.vocr_tier >= 1 && job_cfg.vocr_tier <= (int)VJO_VOCR_TIERS ? job_cfg.vocr_tier
+                                                                                 : (int)VJO_VOCR_TIER_DEFAULT;
+    unsigned all = (1u << top) - 1u;
+    return vocr_unusable_generation == job_generation ? all & ~vocr_unusable : all;
+}
+
+/* The largest tier in a request's tiers, or 0. */
+static unsigned vocr_top_tier(unsigned tiers)
+{
+    unsigned top = 0;
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++)
+        if (tiers & (1u << (t - 1u))) top = t;
+    return top;
+}
 
 /* The capture of the job in flight: the kernel publishes it (VjoState.done_seq
  * moves on, with capture_scene and region_seq) once the game has read its
@@ -731,33 +747,46 @@ static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
             vjo_log("%s", line);
 }
 
-/* One job: request (flags: VJO_GAME_OCR_F_*; force_model: this model, no
- * fallback), exchange, logs. */
-static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *force_model, const char **ran)
+/* The memory check's tiers (API 21): a log line for each tier that did not fit
+ * this game, with what it needed (its workspace and weights, and the reserve it
+ * keeps) against what was free (free USER and the worker's own blocks it would
+ * release first), and the tier the job went on to. Only the log has it: the
+ * overlay shows the text as usual (owner 2026-10-15 04:54Z). */
+static void log_tier_checks(const VjoGameOcrResult *r)
 {
-    VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags};
+    const VjoGameOcrStep *check[VJO_VOCR_TIERS];
+    unsigned n = 0;
+    for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS && n < VJO_VOCR_TIERS; i++)
+        if (r->step[i].id == VJO_GSTEP_CHECK && VJO_GCHECK_TIER(r->step[i].kind)) check[n++] = &r->step[i];
+    for (unsigned i = 0; i < n; i++) {
+        unsigned t = VJO_GCHECK_TIER(check[i]->kind), next = i + 1u < n ? VJO_GCHECK_TIER(check[i + 1u]->kind) : 0u;
+        /* refused: its last try was without the LM and the cascade, so its own reserve */
+        uint32_t reserve = t >= VJO_VOCR_TIER_LARGE ? VJO_GAME_RESERVE_LARGE
+                         : t == VJO_VOCR_TIER_NORMAL ? VJO_GAME_RESERVE_NORMAL : VJO_GAME_RESERVE_SMALL;
+        int64_t avail = (int64_t)r->free_user + check[i]->sum;
+        if (check[i]->rc != 1) continue;
+        vjo_log("tier %s did not fit in %s (need %u, free %d); %s %s", vjo_vocr_tier_id((int)t),
+                job_title[0] ? job_title : "this game", (unsigned)(check[i]->bytes + reserve),
+                (int)(avail > INT32_MAX ? INT32_MAX : avail),
+                !next ? "no smaller tier:" : check[i + 1u]->rc == 1 ? "trying" : "using",
+                next ? vjo_vocr_tier_id((int)next) : "not enough memory");
+    }
+}
+
+/* One job: request (flags: VJO_GAME_OCR_F_*; tiers: the model tiers it may run,
+ * bit t - 1 for tier t), exchange, logs. *ran: the tier the worker chose (or
+ * whose check refused it last). */
+static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers, unsigned *ran)
+{
+    VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags, .tiers=tiers};
     VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     VjoState st0;
+    unsigned top = vocr_top_tier(tiers);
+    *ran = top;
+    if (!top) return VJO_E_OCR_MODEL;
     sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
-    const char *model = job_cfg.vocr_model;
-    const char *fallback = job_cfg.vocr_fallback_model;
-    vocr_fallback_requested = 0;
-    if (fallback[0] && !sceClibStrcmp(fallback, model)) fallback = "";
-    if (force_model) {
-        model = force_model;
-        fallback = "";
-    } else if (fallback[0] && (vocr_retry_with_fallback ||
-                               (vocr_unusable_generation == job_generation && !sceClibStrcmp(vocr_unusable, model)))) {
-        model = fallback;
-        fallback = "";
-    }
-    size_t model_len = sceClibStrnlen(model, sizeof(job_cfg.vocr_model));
-    size_t fallback_len = sceClibStrnlen(fallback, sizeof(job_cfg.vocr_fallback_model));
-    if (!model_len || model_len >= sizeof(request.model) || fallback_len >= sizeof(request.fallback))
-        return VJO_E_OCR_MODEL;
-    sceClibMemcpy(request.model, model, model_len+1);
-    sceClibMemcpy(request.fallback, fallback, fallback_len+1);
-    vocr_fallback_requested = fallback_len > 0;
+    /* The largest tier's model names the job (the kernel's log); the worker opens each by its tier. */
+    sceClibSnprintf(request.model, sizeof(request.model), "%s", vjo_vocr_tier_model((int)top));
     st0.size = sizeof(st0);
     if (vjoGetState(&st0) < 0) st0.done_seq = st0.stable = 0;
     vocr_done_before = st0.done_seq;
@@ -788,19 +817,21 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     static const char *const weights[] = {"none", "read", "resident"};
     static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
     static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
-    /* The name of the model that ran, for after this call: the config's string, never
-     * the request's copy (a local of this call). */
-    *ran = result->fallback ? fallback : model;
+    /* The tier that ran (or whose check refused the job last): the largest one less
+     * the tiers the worker stepped down; its model's name is a constant, so it
+     * outlives this call. */
+    *ran = result->fallback < top ? top - result->fallback : VJO_VOCR_TIER_SMALL;
     /* The result's lines (about 21: the job, its capture, memory, speed and lines,
-     * and every game-worker step), formatted from the result alone, go out with one
-     * append per file instead of one each: a file append costs 12-46 ms on the
-     * console (#81's self-test timestamps). */
+     * the tiers that did not fit, and every game-worker step), formatted from the
+     * result alone, go out with one append per file instead of one each: a file
+     * append costs 12-46 ms on the console (#81's self-test timestamps). */
     VjoLogBatch batch;
     char batch_buf[4096];
     vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-            rc, *ran, !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
+            rc, vjo_vocr_tier_model((int)*ran),
+            !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
             result->width, result->height, result->region_x, result->region_y, result->fb_width, result->fb_height,
             (unsigned)result->fb_format, result->lines, result->workspace_bytes,
             result->weights < 3 ? weights[result->weights] : "?", result->resident_bytes,
@@ -811,11 +842,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
             result->capture_memory < 5 ? memories[result->capture_memory] : "?", (unsigned)result->capture_bytes,
             (unsigned)result->strip_rows, (unsigned)result->captures, (unsigned)(result->capture_us / 1000),
             (unsigned)result->tears, (unsigned)result->region_sum);
-    if (result->fallback)
-        vjo_log("game vocr fallback: %s needs workspace %u + weights %u + reserve %u, more than free "
-                "USER %d + own weights %u", model, (unsigned)result->model_need_workspace,
-                (unsigned)result->model_need_weights, (unsigned)result->reserve_bytes,
-                (int)result->free_user, (unsigned)result->model_release_bytes);
+    log_tier_checks(result);
     log_vocr_measurements(result);
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
     vjo_log_batch_end(&batch);
@@ -858,19 +885,20 @@ static void log_text_lines(const char *text, size_t cap)
  * so every region stage found nothing. With no line in the region (or a screen
  * that changed under every read) the stages wait for the next settled screen
  * (shell/selftest.c bounds the wait) and the job's result is that stage's. */
-static int run_selftest_stages(VjoGameOcrResult *result)
+static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigned *ran)
 {
-    unsigned n = vjo_selftest_stages();
+    unsigned n = vjo_selftest_stages(), top = vocr_top_tier(tiers), low = 0;
     int rc = VJO_E_SOURCE;
+    while (low < VJO_VOCR_TIERS && !(tiers & (1u << low))) low++; /* the smallest tier: the fallback stage's */
     for (unsigned i = 0; i < n && !vocr_cancelled(NULL); i++) {
-        const char *ran = "?";
         int64_t t = now_us();
-        vjo_selftest_stage_begin(i, job_cfg.vocr_model, job_cfg.vocr_fallback_model);
+        vjo_selftest_stage_begin(i, vjo_vocr_tier_model((int)top),
+                                 low + 1u < top ? vjo_vocr_tier_model((int)low + 1) : "");
         sceClibMemset(result, 0, sizeof(*result));
-        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), NULL, &ran);
+        rc = vocr_run_one(result, vjo_selftest_stage_flags(i), tiers, ran);
         if (vjo_selftest_stage_wait(i, rc, result))
             return rc;
-        vjo_selftest_stage_end(i, rc, result, (uint32_t)((now_us() - t) / 1000), ran);
+        vjo_selftest_stage_end(i, rc, result, (uint32_t)((now_us() - t) / 1000), vjo_vocr_tier_model((int)*ran));
     }
     if (vocr_cancelled(NULL)) return VJO_E_CANCELLED; /* the stages run again on the next settled screen */
     vjo_selftest_done();
@@ -880,34 +908,34 @@ static int run_selftest_stages(VjoGameOcrResult *result)
 static int run_vocr(VjoArena *a, VjoOverlayData *out)
 {
     static VjoGameOcrResult result;
-    const char *ran = "?";
+    unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
     int local = local_pipeline(&job_cfg);
     sceClibMemset(&result, 0, sizeof(result));
-    vocr_fallback_requested = 0;
     if (vjo_selftest_stages())
-        out->err.rc = run_selftest_stages(&result);
+        out->err.rc = run_selftest_stages(&result, tiers, &ran);
     else
-        out->err.rc = vocr_run_one(&result, 0, NULL, &ran);
-    /* The configured model failed to open or verify: keep OCR working with
-     * the fallback for this job. Only a file that is absent, the wrong
-     * length or fails its hash (io 0: rejected after reading) makes the
-     * switch stick for this game; a timeout or unavailable storage does not. */
-    if (out->err.rc == VJO_E_OCR_MODEL && vocr_fallback_requested && !result.fallback &&
-        !vocr_cancelled(NULL)) {
+        out->err.rc = vocr_run_one(&result, 0, tiers, &ran);
+    /* A tier's model failed to open or verify: keep OCR working with the next
+     * smaller tier for this job. Only a file that is absent, the wrong length or
+     * fails its hash (io 0: rejected after reading) leaves the tier out for this
+     * game; a timeout or unavailable storage does not. Log only. */
+    while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL && ran <= VJO_VOCR_TIERS &&
+           !vocr_cancelled(NULL)) {
         int file_bad = !result.io_error || result.io_error == VJO_ERR_FORMAT ||
                        (uint32_t)result.io_error == 0x80010002u; /* ENOENT */
-        vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s%s", job_cfg.vocr_model,
-                (unsigned)result.io_error, job_cfg.vocr_fallback_model,
+        unsigned failed = ran, below = tiers & ((1u << (failed - 1u)) - 1u);
+        vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s%s", vjo_vocr_tier_model((int)failed),
+                (unsigned)result.io_error, below ? vjo_vocr_tier_model((int)vocr_top_tier(below)) : "none",
                 file_bad ? " for this game" : " for this job");
         if (file_bad) {
-            sceClibSnprintf(vocr_unusable, sizeof(vocr_unusable), "%.*s", (int)sizeof(vocr_unusable) - 1,
-                            job_cfg.vocr_model);
+            if (vocr_unusable_generation != job_generation) vocr_unusable = 0;
+            vocr_unusable |= 1u << (failed - 1u);
             vocr_unusable_generation = job_generation;
         }
-        vocr_retry_with_fallback = 1;
+        if (!below) break;
+        tiers = below;
         sceClibMemset(&result, 0, sizeof(result));
-        out->err.rc = vocr_run_one(&result, 0, NULL, &ran);
-        vocr_retry_with_fallback = 0;
+        out->err.rc = vocr_run_one(&result, 0, tiers, &ran);
     }
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {
@@ -926,9 +954,10 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
     /* The worker returns the text normalised (core/textnorm.h: one form of each
      * mark, ー or 一 by context); the recognizer's own text goes to the log. */
     log_text_lines(result.text, sizeof(result.text));
-    /* The model on this text's Anki cards (ran: the config's name of the model
-     * that ran; a self-test job's last stage is the configured one). */
-    const char *read_by = result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model;
+    /* The model on this text's Anki cards: the tier's that ran (a self-test job's
+     * last stage is the configured one's). A constant string. */
+    const char *read_by = vjo_vocr_tier_model((int)ran);
+    if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
     if (local && job_refresh) {
         /* The open overlay shows local_text, its lookup and Anki card: this
          * job changes none of them. The control thread compares its text
@@ -1179,6 +1208,8 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_idx = refresh ? 1 : local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
     job_generation = game_generation;
+    sceClibMemcpy(job_title, title_id, sizeof(job_title));
+    job_title[sizeof(job_title) - 1] = '\0';
     job_cached_text = !local_pipeline(&cfg) && cache_ok && cache_dictionary == cfg.dictionary
                       ? cache_data[active].filtered : NULL;
     job_same_text = 0;
@@ -1265,8 +1296,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
          a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
          a->ocr_refine_lines != b->ocr_refine_lines ||
-         (a->ocr_backend == VJO_OCR_VOCR && (sceClibStrcmp(a->vocr_model, b->vocr_model) ||
-                                             sceClibStrcmp(a->vocr_fallback_model, b->vocr_fallback_model)))))
+         (a->ocr_backend == VJO_OCR_VOCR && a->vocr_tier != b->vocr_tier)))
         return 0;
     if (a->dictionary == VJO_DICT_LOCAL)
         return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&

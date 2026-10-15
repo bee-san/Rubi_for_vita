@@ -381,7 +381,10 @@ def analyse_v2(records):
                   + (f" in {res.get('load_ms')} ms" if res.get("weights") == "read" else "")
                   + f", recognize {res.get('recognize_ms', '?')} ms")
         verdict = "PASS"
-        if name == "fallback" and not end.get("fallback"):
+        # API 21: the stage runs the smallest model size; with Small configured there is none smaller
+        # (the config record's fallback is "-"), so the configured model running is the stage's pass
+        smallest = (out.get("config") or {}).get("fallback") == "-"
+        if name == "fallback" and not end.get("fallback") and not smallest:
             verdict, detail = "FAIL", "the fallback model was not used: " + detail
         if name == "fullscreen":
             m = re.match(r"(\d+)x(\d+)", str(region))
@@ -524,7 +527,12 @@ def analyse_v2(records):
     # findings
     if out.get("config"):
         c = out["config"]
-        findings.append(f"Configured {c.get('model')} with fallback {c.get('fallback')}.")
+        if c.get("tier"):  # API 21: the model size and its model, and the smallest size the fallback stage runs
+            findings.append(f"Configured the {c['tier']} model size ({c.get('model')}); the fallback stage runs "
+                            + (f"the smallest, {c.get('fallback')}." if c.get("fallback") != "-"
+                               else "it too: it is the smallest."))
+        else:
+            findings.append(f"Configured {c.get('model')} with fallback {c.get('fallback')}.")
     for step, sample in out["samples"].items():
         paf = sample.get("mem", {}).get("paf_free")
         if isinstance(paf, int) and 0 < paf < PAF_RESERVE:
@@ -871,6 +879,10 @@ LOG = {
     # API 20: the cascade's model, whose re-reads are not in the line above
     "cascade_speed": re.compile(r"^game vocr cascade speed: (\d+) frames in (\d+) us, (\d+) us per frame"),
     "unusable": re.compile(r"^game vocr: (\S+) is unusable here \(io=0x([0-9A-Fa-f]+)\), using (\S+)"),
+    # API 21, shell/worker.c log_tier_checks: a model size that did not fit the game's free memory, and the
+    # size the job went on to (only the log says so: no UI shows it)
+    "tier": re.compile(r"^tier (\w+) did not fit in (\S+) \(need (\d+), free (-?\d+)\); "
+                       r"(?:(?:using|trying) (\w+)|no smaller tier: not enough memory)"),
     "line": re.compile(r"(\d+)x(\d+) (\d+)f (\d+)\.(\d)ms"),
     # shell/worker.c: the dictionary's display name (core/config.c), "Local dictionaries" by default
     "game": re.compile(r"^game (\S+) started: dictionary (.+?) \(key (\S+)\), trigger (\S+), subtitles (\S+), ocr_mode (\S+)"),
@@ -933,7 +945,7 @@ def summarise_log(text):
     s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
-         "gstep_fail": {}, "config_warnings": [],
+         "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
          "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
@@ -1046,8 +1058,8 @@ def summarise_log(text):
                               "load": int(m.group(13)), "recognize": int(m.group(14)), "frames": int(m.group(15)),
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             continue
-        for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "game", "disabled", "done", "overlay",
-                    "anki_save", "anki_queue", "anki_sent", "gstep"):
+        for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
+                    "done", "overlay", "anki_save", "anki_queue", "anki_sent", "gstep"):
             m = LOG[key].match(line)
             if not m:
                 continue
@@ -1068,6 +1080,9 @@ def summarise_log(text):
                 s["cascade_speed_us"].append(int(m.group(3)))
             elif key == "unusable":
                 s["unusable"].append(f"{m.group(1)} io=0x{m.group(2)} -> {m.group(3)}")
+            elif key == "tier":
+                s["tier_misses"].append({"tier": m.group(1), "title": m.group(2), "need": int(m.group(3)),
+                                         "free": int(m.group(4)), "next": m.group(5)})
             elif key == "game":
                 g = s["games"].setdefault(m.group(1), {"starts": 0, "ocr_mode": m.group(6), "dictionary": m.group(2)})
                 g["starts"] += 1
@@ -1197,9 +1212,12 @@ def summarise_collect(folder):
         m = re.match(r"^\s*([a-z0-9_]+)\s*=\s*(.*?)\s*$", line)
         if m:
             cfg[m.group(1)] = m.group(2)
-    out["config"] = {k: cfg.get(k) for k in ("ocr_backend", "vocr_model", "vocr_fallback_model", "ocr_mode", "dictionary",
+    out["config"] = {k: cfg.get(k) for k in ("ocr_backend", "vocr_tier", "ocr_mode", "dictionary",
                                              "local_dictionaries", "log_file", "anki_mining",
                                              "japanese_only_selection", "highlight_mode")}
+    for k in ("vocr_model", "vocr_fallback_model"):  # an older build's model choice (API 20 and before)
+        if k in cfg:
+            out["config"][k] = cfg[k]
     out["config"]["anki_host"] = "set" if cfg.get("anki_host") else "empty"
     # (an audio source URL can carry an API key: only whether it is set)
     out["config"]["anki_audio_url"] = "set" if cfg.get("anki_audio_url") else "empty"
@@ -1348,6 +1366,21 @@ def render_collect(c):
                             if lg.get("cascade_speed_us") else ""))
             if lg["captures"]:
                 L.append("  capture: " + ", ".join(f"{k} x{n}" for k, n in lg["captures"].items()))
+        misses = lg.get("tier_misses") or []
+        if misses:
+            # API 21: each model size that did not fit, per game, with the least free memory seen against its need
+            by = {}
+            for miss in misses:
+                b = by.setdefault((miss["tier"], miss["title"]), {"n": 0, "need": miss["need"], "free": miss["free"],
+                                                                  "next": {}})
+                b["n"] += 1
+                b["free"] = min(b["free"], miss["free"])
+                b["need"] = max(b["need"], miss["need"])
+                nxt = miss["next"] or "none"
+                b["next"][nxt] = b["next"].get(nxt, 0) + 1
+            L.append("  model sizes that did not fit (log only, never shown): " + "; ".join(
+                f"{tier} in {title} x{b['n']} (need {b['need']:,} B, free as low as {b['free']:,} B; then "
+                + ", ".join(f"{n} x{c}" for n, c in b["next"].items()) + ")" for (tier, title), b in by.items()))
         st = lg.get("settle") or {}
         if st.get("jobs"):
             L.append(f"  stable-text wait: {st['jobs']} job(s): rows held still in {st['held']}, the limit reached in "

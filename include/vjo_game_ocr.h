@@ -25,7 +25,8 @@
 
 /* VjoGameOcrRequest.flags (the Shell sets them; normal jobs use 0). */
 #define VJO_GAME_OCR_F_FULL 0x1u           /* the whole frame, whatever the region */
-#define VJO_GAME_OCR_F_FORCE_FALLBACK 0x2u /* self-test: the memory check refuses the model, so the fallback runs */
+#define VJO_GAME_OCR_F_FORCE_FALLBACK 0x2u /* self-test: the memory check refuses the model, so the fallback runs
+                                              (a request by tiers: the smallest of its tiers runs) */
 #define VJO_GAME_OCR_F_PROBE 0x4u          /* self-test: try every capture path and memory type, recognize nothing */
 /* API 20: the job's policy (core/vocr_ocr.h VjoVocrPolicy). It rides in the
  * flags so the request, which the kernel keeps a copy of, keeps its size. */
@@ -73,15 +74,27 @@ typedef struct {
     /* A smaller pinned model the worker runs instead when the game's free
      * memory has room for it but not for `model`; "" for none. */
     char fallback[VJO_GAME_OCR_MODEL_BYTES];
+    /* API 21: the model tiers this job may run (bit t - 1 for tier t of
+     * include/vjo_vocr_sizes.h: 1 Small, 2 Normal, 4 Large), or 0 for a request by
+     * model name (model, then fallback, as before). With tiers the worker runs the
+     * largest of them whose job fits beside that tier's reserve, else the next one
+     * down, and opens each by its tier (VJO_GAME_OCR_OPEN_TIER), never by `model`
+     * (which names the largest, for the logs) or `fallback` (""). */
+    uint32_t tiers;
 } VjoGameOcrRequest;
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
- * or the cascade's model when the request gives a cascade ceiling. */
+ * or the cascade's model when the request gives a cascade ceiling; or (API 21,
+ * a request by tiers) the model of tier which - VJO_GAME_OCR_OPEN_TIER + 1: one of
+ * the request's tiers, or with a cascade ceiling the tier above its largest
+ * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
+ * one by name opens no TIER. */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
 #define VJO_GAME_OCR_OPEN_FALLBACK 1u
 #define VJO_GAME_OCR_OPEN_LM 2u
 #define VJO_GAME_OCR_OPEN_CASCADE 8u
+#define VJO_GAME_OCR_OPEN_TIER 9u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -111,7 +124,12 @@ enum {
     VJO_GSTEP_NONE = 0,
     VJO_GSTEP_MEM,       /* a memory sample (rc: the query's) */
     VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's, which
-                            then runs (sum 1: forced by the self-test) */
+                            then runs (sum 1: forced by the self-test). API 21, a request by tiers: one check
+                            per tier tried, largest first; kind = LM tier | 8 (with the cascade) | the tier
+                            checked << 4 (VJO_GCHECK_TIER) | 0x40 (forced by the self-test); arg 0 for the
+                            largest requested tier, 1 for a smaller one; sum = the worker's own resident
+                            bytes the check counted as free (released first); the reserve is the tier's
+                            (VJO_GAME_RESERVE_*: of the cascade's tier with the cascade) */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
     VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
@@ -152,6 +170,10 @@ enum {
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
 #define VJO_GLM_RESIDENT 0x40000000u /* kept from an earlier job */
+/* VJO_GSTEP_CHECK kind, a request by tiers (API 21): the tier checked, and forced by the self-test. */
+#define VJO_GCHECK_TIER(kind) (((unsigned)(kind) >> 4) & 0x3u)
+#define VJO_GCHECK_CASCADE 0x8u
+#define VJO_GCHECK_FORCED 0x40u
 #define VJO_GAME_OCR_LOW_CONF 700u   /* a line's confidence (VjoGameOcrLine.flags) under 0.7: doubtful */
 /* VJO_GSTEP_SETTLE rc. */
 #define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
@@ -209,7 +231,10 @@ typedef struct {
     uint32_t need_workspace, need_weights, reserve_bytes;
     /* 1: the request's model did not fit the memory check, so the check (and
      * the job, if it passed) used the fallback; need_* above are then the
-     * fallback's and these the model's. */
+     * fallback's and these the model's. API 21, a request by tiers: how many
+     * tiers below the largest requested one the tier the check chose is (0: the
+     * largest; 1 or 2: a smaller one ran), with need_* that tier's and these the
+     * largest's. */
     uint32_t fallback, model_need_workspace, model_need_weights, model_release_bytes;
     /* The worker's own resident weights of another model, which the check
      * counted as free because the job releases them first (else 0). */

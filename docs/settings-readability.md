@@ -19,9 +19,10 @@ toggle a game or setting, or choose
 the local engine or Google Lens directly. Left chooses the local engine, Right
 Google Lens; Cross switches to the other one. Touching the OCR heading, help text
 or gaps only focuses that row, so it cannot accidentally enable online OCR.
-The selected engine's description identifies local/manual behavior or Lens's
-Wi-Fi requirement and image upload. Model availability is shown only for the
-selected local engine. Game policy and preference loading/saving are unchanged.
+With Google Lens selected the card's last line states its Wi-Fi requirement and
+image upload; with the local engine it names the model size and its model file
+(since API 21 the separate help line made way for the Model size row). Model
+availability is shown only for the selected local engine. Game policy and preference loading/saving are unchanged.
 The app still re-reads after a save failure to display the actual saved choices;
 a failure is never presented as a successful save.
 
@@ -272,6 +273,31 @@ After v0.7.12 the Meiki choice was removed, and after v0.8.0-test.1 (#81) the
 VOCR2 trial. The row now has two 432-pixel buttons, 12 pixels apart, with the
 same left and right edges as before: the local engine, labelled with the
 generation of the model it runs (VOCR3; `core/vocr_models.c`), and Google Lens.
+
+**Model size (API 21).** The OCR card has two rows since the model sizes. Its
+height is unchanged (146 pixels): the help line made way for a second row, so the
+cards below keep their places. The first row is the engine: its title at the left
+and two 337-pixel buttons (48 pixels tall, 12 apart, from x = 232 to 918). The
+second, under it, is the local engine's **Model size**: its title, with
+"estimated" below it, and three 220-pixel buttons, 54 pixels tall and 13 apart,
+Small, Normal and Large, each with a second line, its estimated time for a
+3-line textbox and the game memory a job of it takes (`0.7 s, 0.9 MB`,
+`1.3 s, 1.4 MB`, `1.7 s, 1.9 MB`, from `core/vocr_models.c`). The chosen size is
+filled in the accent colour; with Google Lens the row stays, dimmed, the chosen
+size only outlined, and a tap still chooses a size for the local engine. The
+card's last line names the chosen size and its model (`Normal: default,
+balanced. VOCR3-H15 found.`), or that file missing. Up/Down select the engine row,
+the size row and the three cards (five rows); on the size row Left/Right choose
+the next smaller or larger size and Enter goes round them; a touch on a size
+chooses it, the row's title, the gaps and the status line only focus it. The
+focus bar at the card's left edge is beside the selected row only. The local
+engine's name follows the size's model: VOCR4 for Large. When a game's free memory
+has no room for the chosen size a job runs a smaller one; nothing in the app says
+so (owner 2026-10-15 04:54Z), only `log.txt`. `host/tests/test_settings_app.c`
+drives it: every size's edges and gaps by touch, Down/Left/Right/Enter/Up, the
+saved `vocr_tier` (an older `vocr_model` line dropped on the first save), the
+muted row under Lens, each size's file missing (the next smaller one's generation
+named, the chosen size's file reported), and no frame naming a fallback.
 A saved `ocr_backend = vocr2`, `meiki` or `ncnn` loads as the local engine with a
 config warning, and the next save writes `vocr`. `host/tests/test_settings_app.c`
 runs the actual input/draw loop with a scripted controller, touch screen and

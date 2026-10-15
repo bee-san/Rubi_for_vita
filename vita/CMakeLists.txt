@@ -232,6 +232,12 @@ if(VJO_WITH_VOCR)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
+  # The worker's control code (a job's request, memory checks and ladder, one call
+  # per strip, the probe) is built for size: the recognizer, the finder and the
+  # decoder are vita-vn-ocr's runtime and core/vocr_ocr.c, built apart. -Os pays for
+  # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
+  # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
+  set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)

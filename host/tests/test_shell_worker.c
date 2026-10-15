@@ -264,6 +264,27 @@ static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED 
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
+/* API 21: tiers whose memory check the fake worker refuses (bit t - 1), in a
+ * request by tiers: it logs a CHECK step per tier tried, largest first, as the
+ * worker does, and runs the first one it does not refuse (all refused: OOM). */
+static unsigned fake_tier_checks;
+static unsigned fake_top(unsigned tiers)
+{
+    unsigned top = 0;
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) if (tiers & (1u << (t - 1u))) top = t;
+    return top;
+}
+static void fake_check(unsigned tier, unsigned top, int refused)
+{
+    VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
+    memset(s, 0, sizeof(*s));
+    s->id = VJO_GSTEP_CHECK;
+    s->kind = (uint8_t)(tier << 4);
+    s->arg = tier != top;
+    s->rc = refused;
+    s->bytes = 1000000u * tier; /* a made-up need: workspace and weights */
+    s->sum = 4096u * tier;      /* own resident blocks it would release first */
+}
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     TEST_CHECK(!open_batch); /* no log batch is held across the game's exchange */
@@ -306,10 +327,32 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         *out = fake_game_result;
         return 0;
     }
-    if (fake_missing_model && !strcmp(fake_game_request.model, fake_missing_model)) {
+    /* The model the job runs (API 21): the request's largest tier less the tiers the
+     * worker stepped down (its memory check), else the request's model by name. */
+    unsigned top = fake_top(fake_game_request.tiers), ran = top;
+    if (fake_tier_checks && top) {
+        for (unsigned t = top; t >= 1u; t--) {
+            int refused;
+            if (!(fake_game_request.tiers & (1u << (t - 1u)))) continue;
+            refused = (int)((fake_tier_checks >> (t - 1u)) & 1u);
+            fake_check(t, top, refused);
+            ran = t;
+            if (!refused) break;
+        }
+        fake_game_result.fallback = top - ran;
+        if ((fake_tier_checks >> (ran - 1u)) & 1u) { /* every tier refused: the worker's OOM */
+            fake_game_result.rc = VJO_E_OOM;
+            fake_game_result.free_user = fake_free_user; fake_game_result.reserve_bytes = 4194304;
+            fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 659456;
+            *out = fake_game_result;
+            return 0;
+        }
+    } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
+    const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
+    if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_game_result.rc = VJO_E_OCR_MODEL; /* as the worker reports an absent file */
         fake_game_result.io_error = fake_missing_io;
-        fake_game_result.fallback = fake_missing_with_fallback;
+        fake_game_result.fallback = top ? top - ran : (uint32_t)fake_missing_with_fallback; /* the tier that failed */
         if (fake_cancel_on_model_error) job_cancelled = 1;
         *out = fake_game_result;
         return 0;
@@ -329,7 +372,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.workspace_bytes = 244896;
     }
     else {
-        size_t bytes = vjo_vocr_workspace_bytes(fake_game_request.model, raw_state.width, raw_state.height);
+        size_t bytes = vjo_vocr_workspace_bytes(ran_model, raw_state.width, raw_state.height);
         static unsigned char capture[64 * 1024];
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
         VjoRgbaImage rgba = {raw_region, raw_state.width, raw_state.height, raw_state.raw_stride};
@@ -337,7 +380,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         vjo_grey_source_rgba(&rgba, &im);
         vocr_live = 1;
         fake_game_result.rc = vjo_vocr_ocr(&game_platform, fake_game_request.model_dir,
-            fake_game_request.model, &im, vocr_storage, bytes, capture,
+            ran_model, &im, vocr_storage, bytes, capture,
             vjo_vocr_capture_bytes(raw_state.width, raw_state.height),
             fake_game_result.text, sizeof(fake_game_result.text), &stats);
         vocr_live = 0; vocr_frees++;
@@ -436,8 +479,9 @@ static void reset(void)
     fake_missing_model = NULL;
     fake_memory_fallback = fake_missing_with_fallback = fake_cancel_on_model_error = 0;
     fake_missing_io = (int32_t)0x80010002u;
-    vocr_unusable[0] = 0; vocr_unusable_generation = 0; vocr_fallback_requested = 0;
-    vocr_retry_with_fallback = 0;
+    vocr_unusable = 0; vocr_unusable_generation = 0;
+    fake_tier_checks = 0;
+    memset(job_title, 0, sizeof(job_title));
     log_count = 0;
     capture_kernel_oom = jpeg_encoder_oom = 0;
     fake_screen_changes = 0;
@@ -679,25 +723,36 @@ static int run_vocr_job(void)
 }
 
 #ifdef VJO_WITH_VOCR
-/* The model name a job reports (the self-test's stage record reads it after
- * the job) is the configuration's string, never the request's copy, a local
- * of the call that is gone by then. */
+/* A job asks by tiers (API 21): the configured size and every smaller one, the
+ * largest's model naming it; the tier it reports is the one the worker ran, whose
+ * model name (the self-test's stage record and the Anki cards read it after the
+ * job) is a constant, never the request's copy, a local of the call. */
 static void test_vocr_ran_names_outlive_the_job(void)
 {
     VjoGameOcrResult result;
-    const char *ran = NULL;
+    unsigned ran = 0;
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg;
-    fake_memory_fallback = 1; /* the game ran the fallback */
-    (void)vocr_run_one(&result, 0, NULL, &ran);
-    TEST_CHECK(result.fallback && ran == job_cfg.vocr_fallback_model && !strcmp(ran, "VOCR3_FL10_w8.vocr"));
+    fake_memory_fallback = 1; /* the game ran the next smaller tier */
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+    TEST_CHECK(fake_game_request.tiers == 3u && !strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") &&
+               !fake_game_request.fallback[0]);
+    TEST_CHECK(result.fallback && ran == VJO_VOCR_TIER_SMALL && !strcmp(vjo_vocr_tier_model((int)ran), "VOCR3_FL10_w8.vocr"));
     fake_memory_fallback = 0;
-    (void)vocr_run_one(&result, 0, NULL, &ran);
-    TEST_CHECK(!result.fallback && ran == job_cfg.vocr_model);
-    TEST_MSG("ran %s", ran ? ran : "(null)");
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+    TEST_CHECK(!result.fallback && ran == VJO_VOCR_TIER_NORMAL);
+    /* each size asks for itself and every smaller one */
+    static const unsigned want[] = {0, 1u, 3u, 7u};
+    static const char *const model[] = {"", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr"};
+    for (int t = 1; t <= 3; t++) {
+        job_cfg.vocr_tier = t;
+        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran);
+        TEST_CHECK_(fake_game_request.tiers == want[t] && !strcmp(fake_game_request.model, model[t]) && ran == (unsigned)t,
+                    "tier %d: tiers 0x%X model %s ran %u", t, fake_game_request.tiers, fake_game_request.model, ran);
+    }
     mem_free();
 }
 
@@ -785,7 +840,7 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
 #ifdef VJO_WITH_VOCR
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
         TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
-        TEST_CHECK(!strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
+        TEST_CHECK(fake_game_request.tiers == 3u && !fake_game_request.fallback[0]); /* Normal, then Small */
         TEST_CHECK(cache_data[0].failed_stage == VJO_STAGE_NONE);
 #else
         TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
@@ -810,18 +865,18 @@ static void test_engine_cache_tracks_backend_models_and_storage(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
-    strcpy(loaded.vocr_model, "H15_w8.vocr");
+    loaded.vocr_tier = VJO_VOCR_TIER_SMALL;
     apply_config();
     TEST_CHECK(cache_ok); /* Lens runs no local model */
     loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
-    strcpy(loaded.vocr_model, "VOCR3_H15_w8.vocr");
+    loaded.vocr_tier = VJO_VOCR_TIER_LARGE; /* another model size: another pipeline */
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
-    strcpy(loaded.vocr_fallback_model, "FL10_w8.vocr");
+    loaded.vocr_tier = VJO_VOCR_TIER_NORMAL;
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
@@ -836,32 +891,27 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    /* VOCR3-H15 by default, VOCR3-FL10 when the game's memory has no room for it. */
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "VOCR3_H15_w8.vocr"));
-    TEST_CHECK(!strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr") && c.log_file == 1);
-    vjo_config_parse(&c, ini, sizeof(ini) - 1); /* v0.2.0's FL10 stays selectable */
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !strcmp(c.vocr_model, "FL10_w8.vocr") && c.n_warnings == 0);
+    /* Normal (VOCR3-H15) by default; a job runs Small (VOCR3-FL10) when the game's memory has no room for it. */
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
+    TEST_CHECK(!strcmp(vjo_vocr_tier_model(c.vocr_tier), "VOCR3_H15_w8.vocr") &&
+               !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL), "VOCR3_FL10_w8.vocr") &&
+               !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_LARGE), "VOCR4_W20_w8.vocr"));
+    vjo_config_parse(&c, ini, sizeof(ini) - 1); /* v0.2.0's FL10 chose the smallest size */
+    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.vocr_tier == VJO_VOCR_TIER_SMALL && c.n_warnings == 0);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
-    TEST_CHECK(!strcmp(c.vocr_model, "VOCR3_H15_w8.vocr") && c.n_warnings == 3); /* each kept the default */
-    const char fallbacks[] = "vocr_fallback_model = none\n";
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.n_warnings == 3); /* each kept the default */
+    const char fallbacks[] = "vocr_fallback_model = none\nvocr_fallback_model = ../x.vocr\n";
     vjo_config_defaults(&c);
-    vjo_config_parse(&c, fallbacks, sizeof(fallbacks) - 1);
-    TEST_CHECK(!c.vocr_fallback_model[0] && !c.n_warnings);
-    const char empty[] = "vocr_fallback_model =\n", bad_fallback[] = "vocr_fallback_model = ../x.vocr\n";
-    vjo_config_defaults(&c);
-    vjo_config_parse(&c, empty, sizeof(empty) - 1);
-    TEST_CHECK(!c.vocr_fallback_model[0] && !c.n_warnings);
-    vjo_config_defaults(&c);
-    vjo_config_parse(&c, bad_fallback, sizeof(bad_fallback) - 1);
-    TEST_CHECK(!strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr") && c.n_warnings == 1);
+    vjo_config_parse(&c, fallbacks, sizeof(fallbacks) - 1); /* no longer read: the tiers fall back */
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && !c.n_warnings);
     TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_VOCR == 2); /* 1, 3, 4: removed engines; IDs never move */
-    /* A saved VOCR2 choice keeps the configured model: the local engine runs it. */
+    /* A saved VOCR2 choice keeps the configured model's size: the local engine runs it. */
     const char old_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, old_ini, sizeof(old_ini) - 1);
     TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
-    TEST_CHECK(!strcmp(c.vocr_model, "H15_w8.vocr"));
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL);
 }
 
 static void test_vocr_warms_no_lens_connection(void)
@@ -885,11 +935,7 @@ static void test_vocr_model_change_invalidates_cache(void)
     loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     cache_ok = 1;
-    strcpy(loaded.vocr_model, "FL10_w8.vocr");
-    apply_config();
-    TEST_CHECK(!cache_ok);
-    cache_ok = 1;
-    loaded.vocr_fallback_model[0] = 0; /* the fallback is part of the pipeline too */
+    loaded.vocr_tier = VJO_VOCR_TIER_SMALL;
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
@@ -913,25 +959,27 @@ static void test_vocr_missing_model_releases_workspace(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    cfg.vocr_fallback_model[0] = 0; /* without a fallback: one job, one error */
+    cfg.vocr_tier = VJO_VOCR_TIER_SMALL; /* the smallest size: one job, one error */
     strokes(15, 39); /* one light line on black */
     int rc = run_vocr_job();
     TEST_CHECK(rc == VJO_E_OCR_MODEL && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 1 && vocr_frees == 1);
+    TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 1 && vocr_frees == 1 && fake_game_request.tiers == 1u);
     mem_free();
-    reset(); /* with the default fallback, both files missing: two jobs, the fallback's error */
+    reset(); /* the default size, both files missing: two jobs, the smaller one's error */
     cfg.ocr_backend = VJO_OCR_VOCR;
     strokes(15, 39);
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].failed_stage == VJO_STAGE_OCR);
     TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 2 && vocr_frees == 2);
-    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr") && !fake_game_request.fallback[0]);
+    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr") && fake_game_request.tiers == 1u &&
+               !fake_game_request.fallback[0]);
+    TEST_CHECK(logged("VOCR3_FL10_w8.vocr is unusable here (io=0x00000000), using none for this game") != NULL);
     mem_free();
 }
 
-/* The configured H15 is missing or corrupt on the card: the same job is
- * repeated with FL10, and this game's later jobs ask for FL10 directly until
- * the game changes. The memory fallback itself is the game worker's
- * (test_game_resident.c); this is the Shell's half. */
+/* The chosen size's model is missing or corrupt on the card: the same job is
+ * repeated with the next smaller tier, and this game's later jobs leave it out
+ * until the game changes. Only the log says so. The memory ladder itself is the
+ * game worker's (test_game_vocr.c); this is the Shell's half. */
 static void test_vocr_unusable_model_uses_the_fallback(void)
 {
     reset();
@@ -939,34 +987,44 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     fake_missing_model = "VOCR3_H15_w8.vocr";
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
-    TEST_CHECK(vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
+    TEST_CHECK(vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr") && fake_game_request.tiers == 1u);
     TEST_CHECK(logged("VOCR3_H15_w8.vocr is unusable here (io=0x80010002), using VOCR3_FL10_w8.vocr for this game") != NULL);
+    TEST_CHECK(!cache_data[0].err.detail && cache_data[0].failed_stage == VJO_STAGE_NONE); /* nothing shown of it */
+    TEST_CHECK(!strcmp(anki_model, "VOCR3_FL10_w8.vocr")); /* the cards name the model that read the text */
     mem_free();
     unsigned before = vocr_allocs;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* one job, straight to FL10 */
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* one job, Normal left out */
     TEST_CHECK(vocr_allocs == before + 1 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
-    TEST_CHECK(!fake_game_request.fallback[0]);
+    TEST_CHECK(fake_game_request.tiers == 1u && !fake_game_request.fallback[0]);
     mem_free();
-    game_generation++; job_generation = game_generation; /* another game: H15 is tried again */
+    game_generation++; job_generation = game_generation; /* another game: Normal is tried again */
     fake_missing_model = NULL;
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg; vjo_arena_reset(&results[0]);
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
-    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && !strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
+    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && fake_game_request.tiers == 3u);
     mem_free();
-    /* No fallback configured: the job names none. */
+    /* Large chosen and Normal's file bad: Large stays in this game's ladder, Normal is left out. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    cfg.vocr_fallback_model[0] = '\0';
-    TEST_CHECK(run_vocr_job() == VJO_OK && !fake_game_request.fallback[0]);
-    TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u); /* Large does not fit this game */
+    fake_missing_model = "VOCR3_H15_w8.vocr"; fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2);
+    TEST_CHECK(vocr_unusable == 1u << (VJO_VOCR_TIER_NORMAL - 1u) && fake_game_request.tiers == 1u);
+    mem_free();
+    TEST_ASSERT(mem_alloc() == 0);
+    job_cfg = cfg; vjo_arena_reset(&results[0]);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK);
+    TEST_CHECK(fake_game_request.tiers == 5u && !strcmp(fake_game_request.model, "VOCR4_W20_w8.vocr"));
+    /* the worker went from Large to Small: two tiers down, Small read the text */
+    TEST_CHECK(logged("tier large did not fit in this game (need 19777216, free 91238400); using small") != NULL);
     mem_free();
 }
 
 /* A transient failure (an Open timeout, unavailable storage) retries this job
- * with the fallback but does not stop later jobs from trying H15. */
+ * with the next smaller tier but does not stop later jobs from trying Normal. */
 static void test_vocr_transient_model_failure_is_not_sticky(void)
 {
     const int32_t transient[] = {VJO_ERR_TIMEOUT, (int32_t)0x80010013u, VJO_ERR_CANCELLED};
@@ -976,46 +1034,52 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
         fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = transient[i];
         fake_recognized_text = "猫";
         TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
-        TEST_CHECK(logged("using VOCR3_FL10_w8.vocr for this job") != NULL && !vocr_unusable[0]);
+        TEST_CHECK(logged("using VOCR3_FL10_w8.vocr for this job") != NULL && !vocr_unusable);
         mem_free();
         fake_missing_model = NULL;
         TEST_ASSERT(mem_alloc() == 0);
         job_cfg = cfg; vjo_arena_reset(&results[0]);
         TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && vocr_allocs == 3);
-        TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && !strcmp(fake_game_request.fallback, "VOCR3_FL10_w8.vocr"));
+        TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr") && fake_game_request.tiers == 3u);
         mem_free();
     }
     /* A hash/format rejection (io 0) is a bad file: sticky, like a missing one. */
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = 0; fake_recognized_text = "猫";
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(vocr_unusable, "VOCR3_H15_w8.vocr"));
+    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_unusable == 1u << (VJO_VOCR_TIER_NORMAL - 1u));
     mem_free();
 }
 
-/* No retry when the worker's memory check already ran the fallback (its own
- * file failed), when the job was cancelled, or without a fallback. */
+/* No retry when the tier the worker ran is already the smallest (its own file
+ * failed: then it is left out, and later jobs still try Normal), when the job
+ * was cancelled, or for the smallest size. */
 static void test_vocr_model_error_retry_limits(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_with_fallback = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !vocr_unusable[0]);
+    fake_memory_fallback = 1; fake_missing_model = "VOCR3_FL10_w8.vocr"; fake_missing_with_fallback = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && vocr_unusable == 1u);
+    mem_free();
+    TEST_ASSERT(mem_alloc() == 0);
+    fake_memory_fallback = 0; fake_missing_model = NULL;
+    job_cfg = cfg; vjo_arena_reset(&results[0]);
+    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 2u); /* Normal alone */
     mem_free();
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     fake_missing_model = "VOCR3_H15_w8.vocr"; fake_cancel_on_model_error = 1;
     run_vocr_job();
-    TEST_CHECK(vocr_allocs == 1 && !vocr_unusable[0]);
+    TEST_CHECK(vocr_allocs == 1 && !vocr_unusable);
     mem_free();
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_fallback_model[0] = 0;
-    fake_missing_model = "VOCR3_H15_w8.vocr";
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && !fake_game_request.fallback[0]);
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_SMALL;
+    fake_missing_model = "VOCR3_FL10_w8.vocr";
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_game_request.tiers == 1u);
     mem_free();
 }
 
-/* Neither VOCR3-H15 nor VOCR3-FL10 fitted: the job line says the fallback was refused too. */
+/* Neither tier fitted: the job line says the smaller one was refused too. */
 static void test_vocr_refused_fallback_is_labelled(void)
 {
     reset();
@@ -1025,26 +1089,63 @@ static void test_vocr_refused_fallback_is_labelled(void)
     TEST_CHECK(logged("game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too):") != NULL);
     TEST_CHECK(cache_data[0].err.detail && !strcmp(cache_data[0].err.detail, OOM_GAME_REGION));
     mem_free();
+    /* every tier refused by the ladder: one line per tier, the last says nothing smaller fits */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    fake_tier_checks = VJO_VOCR_TIERS_ALL; fake_free_user = 4300000;
+    memcpy(job_title, "PCSG00415", 10);
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(logged("tier large did not fit in PCSG00415 (need 19777216, free 4312288); trying normal") != NULL);
+    TEST_CHECK(logged("tier normal did not fit in PCSG00415 (need 10388608, free 4308192); trying small") != NULL);
+    TEST_CHECK(logged("tier small did not fit in PCSG00415 (need 5194304, free 4304096); no smaller tier: "
+                      "not enough memory") != NULL);
+    mem_free();
 }
 
-/* The worker reported that the configured model did not fit and the fallback
- * ran: the log names both, and the user sees the text as usual. */
+/* API 21, the owner's 04:54Z rule: a size that does not fit the game is left
+ * silently. The worker ran a smaller tier: the log names each tier that did not
+ * fit, in that game, with what it needed against what was free, and the tier
+ * used; the user sees the text as usual and no note of it anywhere. */
 static void test_vocr_memory_fallback_is_logged(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
+    cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
     fake_recognized_text = "猫";
-    fake_memory_fallback = 1;
+    fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u) | 1u << (VJO_VOCR_TIER_NORMAL - 1u);
+    memcpy(job_title, "PCSG00415", 10);
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫") && vocr_allocs == 1);
+    TEST_CHECK(fake_game_request.tiers == 7u && !strcmp(fake_game_request.model, "VOCR4_W20_w8.vocr"));
     const char *line = logged("game vocr rc=0 VOCR3_FL10_w8.vocr (fallback):");
     TEST_CHECK(line != NULL);
-    line = logged("game vocr fallback:");
-    TEST_CHECK(line && !strcmp(line, "game vocr fallback: VOCR3_H15_w8.vocr needs workspace 303104 + weights "
-                                     "1159168 + reserve 4194304, more than free USER 5300000 + own weights 659456"));
-    TEST_MSG("%s", line ? line : "(no fallback line)");
-    line = logged("game vocr memory:");
-    TEST_CHECK(line && strstr(line, "free USER=5300000, needs workspace 245760 + weights 0") &&
-               strstr(line, "check passed"));
+    /* need: the check's bytes and the tier's reserve; free: free USER and the own blocks released first */
+    line = logged("tier large");
+    TEST_CHECK(line && !strcmp(line, "tier large did not fit in PCSG00415 (need 19777216, free 91238400); trying normal"));
+    TEST_MSG("%s", line ? line : "(no large line)");
+    line = logged("tier normal");
+    TEST_CHECK(line && !strcmp(line, "tier normal did not fit in PCSG00415 (need 10388608, free 91234304); using small"));
+    TEST_MSG("%s", line ? line : "(no normal line)");
+    TEST_CHECK(!logged("tier small")); /* it fitted */
+    /* nothing of it in what the user sees: no error, no warning, the Anki cards name Small's model */
+    TEST_CHECK(!cache_data[0].err.detail && cache_data[0].failed_stage == VJO_STAGE_NONE && !g_view.n_warnings);
+    TEST_CHECK(!strcmp(anki_model, "VOCR3_FL10_w8.vocr"));
+    mem_free();
+    /* the largest tier fitted: no tier line at all */
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    fake_recognized_text = "猫"; fake_tier_checks = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("did not fit") && !strcmp(anki_model, "VOCR4_W20_w8.vocr"));
+    mem_free();
+    /* a job's game is the title it started in, kept while the job runs */
+    reset();
+    memcpy(title_id, "PCSB00123", 10);
+    loaded.ocr_backend = cfg.ocr_backend = VJO_OCR_VOCR;
+    TEST_ASSERT(mem_alloc() == 0);
+    start_job("test", 0);
+    TEST_CHECK(!strcmp(job_title, "PCSB00123"));
+    memcpy(title_id, "PCSG00415", 10);
+    TEST_CHECK(!strcmp(job_title, "PCSB00123"));
+    job_running = 0;
     mem_free();
 }
 
@@ -1291,6 +1392,11 @@ static void check_oom_message(const char *advice, const char *must, const char *
     TEST_CHECK(strlen(text) < sizeof(g_view.status)); /* shown whole in the status line */
     if (must) TEST_CHECK(strstr(text, must) != NULL);
     if (must_not) TEST_CHECK(strstr(text, must_not) == NULL);
+    /* No size, reserve or fallback on screen, in any memory advice (owner 2026-10-15 04:54Z). */
+    static const char *const hints[] = {"smallest", "smaller", "fallback", "fall back", "falls back", "instead",
+                                        "did not fit in", "Small", "Normal", "Large", "MiB", "tier", "size"};
+    for (unsigned i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
+        TEST_CHECK_(strstr(text, hints[i]) == NULL, "'%s' in: %s", hints[i], text);
     TEST_MSG("%s", text);
 }
 
@@ -1298,14 +1404,17 @@ static void test_vocr_oom_advice_names_the_stage(void)
 {
     /* The game worker's memory check, from its reported numbers (game_ocr/main.c):
      * job = reserve 4194304 + workspace 245760 = 4440064. */
-    /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. */
+    /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. A job asks by
+     * tiers (API 21): the weights its last check refused are its smallest tier's. No advice
+     * names a model, a model file, a size, a reserve, or that a smaller one was tried (owner
+     * 2026-10-15 04:54Z: no fallback hint on screen); check_oom_message checks every text. */
     const struct { int32_t free_user; uint32_t weights; const char *advice, *must, *must_not; } cases[] = {
-        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "tighter"},        /* below the reserve */
+        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "MiB"},            /* below the reserve */
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
-        {5200000, 1159168, OOM_GAME_MODEL_FITS, "would fit this region", "tighter"}, /* H15; FL10 fits */
-        {5000000, 1159168, OOM_GAME_MODEL, "VOCR3_FL10_w8.vocr, the smallest model, and a tighter", NULL},
-        {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
+        {5200000, 1159168, OOM_GAME_SMALLEST, "for the OCR model's weights", "vocr"},
+        {5000000, 1159168, OOM_GAME_SMALLEST, "tighter dialogue region", "VOCR3"},
+        {5000000, 659456, OOM_GAME_SMALLEST, "for the OCR model's weights", "Select FL10"}, /* FL10's weights */
         {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
         {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},
         {(int32_t)0x80020001u, 659456, OOM_GAME_UNKNOWN, "could not be checked", "FL10"},
@@ -1383,13 +1492,15 @@ static void test_vocr_storage_errors_are_specific(void)
     }
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
-    cfg.vocr_fallback_model[0] = 0;
+    cfg.vocr_tier = VJO_VOCR_TIER_SMALL; /* the smallest size: no smaller tier to repeat the job with */
     fake_model_io_error = (int32_t)0x80010013u;
     strokes(15, 39);
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].err.detail);
-    /* Rejecting a name before submitting must not reuse the previous job's I/O error. */
-    strcpy(cfg.vocr_model, "unsupported-model-name-longer-than-the-wire.vocr");
-    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && !cache_data[0].err.detail);
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].err.detail && vocr_allocs == 1);
+    /* Every size left out in this game: refused before submitting, and the previous job's I/O
+     * error is not reused. */
+    vocr_unusable = VJO_VOCR_TIERS_ALL; vocr_unusable_generation = job_generation;
+    unsigned before = submits;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && !cache_data[0].err.detail && submits == before);
     mem_free();
 }
 
@@ -1684,9 +1795,9 @@ static void test_japanese_only_selection_and_config_reload(void)
     generation = local_text_generation;
     vjo_post_cursor(1, generation); on_command(); finish_current_job();
     TEST_CHECK(g_view.cursor_byte == 1);
-    close_overlay(); strcpy(loaded.vocr_model, "VOCR3_FL10_w8.vocr");
+    close_overlay(); loaded.vocr_tier = VJO_VOCR_TIER_SMALL;
     open_overlay();
-    TEST_CHECK(!strcmp(cfg.vocr_model, "VOCR3_FL10_w8.vocr") && !strcmp(job_cfg.vocr_model, "VOCR3_FL10_w8.vocr"));
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_SMALL && job_cfg.vocr_tier == VJO_VOCR_TIER_SMALL);
     TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);
     close_overlay(); finish_current_job(); mem_free();
 }

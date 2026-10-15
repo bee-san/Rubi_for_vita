@@ -11,6 +11,8 @@
 #include "vocr_models.h"
 #include "vocr_lines.h"
 #include "../../core/fbgrey.h"
+#include "../../core/config.h"
+#include "../../include/vjo_ledger_budget.h"
 #include "../../include/vjo_vocr_sizes.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -180,6 +182,56 @@ static void test_model_metadata_matches_the_pins(void)
     TEST_CHECK(!vjo_vocr_model_info("VOCR2_FL10_w8.vocr") && !vjo_vocr_model_info("other.vocr") &&
                !vjo_vocr_model_info("") && !vjo_vocr_model_info(NULL));
     TEST_CHECK(vjo_vocr_model_infos(NULL) == info);
+}
+
+/* API 21: each model tier's pinned model is one the runtime runs, smaller to
+ * larger, and the estimates the Overlay app shows for it come from the runtime
+ * itself: its job bytes are the game worker's check at a full screen (page-rounded
+ * weights, workspace and capture block, without the LM, cascade or refinement),
+ * its need adds the tier's reserve; the time grows with the size. The three
+ * tables (include/vjo_vocr_sizes.h, core/config.c, core/vocr_models.c) agree;
+ * tools/tests/test_vocr_defaults.py checks them against tools/model_tiers.json. */
+static void test_tier_metadata_matches_the_runtime(void)
+{
+#define PAGE(x) (((size_t)(x) + 4095u) & ~(size_t)4095u)
+    static const char *const names[] = {"", VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME};
+    static const uint32_t bytes[] = {0, VJO_VOCR_TIER1_BYTES, VJO_VOCR_TIER2_BYTES, VJO_VOCR_TIER3_BYTES};
+    static const uint32_t reserve[] = {0, VJO_GAME_RESERVE_SMALL, VJO_GAME_RESERVE_NORMAL, VJO_GAME_RESERVE_LARGE};
+    static const char *const ids[] = {"", "small", "normal", "large"};
+    const VjoVocrModelInfo *prev = NULL;
+    TEST_CHECK(VJO_VOCR_TIERS == 3u && VJO_VOCR_TIERS_ALL == 7u);
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
+        const VjoVocrTierInfo *tier = vjo_vocr_tier_info(t);
+        const VjoVocrModel *m = tier ? vjo_vocr_model(tier->model) : NULL;
+        const VjoVocrModelInfo *mi = tier ? vjo_vocr_model_info(tier->model) : NULL;
+        TEST_ASSERT(tier && m && mi);
+        TEST_CHECK_(!strcmp(tier->model, names[t]) && !strcmp(vjo_vocr_tier_model((int)t), names[t]) &&
+                    m->bytes == bytes[t] && mi->bytes == bytes[t], "tier %u: %s", t, tier->model);
+        TEST_CHECK(!strcmp(tier->id, ids[t]) && !strcmp(vjo_vocr_tier_id((int)t), ids[t]) &&
+                   vjo_vocr_tier_parse(ids[t]) == (int)t && tier->reserve == reserve[t] && tier->name[0] &&
+                   tier->tagline[0]);
+        /* The console's (32-bit) job: the arena (or the finder's at 960x544, the larger) and the
+         * runtime's two structs, 3,760 B there (the #81 self-test's workspace records: VOCR3-FL10
+         * 128,592 = 124,832 + 3,760, VOCR3-H15 at the full screen 186,704 = 182,944 + 3,760); a
+         * 64-bit host's structs are larger, so its own job may be a page more. */
+        size_t finder = vocr_lines_arena_bytes(960, 544), arena = m->arena_bytes > finder ? m->arena_bytes : finder;
+        size_t vita_structs = 3760u, structs = vjo_vocr_job_bytes(m->name, 960, 544) - ((arena + 15u) & ~(size_t)15u);
+        TEST_CHECK_(sizeof(void *) == 4 ? structs == vita_structs : structs >= vita_structs, "structs %zu B", structs);
+        size_t job = PAGE(m->bytes) + PAGE(((arena + 15u) & ~(size_t)15u) + vita_structs) +
+                     PAGE(vjo_vocr_capture_bytes(960, 544));
+        TEST_CHECK_(mi->job_bytes == job, "%s: metadata %u B, the runtime's check %zu B", m->name, mi->job_bytes, job);
+        TEST_CHECK(vjo_vocr_tier_need(t) == mi->job_bytes + tier->reserve);
+        /* the shape's estimate: the same for every model of a shape, larger for a larger tier */
+        TEST_CHECK(mi->box_ms > 0 && (!prev || (mi->box_ms > prev->box_ms && mi->job_bytes > prev->job_bytes &&
+                                                mi->bytes > prev->bytes)));
+        prev = mi;
+    }
+    TEST_CHECK(!vjo_vocr_tier_info(0) && !vjo_vocr_tier_info(4) && !vjo_vocr_tier_need(0) && !vjo_vocr_tier_need(4));
+    /* models of one shape share its estimates (the v0.2.0 ones and VOCR3's, F20 and VOCR4-W20) */
+    TEST_CHECK(vjo_vocr_model_info("H15_w8.vocr")->box_ms == vjo_vocr_model_info(VJO_VOCR3_H15_NAME)->box_ms &&
+               vjo_vocr_model_info("F20_w8.vocr")->job_bytes == vjo_vocr_model_info(VJO_VOCR4_W20_NAME)->job_bytes &&
+               vjo_vocr_model_info("FL10_w8.vocr")->job_bytes == vjo_vocr_model_info(VJO_VOCR3_FL10_NAME)->job_bytes);
+#undef PAGE
 }
 
 static void test_empty_region_reads_no_model(void)
@@ -427,11 +479,14 @@ static void test_default_model_and_ceiling(void)
     unsigned n = 0;
     const VjoVocrModel *all = vjo_vocr_models(&n), *h15, *fl10, *old_h15, *old_fl10;
     vjo_config_defaults(&c);
-    TEST_CHECK(!strcmp(c.vocr_model, "VOCR3_H15_w8.vocr") && !strcmp(c.vocr_fallback_model, "VOCR3_FL10_w8.vocr"));
-    TEST_CHECK(!strcmp(VJO_VOCR_DEFAULT_MODEL, c.vocr_model) && !strcmp(VJO_VOCR3_H15_NAME, c.vocr_model) &&
-               !strcmp(VJO_VOCR3_FL10_NAME, c.vocr_fallback_model));
-    h15 = vjo_vocr_model(c.vocr_model);
-    fl10 = vjo_vocr_model(c.vocr_fallback_model);
+    /* API 21: the default tier, Normal, is VOCR3-H15; Small is VOCR3-FL10, Large VOCR4-W20 */
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && VJO_VOCR_TIER_DEFAULT == VJO_VOCR_TIER_NORMAL);
+    TEST_CHECK(!strcmp(VJO_VOCR_DEFAULT_MODEL, vjo_vocr_tier_model(c.vocr_tier)) &&
+               !strcmp(VJO_VOCR3_H15_NAME, vjo_vocr_tier_model(VJO_VOCR_TIER_NORMAL)) &&
+               !strcmp(VJO_VOCR3_FL10_NAME, vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL)) &&
+               !strcmp(VJO_VOCR4_W20_NAME, vjo_vocr_tier_model(VJO_VOCR_TIER_LARGE)));
+    h15 = vjo_vocr_model(vjo_vocr_tier_model(VJO_VOCR_TIER_NORMAL));
+    fl10 = vjo_vocr_model(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL));
     old_h15 = vjo_vocr_model("H15_w8.vocr");
     old_fl10 = vjo_vocr_model("FL10_w8.vocr");
     TEST_ASSERT(h15 && fl10 && old_h15 && old_fl10);
@@ -459,6 +514,7 @@ TEST_LIST = {
     {"default_is_vocr3_h15_with_vocr3_fl10_fallback_v020_kept_within_the_ceiling", test_default_model_and_ceiling},
     {"models_and_workspace_sizes", test_models_and_sizes},
     {"model_metadata_names_every_pinned_model_with_its_generation", test_model_metadata_matches_the_pins},
+    {"model_tiers_pin_runtime_models_and_their_estimates_come_from_the_runtime", test_tier_metadata_matches_the_runtime},
     {"empty_region_reads_strips_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},
     {"wrong_size_or_hash_is_refused", test_wrong_or_corrupt_weights},

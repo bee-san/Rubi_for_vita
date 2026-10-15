@@ -1,8 +1,10 @@
-"""The device default is VOCR3_H15_w8.vocr from bee-san/vita-vn-ocr v0.2.5-vocr3.1, with
-VOCR3_FL10_w8.vocr as its fallback; v0.2.0's H15/FL10 stay pinned and shipped; every pinned
-model fits the console budget ceiling; and the game worker's, the kernel's, the model metadata's
-(core/vocr_models.c, with each model's generation) and the Python pins agree. Each C table is
-read entry by entry, with a macro or a literal size; an entry the parsers cannot read fails."""
+"""The device default is the Normal model size, VOCR3_H15_w8.vocr from bee-san/vita-vn-ocr
+v0.2.5-vocr3.1, with Small (VOCR3_FL10_w8.vocr) and Large (VOCR4_W20_w8.vocr) the other sizes
+(tools/model_tiers.json; tools/tests/test_model_tiers.py checks the C tiers against it); v0.2.0's
+H15/FL10 stay pinned (host tools) but are not shipped; every pinned model fits the console budget
+ceiling; and the game worker's, the kernel's, the model metadata's (core/vocr_models.c, with each
+model's generation) and the Python pins agree. Each C table is read entry by entry, with a macro or
+a literal size; an entry the parsers cannot read fails."""
 import re
 import sys
 import unittest
@@ -21,20 +23,21 @@ VOCR3_FL10_SHA256 = "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b820
 CEILING_WEIGHTS, CEILING_ARENA = 1_600_000, 262_144
 
 
-def macros():
-    """#define NAME value (number or string) of include/vjo_vocr_sizes.h."""
-    text = (ROOT / "include/vjo_vocr_sizes.h").read_text()
-    out = {m.group(1): int(m.group(2)) for m in re.finditer(r"#define (VJO_\w+) (\d+)u", text)}
-    out.update({m.group(1): m.group(2) for m in re.finditer(r'#define (VJO_\w+) "([^"]+)"', text)})
-    for m in re.finditer(r"#define (VJO_\w+) (VJO_\w+)\s*$", text, re.M):  # an alias of another macro
+def macros(*more):
+    """#define NAME value (number or string) of include/vjo_vocr_sizes.h (and of the files `more`)."""
+    text = "\n".join((ROOT / path).read_text() for path in ("include/vjo_vocr_sizes.h", *more))
+    out = {m.group(1): int(m.group(2)) for m in re.finditer(r"#define (\w+) (\d+)u", text)}
+    out.update({m.group(1): m.group(2) for m in re.finditer(r'#define (\w+) "([^"]+)"', text)})
+    for m in re.finditer(r"#define (\w+) (VJO_\w+)\s*$", text, re.M):  # an alias of another macro
         if m.group(2) in out:
             out[m.group(1)] = out[m.group(2)]
     return out
 
 
 def number(token, sizes):
-    """A size or an arena: a macro of include/vjo_vocr_sizes.h, or a decimal literal (1155968u)."""
-    return sizes[token] if token.startswith("VJO_") else int(token)
+    """A size or an arena: a macro of include/vjo_vocr_sizes.h (or of the file read), or a decimal
+    literal (1155968u)."""
+    return sizes[token] if not token.isdigit() else int(token)
 
 
 def without_comments(source):
@@ -71,6 +74,7 @@ def every_pin(where, pins, expected):
 
 
 SIZE = r"(VJO_\w+|\d+)[uU]?"  # a macro or a decimal literal, as either table may spell it
+ESTIMATE = r"([A-Z][A-Z0-9_]+|\d+)[uU]?"  # an estimate: a macro of core/vocr_models.c, or a literal
 
 
 def c_table(source=None):
@@ -87,14 +91,19 @@ def c_table(source=None):
     return every_pin("core/vocr_ocr.c models[]", pins, entries(body))
 
 
-def metadata_table(source=None):
-    """name -> (generation, shape, bytes) from core/vocr_models.c, the Overlay app's model metadata."""
+def metadata_table(source=None, estimates=False):
+    """name -> (generation, shape, bytes) from core/vocr_models.c, the Overlay app's model metadata;
+    with estimates, name -> (generation, shape, bytes, box ms, job bytes)."""
     if source is None:
         source = (ROOT / "core/vocr_models.c").read_text()
     sizes = macros()
+    sizes.update({m.group(1): int(m.group(2)) for m in re.finditer(r"#define (\w+) (\d+)u", source)})
     body = array_body(source, "#else\nstatic const VjoVocrModelInfo infos[]")
-    pins = [(sizes.get(m.group(1), m.group(1)), (m.group(2), m.group(3), number(m.group(4), sizes)))
-            for m in re.finditer(r'\{"?([\w.]+)"?, "(\w+)", "(\w+)", ' + SIZE + r'\}', body)]
+    pins = [(sizes.get(m.group(1), m.group(1)),
+             (m.group(2), m.group(3), number(m.group(4), sizes))
+             + ((number(m.group(5), sizes), number(m.group(6), sizes)) if estimates else ()))
+            for m in re.finditer(r'\{"?([\w.]+)"?, "(\w+)", "(\w+)", ' + SIZE + ", " + ESTIMATE + ", " + ESTIMATE
+                                 + r'\}', body)]
     return every_pin("core/vocr_models.c infos[]", pins, entries(body))
 
 
@@ -157,7 +166,8 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(c_table()[prepare_ocr.VOCR_CASCADE_MODEL][:2], (size, sha))
         import package_release  # noqa: PLC0415
         roles = {name: role for name, _, _, role in package_release.shipped_models()}
-        self.assertIn(prepare_ocr.VOCR_CASCADE_MODEL, roles)
+        self.assertEqual(roles[prepare_ocr.VOCR_CASCADE_MODEL], "Large model size")  # Normal's cascade
+        self.assertEqual(sizes["VJO_VOCR_TIER3_NAME"], prepare_ocr.VOCR_CASCADE_MODEL)
         self.assertIn("\nocr_cascade_ms = 2000\n", (ROOT / "docs/config.example.ini").read_text())
 
     def test_lms_and_their_attribution_come_pinned_from_a_local_copy(self):
@@ -269,10 +279,13 @@ class VocrDefaults(unittest.TestCase):
         with self.assertRaises(AssertionError):
             c_table(add(worker, end, f'    {{.name = "VOCR5_N_w8.vocr", .bytes = 1155968u, .sha256 = {sha}}},\n'))
         meta = (ROOT / "core/vocr_models.c").read_text()
-        f20 = '    {"F20_w8.vocr", "VOCR1", "F20", VJO_VOCR_F20_BYTES},\n'
-        literal = metadata_table(add(meta, f20, '    {"VOCR5_N_w8.vocr", "VOCR5", "N", 3000000u},\n'))
-        self.assertEqual(literal["VOCR5_N_w8.vocr"], ("VOCR5", "N", 3000000))
-        for line in ('    {"VOCR5_N_w8.vocr", "VOCR5", "N", 0x2dc6c0},\n', f20):  # a hex size; a name twice
+        f20 = '    {"F20_w8.vocr", "VOCR1", "F20", VJO_VOCR_F20_BYTES, W20_BOX_MS, W20_JOB_BYTES},\n'
+        literal = metadata_table(add(meta, f20, '    {"VOCR5_N_w8.vocr", "VOCR5", "N", 3000000u, 900u, 3500000u},\n'),
+                                 estimates=True)
+        self.assertEqual(literal["VOCR5_N_w8.vocr"], ("VOCR5", "N", 3000000, 900, 3500000))
+        for line in ('    {"VOCR5_N_w8.vocr", "VOCR5", "N", 0x2dc6c0, 900u, 3500000u},\n',  # a hex size
+                     '    {"VOCR5_N_w8.vocr", "VOCR5", "N", 3000000u},\n',  # no estimates
+                     f20):  # a name twice
             with self.assertRaises(AssertionError, msg=line):
                 metadata_table(add(meta, f20, line))
 
@@ -292,43 +305,50 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
                                                        "v0.2.5-vocr4.1": "VOCR4"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], "VOCR3")
-        self.assertEqual(meta[prepare_ocr.VOCR_FALLBACK_MODEL][0], "VOCR3")
+        tiers = prepare_ocr.model_tiers()["tiers"]
+        self.assertEqual([meta[t["model"]][0] for t in tiers], ["VOCR3", "VOCR3", "VOCR4"])
         for path in ("core/vocr_ocr.c", "core/vocr_models.c", "kernel/game_ocr.c", "include/vjo_vocr_sizes.h",
                      "tools/prepare_ocr.py", "tools/package_release.py"):
             text = (ROOT / path).read_text()
             for pin in ('"VOCR2_FL10_w8.vocr"', "'VOCR2_FL10_w8.vocr'", "VJO_VOCR2", "VOCR2_ASSETS"):
                 self.assertNotIn(pin, text, path)
 
-    def test_defaults_everywhere_are_vocr3_h15_with_vocr3_fl10_fallback(self):
-        self.assertEqual((prepare_ocr.VOCR_DEFAULT_MODEL, prepare_ocr.VOCR_FALLBACK_MODEL),
-                         ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"))
+    def test_defaults_everywhere_are_the_normal_size_vocr3_h15(self):
+        tiers = prepare_ocr.model_tiers()
+        default = next(t for t in tiers["tiers"] if t["id"] == tiers["default"])
+        self.assertEqual((tiers["default"], default["model"], prepare_ocr.VOCR_DEFAULT_MODEL),
+                         ("normal", "VOCR3_H15_w8.vocr", "VOCR3_H15_w8.vocr"))
         config = (ROOT / "core/config.c").read_text()
-        self.assertIn('c->vocr_model, sizeof(c->vocr_model), "VOCR3_H15_w8.vocr"', config)
-        self.assertIn('c->vocr_fallback_model, sizeof(c->vocr_fallback_model), "VOCR3_FL10_w8.vocr"', config)
+        self.assertIn("c->vocr_tier = VJO_VOCR_TIER_DEFAULT;", config)
+        self.assertIn("#define VJO_VOCR_TIER_DEFAULT VJO_VOCR_TIER_NORMAL", (ROOT / "include/vjo_vocr_sizes.h").read_text())
         self.assertIn('#define VJO_VOCR_DEFAULT_MODEL "VOCR3_H15_w8.vocr"', (ROOT / "core/vocr_ocr.h").read_text())
         example = (ROOT / "docs/config.example.ini").read_text()
-        self.assertIn("\nvocr_model = VOCR3_H15_w8.vocr\n", example)
-        self.assertIn("\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n", example)
+        self.assertIn("\nvocr_tier = normal\n", example)
+        self.assertNotIn("vocr_model", example)
+        self.assertNotIn("vocr_fallback_model", example)
         self.assertIn("\nlog_file = on\n", example)
         installer = (ROOT / "tools/install-vita.sh").read_text()
-        self.assertIn("--set vocr_model=VOCR3_H15_w8.vocr", installer)
-        self.assertIn("--set vocr_fallback_model=VOCR3_FL10_w8.vocr", installer)
+        self.assertNotIn("vocr_model", installer)  # the user's model size is kept on an update
         package = (ROOT / "tools/package_release.py").read_text()
-        self.assertNotIn('"vocr_model": "', package)  # no model name of its own: the template's
-        # VOCR3 and the v0.2.0 fallback are both shipped, each with its own release's pins
+        self.assertNotIn("VOCR_FALLBACK_MODEL", package)
+        self.assertFalse(hasattr(prepare_ocr, "VOCR_FALLBACK_MODEL"))
+        self.assertNotIn('"vocr_model": "', package)  # no model name of its own: the template's size
         import package_release  # noqa: E402
         generations = {name: {"generation": prepare_ocr.VOCR_GENERATION[tag]}
                        for name, _, tag, _ in package_release.shipped_models() if name.endswith(".vocr")}
         defaults = package_release.manifest_defaults(example, generations)
-        self.assertEqual((defaults["vocr_model"], defaults["vocr_fallback_model"], defaults["ocr_engine"]),
-                         (prepare_ocr.VOCR_DEFAULT_MODEL, prepare_ocr.VOCR_FALLBACK_MODEL, "VOCR3"))
+        self.assertEqual((defaults["vocr_tier"], defaults["ocr_engine"]), ("normal", "VOCR3"))
+        self.assertNotIn("vocr_model", defaults)
+        # the three sizes are shipped, each with its own release's pins; v0.2.0's are not
         shipped = {name: (pins[name], tag, role) for name, pins, tag, role in package_release.shipped_models()}
-        self.assertEqual(list(shipped)[:4], ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr"])
-        self.assertEqual(shipped["VOCR3_H15_w8.vocr"][1:], ("v0.2.5-vocr3.1", "default"))
-        self.assertEqual(shipped["VOCR3_FL10_w8.vocr"][1:], ("v0.2.5-vocr3.1", "fallback"))
-        self.assertEqual(shipped["H15_w8.vocr"][0][2], H15_V020_SHA256)
-        self.assertEqual(shipped["H15_w8.vocr"][1], "v0.2.0")
-
+        self.assertEqual(list(shipped)[:3], ["VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr"])
+        self.assertEqual(shipped["VOCR3_H15_w8.vocr"][1:], ("v0.2.5-vocr3.1", "Normal model size (default)"))
+        self.assertEqual(shipped["VOCR3_FL10_w8.vocr"][1:], ("v0.2.5-vocr3.1", "Small model size"))
+        self.assertEqual(shipped["VOCR4_W20_w8.vocr"][1:], ("v0.2.5-vocr4.1", "Large model size"))
+        self.assertEqual(shipped["VOCR3_H15_w8.vocr"][0][2], VOCR3_H15_SHA256)
+        for name in ("H15_w8.vocr", "FL10_w8.vocr", "F20_w8.vocr"):
+            self.assertNotIn(name, shipped)
+        self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]}, set(prepare_ocr.VOCR_LM_ASSETS))
 
 if __name__ == "__main__":
     unittest.main()

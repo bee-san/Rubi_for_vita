@@ -11,21 +11,103 @@ passes the host tests; everything below the "Host measurements" heading was
 measured on a PC. On-console memory, speed and stability are what the
 [checklist](#on-console-checklist) is for.
 
+## Model sizes: Small, Normal, Large (API 21)
+
+The Overlay app's OCR page offers, under the local engine, its **Model size**:
+**Small** (fastest), **Normal** (the default, balanced) and **Large** (most
+accurate); `config.ini` keeps it as `vocr_tier = small | normal | large`. Each size
+is one pinned recognizer: this package's Small is VOCR3-FL10, its Normal VOCR3-H15
+and its Large VOCR4-W20 (the confidence cascade's model before sizes). A later
+generation's three blobs replace them through the pins, with no change to the app.
+`tools/model_tiers.json` is the one table of the sizes (their ceilings, reserves,
+models and estimates); the self-test analyser reads it, and
+`tools/tests/test_model_tiers.py` checks every C copy against it
+(`include/vjo_vocr_sizes.h`, `include/vjo_ledger_budget.h`, `core/config.c`,
+`core/vocr_models.c`).
+
+| size | model | int8 weights | est. time per 3-line textbox | game memory a job takes | its reserve | needs free |
+|---|---|---:|---:|---:|---:|---:|
+| Small | VOCR3-FL10 | 657,664 B | 0.74 s | 856,064 B | 4 MiB | 5,050,368 B |
+| Normal (default) | VOCR3-H15 | 1,155,968 B | 1.25 s | 1,413,120 B | 8 MiB | 9,801,728 B |
+| Large | VOCR4-W20 | 1,558,016 B | 1.72 s | 1,871,872 B | 16 MiB | 18,649,088 B |
+
+The times are estimates: vita-vn-ocr `docs/ctc-lm-decode.md`'s `vita/a9_cycles.py`
+figures for a greedy box of 3 lines of about 640 px (main 57b6622, high bound),
+calibrated so that VOCR3-H15 costs its measured 5.0-5.2 ms per CTC frame (the
+v0.8.0-test.1 console logs: 1,027 frames over 11 jobs). v0.8.0-test.2's logs (API 20;
+the installed files' SHA-256 are the pins) have VOCR3-FL10 recognizing at 3.0-3.7 ms per
+frame (the self-test's fallback stage: five jobs of one line, 37-77 frames each) and
+VOCR4-W20 re-reading lines as the confidence cascade at 7.4-7.8 ms per frame (five
+lines), near the estimates' 2.8-3.1 and 7.1-7.2 ms (all three read 32-px lines at
+stride 8, so a 640-px line is 80 frames); VOCR3-H15 there ran at 5.21 ms per frame
+pooled over 47 speed lines (3,134 frames; median 5.17 ms). VOCR4-W20 has not run as
+the chosen size on a console; v0.2.0's FL10
+(Small's shape) recognized lines in older builds, without frame counts. "Game memory a
+job takes" is a job's page-rounded weights, workspace and capture block at the full
+screen (the game worker's memory check), without the character LM, the cascade's
+model or the PSP refinement, which a job leaves out first when memory is short. The
+app's buttons show the time and that memory (`1.3 s, 1.4 MB`). Each size is within
+the owner's ceilings of 2026-10-14 (weights Small < 1 MB, Normal <= 1.6 MB, Large
+<= 2.5 MB; box time Small < 1 s, Normal < 2 s, Large < 3 s).
+
+**The ladder.** The Shell asks for the chosen size and every smaller one
+(`VjoGameOcrRequest.tiers`); the game worker tries them largest first and runs the
+first whose job fits the game's free USER memory beside that size's reserve
+(vita-vn-ocr `docs/model-tiers.md` 1.5, the reserve the largest size the job holds,
+the cascade's included), its own resident blocks of another size counted as free
+because they are released first. §1.5 gives each size its own reserve; the job keeps
+the largest held size's because §1.3's reason for a larger reserve is the resident
+block, not the size's name: Normal reading with Large's model as its cascade holds a
+Large-sized block, so it leaves Large's 16 MiB. Each try is a `check` step of the job
+(`include/vjo_game_ocr.h` VJO_GSTEP_CHECK: the size in the kind, refused or
+passed, what it needed). Nothing on screen says that a smaller size ran (owner
+2026-10-15 04:54Z): the Shell writes it to `log.txt`, e.g.
+
+```
+tier large did not fit in PCSG00415 (need 18649088, free 12000000); using normal
+```
+
+with need = the size's workspace, weights and reserve, and free = the game's free
+USER plus the blocks it would release. The `--collect` summary groups these lines
+per size and game (`model sizes that did not fit (log only, never shown)`). Only
+when no size fits does a job fail with the usual out-of-memory message.
+
+**The cascade** (#89) reads the lines a job doubts again with the next size up,
+when its model fits too: Small's is VOCR3-H15, Normal's VOCR4-W20, Large has none.
+The kernel broker opens a size's model only by its size
+(`VJO_GAME_OCR_OPEN_TIER`): one of the request's sizes, or with a cascade ceiling
+the size above its largest; never a name or a path.
+
+**A missing or damaged file** of a size (`VJO_E_OCR_MODEL` from the worker) leaves
+that size out for the rest of the game's session, and the job is repeated with the
+next smaller one; a timeout or unavailable storage repeats it for that job only.
+Only `log.txt` says so (`game vocr: VOCR3_H15_w8.vocr is unusable here
+(io=0x80010002), using VOCR3_FL10_w8.vocr for this game`). The Overlay app's
+status line names the chosen size's file missing (`VOCR3-H15 missing. Reinstall
+the package.`), a broken install rather than a memory fallback.
+
+**Older settings.** `vocr_model` (API 20 and before) sets the size by its file's
+shape, the FL10 family (`FL10_w8.vocr`, `VOCR3_FL10_w8.vocr`, the VOCR2 trial's)
+Small, H15 Normal, F20 and W20 Large, unless a `vocr_tier` line says otherwise;
+`vocr_fallback_model` is no longer read. The app's next save writes `vocr_tier`
+and drops both lines; `tools/migrate_config.py` (the installer) does the same.
+`install-vita.sh` sets no size, so an update keeps the user's choice. v0.2.0's
+`H15_w8.vocr`, `FL10_w8.vocr` and `F20_w8.vocr` stay pinned for the host tools
+but are no longer shipped.
+
 ## The engine's name: the model generation
 
 The Overlay app offers two OCR engines: this local one and Google Lens. It names
-the local engine after the generation of the model the game worker loads:
-`vocr_model`, or the fallback when the worker refuses that file (missing, not its
-release size, or a model this build does not run): **VOCR3** for this package's
-default `VOCR3_H15_w8.vocr`, **VOCR1** for v0.2.0's `H15_w8.vocr`, and VOCR3 again
-when that `H15_w8.vocr` is missing and the default fallback `VOCR3_FL10_w8.vocr`
-runs. With neither file there nothing runs; the button keeps the configured
-model's name. The last line of the engine card names the file's generation and
-shape (`VOCR3-H15 found`), or what is missing (`VOCR3-H15 missing; uses
-VOCR3-FL10`). "Found" means the file is there at its release size: the app reads
-no weights, so a damaged file of the right size shows as found until the game
-worker's SHA-256 check refuses it and its jobs use the fallback. The memory
-fallback of a single job (too little free memory for the model) is not shown.
+the local engine after the generation of the model the game worker loads: the
+chosen size's when its file is there at its release size, else the largest smaller
+size's that is (a job leaves a missing size out): **VOCR3** for this package's
+Small and Normal, **VOCR4** for its Large. With no file at or below the chosen size
+nothing runs; the button keeps the chosen size's generation. The card's last line
+names the size and its model (`Normal: default, balanced. VOCR3-H15 found.`), or
+that file missing. "Found" means the file is there at its release size: the app
+reads no weights, so a damaged file of the right size shows as found until the
+game worker's SHA-256 check refuses it and the game's jobs leave that size out.
+A job that runs a smaller size for memory is never shown.
 
 The overlay counts every v0.2.0 model as generation VOCR1, so the card says
 `VOCR1-H15` for v0.2.0's `H15_w8.vocr`, which vita-vn-ocr's reports call
@@ -42,16 +124,16 @@ v0.2.5-vocr3.1), and is kept in three places that the tests compare:
   reads it; the game worker's pins (`core/vocr_ocr.c`: SHA-256, arena) and the
   kernel broker's (`kernel/game_ocr.c`: size) name exactly the same files.
 - `tools/prepare_ocr.py` `VOCR_GENERATION`, per release tag.
-- `package-manifest.json` in the release zip: `generation` for every shipped
-  model and `defaults.ocr_engine` for the default's.
+- `package-manifest.json` in the release zip: `generation` (and `tier`, a size's
+  model) for every shipped model, and `defaults.ocr_engine` for the default size's.
 
 A later generation needs no app change: pin its files where every model is
 pinned (`core/vocr_ocr.c`: SHA-256 and arena; `kernel/game_ocr.c`: size;
-`core/vocr_models.c`: generation and shape; `tools/prepare_ocr.py`: the release
-assets and `VOCR_GENERATION`; the tests fail while one of them is missing), make
-one the default (`vocr_model`, the installer's `--set`), and the app shows its
-name, for example **VOCR5** (`host/tests/test_settings_app.c` builds the app
-against such a table).
+`core/vocr_models.c`: generation, shape and estimates; `tools/prepare_ocr.py`: the
+release assets and `VOCR_GENERATION`; the tests fail while one of them is
+missing), make them the sizes (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn_NAME and
+`tools/model_tiers.json` "model"), and the app shows its name, for example
+**VOCR5** (`host/tests/test_settings_app.c` builds the app against such a table).
 
 The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
 `VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
@@ -113,28 +195,26 @@ three page-rounded blocks together, the peak of a job (`vjo_vocr_job_bytes`,
 `vjo_vocr_capture_bytes`; the allocation simulator's "game USER peak" lines
 are the same figures); between jobs only the weights remain.
 
-| model (`vocr_model`) | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
+| model | weights | recognizer arena | full 960×544 region | 880×144 dialogue box |
 |---|---|---|---|---|
-| `VOCR3_H15_w8.vocr` (default), `H15_w8.vocr` (v0.2.0) | 1,155,968 B | 182,944 B | 1,409,024 B (1.34 MiB) | 1,404,928 B (1.34 MiB) |
-| `VOCR3_FL10_w8.vocr` (automatic fallback), `FL10_w8.vocr` (v0.2.0) | 657,664 B | 124,832 B | 851,968 B (0.81 MiB) | 847,872 B (0.81 MiB) |
-| `F20_w8.vocr` (larger) | 1,558,016 B | 241,056 B | 1,871,872 B (1.79 MiB) | 1,867,776 B (1.78 MiB) |
+| `VOCR3_H15_w8.vocr` (Normal, the default), `H15_w8.vocr` (v0.2.0) | 1,155,968 B | 182,944 B | 1,409,024 B (1.34 MiB) | 1,404,928 B (1.34 MiB) |
+| `VOCR3_FL10_w8.vocr` (Small), `FL10_w8.vocr` (v0.2.0) | 657,664 B | 124,832 B | 851,968 B (0.81 MiB) | 847,872 B (0.81 MiB) |
+| `VOCR4_W20_w8.vocr` (Large), `F20_w8.vocr` (v0.2.0) | 1,558,016 B | 241,056 B | 1,871,872 B (1.79 MiB) | 1,867,776 B (1.78 MiB) |
 
 The line finder's arena (83,323 B at 960×544) is smaller than every
 recognizer arena, so it costs nothing extra.
 
-**Default and fallback.** `vocr_model` (default `VOCR3_H15_w8.vocr`) is the
-model a job uses when the game has room for it. The game worker checks free
-`USER` memory before each job; if the reserve, the model's workspace and
-(unless already resident) its weights do not fit but the smaller
-`vocr_fallback_model` (default `VOCR3_FL10_w8.vocr`) does, that job runs the
-fallback. Resident fallback weights stay while the default still does not fit,
-and are released for it once it does. A missing, wrong or corrupt `vocr_model`
-file also makes the game's later jobs use the fallback (until the game
-restarts). Of the recognizers, the kernel opens only the two pinned names the
-Shell submitted (and, since API 20, the cascade's model when the request sets
-its ceiling; the LMs are separate files); the
-log names the model that ran and, after a memory fallback, what the default
-would have needed. Every pinned model is inside
+**The chosen size and the smaller ones.** A job runs the chosen model size
+(`vocr_tier`, Normal by default) when the game has room for it, else the next
+smaller one ([model sizes](#model-sizes-small-normal-large-api-21)). The game
+worker checks free `USER` memory before each job; a smaller size's resident
+weights stay while the chosen one still does not fit, and are released for it
+once it does. A missing, wrong or corrupt file of a size leaves that size out of
+the game's later jobs (until the game restarts). The kernel opens a size's model
+only by its size (and, since API 20, the cascade's when the request sets its
+ceiling: the next size up; the LMs are separate files); the log names the model
+that ran and each size that did not fit, with what it needed. Every pinned
+model is inside
 the console budget ceiling (weights ≤ 1,600,000 B, recognizer arena ≤
 262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). Since v0.7.1 inference runs in
 `VitaJPOverlay_OCR.suprx`, now registered per game in its own `*TITLEID` section
@@ -145,7 +225,7 @@ Shell has confirmed its per-game policy.
 
 The workspace is one private `USER_RW` memblock in that game's process.
 The worker requires enough reported free USER memory for the page-rounded
-workspace plus a 4 MiB game reserve; there is no Paf fallback for OCR.
+workspace plus the size's game reserve (4, 8 or 16 MiB); there is no Paf fallback for OCR.
 It does not borrow the game's heap. Spare bytes inside a game-owned memblock
 remain owned by the game and are not available through this allocator. Free
 USER memory, the process budget and available physical pages all affect fit.
@@ -436,7 +516,7 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 - **Keeping:** kept between jobs while the game is the active one.
 - **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, and on exit.
 - **Tier choice:** a job takes the largest tier up to `ocr_lm` that fits the memory check (free
-  USER minus the 4 MiB reserve must cover the workspace, the weights, the LM and the cascade's
+  USER minus the job's reserve (4, 8 or 16 MiB: the largest size it holds) must cover the workspace, the weights, the LM and the cascade's
   model), else a smaller tier, else none (greedy).
 - **Workspace:** the job's workspace holds the decoder's extras (the top-K of every frame, the LM
   context and the beam workspace: 56,928 B, bounded for every pinned model and LM) and 4 KiB for
@@ -485,9 +565,9 @@ same pixels by a larger recognizer, VOCR4-W20 (vita-vn-ocr #78,
 1,558,016 B, 241,056 B arena), and decoded with the same LM. Its reading is the one shown. On the
 lines measured that is better than keeping whichever reading is more confident (0.717 % against
 0.753 % with the 4 MB LM). VOCR4-W20 does not qualify as a default under vita-vn-ocr's gates; it only reads again
-the lines the default doubts. `vocr_model = VOCR4_W20_w8.vocr` is also accepted as the job's own
-model, within the same budgets; the cascade is then off, since it needs a model larger than the
-job's.
+the lines the default doubts. Since API 21 it is the Large model size, and the cascade reads
+with the next size up of the job's: VOCR4-W20 for Normal, VOCR3-H15 for Small, none for Large
+([model sizes](#model-sizes-small-normal-large-api-21)).
 
 - **Time ceiling.** A doubtful line is read again only while the job's recognition (every line's
   run and decode, the re-reads, and an estimate for the lines still to read; not the weights'
@@ -653,8 +733,9 @@ strips read are the same with and without the refinement.
 
 ## Models
 
-**The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as
-its automatic fallback.** They are vita-vn-ocr #67's recognizers, published as the
+**The default size, Normal, is VOCR3-H15 (`VOCR3_H15_w8.vocr`); Small is VOCR3-FL10
+(`VOCR3_FL10_w8.vocr`) and Large VOCR4-W20 (`VOCR4_W20_w8.vocr`).** The first two are
+vita-vn-ocr #67's recognizers, published as the
 [v0.2.5-vocr3.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.5-vocr3.1):
 H15's and FL10's shapes retrained, so the same sizes, arenas and line finder, and a job needs
 exactly the memory it needed with v0.2.0's H15 and FL10 (`host/tests/test_vocr.c` checks the
@@ -662,8 +743,9 @@ sizes, arenas and job bytes are equal; the Vita build's memory ledger is unchang
 
 | file | bytes | sha256 | W8I arena | release |
 |---|---|---|---|---|
-| `VOCR3_H15_w8.vocr` (default) | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
-| `VOCR3_FL10_w8.vocr` (fallback) | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
+| `VOCR3_H15_w8.vocr` (Normal, the default) | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
+| `VOCR3_FL10_w8.vocr` (Small) | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
+| `VOCR4_W20_w8.vocr` (Large) | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
 
@@ -672,26 +754,21 @@ vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0
 for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
 repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
 dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
-and no console has run them: they are the default of the test builds by the owner's choice
-(2026-10-14), and the v0.2.0 models stay in the package as the documented fallback. To go back
-to them, set in `config.ini`:
-
-```ini
-vocr_model = H15_w8.vocr
-vocr_fallback_model = FL10_w8.vocr
-```
-
-`vocr_model = VOCR3_FL10_w8.vocr` always runs the smaller model; `vocr_fallback_model = none`
-never falls back. `install-vita.sh` sets the package's defaults each time it runs, so set the choice
-again after a reinstall. The game worker and the kernel's model broker accept exactly these files,
-each at its pinned size and SHA-256:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
+and on the console VOCR3-H15 has run as the default (v0.8.0-test.1 and test.2), VOCR3-FL10 in
+test.2's self-test fallback stage and VOCR4-W20 there as the confidence cascade
+([model sizes](#model-sizes-small-normal-large-api-21)): they are the sizes of the test builds by the owner's
+choice (2026-10-14, Normal the default 2026-10-15). VOCR4-W20 (vita-vn-ocr #78, F20's shape) did
+not qualify as a default under that repository's gates either; it is the Large size and Normal's
+confidence cascade. The v0.2.0 models are no longer shipped or selectable (no size names them),
+but the game worker and the kernel's model broker still accept them by name, for the host tools:
+they accept exactly these files, each at its pinned size and SHA-256:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
 the recognizers `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release
 v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release
 v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the character
 LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
 `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
-`core/vocr_models.c` gives each recognizer its generation, the name of the local engine in the
-Overlay app.
+`core/vocr_models.c` gives each recognizer its generation (VOCR3, VOCR4, or VOCR1 for v0.2.0's),
+the name of the local engine in the Overlay app.
 
 The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
@@ -760,15 +837,15 @@ steps below cover a source build or adding another model.
    with access to it). `--from FILE` checks a copy downloaded another way.
    `tools/package_release.py --models ocr` needs every one of these files (it
    ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
-3. Copy the file to `ux0:data/VitaJPOverlay/ocr/`, or let the FTP installer do
+3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
+   vocr-tiers --output ocr` fetches the three sizes' models), or let the FTP installer do
    it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini
    ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
-   vocr_model = VOCR3_H15_w8.vocr
-   vocr_fallback_model = VOCR3_FL10_w8.vocr
+   vocr_tier = normal
    ocr_mode = auto
    log_file = on
    ```
@@ -851,10 +928,11 @@ copied, and the settings above. Close other apps first.
    frames=F io=0x... stat=0x... cleanup=...`. Success requires `rc=0` and
    `cleanup=0`. The first text-bearing job of a game logs `weights=read`;
    later ones log `weights=resident` with a much smaller `load`.
-   A job that fell back logs `VOCR3_FL10_w8.vocr (fallback)` and a `game vocr
-   fallback:` line with the default's needs. Three more lines follow:
+   A job that ran a smaller size logs its model with `(fallback)` and, for each
+   size that did not fit, `tier large did not fit in PCSG00415 (need N, free F);
+   using normal`. Three more lines follow:
    - `game vocr memory: free USER=U, needs workspace J + weights W + reserve
-     4194304: check passed|refused, headroom H`: the game's free memory at that
+     R: check passed|refused, headroom H`: the game's free memory at that
      moment, also for a refused job (`rc=-103`), i.e. this title's real OCR
      budget, and what was left (H < 0: refused).
    - `game vocr speed: F frames in T us, P us per frame`: the recognizer's
@@ -866,13 +944,12 @@ copied, and the settings above. Close other apps first.
    wording with the `game vocr memory:` log line:
    - *the kernel could not allocate this region's screen capture*: kernel
      memory; select a tighter region (the model does not matter) or restart;
-   - *the game has too little free memory for any OCR right now*: below its
-     4 MiB reserve; try later or restart the game;
+   - *the game has too little free memory for any OCR right now*: below the
+     job's reserve (4, 8 or 16 MiB by size); try later or restart the game;
    - *... for OCR of this region*: select a tighter region;
-   - *... for this OCR model's weights*: select FL10 (the smallest), also a
-     tighter region unless the message says FL10 would fit;
-   - *... the OCR model's weights, already the smallest*: a tighter region or
-     try again later;
+   - *... for the OCR model's weights*: no size fits, the smallest one asked for
+     included; a tighter region or later in the game. Like every message it names
+     no size (log.txt has the `tier ... did not fit` lines);
    - *could not be allocated although the memory check passed*: try again;
    - *the Shell has too little memory for the overlay's results*: restart the
      Vita (region and model do not matter).

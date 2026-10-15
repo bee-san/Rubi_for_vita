@@ -1222,6 +1222,76 @@ static void cascade_model_opens_only_with_a_ceiling(void)
     }
 }
 
+/* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
+ * the game opens a size's pinned model by its tier, never by a name: the kernel
+ * opens exactly the request's tiers, and with a cascade ceiling the tier above
+ * its largest (the cascade reads with the next size up), at their pinned sizes.
+ * Such a request opens nothing by name (model, fallback, cascade); one by name
+ * opens no tier; unknown tier bits are refused at Submit. */
+static void model_tiers_open_by_tier_only(void)
+{
+    static const struct { const char *name; uint32_t bytes; } pins[] = {
+        {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER1_BYTES}, {VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER2_BYTES},
+        {VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES}};
+    TEST_CHECK(!strcmp(pins[0].name, "VOCR3_FL10_w8.vocr") && !strcmp(pins[1].name, "VOCR3_H15_w8.vocr") &&
+               !strcmp(pins[2].name, "VOCR4_W20_w8.vocr"));
+    TEST_CHECK(pins[0].bytes == VJO_VOCR_FL10_BYTES && pins[1].bytes == VJO_VOCR_H15_BYTES &&
+               pins[2].bytes == VJO_VOCR_F20_BYTES);
+    for (uint32_t tiers = 1; tiers <= VJO_VOCR_TIERS_ALL; tiers++)
+        for (unsigned ceiling = 0; ceiling <= 1; ceiling++) {
+            uint32_t top = 0;
+            for (uint32_t t = 1; t <= VJO_VOCR_TIERS; t++) if (tiers & (1u << (t - 1u))) top = t;
+            for (uint32_t t = 1; t <= VJO_VOCR_TIERS + 1u; t++) {
+                setup(); VjoGameOcrRequest r = make_request();
+                strcpy(r.model, pins[top - 1u].name); /* the largest names the job (the kernel's log) */
+                r.tiers = tiers;
+                r.flags = ceiling ? 8u << VJO_GAME_OCR_CASCADE_SHIFT : 0u;
+                caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+                int allowed = t <= VJO_VOCR_TIERS && ((tiers & (1u << (t - 1u))) || (ceiling && t == top + 1u));
+                if (!allowed) {
+                    TEST_CHECK_(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + t - 1u, NULL) == VJO_ERR_ARG &&
+                                !model_opens, "tiers 0x%X ceiling %u: tier %u opened", tiers, ceiling, t);
+                } else {
+                    expect_lm = pins[t - 1u].name; expected_model_size = pins[t - 1u].bytes;
+                    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + t - 1u, NULL) == VJO_ERR_BUSY);
+                    model_tick();
+                    TEST_CHECK_(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + t - 1u, NULL) == (int)pins[t - 1u].bytes &&
+                                model_opens == 1, "tiers 0x%X ceiling %u: tier %u", tiers, ceiling, t);
+                    close_model(seq);
+                    expect_lm = NULL;
+                    model_opens = 0;
+                }
+                /* nothing by name: not the model it names, no fallback, not the cascade's name */
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG);
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_FALLBACK, NULL) == VJO_ERR_ARG);
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE, NULL) == VJO_ERR_ARG && !model_opens);
+                TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+            }
+        }
+    /* the LMs open by their tier as before, beside a request by tiers */
+    setup(); VjoGameOcrRequest r = make_request();
+    r.tiers = 3u; r.flags = 2u << VJO_GAME_OCR_LM_SHIFT;
+    caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+    expect_lm = VJO_VOCR_LM2_NAME; expected_model_size = VJO_VOCR_LM2_BYTES;
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_LM + 1u, NULL) == VJO_ERR_BUSY);
+    model_tick();
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_LM + 1u, NULL) == (int)VJO_VOCR_LM2_BYTES);
+    close_model(seq); expect_lm = NULL;
+    TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    /* a request by name opens no tier */
+    setup(); r = make_request();
+    r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    caller = 3; seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+    for (uint32_t t = 0; t <= VJO_VOCR_TIERS; t++)
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + t, NULL) == VJO_ERR_ARG && !model_opens);
+    TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    /* unknown tier bits are refused at Submit, as unknown flags are */
+    for (uint32_t bad = 8u; bad; bad <<= 1) {
+        setup(); r = make_request(); r.tiers = 1u | bad;
+        caller = 3; TEST_CHECK_(vjoOcrSubmit(&r) == VJO_ERR_ARG, "tiers 0x%X", r.tiers);
+    }
+}
+
 /* The fallback is a second pinned name the Shell submits; the game only
  * picks which of the two to open, never a path or another name. */
 static void fallback_is_one_of_the_submitted_pinned_names(void)
@@ -1285,6 +1355,7 @@ TEST_LIST = {
     {"the fallback is one of the submitted pinned names; Open picks which", fallback_is_one_of_the_submitted_pinned_names},
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
+    {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
