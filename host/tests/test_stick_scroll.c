@@ -140,17 +140,18 @@ static void held_for_an_hour(void)
     static const uint64_t rates[] = {HZ60, HZ30};
     for (int i = 0; i < 2; i++) {
         Rig r = rig();
-        long total = frame(&r, 255, rates[i]);
+        /* 64-bit counts: an hour of microseconds overflows a 32-bit long, as on the Vita */
+        long long total = frame(&r, 255, rates[i]);
         int most = 0, quiet = 0;
-        long frames = 3600L * 1000000L / (long)rates[i];
-        for (long f = 2; f <= frames; f++) {
+        long long frames = 3600LL * 1000000LL / (long long)rates[i];
+        for (long long f = 2; f <= frames; f++) {
             int m = frame(&r, 255, rates[i]);
             total += m;
             if (m > most) most = m;
             if (f > 11 && m == 0) quiet++;
         }
-        long want = 1 + (3600L * 1000000L - 166667L) / 16667L;
-        TEST_CHECK_(total >= want - 10 && total <= want + 10, "%llu us frames: %ld rows in an hour, want about %ld",
+        long long want = 1 + (3600LL * 1000000LL - 166667LL) / 16667LL;
+        TEST_CHECK_(total >= want - 10 && total <= want + 10, "%llu us frames: %lld rows in an hour, want about %lld",
                     (unsigned long long)rates[i], total, want);
         TEST_CHECK_(most <= 2 && quiet == 0, "%llu us frames: at most %d rows a frame, %d quiet frames",
                     (unsigned long long)rates[i], most, quiet);
