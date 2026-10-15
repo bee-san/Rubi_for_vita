@@ -31,7 +31,7 @@ void vjo_text_layout(const char *s, int width, float pixels, int lines, VjoTextM
     char line[512];
     const char *source = s;
     if (lines > VJO_TEXT_ROWS) lines = VJO_TEXT_ROWS;
-    out->rows = 0;
+    memset(out, 0, sizeof(*out));
     for (int row = 0; row < lines && *s; row++) {
         while (*s == ' ' || *s == '\r') s++;
         size_t end = fit_line(s, pixels, width, line, measure);
@@ -43,7 +43,7 @@ void vjo_text_layout(const char *s, int width, float pixels, int lines, VjoTextM
             ellipsis = 1;
         }
         VjoTextRow *r = &out->row[out->rows++];
-        r->start = (unsigned short)(s - source);
+        r->start = (unsigned)(s - source);
         r->bytes = (unsigned short)end;
         r->ellipsis = (unsigned char)ellipsis;
         if (!end && *s != '\n') break; /* Even one glyph can exceed a tiny region. */

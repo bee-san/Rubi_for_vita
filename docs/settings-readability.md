@@ -11,8 +11,8 @@ ON/OFF badge. The page tabs and the two direct engine buttons (the local
 engine, named after its model's generation, and Google Lens) have 48-pixel
 touch heights. The focused card has a bright border. Save failures have a distinct
 error color, and status messages have two lines above the control hints.
-Only three icon textures are held at once, retaining the existing unload-on-scroll
-ownership.
+Icons are cached by title ID and loaded one per frame
+([The Games list](#the-games-list)).
 
 Games-page controls keep their existing actions. Touch can select either page,
 toggle a game or setting, or choose
@@ -34,6 +34,150 @@ chooses it; the card's title and help only focus it.
 enabled dictionaries and 2 selected. It used the official 3.74 firmware fonts
 and a build that opens on this page, because injected keys did not reach the
 emulated app; it is not a physical-device check.
+
+## The Games list
+
+The owner found the Games page laggy with many games installed. Three things
+in `settings/main.c` made it so (read in the source, counted in the harness
+below; none timed on a console):
+
+- **Icons were decoded on the UI thread whenever the view moved.** `draw()`
+  freed the three visible icons and decoded three PNG files from the memory card
+  with `vita2d_load_PNG_file` before drawing, each time the list's top row
+  changed: every scroll step at the list's edge and every L/R. `rebuild()` did
+  the same after every toggle, Triangle and filter change. libpng reads a file
+  in pieces, one `sceIoRead` per chunk header, chunk and CRC (14 per icon in the
+  harness), and each load allocated and GPU-mapped a new texture block.
+- **Every wrapped text was laid out again every frame.** `fit_line` measures
+  each prefix of a row with `vita2d_pvf_text_width`, so a row of n characters
+  costs about n²/2 glyph measurements; three titles, the status and the hints
+  came to 3,323 measured glyphs in an idle frame of the harness's list (6,049
+  with 512 games' longer titles). libvita2d measures a glyph with an atlas
+  lookup and a `scePvfGetKerningInfo` call into the firmware's font library.
+- **Textures were freed while the GPU could still read them,** with no
+  `vita2d_wait_rendering_done` between the last draw and the free
+  ([libvita2d #28](https://github.com/xerpi/libvita2d/issues/28)), and with two
+  fields libvita2d never sets for a plain texture: its loader `malloc`s the
+  struct without clearing it, and `vita2d_free_texture` destroys `gxm_rtgt` and
+  frees `depth_UID` when they are non-zero (pinned `libvita2d.a`,
+  `vita2d_free_texture`: offsets 24 and 96). Neither fault has been seen on a
+  console. A damaged icon was decoded again on every move; libvita2d's loader
+  does not free the texture when libpng fails inside the image, so each try
+  kept one CDRAM block.
+
+The catalog (`settings/catalog.c`) was already read only at start and on
+Start; that is unchanged, and a host test counts the scans.
+
+What the page does now:
+
+- **An icon cache by title ID** (`settings/icons.c`): 9 slots, three times the
+  three cards. The window is the visible rows, a page below and a page above;
+  a frame loads at most one icon, the first of the window without one: the
+  visible rows, then the page the list last moved towards, then the other,
+  nearest row first. When the cache is full, the least recently used icon
+  outside the window is freed first, after `vita2d_wait_rendering_done`. A
+  card shows **JP** until its icon is loaded. Toggles, Triangle and filters
+  keep the cache; Start frees it (after the GPU wait) with the new list.
+- **Icons are read whole and checked first.** `vjo_icon_read` reads the file in
+  one bounded read into a 256 KiB buffer; `vjo_icon_png_check` requires the
+  PNG signature, IHDR first, at most 256 × 256 pixels, every chunk inside the
+  file with a matching CRC, and image data before IEND. Only then does
+  `vita2d_load_PNG_buffer` (which has no length) decode it. A missing, larger,
+  damaged or non-PNG icon shows **JP** and is not tried again until Start.
+  This is stricter than libpng, which ignores a bad CRC on an ancillary chunk.
+  After a load, the texture's `gxm_rtgt` and `depth_UID` are cleared.
+- **Titles are laid out once per scan**, by the same rule
+  (`settings/text_layout.c`, `fit_line` moved there unchanged), and drawn
+  from the stored rows. A frame with no icon to load lays out one title of the
+  window. Other wrapped text, the status, the hints and the page header, goes
+  through a 16-entry layout memo keyed by the exact text, width, size and row
+  count. The `n/m` counter, which changes on every move, is drawn apart from
+  the hints, right-aligned, so the hints keep their layout. The drawn strings
+  are those of the old `wrapped_text`: a differential test compares them on
+  168,000 generated layouts and on every card of every frame of the Games tests.
+- **L/R page.** The view moves three rows and the selection keeps its row; at
+  the last or first page L/R selects the last or first game. Held, L/R repeat
+  like Up/Down (350 ms, then every 90 ms).
+- **Left/Right jump between letters.** The list is alphabetical with ASCII
+  letters compared without case (before, every capital sorted before every
+  small letter). A title's letter is its first ASCII letter in upper case,
+  `#` for other ASCII (digits, symbols), the first kana of its gojuon row for
+  kana (か for が and ご, hiragana and katakana apart), and the first character
+  itself otherwise. Right goes to the first game of the next letter (the last
+  game from the last letter), Left to the first game of the current letter, or
+  of the previous one when already there; the game is shown at the top.
+
+A pagination screen was not added: the per-frame work above no longer grows
+with the number of games, and L/R move a page. Whether the page now feels
+smooth on the console has not been checked.
+
+### Memory
+
+libvita2d allocates every texture as its own `USER_CDRAM_RW` block, rounded up
+to 256 KiB ([libvita2d `utils.c`, `get_aligned_size`](https://github.com/xerpi/libvita2d/blob/master/libvita2d/source/utils.c);
+the app's `ScePhyMemPartGameCdram` is 112 MiB, in 256 KiB units,
+[vita-memory.md](vita-memory.md#31-physical-budgets-retail-firmware)). A
+128 × 128 icon's 64 KiB of pixels and the largest accepted, 256 × 256 (256 KiB),
+both take one block, so the cache holds at most 9 × 256 KiB = 2,304 KiB
+(2.25 MiB) of CDRAM, against 768 KiB for the old three icons. If CDRAM refuses,
+libvita2d falls back to `USER_RW` and then phycont. These figures are from the
+source; the console's free CDRAM in the app has not been measured. In the
+app's own memory (`.bss`, Vita build): the file buffer 262,160 B, the title
+rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, 1,024 B of failure
+and layout flags and 184 B for the cache's slots: the Settings ELF's `.bss`
+goes from 1,308,448 to 1,596,336 B (text 471,076 to 474,340 B). The app runs
+in its own process; no plugin and no SceShell memory changes.
+
+### Measurements (host)
+
+`vjo-settings-bench` runs the real `settings/main.c` and `settings/catalog.c`
+over synthetic installed games (generated titles and icons, 128 × 128 8-bit
+palette PNGs compressed with zlib) and times every frame on the host; its
+decoder inflates and expands each icon as libpng does. Text widths are stub
+metrics. The "before" column is main `7ed16d8`'s `main.c` in the same harness
+(`-DVJO_SETTINGS_BENCH_MAIN=…`). Medians of 5 runs, 100 games:
+
+| | before | after |
+|---|---:|---:|
+| idle frame, glyphs measured | 3,323 | 61 |
+| scroll (Down held 30+ rows and back): frames that move the view, mean / max ms | 0.516 / 0.565 | 0.165 / 0.220 |
+| scroll: PNG decodes per view move | 2.9 | 0.91 |
+| scroll: icon file reads in 440 frames | 2,352 | 106 |
+| scroll: glyphs measured per frame, mean | 4,681 | 95 |
+| scroll: most PNG decodes in one frame | 3 | 1 |
+| icons alive, most | 3 | 9 |
+| textures freed while the GPU could read them | 168 | 0 |
+| toggle and filter changes: PNG decodes | 26 | 2 |
+
+The milliseconds are this host's, not the Vita's: the console's PVF calls, its
+memory card reads and its texture allocation are not modelled, and none of it
+has been timed on the console. The counts are what the change removes there.
+With 512 games the after column is the same; before, an idle frame measured
+6,049 glyphs. Run it with
+`cmake --build build/host --target vjo-settings-bench && build/host/vjo-settings-bench 100 5`.
+
+### Tests
+
+- `settings_layout` (also on the ARM lane): the layout against the old
+  `wrapped_text` (`host/tests/settings_wrap_reference.h`, verbatim from main) on
+  168,000 generated texts, widths and sizes under three measure rules; the
+  memo; the PNG check on every truncation and every single-bit change of an
+  icon, lengths that would wrap 32 bits, sizes, chunk order and missing IEND or
+  image data; the bounded file read; the cache's LRU order and window.
+- `settings_games`: the app over 1 to 520 synthetic games. Every card of every
+  frame shows its own game's ID, the old layout's rows and its own icon or
+  **JP**; at most one decode per frame; visible rows first, then the page in
+  the direction of travel; no icon reloaded while it stayed in the window;
+  scrolling back reloads nothing; L/R pages and their ends; Left/Right stop at
+  each letter, both ways; toggles and filters reload nothing; broken icons are
+  tried once; a game installed while the app runs appears only after Start,
+  which rescans exactly once; 512 games stay within 9 icons and 2.25 MiB. Each
+  texture follows libvita2d's rules: freed only outside drawing, after a GPU
+  wait since its last draw, with its two stray fields cleared. Built against
+  main `7ed16d8`'s `main.c`, the suite fails all 11 cases.
+- `tools/vita3k_settings_smoke.sh`: the app's own code, unchanged, in Vita3K with
+  a scripted controller over 120 synthetic games, as a crash check only
+  ([offline testing](offline-testing.md#5-vita3k-precisely)).
 
 ## Font measurement
 

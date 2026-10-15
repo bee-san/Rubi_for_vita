@@ -19,8 +19,9 @@ typedef int (*VjoTextMeasure)(float pixels, const char *s);
 #define VJO_TEXT_ROW_BYTES 508
 
 typedef struct {
-    unsigned short start, bytes; /* the row's text: source[start, start + bytes) */
-    unsigned char ellipsis;      /* followed by "..." (the last row, text cut) */
+    unsigned start;         /* the row's text: source[start, start + bytes) */
+    unsigned short bytes;
+    unsigned char ellipsis; /* followed by "..." (the last row, text cut) */
 } VjoTextRow;
 
 typedef struct {

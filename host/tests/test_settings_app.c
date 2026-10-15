@@ -185,6 +185,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
     return 0;
 }
 vita2d_texture *vita2d_load_PNG_file(const char *filename) { (void)filename; return NULL; }
+vita2d_texture *vita2d_load_PNG_buffer(const void *buffer) { (void)buffer; return NULL; }
 void vita2d_free_texture(vita2d_texture *texture) { (void)texture; }
 unsigned int vita2d_texture_get_width(const vita2d_texture *texture) { (void)texture; return 64; }
 unsigned int vita2d_texture_get_height(const vita2d_texture *texture) { (void)texture; return 64; }
