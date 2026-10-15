@@ -82,19 +82,29 @@ vita3k --frontend sdl "$build/vjo_settings_smoke.vpk" > "$out/vita3k.stdout" 2>&
 rc=$?
 secs=$(( $(date +%s) - t0 ))
 cp "$sbx/cache/Vita3K/vita3k.log" "$out/vita3k.log" 2>/dev/null || true
-# Vita3K does not fault on a bad guest access: it logs it with the PC and goes on, a read giving
-# 0 and a write dropped (b75d5e6 vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213, 234-248), and
-# it logs an instruction it cannot run and goes on (:272-317). On a console each ends the app, so
-# any of these lines fails the run, the first quoted with its PC; no passing run has one.
-GUEST_FAULT='Invalid (read|write|exclusive write) of uint|(Unimplemented|Undefined|Unpredictable) instruction at|Decode error at|Unknown exception [0-9]+ Raised'
-guest_fault() { # guest_fault LOG: the first such line with its PC, SP and LR, and how many; or nothing
-  awk -v pat="$GUEST_FAULT" '
+# Vita3K does not fault on an access to unmapped guest memory: it logs it with the PC and goes on,
+# a read giving 0 and a write dropped (b75d5e6 vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213,
+# 234-248); a console ends the app there. It also logs an instruction it cannot run and goes on
+# (:272-317): an undefined one, which a console faults on, or one it does not implement, its own
+# gap; either way the run says nothing past it. Any of these lines fails the run, the first quoted
+# with its PC; no passing run's log has one. A write to the app's own code or read-only data is
+# not seen: Vita3K maps the module's segments writable (load_self.cpp:651, mem.cpp:183).
+GUEST_ACCESS='Invalid (read|write|exclusive write) of uint'
+GUEST_INSN='(Unimplemented|Undefined|Unpredictable) instruction at|Decode error at|Unknown exception [0-9]+ Raised'
+guest_fault() { # guest_fault PATTERN LOG: the first such line with its PC, SP and LR, and how many; or nothing
+  awk -v pat="$1" '
     want { want = 0; if ($1 == "PC:") { pc = $0; gsub(/ +/, " ", pc); first = first " (" pc ")" } }
     $0 ~ pat { if (!n++) { first = $0; sub(/^\[[0-9:.]+\] \|[A-Z]\| /, "", first); want = 1 } }
-    END { if (n) printf "%s, %d in all", first, n }' "$1"
+    END { if (n) printf "%s, %d in all", first, n }' "$2"
 }
-g=$(guest_fault "$out/vita3k.stdout")
-[ -z "$g" ] || fail "(the app faulted, which ends it on a console; Vita3K logs it and goes on: $g; $out/vita3k.stdout)"
+guest_faults() { # guest_faults WHAT LOG: fails the run on either kind
+  local g
+  g=$(guest_fault "$GUEST_ACCESS" "$2")
+  [ -z "$g" ] || fail "($1 made an invalid memory access, which ends it on a console; Vita3K logs it and goes on: $g; $2)"
+  g=$(guest_fault "$GUEST_INSN" "$2")
+  [ -z "$g" ] || fail "(Vita3K could not run an instruction of $1 and went on, so the run says nothing past it: $g; $2)"
+}
+guest_faults "the app" "$out/vita3k.stdout"
 cp "$ux0/data/vjo_settings_smoke.txt" "$out/results.txt" 2>/dev/null \
   || fail "(Vita3K exit $rc after ${secs}s, the app wrote no results: $out/vita3k.stdout)"
 r=$(cat "$out/results.txt")
@@ -133,8 +143,7 @@ release=
 if [ -n "${RELEASE_VPK:-}" ]; then
   TIMEOUT=30 vita3k --frontend sdl "$RELEASE_VPK" > "$out/release.stdout" 2>&1
   rrc=$?
-  g=$(guest_fault "$out/release.stdout")
-  [ -z "$g" ] || fail "(the release VPK faulted, which ends it on a console; Vita3K logs it and goes on: $g; $out/release.stdout)"
+  guest_faults "the release VPK" "$out/release.stdout"
   [ "$rrc" -eq 124 ] && ! grep -q "The app exited" "$out/release.stdout" \
     || fail "(the release VPK did not keep running for 30 s: exit $rrc, $out/release.stdout)"
   release="; the release VPK ran 30 s on its Games page"

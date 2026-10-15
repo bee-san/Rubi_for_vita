@@ -254,13 +254,18 @@ Unhandled access to 0x…" is quoted when its logger got it out; in some crashed
 cut it off. No other critical line is a crash: every run, passing too, logs "[translate_path]:
 Unknown device with path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`).
 
-Vita3K does not fault on a bad guest access either. It logs "Invalid write …", "Invalid read …"
-or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0 and a write
-dropped (b75d5e6 `vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213, 234-248`), and it logs an
-instruction it cannot run and goes on (`:272-317`). So a NULL write in the app's toggle, which a
-console ends the app on, passed the script (#121's audit). Any of these lines now fails the run,
-the scripted app's and the release VPK's, quoting the first with its PC, SP and LR. Of the
-fleet's 41 smoke logs on 2026-10-15 only that mutant's has one.
+Vita3K does not fault on an access to unmapped guest memory either. It logs "Invalid write …",
+"Invalid read …" or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0
+and a write dropped (b75d5e6 `vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213, 234-248`). So a
+NULL write in the app's toggle, which a console ends the app on, passed the script (#121's
+audit). It also logs an instruction it cannot run and goes on (`:272-317`): an undefined one,
+which a console faults on, or one it does not implement, its own gap. Any of these lines now
+fails the run, the scripted app's and the release VPK's, quoting the first with its PC, SP and LR;
+no passing run's log has one. A write to the app's own code or read-only data is neither faulted
+nor logged: Vita3K maps the module's segments writable (`load_self.cpp:651`, `mem.cpp:183`),
+while on a console the code segment is read-only, so such a write would end the app there (not
+run on a console). A jump to address 0 shows as invalid reads at PC 0 until the timeout ends
+the run.
 
 ## 6. What only the console answers
 
