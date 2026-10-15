@@ -429,9 +429,9 @@ target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-p
 target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME preferences COMMAND vjo-preferences-tests)
 # The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
-# boundary: the OCR engine card's two engines, the local one named after its
-# model's generation; then the same app with a later package's model table
-# (generation VOCR5), which it names unchanged.
+# boundary: the OCR card's Model size, its status line naming the size's model;
+# then the same app with a later package's model table (generation VOCR5),
+# which it names unchanged.
 foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c

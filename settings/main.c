@@ -37,22 +37,18 @@
 #define GAME_H 80
 #define GAME_PITCH 88
 #define OCR_Y 112
-#define OCR_H 146
-/* The OCR card's two rows: the two engine buttons (settings/engine.h), then under
- * the local engine its Model size, three buttons; each row's title at the left,
- * the card's status line below them. */
+#define OCR_H 94
+/* The OCR card: the local engine's Model size, three buttons (settings/engine.h),
+ * the row's title at the left, the card's status line below them. VOCR is the
+ * only engine since the overlay went offline (owner 2026-10-15): Google Lens and
+ * its engine row are gone. */
 #define OCR_ROW_TITLE_X 42
-#define OCR_CHOICE_X 232
-#define OCR_CHOICE_Y (OCR_Y + 6)
-#define OCR_CHOICE_W 337
-#define OCR_CHOICE_H 48
-#define OCR_CHOICE_PITCH 349
-#define OCR_SIZE_ROW_Y (OCR_Y + 56) /* the second row's top: touches below it focus the size */
-#define OCR_SIZE_Y (OCR_Y + 58)
+#define OCR_SIZE_X 232
+#define OCR_SIZE_Y (OCR_Y + 6)
 #define OCR_SIZE_W 220
 #define OCR_SIZE_H 54
 #define OCR_SIZE_PITCH 233
-#define OCR_STATUS_Y (OCR_Y + 137)
+#define OCR_STATUS_Y (OCR_Y + 85)
 /* The three compact preference cards share one layout: title and choices on
  * the first row, help on the second. */
 #define CARD_H 68
@@ -60,25 +56,24 @@
 #define CARD_HELP_Y 60
 #define CARD_BADGE_Y 6
 #define CARD_BADGE_H 34
-#define SELECTION_Y 262
+#define SELECTION_Y (OCR_Y + OCR_H + 4)
 #define SELECTION_H CARD_H
-#define HIGHLIGHT_Y 334
+#define HIGHLIGHT_Y (SELECTION_Y + CARD_H + 4)
 #define HIGHLIGHT_H CARD_H
-#define RESULTS_Y 406
+#define RESULTS_Y (HIGHLIGHT_Y + CARD_H + 4)
 #define RESULTS_H CARD_H
 #define RESULT_BADGE_X 540
 #define RESULT_BADGE_W 44
 #define RESULT_BADGE_PITCH 48
 /* The OCR page's one-line status sits below the fourth card. */
-#define PREFERENCE_FOOTER_Y 478
+#define PREFERENCE_FOOTER_Y (RESULTS_Y + CARD_H + 4)
 #define PREFERENCE_FOOTER_H 30
-/* The rows Up/Down select: the engine, its Model size, then the three cards. */
-#define PREFERENCES 5
-#define PREF_ENGINE 0
-#define PREF_SIZE 1
-#define PREF_SELECTION 2
-#define PREF_HIGHLIGHT 3
-#define PREF_RESULTS 4
+/* The rows Up/Down select: the Model size, then the three cards. */
+#define PREFERENCES 4
+#define PREF_SIZE 0
+#define PREF_SELECTION 1
+#define PREF_HIGHLIGHT 2
+#define PREF_RESULTS 3
 #define BG RGBA8(9, 15, 23, 255)
 #define CARD RGBA8(21, 31, 44, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
@@ -113,7 +108,7 @@ static int scroll_direction = 1, writable = 1; /* the way the list last moved: 1
 static char status[160];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
-static VjoEngineCard engine; /* the OCR engine card: the local engine's name, its model files */
+static VjoEngineCard engine; /* the OCR card: the chosen size, its model files */
 static char preference_status[160];
 static int status_error, preference_error;
 
@@ -514,14 +509,14 @@ static void load_preferences(void)
     check_models();
 }
 
-static void change_preference(int backend, int tier, int japanese_only, int highlight_mode, int dictionary_results)
+static void change_preference(int tier, int japanese_only, int highlight_mode, int dictionary_results)
 {
     if (!preferences_writable) {
         preference_error = 1;
         snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
         return;
     }
-    int rc = vjo_preferences_save(backend, tier, japanese_only, highlight_mode, dictionary_results, &scratch);
+    int rc = vjo_preferences_save(VJO_OCR_VOCR, tier, japanese_only, highlight_mode, dictionary_results, &scratch);
     /* Re-read even on failure: final sync can fail after publication. */
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;
@@ -532,27 +527,20 @@ static void change_preference(int backend, int tier, int japanese_only, int high
         : "Saved. Resume your game, then reopen the overlay.");
 }
 
-/* One preference changed, the others as saved. */
-static void change_backend(int backend)
-{
-    change_preference(backend, preferences.vocr_tier, preferences.japanese_only_selection,
-                      preferences.highlight_mode, preferences.local_dictionary_results);
-}
-
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
     if (tier < 1 || tier > (int)VJO_VOCR_TIERS || tier == preferences.vocr_tier) return;
-    change_preference(preferences.ocr_backend, tier, preferences.japanese_only_selection,
-                      preferences.highlight_mode, preferences.local_dictionary_results);
+    change_preference(tier, preferences.japanese_only_selection, preferences.highlight_mode,
+                      preferences.local_dictionary_results);
 }
 
 /* Dictionaries shown: enter cycles 1..8; Left/Right step within it. */
 static void set_dictionary_results(int results)
 {
     if (results < 1 || results > VJO_LOCAL_MAX_DICTS || results == preferences.local_dictionary_results) return;
-    change_preference(preferences.ocr_backend, preferences.vocr_tier, preferences.japanese_only_selection,
-                      preferences.highlight_mode, results);
+    change_preference(preferences.vocr_tier, preferences.japanese_only_selection, preferences.highlight_mode,
+                      results);
 }
 
 static void toggle_preference(void)
@@ -565,10 +553,7 @@ static void toggle_preference(void)
         set_tier(preferences.vocr_tier % (int)VJO_VOCR_TIERS + 1);
         return;
     }
-    change_preference(preference_selected == PREF_ENGINE
-        ? vjo_engine_backend(!vjo_engine_index(preferences.ocr_backend)) /* the other engine */
-        : preferences.ocr_backend,
-        preferences.vocr_tier,
+    change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
         preferences.local_dictionary_results);
@@ -585,77 +570,43 @@ static void set_preference(int right)
         set_tier(preferences.vocr_tier + (right ? 1 : -1));
         return;
     }
-    change_preference(preference_selected == PREF_ENGINE ? vjo_engine_backend(right)
-                                                         : preferences.ocr_backend,
-        preferences.vocr_tier,
+    change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
                                               : preferences.highlight_mode,
         preferences.local_dictionary_results);
 }
 
-/* The OCR card: its background and, when one of its two rows is selected, the
- * accent frame with the left bar beside that row only. */
-static void focus_ocr_card(int row)
-{
-    int focus = row == PREF_ENGINE || row == PREF_SIZE;
-    int bar_y = row == PREF_SIZE ? OCR_SIZE_ROW_Y : OCR_Y, bar_h = row == PREF_SIZE ? OCR_Y + OCR_H - OCR_SIZE_ROW_Y
-                                                                                     : OCR_SIZE_ROW_Y - OCR_Y;
-    vita2d_draw_rectangle(24, OCR_Y, 912, OCR_H, focus ? SELECTED : CARD);
-    if (focus) {
-        vita2d_draw_rectangle(24, bar_y, 4, bar_h, ACCENT);
-        vita2d_draw_rectangle(24, OCR_Y, 912, 2, ACCENT);
-        vita2d_draw_rectangle(24, OCR_Y + OCR_H - 2, 912, 2, ACCENT);
-        vita2d_draw_rectangle(932, OCR_Y, 4, OCR_H, ACCENT);
-    }
-}
-
-/* A Model size button: the tier's name and, smaller, its estimates. Muted (no
- * fill, the chosen one outlined) while Google Lens is the engine: the choice is
- * the local engine's, kept for when it is used again. */
-static void size_button(int tier, int x, int chosen, int muted)
+/* A Model size button: the tier's name and, smaller, its estimates. */
+static void size_button(int tier, int x, int chosen)
 {
     const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
     char detail[32];
-    int active = chosen && !muted;
-    vita2d_draw_rectangle(x, OCR_SIZE_Y, OCR_SIZE_W, OCR_SIZE_H, active ? ACCENT : SELECTED);
-    if (chosen && muted) {
-        vita2d_draw_rectangle(x, OCR_SIZE_Y, OCR_SIZE_W, 2, ACCENT);
-        vita2d_draw_rectangle(x, OCR_SIZE_Y + OCR_SIZE_H - 2, OCR_SIZE_W, 2, ACCENT);
-        vita2d_draw_rectangle(x, OCR_SIZE_Y, 2, OCR_SIZE_H, ACCENT);
-        vita2d_draw_rectangle(x + OCR_SIZE_W - 2, OCR_SIZE_Y, 2, OCR_SIZE_H, ACCENT);
-    }
+    vita2d_draw_rectangle(x, OCR_SIZE_Y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
     vjo_engine_tier_detail(tier, detail, sizeof(detail));
-    centered_text(x, OCR_SIZE_Y + 24, OCR_SIZE_W, active ? BG : muted ? DIM : WHITE, 24, t ? t->name : "?");
-    centered_text(x, OCR_SIZE_Y + 47, OCR_SIZE_W, active ? BG : DIM, 22, detail);
+    centered_text(x, OCR_SIZE_Y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
+    centered_text(x, OCR_SIZE_Y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
 }
 
 static void draw_preferences(void)
 {
-    int choice = vjo_engine_index(preferences.ocr_backend);
     vita2d_start_drawing();
     vita2d_clear_screen();
     header();
-    focus_ocr_card(preference_selected);
+    focus_card(OCR_Y, OCR_H, preference_selected == PREF_SIZE);
     vita2d_enable_clipping();
     vita2d_set_clip_rectangle(28, OCR_Y + 2, 932, OCR_Y + OCR_H - 2);
-    text(OCR_ROW_TITLE_X, OCR_CHOICE_Y + OCR_CHOICE_H / 2 + 9, WHITE, 28, "OCR engine");
-    for (int i = 0; i < VJO_ENGINES; i++)
-        badge(OCR_CHOICE_X + i * OCR_CHOICE_PITCH, OCR_CHOICE_Y,
-              OCR_CHOICE_W, OCR_CHOICE_H, vjo_engine_name(&engine, i),
-              preferences_writable && choice == i);
-    /* Under the local engine, its Model size (estimates from the models' metadata). */
-    text(OCR_ROW_TITLE_X, OCR_SIZE_Y + 24, preferences_writable && !choice ? WHITE : DIM, 28, "Model size");
+    /* The Model size (estimates from the models' metadata). */
+    text(OCR_ROW_TITLE_X, OCR_SIZE_Y + 24, preferences_writable ? WHITE : DIM, 28, "Model size");
     text(OCR_ROW_TITLE_X, OCR_SIZE_Y + 47, DIM, 22, "estimated"); /* the buttons' time and memory */
     for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++)
-        size_button(t, OCR_CHOICE_X + (t - 1) * OCR_SIZE_PITCH, preferences_writable && preferences.vocr_tier == t,
-                    choice != 0);
+        size_button(t, OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH, preferences_writable && preferences.vocr_tier == t);
     char label[120];
     unsigned color = DIM;
     if (!preferences_writable) {
         snprintf(label, sizeof(label), "Cannot read config.ini. Repair it before changing settings.");
         color = OFF;
-    } else if (vjo_engine_status(&preferences, &engine, label, sizeof(label))) {
+    } else if (vjo_engine_status(&engine, label, sizeof(label))) {
         color = OFF;
     }
     wrapped_text(42, OCR_STATUS_Y, 870, color, 24, 26, 1, label);
@@ -930,21 +881,12 @@ int main(void)
                 page = tab;
             }
             else if (page == 2) { touch_x = x; touch_y = y; }
-            else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_SIZE_ROW_Y) {
-                preference_selected = PREF_ENGINE;
-                if (y >= OCR_CHOICE_Y && y < OCR_CHOICE_Y + OCR_CHOICE_H) {
-                    for (int i = 0; i < VJO_ENGINES; i++) {
-                        int left = OCR_CHOICE_X + i * OCR_CHOICE_PITCH;
-                        if (x >= left && x < left + OCR_CHOICE_W) change_backend(vjo_engine_backend(i));
-                    }
-                }
-            }
-            else if (page && x >= 24 && x < 936 && y >= OCR_SIZE_ROW_Y && y < OCR_Y + OCR_H) {
+            else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
                 /* Touch a size to choose it; the row's title and the status line only focus. */
                 preference_selected = PREF_SIZE;
                 if (y >= OCR_SIZE_Y && y < OCR_SIZE_Y + OCR_SIZE_H) {
                     for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++) {
-                        int left = OCR_CHOICE_X + (t - 1) * OCR_SIZE_PITCH;
+                        int left = OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH;
                         if (x >= left && x < left + OCR_SIZE_W) set_tier(t);
                     }
                 }

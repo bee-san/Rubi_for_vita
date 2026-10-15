@@ -1,4 +1,4 @@
-/* The Overlay app's OCR engine card (engine.h). */
+/* The Overlay app's OCR card (engine.h). */
 #include "engine.h"
 
 #include <psp2/io/fcntl.h>
@@ -35,52 +35,20 @@ void vjo_engine_card(const VjoConfig *cfg, VjoEngineCard *card)
         const VjoVocrModelInfo *m = tier_model(t);
         card->found[t] = m && found(cfg->ocr_model_dir, m);
     }
-    /* Named after the model that loads: a job leaves a tier whose file is missing
-     * or not its release size out and runs the next smaller one (kernel/game_ocr.c
-     * refuses it, shell/worker.c run_vocr). With no file there nothing runs: the
-     * button keeps the chosen tier's name and the status line is red. */
-    for (int t = card->tier; t >= 1 && !card->runs; t--)
-        if (card->found[t]) card->runs = tier_model(t);
-    const VjoVocrModelInfo *named = card->runs ? card->runs : card->model;
-    snprintf(card->local, sizeof(card->local), "%s", named ? named->generation : "VOCR");
 }
 
-int vjo_engine_index(int backend)
-{
-    return backend == VJO_OCR_LENS;
-}
-
-int vjo_engine_backend(int index)
-{
-    return index ? VJO_OCR_LENS : VJO_OCR_VOCR;
-}
-
-const char *vjo_engine_name(const VjoEngineCard *card, int index)
-{
-    return index ? "Google Lens" : card->local;
-}
-
-const char *vjo_engine_description(int index)
-{
-    return index ? "Wi-Fi required. Sends the selected image to Google."
-                 : "Local OCR: dialogue region, automatic or manual.";
-}
-
-int vjo_engine_status(const VjoConfig *cfg, const VjoEngineCard *card, char *out, size_t cap)
+int vjo_engine_status(const VjoEngineCard *card, char *out, size_t cap)
 {
     const VjoVocrTierInfo *tier = vjo_vocr_tier_info((unsigned)card->tier);
     char model[24];
-    if (vjo_engine_index(cfg->ocr_backend)) {
-        snprintf(out, cap, "%s", vjo_engine_description(1));
-        return 0;
-    }
     if (!tier || !card->model) {
         snprintf(out, cap, "This model size is not in this build.");
         return 1;
     }
     vjo_vocr_model_label(card->model, model, sizeof(model));
     if (!card->found[card->tier]) {
-        /* A broken install, not a memory fallback: named, never what runs instead. */
+        /* A broken install, not a memory fallback: named, never what runs instead
+         * (a job leaves a missing tier out and runs the next smaller one found). */
         snprintf(out, cap, "%s missing. Reinstall the package.", model);
         return 1;
     }
