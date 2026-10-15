@@ -537,7 +537,7 @@ append, as a file append costs the console 12-46 ms (#81's self-test timestamps)
 holds up to 256 KB per boot (the previous boot's is
 `kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
 it read-only into one timestamped folder and zip, with `config.ini`'s API keys
-redacted, both taiHEN configurations, the Anki queue, crash dumps and the
+and audio source URL redacted, both taiHEN configurations, the Anki queue, crash dumps and the
 installed files' hashes, and prints its analysis
 ([self-test](docs/self-test.md#collecting-everything---collect)); `--status VITA_IP`
 fetches just the bootstrap logs. Recognition timings and memory attempts are in

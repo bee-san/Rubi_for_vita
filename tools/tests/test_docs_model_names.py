@@ -76,6 +76,24 @@ class DocsModelNames(unittest.TestCase):
         with self.assertRaises(ValueError):
             names.kernel_names(kernel.replace(lm, "VJO_VOCR_LM3_NAME}"))
 
+    def test_no_document_states_an_older_accepted_set(self):
+        """The broker's names live in the generated blocks only: none of the statements of an older
+        accepted set this PR replaced (README's, docs/vita-vn-ocr.md's four) is back in any project
+        document, however its lines are wrapped."""
+        stale = ("only the two VOCR3 model names and the three original VOCR model names",
+                 "allows only the VOCR3 FL10/H15 and v0.2.0 FL10/H15/F20 models",
+                 "accept exactly these names and F20",
+                 "the pinned table accepts the two VOCR3 and three v0.2.0 int8 files",
+                 "the kernel opens only the two pinned names the Shell submitted;")
+        skip = {"build", ".refs", ".git", "third_party"}
+        docs = [p for p in ROOT.rglob("*.md") if not skip & set(p.relative_to(ROOT).parts)]
+        self.assertIn(ROOT / "docs/vita-vn-ocr.md", docs)
+        for path in docs:
+            text = " ".join(path.read_text(encoding="utf-8", errors="replace").split()).lower()
+            found = [phrase for phrase in stale if phrase.lower() in text]
+            if found:
+                self.fail(f"{path.relative_to(ROOT)} states an older accepted set: {found}")
+
     def test_a_missing_or_edited_block_is_stale(self):
         with tempfile.TemporaryDirectory() as d:
             for doc in names.DOCS:

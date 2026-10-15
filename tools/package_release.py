@@ -21,8 +21,10 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 SWITCHES = ("japanese_only_selection", "ocr_skip_blank_lines", "log_file", "anki_mining")
 NUMBERS = ("local_dictionary_results", "font_size_ja", "font_size_en", "ocr_settle_ms", "ocr_settle_max_ms",
            "ocr_cascade_ms")
-# Settings that can hold a credential (an audio source URL can carry one): the defaults say only "set" or
-# "", because install_ftp.sh --collect copies the manifest's defaults into the zip the owner sends.
+# Settings that can hold a credential (an audio source URL can carry one). The manifest gives them only as
+# "set" or "", in its defaults and its install_settings: install_ftp.sh --collect copies both into the zip
+# the owner sends. install-vita.sh takes a set one's value from the package's config.ini, which holds it.
+# tools/install-vita.sh, migrate_config.py, collect_vita.py and analyse_selftest.py use the same pattern.
 SECRET = re.compile(r"api_key$|^anki_audio_url$")
 
 
@@ -194,8 +196,9 @@ def write_package(base, output, models, assets, conversion, version, source_revi
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),
                 "models": shipped}
     if settings:
-        # Applied by install-vita.sh after its own settings (tools/install-vita.sh).
-        manifest["install_settings"] = settings
+        # Applied by install-vita.sh after its own settings (tools/install-vita.sh); a credential's value is in
+        # the package's config.ini only.
+        manifest["install_settings"] = {k: ("set" if v else "") if SECRET.search(k) else v for k, v in settings.items()}
     if source_revision:
         manifest["source_revision"] = source_revision
     output.parent.mkdir(parents=True, exist_ok=True)

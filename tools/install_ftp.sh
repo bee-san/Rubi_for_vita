@@ -31,7 +31,8 @@
 #      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
 #   tools/install_ftp.sh --collect 192.168.1.50  (everything the overlay wrote, read-only: the logs,
-#      the self-test report, status/kernel/boot records, config.ini with its API keys redacted, both
+#      the self-test report, status/kernel/boot records, config.ini with its API keys and audio
+#      source URL redacted, both
 #      taiHEN configs, the Anki queue, crash dumps and the installed files' hashes, into one
 #      timestamped folder and zip under build/device/collect/, then analyse_selftest.py --collect on it)
 set -euo pipefail

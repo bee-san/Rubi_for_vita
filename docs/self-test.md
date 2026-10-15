@@ -193,8 +193,9 @@ Then a **model tier** table: the Small / Normal / Large recognizer tiers of
 reads as well, so the analyser and the app cannot price different tiers. Each tier is priced at its
 ceilings, an estimate, with vita-vn-ocr's formula (`docs/model-tiers.md` there, section 1.5):
 page(weights) + page(max(the line finder's 83,323 B arena, the tier's W8I arena) + 3,760 B of
-runtime structs) + the 61,440 B capture block + the 516,096 B line-block ceiling, plus the tier's
-own reserve (4 / 8 / 16 MiB), against the free USER the game had before the worker's first block.
+runtime structs) + the 65,536 B capture block (today's `VJO_BUDGET_GAME_CAPTURE`; that section has
+API 19's 61,440 B) + the 516,096 B line-block ceiling, plus the tier's own reserve (4 / 8 /
+16 MiB), against the free USER the game had before the worker's first block.
 The recommendation is the largest tier whose first job fits: it is one sample in one game, and
 memory alone. The weights ceilings are the owner's of 2026-10-14 (Small under 1 MB, Normal at most
 1.6 MB, Large at most 2.5 MB of int8 weights); the box time is each tier's limit for a typical full
@@ -204,9 +205,9 @@ depends on them.
 
 | tier | weights at most | box time | W8I arena ceiling | first job needs | reserve | free USER needed |
 |---|---|---|---|---|---|---|
-| Large | 2,500,000 B | < 3 s | 1,310,720 B | 4,395,008 B | 16 MiB | 21,172,224 B |
-| Normal | 1,600,000 B | < 2 s | 262,144 B | 2,445,312 B | 8 MiB | 10,833,920 B |
-| Small | 999,999 B | < 1 s | 131,072 B | 1,716,224 B | 4 MiB | 5,910,528 B |
+| Large | 2,500,000 B | < 3 s | 1,310,720 B | 4,399,104 B | 16 MiB | 21,176,320 B |
+| Normal | 1,600,000 B | < 2 s | 262,144 B | 2,449,408 B | 8 MiB | 10,838,016 B |
+| Small | 999,999 B | < 1 s | 131,072 B | 1,720,320 B | 4 MiB | 5,914,624 B |
 
 ## Collecting everything: `--collect`
 
@@ -221,9 +222,9 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
 
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
   marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
-  `kernel.prev.txt`, `config.ini` with every `*api_key` value replaced by its length before anything
-  is written (also a key line without `=`; any `api_key` text in the logs' config warnings is masked
-  too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
+  `kernel.prev.txt`, `config.ini` with every `*api_key` and `anki_audio_url` value (an audio source
+  URL can carry a key) replaced by its length before anything is written (also a key line without
+  `=`; the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`, `anki_host.txt` and the whole `anki_queue/`;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
@@ -232,7 +233,9 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   dictionary is compared by size.
 
 Each file keeps its device path in the folder (`ux0/data/VitaJPOverlay/log.txt`, ...); `COLLECT.json`
-lists every file with its bytes and SHA-256, what was not on the Vita and every error. Then
+lists every file with its bytes and SHA-256, what was not on the Vita and every error, and the
+package's version, defaults and install settings, with each API key and the audio source URL only as
+`set` or empty. Then
 `analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
 the summary: whether the installed files match the package (a file it does not ship, such as a
 removed engine's model, is listed as not in this package), the configuration, where taiHEN loads

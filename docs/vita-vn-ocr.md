@@ -901,6 +901,7 @@ copied, and the settings above. Close other apps first.
   frames can add a stray line; tight regions read best.
 - Recognition runs on a low-priority thread in the enabled game process at
   the game's clock. The overlay does not change the CPU clock or memory mode.
-- The pinned table accepts the two VOCR3 and three v0.2.0 int8 files; a new release needs its sizes,
-  hashes and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
-  `tools/prepare_ocr.py`).
+- Only the pinned files listed under [Models](#models) load. A new release needs its sizes, hashes
+  and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
+  `tools/prepare_ocr.py`); `python3 tools/docs_model_names.py` then writes the new names into those
+  lists and the README's.

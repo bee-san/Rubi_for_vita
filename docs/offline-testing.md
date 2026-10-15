@@ -50,7 +50,10 @@ bash tools/ci_container_build.sh --vocr-source /path/to/vita-vn-ocr --compare Vi
   (GCC 15.2.0). The workflow names the tag: if the tag moves, that step's digest changes, and
   `VJO_CI_IMAGE` runs the script with the new one.
 - **The job's steps.** The commit's tree (`git archive`, what `actions/checkout` gives; uncommitted
-  changes are not built) is unpacked at CI's path, `/__w/vita-jp-overlay/vita-jp-overlay`. Then the
+  changes are not built) is unpacked at CI's path, `/__w/vita-jp-overlay/vita-jp-overlay`. For a
+  pull request CI builds its merge with the base, not its head: to compare with a pull request's
+  artifact, `git fetch origin pull/N/merge` and pass `--rev FETCH_HEAD` (the head alone gives the
+  same files only while the pull request is on its base's tip). Then the
   job's own commands run: its `apt-get install` (of whatever Ubuntu serves that day, as for CI),
   `tools/setup_toolchain.sh` (the checksum-pinned app packages, vita-headers, ScePaf,
   psp2cxml-tool) and `cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release`. With
@@ -60,12 +63,15 @@ bash tools/ci_container_build.sh --vocr-source /path/to/vita-vn-ocr --compare Vi
   built, with `VJO_WITH_VOCR=OFF`, which the app does not use.
 - **Nothing of the host goes in.** The source goes in on standard input and the built files come out
   on standard output; nothing is mounted. The container needs the network, as CI's does: apt and
-  GitHub (clones, release downloads, codeload.github.com).
+  GitHub (clones, release downloads, codeload.github.com). It runs with an init process and a name,
+  and is removed whenever the script ends, so a `timeout` or Ctrl-C leaves no build running.
 - **The comparison.** `--compare` takes an `eboot.bin`, a VPK, or a zip holding
   `JPOverlaySettings.vpk` (a release, or CI's `VitaJPOverlay` artifact). The VPK's files are compared,
   not its zip bytes: `vita-pack-vpk` records each file's time, so two builds never give the same
-  VPK file. A package's plugins and RCO are compared as well when they were built. The script exits
-  1 on any difference and prints the built files' sha256.
+  VPK file. A package's plugins and RCO are compared as well when they were built. The script prints
+  the built files' sha256 and exits 0 when they are identical, 1 on any difference, 2 before building
+  for what it cannot use (an option, a revision, a reference without an `eboot.bin`, no docker or
+  podman) and 3 when the build itself fails, its log in `--out`.
 
 Measured on the fleet box with docker 25.0 (podman is supported by the script but was not run),
 the image already pulled: building main `4ac02ac` (v0.8.0-test.2's commit), the Overlay app alone

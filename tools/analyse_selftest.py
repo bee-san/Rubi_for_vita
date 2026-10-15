@@ -77,11 +77,13 @@ ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "k
 # first job of a tier needs is page(weights) + page(max(the line finder's arena at 960x544, the tier's
 # W8I arena) + the runtime's structs) + the capture block + the line-block ceiling (vita-vn-ocr
 # docs/model-tiers.md, section 1.5), and the tier keeps its own reserve. Here each tier is priced at
-# its ceilings.
+# its ceilings. The capture block is today's (that section has API 19's 61,440 B); a test ties it and
+# the line block to include/vjo_ledger_budget.h and core/vocr_ocr.h.
 TIER_FINDER_ARENA, TIER_RUNTIME_STRUCTS = 83_323, 3_760     # vita-vn-ocr docs/model-tiers.json "overlay" (main 64b5726)
-TIER_CAPTURE, TIER_LINE = 61_440, 516_096                   # VJO_BUDGET_GAME_CAPTURE page, VJO_VOCR_LINE_MAX_BYTES
+TIER_CAPTURE, TIER_LINE = 65_536, 516_096                   # VJO_BUDGET_GAME_CAPTURE, VJO_VOCR_LINE_MAX_BYTES
 TIERS_FILE = Path(__file__).resolve().parent / "model_tiers.json"  # shipped beside this tool
 TIER_KEYS = ("weights_max_bytes", "box_ms_under", "arena_max_bytes", "reserve_bytes")
+BOX_KEYS = ("lines", "line_px", "cores", "mhz")
 GAME_STEPS_MAX = 20                                         # include/vjo_game_ocr.h VJO_GAME_OCR_STEPS
 LM_TIERS = {"1": "500k", "2": "1000k", "3": "2000k", "4": "4000k"}  # the lm step's kind (core/vocr_ocr.c lms[])
 
@@ -93,30 +95,57 @@ def page(n):
 def load_tiers(path=TIERS_FILE):
     """The shared tier table: its tiers largest first (the order a fit is tried in), each with its id,
     name, ceilings, reserve and 3-line-box time limit, then the default tier's id and what a box is.
-    Keys this tool does not use (the Overlay app's) are ignored; a table it cannot use raises ValueError."""
+    Keys this tool does not use (the Overlay app's) are ignored. A table it cannot use raises
+    ValueError, one it cannot read OSError."""
+    name = Path(path).name
     try:
         table = json.loads(Path(path).read_text(encoding="utf-8"))
-        tiers, default, box = table["tiers"], table["default"], table["box"]
-        rows = [{"id": t["id"], "name": t["name"], **{k: t[k] for k in TIER_KEYS}} for t in tiers]
-        box = {k: box[k] for k in ("lines", "line_px", "cores", "mhz")}
-    except (KeyError, TypeError) as e:
-        raise ValueError(f"{Path(path).name}: not a tier table ({type(e).__name__} {e})") from None
-    for r in rows:
-        if not all(isinstance(r[k], int) and not isinstance(r[k], bool) and r[k] > 0 for k in TIER_KEYS):
-            raise ValueError(f"{Path(path).name}: tier {r['id']}: {', '.join(TIER_KEYS)} must be positive integers")
+    except ValueError as e:  # not JSON, or not UTF-8
+        raise ValueError(f"{name}: not JSON ({e})") from None
+    table = table if isinstance(table, dict) else {}
+    tiers, box, default = table.get("tiers"), table.get("box"), table.get("default")
+    if not isinstance(tiers, list) or not tiers or not all(isinstance(t, dict) for t in tiers) or not isinstance(box, dict):
+        raise ValueError(f"{name}: not a tier table (tiers: a list of objects; box: an object)")
+
+    def count(v):
+        return isinstance(v, int) and not isinstance(v, bool) and v > 0
+
+    def label(v):
+        return isinstance(v, str) and v != "" and v.isprintable()
+
+    rows = []
+    for n, t in enumerate(tiers, 1):
+        if not (label(t.get("id")) and label(t.get("name"))):
+            raise ValueError(f"{name}: tier {n}: id and name must be non-empty one-line strings")
+        if not all(count(t.get(k)) for k in TIER_KEYS):
+            raise ValueError(f"{name}: tier {t['id']}: {', '.join(TIER_KEYS)} must be positive integers")
+        rows.append({"id": t["id"], "name": t["name"], **{k: t[k] for k in TIER_KEYS}})
+    if not all(count(box.get(k)) for k in BOX_KEYS):
+        raise ValueError(f"{name}: box: {', '.join(BOX_KEYS)} must be positive integers")
     ids = [r["id"] for r in rows]
-    # smallest first, each ceiling, limit and reserve at least the previous tier's
-    if not rows or len(set(ids)) != len(ids) or default not in ids or any(
-            b[k] < a[k] for a, b in zip(rows, rows[1:]) for k in TIER_KEYS):
-        raise ValueError(f"{Path(path).name}: tiers must be unique, smallest first, and include the default")
-    return tuple(reversed(rows)), default, box
+    if len(set(ids)) != len(ids) or not label(default) or default not in ids:
+        raise ValueError(f"{name}: the tier ids must be unique and include the default")
+    # smallest first: each ceiling, limit and reserve at least the previous tier's
+    if any(b[k] < a[k] for a, b in zip(rows, rows[1:]) for k in TIER_KEYS):
+        raise ValueError(f"{name}: the tiers must be smallest first, each ceiling, limit and reserve at least "
+                         f"the previous tier's")
+    return tuple(reversed(rows)), default, {k: box[k] for k in BOX_KEYS}
 
 
+def tiers_error(e):
+    """Why the table was not loaded, in one line and without the path (the analysis is sent on)."""
+    if isinstance(e, OSError):
+        return f"{TIERS_FILE.name} cannot be read ({e.strerror or type(e).__name__})"
+    return str(e) if isinstance(e, ValueError) else f"{TIERS_FILE.name}: {type(e).__name__}: {e}"
+
+
+# The tier table is a diagnostic: without it, or with anything wrong in it, the report and its verdict
+# are the same, less the tier table, with a finding that says why.
 try:
     TIERS, TIER_DEFAULT, TIER_BOX = load_tiers()
     TIERS_ERROR = None
-except (OSError, ValueError) as e:  # the tier table is a diagnostic: the verdict never needs it
-    TIERS, TIER_DEFAULT, TIER_BOX, TIERS_ERROR = (), None, None, str(e)
+except Exception as e:  # noqa: BLE001
+    TIERS, TIER_DEFAULT, TIER_BOX, TIERS_ERROR = (), None, None, tiers_error(e)
 
 
 def tier_need(weights, arena):
@@ -878,6 +907,18 @@ TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|S
 SHELL_REFUSAL = re.compile(r"Paf reserve guard|Paf allocation: .*success=0|^thread \S+ refused|^anki: \w+ not started")
 
 
+# The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
+# (package_release.py SECRET, collect_vita.py CREDENTIAL).
+CREDENTIAL = re.compile(r"api_key$|^anki_audio_url$", re.I)
+
+
+def masked(settings):
+    """A package's settings with each credential only as "set" or "" (collect_vita.py masked)."""
+    if not isinstance(settings, dict):
+        return settings
+    return {k: ("set" if v not in ("", None) else "") if CREDENTIAL.search(str(k)) else v for k, v in settings.items()}
+
+
 def _read(folder, rel):
     p = folder / rel
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
@@ -1141,6 +1182,10 @@ def summarise_collect(folder):
     out = {"folder": folder.name, "record": {k: record.get(k) for k in ("collected_at", "host", "missing", "errors",
                                                                           "redacted_keys", "package")},
            "undecided": []}
+    # an older COLLECT.json copied a package's credentials as they were: only whether each is set
+    if isinstance(out["record"]["package"], dict):
+        out["record"]["package"] = {k: masked(v) if k in ("defaults", "install_settings") else v
+                                    for k, v in out["record"]["package"].items()}
     # the installed files against the package
     checks = record.get("package_check") or {}
     out["package_check"] = {"checked": len(checks), "match": sorted(k for k, v in checks.items() if v.get("match")),

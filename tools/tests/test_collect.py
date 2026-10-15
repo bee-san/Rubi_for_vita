@@ -240,7 +240,7 @@ class Collect(unittest.TestCase):
                      "log.txt rotated"):
             self.assertIn(text, analysis)
         # the lowest free USER any job saw (5,000,000 B, a refused job) is under Small's 4 MiB reserve +
-        # 1,716,224 B first job: the game's recommendation is the most conservative sample's
+        # 1,720,320 B first job: the game's recommendation is the most conservative sample's
         problems = analysis.split("lines reporting a problem", 1)[1].split("anki_queue on the card")[0]
         self.assertNotIn("key MISSING", problems)
         self.assertNotIn("anki: sent N, N duplicates, N unreadable", problems)  # a clean summary is not a problem
@@ -251,7 +251,7 @@ class Collect(unittest.TestCase):
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
         self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])
         self.assertIsNone(summary["tiers"]["recommendation"])
-        self.assertEqual(summary["selftest"]["tiers"]["rows"][2]["need"], 1_716_224)
+        self.assertEqual(summary["selftest"]["tiers"]["rows"][2]["need"], 1_720_320)
 
     def test_collect_without_a_report_or_logs_still_zips_and_says_why(self):
         data = self.device / "ux0/data/VitaJPOverlay"
@@ -302,6 +302,55 @@ class Collect(unittest.TestCase):
         self.assertEqual(text, "\ufeffjpdb_api_key = <redacted: 3 characters>\r\njpdb_api_key: <redacted: 3 characters>\r\n"
                                "lens_api_keyx = keep\r\n")
         self.assertEqual(keys, ["jpdb_api_key", "jpdb_api_key"])
+
+    def test_no_credential_reaches_the_zip(self):
+        """audit-overlay-test3-cleanup B1: the zip holds no credential's value. The audio source's URL (it can
+        carry a key) is redacted in config.ini and in the logs' config warnings like an API key, and the
+        package's defaults and install settings (an older package's manifest holds the values) say only
+        whether each is set, in COLLECT.json, analysis.txt and analysis.json."""
+        url_secret, pkg_key, pkg_url = "url-secret-4711", "pkg-key-secret-1", "https://p.invalid/x?k=pkg-url-secret-2"
+        data = self.device / "ux0/data/VitaJPOverlay"
+        url = f"https://audio.invalid/a?term={{term}}&key={url_secret}"
+        (data / "config.ini").write_text(CONFIG + f"anki_audio_url = {url}\r\n", encoding="utf-8")
+        log = (data / "log.txt").read_text(encoding="utf-8")
+        (data / "log.txt").write_text(log + f"config warning: ignored line 'anki_audio_url {url}'\n", encoding="utf-8")
+        manifest = json.loads((self.package / "package-manifest.json").read_text())
+        manifest["defaults"] = {"anki_mining": True, "jpdb_api_key": pkg_key, "jiten_api_key": "",
+                                "anki_audio_url": pkg_url, "ocr_lm": "1000k"}
+        manifest["install_settings"] = {"anki_mining": "on", "jpdb_api_key": pkg_key, "anki_audio_url": pkg_url}
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest))
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
+            blob = b"".join(z.read(n) for n in z.namelist())
+        for secret in (SECRET, SECRET2, url_secret, "audio.invalid", pkg_key, "pkg-url-secret-2", "p.invalid"):
+            self.assertNotIn(secret.encode(), blob, secret)
+            self.assertNotIn(secret, result.stdout + result.stderr, secret)
+        config = (folder / "ux0/data/VitaJPOverlay/config.ini").read_bytes().decode()
+        self.assertIn(f"anki_audio_url = <redacted: {len(url)} characters>\r\n", config)
+        self.assertIn("config warning: ignored line 'anki_audio_url <redacted>'",
+                      (folder / "ux0/data/VitaJPOverlay/log.txt").read_text(encoding="utf-8"))
+        record = json.loads((folder / "COLLECT.json").read_text())
+        self.assertEqual(record["redacted_keys"][-1], "anki_audio_url")
+        self.assertEqual(record["package"]["defaults"], {"anki_mining": True, "jpdb_api_key": "set", "jiten_api_key": "",
+                                                         "anki_audio_url": "set", "ocr_lm": "1000k"})
+        self.assertEqual(record["package"]["install_settings"], {"anki_mining": "on", "jpdb_api_key": "set",
+                                                                 "anki_audio_url": "set"})
+        self.assertIn("install settings {'anki_mining': 'on', 'jpdb_api_key': 'set', 'anki_audio_url': 'set'}",
+                      (folder / "analysis.txt").read_text())
+        self.assertEqual(json.loads((folder / "analysis.json").read_text())["record"]["package"]["install_settings"],
+                         {"anki_mining": "on", "jpdb_api_key": "set", "anki_audio_url": "set"})
+        # a COLLECT.json written before the masking (by an older collect_vita.py) is masked by the analyser
+        raw = dict(record, package=manifest)
+        (folder / "COLLECT.json").write_text(json.dumps(raw))
+        r = subprocess.run([sys.executable, str(self.package / "tools/analyse_selftest.py"), "--collect", str(folder),
+                            "--json"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn(pkg_key, r.stdout)
+        self.assertNotIn("pkg-url-secret-2", r.stdout)
+        self.assertEqual(json.loads(r.stdout)["record"]["package"]["defaults"]["anki_audio_url"], "set")
 
     def test_an_empty_report_is_a_stop_not_a_pass(self):
         (self.device / "ux0/data/VitaJPOverlay/selftest-report.txt").write_text("")

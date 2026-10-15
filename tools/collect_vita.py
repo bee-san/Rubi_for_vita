@@ -5,8 +5,9 @@
 
 Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the installer does:
   ux0:data/VitaJPOverlay/  log.txt log.old.txt selftest-report.txt selftest.txt status.txt
-                           status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys
-                           redacted before anything is written) games.ini region.ini anki_host.txt
+                           status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
+                           the audio source URL redacted before anything is written) games.ini
+                           region.ini anki_host.txt
                            anki_queue/* (every card, screenshot, temp and duplicate file)
   ur0:data/VitaJPOverlay/  boot.txt
   ur0:tai/, ux0:tai/       config.txt and the installer's config.txt.vjo-bak
@@ -52,11 +53,15 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (DATA, None, None),
 # Device paths of the hashed files -> their package path (package-manifest.json "files")
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",
                  f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/JPOverlaySettings.vpk": "JPOverlaySettings.vpk"}
-# A line whose first word is *api_key, whatever follows it (=, :, a space: the C parser logs a
+# The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
+# (package_release.py SECRET).
+CREDENTIAL = re.compile(r"api_key$|^anki_audio_url$", re.I)
+CREDENTIAL_NAME = r"[A-Za-z0-9_]*api_key|anki_audio_url"
+# A line whose first word is one of them, whatever follows it (=, :, a space: the C parser logs a
 # line without = whole, as "ignored line '...'"), is a secret line.
-SECRET = re.compile(r"^([\ufeff\s]*)([A-Za-z0-9_]*api_key)(?![A-Za-z0-9_])(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
-# In the logs: anything after an api_key name on the same line, up to a quote (config warnings).
-LOG_SECRET = re.compile(r"(?i)([A-Za-z0-9_]*api_key)(?![A-Za-z0-9_])[^'\n]*")
+SECRET = re.compile(r"^([\ufeff\s]*)(" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_])(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
+# In the logs: anything after such a name on the same line, up to a quote (config warnings).
+LOG_SECRET = re.compile(r"(?i)(" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_])[^'\n]*")
 LOG_FILES = re.compile(r"/(log|log\.old|status|status\.prev|kernel|kernel\.prev)\.txt$")
 DUMP_TIMEOUT = 900  # a crash dump can be tens of MB over the Vita's Wi-Fi
 
@@ -67,7 +72,7 @@ def local_path(out, device_path):
 
 
 def redact(text):
-    """config.ini with every *api_key value replaced by its length; the keys that were set. Lines are split
+    """config.ini with every credential's value (SECRET) replaced by its length; the keys that were set. Lines are split
     on \\n only, as the plugin's parser does, so no other character can carry a value onto a line of its own."""
     out, keys = [], []
     for raw in text.split("\n"):
@@ -82,12 +87,21 @@ def redact(text):
 
 
 def redact_log(data):
-    """A log or status file: any api_key text on a line masked (the parser's warnings quote lines)."""
+    """A log or status file: the text after a credential's name on a line masked (the parser's warnings
+    quote lines)."""
     text = data.decode("utf-8", "replace")
-    if not re.search(r"(?i)api_key", text):
+    if not LOG_SECRET.search(text):
         return data, 0
-    n = len(re.findall(r"(?i)api_key", text))
-    return LOG_SECRET.sub(lambda m: m.group(1) + " <redacted>", text).encode("utf-8"), n
+    text, n = LOG_SECRET.subn(lambda m: m.group(1) + " <redacted>", text)
+    return text.encode("utf-8"), n
+
+
+def masked(settings):
+    """A package's settings (its manifest's defaults or install_settings) with each credential only as
+    "set" or "": COLLECT.json is sent on, and an older package's manifest holds the values."""
+    if not isinstance(settings, dict):
+        return settings
+    return {k: ("set" if v not in ("", None) else "") if CREDENTIAL.search(str(k)) else v for k, v in settings.items()}
 
 
 def safe_name(name):
@@ -262,8 +276,8 @@ class Collector:
         """Each hashed device file against the package it should come from."""
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         files = manifest.get("files", {})
-        self.record["package"] = {k: manifest.get(k) for k in ("version", "source_revision", "defaults", "install_settings")
-                                  if k in manifest}
+        self.record["package"] = {k: masked(manifest[k]) if k in ("defaults", "install_settings") else manifest[k]
+                                  for k in ("version", "source_revision", "defaults", "install_settings") if k in manifest}
         checks = {}
         for device_path, got in self.record["hashed"].items():
             pkg = None

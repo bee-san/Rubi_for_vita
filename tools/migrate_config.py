@@ -6,7 +6,8 @@ file and applying key=value overrides.
 
 OLD may be missing (first install). Renamed settings are carried over, removed
 ones are dropped, and values of removed features (ocr_backend = vocr2, meiki or
-ncnn) are replaced. Prints what changed (API keys only as set/empty). Exit
+ncnn) are replaced. Prints what changed (credentials, an API key or the audio
+source URL, only as set/empty). Exit
 status 0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
 import os
@@ -39,7 +40,9 @@ def parse(text):
 
 
 def show(k, v):
-    if k.endswith("api_key"):
+    """A value as the report prints it: a credential (an API key, or the audio source's URL, which can
+    carry one) only as set or empty (package_release.py SECRET)."""
+    if re.search(r"api_key$|^anki_audio_url$", k):
         return "set" if v else "empty"
     return v or "empty"
 

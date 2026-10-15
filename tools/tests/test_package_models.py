@@ -210,18 +210,31 @@ class PackageModels(unittest.TestCase):
                           "ocr_mode": "auto", "log_file": True, "anki": False})
 
     def test_package_settings_reach_the_defaults_and_credentials_do_not(self):
-        manifest, _ = self.manifest({"anki_mining": "on", "highlight_mode": "character", "ocr_settle_ms": "0",
-                                     "ocr_refine_lines": "off", "ocr_skip_blank_lines": "on",
-                                     "jpdb_api_key": "fixture-secret-key", "anki_audio_url": "https://a.invalid/?k=s"})
+        secrets = {"jpdb_api_key": "fixture-secret-key", "jiten_api_key": "fixture-jiten-key-2",
+                   "anki_audio_url": "https://a.invalid/audio?term={term}&key=fixture-url-key"}
+        manifest, template = self.manifest({"anki_mining": "on", "highlight_mode": "character", "ocr_settle_ms": "0",
+                                            "ocr_refine_lines": "off", "ocr_skip_blank_lines": "on", **secrets})
         defaults = manifest["defaults"]
         self.assertEqual({k: defaults[k] for k in ("anki_mining", "anki", "highlight_mode", "ocr_settle_ms",
                                                    "ocr_refine_lines", "ocr_skip_blank_lines")},
                          {"anki_mining": True, "anki": True, "highlight_mode": "character", "ocr_settle_ms": 0,
                           "ocr_refine_lines": "off", "ocr_skip_blank_lines": True})
-        self.assertEqual((defaults["jpdb_api_key"], defaults["jiten_api_key"], defaults["anki_audio_url"]),
-                         ("set", "", "set"))
-        self.assertNotIn("fixture-secret-key", json.dumps(defaults))
-        self.assertNotIn("a.invalid", json.dumps(defaults))
+        self.assertEqual({k: defaults[k] for k in secrets}, {k: "set" for k in secrets})
+        # audit-overlay-test3-cleanup B1: no credential's value is anywhere in the manifest, which
+        # install_ftp.sh --collect copies into the zip the owner sends: install_settings says "set"
+        self.assertEqual(manifest["install_settings"], {"anki_mining": "on", "highlight_mode": "character",
+                                                        "ocr_settle_ms": "0", "ocr_refine_lines": "off",
+                                                        "ocr_skip_blank_lines": "on",
+                                                        **{k: "set" for k in secrets}})
+        whole = json.dumps(manifest)
+        for value in (*secrets.values(), "fixture-url-key", "a.invalid"):
+            self.assertNotIn(value, whole)
+        # the values are in both config.ini copies, which install-vita.sh takes them from
+        for key, value in secrets.items():
+            self.assertIn(f"\n{key} = {value}\n", template)
+        # an empty credential stays empty, in both
+        manifest, _ = self.manifest({"jpdb_api_key": "", "anki_mining": "on"})
+        self.assertEqual((manifest["install_settings"]["jpdb_api_key"], manifest["defaults"]["jpdb_api_key"]), ("", ""))
         # a value core/config.c would not read as its type is refused before any output
         for bad in ({"log_file": "yes"}, {"ocr_cascade_ms": "2s"}):
             with self.assertRaises(ValueError):

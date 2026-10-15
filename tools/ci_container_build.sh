@@ -17,6 +17,9 @@
 #                      CI's VitaJPOverlay artifact): exit 1 unless its eboot.bin and the VPK's other
 #                      files, and a package's plugins and RCO when built, are byte-identical
 #
+# Exit status: 0 built (and identical, with --compare), 1 DIFFERENT, 2 nothing built (an option, a
+# revision, a reference or an engine this cannot use), 3 the build failed (its log is in --out).
+#
 # Needs docker or podman (CONTAINER_ENGINE=docker or podman picks one) and network access from the
 # container (apt, GitHub, codeload.github.com), as CI's runner has. The image is linux/amd64, as on
 # CI's runner; another host architecture needs the engine's emulation. VJO_CI_IMAGE overrides the
@@ -32,7 +35,7 @@ REV=HEAD
 OUT=
 VOCR=
 COMPARE=
-usage() { sed -n '8,18p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '8,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
     --rev) [ $# -ge 2 ] || usage; REV=$2; shift 2 ;;
@@ -42,7 +45,26 @@ while [ $# -gt 0 ]; do
     *) usage ;;
   esac
 done
-[ -z "$COMPARE" ] || [ -f "$COMPARE" ] || { echo "ci_container_build: no such file: $COMPARE" >&2; exit 2; }
+die() { echo "ci_container_build: $*" >&2; exit 2; }
+commit=$(git -C "$ROOT" rev-parse --verify --quiet "$REV^{commit}") || die "not a commit here: $REV"
+if [ -n "$COMPARE" ]; then
+  [ -f "$COMPARE" ] || die "no such file: $COMPARE"
+  # before building: a reference that holds no eboot.bin is not one
+  python3 - "$COMPARE" <<'PY' || die "$COMPARE is neither an eboot.bin nor a VPK nor a zip holding JPOverlaySettings.vpk"
+import io, sys, zipfile
+data = open(sys.argv[1], "rb").read()
+if data[:4] == b"SCE\0":
+    sys.exit(0)
+try:
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = set(z.namelist())
+    if "JPOverlaySettings.vpk" in names and "eboot.bin" not in names:
+        names = set(zipfile.ZipFile(io.BytesIO(z.read("JPOverlaySettings.vpk"))).namelist())
+except (zipfile.BadZipFile, KeyError, OSError):
+    sys.exit(1)
+sys.exit(0 if "eboot.bin" in names else 1)
+PY
+fi
 
 engine=${CONTAINER_ENGINE:-}
 if [ -z "$engine" ]; then
@@ -59,18 +81,20 @@ if [ -z "$engine" ]; then
   exit 2
 fi
 
-commit=$(git -C "$ROOT" rev-parse --verify "$REV^{commit}")
+# What the build gives (the comparison reads these names only, whatever else --out holds).
+FILES="eboot.bin JPOverlaySettings.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
 OUT=${OUT:-$ROOT/build/ci-container/${commit:0:12}}
-mkdir -p "$OUT"
+[ ! -e "$OUT" ] || [ -d "$OUT" ] || die "--out is not a directory: $OUT"
+mkdir -p "$OUT" || die "cannot make --out: $OUT"
 OUT=$(cd "$OUT" && pwd)
-rm -f "$OUT/eboot.bin" "$OUT/JPOverlaySettings.vpk" "$OUT"/*.skprx "$OUT"/*.suprx "$OUT/vitajpoverlay.rco"
+for f in $FILES build.log; do rm -f "$OUT/$f"; done
 vocr_commit=
 if [ -n "$VOCR" ]; then
   # The runtime at the commit this revision pins (cmake/VocrOCR.cmake checks each file's hash again).
-  vocr_commit=$(git -C "$ROOT" show "$commit:cmake/VocrOCR.cmake" | sed -n 's/^set(VJO_VOCR_COMMIT \([0-9a-f]\{40\}\))$/\1/p')
-  [ -n "$vocr_commit" ] || { echo "ci_container_build: no VJO_VOCR_COMMIT in $commit's cmake/VocrOCR.cmake" >&2; exit 2; }
-  git -C "$VOCR" cat-file -e "$vocr_commit^{commit}" 2>/dev/null \
-    || { echo "ci_container_build: $VOCR does not have vita-vn-ocr $vocr_commit (git fetch it)" >&2; exit 2; }
+  vocr_commit=$(git -C "$ROOT" show "$commit:cmake/VocrOCR.cmake" 2>/dev/null \
+                | sed -n 's/^set(VJO_VOCR_COMMIT \([0-9a-f]\{40\}\))$/\1/p') || true
+  [ -n "$vocr_commit" ] || die "no VJO_VOCR_COMMIT in $commit's cmake/VocrOCR.cmake"
+  git -C "$VOCR" cat-file -e "$vocr_commit^{commit}" 2>/dev/null || die "$VOCR does not have vita-vn-ocr $vocr_commit (git fetch it)"
 fi
 
 # The job's steps, after actions/checkout: its apt packages, tools/setup_toolchain.sh and its cmake
@@ -94,11 +118,25 @@ fi
 tar -c -C build/vita $files >&3'
 
 echo "ci_container_build: $commit in $IMAGE (linux/amd64) with $engine$( [ -z "$vocr_commit" ] || echo ", vita-vn-ocr $vocr_commit")" >&2
+# A named container, with an init as PID 1 (bash there ignores the SIGTERM a timeout sends), removed
+# however this script ends: a timeout or Ctrl-C leaves no build running.
+name=vjo-ci-build-$$-${commit:0:12}
+cleanup() { "$engine" rm -f "$name" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+trap 'cleanup; trap - EXIT; exit 143' TERM HUP
+trap 'cleanup; trap - EXIT; exit 130' INT
+set +e
 {
   git -C "$ROOT" archive --format=tar "$commit"
   [ -z "$vocr_commit" ] || git -C "$VOCR" archive --format=tar --prefix=.refs/vita-vn-ocr/ "$vocr_commit" runtime
-} | "$engine" run --rm -i --platform linux/amd64 "$IMAGE" bash -c "$INNER" 2> >(tee "$OUT/build.log" >&2) \
-  | tar -x -C "$OUT"
+} | "$engine" run --rm -i --init --name "$name" --platform linux/amd64 "$IMAGE" bash -c "$INNER" \
+      2> >(tee "$OUT/build.log" >&2) | tar -x -C "$OUT"
+status=("${PIPESTATUS[@]}")
+set -e
+if [ "${status[1]}" -ne 0 ] || [ "${status[2]}" -ne 0 ]; then
+  echo "ci_container_build: the build failed (container exit ${status[1]}, output ${status[2]}); see $OUT/build.log" >&2
+  exit 3
+fi
 
 python3 - "$OUT" "$commit" "$IMAGE" "$COMPARE" <<'PY'
 import hashlib, io, sys, zipfile
@@ -123,7 +161,12 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-built = {p.name: p.read_bytes() for p in sorted(out.iterdir()) if p.name != "build.log"}
+KNOWN = ("eboot.bin", "JPOverlaySettings.vpk", "VitaJPOverlay_Kernel.skprx", "VitaJPOverlay_Shell.suprx",
+         "VitaJPOverlay_OCR.suprx", "vitajpoverlay.rco")
+built = {n: (out / n).read_bytes() for n in KNOWN if (out / n).is_file()}
+if "eboot.bin" not in built or "JPOverlaySettings.vpk" not in built:
+    print(f"ci_container_build: the build gave no eboot.bin or VPK in {out}", file=sys.stderr)
+    sys.exit(3)
 print(f"built {commit} in {image}:")
 for name, data in built.items():
     print(f"  {sha(data)}  {len(data):>9,} B  {name}")
@@ -144,7 +187,9 @@ if compare:
         elif "JPOverlaySettings.vpk" in names:
             ref, where = vpk_files(z.read("JPOverlaySettings.vpk")), "JPOverlaySettings.vpk:"
         else:
-            sys.exit(f"ci_container_build: {compare} holds neither eboot.bin nor JPOverlaySettings.vpk")
+            print(f"ci_container_build: {compare} holds neither eboot.bin nor JPOverlaySettings.vpk",
+                  file=sys.stderr)
+            sys.exit(2)
         pairs += [(where + n, ref.get(n), mine.get(n)) for n in sorted(set(ref) | set(mine))]
         pairs += [(path, z.read(path), built[name]) for name, path in PACKAGE.items() if name in built and path in names]
     print(f"{compare}:")
