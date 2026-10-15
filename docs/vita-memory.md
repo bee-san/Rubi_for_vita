@@ -384,8 +384,23 @@ that the system-application budget comes from it, so that a game in an extended 
 close first, is an inference [inference].
 
 - **CPU and priority.** The main thread runs on CPU3 (`SCE_KERNEL_CPU_MASK_SYSTEM`) at priority
-  `0x10000100`, set in `settings/sysapp.c`; the Anki worker asks for the same. CPU3 use is
+  `0x10000100`, set in `settings/sysapp.c`. Every other thread the app creates does too: the link
+  wraps `sceKernelCreateThread` (`--wrap`), and the wrapper gives each thread CPU3 and, for an
+  application priority, the main thread's [source: as VitaShell-sysapp's `sysapp.c`]. CPU3 use is
   unmeasured (rule 8).
+- **The build checks it.** `tools/check_settings_self.py` (the Vita build's `vjo_settings_self`,
+  which the release needs) reads the built `eboot.bin` [measured: in the packaged binary]: control
+  info 6's attribute 0x0E, its 0xC800 KiB budget and no phycont, the process parameters' priority
+  and CPU mask, and, in the ELF, the heap, its sum with the segments and the table's fixed rows
+  (an [estimate]) within the budget, and every `sceKernelCreateThread` call inside the wrapper.
+  Each of #109's audit mutants (no `--undefined`, no `ATTRIBUTE`/`MEMSIZE`, no `sysapp.c`, a
+  64 MiB heap, priority 0xA0, a worker off CPU3) used to build and package; each now fails the
+  build, or for the worker, gets CPU3 from the wrapper.
+- **What the console gives it.** At start the app writes one line to `log.txt` (with
+  `log_file = on`, the default): the budget `sceAppMgrGetBudgetInfo` reports (its mode, main
+  memory total and free, phycont, CDRAM) and the heap. After its first 60 frames it writes their
+  interval and the main memory then free. No console has run this build: those lines are the
+  measurements for this section's estimates.
 - **Heap.** newlib's default heap is 128 MiB [measured: `_init_vita_heap` in the toolchain's
   `libc.a`], which does not fit; `settings/sysapp.c` fixes it at 8 MiB. The app's own code does
   not `malloc`; the heap serves libvita2d's structures and GXM host memory, libpng and ScePvf's
@@ -395,6 +410,11 @@ close first, is an inference [inference].
   to the shared framebuffer through `sceGxmVshInitialize`, and allocates its textures in
   `USER_RW` [source: libvita2d a8f15ab `vita2d.c`, `vita2d_init_internal`]. The app's icon textures (at most 9 of
   at most 256 KiB, `settings/icons.h`) therefore come from main memory, not CDRAM.
+- **Frame rate.** There `vita2d_end_drawing` waits for a vblank and the app's loop waits for
+  another, so it likely draws at 30 Hz [inference: libvita2d a8f15ab `vita2d.c`; the start log's
+  frame line measures it]. The left stick's repeat goes by the clock (`core/stick_scroll.h`: a row,
+  166.7 ms, then 60 rows a second), so it moves as fast at 30 Hz as at 60; the d-pad's repeat
+  always did. The icons still load one a frame.
 
 Main memory, by source [estimate: libvita2d's buffer sizes and the app's static arrays, not
 measured on the console]:

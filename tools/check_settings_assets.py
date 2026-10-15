@@ -4,7 +4,10 @@
 The Vita promoter requires 8-bit indexed, non-interlaced PNGs. See
 https://github.com/hammerill/livearea-specs for the native asset constraints.
 Sony's content information specification also limits icon0.png to 32 KiB and
-the start-up image pic0.png to 600 KiB.
+the start-up image pic0.png to 600 KiB, and asks both to hold only the data
+needed for display: an image editor's other information "may cause an error"
+when the package is made. The artwork may therefore carry no text chunk
+(tEXt, iTXt, zTXt: a tool's name, a comment), in any of the four images.
 Pass the assets directory to check committed artwork before a Vita build.
 """
 import argparse
@@ -22,6 +25,7 @@ ASSETS = {
     "sce_sys/livearea/contents/startup.png": (280, 158),
 }
 MAX_BYTES = {"sce_sys/icon0.png": 32 * 1024, "sce_sys/pic0.png": 600 * 1024}
+TEXT_CHUNKS = (b"tEXt", b"iTXt", b"zTXt")
 
 
 def check_png(data, name, dimensions, max_bytes=None):
@@ -62,6 +66,9 @@ def check_png(data, name, dimensions, max_bytes=None):
         raise ValueError(f"{name}: missing or invalid indexed palette")
     if any(value != 255 for kind, payload in chunks if kind == b"tRNS" for value in payload):
         raise ValueError(f"{name}: settings artwork must be opaque")
+    texts = [kind.decode("ascii") for kind, _ in chunks if kind in TEXT_CHUNKS]
+    if texts:
+        raise ValueError(f"{name}: a {texts[0]} chunk; settings artwork holds display data only")
     if chunks[-1][0] != b"IEND" or not any(kind == b"IDAT" for kind, _ in chunks):
         raise ValueError(f"{name}: incomplete PNG")
     return {"width": width, "height": height, "bit_depth": depth,

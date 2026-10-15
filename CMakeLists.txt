@@ -173,6 +173,12 @@ add_executable(vjo-stick-scroll-tests host/tests/test_stick_scroll.c)
 target_include_directories(vjo-stick-scroll-tests PRIVATE third_party/acutest/include core)
 target_compile_options(vjo-stick-scroll-tests PRIVATE -Wall -Wextra)
 add_test(NAME stick_scroll COMMAND vjo-stick-scroll-tests)
+# The Overlay app's system-application values and its thread wrapper (settings/sysapp.c);
+# tools/check_settings_self.py checks the Vita build's eboot.bin and ELF for them.
+add_executable(vjo-settings-sysapp-tests host/tests/test_settings_sysapp.c)
+target_include_directories(vjo-settings-sysapp-tests PRIVATE third_party/acutest/include host/tests/sysapp_stubs)
+target_compile_options(vjo-settings-sysapp-tests PRIVATE -Wall -Wextra)
+add_test(NAME settings_sysapp COMMAND vjo-settings-sysapp-tests)
 
 # End-to-end word lookup on real VOCR output with the bundled dictionary
 # (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts

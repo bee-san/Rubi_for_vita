@@ -57,6 +57,8 @@ static int log_on;
 
 /* ---------------- log.txt (shell/anki_queue.c logs its storage errors) ---------------- */
 
+void vjo_log_enable(int on) { log_on = on; }
+
 void vjo_log(const char *fmt, ...)
 {
     char line[300];

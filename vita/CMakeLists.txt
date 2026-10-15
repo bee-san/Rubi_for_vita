@@ -311,7 +311,8 @@ target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
 target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
-  -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority)
+  -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
+  -Wl,--wrap=sceKernelCreateThread)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
@@ -327,6 +328,16 @@ set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
 # vita-content-manager-pro: it starts beside a suspended game instead of closing
 # it, in the system-application memory and without CDRAM (settings/sysapp.c).
 vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE ATTRIBUTE 0x0E MEMSIZE 0xC800)
+# The eboot is that system application, whatever the lines above become: each of
+# audit-pr109's mutants M1-M7 (no --undefined, no ATTRIBUTE or MEMSIZE, no
+# settings/sysapp.c, another heap, priority or thread CPU) built and packaged.
+# tools/check_settings_self.py reads the SELF's control info and process
+# parameters, and the ELF's heap and thread calls.
+add_custom_target(vjo_settings_self ALL
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_self.py
+    --elf $<TARGET_FILE:VitaJPOverlay_Settings> ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
+  DEPENDS eboot.bin-self ${ROOT}/tools/check_settings_self.py
+  COMMENT "Checking the Overlay app's eboot.bin is the system application it is built as")
 # LiveArea title (param.sfo TITLE/STITLE) is "Overlay". The title ID, the VPK file name and every
 # plugin, path and config name keep their old names, so installing over JP Overlay Settings is an update.
 vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
@@ -356,7 +367,7 @@ if(VJO_SETTINGS_SMOKE)
   target_link_options(vjo_settings_smoke PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
     -Wl,--wrap=sceCtrlPeekBufferPositive,--wrap=sceKernelExitProcess,--wrap=vita2d_load_PNG_buffer
     -Wl,--wrap=vita2d_load_PNG_file,--wrap=vita2d_free_texture,--wrap=vita2d_wait_rendering_done
-    -Wl,--wrap=vita2d_draw_texture_scale)
+    -Wl,--wrap=vita2d_draw_texture_scale,--wrap=sceKernelCreateThread)
   target_link_libraries(vjo_settings_smoke ${VJO_SETTINGS_LIBS})
   # An ordinary app, from the plugins' flags: vita_create_self (a macro) leaves the eboot's
   # in these, since #109 a list (-c;-at;0x0E;-m;0xC800) that the shell splits at each ';'.
@@ -404,5 +415,5 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")

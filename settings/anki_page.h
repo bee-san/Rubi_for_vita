@@ -28,9 +28,9 @@ void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch);
-/* The left stick's move for the next frame (-1 up a row, 1 down, 0 none;
- * core/stick_scroll.h): it stops at the first and last row, where Up/Down
- * wrap round. */
+/* The left stick's move for the next frame (rows: negative up, positive down,
+ * 0 none; core/stick_scroll.h): it stops at the first and last row, where
+ * Up/Down wrap round. */
 void vjo_anki_page_stick(int move);
 /* The keyboard is open: main.c leaves every button to it. */
 int vjo_anki_page_modal(void);
@@ -38,5 +38,10 @@ int vjo_anki_page_modal(void);
 int vjo_anki_page_busy(void);
 /* Leaving the app: cancels and joins the running action, ends the network. */
 void vjo_anki_page_quit(void);
+/* The app's lines in log.txt, "overlay app: " and the text (anki_page.c,
+ * below the Shell's 1 MiB rotation): written while config.ini's log_file is
+ * on, which main.c sets at start and the page again when it is shown. */
+void vjo_log_enable(int on);
+void vjo_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 #endif
