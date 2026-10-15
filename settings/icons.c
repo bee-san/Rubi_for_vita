@@ -49,30 +49,53 @@ static uint32_t chunk_crc(const unsigned char *p, size_t n)
     return c ^ 0xFFFFFFFFu;
 }
 
+/* libpng's rule for a chunk type (pngrutil.c check_chunk_name): four ASCII
+ * letters, the third upper case. */
+static int chunk_name_valid(const unsigned char *t)
+{
+    for (int i = 0; i < 4; i++) {
+        unsigned char c = t[i] & (i == 2 ? 0xFF : 0xDF);
+        if (c < 'A' || c > 'Z') return 0;
+    }
+    return 1;
+}
+
 int vjo_icon_png_check(const unsigned char *png, size_t size, unsigned *width, unsigned *height)
 {
     static const unsigned char signature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     if (size < 8 || memcmp(png, signature, 8)) return VJO_ICON_NOT_PNG;
     size_t at = 8;
-    int first = 1, image = 0;
+    int first = 1, palette = 0, have_palette = 0, image = 0, after_image = 0;
     for (;;) {
         /* length, type, data, CRC: the data's length is checked against what is left */
         if (size - at < 12) return VJO_ICON_TRUNCATED;
         uint32_t length = be32(png + at);
         if (length > size - at - 12) return VJO_ICON_TRUNCATED;
         const unsigned char *type = png + at + 4;
-        if (chunk_crc(type, 4 + (size_t)length) != be32(type + 4 + length)) return VJO_ICON_BAD_CRC;
+        if (!chunk_name_valid(type)) return VJO_ICON_BAD_CHUNK;
+        /* libpng fails on a critical chunk's bad CRC (upper-case first letter) and
+         * only warns on an ancillary one's, which it then reads as it would anyway. */
+        if (!(type[0] & 0x20) && chunk_crc(type, 4 + (size_t)length) != be32(type + 4 + length))
+            return VJO_ICON_BAD_CRC;
         if (first) {
             if (memcmp(type, "IHDR", 4) || length != 13) return VJO_ICON_BAD_HEADER;
             uint32_t w = be32(type + 4), h = be32(type + 8);
             if (!w || !h || w > VJO_ICON_SIDE_MAX || h > VJO_ICON_SIDE_MAX) return VJO_ICON_BAD_SIZE;
             if (width) *width = w;
             if (height) *height = h;
+            palette = type[4 + 9] == 3;
             first = 0;
         } else if (!memcmp(type, "IDAT", 4)) {
+            /* The image data is one run of IDATs (PNG 5.6): libpng decodes it into the
+             * new texture, and a gap fails it there, which libvita2d's loader survives
+             * by keeping the texture. A palette image needs its PLTE first. */
+            if (after_image || (palette && !have_palette)) return VJO_ICON_BAD_ORDER;
             image = 1;
         } else if (!memcmp(type, "IEND", 4)) {
             return image ? VJO_ICON_OK : VJO_ICON_NO_IMAGE;
+        } else {
+            if (!memcmp(type, "PLTE", 4)) have_palette = 1;
+            after_image = image;
         }
         at += 12 + (size_t)length;
     }

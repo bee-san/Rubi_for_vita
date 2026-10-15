@@ -229,6 +229,14 @@ static void make_icon(void)
     if (!small_size) small_size = fx_png(small, sizeof(small), 24, 24, 1, 5, "PCSG00002");
     TEST_ASSERT(icon_size > 100 && small_size > 100);
 }
+/* A chunk type the PNG spec allows (four ASCII letters, the third upper case) whose
+ * first letter is lower case: ancillary. Written from the spec, not from icons.c. */
+static int spec_ancillary_name(const uint8_t *t)
+{
+    for (int i = 0; i < 4; i++)
+        if (!((t[i] >= 'A' && t[i] <= 'Z') || (t[i] >= 'a' && t[i] <= 'z'))) return 0;
+    return t[2] >= 'A' && t[2] <= 'Z' && t[0] >= 'a' && t[0] <= 'z';
+}
 /* The check on an exact-size heap copy, so a read past the end is an ASan error. */
 static int check_copy(const uint8_t *p, size_t n, unsigned side)
 {
@@ -240,6 +248,84 @@ static int check_copy(const uint8_t *p, size_t n, unsigned side)
     if (rc == VJO_ICON_OK) TEST_CHECK(w == side && h == side);
     free(copy);
     return rc;
+}
+
+/* The small icon's chunks, by type: its offset in the file (0 when absent). */
+static size_t chunk_at(const uint8_t *png, size_t size, const char *type)
+{
+    for (size_t at = 8; at + 12 <= size; at += 12 + (size_t)fx_get32(png + at))
+        if (!memcmp(png + at + 4, type, 4)) return at;
+    return 0;
+}
+
+/* CRCs: an ancillary chunk's may be wrong (libpng warns and loads), a critical one's not. */
+static void png_check_crc_rules(void)
+{
+    uint8_t png[8192];
+    make_icon();
+    size_t text = chunk_at(small, small_size, "tEXt"), plte = chunk_at(small, small_size, "PLTE"),
+           idat = chunk_at(small, small_size, "IDAT");
+    TEST_ASSERT(text && plte && idat);
+    memcpy(png, small, small_size);
+    png[text + 8 + fx_get32(small + text) + 3] ^= 1; /* tEXt's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_OK);
+    png[text + 9] ^= 0x40; /* and its text */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_OK);
+    memcpy(png, small, small_size);
+    png[plte + 8 + fx_get32(small + plte) + 3] ^= 1; /* PLTE's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+    memcpy(png, small, small_size);
+    png[idat + 20] ^= 4; /* IDAT's data */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+    memcpy(png, small, small_size);
+    png[small_size - 1] ^= 1; /* IEND's CRC */
+    TEST_CHECK(vjo_icon_png_check(png, small_size, NULL, NULL) == VJO_ICON_BAD_CRC);
+}
+
+/* The image data is one run of IDATs, after a palette image's PLTE. */
+static void png_check_chunk_order(void)
+{
+    uint8_t png[8192];
+    make_icon();
+    size_t plte = chunk_at(small, small_size, "PLTE"), idat = chunk_at(small, small_size, "IDAT"),
+           iend = chunk_at(small, small_size, "IEND");
+    uint32_t n = fx_get32(small + idat);
+    const uint8_t *data = small + idat + 8;
+    TEST_ASSERT(plte && idat && iend && n > 20);
+    /* IDAT split in two, back to back: one run. */
+    size_t at = idat;
+    memcpy(png, small, idat);
+    at += fx_chunk(png + at, "IDAT", data, 10);
+    at += fx_chunk(png + at, "IDAT", data + 10, n - 10);
+    memcpy(png + at, small + iend, small_size - iend);
+    size_t split = at + small_size - iend;
+    TEST_CHECK(vjo_icon_png_check(png, split, NULL, NULL) == VJO_ICON_OK);
+    /* a chunk between the two halves: refused (libpng would fail mid-image) */
+    at = idat;
+    at += fx_chunk(png + at, "IDAT", data, 10);
+    at += fx_chunk(png + at, "tIME", (const uint8_t *)"\x07\xea\x0a\x0f\0\0\0", 7);
+    at += fx_chunk(png + at, "IDAT", data + 10, n - 10);
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_BAD_ORDER);
+    /* an ancillary chunk after the image data, before IEND: fine (libvita2d never reads it) */
+    at = idat + 12 + n;
+    memcpy(png, small, at);
+    at += fx_chunk(png + at, "tIME", (const uint8_t *)"\x07\xea\x0a\x0f\0\0\0", 7);
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_OK);
+    /* a palette image's IDAT before its PLTE */
+    at = plte;
+    memcpy(png, small, plte);
+    memcpy(png + at, small + idat, 12 + n);
+    at += 12 + n;
+    memcpy(png + at, small + plte, idat - plte);
+    at += idat - plte;
+    memcpy(png + at, small + iend, small_size - iend);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - iend, NULL, NULL) == VJO_ICON_BAD_ORDER);
+    /* an RGBA image has no PLTE */
+    uint8_t rgba[80 * 1024];
+    size_t size = fx_png(rgba, sizeof(rgba), 16, 16, 0, 2, NULL);
+    TEST_CHECK(size && !chunk_at(rgba, size, "PLTE") && vjo_icon_png_check(rgba, size, NULL, NULL) == VJO_ICON_OK);
 }
 
 static void png_check_accepts_icons(void)
@@ -271,16 +357,29 @@ static void png_check_refuses_damage(void)
         refused += rc != VJO_ICON_OK;
     }
     for (size_t n = 0; n < icon_size; n += 97) TEST_CHECK(check_copy(icon, n, 128) != VJO_ICON_OK);
-    /* Every single-bit change: refused, by the signature, a length, a CRC or a field. */
+    /* Every single-bit change. The oracle, from the PNG spec and libpng's defaults: a
+     * change inside an ancillary chunk's data or CRC still loads (libpng warns on the
+     * CRC), as does one that leaves an ancillary chunk's type another valid ancillary
+     * type (libpng skips unknown ancillary chunks); any other change is refused. */
     memcpy(png, small, small_size);
+    int accepted = 0;
     for (size_t i = 0; i < small_size; i++) {
         uint8_t keep = png[i];
         png[i] ^= (uint8_t)(1u << (i % 8));
-        int rc = check_copy(png, small_size, 24);
+        int rc = check_copy(png, small_size, 24), want_ok = 0;
+        for (size_t at = 8; at + 12 <= small_size;) { /* the original file's chunks */
+            uint32_t n = fx_get32(small + at);
+            int ancillary = small[at + 4] & 0x20;
+            if (ancillary && i >= at + 8 && i < at + 12 + n) want_ok = 1;
+            if (ancillary && i >= at + 4 && i < at + 8) want_ok = spec_ancillary_name(png + at + 4);
+            at += 12 + (size_t)n;
+        }
         png[i] = keep;
-        TEST_CHECK_(rc != VJO_ICON_OK, "byte %zu changed", i);
+        TEST_CHECK_((rc == VJO_ICON_OK) == want_ok, "byte %zu changed: %d", i, rc);
         refused += rc != VJO_ICON_OK;
+        accepted += rc == VJO_ICON_OK;
     }
+    TEST_CHECK(accepted > 8 && refused > (long)small_size); /* both kinds were met */
     TEST_MSG("%ld damaged files refused", refused);
     /* Lengths that would wrap a 32-bit size_t, with valid CRCs over what is there. */
     static const uint32_t lengths[] = {0x7FFFFFFFu, 0x80000000u, 0xFFFFFFF0u, 0xFFFFFFFFu, 0x10000u};
@@ -316,6 +415,14 @@ static void png_check_refuses_damage(void)
     TEST_CHECK(vjo_icon_png_check(first, at, NULL, NULL) == VJO_ICON_NO_IMAGE);
     /* No IEND at all. */
     TEST_CHECK(vjo_icon_png_check(icon, icon_size - 12, NULL, NULL) == VJO_ICON_TRUNCATED);
+    /* Chunk names libpng refuses: a digit, the third letter lower case. */
+    memcpy(png, small, 33);
+    at = 33 + fx_chunk(png + 33, "t3Xt", (const uint8_t *)"x", 1);
+    memcpy(png + at, small + 33, small_size - 33);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - 33, NULL, NULL) == VJO_ICON_BAD_CHUNK);
+    at = 33 + fx_chunk(png + 33, "tExt", (const uint8_t *)"x", 1);
+    memcpy(png + at, small + 33, small_size - 33);
+    TEST_CHECK(vjo_icon_png_check(png, at + small_size - 33, NULL, NULL) == VJO_ICON_BAD_CHUNK);
     TEST_CHECK(vjo_icon_png_check((const uint8_t *)"GIF89a....", 10, NULL, NULL) == VJO_ICON_NOT_PNG);
 }
 
@@ -431,6 +538,8 @@ TEST_LIST = {
     {"memo_reuses_layouts", memo_reuses_layouts},
     {"png_check_accepts_icons", png_check_accepts_icons},
     {"png_check_refuses_damage", png_check_refuses_damage},
+    {"png_check_crc_rules", png_check_crc_rules},
+    {"png_check_chunk_order", png_check_chunk_order},
     {"fixture_round_trip", fixture_round_trip},
     {"icon_read_is_bounded", icon_read_is_bounded},
     {"icon_cache_lru", icon_cache_lru},

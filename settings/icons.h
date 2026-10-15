@@ -24,8 +24,10 @@ enum {
     VJO_ICON_BAD_HEADER = -4, /* the first chunk is not a 13-byte IHDR */
     VJO_ICON_BAD_SIZE = -5,   /* 0 or more than VJO_ICON_SIDE_MAX pixels a side */
     VJO_ICON_TRUNCATED = -6,  /* a chunk runs past the file's end, or no IEND */
-    VJO_ICON_BAD_CRC = -7,    /* a chunk's CRC does not match */
-    VJO_ICON_NO_IMAGE = -8    /* IEND before any IDAT */
+    VJO_ICON_BAD_CRC = -7,    /* a critical chunk's CRC does not match */
+    VJO_ICON_NO_IMAGE = -8,   /* IEND before any IDAT */
+    VJO_ICON_BAD_CHUNK = -9,  /* a chunk type libpng refuses (not four letters, third lower case) */
+    VJO_ICON_BAD_ORDER = -10  /* IDATs not one run, or a palette image's IDAT before its PLTE */
 };
 
 /* Reads path into buf and clears the VJO_ICON_FILE_PAD bytes after it: the
@@ -33,13 +35,16 @@ enum {
 long vjo_icon_read(const char *path, unsigned char *buf);
 
 /* VJO_ICON_OK when png[0, size) is a PNG whose chunks, from IHDR (first)
- * through at least one IDAT to IEND, all lie inside it with valid CRCs,
- * and whose image is at most VJO_ICON_SIDE_MAX pixels a side (written to
- * *width and *height when not NULL). vita2d_load_PNG_buffer has no length:
- * libpng reads each chunk where its header says, so only a buffer that
- * passed this check may be given to it. Checking the CRCs here also keeps
- * a damaged file from reaching libvita2d, whose loader does not free the
- * texture when libpng fails inside the image data. */
+ * through one run of IDATs to IEND, all lie inside it, have names libpng
+ * accepts, and, for critical chunks, valid CRCs, and whose image is at most
+ * VJO_ICON_SIDE_MAX pixels a side (written to *width and *height when not
+ * NULL). vita2d_load_PNG_buffer has no length: libpng reads each chunk where
+ * its header says, so only a buffer that passed this check may be given to
+ * it. The CRC and order rules also keep a damaged file from reaching libpng's
+ * image decoding, where a failure costs a texture: libvita2d's loader does not
+ * free it. An ancillary chunk's CRC is not checked: libpng only warns on it.
+ * Image data whose CRCs hold but whose deflate stream is broken still fails
+ * there. */
 int vjo_icon_png_check(const unsigned char *png, size_t size, unsigned *width, unsigned *height);
 
 /* Loaded icon textures by title ID; the least recently used goes first. */

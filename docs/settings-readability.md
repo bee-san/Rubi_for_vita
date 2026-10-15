@@ -81,11 +81,15 @@ What the page does now:
 - **Icons are read whole and checked first.** `vjo_icon_read` reads the file in
   one bounded read into a 256 KiB buffer; `vjo_icon_png_check` requires the
   PNG signature, IHDR first, at most 256 × 256 pixels, every chunk inside the
-  file with a matching CRC, and image data before IEND. Only then does
-  `vita2d_load_PNG_buffer` (which has no length) decode it. A missing, larger,
-  damaged or non-PNG icon shows **JP** and is not tried again until Start.
-  This is stricter than libpng, which ignores a bad CRC on an ancillary chunk.
-  After a load, the texture's `gxm_rtgt` and `depth_UID` are cleared.
+  file with a name libpng accepts, a matching CRC on every critical chunk, the
+  image data as one run of IDATs (after the PLTE of a palette image), and IEND.
+  Only then does `vita2d_load_PNG_buffer` (which has no length) decode it. An
+  ancillary chunk's CRC is not checked, since libpng only warns on it and
+  loads the image. The CRC and IDAT rules keep damaged files away from libpng's
+  image decoding, where a failure would cost a texture; a file whose CRCs hold
+  but whose deflate data is broken still fails there, once per scan. A missing,
+  larger, damaged or non-PNG icon shows **JP** and is not tried again until
+  Start. After a load, the texture's `gxm_rtgt` and `depth_UID` are cleared.
 - **Titles are laid out once per scan**, by the same rule
   (`settings/text_layout.c`, `fit_line` moved there unchanged), and drawn
   from the stored rows. A frame with no icon to load lays out one title of the
@@ -163,9 +167,12 @@ With 512 games the after column is the same; before, an idle frame measured
 - `settings_layout` (also on the ARM lane): the layout against the old
   `wrapped_text` (`host/tests/settings_wrap_reference.h`, verbatim from main) on
   168,000 generated texts, widths and sizes under three measure rules; the
-  memo; the PNG check on every truncation and every single-bit change of an
-  icon, lengths that would wrap 32 bits, sizes, chunk order and missing IEND or
-  image data; the bounded file read; the cache's LRU order and window.
+  memo; the PNG check on every truncation of an icon and every single-bit change
+  (against an oracle from the PNG spec: only a change inside an ancillary
+  chunk, or one leaving it another valid ancillary type, still loads), lengths
+  that would wrap 32 bits, sizes, chunk names, critical and ancillary CRCs,
+  split and interrupted IDATs, PLTE order and missing IEND or image data; the
+  bounded file read; the cache's LRU order and window.
 - `settings_games`: the app over 1 to 520 synthetic games. Every card of every
   frame shows its own game's ID, the old layout's rows and its own icon or
   **JP**; at most one decode per frame; visible rows first, then the page in
