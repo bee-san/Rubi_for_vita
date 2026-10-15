@@ -76,7 +76,7 @@ tiny model, a second one as the cascade and a tiny LM, so CI runs them without r
 with the serial one greedily and with the LM and the cascade, with real threads, slow ones, threads that run at once
 and threads that never start; every text capacity against the serial job's result (`VJO_E_TOO_LARGE` exactly where
 it gives it); cancellation while helpers run; a helper whose join fails (the job stops, below); fewer helpers when
-the workspace holds fewer. 42 mutations of the scheduler, the cache and the worker's helpers and clock each fail
+the workspace holds fewer. 43 mutations of the scheduler, the cache and the worker's helpers and clock each fail
 them (ASan/UBSan).
 
 What overlaps: while a helper recognizes line i, the job's thread fetches line i+1 (a strip re-read, one display
