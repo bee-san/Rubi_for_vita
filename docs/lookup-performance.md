@@ -148,9 +148,9 @@ estimates from the console fit:
 
 | line set | lookups | reads | index-page reads | console ms p50 / p95 (est.) | per screen p50 / p95 (est.) |
 |---|---:|---:|---:|---:|---:|
-| 50 committed VOCR lines | 629 | 13.51 → 8.59 | 6.96 → 1.13 | 65.8 → 47.5 / 121.7 → 77.0 | 948 → 702 / 1517 → 1194 ms |
-| 500 realplus-v3 screens | 5,005 | 15.21 → 8.34 | 8.94 → 1.14 | 69.5 → 47.1 / 147.8 → 80.7 | 478 → 352 / 2155 → 1338 ms |
-| 500 owner-pool-2 screens | 5,423 | 15.78 → 8.33 | 9.55 → 1.15 | 69.5 → 47.1 / 147.8 → 77.0 | 733 → 511 / 2016 → 1217 ms |
+| 50 committed VOCR lines | 629 | 13.51 → 8.59 | 6.96 → 1.13 | 66.7 → 48.4 / 122.6 → 77.8 | 962 → 714 / 1532 → 1213 ms |
+| 500 realplus-v3 screens | 5,005 | 15.21 → 8.34 | 8.94 → 1.14 | 70.4 → 48.0 / 148.7 → 81.6 | 485 → 358 / 2175 → 1361 ms |
+| 500 owner-pool-2 screens | 5,423 | 15.78 → 8.33 | 9.55 → 1.15 | 70.4 → 48.0 / 148.7 → 77.8 | 744 → 521 / 2034 → 1238 ms |
 
 The filter costs 0.91-1.00 reads and 0 bytes of RAM, and adds 904 KiB to the bundled file.
 Results for every mode and set:

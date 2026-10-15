@@ -237,29 +237,30 @@ The design takes hoshidicts' Bloom filter and lays it out so a lookup needs one 
   never read.
 - **Bypass.** One-character candidates (nearly always keys) and candidates with another prefix
   (した → する) search the index as before.
-- **No false negatives.** The filter has none, so results cannot change. Per lookup, about 0.04
-  candidates are false positives: they pass the filter and the index read finds nothing.
+- **No false negatives.** The filter has none, so results cannot change. Candidates that are not
+  keys now cost 0.08-0.22 reads per lookup, instead of 5.8-8.5. Those reads come from false
+  positives and from the candidates that bypass the filter.
 
 | set | mode | lookups | reads before → after | index-page reads | console ms p50 before → after (est.) | p95 | per screen p50 | per screen p95 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| fixture (50 lines) | first | 50 | 14.28 → 8.48 | 7.88 → 1.08 | 62.0 → 47.1 | 155.3 → 69.5 | 62 → 47 | 155 → 70 |
-| fixture (50 lines) | words | 629 | 13.51 → 8.59 | 6.96 → 1.13 | 65.8 → 47.5 | 121.7 → 77.0 | 948 → 702 | 1517 → 1194 |
-| fixture (50 lines) | letters | 1,321 | 13.97 → 9.28 | 6.87 → 1.27 | 65.8 → 50.8 | 129.2 → 84.4 | 1958 → 1470 | 2999 → 2358 |
-| realplus-v3 (500 screens) | first | 500 | 12.57 → 7.87 | 6.80 → 1.11 | 54.6 → 47.1 | 140.4 → 73.2 | 55 → 47 | 140 → 73 |
-| realplus-v3 (500 screens) | words | 5,005 | 15.21 → 8.34 | 8.94 → 1.14 | 69.5 → 47.1 | 147.8 → 80.7 | 478 → 352 | 2155 → 1338 |
-| realplus-v3 (500 screens) | letters | 10,905 | 15.43 → 8.94 | 8.63 → 1.23 | 69.5 → 50.8 | 147.8 → 84.4 | 1076 → 828 | 4508 → 2972 |
-| owner-pool-2 (500 screens) | first | 500 | 13.84 → 7.71 | 8.26 → 1.10 | 58.3 → 47.1 | 151.6 → 69.5 | 58 → 47 | 152 → 70 |
-| owner-pool-2 (500 screens) | words | 5,423 | 15.78 → 8.33 | 9.55 → 1.15 | 69.5 → 47.1 | 147.8 → 77.0 | 733 → 511 | 2016 → 1217 |
-| owner-pool-2 (500 screens) | letters | 12,188 | 16.01 → 8.90 | 9.30 → 1.25 | 73.2 → 50.8 | 147.8 → 80.7 | 1678 → 1183 | 4577 → 2969 |
+| fixture (50 lines) | first | 50 | 14.28 → 8.48 | 7.88 → 1.08 | 62.9 → 48.0 | 156.2 → 70.4 | 63 → 48 | 156 → 70 |
+| fixture (50 lines) | words | 629 | 13.51 → 8.59 | 6.96 → 1.13 | 66.7 → 48.4 | 122.6 → 77.8 | 962 → 714 | 1532 → 1213 |
+| fixture (50 lines) | letters | 1,321 | 13.97 → 9.28 | 6.87 → 1.27 | 66.7 → 51.7 | 130.1 → 85.3 | 1985 → 1494 | 3036 → 2397 |
+| realplus-v3 (500 screens) | first | 500 | 12.57 → 7.87 | 6.80 → 1.11 | 55.5 → 48.0 | 141.3 → 74.1 | 56 → 48 | 141 → 74 |
+| realplus-v3 (500 screens) | words | 5,005 | 15.21 → 8.34 | 8.94 → 1.14 | 70.4 → 48.0 | 148.7 → 81.6 | 485 → 358 | 2175 → 1361 |
+| realplus-v3 (500 screens) | letters | 10,905 | 15.43 → 8.94 | 8.63 → 1.23 | 70.4 → 51.7 | 148.7 → 85.3 | 1092 → 843 | 4548 → 3021 |
+| owner-pool-2 (500 screens) | first | 500 | 13.84 → 7.71 | 8.26 → 1.10 | 59.2 → 48.0 | 152.5 → 70.4 | 59 → 48 | 152 → 70 |
+| owner-pool-2 (500 screens) | words | 5,423 | 15.78 → 8.33 | 9.55 → 1.15 | 70.4 → 48.0 | 148.7 → 77.8 | 744 → 521 | 2034 → 1238 |
+| owner-pool-2 (500 screens) | letters | 12,188 | 16.01 → 8.90 | 9.30 → 1.25 | 74.1 → 51.7 | 148.7 → 81.6 | 1696 → 1202 | 4621 → 3020 |
 
 Raw numbers: [`docs/benchmarks/dict-key-filter-20261015.json`](../docs/benchmarks/dict-key-filter-20261015.json).
 
 - **Reads and bytes.** The filter itself costs 0.91-1.00 reads per lookup. The worst lookup's reads
   fall from 38-69 to 25-34, and bytes per lookup from 43-57 KiB to 27-34 KiB.
-- **The index.** Searches that reach it fall from 7.0-9.6 to 1.16-1.19 per lookup, which is about
-  the 1.10-1.25 keys whose hash is present: the floor for any index.
-- **Host CPU.** 33-41 µs at p50 instead of 38-53 µs; with Whole word stepping, 23,400-25,500
-  lookups/s instead of 16,500-19,800.
+- **The index.** Index-page reads fall from 6.8-9.6 to 1.08-1.27 per lookup. That is about the
+  1.10-1.25 keys whose hash is present: the floor for any index.
+- **Host CPU.** 34-39 µs at p50 instead of 36-50 µs; with Whole word stepping, 24,800-27,100
+  lookups/s instead of 17,000-20,800.
 - **Memory.** No RAM is added: the block shares the existing 16 KiB page cache inside the 48 KiB
   scratch. The `Workspace` grows by 24 B per configured dictionary, and the arena peak goes from
   53,648 B to 53,840 B (host build) of the 64 KiB arena. Nothing stays resident between lookups.
@@ -279,8 +280,8 @@ Raw numbers: [`docs/benchmarks/dict-key-filter-20261015.json`](../docs/benchmark
 
 Alternatives considered for the filter's shape (simulated on the probe traces, §5's sets,
 Whole word):
-- **hoshidicts' layout** (one bit array, k = 7 over 1 MiB): 33-39 distinct 4 KiB pages per lookup
-  (p50), so far more reads than it saves.
+- **hoshidicts' layout** (one bit array, k = 7 over 1 MiB, stopping at the first clear bit): 14-17
+  distinct 4 KiB pages per lookup (p50), so more reads than it saves.
 - **One partition per first character:** 172 blocks, 0.36-0.83 false positives per lookup, because
   し alone has 19,235 keys.
 - **First three characters:** about the same as two.
@@ -293,13 +294,14 @@ Whole word):
 
 | change | RAM (SceShell) | disk | reads saved per lookup | status |
 |---|---:|---:|---:|---|
-| key filter (6.1) | 0 (existing page cache) | +904 KiB | 4.9-7.5 (measured) | this work |
-| posting rank hints: spelling = key, normalized spelling = key, has a reading, in the v3 postings' u16 that dict-freq leaves to this work (bits 0-2; its 13-bit frequency key fills bits 3-15) | 0 | 0 | up to 2.6-4.0 (the head reads; keys with a preferred reading and katakana text still read heads) | next, after dict-freq's v3 |
-| keep the file open across one overlay session's lookups | 0 (a descriptor; overlay-shell-slim: fine) | 0 | 1 header read and the open/seek/close, est. most of the 21 ms intercept | needs a console test: on the host nothing can measure `sceIoOpen` |
+| key filter (6.1) | 0 (existing page cache) | +904 KiB | 4.7-7.5 (measured) | this work |
+| posting rank hints: spelling = key, normalized spelling = key, has a reading, in the v3 postings' u16 that dict-freq leaves to this work (bits 0-2; its 13-bit frequency key fills bits 3-15) | 0 | 0 | 2.2-3.7 simulated: heads 2.7-4.0 → 0.2-1.2, since keys with a preferred reading and katakana spellings of katakana text still read their heads | next, after dict-freq's v3 |
+| keep the file open across one overlay session's lookups | 0 (a descriptor; overlay-shell-slim: fine) | 0 | 1 header read and the open/seek/close: the fixed part, est. about 11 ms for a cursor lookup | needs a console test: on the host nothing can measure `sceIoOpen` |
 | bigger page cache kept across one text's lookups | 16-128 KiB resident in SceShell | 0 | 0-2.8% (audit-overlay-perf-1: 4 pages 0.0%, 8 pages 1.5%, 32 pages 2.8%) | rejected: AGENTS.md rule 1, and too small |
 | block index / sorted prefix table instead of the hash | 0 | about 0 | ≤ 0.1 after the filter (index reads are at the floor) | not worth a format change |
 | batching candidates by sorted key | 0 | 0 | ≤ 0.1 after the filter (the absent ones are no longer searched) | not needed |
 | a resident filter (904 KiB) in the Shell | 904 KiB | 0 | 0.9 (the filter read) | rejected: AGENTS.md rule 1 (overlay-shell-slim) |
+| hoshidicts' layout (one 1 MiB bit array, k = 7) | 0 | +1 MiB | negative: 14-17 filter pages a lookup at p50 | rejected (§1) |
 
 After the filter, a lookup reads: header 1, filter 0.9, index 1.1, key group 1.0, payload heads
 2.6-4.0, payload 1. The heads are the next target. Keeping the file open would then remove the

@@ -1,10 +1,10 @@
 {
  "method": "The Shell's local word lookup over real recognized lines: file reads (what they fetch), bytes, deinflection candidates generated / searched / found, the arena peak and the time, per lookup and per screen, with a console latency model. Compares two builds or dictionaries and fails unless every lookup shows exactly the same entries (a golden check).",
  "console_model": {
-  "fixed_ms": 21.0,
+  "fixed_ms": 21.9,
   "read_ms": 3.73,
   "excess_kib_ms": 0.146,
-  "source": "estimate: least-squares fit over the 90 lookups of the v0.8.0-test.1 and test.2 console log.txt (ms = 21.0 + 3.73 x reads, R^2 0.56; docs/performance.md's 30-lookup fit: 15.3 + 3.82); a read's bytes beyond 4 KiB at most 0.146 ms/KiB: the 1,155,968 B of VOCR3-H15 weights in 32 KiB reads took at most 165 ms (load 218-231 ms less SHA-256)"
+  "source": "estimate: least-squares fit over the 57 distinct lookups of the v0.8.0-test.2 console log.txt, whose first 4,966 lines are test.1's whole log (ms = 21.9 + 3.73 x reads, R^2 0.52, reads 5-33). By kind: cursor (n 35) 11.2 + 3.76 x reads, R^2 0.85; first word and on open (n 22) 35.4 + 3.91 x reads, R^2 0.27. docs/performance.md's 30-lookup fit: 15.3 + 3.82. A read's bytes beyond 4 KiB at most 0.146 ms/KiB: the 1,155,968 B of VOCR3-H15 weights in 32 KiB reads took at most 165 ms (load 218-231 ms less the A9 SHA-256 estimate)"
  },
  "rounds": 21,
  "dicts": "plaintext.vjdict",
@@ -16,17 +16,17 @@
      "with_entry": 50,
      "opened_files": 50,
      "host_us": {
-      "mean": 35.85,
-      "p50": 32.77,
-      "p95": 57.52,
-      "max": 70.74
+      "mean": 38.12,
+      "p50": 34.72,
+      "p95": 61.53,
+      "max": 77.081
      },
-     "host_lookups_per_s": 27893.7,
+     "host_lookups_per_s": 26233.1,
      "console_ms": {
-      "mean": 52.6,
-      "p50": 47.1,
-      "p95": 69.5,
-      "max": 140.4
+      "mean": 53.5,
+      "p50": 48.0,
+      "p95": 70.4,
+      "max": 141.3
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -107,6 +107,12 @@
       "p95": 18,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.1,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
      "reads_by": {
       "header": 1,
       "index": 1.08,
@@ -132,16 +138,16 @@
        "max": 1
       },
       "host_us": {
-       "mean": 35.9,
-       "p50": 32.8,
-       "p95": 57.5,
-       "max": 70.7
+       "mean": 38.1,
+       "p50": 34.7,
+       "p95": 61.5,
+       "max": 77.1
       },
       "console_ms": {
-       "mean": 52.6,
-       "p50": 47.1,
-       "p95": 69.5,
-       "max": 140.4
+       "mean": 53.5,
+       "p50": 48.0,
+       "p95": 70.4,
+       "max": 141.3
       },
       "reads": {
        "mean": 8.5,
@@ -156,17 +162,17 @@
      "with_entry": 50,
      "opened_files": 50,
      "host_us": {
-      "mean": 48.594,
-      "p50": 38.22,
-      "p95": 106.481,
-      "max": 116.92
+      "mean": 44.729,
+      "p50": 35.5,
+      "p95": 97.37,
+      "max": 104.93
      },
-     "host_lookups_per_s": 20578.7,
+     "host_lookups_per_s": 22357.0,
      "console_ms": {
-      "mean": 74.3,
-      "p50": 62.0,
-      "p95": 155.3,
-      "max": 162.7
+      "mean": 75.2,
+      "p50": 62.9,
+      "p95": 156.2,
+      "max": 163.6
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -247,6 +253,12 @@
       "p95": 18,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 6.9,
+      "p50": 3,
+      "p95": 25,
+      "max": 31
+     },
      "reads_by": {
       "header": 1,
       "index": 7.88,
@@ -272,16 +284,16 @@
        "max": 1
       },
       "host_us": {
-       "mean": 48.6,
-       "p50": 38.2,
-       "p95": 106.5,
-       "max": 116.9
+       "mean": 44.7,
+       "p50": 35.5,
+       "p95": 97.4,
+       "max": 104.9
       },
       "console_ms": {
-       "mean": 74.3,
-       "p50": 62.0,
-       "p95": 155.3,
-       "max": 162.7
+       "mean": 75.2,
+       "p50": 62.9,
+       "p95": 156.2,
+       "max": 163.6
       },
       "reads": {
        "mean": 14.3,
@@ -299,17 +311,17 @@
      "with_entry": 625,
      "opened_files": 629,
      "host_us": {
-      "mean": 39.168,
-      "p50": 37.29,
-      "p95": 58.84,
-      "max": 86.32
+      "mean": 36.903,
+      "p50": 35.2,
+      "p95": 54.85,
+      "max": 82.481
      },
-     "host_lookups_per_s": 25530.9,
+     "host_lookups_per_s": 27098.0,
      "console_ms": {
-      "mean": 53.1,
-      "p50": 47.5,
-      "p95": 77.0,
-      "max": 140.4
+      "mean": 54.0,
+      "p50": 48.4,
+      "p95": 77.8,
+      "max": 141.3
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -390,6 +402,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.12,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
      "reads_by": {
       "header": 1,
       "index": 1.13,
@@ -415,16 +433,16 @@
        "max": 23
       },
       "host_us": {
-       "mean": 492.7,
-       "p50": 514.5,
-       "p95": 855.9,
-       "max": 877.0
+       "mean": 464.2,
+       "p50": 479.1,
+       "p95": 804.2,
+       "max": 818.9
       },
       "console_ms": {
-       "mean": 667.4,
-       "p50": 702.0,
-       "p95": 1194.5,
-       "max": 1229.5
+       "mean": 678.7,
+       "p50": 713.6,
+       "p95": 1213.4,
+       "max": 1250.2
       },
       "reads": {
        "mean": 108.1,
@@ -439,17 +457,17 @@
      "with_entry": 625,
      "opened_files": 629,
      "host_us": {
-      "mean": 50.501,
-      "p50": 43.92,
-      "p95": 93.871,
-      "max": 135.3
+      "mean": 48.032,
+      "p50": 41.82,
+      "p95": 88.28,
+      "max": 128.93
      },
-     "host_lookups_per_s": 19801.7,
+     "host_lookups_per_s": 20819.5,
      "console_ms": {
-      "mean": 71.4,
-      "p50": 65.8,
-      "p95": 121.7,
-      "max": 162.7
+      "mean": 72.3,
+      "p50": 66.7,
+      "p95": 122.6,
+      "max": 163.6
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -530,6 +548,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 5.96,
+      "p50": 4,
+      "p95": 19,
+      "max": 31
+     },
      "reads_by": {
       "header": 1,
       "index": 6.963,
@@ -555,16 +579,16 @@
        "max": 23
       },
       "host_us": {
-       "mean": 635.3,
-       "p50": 649.1,
-       "p95": 1147.8,
-       "max": 1191.4
+       "mean": 604.2,
+       "p50": 618.1,
+       "p95": 1092.5,
+       "max": 1137.3
       },
       "console_ms": {
-       "mean": 897.9,
-       "p50": 947.7,
-       "p95": 1517.0,
-       "max": 1736.8
+       "mean": 909.3,
+       "p50": 962.1,
+       "p95": 1532.3,
+       "max": 1757.5
       },
       "reads": {
        "mean": 169.9,
@@ -582,17 +606,17 @@
      "with_entry": 1309,
      "opened_files": 1321,
      "host_us": {
-      "mean": 39.461,
-      "p50": 37.14,
-      "p95": 59.07,
-      "max": 107.981
+      "mean": 38.737,
+      "p50": 36.561,
+      "p95": 58.21,
+      "max": 109.181
      },
-     "host_lookups_per_s": 25341.4,
+     "host_lookups_per_s": 25815.1,
      "console_ms": {
-      "mean": 55.6,
-      "p50": 50.8,
-      "p95": 84.4,
-      "max": 144.1
+      "mean": 56.5,
+      "p50": 51.7,
+      "p95": 85.3,
+      "max": 145.0
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -673,6 +697,12 @@
       "p95": 49,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.2,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
      "reads_by": {
       "header": 1,
       "index": 1.266,
@@ -698,16 +728,16 @@
        "max": 43
       },
       "host_us": {
-       "mean": 1042.6,
-       "p50": 1055.2,
-       "p95": 1621.6,
-       "max": 1645.7
+       "mean": 1023.4,
+       "p50": 1050.3,
+       "p95": 1603.0,
+       "max": 1617.7
       },
       "console_ms": {
-       "mean": 1469.2,
-       "p50": 1469.7,
-       "p95": 2358.1,
-       "max": 2376.3
+       "mean": 1493.0,
+       "p50": 1494.0,
+       "p95": 2396.8,
+       "max": 2415.1
       },
       "reads": {
        "mean": 245.1,
@@ -722,17 +752,17 @@
      "with_entry": 1309,
      "opened_files": 1321,
      "host_us": {
-      "mean": 51.963,
-      "p50": 45.45,
-      "p95": 99.08,
-      "max": 152.22
+      "mean": 49.552,
+      "p50": 43.16,
+      "p95": 94.87,
+      "max": 143.0
      },
-     "host_lookups_per_s": 19244.5,
+     "host_lookups_per_s": 20180.9,
      "console_ms": {
-      "mean": 73.1,
-      "p50": 65.8,
-      "p95": 129.2,
-      "max": 185.1
+      "mean": 74.0,
+      "p50": 66.7,
+      "p95": 130.1,
+      "max": 186.0
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -813,6 +843,12 @@
       "p95": 49,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 5.8,
+      "p50": 4,
+      "p95": 18,
+      "max": 31
+     },
      "reads_by": {
       "header": 1,
       "index": 6.871,
@@ -838,16 +874,16 @@
        "max": 43
       },
       "host_us": {
-       "mean": 1372.9,
-       "p50": 1367.4,
-       "p95": 2131.7,
-       "max": 2296.6
+       "mean": 1309.2,
+       "p50": 1301.4,
+       "p95": 2099.9,
+       "max": 2191.8
       },
       "console_ms": {
-       "mean": 1931.1,
-       "p50": 1957.9,
-       "p95": 2999.1,
-       "max": 3119.4
+       "mean": 1954.9,
+       "p50": 1984.9,
+       "p95": 3036.0,
+       "max": 3152.7
       },
       "reads": {
        "mean": 369.0,
@@ -860,24 +896,24 @@
     "golden": "1321 lookups, every shown entry and highlight identical"
    }
   },
-  "pool:realplus-v3/labels.jsonl:500 screens": {
+  "pool:realplus-v3/labels_v3i7.jsonl:500 screens": {
    "first": {
     "after": {
      "lookups": 500,
      "with_entry": 499,
      "opened_files": 500,
      "host_us": {
-      "mean": 37.499,
-      "p50": 33.84,
-      "p95": 59.83,
-      "max": 89.79
+      "mean": 37.511,
+      "p50": 33.71,
+      "p95": 59.49,
+      "max": 91.03
      },
-     "host_lookups_per_s": 26667.4,
+     "host_lookups_per_s": 26658.9,
      "console_ms": {
-      "mean": 50.4,
-      "p50": 47.1,
-      "p95": 73.2,
-      "max": 114.2
+      "mean": 51.3,
+      "p50": 48.0,
+      "p95": 74.1,
+      "max": 115.2
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -958,6 +994,12 @@
       "p95": 22,
       "max": 53
      },
+     "absent_reads": {
+      "mean": 0.09,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
      "reads_by": {
       "header": 1,
       "index": 1.114,
@@ -984,15 +1026,15 @@
       },
       "host_us": {
        "mean": 37.5,
-       "p50": 33.8,
-       "p95": 59.8,
-       "max": 89.8
+       "p50": 33.7,
+       "p95": 59.5,
+       "max": 91.0
       },
       "console_ms": {
-       "mean": 50.4,
-       "p50": 47.1,
-       "p95": 73.2,
-       "max": 114.2
+       "mean": 51.3,
+       "p50": 48.0,
+       "p95": 74.1,
+       "max": 115.2
       },
       "reads": {
        "mean": 7.9,
@@ -1007,17 +1049,17 @@
      "with_entry": 499,
      "opened_files": 500,
      "host_us": {
-      "mean": 50.878,
-      "p50": 38.97,
-      "p95": 118.74,
-      "max": 181.711
+      "mean": 48.949,
+      "p50": 37.44,
+      "p95": 113.441,
+      "max": 172.71
      },
-     "host_lookups_per_s": 19654.7,
+     "host_lookups_per_s": 20429.6,
      "console_ms": {
-      "mean": 67.9,
-      "p50": 54.6,
-      "p95": 140.4,
-      "max": 226.2
+      "mean": 68.8,
+      "p50": 55.5,
+      "p95": 141.3,
+      "max": 227.1
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -1098,6 +1140,12 @@
       "p95": 22,
       "max": 53
      },
+     "absent_reads": {
+      "mean": 5.78,
+      "p50": 1,
+      "p95": 25,
+      "max": 43
+     },
      "reads_by": {
       "header": 1,
       "index": 6.802,
@@ -1123,16 +1171,16 @@
        "max": 1
       },
       "host_us": {
-       "mean": 50.9,
-       "p50": 39.0,
-       "p95": 118.7,
-       "max": 181.7
+       "mean": 48.9,
+       "p50": 37.4,
+       "p95": 113.4,
+       "max": 172.7
       },
       "console_ms": {
-       "mean": 67.9,
-       "p50": 54.6,
-       "p95": 140.4,
-       "max": 226.2
+       "mean": 68.8,
+       "p50": 55.5,
+       "p95": 141.3,
+       "max": 227.1
       },
       "reads": {
        "mean": 12.6,
@@ -1150,17 +1198,17 @@
      "with_entry": 4984,
      "opened_files": 5005,
      "host_us": {
-      "mean": 40.41,
-      "p50": 37.5,
-      "p95": 63.13,
-      "max": 104.44
+      "mean": 39.866,
+      "p50": 36.89,
+      "p95": 62.4,
+      "max": 102.71
      },
-     "host_lookups_per_s": 24746.1,
+     "host_lookups_per_s": 25084.1,
      "console_ms": {
-      "mean": 52.1,
-      "p50": 47.1,
-      "p95": 80.7,
-      "max": 144.1
+      "mean": 53.0,
+      "p50": 48.0,
+      "p95": 81.6,
+      "max": 145.0
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -1241,6 +1289,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.13,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
      "reads_by": {
       "header": 1,
       "index": 1.143,
@@ -1266,16 +1320,16 @@
        "max": 180
       },
       "host_us": {
-       "mean": 404.5,
-       "p50": 264.9,
-       "p95": 1074.4,
-       "max": 8106.2
+       "mean": 399.1,
+       "p50": 261.1,
+       "p95": 1067.0,
+       "max": 7956.3
       },
       "console_ms": {
-       "mean": 521.5,
-       "p50": 352.1,
-       "p95": 1338.1,
-       "max": 9480.7
+       "mean": 530.5,
+       "p50": 358.4,
+       "p95": 1360.6,
+       "max": 9642.7
       },
       "reads": {
        "mean": 83.5,
@@ -1290,17 +1344,17 @@
      "with_entry": 4984,
      "opened_files": 5005,
      "host_us": {
-      "mean": 58.81,
-      "p50": 48.66,
-      "p95": 120.181,
-      "max": 235.361
+      "mean": 56.863,
+      "p50": 47.05,
+      "p95": 116.57,
+      "max": 234.8
      },
-     "host_lookups_per_s": 17003.9,
+     "host_lookups_per_s": 17586.2,
      "console_ms": {
-      "mean": 77.7,
-      "p50": 69.5,
-      "p95": 147.8,
-      "max": 267.2
+      "mean": 78.6,
+      "p50": 70.4,
+      "p95": 148.7,
+      "max": 268.1
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -1381,6 +1435,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 7.93,
+      "p50": 5,
+      "p95": 26,
+      "max": 55
+     },
      "reads_by": {
       "header": 1,
       "index": 8.944,
@@ -1406,16 +1466,16 @@
        "max": 180
       },
       "host_us": {
-       "mean": 588.7,
-       "p50": 355.0,
-       "p95": 1650.2,
-       "max": 13136.2
+       "mean": 569.2,
+       "p50": 342.2,
+       "p95": 1599.8,
+       "max": 12894.6
       },
       "console_ms": {
-       "mean": 778.2,
-       "p50": 477.6,
-       "p95": 2155.4,
-       "max": 16929.5
+       "mean": 787.2,
+       "p50": 484.8,
+       "p95": 2175.2,
+       "max": 17091.5
       },
       "reads": {
        "mean": 152.3,
@@ -1433,17 +1493,17 @@
      "with_entry": 10792,
      "opened_files": 10905,
      "host_us": {
-      "mean": 42.692,
-      "p50": 39.6,
-      "p95": 67.25,
-      "max": 116.46
+      "mean": 41.066,
+      "p50": 38.1,
+      "p95": 64.38,
+      "max": 112.171
      },
-     "host_lookups_per_s": 23423.4,
+     "host_lookups_per_s": 24351.0,
      "console_ms": {
-      "mean": 54.4,
-      "p50": 50.8,
-      "p95": 84.4,
-      "max": 144.1
+      "mean": 55.3,
+      "p50": 51.7,
+      "p95": 85.3,
+      "max": 145.0
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -1524,6 +1584,12 @@
       "p95": 45,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.2,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
      "reads_by": {
       "header": 1,
       "index": 1.232,
@@ -1549,16 +1615,16 @@
        "max": 388
       },
       "host_us": {
-       "mean": 931.1,
-       "p50": 633.2,
-       "p95": 2444.2,
-       "max": 18426.0
+       "mean": 895.7,
+       "p50": 612.0,
+       "p95": 2341.2,
+       "max": 17781.1
       },
       "console_ms": {
-       "mean": 1185.6,
-       "p50": 828.4,
-       "p95": 2971.5,
-       "max": 21081.6
+       "mean": 1205.2,
+       "p50": 842.8,
+       "p95": 3021.0,
+       "max": 21430.8
       },
       "reads": {
        "mean": 195.0,
@@ -1573,17 +1639,17 @@
      "with_entry": 10792,
      "opened_files": 10905,
      "host_us": {
-      "mean": 59.42,
-      "p50": 49.38,
-      "p95": 122.02,
-      "max": 239.091
+      "mean": 56.935,
+      "p50": 47.16,
+      "p95": 116.77,
+      "max": 232.78
      },
-     "host_lookups_per_s": 16829.4,
+     "host_lookups_per_s": 17564.0,
      "console_ms": {
-      "mean": 78.6,
-      "p50": 69.5,
-      "p95": 147.8,
-      "max": 278.4
+      "mean": 79.5,
+      "p50": 70.4,
+      "p95": 148.7,
+      "max": 279.3
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -1664,6 +1730,12 @@
       "p95": 45,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 7.59,
+      "p50": 4,
+      "p95": 25,
+      "max": 55
+     },
      "reads_by": {
       "header": 1,
       "index": 8.627,
@@ -1689,16 +1761,16 @@
        "max": 388
       },
       "host_us": {
-       "mean": 1295.9,
-       "p50": 778.1,
-       "p95": 3488.1,
-       "max": 28570.4
+       "mean": 1241.7,
+       "p50": 745.9,
+       "p95": 3320.9,
+       "max": 27803.2
       },
       "console_ms": {
-       "mean": 1713.5,
-       "p50": 1076.3,
-       "p95": 4508.5,
-       "max": 36553.6
+       "mean": 1733.1,
+       "p50": 1091.7,
+       "p95": 4548.1,
+       "max": 36902.8
       },
       "reads": {
        "mean": 336.6,
@@ -1718,17 +1790,17 @@
      "with_entry": 500,
      "opened_files": 500,
      "host_us": {
-      "mean": 39.079,
-      "p50": 35.7,
-      "p95": 62.87,
-      "max": 91.67
+      "mean": 37.576,
+      "p50": 34.52,
+      "p95": 61.1,
+      "max": 88.21
      },
-     "host_lookups_per_s": 25589.1,
+     "host_lookups_per_s": 26612.8,
      "console_ms": {
-      "mean": 49.8,
-      "p50": 47.1,
-      "p95": 69.5,
-      "max": 140.4
+      "mean": 50.7,
+      "p50": 48.0,
+      "p95": 70.4,
+      "max": 141.3
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -1809,6 +1881,12 @@
       "p95": 19,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.08,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
      "reads_by": {
       "header": 1,
       "index": 1.1,
@@ -1834,16 +1912,16 @@
        "max": 1
       },
       "host_us": {
-       "mean": 39.1,
-       "p50": 35.7,
-       "p95": 62.9,
-       "max": 91.7
+       "mean": 37.6,
+       "p50": 34.5,
+       "p95": 61.1,
+       "max": 88.2
       },
       "console_ms": {
-       "mean": 49.8,
-       "p50": 47.1,
-       "p95": 69.5,
-       "max": 140.4
+       "mean": 50.7,
+       "p50": 48.0,
+       "p95": 70.4,
+       "max": 141.3
       },
       "reads": {
        "mean": 7.7,
@@ -1858,17 +1936,17 @@
      "with_entry": 500,
      "opened_files": 500,
      "host_us": {
-      "mean": 55.633,
-      "p50": 42.38,
-      "p95": 128.23,
-      "max": 186.47
+      "mean": 52.459,
+      "p50": 39.85,
+      "p95": 119.86,
+      "max": 174.801
      },
-     "host_lookups_per_s": 17975.0,
+     "host_lookups_per_s": 19062.6,
      "console_ms": {
-      "mean": 72.6,
-      "p50": 58.3,
-      "p95": 151.6,
-      "max": 226.2
+      "mean": 73.5,
+      "p50": 59.2,
+      "p95": 152.5,
+      "max": 227.1
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -1949,6 +2027,12 @@
       "p95": 19,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 7.24,
+      "p50": 3,
+      "p95": 28,
+      "max": 40
+     },
      "reads_by": {
       "header": 1,
       "index": 8.256,
@@ -1974,16 +2058,16 @@
        "max": 1
       },
       "host_us": {
-       "mean": 55.6,
-       "p50": 42.4,
-       "p95": 128.2,
-       "max": 186.5
+       "mean": 52.5,
+       "p50": 39.9,
+       "p95": 119.9,
+       "max": 174.8
       },
       "console_ms": {
-       "mean": 72.6,
-       "p50": 58.3,
-       "p95": 151.6,
-       "max": 226.2
+       "mean": 73.5,
+       "p50": 59.2,
+       "p95": 152.5,
+       "max": 227.1
       },
       "reads": {
        "mean": 13.8,
@@ -2001,17 +2085,17 @@
      "with_entry": 5402,
      "opened_files": 5423,
      "host_us": {
-      "mean": 42.673,
-      "p50": 39.88,
-      "p95": 66.14,
-      "max": 110.39
+      "mean": 40.354,
+      "p50": 37.71,
+      "p95": 62.61,
+      "max": 105.24
      },
-     "host_lookups_per_s": 23433.8,
+     "host_lookups_per_s": 24780.5,
      "console_ms": {
-      "mean": 52.1,
-      "p50": 47.1,
-      "p95": 77.0,
-      "max": 144.1
+      "mean": 53.0,
+      "p50": 48.0,
+      "p95": 77.8,
+      "max": 145.0
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -2092,6 +2176,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.14,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
      "reads_by": {
       "header": 1,
       "index": 1.154,
@@ -2117,16 +2207,16 @@
        "max": 62
       },
       "host_us": {
-       "mean": 462.8,
-       "p50": 405.9,
-       "p95": 1035.5,
-       "max": 2972.4
+       "mean": 437.7,
+       "p50": 381.9,
+       "p95": 980.1,
+       "max": 2870.2
       },
       "console_ms": {
-       "mean": 564.9,
-       "p50": 510.7,
-       "p95": 1216.8,
-       "max": 3190.1
+       "mean": 574.6,
+       "p50": 520.6,
+       "p95": 1238.4,
+       "max": 3245.9
       },
       "reads": {
        "mean": 90.4,
@@ -2141,17 +2231,17 @@
      "with_entry": 5402,
      "opened_files": 5423,
      "host_us": {
-      "mean": 60.411,
-      "p50": 51.421,
-      "p95": 122.21,
-      "max": 227.291
+      "mean": 58.998,
+      "p50": 50.19,
+      "p95": 119.71,
+      "max": 223.701
      },
-     "host_lookups_per_s": 16553.4,
+     "host_lookups_per_s": 16949.6,
      "console_ms": {
-      "mean": 79.8,
-      "p50": 69.5,
-      "p95": 147.8,
-      "max": 241.1
+      "mean": 80.7,
+      "p50": 70.4,
+      "p95": 148.7,
+      "max": 242.0
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -2232,6 +2322,12 @@
       "p95": 30,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 8.54,
+      "p50": 6,
+      "p95": 26,
+      "max": 53
+     },
      "reads_by": {
       "header": 1,
       "index": 9.549,
@@ -2257,16 +2353,16 @@
        "max": 62
       },
       "host_us": {
-       "mean": 655.2,
-       "p50": 548.5,
-       "p95": 1561.8,
-       "max": 5112.4
+       "mean": 639.9,
+       "p50": 535.6,
+       "p95": 1539.4,
+       "max": 5020.1
       },
       "console_ms": {
-       "mean": 866.0,
-       "p50": 733.2,
-       "p95": 2016.4,
-       "max": 6532.2
+       "mean": 875.8,
+       "p50": 744.0,
+       "p95": 2034.4,
+       "max": 6588.0
       },
       "reads": {
        "mean": 171.1,
@@ -2284,17 +2380,17 @@
      "with_entry": 12058,
      "opened_files": 12188,
      "host_us": {
-      "mean": 43.686,
-      "p50": 40.72,
-      "p95": 68.2,
-      "max": 113.221
+      "mean": 41.769,
+      "p50": 38.92,
+      "p95": 65.19,
+      "max": 105.481
      },
-     "host_lookups_per_s": 22890.8,
+     "host_lookups_per_s": 23940.9,
      "console_ms": {
-      "mean": 54.2,
-      "p50": 50.8,
-      "p95": 80.7,
-      "max": 147.8
+      "mean": 55.1,
+      "p50": 51.7,
+      "p95": 81.6,
+      "max": 148.7
      },
      "arena_peak_max": 53840,
      "reads": {
@@ -2375,6 +2471,12 @@
       "p95": 45,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 0.22,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
      "reads_by": {
       "header": 1,
       "index": 1.252,
@@ -2400,16 +2502,16 @@
        "max": 120
       },
       "host_us": {
-       "mean": 1064.9,
-       "p50": 931.9,
-       "p95": 2393.6,
-       "max": 5771.3
+       "mean": 1018.2,
+       "p50": 889.4,
+       "p95": 2306.8,
+       "max": 5519.2
       },
       "console_ms": {
-       "mean": 1320.9,
-       "p50": 1183.3,
-       "p95": 2968.8,
-       "max": 6452.2
+       "mean": 1342.8,
+       "p50": 1202.2,
+       "p95": 3020.1,
+       "max": 6560.2
       },
       "reads": {
        "mean": 216.9,
@@ -2424,17 +2526,17 @@
      "with_entry": 12058,
      "opened_files": 12188,
      "host_us": {
-      "mean": 62.053,
-      "p50": 52.78,
-      "p95": 124.061,
-      "max": 239.83
+      "mean": 58.825,
+      "p50": 49.92,
+      "p95": 118.11,
+      "max": 228.621
      },
-     "host_lookups_per_s": 16115.2,
+     "host_lookups_per_s": 16999.4,
      "console_ms": {
-      "mean": 80.7,
-      "p50": 73.2,
-      "p95": 147.8,
-      "max": 259.7
+      "mean": 81.6,
+      "p50": 74.1,
+      "p95": 148.7,
+      "max": 260.6
      },
      "arena_peak_max": 53648,
      "reads": {
@@ -2515,6 +2617,12 @@
       "p95": 45,
       "max": 64
      },
+     "absent_reads": {
+      "mean": 8.27,
+      "p50": 6,
+      "p95": 26,
+      "max": 60
+     },
      "reads_by": {
       "header": 1,
       "index": 9.302,
@@ -2540,16 +2648,16 @@
        "max": 120
       },
       "host_us": {
-       "mean": 1512.6,
-       "p50": 1269.8,
-       "p95": 3631.4,
-       "max": 9508.7
+       "mean": 1433.9,
+       "p50": 1210.1,
+       "p95": 3453.2,
+       "max": 9135.4
       },
       "console_ms": {
-       "mean": 1967.8,
-       "p50": 1678.4,
-       "p95": 4576.6,
-       "max": 12069.5
+       "mean": 1989.8,
+       "p50": 1695.5,
+       "p95": 4620.7,
+       "max": 12177.5
       },
       "reads": {
        "mean": 390.3,
@@ -2565,8 +2673,9 @@
  },
  "pools": [
   {
-   "set": "pool:realplus-v3/labels.jsonl:500 screens",
-   "labels": "vita-vn-ocr realplus-v3 line labels ($HERD/shared/artifacts/realplus-v3/labels.jsonl; text not committed)",
+   "set": "pool:realplus-v3/labels_v3i7.jsonl:500 screens",
+   "labels": "vita-vn-ocr realplus-v3 line labels, the snapshot $HERD/shared/artifacts/realplus-v3/labels_v3i7.jsonl (text not committed)",
+   "labels_sha256": "259729cefd76272bed1d689c2dc86c7b03c08fd42ffdcf03e29865af14a29437",
    "screens": 500,
    "lines": 1096,
    "selection_sha256": "98dea3a45a189b16282be5b11ecafb5575d1f9183000d8831c662d88ad8490c1"
@@ -2574,19 +2683,20 @@
   {
    "set": "pool:owner-pool-2/labels.jsonl:500 screens",
    "labels": "owner-pool-2 line labels of the owner's screenshots ($HERD/shared/private/owner-games/_build2/owner-pool-2/labels.jsonl; private, text not committed)",
+   "labels_sha256": "b16a529edcfb1d788661c60e1b5fd912f79a18f07cee6a72ab206c4dcd5f279f",
    "screens": 500,
    "lines": 987,
    "selection_sha256": "6e7e52ce9c3acbe0457002b45076366698737a0d1caceccffb889f50fa79a84e"
   }
  ],
  "before": {
-  "build": "main's core/local_dict.c (PR #118's vjo-dict-bench)",
+  "build": "#118's core/local_dict.c (its vjo-dict-bench; main's lookup code)",
   "dictionary": "plaintext.vjdict as frozen, sha256 57d482968cb28560ac484e36f499219a5ad82e2bb172a4729614bf161e497568, 140,556,089 B"
  },
  "after": {
   "build": "this change's core/local_dict.c (vjo-dict-bench)",
   "dictionary": "plaintext.vjdict with the key filter (tools/prepare_plaintext.py), sha256 ab739112312ef921c80c0112c86a88f7355f18516ed010163758253f409ec81d, 141,484,032 B"
  },
- "host": "gcc 11.5 RelWithDebInfo, x86-64, warm OS file cache; 21 rounds, median of 20 timed per lookup",
+ "host": "gcc 11.5 RelWithDebInfo, x86-64, warm OS file cache; 21 rounds, median of 20 timed per lookup; lines normalised as the game worker returns them",
  "reserved": "vita-vn-ocr a540027 eval/manifests/reserved.json 'test' VNs left out of both pools"
 }
