@@ -323,6 +323,64 @@ What is left for it is an even area or a smooth gradient. Telling the rest
 apart needs the recognizer's own confidence, or a finder that cuts frame
 lines.
 
+## Text normalisation (shown and looked up)
+
+The recognizer's vocabulary holds both widths of the same marks (`!` and `！`, `~` and `～`, `.`
+and `．`), several dashes, and both the long-vowel mark ー and the kanji 一. What the overlay shows,
+saves to Anki and looks up is normalised to one form of each (`core/textnorm.h`), the form
+vita-vn-ocr's scorer (`eval/metrics.py` `norm()`) reads as the same text, so a sentence from the
+console compares with the evaluation directly:
+
+- the full-width ASCII forms U+FF01–U+FF5E become ASCII, as NFKC does (`！` → `!`, `１` → `1`);
+- `〜` and `∼` become `~`; the dashes `— – ‐ ‑ ‒ − ─ ━` become `―` (the ASCII hyphen stays);
+- `...` becomes `…`, and a run of two or more `・` becomes `…` for every three (a lone `・` in a name
+  stays);
+- by context: `一` becomes `ー` after a katakana when katakana, a small kana, a mark or the end of the
+  line follows (`コ一ヒ一` → `コーヒー`, while `コーヒー一杯` stays), and after a hiragana when a small
+  kana, `ー`, `~`, `!`, `?`, an ellipsis, `」` or `』` follows (`だよ一っ` → `だよーっ`); `ー` between
+  two kanji becomes `一` (`玄ー郎` → `玄一郎`). The counters `ヶ` and `ヵ` do not count as small kana
+  (`あと一ヶ月` and `ハネムーン一ヶ月` stay). After a hiragana, `一` at the end of a line also stays,
+  because a text box wraps mid-word and `もう一` / `度` is far more common there than `すごー`.
+
+The text never grows, so the game worker normalises it in place before it returns it, and keeps
+the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
+is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
+recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
+what is shown (`game vocr text N shown: …`). The job's `gstep job norm` step counts the changes
+(`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 | 一→ー << 4 | ー→一).
+
+**Measured on development data** (`tools/textnorm_eval.py`, `docs/benchmarks/textnorm-20261014.json`):
+teacher_val and devnative v3 (2,629 lines, 28,544 reference characters), the console-polarity
+readings of the C runtime (W8I). "Scored" is CER with vita-vn-ocr's scorer; "exact" compares the
+text itself with the references, which are written in the scorer's form.
+
+| model | scored CER | exact CER (raw readings) | ー/一 changes right / wrong |
+|---|---|---|---|
+| VOCR3-H15 (default) | 2.116 → 2.113 % | **3.906 → 2.113 %** (513 full-width forms) | 1 / 0 |
+| VOCR3-FL10 (fallback) | 2.291 → 2.281 % | **4.043 → 2.281 %** (504 full-width forms) | 3 / 0 |
+| VOCR3-W20 | 1.815 → 1.815 % | – | 0 / 0 |
+| VOCR4-FL10 | 2.459 → 2.452 % | – | 2 / 0 |
+| VOCR4-H15 | 2.113 → 2.109 % | – | 1 / 0 |
+| VOCR4-W20 | 1.703 → 1.703 % | – | 0 / 0 (its one change is on a line misread around it) |
+
+The scorer already folds the forms, so only the ー/一 rules move scored CER, and only a little:
+these recognizers rarely confuse the two (one `一` after a katakana in all six models' 15,774 readings).
+
+**On correct text**, every change the ー/一 rules make is a wrong one (`--corpus` in the same tool
+and benchmark file). The text is vita-vn-ocr's training corpus, `shared/data/corpus`: 1.6 million
+lines of dialogue, narration and Wikipedia text, none of it from a test set. The rules change:
+
+- 0.25–0.31 characters per 100,000 on whole lines;
+- 0.33–0.44 per 100,000 when the lines are wrapped every 20 or 26 characters, as a text box wraps
+  them.
+
+Most of these changes come after a katakana: the numeral before a katakana counter or unit (`ビール一ケース`),
+or a word cut by the wrap right before the numeral. In Wikipedia text, `ー` written between kanji
+accounts for most of the rest. What the
+console shows moves a lot: against the references the raw text differs in 1,115 characters
+(H15), the normalised text in 603, exactly the scored errors. Lookups see the ー/一 changes only
+(punctuation is never looked up).
+
 ## Models
 
 **The default is VOCR3-H15 (`VOCR3_H15_w8.vocr`), with VOCR3-FL10 (`VOCR3_FL10_w8.vocr`) as

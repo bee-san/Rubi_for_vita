@@ -35,6 +35,10 @@ game vocr lines: 877x30 110f 273.3ms 870x30 110f 273.3ms 860x30 110f 273.3ms
 gstep job alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
 gstep job settle kind=- arg=4 rc=0x00000001 bytes=37 sum=0x00020006 main=0 cdram=0 phycont=0 us=183000
 gstep job blank kind=- arg=2 rc=0x00000001 bytes=19660830 sum=0x00C00014 main=0 cdram=0 phycont=0 us=310
+gstep job norm kind=- arg=4 rc=0x00000000 bytes=2 sum=0x00000121 main=0 cdram=0 phycont=0 us=41
+game vocr text 0: コ一ヒ一！
+game vocr text 0 shown: コーヒー!
+game vocr text 1: Error 404 not found
 job 0 done rc=0 in 2100 ms, arena peak 4096, dictionary page 1/1
 gstep job blank kind=- arg=0 rc=0x00000006 bytes=19660830 sum=0x00C00010 main=0 cdram=0 phycont=0 us=410
 gstep job blank kind=- arg=1 rc=0x00000006 bytes=19660830 sum=0x00C00011 main=0 cdram=0 phycont=0 us=410
@@ -202,6 +206,8 @@ class Collect(unittest.TestCase):
                      "waited 183-183 ms (4-4 passes); 37 row change(s) seen while waiting (text typing out); rows toggling "
                      "(an icon) in 1 job(s)",
                      "blank lines skipped: 7 (300x30, 300x30, 300x30, 300x30, 300x30; edges 16-20 per 10,000)",
+                     "text normalised: 1 of 1 job(s) changed: 2 full-width form(s), 0 tilde(s), 0 dash(es), "
+                     "1 ellipsis(es), 2 一->ー, 1 ー->一; 41-41 us",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",
@@ -224,6 +230,7 @@ class Collect(unittest.TestCase):
         self.assertNotIn("anki: sent N, N duplicates, N unreadable", problems)  # a clean summary is not a problem
         self.assertIn("thread VjoAnki refused", problems)
         self.assertIn("anki: count not started", problems)
+        self.assertNotIn("Error 404", problems)  # recognized game text is never a problem line
         summary = json.loads((folder / "analysis.json").read_text())
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
         self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])

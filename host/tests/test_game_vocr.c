@@ -8,7 +8,8 @@
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
-static unsigned char pixels[200*60*4];
+static unsigned char pixels[200*100*4]; /* 200 x frame_h */
+static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
 /* The capture block and the memory-type ladder: which types refuse. */
 static int capture_live, refuse_user, refuse_cdram, refuse_phycont, rows_error, hook_write_error;
 static int busy_unarmed, busy_armed, allow_capture_held; /* rows calls that answer BUSY, before / after arming */
@@ -26,6 +27,7 @@ static char own_title[12];
 static uint64_t clock_value;
 static unsigned frame_us; /* each rows call waits this long for its frame (0: none) */
 static unsigned change_at_rows; /* at this rows call the line moves down 6 rows (the player advanced); 0: never */
+static unsigned clear_at_rows;  /* at this rows call the box empties (the player advanced to an empty box); 0: never */
 
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
@@ -100,7 +102,7 @@ int vjoOcrComplete(const VjoGameOcrResult *out)
 /* The kernel's rows call: grey rows of the 200x60 region into the worker's block. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
-    TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && req->y < 60 && req->n && req->n <= 60 - req->y);
+    TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && req->y < frame_h && req->n && req->n <= frame_h - req->y);
     TEST_CHECK(req->dst_stride >= 200 && info && info->size == sizeof(*info));
     TEST_CHECK(capture_live && (unsigned char *)dst >= capture_mem && (unsigned char *)dst < capture_mem + capture_block);
     rows_calls++;
@@ -109,8 +111,9 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         memset(pixels, 0, sizeof(pixels));
         for (unsigned y = 21; y < 45; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
     }
+    if (clear_at_rows && rows_calls == clear_at_rows) memset(pixels, 0, sizeof(pixels));
     if (req->mode == VJO_GAME_OCR_SRC_KSTRIP) kstrip_calls++;
-    info->fb_width = 200; info->fb_height = 60; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
+    info->fb_width = 200; info->fb_height = frame_h; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
     info->armed = 1;
     if (busy_unarmed > 0) { busy_unarmed--; info->armed = 0; return VJO_ERR_BUSY; } /* a previous copy not tidied */
     if (busy_armed) { /* this copy outlived the call; until the kernel worker tidies it, every
@@ -203,7 +206,7 @@ static VjoGameOcrRequest setup(void)
     available = 16*1024*1024;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
-    change_at_rows = 0; blocks_held = 0;
+    change_at_rows = clear_at_rows = 0; blocks_held = 0; frame_h = 60;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
     /* Blank images never open weights, but requests still need a valid directory.
@@ -476,7 +479,7 @@ static void probe_user_read_stays_in_the_frame_block(void)
     unsigned char *map = mmap(NULL, 0x10000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     TEST_ASSERT(map != MAP_FAILED);
     frame_at = map;
-    memcpy(frame_at, pixels, sizeof(pixels));
+    memcpy(frame_at, pixels, 200 * 60 * 4);
     /* the whole frame in one readable block: 60 rows, the same grey as the hook's */
     block_base = (uintptr_t)map; block_size = 0x10000; block_access = SCE_KERNEL_MEMORY_ACCESS_R;
     int rc = probe_user_read(&r, &hook_sum);
@@ -520,11 +523,6 @@ static void probe_user_read_stays_in_the_frame_block(void)
     munmap(map, 0x10000);
     frame_at = NULL;
 }
-/* API 20: the job's policy rides in the request's flags. A wait of 150 ms
- * (15 x 10 ms) first, at 60 frames a second, on a still screen: the job reads
- * the region until it held still, records the wait as a step, and only then
- * finds its line; the blank-line check passes a line of strokes. Unknown flag
- * bits are refused before anything is allocated. */
 /* The request's flags become the job's policy (include/vjo_game_ocr.h): the
  * wait in 10 ms steps, its limit in 50 ms steps, settle_first, the blank-line
  * check; a request without them is API 19's job (a zero policy but for the
@@ -546,6 +544,11 @@ static void request_flags_become_the_policy(void)
     TEST_CHECK(p.settle_us == 2550000u && p.settle_max_us == 12750000u && !p.settle_first);
 }
 
+/* API 20: the job's policy rides in the request's flags. A wait of 150 ms
+ * (15 x 10 ms) first, at 60 frames a second, on a still screen: the job reads
+ * the region until it held still, records the wait as a step, and only then
+ * finds its line; the blank-line check passes a line of strokes. Unknown flag
+ * bits are refused before anything is allocated. */
 static void policy_in_the_flags(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -611,6 +614,56 @@ static void step_log_keeps_the_releases(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live);
 }
 
+/* API 20: a recognized job returns its text normalised, the recognizer's own
+ * text after its NUL, and a NORM step; the last byte stays 0 (the kernel's check). */
+static void returned_text_is_normalised_and_kept(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("VJO_VOCR_MODEL_DIR not set"); return; }
+    line();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.text[0] && !out.text[sizeof(out.text) - 1]);
+    const char *raw = vjo_text_raw(out.text, sizeof(out.text));
+    char again[sizeof(out.text)];
+    snprintf(again, sizeof(again), "%s", raw);
+    vjo_text_normalize(again, NULL);
+    TEST_CHECK(raw[0] && !strcmp(again, out.text));
+    unsigned norm = 0;
+    for (unsigned i = 0; i < out.n_steps; i++)
+        if (out.step[i].id == VJO_GSTEP_NORM) { norm++; TEST_CHECK(out.step[i].us > 0); }
+    TEST_CHECK(norm == 1);
+    TEST_MSG("text '%s', raw '%s'", out.text, raw);
+}
+
+/* A try that read a line, then saw the screen change, and a retry that found
+ * the box empty: the job returns no text, and nothing of the first try after
+ * the NUL either, which the Shell would log as the recognizer's text
+ * (audit-overlay-dialogue-3 B2). A 200x100 region is two strips, with a line in
+ * each: the first line is read before the second strip is read again. The box
+ * empties at each rows call in turn, so one of them lands between the two. */
+static void a_retry_to_an_empty_box_returns_nothing(void)
+{
+    unsigned torn_empty = 0;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("VJO_VOCR_MODEL_DIR not set"); return; }
+    for (unsigned at = 2; at <= 12; at++) {
+        VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+        size_t stale = 0;
+        int torn = 0;
+        frame_h = r.fb_height = r.height = 100;
+        for (unsigned y = 15; y < 39; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
+        for (unsigned y = 70; y < 94; y++) for (unsigned x = 13; x < 190; x += 7) memset(pixels + (y * 200 + x) * 4, 235, 5);
+        clear_at_rows = at;
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+        if (out.rc || out.text[0]) continue;
+        for (unsigned i = 0; i < out.n_steps; i++) torn |= out.step[i].id == VJO_GSTEP_TEAR;
+        for (size_t i = 0; i < sizeof(out.text); i++) stale += out.text[i] != 0;
+        TEST_CHECK(!stale && !vjo_text_raw(out.text, sizeof(out.text))[0]);
+        TEST_MSG("box emptied at rows call %u: %zu bytes left after the NUL", at, stale);
+        torn_empty += torn;
+    }
+    TEST_CHECK(torn_empty > 0); /* some job did retry into the empty box */
+}
+
 /* The self-test's fallback stage: the memory check refuses the model on
  * purpose and the fallback runs. */
 static void forced_fallback_runs_the_fallback(void)
@@ -641,5 +694,7 @@ TEST_LIST = {
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
+    {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
+    {"a retry to an empty box returns nothing of the first try", a_retry_to_an_empty_box_returns_nothing},
     {NULL, NULL}
 };

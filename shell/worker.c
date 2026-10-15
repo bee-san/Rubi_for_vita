@@ -12,6 +12,7 @@
 #include "../core/regions.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
+#include "../core/textnorm.h"
 #include "../core/utf.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
@@ -738,7 +739,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     static const char *const weights[] = {"none", "read", "resident"};
     static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
     static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
-    *ran = result->fallback ? request.fallback : model;
+    /* The name of the model that ran, for after this call: the config's string, never
+     * the request's copy (a local of this call). */
+    *ran = result->fallback ? fallback : model;
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, *ran, !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
@@ -760,6 +763,30 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, const char *fo
     log_vocr_measurements(result);
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
     return rc;
+}
+
+/* The recognized text, a log line per line (60 characters each at most): what
+ * the recognizer read (the game worker keeps it after the normalised text) and,
+ * where it differs, what is shown and looked up. */
+static void log_text_lines(const char *text, size_t cap)
+{
+    char line[184];
+    const char *raw = vjo_text_raw(text, cap), *shown = text;
+    for (unsigned i = 0; *raw || *shown; i++) {
+        size_t n = 0, m = 0, same;
+        while (raw[n] && raw[n] != '\n') n++;
+        while (shown[m] && shown[m] != '\n') m++;
+        for (same = 0; same < n && same < m && raw[same] == shown[same]; same++) {
+        }
+        log_text(line, sizeof(line), raw, n, 60);
+        vjo_log("game vocr text %u: %s", i, line);
+        if (same != n || n != m) {
+            log_text(line, sizeof(line), shown, m, 60);
+            vjo_log("game vocr text %u shown: %s", i, line);
+        }
+        raw += n + (raw[n] == '\n');
+        shown += m + (shown[m] == '\n');
+    }
 }
 
 /* The self-test (docs/self-test.md): every stage on this settled screen in
@@ -833,8 +860,11 @@ static int run_vocr(VjoArena *a, VjoOverlayData *out)
             out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
     }
-    /* The model on this text's Anki cards (ran names the request's fallback
-     * only inside vocr_run_one; a self-test job's last stage is the configured one). */
+    /* The worker returns the text normalised (core/textnorm.h: one form of each
+     * mark, ー or 一 by context); the recognizer's own text goes to the log. */
+    log_text_lines(result.text, sizeof(result.text));
+    /* The model on this text's Anki cards (ran: the config's name of the model
+     * that ran; a self-test job's last stage is the configured one). */
     vjo_anki_set_ocr_model(result.fallback ? job_cfg.vocr_fallback_model : *ran != '?' ? ran : job_cfg.vocr_model);
     if (local) {
         VjoArena text_arena;

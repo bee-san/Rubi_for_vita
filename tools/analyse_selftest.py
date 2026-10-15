@@ -748,6 +748,8 @@ LOG = {
     # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
     "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
+    "norm": re.compile(r"^gstep job norm kind=\S+ arg=(\d+) rc=0x[0-9A-Fa-f]+ bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
 }
 TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|SAFE MODE|not starting|missing at|"
                      r"too large|not opened|unreadable|not writable|unavailable|success=0|reserve guard|not started|"
@@ -772,7 +774,9 @@ def summarise_log(text):
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
-         "blank": {"lines": 0, "sizes": [], "edges": []}}
+         "blank": {"lines": 0, "sizes": [], "edges": []},
+         "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
+                  "kanji_one": 0, "us": []}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
@@ -796,6 +800,18 @@ def summarise_log(text):
                 st["passes"].append(int(m.group(1)))
             st["changes"] += int(m.group(3))
             st["toggling_jobs"] += (int(m.group(4), 16) >> 16) > 0
+            continue
+        m = LOG["norm"].match(line)
+        if m:
+            nm, packed = s["norm"], int(m.group(3), 16)
+            nm["jobs"] += 1
+            nm["changed"] += int(m.group(1)) > 0
+            nm["width"] += int(m.group(2))
+            for k, shift in (("tilde", 24), ("dash", 16), ("ellipsis", 8)):
+                nm[k] += (packed >> shift) & 0xFF
+            nm["long_vowel"] += (packed >> 4) & 0xF
+            nm["kanji_one"] += packed & 0xF
+            nm["us"].append(int(m.group(4)))
             continue
         m = LOG["blank"].match(line)
         if m:
@@ -873,7 +889,7 @@ def summarise_log(text):
         sent = LOG["anki_sent"].match(line)
         if sent and not int(sent.group(3)) and not int(sent.group(4)):
             continue  # "0 unreadable, 0 too large": a summary, not a problem
-        if TROUBLE.search(line) and not line.startswith("gstep"):
+        if TROUBLE.search(line) and not line.startswith(("gstep", "game vocr text ")):  # game text may say anything
             key = re.sub(r"\d+", "N", line)[:120]
             s["trouble"][key] = s["trouble"].get(key, 0) + 1
     s["disabled"] = sorted(s["disabled"])
@@ -1108,6 +1124,11 @@ def render_collect(c):
                      f"{st['timeout']}, no line to wait for in {st['none']}; waited {_span(st['ms'])} ms "
                      f"({_span(st['passes'])} passes); {st['changes']} row change(s) seen while waiting (text typing "
                      f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)")
+        nm = lg.get("norm") or {}
+        if nm.get("jobs"):
+            L.append(f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "
+                     f"form(s), {nm['tilde']} tilde(s), {nm['dash']} dash(es), {nm['ellipsis']} ellipsis(es), "
+                     f"{nm['long_vowel']} 一->ー, {nm['kanji_one']} ー->一; {_span(nm['us'])} us")
         bl = lg.get("blank") or {}
         if bl.get("lines"):
             L.append(f"  blank lines skipped: {bl['lines']} ({', '.join(bl['sizes'][:6])}"

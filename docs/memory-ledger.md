@@ -25,12 +25,12 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell pages                         389,120      458,752    1,048,576      589,824
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
-  game                                 94,208    2,392,064    2,392,064            0
+  game                                 98,304    2,392,064    2,392,064            0
   shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared
       VitaJPOverlay_Shell       299,008 B of    299,008 B declared
-      VitaJPOverlay_OCR          57,344 B of     57,344 B declared
+      VitaJPOverlay_OCR          61,440 B of     61,440 B declared
 ```
 
 The last row is the opt-in network dictionary with an Anki card and the overlay all at their
@@ -123,7 +123,7 @@ same instructions) are built with `-Os` too. They pay for `text_rows.c` and for 
 
 | item | bytes | what | source |
 |---|---|---|---|
-| OCR worker pages | 57,344 | the module, in each game it is registered for: 49,152 text + 8,192 data/bss; raised from 45,056 B for the in-game capture (strips, ladder, probe, step log), then from 53,248 B by one text page for API 20's job policy (the stable-text wait and the blank-line check), in the game's partition, never SceShell's | packaged SELF segments [measured, API 20 build] |
+| OCR worker pages | 61,440 | the module, in each game it is registered for: 53,248 text + 8,192 data/bss; raised from 45,056 B for the in-game capture (strips, ladder, probe, step log), then from 53,248 B by two text pages for API 20's job policy (the stable-text wait and the blank-line check) and the text normalisation (`core/textnorm.c`, run in the game so that SceShell's pages stay as they are), in the game's partition, never SceShell's | packaged SELF segments [measured, API 20 build] |
 | VjoGameVocr stack+TLS | 36,864 | 32,768 + 4,096 | `game_ocr/main.c` |
 | VjoGameVocrWeights | 1,560,576 at most | F20, the largest accepted model, page-rounded; resident between jobs | `core/vocr_ocr.c`; asserted in `test_ledger.c` |
 | VjoGameVocr workspace | 249,856 at most | F20, page-rounded, per job, at any region: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544) | `vjo_vocr_job_bytes`; asserted in `test_ledger.c` |

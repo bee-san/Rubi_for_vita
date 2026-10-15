@@ -188,6 +188,7 @@ int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
 int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 #ifdef VJO_WITH_VOCR
 #include "../../core/vocr_ocr.h"
+#include "../../core/textnorm.h"
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
@@ -269,6 +270,8 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     /* A supplied successful worker response tests Shell publication, not OCR accuracy. */
     if (fake_game_result.rc == VJO_OK && fake_recognized_text) {
         snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
+        /* as the worker returns it (API 20): normalised, its own text kept after the NUL */
+        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL);
         /* A supplied measurement, as the real worker copies VjoVocrStats. */
         fake_game_result.free_user = fake_memory_fallback ? 5300000 : 91226112;
         fake_game_result.reserve_bytes = 4194304;
@@ -564,6 +567,28 @@ static int run_vocr_job(void)
 }
 
 #ifdef VJO_WITH_VOCR
+/* The model name a job reports (the self-test's stage record reads it after
+ * the job) is the configuration's string, never the request's copy, a local
+ * of the call that is gone by then. */
+static void test_vocr_ran_names_outlive_the_job(void)
+{
+    VjoGameOcrResult result;
+    const char *ran = NULL;
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    TEST_ASSERT(mem_alloc() == 0);
+    job_cfg = cfg;
+    fake_memory_fallback = 1; /* the game ran the fallback */
+    (void)vocr_run_one(&result, 0, NULL, &ran);
+    TEST_CHECK(result.fallback && ran == job_cfg.vocr_fallback_model && !strcmp(ran, "VOCR3_FL10_w8.vocr"));
+    fake_memory_fallback = 0;
+    (void)vocr_run_one(&result, 0, NULL, &ran);
+    TEST_CHECK(!result.fallback && ran == job_cfg.vocr_model);
+    TEST_MSG("ran %s", ran ? ran : "(null)");
+    mem_free();
+}
+
 /* The job's capture is its latest one: voided while the worker waits for a
  * changed screen to hold still, then the retry's. A settled screen cancels no
  * job whose retry already shows it. */
@@ -577,6 +602,28 @@ static void test_vocr_capture_follows_the_retry(void)
     TEST_CHECK(job_captured && job_capture_scene == 3 && job_capture_seq == 5);
     TEST_CHECK(shows_screen(job_capture_scene, job_capture_seq, &state));
     fake_republish = 0;
+    mem_free();
+}
+#endif
+
+#ifdef VJO_WITH_VOCR
+/* The recognizer's text is logged as it read it, a line per line; the sentence
+ * shown, saved and looked up is normalised (one form of each mark, ー or 一 by
+ * context), and what changed is logged. */
+static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
+{
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "コ一ヒ一！？\n統ー的．．．";
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    TEST_CHECK(!strcmp(cache_data[0].sentence, "コーヒー!?\n統一的…"));
+    TEST_MSG("shown: %s", cache_data[0].sentence);
+    TEST_CHECK(logged("game vocr text 0: コ一ヒ一！？") != NULL && logged("game vocr text 1: 統ー的．．．") != NULL);
+    TEST_CHECK(logged("game vocr text 0 shown: コーヒー!?") != NULL && logged("game vocr text 1 shown: 統一的…") != NULL);
+    fake_recognized_text = "猫";
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+    TEST_CHECK(logged("game vocr text 0: 猫") != NULL && !logged("shown:")); /* unchanged: one line */
     mem_free();
 }
 #endif
@@ -2281,6 +2328,8 @@ TEST_LIST = {
     {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
+    {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
+    {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
 #endif
     {"vocr2_selection_stays_local_without_old_model_fallback", test_vocr2_selection_stays_local},
     {"vocr2_cache_tracks_backend_and_storage_not_old_model", test_vocr2_cache_uses_its_own_backend_and_storage},
