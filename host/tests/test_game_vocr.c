@@ -1144,7 +1144,9 @@ static void refine_modes(void)
 /* The refine step's fields, from a job that reads its lines (the release weights):
  * pairs of text rows set one row apart, each pair one finder box that the refinement
  * splits, nine of them in a 200 x 272 region: seven split, the last two not (their
- * split would pass 16 lines), 16 lines, and the rows the refinement read. */
+ * split would pass 16 lines), 16 lines, and the rows the refinement read: each box's
+ * 31 rows once (its grey pixels fit beside its mask), the two capped boxes' again
+ * for their second call, 9 x 31 + 2 x 31. */
 static void the_refine_step_carries_its_counts(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -1163,7 +1165,7 @@ static void the_refine_step_carries_its_counts(void)
     const VjoGameOcrStep *rs = refine_step(&out);
     TEST_ASSERT(rs != NULL);
     TEST_CHECK(out.lines == 9 && rs->rc == 0 && rs->arg == 16 && (rs->bytes >> 16) == 9 &&
-               ((rs->bytes >> 8) & 0xFFu) == 2 && (rs->bytes & 0xFFu) == 7 && rs->sum >= 9u * 23u && rs->us > 0);
+               ((rs->bytes >> 8) & 0xFFu) == 2 && (rs->bytes & 0xFFu) == 7 && rs->sum == 11u * 31u && rs->us > 0);
     TEST_MSG("%u boxes: refine arg %u bytes 0x%08X sum %u", out.lines, (unsigned)rs->arg, (unsigned)rs->bytes,
              (unsigned)rs->sum);
     TEST_CHECK(!vjo_game_ocr_worker_stop());

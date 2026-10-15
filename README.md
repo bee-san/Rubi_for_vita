@@ -334,7 +334,8 @@ logged beside the shown text
 In PSP games the line finder's boxes are also refined, cut back to their text
 and split where two text rows were merged (`ocr_refine_lines = psp`; `on` for
 every game, `off`). vita-vn-ocr #83 measured a dialogue gain with it on native
-480×272 PSP frames and none on native Vita text. The overlay sees a PSP game as
+480×272 PSP frames; on native Vita text it was level or worse, and worse on
+CLANNAD for five of six models. The overlay sees a PSP game as
 Adrenaline shows it, 2× through a bilinear filter, where its accuracy is
 untested and the host's box fit is level, so `psp` is the next test build's
 trial, which that build's logs decide. Refined lines are read wider: on the
