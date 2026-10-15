@@ -2,6 +2,14 @@
 #include "../core/conn.h"
 #include <string.h>
 
+/* The kernel answers a submission BUSY while the worker still cleans up the
+ * previous job (one cancelled a moment ago: a lookup went first, the screen
+ * changed) or a Lens/Anki capture is in flight. That passes in a few ms, so
+ * the submission is repeated every SUBMIT_RETRY_US for SUBMIT_BUSY_US; only
+ * then is the worker taken for unavailable. */
+#define SUBMIT_RETRY_US 20000u
+#define SUBMIT_BUSY_US 2000000
+
 int vjo_game_ocr_exchange(const VjoGameOcrClient *client,
                           const VjoGameOcrRequest *request,
                           VjoGameOcrResult *result,
@@ -18,7 +26,11 @@ int vjo_game_ocr_exchange(const VjoGameOcrClient *client,
     if (cancelled && cancelled(cancel_ud)) return VJO_E_CANCELLED;
     start = client->now_us(client->ud);
     if (start < 0) return VJO_E_SOURCE;
-    seq = client->submit(client->ud, request);
+    while ((seq = client->submit(client->ud, request)) == VJO_ERR_BUSY &&
+           client->now_us(client->ud) - start < SUBMIT_BUSY_US) {
+        if (cancelled && cancelled(cancel_ud)) return VJO_E_CANCELLED;
+        client->delay_us(client->ud, SUBMIT_RETRY_US);
+    }
     if (seq <= 0) return VJO_E_OCR_UNAVAILABLE;
     for (;;) {
         if (cancelled && cancelled(cancel_ud)) { rc = VJO_E_CANCELLED; break; }

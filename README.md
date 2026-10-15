@@ -147,7 +147,12 @@ recognition errors. Regions are saved per game. Automatic mode recognizes
 settled dialogue in the background and prepares its first local match in Whole
 word mode. A completed lookup appears immediately when opening unchanged
 dialogue. Character mode defers dictionary lookup until opening the overlay.
-Selection changes never recapture the screen or rerun OCR. Set `ocr_mode = on_press` to recognize only
+Selection changes never recapture the screen or rerun OCR. While the overlay is
+open, its text stays usable for lookups and Anki whatever the screen does, with no
+"dialogue changed" message: in Auto mode a newly settled screen is recognized in the
+background and replaces the text quietly only when it reads a different one
+([touch lookup](docs/touch-lookup.md)). A job that read a screen changing under it
+shows nothing and is retried quietly. Set `ocr_mode = on_press` to recognize only
 when opening the overlay. With card mining on, Cross saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card, even with Wi-Fi off or Anki closed; Triangle sends the queue to
@@ -465,12 +470,14 @@ installed files' hashes, and prints its analysis
 fetches just the bootstrap logs. Recognition timings and memory attempts are in
 `log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
-start a game and reach a text screen: on the first settled screen one job runs
+start a game and reach a text screen: on the first settled screen with text in your
+saved region (it waits past logos and notices, at most 30 screens) one job runs
 the fallback model, the configured model, the full screen, the capture probe and
 the configured model again, in your saved region, each stage with its own record,
 and the report has every pool's free memory at each step by every query route;
 `--status` fetches it and `python3 tools/analyse_selftest.py` prints a PASS/FAIL
-row per stage and the diagnostics (probe, memory routes) as PASS/WARN, which never change
+row per stage (NOTEXT for a region stage that found no line: no proof of recognition)
+and the diagnostics (probe, memory routes) as PASS/WARN, which never change
 the OCR verdict. See [docs/self-test.md](docs/self-test.md). Each game OCR job logs the
 game's free USER memory against what the job needed (also when it refused the
 job) and, for each recognized line, its size, CTC frames and recognition time.

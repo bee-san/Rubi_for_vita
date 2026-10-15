@@ -1,0 +1,35 @@
+selftest v2 api=20
+boot seq=2 mode=0 prev=0/0/0/0 failures=0 write=0x00000000
+config backend=2 model=H15_w8.vocr fallback=FL10_w8.vocr dictionary=3 anki=0
+step boot t=0
+mem boot rc=0x00000000 main=7340032 cdram=4194304 phycont=0 valid=1 paf_free=2346312
+ledger boot pages=0/0 paf=0/0
+kmem boot route=block part=kernel rc=0x00000000 step=0 total=37748736 free=9437184
+kmem boot route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
+kmem boot route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
+kmem boot route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
+kernel boot ledger=131072/131072 limit=2220032 capture=0
+step ok t=60999
+mem ok rc=0x00000000 main=-2097152 cdram=0 phycont=0 valid=0 paf_free=2346312
+ledger ok pages=0/0 paf=0/0
+kmem ok route=block part=kernel rc=0x00000000 step=0 total=37748736 free=9437184
+kmem ok route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
+kmem ok route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
+kmem ok route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
+kernel ok ledger=131072/131072 limit=2220032 capture=0
+step game t=142999 title=PCSG00415 enabled=1 mode=1 region=user rect=1536,48188,62600,15059
+mem game rc=0x00000000 main=-2097152 cdram=0 phycont=0 valid=0 paf_free=2346312
+ledger game pages=0/0 paf=0/0
+kmem game route=block part=kernel rc=0x00000000 step=0 total=37748736 free=9437184
+kmem game route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
+kmem game route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
+kmem game route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
+kernel game ledger=131072/131072 limit=2220032 capture=0
+stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback wait t=143599 rc=0 screens=1/30
+stage fallback begin t=147599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback wait t=148199 rc=-120 screens=2/30
+stage fallback begin t=152199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback wait t=152799 rc=0 screens=3/30
+stage fallback begin t=156799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback wait t=157399 rc=0 screens=4/30

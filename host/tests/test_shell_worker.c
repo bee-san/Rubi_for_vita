@@ -26,6 +26,12 @@ static unsigned char raw_region[200 * 60 * 4];
 static VjoState raw_state;
 static int has_result_memory(void);
 static int held_cmd, held_view, retirement_checks;
+/* Set by the refresh tests: whenever the view lock is released, an open local
+ * view that shows local_text shows it with its own generation (a replaced
+ * text never appears with the old one's entry or cursor). */
+static int view_invariant, view_invariant_checks;
+static uint32_t invariant_generation;
+static unsigned invariant_seq;
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
 int sceKernelSetEventFlag(SceUID id, unsigned bits) { posted |= bits; return 0; }
@@ -71,6 +77,20 @@ int sceKernelLockMutex(SceUID uid, int count, void *timeout)
 }
 int sceKernelUnlockMutex(SceUID uid, int count)
 {
+    if (uid == 81 && view_invariant && g_view.open && g_view.local_cursor_mode && g_view.list &&
+        g_view.list->header == local_text && local_text_valid) {
+        view_invariant_checks++;
+        TEST_CHECK_(g_view.text_generation == local_text_generation && g_view.cursor_byte == local_cursor_byte &&
+                    (g_view.list == &local_header || g_view.list == &cache_data[0].list),
+                    "view generation %u, text %u", g_view.text_generation, local_text_generation);
+        /* an entry shown is the current lookup's (never the replaced text's) */
+        TEST_CHECK(g_view.list != &cache_data[0].list || cache_ok || !g_view.list->n_entries);
+        /* a new text is published with a new list_seq: an Anki save asked for the old list fails */
+        TEST_CHECK_(g_view.text_generation == invariant_generation || g_view.list_seq != invariant_seq,
+                    "text %u shown under the old list_seq %u", g_view.text_generation, g_view.list_seq);
+        invariant_generation = g_view.text_generation;
+        invariant_seq = g_view.list_seq;
+    }
     if (uid == 81) { TEST_CHECK(held_view == 1); held_view--; }
     if (uid == 82) {
         TEST_CHECK(held_cmd == 1 && !held_view);
@@ -141,6 +161,16 @@ unsigned vjo_selftest_stages(void) { return vjo_selftest_armed() ? selftest_stag
 const char *vjo_selftest_stage_name(unsigned i) { return i < 5 ? selftest_names[i] : "?"; }
 uint32_t vjo_selftest_stage_flags(unsigned i) { return i < 5 ? selftest_stage_flags_tab[i] : 0; }
 void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback) { selftest_begins++; }
+/* shell/selftest.c's rule (its report lines are host/tests/selftest_writer.c's). */
+static int selftest_waits;
+int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
+{
+    if (!vjo_selftest_armed() || i || !((rc == VJO_OK && !r->lines) || rc == VJO_E_SCREEN_CHANGED) ||
+        selftest_waits >= VJO_SELFTEST_WAITS)
+        return 0;
+    selftest_waits++;
+    return 1;
+}
 void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model)
 { if (selftest_ends < 8) selftest_rcs[selftest_ends] = rc; selftest_ends++; }
 void vjo_selftest_done(void) { selftest_done = 1; }
@@ -200,6 +230,7 @@ static const char *fake_missing_model;
 static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_model_error;
 static int32_t fake_missing_io;
 static unsigned submits;
+static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     fake_game_request = *r;
@@ -230,6 +261,16 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     }
     vocr_allocs++;
     if (phases_checked) TEST_CHECK(!has_result_memory());
+    if (fake_screen_changes > 0) {
+        /* The real worker's result after VJO_VOCR_TRIES reads of a changing region. */
+        fake_screen_changes--;
+        fake_game_result.rc = VJO_E_SCREEN_CHANGED;
+        fake_game_result.text[0] = 0;
+        fake_game_result.tears = 3;
+        vocr_frees++; /* the worker freed the job's workspace before answering */
+        *out = fake_game_result;
+        return 0;
+    }
     if (fake_missing_model && !strcmp(fake_game_request.model, fake_missing_model)) {
         fake_game_result.rc = VJO_E_OCR_MODEL; /* as the worker reports an absent file */
         fake_game_result.io_error = fake_missing_io;
@@ -277,6 +318,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.reserve_bytes = 4194304;
         fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 0;
         fake_game_result.recognize_us = 92345; fake_game_result.frames = 205;
+        fake_game_result.lines = fake_lines;
         fake_game_result.recognized = fake_lines;
         for (unsigned i = 0; i < fake_lines; i++)
             fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i), 0, 52100u + i};
@@ -336,7 +378,15 @@ static void reset(void)
     vocr_retry_with_fallback = 0;
     log_count = 0;
     capture_kernel_oom = jpeg_encoder_oom = 0;
+    fake_screen_changes = 0;
 #endif
+    selftest_waits = 0;
+    job_refresh = 0;
+    job_started_us = 0;
+    refresh_pending = open_retry = 0;
+    refresh_after_us = lookup_us = 0;
+    screen_changed_streak = 0;
+    screen_retry_until = 0;
     phases_checked = vocr_live = fail_join = 0;
     anki_configured = anki_reaps = anki_stop_rc = anki_counts = anki_on = 0;
     memset(&raw_state, 0, sizeof(raw_state));
@@ -1678,18 +1728,35 @@ static void test_character_close_reopen_and_retirement(void)
     TEST_CHECK(game_generation != job_generation && local_text_generation != generation);
     TEST_CHECK(vocr_allocs == 1 && retirement_checks > 0);
 }
-static void test_character_scene_and_region_invalidate_saved_text(void)
+/* #81 request 4: the region's scene moving on (an icon's mask ending, an
+ * effect; in the test build's console log one open overlay saw ten new scene
+ * numbers while the game's input was blocked) never retires the shown text or shows a
+ * message, before a lookup or during it, and a settled screen meanwhile
+ * does not cancel the lookup: it is looked up in the shown text and shown.
+ * Reopening on the changed screen recognizes it again, as before. A region
+ * change still retires the text: the user drew another region. */
+static void test_character_scene_change_keeps_the_shown_text(void)
 {
-    for (int during_read = 0; during_read < 2; during_read++) {
+    for (int during_read = 0; during_read < 3; during_read++) {
         cursor_saved_text(); open_overlay(); finish_current_job();
         uint32_t generation = local_text_generation;
+        int retired = retirement_checks;
         vjo_post_cursor(3, generation);
         if (!during_read) { state.scene = state.region_scene = 8; state.region_seq++; }
         on_command();
-        if (during_read) { read_action = 5; finish_current_job(); }
-        TEST_CHECK(!local_text_valid && !job_running && !g_view.list);
-        TEST_CHECK(local_text_generation != generation && g_view.status_is_error);
-        TEST_CHECK(strstr(g_view.status, "dialogue changed") != NULL && vocr_allocs == 1);
+        TEST_ASSERT(job_running && job_cursor_only);
+        if (during_read == 1) read_action = 5;
+        if (during_read == 2) {
+            state.scene = state.region_scene = 8; state.region_seq++;
+            control_tick(VJO_EV_REGION_STABLE); /* a settled screen: the lookup is not cancelled */
+            TEST_CHECK(job_running && job_cursor_only && !job_cancelled);
+        }
+        finish_current_job();
+        check_current_definition("dog", 3);
+        TEST_CHECK(local_text_valid && local_text_generation == generation && vocr_allocs == 1);
+        TEST_CHECK(!g_view.status_is_error && !strstr(g_view.status, "changed") && retirement_checks == retired);
+        vjo_post_cursor(6, generation); on_command(); finish_current_job();
+        check_current_definition("bird", 6); /* still usable */
         close_overlay(); open_overlay();
         TEST_CHECK(job_running && !job_cursor_only && !g_view.list);
         job_running = 0;
@@ -2289,12 +2356,554 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
 }
+
+/* #81's self-test began 2 s after the game started, on its opening notice: the
+ * three region stages found no line (the full screen five, above the region).
+ * The stages now wait for text in the region: a first stage with no line, or
+ * whose screen changed under every read, ends the job with its own result and
+ * the stages run on a later settled screen; after VJO_SELFTEST_WAITS such
+ * screens they run anyway (their records then say there was no text). */
+static void test_selftest_waits_for_text_in_the_region(void)
+{
+    /* The stage's own bits (a job's policy may ride in the other flags). */
+    const uint32_t stage = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    selftest_begins = selftest_ends = submits = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK); /* an empty region: no line */
+    TEST_CHECK(selftest_begins == 1 && !selftest_ends && submits == 1 && selftest_waits == 1 && !selftest_done);
+    TEST_CHECK(vjo_selftest_stages() == 5 && cache_data[0].sentence && !cache_data[0].sentence[0]);
+    TEST_CHECK((selftest_flags_seen[0] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK);
+    mem_free();
+    fake_screen_changes = 1; /* typing text: the screen changed under every read */
+    TEST_CHECK(run_vocr_job() == VJO_E_SCREEN_CHANGED && selftest_waits == 2 && !selftest_ends && !selftest_done);
+    mem_free();
+    fake_recognized_text = "猫"; /* dialogue in the region: every stage, then done */
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+    TEST_CHECK(selftest_begins == 2 + 5 && selftest_ends == 5 && submits == 2 + 5 && selftest_done);
+    TEST_CHECK((selftest_flags_seen[2] & stage) == VJO_GAME_OCR_F_FORCE_FALLBACK &&
+               (selftest_flags_seen[4] & stage) == VJO_GAME_OCR_F_FULL);
+    mem_free();
+    /* Bounded: after VJO_SELFTEST_WAITS empty screens the stages run on the next anyway. */
+    reset();
+    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    selftest_begins = selftest_ends = submits = 0;
+    for (int i = 0; i < VJO_SELFTEST_WAITS; i++) {
+        TEST_CHECK(run_vocr_job() == VJO_OK && !selftest_done);
+        mem_free();
+    }
+    TEST_CHECK(selftest_waits == VJO_SELFTEST_WAITS && !selftest_ends);
+    TEST_CHECK(run_vocr_job() == VJO_OK && selftest_ends == 5 && selftest_done && selftest_rcs[0] == VJO_OK);
+    selftest_armed = 0; selftest_stage_count = 0;
+    mem_free();
+}
+
+/* Nothing about a changed screen reaches the user (#81 request 4). */
+static void check_quiet(void)
+{
+    TEST_CHECK(!g_view.status_is_error && !strstr(g_view.status, "changed") && !strstr(g_view.status, "reopen"));
+    TEST_CHECK(g_view.strip_kind != VJO_STRIP_ERROR && !strstr(g_view.strip_text, "changed"));
+}
+
+/* #81: 4 of 21 console jobs read a screen that changed under every read
+ * (VJO_E_SCREEN_CHANGED) and were dropped. They still are, quietly and logged;
+ * the next try starts at once, from the second in a row 250 ms later,
+ * doubling to 4 s, and a job that reads its screen ends the run. Auto (the
+ * overlay closed, subtitles on) and an open overlay waiting for its text
+ * ("Recognizing…" all along) follow the same pace; closing the overlay
+ * during a wait leaves the retry to Auto. The error text no longer exists. */
+static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
+{
+    char memory[64]; VjoArena arena;
+    VjoErr err = {.rc = VJO_E_SCREEN_CHANGED};
+    vjo_arena_init(&arena, memory, sizeof(memory));
+    TEST_CHECK(!strcmp(vjo_err_text(&arena, VJO_STAGE_OCR, &err), ""));
+
+    cursor_setup();
+    fake_screen_changes = 8;
+    const int64_t waits[] = {0, 250, 500, 1000, 2000, 4000, 4000, 4000}; /* ms, before tries 2..9 */
+    stable_pending = 1; control_tick(0);
+    for (int i = 0; i < 8; i++) {
+        char line[128];
+        TEST_ASSERT(job_running && !job_refresh);
+        finish_current_job();
+        snprintf(line, sizeof(line), "job dropped: the screen changed under it (%d in a row), "
+                 "next try in %u ms", i + 1, (unsigned)waits[i]);
+        TEST_CHECK_(logged(line) != NULL, "%s", line);
+        TEST_CHECK(!job_running && stable_pending);
+        check_quiet();
+        if (waits[i]) {
+            test_now += waits[i] * 1000 - 1000;
+            control_tick(0);
+            TEST_CHECK(!job_running); /* not yet */
+            test_now += 1000;
+        }
+        control_tick(0);
+    }
+    TEST_ASSERT(job_running);
+    finish_current_job(); /* this one reads its screen */
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥") && !screen_changed_streak && !screen_retry_until);
+    TEST_CHECK(vocr_allocs == 9 && vocr_frees == 9);
+    check_quiet();
+    mem_free();
+
+    /* The subtitles: nothing reaches the strip; the retry keeps its 1 s pace. */
+    cursor_setup();
+    subtitles = 1;
+    fake_screen_changes = 1;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && g_view.strip_busy);
+    finish_current_job();
+    TEST_CHECK(!g_view.strip_busy && !g_view.strip_text[0]);
+    check_quiet();
+    control_tick(0);
+    TEST_CHECK(!job_running); /* SUBTITLE_GAP_US after the last job */
+    test_now += SUBTITLE_GAP_US; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    subtitles = 0;
+    mem_free();
+
+    /* Another game (or the same one restarted) starts the pace over. */
+    cursor_setup();
+    fake_screen_changes = 2;
+    stable_pending = 1; control_tick(0); finish_current_job();
+    control_tick(0); finish_current_job();
+    TEST_CHECK(screen_changed_streak == 2 && screen_retry_until > now_us());
+    invalidate_game_work();
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running); /* at once */
+    finish_current_job();
+    mem_free();
+    /* A job of the previous game that ends after the change counts for no game. */
+    cursor_setup();
+    fake_screen_changes = 1;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    invalidate_game_work();
+    finish_current_job();
+    TEST_CHECK(!screen_changed_streak && !screen_retry_until);
+    mem_free();
+
+    cursor_setup();
+    fake_screen_changes = 3;
+    open_overlay();
+    TEST_ASSERT(job_running);
+    finish_current_job(); /* the first: again at once */
+    TEST_ASSERT(job_running && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job(); /* the second: 250 ms */
+    TEST_CHECK(!job_running && open_retry && !strcmp(g_view.status, "Recognizing…") && !g_view.list);
+    check_quiet();
+    test_now += 249000; control_tick(0);
+    TEST_CHECK(!job_running);
+    test_now += 1000; control_tick(0);
+    TEST_ASSERT(job_running && !open_retry);
+    finish_current_job(); /* the third: 500 ms */
+    test_now += 500000; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    check_current_definition("cat", 0);
+    check_quiet();
+    close_overlay(); mem_free();
+
+    cursor_setup();
+    fake_screen_changes = 2;
+    open_overlay(); finish_current_job(); finish_current_job();
+    TEST_CHECK(open_retry && !job_running);
+    close_overlay();
+    TEST_CHECK(!open_retry && stable_pending);
+    control_tick(0);
+    TEST_CHECK(!job_running);
+    test_now += 250000; control_tick(0);
+    TEST_ASSERT(job_running && job_prepares); /* Auto's job for this screen */
+    finish_current_job();
+    TEST_CHECK(local_text_valid && !g_view.open && cache_ok);
+    check_quiet();
+    mem_free();
+}
+
+/* The region shows scene id (as the kernel numbers it): a job then captures that scene. */
+static void next_scene(uint32_t id)
+{
+    state.scene = state.region_scene = state.capture_scene = id;
+    state.region_seq++;
+}
+
+/* The open overlay with this text, its cursor and its entry. */
+static void check_shown(const char *text, const char *meaning, uint32_t cursor)
+{
+    TEST_ASSERT(g_view.list != NULL && g_view.list->n_entries == 1);
+    TEST_CHECK(g_view.open && g_view.local_cursor_mode && g_view.cursor_byte == cursor);
+    TEST_CHECK(!strcmp(g_view.list->header, text) && !strcmp(local_text, text));
+    TEST_CHECK(strstr(g_view.list->entries[0].text, meaning) != NULL && g_view.list->entries[0].hl_start == (int)cursor);
+    TEST_CHECK(!held_cmd && !held_view);
+    check_quiet();
+}
+
+/* #81 request 4, the open overlay: its text stays usable whatever the screen
+ * does. A settled screen it was not read from is recognized in the
+ * background (a refresh) while the entry, the arena and an Anki save keep
+ * working; the same text changes nothing, a new text replaces the shown one
+ * quietly with its first word looked up, no text or a changing screen keeps
+ * it. Refreshes wait for a settled screen and are paced (REFRESH_GAP_US
+ * apart), a lookup goes first (a refresh in progress
+ * yields and is asked again once lookups pause), and closing the overlay
+ * drops one in progress; reopening meanwhile waits for a recognition. */
+static void test_open_overlay_refreshes_its_text_quietly(void)
+{
+    cursor_setup();
+    view_invariant = 1; view_invariant_checks = 0; invariant_generation = 0; invariant_seq = 0;
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    uint32_t generation = local_text_generation;
+    unsigned seq = g_view.list_seq, inferences = vocr_allocs;
+    const VjoEntryList *shown = g_view.list;
+    control_tick(VJO_EV_REGION_STABLE); /* the screen the text was read from */
+    TEST_CHECK(!job_running && !refresh_pending && vocr_allocs == inferences);
+
+    next_scene(8); /* an icon's mask ended */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh && !job_lookup && job_idx == 1);
+    /* What anki.c checks before saving the shown entry still holds. */
+    TEST_CHECK(g_view.open && g_view.list == shown && g_view.list_seq == seq && g_view.list->n_entries == 1);
+    TEST_CHECK(local_text_valid && has_result_memory() && !g_view.status[0]);
+    finish_current_job();
+    TEST_CHECK(logged("refresh rc=0: same text") && local_text_scene == 8 && cache_scene == 8);
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(g_view.list_seq == seq && local_text_generation == generation && vocr_allocs == inferences + 1);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending); /* paced: REFRESH_GAP_US after the last refresh */
+    test_now += REFRESH_GAP_US; control_tick(0);
+    TEST_CHECK(!job_running && !refresh_pending); /* the shown text is this screen's now */
+    state.stable = 0; next_scene(14); /* nor one that still changes */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && !refresh_pending && vocr_allocs == inferences + 1);
+    state.stable = 1;
+
+    /* The game moved on (auto-advance): replaced quietly. */
+    fake_recognized_text = "犬猫";
+    next_scene(9);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(logged("refresh rc=0: new text") != NULL);
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    TEST_CHECK(!strcmp(local_text, "犬猫") && local_text_generation != generation && local_text_scene == 9);
+    TEST_CHECK(g_view.list == &local_header && !g_view.list->n_entries && g_view.text_generation == local_text_generation);
+    TEST_CHECK(g_view.list_seq != seq && !strcmp(g_view.status, "Looking up words…") && !g_view.status_is_error);
+    vjo_post_cursor(3, generation); /* made for the old text: refused */
+    TEST_CHECK(pending_cmd == VJO_CMD_NONE);
+    finish_current_job();
+    check_shown("犬猫", "dog", 0);
+    generation = local_text_generation;
+
+    /* A lookup while a refresh reads: the refresh yields. */
+    next_scene(10);
+    test_now += REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    vjo_post_cursor(3, generation); control_tick(0);
+    TEST_CHECK(job_cancelled && cursor_waiting);
+    finish_current_job(); /* the refresh, cancelled: the lookup follows */
+    TEST_CHECK(logged("refresh rc=-118: dropped") != NULL);
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+    finish_current_job();
+    check_shown("犬猫", "cat", 3);
+    TEST_CHECK(refresh_pending);
+    control_tick(0);
+    TEST_CHECK(!job_running); /* lookups have not paused for REFRESH_IDLE_US yet */
+    test_now += REFRESH_IDLE_US; control_tick(0);
+    TEST_CHECK(!job_running); /* nor REFRESH_GAP_US passed since the last refresh */
+    test_now += REFRESH_GAP_US - REFRESH_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job(); /* the same text: the cursor and its entry stay */
+    check_shown("犬猫", "cat", 3);
+
+    /* A lookup long after the last refresh still goes first: a screen that
+     * settles right after it waits REFRESH_IDLE_US; a command posted by the
+     * overlay meanwhile (a move) also holds the refresh back. */
+    test_now += 3 * REFRESH_GAP_US;
+    vjo_post_cursor(0, local_text_generation); on_command(); finish_current_job();
+    check_shown("犬猫", "dog", 0);
+    next_scene(18); control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending);
+    test_now += REFRESH_IDLE_US - 1; control_tick(0);
+    TEST_CHECK(!job_running);
+    test_now += 1;
+    vjo_post_cursor(3, local_text_generation); /* the overlay's move, not handled yet */
+    background_open();
+    TEST_CHECK(!job_running && pending_cmd == VJO_CMD_CURSOR);
+    on_command(); finish_current_job();
+    check_shown("犬猫", "cat", 3);
+    test_now += REFRESH_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    check_shown("犬猫", "cat", 3);
+
+    /* A refresh after each settled screen, REFRESH_GAP_US apart at most. */
+    next_scene(15);
+    test_now += REFRESH_GAP_US - 1; control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending);
+    test_now += 1; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    check_shown("犬猫", "cat", 3);
+
+    /* No text in the region (a box fading between lines), then a changing
+     * screen: the shown text stays usable. */
+    fake_recognized_text = "";
+    next_scene(11);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(logged("refresh rc=0: kept") != NULL);
+    check_shown("犬猫", "cat", 3);
+    fake_screen_changes = 1;
+    next_scene(12);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(logged("refresh dropped: the screen changed under it (1 in a row), next try in 0 ms"));
+    check_shown("犬猫", "cat", 3);
+    TEST_CHECK(refresh_pending && !job_running);
+    fake_recognized_text = "鳥";
+    control_tick(0); /* the next try, at once */
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job(); finish_current_job();
+    check_shown("鳥", "bird", 0);
+    TEST_CHECK(!screen_changed_streak);
+
+    /* Closing during a refresh drops it; Auto has the settled screen. */
+    next_scene(13);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !refresh_pending);
+    finish_current_job();
+    TEST_CHECK(!job_running && !g_view.open && stable_pending && local_text_valid);
+    check_quiet();
+    /* Reopened while a refresh still runs, on a screen the text was not read
+     * from: the opening waits for its own recognition. */
+    fake_recognized_text = "犬";
+    open_overlay(); finish_current_job();
+    check_shown("犬", "dog", 0);
+    next_scene(17);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    close_overlay(); open_overlay();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job();
+    TEST_ASSERT(job_running && !job_refresh && !job_cursor_only && ov == OV_OPEN);
+    fake_recognized_text = "猫";
+    finish_current_job();
+    check_shown("猫", "cat", 0);
+    close_overlay(); mem_free();
+    TEST_CHECK(view_invariant_checks > 10);
+    view_invariant = 0;
+}
+
+/* ocr_mode = on_press recognizes only when the overlay opens: the open
+ * overlay keeps its text and runs no refresh, however the screen settles. */
+static void test_on_press_overlay_never_refreshes(void)
+{
+    cursor_setup();
+    cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    unsigned inferences = vocr_allocs;
+    for (int i = 0; i < 3; i++) {
+        next_scene(20 + i);
+        test_now += 4 * REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_CHECK(!job_running && vocr_allocs == inferences);
+    }
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay(); mem_free();
+}
+
+/* A replaced text's dictionary pages go with it: the overlay never offers
+ * the old text's pages for the new text's word. */
+static void test_refresh_replacement_resets_dictionary_pages(void)
+{
+    paged_setup(3);
+    open_overlay(); finish_current_job();
+    check_page("main. cat", 0, 0, 3);
+    TEST_CHECK(vjo_post_page(1, local_text_generation)); on_command(); finish_current_job();
+    check_page("extra cat", 0, 1, 3);
+    fake_recognized_text = "犬";
+    next_scene(8);
+    test_now += REFRESH_IDLE_US; /* the page's lookup goes first */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only);
+    TEST_CHECK(!g_view.dict_page && !g_view.dict_pages && !local_page && !vjo_post_page(1, local_text_generation));
+    finish_current_job();
+    check_page("main. dog", 0, 0, 2); /* third.vjdict has no 犬 */
+    close_overlay(); mem_free();
+}
+
+/* The job on the network thread, then one control-thread wakeup handles its
+ * sentence and its end in ctl_main's order (finish_current_job skips the
+ * sentence step). */
+static void finish_by_tick(void)
+{
+    TEST_ASSERT(job_running);
+    int idx = job_idx;
+    job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx]) : run_job(&results[idx], &cache_data[idx]);
+    job_done = 1;
+    control_tick(0);
+}
+
+/* Subtitles on, overlay open (#92's audit, B1): a refresh that reads a new text
+ * shows it on the subtitle strip too, as every other OCR job does; its lookup
+ * tags the cache with the refresh's capture, so after Circle no job reads that
+ * screen again and the strip must already be right. A refresh that reads the
+ * same text, or none, leaves the strip alone. */
+static void test_refresh_updates_the_subtitle_strip(void)
+{
+    cursor_setup();
+    subtitles = 1; /* Select+R before opening the overlay */
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    unsigned strip_seq = g_view.strip_text_seq;
+    next_scene(8); /* the same text */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh && !g_view.strip_busy);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_text_seq == strip_seq && !strcmp(g_view.strip_text, "猫犬鳥"));
+    fake_recognized_text = ""; /* no text: the shown one stays, and so does the strip */
+    next_scene(9);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_text_seq == strip_seq && !strcmp(g_view.strip_text, "猫犬鳥"));
+    fake_recognized_text = "犬猫"; /* the game moves on while the overlay is open */
+    next_scene(10);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "犬猫") && !g_view.strip_busy);
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job(); /* its first word: tags the cache with the refresh's capture */
+    check_shown("犬猫", "dog", 0);
+    unsigned inferences = vocr_allocs;
+    close_overlay(); /* Circle */
+    for (int i = 0; i < 3; i++) {
+        test_now += SUBTITLE_GAP_US; control_tick(0);
+        if (job_running) finish_current_job();
+    }
+    TEST_CHECK_(!strcmp(g_view.strip_text, "犬猫"), "strip shows [%s] while the region shows 犬猫", g_view.strip_text);
+    TEST_CHECK(vocr_allocs == inferences); /* the screen's text was already read */
+    subtitles = 0;
+    mem_free();
+}
+
+/* The cards name the model that read their text (#90's record): a refresh
+ * that keeps the shown text leaves the model alone, even when another model
+ * read it (the memory fallback); one that replaces the text names its own. */
+static void test_refresh_names_its_model_on_the_cards_only_when_it_replaces(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(!strcmp(anki_model, "VOCR3_H15_w8.vocr"));
+    fake_memory_fallback = 1; /* the next jobs: H15 did not fit, FL10 ran */
+    next_scene(8); /* the same text */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(!strcmp(anki_model, "VOCR3_H15_w8.vocr"));
+    fake_recognized_text = "犬猫";
+    next_scene(9);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job(); finish_current_job();
+    check_shown("犬猫", "dog", 0);
+    TEST_CHECK(!strcmp(anki_model, "VOCR3_FL10_w8.vocr"));
+    close_overlay(); mem_free();
+}
+
+/* A refresh logs its own lines only: no "subtitle text ready" (it has no
+ * sentence until it is compared). A failing one (here the game's memory)
+ * shows nothing, keeps the shown text, and backs off as any OCR job: 2 s,
+ * 4 s, ... between tries; a refresh that works ends the backoff. */
+static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    next_scene(8);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    log_count = 0;
+    finish_by_tick();
+    TEST_CHECK(!job_running && logged("refresh rc=0: same text") && !logged("subtitle text ready"));
+    fail_vocr_user = 1; fake_free_user = 1000; /* the game has no memory for OCR now */
+    next_scene(9);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_by_tick();
+    TEST_CHECK(logged("refresh rc=-103: kept") && ocr_backoff.us == BACKOFF_MIN_US);
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(!g_view.status_is_error && !g_view.status[0]);
+    next_scene(10);
+    test_now += BACKOFF_MIN_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh); /* 2 s later: the next try */
+    finish_by_tick();
+    TEST_CHECK(ocr_backoff.us == 2 * BACKOFF_MIN_US);
+    next_scene(11);
+    test_now += BACKOFF_MIN_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending); /* backing off: 4 s now */
+    fail_vocr_user = 0;
+    test_now += BACKOFF_MIN_US; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_by_tick();
+    TEST_CHECK(!ocr_backoff.us && !ocr_backoff.until);
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay(); mem_free();
+}
+
+/* While the self-test is armed the open overlay runs no refresh: the stages
+ * run in the overlay's own jobs and in Auto's, as on main, never inside a
+ * refresh a lookup may cancel half way. */
+static void test_no_refresh_while_the_selftest_is_armed(void)
+{
+    cursor_setup();
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 0; /* armed, its stages not counted here */
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    unsigned inferences = vocr_allocs;
+    next_scene(8);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && vocr_allocs == inferences);
+    selftest_done = 1; /* the test finished */
+    next_scene(9);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_running && job_refresh);
+    finish_current_job();
+    selftest_armed = selftest_done = 0;
+    close_overlay(); mem_free();
+}
 #endif
 
 TEST_LIST = {
     {"selftest_keeps_the_user_region_and_auto_ocr", test_selftest_keeps_the_user_region_and_auto_ocr},
 #ifdef VJO_WITH_VOCR
     {"selftest_stages_run_in_one_job_each_recorded_then_finish", test_selftest_stages_run_in_one_job_and_finish},
+    {"selftest_waits_for_text_in_the_region_a_bounded_number_of_screens", test_selftest_waits_for_text_in_the_region},
+    {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
+    {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
+    {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
+    {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
+    {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
+    {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
+    {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
+    {"no_refresh_while_the_selftest_is_armed", test_no_refresh_while_the_selftest_is_armed},
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
@@ -2313,7 +2922,7 @@ TEST_LIST = {
     {"lookup_log_line_fits_with_worst_case_fields", test_lookup_log_line_fits_with_worst_case_fields},
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
-    {"character_scene_and_region_changes_retire_saved_text", test_character_scene_and_region_invalidate_saved_text},
+    {"character_scene_change_keeps_the_shown_text_and_region_change_retires_it", test_character_scene_change_keeps_the_shown_text},
     {"character_commands_preserve_close_region_priority_and_nonzero_generations", test_character_command_priority_and_generation_boundaries},
     {"dictionary_pages_read_one_entry_each_in_the_single_arena", test_dictionary_pages_read_one_entry_each},
     {"dictionary_count_change_looks_up_again_without_OCR", test_dictionary_count_change_relooks_up_without_ocr},

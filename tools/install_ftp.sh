@@ -144,7 +144,7 @@ with zipfile.ZipFile(str(out) + ".zip", "w", zipfile.ZIP_DEFLATED) as z:
 PY
   cat "$OUT/analysis.txt"
   echo
-  echo "analysis exit $verdict (0: the self-test passed or did not run, 1: it failed or stopped part way)"
+  echo "analysis exit $verdict (0: the self-test passed or did not run, 1: it failed, read no text in your region or stopped part way)"
   echo "Send this one file: $(pwd)/$OUT.zip"
   exit 0
 fi

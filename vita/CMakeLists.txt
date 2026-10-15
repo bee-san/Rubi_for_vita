@@ -169,6 +169,14 @@ if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()
 # The Shell imports only the bounded job transport. No vocr inference is linked here.
+# More cold code built for size, which pays for the open overlay's quiet refresh
+# (#81 request 4) within the module's pages: the module and Paf allocator entry
+# points (once per boot or allocation), the network dictionaries' entry lists,
+# the per-tap hit test, the overlay's text styling (once per render) and
+# games.ini storage (the Settings app's copy too). Measured -O2 -> -Os: 54 + 176 + 279 + 108 + 454 + 133 B.
+set_source_files_properties(${ROOT}/shell/main.cpp ${ROOT}/shell/memory.cpp ${ROOT}/core/entries.c
+  ${ROOT}/core/text_hit.c ${ROOT}/core/styled.c ${ROOT}/vita/games_storage.c
+  PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-parameter -fno-builtin -fshort-wchar
   "$<$<COMPILE_LANGUAGE:CXX>:-fno-rtti;-fno-exceptions;-Wno-sign-compare;-Wno-unused-function>"
