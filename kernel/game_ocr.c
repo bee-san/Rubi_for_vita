@@ -179,8 +179,8 @@ int game_ocr_waiters_locked(void)
  * left their wait (they give their count back under the lock), at most
  * STOP_DRAIN_POLLS ms, and 1 ms more for the few instructions such a thread
  * still runs after its unlock. One that does not leave in time fails the stop,
- * which is undone (the transport works as before; a game worker refused
- * meanwhile reloads its weights at its next job). 0, or VJO_ERR_BUSY. */
+ * which is undone (the transport works as before; a worker refused meanwhile
+ * reloads its weights, a job submitted meanwhile fails once). 0, or VJO_ERR_BUSY. */
 #define STOP_DRAIN_POLLS 200
 int game_ocr_stop(void)
 {

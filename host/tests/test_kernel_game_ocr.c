@@ -540,6 +540,17 @@ static void stop_drains_its_waiters(void)
     before_lock = NULL;
     TEST_CHECK(delays == 1 && model_clock - left_at == 1000);
     TEST_MSG("%u delays, %llu us after the count went to 0", delays, (unsigned long long)(model_clock - left_at));
+    /* a drain that waited and then succeeded keeps the stop: the undo belongs to the give-up only,
+     * whether the waiter leaves after 4 polls or after 150 (audit-overlay-perf-4c's case) */
+    static const unsigned at[] = {5, 151};
+    for (unsigned k = 0; k < 2; k++) {
+        setup(); waiters = 1; locks_seen = 0; leave_at = at[k]; before_lock = waiter_leaves_on_lock;
+        int rc = game_ocr_stop();
+        before_lock = NULL;
+        TEST_CHECK(rc == 0 && stopping && delays == at[k] - 1);
+        TEST_MSG("leave at lock %u: rc %d, stopping %d, %u delays", at[k], rc, stopping, delays);
+        caller = 7; TEST_CHECK(vjoOcrRegister() == VJO_ERR_NO_GAME);
+    }
 }
 
 static void registration_and_permissions(void)

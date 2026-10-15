@@ -1,10 +1,11 @@
 # Where an OCR job's time goes: the stage benchmark
 
 The recognizer is not the only cost of a job. Between a settled screen and a word on the
-overlay, the game worker waits for a poll, reads the region a strip per display frame (on main,
-again until the text has held still), finds and recognizes the lines (on main, with a beam + LM
-decoder and a larger model reading doubtful lines again), and the Shell waits for another poll,
-writes about 29 log lines and looks the first word up. `tools/bench_stages.py` measures each stage
+overlay, the game worker takes the job (at bcb780e after a poll of up to 100 ms; with #102 as it
+is submitted), reads the region a strip per display frame (on main, again until the text has
+held still), finds and recognizes the lines (on main, with a beam + LM decoder and a larger model
+reading doubtful lines again), and the Shell takes the result (a 50 ms poll at bcb780e; with #102
+as it completes), writes about 29 log lines and looks the first word up. `tools/bench_stages.py` measures each stage
 on the real sources (host time, and Cortex-A9 instruction counts of the Vita compiler's code under
 qemu-arm) and combines them with the source's polling periods and with the console's own timings
 from #81's `--collect` logs into a model of one job. It is the baseline for the speed fixes that
@@ -84,7 +85,7 @@ the completion instead of 100 ms and 50 ms polls); every other part as above:
 | + while `status.txt` is under 64 KiB | +75-376 ms | +75-376 ms | +75-376 ms | +75-376 ms | +126 ms |
 | a game's first job | 1052-1701 ms | 1163-1812 ms | 1152-1900 ms | 1264-2012 ms | 1635 ms |
 
-So the estimate goes from 1624 to 1219 ms (−405 ms, −25%), and from 2080 to 1345 ms (−735 ms) in
+So the estimate goes from 1624 to 1219 ms (−405 ms, −25%), and from 2080 to 1344 ms (−735 ms) in
 a boot's first jobs, at 333 MHz and 60 fps. The woken threads' scheduling (the game worker runs at
 the lowest user priority) is not modelled, and neither is what #81's jobs leave unexplained.
 
@@ -218,18 +219,19 @@ vita-vn-ocr's runtime.
    one result's lines written with one append, the same bytes in the same order (est. 0.33 s a
    job at 15.7 ms an append, 0.44 s at the jobs' 20.9 ms; twice that while `status.txt` is under
    64 KiB).
-2. **Polled hand-offs: 75 ms per job on average, 150 ms at worst** (fixed by #102). The game worker sleeps 100 ms
-   between `vjoOcrComplete`/`vjoOcrRegister` + `vjoOcrTake` rounds (`game_ocr/main.c:1080-1103`;
-   50 ms while a claim is outstanding), so a submitted job waits 0-100 ms before the game claims
-   it, and every candidate game wakes ten times a second for those calls. The Shell asks for the
-   result every 50 ms (`shell/game_ocr_client.c:55`). The kernel already waits on an event flag
-   for model I/O instead of polling (`kernel/game_ocr.c:664`, `MEV_DONE`), the pattern of ref00d's
-   RSA engine thread (blocks on a request bit, signals a done bit: ref00d f3271bc
-   `src/ref00d_rsa_engine.c:31-57, 94`); the SDK advises against polling loops
-   ([vita-memory.md](vita-memory.md), "Don't busy-wait"). Fix: Submit and Complete signal event
-   bits that Take and Read wait on, bounded as the model syscalls' waits are. The worker then
-   still competes with the game's threads at the lowest priority: part of the 194 ms that #81's
-   jobs leave unexplained may be that, and no poll removes it.
+2. **Polled hand-offs: 75 ms per job on average, 150 ms at worst** (fixed by #102). At bcb780e
+   the game worker slept 100 ms between `vjoOcrComplete`/`vjoOcrRegister` + `vjoOcrTake` rounds
+   (`game_ocr/main.c:1080-1103` there; 50 ms while a claim was outstanding), so a submitted job
+   waited 0-100 ms before the game claimed it, and every candidate game woke ten times a second
+   for those calls. The Shell asked for the result every 50 ms (`shell/game_ocr_client.c:55`
+   there). The kernel already waited on an event flag for model I/O instead of polling
+   (`kernel/game_ocr.c:664`, `MEV_DONE`), the pattern of ref00d's RSA engine thread (blocks on a
+   request bit, signals a done bit: ref00d f3271bc `src/ref00d_rsa_engine.c:31-57, 94`); the SDK
+   advises against polling loops ([vita-memory.md](vita-memory.md), "Don't busy-wait"). Fix:
+   Submit and Complete signal event bits that Take and Read wait on, bounded as the model
+   syscalls' waits are. The worker then still competes with the game's threads at the lowest
+   priority: part of the 194 ms that #81's jobs leave unexplained may be that, and no poll
+   removes it.
 3. **The cascade: 256 ms a job** (est.; 139-253 ms A9 at 333 MHz) on these regions, where it reads
    43% of the lines again with VOCR4-W20 (1.37 times H15's cost a frame). That is the dialogue
    accuracy work's trade (vita-vn-ocr #82, `ocr_cascade_ms`), bounded by its 2 s ceiling; test.2's
