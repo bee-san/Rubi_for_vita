@@ -24,10 +24,10 @@
 /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
- * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss, still these
- * pages [measured, 68d6dc9]. */
+ * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss [measured, bcd3cf0],
+ * and with the finder refinement 215,232 + 77,984 [measured, b51a748], still these pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
-/* VitaJPOverlay_OCR.suprx: 61,440 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
+/* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
  * Raised again from 53,248 B (45,056 + 8,192) by one text page for API 20's job policy: the
@@ -36,8 +36,9 @@
  * Raised again from 61,440 B by two text pages for the beam + LM decoder: vita-vn-ocr's
  * runtime/vocr_lm.c (the decoder and the LM scorer) and vocr.c's top-K extras, with their
  * planning and per-line confidence in core/vocr_ocr.c, and the confidence cascade
- * (59,692 B text measured at 68d6dc9, core/vocr_ocr.c built for size); and by one more for the finder
- * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built).
+ * (59,692 B text measured at bcd3cf0, core/vocr_ocr.c built for size); and by one more for the finder
+ * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built; 65,164 B
+ * text measured at b51a748).
  * The game's partition has the room (90,177,536 B free USER the least #81 saw). */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 73728u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,

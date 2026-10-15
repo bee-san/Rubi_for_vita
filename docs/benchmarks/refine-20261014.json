@@ -221,5 +221,5 @@
  },
  "how": "python3 tools/refine_eval.py --ocr build/host/vjo-ocr --models DIR --vocr-repo VITA_VN_OCR --shots DIR... (VOCR3-H15, vocr_lm_o3_1000k.vlm, the VOCR4-W20 cascade)",
  "when": "2026-10-14T20:20Z",
- "vita_vn_ocr": "557f217 (PR #82) with runtime/vocr_lines_refine.c/.h of PR #83 at 48e1dbb"
+ "vita_vn_ocr": "557f217 (PR #82) with runtime/vocr_lines_refine.c/.h of PR #83 at 48e1dbb; re-run 2026-10-15 on the overlay's 1f29dfa against #83's a417be9 (the same refine bytes, on #82's merge 57b6622): every count identical"
 }
