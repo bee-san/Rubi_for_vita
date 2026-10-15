@@ -132,11 +132,14 @@ and the app and the emulator exit 0: it catches crashes in that code, and is not
 anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.
 
-The Overlay app ships as a system application (SELF attribute 0x0E, 50 MiB, since #109); the
-smoke target below is built as an ordinary app, so it takes libvita2d's ordinary-app path and
-cannot show the system-application path: the shared framebuffer, the VSH GXM initialisation,
-the budget or the exit through `vita2d_fini` that crashed it (#112). Whether Vita3K runs the
-release VPK as a system application has not been checked.
+The Overlay app ships as a system application (SELF attribute 0x0E, 50 MiB, since #109). The
+smoke target below is built as an ordinary app (`vita-make-fself -c`: no attribute, no budget).
+libvita2d picks its system-application path when `sceAppMgrGetBudgetInfo` succeeds, and which
+path it takes under Vita3K was not checked. Either way a pass is not evidence for the
+system-application path on a console: the shared framebuffer, the VSH GXM initialisation, the
+50 MiB budget, or the exit through `vita2d_fini` that would crash it (#112: found in libvita2d's
+source and the pinned `.a`, not run on a console). Whether Vita3K runs the release VPK as a
+system application has not been checked either.
 `tools/vita3k_settings_smoke.sh` builds the app's sources unchanged with a scripted controller
 and counted textures (`tools/vita3k_settings_smoke.c`, linked by `-Wl,--wrap`; the
 `VJO_SETTINGS_SMOKE` target of `vita/CMakeLists.txt`, never in the release), installs 120

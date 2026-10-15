@@ -60,10 +60,14 @@ class SettingsAssets(unittest.TestCase):
                 assets.check_png(data, "icon0.png", (128, 128))
 
     def test_reject_art_over_the_vita_size_limits(self):
+        # The SDK's limits (content information specification): icon0.png 32 KiB, the start-up
+        # image pic0.png 600 KiB. Pinned here, so the checker cannot drift from them.
+        limits = {"sce_sys/icon0.png": 32768, "sce_sys/pic0.png": 614400}
+        self.assertEqual(assets.MAX_BYTES, limits)
         for name, size in (("sce_sys/icon0.png", (128, 128)), ("sce_sys/pic0.png", (960, 544))):
             with self.subTest(name=name):
                 original = (ROOT / "settings/assets" / Path(name).name).read_bytes()
-                limit = assets.MAX_BYTES[name]
+                limit = limits[name]
                 self.assertLessEqual(len(original), limit)
                 # Pad the real image with a valid private chunk after IHDR until it is one byte too large.
                 payload = b"\0" * (limit + 1 - len(original) - 12)
