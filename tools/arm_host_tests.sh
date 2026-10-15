@@ -55,8 +55,8 @@ build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
-# The Overlay app's text layouts and icon file check: 32-bit size_t in the PNG chunk walk.
-build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c core/utf.c
+# The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
+build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
 
 TESTS=(boot_guard ledger kernel_capture kernel_input kernel_game_ocr kernel_meminfo region_select)
 TESTS+=(text_rows settings_layout)

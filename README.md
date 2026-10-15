@@ -189,8 +189,9 @@ not tested yet.
 ## Per-game settings
 
 The **Overlay** app shows three large game cards at a time, with wrapped
-titles, visible IDs and clear ON/OFF badges. Games are listed alphabetically,
-capital and small letters together. Tap the **Games**, **OCR & lookup**
+titles, visible IDs and clear ON/OFF badges. Games are listed by letter (#,
+A–Z, kana by row, then other characters), alphabetically within it, capital
+and small letters together. Tap the **Games**, **OCR & lookup**
 or **Anki** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame, the cards on screen first, and stay loaded for those
@@ -202,7 +203,7 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
-| Left / Right | First game of the previous / next letter: A–Z, kana by row (か for が), others by first character |
+| Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Cross or touch a game | Toggle OCR and overlay input for that game |
 | Triangle or touch the default row | Choose all games by default or selected games only |
 | Square | Filter all, enabled or disabled games |

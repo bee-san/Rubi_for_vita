@@ -1,4 +1,5 @@
 #include "catalog.h"
+#include "letter.h"
 #include "../core/sfo.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -6,19 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Alphabetical: ASCII letters compare without case, so "planetarian" is
- * listed with the P titles rather than after every capital (Left/Right jump
- * between letters); then byte order, then the title ID. */
-static int fold(unsigned char c) { return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c; }
-
+/* By letter, then alphabetically with capital and small letters together
+ * ("echo Garden" with the E titles), then by title ID (settings/letter.c):
+ * each letter's games are one run, for Left/Right. */
 static int name_order(const void *a, const void *b)
 {
     const VjoInstalledGame *ga = a, *gb = b;
-    const unsigned char *x = (const unsigned char *)ga->title, *y = (const unsigned char *)gb->title;
-    while (*x && fold(*x) == fold(*y)) x++, y++;
-    int n = fold(*x) - fold(*y);
-    if (!n) n = strcmp(ga->title, gb->title);
-    return n ? n : strcmp(ga->id, gb->id);
+    return vjo_title_order(ga->title, ga->id, gb->title, gb->id);
 }
 
 static void read_title(const char *path, char *out, size_t cap)

@@ -2,9 +2,11 @@
 """Synthetic installed games for the Overlay app's Vita3K smoke
 (tools/vita3k_settings_smoke.sh): UX0/app/VJOTnnnnn/sce_sys/param.sfo (TITLE) and
 icon0.png for N games, with generated titles (Latin, lower case, kana, kanji,
-digits; short and long) and generated icons: 128x128 8-bit palette, a few RGBA,
-64x64 and 300x300 ones, and some missing, damaged (bad CRC) or not PNG at all.
-No real game names or icons. Standard library only.
+digits; short and long; the letters' edges as host/tests/test_settings_games.c
+has them: ゔ, ヴ, ヵ, '{', '~', half-width kana, a byte that is not UTF-8) and
+generated icons: 128x128 8-bit palette, a few RGBA, 64x64 and 300x300 ones, and
+some missing, damaged (bad CRC) or not PNG at all. No real game names or icons.
+Standard library only.
 
     make_settings_smoke_games.py UX0_DIR [N]
 """
@@ -21,26 +23,30 @@ KANA = ["あおいそらの", "がっこうの", "かぜの", "さくらの", "�
         "はるかな", "まよなかの", "やまの", "らせんの", "わすれた", "アーカイブ", "カタログ", "ガラスの",
         "サウンド", "タイム", "ハーモニー", "マップ", "ワールド"]
 KANJI = ["空の物語", "海の記憶", "星の欠片", "夢の続き", "森の歌"]
+EDGES = ["ゔぁいおりんの".encode(), "ヴァイオリン".encode(), "ヵ月の旅".encode(), b"{Curly} Brace", b"8-bit Quest",
+         "ｶﾀｶﾅ ゲーム".encode(), b"~Tilde Tale", b"[Test] Bracket", b"3D Room", "ゖの歌".encode(), "ヶ所めぐり".encode(),
+         b"\xff Broken Byte"]
 
 
 def title(i):
+    """The i-th title's bytes."""
     tail = (" - Synthetic Long Edition With Extra Subtitle Words For Wrapping Twice" if i % 7 == 3 else
             "　〜とても長い日本語の副題がついたテスト用の題名で二行を超える〜" if i % 11 == 5 else "")
     k = i % 10
     if k < 4:
-        return f"{LATIN[i * 7 % 26]} {NOUNS[i % 6]} {i}{tail}"
+        return f"{LATIN[i * 7 % 26]} {NOUNS[i % 6]} {i}{tail}".encode()
     if k == 4:
         t = f"{LATIN[i * 3 % 26]} {NOUNS[(i + 1) % 6]} {i}{tail}"
-        return t[0].lower() + t[1:]
+        return (t[0].lower() + t[1:]).encode()
     if k < 8:
-        return f"{KANA[(i // 10 * 3 + k - 5) % 21]}{'ものがたり' if i % 2 else 'きおく'} {i}{tail}"
+        return f"{KANA[(i // 10 * 3 + k - 5) % 21]}{'ものがたり' if i % 2 else 'きおく'} {i}{tail}".encode()
     if k == 8:
-        return f"{KANJI[i % 5]} {i}{tail}"
-    return f"{['3D Room', '[Test] Bracket', '8-bit Quest'][i % 3]} {i}{tail}"
+        return f"{KANJI[i % 5]} {i}{tail}".encode()
+    return EDGES[i // 10 % 12] + f" {i}{tail}".encode()
 
 
 def sfo(text):
-    value = text.encode() + b"\0"
+    value = text + b"\0"
     cap = (len(value) + 3) & ~3
     header = struct.pack("<4sIIII", b"\0PSF", 0x0101, 36, 44, 1)
     entry = struct.pack("<HHIII", 0, 0x0204, len(value), cap, 0)

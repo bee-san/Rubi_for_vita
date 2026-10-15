@@ -70,6 +70,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 typedef struct {
     char title[ROWS][2][128], id[ROWS][16], icon[ROWS][16]; /* icon: the texture's game, "JP", or "" */
     char hints[128], counter[24], status[2][128];
+    int counter_x;                                           /* where the counter starts */
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
     int focus;                                               /* the focused card, -1 */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
@@ -339,12 +340,15 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
 }
 vita2d_pvf *vita2d_load_default_pvf(void) { return (vita2d_pvf *)&font_dummy; }
 void vita2d_free_pvf(vita2d_pvf *font) { (void)font; }
-/* Stub metrics: 10 units for an ASCII character, 18 for any other, at scale 1. */
+/* Stub metrics: 10 units for an ASCII character (a test may widen them), 18 for
+ * any other, at scale 1. The app calibrates its em from full-width glyphs, so
+ * wider ASCII makes Latin text wider on screen. */
+static int ascii_units = 10;
 static int stub_units(const char *text, int *glyphs)
 {
     int units = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p; p++)
-        if (*p < 0x80) units += 10, (*glyphs)++;
+        if (*p < 0x80) units += ascii_units, (*glyphs)++;
         else if ((*p & 0xC0) != 0x80) units += 18, (*glyphs)++;
     return units;
 }
@@ -367,7 +371,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
     }
     if (y == HINT_Y) {
         if (x == 24) copy(cur.hints, sizeof(cur.hints), text);
-        else copy(cur.counter, sizeof(cur.counter), text);
+        else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
     }
     if (x == 40 && (y == STATUS_Y || y == STATUS_Y + 28)) copy(cur.status[(y - STATUS_Y) / 28], sizeof(cur.status[0]), text);
     return 0;
@@ -377,6 +381,15 @@ TEST_ONLY static int stub_width(float pixels, const char *s)
     int glyphs = 0; /* the reference's own measuring is not the app's */
     return (int)(stub_units(s, &glyphs) * (pixels / 18.0f) + 0.5f);
 }
+/* The same widths, counting the glyphs measured, as the app's measure does. */
+static long counted;
+TEST_ONLY static int counting_width(float pixels, const char *s)
+{
+    int glyphs = 0;
+    int w = (int)(stub_units(s, &glyphs) * (pixels / 18.0f) + 0.5f);
+    counted += glyphs;
+    return w;
+}
 
 /* ---- the memory card: synthetic installed games ---- */
 enum { ICON_OK, ICON_NONE, ICON_DAMAGED, ICON_HUGE, ICON_NOT_PNG, ICON_RGBA, ICON_SMALL };
@@ -385,7 +398,10 @@ typedef struct { char id[VJO_TITLE_ID_SIZE]; char title[200]; int icon; } Game;
 static Game games[MAX_GAMES + 1];
 static int game_count;
 /* Synthetic titles: Latin initials A-Z, some lower case, kana of several
- * gojuon rows (dakuten included), kanji, digits and symbols, short and long. */
+ * gojuon rows (dakuten included), kanji, digits and symbols, short and long,
+ * and the edges of the letters: ゔ, ヴ and ヵ (filed under あ, ア and カ but
+ * byte-sorted after ん and ン), '{' and '~' (after 'z'), half-width kana and a
+ * byte that is not UTF-8. */
 static void make_title(int i, char *out, size_t cap)
 {
     static const char *const latin[] = {"Amber", "Bright", "Cobalt", "Distant", "Echo", "Frozen", "Golden",
@@ -412,9 +428,16 @@ static void make_title(int i, char *out, size_t cap)
     case 8:
         snprintf(out, cap, "%s %d%s", kanji[i % 5], i, tail);
         break;
-    default:
+    default: { /* the first six by 60 games */
+#ifndef VJO_SETTINGS_BENCH
+        static const char *const edges[] = {"ゔぁいおりんの", "ヴァイオリン", "ヵ月の旅", "{Curly} Brace", "8-bit Quest",
+            "ｶﾀｶﾅ ゲーム", "~Tilde Tale", "[Test] Bracket", "3D Room", "ゖの歌", "ヶ所めぐり", "\xFF Broken Byte"};
+        snprintf(out, cap, "%s %d%s", edges[i / 10 % 12], i, tail);
+#else /* the benchmark keeps the titles its published tables were measured with */
         snprintf(out, cap, "%s %d%s", i % 3 == 0 ? "3D Room" : i % 3 == 1 ? "[Test] Bracket" : "8-bit Quest", i, tail);
+#endif
         break;
+    }
     }
 }
 static char card_dir[64];
@@ -508,27 +531,9 @@ static void card(int n, int (*kind)(int))
 }
 
 /* ---- the list as the spec orders and groups it (the test's own reference) ---- */
-static int fold(unsigned char c) { return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c; }
-static int spec_order(const void *a, const void *b)
-{
-    const Game *ga = a, *gb = b;
-    const unsigned char *x = (const unsigned char *)ga->title, *y = (const unsigned char *)gb->title;
-    while (*x && fold(*x) == fold(*y)) x++, y++;
-    int n = fold(*x) - fold(*y);
-    if (!n) n = strcmp(ga->title, gb->title);
-    return n ? n : strcmp(ga->id, gb->id);
-}
-static Game list[MAX_GAMES + 1];
-static int list_count;
-TEST_ONLY static void spec_list(void)
-{
-    list_count = game_count + 1;
-    memcpy(list, games, sizeof(Game) * (size_t)list_count);
-    qsort(list, (size_t)list_count, sizeof(Game), spec_order);
-}
 /* The letter a title is listed under: ASCII letters by letter, other ASCII
  * together, kana by gojuon row (hiragana and katakana apart), else itself. */
-TEST_ONLY static uint32_t spec_group(const char *title)
+static uint32_t spec_group(const char *title)
 {
     static const struct { uint32_t first, last, head; } rows[] = {
         {0x3041, 0x304A, 0x3042}, {0x304B, 0x3054, 0x304B}, {0x3055, 0x305E, 0x3055}, {0x305F, 0x3069, 0x305F},
@@ -542,6 +547,27 @@ TEST_ONLY static uint32_t spec_group(const char *title)
     for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++)
         if (k >= rows[i].first && k <= rows[i].last) return rows[i].head + (katakana ? 0x60 : 0);
     return c;
+}
+/* By letter, then alphabetically, capital and small letters together, then by bytes and ID. */
+static int fold(unsigned char c) { return c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c; }
+static int spec_order(const void *a, const void *b)
+{
+    const Game *ga = a, *gb = b;
+    uint32_t la = spec_group(ga->title), lb = spec_group(gb->title);
+    if (la != lb) return la < lb ? -1 : 1;
+    const unsigned char *x = (const unsigned char *)ga->title, *y = (const unsigned char *)gb->title;
+    while (*x && fold(*x) == fold(*y)) x++, y++;
+    int n = fold(*x) - fold(*y);
+    if (!n) n = strcmp(ga->title, gb->title);
+    return n ? n : strcmp(ga->id, gb->id);
+}
+static Game list[MAX_GAMES + 1];
+static int list_count;
+TEST_ONLY static void spec_list(void)
+{
+    list_count = game_count + 1;
+    memcpy(list, games, sizeof(Game) * (size_t)list_count);
+    qsort(list, (size_t)list_count, sizeof(Game), spec_order);
 }
 static int list_index(const char *id)
 {
@@ -905,7 +931,7 @@ static void page_jumps_at_the_ends(void)
 
 static void letter_jumps_go_to_the_next_initial(void)
 {
-    card(60, NULL);
+    card(120, NULL); /* every edge initial of make_title */
     spec_list();
     /* The expected stops: from the top, Right goes to the first entry of the next group. */
     int stops[MAX_GAMES + 1], n = 0, i = 0;
@@ -953,6 +979,30 @@ static void letter_jumps_go_to_the_next_initial(void)
     }
     TEST_CHECK(selected_of(frames - 1) == 0);
     TEST_MSG("%d groups among %d entries", n + 1, list_count);
+    /* Left from inside a letter goes to that letter's first game, not the previous letter's. */
+    int first = -1; /* the first game of a letter with two or more games, not the list's first letter */
+    for (int i = 1; i + 1 < list_count && first < 0; i++)
+        if (spec_group(list[i].title) != spec_group(list[i - 1].title) &&
+            spec_group(list[i + 1].title) == spec_group(list[i].title)) first = i;
+    TEST_ASSERT(first > 0);
+    at = 0;
+    hold(0, 12);
+    int k = 0;
+    for (int i = 0; i < first; i = stops[k++]) tap(SCE_CTRL_RIGHT, 8); /* Right to that letter */
+    int at_first = at - 1;
+    tap(DOWN, 8);
+    int inside = at - 1;
+    tap(SCE_CTRL_LEFT, 8);
+    int back = at - 1;
+    tap(SCE_CTRL_LEFT, 8);
+    int prev = at - 1;
+    run(at);
+    int prev_first = first - 1;
+    while (prev_first > 0 && spec_group(list[prev_first - 1].title) == spec_group(list[first - 1].title)) prev_first--;
+    TEST_CHECK_(selected_of(at_first) == first && selected_of(inside) == first + 1, "at %d, inside %d, want %d, %d",
+                selected_of(at_first), selected_of(inside), first, first + 1);
+    TEST_CHECK_(selected_of(back) == first, "Left inside: %d, want %d", selected_of(back), first);
+    TEST_CHECK_(selected_of(prev) == prev_first, "Left again: %d, want %d", selected_of(prev), prev_first);
     /* Lower case is listed with its letter: every group is one run. */
     int runs = 1;
     for (int k = 1; k < list_count; k++) runs += spec_group(list[k].title) != spec_group(list[k - 1].title);
@@ -965,6 +1015,171 @@ static void letter_jumps_go_to_the_next_initial(void)
         if (!found) seen[distinct++] = g;
     }
     TEST_CHECK_(runs == distinct, "%d runs, %d groups", runs, distinct);
+}
+
+/* After a move up (Up at the top card, L, Left) the list's direction of travel is
+ * up: Start's reload, which finds no icon cached, goes visible rows, then the page
+ * above, then the page below, nearest first. */
+static void moving_up_prefetches_the_page_above(void)
+{
+    static const unsigned keys[] = {UP, SCE_CTRL_LTRIGGER, SCE_CTRL_LEFT};
+    static const char *const names[] = {"Up", "L", "Left"};
+    for (int k = 0; k < 3; k++) {
+        card(60, NULL);
+        spec_list();
+        at = 0;
+        hold(0, 15);
+        for (int i = 0; i < 6; i++) tap(SCE_CTRL_RTRIGGER, 12); /* down 6 pages: the view's top is 18 */
+        tap(keys[k], 12);                                        /* one move up */
+        tap(SCE_CTRL_START, 14);                                 /* the reload */
+        int start = at - 15, frames = run(at), top = top_of(start);
+        check_rules();
+        TEST_CHECK(frames == at);
+        TEST_CHECK_(top >= ROWS && top + 2 * ROWS <= list_count && top < 18, "%s: top %d", names[k], top);
+        TEST_CHECK_(sum_loads(start, start + 3 * ROWS) == 3 * ROWS, "%s: %d loads", names[k],
+                    sum_loads(start, start + 3 * ROWS));
+        TEST_CHECK_(loads_in_order(start, start + 3 * ROWS - 1, -1), "%s", names[k]);
+    }
+    /* and after a move down, the page below first (the same reload) */
+    card(60, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 15);
+    for (int i = 0; i < 6; i++) tap(SCE_CTRL_RTRIGGER, 12);
+    tap(SCE_CTRL_START, 14);
+    int start = at - 15;
+    run(at);
+    TEST_CHECK(loads_in_order(start, start + 3 * ROWS - 1, 1) && sum_loads(start, start + 3 * ROWS) == 3 * ROWS);
+}
+
+/* A held list key repeats 350 ms after its press, then every 90 ms (the process
+ * clock: 16,667 us a frame); a key pressed while another is held acts at once. */
+static void held_keys_repeat_and_new_presses_act(void)
+{
+    card(60, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    int p = at;
+    hold(DOWN, 40);
+    int q = at;
+    hold(DOWN | SCE_CTRL_RTRIGGER, 4); /* R pressed with Down still held */
+    hold(0, 10);
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    /* The expected selection, frame by frame, from the rule. */
+    int sel = 0, bad = 0;
+    uint64_t repeat = 0;
+    for (int f = p; f < q + 4; f++) {
+        uint64_t now = (uint64_t)f * 16667u;
+        if (f == p) { sel++; repeat = now + 350000; }
+        else if (f == q) { sel += ROWS; repeat = now + 350000; } /* a page; the row is kept */
+        else if (now >= repeat) { sel++; repeat = now + 90000; } /* held together, Down repeats */
+        if (selected_of(f) != sel && bad++ < 5) TEST_MSG("frame %d: selection %d, want %d", f - p, selected_of(f), sel);
+    }
+    TEST_CHECK(bad == 0);
+    TEST_CHECK_(selected_of(q - 1) == 5 && selected_of(q) == 8 && top_of(q) == top_of(q - 1) + ROWS,
+                "Down held 40 frames: %d; then R: %d", selected_of(q - 1), selected_of(q));
+}
+
+/* The list keys act on the Games page only: on the OCR & lookup and Anki pages
+ * Up/Down/L/R leave the list where it was. */
+static void list_keys_only_on_the_games_page(void)
+{
+    card(30, NULL);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    tap(DOWN, 8);
+    int before = at - 1;
+    tap(SCE_CTRL_SELECT, 8); /* OCR & lookup */
+    for (int i = 0; i < 3; i++) tap(DOWN, 8);
+    tap(SCE_CTRL_RTRIGGER, 8);
+    tap(SCE_CTRL_LTRIGGER, 8);
+    hold(DOWN, 40);
+    hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Anki */
+    tap(DOWN, 8);
+    tap(SCE_CTRL_RTRIGGER, 8);
+    hold(UP, 30);
+    hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Games again */
+    int after = at - 1, frames = run(at);
+    TEST_CHECK(frames == at);
+    TEST_CHECK_(selected_of(before) == 1 && selected_of(after) == 1 && top_of(after) == 0, "selection %d -> %d, top %d",
+                selected_of(before), selected_of(after), top_of(after));
+}
+
+/* The hints keep 140 px for the counter, which is right-aligned at the card edge:
+ * with Latin glyphs wide enough that the hints need more than 912 - 140 px, they
+ * are cut with "..." there and never reach the counter. */
+static void hints_leave_room_for_the_counter(void)
+{
+    for (int wide = 0; wide < 2; wide++) {
+        ascii_units = wide ? 12 : 10;
+        card(511, NULL); /* 512 entries: the counter's widest, "512/512" */
+        spec_list();
+        at = 0;
+        hold(0, 10);
+        hold(SCE_CTRL_RTRIGGER, 1100); /* to the last game */
+        hold(0, 10);
+        int frames = run(at);
+        TEST_CHECK(frames == at);
+        const Frame *last = &session->shown[frames - 1];
+        float px = 24.0f / 18.0f; /* text_scale(24): the em is 18 units, full-width */
+        int hints_w = (int)(stub_units(last->hints, &(int){0}) * px + 0.5f);
+        int counter_w = (int)(stub_units(last->counter, &(int){0}) * px + 0.5f);
+        TEST_CHECK_(!strcmp(last->counter, "512/512") && last->counter_x + counter_w == 936,
+                    "wide %d: counter '%s' at %d, %d px", wide, last->counter, last->counter_x, counter_w);
+        TEST_CHECK_(hints_w <= 912 - 140 && 24 + hints_w < last->counter_x, "wide %d: hints %d px to %d, counter at %d",
+                    wide, hints_w, 24 + hints_w, last->counter_x);
+        size_t n = strlen(last->hints);
+        int cut = n > 3 && !strcmp(last->hints + n - 3, "...");
+        TEST_CHECK_(cut == wide, "wide %d: hints '%s'", wide, last->hints);
+    }
+    ascii_units = 10;
+}
+
+/* Titles of the window beyond the visible rows are laid out one a frame, when no
+ * icon is to be loaded; a view move then lays out no title while it draws. */
+TEST_ONLY static int kind_none(int i) { (void)i; return ICON_NONE; }
+static long layout_glyphs(const char *title)
+{
+    counted = 0;
+    ref_measure = counting_width;
+    ref_wrapped_text(120, 0, 620, 26, 32, 2, title);
+    return counted;
+}
+static void titles_are_laid_out_ahead_one_a_frame(void)
+{
+    card(60, kind_none); /* no icons: each window entry's attempt takes one frame, then fails */
+    spec_list();
+    at = 0;
+    hold(0, 30);
+    tap(DOWN, 10); tap(DOWN, 10); /* the selection to the third card: no view move */
+    tap(DOWN, 10);                /* the view moves one row */
+    int move = at - 11;
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    long idle = session->shown[25].glyphs, bad = 0;
+    /* frames 1-5: one icon attempt each (the visible titles were laid out by frame 0's draw) */
+    for (int f = 1; f < 2 * ROWS; f++)
+        if (session->shown[f].glyphs != idle && bad++ < 5) TEST_MSG("frame %d: %d glyphs, idle %ld", f, session->shown[f].glyphs, idle);
+    /* frames 6-8: the page below's three titles, one a frame */
+    for (int f = 2 * ROWS; f < 3 * ROWS; f++) {
+        long want = idle + layout_glyphs(list[ROWS + f - 2 * ROWS].title);
+        if (session->shown[f].glyphs != want && bad++ < 5) TEST_MSG("frame %d: %d glyphs, want %ld", f, session->shown[f].glyphs, want);
+    }
+    for (int f = 3 * ROWS; f < 30; f++)
+        if (session->shown[f].glyphs != idle && bad++ < 5) TEST_MSG("frame %d: %d glyphs, idle %ld", f, session->shown[f].glyphs, idle);
+    TEST_CHECK(bad == 0);
+    /* The move's frame: one icon attempt (the row entering the window), and no title
+     * layout (the counter's digits aside); the next frame lays out that row's title. */
+    TEST_CHECK_(top_of(move) == 1 && top_of(move - 1) == 0, "top %d", top_of(move));
+    long move_glyphs = session->shown[move].glyphs, next = session->shown[move + 1].glyphs;
+    TEST_CHECK_(move_glyphs <= idle + 2, "the move's frame measured %ld glyphs, idle %ld", move_glyphs, idle);
+    TEST_CHECK_(next - move_glyphs == layout_glyphs(list[2 * ROWS].title), "the next frame: %ld more glyphs, want %ld",
+                next - move_glyphs, layout_glyphs(list[2 * ROWS].title));
 }
 
 static void toggles_and_filters_keep_icons(void)
@@ -1035,9 +1250,14 @@ static void install_new_game(int f)
     Game g = {"VJOT09999", "0 New Synthetic Game", ICON_OK};
     install(&g, 9999);
 }
+TEST_ONLY static int kind_every_third(int i) { return i % 3 == 1 ? ICON_DAMAGED : ICON_OK; }
+static int loadable_kind(int kind) { return kind == ICON_OK || kind == ICON_RGBA || kind == ICON_SMALL; }
 static void rescan_only_on_start(void)
 {
-    card(60, kind_mixed);
+    card(60, kind_every_third);
+    Game before[MAX_GAMES + 1]; /* the list before the rescan */
+    spec_list();
+    memcpy(before, list, sizeof(Game) * (size_t)list_count);
     /* the list after the rescan: the new game, then Adrenaline's entry */
     snprintf(games[game_count].id, sizeof(games[0].id), "VJOT09999");
     snprintf(games[game_count].title, sizeof(games[0].title), "0 New Synthetic Game");
@@ -1074,6 +1294,14 @@ static void rescan_only_on_start(void)
     TEST_CHECK_(sum_loads(start, frames) == loadable, "%d loads after Start, %d loadable icons in the window",
                 sum_loads(start, frames), loadable);
     TEST_CHECK(top > ROWS && loads_in_order(start, start + 3 * ROWS + 2, 1));
+    /* The new game sorts first, so each later entry moved down one place. The case
+     * that per-place state (failures, layouts) must not survive: a place in the
+     * window whose old entry's icon was broken, and was tried, now holds a good one. */
+    int moved = 0;
+    for (int i = top - ROWS; i < top + 2 * ROWS; i++)
+        moved += i >= 1 && i < list_count && !strcmp(list[0].id, "VJOT09999") && !loadable_kind(before[i].icon) &&
+                 loadable_kind(list[i].icon);
+    TEST_CHECK_(moved >= 1, "no window place went from a broken icon to a good one");
     /* From the rescan on, every card shows its own game's rows and icon. */
     int bad = 0;
     ref_measure = stub_width;
@@ -1143,6 +1371,11 @@ TEST_LIST = {
     {"page_jumps_keep_the_row_and_prefetch", page_jumps_keep_the_row_and_prefetch},
     {"page_jumps_at_the_ends", page_jumps_at_the_ends},
     {"letter_jumps_go_to_the_next_initial", letter_jumps_go_to_the_next_initial},
+    {"moving_up_prefetches_the_page_above", moving_up_prefetches_the_page_above},
+    {"held_keys_repeat_and_new_presses_act", held_keys_repeat_and_new_presses_act},
+    {"list_keys_only_on_the_games_page", list_keys_only_on_the_games_page},
+    {"hints_leave_room_for_the_counter", hints_leave_room_for_the_counter},
+    {"titles_are_laid_out_ahead_one_a_frame", titles_are_laid_out_ahead_one_a_frame},
     {"toggles_and_filters_keep_icons", toggles_and_filters_keep_icons},
     {"broken_icons_show_the_placeholder_once_tried", broken_icons_show_the_placeholder_once_tried},
     {"rescan_only_on_start", rescan_only_on_start},

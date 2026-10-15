@@ -102,14 +102,19 @@ What the page does now:
 - **L/R page.** The view moves three rows and the selection keeps its row; at
   the last or first page L/R selects the last or first game. Held, L/R repeat
   like Up/Down (350 ms, then every 90 ms).
-- **Left/Right jump between letters.** The list is alphabetical with ASCII
-  letters compared without case (before, every capital sorted before every
-  small letter). A title's letter is its first ASCII letter in upper case,
-  `#` for other ASCII (digits, symbols), the first kana of its gojuon row for
-  kana (か for が and ご, hiragana and katakana apart), and the first character
-  itself otherwise. Right goes to the first game of the next letter (the last
-  game from the last letter), Left to the first game of the current letter, or
-  of the previous one when already there; the game is shown at the top.
+- **Left/Right jump between letters.** A title's letter is its first ASCII
+  letter in upper case, `#` for other ASCII (digits, symbols, a space), the
+  first kana of its gojuon row for kana (か for が and ご, あ for ゔ, か for ゕ
+  and ゖ; katakana apart from hiragana: ア for ヴ, カ for ヵ and ヶ), and the
+  first character itself otherwise (U+FFFD for a byte that is not UTF-8;
+  `settings/letter.c`). The catalog sorts by that letter first (`#`, A–Z, then
+  by code point: hiragana rows, katakana rows, other characters), then
+  alphabetically with capital and small letters together, so each letter is
+  one run of the list: by bytes alone, ゔ and ヴ would sort after ん and ン and
+  `{|}~` after `z`, splitting their letters. Right goes to the first game of the
+  next letter (the last game from the last letter), Left to the first game of
+  the current letter, or of the previous one when already there; the game is
+  shown at the top.
 
 A pagination screen was not added: the per-frame work above no longer grows
 with the number of games, and L/R move a page. Whether the page now feels
@@ -124,8 +129,14 @@ the app's `ScePhyMemPartGameCdram` is 112 MiB, in 256 KiB units,
 128 × 128 icon's 64 KiB of pixels and the largest accepted, 256 × 256 (256 KiB),
 both take one block, so the cache holds at most 9 × 256 KiB = 2,304 KiB
 (2.25 MiB) of CDRAM, against 768 KiB for the old three icons. If CDRAM refuses,
-libvita2d falls back to `USER_RW` and then phycont. These figures are from the
-source; the console's free CDRAM in the app has not been measured. In the
+libvita2d's `gpu_alloc` tries `USER_RW` (0x0C20D060, rounded to 4 KiB: 256 KiB
+for the largest icon) and then `USER_MAIN_PHYCONT_RW` (0x0C80D060, rounded to
+1 MiB), the pinned `libvita2d.a`'s instructions and `psp2common/kernel/sysmem.h`'s
+constants. So the 2.25 MiB bound is the CDRAM case; if CDRAM and `USER_RW` both
+refused every icon, the cache could hold up to 9 MiB of phycont, of the app's
+26 MiB phycont budget ([vita-memory.md](vita-memory.md#31-physical-budgets-retail-firmware)). These
+figures are from the source; the console's free CDRAM in the app, and whether
+either fallback is ever taken, have not been measured. In the
 app's own memory (`.bss`, Vita build): the file buffer 262,160 B, the title
 rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, the PNG CRC table
 1,024 B, 1,024 B of failure and layout flags and 184 B for the cache's slots:
@@ -171,19 +182,30 @@ With 512 games the after column is the same; before, an idle frame measured
   (against an oracle from the PNG spec: only a change inside an ancillary
   chunk, or one leaving it another valid ancillary type, still loads), lengths
   that would wrap 32 bits, sizes, chunk names, critical and ancillary CRCs,
-  split and interrupted IDATs, PLTE order and missing IEND or image data; the
-  bounded file read; the cache's LRU order and window.
+  split and interrupted IDATs, PLTE order and missing IEND or image data, each
+  check run on a copy that ends at an unmapped page, so an over-read faults
+  without a sanitizer; the bounded file read; the cache's LRU order and window;
+  every title's letter for the ASCII and kana ranges against a gojuon chart
+  written in the test; the catalog order (each letter one run, a total order,
+  the case tie-break) over shuffled titles with every edge initial.
 - `settings_games`: the app over 1 to 520 synthetic games. Every card of every
   frame shows its own game's ID, the old layout's rows and its own icon or
   **JP**; at most one decode per frame; visible rows first, then the page in
   the direction of travel; no icon reloaded while it stayed in the window;
-  scrolling back reloads nothing; L/R pages and their ends; Left/Right stop at
-  each letter, both ways; toggles and filters reload nothing; broken icons are
-  tried once; a game installed while the app runs appears only after Start,
-  which rescans exactly once; 512 games stay within 9 icons and 2.25 MiB. Each
+  scrolling back reloads nothing; after a move up (Up, L, Left) the page above
+  is loaded before the page below; L/R pages and their ends; Left/Right stop
+  at each letter, both ways, over titles with every edge initial; a held key
+  repeats after 350 ms, then every 90 ms, and a key pressed while another is
+  held acts at once; the list keys do nothing on the other pages; the hints
+  keep 140 px for the right-aligned counter, cut with "..." when Latin glyphs
+  are wider; the window's titles are laid out one a frame ahead, so a view move
+  lays out none; toggles and filters reload nothing; broken icons are tried
+  once; a game installed while the app runs appears only after Start, which
+  rescans exactly once; 512 games stay within 9 icons and 2.25 MiB. Each
   texture follows libvita2d's rules: freed only outside drawing, after a GPU
   wait since its last draw, with its two stray fields cleared. Built against
-  main `7ed16d8`'s `main.c`, the suite fails all 11 cases.
+  main `7ed16d8`'s `main.c`, 14 of its 16 cases fail; the other two (the
+  key repeat timing, the list keys' page gate) guard behaviour main already had.
 - `tools/vita3k_settings_smoke.sh`: the app's own code, unchanged, in Vita3K with
   a scripted controller over 120 synthetic games, as a crash check only
   ([offline testing](offline-testing.md#5-vita3k-precisely)).
