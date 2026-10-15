@@ -4,14 +4,6 @@
 
 #include "utf.h"
 
-int vjo_pitch_from_pattern(const char *pattern, size_t n)
-{
-    for (size_t i = 0; i + 1 < n; i++)
-        if (pattern[i] == 'H' && pattern[i + 1] == 'L')
-            return (int)i + 1;
-    return 0;
-}
-
 int vjo_morae(const char *reading)
 {
     static const uint32_t small[] = {0x3083, 0x3085, 0x3087, 0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x308E,

@@ -22,20 +22,15 @@ typedef struct {
 
 void vjo_memconn_init(VjoMemConn *m, VjoConn *c);
 
-/* Recorded response file in a fixture dir for a request host: "lens.pb",
- * "jpdb.json" or "jiten.json" (--record writes, replay reads). */
+/* Recorded response file in a fixture dir for a request host: "lens.pb" for
+ * Google Lens (--record writes it, the replay reads it), NULL for any other
+ * host (not recorded; the replay refuses it like an offline network). */
 const char *vjo_fixture_file(const char *host);
 
-/* Prepares cfg to replay dir: the dictionary whose response was recorded
- * (jiten.json, else jpdb.json, else cfg's) and placeholder API keys (they
- * are never sent), so the output does not depend on the environment. */
-void vjo_replay_config(VjoConfig *cfg, const char *dir);
-
-/* vjo_overlay_from_jpeg (empty JPEG) on a VjoPlatform whose connect()
- * serves dir's recording for the host as a plain HTTP 200 response, or
- * fails like an offline network when there is none. The responses are
- * loaded into `files`. Returns vjo_overlay_from_jpeg's result. */
-int vjo_replay_overlay(VjoArena *a, VjoArena *files, const char *dir, const VjoConfig *cfg,
-                       VjoOverlayData *out);
+/* vjo_overlay_ocr (empty JPEG) on a VjoPlatform whose connect() serves dir's
+ * recorded Lens response as a plain HTTP 200 response, or fails like an
+ * offline network when there is none: the sentence, without a lookup. The
+ * response is loaded into `files`. Returns vjo_overlay_ocr's result. */
+int vjo_replay_ocr(VjoArena *a, VjoArena *files, const char *dir, const VjoConfig *cfg, VjoOverlayData *out);
 
 #endif

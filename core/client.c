@@ -3,10 +3,8 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "jiten.h"
 #include "hachidori.h"
 #include "local_dict.h"
-#include "jpdb.h"
 #include "port.h"
 #include "textfilter.h"
 #include "utf.h"
@@ -92,76 +90,19 @@ int vjo_lens_ocr(VjoArena *a, const VjoPlatform *p, const VjoJpegSource *src,
     return VJO_OK;
 }
 
-typedef struct {
-    const char *json;
-    size_t len;
-} JsonBody;
-
-static int write_json_body(void *ud, VjoConn *c)
-{
-    JsonBody *b = (JsonBody *)ud;
-    return vjo_conn_send_all(c, b->json, b->len);
-}
-
-static const VjoDictBackend backends[VJO_DICT_COUNT] = {
-    [VJO_DICT_JPDB] = {VJO_JPDB_HOST, VJO_JPDB_PATH, "Authorization: Bearer %s\r\n",
-                       vjo_jpdb_build_request, vjo_jpdb_parse_response, vjo_jpdb_error_message},
-    [VJO_DICT_JITEN] = {VJO_JITEN_HOST, VJO_JITEN_PATH, "X-Api-Key: %s\r\n",
-                        vjo_jiten_build_request, vjo_jiten_parse_response, vjo_jiten_error_message},
-};
-
-const VjoDictBackend *vjo_dict_backend(int dictionary)
-{
-    return &backends[dictionary >= 0 && dictionary < VJO_DICT_COUNT ? dictionary : VJO_DICT_JPDB];
-}
-
 int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
                     VjoDictResult *res, VjoErr *err)
 {
-    const VjoDictBackend *be = vjo_dict_backend(cfg->dictionary);
-    const char *key = vjo_config_api_key(cfg);
-    VjoHttpRequest req;
-    VjoHttpResponse resp;
-    JsonBody body;
-    char auth[192];
-
     memset(err, 0, sizeof(*err));
     memset(res, 0, sizeof(*res));
     err->dict = cfg->dictionary;
-    if (cfg->dictionary == VJO_DICT_LOCAL)
-        return vjo_local_lookup(a, p, cfg, text, res, err);
     if (cfg->dictionary == VJO_DICT_HACHIDORI) {
         int rc = vjo_hachidori_lookup(a, p, cfg, text, res, err);
         if (rc)
             memset(res, 0, sizeof(*res));
         return rc;
     }
-    if (!*key)
-        return err->rc = VJO_E_NO_KEY;
-    body.json = be->build_request(a, text);
-    if (!body.json)
-        return err->rc = VJO_E_OOM;
-    body.len = strlen(body.json);
-    vjo_snprintf(auth, sizeof(auth), be->auth_header, key);
-
-    memset(&req, 0, sizeof(req));
-    req.method = "POST";
-    req.host = be->host;
-    req.path = be->path;
-    req.content_type = "application/json; charset=utf-8";
-    req.extra_headers = auth;
-    req.body_len = body.len;
-    req.write_body = write_json_body;
-    req.ud = &body;
-
-    if (vjo_http_request(a, p, 443, 1, &req, VJO_DICT_MAX_RESPONSE, &resp, err)) {
-        if (err->rc == VJO_E_STATUS && resp.body)
-            err->detail = be->error_message(a, resp.body, resp.body_len);
-        return err->rc;
-    }
-    if (be->parse_response(a, resp.body, resp.body_len, res) < 0)
-        return err->rc = VJO_E_PARSE;
-    return VJO_OK;
+    return vjo_local_lookup(a, p, cfg, text, res, err);
 }
 
 static int is_blank(const char *s)
@@ -365,17 +306,14 @@ int vjo_overlay_from_jpeg(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
     return vjo_overlay_lookup(a, p, cfg, out);
 }
 
-void vjo_overlay_warm(const VjoPlatform *p, int dictionary, int timeout_us)
+void vjo_overlay_warm(const VjoPlatform *p, int timeout_us)
 {
-    if (vjo_net_warm(p, VJO_LENS_HOST, 443, timeout_us) == VJO_OK &&
-        (dictionary == VJO_DICT_JPDB || dictionary == VJO_DICT_JITEN))
-        vjo_net_warm(p, vjo_dict_backend(dictionary)->host, 443, timeout_us);
+    vjo_net_warm(p, VJO_LENS_HOST, 443, timeout_us);
 }
 
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
 {
-    const VjoDictInfo *di = vjo_dict_info(err->dict);
-    const char *dict = di->name, *key = di->key_setting;
+    const char *dict = vjo_dict_name(err->dict);
     char what[48];
     VjoBuf b;
     if (stage == VJO_STAGE_OCR)
@@ -386,9 +324,6 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
     switch (err->rc) {
     case VJO_OK:
         return "";
-    case VJO_E_NO_KEY:
-        vjo_buf_printf(&b, "%s API key is not set. Add %s to ux0:data/VitaJPOverlay/config.ini", dict, key);
-        break;
     case VJO_E_NET:
     case VJO_E_NO_HOST:
         if (err->rc == VJO_E_NO_HOST) {
@@ -445,10 +380,7 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         vjo_buf_printf(&b, "%s failed: response too large", what);
         break;
     case VJO_E_STATUS:
-        if (stage == VJO_STAGE_DICT && key && (err->http_status == 401 || err->http_status == 403))
-            vjo_buf_printf(&b, "%s rejected the API key (HTTP %d). Check %s in config.ini", dict,
-                           err->http_status, key);
-        else if (stage == VJO_STAGE_DICT && err->http_status == 429)
+        if (stage == VJO_STAGE_DICT && err->http_status == 429)
             vjo_buf_printf(&b, "%s rate limit reached (HTTP 429). Try again shortly.", dict);
         else
             vjo_buf_printf(&b, "%s failed: HTTP %d", what, err->http_status);

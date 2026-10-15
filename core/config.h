@@ -16,7 +16,13 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
 enum { VJO_OCR_LENS = 0, VJO_OCR_VOCR = 2 };
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
-enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3, VJO_DICT_COUNT };
+/* dictionary: the local .vjdict files or a Hachidori relay. The self-test
+ * reports the value (config dictionary=); keep the IDs unchanged. 0 and 1
+ * were jpdb.io and jiten.moe, the online dictionaries with an API key, removed
+ * after v0.8.0-test.2: a config.ini naming them loads as local with a warning,
+ * and the Overlay app's next save and the installer write local and drop
+ * their API keys (vjo_config_removed_line, tools/migrate_config.py). */
+enum { VJO_DICT_HACHIDORI = 2, VJO_DICT_LOCAL = 3 };
 
 #define VJO_CONFIG_MAX_WARNINGS 4
 /* The Shell reads the text plus NUL into its existing 24 KiB scratch arena.
@@ -25,7 +31,6 @@ enum { VJO_DICT_JPDB = 0, VJO_DICT_JITEN = 1, VJO_DICT_HACHIDORI = 2, VJO_DICT_L
 
 typedef struct {
     int dictionary;           /* VJO_DICT_* */
-    char api_key[VJO_DICT_COUNT][128]; /* indexed by VJO_DICT_* */
     char hachidori_host[64];   /* required host[:port], default port 19633 */
     char local_dictionary_dir[160];
     char local_dictionaries[512]; /* comma-separated relative .vjdict filenames */
@@ -91,8 +96,9 @@ const char *vjo_config_default_text(void);
 /* Changes only the app's five OCR/lookup preferences (ocr_backend, vocr_tier,
  * japanese_only_selection, highlight_mode, local_dictionary_results), retaining
  * every other INI line verbatim but the vocr_model and vocr_fallback_model
- * lines of older builds, which vocr_tier replaces. Duplicate owned keys are
- * collapsed. Input/output must not overlap. Returns output bytes (not
+ * lines of older builds, which vocr_tier replaces, and those of removed
+ * features (vjo_config_removed_line: dropped or replaced). Duplicate owned
+ * keys are collapsed. Input/output must not overlap. Returns output bytes (not
  * including NUL), or -1 for invalid choices, embedded NUL, or insufficient
  * capacity. */
 int vjo_config_patch_preferences(const char *text, size_t len, int backend, int vocr_tier,
@@ -109,24 +115,24 @@ int vjo_vocr_tier_parse(const char *id);
 const char *vjo_vocr_tier_model(int tier);
 int vjo_vocr_tier_of_model(const char *name);
 
+/* A config.ini line (n bytes, its newline included or not) of a removed
+ * feature, which the Overlay app's saves rewrite as they patch the file:
+ * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line
+ * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
+ * older name, in any case, with or without '='), VJO_LINE_REPLACE with
+ * *replacement ("dictionary = local\n") for dictionary = jpdb or jiten, else
+ * VJO_LINE_KEEP. */
+enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2 };
+int vjo_config_removed_line(const char *line, size_t n, const char **replacement);
+
 const char *vjo_trigger_name(int trigger);
 
-/* A dictionary's config-level names (its network side: client.h). */
-typedef struct {
-    const char *id;          /* config.ini dictionary / CLI --dict value: "jpdb" | "jiten" */
-    const char *name;        /* "jpdb.io" | "jiten.moe" */
-    const char *key_setting; /* config.ini key of its API key, NULL for relay */
-    const char *key_env;     /* host CLI key environment variable, NULL for relay */
-} VjoDictInfo;
-
-/* Info for a VJO_DICT_* value (jpdb for an out-of-range one). */
-const VjoDictInfo *vjo_dict_info(int dictionary);
-const char *vjo_dict_name(int dictionary); /* "jpdb.io" | "jiten.moe" */
-/* VJO_DICT_* for an id ("jpdb" | "jiten", any case), or -1. */
+/* A dictionary's display name: "Local dictionaries" | "Hachidori relay". */
+const char *vjo_dict_name(int dictionary);
+/* VJO_DICT_* for a config.ini dictionary / CLI --dict value ("local" |
+ * "hachidori", any case), or -1. */
 int vjo_dict_find(const char *id);
-/* API key of the selected dictionary ("" if unset). */
-const char *vjo_config_api_key(const VjoConfig *c);
-/* Local lookup is always schedulable (worker checks files); relay/cloud need their settings. */
+/* Local lookup is always schedulable (worker checks files); the relay needs its host. */
 int vjo_config_dict_ready(const VjoConfig *c);
 
 /* anki_host (or the saved anki_host.txt), where △ sends the queue: "" =

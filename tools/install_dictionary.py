@@ -18,6 +18,10 @@ from convert_dictionary import HEADER, MAGIC, MAGIC_V2, RECORD, PAGE_SIZE
 
 DATA_DIR = "/ux0:/data/VitaJPOverlay"
 DICT_DIR = DATA_DIR + "/dictionaries"
+# The API keys of jpdb.io and jiten.moe, the removed online dictionaries (api_key: jpdb's
+# older name): --enable drops every line that starts with one, as the overlay ignores them
+# (core/config.c removed_secret; no setting's name starts with one of them).
+REMOVED_SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 
 
 def inspect(path):
@@ -49,6 +53,8 @@ def config_with_local(text, names):
               "local_dictionaries": ",".join(names)}
     lines, used = [], set()
     for line in text.splitlines():
+        if line.lstrip().lower().startswith(REMOVED_SECRETS):
+            continue  # the removed online dictionaries' API keys (core/config.c removed_secret)
         match = re.match(r"\s*([a-zA-Z_]+)\s*=", line)
         key = match.group(1).lower() if match else None
         if key in values:

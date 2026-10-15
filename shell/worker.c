@@ -29,12 +29,12 @@
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
-#define POOL_SLOTS        2 /* Lens and the dictionary */
+#define POOL_SLOTS        2 /* Lens and the Hachidori relay */
 #define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
 #define MEM_SIZE          (2 * RESULT_ARENA_SIZE + POOL_SIZE)
-/* Well within the servers' (jiten closes an idle connection after 3
- * minutes, Lens after 4), and short enough that one a network dropped
- * silently (a hotspot's NAT) is rarely met: that costs a read timeout. */
+/* Well within Lens's (it closes an idle connection after 4 minutes), and
+ * short enough that one a network dropped silently (a hotspot's NAT) is
+ * rarely met: that costs a read timeout. */
 #define NET_IDLE_US       (60 * 1000 * 1000)
 /* Connections are readied when the region starts changing (for this long),
  * this often at most: a region that never settles readies them once. */
@@ -185,10 +185,8 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
  * is dropped. */
 static volatile int job_cancelled;
 static VjoNetCancel net_cancel = {-1, -1, 0}; /* the network thread's requests */
-/* The network thread opens the connections for the next job (warm_dictionary:
- * VJO_DICT_*, or -1 for Lens only). */
+/* The network thread opens the Lens connection for the next job. */
 static volatile int warm_running;
-static volatile int warm_dictionary;
 static int64_t warm_asked_us;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
@@ -1166,7 +1164,7 @@ static int net_main(SceSize args, void *argp)
         if (bits & NET_EV_QUIT)
             break;
         if ((bits & NET_EV_WARM) && !(bits & NET_EV_JOB)) /* a job opens them itself */
-            vjo_overlay_warm(&plat, warm_dictionary, WARM_CONNECT_US);
+            vjo_overlay_warm(&plat, WARM_CONNECT_US);
         if (bits & NET_EV_WARM) {
             __sync_synchronize();
             warm_running = 0;
@@ -1309,12 +1307,10 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
          a->ocr_refine_lines != b->ocr_refine_lines ||
          (a->ocr_backend == VJO_OCR_VOCR && a->vocr_tier != b->vocr_tier)))
         return 0;
-    if (a->dictionary == VJO_DICT_LOCAL)
-        return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
-               !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
     if (a->dictionary == VJO_DICT_HACHIDORI)
         return !sceClibStrcmp(a->hachidori_host, b->hachidori_host);
-    return !sceClibStrcmp(vjo_config_api_key(a), vjo_config_api_key(b));
+    return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
+           !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
 }
 
 static void apply_config(void)
@@ -1433,9 +1429,8 @@ static void open_overlay(void)
         view_publish(1, NULL, "Not enough memory for the overlay", 1);
         return;
     }
-    if (!vjo_config_dict_ready(&cfg)) {
-        VjoErr e = {cfg.dictionary == VJO_DICT_HACHIDORI ? VJO_E_NO_HOST : VJO_E_NO_KEY,
-                    0, 0, NULL, cfg.dictionary};
+    if (!vjo_config_dict_ready(&cfg)) { /* the relay without a valid host */
+        VjoErr e = {VJO_E_NO_HOST, 0, 0, NULL, cfg.dictionary};
         size_t mark = vjo_arena_mark(&scratch);
         view_publish(1, NULL, vjo_err_text(&scratch, VJO_STAGE_DICT, &e), 1);
         vjo_arena_release(&scratch, mark);
@@ -1524,29 +1519,14 @@ static void backoff_note(Backoff *b, int failed)
     b->until = now_us() + b->us;
 }
 
-/* The lookup of the finished job's text: the cached result's when it was
- * the same text (which needs a usable cache: active is set), else its own
- * if it made one. NULL if none. */
-static const VjoEntryList *job_words(const VjoOverlayData *d)
-{
-    if (job_same_text)
-        return &cache_data[active].list;
-    return job_lookup && d->err.rc == VJO_OK ? &d->list : NULL;
-}
-
-/* The strip for a finished job: its sentence with its readings, else its
- * error. */
+/* The strip for a finished job: its sentence, else its error. */
 static void strip_show_result(const VjoOverlayData *d)
 {
     size_t mark = vjo_arena_mark(&scratch);
-    if (d->sentence) {
-        const VjoEntryList *words = job_words(d);
+    if (d->sentence)
         vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
-        if (words)
-            vjo_strip_show_readings(&scratch, words);
-    } else {
+    else
         vjo_strip_show(vjo_err_text(&scratch, d->failed_stage, &d->err), VJO_STRIP_ERROR, 0);
-    }
     vjo_arena_release(&scratch, mark);
 }
 
@@ -1819,15 +1799,14 @@ static void on_job_done(void)
 
 /* Does a job started now look the words up? Yes when they are shown: the
  * overlay is open, or opens from the background result (auto: a local
- * dictionary prepares only the first whole-word match), or the subtitles
- * show their readings. Only jpdb and jiten (an API key) give readings: local
- * and Hachidori subtitle jobs stay OCR-only and allocate no result arena. */
+ * dictionary prepares only the first whole-word match). Subtitle jobs stay
+ * OCR-only (the strip shows the text alone) and allocate no result arena
+ * for a local dictionary. */
 static int want_lookup(void)
 {
     return vjo_config_dict_ready(&cfg) &&
            (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
-              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD)) ||
-            (subtitles && vjo_config_api_key(&cfg)[0])) &&
+              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD))) &&
            now_us() >= dict_backoff.until;
 }
 
@@ -1884,8 +1863,6 @@ static void set_subtitles(int on)
     }
     if (!job_running && d && d->sentence && shows_screen(cache_scene, cache_seq, &st)) {
         vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
-        if (cache_ok)
-            vjo_strip_show_readings(&scratch, &d->list);
         return;
     }
     vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
@@ -1983,9 +1960,8 @@ static void activate_game(SceUID pid, const char *tid, int mode)
     backoff_note(&ocr_backoff, 0);
     backoff_note(&dict_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary %s (key %s), trigger %s, subtitles %s, ocr_mode %s", title_id,
-            vjo_dict_name(cfg.dictionary), vjo_config_api_key(&cfg)[0] ? "set" : "MISSING",
-            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+    vjo_log("game %s started: dictionary %s, trigger %s, subtitles %s, ocr_mode %s", title_id,
+            vjo_dict_name(cfg.dictionary), vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
@@ -2136,25 +2112,22 @@ static void background_open(void)
 }
 
 /* When the region starts changing, the network thread readies the next
- * job's connections (keeping usable ones), so its requests skip the
- * handshakes. */
+ * job's Lens connection (keeping a usable one), so its request skips the
+ * handshake. */
 static void warm_connections(void)
 {
     VjoState st;
-    int lookup;
     if (!game_active() || !has_result_memory() || net_busy() || now_us() - warm_asked_us < WARM_GAP_US)
         return;
     if (cfg.ocr_backend != VJO_OCR_LENS) /* local OCR opens no Lens connection */
         return;
-    lookup = vjo_config_dict_ready(&cfg);
-    if (!lookup && !subtitles)
+    if (!vjo_config_dict_ready(&cfg) && !subtitles)
         return;
     st.size = sizeof(st);
     vjoGetState(&st);
     if (!st.unsettled_ms || st.unsettled_ms > WARM_WINDOW_MS)
         return;
     warm_asked_us = now_us();
-    warm_dictionary = lookup ? cfg.dictionary : -1;
     vjo_net_cancel_clear(&net_cancel);
     warm_running = 1;
     __sync_synchronize();

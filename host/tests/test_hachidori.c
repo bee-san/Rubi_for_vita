@@ -16,10 +16,8 @@ static void test_relay_config(void)
     const char *ini = "dictionary = hachidori\nhachidori_host = anki.local:19634 ; LAN\n";
     TEST_ASSERT(relay >= 0);
     vjo_config_defaults(&c);
-    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL);
-    TEST_CHECK(!*vjo_config_api_key(&c));
-    TEST_CHECK(vjo_dict_info(relay)->key_env == NULL);
-    TEST_CHECK(vjo_dict_info(relay)->key_setting == NULL);
+    TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && relay == VJO_DICT_HACHIDORI);
+    TEST_CHECK(!strcmp(vjo_dict_name(relay), "Hachidori relay"));
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.dictionary == relay && c.n_warnings == 0);
     TEST_CHECK(strstr(vjo_config_default_text(), "dictionary = local\n") != NULL);
@@ -63,7 +61,6 @@ static void net_setup(void)
     P.connect = connect_fake; P.disconnect = disconnect_fake;
     vjo_config_defaults(&C); C.dictionary = vjo_dict_find("hachidori");
     snprintf(C.hachidori_host, sizeof(C.hachidori_host), "anki.local");
-    strcpy(C.api_key[VJO_DICT_JITEN], "never-send-this-key");
 }
 static void reply(int status, const char *json)
 {
@@ -93,7 +90,7 @@ static void test_relay_missing_host(void)
     VjoDictResult r; VjoErr e;
     net_setup(); C.hachidori_host[0] = '\0';
     TEST_CHECK(vjo_dict_lookup(&A, &P, &C, "猫", &r, &e) != VJO_OK);
-    TEST_CHECK(F.next == 0 && e.rc != VJO_E_NO_KEY);
+    TEST_CHECK(F.next == 0 && e.rc == VJO_E_NO_HOST);
     TEST_CHECK(strstr(vjo_err_text(&A, VJO_STAGE_DICT, &e), "hachidori_host") != NULL);
     strcpy(C.hachidori_host, "h\r\nX:1");
     TEST_CHECK(vjo_dict_lookup(&A, &P, &C, "猫", &r, &e) != VJO_OK && F.next == 0);

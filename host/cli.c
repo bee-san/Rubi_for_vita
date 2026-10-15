@@ -1,9 +1,9 @@
 /* vjo-cli: runs the Vita JP Overlay pipeline on the Mac.
  *
- *   vjo-cli IMAGE.jpg [--dict jpdb|jiten] [--api-key KEY | --config config.ini]
+ *   vjo-cli IMAGE.jpg [--dict local|hachidori] [--config config.ini]
  *           [--filter lines|none] [--record DIR] [--nav] [-v]
- *   vjo-cli --text "日本語" --api-key KEY ...
- *   vjo-cli --replay DIR [--dict jpdb|jiten] [--filter lines|none] [--nav]
+ *   vjo-cli --text "日本語" ...
+ *   vjo-cli --replay DIR [--filter lines|none]
  *   vjo-cli --print-default-config
  *   ... --anki HOST[:PORT] [--anki-add N [--picture FILE.jpg] [--game NAME]]
  *
@@ -13,8 +13,9 @@
  * with the local time as MiscInfo (--game; the time alone without); the other anki_*
  * settings come from --config.
  *
- * The API key may also come from $VJO_JPDB_KEY / $VJO_JITEN_KEY. --replay runs
- * the same pipeline on a fixture dir's recorded responses (see replay.h). */
+ * IMAGE.jpg is recognized by Google Lens (--record DIR keeps its response as
+ * DIR/lens.pb); --replay recognizes a fixture dir's recorded response without
+ * the network and prints the sentence (see replay.h). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,9 +134,9 @@ static int run_anki(VjoArena *a, VjoArena *fa, const VjoPlatform *p, const VjoCo
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: vjo-cli IMAGE.jpg [--dict hachidori|local|jpdb|jiten] [--api-key KEY | --config FILE]\n"
+            "usage: vjo-cli IMAGE.jpg [--dict local|hachidori] [--config FILE]\n"
             "               [--local-dir DIR] [--local-dicts main.vjdict,extra.vjdict]\n"
-            "               [--hachidori HOST[:PORT]] (plain HTTP, trusted LAN; no key)\n"
+            "               [--hachidori HOST[:PORT]] (plain HTTP, trusted LAN)\n"
             "               [--filter lines|none] [--record DIR] [--nav] [--stats] [-v]\n"
             "       vjo-cli --text TEXT [options]\n"
             "       vjo-cli --replay DIR [options]\n"
@@ -151,7 +152,7 @@ int main(int argc, char **argv)
     PosixPlatform pp = {0};
     VjoPlatform plat;
     VjoOverlayData d;
-    const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *key = NULL, *dict = NULL;
+    const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *dict = NULL;
     const char *anki = NULL, *picture = NULL, *game = NULL;
     const char *hachidori = NULL, *local_dir = NULL, *local_dicts = NULL;
     int nav = 0, stats = 0, anki_add = 0, rc;
@@ -163,9 +164,7 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         const char *s = argv[i];
         int more = i + 1 < argc;
-        if (!strcmp(s, "--api-key") && more)
-            key = argv[++i];
-        else if (!strcmp(s, "--config") && more)
+        if (!strcmp(s, "--config") && more)
             config = argv[++i];
         else if (!strcmp(s, "--dict") && more)
             dict = argv[++i];
@@ -220,8 +219,6 @@ int main(int argc, char **argv)
         for (int i = 0; i < cfg.n_warnings; i++)
             fprintf(stderr, "config: %s\n", cfg.warnings[i]);
     }
-    if (replay)
-        vjo_replay_config(&cfg, replay);
     if ((anki_add || picture || game) && !anki)
         usage();
     if (dict) {
@@ -247,16 +244,12 @@ int main(int argc, char **argv)
         if (strlen(local_dicts) >= sizeof(cfg.local_dictionaries)) usage();
         snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", local_dicts);
     }
-    if (!key && vjo_dict_info(cfg.dictionary)->key_env)
-        key = getenv(vjo_dict_info(cfg.dictionary)->key_env);
-    if (key)
-        snprintf(cfg.api_key[cfg.dictionary], sizeof(cfg.api_key[cfg.dictionary]), "%s", key);
 
     posix_platform_init(&pp, &plat);
     memset(&d, 0, sizeof(d));
 
     if (replay) {
-        vjo_replay_overlay(&a, &fa, replay, &cfg, &d);
+        vjo_replay_ocr(&a, &fa, replay, &cfg, &d);
     } else if (text) {
         vjo_overlay_from_text(&a, &plat, &cfg, text, &d);
     } else if (image) {

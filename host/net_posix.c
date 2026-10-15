@@ -147,10 +147,11 @@ static void posix_on_response(void *ud, const char *host, const char *body, size
 {
     PosixPlatform *pp = (PosixPlatform *)ud;
     char path[1024];
+    const char *name = vjo_fixture_file(host);
     FILE *f;
-    if (!pp->record_dir)
+    if (!pp->record_dir || !name) /* only Lens is recorded (a relay's lookups are not) */
         return;
-    snprintf(path, sizeof(path), "%s/%s", pp->record_dir, vjo_fixture_file(host));
+    snprintf(path, sizeof(path), "%s/%s", pp->record_dir, name);
     f = fopen(path, "wb");
     if (!f)
         return;

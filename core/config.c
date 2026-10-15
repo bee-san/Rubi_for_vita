@@ -20,39 +20,25 @@ const char *vjo_trigger_name(int trigger)
     return trigger_names[trigger];
 }
 
-static const VjoDictInfo dicts[VJO_DICT_COUNT] = {
-    [VJO_DICT_JPDB] = {"jpdb", "jpdb.io", "jpdb_api_key", "VJO_JPDB_KEY"},
-    [VJO_DICT_JITEN] = {"jiten", "jiten.moe", "jiten_api_key", "VJO_JITEN_KEY"},
-    [VJO_DICT_HACHIDORI] = {"hachidori", "Hachidori relay", NULL, NULL},
-    [VJO_DICT_LOCAL] = {"local", "Local dictionaries", NULL, NULL},
-};
-
-const VjoDictInfo *vjo_dict_info(int dictionary)
-{
-    return &dicts[dictionary >= 0 && dictionary < VJO_DICT_COUNT ? dictionary : VJO_DICT_JPDB];
-}
-
 const char *vjo_dict_name(int dictionary)
 {
-    return vjo_dict_info(dictionary)->name;
+    return dictionary == VJO_DICT_HACHIDORI ? "Hachidori relay" : "Local dictionaries";
 }
 
-const char *vjo_config_api_key(const VjoConfig *c)
+int vjo_dict_find(const char *id)
 {
-    return c->dictionary == VJO_DICT_HACHIDORI || c->dictionary == VJO_DICT_LOCAL ? "" : c->api_key[c->dictionary];
+    return vjo_ieq(id, "local") ? VJO_DICT_LOCAL : vjo_ieq(id, "hachidori") ? VJO_DICT_HACHIDORI : -1;
 }
 
 int vjo_config_dict_ready(const VjoConfig *c)
 {
     /* File availability is checked by the worker, without blocking the UI thread. */
-    if (c->dictionary == VJO_DICT_LOCAL)
-        return 1;
     if (c->dictionary == VJO_DICT_HACHIDORI) {
         char host[64];
         int port;
         return vjo_hachidori_endpoint(c->hachidori_host, host, sizeof(host), &port) == 0;
     }
-    return vjo_config_api_key(c)[0] != '\0';
+    return 1;
 }
 
 void vjo_config_defaults(VjoConfig *c)
@@ -90,10 +76,10 @@ const char *vjo_config_default_text(void)
 {
     return "; Vita JP Overlay settings. Changes apply the next time the overlay opens.\n"
            "\n"
-           "; Dictionary used for word lookups: hachidori | local | jpdb | jiten\n"
+           "; Dictionary used for word lookups: local | hachidori\n"
            "dictionary = local\n"
            "\n"
-           "; Hachidori relay computer: host[:port], default port 19633 (no API key)\n"
+           "; Hachidori relay computer: host[:port], default port 19633\n"
            "; Plain HTTP: use only on a trusted LAN. Anki and a sharing Hachidori host\n"
            "; with dictionaries must be running; enable Sharing > Also with my other computers.\n"
            "hachidori_host =\n"
@@ -105,12 +91,6 @@ const char *vjo_config_default_text(void)
            "; Dictionaries shown per selected word, 1-8: the best match first, then each\n"
            "; other dictionary's entry in the order above. L/R tap pages; one is in memory.\n"
            "local_dictionary_results = 1\n"
-           "\n"
-           "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings -> API key\n"
-           "jpdb_api_key =\n"
-           "\n"
-           "; jiten.moe API key (needed for dictionary = jiten): jiten.moe -> Settings -> API key\n"
-           "jiten_api_key =\n"
            "\n"
            "; Drop OCR lines without Japanese characters: none | lines\n"
            "non_japanese_filter = lines\n"
@@ -133,8 +113,7 @@ const char *vjo_config_default_text(void)
            "toggle_button = l+r\n"
            "\n"
            "; Turns subtitles on/off: the recognized text in a strip at the top of the\n"
-           "; screen while the game runs, with furigana once its words are looked up\n"
-           "; (jpdb or jiten only). Same values as toggle_button, but not the same one.\n"
+           "; screen while the game runs. Same values as toggle_button, but not the same one.\n"
            "; When one is part of the other (select and select+r), the shorter one acts\n"
            "; on release.\n"
            "subtitle_button = select+r\n"
@@ -315,23 +294,52 @@ static int parse_int(const char *s, int *out)
     return 0;
 }
 
-int vjo_dict_find(const char *id)
+/* A dictionary value of a removed online service: its name, for the config
+ * warning, or NULL. Such a file loads as local; the Overlay app's next save
+ * (vjo_config_removed_line) and the installer (tools/migrate_config.py
+ * REPLACED_VALUES) write local. */
+static const char *removed_dictionary(const char *v)
 {
-    for (int i = 0; i < VJO_DICT_COUNT; i++)
-        if (vjo_ieq(id, dicts[i].id))
-            return i;
-    return -1;
+    return vjo_ieq(v, "jpdb") ? "jpdb.io" : vjo_ieq(v, "jiten") ? "jiten.moe" : NULL;
 }
 
-/* VJO_DICT_* whose API key `key` sets, or -1. */
-static int api_key_dict(const char *key)
+/* The API keys of the removed online dictionaries (api_key: jpdb's older
+ * name) open the n bytes at s, in any case: the key's line, or a typo of
+ * it, whose text may hold the key (whatever follows the name: "=", ":", a
+ * space, the key itself). No setting's name starts with one of them. Such a
+ * line is ignored without a warning, so no secret is ever shown or logged;
+ * the Overlay app's next save and the installer (tools/migrate_config.py
+ * SECRETS) delete it. */
+static int removed_secret(const char *s, size_t n)
 {
-    if (vjo_ieq(key, "api_key")) /* the old name of jpdb_api_key (tools/migrate_config.py RENAMED) */
-        return VJO_DICT_JPDB;
-    for (int i = 0; i < VJO_DICT_COUNT; i++)
-        if (dicts[i].key_setting && vjo_ieq(key, dicts[i].key_setting))
-            return i;
-    return -1;
+    static const char *const keys[] = {"jpdb_api_key", "jiten_api_key", "api_key"};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
+        if (n >= strlen(keys[i]) && vjo_ieq_prefix(s, keys[i]))
+            return 1;
+    return 0;
+}
+
+int vjo_config_removed_line(const char *line, size_t n, const char **replacement)
+{
+    size_t b = 0, e, v;
+    *replacement = NULL;
+    while (b < n && is_space(line[b])) b++;
+    if (removed_secret(line + b, n - b))
+        return VJO_LINE_DROP;
+    e = b;
+    while (e < n && line[e] != '=' && !is_space(line[e])) e++;
+    v = e;
+    while (v < n && is_space(line[v])) v++;
+    if (e - b != 10 || !vjo_ieq_prefix(line + b, "dictionary") || v >= n || line[v] != '=')
+        return VJO_LINE_KEEP;
+    for (v++; v < n && is_space(line[v]); v++) {}
+    /* the value up to an inline comment, a space or the line's end */
+    for (e = v; e < n && line[e] != '\n' && line[e] != ';' && line[e] != '#' && !is_space(line[e]); e++) {}
+    if ((e - v == 4 && vjo_ieq_prefix(line + v, "jpdb")) || (e - v == 5 && vjo_ieq_prefix(line + v, "jiten"))) {
+        *replacement = "dictionary = local\n";
+        return VJO_LINE_REPLACE;
+    }
+    return VJO_LINE_KEEP;
 }
 
 static int valid_hachidori_host(const char *v)
@@ -526,15 +534,17 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     const StrSetting *ss;
     int d;
     if (vjo_ieq(key, "dictionary")) {
+        const char *removed;
         d = vjo_dict_find(val);
         if (d >= 0)
             c->dictionary = d;
-        else
+        else if ((removed = removed_dictionary(val)) != NULL) {
+            c->dictionary = VJO_DICT_LOCAL;
+            warn(c, "%s: %s was removed; using local", key, removed);
+        } else
             warn(c, "%s: invalid value '%s'", key, val);
-    } else if ((d = api_key_dict(key)) >= 0) {
-        set_str(c, key, val, c->api_key[d], sizeof(c->api_key[d]));
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
-               vjo_ieq(key, "combo_delay_ms") || removed_anki_key(key)) {
+               vjo_ieq(key, "combo_delay_ms") || removed_anki_key(key) || removed_secret(key, strlen(key))) {
         /* removed settings (tools/migrate_config.py REMOVED): no warning */
     } else if (vjo_ieq(key, "non_japanese_filter")) {
         if (vjo_ieq(val, "lines"))
@@ -727,13 +737,17 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend, int 
         while (i < len && text[i] != '\n') i++;
         int key = preference_key(text + begin, i - begin);
         if (i < len) i++;
-        const char *line = text + begin;
+        const char *line = text + begin, *replacement;
         size_t bytes = i - begin;
         if (key == DROPPED_PREFERENCE) continue;
         if (key >= 0) {
             if (seen & (1u << key)) continue;
             seen |= 1u << key;
             line = values[key]; bytes = strlen(line);
+        } else {
+            int removed = vjo_config_removed_line(line, bytes, &replacement);
+            if (removed == VJO_LINE_DROP) continue;
+            if (removed == VJO_LINE_REPLACE) { line = replacement; bytes = strlen(line); }
         }
         if (bytes >= cap - used) return -1;
         memcpy(out + used, line, bytes); used += bytes;
@@ -782,7 +796,9 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         {
             char *p = strchr(line + s, '=');
             if (!p) {
-                warn(c, "ignored line '%s'%s", line + s, "");
+                /* a removed API key's line is not quoted: its value may be the key */
+                if (!removed_secret(line + s, n - s))
+                    warn(c, "ignored line '%s'%s", line + s, "");
                 continue;
             }
             eq = (size_t)(p - line);
@@ -813,7 +829,8 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         while (e > s && is_space(line[e - 1]))
             e--;
         if (cut || e - s >= sizeof(val)) {
-            warn(c, "%s: value too long%s", key, "");
+            if (!removed_secret(key, strlen(key))) /* a removed setting stays silent */
+                warn(c, "%s: value too long%s", key, "");
             continue;
         }
         memcpy(val, line + s, e - s);

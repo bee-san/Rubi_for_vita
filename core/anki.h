@@ -33,7 +33,7 @@ enum {
     VJO_KIKU_GLOSSARY,                /* every dictionary's entry, with two or more */
     VJO_KIKU_PITCH_POSITION,          /* [2], as Yomitan writes it */
     VJO_KIKU_PITCH_CATEGORIES,        /* heiban,kifuku */
-    VJO_KIKU_FREQUENCY,               /* <ul><li>Jiten: 384</li></ul> */
+    VJO_KIKU_FREQUENCY,               /* <ul><li>SOURCE: 384</li></ul>, SOURCE the rank's (VjoDictResult.source) */
     VJO_KIKU_FREQ_SORT,               /* 384 */
     VJO_KIKU_MISC_INFO,               /* the game and the date */
     VJO_KIKU_FIELDS
@@ -93,14 +93,16 @@ typedef struct {
     int hl_start, hl_end; /* the word in sentence, -1 if none */
     const char *sentence_furigana; /* the sentence with every word's furigana, NULL = none */
     int sf_hl_start, sf_hl_end;    /* the word in sentence_furigana, -1 if none */
-    const char *source;            /* the frequency's source ("Jiten"), NULL if unknown */
+    const char *source;            /* the frequency rank's source (its list's name), NULL if unknown */
     int pitch[VJO_MAX_PITCH], n_pitch;
     const char **pos; /* part-of-speech codes */
     int n_pos;
     const char *misc; /* MiscInfo text, set by the caller; NULL = none */
     const char *queue_tag; /* optional stable tag for retry-safe queued sends */
     /* Record version 3 (NULL / 0 for older records): */
-    const char *furigana;   /* the word's furigana as the dictionary gave it, NULL = from spelling and reading */
+    /* the word's furigana as the dictionary gave it (ruby markup, "来[く]る"; only the removed online
+     * dictionaries gave one, so only their queued records have it), NULL = from spelling and reading */
+    const char *furigana;
     const char *dictionary; /* the shown entry's dictionary, NULL = from its definitions' first lines */
     const VjoAnkiGloss *more; /* the other dictionaries' entries */
     int n_more;

@@ -2216,7 +2216,7 @@ static void test_a_refused_job_thread_is_logged(void)
     triangle();
     fail_create = 0;
     TEST_CHECK(times_logged("thread VjoAnki refused 0xFFFFFFFF: 69632 B; SceShell free 28672 (0x00000000), held "
-                            "299008\n") == 3);
+                            "286720\n") == 3);
     TEST_CHECK(logged("anki: count not started 0xFFFFFFFF\n") && logged("anki: save not started 0xFFFFFFFF\n") &&
                logged("anki: send not started 0xFFFFFFFF\n"));
     TEST_MSG("%s", all_logs);

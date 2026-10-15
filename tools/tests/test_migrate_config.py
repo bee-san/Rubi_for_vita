@@ -29,9 +29,62 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("ocr_mode = on_press\n", text)
         self.assertIn("vocr_tier = normal\n", text)  # H15: Normal
         self.assertNotIn("vocr_model", text)
-        self.assertIn("jpdb_api_key = secret-key\n", text)
         self.assertIn("config.ini: ocr_backend = vocr", report)
-        self.assertNotIn("secret-key", report)
+        # jpdb.io was removed: its API key goes, named, never its value
+        self.assertNotIn("secret-key", text + report)
+        self.assertIn("config.ini: jpdb_api_key removed", report)
+
+    def test_removed_online_dictionaries_become_local_and_their_keys_go(self):
+        # jpdb.io and jiten.moe (online, with an API key) were removed: the dictionary becomes
+        # local and every key line is dropped (api_key: jpdb_api_key's older name), said by name
+        # only; the template keeps no key either.
+        for old in ("jpdb", "JPDB", "jiten", "Jiten"):
+            text, report = self.migrate("dictionary = %s\njpdb_api_key = secret-1\njiten_api_key = secret-2 ; mine\n"
+                                        "api_key = secret-3\nocr_mode = on_press\n" % old)
+            self.assertIn("\ndictionary = local\n", text, old)
+            self.assertEqual(text.count("dictionary ="), 1)
+            self.assertIn("ocr_mode = on_press\n", text)
+            self.assertNotIn("secret", text + report)
+            self.assertNotIn("api_key", text)
+            self.assertNotIn("jpdb", text.lower())
+            self.assertNotIn("jiten", text.lower())
+            self.assertIn("config.ini: dictionary = local", report)
+            for key in ("jpdb_api_key", "jiten_api_key", "api_key"):
+                self.assertIn("config.ini: %s removed" % key, report)
+
+    def test_a_mistyped_key_line_is_dropped_and_never_printed(self):
+        # a key glued to its name, or text after it that the parser reads as the key's name ("...; x = y"):
+        # a line that starts with a removed key's name goes, and the report names only that name
+        text, report = self.migrate("jpdb_api_key secret-1 ; x = y\njpdb_api_keysecret-2 = 1\nJITEN_API_KEY_OLD = secret-3\n"
+                                    "api_keys = secret-4\nocr_mode = on_press\n", "jpdb_api_key secret-5=6")
+        self.assertIn("ocr_mode = on_press\n", text)
+        for secret in ("secret-1", "secret-2", "secret-3", "secret-4", "secret-5"):
+            self.assertNotIn(secret, text + report)
+        self.assertNotIn("api_key", text)
+        for line in ("config.ini: jpdb_api_key removed", "config.ini: jiten_api_key removed",
+                     "config.ini: api_key removed", "config.ini: jpdb_api_key is no longer a setting, not set"):
+            self.assertEqual(report.count(line + "\n"), 1, line)
+
+    def test_the_two_dictionaries_are_unchanged(self):
+        for dictionary in ("local", "hachidori"):
+            text, report = self.migrate("dictionary = %s\nhachidori_host = 192.168.1.20\n" % dictionary)
+            self.assertIn("\ndictionary = %s\n" % dictionary, text)
+            self.assertIn("hachidori_host = 192.168.1.20\n", text)
+            self.assertNotIn("config.ini: dictionary", report)
+
+    def test_an_explicit_removed_setting_is_not_set(self):
+        # tools/install_ftp.sh --set: a removed online dictionary is replaced, its key not set
+        text, report = self.migrate("ocr_mode = auto\n", "dictionary=jiten", "jiten_api_key=secret-9")
+        self.assertIn("\ndictionary = local\n", text)
+        self.assertNotIn("secret-9", text + report)
+        self.assertIn("config.ini: jiten_api_key is no longer a setting, not set", report)
+
+    def test_template_has_no_online_dictionary(self):
+        template = (ROOT / "docs/config.example.ini").read_text(encoding="utf-8")
+        self.assertNotIn("jpdb", template)
+        self.assertNotIn("jiten", template)
+        self.assertNotIn("api_key", template)
+        self.assertIn("\ndictionary = local\n", template)
 
     def test_removed_engines_become_vocr_and_keep_other_values(self):
         # The VOCR2 trial (v0.7.12 to v0.8.0-test.1) and ncnn (host tools) are no engines any more.
@@ -155,15 +208,19 @@ class MigrateConfig(unittest.TestCase):
         self.assertEqual(text.count("anki_mining"), 1)
 
     def test_a_credential_is_reported_only_as_set_or_empty(self):
-        # an API key, and the audio source's URL, which can carry one (audit-overlay-test3-cleanup B1)
+        # the audio source's URL, which can carry a key (audit-overlay-test3-cleanup B1); the removed online
+        # dictionaries' API keys, old or --set, are dropped, named, never their values
         url = "https://audio.invalid/a?term={term}&key=url-secret-99"
         text, report = self.migrate("jpdb_api_key = old-key-1\n", f"anki_audio_url={url}", "jiten_api_key=new-key-2")
         self.assertIn(f"anki_audio_url = {url}\n", text)
-        self.assertIn("jiten_api_key = new-key-2\n", text)
+        self.assertNotIn("api_key", text)
         self.assertIn("config.ini: anki_audio_url = set", report)
-        self.assertIn("config.ini: jiten_api_key = set", report)
+        self.assertIn("config.ini: jpdb_api_key removed", report)
+        self.assertIn("config.ini: jiten_api_key is no longer a setting, not set", report)
         for secret in ("url-secret-99", "audio.invalid", "new-key-2", "old-key-1"):
             self.assertNotIn(secret, report)
+        for key in ("new-key-2", "old-key-1"):
+            self.assertNotIn(key, text)
         _, report = self.migrate(f"anki_audio_url = {url}\n", "anki_audio_url=")
         self.assertIn("config.ini: anki_audio_url = empty", report)
         self.assertNotIn("url-secret-99", report)

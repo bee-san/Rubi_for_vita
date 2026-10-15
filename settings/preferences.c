@@ -88,14 +88,51 @@ static int publish(const char *next, int len, int primary)
     return sceIoSync("ux0:", 0) < 0 ? -1 : 0;
 }
 
+/* The removed online dictionaries' API keys (core/config.h
+ * vjo_config_removed_line) are secrets. A save drops them, but it keeps the
+ * file it replaces as the backup, so a file holding one is first published
+ * without them (every other line as it is) and the backup, which is the
+ * keyed file now (or was the source when the primary was missing), is
+ * deleted. Once this returns 0, neither file holds a key, whatever the save
+ * then does. Returns 0, or -1 when that failed (the save then stops; a key
+ * left in the backup goes with the next save, whose primary has none). */
+static int publish_without_secrets(const char *old, size_t bytes, int *primary, VjoArena *a)
+{
+    const char *replacement;
+    size_t i = 0, cap = bytes + bytes / 4 + 32, mark = vjo_arena_mark(a);
+    int found = 0, len, rc;
+    char *clean;
+    SceIoStat st;
+    while (i < bytes && !found) {
+        size_t begin = i;
+        while (i < bytes && old[i] != '\n') i++;
+        if (i < bytes) i++;
+        found = vjo_config_removed_line(old + begin, i - begin, &replacement) == VJO_LINE_DROP;
+    }
+    if (!found)
+        return 0;
+    clean = vjo_arena_alloc(a, cap);
+    len = clean ? vjo_config_patch_keys(old, bytes, NULL, NULL, 0, clean, cap) : -1;
+    rc = len < 0 || len > VJO_PREFERENCES_TEXT_MAX || publish(clean, len, *primary) < 0 ? -1 : 0;
+    vjo_arena_release(a, mark);
+    if (rc)
+        return -1;
+    *primary = 1;
+    if (sceIoGetstat(BACKUP, &st) >= 0 && (sceIoRemove(BACKUP) < 0 || sceIoSync("ux0:", 0) < 0))
+        return -1;
+    return 0;
+}
+
 int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
-    if (current_text(a, &old, &bytes, &primary) < 0) goto done;
-    size_t cap = bytes + 192; /* the five owned lines, appended or longer than before */
+    if (current_text(a, &old, &bytes, &primary) < 0 || publish_without_secrets(old, bytes, &primary, a) < 0)
+        goto done;
+    /* the five owned lines, appended or longer than before, and a replaced line's growth */
+    size_t cap = bytes + bytes / 4 + 192;
     char *next = vjo_arena_alloc(a, cap);
     int len = next ? vjo_config_patch_preferences(old, bytes, backend, vocr_tier, japanese_only,
                                                  highlight_mode, dictionary_results, next, cap) : -1;
@@ -125,7 +162,7 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
 {
     size_t i = 0, used = 0;
     unsigned seen = 0;
-    if ((!text && len) || n < 1 || n > 8 || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
+    if ((!text && len) || n < 0 || n > 8 || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
         (len && memchr(text, 0, len)))
         return -1;
     for (int k = 0; k < n; k++)
@@ -138,15 +175,20 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
     while (i < len) {
         size_t begin = i;
         char key[40];
-        int k = -1;
+        const char *replacement;
+        int k = -1, removed;
         while (i < len && text[i] != '\n') i++;
         if (i < len) i++;
         if (line_key(text + begin, i - begin, key))
             for (int j = 0; j < n && k < 0; j++)
                 if (!strcmp(key, keys[j])) k = j;
         if (k >= 0 && (seen & (1u << k))) continue; /* a duplicate goes */
+        /* a removed feature's line (core/config.h vjo_config_removed_line) goes or is replaced */
+        removed = k < 0 ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
+        if (removed == VJO_LINE_DROP) continue;
         int w = k >= 0 ? snprintf(out + used, cap - used, "%s = %s\n", keys[k], values[k])
-                       : snprintf(out + used, cap - used, "%.*s", (int)(i - begin), text + begin);
+                : removed == VJO_LINE_REPLACE ? snprintf(out + used, cap - used, "%s", replacement)
+                : snprintf(out + used, cap - used, "%.*s", (int)(i - begin), text + begin);
         if (w < 0 || (size_t)w >= cap - used) return -1;
         used += (size_t)w;
         if (k >= 0) seen |= 1u << k;
@@ -168,8 +210,9 @@ int vjo_preferences_save_anki(int mining, const char *host, VjoArena *a)
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
-    if (current_text(a, &old, &bytes, &primary) < 0) goto done;
-    size_t cap = bytes + 160;
+    if (current_text(a, &old, &bytes, &primary) < 0 || publish_without_secrets(old, bytes, &primary, a) < 0)
+        goto done;
+    size_t cap = bytes + bytes / 4 + 160;
     char *next = vjo_arena_alloc(a, cap);
     int len = next ? vjo_config_patch_keys(old, bytes, keys, values, 2, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;

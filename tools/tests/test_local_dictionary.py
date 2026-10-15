@@ -419,13 +419,18 @@ class FakeFTP:
 
 class InstallerTest(unittest.TestCase):
     def test_preserve_settings_and_back_up_config(self):
-        old = b"; my config\ndictionary = hachidori\njiten_api_key = secret\nanki_host = 10.0.0.3\ndictionary = jiten\n"
+        old = (b"; my config\ndictionary = hachidori\njiten_api_key = secret\nanki_host = 10.0.0.3\ndictionary = jiten\n"
+               b"JPDB_API_KEY: secret2\napi_key = secret3\n; jpdb_api_key = a comment\njpdb_api_keysecret4 = x\n"
+               b"  jiten_api_key secret5 ; dictionary = local\n")
         key = install.DATA_DIR + "/config.ini"
         ftp = FakeFTP({key: old})
-        with contextlib.redirect_stdout(io.StringIO()):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
             install.enable(ftp, ["main.vjdict", "extra.vjdict"])
         config = ftp.files[key].decode()
-        self.assertIn("jiten_api_key = secret", config)
+        # the removed online dictionaries' API keys (secrets) go; comments stay
+        self.assertNotIn("secret", config + out.getvalue())
+        self.assertIn("; jpdb_api_key = a comment", config)
+        self.assertIn("; my config\n", config)
         self.assertIn("anki_host = 10.0.0.3", config)
         self.assertEqual(config.count("dictionary = local"), 1)
         self.assertIn("local_dictionaries = main.vjdict,extra.vjdict", config)

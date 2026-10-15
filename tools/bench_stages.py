@@ -127,7 +127,7 @@ WORKLOADS = [
     W("log", "log", (), unit="line", what="Shell: formatting a job's log lines (formatting only)"),
     W("anki", "anki", ("texts", "dict"), unit="card", what="Shell: an Anki card's note and queue record"),
     W("furigana", "furigana", ("texts", "dict"), unit="word",
-      what="Shell: a word's reading aligned with its spelling (subtitle strip, network dictionaries)"),
+      what="Shell: a word's reading aligned with its spelling (an Anki card from a queued record with ruby)"),
 ]
 
 

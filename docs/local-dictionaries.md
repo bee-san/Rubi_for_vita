@@ -1,7 +1,10 @@
 # Local dictionaries on PS Vita
 
 Local lookup reads dictionaries from the Vita's storage. It needs no running
-computer, dictionary API key, Hachidori Relay, or dictionary network request.
+computer, Hachidori Relay, or dictionary network request. The online
+dictionaries jpdb.io and jiten.moe have been removed; Jitendex and every other
+Yomitan dictionary are converted and looked up locally as below, and a saved
+`dictionary = jpdb` or `jiten` loads as `local` (README, Settings and dictionaries).
 The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
 JMdict already converted and enabled. Recognition and lookup are offline.
 Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards
@@ -208,7 +211,7 @@ no dictionary-sized persistent allocation is added.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
-| Network worker result arenas | Two 256 KiB arenas, plus connection pool |
+| Network worker result arenas (Google Lens or the Hachidori relay) | Two 256 KiB arenas, plus connection pool |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
 | Input text | Up to 4,095 UTF-8 bytes plus NUL |
@@ -351,7 +354,7 @@ python3 tools/benchmark_local_dictionary.py --entries 1000000
 CTest runs conversion, real disk lookup, deinflection, UTF-16 highlights,
 structured/HTML glossaries, dictionary priority, format corruption, interrupted
 configuration replacement, and memory-size regression checks. Worker tests cover
-local lookup without API keys and changing dictionaries during an in-flight job.
+local lookup and changing dictionaries during an in-flight job.
 The generated deinflection table is checked against its pinned source.
 
 ### Host benchmark (2026-10-08)

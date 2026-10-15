@@ -3,7 +3,6 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "client.h"
-#include "jpdb.h"
 #include "net_posix.h"
 #include "textfilter.h"
 #define VJO_TEST_MEMORY_STUBS 1
@@ -1463,7 +1462,8 @@ static void test_vocr_oom_advice_names_the_stage(void)
     mem_free();
     /* A network dictionary's result memory in the Shell, before any capture. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.dictionary = VJO_DICT_JPDB;
+    cfg.ocr_backend = VJO_OCR_VOCR; cfg.dictionary = VJO_DICT_HACHIDORI;
+    strcpy(cfg.hachidori_host, "192.168.1.2");
     job_cfg = cfg; job_cancelled = 0; job_captured = 0; fail_alloc = 1;
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !jpeg_captures);
     check_oom_message(OOM_SHELL_RESULTS, "Restart the Vita", "FL10");
@@ -1511,15 +1511,13 @@ static void test_vocr_storage_errors_are_specific(void)
 
 #endif
 
-/* Upstream's furigana strip: only jpdb/jiten lookups carry readings. Local and
- * Hachidori subtitle jobs stay OCR-only (no result arena) and keep no readings
- * to draw; a jiten key makes subtitle jobs look the words up for them. */
-static void test_subtitle_readings_need_a_reading_dictionary(void)
+/* The subtitle strip shows the recognized text alone, with any dictionary:
+ * its readings came only from the removed online dictionaries (jpdb.io,
+ * jiten.moe). Subtitle jobs stay OCR-only while the overlay is closed (no
+ * lookup, no result arena for a local dictionary), and a strip's sentence is
+ * the job's text as recognized. */
+static void test_subtitles_are_ocr_only(void)
 {
-    const char *jp = "{\"tokens\":[[0,0,1,[[\"雨\",\"あめ\"]]]],"
-                     "\"vocabulary\":[[1,2,3,\"雨\",\"あめ\",1000,[\"rain\"],[\"n\"],[\"HLL\"]]]}";
-    VjoDictResult r;
-    VjoEntryList l;
     reset();
     cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
     subtitles = 1;
@@ -1528,39 +1526,24 @@ static void test_subtitle_readings_need_a_reading_dictionary(void)
     strcpy(cfg.hachidori_host, "192.168.1.2");
     loaded = cfg;
     TEST_CHECK(vjo_config_dict_ready(&cfg) && !want_lookup());
-
-    TEST_ASSERT(vjo_jpdb_parse_response(&scratch, jp, strlen(jp), &r) == 0);
-    TEST_ASSERT(vjo_entries_build(&scratch, "雨だ", &r, &l) == 0);
+    /* a removed online dictionary in config.ini loads as local: still OCR only */
+    {
+        const char *old = "dictionary = jiten\njiten_api_key = test-key\nocr_mode = on_press\n";
+        VjoConfig c;
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, old, strlen(old));
+        TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.n_warnings == 1);
+        cfg = loaded = c;
+        TEST_CHECK(!want_lookup());
+    }
     vjo_strip_configure(1, &cfg);
     vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
-    vjo_strip_show_readings(&scratch, &l);
-    TEST_CHECK(!g_view.strip_ruby_room && g_view.strip_n_ruby == 0);
-
-    cfg.dictionary = VJO_DICT_JITEN;
-    strcpy(cfg.api_key[VJO_DICT_JITEN], "test-key");
-    loaded = cfg;
-    TEST_CHECK(want_lookup()); /* subtitles show readings: their job looks words up */
-    vjo_strip_configure(1, &cfg);
-    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
-    vjo_strip_show_readings(&scratch, &l);
-    TEST_CHECK(g_view.strip_ruby_room && g_view.strip_n_ruby == 1);
-    TEST_CHECK(g_view.strip_ruby[0].start == 0 && g_view.strip_ruby[0].end == 1 &&
-               !strcmp(g_view.strip_ruby[0].reading, "あめ"));
-    vjo_strip_show("次", VJO_STRIP_SENTENCE, 0); /* a new sentence has no readings */
-    TEST_CHECK(g_view.strip_n_ruby == 0);
-
-    /* Readings are staged in scratch and released; without scratch the
-     * sentence stays and only its readings are left out. */
-    size_t used = scratch.used;
-    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
-    vjo_strip_show_readings(&scratch, &l);
-    TEST_CHECK(g_view.strip_n_ruby == 1 && scratch.used == used);
-    TEST_ASSERT(vjo_arena_alloc(&scratch, vjo_arena_free(&scratch) - 64) != NULL);
-    used = scratch.used;
+    TEST_CHECK(g_view.strip_on && g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "雨だ"));
+    unsigned seq = g_view.strip_text_seq;
+    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 1); /* the same text: only busy changes */
+    TEST_CHECK(g_view.strip_text_seq == seq && g_view.strip_busy);
     vjo_strip_show("次", VJO_STRIP_SENTENCE, 0);
-    vjo_strip_show("雨だ", VJO_STRIP_SENTENCE, 0);
-    vjo_strip_show_readings(&scratch, &l);
-    TEST_CHECK(g_view.strip_n_ruby == 0 && !strcmp(g_view.strip_text, "雨だ") && scratch.used == used);
+    TEST_CHECK(g_view.strip_text_seq == seq + 1 && !strcmp(g_view.strip_text, "次"));
     subtitles = 0;
     TEST_CHECK(!want_lookup());
     vjo_arena_reset(&scratch);
@@ -2579,7 +2562,8 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
     mem_free();
     fail_alloc = 0;
-    loaded.dictionary = VJO_DICT_JITEN; loaded.ocr_backend = VJO_OCR_LENS;
+    loaded.dictionary = VJO_DICT_HACHIDORI; loaded.ocr_backend = VJO_OCR_LENS;
+    strcpy(loaded.hachidori_host, "192.168.1.2");
     cfg = loaded;
 #ifdef VJO_PAF_ALLOC
     TEST_CHECK(mem_alloc() == 0);
@@ -3232,7 +3216,7 @@ TEST_LIST = {
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
-    {"subtitle_readings_need_a_reading_dictionary", test_subtitle_readings_need_a_reading_dictionary},
+    {"subtitles_are_ocr_only", test_subtitles_are_ocr_only},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},

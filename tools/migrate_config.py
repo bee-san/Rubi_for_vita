@@ -4,21 +4,21 @@ file and applying key=value overrides.
 
     migrate_config.py OLD TEMPLATE OUT [key=value ...]
 
-OLD may be missing (first install). Renamed settings are carried over, removed
-ones are dropped, and values of removed features (ocr_backend = vocr2, meiki or
-ncnn) are replaced. An older build's model choice (vocr_model) becomes its model
-size (vocr_tier) unless the file already names a valid one; vocr_model and
-vocr_fallback_model go. A vocr_tier core/config.c cannot read is replaced by
-the size the plugin would run (the old model's, else the template's), as the
-plugin ignores it. Prints what changed (credentials, an API key or the audio
-source URL, only as set/empty). Exit
-status 0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
+OLD may be missing (first install). Removed settings are dropped (the API keys of
+jpdb.io and jiten.moe, the removed online dictionaries, among them: printed as removed,
+never their values), and values of removed features (ocr_backend = vocr2, meiki or ncnn;
+dictionary = jpdb or jiten) are replaced. An older build's model choice (vocr_model)
+becomes its model size (vocr_tier) unless the file already names a valid one; vocr_model
+and vocr_fallback_model go. A vocr_tier core/config.c cannot read is replaced by the size
+the plugin would run (the old model's, else the template's), as the plugin ignores it.
+Prints what changed (a credential, the audio source URL, only as set/empty). Exit status
+0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
 import os
 import re
 import sys
 
-RENAMED = {"api_key": "jpdb_api_key"}
+RENAMED = {}
 REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            # Anki's field mapping: the note is Kiku's, in the deck Kiku (docs/anki.md); with every
            # anki_field_* key (REMOVED_PREFIXES), as core/config.c ignores them.
@@ -26,9 +26,15 @@ REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            # API 21: the model and its fallback became one model size (vocr_tier, MODEL_TIER below).
            "vocr_model", "vocr_fallback_model"}
 REMOVED_PREFIXES = ("anki_field_",)
+# The removed online dictionaries' API keys (secrets; api_key: jpdb_api_key's older name): a key
+# that starts with one is dropped, and reported by that name only, as its line's text may hold the
+# key (core/config.c removed_secret; no setting's name starts with one of them).
+SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 # Values whose feature was removed, with their replacement. ocr_backend offers two engines,
-# vocr and lens; the others load as vocr already (core/config.c removed_engine).
-REPLACED_VALUES = {"ocr_backend": {"vocr2": "vocr", "meiki": "vocr", "ncnn": "vocr"}}
+# vocr and lens; the others load as vocr already (core/config.c removed_engine). dictionary
+# offers local and hachidori; jpdb and jiten load as local (core/config.c removed_dictionary).
+REPLACED_VALUES = {"ocr_backend": {"vocr2": "vocr", "meiki": "vocr", "ncnn": "vocr"},
+                   "dictionary": {"jpdb": "local", "jiten": "local"}}
 # An older build's vocr_model, by the shape its file name carries (core/config.c vjo_vocr_tier_of_model):
 # the FL10 family Small, H15 Normal, F20 and W20 Large; any other name keeps the template's size.
 MODEL_TIER = (("FL10", "small"), ("H15", "normal"), ("W20", "large"), ("F20", "large"))
@@ -50,6 +56,20 @@ def model_tier(name):
     return next((tier for shape, tier in MODEL_TIER if shape in name), None)
 
 
+def secret(k):
+    """The removed API key's name a key starts with, or None."""
+    return next((name for name in SECRETS if k.startswith(name)), None)
+
+
+def removed(k):
+    return k in REMOVED or k.startswith(REMOVED_PREFIXES) or secret(k) is not None
+
+
+def name(k):
+    """A key as the report names it: a removed API key's line by the key's name only."""
+    return secret(k) or k
+
+
 def parse(text):
     vals = {}
     for line in text.splitlines():
@@ -65,8 +85,8 @@ def parse(text):
 
 
 def show(k, v):
-    """A value as the report prints it: a credential (an API key, or the audio source's URL, which can
-    carry one) only as set or empty (package_release.py SECRET)."""
+    """A value as the report prints it: a credential (the audio source's URL, which can carry one;
+    an API key, though none survives: REMOVED) only as set or empty (package_release.py SECRET)."""
     if re.search(r"api_key$|^anki_audio_url$", k):
         return "set" if v else "empty"
     return v or "empty"
@@ -80,7 +100,7 @@ def main():
     vals = {}
     for k, v in (old or {}).items():
         k = RENAMED.get(k, k)
-        if k not in REMOVED and not k.startswith(REMOVED_PREFIXES):
+        if not removed(k):
             vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
     # An older build's model choice is its model size, unless the file already names a valid one.
     # core/config.c ignores a vocr_tier it cannot read (with a warning): so does this, in either
@@ -107,7 +127,10 @@ def main():
             continue
         if k == "vocr_fallback_model":
             continue
-        vals[k] = v
+        if removed(k):  # a removed setting (an API key: its value is never printed)
+            print("config.ini: %s is no longer a setting, not set" % name(k))
+            continue
+        vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
         explicit.add(k)
 
     out, used = [], set()
@@ -128,13 +151,16 @@ def main():
     open(out_path, "w", encoding="utf-8").write(text)
 
     new = parse(text)
+    report = []
     for k in sorted(set(old or {}) | set(new)):
         if old is not None and k in old and k not in new:
-            print("config.ini: %s removed" % k)
+            report.append("config.ini: %s removed" % name(k))
         elif old is None or old.get(k) != new.get(k):
-            print("config.ini: %s = %s" % (k, show(k, new.get(k, ""))))
+            report.append("config.ini: %s = %s" % (name(k), show(k, new.get(k, ""))))
     for k in sorted(set(vals) - used):
-        print("config.ini: unknown setting %s dropped" % k)
+        report.append("config.ini: unknown setting %s dropped" % name(k))
+    for line in dict.fromkeys(report):  # once each (several lines can name one removed key)
+        print(line)
     return 0 if old_text is None or old_text != text else 1
 
 

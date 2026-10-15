@@ -247,7 +247,9 @@ VOCR3-H15 found.`), or reports that file missing; it never says that a game ran 
 smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored; only the selected engine runs. Start reloads
 the saved preferences. Other config values, including dictionary priority,
-paths, capture mode and API keys, are preserved.
+paths and capture mode, are preserved; only the lines of removed features are
+rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
+API keys go, and `dictionary = jpdb` or `jiten` becomes `local`).
 
 Japanese-only selection is **ON by default**. The initial cursor and the
 arrows skip Latin text, digits, punctuation and Hangul while selecting kana
@@ -422,13 +424,20 @@ Google Lens can also be selected with `ocr_backend = lens`; it uploads the
 selected image to Google and works with the configured dictionary, including
 local JMdict. Selecting an OCR engine preserves the dictionary, OCR mode and
 other settings. `dictionary = hachidori` uses Hachidori Relay on
-your trusted LAN (`hachidori_host = COMPUTER_IP`, port 19633). Jiten and JPDB
-require their respective API keys. With either key set, the subtitle strip
-(Select + R) shows furigana over its kanji once the words are looked up, so
-each settled subtitle's recognized text is also sent to that service. Local
-dictionaries and Hachidori show the strip without readings and add no lookups
-for it. Local defaults make no OCR or dictionary network requests and have no
-cloud fallback.
+your trusted LAN (`hachidori_host = COMPUTER_IP`, port 19633). The subtitle
+strip (Select + R) shows the recognized text, without readings, and adds no
+lookups for it. Local defaults make no OCR or dictionary network requests and
+have no cloud fallback.
+
+The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
+been removed (the local Jitendex and every other Yomitan dictionary still
+work, converted as above). A saved `dictionary = jpdb` or `jiten` now loads
+as `local` with a config warning in `log.txt` and the overlay; the installer
+(`tools/migrate_config.py`) and the Overlay app's next save write `local` and
+delete the `jpdb_api_key`, `jiten_api_key` and older `api_key` lines (the
+app's save leaves none in `config.ini.bak` either; the installer names each
+removed key, never its value). The subtitle strip's furigana, which only
+those two services gave, went with them.
 
 ### Anki
 
@@ -527,9 +536,9 @@ together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 294,912 B
-of SceShell's partition, of the 299,008 B declared (down from 405,504 B in 0.7.12's
-successor builds): the
+64 KiB result arena and no TLS pool for local lookup. Its module holds 286,720 B
+of SceShell's partition (294,912 B before the online dictionaries' removal, of
+299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle
@@ -571,8 +580,8 @@ before it, except that a burst of lines formatted at once (a job's result, about
 append, as a file append costs the console 12-46 ms (#81's self-test timestamps); `kernel.txt`
 holds up to 256 KB per boot (the previous boot's is
 `kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
-it read-only into one timestamped folder and zip, with `config.ini`'s API keys
-and audio source URL redacted, both taiHEN configurations, the Anki queue, crash dumps and the
+it read-only into one timestamped folder and zip, with its audio source URL and
+any API key an older build left in `config.ini` redacted, both taiHEN configurations, the Anki queue, crash dumps and the
 installed files' hashes, and prints its analysis
 ([self-test](docs/self-test.md#collecting-everything---collect)); `--status VITA_IP`
 fetches just the bootstrap logs. Recognition timings and memory attempts are in
