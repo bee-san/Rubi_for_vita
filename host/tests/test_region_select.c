@@ -1,15 +1,22 @@
 /* The region selector's state machine (core/region_select.c), driven frame by
  * frame as shell/overlay.cpp drives it: the cursor, the stick's dead zone,
  * speed curve and acceleration, the d-pad's single steps and repeat, the two
- * corners, Circle, touch drags, the screen's edges and the saved region. */
+ * corners, enter and cancel under either button assignment, touch drags, the
+ * screen's edges and the saved region. */
 #include <string.h>
 
 #include "acutest.h"
+#include "buttons.h"
 #include "region_select.h"
 #include "regions.h"
 
 #define FRAME_US 16667 /* 60 fps */
 #define C 128          /* stick centre */
+
+/* The console's buttons for the rig: × enters unless a test assigns ○. */
+static VjoButtons btn;
+#define ENTER (btn.enter)
+#define CANCEL (btn.cancel)
 
 typedef struct {
     VjoRegionSelect s;
@@ -22,6 +29,10 @@ static void rig_begin(Rig *r, uint32_t held)
     memset(r, 0, sizeof(*r));
     r->in.lx = r->in.ly = C;
     r->in.now_us = 5000000;
+    if (!btn.enter)
+        btn = vjo_buttons(VJO_BUTTON_ASSIGN_CROSS);
+    r->in.enter = btn.enter;
+    r->in.cancel = btn.cancel;
     r->in.held = r->prev = held; /* as the overlay: buttons held on entry are not presses */
     vjo_rsel_begin(&r->s, r->in.now_us);
 }
@@ -308,7 +319,7 @@ static void clamped_to_the_screen(void)
     TEST_CHECK(cx(&r) == VJO_RSEL_W - 1 && cy(&r) == VJO_RSEL_H - 1);
     /* a full-screen box from corner to corner */
     frames(&r, 0, 1, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_CORNER);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_CORNER);
     stick(&r, 0, 0);
     frames(&r, 0, 120, FRAME_US);
     TEST_CHECK(box_is(&r, 0, 0, VJO_RSEL_W, VJO_RSEL_H));
@@ -322,34 +333,34 @@ static void clamped_to_the_screen(void)
     TEST_CHECK(box_is(&r, 0, 0, VJO_RSEL_W, VJO_RSEL_H));
 }
 
-static void two_corners_with_cross(void)
+static void two_corners_with_enter(void)
 {
     Rig r;
     int x, y, w, h;
     rig_begin(&r, 0);
     dpad_to(&r, 48, 417);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_CORNER);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_CORNER);
     TEST_CHECK(box_is(&r, 48, 417, 1, 1));
-    /* × again at once (a double press) saves nothing */
+    /* enter again at once (a double press) saves nothing */
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SMALL);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL);
     TEST_CHECK(box_is(&r, 48, 417, 1, 1));
     /* the box follows the cursor */
     dpad_to(&r, 48 + 30, 417 + 31);
     TEST_CHECK(box_is(&r, 48, 417, 31, 32));
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SMALL); /* 31 wide */
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL); /* 31 wide */
     dpad_to(&r, 48 + 31, 417 + 30);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SMALL); /* 31 high */
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SMALL); /* 31 high */
     dpad_to(&r, 48 + 31, 417 + 31);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SAVE); /* 32 x 32: the minimum */
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE); /* 32 x 32: the minimum */
     TEST_CHECK(box_is(&r, 48, 417, 32, 32));
     /* a CLANNAD-sized box drawn from its bottom-right corner: 883 x 112 at 48,417 */
     rig_begin(&r, 0);
     dpad_to(&r, 930, 528);
-    frame(&r, VJO_RSEL_CROSS, FRAME_US);
+    frame(&r, ENTER, FRAME_US);
     stick(&r, 0, 0);
     for (int n = 0; (cx(&r) > 48 + 40 || cy(&r) > 417 + 40) && n < 600; n++)
         frame(&r, 0, FRAME_US);
@@ -357,38 +368,61 @@ static void two_corners_with_cross(void)
     dpad_to(&r, 48, 417);
     TEST_CHECK(box_is(&r, 48, 417, 883, 112)); /* the cursor above and left of the corner */
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SAVE);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
     TEST_ASSERT(vjo_rsel_box(&r.s, &x, &y, &w, &h));
     TEST_CHECK(x == 48 && y == 417 && w == 883 && h == 112);
 }
 
-static void circle_takes_the_corner_back_then_cancels(void)
+static void cancel_takes_the_corner_back_then_cancels_with(int assign)
 {
+    btn = vjo_buttons(assign);
     Rig r;
     int x, y, w, h;
     rig_begin(&r, 0);
-    TEST_CHECK(frame(&r, VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_CANCEL);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_CANCEL);
     rig_begin(&r, 0);
-    frame(&r, VJO_RSEL_CROSS, FRAME_US);
+    frame(&r, ENTER, FRAME_US);
     dpad_to(&r, 600, 400);
     TEST_CHECK(box_is(&r, 480, 272, 121, 129));
-    TEST_CHECK(frame(&r, VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_BACK);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
     TEST_CHECK(!vjo_rsel_box(&r.s, &x, &y, &w, &h));
     TEST_CHECK(cx(&r) == 600 && cy(&r) == 400); /* the cursor stays for a new first corner */
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_CORNER);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_CORNER);
     TEST_CHECK(box_is(&r, 600, 400, 1, 1));
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_BACK);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_CANCEL);
-    /* × and ○ in the same frame: ○ wins, nothing is saved */
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_CANCEL);
+    /* enter and cancel in the same frame: cancel wins, nothing is saved */
     rig_begin(&r, 0);
-    frame(&r, VJO_RSEL_CROSS, FRAME_US);
+    frame(&r, ENTER, FRAME_US);
     dpad_to(&r, 600, 400);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS | VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_BACK);
+    TEST_CHECK(frame(&r, ENTER | CANCEL, FRAME_US) == VJO_RSEL_BACK);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS | VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_CANCEL);
+    TEST_CHECK(frame(&r, ENTER | CANCEL, FRAME_US) == VJO_RSEL_CANCEL);
+}
+
+static void cancel_takes_the_corner_back_then_cancels(void)
+{
+    cancel_takes_the_corner_back_then_cancels_with(VJO_BUTTON_ASSIGN_CROSS);
+    TEST_CHECK(ENTER == VJO_BUTTON_CROSS && CANCEL == VJO_BUTTON_CIRCLE);
+}
+
+/* A console set to enter with ○ (Japan's default): ○ sets and saves corners,
+ * × takes them back and leaves; the same presses as the × console's swapped. */
+static void circle_enters_on_a_circle_console(void)
+{
+    Rig r;
+    cancel_takes_the_corner_back_then_cancels_with(VJO_BUTTON_ASSIGN_CIRCLE);
+    TEST_CHECK(ENTER == VJO_BUTTON_CIRCLE && CANCEL == VJO_BUTTON_CROSS);
+    rig_begin(&r, 0);
+    TEST_CHECK(frame(&r, VJO_BUTTON_CROSS, FRAME_US) == VJO_RSEL_CANCEL);
+    rig_begin(&r, 0);
+    TEST_CHECK(frame(&r, VJO_BUTTON_CIRCLE, FRAME_US) == VJO_RSEL_CORNER);
+    dpad_to(&r, 600, 400);
+    TEST_CHECK(frame(&r, VJO_BUTTON_CIRCLE, FRAME_US) == VJO_RSEL_SAVE);
+    btn = vjo_buttons(VJO_BUTTON_ASSIGN_CROSS);
 }
 
 static void touch_draws_and_the_stick_finishes(void)
@@ -412,7 +446,7 @@ static void touch_draws_and_the_stick_finishes(void)
     dpad_to(&r, 703, 498);
     TEST_CHECK(box_is(&r, 100, 400, 604, 99));
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SAVE);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
     TEST_ASSERT(vjo_rsel_box(&r.s, &x, &y, &w, &h));
     TEST_CHECK(x == 100 && y == 400 && w == 604 && h == 99);
     /* a new drag replaces the box, from where it starts */
@@ -426,14 +460,14 @@ static void touch_draws_and_the_stick_finishes(void)
     touch(&r, 1, 900, 500);
     TEST_CHECK(frame(&r, 0, FRAME_US) == VJO_RSEL_CORNER);
     TEST_CHECK(box_is(&r, 900, 500, 1, 1));
-    /* × during a drag saves the box drawn so far, as before */
+    /* enter during a drag saves the box drawn so far, as before */
     touch(&r, 1, 500, 300);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CROSS, FRAME_US) == VJO_RSEL_SAVE);
+    TEST_CHECK(frame(&r, ENTER, FRAME_US) == VJO_RSEL_SAVE);
     TEST_CHECK(box_is(&r, 500, 300, 401, 201));
 }
 
-static void circle_during_a_drag_waits_for_the_finger(void)
+static void cancel_during_a_drag_waits_for_the_finger(void)
 {
     Rig r;
     rig_begin(&r, 0);
@@ -441,7 +475,7 @@ static void circle_during_a_drag_waits_for_the_finger(void)
     frame(&r, 0, FRAME_US);
     touch(&r, 1, 400, 300);
     frame(&r, 0, FRAME_US);
-    TEST_CHECK(frame(&r, VJO_RSEL_CIRCLE, FRAME_US) == VJO_RSEL_BACK);
+    TEST_CHECK(frame(&r, CANCEL, FRAME_US) == VJO_RSEL_BACK);
     /* the finger still down neither starts a new corner nor moves the cursor */
     touch(&r, 1, 450, 350);
     TEST_CHECK(frames(&r, 0, 30, FRAME_US) == VJO_RSEL_NONE);
@@ -511,10 +545,11 @@ TEST_LIST = {
     {"d-pad: single steps, then repeat", dpad_single_steps_and_repeat},
     {"d-pad after the stick lands on whole pixels", dpad_after_the_stick_lands_on_whole_pixels},
     {"clamped to the screen", clamped_to_the_screen},
-    {"two corners with Cross, minimum size", two_corners_with_cross},
-    {"Circle takes the corner back, then cancels", circle_takes_the_corner_back_then_cancels},
+    {"two corners with enter, minimum size", two_corners_with_enter},
+    {"cancel takes the corner back, then cancels", cancel_takes_the_corner_back_then_cancels},
+    {"○ enters on a console set to ○", circle_enters_on_a_circle_console},
     {"touch draws, the stick finishes", touch_draws_and_the_stick_finishes},
-    {"Circle during a drag waits for the finger", circle_during_a_drag_waits_for_the_finger},
+    {"cancel during a drag waits for the finger", cancel_during_a_drag_waits_for_the_finger},
     {"saved region round-trips region.ini", saved_region_round_trips_region_ini},
     {NULL, NULL}
 };

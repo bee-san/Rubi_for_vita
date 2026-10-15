@@ -1,8 +1,9 @@
 /* Drawing the OCR region with the left stick and the d-pad as well as by
- * touch (#81 request 3). A cursor moves over the screen: Cross sets the first
- * corner, the box then follows the cursor to the opposite corner, and Cross
- * saves it. Circle takes the first corner back, or, with none, leaves without
- * saving. A touch drag sets the first corner where it starts and moves the
+ * touch (#81 request 3). A cursor moves over the screen: enter sets the first
+ * corner, the box then follows the cursor to the opposite corner, and enter
+ * saves it. Cancel takes the first corner back, or, with none, leaves without
+ * saving. Enter and cancel are the console's (core/buttons.h): ○ and × trade
+ * places with its setting. A touch drag sets the first corner where it starts and moves the
  * cursor with the finger, so the stick and the d-pad can finish its opposite
  * corner after it lifts.
  *
@@ -30,8 +31,6 @@ extern "C" {
 #define VJO_RSEL_RIGHT  0x0020u
 #define VJO_RSEL_DOWN   0x0040u
 #define VJO_RSEL_LEFT   0x0080u
-#define VJO_RSEL_CIRCLE 0x2000u
-#define VJO_RSEL_CROSS  0x4000u
 
 /* The left stick moves nothing within VJO_RSEL_DEAD of its centre (the idle
  * stick read 1-3 from it in #81's console logs). Beyond, its speed grows with
@@ -55,7 +54,8 @@ extern "C" {
 #define VJO_RSEL_MAX_STEP_US 50000
 
 typedef struct {
-    uint32_t held, pressed; /* VJO_RSEL_* held now, and newly pressed */
+    uint32_t held, pressed; /* pad bits (VJO_RSEL_*, the SCE_CTRL_* values) held now, and newly pressed */
+    uint32_t enter, cancel; /* the console's enter and cancel buttons (VjoButtons) */
     uint8_t lx, ly;         /* the left stick, 128 = centre */
     int touch;              /* a front touch is down at (tx, ty), screen pixels */
     int tx, ty;
@@ -65,11 +65,11 @@ typedef struct {
 /* What an update did. */
 enum {
     VJO_RSEL_NONE = 0, /* at most the cursor moved */
-    VJO_RSEL_CORNER,   /* the first corner was set, by Cross or a new touch */
-    VJO_RSEL_BACK,     /* Circle took the first corner back */
-    VJO_RSEL_SMALL,    /* Cross with a box under VJO_RSEL_MIN either way: not saved */
-    VJO_RSEL_SAVE,     /* Cross: save vjo_rsel_box's box and leave */
-    VJO_RSEL_CANCEL    /* Circle with no first corner: leave, nothing saved */
+    VJO_RSEL_CORNER,   /* the first corner was set, by enter or a new touch */
+    VJO_RSEL_BACK,     /* cancel took the first corner back */
+    VJO_RSEL_SMALL,    /* enter with a box under VJO_RSEL_MIN either way: not saved */
+    VJO_RSEL_SAVE,     /* enter: save vjo_rsel_box's box and leave */
+    VJO_RSEL_CANCEL    /* cancel with no first corner: leave, nothing saved */
 };
 
 typedef struct {
@@ -87,7 +87,7 @@ typedef struct {
 /* Starts a selection: the cursor at the screen's centre, no first corner. */
 void vjo_rsel_begin(VjoRegionSelect *s, int64_t now_us);
 /* One frame: touch, then the d-pad and the stick (not during a drag), then
- * Circle and Cross. Returns VJO_RSEL_*. */
+ * cancel, then enter. Returns VJO_RSEL_*. */
 int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in);
 /* The cursor's pixel. */
 void vjo_rsel_cursor(const VjoRegionSelect *s, int *x, int *y);

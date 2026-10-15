@@ -144,6 +144,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/log_vita.c
   ${ROOT}/shell/files.c
   ${ROOT}/vita/games_storage.c
+  ${ROOT}/vita/buttons_vita.c
   ${ROOT}/shell/libc_shim.c)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
@@ -207,6 +208,9 @@ target_link_libraries(VitaJPOverlay_Shell
   SceNetCtl_stub_weak
   SceRtc_stub_weak
   SceAppMgr_stub_weak
+  # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it
+  # fails and × enters, as before.
+  SceRegistryMgr_stub_weak
   vjo_bearssl  # again after the core: its integer division comes from libgcc
   gcc)
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
@@ -279,13 +283,13 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
-  ${ROOT}/vita/games_storage.c ${VJO_SETTINGS_ANKI_SRC})
+  ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${VJO_SETTINGS_ANKI_SRC})
 # vjo_bearssl (SHA-256 for the queue's IDs, TLS for an https audio source) is
 # the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
 set(VJO_SETTINGS_LIBS
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
-  SceAppMgr_stub SceAppUtil_stub SceNet_stub SceNetCtl_stub SceRtc_stub vjo_bearssl)
+  SceAppMgr_stub SceAppUtil_stub SceNet_stub SceNetCtl_stub SceRtc_stub SceRegistryMgr_stub vjo_bearssl)
 add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)

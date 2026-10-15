@@ -11,7 +11,7 @@
  * nothing is allocated while anki_mining is off, the default.
  *
  * Memory: one job at a time: counting the queue (overlay opened), saving a
- * card (×) or sending the queue (△). A job runs on its own short-lived
+ * card (the enter button) or sending the queue (△). A job runs on its own short-lived
  * thread (ANKI_STACK), which the control thread joins once it is done
  * (vjo_anki_reap). Saving or sending takes one bounded Paf allocation, which
  * keeps the Shell UI reserve, and frees it before the thread ends; counting
@@ -28,6 +28,7 @@
 #include <string.h> /* strlen: shell/libc_shim.c */
 
 #include "../core/anki.h"
+#include "../core/buttons.h"
 #include "../core/games.h"
 #include "../core/local_dict.h"
 #include "../include/vjo_ledger_budget.h"
@@ -128,6 +129,12 @@ static void mark_locked(unsigned seq, int entry, int value)
 /* Status for list seq (0: for whatever is shown, as a send's) and, with
  * mark_entry >= 0, that entry's mark; dropped when another list is shown
  * by now. */
+/* The glyph of the button that saves a card: the console's enter button. */
+static const char *enter_glyph(void)
+{
+    return vjo_buttons(g_view.enter_circle ? VJO_BUTTON_ASSIGN_CIRCLE : VJO_BUTTON_ASSIGN_CROSS).enter_glyph;
+}
+
 static void publish(unsigned seq, const char *msg, int kind, int mark_entry, int mark)
 {
     vjo_view_lock();
@@ -248,7 +255,7 @@ static int with_anki(AnkiOp op, void *ud, VjoErr *err)
     return rc;
 }
 
-/* ---------------- saving a card (×) ---------------- */
+/* ---------------- saving a card (enter) ---------------- */
 
 static uint64_t unix_ms(void)
 {
@@ -577,7 +584,9 @@ static void do_send(void)
         return;
     }
     if (!pending) {
-        publish(0, "No cards queued: × saves the word shown", VJO_ANKI_STATUS_DIM, -1, 0);
+        char msg[64];
+        sceClibSnprintf(msg, sizeof(msg), "No cards queued: %s saves the word shown", enter_glyph());
+        publish(0, msg, VJO_ANKI_STATUS_DIM, -1, 0);
         return;
     }
     if (!has_host) {
@@ -841,10 +850,12 @@ int vjo_anki_configure(const VjoConfig *cfg)
 void vjo_anki_post_add(unsigned list_seq, int entry)
 {
     int busy, r = post_job(JOB_SAVE, list_seq, entry, &busy);
-    if (r == POST_BUSY)
-        publish(list_seq, busy == JOB_SEND ? "Anki: sending the queue; × saves again when it is done"
-                                           : "Anki: still saving the previous card",
-                VJO_ANKI_STATUS_DIM, -1, 0);
+    if (r == POST_BUSY && busy == JOB_SEND) {
+        char msg[80];
+        sceClibSnprintf(msg, sizeof(msg), "Anki: sending the queue; %s saves again when it is done", enter_glyph());
+        publish(list_seq, msg, VJO_ANKI_STATUS_DIM, -1, 0);
+    } else if (r == POST_BUSY)
+        publish(list_seq, "Anki: still saving the previous card", VJO_ANKI_STATUS_DIM, -1, 0);
     else if (r == POST_FAILED)
         publish(list_seq, "Anki: not enough memory, card not saved", VJO_ANKI_STATUS_ERROR, -1, 0);
 }

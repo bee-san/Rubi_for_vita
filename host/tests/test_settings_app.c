@@ -14,6 +14,7 @@
 #include <psp2/display.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/registrymgr.h>
 #include <psp2/touch.h>
 #include <vita2d.h>
 #include <dirent.h>
@@ -101,6 +102,13 @@ static int font_dummy;
 
 uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * 16667u; }
 int sceKernelExitProcess(int status) { exited = status; return 0; }
+/* /CONFIG/SYSTEM/button_assign: 1, × enters (the scripts press × and leave with ○). */
+int sceRegMgrGetKeyInt(const char *category, const char *name, int *buf)
+{
+    (void)category; (void)name;
+    *buf = 1;
+    return 0;
+}
 int sceCtrlSetSamplingMode(int mode) { (void)mode; return 0; }
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 int sceCtrlPeekBufferPositive(int port, SceCtrlData *pad, int count)

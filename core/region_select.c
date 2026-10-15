@@ -134,7 +134,7 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
         }
     }
 
-    if (in->pressed & VJO_RSEL_CIRCLE) {
+    if (in->pressed & in->cancel) {
         if (!s->anchored)
             return VJO_RSEL_CANCEL;
         s->anchored = 0;
@@ -142,7 +142,7 @@ int vjo_rsel_update(VjoRegionSelect *s, const VjoRselInput *in)
             s->touching = 2; /* the finger still down must not start a drag again */
         return VJO_RSEL_BACK;
     }
-    if (in->pressed & VJO_RSEL_CROSS) {
+    if (in->pressed & in->enter) {
         int x, y, w, h;
         if (!s->anchored) {
             s->anchored = 1;

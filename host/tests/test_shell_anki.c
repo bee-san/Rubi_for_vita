@@ -1330,6 +1330,12 @@ static void test_partial_send_keeps_the_rest(void)
     /* nothing left */
     triangle();
     TEST_CHECK(!strcmp(g_view.anki_status, "No cards queued: × saves the word shown") && heap_allocs == 4);
+    /* a console that enters with ○ is told to press ○ */
+    g_view.enter_circle = 1;
+    triangle();
+    TEST_CHECK(!strcmp(g_view.anki_status, "No cards queued: ○ saves the word shown"));
+    TEST_MSG("%s", g_view.anki_status);
+    g_view.enter_circle = 0;
     /* no computer configured: the cards wait, without memory */
     cfg.anki_host[0] = '\0';
     reconfigure();
@@ -1646,6 +1652,10 @@ static void test_cancellation(void)
     vjo_anki_post_send();
     vjo_anki_post_add(5, 1);
     TEST_CHECK(!strcmp(g_view.anki_status, "Anki: sending the queue; × saves again when it is done"));
+    g_view.enter_circle = 1;
+    vjo_anki_post_add(5, 1);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Anki: sending the queue; ○ saves again when it is done"));
+    g_view.enter_circle = 0;
     vjo_anki_post_send();
     TEST_CHECK(!strcmp(g_view.anki_status, "Already sending to Anki"));
     thread_entry(0, NULL);

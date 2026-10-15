@@ -54,9 +54,10 @@ typedef struct {
     int n_warnings;
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
+    int enter_circle;         /* ○ enters and × cancels (core/buttons.h), as read when the overlay opened */
     /* Anki (anki.c): changes bump anki_version only, so the overlay keeps
      * the header, the selection and the definition's scroll */
-    int anki_enabled;         /* anki_mining is on: × saves the shown word, △ sends the queue */
+    int anki_enabled;         /* anki_mining is on: enter saves the shown word, △ sends the queue */
     unsigned anki_version;
     int anki_pending;         /* cards in the offline queue; -1 unreadable, -2 not counted yet */
     int anki_sending;         /* △ is sending them */
@@ -88,7 +89,7 @@ const VjoLocalPages *vjo_view_pages(int *page);
 /* ---- overlay -> control thread commands ---- */
 enum {
     VJO_CMD_NONE = 0,
-    VJO_CMD_CLOSED,          /* overlay closed by ○ */
+    VJO_CMD_CLOSED,          /* overlay closed by the cancel button */
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
