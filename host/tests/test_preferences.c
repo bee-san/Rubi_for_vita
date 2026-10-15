@@ -5,6 +5,7 @@
 #include <psp2/io/fcntl.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -781,6 +782,118 @@ static void test_removed_engine_choice_loads_as_vocr_and_is_rewritten(void)
         TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0 && arena.used == 0);
     }
 }
+static size_t read_fixture(const char *name, char *out, size_t cap)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/host/tests/fixtures/%s", VJO_SOURCE_DIR, name);
+    FILE *f = fopen(path, "rb");
+    TEST_ASSERT_(f != NULL, "fixture %s", path);
+    size_t n = fread(out, 1, cap - 1, f);
+    fclose(f);
+    out[n] = 0;
+    return n;
+}
+
+/* #101: test.1's Overlay app saved its four preferences over test.2's
+ * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
+ * vocr2). Today's Shell and app read it as the local engine with one warning
+ * and no unknown setting (its vocr_model gives the Normal size), and the app's
+ * next save writes vocr and vocr_tier in place of vocr2 and the two model
+ * lines, keeping every other byte. */
+static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
+{
+    static char fixture[8192], expect[8192], out[8192];
+    reset();
+    size_t n = read_fixture("config-old-app-test2.ini", fixture, sizeof(fixture));
+    TEST_ASSERT(strstr(fixture, "\nocr_backend = vocr2\n") != NULL);
+    put_file(VJO_PREFERENCES_PATH, fixture, n);
+    unsigned char shell_mem[24 * 1024]; VjoArena shell;
+    vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+    VjoConfig cfg;
+    vjo_config_load(&cfg, &shell);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
+    TEST_CHECK(!strcmp(cfg.warnings[0], "ocr_backend: VOCR2 was removed; using vocr"));
+    TEST_MSG("%d warnings, first '%s'", cfg.n_warnings, cfg.n_warnings ? cfg.warnings[0] : "");
+    TEST_CHECK(cfg.anki_mining && cfg.highlight_mode == VJO_HIGHLIGHT_WORD && cfg.japanese_only_selection);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && !cfg.vocr_tier_explicit); /* from vocr_model = VOCR3_H15 */
+    TEST_CHECK(cfg.ocr_lm == 2 && cfg.ocr_cascade_ms == 2000 && cfg.ocr_refine_lines == 2);
+    TEST_CHECK(shell.used == 0 && handles == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
+    /* the app's next save: vocr in place of vocr2, the two model lines gone, vocr_tier added; every other
+     * byte kept (core/config.c vjo_config_patch_preferences) */
+    TEST_ASSERT(vjo_preferences_save(cfg.ocr_backend, cfg.vocr_tier, cfg.japanese_only_selection, cfg.highlight_mode,
+                                     cfg.local_dictionary_results, &arena) == 0);
+    int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
+    ssize_t got = read(fd, out, sizeof(out) - 1); close(fd);
+    TEST_ASSERT(got > 0); out[got] = 0;
+    static const char *const swap[][2] = {{"\nocr_backend = vocr2\n", "\nocr_backend = vocr\n"},
+                                          {"\nvocr_model = VOCR3_H15_w8.vocr\n", "\n"},
+                                          {"\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n", "\n"}};
+    snprintf(expect, sizeof(expect), "%s", fixture);
+    for (unsigned i = 0; i < 3; i++) {
+        static char next[8192];
+        char *at = strstr(expect, swap[i][0]);
+        TEST_ASSERT_(at != NULL, "fixture line %s", swap[i][0] + 1);
+        snprintf(next, sizeof(next), "%.*s%s%s", (int)(at - expect), expect, swap[i][1], at + strlen(swap[i][0]));
+        snprintf(expect, sizeof(expect), "%s", next);
+    }
+    strncat(expect, "vocr_tier = normal\n", sizeof(expect) - strlen(expect) - 1);
+    TEST_CHECK(!strcmp(out, expect));
+    TEST_MSG("saved:\n%s", out);
+    vjo_config_load(&cfg, &shell);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0);
+}
+
+/* SceShell never writes config.ini: with neither the file nor its backup it
+ * runs on the defaults, which are the template's values (core/config.h). */
+static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
+{
+    reset();
+    unsigned char shell_mem[24 * 1024]; VjoArena shell;
+    vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+    VjoConfig cfg, d, parsed;
+    memset(&cfg, 0x5A, sizeof(cfg));
+    vjo_config_load(&cfg, &shell);
+    vjo_config_defaults(&d);
+    TEST_CHECK(!memcmp(&cfg, &d, sizeof(cfg)));
+    vjo_config_defaults(&parsed);
+    vjo_config_parse(&parsed, vjo_config_default_text(), strlen(vjo_config_default_text()));
+    TEST_CHECK(parsed.n_warnings == 0 && parsed.vocr_tier_explicit); /* the template has a vocr_tier line */
+    parsed.vocr_tier_explicit = d.vocr_tier_explicit; /* bookkeeping only: which line set the size */
+    TEST_CHECK(!memcmp(&parsed, &d, sizeof(d)));
+    TEST_CHECK(written == 0 && renames == 0 && handles == 0 && shell.used == 0);
+    TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_PREFERENCES_PATH ".tmp", F_OK) != 0);
+    TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) != 0);
+}
+
+/* The Shell's reads of the Overlay app's stamps (shell/files.c): the first
+ * line, whole, through short reads; cut to the buffer; the SDK's error. */
+static void test_file_line_and_exists(void)
+{
+    static const char path[] = "ux0:data/VitaJPOverlay/vjo_app.txt";
+    char buf[64];
+    reset();
+    unlink(path);
+    TEST_CHECK(vjo_file_line(path, buf, sizeof(buf)) == (int)0x80010002u && !buf[0]);
+    TEST_CHECK(!vjo_file_exists(path));
+    put_file(path, "vjoapp1 api=21 build=0123456789abcdef\nsecond line\n", 50);
+    TEST_CHECK(vjo_file_line(path, buf, sizeof(buf)) == 50 && !strcmp(buf, "vjoapp1 api=21 build=0123456789abcdef"));
+    TEST_CHECK(vjo_file_exists(path) && handles == 0);
+    put_file(path, "vjoapp1 api=21 build=0123456789abcdef\r\n", 39);
+    TEST_CHECK(vjo_file_line(path, buf, sizeof(buf)) == 39 && !strcmp(buf, "vjoapp1 api=21 build=0123456789abcdef"));
+    memset(buf, 'x', sizeof(buf));
+    put_file(path, "0123456789012345678901234567890123456789", 40);
+    TEST_CHECK(vjo_file_line(path, buf, 17) == 16 && !strcmp(buf, "0123456789012345"));
+    put_file(path, "", 0);
+    TEST_CHECK(vjo_file_line(path, buf, sizeof(buf)) == 0 && !buf[0]);
+    read_fail = 1;
+    TEST_CHECK(vjo_file_line(path, buf, sizeof(buf)) == (int)0x80010013u && !buf[0]);
+    read_fail = 0;
+    TEST_CHECK(handles == 0);
+    unlink(path);
+}
+
 TEST_LIST = {
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
@@ -798,5 +911,8 @@ TEST_LIST = {
     {"unreadable_embedded_NUL_and_oversize_config_are_not_overwritten", test_unreadable_or_invalid_config_never_overwritten},
     {"backup_only_config_loads_in_actual_Shell_without_overwriting_saved_keys", test_backup_only_loads_actual_shell_without_default_publication},
     {"largest_published_config_round_trips_through_actual_24KiB_Shell_loader", test_maximum_published_config_fits_actual_shell_scratch},
+    {"old_app_config_from_101_loads_as_VOCR_with_one_warning_and_a_save_repairs_it", test_old_app_config_loads_as_vocr_and_a_save_repairs_it},
+    {"shell_runs_on_the_defaults_and_never_writes_config_ini", test_shell_runs_on_the_defaults_without_writing_config_ini},
+    {"shell_reads_a_stamp_file_s_first_line_whole", test_file_line_and_exists},
     {NULL, NULL}
 };

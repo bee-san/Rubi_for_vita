@@ -201,6 +201,17 @@ app's copy −392, not a plugin) with `-Os`. The worker's text goes from 70,124 
 TEAR step's retry time) and its data and `.bss` from 14,200 to 14,208 B, the same 90,112 B of pages
 [measured: the build log's module rows, main `f85b5d9` and this change, vita-vn-ocr `d214a05`].
 
+The Overlay app check (#101, `core/app_stamp.h`) takes no allocation and no item: at each enabled
+game's start the control thread reads two one-line stamp files into two 64-byte stack buffers
+(`shell/worker.c` `check_app`, `shell/files.c` `vjo_file_line`) and stats one file, and the notice is
+a pointer to a constant string in the view model. The config warnings are compared with the previous
+load's in the two `VjoConfig` copies `apply_config` already has. SceShell no longer writes a default
+`config.ini` when there is none (the installer, the package and the Overlay app do), so the 4,338 B
+commented template is not linked into the Shell any more, which pays for the check: the build log's
+module row goes from 216,448 to 213,176 B of text and from 77,624 to 77,640 B of data and `.bss`
+(+16 B of state); the module stays at 294,912 B, with 3,912 B left in its last code page instead of 640 B
+[measured: the Vita builds of main `8f1ec8f` and of this change].
+
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
 | item | bytes | what | source |

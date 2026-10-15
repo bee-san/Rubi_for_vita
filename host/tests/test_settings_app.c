@@ -29,6 +29,9 @@
 #include <unistd.h>
 #include "../../core/vocr_models.h"
 #include "../../include/vjo_vocr_sizes.h"
+#include "../../core/app_stamp.h"
+#include "../../include/vjo_api.h"
+#include "../../settings/app_check.h"
 #include "../../settings/catalog.h"
 #include "../../settings/engine.h"
 #include "../../settings/preferences.h"
@@ -826,6 +829,128 @@ static void test_exit_ends_the_process_without_vita2d_fini(void)
     font_fails = 0;
 }
 
+/* ---- the Overlay app against the overlay plugins (settings/app_check.c) ---- */
+#define BANNER_RED OFF
+static void stamp(char *out, size_t cap, int api, const char *build)
+{
+    snprintf(out, cap, "vjoapp1 api=%d build=%s", api, build);
+}
+/* The banner's two rows (settings/main.c: baselines 24 and 46), joined; "" when none is drawn. */
+static void banner_drawn(int f, char *out, size_t cap)
+{
+    const Text *a = text_at(f, 24, 0, 960), *b = text_at(f, 46, 0, 960);
+    int red = 0;
+    for (int i = 0; i < shown[f].rects; i++)
+        red |= shown[f].rect[i].y == 4 && shown[f].rect[i].h == 46 && shown[f].rect[i].w == 960 &&
+               shown[f].rect[i].color == BANNER_RED;
+    snprintf(out, cap, "%s%s%s", red && a ? a->text : "", red && a && b ? " " : "", red && b ? b->text : "");
+}
+static void app_card(const char *own, const char *record, const char *status)
+{
+    card(NULL);
+    unlink(VJO_APP_STAMP_OWN); unlink(VJO_APP_STAMP_PACKAGE); unlink(VJO_APP_STATUS_PATH);
+    if (own) put_file(VJO_APP_STAMP_OWN, own);
+    if (record) put_file(VJO_APP_STAMP_PACKAGE, record);
+    if (status) put_file(VJO_APP_STATUS_PATH, status);
+}
+
+static void test_banner_text_says_which_side_is_older(void)
+{
+    char own[64], newer[64], older[64], other[64], out[192];
+    const int api = VJO_API_VERSION;
+    stamp(own, sizeof(own), api, "0123456789abcdef");
+    stamp(newer, sizeof(newer), api + 1, "1111111111111111");
+    stamp(older, sizeof(older), api - 1, "2222222222222222");
+    stamp(other, sizeof(other), api, "3333333333333333");
+    char st_same[64], st_newer[64], st_older[64];
+    snprintf(st_same, sizeof(st_same), "bootstrap: shell API %d entered\nboot guard: boot 1 normal", api);
+    snprintf(st_newer, sizeof(st_newer), "bootstrap: shell API %d entered", api + 1);
+    snprintf(st_older, sizeof(st_older), "bootstrap: shell API %d entered", api - 1);
+    /* nothing says otherwise: no banner */
+    TEST_CHECK(!vjo_app_banner_text(api, own, own, st_same, out, sizeof(out)) && !out[0]);
+    TEST_CHECK(!vjo_app_banner_text(api, NULL, NULL, NULL, out, sizeof(out)) && !out[0]);
+    TEST_CHECK(!vjo_app_banner_text(api, own, NULL, NULL, out, sizeof(out)));
+    TEST_CHECK(!vjo_app_banner_text(api, NULL, other, st_same, out, sizeof(out))); /* no stamp of its own: the API decides */
+    /* the plugins installed came with another app */
+    TEST_CHECK(vjo_app_banner_text(api, own, newer, st_same, out, sizeof(out)));
+    TEST_CHECK(!strcmp(out, "This Overlay app is older than the installed overlay: install "
+                            "ux0:data/JPOverlaySettings.vpk in VitaShell."));
+    TEST_CHECK(vjo_app_banner_text(api, own, older, st_older, out, sizeof(out)));
+    TEST_CHECK(!strcmp(out, "The installed overlay is older than this app: run install-vita.sh from this app's "
+                            "package, then reboot."));
+    TEST_CHECK(vjo_app_banner_text(api, own, other, st_same, out, sizeof(out)));
+    TEST_CHECK(!strcmp(out, "This Overlay app is not the installed overlay's: install ux0:data/JPOverlaySettings.vpk "
+                            "in VitaShell."));
+    TEST_CHECK(vjo_app_banner_text(api, NULL, newer, NULL, out, sizeof(out)) && strstr(out, "is older than the installed"));
+    /* the Shell plugin that last started (status.txt) is another API's */
+    TEST_CHECK(vjo_app_banner_text(api, own, NULL, st_newer, out, sizeof(out)));
+    char want[192];
+    snprintf(want, sizeof(want), "This Overlay app (API %d) is older than the overlay that last started (API %d): install "
+             "ux0:data/JPOverlaySettings.vpk in VitaShell.", api, api + 1);
+    TEST_CHECK(!strcmp(out, want));
+    TEST_CHECK(vjo_app_banner_text(api, own, own, st_older, out, sizeof(out)));
+    snprintf(want, sizeof(want), "The overlay that last started (API %d) is older than this app: reboot the Vita to load the "
+             "one installed with it.", api - 1);
+    TEST_CHECK(!strcmp(out, want));
+    TEST_CHECK(vjo_app_banner_text(api, own, NULL, st_older, out, sizeof(out)));
+    snprintf(want, sizeof(want), "The overlay that last started (API %d) is older than this app (API %d): run install-vita.sh "
+             "from this app's package, then reboot.", api - 1, api);
+    TEST_CHECK(!strcmp(out, want));
+    /* status.txt's first line only, and only that line's form */
+    TEST_CHECK(vjo_app_running_api(st_same) == api && vjo_app_running_api("boot guard: x\nbootstrap: shell API 9 entered") == -1);
+    TEST_CHECK(vjo_app_running_api("bootstrap: shell API x entered") == -1 && vjo_app_running_api("") == -1);
+    TEST_CHECK(!vjo_app_banner_text(api, own, own, "boot guard: x\nbootstrap: shell API 1 entered", out, sizeof(out)));
+    /* not a stamp: no answer from it */
+    TEST_CHECK(!vjo_app_banner_text(api, own, "vjoapp1 garbage", st_same, out, sizeof(out)));
+}
+
+/* The app loop draws the banner over the title row on every page it shows, and
+ * nothing else changes; with matching files the title is back. */
+static void test_banner_is_drawn_on_every_page(void)
+{
+    char own[64], newer[64], status[64], text[192], want[192];
+    static const Input in[] = {OCR_PAGE};
+    stamp(own, sizeof(own), VJO_API_VERSION, "0123456789abcdef");
+    stamp(newer, sizeof(newer), VJO_API_VERSION + 1, "1111111111111111");
+    snprintf(status, sizeof(status), "bootstrap: shell API %d entered\n", VJO_API_VERSION + 1);
+    app_card(own, newer, status); /* #101 the other way round: newer plugins, this app older */
+    TEST_ASSERT(run(in, 2) == 2);
+    vjo_app_banner_text(VJO_API_VERSION, own, newer, status, want, sizeof(want));
+    for (int f = 0; f < 2; f++) {
+        banner_drawn(f, text, sizeof(text));
+        TEST_CHECK_(!strcmp(text, want), "frame %d: banner '%s'", f, text);
+        TEST_CHECK(!text_at(f, 35, 0, 700)); /* the title row is the banner's */
+    }
+    check_card(1, "VOCR3", 0, NORMAL_STATUS, DIM);
+    /* the files agree: the title is back and nothing is red */
+    snprintf(status, sizeof(status), "bootstrap: shell API %d entered\n", VJO_API_VERSION);
+    app_card(own, own, status);
+    TEST_ASSERT(run(in, 2) == 2);
+    for (int f = 0; f < 2; f++) {
+        banner_drawn(f, text, sizeof(text));
+        TEST_CHECK_(!text[0], "frame %d: banner '%s'", f, text);
+        const Text *title = text_at(f, 35, 0, 700);
+        TEST_CHECK(title && !strcmp(title->text, "Overlay"));
+    }
+    /* app0: not readable: the installed copy of its stamp (ux0:app/VJOSET001) is the same file */
+    char other[64];
+    stamp(other, sizeof(other), VJO_API_VERSION, "3333333333333333");
+    app_card(NULL, own, status);
+    mkdir("ux0:app", 0777);
+    mkdir("ux0:app/VJOSET001", 0777);
+    put_file(VJO_APP_STAMP_INSTALLED, other);
+    TEST_ASSERT(run(in, 2) == 2);
+    banner_drawn(1, text, sizeof(text));
+    TEST_CHECK_(!strcmp(text, "This Overlay app is not the installed overlay's: install ux0:data/JPOverlaySettings.vpk "
+                              "in VitaShell."), "banner '%s'", text);
+    put_file(VJO_APP_STAMP_INSTALLED, own);
+    TEST_ASSERT(run(in, 2) == 2);
+    banner_drawn(1, text, sizeof(text));
+    TEST_CHECK_(!text[0], "banner '%s'", text);
+    unlink(VJO_APP_STAMP_INSTALLED);
+    unlink(VJO_APP_STAMP_OWN); unlink(VJO_APP_STAMP_PACKAGE); unlink(VJO_APP_STATUS_PATH);
+}
+
 TEST_LIST = {
     {"two_engines_the_local_one_named_VOCR3_after_its_model_generation", test_two_engines_local_named_after_its_generation},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},
@@ -837,6 +962,8 @@ TEST_LIST = {
     {"label_and_status_follow_the_configured_models_and_files", test_label_and_status_follow_the_configured_models},
     {"unreadable_config_selects_and_saves_nothing", test_unreadable_config_selects_and_saves_nothing},
     {"engine_buttons_and_backends", test_engine_buttons_and_backends},
+    {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
+    {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},
     {NULL, NULL}
 };
 #else

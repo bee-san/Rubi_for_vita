@@ -281,6 +281,70 @@ class Collect(unittest.TestCase):
         self.assertIsNone(summary["tiers"]["recommendation"])
         self.assertEqual(summary["selftest"]["tiers"]["rows"][2]["need"], 1_720_320)
 
+    def test_the_overlay_app_is_collected_read_only_and_compared(self):
+        # The installed Overlay app (core/app_stamp.h): its stamp is fetched, its eboot.bin hashed and never kept,
+        # and both are compared with the plugins' record and the package (#101).
+        eboot, other = b"SCE\0 the package's eboot.bin", b"SCE\0 test.2's eboot.bin"
+        stamp = f"vjoapp1 api=21 build={hashlib.sha256(eboot).hexdigest()[:16]}"
+        manifest = json.loads((self.package / "package-manifest.json").read_text())
+        manifest["app"] = {"stamp": stamp, "title_id": "VJOSET001", "eboot_bytes": len(eboot),
+                           "eboot_sha256": hashlib.sha256(eboot).hexdigest()}
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest))
+        (self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(stamp + "\n")
+        (self.device / "ux0/data/VitaJPOverlay/config.ini").write_text("ocr_backend = vocr2\n")
+        app = self.device / "ux0/app/VJOSET001"
+        app.mkdir(parents=True)
+        cases = ((other, None, ("Overlay app: NOT the plugins' (installed: an app from before the version stamps, "
+                                f"eboot.bin {hashlib.sha256(other).hexdigest()[:16]}; the plugins came with {stamp})")),
+                 (eboot, stamp, f"Overlay app: the plugins' ({stamp}); its eboot.bin is the package's"),
+                 (None, None, "Overlay app: not installed (no ux0:app/VJOSET001/eboot.bin)"))
+        for i, (body, own, text) in enumerate(cases):
+            with self.subTest(text=text):
+                for f in app.iterdir():
+                    f.unlink()
+                if body is not None:
+                    (app / "eboot.bin").write_bytes(body)
+                if own is not None:
+                    (app / "vjo_app.txt").write_text(own + "\n")
+                before = {q: q.read_bytes() for q in self.device.rglob("*") if q.is_file()}
+                with FtpMock(self.device) as ftp:
+                    result = self.collect(ftp)
+                    writes = list(ftp.stored)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(writes, [])
+                self.assertEqual({q: q.read_bytes() for q in self.device.rglob("*") if q.is_file()}, before)
+                folder = max(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+                record = json.loads((folder / "COLLECT.json").read_text())
+                self.assertEqual(record["package_app"]["stamp"], stamp)
+                self.assertEqual((record["app"]["eboot"] or {}).get("sha256"),
+                                 hashlib.sha256(body).hexdigest() if body else None)
+                self.assertNotIn("ux0:/app/VJOSET001/eboot.bin", record["hashed"])  # not a package file
+                with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
+                    self.assertFalse(any(n.endswith("eboot.bin") for n in z.namelist()))
+                analysis = (folder / "analysis.txt").read_text()
+                self.assertIn(text, analysis)
+                self.assertIn("ocr_backend=vocr2: a removed engine, which an older Overlay app writes", analysis)
+                self.assertNotIn("not in this package: ux0:/app", analysis)
+                shutil.rmtree(folder)
+                Path(str(folder) + ".zip").unlink()
+
+    def test_config_warnings_are_counted_once_each(self):
+        log = (self.device / "ux0/data/VitaJPOverlay/log.txt").read_text()
+        log += "config warning: unknown setting 'ocr_backend'\n" * 3 + "config warning: unknown setting 'meiki_layout'\n"
+        log += ("overlay app MISMATCH: installed '' (0x80010002, app 1), plugins' 'vjoapp1 api=21 build=0123456789abcdef'"
+                " (0x00000025)\n")
+        # the next boot's own config load comes before its "shell started" line (shell/worker.c vjo_worker_start)
+        log += "config warning: unknown setting 'ocr_settle_ms'\nVita JP Overlay shell started (kernel API 20)\n"
+        (self.device / "ux0/data/VitaJPOverlay/log.txt").write_text(log)
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        analysis = (folder / "analysis.txt").read_text()
+        self.assertIn("config warnings: 6 line(s), 4 distinct: unknown setting 'ocr_backend' x3; ", analysis)
+        self.assertIn("    logged by builds of API 19: 5, 20: 1\n", analysis)
+        self.assertIn("the Shell's Overlay app check: MISMATCH x1", analysis)
+
     def test_collect_without_a_report_or_logs_still_zips_and_says_why(self):
         data = self.device / "ux0/data/VitaJPOverlay"
         for name in ("selftest-report.txt", "log.txt", "log.old.txt"):

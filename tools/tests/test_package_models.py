@@ -58,9 +58,10 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.vocr3)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
 
-    def package_fixture(self, settings=None, write_models=True):
+    def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
-        unless write_models is False); returns its path."""
+        unless write_models is False); returns its path. vpk: the base's JPOverlaySettings.vpk, record: its
+        ux0/data/VitaJPOverlay/vjo_app.txt (None: none, as before the stamps)."""
         if write_models:
             self.write_models()
         dictionary = self.root / "jmdict.vjdict"
@@ -71,15 +72,48 @@ class PackageModels(unittest.TestCase):
         base = self.root / "base.zip"
         with zipfile.ZipFile(base, "w") as archive:
             for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-                         "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
-                         "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
+                         "ur0/tai/VitaJPOverlay_OCR.suprx", "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
                 archive.writestr(name, b"synthetic package fixture")
+            archive.writestr("JPOverlaySettings.vpk", vpk)
+            if record is not None:
+                archive.writestr(release.APP_RECORD, record)
             archive.writestr("config.ini", b"; the build's own template copy\n")
         output = self.root / "package.zip"
         with mock.patch.object(release, "load_manifest", return_value=snapshot), \
              contextlib.redirect_stdout(io.StringIO()):
             release.package(base, output, self.models, dictionary, license_file, settings=settings)
         return output
+
+    @staticmethod
+    def app_vpk(eboot, stamp):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("eboot.bin", eboot)
+            if stamp is not None:
+                z.writestr("vjo_app.txt", stamp)
+        return buf.getvalue()
+
+    def test_the_manifest_names_the_overlay_app_and_the_record_must_be_its_stamp(self):
+        eboot = b"SCE\0 synthetic eboot.bin"
+        stamp = f"vjoapp1 api=21 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
+        package = self.package_fixture(vpk=self.app_vpk(eboot, stamp), record=stamp)
+        with zipfile.ZipFile(package) as archive:
+            manifest = json.loads(archive.read("package-manifest.json"))
+            self.assertEqual(archive.read(release.APP_RECORD).decode(), stamp)
+        self.assertEqual(manifest["app"], {"stamp": stamp.strip(), "title_id": "VJOSET001", "eboot_bytes": len(eboot),
+                                           "eboot_sha256": hashlib.sha256(eboot).hexdigest()})
+        self.assertIn(release.APP_RECORD, manifest["files"])  # --verify checks it like every file
+        # a base from before the stamps has neither, and no "app"
+        manifest = json.loads(zipfile.ZipFile(self.package_fixture()).read("package-manifest.json"))
+        self.assertNotIn("app", manifest)
+        # the record and the VPK must agree, and the stamp must be the eboot's
+        other = f"vjoapp1 api=20 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
+        for vpk, record in ((self.app_vpk(eboot, stamp), other), (self.app_vpk(eboot, stamp), None),
+                            (self.app_vpk(eboot, None), stamp), (b"not a zip", stamp),
+                            (self.app_vpk(b"another eboot", stamp), stamp),
+                            (self.app_vpk(eboot, "garbage\n"), "garbage\n")):
+            with self.subTest(record=record), self.assertRaises(ValueError):
+                self.package_fixture(vpk=vpk, record=record)
 
     def test_bundle_ships_the_three_model_sizes(self):
         """API 21: each model size's pinned recognizer (tools/model_tiers.json: VOCR3-FL10 Small,

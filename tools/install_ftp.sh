@@ -31,6 +31,9 @@
 #   tools/install_ftp.sh --self-test 192.168.1.50 (arms the on-device self-test for the next
 #      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
+#   tools/install_ftp.sh --check-app 192.168.1.50 (read-only: is the Vita's Overlay app this package's?
+#      Compares ux0:app/VJOSET001/vjo_app.txt and eboot.bin with the package's stamp and VPK; exit 0 yes,
+#      1 no, 2 cannot tell. An install ends with the same check, in a box.)
 #   tools/install_ftp.sh --collect 192.168.1.50  (everything the overlay wrote, read-only: the logs,
 #      the self-test report, status/kernel/boot records, config.ini with its API keys and audio
 #      source URL redacted, both
@@ -45,6 +48,7 @@ STATUS=0
 DUMPS=0
 SELFTEST=0
 COLLECT=0
+CHECKAPP=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
@@ -58,6 +62,7 @@ while [ $# -gt 1 ]; do
     --status) STATUS=1 ;;
     --self-test) SELFTEST=1 ;;
     --collect) COLLECT=1 ;;
+    --check-app) CHECKAPP=1 ;;
     --set) SETS+=("$2"); shift ;;
     --title) TITLES+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
@@ -67,12 +72,12 @@ while [ $# -gt 1 ]; do
   esac
   shift
 done
-HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--dumps|--self-test] VITA_IP[:PORT]}
+HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--check-app|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
 # How to install from here: the release package has install-vita.sh at its root.
 INSTALL_CMD="bash tools/install_ftp.sh"
 [ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
-if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT)) -gt 0 ]; then
+if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP)) -gt 0 ]; then
   echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
   echo "this command does not change which games the OCR worker is registered for."
 fi
@@ -89,6 +94,18 @@ if [ -n "$PACKAGE_DIR" ]; then
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
+fi
+# The Overlay app this install brings (core/app_stamp.h): its stamp, also the plugins' record on the Vita,
+# and its VPK. A package has them at ux0/data/VitaJPOverlay/vjo_app.txt and at its root (this script also runs
+# from an extracted package's root, e.g. for --check-app); a source build in build/vita.
+APP_STAMP=build/vita/vjo_app.txt
+APP_VPK=build/vita/JPOverlaySettings.vpk
+if [ -n "$PACKAGE_DIR" ]; then
+  APP_STAMP=$PACKAGE_DIR/ux0/data/VitaJPOverlay/vjo_app.txt
+  APP_VPK=$PACKAGE_DIR/JPOverlaySettings.vpk
+elif [ -f ux0/data/VitaJPOverlay/vjo_app.txt ]; then
+  APP_STAMP=ux0/data/VitaJPOverlay/vjo_app.txt
+  APP_VPK=JPOverlaySettings.vpk
 fi
 PATCH_ARGS=()
 for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
@@ -122,9 +139,38 @@ reset_boot_record() {
   put "$TMP/boot.empty" "ur0:/data/VitaJPOverlay/boot.txt"
 }
 
+# Read-only: is the Vita's Overlay app (ux0:app/VJOSET001) the one this install brings? Prints a box with the
+# answer and what to do; returns 0 yes, 1 no, 2 cannot tell (tools/app_stamp.py check). $1: --after-install
+# for the installer's own last words.
+app_check() {
+  local rc pair src dst
+  rm -f "$TMP/app.stamp" "$TMP/app.eboot"
+  for pair in "ux0:/app/VJOSET001/vjo_app.txt $TMP/app.stamp" "ux0:/app/VJOSET001/eboot.bin $TMP/app.eboot"; do
+    src=${pair%% *}
+    dst=${pair#* }
+    rc=0
+    get "$src" "$dst" 2>/dev/null || rc=$?
+    case $rc in
+      0) ;;
+      9|19|78) rm -f "$dst" ;;  # not there: CWD or RETR refused (as tools/collect_vita.py reads them)
+      *)  # cannot connect, timed out, a broken transfer: not a Vita without the app
+        echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Overlay app. Start VitaShell's FTP (SELECT) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
+        return 2 ;;
+    esac
+  done
+  python3 tools/app_stamp.py check --package "$APP_STAMP" --vpk "$APP_VPK" --installed "$TMP/app.stamp" \
+    --installed-eboot "$TMP/app.eboot" --command "$INSTALL_CMD --check-app ${HOST%%:*}" "$@"
+}
+
 python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5).close()' \
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
   echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."; exit 1; }
+
+if [ $CHECKAPP = 1 ]; then
+  app_rc=0
+  app_check || app_rc=$?
+  exit $app_rc
+fi
 
 if [ $COLLECT = 1 ]; then
   # Read-only: tools/collect_vita.py sends only CWD, LIST, SIZE and RETR. One timestamped folder
@@ -345,9 +391,11 @@ if [ -n "$PACKAGE_DIR" ]; then
     [ -f "$f" ] || continue
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done
-  put "$PACKAGE_DIR/JPOverlaySettings.vpk" "ux0:/data/JPOverlaySettings.vpk"
-  echo "In VitaShell install ux0:data/JPOverlaySettings.vpk to add or update the Overlay settings app."
 fi
+# The Overlay app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
+# the record of it the Shell plugin compares the installed app with.
+if [ -f "$APP_VPK" ]; then put "$APP_VPK" "ux0:/data/JPOverlaySettings.vpk"; fi
+if [ -f "$APP_STAMP" ]; then put "$APP_STAMP" "ux0:/data/VitaJPOverlay/vjo_app.txt"; fi
 for f in ${VOCR_MODELS[@]+"${VOCR_MODELS[@]}"}; do
   # The plugin checks the file's size and SHA-256 before it parses it.
   put "$f" "ux0:/data/VitaJPOverlay/ocr/$(basename "$f")"
@@ -375,3 +423,12 @@ else
 fi
 for CFG in "${CFGS[@]}"; do put "$TMP/${CFG%%:*}.new" "$CFG"; done
 echo "Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on and run: tools/install_ftp.sh --uninstall ${HOST%%:*}"
+# Last, so it cannot scroll away: the Overlay app (#101: test.1's app ran beside test.2's plugins). A failed
+# check changes nothing of the install.
+echo
+app_rc=0
+app_check --after-install || app_rc=$?
+if [ $app_rc = 1 ] && [ -t 0 ] && [ -t 1 ] && [ -z "${VJO_NO_PROMPT:-}" ]; then
+  read -r -p "Press Enter once the app is installed to check it again (Ctrl-C to skip): " _ || true
+  app_check || true
+fi

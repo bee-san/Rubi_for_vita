@@ -1,16 +1,21 @@
 """Exercise the real package installer with a local filesystem FTP substitute."""
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import unittest
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools"))
+import app_stamp
 
 
 class ReleaseInstall(unittest.TestCase):
@@ -25,7 +30,7 @@ class ReleaseInstall(unittest.TestCase):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
         for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py",
                      "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py",
-                     "model_tiers.json"):
+                     "model_tiers.json", "app_stamp.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
@@ -61,13 +66,14 @@ class ReleaseInstall(unittest.TestCase):
 import os, pathlib, shutil, sys
 from urllib.parse import urlparse
 a = sys.argv[1:]
+if os.environ.get('CURL_EXIT'): sys.exit(int(os.environ['CURL_EXIT']))  # 7: the Vita cannot be reached
 p = urlparse(a[-1]).path.lstrip('/').replace(':', '')
 remote = pathlib.Path(os.environ['FAKE_DEVICE']) / p
 if '-T' in a:
     remote.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(a[a.index('-T') + 1], remote)
 elif '-o' in a:
-    if not remote.is_file(): sys.exit(22)
+    if not remote.is_file(): sys.exit(78)  # curl's code for an FTP RETR answered 550 (not there)
     out = a[a.index('-o') + 1]
     if out != '/dev/null':
         shutil.copyfile(remote, out)
@@ -149,6 +155,98 @@ elif '-o' in a:
                      "ocr/LM-ATTRIBUTION.md", "ocr/VOCR4_W20_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
+
+    # ---- the Overlay app (core/app_stamp.h): staged with the plugins, checked at the end, loudly ----
+    def stamped_package(self):
+        """The package with a real app VPK (an eboot.bin and its stamp) and the record beside the plugins."""
+        eboot = b"SCE\0 this package's eboot.bin"
+        stamp = app_stamp.make(eboot, 21)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("eboot.bin", eboot)
+            z.writestr("vjo_app.txt", stamp)
+        (self.package / "JPOverlaySettings.vpk").write_bytes(buf.getvalue())
+        (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(stamp)
+        files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
+                 "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                 for p in self.package.rglob("*") if p.is_file() and p.name != "package-manifest.json"}
+        (self.package / "package-manifest.json").write_text(json.dumps({"files": files}))
+        return eboot, stamp
+
+    def device_app(self, eboot=None, stamp=None):
+        app = self.device / "ux0/app/VJOSET001"
+        shutil.rmtree(app, ignore_errors=True)
+        if eboot is not None:
+            app.mkdir(parents=True)
+            (app / "eboot.bin").write_bytes(eboot)
+            if stamp is not None:
+                (app / "vjo_app.txt").write_text(stamp)
+
+    def device_files(self):
+        return {str(p.relative_to(self.device)): p.read_bytes() for p in self.device.rglob("*") if p.is_file()}
+
+    def test_install_stages_the_app_and_ends_with_a_loud_box_until_it_is_installed(self):
+        eboot, stamp = self.stamped_package()
+        self.device_app(b"test.2's eboot.bin")  # #101: the app from before the stamps
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # the VPK and the record go up with the plugins
+        self.assertEqual((self.device / "ux0/data/JPOverlaySettings.vpk").read_bytes(),
+                         (self.package / "JPOverlaySettings.vpk").read_bytes())
+        self.assertEqual((self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").read_text(), stamp)
+        # the last words, after "Installed.": a box, the app's state and what to do
+        tail = result.stdout.split("Installed. Reboot the Vita", 1)[1]
+        box = [l for l in tail.splitlines() if l.startswith(("+", "|"))]
+        self.assertTrue(box and all(len(l) == 78 for l in box), box)
+        flat = " ".join(" ".join(l.strip("|+- ").split()) for l in box)
+        self.assertIn("ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)", flat)
+        self.assertIn("no version stamp: it is from an older build (v0.8.0-test.2 or earlier)", flat)
+        self.assertIn("bash install-vita.sh --check-app 127.0.0.1", flat)
+        self.assertEqual(result.stdout.rstrip().splitlines()[-1], box[-1])  # nothing can scroll it away
+        # VitaShell installs the VPK: the check says so, read-only
+        self.device_app(eboot, stamp)
+        before = self.device_files()
+        check = self.install("install-vita.sh", "--check-app")
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn("Overlay app: up to date", check.stdout)
+        self.assertIn("Its eboot.bin is the package VPK's.", check.stdout)
+        self.assertEqual(self.device_files(), before)
+        # and an install over an up-to-date app says so in the same place
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Overlay app: up to date", result.stdout.split("Installed. Reboot the Vita", 1)[1])
+
+    def test_check_app_answers_for_each_app_and_never_writes(self):
+        eboot, stamp = self.stamped_package()
+        cases = ((None, None, 1, "No Overlay app is installed on the Vita"),
+                 (b"old eboot", None, 1, "no version stamp"),
+                 (b"other eboot", stamp.replace("api=21", "api=20"), 1, "an older build"),
+                 (eboot, stamp, 0, "Overlay app: up to date"))
+        for app_eboot, app_stamp_text, code, text in cases:
+            with self.subTest(text=text):
+                self.device_app(app_eboot, app_stamp_text)
+                before = self.device_files()
+                for script in ("install-vita.sh", "tools/install_ftp.sh"):
+                    result = self.install(script, "--check-app")
+                    self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                    self.assertIn(text, " ".join(result.stdout.replace("|", " ").split()))
+                    self.assertEqual(self.device_files(), before)
+                    self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists())
+        # a Vita that cannot be reached (FTP stopped, rebooted) is not one without the app
+        result = subprocess.run(["bash", str(self.package / "install-vita.sh"), "--check-app",
+                                 "127.0.0.1:" + str(self.listener.getsockname()[1])],
+                                env=dict(self.environment, CURL_EXIT="7"), capture_output=True, text=True, timeout=30,
+                                check=False)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("Cannot read ux0:app/VJOSET001/vjo_app.txt from 127.0.0.1", result.stdout)
+        self.assertIn("(curl exit 7)", result.stdout)
+        self.assertIn("bash install-vita.sh --check-app 127.0.0.1", result.stdout)
+        self.assertNotIn("No Overlay app is installed", result.stdout)
+        # a package from before the stamps cannot tell
+        (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").unlink()
+        result = self.install("install-vita.sh", "--check-app")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("Overlay app: not checked", result.stdout)
 
     def test_package_settings_from_the_manifest_are_applied_after_the_defaults(self):
         # A test build's own settings (package_release.py --set): anki_mining = on wins over

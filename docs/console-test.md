@@ -6,7 +6,8 @@ single zip that has everything: the three plugins, the **Overlay** settings app,
 the analyser. It needs no git, no `gh` and no packaging. Its install issue names the tag and gives
 the zip's SHA-256. The installer registers the OCR worker only for the games named with `--title`
 (here CLANNAD, `PCSG00415`), never under `*ALL`. "est." marks an estimate; nothing of a test build
-has run on a console before the owner's run.
+has run on a console before the owner's run. The install issue follows
+[test-build-issue.md](test-build-issue.md), whose first install step is the Overlay app.
 
 ## What you need
 - A PCH-1000/1001 on 3.60–3.74 with HENkaku/Ensō or h-encore, and VitaShell.
@@ -27,17 +28,27 @@ and download again.
 On the Vita, close any game, open VitaShell and press **Select** to start FTP. Then, in `vjo`:
 ```sh
 bash install-vita.sh --title PCSG00415 VITA_IP:1337
-bash tools/install_ftp.sh --self-test VITA_IP
 ```
+- [ ] **Step 1, every time: install the Overlay app again.** In VitaShell (press OK on its FTP dialog to
+  keep FTP running) open `ux0:data/`, install `JPOverlaySettings.vpk`, then on the PC check it:
+  ```sh
+  bash install-vita.sh --check-app VITA_IP     # must print "Overlay app: up to date"
+  ```
+  The installer ends with a box saying the same. In #101 the app was not reinstalled, so test.1's app ran
+  beside test.2's plugins: it still showed VOCR2, had no Anki page and wrote `ocr_backend = vocr2`.
+  From this build on, the plugins notice an old app at the next game start, and the first overlay opened
+  then says `Overlay app is out of date: …` once.
+- [ ] Arm the self-test: `bash tools/install_ftp.sh --self-test VITA_IP`.
 - The installer first backs up both taiHEN configurations: on the PC in `build/device/backup/`, and
   on the Vita as `config.txt.vjo-bak` next to each `config.txt`. It also keeps your `config.ini`'s
   values (the copy it replaced is in the same backup folder).
 - It registers the OCR worker for CLANNAD only (`*PCSG00415`), the kernel plugin under `*KERNEL`
   and the Shell plugin under `*main`, and prints each change.
 - It prints `package settings: ...` for the test build's own settings (`anki_mining=on`).
-- Keep the screen on until it prints `Installed. Reboot the Vita, then leave it on for a minute. …`;
-  `Nothing was changed on the Vita` means you left out `--title`.
-- In VitaShell, install `ux0:data/JPOverlaySettings.vpk` (the **Overlay** app).
+- Keep the screen on until it prints `Installed. Reboot the Vita, then leave it on for a minute. …`
+  and the Overlay app's box after it; `Nothing was changed on the Vita` means you left out `--title`.
+- It uploads the Overlay app's VPK to `ux0:data/JPOverlaySettings.vpk` and its record to
+  `ux0:data/VitaJPOverlay/vjo_app.txt` with the plugins; installing the VPK is the step above.
 
 Manual install without the install script (VitaShell's file manager, over USB or FTP): first copy
 `ur0:tai/config.txt` to `ur0:tai/config.txt.bak` and your `ux0:data/VitaJPOverlay/config.ini` aside

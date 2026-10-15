@@ -2,26 +2,34 @@
 # Installs this release over VitaShell's FTP. Name each game that should have
 # OCR with --title (repeatable): the OCR worker is registered for those games
 # and the games registered before, never under *ALL. For Adrenaline's PSP
-# games add NPXS10028 and PSPEMUCFW (README 'Install').
+# games add NPXS10028 and PSPEMUCFW (README 'Install'). --check-app only checks,
+# read-only, that the Vita's Overlay app is this package's (the install ends with
+# the same check).
 set -euo pipefail
 PACKAGE=$(cd "$(dirname "$0")" && pwd)
 TITLES=()
 HOST=
 HOSTS=0
 USAGE=0
+CHECK_APP=0
 while [ $# -gt 0 ]; do
   case $1 in
     --title)
       if [ $# -lt 2 ]; then USAGE=1; break; fi
       TITLES+=(--title "$2"); shift 2 ;;
+    --check-app) CHECK_APP=1; shift ;;
     -*) USAGE=1; break ;;
     *) HOST=$1; HOSTS=$((HOSTS + 1)); shift ;;
   esac
 done
 if [ $USAGE = 1 ] || [ $HOSTS -ne 1 ]; then
   echo "Usage: ./install-vita.sh [--title TITLEID]... VITA_IP[:1337]"
+  echo "       ./install-vita.sh --check-app VITA_IP[:1337]"
   echo "  e.g. ./install-vita.sh --title PCSG00415 192.168.1.50"
   exit 2
+fi
+if [ $CHECK_APP = 1 ]; then
+  exec bash "$PACKAGE/tools/install_ftp.sh" --check-app "$HOST"
 fi
 python3 "$PACKAGE/tools/package_release.py" --verify "$PACKAGE"
 # The package's own settings (package_release.py --set, e.g. a test build's anki_mining=on),

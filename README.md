@@ -123,7 +123,25 @@ it starts (`game … started`), and that ID is the one to add. The 0.7.12 archiv
 and registers the worker under `*ALL`; use the installer from `main` or a
 later release.
 
-In VitaShell, install `ux0:data/JPOverlaySettings.vpk`, then reboot the Vita.
+**Then install the Overlay app again, every time:** in VitaShell (press OK on
+its FTP dialog to keep FTP running), open `ux0:data/`, install
+`JPOverlaySettings.vpk`, then reboot the Vita. The plugins and the app come as a
+pair. An older app shows engines and pages that are gone and saves settings the
+plugins no longer use: in [#101](https://github.com/bee-san/vita-jp-overlay/issues/101)
+test.1's app ran beside test.2's plugins, showed VOCR2, had no Anki page and
+wrote `ocr_backend = vocr2`. The installer uploads the VPK with the plugins and
+ends with a box that says whether the Vita's app is this package's;
+`bash install-vita.sh --check-app VITA_IP` asks again, read-only. Each build's
+app carries a version stamp (`ux0:app/VJOSET001/vjo_app.txt`, the API and its
+eboot.bin's hash) and the plugins a record of the app they came with
+(`ux0:data/VitaJPOverlay/vjo_app.txt`). When the two differ, the Shell plugin
+logs it at the next game start and says so once, in red under the recognized
+text of the first overlay opened in a game (`Overlay app is out of date: reinstall
+ux0:data/JPOverlaySettings.vpk in VitaShell.`); the app shows a red banner in
+place of its title when its stamp, the plugins' record or the Shell plugin that
+last started (`status.txt`) is another build's. Apps from before the
+stamps (0.8.0-test.2 and older) cannot show the banner, but the plugins still
+notice them.
 Open **Overlay** from LiveArea to enable or disable individual games. Older
 builds, including 0.7.12, call it **JP Overlay Settings**; the title ID
 (`VJOSET001`) and VPK file name are unchanged, so the new VPK installs over it.
@@ -137,6 +155,7 @@ game that uses extended memory (`ATTRIBUTE2` in its `param.sfo`) may still have
 to close first, as for other system applications.
 
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
+(`ux0/` includes the app's record, `ux0/data/VitaJPOverlay/vjo_app.txt`)
 and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
 copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
@@ -297,7 +316,14 @@ the game to be registered for the OCR worker at install time (`--title`, see
 
 ## Settings and dictionaries
 
-`ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens:
+`ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
+the plugins do not know or cannot use is listed in red in the open overlay and
+logged in `log.txt` once, and again only when the set of such lines changes
+(test.2's log had 76 lines from 8 of them, #101). A removed engine
+(`ocr_backend = vocr2`, `meiki`, `ncnn`) runs the local engine, and the app's
+next save writes `vocr`. The installer, the package's own copy and the Overlay
+app write the file; the Shell plugin never does, and with no file it runs on
+these defaults:
 
 ```ini
 dictionary = local
@@ -635,9 +661,19 @@ The Overlay app is not a plugin and never starts by itself, so it cannot stop
 the Vita from starting. If it misbehaves, close it from its LiveArea page. To go
 back, install the previous `JPOverlaySettings.vpk` over it in VitaShell (the same
 title ID, so its settings stay) or delete the app; the plugins keep reading
-`games.ini` and `config.ini` without it.
+`games.ini` and `config.ini` without it. With no app installed the overlay says
+nothing about it; an older one than the plugins' is said once a boot, at the first
+overlay opened.
 
 ## Build and validation
+
+The Vita build stamps the Overlay app: `tools/app_stamp.py` writes `vjo_app.txt`
+(`vjoapp1 api=API build=` the first 16 hex digits of its eboot.bin's SHA-256)
+into the VPK and, the same bytes, into the release's `ux0/data/VitaJPOverlay/`
+as the record of the app these plugins come with ([core/app_stamp.h](core/app_stamp.h)).
+`package_release.py` refuses a base zip whose two copies differ and writes the
+stamp and the eboot's SHA-256 into the manifest (`app`), which `--check-app` and
+`--collect` compare with the Vita's app.
 
 The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
 ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed

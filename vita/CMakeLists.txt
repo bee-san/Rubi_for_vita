@@ -101,7 +101,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/ledger.c)
+  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -120,6 +120,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
   ${ROOT}/core/jpegsw.c ${ROOT}/core/utf.c
+  ${ROOT}/core/app_stamp.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -296,8 +297,8 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
-  ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c
-  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c
+  ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
+  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${VJO_SETTINGS_ANKI_SRC})
 # vjo_bearssl (SHA-256 for the queue's IDs and the screenshots' names, SHA-1 for Anki's field
@@ -338,6 +339,15 @@ add_custom_target(vjo_settings_self ALL
     --elf $<TARGET_FILE:VitaJPOverlay_Settings> ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
   DEPENDS eboot.bin-self ${ROOT}/tools/check_settings_self.py
   COMMENT "Checking the Overlay app's eboot.bin is the system application it is built as")
+# The app's version stamp (core/app_stamp.h): VJO_API_VERSION and the first 16 hex digits of the
+# eboot's SHA-256. In the VPK it is app0:vjo_app.txt (installed as ux0:app/VJOSET001/vjo_app.txt); the
+# release carries the same bytes as ux0:data/VitaJPOverlay/vjo_app.txt, the record of the app these
+# plugins come with, which the Shell plugin, the app and the installer compare it with.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/app_stamp.py make --eboot ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
+    --api-header ${ROOT}/include/vjo_api.h -o ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin ${ROOT}/tools/app_stamp.py ${ROOT}/include/vjo_api.h
+  COMMENT "Stamping the Overlay app (vjo_app.txt)")
 # LiveArea title (param.sfo TITLE/STITLE) is "Overlay". The title ID, the VPK file name and every
 # plugin, path and config name keep their old names, so installing over JP Overlay Settings is an update.
 vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
@@ -346,7 +356,8 @@ vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
        ${ROOT}/settings/assets/pic0.png sce_sys/pic0.png
        ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
        ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png
-       ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml)
+       ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml
+       ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt vjo_app.txt)
 add_custom_target(vjo_settings_assets ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_assets.py
     ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk
@@ -405,8 +416,11 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
+  # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/

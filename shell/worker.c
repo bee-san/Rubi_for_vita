@@ -8,6 +8,7 @@
 #include <psp2/power.h>
 
 #include "../core/boot_guard.h"
+#include "../core/app_stamp.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
 #include "../core/local_dict.h"
@@ -1373,8 +1374,12 @@ static void apply_config(void)
     anki_on = vjo_anki_configure(&cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
-    for (int i = 0; i < cfg.n_warnings; i++)
-        vjo_log("config warning: %s", cfg.warnings[i]);
+    /* Logged when they change, not at every load (each overlay open, game
+     * start, subtitles on): test.2's log.txt had one line per load and key
+     * (#101). The overlay still lists them each time it opens. */
+    if (sceClibMemcmp(cfg.warnings, previous.warnings, sizeof(cfg.warnings)))
+        for (int i = 0; i < cfg.n_warnings; i++)
+            vjo_log("config warning: %s", cfg.warnings[i]);
 }
 
 /* The region in force for this game (w == 0: none, the whole frame). The
@@ -1545,6 +1550,8 @@ static void close_overlay_for(int why)
     /* #104: with SceShell itself in front (the game suspended by PS, or gone)
      * its LiveArea owns the region; the page must not deactivate it then. */
     g_view.touch_handback = why == CLOSE_GAME_LEFT ? VJO_TOUCH_LEAVE : VJO_TOUCH_RELEASE;
+    if (g_view.notice_shown) /* the Overlay app's notice is said once (check_app) */
+        g_view.notice = NULL;
     /* The next job may reuse the shown arena; an open republishes it. */
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
@@ -2024,6 +2031,33 @@ static void on_command(void)
 static SceUID pending_pid;
 static int64_t pending_since;
 
+/* The installed Overlay app against the one the plugins came with
+ * (core/app_stamp.h), at each enabled game's start (the app can be
+ * reinstalled while SceShell runs): logged when the answer changes, and a
+ * mismatch is said once, in the body of the next overlay that draws its
+ * page (an overlay refused Paf memory for it keeps the notice for the next). */
+static int app_state = -1;
+
+static void check_app(void)
+{
+    char installed[VJO_APP_STAMP_MAX], package[VJO_APP_STAMP_MAX];
+    int irc = vjo_file_line(VJO_APP_STAMP_INSTALLED, installed, sizeof(installed));
+    int prc = vjo_file_line(VJO_APP_STAMP_PACKAGE, package, sizeof(package));
+    int app = vjo_file_exists(VJO_APP_EBOOT_INSTALLED);
+    int s = vjo_app_state(irc, installed, app, prc, package);
+    if (s == app_state)
+        return;
+    app_state = s;
+    vjo_view_lock(); /* the overlay is closed: a game is starting */
+    g_view.notice = s != VJO_APP_MISMATCH ? NULL
+                    : vjo_app_stamp_api(installed) > vjo_app_stamp_api(package) ? VJO_APP_NOTICE_NEWER : VJO_APP_NOTICE;
+    g_view.notice_shown = 0;
+    vjo_view_unlock();
+    vjo_log("overlay app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)",
+            s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app, package,
+            prc);
+}
+
 static void activate_game(SceUID pid, const char *tid, int mode)
 {
     if (!vjo_game_enabled(tid, &scratch)) {
@@ -2051,6 +2085,7 @@ static void activate_game(SceUID pid, const char *tid, int mode)
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
+    check_app(); /* after the game is active: its file reads never delay that */
 }
 
 static void classify_pending(void)

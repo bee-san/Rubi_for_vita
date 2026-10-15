@@ -53,6 +53,11 @@ typedef struct {
     int dict_pages;           /* local: dictionaries with an entry there; 0 = unknown */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
+    /* The Overlay app does not match the plugins (core/app_stamp.h): said in
+     * the body of the next overlay that draws its page, NULL otherwise (worker.c
+     * check_app); notice_shown: an overlay drew it, so closing it drops it */
+    const char *notice;
+    int notice_shown;
     int font_size_ja;         /* config font_size_ja */
     int font_size_en;         /* config font_size_en */
     int enter_circle;         /* ○ enters and × cancels (core/buttons.h), as read when the overlay opened */
@@ -277,6 +282,10 @@ uint32_t vjo_log_io(uint32_t *appends);
 /* files.c */
 char *vjo_file_read(VjoArena *a, const char *path, size_t *len);
 int vjo_file_write(const char *path, const void *data, size_t len);
+/* The first line of path (at most cap - 1 bytes, NUL-terminated; "" when it
+ * cannot be read): the bytes read, or the SDK's error (0x80010002: no file). */
+int vjo_file_line(const char *path, char *buf, int cap);
+int vjo_file_exists(const char *path);
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch);
 /* title_id's region (VJO_REGION_* from core/regions.h). */
 int vjo_region_load(const char *title_id, VjoRect *out, VjoArena *scratch);

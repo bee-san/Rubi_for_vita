@@ -244,7 +244,10 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;
   the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
   the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
-  `anki/`, the Overlay app's `.apkg` packages;
+  `anki/`, the Overlay app's `.apkg` packages, and `vjo_app.txt`, the record of the Overlay app the plugins came
+  with;
+- `ux0:app/VJOSET001/vjo_app.txt`, the installed Overlay app's version stamp, and the SHA-256 of its
+  `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h));
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
@@ -258,11 +261,15 @@ package's version, defaults and install settings, with each API key and the audi
 `set` or empty. Then
 `analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
 the summary: whether the installed files match the package (a file it does not ship, such as a
-removed engine's model, is listed as not in this package), the configuration, where taiHEN loads
+removed engine's model, is listed as not in this package), whether the installed Overlay app is the
+one the plugins came with (an app from before the stamps, v0.8.0-test.2 and older, is recognised by its
+eboot.bin without one), the configuration (with a note when `ocr_backend` names a removed engine, which
+an older app writes), where taiHEN loads
 each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the dictionary jobs, the overlay's
-slowest frame, Anki saves and exports, the lines that report a problem, the Anki queue, crash dumps, the
+slowest frame, Anki saves and exports, the config warnings counted once each, the Shell's own checks of the
+Overlay app at game starts, the lines that report a problem, the Anki queue, crash dumps, the
 model tier from each free-memory sample, the full self-test analysis when a report is there, and what
 it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.
 

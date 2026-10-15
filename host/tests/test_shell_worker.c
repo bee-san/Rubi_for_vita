@@ -127,6 +127,16 @@ void vjo_log_configure(const VjoConfig *c) {}
 /* The last log lines, for the game OCR measurement tests. */
 static char log_lines[32][256];
 static unsigned log_count;
+/* Every config warning line (the last 16) and the Overlay app check's lines, counted since reset. */
+static char warning_logs[16][128], last_app_log[256];
+static unsigned config_warning_logs, app_logs;
+static unsigned warnings_logged(const char *text)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < config_warning_logs && i < 16; i++)
+        n += !strcmp(warning_logs[i], text);
+    return n;
+}
 /* The logger's batches (shell/log_vita.c vjo_log_batch_begin/end), by its own
  * rules: a line outside a batch is one append of log.txt; a batch's lines go
  * out together when it ends, or when the next one would pass its
@@ -152,7 +162,14 @@ void vjo_log(const char *fmt, ...)
 {
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(log_lines[log_count % 32], sizeof(log_lines[0]), fmt, ap);
-    va_end(ap); log_count++;
+    va_end(ap);
+    if (!strncmp(log_lines[log_count % 32], "config warning: ", 16))
+        snprintf(warning_logs[config_warning_logs++ % 16], sizeof(warning_logs[0]), "%s", log_lines[log_count % 32] + 16);
+    if (!strncmp(log_lines[log_count % 32], "overlay app ", 12)) {
+        app_logs++;
+        snprintf(last_app_log, sizeof(last_app_log), "%s", log_lines[log_count % 32]);
+    }
+    log_count++;
     n = (n > 254 ? 254 : n) + 1; /* the line and its '\n', as vjo_log writes it */
     if (!open_batch) { log_appends++; return; }
     batched_lines++;
@@ -171,6 +188,22 @@ static const char *logged(const char *needle)
 }
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
+/* The Overlay app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
+static char app_installed[64], app_record[64];
+static int app_installed_rc, app_record_rc, app_eboot;
+int vjo_file_line(const char *path, char *buf, int cap)
+{
+    int installed = !strcmp(path, VJO_APP_STAMP_INSTALLED);
+    TEST_CHECK_(installed || !strcmp(path, VJO_APP_STAMP_PACKAGE), "read %s", path);
+    int rc = installed ? app_installed_rc : app_record_rc;
+    snprintf(buf, (size_t)cap, "%s", rc >= 0 ? (installed ? app_installed : app_record) : "");
+    return rc;
+}
+int vjo_file_exists(const char *path)
+{
+    TEST_CHECK_(!strcmp(path, VJO_APP_EBOOT_INSTALLED), "stat %s", path);
+    return app_eboot;
+}
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
 /* The self-test's interface (shell/selftest.c writes the report): the stages
  * one job runs, recorded here. */
@@ -530,6 +563,12 @@ static void reset(void)
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
     memset(cache_data, 0, sizeof(cache_data));
+    app_state = -1;
+    app_installed_rc = app_record_rc = (int)0x80010002u; /* neither stamp: a package from before them */
+    app_eboot = 0;
+    app_installed[0] = app_record[0] = 0;
+    app_logs = config_warning_logs = 0;
+    last_app_log[0] = 0;
 }
 
 static void test_local_open(void)
@@ -3732,7 +3771,195 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
 }
 #endif
 
+/* test.2's log.txt (#101): each config load (an overlay open, a game start,
+ * subtitles on) logged every warning again, 76 lines from 8 distinct ones.
+ * A warning is logged when the loaded set changes; the overlay still lists
+ * the warnings each time it opens. */
+static void test_config_warnings_are_logged_once_per_change(void)
+{
+    static const char stale[] = "ocr_backend = vocr2\nmeiki_layout = auto\nocr_settle_ms = 150\n";
+    reset();
+    vjo_config_defaults(&loaded);
+    vjo_config_parse(&loaded, stale, strlen(stale));
+    TEST_ASSERT(loaded.n_warnings == 2);
+    for (int i = 0; i < 3; i++) {
+        apply_config();
+        open_overlay(); /* re-reads config.ini */
+        TEST_CHECK(g_view.n_warnings == 2 && !strcmp(g_view.warnings[1], "unknown setting 'meiki_layout'"));
+        close_overlay();
+        activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+        set_subtitles(1);
+        set_subtitles(0);
+    }
+    TEST_CHECK_(config_warning_logs == 2, "%u config warning lines", config_warning_logs);
+    TEST_CHECK(warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 1);
+    TEST_CHECK(warnings_logged("unknown setting 'meiki_layout'") == 1);
+    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR);
+    /* the file changes: its new set is logged once */
+    vjo_config_defaults(&loaded);
+    vjo_config_parse(&loaded, "ocr_backend = vocr2\n", 20);
+    apply_config();
+    apply_config();
+    TEST_CHECK(config_warning_logs == 3 && warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 2);
+    /* repaired (the app's next save writes vocr): nothing more is logged or shown */
+    vjo_config_defaults(&loaded);
+    apply_config();
+    open_overlay();
+    TEST_CHECK(config_warning_logs == 3 && !g_view.n_warnings);
+    close_overlay();
+    mem_free();
+}
+
+static void app_files(int installed_rc, const char *installed, int eboot, int record_rc, const char *record)
+{
+    app_installed_rc = installed_rc;
+    snprintf(app_installed, sizeof(app_installed), "%s", installed);
+    app_eboot = eboot;
+    app_record_rc = record_rc;
+    snprintf(app_record, sizeof(app_record), "%s", record);
+}
+#define STAMP_21 "vjoapp1 api=21 build=0123456789abcdef"
+#define STAMP_20 "vjoapp1 api=20 build=fedcba9876543210"
+#define NOENT ((int)0x80010002u)
+
+/* overlay.cpp's render: the open overlay's body says the notice, if any, and
+ * marks it drawn (under the view lock, which the harness does not model). */
+static const char *overlay_draws(void)
+{
+    if (g_view.open && g_view.notice) g_view.notice_shown = 1;
+    return g_view.open ? g_view.notice : NULL;
+}
+static int notice_is(const char *shown, const char *text) { return shown && !strcmp(shown, text); }
+static void next_game(void)
+{
+    on_game_exit();
+    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+}
+
+/* The installed Overlay app is checked against the plugins' record at each
+ * enabled game's start: logged when the answer changes, and a mismatch is
+ * said once, in the body of the next overlay that draws its page (core/app_stamp.h). */
+static void test_overlay_app_mismatch_is_logged_and_said_once(void)
+{
+    reset();
+    /* #101: the app from before the stamps (its eboot, no vjo_app.txt) beside newer plugins */
+    app_files(NOENT, "", 1, 37, STAMP_21);
+    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    TEST_CHECK(app_logs == 1);
+    TEST_CHECK_(strstr(last_app_log, "overlay app MISMATCH: installed '' (0x80010002, app 1), plugins' '"
+                       STAMP_21 "' (0x00000025)") != NULL, "%s", last_app_log);
+    TEST_CHECK(!g_view.open && !g_view.strip_text[0]); /* nothing is drawn over the game */
+    open_overlay();
+    TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE));
+    view_publish(1, NULL, "Recognizing…", 0); /* the same overlay keeps it while it is open */
+    TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE));
+    close_overlay();
+    open_overlay();
+    TEST_CHECK(g_view.open && !overlay_draws()); /* once */
+    close_overlay();
+    /* the next game start finds the same app: nothing new */
+    next_game();
+    open_overlay();
+    TEST_CHECK(app_logs == 1 && !overlay_draws());
+    close_overlay();
+    /* the VPK installed meanwhile (VitaShell beside the running plugins): ok, logged once, no notice */
+    app_files(37, STAMP_21, 1, 37, STAMP_21);
+    next_game();
+    TEST_CHECK(app_logs == 2 && strstr(last_app_log, "overlay app ok: installed '" STAMP_21 "'"));
+    open_overlay();
+    TEST_CHECK(!overlay_draws());
+    close_overlay();
+    /* an older app installed again: a mismatch again, said again */
+    app_files(37, STAMP_20, 1, 37, STAMP_21);
+    next_game();
+    TEST_CHECK(app_logs == 3 && strstr(last_app_log, "overlay app MISMATCH: installed '" STAMP_20 "'"));
+    open_overlay();
+    TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE));
+    close_overlay();
+    /* an overlay that cannot draw its page (no Paf memory for it, as 21 times in test.2's log): the
+     * notice waits for the next overlay that does */
+    app_files(37, STAMP_21, 1, 37, STAMP_21);
+    next_game();
+    app_files(NOENT, "", 1, 37, STAMP_21);
+    next_game();
+    TEST_CHECK(app_logs == 5);
+    open_overlay(); /* not drawn */
+    close_overlay();
+    open_overlay();
+    TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE));
+    close_overlay();
+    open_overlay();
+    TEST_CHECK(!overlay_draws());
+    close_overlay();
+    /* a mismatch that is gone before an overlay drew it leaves nothing to say */
+    app_files(37, STAMP_21, 1, 37, STAMP_21);
+    next_game();
+    app_files(NOENT, "", 1, 37, STAMP_21);
+    next_game();
+    open_overlay(); /* not drawn */
+    close_overlay();
+    app_files(37, STAMP_21, 1, 37, STAMP_21);
+    next_game();
+    TEST_CHECK(app_logs == 8 && !g_view.notice);
+    open_overlay();
+    TEST_CHECK(!overlay_draws());
+    close_overlay();
+    /* an app newer than the plugins (the newer package's installer not run): the other notice */
+    app_files(37, "vjoapp1 api=22 build=0123456789abcdef", 1, 37, STAMP_21);
+    next_game();
+    open_overlay();
+    TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE_NEWER));
+    close_overlay();
+    /* a disabled game starts no check */
+    unsigned before = app_logs;
+    app_files(NOENT, "", 1, 37, STAMP_21);
+    game_enabled = 0;
+    next_game();
+    TEST_CHECK(app_logs == before);
+    mem_free();
+}
+
+/* Nothing to compare, or nothing installed, is no mismatch: an older package
+ * brings no record, the README lets the app be deleted, and a file the Shell
+ * cannot read says nothing about the app. */
+static void test_overlay_app_unknown_is_never_said(void)
+{
+    static const struct { int irc; const char *installed; int eboot, prc; const char *record; int state; } cases[] = {
+        {NOENT, "", 1, NOENT, "", VJO_APP_UNKNOWN},             /* test.2's package: no record */
+        {37, STAMP_20, 1, NOENT, "", VJO_APP_UNKNOWN},
+        {37, STAMP_21, 1, 0, "", VJO_APP_UNKNOWN},             /* an empty record */
+        {NOENT, "", 0, 37, STAMP_21, VJO_APP_UNKNOWN},          /* no app installed */
+        {(int)0x80010013u, "", 1, 37, STAMP_21, VJO_APP_UNKNOWN}, /* the stamp not readable here */
+        {37, STAMP_21, 1, (int)0x80010013u, "", VJO_APP_UNKNOWN},
+        {37, STAMP_21, 1, 37, STAMP_21, VJO_APP_OK},
+        {37, STAMP_21, 0, 37, STAMP_21, VJO_APP_OK},           /* the stamp decides, not the stat */
+        {0, "", 1, 37, STAMP_21, VJO_APP_MISMATCH},            /* an empty stamp */
+        {37, STAMP_20, 1, 37, STAMP_21, VJO_APP_MISMATCH},
+        {NOENT, "", 1, 37, STAMP_21, VJO_APP_MISMATCH},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        reset();
+        app_files(cases[i].irc, cases[i].installed, cases[i].eboot, cases[i].prc, cases[i].record);
+        TEST_CHECK_(vjo_app_state(cases[i].irc, cases[i].installed, cases[i].eboot, cases[i].prc, cases[i].record) ==
+                    cases[i].state, "case %u", i);
+        activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, cases[i].state == VJO_APP_OK ? "overlay app ok: " :
+                                            cases[i].state == VJO_APP_MISMATCH ? "overlay app MISMATCH: " :
+                                            "overlay app unknown: "), "case %u: %s", i, last_app_log);
+        open_overlay();
+        TEST_CHECK_(!overlay_draws() == (cases[i].state != VJO_APP_MISMATCH), "case %u", i);
+        close_overlay();
+        mem_free();
+    }
+    TEST_CHECK(vjo_app_stamp_api(STAMP_21) == 21 && vjo_app_stamp_api("vjoapp1 api=7") == 7);
+    TEST_CHECK(vjo_app_stamp_api("vjoapp2 api=21 build=0") == -1 && vjo_app_stamp_api("vjoapp1 api= build=") == -1);
+    TEST_CHECK(vjo_app_stamp_api("vjoapp1 api=21x build=0") == -1 && vjo_app_stamp_api("") == -1);
+}
+
 TEST_LIST = {
+    {"config_warnings_are_logged_once_per_change", test_config_warnings_are_logged_once_per_change},
+    {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},
+    {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
     {"selftest_keeps_the_user_region_and_auto_ocr", test_selftest_keeps_the_user_region_and_auto_ocr},
 #ifdef VJO_WITH_VOCR
     {"selftest_stages_run_in_one_job_each_recorded_then_finish", test_selftest_stages_run_in_one_job_and_finish},
