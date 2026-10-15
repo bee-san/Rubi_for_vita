@@ -60,11 +60,13 @@ class BenchModelTest(unittest.TestCase):
         self.assertEqual(report["jobs"], bundle["report"]["jobs"])
         chk = report["console_check"]
         measured = chk["measured"]["shell_ms_mean"]
-        # the model of API 19's job at the console jobs' own means lands within 10% of what they took
-        self.assertLess(abs(chk["model"]["estimate"] - measured) / measured, 0.10)
+        # the model of API 19's job at the console jobs' own means: its range holds what they took,
+        # and its estimate explains more than half of it, never more than all
         lo, hi = chk["model"]["total"]
         self.assertLess(lo, measured)
         self.assertGreater(hi, measured)
+        self.assertGreater(chk["unexplained_ms"], 0)
+        self.assertLess(chk["unexplained_ms"], measured / 2)
         self.assertIn("| **total** |", md)
 
 

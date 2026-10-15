@@ -48,11 +48,15 @@ def job_log_lines(kind, lines, cascade_jobs=0.0, text_extra=0.0):
 CONSOLE = {
     "h15_ms_per_frame": (5.056, "VOCR3-H15: 664 CTC frames in 10 jobs' recognize= times (the owner: 5.0-5.2 ms); "
                                 "vita-vn-ocr's A9 model gives 5.00 ms at its 333 MHz upper bound"),
-    "fs_line_ms": (20.0, 40.0, 38.3,
-                   "one log line's open/append/close on ux0 with the game running: of each job's Shell time, what "
-                   "the game's job, the lookup and the polls (at their mean) leave, per line it logged: median "
-                   "38.3 ms (11 jobs, 19-24 lines each); the self-test's own timestamps give 20-30 ms per file "
-                   "append. Low 20, high 40, estimate 38.3"),
+    "fs_append_ms": (12.1, 46.0, 15.7,
+                     "one open/append/close of a file on ux0 with the game running, measured by the self-test's own "
+                     "timestamps: each stage's closing report lines (a report, a status.txt and a log.txt append "
+                     "each) took 12.1-46.0 ms per append, median 15.7 (5 stages)"),
+    "job_unexplained_per_line_ms": (38.3,
+                                    "the 11 jobs' Shell time minus the game's job, the lookup and the polls at their "
+                                    "mean, per line the job logged: median 38.3 ms (15-94). An upper bound of a "
+                                    "line's cost: it holds everything the model leaves out (the lowest-priority "
+                                    "game worker's scheduling, file system contention with the game)"),
     "lookup_fixed_ms": (15.3, "a lookup's open, header and CPU: the intercept of ms against reads, 30 lookups"),
     "lookup_read_ms": (3.82, "one dictionary read (4 KiB at a random offset of the 134 MiB file): the slope"),
     "first_load_ms": (218.0, 231.0, "load= of the 4 jobs that read the weights: 1,155,968 B read and SHA-256 checked"),
@@ -206,10 +210,11 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
     reads_per = g.get("lookup_reads", lookup["reads"] / max(1, lookup["lookups"]))
     take = SOURCE["worker_take_poll_ms"][0]
     poll = SOURCE["shell_result_poll_ms"][0]
-    fs_lo, fs_hi, fs_est, _ = CONSOLE["fs_line_ms"]
+    fs_lo, fs_hi, fs_est, _ = CONSOLE["fs_append_ms"]
     lk_fixed, lk_read = CONSOLE["lookup_fixed_ms"][0], CONSOLE["lookup_read_ms"][0]
     # The console's own rate where it was measured: H15 at 5.06 ms per frame is the A9 model's upper
-    # bound at 333 MHz (5.00); the estimate column takes every compute part at its upper bound.
+    # bound at 333 MHz (5.00); the estimate column takes every compute part at its upper bound, scaled
+    # by that ratio.
     k_console = CONSOLE["h15_ms_per_frame"][0] / per_frame(a9, "recognize_h15", 333)[1]
     parts = {}
 
@@ -238,7 +243,7 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
          f"0-{poll} ms, mean {poll / 2:.0f}: {SOURCE['shell_result_poll_ms'][1]}")
     part("log.txt", log_lines * fs_lo, log_lines * fs_hi, log_lines * fs_est,
          f"{log_lines:.0f} lines, each an open/append/close (twice while status.txt < 64 KiB): console "
-         f"{fs_lo:.0f}-{fs_hi:.0f} ms a line (estimate {fs_est}); formatting {fmt_range(fmt_line, 3)} a line")
+         f"{fs_lo:.0f}-{fs_hi:.0f} ms an append (median {fs_est}); formatting {fmt_range(fmt_line, 3)} a line")
     part("text post-processing", post[0], post[1], post[1], "A9 estimate")
     part("first-word lookup", lookup_cpu[0] + lk_fixed + reads_per * lk_read * 0.8,
          lk_fixed + reads_per * lk_read * 1.2, lk_fixed + reads_per * lk_read,
@@ -263,7 +268,10 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
 
 
 def console_check(a9):
-    """API 19's job at the console jobs' own means, against what those jobs took (333 MHz, 60 fps)."""
+    """API 19's job at the console jobs' own means, against what those jobs took (333 MHz, 60 fps). Not an
+    independent validation: recognition's rate and the lookup's fit come from the same logs; the log
+    lines are costed with the self-test's appends, so the remainder (unexplained) is what the model
+    does not account for."""
     c = CONSOLE["jobs"]
     w, h = c["region"]
     scale = (w * h) / (896 * 156)
@@ -273,7 +281,9 @@ def console_check(a9):
     m = job_model(a9, None, 333, 60, kind="api19",
                   given={"strips": c["strips_mean"], "frames": c["frames_mean"], "lines": c["lines"],
                          "log_lines": lines_inside, "lookup_reads": c["lookup_reads"], "scale": scale})
-    return {"model": m, "measured": c}
+    unexplained = c["shell_ms_mean"] - m["estimate"]
+    return {"model": m, "measured": c, "unexplained_ms": unexplained,
+            "unexplained_per_line_ms": unexplained / max(1.0, lines_inside)}
 
 
 def build_report(host, a9, dev, workloads):
@@ -322,5 +332,7 @@ def build_report(host, a9, dev, workloads):
         md += ["", "| console check (API 19's job, the 11 console jobs' means) | model, 333 MHz, 60 fps | console |",
                "|---|---:|---:|",
                f"| the Shell's job time | {m['total'][0]:.0f}-{m['total'][1]:.0f} ms (estimate {m['estimate']:.0f}) | "
-               f"{c['shell_ms_mean']:.0f} ms mean, {c['shell_ms_median']:.0f} median |"]
+               f"{c['shell_ms_mean']:.0f} ms mean, {c['shell_ms_median']:.0f} median |",
+               f"| not explained by the model | | {chk['unexplained_ms']:.0f} ms "
+               f"({chk['unexplained_per_line_ms']:.1f} ms per logged line) |"]
     return report, "\n".join(md) + "\n"
