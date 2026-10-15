@@ -1071,7 +1071,13 @@ static void refine_modes(void)
         TEST_CHECK(rc == 0 || rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
         for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_REFINE) rs = &out.step[i];
         TEST_CHECK_((rs != NULL) == cases[c].refined, "mode %u psp %d", cases[c].mode, cases[c].psp);
-        if (rs) TEST_CHECK(rs->kind == cases[c].mode && rs->rc == 0 && (rs->bytes >> 16) == out.lines && rs->arg >= out.lines);
+        if (rs) TEST_CHECK(rs->kind == cases[c].mode);
+        /* the boxes are refined as they are read, after the weights: without the release
+         * files (CI) the job ends at the model, so only a job that read its lines counts them */
+        if (rs && rc == 0)
+            TEST_CHECK(rs->rc == 0 && (rs->bytes >> 16) == out.lines && rs->arg >= out.lines);
+        else if (rs)
+            TEST_CHECK(!(rs->bytes >> 16) && !rs->arg);
         if (!c) plain_block = job_block;
         else if (cases[c].refined)
             TEST_CHECK(job_block == PAGE_ROUND(vjo_vocr_job_bytes(r.model, r.width, r.height) +
