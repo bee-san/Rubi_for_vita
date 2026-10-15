@@ -360,19 +360,25 @@ application (`vita-make-fself -at 0x0E -m 0xC800`, `vita/CMakeLists.txt`), as
 [VitaShell-sysapp](https://github.com/shoui520/VitaShell-sysapp),
 [jmdict-vita](https://github.com/shoui520/jmdict-vita) and
 [vita-content-manager-pro](https://github.com/shoui520/vita-content-manager-pro) are: it starts
-beside a suspended game instead of ending it. Such a process gets a budget of the size its SELF
-requests [source: vita-toolchain `vita-make-fself`, whose `-m` takes 0x1000-0x12800 KiB for a
-system-mode app], and libvita2d treats CDRAM as unavailable there [source: libvita2d a8f15ab
-`vita2d.c`, `vita2d_init_internal`]; whether the kernel grants such a process any CDRAM was not
-checked [inference]. The SELF requests 50 MiB (`-m 0xC800`) and no physically contiguous budget
-(no `-pm`).
+beside a suspended game instead of ending it. The kernel keeps a separate budget for system
+applications [wiki: SceProcessmgr, 'Types': the system-application budget pseudo-UID 3], and the
+SELF says how much of it the app asks for [source: vita-toolchain `vita-make-fself`, whose `-m` is
+0x1000-0x12800 KiB for a system-mode app]. libvita2d treats CDRAM as unavailable there [source:
+libvita2d a8f15ab `vita2d.c`, `vita2d_init_internal`]; whether the kernel grants such a process
+any CDRAM was not checked [inference]. The SELF requests 50 MiB (`-m 0xC800`) and no physically
+contiguous budget (no `-pm`). The memory outside the fixed budgets serves both a game's extended
+mode and the system [wiki: Memory_budget, "Remaining memory (for Game +109MiB mode and system)"];
+that the system-application budget comes from it, so that a game in an extended mode may have to
+close first, is an inference [inference].
 
 - **CPU and priority.** The main thread runs on CPU3 (`SCE_KERNEL_CPU_MASK_SYSTEM`) at priority
   `0x10000100`, set in `settings/sysapp.c`; the Anki worker asks for the same. CPU3 use is
   unmeasured (rule 8).
 - **Heap.** newlib's default heap is 128 MiB [measured: `_init_vita_heap` in the toolchain's
   `libc.a`], which does not fit; `settings/sysapp.c` fixes it at 8 MiB. The app's own code does
-  not `malloc`; the heap serves libvita2d, libpng and the PVF glyph atlas.
+  not `malloc`; the heap serves libvita2d's structures and GXM host memory, libpng and ScePvf's
+  library. The PVF glyph atlas is a 512 x 512 one-byte texture, a 256 KiB `USER_RW` block, not
+  heap [source: libvita2d a8f15ab `vita2d_pvf.c`, `texture_atlas.c`].
 - **Graphics.** libvita2d detects the system-application budget (`sceAppMgrGetBudgetInfo`), draws
   to the shared framebuffer through `sceGxmVshInitialize`, and allocates its textures in
   `USER_RW` [source: libvita2d a8f15ab `vita2d.c`, `vita2d_init_internal`]. The app's icon textures (at most 9 of
@@ -383,12 +389,16 @@ measured on the console]:
 
 | Use | Size |
 | --- | ---: |
-| GXM rings (VDM 128 KiB, vertex 2 MiB, fragment 512 KiB, fragment USSE 16 KiB), depth and stencil (2 x 2,088,960 B), shader patcher (3 x 64 KiB), index and clear buffers (132 KiB), parameter buffer (2 MiB), temporary pool (1 MiB) | about 9.9 MiB |
+| GXM rings (VDM 128 KiB, vertex 2 MiB, fragment 512 KiB, fragment USSE 16 KiB), depth and stencil (2 x 2,088,960 B), shader patcher (3 x 64 KiB), index and clear buffers (132 KiB), parameter buffer (2 MiB), temporary pool (1 MiB): 10,424,320 B | about 9.9 MiB |
 | newlib heap (reserved whole) | 8 MiB |
 | Icon textures | at most 2.25 MiB |
 | Anki arena, SceNet pool, config scratch, game list | about 0.9 MiB |
 | Code, stacks, PVF atlas | about 2 MiB |
 | **Total** | **about 23 MiB of 50 MiB** |
+
+Not in the table: libgxm's own memory for the render target (libvita2d passes no driver memory
+block, `driverMemBlock = -1`) is unmeasured, and where `sceGxmVshInitialize` places the 2 MiB
+parameter buffer was not checked; for a game it must be CDRAM (§8).
 
 ## 6. Game memory modes, free memory, and the PS TV
 

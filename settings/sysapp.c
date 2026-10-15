@@ -8,8 +8,9 @@
  *   jmdict-vita). The Anki worker asks for the same (anki_page.c).
  * - newlib's heap is fixed: its default, 128 MiB, does not fit the budget,
  *   and a failed heap block leaves every malloc failing. The app's own code
- *   does not malloc; the heap serves libvita2d, libpng and ScePvf's glyph
- *   atlas, an estimated few hundred KiB.
+ *   does not malloc; the heap serves libvita2d's structures and GXM host
+ *   memory, libpng and ScePvf's library, an estimated few hundred KiB. The
+ *   glyph atlas is a 256 KiB texture (USER_RW), not heap.
  *
  * libvita2d needs no setting: it finds the system-application budget itself
  * (sceAppMgrGetBudgetInfo), draws to the shared framebuffer and keeps its

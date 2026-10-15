@@ -20,6 +20,9 @@
 #include "../vita/games_storage.h"
 #include "../vita/buttons_vita.h"
 #include "../core/stick_scroll.h"
+/* The app never calls vita2d_fini: as a system application it would clear a
+ * display buffer libvita2d never set (the end of main). A call fails to build. */
+#pragma GCC poison vita2d_fini
 
 #define ROWS 3
 #define TAB_Y 52
