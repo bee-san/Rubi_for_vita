@@ -440,6 +440,31 @@ def compiled_ints(path):
     return out
 
 
+def without_tiers(out):
+    """A --json object with the fields the tier table *fills* removed (a report's or a --collect's
+    self-test "tiers", --collect's "tiers") and the 'not priced' finding dropped, so what is left must
+    be the same with the table and without it. "tiers_all" is kept: without the table it must be [],
+    which the caller checks, so dropping it there is caught."""
+    out = json.loads(json.dumps(out))  # a copy
+    not_priced = "The model tiers were not priced: "
+
+    def strip(node):
+        if isinstance(node, dict):
+            node.pop("tiers", None)
+            if isinstance(node.get("findings"), list):
+                node["findings"] = [f for f in node["findings"] if not f.startswith(not_priced)]
+            if isinstance(node.get("undecided"), list):
+                node["undecided"] = [u for u in node["undecided"] if "model tiers were not priced" not in u]
+            for v in node.values():
+                strip(v)
+        elif isinstance(node, list):
+            for v in node:
+                strip(v)
+
+    strip(out)
+    return out
+
+
 def collect_folder(root):
     """A minimal --collect folder: the PASS self-test report and one job's memory line in log.txt."""
     folder = root / "vjo-collect-20261015-000000Z"
@@ -582,15 +607,15 @@ class SharedTierTable(unittest.TestCase):
             def runs():
                 out = []
                 for args in ([FIXTURES / "selftest-v2-pass.txt"], [FIXTURES / "selftest-v2-pass.txt", "--json"],
-                             ["--collect", folder]):
+                             ["--collect", folder], ["--collect", folder, "--json"]):
                     r = subprocess.run([sys.executable, str(tools / SCRIPT.name), *map(str, args)],
                                        capture_output=True, text=True, timeout=60)
                     out.append(r)
                 return out
 
             shutil.copyfile(TIERS_JSON, tools / TIERS_JSON.name)
-            plain, as_json, collected = runs()
-            for r in (plain, as_json, collected):
+            plain, as_json, collected, collect_json = runs()
+            for r in (plain, as_json, collected, collect_json):
                 self.assertEqual((r.returncode, r.stderr), (0, ""))
             # the reference, less its tier tables: one in the report; in --collect two samples and the self-test's
             want_plain, n = TIER_BLOCK.subn("", plain.stdout)
@@ -599,15 +624,24 @@ class SharedTierTable(unittest.TestCase):
             self.assertEqual(n, 3)
             want_collect, n = GAME_TIER_LINE.subn("", want_collect)
             self.assertEqual(n, 1)
+            # the reference --json, less what the tier table adds (its "tiers", and in --collect the
+            # self-test's "tiers"/"tiers_all" and the finding), so a dropped field (stages, tiers_all)
+            # fails per variant below, not only the verdict
             self.assertIn("tiers", json.loads(as_json.stdout))
+            want_plain_json = without_tiers(json.loads(as_json.stdout))
+            # --collect --json: "tiers_all" is [] without a table; set the reference's to [] and check each
+            # variant's is [] too, so dropping it (or making it null) fails
+            want_collect_json = without_tiers(json.loads(collect_json.stdout))
+            self.assertTrue(want_collect_json.get("tiers_all"))  # the reference has samples
+            want_collect_json["tiers_all"] = []
             for name, text in variants.items():
                 with self.subTest(name):
                     if text is None:
                         (tools / TIERS_JSON.name).unlink(missing_ok=True)
                     else:
                         (tools / TIERS_JSON.name).write_text(text, encoding="utf-8")
-                    plain, as_json, collected = runs()
-                    for r in (plain, as_json, collected):
+                    plain, as_json, collected, collect_json = runs()
+                    for r in (plain, as_json, collected, collect_json):
                         self.assertEqual((r.returncode, r.stderr), (0, ""))
                         self.assertNotIn("model tiers (", r.stdout)
                         self.assertNotIn("recommendation", r.stdout)
@@ -622,6 +656,11 @@ class SharedTierTable(unittest.TestCase):
                     self.assertEqual((out["ocr_result"], out["diagnostics_result"]), ("PASS", "PASS"))
                     self.assertNotIn("tiers", out)
                     self.assertEqual(sum(f.startswith("The model tiers were not priced: ") for f in out["findings"]), 1)
+                    # the whole --json, not just the verdict and finding: dropping stages or tiers_all fails here
+                    self.assertEqual(without_tiers(out), want_plain_json)
+                    collect_out = json.loads(collect_json.stdout)
+                    self.assertEqual(collect_out["tiers_all"], [])  # [] without a table, not null
+                    self.assertEqual(without_tiers(collect_out), want_collect_json)
             # a fault of any other kind while the table loads (here json.loads raising) is caught the same way
             shutil.copyfile(TIERS_JSON, tools / TIERS_JSON.name)
             runner = Path(d) / "with_a_fault.py"

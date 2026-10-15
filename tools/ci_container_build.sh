@@ -87,7 +87,12 @@ OUT=${OUT:-$ROOT/build/ci-container/${commit:0:12}}
 [ ! -e "$OUT" ] || [ -d "$OUT" ] || die "--out is not a directory: $OUT"
 mkdir -p "$OUT" || die "cannot make --out: $OUT"
 OUT=$(cd "$OUT" && pwd)
-for f in $FILES build.log; do rm -f "$OUT/$f"; done
+[ -w "$OUT" ] || die "--out is not writable: $OUT"
+# Clear the known outputs, and refuse one that is a directory (its presence would read as "built").
+for f in $FILES build.log; do
+  [ ! -d "$OUT/$f" ] || die "--out holds a directory named $f: $OUT/$f"
+  rm -f "$OUT/$f"
+done
 vocr_commit=
 if [ -n "$VOCR" ]; then
   # The runtime at the commit this revision pins (cmake/VocrOCR.cmake checks each file's hash again).
