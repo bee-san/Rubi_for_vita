@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Fictional game icon, original art drawn from scratch for bee-san/vita-jp-overlay. GPL-3.0-only. -->
+<!-- Hoshizora Diary: a night sky, a star and a small open diary -->
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#121552"/><stop offset="0.6" stop-color="#3b2a85"/><stop offset="1" stop-color="#c76a8e"/>
+  </linearGradient>
+  <radialGradient id="glow" cx="64" cy="44" r="34" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#fff2b0" stop-opacity="0.75"/><stop offset="1" stop-color="#fff2b0" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff6c2"/><stop offset="1" stop-color="#ffc341"/>
+  </linearGradient>
+</defs>
+<rect width="128" height="128" fill="url(#bg)"/>
+<g fill="#fff">
+  <circle cx="26" cy="30" r="1.6" opacity="0.9"/><circle cx="98" cy="24" r="1.3" opacity="0.8"/>
+  <circle cx="104" cy="58" r="1.8" opacity="0.9"/><circle cx="20" cy="62" r="1.2" opacity="0.7"/>
+  <circle cx="40" cy="16" r="1" opacity="0.7"/><circle cx="86" cy="12" r="1" opacity="0.6"/>
+  <circle cx="110" cy="40" r="1" opacity="0.6"/><circle cx="16" cy="44" r="1" opacity="0.6"/>
+  <path d="M94 36Q94 42 100 42Q94 42 94 48Q94 42 88 42Q94 42 94 36Z"/>
+  <path d="M32 46Q32 50 36 50Q32 50 32 54Q32 50 28 50Q32 50 32 46Z" opacity="0.85"/>
+</g>
+<circle cx="64" cy="44" r="34" fill="url(#glow)"/>
+<path d="M64 21L70.2 37.4L87.6 38.1L73.9 49L78.6 65.9L64 56.2L49.4 65.9L54.1 49L40.4 38.1L57.8 37.4Z"
+      fill="url(#star)" stroke="#ffe48a" stroke-width="3" stroke-linejoin="round"/>
+<path d="M64 27L67.5 37.6L60 40Z" fill="#fffbe6" opacity="0.9"/>
+<!-- open diary -->
+<path d="M32 80Q48 74 64 81V106Q48 99 32 104Z" fill="#7a2f52"/>
+<path d="M96 80Q80 74 64 81V106Q80 99 96 104Z" fill="#7a2f52"/>
+<path d="M35 78Q50 72 64 79V102Q50 96 35 100Z" fill="#fff8ec"/>
+<path d="M93 78Q78 72 64 79V102Q78 96 93 100Z" fill="#f1e4d4"/>
+<path d="M64 79V102" stroke="#c9b39b" stroke-width="1.5"/>
+<g stroke="#c8b8e6" stroke-width="1.6" stroke-linecap="round" fill="none">
+  <path d="M41 83Q50 80 58 83M41 89Q50 86 58 89M41 95Q50 92 58 95"/>
+  <path d="M70 83Q78 80 87 83M70 89Q78 86 87 89"/>
+</g>
+<path d="M80 92l1.5 3.2 3.5.4-2.6 2.4.7 3.4-3.1-1.7-3.1 1.7.7-3.4-2.6-2.4 3.5-.4Z" fill="#ffc341"/>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Fictional game icon, original art drawn from scratch for bee-san/vita-jp-overlay. GPL-3.0-only. -->
+<!-- Pocket Garden: a sprout on pastel tiles -->
+<rect width="128" height="128" fill="#e9f7f0"/>
+<g>
+  <rect x="2" y="2" width="29" height="29" rx="6" fill="#ffd6e0"/><rect x="34" y="2" width="29" height="29" rx="6" fill="#fff1b8"/>
+  <rect x="66" y="2" width="29" height="29" rx="6" fill="#cfe9ff"/><rect x="98" y="2" width="28" height="29" rx="6" fill="#e6dbff"/>
+  <rect x="2" y="34" width="29" height="29" rx="6" fill="#cfe9ff"/><rect x="34" y="34" width="29" height="29" rx="6" fill="#e6dbff"/>
+  <rect x="66" y="34" width="29" height="29" rx="6" fill="#ffd6e0"/><rect x="98" y="34" width="28" height="29" rx="6" fill="#fff1b8"/>
+  <rect x="2" y="66" width="29" height="29" rx="6" fill="#fff1b8"/><rect x="34" y="66" width="29" height="29" rx="6" fill="#ffd6e0"/>
+  <rect x="66" y="66" width="29" height="29" rx="6" fill="#e6dbff"/><rect x="98" y="66" width="28" height="29" rx="6" fill="#cfe9ff"/>
+  <rect x="2" y="98" width="29" height="28" rx="6" fill="#e6dbff"/><rect x="34" y="98" width="29" height="28" rx="6" fill="#cfe9ff"/>
+  <rect x="66" y="98" width="29" height="28" rx="6" fill="#fff1b8"/><rect x="98" y="98" width="28" height="28" rx="6" fill="#ffd6e0"/>
+</g>
+<!-- centre planter tile -->
+<rect x="30" y="68" width="68" height="32" rx="9" fill="#ffffff" opacity="0.6"/>
+<rect x="34" y="64" width="60" height="30" rx="8" fill="#fffaf2"/>
+<rect x="34" y="88" width="60" height="6" rx="3" fill="#f0d9c4"/>
+<ellipse cx="64" cy="72" rx="20" ry="6" fill="#8a5a3c"/>
+<ellipse cx="60" cy="70.5" rx="9" ry="2" fill="#a8745a"/>
+<!-- sprout -->
+<path d="M64 72Q62 60 64 48" stroke="#3f9e4f" stroke-width="5" fill="none" stroke-linecap="round"/>
+<path d="M64 54Q46 56 36 38Q56 32 64 52Z" fill="#7fd36b"/>
+<path d="M64 52Q52 46 42 40" stroke="#4fae4f" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M64 48Q74 28 94 28Q90 52 64 50Z" fill="#9be07a"/>
+<path d="M65 48Q76 38 88 32" stroke="#4fae4f" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M44 38Q50 37 54 40" stroke="#d8f7c4" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.9"/>
+<g fill="#ffb3c6"><circle cx="100" cy="52" r="3"/><circle cx="28" cy="58" r="2.4"/></g>
+<path d="M100 72Q100 76 104 76Q100 76 100 80Q100 76 96 76Q100 76 100 72Z" fill="#ffc94d"/>
+</svg>

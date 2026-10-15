@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="544" viewBox="0 0 960 544">
+<!-- Hoshizora Diary (星空ダイアリー) heroine sprite, waist-up, transparent background.
+     Original character drawn from scratch for bee-san/vita-jp-overlay. GPL-3.0-only. -->
+<!-- HEROINE:BEGIN -->
+<g id="hc-heroine">
+<defs>
+  <path id="hc-hairback" d="M690 50C604 50 576 120 582 190C586 236 580 270 566 302L588 296L596 311L612 297L632 301L650 287L730 287L748 301L768 297L784 311L792 296L814 302C800 270 794 236 798 190C804 120 776 50 690 50Z"/>
+  <path id="hc-body" d="M668 272C642 284 610 290 590 300C566 312 558 340 554 380L544 560L838 560L828 380C824 340 816 312 792 300C772 290 740 284 712 272Z"/>
+  <path id="hc-neck" d="M672 222L670 292L710 292L708 222Z"/>
+  <path id="hc-face" d="M628 126C624 178 636 212 662 233Q690 251 718 233C744 212 756 178 752 126Z"/>
+  <path id="hc-hairfront" d="M690 46C762 46 800 92 798 160C797 204 790 244 778 272Q770 258 766 246C762 222 758 196 752 172Q750 152 746 134Q744 148 736 158Q732 138 722 122Q716 142 706 156Q702 134 692 118Q686 140 676 154Q672 136 662 122Q656 144 646 158Q644 144 640 134Q634 152 630 172C624 204 616 236 602 272C590 244 582 204 582 160C580 92 618 46 690 46Z"/>
+  <clipPath id="hc-clip-hairback"><use xlink:href="#hc-hairback"/></clipPath>
+  <clipPath id="hc-clip-body"><use xlink:href="#hc-body"/></clipPath>
+  <clipPath id="hc-clip-face"><use xlink:href="#hc-face"/></clipPath>
+  <clipPath id="hc-clip-hairfront"><use xlink:href="#hc-hairfront"/></clipPath>
+  <clipPath id="hc-clip-neck"><use xlink:href="#hc-neck"/></clipPath>
+  <clipPath id="hc-clip-all">
+    <use xlink:href="#hc-hairback"/>
+    <use xlink:href="#hc-body"/>
+    <use xlink:href="#hc-neck"/>
+    <use xlink:href="#hc-face" transform="rotate(-6 690 240)"/>
+    <use xlink:href="#hc-hairfront" transform="rotate(-6 690 240)"/>
+  </clipPath>
+  <linearGradient id="hc-iris" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#151c4e"/>
+    <stop offset="0.55" stop-color="#2f4f9a"/>
+    <stop offset="1" stop-color="#6fb0e8"/>
+  </linearGradient>
+  <linearGradient id="hc-night" x1="0" y1="40" x2="0" y2="560" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#1a2260" stop-opacity="0"/>
+    <stop offset="0.5" stop-color="#1a2260" stop-opacity="0.10"/>
+    <stop offset="1" stop-color="#080b26" stop-opacity="0.55"/>
+  </linearGradient>
+  <linearGradient id="hc-moonside" x1="530" y1="0" x2="860" y2="0" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#bcd2ff" stop-opacity="0.16"/>
+    <stop offset="0.45" stop-color="#bcd2ff" stop-opacity="0"/>
+  </linearGradient>
+  <clipPath id="hc-clip-eyeL"><path d="M636 174Q649 150 674 159Q675 182 657 190Q641 188 636 174Z"/></clipPath>
+  <clipPath id="hc-clip-eyeR"><path d="M744 174Q731 150 706 159Q705 182 723 190Q739 188 744 174Z"/></clipPath>
+  <g id="hc-eyewhite">
+    <path d="M636 174Q649 150 674 159Q675 182 657 190Q641 188 636 174Z" fill="#fbfcff"/>
+  </g>
+  <g id="hc-eyelash">
+    <path d="M630 176Q645 143 679 153L682 159L675 158Q650 150 636 179Z" fill="#171732"/>
+    <path d="M633 172L625 168L635 168Z" fill="#171732"/>
+    <path d="M646 189Q657 193 668 187" stroke="#7a4a52" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- iris, looking up and a little toward the moon -->
+  <g id="hc-iris-g">
+    <ellipse cx="0" cy="0" rx="11.5" ry="15" fill="url(#hc-iris)"/>
+    <ellipse cx="0" cy="9" rx="8" ry="5" fill="#9fd2ff" opacity="0.55"/>
+    <ellipse cx="0" cy="-3" rx="5" ry="7.5" fill="#0d1236"/>
+  </g>
+</defs>
+
+<!-- back hair -->
+<use xlink:href="#hc-hairback" fill="#171c46" stroke="#0e1030" stroke-width="1.8" stroke-linejoin="round"/>
+<g clip-path="url(#hc-clip-hairback)">
+  <path d="M566 302C580 270 586 236 582 190C578 130 600 70 650 52" stroke="#a6c4ff" stroke-width="5" fill="none" opacity="0.75"/>
+</g>
+
+<!-- neck -->
+<use xlink:href="#hc-neck" fill="#f7dbcd"/>
+<g clip-path="url(#hc-clip-neck)">
+  <path d="M660 222H720V258Q690 272 660 250Z" fill="#e2ada3"/>
+</g>
+
+<!-- blazer -->
+<use xlink:href="#hc-body" fill="#212a54" stroke="#0d1030" stroke-width="1.8" stroke-linejoin="round"/>
+<g clip-path="url(#hc-clip-body)">
+  <!-- far (shadow) side -->
+  <path d="M754 286C784 300 822 320 828 380L840 560L752 560C778 470 786 380 754 286Z" fill="#151b3c"/>
+  <!-- shade cast by the hair on the shoulders -->
+  <path d="M600 296Q640 306 660 290L668 272L560 300Z" fill="#151b3c" opacity="0.8"/>
+  <path d="M720 288Q750 306 790 300L812 302L712 272Z" fill="#10152f" opacity="0.9"/>
+  <!-- sleeve seams -->
+  <path d="M596 304C610 352 610 450 604 560M786 304C772 352 772 450 778 560" stroke="#0c0f2a" stroke-width="2" fill="none" opacity="0.8"/>
+  <path d="M598 312C608 360 606 440 600 560" stroke="#3a4888" stroke-width="1.6" fill="none" opacity="0.6"/>
+  <!-- moonlight rim on the near shoulder -->
+  <path d="M668 273C642 285 610 291 590 301C566 313 558 340 554 380L547 480" stroke="#a9c6ff" stroke-width="4" fill="none" opacity="0.85"/>
+  <path d="M668 273C642 285 610 291 590 301C576 308 568 320 562 336" stroke="#e6efff" stroke-width="1.6" fill="none" opacity="0.8"/>
+  <!-- front edge and buttons -->
+  <path d="M690 430L693 560" stroke="#0c0f2a" stroke-width="2" fill="none"/>
+  <circle cx="680" cy="470" r="4.5" fill="#c9a24c"/>
+  <circle cx="681" cy="524" r="4.5" fill="#c9a24c"/>
+  <circle cx="679" cy="468.5" r="1.6" fill="#fff1c4"/>
+  <circle cx="680" cy="522.5" r="1.6" fill="#fff1c4"/>
+  <!-- chest crest: a small star in a rounded shield -->
+  <g transform="translate(756 382)">
+    <path d="M-11 -12H11V2Q11 12 0 17Q-11 12 -11 2Z" fill="#1a2148" stroke="#c9a24c" stroke-width="1.6"/>
+    <path d="M0 -6.5L1.6 -2.2L6.2 -2L2.6 0.8L3.8 5.3L0 2.7L-3.8 5.3L-2.6 0.8L-6.2 -2L-1.6 -2.2Z" fill="#e2be62"/>
+  </g>
+</g>
+
+<!-- shirt and collar -->
+<path d="M664 276L716 276L690 430Z" fill="#eef1fb"/>
+<path d="M700 276L716 276L690 430Z" fill="#c4cbe6"/>
+<path d="M668 272L652 302L687 308Z" fill="#f6f8ff" stroke="#8890b8" stroke-width="1.2" stroke-linejoin="round"/>
+<path d="M712 272L728 302L693 308Z" fill="#d3d8ee" stroke="#8890b8" stroke-width="1.2" stroke-linejoin="round"/>
+<path d="M664 266Q690 280 716 266L718 278Q690 294 662 278Z" fill="#f2f4fc" stroke="#8890b8" stroke-width="1.2"/>
+<!-- lapels -->
+<path d="M664 276L690 430L672 420L642 334L654 322L640 302L650 284Z" fill="#2c376c" stroke="#0d1030" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M716 276L690 430L708 420L738 334L726 322L740 302L730 284Z" fill="#1b2248" stroke="#0d1030" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M650 285L641 302L654 322" stroke="#8fb0ee" stroke-width="1.4" fill="none" opacity="0.8"/>
+<!-- ribbon tie -->
+<g stroke="#5e1a2c" stroke-width="1.4" stroke-linejoin="round">
+  <path d="M684 312L672 356L686 349L690 318Z" fill="#c23e58"/>
+  <path d="M696 312L708 358L694 350L690 318Z" fill="#9a2c46"/>
+  <path d="M684 303L655 290Q648 305 655 320L684 312Z" fill="#d84a64"/>
+  <path d="M696 303L725 290Q732 305 725 320L696 312Z" fill="#a8304b"/>
+  <path d="M683 300H697L695 314H685Z" fill="#c93f5a"/>
+</g>
+<path d="M657 295Q654 304 657 314" stroke="#ff9db0" stroke-width="1.4" fill="none" opacity="0.8"/>
+
+<!-- head, tilted a little toward the sky -->
+<g transform="rotate(-6 690 240)">
+  <use xlink:href="#hc-face" fill="#fbe4d7" stroke="#a8706a" stroke-width="1.4"/>
+  <g clip-path="url(#hc-clip-face)">
+    <path d="M620 118H760V146Q730 136 704 152Q676 140 648 156Q632 150 620 162Z" fill="#efc2b5"/>
+    <path d="M753 146C753 190 742 214 716 236Q738 202 740 158Z" fill="#efc2b5"/>
+  </g>
+  <!-- blush -->
+  <ellipse cx="648" cy="199" rx="13" ry="5.5" fill="#ff8ea2" opacity="0.38"/>
+  <ellipse cx="732" cy="199" rx="13" ry="5.5" fill="#ff8ea2" opacity="0.38"/>
+  <path d="M642 199l3-4M648 199l3-4M654 199l3-4M726 199l3-4M732 199l3-4M738 199l3-4" stroke="#f07890" stroke-width="1" opacity="0.6"/>
+  <!-- eyes (right eye mirrored), highlights share one light direction -->
+  <use xlink:href="#hc-eyewhite"/>
+  <use xlink:href="#hc-eyewhite" transform="translate(1380 0) scale(-1 1)"/>
+  <g clip-path="url(#hc-clip-eyeL)">
+    <path d="M636 174Q649 150 674 159L674 164Q650 156 636 179Z" fill="#c9d2ee"/>
+    <use xlink:href="#hc-iris-g" transform="translate(653 168)"/>
+  </g>
+  <g clip-path="url(#hc-clip-eyeR)">
+    <path d="M744 174Q731 150 706 159L706 164Q730 156 744 179Z" fill="#c9d2ee"/>
+    <use xlink:href="#hc-iris-g" transform="translate(722 168)"/>
+  </g>
+  <use xlink:href="#hc-eyelash"/>
+  <use xlink:href="#hc-eyelash" transform="translate(1380 0) scale(-1 1)"/>
+  <circle cx="648" cy="163" r="3.8" fill="#fff"/>
+  <circle cx="658" cy="177" r="1.7" fill="#fff"/>
+  <circle cx="717" cy="163" r="3.8" fill="#fff"/>
+  <circle cx="727" cy="177" r="1.7" fill="#fff"/>
+  <!-- nose and a gentle smile -->
+  <path d="M691 197Q689 202 692.5 203.5" stroke="#c98a82" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+  <path d="M680 214Q690 222 700 213" stroke="#a24e5a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+  <!-- front hair -->
+  <use xlink:href="#hc-hairfront" fill="#232b5e" stroke="#0e1030" stroke-width="1.8" stroke-linejoin="round"/>
+  <g clip-path="url(#hc-clip-hairfront)">
+    <path d="M756 56C800 100 802 200 780 274L742 274C764 200 772 120 738 56Z" fill="#171d46"/>
+    <path d="M690 50Q678 92 676 154M690 50Q712 92 706 156M690 50Q650 80 646 158M690 50Q736 80 736 158M626 90Q606 160 602 272M754 90Q776 160 778 272" stroke="#141a42" stroke-width="1.4" fill="none" opacity="0.8"/>
+    <path d="M618 104Q636 84 668 80Q700 77 730 81Q756 88 766 102L760 105Q754 98 748 108Q742 96 730 100Q722 90 712 96Q702 88 692 95Q682 88 672 96Q662 90 654 101Q644 94 636 107Q628 100 622 110Z" fill="#33418a" opacity="0.55"/>
+    <path d="M636 94Q662 82 698 80L698 83Q666 86 642 98Z" fill="#7284c8" opacity="0.5"/>
+    <path d="M602 272C590 244 582 204 582 160C581 110 600 70 642 54" stroke="#a9c8ff" stroke-width="4" fill="none" opacity="0.85"/>
+    <path d="M592 230C586 204 584 180 585 160C585 120 600 84 630 64" stroke="#eaf2ff" stroke-width="1.5" fill="none" opacity="0.8"/>
+  </g>
+  <!-- eyebrows, seen through the bangs -->
+  <path d="M641 147Q654 141 667 145M713 145Q726 141 739 147" stroke="#1a1d44" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.55"/>
+  <!-- star hair clip -->
+  <g transform="translate(748 104) rotate(14)">
+    <rect x="-14" y="-2" width="16" height="4" rx="2" fill="#c7cde6" transform="rotate(-30)"/>
+    <path d="M0 -12L2.94 -4.05L11.41 -3.71L4.76 1.55L7.05 9.71L0 5L-7.05 9.71L-4.76 1.55L-11.41 -3.71L-2.94 -4.05Z" fill="#ffd66b" stroke="#b07e2a" stroke-width="1.3" stroke-linejoin="round"/>
+    <path d="M0 -7L1.6 -2.8L-2.2 -1.6Z" fill="#fff6cf"/>
+  </g>
+</g>
+
+<!-- night light: cool from the moon side, darker toward the bottom -->
+<g clip-path="url(#hc-clip-all)">
+  <rect x="520" y="40" width="360" height="520" fill="url(#hc-moonside)"/>
+  <rect x="520" y="40" width="360" height="520" fill="url(#hc-night)"/>
+</g>
+</g>
+<!-- HEROINE:END -->
+</svg>
