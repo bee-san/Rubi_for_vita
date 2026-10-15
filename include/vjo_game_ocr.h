@@ -146,7 +146,8 @@ enum {
                             frames, sum its load time (us), us the re-reading (not in RECOGNIZE's us) */
     VJO_GSTEP_REFINE,    /* API 20, the finder's boxes refined: kind the mode (VJO_GAME_OCR_REFINE_*), arg the
                             lines they became, rc 0 or the first refusal (VOCR_LINES_E_*: that box kept as found),
-                            bytes = boxes refined << 16 | boxes split, sum the rows read, us the time */
+                            bytes = boxes refined << 16 | boxes not split for the 16-line cap << 8 | boxes split,
+                            sum the rows read, us the time */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

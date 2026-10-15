@@ -258,9 +258,9 @@ int main(int argc, char **argv)
                         st.lm ? st.lm->name : "-", st.lm_rc, st.lm_lines, st.lm_changed, (unsigned)st.lm_us,
                         (unsigned)st.lm_load_us);
             if (refine)
-                fprintf(stderr, "refine_boxes=%u refine_lines=%u refine_split=%u refine_kept=%u refine_rc=%d "
+                fprintf(stderr, "refine_boxes=%u refine_lines=%u refine_split=%u refine_capped=%u refine_rc=%d "
                         "refine_rows=%lu refine_us=%u\n", st.refine_boxes, st.refine_lines, st.refine_split,
-                        st.refine_kept, st.refine_rc, st.refine_rows, (unsigned)st.refine_us);
+                        st.refine_capped, st.refine_rc, st.refine_rows, (unsigned)st.refine_us);
             if (policy.cascade)
                 fprintf(stderr, "cascade=%s cascade_rc=%d cascade_lines=%u cascade_changed=%u cascade_skipped=%u "
                         "cascade_us=%u cascade_load_us=%u\n", st.cascade ? st.cascade->name : "-", st.cascade_rc,

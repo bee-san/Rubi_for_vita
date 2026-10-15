@@ -842,6 +842,13 @@ static void test_vocr_model_change_invalidates_cache(void)
     loaded.vocr_fallback_model[0] = 0; /* the fallback is part of the pipeline too */
     apply_config();
     TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    loaded.ocr_refine_lines = loaded.ocr_refine_lines == 1 ? 2 : 1; /* and so is the refinement's mode */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    apply_config(); /* the same again: nothing changed */
+    TEST_CHECK(cache_ok);
 }
 
 #ifdef VJO_WITH_VOCR

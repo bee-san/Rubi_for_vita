@@ -276,7 +276,7 @@ typedef struct {
     unsigned refine_boxes;   /* boxes refined */
     unsigned refine_lines;   /* the lines they became (a box can split into several) */
     unsigned refine_split;   /* boxes split into two or more */
-    unsigned refine_kept;    /* boxes kept as found: their split would pass VJO_VOCR_MAX_LINES lines */
+    unsigned refine_capped;  /* boxes refined without their split, which would pass VJO_VOCR_MAX_LINES lines */
     int refine_rc;           /* 0, or the first refusal (VOCR_LINES_E_*, the box then kept as found) */
     unsigned long refine_rows; /* rows the refinement read (from memory: the strip or the line's block) */
     uint32_t refine_us;      /* refining, all boxes */
@@ -354,8 +354,10 @@ typedef struct {
  * finder's boxes as found, exactly). Each box is refined on the pixels the job
  * already holds for it (its strip, or a tall line's block: no read more): cut to
  * its text band, frame rows and cursors ignored, a box of several text rows split
- * into one line each. The workspace must hold vjo_vocr_refine_bytes() more, before
- * the LM extras. */
+ * into one line each, the same lines as vocr_refine_lines() on the whole region:
+ * a split that would take the job past VJO_VOCR_MAX_LINES lines is not made (the
+ * box keeps its main band). The workspace must hold vjo_vocr_refine_bytes() more,
+ * before the LM extras. */
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;

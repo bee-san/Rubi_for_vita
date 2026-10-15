@@ -380,8 +380,14 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         lines = done.stdout.splitlines()
         for start in ("gstep job check kind=10 ", "gstep job lm kind=2 arg=1 ", "gstep job cascade kind=1 arg=1 ",
-                      "gstep job recognize kind=- arg=1 "):
+                      "gstep job recognize kind=- arg=1 ", "gstep job refine kind=2 arg=16 "):
             self.assertTrue(any(line.startswith(start) for line in lines), (start, lines))
+        # the refine step as the formatter writes it, read back by --collect: its mode, boxes, splits,
+        # the boxes not split for the 16-line cap and the rows read
+        rf = a.summarise_log("\n".join(lines) + "\n")["refine"]
+        self.assertEqual({k: rf[k] for k in ("jobs", "modes", "boxes", "lines", "split", "capped", "rows", "us")},
+                         {"jobs": 1, "modes": {"psp": 1}, "boxes": 9, "lines": 16, "split": 7, "capped": 2,
+                          "rows": 410, "us": [1400]})
 
     @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
     def test_the_fixtures_are_what_the_writer_writes(self):

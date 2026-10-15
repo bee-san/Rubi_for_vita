@@ -14,7 +14,7 @@ static unsigned char lm_memory[VJO_VOCR_LM_MAX_BYTES + 4096] __attribute__((alig
 static int lm_live; static unsigned lm_block, lm_allocations, lm_frees, lm_opens, last_which;
 static unsigned char cascade_memory[VJO_VOCR_CASCADE_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
-static unsigned char pixels[200*100*4]; /* 200 x frame_h */
+static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
 /* The capture block and the memory-type ladder: which types refuse. */
 static int capture_live, refuse_user, refuse_cdram, refuse_phycont, rows_error, hook_write_error;
@@ -1069,6 +1069,26 @@ static void cascade_jobs(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !cascade_live && !lm_live && !weights_live);
 }
 
+/* Glyph-like strokes lh rows tall across the frame (as test_vocr_policy.c's). */
+static void strokes_at(unsigned y0, unsigned lh)
+{
+    unsigned pitch = 6u + (lh > 12u ? lh / 2u : 6u);
+    for (unsigned y = y0; y < y0 + lh; y++)
+        for (unsigned x = 10; x < 190; x++) {
+            unsigned cx = (x - 10) % pitch, cy = y - y0;
+            if (cx < pitch * 3u / 4u && (cx % 4u < 2u || cy % 7u < 2u || (cx + cy) % 9u == 0u))
+                memset(pixels + ((size_t)y * 200 + x) * 4, 235, 3);
+        }
+}
+
+/* The REFINE step of a job's log, or NULL. */
+static const VjoGameOcrStep *refine_step(const VjoGameOcrResult *out)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == VJO_GSTEP_REFINE) return &out->step[i];
+    return NULL;
+}
+
 /* API 20, the finder's boxes refined: on, or in PSP games only (the worker's own
  * title: NPXS10028 or a PSPEMU* bubble). The job's workspace holds the arena,
  * and a REFINE step reports it; mode 3 is refused before anything is allocated. */
@@ -1076,40 +1096,96 @@ static void refine_modes(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
     static const struct { const char *title; int psp; } titles[] = {
-        {"NPXS10028", 1}, {"PSPEMU005", 1}, {"PSPEMUCFW", 1}, {"PCSG00415", 0}, {"PSPEM", 0}, {"XPSPEMU01", 0}, {"", 0}};
+        {"NPXS10028", 1}, {"PSPEMU005", 1}, {"PSPEMUCFW", 1}, {"PSPEMU", 1}, {"PCSG00415", 0}, {"PSPEM", 0},
+        {"XPSPEMU01", 0}, {"pspemu001", 0}, {"NPXS10028X", 0}, {"NPXS1002", 0}, {"NPXS10027", 0}, {"", 0}};
     for (unsigned i = 0; i < sizeof(titles) / sizeof(titles[0]); i++)
-        TEST_CHECK_(is_psp_title(titles[i].title) == titles[i].psp, "%s", titles[i].title);
+        TEST_CHECK_(vjo_game_is_psp(titles[i].title) == titles[i].psp, "%s", titles[i].title);
     line();
     struct { unsigned mode; int psp; int refined; } cases[] = {
         {0, 1, 0}, {VJO_GAME_OCR_REFINE_ON, 0, 1}, {VJO_GAME_OCR_REFINE_PSP, 0, 0}, {VJO_GAME_OCR_REFINE_PSP, 1, 1}};
     unsigned plain_block = 0;
     for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
-        const VjoGameOcrStep *rs = NULL;
+        const VjoGameOcrStep *rs;
         r = setup();
         line();
         psp_title = cases[c].psp;
         r.flags = cases[c].mode << VJO_GAME_OCR_REFINE_SHIFT;
         int rc = vjo_game_ocr_run_request(&r, &out);
         TEST_CHECK(rc == 0 || rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
-        for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_REFINE) rs = &out.step[i];
+        rs = refine_step(&out);
         TEST_CHECK_((rs != NULL) == cases[c].refined, "mode %u psp %d", cases[c].mode, cases[c].psp);
-        if (rs) TEST_CHECK(rs->kind == cases[c].mode);
+        if (rs) TEST_CHECK(rs->kind == cases[c].mode && rs->rc == 0);
         /* the boxes are refined as they are read, after the weights: without the release
          * files (CI) the job ends at the model, so only a job that read its lines counts them */
         if (rs && rc == 0)
-            TEST_CHECK(rs->rc == 0 && (rs->bytes >> 16) == out.lines && rs->arg >= out.lines);
+            TEST_CHECK((rs->bytes >> 16) == out.lines && rs->arg >= out.lines && rs->sum > 0);
         else if (rs)
-            TEST_CHECK(!(rs->bytes >> 16) && !rs->arg);
+            TEST_CHECK(!(rs->bytes >> 16) && !rs->arg && !rs->sum);
         if (!c) plain_block = job_block;
         else if (cases[c].refined)
             TEST_CHECK(job_block == PAGE_ROUND(vjo_vocr_job_bytes(r.model, r.width, r.height) +
                                                vjo_vocr_refine_bytes(r.width, r.height)) && job_block >= plain_block);
         TEST_MSG("mode %u psp %d: workspace %u B (plain %u B)", cases[c].mode, cases[c].psp, job_block, plain_block);
     }
+    /* a job that finds no line logs no refine step */
+    r = setup();
+    r.flags = VJO_GAME_OCR_REFINE_ON << VJO_GAME_OCR_REFINE_SHIFT;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.lines && !refine_step(&out));
+    /* mode 3, also in a probe: refused before anything, as unknown bits are */
     r = setup();
     allocations = 0;
     r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT;
-    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+    r.flags |= VJO_GAME_OCR_F_PROBE;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps && !capture_allocs);
+    psp_title = 0;
+}
+
+/* The refine step's fields, from a job that reads its lines (the release weights):
+ * pairs of text rows set one row apart, each pair one finder box that the refinement
+ * splits, nine of them in a 200 x 272 region: seven split, the last two not (their
+ * split would pass 16 lines), 16 lines, and the rows the refinement read. */
+static void the_refine_step_carries_its_counts(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    char path[600];
+    FILE *f;
+    snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, r.model);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(path, "rb"))) { TEST_SKIP("no release weights"); return; }
+    fclose(f);
+    frame_h = r.fb_height = r.height = 272;
+    for (unsigned k = 0; k < 9; k++) {
+        strokes_at(4 + k * 29, 11);
+        strokes_at(4 + k * 29 + 12, 11);
+    }
+    r.flags = VJO_GAME_OCR_REFINE_ON << VJO_GAME_OCR_REFINE_SHIFT;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    const VjoGameOcrStep *rs = refine_step(&out);
+    TEST_ASSERT(rs != NULL);
+    TEST_CHECK(out.lines == 9 && rs->rc == 0 && rs->arg == 16 && (rs->bytes >> 16) == 9 &&
+               ((rs->bytes >> 8) & 0xFFu) == 2 && (rs->bytes & 0xFFu) == 7 && rs->sum >= 9u * 23u && rs->us > 0);
+    TEST_MSG("%u boxes: refine arg %u bytes 0x%08X sum %u", out.lines, (unsigned)rs->arg, (unsigned)rs->bytes,
+             (unsigned)rs->sum);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
+/* module_start records the game's title: in psp mode a PSP game's jobs refine
+ * (Adrenaline's NPXS10028, a PSPEMU* bubble), CLANNAD's do not. */
+static void module_start_sets_the_psp_title(void)
+{
+    static const struct { const char *title; int psp; } games[] = {{"NPXS10028", 1}, {"PSPEMU001", 1}, {"PCSG00415", 0}};
+    for (unsigned i = 0; i < sizeof(games) / sizeof(games[0]); i++) {
+        VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+        psp_title = !games[i].psp; /* only module_start can make it right */
+        strcpy(own_title, games[i].title);
+        TEST_CHECK_(!module_start(0, NULL) && thread_creates == 1 && psp_title == games[i].psp, "%s", games[i].title);
+        line();
+        r.flags = VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT;
+        int rc = vjo_game_ocr_run_request(&r, &out);
+        TEST_CHECK(rc == 0 || rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+        TEST_CHECK_((refine_step(&out) != NULL) == games[i].psp, "%s", games[i].title);
+        TEST_CHECK(!module_stop(0, NULL));
+    }
     psp_title = 0;
 }
 
@@ -1127,6 +1203,21 @@ static void forced_fallback_runs_the_fallback(void)
         if (out.step[i].id == VJO_GSTEP_CHECK && out.step[i].arg == 1 && out.step[i].sum == 1) forced = 1;
     for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_FALLBACK);
     TEST_CHECK(forced);
+    /* with the refinement: the fallback's workspace holds its arena too, and its boxes are refined */
+    r = setup();
+    line();
+    snprintf(r.model, sizeof(r.model), "H15_w8.vocr");
+    snprintf(r.fallback, sizeof(r.fallback), "FL10_w8.vocr");
+    r.flags = VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_REFINE_ON << VJO_GAME_OCR_REFINE_SHIFT;
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    const VjoGameOcrStep *rs = refine_step(&out);
+    TEST_CHECK(rc == 0 || rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    TEST_CHECK(out.fallback == 1 && rs && rs->rc == 0 &&
+               job_block == PAGE_ROUND(vjo_vocr_job_bytes(r.fallback, r.width, r.height) +
+                                       vjo_vocr_refine_bytes(r.width, r.height)));
+    if (rs && !rc) TEST_CHECK(out.lines == 1 && (rs->bytes >> 16) == 1 && rs->arg == 1);
+    TEST_MSG("rc %d, workspace %u B, refine rc %d", rc, job_block, rs ? (int)rs->rc : 1);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 TEST_LIST = {
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},
@@ -1155,5 +1246,7 @@ TEST_LIST = {
     {"an inactive game gets the cascade's block back", an_inactive_game_gets_the_cascade_block_back},
     {"the first job's step log keeps its lm, cascade and norm steps", the_first_job_logs_the_lm_cascade_and_norm},
     {"the refinement: on, in PSP games only by title, its step and arena; mode 3 refused", refine_modes},
+    {"the refine step's counts: boxes, splits, the 16-line cap, rows", the_refine_step_carries_its_counts},
+    {"module_start records whether the game is a PSP game", module_start_sets_the_psp_title},
     {NULL, NULL}
 };

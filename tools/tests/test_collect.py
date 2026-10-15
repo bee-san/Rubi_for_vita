@@ -39,7 +39,7 @@ gstep job blank kind=- arg=2 rc=0x00000001 bytes=19660830 sum=0x00C00014 main=0 
 gstep job norm kind=- arg=4 rc=0x00000000 bytes=2 sum=0x00000121 main=0 cdram=0 phycont=0 us=41
 gstep job lm kind=2 arg=1 rc=0x00000000 bytes=2147549187 sum=0x0016E360 main=0 cdram=0 phycont=0 us=2100
 gstep job cascade kind=1 arg=1 rc=0x00000000 bytes=2164261044 sum=0x0004B000 main=0 cdram=0 phycont=0 us=550000
-gstep job refine kind=2 arg=4 rc=0x00000000 bytes=196609 sum=0x00000060 main=0 cdram=0 phycont=0 us=1400
+gstep job refine kind=2 arg=4 rc=0x00000000 bytes=196865 sum=0x00000060 main=0 cdram=0 phycont=0 us=1400
 game vocr text 0: コ一ヒ一！
 game vocr text 0 shown: コーヒー!
 game vocr text 1: Error 404 not found
@@ -222,7 +222,8 @@ class Collect(unittest.TestCase):
                      "cascade: 1 job(s), 1 doubtful line(s) read again with the larger model (1 changed, 1 read as empty; its confidence "
                      "median 0.85), 0 left for the time ceiling; its weights read 1x (307-307 ms), re-reading 550-550 ms "
                      "a job",
-                     "finder boxes refined: 1 job(s) (psp x1), 3 box(es) became 4 line(s) (1 split); 1,400-1,400 us a job",
+                     "finder boxes refined: 1 job(s) (psp x1), 3 box(es) became 4 line(s) (1 split, 1 not split for the "
+                     "16-line cap), 96 rows read from memory; 1,400-1,400 us a job",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",

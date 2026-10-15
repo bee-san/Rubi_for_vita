@@ -916,7 +916,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     st->cascade_lines = st->cascade_changed = st->cascade_skipped = st->cascade_frames = st->cascade_blanked = 0;
     st->cascade_us = 0;
-    st->refine_boxes = st->refine_lines = st->refine_split = st->refine_kept = 0;
+    st->refine_boxes = st->refine_lines = st->refine_split = st->refine_capped = 0;
     st->refine_rows = 0;
     st->refine_us = 0;
     if (l->refine_bytes) st->refine_rc = 0;
@@ -973,27 +973,33 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         parts.lines[0] = *box;
         if (l->refine_bytes) {
             /* The box refined on the pixels the job holds for it: its strip (the
-             * box made strip-relative), or a tall line's own block. A split that
-             * would take the job past VJO_VOCR_MAX_LINES lines keeps the box. */
+             * box made strip-relative), or a tall line's own block. Its lines may
+             * take the job to VJO_VOCR_MAX_LINES, one kept for each box still to
+             * come; a split past that is not made, and the box is refined without
+             * it (its main text band), as #83's whole-set refinement does. */
             int tall = box->h > s->strip_rows;
             VocrLinesImage bim = {tall ? box_pixels : s->strip, tall ? box->w : w, tall ? box->h : s->rows,
                                   box_stride, VOCR_LINES_GREY};
-            unsigned ox = tall ? box->x : 0, oy = tall ? box->y : s->y0, room;
+            unsigned ox = tall ? box->x : 0, oy = tall ? box->y : s->y0, flags = pol->refine, room;
             unsigned long rows = 0;
             VocrLineSet one;
             uint32_t r0 = clock_us(p);
-            one.count = 1;
-            one.truncated = 0;
-            one.lines[0] = *box;
-            one.lines[0].x -= ox;
-            one.lines[0].y -= oy;
-            rc = vocr_refine_lines(&bim, pol->refine, ws + l->refine_off, l->refine_bytes, &one, &rows);
             room = VJO_VOCR_MAX_LINES - (li < VJO_VOCR_MAX_LINES ? li : VJO_VOCR_MAX_LINES);
             room = room > set.count - i - 1u ? room - (set.count - i - 1u) : 1u;
-            st->refine_rows += rows;
+            for (;;) {
+                one.count = 1;
+                one.truncated = 0;
+                one.lines[0] = *box;
+                one.lines[0].x -= ox;
+                one.lines[0].y -= oy;
+                rc = vocr_refine_lines(&bim, flags, ws + l->refine_off, l->refine_bytes, &one, &rows);
+                st->refine_rows += rows;
+                if (rc || one.count <= room || !(flags & VOCR_REFINE_SPLIT)) break;
+                flags &= ~VOCR_REFINE_SPLIT;
+                st->refine_capped++;
+            }
             if (rc && !st->refine_rc) st->refine_rc = rc;
-            if (!rc && one.count > room) st->refine_kept++;
-            if (!rc && one.count >= 1 && one.count <= room) {
+            if (!rc) { /* 1 to room lines */
                 parts = one;
                 for (unsigned k = 0; k < parts.count; k++) {
                     parts.lines[k].x += ox;

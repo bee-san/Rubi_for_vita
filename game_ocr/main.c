@@ -222,17 +222,9 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
-/* A PSP game (Adrenaline runs them as NPXS10028, or from a PSPEMU* bubble): the
- * refinement's "psp" mode applies (set by module_start from the title). */
+/* A PSP game (vjo_game_is_psp: NPXS10028, or a PSPEMU* bubble): the refinement's
+ * "psp" mode applies (set by module_start from the title). */
 static int psp_title;
-static int is_psp_title(const char *t)
-{
-    static const char emu[] = "PSPEMU";
-    unsigned i = 0;
-    if (!sceClibStrcmp(t, "NPXS10028")) return 1;
-    while (emu[i] && t[i] == emu[i]) i++;
-    return !emu[i];
-}
 
 /* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens;
  * and whether the cascade's model is the job's to open by its name. */
@@ -862,7 +854,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     VjoVocrStats stats = {0};
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
+    unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
+        refine_mode > VJO_GAME_OCR_REFINE_PSP ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         !r->fb_width || r->fb_width > VJO_OCR_MAX_WIDTH || !r->fb_height || r->fb_height > VJO_OCR_MAX_HEIGHT ||
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
@@ -876,8 +871,6 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
     const VjoVocrModel *model = vjo_vocr_model(r->model);
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
-    unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
-    if (refine_mode > VJO_GAME_OCR_REFINE_PSP) goto done;
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;
     size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
@@ -1005,10 +998,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
                  (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
     }
-    if (refine && stats.lines)
+    if (refine && stats.lines) /* each count at most VJO_VOCR_MAX_LINES: the boxes of one try */
         step_add(VJO_GSTEP_REFINE, refine_mode, stats.refine_lines, stats.refine_rc,
-                 (stats.refine_boxes > 0xFFFFu ? 0xFFFFu : stats.refine_boxes) << 16 |
-                 (stats.refine_split > 0xFFFFu ? 0xFFFFu : stats.refine_split),
+                 stats.refine_boxes << 16 | (stats.refine_capped & 0xFFu) << 8 | (stats.refine_split & 0xFFu),
                  (uint32_t)stats.refine_rows, stats.refine_us + 1u, 0);
     if (stats.model_loaded || stats.model_cached)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
@@ -1194,7 +1186,7 @@ int module_start(SceSize args, void *argp)
      * treated the same way: nothing is started, nothing stays. Candidate
      * games keep an idle worker until the Shell confirms their games.ini policy. */
     if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
-    psp_title = is_psp_title(title);
+    psp_title = vjo_game_is_psp(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */

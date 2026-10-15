@@ -181,8 +181,20 @@ static void test_sfo_bounds(void)
     TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) < 0);
 }
 
+/* One PSP rule for the refinement's psp mode and Anki's platform: Adrenaline's
+ * NPXS10028 and its PSPEMU* bubbles (its own PSPEMUCFW, Adrenaline Bubble Manager's). */
+static void test_psp_titles(void)
+{
+    static const struct { const char *id; int psp; } ids[] = {
+        {"NPXS10028", 1}, {"PSPEMUCFW", 1}, {"PSPEMU001", 1}, {"PSPEMU", 1}, {"PCSG00415", 0}, {"PSPEM", 0},
+        {"XPSPEMU01", 0}, {"pspemu001", 0}, {"NPXS10028X", 0}, {"NPXS10027", 0}, {"NPXS10015", 0}, {"", 0}};
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+        TEST_CHECK_(vjo_game_is_psp(ids[i].id) == ids[i].psp, "%s", ids[i].id);
+}
+
 TEST_LIST = {
     {"per-title blacklist and selected-only policies", test_policy},
+    {"PSP titles: NPXS10028 and PSPEMU* bubbles", test_psp_titles},
     {"saved choices survive fresh loads", test_save_restart},
     {"partial writes and interrupted rename retain disabled games", test_failed_save_and_backup},
     {"corrupt or unreadable settings disable OCR", test_corruption_disables_input_reservation},

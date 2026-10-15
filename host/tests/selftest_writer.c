@@ -259,11 +259,13 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting|gstep\n", argv[0]);
         return 2;
     }
-    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm and cascade kinds */
+    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm, cascade, refine kinds */
         static const VjoGameOcrStep steps[] = {{.id = VJO_GSTEP_CHECK, .kind = 2 | 8, .bytes = 4096},
                                                {.id = VJO_GSTEP_LM, .kind = 2, .arg = 1, .us = 2100},
                                                {.id = VJO_GSTEP_CASCADE, .kind = 1, .arg = 1, .us = 550001},
-                                               {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000}};
+                                               {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000},
+                                               {.id = VJO_GSTEP_REFINE, .kind = 2, .arg = 16, .bytes = 9u << 16 | 2u << 8 | 7u,
+                                                .sum = 410, .us = 1400}};
         char line[256];
         for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
             if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);
