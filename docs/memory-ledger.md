@@ -209,13 +209,13 @@ and the notice is a pointer to a constant string in the view model. `check_app` 
 680 B, under the existing `apply_config` path [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the
 Vita build's flags]. The config warnings are compared with the previous load's in the two `VjoConfig`
 copies `apply_config` already has. SceShell no longer writes a default `config.ini` when there is none
-(the installer, the package and the Overlay app do), so the commented template (3,926 B with its NUL,
+(the installer, the package and the Overlay app do), so the commented template (3,695 B with its NUL,
 `.rodata.vjo_config_default_text.str1.1` of `core/config.c` under the Vita flags; `docs/config.example.ini`
-is the same 3,925 B), its 8 B accessor and 60 B of `vjo_config_load` (180 to 120 B) leave the Shell, which
-pays for the check: the build log's module row goes from 210,184 to 207,120 B of text and from 71,204 to
-71,220 B of data and `.bss` (+16 B of state), and the module from 286,720 to 282,624 B, one page fewer
-[measured: the Vita builds of main `a5d79f2` and of this change; the template string is in main's Shell
-ELF and not in this change's]. `VJO_BUDGET_SHELL_MODULE_PAGES` stays 286,720 B, the ceiling, which
+is the same 3,694 B), its 8 B accessor and 60 B of `vjo_config_load` (180 to 120 B) leave the Shell, which
+pays for the check: the build log's module row goes from 206,192 to 203,368 B of text and from 71,020 to
+71,036 B of data and `.bss` (+16 B of state), and the module from 282,624 to 278,528 B, one page fewer
+[measured: the Vita builds of main `9824b55` and of this change; the template string is in main's Shell
+ELF and not in this change's]. `VJO_BUDGET_SHELL_MODULE_PAGES` stays 282,624 B, the ceiling, which
 concurrent changes to the Shell share. The check's file I/O is not measured on a console: two
 open/read/close and one getstat on `ux0:` at each enabled game start, and one log append when the answer
 changes, about 30-90 ms on VjoControl after the game is active (an estimate from
