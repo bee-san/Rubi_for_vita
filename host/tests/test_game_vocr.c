@@ -1723,6 +1723,7 @@ static void helpers_keep_the_tier_reserve(void)
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + 4096u);
     int rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(rc == 0 && out.rc == VJO_OK && out.text[0]); /* the job runs, serially */
     TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
     TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes <= (uint32_t)large + 4096u);
     TEST_MSG("rc %d, reserve %u, fallback %u, need %u (Large alone %u)", rc, (unsigned)out.reserve_bytes,
@@ -1734,6 +1735,7 @@ static void helpers_keep_the_tier_reserve(void)
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + two + 4096u);
     rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(rc == 0 && out.rc == VJO_OK && out.text[0]); /* the job runs, with both helpers */
     TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
     TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes == (uint32_t)(large + two));
     TEST_MSG("rc %d, need %u, Large alone %u + two helpers %u", rc,

@@ -25,10 +25,6 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell pages                         389,120      458,752    1,048,576      589,824
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
-  pool                              permanent   worst case        limit     headroom
-  shell pages                         389,120      458,752    1,048,576      589,824
-  shell paf                             8,192      225,280      985,088      759,808
-  kernel                              131,072    2,220,032    2,220,032            0
   game                                126,976    8,720,384    8,720,384            0
   shell paf (network dictionary)     (opt-in)      731,632      985,088      253,456
   packaged modules (loaded pages vs declared budget)
