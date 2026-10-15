@@ -86,12 +86,16 @@ cp "$sbx/cache/Vita3K/vita3k.log" "$out/vita3k.log" 2>/dev/null || true
 # a read giving 0 and a write dropped (b75d5e6 vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213,
 # 234-248); a console ends the app there. It also logs an instruction it cannot run and goes on
 # (:272-317): an undefined one, which a console faults on, or one it does not implement, its own
-# gap; either way the run says nothing past it. Any of these lines fails the run, the first quoted
-# with its PC; no passing run's log has one. A write to the app's own code or read-only data is
+# gap; either way the run says nothing past it. Any of these lines fails the run, the first quoted;
+# no passing run's log has one. A write to the app's own code or read-only data is
 # not seen: Vita3K maps the module's segments writable (load_self.cpp:651, mem.cpp:183).
 GUEST_ACCESS='Invalid (read|write|exclusive write) of uint'
 GUEST_INSN='(Unimplemented|Undefined|Unpredictable) instruction at|Decode error at|Unknown exception [0-9]+ Raised'
-guest_fault() { # guest_fault PATTERN LOG: the first such line with its PC, SP and LR, and how many; or nothing
+# guest_fault PATTERN LOG: the first such line and the number of such lines, or nothing. An invalid
+# access is quoted with the PC, SP and LR Vita3K logs on the next line (the PC is where its JIT block
+# began: the function, not the line); an instruction with the address in its own line (Vita3K logs
+# two lines for each, so the count is twice the instructions).
+guest_fault() {
   awk -v pat="$1" '
     want { want = 0; if ($1 == "PC:") { pc = $0; gsub(/ +/, " ", pc); first = first " (" pc ")" } }
     $0 ~ pat { if (!n++) { first = $0; sub(/^\[[0-9:.]+\] \|[A-Z]\| /, "", first); want = 1 } }

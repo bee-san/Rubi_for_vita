@@ -263,12 +263,14 @@ and a write dropped (b75d5e6 `vita3k/cpu/src/dynarmic_cpu.cpp:161-173, 198-213, 
 NULL write in the app's toggle, which a console ends the app on, passed the script (#121's
 audit). It also logs an instruction it cannot run and goes on (`:272-317`): an undefined one,
 which a console faults on, or one it does not implement, its own gap. Any of these lines now
-fails the run, the scripted app's and the release VPK's, quoting the first with its PC, SP and LR;
-no passing run's log has one. A write to the app's own code or read-only data is neither faulted
-nor logged: Vita3K maps the module's segments writable (`load_self.cpp:651`, `mem.cpp:183`),
-while on a console the code segment is read-only, so such a write would end the app there (not
-run on a console). A jump to address 0 shows as invalid reads at PC 0 until the timeout ends
-the run.
+fails the run, the scripted app's and the release VPK's. The failure quotes the first such line
+and the number of such lines: for an invalid access with the PC, SP and LR Vita3K logs after it
+(the PC is where its JIT block began, so it names the function rather than the line), for an
+instruction with its address (Vita3K logs two lines for each). No passing run's log has one. A
+write to the app's own code or read-only data is neither faulted nor logged: Vita3K maps the
+module's segments writable (`load_self.cpp:651`, `mem.cpp:183`), while on a console the code
+segment is read-only, so such a write would end the app there (not run on a console). A jump to
+address 0 shows as invalid reads at PC 0 until the timeout ends the run.
 
 ## 6. What only the console answers
 
