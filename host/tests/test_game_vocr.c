@@ -115,11 +115,72 @@ int sceKernelFreeMemBlock(SceUID uid)
     TEST_CHECK(uid == 9 && memory_live); if (free_failure) return -1;
     memory_live = 0; frees++; live_bytes -= job_block; return 0;
 }
+/* API 22: a helper thread (game_ocr/main.c pool_run) runs its line at once, in StartThread. */
+static unsigned helper_threads, helper_live, helper_starts;
+static int helper_create_failure, helper_join_failure;
+/* helper_deferred: a helper's line runs at its join, not at its start, so the worker meets the
+ * next lines while it is still out (as a slower core would) */
+static int helper_deferred;
+static struct { SceUID uid; SceSize size; unsigned char args[16]; int pending; } deferred[4];
+static SceUID wait_order[8]; /* the threads WaitThreadEnd was asked for, in order */
+static unsigned n_waits;
 SceUID sceKernelCreateThread(const char *n, int (*entry)(SceSize, void *), int p, unsigned stack, unsigned a, int cpu, void *opt)
-{ TEST_CHECK(stack == 32*1024 && entry == worker_main && p == 0x10000100 + 31 && cpu == 0x70000); thread_creates++; return 20; }
-int sceKernelStartThread(SceUID uid, SceSize size, void *args) { return start_failure ? -1 : 0; }
-int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return join_failure ? -1 : 0; }
-int sceKernelDeleteThread(SceUID uid) { return delete_failure ? -1 : 0; }
+{
+    if (entry == helper_entry) {
+        TEST_CHECK(stack == VJO_STACK_GAME_HELPER && p == 0x10000100 + 31 && cpu == 0x70000 && !strcmp(n, "VjoGameVocrHelper"));
+        if (helper_create_failure) return (int)0x80020190u;
+        helper_threads++; helper_live++;
+        return 40 + (int)helper_threads;
+    }
+    TEST_CHECK(stack == 32*1024 && entry == worker_main && p == 0x10000100 + 31 && cpu == 0x70000); thread_creates++; return 20;
+}
+int sceKernelStartThread(SceUID uid, SceSize size, void *args)
+{
+    if (uid > 40 && helper_deferred) { /* the argument block is copied, as StartThread does */
+        unsigned k = (unsigned)(uid - 41) % 4u;
+        TEST_CHECK(size <= sizeof(deferred[k].args) && !deferred[k].pending);
+        deferred[k].uid = uid;
+        deferred[k].size = size;
+        memcpy(deferred[k].args, args, size);
+        deferred[k].pending = 1;
+        helper_starts++;
+        return 0;
+    }
+    if (uid > 40) { helper_starts++; return helper_entry(size, args); }
+    return start_failure ? -1 : 0;
+}
+int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout)
+{
+    if (n_waits < 8) wait_order[n_waits++] = uid;
+    if (uid > 40 && helper_join_failure) return (int)0x80028005u; /* the wait timed out */
+    if (uid > 40) {
+        unsigned k = (unsigned)(uid - 41) % 4u;
+        if (deferred[k].pending && deferred[k].uid == uid) {
+            deferred[k].pending = 0;
+            helper_entry(deferred[k].size, deferred[k].args);
+        }
+        return 0;
+    }
+    return join_failure ? -1 : 0;
+}
+int sceKernelDeleteThread(SceUID uid)
+{
+    if (uid > 40) { TEST_CHECK(helper_live > 0); helper_live--; return 0; }
+    return delete_failure ? -1 : 0;
+}
+int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info)
+{ TEST_CHECK(info->size == sizeof(*info)); info->runClocks = clock_value; return 0; }
+SceUID sceKernelGetThreadId(void) { return 20; }
+/* The ARM clock (ocr_boost_clock): what the game runs at, and the calls that set it. */
+static int arm_mhz = 333, arm_sets, arm_set_last;
+static unsigned arm_gets, arm_game_at; /* the game sets arm_game_mhz just before the arm_game_at-th read */
+static int arm_game_mhz;
+int scePowerGetArmClockFrequency(void)
+{
+    if (arm_game_at && ++arm_gets == arm_game_at) arm_mhz = arm_game_mhz;
+    return arm_mhz;
+}
+int scePowerSetArmClockFrequency(int mhz) { arm_sets++; arm_set_last = mhz; arm_mhz = mhz; return 0; }
 static int quit_on_delay; /* the worker loop's next sleep ends it (one pass of worker_main) */
 int sceKernelDelayThread(unsigned us) { clock_value += us; if (quit_on_delay) quitting = 1; return 0; }
 int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size)
@@ -268,6 +329,13 @@ static VjoGameOcrRequest setup(void)
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
     change_at_rows = clear_at_rows = 0; blocks_held = 0; frame_h = 60;
+    /* API 22: no helper, no stuck job, an empty line cache, the clock as the game set it */
+    hook_owns_workspace = 0; vjo_vocr_unstick();
+    for (unsigned k = 0; k <= VJO_VOCR_HELPERS_MAX; k++) { helper_uid[k] = -1; helper_job[k].fn = NULL; }
+    memset(&line_cache, 0, sizeof(line_cache));
+    helper_threads = helper_live = helper_starts = 0; helper_create_failure = helper_join_failure = 0; n_waits = 0;
+    helper_deferred = 0; memset(deferred, 0, sizeof(deferred));
+    arm_mhz = 333; arm_sets = arm_set_last = 0; arm_gets = arm_game_at = 0; arm_game_mhz = 0;
     VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=200, .fb_height=60, .width=200, .height=60};
     snprintf(r.model, sizeof(r.model), "FL10_w8.vocr");
     /* Blank images never open weights, but requests still need a valid directory.
@@ -344,6 +412,9 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.x = 0; r.flags = 0x4000; /* API 20: bits 14-15 mean nothing yet */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    r.flags = 0; r.speed = 0x10; /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    r.speed = 0;
     r.flags = 0; r.model[31] = 'x';
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
 }
@@ -637,6 +708,223 @@ static void policy_in_the_flags(void)
     allocations = 0;
     r.flags = 0x4000u; /* bits 14-15 mean nothing yet */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+}
+
+/* API 22 (ocr-speed): helpers and the ARM clock ride in the flags. Helpers are
+ * counted in the memory check and dropped one at a time when they do not fit;
+ * the clock goes to 444 MHz around the recognition only and back after it. */
+static void helpers_and_clock_in_the_flags(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    const size_t block = vjo_vocr_job_bytes(r.model, 200, 60); /* no LM, cascade or refinement here */
+    uint32_t plain_need, extra2 = (uint32_t)helpers_need(r.model, block, 2);
+    uint32_t extra1 = (uint32_t)helpers_need(r.model, block, 1);
+    const VjoGameOcrStep *clock = NULL, *par = NULL;
+    line();
+    arm_mhz = 333; arm_sets = 0; helper_threads = helper_live = helper_starts = 0;
+    vjo_game_ocr_run_request(&r, &out);
+    plain_need = out.need_workspace;
+    TEST_CHECK(arm_sets == 0 && plain_need > 0);
+    for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_CLOCK && out.step[i].id != VJO_GSTEP_PAR);
+    /* two helpers asked for, room for both: counted, stacks included */
+    TEST_CHECK(extra1 > 2u * VJO_BUDGET_GAME_HELPER_STACK / 2u && extra2 > extra1);
+    r.speed = 2u | VJO_GAME_OCR_S_BOOST;
+    memset(&line_cache, 0, sizeof(line_cache)); /* the plain job's line is cached: recognize it again */
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(!rc || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+    TEST_CHECK(out.need_workspace == plain_need + extra2);
+    TEST_MSG("need %u, without helpers %u, two helpers add %u", (unsigned)out.need_workspace, plain_need, extra2);
+    TEST_CHECK(!memory_live && !capture_live && helper_live == 0);
+    for (unsigned i = 0; i < out.n_steps; i++) {
+        if (out.step[i].id == VJO_GSTEP_CLOCK) clock = &out.step[i];
+        if (out.step[i].id == VJO_GSTEP_PAR) par = &out.step[i];
+    }
+    if (VJO_VOCR_MODEL_DIR[0] && !rc && out.recognized) {
+        /* one line: it runs on the worker's own thread (the last line always does) */
+        TEST_ASSERT(clock != NULL && par != NULL);
+        TEST_CHECK(clock->arg == 333 && clock->bytes == 444 && clock->sum == 333 && clock->rc == 0);
+        TEST_CHECK(arm_sets == 2 && arm_set_last == 333 && arm_mhz == 333);
+        TEST_CHECK(par->arg == 2 && par->rc == 0 && par->bytes == extra2 && helper_threads == 0);
+        TEST_CHECK(((par->sum >> 16) & 0xFFu) == 0); /* no line from the cache */
+        /* already at 444 or more (PSVshell's 500): not raised, never lowered, logged as left alone */
+        static const int already[] = {444, 500};
+        for (unsigned k = 0; k < 2; k++) {
+            arm_mhz = already[k]; arm_sets = 0;
+            resident.model = NULL; /* weights again, so the line is recognized, not cached */
+            memset(&line_cache, 0, sizeof(line_cache));
+            TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
+            clock = NULL;
+            for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_CLOCK) clock = &out.step[i];
+            TEST_CHECK(clock && clock->rc == 1 && clock->arg == (unsigned)already[k]);
+            TEST_CHECK(clock && clock->bytes == (uint32_t)already[k] && clock->sum == (uint32_t)already[k]);
+            TEST_CHECK(arm_sets == 0 && arm_mhz == already[k]);
+            TEST_MSG("at %d MHz: %d set call(s), now %d MHz", already[k], arm_sets, arm_mhz);
+        }
+        /* the same screen again: the line comes from the cache, no clock change, no recognizer */
+        arm_mhz = 333; arm_sets = 0;
+        TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
+        par = NULL;
+        for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_PAR) par = &out.step[i];
+        TEST_CHECK(arm_sets == 0 && out.frames == 0 && out.recognized == 1 && par && ((par->sum >> 16) & 0xFFu) == 1);
+    }
+    /* free memory for one helper only, then for none: fewer helpers, never a refusal
+     * (the resident weights, if any, are already part of live_bytes) */
+    TEST_ASSERT(resident.model != NULL || !VJO_VOCR_MODEL_DIR[0]); /* weights resident: they need nothing more */
+    available = (int)(live_bytes + VJO_GAME_RESERVE + plain_need + extra1 + 4096u);
+    if (!resident.model) available += (int)PAGE_ROUND(vjo_vocr_model(r.model)->bytes);
+    vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(out.need_workspace == plain_need + extra1);
+    TEST_MSG("need %u (plain %u, +1 helper %u, +2 %u)", (unsigned)out.need_workspace, plain_need, extra1, extra2);
+    available = (int)(live_bytes + VJO_GAME_RESERVE + plain_need + 4096u);
+    if (!resident.model) available += (int)PAGE_ROUND(vjo_vocr_model(r.model)->bytes);
+    vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(out.need_workspace == plain_need && out.rc != VJO_E_OOM);
+    TEST_MSG("need %u (plain %u, +1 helper %u)", (unsigned)out.need_workspace, plain_need, extra1);
+    arm_mhz = 333;
+}
+
+/* Two lines of strokes, 30 rows apart, in a 200 x 120 region (two strips). */
+static void two_lines(VjoGameOcrRequest *r)
+{
+    frame_h = 120;
+    r->height = r->fb_height = 120;
+    for (unsigned y = 15; y < 39; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
+    for (unsigned y = 70; y < 94; y++) for (unsigned x = 14; x < 150; x += 5) memset(pixels + (y * 200 + x) * 4, 235, 5);
+}
+
+/* Five lines of strokes, 50 rows apart, in a 200 x 272 region (five strips). */
+static void five_lines(VjoGameOcrRequest *r)
+{
+    frame_h = 272;
+    r->height = r->fb_height = 272;
+    for (unsigned l = 0; l < 5; l++)
+        for (unsigned y = 15 + 50 * l; y < 39 + 50 * l; y++)
+            for (unsigned x = 10 + 2 * l; x < 190 - 15 * l; x += 5 + l) memset(pixels + (y * 200 + x) * 4, 235, 4);
+}
+
+/* API 22: a helper that cannot be joined (its WaitThreadEnd times out) may still run in the
+ * job's workspace and read the weights. The job fails with VJO_E_OCR_UNAVAILABLE, both stay
+ * held, the worker takes no more jobs; worker_stop waits for the worker first, then for the
+ * helper, and only then gives everything back. */
+static void a_stuck_helper_keeps_its_memory_until_stop(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("no release weights"); return; }
+    two_lines(&r);
+    r.speed = 1; /* one helper: the first line runs on it, the last on the worker */
+    helper_join_failure = 1;
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    if (!helper_threads) { TEST_SKIP("the finder did not find two lines (rc %d, %u lines)", rc, out.lines); return; }
+    TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE && out.rc == VJO_E_OCR_UNAVAILABLE && !out.text[0]);
+    TEST_CHECK(blocked && hook_owns_workspace && workspace_uid >= 0 && memory_live && weights_live);
+    TEST_CHECK(!capture_live && helper_uid[1] >= 0 && helper_live == 1);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_HELPERS) == VJO_BUDGET_GAME_HELPER_STACK);
+    TEST_MSG("rc %d, %u lines, helper threads %u", rc, out.lines, helper_threads);
+    /* no other job while it may run */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE && memory_live && weights_live);
+    /* stop: the worker thread first (its own job joins its helpers), then the helper left over */
+    vjo_ledger_add(&g_game_ledger, GL_STACK, VJO_BUDGET_GAME_STACK);
+    worker = 20; worker_started = 1; n_waits = 0;
+    helper_join_failure = 0;
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+    TEST_CHECK(n_waits == 2 && wait_order[0] == 20 && wait_order[1] > 40);
+    TEST_CHECK(!memory_live && !weights_live && workspace_uid < 0 && !hook_owns_workspace && !blocked);
+    TEST_CHECK(helper_uid[1] < 0 && helper_live == 0 && vjo_ledger_current(&g_game_ledger, GL_HELPERS) == 0);
+    /* and after a start again (worker_start clears quitting) the next job runs */
+    __atomic_store_n(&quitting, 0, __ATOMIC_RELEASE);
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out));
+    TEST_CHECK(!memory_live && helper_live == 0);
+}
+
+/* API 22 with the release weights, the 1 MB LM and the cascade's VOCR4-W20 reading every line again:
+ * one and two helpers give the serial job's text and its recognizer text (kept after the NUL), and the
+ * helpers' line slots, at the end of the workspace, overlap neither the LM's extras nor that text. */
+static void helpers_with_the_lm_and_cascade_give_the_serial_text(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    static char serial_text[sizeof(out.text)], serial_raw[sizeof(out.text)];
+    char lm2[600], w20[600];
+    FILE *f;
+    snprintf(lm2, sizeof(lm2), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_LM2_NAME);
+    snprintf(w20, sizeof(w20), "%s/%s", VJO_VOCR_MODEL_DIR, VJO_VOCR_CASCADE_NAME);
+    if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(lm2, "rb"))) { TEST_SKIP("no LM beside the release weights"); return; }
+    fclose(f);
+    if (!(f = fopen(w20, "rb"))) { TEST_SKIP("no VOCR4-W20 beside the release weights"); return; }
+    fclose(f);
+    five_lines(&r); /* with one helper, its line is still out when the worker's own slot takes the next */
+    available = 64 * 1024 * 1024;
+    test_cascade_conf = 1001; /* every line with text is read again */
+    r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    if (out.lines < 5) { TEST_SKIP("the finder did not find five lines (%u)", out.lines); return; }
+    strcpy(serial_text, out.text);
+    strcpy(serial_raw, out.text + strlen(out.text) + 1);
+    TEST_CHECK(serial_text[0] && serial_raw[0]);
+    for (unsigned helpers = 1; helpers <= VJO_VOCR_HELPERS_MAX; helpers++) {
+        vjo_game_ocr_cache_clear(); /* recognized again, not cached */
+        helper_threads = 0;
+        helper_deferred = 1; /* the first line still out when the last runs: the worker's own slot */
+        r.speed = helpers;
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+        TEST_CHECK_(!strcmp(out.text, serial_text) && !strcmp(out.text + strlen(out.text) + 1, serial_raw),
+                    "%u helper(s): \"%s\" / \"%s\", serially \"%s\" / \"%s\"", helpers, out.text,
+                    out.text + strlen(out.text) + 1, serial_text, serial_raw);
+        TEST_CHECK(helper_threads >= 1 && helper_live == 0 && !memory_live);
+        for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK(out.line[i].flags & VJO_VOCR_LINE_CASCADE);
+        {   /* the first line on a helper (the PAR step's rc: lines on helpers) */
+            const VjoGameOcrStep *par = NULL;
+            for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_PAR) par = &out.step[i];
+            TEST_CHECK(out.recognized >= 2 && par && par->arg == helpers && par->rc >= 1);
+        }
+    }
+    helper_deferred = 0;
+    r.speed = 0;
+}
+
+/* API 22: VJO_GAME_OCR_S_NOCACHE (the self-test's stages) empties the line cache and leaves it
+ * unused: the job recognizes its line, and nothing is cached from it. */
+static void a_nocache_job_recognizes_and_caches_nothing(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("no release weights"); return; }
+    line();
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.recognized == 1 && out.frames > 0);
+    unsigned keys = 0;
+    for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++) keys += line_cache.line[i].key != 0;
+    TEST_CHECK(keys == 1);
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.frames == 0); /* the same screen: from the cache */
+    r.speed = VJO_GAME_OCR_S_NOCACHE;
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.recognized == 1 && out.frames > 0);
+    keys = 0;
+    for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++) keys += line_cache.line[i].key != 0;
+    TEST_CHECK(keys == 0);
+    r.speed = 0;
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out) && out.frames > 0); /* recognized again, then cached */
+}
+
+/* ocr_boost_clock: when the game sets another clock while a job recognizes, the job leaves
+ * the game's clock as it is (no restore over it), and the step logs before, during, after. */
+static void the_clock_stays_where_the_game_set_it(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    const VjoGameOcrStep *clock = NULL;
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_SKIP("no release weights"); return; }
+    line();
+    r.speed = VJO_GAME_OCR_S_BOOST;
+    arm_mhz = 333;
+    arm_game_mhz = 222;
+    arm_game_at = 3; /* before, during, then the game's 222 MHz at the check after the last line */
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out));
+    if (!out.recognized) { TEST_SKIP("no line recognized"); return; }
+    for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_CLOCK) clock = &out.step[i];
+    TEST_ASSERT(clock != NULL);
+    TEST_CHECK(arm_sets == 1 && arm_set_last == 444 && arm_mhz == 222); /* raised once, never put back */
+    TEST_CHECK(clock->arg == 333 && clock->bytes == 444 && clock->sum == 222 && clock->rc == 0);
+    /* the game leaves it alone: the job puts its own value back */
+    arm_mhz = 333; arm_sets = 0; arm_gets = 0; arm_game_at = 0;
+    vjo_game_ocr_cache_clear();
+    TEST_ASSERT(!vjo_game_ocr_run_request(&r, &out));
+    TEST_CHECK(arm_sets == 2 && arm_set_last == 333 && arm_mhz == 333);
 }
 
 /* The step log: a retried job logs its first pass and its signature once (the
@@ -1009,6 +1297,7 @@ static void cascade_jobs(void)
     available = 64 * 1024 * 1024;
     test_cascade_conf = 1001;
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     const VjoGameOcrStep *c = NULL, *check = NULL;
     for (unsigned i = 0; i < out.n_steps; i++) {
@@ -1024,12 +1313,14 @@ static void cascade_jobs(void)
     TEST_CHECK(!memory_live && !capture_live && blocks_held == 3u); /* weights, LM, cascade */
     TEST_MSG("text '%s', %u steps, cascade step arg %u bytes 0x%08X", out.text, out.n_steps, c->arg, (unsigned)c->bytes);
     /* the next job: resident */
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     c = NULL;
     for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_CASCADE) c = &out.step[i];
     TEST_CHECK(c && (c->bytes & VJO_GLM_RESIDENT) && cascade_allocations == 1 && cascade_opens == 2);
     /* no ceiling in the request: the block goes back, no cascade step */
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT;
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(!cascade_live && !cascade_res.model && cascade_frees == 1);
     for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_CASCADE);
@@ -1037,6 +1328,7 @@ static void cascade_jobs(void)
     /* room for the model and the LM, not for the cascade too: the LM alone */
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
     available = (int)(live_bytes + 4u * 1024 * 1024 + 500000u);
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(!cascade_live && lm_live && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
     for (unsigned i = 0; i < out.n_steps; i++) {
@@ -1047,6 +1339,7 @@ static void cascade_jobs(void)
      * resident block (weights, LM, the cascade's) goes back to the game */
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
     available = 64 * 1024 * 1024;
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(cascade_live && lm_live && weights_live);
     /* everything resident, and too little room for the cascade with any LM tier (counting what
@@ -1066,15 +1359,18 @@ static void cascade_jobs(void)
         available = (int)(live_bytes + GAME_RESERVE + least - 4096);
     }
     unsigned frees_before = cascade_frees;
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(!cascade_live && cascade_frees == frees_before + 1 && !cascade_res.model && lm_live && weights_live);
     TEST_CHECK(lm_res.lm == vjo_vocr_lm_tier(2) && freed_before_the_workspace(&out, VJO_GITEM_CASCADE));
     TEST_CHECK(out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
     /* resident again */
     available = 64 * 1024 * 1024;
+    vjo_game_ocr_cache_clear(); /* the same screen is recognized again, not cached */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(cascade_live && lm_live && weights_live);
     available = (int)(live_bytes + 1000000u); /* under the reserve, even with them given back */
+    vjo_game_ocr_cache_clear();
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM);
     TEST_CHECK(!cascade_live && !lm_live && !weights_live && !cascade_res.model && !lm_res.lm && !resident.model);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !cascade_live && !lm_live && !weights_live);
@@ -1628,5 +1924,12 @@ TEST_LIST = {
      tier_jobs_open_their_models_by_tier},
     {"model tiers: another size's resident blocks count as free and are released first",
      tier_release_counts_other_sizes_as_free},
+    {"API 22: helpers and the ARM clock ride in the flags, counted and restored", helpers_and_clock_in_the_flags},
+    {"API 22: a stuck helper keeps the workspace and weights until stop, which waits for the worker first",
+     a_stuck_helper_keeps_its_memory_until_stop},
+    {"API 22: the clock stays where the game set it during a job", the_clock_stays_where_the_game_set_it},
+    {"API 22: a job with VJO_GAME_OCR_S_NOCACHE recognizes and caches nothing", a_nocache_job_recognizes_and_caches_nothing},
+    {"API 22: helpers with the LM and the cascade give the serial job's text and recognizer text",
+     helpers_with_the_lm_and_cascade_give_the_serial_text},
     {NULL, NULL}
 };

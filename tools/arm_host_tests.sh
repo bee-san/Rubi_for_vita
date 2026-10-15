@@ -25,7 +25,12 @@
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
 # libc). The defaults below are those package names; the fleet box sets both
-# variables to its own toolchain, which bundles a sysroot.
+# variables to its own toolchain, which bundles a sysroot. With
+# VJO_VOCR_SOURCE_DIR the cross gcc must be GCC 14 or later: the pinned
+# runtime's NEON kernels (vita-vn-ocr #85) use vld1q_*_x2, which the 32-bit
+# arm_neon.h has from GCC 14 on. On Ubuntu 24.04, whose default is GCC 13,
+# install gcc-14-arm-linux-gnueabihf and set ARM_CC=arm-linux-gnueabihf-gcc-14
+# (as CI does).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ARM_CC=${ARM_CC:-arm-linux-gnueabihf-gcc}

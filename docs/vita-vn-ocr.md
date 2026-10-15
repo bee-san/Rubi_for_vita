@@ -796,7 +796,7 @@ needs access to it):
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout a540027f90a640fd7c4d99b8389973b85a1cc057  # #83's merge (after #82's): the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
 cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
@@ -976,8 +976,11 @@ copied, and the settings above. Close other apps first.
 - Horizontal text only; vertical text is not read.
 - Adjacent lines 1-2 px apart can merge on PSP-sized text, and decorated
   frames can add a stray line; tight regions read best.
-- Recognition runs on a low-priority thread in the enabled game process at
-  the game's clock. The overlay does not change the CPU clock or memory mode.
+- Recognition runs on low-priority threads in the enabled game process. While
+  a job recognizes, the ARM clock is 444 MHz (`ocr_boost_clock = on`, the
+  default; a clock already at 444 MHz or more is left as it is) and is put
+  back after ([OCR speed](ocr-speed.md#the-arm-clock-ocr_boost_clock-on)); the
+  bus and GPU clocks and the memory mode are never changed.
 - Only the pinned files listed under [Models](#models) load. A new release needs its sizes, hashes
   and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
   `tools/prepare_ocr.py`); `python3 tools/docs_model_names.py` then writes the new names into those

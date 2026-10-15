@@ -371,8 +371,8 @@ class AnalyseV2(unittest.TestCase):
         screen'; the screen changed between the stages only if the region's checksum did."""
         base = (FIXTURES / "selftest-v2-pass.txt").read_text()
         text = re.sub(r"^line textbox2 .*\n", "", base, flags=re.M)
-        text, n = re.subn(r"^(stage textbox2 end .*) lines=3 recognized=3 frames=330$", r"\1 lines=0 recognized=0 frames=0",
-                          text, flags=re.M)
+        text, n = re.subn(r"^(stage textbox2 end .*) lines=3 recognized=3 frames=330( text=0x[0-9A-F]+)?$",
+                          r"\1 lines=0 recognized=0 frames=0\2", text, flags=re.M)
         self.assertEqual(n, 1)
         changed, n = re.subn(r"^(memory textbox2 .*) sum=0x5EED0003$", r"\1 sum=0x5EED0000", text, flags=re.M)
         self.assertEqual(n, 1)
@@ -424,6 +424,15 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual({k: rf[k] for k in ("jobs", "modes", "boxes", "lines", "split", "capped", "rows", "us")},
                          {"jobs": 1, "modes": {"psp": 1}, "boxes": 9, "lines": 16, "split": 7, "capped": 2,
                           "rows": 410, "us": [1400]})
+
+    def test_the_clock_step_counts_raised_and_left_alone(self):
+        # game_ocr/main.c job_busy (ocr_boost_clock = on, the default): 333 raised to 444 and put back; a clock
+        # already at 444 or more (PSVshell's 500) left as it is, rc 1, never lowered
+        log = "".join("gstep job clock kind=- arg=%d rc=0x%08X bytes=%d sum=0x%08X main=0 cdram=0 phycont=0 us=1\n"
+                      % row for row in ((333, 0, 444, 333), (500, 1, 500, 500), (444, 1, 444, 444)))
+        ck = a.summarise_log(log)["clock"]
+        self.assertEqual((ck["jobs"], ck["raised"], ck["kept"]), (3, 1, 2))
+        self.assertEqual((ck["before"], ck["during"], ck["after"]), ([333, 500, 444], [444, 500, 444], [333, 500, 444]))
 
     @unittest.skipUnless(os.environ.get("VJO_SELFTEST_WRITER"), "vjo-selftest-writer not built")
     def test_the_fixtures_are_what_the_writer_writes(self):
@@ -742,6 +751,23 @@ class DiagnosticsNeverDecide(unittest.TestCase):
     def fixture(self, name):
         return (FIXTURES / f"selftest-v2-{name}.txt").read_text()
 
+    def test_the_parallel_row_compares_textbox_with_textbox2(self):
+        """API 22: textbox with the configured helpers, textbox2 the same region serially, neither cached."""
+        text = self.fixture("pass")
+        self.assertRegex(text, r"(?m)^stage textbox begin .* speed=0xA$")   # two helpers, no line cache
+        self.assertRegex(text, r"(?m)^stage textbox2 begin .* speed=0x8$")  # serial, no line cache
+        r = run(text)
+        self.assertIn("textbox with 2 helper(s), 2 line(s) on them; their threads' share of a core: lowest 95 %, "
+                      "mean 98 %: 820 ms recognizing; textbox2, the same region serially: 1500 ms; the same text",
+                      r.stdout)
+        # ocr_threads = 1: both serial, nothing to compare but the texts
+        r = run(re.sub(r"(?m)^(stage textbox begin .* speed=)0xA$", r"\g<1>0x8", text))
+        self.assertEqual(rows(r.stdout)["parallel"], "PASS")
+        self.assertIn("ocr_threads = 1: both stages ran serially", r.stdout)
+        # an older build's stages carry no speed: no row
+        r = run(re.sub(r" speed=0x[0-9A-F]+$", "", text, flags=re.M))
+        self.assertNotIn("parallel", rows(r.stdout))
+
     def test_the_row_kinds_are_fixed(self):
         rows_json = json.loads(run(self.fixture("pass"), "--json").stdout)["rows"]
         kinds = {r["row"]: r["kind"] for r in rows_json}
@@ -800,6 +826,7 @@ class DiagnosticsNeverDecide(unittest.TestCase):
             "probe": [(r"^(gstep probe probe kind=\w+ arg=\w+) rc=0x0000003E ", r"\1 rc=0xBFFFFFF9 ")],
             "capture<64KiB": [(r"^(result textbox .* capture=)61440 ", r"\g<1>69632 ")],
             "kernel-pool": [(r"^(result textbox2 source=)hook ", r"\1kstrip ")],
+            "parallel": [(r"^(stage textbox2 end .* text=)0x[0-9A-Fa-f]+$", r"\g<1>0x00000001")],  # another reading
         }
         for name, subs in cases.items():
             text = base

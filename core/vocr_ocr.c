@@ -61,7 +61,9 @@ static const VjoVocrModel models[] = {
 
 /* The LM tiers of bee-san/vita-vn-ocr pre-release v0.2.6-ctclm.2 (CC BY-SA 4.0,
  * ATTRIBUTION.md ships with them), and the per-character bonus each was tuned
- * with (docs/ctc-lm-decode.md, "settings"). */
+ * with (docs/ctc-lm-decode.md, "settings"). A host test's model table may bring
+ * its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). */
+#ifndef VJO_VOCR_TEST_LMS
 static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
     {VJO_VOCR_LM1_NAME, VJO_VOCR_LM1_BYTES,
      {0x38,0xea,0x94,0xe0,0xc4,0xec,0x93,0x86,0x34,0x54,0x38,0x7e,0x7c,0x2c,0x46,0x9d,
@@ -76,6 +78,7 @@ static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
      {0x01,0xf4,0x9b,0xe1,0x69,0x1a,0x1a,0xab,0x5a,0x6d,0x33,0x41,0x4c,0xe7,0xd1,0x7c,
       0x3e,0x5b,0x2d,0xaf,0x97,0xdf,0xcc,0xb0,0xd3,0x41,0xa3,0x80,0xa6,0x8e,0x58,0x98}, 3500, 4},
 };
+#endif /* VJO_VOCR_TEST_LMS */
 
 const VjoVocrLm *vjo_vocr_lm(const char *name)
 {
@@ -123,16 +126,35 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
     return NULL;
 }
 
-/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx]. The
- * one-shot form puts the weights in front of it. The region's pixels are not in
- * it: they live one strip at a time in the capture block. */
+/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx], then
+ * the refinement's arena, the LM extras and the cascade's (each when the job has
+ * them), and last the line slots of parallel lines (API 22: the caller's own and
+ * one per helper). The one-shot form puts the weights in front of it. The
+ * region's pixels are not in it: they live one strip at a time in the capture
+ * block. */
 typedef struct {
     size_t scratch_off, structs_off, total;
     size_t scratch, finder;
     int lm;               /* the LM extras (top-K, decoder) follow at total (lm_layout) */
     int cascade;          /* and after them the cascade's (cascade_layout) */
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
+    unsigned helpers;     /* helpers laid out (VjoVocrPool), 0: none, and no line slots */
+    size_t slots_off;     /* the line slots: the caller's (SLOT_BYTES), then each helper's (HELPER_BYTES) */
 } Layout;
+
+/* A line's slot (parallel lines): its pixels, copied out of the strip (a line
+ * inside a strip: at most VJO_VOCR_STRIP_BYTES), its greedy text and its top-K
+ * (for the LM and the line's confidence); a helper's also has its own
+ * recognizer arena and context (S_ARENA: the model's pinned arena). */
+#define S_ARENA(m) ALIGN16((size_t)(m)->arena_bytes)
+#define S_CTX ALIGN16(sizeof(vocr_ctx))
+#define S_PIXELS ALIGN16((size_t)VJO_VOCR_STRIP_BYTES)
+#define S_TEXT ALIGN16((size_t)VJO_OCR_TEXT_CAP)
+#define S_TOPK_LOGIT ALIGN16((size_t)VJO_VOCR_LM_FRAMES * VJO_VOCR_LM_TOPK * sizeof(float))
+#define S_TOPK_CLASS ALIGN16((size_t)VJO_VOCR_LM_FRAMES * VJO_VOCR_LM_TOPK * sizeof(uint16_t))
+#define S_BLANK ALIGN16((size_t)VJO_VOCR_LM_FRAMES * sizeof(float))
+#define SLOT_BYTES (S_PIXELS + S_TEXT + S_TOPK_LOGIT + S_TOPK_CLASS + S_BLANK)
+#define HELPER_BYTES(m) (S_ARENA(m) + S_CTX + SLOT_BYTES)
 
 static int region_ok(unsigned w, unsigned h)
 {
@@ -149,6 +171,8 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
     l->lm = l->cascade = 0;
     l->refine_off = l->refine_bytes = 0;
+    l->helpers = 0;
+    l->slots_off = 0;
     return 0;
 }
 
@@ -228,6 +252,26 @@ size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
 {
     Layout l;
     return layout(vjo_vocr_model(model), width, height, &l) < 0 ? 0 : l.total;
+}
+
+size_t vjo_vocr_helper_bytes(const char *model)
+{
+    const VjoVocrModel *m = vjo_vocr_model(model);
+    return m ? HELPER_BYTES(m) : 0;
+}
+
+size_t vjo_vocr_helpers_bytes(const char *model, unsigned helpers)
+{
+    const VjoVocrModel *m = vjo_vocr_model(model);
+    if (!m || !helpers || helpers > VJO_VOCR_HELPERS_MAX) return 0;
+    return SLOT_BYTES + (size_t)helpers * HELPER_BYTES(m);
+}
+
+size_t vjo_vocr_job_bytes_helpers(const char *model, unsigned width, unsigned height, unsigned helpers)
+{
+    size_t job = vjo_vocr_job_bytes(model, width, height);
+    if (!job || helpers > VJO_VOCR_HELPERS_MAX) return 0;
+    return job + vjo_vocr_helpers_bytes(model, helpers);
 }
 
 size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height)
@@ -760,7 +804,8 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
 /* The weights resident and verified, the runtime's model parsed and its arena
  * planned in the scratch (the finder is done with it). */
 static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi, const VjoGreySource *im,
-                      VjoVocrResident *res, unsigned char *ws, const Layout *l, VjoVocrStats *st)
+                      VjoVocrResident *res, unsigned char *ws, const Layout *l, VjoVocrStats *st,
+                      VjoVocrCache *cache)
 {
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
@@ -768,6 +813,9 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
     uint32_t t0 = clock_us(p);
     int rc = resident_weights(p, dir, mi, res, im, &st->model_loaded, &st->model_cached);
     if (rc) return rc;
+    /* Weights read from the file again (another file, or the first job): no
+     * earlier line's text is known to be theirs. */
+    if (st->model_loaded && cache) memset(cache, 0, sizeof(*cache));
     /* Verified bytes the runtime refuses would fail every job: release them. */
     if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
     memset(&opts, 0, sizeof(opts));
@@ -878,32 +926,583 @@ static uint32_t line_length(const VocrLine *ln)
     return (uint32_t)ln->w * 32u / (ln->h ? ln->h : 1u) + 1u;
 }
 
+/* ---- API 22: the line cache ---- */
+
+/* 64-bit FNV-1a of a crop's rows, then its width, height, polarity and the job's
+ * cache variant. Never 0 (an empty cache entry). */
+static uint64_t line_key(const unsigned char *px, size_t stride, unsigned w, unsigned h, unsigned dark,
+                         uint32_t variant)
+{
+    const uint64_t prime = 0x100000001b3ull;
+    uint64_t k = 0xcbf29ce484222325ull;
+    const uint32_t tail[4] = {w, h, dark, variant};
+    for (unsigned y = 0; y < h; y++) {
+        const unsigned char *r = px + (size_t)y * stride;
+        for (unsigned x = 0; x < w; x++) {
+            k ^= r[x];
+            k *= prime;
+        }
+    }
+    for (unsigned i = 0; i < sizeof(tail); i++) {
+        k ^= ((const unsigned char *)tail)[i];
+        k *= prime;
+    }
+    return k ? k : 1u;
+}
+
+static VjoVocrCacheLine *cache_find(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key)
+{
+    for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++)
+        if (c->line[i].key == key && c->line[i].model == m) return &c->line[i];
+    return NULL;
+}
+
+static void cache_put(VjoVocrCache *c, const VjoVocrModel *m, uint64_t key, const char *text, size_t len,
+                      const char *greedy, size_t greedy_len, unsigned frames, uint16_t flags, size_t need)
+{
+    VjoVocrCacheLine *e = cache_find(c, m, key);
+    if (len >= VJO_VOCR_CACHE_TEXT || greedy_len >= VJO_VOCR_CACHE_TEXT || need >= 0xFFFFu) return;
+    if (!e) { /* an empty entry, else the least recently used */
+        e = &c->line[0];
+        for (unsigned i = 1; i < VJO_VOCR_CACHE_LINES; i++)
+            if (!c->line[i].key || (e->key && c->line[i].used < e->used)) e = &c->line[i];
+    }
+    e->key = key;
+    e->model = m;
+    e->used = ++c->tick;
+    e->frames = (uint16_t)(frames > 0xFFFFu ? 0xFFFFu : frames);
+    e->len = (uint16_t)len;
+    e->flags = flags;
+    e->greedy_len = (uint16_t)greedy_len;
+    e->need = (uint16_t)need;
+    e->pad = 0;
+    memcpy(e->text, text, len);
+    e->text[len] = '\0';
+    memcpy(e->greedy, greedy, greedy_len);
+    e->greedy[greedy_len] = '\0';
+}
+
+/* ---- API 22: the line slots and the queue ---- */
+
+/* Slot 0 is the caller's thread (the job's context in the scratch); slots
+ * 1..helpers run on helper threads, each with its own arena and context over the
+ * shared model. A slot holds a line from its run until its turn in the text: a
+ * copy of its pixels (the cascade may read it again then), its greedy text and
+ * its top-K. A line placed as soon as it is read (nothing before it still out)
+ * needs no slot: it is read from the strip straight into the text, as the serial
+ * job reads every line. */
+typedef struct {
+    vocr_ctx *ctx;
+    unsigned char *arena, *pixels;
+    char *text;                 /* VJO_OCR_TEXT_CAP bytes: the line's greedy text */
+    float *topk_logit, *blank;  /* its top-K (VJO_VOCR_LM_FRAMES frames) */
+    uint16_t *topk_class;
+    int inited;                 /* vocr_init done on ctx */
+    int busy;                   /* holds a line not yet in the text */
+    int running;                /* a helper thread was started for it: join before reuse */
+    int done;                   /* (atomic) the run returned */
+    int rc;
+    uint32_t us, cpu_us;
+    vocr_image img;
+    vocr_extra extra;
+    /* A helper reads nothing on the caller's stack (it may outlive a failed join):
+     * the callbacks it needs, and the image's cancel test with its ud, are copied
+     * here, not the caller's VjoGreySource (the game's is on its job's stack). */
+    const VjoVocrPool *pool;    /* the caller's thread only */
+    uint64_t (*now_us)(void *ud);
+    void *now_ud;
+    uint64_t (*thread_us)(void *ud);
+    void *thread_ud;
+    int (*cancelled)(void *ud); /* the image's (VjoGreySource.cancelled), or NULL */
+    void *cancelled_ud;
+    const int *abort;           /* the job stops: helpers end at their next tile */
+} Slot;
+
+/* The job's abort flag first: once the job has stopped it, a helper that is
+ * still running (a failed join) asks nothing more of the job. A helper that
+ * read the flag just before it was set calls the copied cancel test, which the
+ * game's worker answers from its own statics (game_ocr/main.c cancelled). */
+static int slot_cancel(void *user)
+{
+    const Slot *sl = (const Slot *)user;
+    return __atomic_load_n(sl->abort, __ATOMIC_ACQUIRE) || (sl->cancelled && sl->cancelled(sl->cancelled_ud));
+}
+
+static uint32_t slot_clock(const Slot *sl)
+{
+    return sl->now_us ? (uint32_t)sl->now_us(sl->now_ud) : 0;
+}
+
+static void slot_run(void *arg)
+{
+    Slot *sl = (Slot *)arg;
+    uint32_t t0 = slot_clock(sl);
+    uint64_t c0 = sl->thread_us ? sl->thread_us(sl->thread_ud) : 0;
+    sl->rc = vocr_run(sl->ctx, &sl->img, sl->text, VJO_OCR_TEXT_CAP, &sl->extra);
+    sl->us = slot_clock(sl) - t0;
+    sl->cpu_us = sl->thread_us ? (uint32_t)(sl->thread_us(sl->thread_ud) - c0) : 0;
+    __atomic_store_n(&sl->done, 1, __ATOMIC_RELEASE);
+}
+
+/* A line between its fetch and its turn in the text, in line order. */
+enum { LN_BLANK = 1, LN_HIT, LN_SLOT };
+typedef struct {
+    uint8_t kind, slot, dark, pad;
+    uint16_t index, x, y, w, h;   /* its place among the found lines; its box in the region */
+    uint32_t len;                 /* line_length() */
+    uint64_t key;                 /* its cache key; 0: not looked up (no cache, a tall line) */
+    const VjoVocrCacheLine *hit;  /* LN_HIT */
+    const unsigned char *pixels;  /* in the strip, for the line callback (a serial job places at once) */
+    size_t stride;
+    VjoVocrInk ink;
+} Pending;
+
+/* A placed line that becomes a cache entry if the job succeeds. */
+typedef struct {
+    uint64_t key;
+    uint32_t off, roff;           /* its text in text, its greedy text in pol->raw (NO_RAW: the same text) */
+    uint16_t len, glen, need, frames, flags, pad;
+} CachePut;
+#define NO_RAW 0xFFFFFFFFu
+
+/* Returned by recognize() when a cached line would not fit where it is, as it
+ * was read: the serial job may read a shorter fallback there, so the job reads
+ * the region again without the cache. Never returned to a caller. */
+#define RETRY_NOCACHE 1
+
+typedef struct {
+    /* the job */
+    const VjoPlatform *p;
+    const char *dir;
+    const VjoVocrModel *mi;
+    const VjoGreySource *im;
+    const VjoVocrPolicy *pol;
+    const Layout *l;
+    VjoVocrStats *st;
+    VjoVocrCache *cache;        /* NULL: no lookups and no entries */
+    unsigned char *x0, *c0;     /* the LM extras and the cascade's */
+    LmLayout x;
+    CascadeLayout cx;
+    char *text;
+    size_t cap, used, rused;
+    /* the serial job's state between its lines: the decoder, the cascade's time estimate */
+    uint32_t t0, prim_us, casc_ratio, len_done, len_left;
+    unsigned casc_conf;
+    int lm_on, casc_on, casc_ready, want_lm, want_cascade;
+    /* the slots and the queue */
+    Slot slot[1 + VJO_VOCR_HELPERS_MAX];
+    unsigned helpers;
+    Pending q[VJO_VOCR_MAX_LINES];
+    unsigned qh, qt;
+    CachePut put[VJO_VOCR_MAX_LINES];
+    unsigned n_put;
+    int abort, stuck;
+} Lines;
+
+/* ~3 KB: never on the worker's stack. One job at a time; after a job left a
+ * helper running (stuck), none until vjo_vocr_unstick(). */
+static Lines lines;
+
+void vjo_vocr_unstick(void)
+{
+    lines.stuck = 0;
+}
+
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host tests: the length the cascade's estimate still counts after the last job, which a job
+ * that placed every line leaves at 0 (each line's length is taken off at its turn). */
+uint32_t vjo_vocr_test_len_left(void);
+uint32_t vjo_vocr_test_len_left(void)
+{
+    return lines.len_left;
+}
+#endif
+
+static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flags, uint32_t us, uint32_t cpu_us,
+                      unsigned slot, int cached)
+{
+    VjoVocrLineStat *ls;
+    if (L->st->recognized >= VJO_VOCR_MAX_LINES) return;
+    ls = &L->st->line[L->st->recognized++];
+    ls->width = e->w;
+    ls->height = e->h;
+    ls->frames = (uint16_t)(frames > 0xFFFFu ? 0xFFFFu : frames);
+    ls->flags = flags;
+    ls->us = us; /* without a re-read: frames and time are the job's model's */
+    ls->slot = (uint8_t)slot;
+    ls->cached = (uint8_t)(cached != 0);
+    ls->pad = 0;
+    ls->cpu_us = cpu_us;
+}
+
+/* Lengths of the queued lines after the one being placed that need no more work
+ * of the job's model (cache hits, skipped lines, finished runs): the cascade's
+ * estimate counts only what is still to run. Nothing for a serial job. */
+static uint32_t len_finished_after(const Lines *L)
+{
+    uint32_t n = 0;
+    for (unsigned j = L->qh; j < L->qt; j++) {
+        const Pending *e = &L->q[j];
+        if (e->kind != LN_SLOT || !L->slot[e->slot].running ||
+            __atomic_load_n(&L->slot[e->slot].done, __ATOMIC_ACQUIRE))
+            n += e->len;
+    }
+    return n;
+}
+
+/* A recognized line's turn in the text, exactly as the serial job finishes a line
+ * after its vocr_run: its greedy text is at text + start already. The LM decode,
+ * the cascade's re-read (of img: the strip, or the slot's copy), the stats, the
+ * line callback, the text and the raw text; and the line's cache entry, to keep
+ * if the job succeeds. ex: its run's extras (the top-K); greedy_copy: a copy of
+ * its greedy text that outlives this call (a slot's), or NULL (it is kept in the
+ * LM extras, as the serial job does); run_us: its run. */
+static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_image *img, vocr_extra *ex,
+                       char *greedy_copy, uint32_t run_us, uint32_t cpu_us, unsigned slot)
+{
+    const VjoPlatform *p = L->p;
+    const VjoVocrPolicy *pol = L->pol;
+    const Layout *l = L->l;
+    VjoVocrStats *st = L->st;
+    char *text = L->text;
+    const size_t cap = L->cap;
+    const uint32_t f0 = clock_us(p);
+    uint16_t flags = VJO_VOCR_LINE_CONF_NONE, conf;
+    char *greedy = text + start;
+    uint32_t line_us;
+    size_t n, gn = strlen(text + start), need = gn;
+    uint32_t roff = NO_RAW;
+    int rc, lm_done = 0, casc_done = 0;
+    if (l->lm) {
+        flags = line_conf(ex, text + start);
+        if (gn < LM_LINE_TEXT) { /* a class a frame, 4 bytes at most: always; kept for the log */
+            if (greedy_copy) {
+                greedy = greedy_copy;
+            } else {
+                greedy = (char *)(L->x0 + L->x.line);
+                memcpy(greedy, text + start, gn + 1);
+            }
+        }
+        if (L->lm_on && gn && greedy != text + start) { /* a line read as empty stays empty */
+            uint32_t d0 = clock_us(p);
+            rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(L->x0 + L->x.ctx), ex, text + start, cap - start, NULL);
+            st->lm_us += clock_us(p) - d0;
+            if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+            if (rc == VOCR_OK) {
+                size_t ln = strlen(text + start);
+                flags |= VJO_VOCR_LINE_LM;
+                st->lm_lines++;
+                st->lm_changed += strcmp(greedy, text + start) != 0;
+                lm_done = 1;
+                if (ln > need) need = ln;
+            } else { /* longer than the room left, or refused: the greedy line stands */
+                memcpy(text + start, greedy, gn + 1);
+                if (rc != VOCR_E_TEXT) {
+                    st->lm_rc = VJO_E_OCR_INFERENCE;
+                    L->lm_on = 0;
+                }
+            }
+        }
+    }
+    conf = flags & VJO_VOCR_LINE_CONF;
+    line_us = run_us + (clock_us(p) - f0); /* the job's model: its run and decode */
+    {   /* the primary's time per length, for the estimate of the lines still to read */
+        L->prim_us += line_us;
+        L->len_done += e->len;
+        /* The cascade: a doubtful line read again by the larger model, whose
+         * reading is then shown, while the job stays within its time ceiling. */
+        if (L->casc_on && conf < L->casc_conf && greedy != text + start) {
+            const uint32_t fin = len_finished_after(L), rest = L->len_left > fin ? L->len_left - fin : 0u;
+            uint64_t est = (uint64_t)line_us * L->casc_ratio / 256u +
+                           (uint64_t)L->prim_us * rest / (L->len_done ? L->len_done : 1u);
+            if ((uint64_t)(clock_us(p) - L->t0) + est > pol->cascade_us) {
+                st->cascade_skipped++;
+            } else {
+                if (!L->casc_ready) {
+                    uint32_t r0 = clock_us(p);
+                    rc = cascade_setup(p, L->dir, L->im, pol, L->c0,
+                                       L->lm_on ? (const vocr_lm *)(void *)(L->x0 + L->x.lm) : NULL, st);
+                    if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
+                    L->casc_ready = !rc;
+                    L->casc_on = L->casc_ready;
+                    L->t0 += clock_us(p) - r0; /* its load is not recognition time either */
+                }
+                if (L->casc_ready) {
+                    uint32_t c_t0 = clock_us(p), c_us;
+                    char *cg = (char *)(L->c0 + L->cx.greedy), *ct = cg;
+                    vocr_extra e2;
+                    memset(&e2, 0, sizeof(e2));
+                    e2.cancel = run_cancel;
+                    e2.user = (void *)L->im;
+                    e2.topk = VJO_VOCR_LM_TOPK;
+                    e2.topk_logit = (float *)(void *)(L->x0 + L->x.topk_logit);
+                    e2.topk_class = (uint16_t *)(void *)(L->x0 + L->x.topk_class);
+                    e2.blank_logit = (float *)(void *)(L->x0 + L->x.blank);
+                    e2.cap_frames = VJO_VOCR_LM_FRAMES;
+                    rc = vocr_run((vocr_ctx *)(void *)(L->c0 + L->cx.ctx), img, cg, LM_LINE_TEXT, &e2);
+                    if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                    if (rc == VOCR_OK) st->cascade_frames += e2.frames;
+                    if (rc == VOCR_OK && L->lm_on && cg[0]) {
+                        rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(L->c0 + L->cx.lm_ctx), &e2,
+                                            (char *)(L->c0 + L->cx.text), LM_LINE_TEXT, NULL);
+                        if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                        if (rc == VOCR_OK) ct = (char *)(L->c0 + L->cx.text);
+                        rc = VOCR_OK; /* its greedy reading, when the decode does not fit */
+                    }
+                    if (rc == VOCR_OK) {
+                        size_t cn = strlen(ct);
+                        if (start + cn < cap) { /* else the primary's reading stays */
+                            st->cascade_changed += strcmp(ct, text + start) != 0;
+                            st->cascade_blanked += !cn && text[start];
+                            memcpy(text + start, ct, cn + 1);
+                            flags = (uint16_t)((flags & ~VJO_VOCR_LINE_CONF) | line_conf(&e2, cg) |
+                                               VJO_VOCR_LINE_CASCADE);
+                            st->cascade_lines++;
+                            casc_done = 1;
+                            if (cn > need) need = cn;
+                        }
+                    } else if (rc != VOCR_E_TEXT) {
+                        st->cascade_rc = VJO_E_OCR_INFERENCE;
+                        L->casc_on = 0;
+                    }
+                    c_us = clock_us(p) - c_t0;
+                    st->cascade_us += c_us;
+                    /* what this console takes for the larger model, if more than the estimate */
+                    if (line_us && (uint64_t)c_us * 256u / line_us > L->casc_ratio)
+                        L->casc_ratio = (uint32_t)((uint64_t)c_us * 256u / line_us);
+                }
+            }
+        }
+    }
+    if (strcmp(greedy, text + start)) flags |= VJO_VOCR_LINE_CHANGED;
+    st->frames += ex->frames;
+    line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0);
+    if (pol->line) {
+        VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
+                                text + start, run_us + (clock_us(p) - f0), greedy, flags};
+        pol->line(pol->ud, &info);
+    }
+    n = strlen(text + start);
+    if (!n) { /* nothing read on this line: no separator either */
+        text[L->used] = '\0';
+    } else {
+        if (start) text[L->used] = '\n';
+        L->used = start + n;
+        if (pol->raw && pol->raw_cap) { /* its greedy text, laid out as the text */
+            size_t rstart = L->rused ? L->rused + 1 : 0, g = strlen(greedy);
+            if (rstart + g < pol->raw_cap) {
+                memmove(pol->raw + rstart, greedy, g + 1);
+                if (rstart) pol->raw[L->rused] = '\n';
+                L->rused = rstart + g;
+                roff = (uint32_t)rstart;
+            }
+        }
+    }
+    /* Its cache entry: only a text the serial job gives this line wherever it is,
+     * however much time is left: read with the LM asked for, read again by the
+     * cascade if its confidence asks for it, nothing shortened to fit. */
+    if (L->cache && e->key && L->n_put < VJO_VOCR_MAX_LINES) {
+        int ok = !L->want_lm || !gn || lm_done;
+        if (L->want_cascade) ok = ok && l->lm && l->cascade && (conf >= L->casc_conf || casc_done);
+        if (flags & VJO_VOCR_LINE_CHANGED) ok = ok && n && roff != NO_RAW; /* its greedy text kept too */
+        if (ok) {
+            CachePut *c = &L->put[L->n_put++];
+            c->key = e->key;
+            c->off = (uint32_t)start;
+            c->len = (uint16_t)n;
+            c->roff = flags & VJO_VOCR_LINE_CHANGED ? roff : NO_RAW;
+            c->glen = (uint16_t)gn;
+            c->need = (uint16_t)(need > 0xFFFFu ? 0xFFFFu : need);
+            c->frames = (uint16_t)(ex->frames > 0xFFFFu ? 0xFFFFu : ex->frames);
+            c->flags = flags;
+            c->pad = 0;
+        }
+    }
+    return VJO_OK;
+}
+
+/* Places the line at the head of the queue into the text, exactly as the serial
+ * job does when that line's turn comes. Its run is over. */
+static int place(Lines *L)
+{
+    Pending *e = &L->q[L->qh];
+    VjoVocrStats *st = L->st;
+    const VjoVocrPolicy *pol = L->pol;
+    size_t start = L->used ? L->used + 1 : 0;
+    int rc;
+    L->qh++;
+    L->len_left -= e->len; /* its turn: the serial job's estimate has the lines after it */
+    if (start + 1 >= L->cap) return VJO_E_TOO_LARGE;
+    if (e->kind == LN_BLANK) {
+        if (st->blank < VJO_VOCR_BLANK_LOGGED) {
+            VjoVocrBlankStat *b = &st->blank_line[st->blank];
+            b->index = e->index;
+            b->width = e->w;
+            b->height = e->h;
+            b->x = e->x;
+            b->y = e->y;
+            b->ink = e->ink;
+        }
+        st->blank++;
+        if (pol->line) {
+            VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 1, "",
+                                    0, "", VJO_VOCR_LINE_CONF_NONE};
+            pol->line(pol->ud, &info);
+        }
+        return VJO_OK;
+    }
+    if (e->kind == LN_HIT) {
+        const VjoVocrCacheLine *h = e->hit;
+        if (start + h->need + 1 > L->cap) {
+            if (start + h->greedy_len + 1 > L->cap) return VJO_E_TOO_LARGE; /* as its vocr_run would */
+            return RETRY_NOCACHE;
+        }
+        memcpy(L->text + start, h->text, (size_t)h->len + 1);
+        line_stat(L, e, h->frames, h->flags, 0, 0, 0, 1);
+        st->cached++;
+        if (pol->line) {
+            VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
+                                    h->text, 0, h->greedy, h->flags};
+            pol->line(pol->ud, &info);
+        }
+        if (!h->len) {
+            L->text[L->used] = '\0';
+            return VJO_OK;
+        }
+        if (start) L->text[L->used] = '\n';
+        L->used = start + h->len;
+        if (pol->raw && pol->raw_cap) {
+            size_t rstart = L->rused ? L->rused + 1 : 0;
+            if (rstart + h->greedy_len < pol->raw_cap) {
+                memcpy(pol->raw + rstart, h->greedy, (size_t)h->greedy_len + 1);
+                if (rstart) pol->raw[L->rused] = '\n';
+                L->rused = rstart + h->greedy_len;
+            }
+        }
+        return VJO_OK;
+    }
+    {   /* LN_SLOT */
+        Slot *sl = &L->slot[e->slot];
+        size_t gn;
+        if (sl->rc != VOCR_OK) return run_error(sl->rc);
+        gn = strlen(sl->text);
+        if (start + gn + 1 > L->cap) return VJO_E_TOO_LARGE; /* its vocr_run, into the text, would not fit */
+        memcpy(L->text + start, sl->text, gn + 1);
+        rc = finish_line(L, e, start, &sl->img, &sl->extra, sl->text, sl->us, sl->cpu_us, e->slot);
+        sl->busy = 0;
+        return rc;
+    }
+}
+
+/* Waits for slot k's helper, if one runs it. */
+static int join_slot(Lines *L, unsigned k)
+{
+    Slot *sl = &L->slot[k];
+    if (!sl->running) return VJO_OK;
+    if (sl->pool->join(sl->pool->ud, k) < 0) {
+        L->stuck = 1; /* it may still run in the workspace: never freed under it */
+        return VJO_E_OCR_UNAVAILABLE;
+    }
+    sl->running = 0;
+    return VJO_OK;
+}
+
+/* Places every line at the head whose run is over (wait: also the ones still
+ * running, in order). An empty queue starts again at its first entry. */
+static int drain(Lines *L, int wait)
+{
+    while (L->qh < L->qt) {
+        Pending *e = &L->q[L->qh];
+        int rc;
+        if (e->kind == LN_SLOT) {
+            Slot *sl = &L->slot[e->slot];
+            if (sl->running && !wait && !__atomic_load_n(&sl->done, __ATOMIC_ACQUIRE)) return VJO_OK;
+            rc = join_slot(L, e->slot);
+            if (rc) return rc;
+        }
+        rc = place(L);
+        if (rc) return rc;
+    }
+    L->qh = L->qt = 0;
+    return VJO_OK;
+}
+
+/* Stops the job's helpers and waits for every one: nothing runs in the
+ * workspace afterwards (unless a join fails: L->stuck). */
+static void stop_all(Lines *L)
+{
+    __atomic_store_n(&L->abort, 1, __ATOMIC_RELEASE);
+    for (unsigned k = 1; k <= L->helpers; k++)
+        if (join_slot(L, k)) L->stuck = 1;
+    L->qh = L->qt = 0;
+}
+
+/* A helper's context over the shared model, planned in its own arena of `avail`
+ * bytes (the pinned arena, S_ARENA): a plan that needs more is refused, as
+ * load_model refuses it for the job's own context. */
+static int slot_init(Slot *sl, const vocr_model *model, size_t avail)
+{
+    vocr_opts opts;
+    size_t need;
+    if (sl->inited) return VJO_OK;
+    memset(&opts, 0, sizeof(opts));
+    opts.mode = VOCR_MODE_W8I;
+    need = vocr_arena_bytes(model, &opts);
+    if (!need || need > avail) return VJO_E_OCR_MODEL;
+    if (vocr_init(sl->ctx, model, &opts, sl->arena, avail) != VOCR_OK) return VJO_E_OCR_INFERENCE;
+    sl->inited = 1;
+    return VJO_OK;
+}
+
+/* A line's extras for vocr_run: the cancel callback, and with the LM extras the
+ * top K of every frame (for the decoder and the line's confidence). */
+static void line_extra(vocr_extra *ex, int (*cancel)(void *), void *user, int topk, float *tv, uint16_t *tc,
+                       float *bl)
+{
+    memset(ex, 0, sizeof(*ex));
+    ex->cancel = cancel;
+    ex->user = user;
+    if (topk) {
+        ex->topk = VJO_VOCR_LM_TOPK;
+        ex->topk_logit = tv;
+        ex->topk_class = tc;
+        ex->blank_logit = bl;
+        ex->cap_frames = VJO_VOCR_LM_FRAMES;
+    }
+}
+
+/* A slot's copy of a line: its rows out of the strip, and its image. */
+static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, const VocrLine *ln)
+{
+    for (unsigned r = 0; r < ln->h; r++) memcpy(sl->pixels + (size_t)r * ln->w, pixels + (size_t)r * stride, ln->w);
+    sl->img.pixels = sl->pixels;
+    sl->img.width = ln->w;
+    sl->img.height = ln->h;
+    sl->img.stride = ln->w;
+    sl->img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
+}
+
 /* One capture of the region: lines, then (weights) each line recognized. */
 static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi,
                      const VjoGreySource *im, VjoVocrResident *res, unsigned char *ws, const Layout *l,
-                     Stream *s, char *text, size_t cap, VjoVocrStats *st)
+                     Stream *s, char *text, size_t cap, VjoVocrStats *st, int nocache)
 {
     const unsigned w = im->width;
     const VjoVocrPolicy *pol = s->pol;
+    const VjoVocrPool *pool = pol->pool;
     VocrLinesRows region = {w, im->height, VOCR_LINES_GREY, stream_row, s};
     VocrLineSet set;
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
     unsigned char *x0 = ws + l->total; /* the LM extras (l->lm) */
     unsigned char *c0 = x0 + vjo_vocr_lm_job_bytes(mi->name); /* the cascade's (l->cascade) */
-    LmLayout x;
-    CascadeLayout cx;
-    size_t used = 0, rused = 0;
-    uint32_t t0, prim_us = 0, casc_ratio = 0, len_done = 0, len_left = 0;
-    unsigned casc_conf = pol->cascade_conf ? pol->cascade_conf : VJO_VOCR_CASCADE_CONF;
-    int rc, loaded = 0, lm_on = 0, casc_on = l->cascade, casc_ready = 0;
+    Lines *L = &lines;
+    uint32_t t0, len_left = 0;
+    int rc, loaded = 0, busy_on = 0;
 
-    lm_layout(&x);
-    memset(&cx, 0, sizeof(cx));
-    if (casc_on) {
-        cascade_layout(pol->cascade, &cx);
-        /* its time per line from the job's own, by the shapes' cost (then by what it measured) */
-        casc_ratio = model_cost(pol->cascade) * 256u / model_cost(mi);
+    if (L->stuck) { /* an earlier job's helper may still run in its workspace */
+        st->stuck = 1;
+        return VJO_E_OCR_UNAVAILABLE;
     }
     text[0] = '\0';
     if (pol->raw && pol->raw_cap) pol->raw[0] = '\0';
@@ -924,6 +1523,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->cascade = NULL;
         st->cascade_rc = 0;
     }
+    st->cached = st->dispatched = st->run_failures = 0;
     t0 = clock_us(p);
     rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
@@ -944,29 +1544,84 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* Nothing is recognized before the rows have held still for settle_us. */
     if (settle_on(s) && settle_verify(s) < 0) return stream_error(s, VJO_E_SOURCE);
 
+    memset(L, 0, sizeof(*L));
+    L->p = p;
+    L->dir = dir;
+    L->mi = mi;
+    L->im = im;
+    L->pol = pol;
+    L->l = l;
+    L->st = st;
+    L->cache = nocache ? NULL : pol->cache;
+    L->x0 = x0;
+    L->c0 = c0;
+    lm_layout(&L->x);
+    L->text = text;
+    L->cap = cap;
+    L->len_left = len_left;
+    L->casc_conf = pol->cascade_conf ? pol->cascade_conf : VJO_VOCR_CASCADE_CONF;
+    L->casc_on = l->cascade;
+    if (L->casc_on) {
+        cascade_layout(pol->cascade, &L->cx);
+        /* its time per line from the job's own, by the shapes' cost (then by what it measured) */
+        L->casc_ratio = model_cost(pol->cascade) * 256u / model_cost(mi);
+    }
+    L->want_lm = pol->lm != NULL;
+    L->want_cascade = pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi;
+    /* Helpers only without a per-line callback (it reads the strip in line order)
+     * and for a text the slots can hold. */
+    L->helpers = pool && pool->run && pool->join && !pol->line && cap <= VJO_OCR_TEXT_CAP
+                 ? (pool->helpers < l->helpers ? pool->helpers : l->helpers) : 0;
+    st->helpers = L->helpers;
+    for (unsigned k = 0; L->helpers && k <= L->helpers; k++) {
+        Slot *sl = &L->slot[k];
+        unsigned char *b = ws + l->slots_off + (k ? SLOT_BYTES + (size_t)(k - 1) * HELPER_BYTES(mi) : 0);
+        sl->now_us = p->now_us;
+        sl->now_ud = p->ud;
+        sl->pool = pool;
+        sl->thread_us = pool->thread_us;
+        sl->thread_ud = pool->ud;
+        sl->cancelled = im->cancelled;
+        sl->cancelled_ud = im->ud;
+        sl->abort = &L->abort;
+        if (!k) {
+            sl->ctx = ctx;
+            sl->inited = 1; /* load_model plans ctx */
+        } else {
+            sl->arena = b;
+            sl->ctx = (vocr_ctx *)(void *)(b + S_ARENA(mi));
+            b += S_ARENA(mi) + S_CTX;
+        }
+        sl->pixels = b;
+        sl->text = (char *)(b + S_PIXELS);
+        sl->topk_logit = (float *)(void *)(b + S_PIXELS + S_TEXT);
+        sl->topk_class = (uint16_t *)(void *)(b + S_PIXELS + S_TEXT + S_TOPK_LOGIT);
+        sl->blank = (float *)(void *)(b + S_PIXELS + S_TEXT + S_TOPK_LOGIT + S_TOPK_CLASS);
+    }
+
     /* With the blank-line check, the weights are read at the first line that
      * is not skipped: a box of blank lines opens no model file. */
     if (!pol->blank) {
-        rc = load_model(p, dir, mi, im, res, ws, l, st);
+        rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache);
         if (rc) return rc;
         loaded = 1;
         if (l->lm && pol->lm) {
             rc = lm_setup(p, dir, im, pol, x0, model, st);
             if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
-            lm_on = !rc;
+            L->lm_on = !rc;
         }
     }
 
-    t0 = clock_us(p);
+    L->t0 = clock_us(p);
     for (unsigned i = 0, li = 0; i < set.count; i++) {
         const VocrLine *box = &set.lines[i];
         const unsigned char *box_pixels;
         size_t box_stride = w;
         VocrLineSet parts;
-        len_left -= line_length(box);
-        if (cancelled(im)) return VJO_E_CANCELLED;
+        L->len_left -= line_length(box);
+        if (cancelled(im)) { rc = VJO_E_CANCELLED; goto fail; }
         box_pixels = line_pixels(s, box, &box_stride);
-        if (s->err) return s->err;
+        if (s->err) { rc = s->err; goto fail; }
         if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
         parts.count = 1;
         parts.truncated = 0;
@@ -1012,204 +1667,176 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             st->refine_us += clock_us(p) - r0;
         }
         /* the box's estimate of the time still to read, now by its parts */
-        for (unsigned k = 0; k < parts.count; k++) len_left += line_length(&parts.lines[k]);
+        for (unsigned k = 0; k < parts.count; k++) L->len_left += line_length(&parts.lines[k]);
         for (unsigned k = 0; k < parts.count; k++, li++) {
-        const VocrLine *ln = &parts.lines[k];
-        const unsigned char *pixels = box_pixels + (size_t)(ln->y - box->y) * box_stride + (ln->x - box->x);
-        size_t stride = box_stride;
-        vocr_image img;
-        vocr_extra extra;
-        VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
-        size_t start = used ? used + 1 : 0, n;
-        uint32_t line_t0, line_us, line_len = line_length(ln);
-        uint16_t flags;
-        char *greedy;
-        int blank = 0;
-        len_left -= line_len;
-        if (cancelled(im)) return VJO_E_CANCELLED;
-        if (start + 1 >= cap) return VJO_E_TOO_LARGE;
-        if (pol->blank || pol->line) {
-            uint32_t b0 = clock_us(p);
-            blank = vjo_vocr_ink(pixels, stride, ln->w, ln->h, &ink);
-            if (pol->blank_edges) blank = ink.edges < pol->blank_edges;
-            blank = blank && pol->blank;
-            st->blank_us += clock_us(p) - b0;
-        }
-        if (blank) {
-            if (st->blank < VJO_VOCR_BLANK_LOGGED) {
-                VjoVocrBlankStat *b = &st->blank_line[st->blank];
-                b->index = (uint16_t)li;
-                b->width = (uint16_t)ln->w;
-                b->height = (uint16_t)ln->h;
-                b->x = (uint16_t)ln->x;
-                b->y = (uint16_t)ln->y;
-                b->ink = ink;
+            const VocrLine *ln = &parts.lines[k];
+            const unsigned char *pixels = box_pixels + (size_t)(ln->y - box->y) * box_stride + (ln->x - box->x);
+            const size_t stride = box_stride;
+            const int last = i + 1 == set.count && k + 1 == parts.count;
+            VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
+            Pending cur;
+            Slot *sl = NULL;
+            int blank = 0;
+            if (cancelled(im)) { rc = VJO_E_CANCELLED; goto fail; }
+            /* The queue holds VJO_VOCR_MAX_LINES (a job's most lines): never more */
+            if (L->qt >= VJO_VOCR_MAX_LINES && (rc = drain(L, 1)) != VJO_OK) goto fail;
+            /* With nothing queued, the text so far is final: the serial job's check. */
+            if (L->qh == L->qt && (L->used ? L->used + 1 : 0) + 1 >= cap) { rc = VJO_E_TOO_LARGE; goto fail; }
+            if (pol->blank || pol->line) {
+                uint32_t b0 = clock_us(p);
+                blank = vjo_vocr_ink(pixels, stride, ln->w, ln->h, &ink);
+                if (pol->blank_edges) blank = ink.edges < pol->blank_edges;
+                blank = blank && pol->blank;
+                st->blank_us += clock_us(p) - b0;
             }
-            st->blank++;
-            if (pol->line) {
-                VjoVocrLineInfo info = {li, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0, "",
-                                        VJO_VOCR_LINE_CONF_NONE};
-                pol->line(pol->ud, &info);
+            memset(&cur, 0, sizeof(cur));
+            cur.index = (uint16_t)li;
+            cur.x = (uint16_t)ln->x;
+            cur.y = (uint16_t)ln->y;
+            cur.w = (uint16_t)ln->w;
+            cur.h = (uint16_t)ln->h;
+            cur.dark = (uint8_t)(ln->dark != 0);
+            cur.len = line_length(ln);
+            cur.pixels = pixels;
+            cur.stride = stride;
+            cur.ink = ink;
+            if (blank) {
+                cur.kind = LN_BLANK;
+                L->q[L->qt++] = cur;
+                if ((rc = drain(L, 0)) != VJO_OK) goto fail;
+                continue;
             }
-            continue;
-        }
-        if (!loaded) {
-            uint32_t r0 = clock_us(p);
-            rc = load_model(p, dir, mi, im, res, ws, l, st);
-            if (rc) return rc;
-            loaded = 1;
-            if (l->lm && pol->lm) {
-                rc = lm_setup(p, dir, im, pol, x0, model, st);
-                if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
-                lm_on = !rc;
-            }
-            t0 += clock_us(p) - r0; /* recognize_us leaves the load out */
-        }
-        img.pixels = pixels;
-        img.width = ln->w;
-        img.height = ln->h;
-        img.stride = stride;
-        img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
-        memset(&extra, 0, sizeof(extra));
-        extra.cancel = run_cancel;
-        extra.user = (void *)im;
-        if (l->lm) { /* the top K of every frame, for the decoder, and the line's confidence */
-            extra.topk = VJO_VOCR_LM_TOPK;
-            extra.topk_logit = (float *)(void *)(x0 + x.topk_logit);
-            extra.topk_class = (uint16_t *)(void *)(x0 + x.topk_class);
-            extra.blank_logit = (float *)(void *)(x0 + x.blank);
-            extra.cap_frames = VJO_VOCR_LM_FRAMES;
-        }
-        line_t0 = clock_us(p);
-        rc = vocr_run(ctx, &img, text + start, cap - start, &extra);
-        if (rc != VOCR_OK) return run_error(rc);
-        flags = VJO_VOCR_LINE_CONF_NONE;
-        greedy = text + start;
-        if (l->lm) {
-            size_t gn = strlen(text + start);
-            flags = line_conf(&extra, text + start);
-            if (gn < LM_LINE_TEXT) { /* a class a frame, 4 bytes at most: always; kept for the log */
-                greedy = (char *)(x0 + x.line);
-                memcpy(greedy, text + start, gn + 1);
-            }
-            if (lm_on && gn && greedy != text + start) { /* a line read as empty stays empty */
-                uint32_t d0 = clock_us(p);
-                rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(x0 + x.ctx), &extra, text + start, cap - start, NULL);
-                st->lm_us += clock_us(p) - d0;
-                if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
-                if (rc == VOCR_OK) {
-                    flags |= VJO_VOCR_LINE_LM;
-                    st->lm_lines++;
-                    st->lm_changed += strcmp(greedy, text + start) != 0;
-                } else { /* longer than the room left, or refused: the greedy line stands */
-                    memcpy(text + start, greedy, gn + 1);
-                    if (rc != VOCR_E_TEXT) {
-                        st->lm_rc = VJO_E_OCR_INFERENCE;
-                        lm_on = 0;
-                    }
+            if (!loaded) {
+                uint32_t r0 = clock_us(p);
+                rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache);
+                if (rc) goto fail;
+                loaded = 1;
+                if (l->lm && pol->lm) {
+                    rc = lm_setup(p, dir, im, pol, x0, model, st);
+                    if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) goto fail;
+                    L->lm_on = !rc;
                 }
+                L->t0 += clock_us(p) - r0; /* recognize_us leaves the load out */
             }
-        }
-        line_us = clock_us(p) - line_t0; /* the job's model: its run and decode */
-        {   /* the primary's time per length, for the estimate of the lines still to read */
-            prim_us += line_us;
-            len_done += line_len;
-            /* The cascade: a doubtful line read again by the larger model, whose
-             * reading is then shown, while the job stays within its time ceiling. */
-            if (casc_on && (flags & VJO_VOCR_LINE_CONF) < casc_conf && greedy != text + start) {
-                uint64_t est = (uint64_t)line_us * casc_ratio / 256u +
-                               (uint64_t)prim_us * len_left / (len_done ? len_done : 1u);
-                if ((uint64_t)(clock_us(p) - t0) + est > pol->cascade_us) {
-                    st->cascade_skipped++;
+            if (L->cache && ln->h <= s->strip_rows) {
+                uint32_t k0 = clock_us(p);
+                VjoVocrCacheLine *hit;
+                cur.key = line_key(pixels, stride, ln->w, ln->h, ln->dark, pol->cache_variant);
+                st->key_us += clock_us(p) - k0;
+                hit = cache_find(L->cache, mi, cur.key);
+                if (hit) {
+                    hit->used = ++L->cache->tick;
+                    L->cache->hits++;
+                    cur.kind = LN_HIT;
+                    cur.hit = hit;
+                    cur.key = 0; /* already there */
+                    L->q[L->qt++] = cur;
+                    if ((rc = drain(L, 0)) != VJO_OK) goto fail;
+                    continue;
+                }
+                L->cache->misses++;
+            }
+            cur.kind = LN_SLOT;
+            if (!busy_on && pol->busy) {
+                pol->busy(pol->busy_ud, 1);
+                busy_on = 1;
+            }
+            /* A helper, when one is free and the line fits its copy; else this thread.
+             * The last line always runs here: this thread would only wait otherwise. */
+            if (L->helpers && !last && (size_t)ln->w * ln->h <= VJO_VOCR_STRIP_BYTES) {
+                if ((rc = drain(L, 0)) != VJO_OK) goto fail; /* lines that are done free their helpers */
+                for (unsigned k2 = 1; k2 <= L->helpers && !sl; k2++)
+                    if (!L->slot[k2].busy) sl = &L->slot[k2];
+            }
+            if (sl) {
+                const unsigned k2 = (unsigned)(sl - L->slot);
+                if ((rc = slot_init(sl, model, S_ARENA(mi))) != VJO_OK) goto fail;
+                slot_line(sl, pixels, stride, ln);
+                line_extra(&sl->extra, slot_cancel, sl, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
+                sl->busy = 1;
+                __atomic_store_n(&sl->done, 0, __ATOMIC_RELEASE);
+                cur.slot = (uint8_t)k2;
+                L->q[L->qt++] = cur;
+                if (pool->run(pool->ud, k2, slot_run, sl) == 0) {
+                    sl->running = 1;
+                    st->dispatched++;
                 } else {
-                    if (!casc_ready) {
-                        uint32_t r0 = clock_us(p);
-                        rc = cascade_setup(p, dir, im, pol, c0, lm_on ? (const vocr_lm *)(void *)(x0 + x.lm) : NULL,
-                                           st);
-                        if (rc == VJO_E_CANCELLED || rc == VJO_E_OCR_UNAVAILABLE) return rc;
-                        casc_ready = !rc;
-                        casc_on = casc_ready;
-                        t0 += clock_us(p) - r0; /* its load is not recognition time either */
-                    }
-                    if (casc_ready) {
-                        uint32_t c_t0 = clock_us(p), c_us;
-                        char *cg = (char *)(c0 + cx.greedy), *ct = cg;
-                        vocr_extra e2;
-                        memset(&e2, 0, sizeof(e2));
-                        e2.cancel = run_cancel;
-                        e2.user = (void *)im;
-                        e2.topk = VJO_VOCR_LM_TOPK;
-                        e2.topk_logit = (float *)(void *)(x0 + x.topk_logit);
-                        e2.topk_class = (uint16_t *)(void *)(x0 + x.topk_class);
-                        e2.blank_logit = (float *)(void *)(x0 + x.blank);
-                        e2.cap_frames = VJO_VOCR_LM_FRAMES;
-                        rc = vocr_run((vocr_ctx *)(void *)(c0 + cx.ctx), &img, cg, LM_LINE_TEXT, &e2);
-                        if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
-                        if (rc == VOCR_OK) st->cascade_frames += e2.frames;
-                        if (rc == VOCR_OK && lm_on && cg[0]) {
-                            rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(c0 + cx.lm_ctx), &e2, (char *)(c0 + cx.text),
-                                                LM_LINE_TEXT, NULL);
-                            if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
-                            if (rc == VOCR_OK) ct = (char *)(c0 + cx.text);
-                            rc = VOCR_OK; /* its greedy reading, when the decode does not fit */
-                        }
-                        if (rc == VOCR_OK) {
-                            size_t cn = strlen(ct);
-                            if (start + cn < cap) { /* else the primary's reading stays */
-                                st->cascade_changed += strcmp(ct, text + start) != 0;
-                                st->cascade_blanked += !cn && text[start];
-                                memcpy(text + start, ct, cn + 1);
-                                flags = (uint16_t)((flags & ~VJO_VOCR_LINE_CONF) | line_conf(&e2, cg) |
-                                                   VJO_VOCR_LINE_CASCADE);
-                                st->cascade_lines++;
-                            }
-                        } else if (rc != VOCR_E_TEXT) {
-                            st->cascade_rc = VJO_E_OCR_INFERENCE;
-                            casc_on = 0;
-                        }
-                        c_us = clock_us(p) - c_t0;
-                        st->cascade_us += c_us;
-                        /* what this console takes for the larger model, if more than the estimate */
-                        if (line_us && (uint64_t)c_us * 256u / line_us > casc_ratio)
-                            casc_ratio = (uint32_t)((uint64_t)c_us * 256u / line_us);
-                    }
+                    st->run_failures++;
+                    slot_run(sl); /* no thread: here, now */
                 }
+                if ((rc = drain(L, 0)) != VJO_OK) goto fail;
+                continue;
             }
-        }
-        if (strcmp(greedy, text + start)) flags |= VJO_VOCR_LINE_CHANGED;
-        st->frames += extra.frames;
-        if (st->recognized < VJO_VOCR_MAX_LINES) {
-            VjoVocrLineStat *ls = &st->line[st->recognized++];
-            ls->width = (uint16_t)ln->w;
-            ls->height = (uint16_t)ln->h;
-            ls->frames = (uint16_t)(extra.frames > 0xFFFFu ? 0xFFFFu : extra.frames);
-            ls->flags = flags;
-            ls->us = line_us; /* without a re-read: frames and time are the job's model's */
-        }
-        if (pol->line) {
-            VjoVocrLineInfo info = {li, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
-                                    text + start, clock_us(p) - line_t0, greedy, flags};
-            pol->line(pol->ud, &info);
-        }
-        n = strlen(text + start);
-        if (!n) { /* nothing read on this line: no separator either */
-            text[used] = '\0';
-            continue;
-        }
-        if (start) text[used] = '\n';
-        used = start + n;
-        if (pol->raw && pol->raw_cap) { /* its greedy text, laid out as the text */
-            size_t rstart = rused ? rused + 1 : 0, gn = strlen(greedy);
-            if (rstart + gn < pol->raw_cap) {
-                memmove(pol->raw + rstart, greedy, gn + 1);
-                if (rstart) pol->raw[rused] = '\n';
-                rused = rstart + gn;
+            /* Here, on the caller's thread. Slot 0 holds one line at a time, and only
+             * one that fits its copy (else the line waits to be read straight). */
+            if (L->qh < L->qt && (L->slot[0].busy || (size_t)ln->w * ln->h > VJO_VOCR_STRIP_BYTES) &&
+                (rc = drain(L, 1)) != VJO_OK)
+                goto fail;
+            if (L->qh == L->qt) {
+                /* Nothing before it is still out: from the strip straight into the
+                 * text, as the serial job reads every line. */
+                const size_t start = L->used ? L->used + 1 : 0;
+                vocr_image img;
+                vocr_extra extra;
+                uint32_t line_t0, run_us;
+                uint64_t c0t = pool && pool->thread_us ? pool->thread_us(pool->ud) : 0;
+                if (start + 1 >= cap) { rc = VJO_E_TOO_LARGE; goto fail; } /* the serial job's check */
+                img.pixels = pixels;
+                img.width = ln->w;
+                img.height = ln->h;
+                img.stride = stride;
+                img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
+                line_extra(&extra, run_cancel, (void *)im, l->lm, (float *)(void *)(x0 + L->x.topk_logit),
+                           (uint16_t *)(void *)(x0 + L->x.topk_class), (float *)(void *)(x0 + L->x.blank));
+                line_t0 = clock_us(p);
+                rc = vocr_run(ctx, &img, text + start, cap - start, &extra);
+                if (rc != VOCR_OK) { rc = run_error(rc); goto fail; }
+                run_us = clock_us(p) - line_t0;
+                L->len_left -= cur.len; /* its turn (place() does this for a queued line) */
+                rc = finish_line(L, &cur, start, &img, &extra, NULL, run_us,
+                                 pool && pool->thread_us ? (uint32_t)(pool->thread_us(pool->ud) - c0t) : 0, 0);
+                if (rc) goto fail;
+            } else {
+                /* Lines before it are still out: into slot 0, with its own copy of
+                 * the pixels and its own top-K, until its turn. */
+                uint32_t r0;
+                uint64_t c0t = pool->thread_us ? pool->thread_us(pool->ud) : 0;
+                sl = &L->slot[0];
+                slot_line(sl, pixels, stride, ln);
+                line_extra(&sl->extra, run_cancel, (void *)im, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
+                r0 = clock_us(p);
+                sl->rc = vocr_run(ctx, &sl->img, sl->text, VJO_OCR_TEXT_CAP, &sl->extra);
+                sl->us = clock_us(p) - r0;
+                sl->cpu_us = pool->thread_us ? (uint32_t)(pool->thread_us(pool->ud) - c0t) : 0;
+                sl->busy = 1;
+                sl->done = 1;
+                cur.slot = 0;
+                L->q[L->qt++] = cur;
             }
+            if ((rc = drain(L, 0)) != VJO_OK) goto fail;
         }
-        } /* the box's parts */
     }
-    st->recognize_us = clock_us(p) - t0 - st->cascade_us; /* the re-reads are cascade_us */
+    rc = drain(L, 1);
+    if (rc) goto fail;
+    if (busy_on) pol->busy(pol->busy_ud, 0);
+    st->recognize_us = clock_us(p) - L->t0 - st->cascade_us; /* the re-reads are cascade_us */
+    /* The job succeeded: its lines become known texts. */
+    if (L->cache)
+        for (unsigned k = 0; k < L->n_put; k++) {
+            const CachePut *c = &L->put[k];
+            const char *g = c->roff == NO_RAW ? text + c->off : pol->raw + c->roff;
+            cache_put(L->cache, mi, c->key, text + c->off, c->len, g, c->roff == NO_RAW ? c->len : c->glen,
+                      c->frames, c->flags, c->need);
+        }
     return VJO_OK;
+fail:
+    stop_all(L);
+    if (busy_on) pol->busy(pol->busy_ud, 0);
+    if (L->stuck) { /* a helper may still run in the workspace: the caller keeps it, and stops */
+        st->stuck = 1;
+        rc = VJO_E_OCR_UNAVAILABLE;
+    }
+    return rc;
 }
 
 static const VjoVocrPolicy no_policy;
@@ -1225,7 +1852,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     Stream st;
     size_t front, need_capture;
     unsigned strip_rows;
-    int rc = VJO_OK;
+    int rc = VJO_OK, nocache = 0;
     if (!platform || !model_dir || !model || !image || !res || !text || !text_cap || !stats)
         return VJO_E_SOURCE;
     text[0] = '\0';
@@ -1262,8 +1889,19 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         if (want_cascade && l.lm && workspace_size >= with_cascade) l.cascade = 1;
         else if (want_cascade) stats->cascade_rc = VJO_E_OOM;
     }
-    stats->workspace = front + l.total + (l.lm ? vjo_vocr_lm_job_bytes(model) : 0) +
-                       (l.cascade ? vjo_vocr_cascade_job_bytes(policy->cascade->name) : 0);
+    {
+        /* Parallel lines (API 22): as many of the pool's helpers as the workspace
+         * holds after every other part; their line slots end it. */
+        size_t end = front + l.total + (l.lm ? vjo_vocr_lm_job_bytes(model) : 0) +
+                     (l.cascade ? vjo_vocr_cascade_job_bytes(policy->cascade->name) : 0);
+        if (policy && policy->pool && workspace) {
+            unsigned h = policy->pool->helpers < VJO_VOCR_HELPERS_MAX ? policy->pool->helpers : VJO_VOCR_HELPERS_MAX;
+            while (h && workspace_size < end + vjo_vocr_helpers_bytes(model, h)) h--;
+            l.helpers = h;
+            l.slots_off = end - front;
+        }
+        stats->workspace = end + vjo_vocr_helpers_bytes(model, l.helpers);
+    }
     stats->capture = need_capture;
     stats->model_bytes = mi->bytes;
     stats->scratch_bytes = l.scratch;
@@ -1309,7 +1947,12 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
             break;
         }
         rc = recognize(platform, model_dir, mi, image, res, (unsigned char *)workspace + front, &l, &st,
-                       text, text_cap, stats);
+                       text, text_cap, stats, nocache);
+        if (rc == RETRY_NOCACHE) { /* a cached line that would not fit as read: once more without the cache */
+            nocache = 1;
+            attempt--;
+            continue;
+        }
         if (rc != VJO_E_SCREEN_CHANGED || cancelled(image)) break;
     }
     if (rc) text[0] = '\0'; /* never publish a partial recognition */

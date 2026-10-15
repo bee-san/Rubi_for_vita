@@ -696,6 +696,8 @@ static const char nondefault_config[] =
     "ocr_lm = off\n"
     "ocr_refine_lines = on\n"
     "ocr_skip_blank_lines = on\n"
+    "ocr_threads = 1\n"
+    "ocr_boost_clock = on\n"
     "log_file = off\n"
     "anki_mining = on\n";
 

@@ -25,7 +25,7 @@ kmem game route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem game route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem game route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
 kernel game ledger=131072/131072 limit=2220032 capture=0
-stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep fallback check kind=0 arg=0 rc=0x00000000 bytes=5103616 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep fallback check kind=0 arg=1 rc=0x00000000 bytes=5103616 sum=0x00000001 main=91226112 cdram=117440512 phycont=0 us=20
@@ -38,15 +38,16 @@ gstep fallback sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=9
 gstep fallback find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=9000
 gstep fallback load kind=- arg=0 rc=0x00000000 bytes=659456 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=610000
 gstep fallback recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=820000
+gstep fallback par kind=- arg=2 rc=0x00000002 bytes=548864 sum=0x00005F62 main=90316800 cdram=117440512 phycont=0 us=820000
 gstep fallback free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=90505216 cdram=117440512 phycont=0 us=0
 gstep fallback free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=90566656 cdram=117440512 phycont=0 us=0
 line fallback i=0 w=877 h=30 frames=110 us=273333
 line fallback i=1 w=817 h=30 frames=110 us=273333
 line fallback i=2 w=757 h=30 frames=110 us=273333
-stage fallback end rc=0 t=145499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=FL10_w8.vocr fallback=1 lines=3 recognized=3 frames=330
+stage fallback end rc=0 t=145499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=FL10_w8.vocr fallback=1 lines=3 recognized=3 frames=330 text=0x70666972
 result fallback source=hook mem=user capture=61440 strip_rows=62 strips=9 tears=0 capture_ms=34 workspace=188416 resident=659456 weights=read find_ms=9 load_ms=610 recognize_ms=820
 memory fallback free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=659456 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0003
-stage textbox begin t=145499 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage textbox begin t=145499 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep textbox mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep textbox check kind=0 arg=0 rc=0x00000000 bytes=5603328 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep textbox alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
@@ -58,12 +59,13 @@ gstep textbox sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=89
 gstep textbox find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=89817088 cdram=117440512 phycont=0 us=9000
 gstep textbox load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=89817088 cdram=117440512 phycont=0 us=1050000
 gstep textbox recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=89817088 cdram=117440512 phycont=0 us=820000
+gstep textbox par kind=- arg=2 rc=0x00000002 bytes=548864 sum=0x00005F62 main=89817088 cdram=117440512 phycont=0 us=820000
 gstep textbox free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=90005504 cdram=117440512 phycont=0 us=0
 gstep textbox free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=90066944 cdram=117440512 phycont=0 us=0
 line textbox i=0 w=877 h=30 frames=110 us=273333
 line textbox i=1 w=817 h=30 frames=110 us=273333
 line textbox i=2 w=757 h=30 frames=110 us=273333
-stage textbox end rc=0 t=147999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=3 recognized=3 frames=330
+stage textbox end rc=0 t=147999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=3 recognized=3 frames=330 text=0xA9C0C220
 result textbox source=hook mem=user capture=61440 strip_rows=62 strips=9 tears=0 capture_ms=34 workspace=188416 resident=1159168 weights=read find_ms=9 load_ms=1050 recognize_ms=820
 memory textbox free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=1159168 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0003
-stage fullscreen begin t=147999 flags=0x1 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fullscreen begin t=147999 flags=0x1 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA

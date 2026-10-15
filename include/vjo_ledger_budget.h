@@ -40,7 +40,16 @@
  * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built; 65,084 B
  * text measured at fec85af).
  * The game's partition has the room (90,177,536 B free USER the least #81 saw). */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 73728u
+/* Raised again from 73,728 B by two text pages and two data/bss pages for API 22 (parallel lines,
+ * the line cache, the clock): text 65,116 -> 71,164 B (the scheduler, the helper threads, the clock,
+ * the cache), data/bss 5,836 -> 14,192 B (the 6,160 B VjoVocrCache, eight lines each with its shown
+ * and greedy text, and the 2,080 B line queue and slots) [measured: main 72c6148 against the API 22
+ * build, both on vita-vn-ocr a540027], in the same game partition. */
+/* Raised again from 90,112 B by one text page for vita-vn-ocr #85's faster W8I kernels (the runtime
+ * pin): the build's vocr.c object 15,288 -> 17,952 B of code with the Vita compiler, the worker's text
+ * 71,164 -> 73,836 B, 108 B over its last page [measured: the API 22 build on vita-vn-ocr a540027
+ * against #85's merge], in the same game partition. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -98,7 +107,10 @@
 #define VJO_LIMIT_SHELL_PAF (VJO_PAF_FREE_MEASURED - VJO_PAF_RESERVE)
 
 /* ---- the kernel's partition (ScePhyMemPartKD, 36 MiB shared by every driver; pool "kernel") ---- */
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u     /* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured] */
+/* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured; API 22's frame-pacing step
+ * (kernel/game_ocr.c game_ocr_frame, VJO_GSTEP_PACE) takes 36,184 -> 36,456 B of text and
+ * 77,720 -> 77,760 B of data/bss, the same pages: main 72c6148 against the API 22 build] */
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
 /* The Shell's JPEG capture (Lens; an Anki screenshot only with VJO_ANKI_SCREENSHOT) at a full frame, KERNEL_RW,
@@ -130,9 +142,20 @@
  * build) and the greedy text kept for the log (4,096 B), and for a model smaller than the
  * confidence cascade's the cascade's extras (vjo_vocr_cascade_job_bytes: VOCR4-W20's arena,
  * structs and decoder, 296,192 B), and the finder's boxes refined (vjo_vocr_refine_bytes:
- * 72,400 B at 960x544): 617,312 B with H15.
+ * 72,400 B at 960x544): 617,312 B with H15. API 22 (parallel lines) ends it with the line slots
+ * of the most helpers a job takes (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's
+ * slot, a line's pixels, greedy text and top-K, 68,160 B, and per helper its recognizer arena and
+ * context and a slot, 253,104 B for H15 on the host build): 1,191,680 B with H15. The worker takes
+ * helpers only when its memory check passes with them, one fewer at a time down to none.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
-#define VJO_BUDGET_GAME_WORKSPACE 618496u
+#define VJO_BUDGET_GAME_WORKSPACE 1191936u
+/* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
+ * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
+ * Its deepest chain: vocr_run 448 + run_head 1,328 + mm_i16 616 = 2,392 B with the Vita compiler
+ * (-fstack-usage, vita-vn-ocr #85's runtime), about a seventh of it. */
+#define VJO_STACK_GAME_HELPER 16384u
+#define VJO_BUDGET_GAME_HELPER_STACK (VJO_STACK_GAME_HELPER + VJO_LEDGER_TLS)
+#define VJO_BUDGET_GAME_HELPERS (2u * VJO_BUDGET_GAME_HELPER_STACK)
 /* The capture block: one strip of grey rows and, per region row, its checksum,
  * its recent states and two bits, at most 65,536 B at any region (vjo_vocr_capture_bytes,
  * VJO_VOCR_CAPTURE_LIMIT; 65,480 B at 960x544, 61,388 B at 917x125). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
@@ -141,9 +164,11 @@
 /* A line taller than a strip, kept whole (core/vocr_ocr.h VJO_VOCR_LINE_MAX_BYTES): line
  * width x line height, so the recognizer gets exactly API 18's input for any line the finder
  * reports (host/tests/test_capture_parity.c; 78,884 B at most on the linefind dev regions).
- * Only when such a line occurs, freed with the job. The most that fits the ceiling below
- * with F20's weights, the workspace and the capture block:
- * 2,392,064 - 1,560,576 - 249,856 - 65,536 = 516,096 B; a larger band is left out and counted. */
+ * Only when such a line occurs, freed with the job. Sized when the job ceiling was 2,392,064 B:
+ * 2,392,064 - 1,560,576 (F20's weights) - 249,856 (the serial workspace) - 65,536 (the capture
+ * block) = 516,096 B; a larger band is left out and counted. A tall line of at most
+ * VJO_VOCR_STRIP_BYTES may still run on a helper (API 22): it is copied out of this block into
+ * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. */
 #define VJO_BUDGET_GAME_LINE 516096u
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
  * active one, USER_RW only: the largest tier, 3,781,072 B (include/vjo_vocr_sizes.h),
@@ -172,16 +197,22 @@
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
-                            VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE)
+                            VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
+                            VJO_BUDGET_GAME_HELPERS)
 /* The recognizer ceiling tier: weights <= 1,601,536 B and a full-screen
- * workspace <= 790,528 B [vita-vn-ocr docs/vita-memory-budget.md], and (API 20)
+ * workspace <= 790,528 B [vita-vn-ocr docs/vita-memory-budget.md; since API 22 the
+ * workspace limit is VJO_BUDGET_GAME_WORKSPACE by construction], and (API 20)
  * the 4 MB LM and the cascade's larger model: a job's peak 8,105,984 B, which the
  * preflight (free USER minus the job's reserve, 4-16 MiB by tier) has to cover. Raised from
  * 2,392,064 B for the LM and the cascade: 9 % of the 90,177,536 B free USER, the
  * least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log]; a game with
- * less runs a smaller LM, no cascade, or neither (the memory check), then a smaller tier. */
+ * less runs a smaller LM, no cascade, or neither (the memory check), then a smaller tier.
+ * Raised again for API 22's parallel lines (the helpers' line slots in the workspace,
+ * 573,440 B more at 960x544 with H15, and two 20,480 B thread stacks): a job's peak
+ * 8,720,384 B, 9.7 % of that free USER; a game with less runs fewer helpers, or none,
+ * before anything else gives way, and never a smaller tier for them (game_ocr/main.c). */
 #define VJO_LIMIT_GAME_WEIGHTS 1601536u
-#define VJO_LIMIT_GAME_WORKSPACE 790528u
-#define VJO_LIMIT_GAME_JOB 8105984u
+#define VJO_LIMIT_GAME_WORKSPACE 1191936u
+#define VJO_LIMIT_GAME_JOB 8720384u
 
 #endif

@@ -70,6 +70,15 @@ typedef struct {
     char anki_audio_url[256]; /* "" = no word audio; see vjo_anki_audio_endpoint */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
+    /* Local OCR (vocr, API 22): ocr_threads, the threads that recognize a
+     * region's lines at once (1 = one line after another), kept as the helper
+     * threads beside the job's own (ocr_threads - 1, VjoGameOcrRequest.speed's
+     * bits 0-1); and the ARM clock at 444 MHz while a job recognizes (on by
+     * default; a clock already at 444 or more is left as it is; core/vocr_ocr.h
+     * VjoVocrPool, busy). Last, so that no other field moves (the Shell's code
+     * size). */
+    int ocr_helpers;          /* 0..2 */
+    int ocr_boost_clock;      /* 0/1 */
 } VjoConfig;
 
 void vjo_config_defaults(VjoConfig *c);

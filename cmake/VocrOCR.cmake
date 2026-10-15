@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT a540027f90a640fd7c4d99b8389973b85a1cc057)
+set(VJO_VOCR_COMMIT d214a05deeef503a5e1d1853fe9fa4c91eb60bc2)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -26,7 +26,7 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
 # drops frame rows and cursors, splits boxes holding several text rows).
 set(_vocr_pins
-  vocr.c 0bfa9f57b3f40fdb131c01d7182f4d42554ae93a25c8c6cc25e01e2269a2e76c
+  vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
   vocr_lines.c 90c30a1c1e1707b818c2bd919243ee589700ff44ceac8b8d7a842b9d55d8d9ca
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d

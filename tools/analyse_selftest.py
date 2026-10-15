@@ -68,7 +68,7 @@ STAGES = ("fallback", "textbox", "fullscreen", "probe", "textbox2")  # shell/sel
 REGION_STAGES = ("fallback", "textbox", "textbox2")  # the user's region: a row there with no line is NOTEXT
 ROWS_V2 = ("boot", "ok", "game") + STAGES + ("done",)
 # Rows that report how OCR ran, never whether it worked: PASS or WARN only.
-DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-memory", "game-memory")
+DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-memory", "game-memory", "parallel")
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
@@ -431,6 +431,35 @@ def analyse_v2(records):
             row("recognitions", "NOTEXT", f"{recognized} line(s) recognized in all, none in your region")
         tears = sum(s.get("result", {}).get("tears", 0) for _, s in regions)
         diag("tearing", "PASS", f"{tears} row(s) changed between two reads (the job reads again)")
+
+    # API 22: textbox ran with the configured helpers (ocr_threads), textbox2 the same region again serially,
+    # neither with the line cache (shell/selftest.c): the same text, and the two recognition times.
+    t1, t2 = stages.get("textbox") or {}, stages.get("textbox2") or {}
+    if "speed" in (t1.get("begin") or {}) and "speed" in (t2.get("begin") or {}):
+        def read_text(st):
+            e = st.get("end")
+            return e is not None and s32(e.get("rc", 0)) == 0 and e.get("lines", 0) > 0
+        if read_text(t1) and read_text(t2):
+            h1 = u32(t1["begin"]["speed"]) & 3
+            r1, r2 = t1.get("result", {}).get("recognize_ms", "?"), t2.get("result", {}).get("recognize_ms", "?")
+            same = t1["end"].get("text") == t2["end"].get("text")
+            if not h1:
+                diag("parallel", "PASS" if same else "WARN",
+                     f"ocr_threads = 1: both stages ran serially ({r1} and {r2} ms recognizing)"
+                     + ("" if same else "; different texts: the screen changed between the stages"))
+            else:
+                par = next((g for g in t1["gsteps"] if g["step"] == "par"), {})
+                sh = u32(par.get("sum", 0))
+                share = (f"; their threads' share of a core: lowest {sh >> 8 & 0xFF} %, mean {sh & 0xFF} %"
+                         if sh & 0xFFFF else "")
+                diag("parallel", "PASS" if same else "WARN",
+                     f"textbox with {h1} helper(s), {u32(par.get('rc', 0))} line(s) on them{share}: {r1} ms "
+                     f"recognizing; textbox2, the same region serially: {r2} ms; "
+                     + ("the same text" if same else
+                        "different texts (the parallel path read differently, or the screen changed between the "
+                        "stages)"))
+        else:
+            diag("parallel", None, "not compared: textbox and textbox2 did not both read text in your region")
 
     # memory routes at each step (diagnostics: a route that read nothing is a WARN with its native result)
     for step, sample in out["samples"].items():
@@ -911,6 +940,11 @@ LOG = {
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
     "norm": re.compile(r"^gstep job norm kind=\S+ arg=(\d+) rc=0x[0-9A-Fa-f]+ bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    # API 22 (docs/ocr-speed.md): parallel lines and the line cache, the ARM clock, the game's frame pacing
+    "par": re.compile(r"^gstep job par kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    "clock": re.compile(r"^gstep job clock kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+)"),
+    "pace": re.compile(r"^gstep job pace kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                       r"main=(-?\d+) cdram=(-?\d+) phycont=(-?\d+) us=(\d+)"),
 }
 TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|SAFE MODE|not starting|missing at|"
                      r"too large|not opened|unreadable|not writable|unavailable|success=0|reserve guard|not started|"
@@ -955,7 +989,10 @@ def summarise_log(text):
          "cascade": {"jobs": 0, "lines": 0, "changed": 0, "left": 0, "read": 0, "load_ms": [], "ms": [], "rcs": {},
                      "conf": [], "frames": 0, "blanked": 0},
          "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
-                    "modes": {}}}
+                    "modes": {}},
+         "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
+         "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
+         "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
@@ -1049,6 +1086,39 @@ def summarise_log(text):
             in_blank = True
             s["blank"]["sizes"].append(f"{size >> 16}x{size & 0xFFFF}")
             s["blank"]["edges"].append(int(m.group(4), 16) & 0xFFFF)
+            continue
+        m = LOG["par"].match(line)
+        if m:
+            pa, packed = s["par"], int(m.group(4), 16)
+            pa["jobs"] += 1
+            pa["helpers"].append(int(m.group(1)))
+            pa["on_helpers"] += int(m.group(2), 16)
+            pa["not_started"] += packed >> 24
+            pa["cached"] += (packed >> 16) & 0xFF
+            if packed & 0xFF:
+                pa["share_min"].append((packed >> 8) & 0xFF)
+                pa["share_mean"].append(packed & 0xFF)
+            continue
+        m = LOG["clock"].match(line)
+        if m:
+            ck = s["clock"]
+            ck["jobs"] += 1
+            ck["raised"] += int(m.group(2), 16) == 0 and int(m.group(3)) > int(m.group(1))
+            ck["kept"] += int(m.group(2), 16) == 1 and int(m.group(1)) >= 444  # already 444 or more: never lowered
+            ck["before"].append(int(m.group(1)))
+            ck["during"].append(int(m.group(3)))
+            ck["after"].append(int(m.group(4), 16))
+            continue
+        m = LOG["pace"].match(line)
+        if m:
+            pc = s["pace"]
+            pc["jobs"] += 1
+            pc["frames"] += int(m.group(1))
+            pc["max_ms"].append(int(m.group(2), 16) // 1000)
+            pc["slow"] += int(m.group(4), 16)
+            pc["before_frames"] += int(m.group(8))
+            pc["before_max_ms"].append(int(m.group(6)) // 1000)
+            pc["before_slow"] += int(m.group(7))
             continue
         m = LOG["job"].match(line)
         if m:
@@ -1425,6 +1495,23 @@ def render_collect(c):
         if bl.get("lines"):
             L.append(f"  blank lines skipped: {bl['lines']} ({', '.join(bl['sizes'][:6])}"
                      f"{', ...' if len(bl['sizes']) > 6 else ''}; edges {_span(bl['edges'])} per 10,000)")
+        pa = lg.get("par") or {}
+        if pa.get("jobs"):
+            share = (f"; the recognizing threads' share of a core: lowest {_span(pa['share_min'])}%, mean "
+                     f"{_span(pa['share_mean'])}%" if pa["share_mean"] else "")
+            L.append(f"  parallel lines: {pa['jobs']} job(s) with helpers {_span(pa['helpers'])}; {pa['on_helpers']} "
+                     f"line(s) on a helper, {pa['not_started']} helper(s) did not start, {pa['cached']} line(s) from "
+                     f"the cache{share}")
+        ck = lg.get("clock") or {}
+        if ck.get("jobs"):
+            kept = f", left at 444 or more in {ck['kept']}" if ck.get("kept") else ""
+            L.append(f"  ARM clock (ocr_boost_clock): {ck['jobs']} job(s), raised in {ck['raised']}{kept}; MHz before "
+                     f"{_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
+        pc = lg.get("pace") or {}
+        if pc.get("jobs"):
+            L.append(f"  game frames during OCR jobs: {pc['frames']} in {pc['jobs']} job(s), longest gap "
+                     f"{_span(pc['max_ms'])} ms, {pc['slow']} over 25 ms; between jobs {pc['before_frames']} frames, "
+                     f"longest gap {_span(pc['before_max_ms'])} ms, {pc['before_slow']} over 25 ms")
         if lg["memory"]:
             frees = [m["free"] for m in lg["memory"]]
             heads = [m["headroom"] for m in lg["memory"]]

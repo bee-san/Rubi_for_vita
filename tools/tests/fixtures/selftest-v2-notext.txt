@@ -25,67 +25,67 @@ kmem game route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem game route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem game route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
 kernel game ledger=131072/131072 limit=2220032 capture=0
-stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=143599 rc=0 screens=1/30
-stage fallback begin t=147599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=147599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=148199 rc=0 screens=2/30
-stage fallback begin t=152199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=152199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=152799 rc=0 screens=3/30
-stage fallback begin t=156799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=156799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=157399 rc=0 screens=4/30
-stage fallback begin t=161399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=161399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=161999 rc=0 screens=5/30
-stage fallback begin t=165999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=165999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=166599 rc=0 screens=6/30
-stage fallback begin t=170599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=170599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=171199 rc=0 screens=7/30
-stage fallback begin t=175199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=175199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=175799 rc=0 screens=8/30
-stage fallback begin t=179799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=179799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=180399 rc=0 screens=9/30
-stage fallback begin t=184399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=184399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=184999 rc=0 screens=10/30
-stage fallback begin t=188999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=188999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=189599 rc=0 screens=11/30
-stage fallback begin t=193599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=193599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=194199 rc=0 screens=12/30
-stage fallback begin t=198199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=198199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=198799 rc=0 screens=13/30
-stage fallback begin t=202799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=202799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=203399 rc=0 screens=14/30
-stage fallback begin t=207399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=207399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=207999 rc=0 screens=15/30
-stage fallback begin t=211999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=211999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=212599 rc=0 screens=16/30
-stage fallback begin t=216599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=216599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=217199 rc=0 screens=17/30
-stage fallback begin t=221199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=221199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=221799 rc=0 screens=18/30
-stage fallback begin t=225799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=225799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=226399 rc=0 screens=19/30
-stage fallback begin t=230399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=230399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=230999 rc=0 screens=20/30
-stage fallback begin t=234999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=234999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=235599 rc=0 screens=21/30
-stage fallback begin t=239599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=239599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=240199 rc=0 screens=22/30
-stage fallback begin t=244199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=244199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=244799 rc=0 screens=23/30
-stage fallback begin t=248799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=248799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=249399 rc=0 screens=24/30
-stage fallback begin t=253399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=253399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=253999 rc=0 screens=25/30
-stage fallback begin t=257999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=257999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=258599 rc=0 screens=26/30
-stage fallback begin t=262599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=262599 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=263199 rc=0 screens=27/30
-stage fallback begin t=267199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=267199 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=267799 rc=0 screens=28/30
-stage fallback begin t=271799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=271799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=272399 rc=0 screens=29/30
-stage fallback begin t=276399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=276399 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 stage fallback wait t=276999 rc=0 screens=30/30
-stage fallback begin t=280999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fallback begin t=280999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep fallback check kind=0 arg=0 rc=0x00000000 bytes=5046272 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep fallback alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
@@ -95,10 +95,10 @@ gstep fallback sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=9
 gstep fallback find kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91033600 cdram=117440512 phycont=0 us=9000
 gstep fallback free kind=user arg=workspace rc=0x00000000 bytes=131072 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=0
 gstep fallback free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=0
-stage fallback end rc=0 t=283499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=FL10_w8.vocr fallback=1 lines=0 recognized=0 frames=0
+stage fallback end rc=0 t=283499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=FL10_w8.vocr fallback=1 lines=0 recognized=0 frames=0 text=0x811C9DC5
 result fallback source=hook mem=user capture=61440 strip_rows=62 strips=6 tears=0 capture_ms=34 workspace=131072 resident=0 weights=none find_ms=9 load_ms=0 recognize_ms=0
 memory fallback free_user=91226112 reserve=4194304 need_workspace=192512 need_weights=659456 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0000
-stage textbox begin t=283499 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage textbox begin t=283499 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep textbox mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep textbox check kind=0 arg=0 rc=0x00000000 bytes=5603328 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep textbox alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
@@ -108,10 +108,10 @@ gstep textbox sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=90
 gstep textbox find kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=9000
 gstep textbox free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=0
 gstep textbox free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=0
-stage textbox end rc=0 t=285999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0
+stage textbox end rc=0 t=285999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0 text=0x811C9DC5
 result textbox source=hook mem=user capture=61440 strip_rows=62 strips=6 tears=0 capture_ms=34 workspace=188416 resident=0 weights=none find_ms=9 load_ms=0 recognize_ms=0
 memory textbox free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=1159168 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0000
-stage fullscreen begin t=285999 flags=0x1 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage fullscreen begin t=285999 flags=0x1 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep fullscreen mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep fullscreen check kind=0 arg=0 rc=0x00000000 bytes=4444160 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep fullscreen alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
@@ -121,6 +121,7 @@ gstep fullscreen pass kind=hook arg=10 rc=0x00000000 bytes=522240 sum=0x00000000
 gstep fullscreen sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=90976256 cdram=117440512 phycont=0 us=0
 gstep fullscreen find kind=- arg=5 rc=0x00000000 bytes=0 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=48000
 gstep fullscreen recognize kind=- arg=5 rc=0x00000000 bytes=0 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=1400000
+gstep fullscreen par kind=- arg=2 rc=0x00000002 bytes=548864 sum=0x00005F62 main=90976256 cdram=117440512 phycont=0 us=1400000
 gstep fullscreen free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=0
 gstep fullscreen free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=0
 line fullscreen i=0 w=920 h=30 frames=110 us=280000
@@ -128,10 +129,10 @@ line fullscreen i=1 w=860 h=30 frames=110 us=280000
 line fullscreen i=2 w=800 h=30 frames=110 us=280000
 line fullscreen i=3 w=740 h=30 frames=110 us=280000
 line fullscreen i=4 w=680 h=30 frames=110 us=280000
-stage fullscreen end rc=0 t=288499 ms=2500 region=960x544+0+0 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=5 recognized=5 frames=550
+stage fullscreen end rc=0 t=288499 ms=2500 region=960x544+0+0 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=5 recognized=5 frames=550 text=0x20C5E1C0
 result fullscreen source=hook mem=user capture=61440 strip_rows=59 strips=25 tears=0 capture_ms=160 workspace=188416 resident=1159168 weights=resident find_ms=48 load_ms=0 recognize_ms=1400
 memory fullscreen free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0005
-stage probe begin t=288499 flags=0x4 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage probe begin t=288499 flags=0x4 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep probe mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep probe alloc kind=user arg=probe rc=0x00000051 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=20
 gstep probe probe kind=hook arg=user rc=0x0000003E bytes=56854 sum=0x1234ABCD main=91164672 cdram=117440512 phycont=0 us=16500
@@ -143,10 +144,10 @@ gstep probe probe kind=hook arg=cdram rc=0x0000003E bytes=56854 sum=0x1234ABCD m
 gstep probe probe kind=kstrip arg=cdram rc=0x0000003E bytes=56854 sum=0x1234ABCD main=91226112 cdram=117440512 phycont=0 us=16800
 gstep probe free kind=cdram arg=probe rc=0x00000000 bytes=262144 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=0
 gstep probe alloc kind=phycont arg=probe rc=0x80024302 bytes=1048576 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=40
-stage probe end rc=0 t=290999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0
+stage probe end rc=0 t=290999 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0 text=0x811C9DC5
 result probe source=- mem=- capture=0 strip_rows=62 strips=0 tears=0 capture_ms=0 workspace=0 resident=0 weights=none find_ms=0 load_ms=0 recognize_ms=0
 memory probe free_user=0 reserve=0 need_workspace=0 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x00000000
-stage textbox2 begin t=290999 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr
+stage textbox2 begin t=290999 flags=0x0 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0x8
 gstep textbox2 mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep textbox2 check kind=0 arg=0 rc=0x00000000 bytes=4444160 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
 gstep textbox2 alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
@@ -156,7 +157,7 @@ gstep textbox2 sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=9
 gstep textbox2 find kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=9000
 gstep textbox2 free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=0
 gstep textbox2 free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=0
-stage textbox2 end rc=0 t=293499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0
+stage textbox2 end rc=0 t=293499 ms=2500 region=917x125+22+400 fb=960x544/960/0x00000000 model=H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0 text=0x811C9DC5
 result textbox2 source=hook mem=user capture=61440 strip_rows=62 strips=6 tears=0 capture_ms=34 workspace=188416 resident=1159168 weights=none find_ms=9 load_ms=0 recognize_ms=0
 memory textbox2 free_user=91226112 reserve=4194304 need_workspace=249856 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5EED0000
 mem done rc=0x00000000 main=-2097152 cdram=0 phycont=0 valid=0 paf_free=2346312
