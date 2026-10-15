@@ -80,6 +80,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_skip_blank_lines = 0;
     c->ocr_lm = 2;
     c->ocr_cascade_ms = 2000;
+    c->ocr_refine_lines = 2;
     c->log_file = 1; /* log.txt is on unless log_file = off */
 }
 
@@ -160,6 +161,8 @@ const char *vjo_config_default_text(void)
            "ocr_lm = 1000k\n"
            "; vocr: re-read doubtful lines with a larger model within (ms, 0 = off)\n"
            "ocr_cascade_ms = 2000\n"
+           "; vocr: refine lines: psp | on | off\n"
+           "ocr_refine_lines = psp\n"
            "\n"
            "; auto: recognize text in the background when the region changes (lens, vocr)\n"
            "; on_press: recognize only when the overlay is opened\n"
@@ -449,6 +452,17 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
 }
 
 /* A time in ms within [lo, hi]. */
+/* One of names (NULL-ended), stored as its index. */
+static void set_choice(VjoConfig *c, const char *key, const char *val, int *dst, const char *const *names)
+{
+    for (int i = 0; names[i]; i++)
+        if (vjo_ieq(val, names[i])) {
+            *dst = i;
+            return;
+        }
+    warn(c, "%s: invalid value '%s'", key, val);
+}
+
 static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int lo, int hi)
 {
     int v;
@@ -552,12 +566,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_cascade_ms")) {
         set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
     } else if (vjo_ieq(key, "ocr_lm")) {
-        static const char *const tiers[] = {"off", "500k", "1000k", "2000k", "4000k"};
-        int t = -1;
-        for (int i = 0; i < 5; i++)
-            if (vjo_ieq(val, tiers[i])) t = i;
-        if (t >= 0) c->ocr_lm = t;
-        else warn(c, "%s: invalid value '%s' (4000k, 2000k, 1000k, 500k or off)", key, val);
+        static const char *const tiers[] = {"off", "500k", "1000k", "2000k", "4000k", NULL};
+        set_choice(c, key, val, &c->ocr_lm, tiers);
+    } else if (vjo_ieq(key, "ocr_refine_lines")) {
+        static const char *const modes[] = {"off", "on", "psp", NULL};
+        set_choice(c, key, val, &c->ocr_refine_lines, modes);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 57b662286186e417325fe2b13467811121ef7239)
+set(VJO_VOCR_COMMIT a540027f90a640fd7c4d99b8389973b85a1cc057)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -23,6 +23,8 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # the host tests check that both give the same lines. vocr_lm.c (vita-vn-ocr
 # #82) is the CTC prefix beam search with a character n-gram LM over
 # vocr_run()'s per-frame top-K, which also reports each line's confidence.
+# vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
+# drops frame rows and cursors, splits boxes holding several text rows).
 set(_vocr_pins
   vocr.c 0bfa9f57b3f40fdb131c01d7182f4d42554ae93a25c8c6cc25e01e2269a2e76c
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
@@ -31,7 +33,9 @@ set(_vocr_pins
   vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e
   vocr_lines_rows.h 60967239238df1ecca767e95c9c752f4c0b9efba097a59034ae2326717ad3465
   vocr_lm.c 89e0494caf22090cab52131b8b9d489a26085300b61e59855cb9a0d4074dbd05
-  vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86)
+  vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
+  vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
+  vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -54,7 +58,7 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)

@@ -820,6 +820,9 @@ LOG = {
     # API 20: the confidence cascade (include/vjo_game_ocr.h VJO_GSTEP_CASCADE)
     "cascade": re.compile(r"^gstep job cascade kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                           r".*us=(\d+)"),
+    # API 20: the finder's boxes refined (VJO_GSTEP_REFINE)
+    "refine": re.compile(r"^gstep job refine kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                         r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
@@ -854,7 +857,9 @@ def summarise_log(text):
          "lm": {"jobs": 0, "greedy": 0, "rcs": {}, "lines": 0, "changed": 0, "low": 0, "read": 0, "load_ms": [],
                 "decode_ms": [], "conf": [], "tiers": {}},
          "cascade": {"jobs": 0, "lines": 0, "changed": 0, "left": 0, "read": 0, "load_ms": [], "ms": [], "rcs": {},
-                     "conf": [], "frames": 0, "blanked": 0}}
+                     "conf": [], "frames": 0, "blanked": 0},
+         "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
+                    "modes": {}}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     for raw in text.splitlines():
         line = raw.strip()
@@ -911,6 +916,22 @@ def summarise_log(text):
                 cs["read"] += 1
                 cs["load_ms"].append(int(m.group(5), 16) // 1000)
             cs["ms"].append(int(m.group(6)) // 1000)
+            continue
+        m = LOG["refine"].match(line)
+        if m:
+            rf, packed = s["refine"], int(m.group(4))
+            rf["jobs"] += 1
+            mode = {"1": "on", "2": "psp"}.get(m.group(1), m.group(1))  # VJO_GAME_OCR_REFINE_*
+            rf["modes"][mode] = rf["modes"].get(mode, 0) + 1
+            rf["lines"] += int(m.group(2))
+            rf["boxes"] += packed >> 16  # boxes refined << 16 | not split for the 16-line cap << 8 | split
+            rf["capped"] += (packed >> 8) & 0xFF
+            rf["split"] += packed & 0xFF
+            rf["rows"] += int(m.group(5), 16)  # the rows read (from the job's memory)
+            rc = s32(int(m.group(3), 16))
+            if rc:
+                rf["rcs"][rc] = rf["rcs"].get(rc, 0) + 1
+            rf["us"].append(int(m.group(6)))
             continue
         m = LOG["norm"].match(line)
         if m:
@@ -1263,6 +1284,15 @@ def render_collect(c):
                      f"({_span(cs['load_ms'])} ms), re-reading {_span(cs['ms'])} ms a job"
                      + ("; not used in " + ", ".join(f"{rc_text(r)} x{n}" for r, n in sorted(cs["rcs"].items()))
                         if cs["rcs"] else ""))
+        rf = lg.get("refine") or {}
+        if rf.get("jobs"):
+            L.append(f"  finder boxes refined: {rf['jobs']} job(s) ("
+                     + ", ".join(f"{k} x{n}" for k, n in sorted(rf["modes"].items()))
+                     + f"), {rf['boxes']} box(es) became {rf['lines']} line(s) "
+                     f"({rf['split']} split" + (f", {rf['capped']} not split for the 16-line cap" if rf["capped"] else "")
+                     + f"), {rf['rows']:,} rows read from memory; {_span(rf['us'])} us a job"
+                     + ("; kept as found after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(rf["rcs"].items()))
+                        if rf["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "

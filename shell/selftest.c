@@ -233,7 +233,7 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 
 static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
-    "fb", "probe", "settle", "blank", "norm", "lm", "cascade"};
+    "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade"};
@@ -259,8 +259,9 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
         sceClibSnprintf(argbuf, sizeof(argbuf), "%u", (unsigned)s->arg);
         arg = argbuf;
     } else {
-        if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE) {
-            /* API 20: the LM tier (check: | 8 with the cascade) */
+        if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE ||
+            s->id == VJO_GSTEP_REFINE) {
+            /* API 20: the LM tier (check: | 8 with the cascade), the refinement's mode */
             sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
             kind = kindbuf;
         }

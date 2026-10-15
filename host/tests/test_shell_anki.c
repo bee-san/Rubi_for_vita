@@ -960,6 +960,28 @@ static void test_cross_saves_offline_without_host(void)
     finish();
 }
 
+/* A PSP game's card says so: Adrenaline's NPXS10028 and its PSPEMU* bubbles (its own
+ * PSPEMUCFW, an Adrenaline Bubble Manager bubble), core/games.c's one rule. */
+static void test_a_psp_games_card_says_psp(void)
+{
+    static const char *const ids[] = {"NPXS10028", "PSPEMUCFW", "PSPEMU001"};
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        char id[VJO_QUEUE_ID_SIZE];
+        size_t len;
+        const char *json;
+        reset();
+        vjo_test_anki_text_only = 1;
+        vjo_anki_set_game(ids[i], "planetarian");
+        cross(0);
+        TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
+        only_id(id);
+        json = queue_file(id, "json", &len);
+        TEST_ASSERT(json != NULL);
+        TEST_CHECK_(strstr(json, "\"platform\":\"psp\"") != NULL, "%s: %s", ids[i], json);
+        finish();
+    }
+}
+
 /* Japanese, supplementary characters, quotes, backslashes, tags and line
  * breaks survive the record and are escaped for Anki when sent. */
 static void test_japanese_and_escaping_round_trip(void)
@@ -2269,6 +2291,7 @@ static void test_build_saves_text_cards_without_the_kernel_capture(void)
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"japanese_text_and_escaping_round_trip_to_anki", test_japanese_and_escaping_round_trip},
+    {"a_psp_games_card_says_psp", test_a_psp_games_card_says_psp},
     {"port_and_audio_resolved_at_send", test_mapping_port_and_audio_at_send},
     {"partial_send_keeps_the_rest_and_needs_anki_host", test_partial_send_keeps_the_rest},
     {"auto_host_sends_to_the_address_the_overlay_app_found", test_auto_finds_anki_on_the_lan},

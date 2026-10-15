@@ -42,13 +42,20 @@
 #define VJO_GAME_OCR_CASCADE_SHIFT 8u
 #define VJO_GAME_OCR_CASCADE_MASK 0xFu
 #define VJO_GAME_OCR_CASCADE_UNIT_US 250000u
+/* Bits 12-13: the finder's boxes refined (vita-vn-ocr's vocr_lines_refine.h): 0
+ * off, 1 on, 2 in PSP games only (the worker's own title: Adrenaline's
+ * NPXS10028, or a PSPEMU* bubble); 3 is refused. */
+#define VJO_GAME_OCR_REFINE_SHIFT 12u
+#define VJO_GAME_OCR_REFINE_MASK 0x3u
+#define VJO_GAME_OCR_REFINE_ON 1u
+#define VJO_GAME_OCR_REFINE_PSP 2u
 /* Bits 16-23: the stable-text wait, in 10 ms (0: off); bits 24-31: the most the
  * job spends waiting, in 50 ms (0: VJO_VOCR_SETTLE_MAX_US, 2 s). */
 #define VJO_GAME_OCR_SETTLE_SHIFT 16u
 #define VJO_GAME_OCR_SETTLE_UNIT_US 10000u
 #define VJO_GAME_OCR_SETTLE_MAX_SHIFT 24u
 #define VJO_GAME_OCR_SETTLE_MAX_UNIT_US 50000u
-#define VJO_GAME_OCR_F_ALL 0xFFFF0FFFu
+#define VJO_GAME_OCR_F_ALL 0xFFFF3FFFu
 
 typedef struct {
     uint32_t size;
@@ -103,7 +110,8 @@ typedef struct {
 enum {
     VJO_GSTEP_NONE = 0,
     VJO_GSTEP_MEM,       /* a memory sample (rc: the query's) */
-    VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's */
+    VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's, which
+                            then runs (sum 1: forced by the self-test) */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
     VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
@@ -112,7 +120,7 @@ enum {
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
-    VJO_GSTEP_FALLBACK,  /* the fallback model runs: arg 1 = forced by the self-test */
+    VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
                             arg = width, sum = pixel format, rc the query's */
     VJO_GSTEP_PROBE,     /* a probe capture: kind VJO_GAME_OCR_SRC_*, arg VJO_GAME_OCR_MEM_*, sum the
@@ -136,6 +144,10 @@ enum {
                             why it could not run (VJO_E_*), bytes = VJO_GLM_READ / _RESIDENT (its weights) | lines
                             whose text it changed << 24 | doubtful lines left for the time ceiling << 16 | its CTC
                             frames, sum its load time (us), us the re-reading (not in RECOGNIZE's us) */
+    VJO_GSTEP_REFINE,    /* API 20, the finder's boxes refined: kind the mode (VJO_GAME_OCR_REFINE_*), arg the
+                            lines they became, rc 0 or the first refusal (VOCR_LINES_E_*: that box kept as found),
+                            bytes = boxes refined << 16 | boxes not split for the 16-line cap << 8 | boxes split,
+                            sum the rows read, us the time */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

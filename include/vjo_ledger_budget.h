@@ -24,10 +24,10 @@
 /* VitaJPOverlay_Shell.suprx: 217,088 text + 81,920 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
- * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss, still these
- * pages [measured, 68d6dc9]. */
+ * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss [measured, bcd3cf0],
+ * and with the finder refinement 215,256 + 77,984 [measured, fec85af], still these pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 299008u
-/* VitaJPOverlay_OCR.suprx: 61,440 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
+/* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
  * Raised again from 53,248 B (45,056 + 8,192) by one text page for API 20's job policy: the
@@ -36,8 +36,11 @@
  * Raised again from 61,440 B by two text pages for the beam + LM decoder: vita-vn-ocr's
  * runtime/vocr_lm.c (the decoder and the LM scorer) and vocr.c's top-K extras, with their
  * planning and per-line confidence in core/vocr_ocr.c, and the confidence cascade
- * (59,692 B text measured at 68d6dc9, core/vocr_ocr.c built for size). */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 69632u
+ * (59,692 B text measured at bcd3cf0, core/vocr_ocr.c built for size); and by one more for the finder
+ * refinement (vita-vn-ocr #83's runtime/vocr_lines_refine.c, -O2 as the runtime is built; 65,084 B
+ * text measured at fec85af).
+ * The game's partition has the room (90,177,536 B free USER the least #81 saw). */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 73728u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
@@ -126,9 +129,10 @@
  * decoder's structs and its workspace, bounded by VJO_VOCR_LM_WS_BYTES: 56,928 B on the host
  * build) and the greedy text kept for the log (4,096 B), and for a model smaller than the
  * confidence cascade's the cascade's extras (vjo_vocr_cascade_job_bytes: VOCR4-W20's arena,
- * structs and decoder, 296,192 B): 544,912 B with H15.
+ * structs and decoder, 296,192 B), and the finder's boxes refined (vjo_vocr_refine_bytes:
+ * 72,400 B at 960x544): 617,312 B with H15.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
-#define VJO_BUDGET_GAME_WORKSPACE 548864u
+#define VJO_BUDGET_GAME_WORKSPACE 618496u
 /* The capture block: one strip of grey rows and, per region row, its checksum,
  * its recent states and two bits, at most 65,536 B at any region (vjo_vocr_capture_bytes,
  * VJO_VOCR_CAPTURE_LIMIT; 65,480 B at 960x544, 61,388 B at 917x125). Its fallback rungs take 256 KiB of CDRAM or 1 MiB of
@@ -156,13 +160,13 @@
                             VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE)
 /* The recognizer ceiling tier: weights <= 1,601,536 B and a full-screen
  * workspace <= 790,528 B [vita-vn-ocr docs/vita-memory-budget.md], and (API 20)
- * the 4 MB LM and the cascade's larger model: a job's peak 8,036,352 B, which the
+ * the 4 MB LM and the cascade's larger model: a job's peak 8,105,984 B, which the
  * preflight (free USER minus the 4 MiB reserve) has to cover. Raised from
  * 2,392,064 B for the LM and the cascade: 9 % of the 90,177,536 B free USER, the
  * least any job saw in CLANNAD [measured, #81's v0.8.0-test.1 log]; a game with
  * less runs a smaller LM, no cascade, or neither (the memory check). */
 #define VJO_LIMIT_GAME_WEIGHTS 1601536u
 #define VJO_LIMIT_GAME_WORKSPACE 790528u
-#define VJO_LIMIT_GAME_JOB 8036352u
+#define VJO_LIMIT_GAME_JOB 8105984u
 
 #endif

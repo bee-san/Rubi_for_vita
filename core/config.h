@@ -56,6 +56,7 @@ typedef struct {
      * greedy decoding (core/vocr_ocr.h VjoVocrPolicy.lm). */
     int ocr_lm;
     int ocr_cascade_ms;       /* 0 (off) or 250..3750: the cascade's time ceiling per recognition */
+    int ocr_refine_lines;     /* 0 off, 1 on, 2 PSP games only (VJO_GAME_OCR_REFINE_*) */
     char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     /* Anki (core/anki.h): one note type, Kiku, in one deck; nothing else to set. */

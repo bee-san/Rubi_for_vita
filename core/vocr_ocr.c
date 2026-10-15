@@ -13,9 +13,11 @@
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
+#include "vocr_lines_refine.h"
 #include "vocr_lm.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
+typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.2.5-vocr3.1
  * (VOCR3, the default and its fallback) and v0.2.0 (docs/vita-vn-ocr.md).
  * Arena bytes: vocr_arena_bytes() in W8I mode with the default 4-frame tiles
@@ -129,6 +131,7 @@ typedef struct {
     size_t scratch, finder;
     int lm;               /* the LM extras (top-K, decoder) follow at total (lm_layout) */
     int cascade;          /* and after them the cascade's (cascade_layout) */
+    size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
 } Layout;
 
 static int region_ok(unsigned w, unsigned h)
@@ -145,6 +148,7 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     l->structs_off = l->scratch;
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
     l->lm = l->cascade = 0;
+    l->refine_off = l->refine_bytes = 0;
     return 0;
 }
 
@@ -195,6 +199,11 @@ static void cascade_layout(const VjoVocrModel *c, CascadeLayout *x)
     x->greedy = off; off += ALIGN16(LM_LINE_TEXT);
     x->text = off;   off += ALIGN16(LM_LINE_TEXT);
     x->total = off;
+}
+
+size_t vjo_vocr_refine_bytes(unsigned width, unsigned height)
+{
+    return region_ok(width, height) ? ALIGN16(vocr_refine_arena_bytes(width, height)) : 0;
 }
 
 size_t vjo_vocr_cascade_job_bytes(const char *cascade)
@@ -907,6 +916,10 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     st->cascade_lines = st->cascade_changed = st->cascade_skipped = st->cascade_frames = st->cascade_blanked = 0;
     st->cascade_us = 0;
+    st->refine_boxes = st->refine_lines = st->refine_split = st->refine_capped = 0;
+    st->refine_rows = 0;
+    st->refine_us = 0;
+    if (l->refine_bytes) st->refine_rc = 0;
     if (l->cascade) {
         st->cascade = NULL;
         st->cascade_rc = 0;
@@ -945,10 +958,65 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
 
     t0 = clock_us(p);
-    for (unsigned i = 0; i < set.count; i++) {
-        const VocrLine *ln = &set.lines[i];
-        const unsigned char *pixels;
-        size_t stride = w;
+    for (unsigned i = 0, li = 0; i < set.count; i++) {
+        const VocrLine *box = &set.lines[i];
+        const unsigned char *box_pixels;
+        size_t box_stride = w;
+        VocrLineSet parts;
+        len_left -= line_length(box);
+        if (cancelled(im)) return VJO_E_CANCELLED;
+        box_pixels = line_pixels(s, box, &box_stride);
+        if (s->err) return s->err;
+        if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
+        parts.count = 1;
+        parts.truncated = 0;
+        parts.lines[0] = *box;
+        if (l->refine_bytes) {
+            /* The box refined on the pixels the job holds for it: its strip (the
+             * box made strip-relative), or a tall line's own block. Its lines may
+             * take the job to VJO_VOCR_MAX_LINES, one kept for each box still to
+             * come; a split past that is not made, and the box is refined without
+             * it (its main text band), as #83's whole-set refinement does. */
+            int tall = box->h > s->strip_rows;
+            VocrLinesImage bim = {tall ? box_pixels : s->strip, tall ? box->w : w, tall ? box->h : s->rows,
+                                  box_stride, VOCR_LINES_GREY};
+            unsigned ox = tall ? box->x : 0, oy = tall ? box->y : s->y0, flags = pol->refine, room;
+            unsigned long rows = 0;
+            VocrLineSet one;
+            uint32_t r0 = clock_us(p);
+            room = VJO_VOCR_MAX_LINES - (li < VJO_VOCR_MAX_LINES ? li : VJO_VOCR_MAX_LINES);
+            room = room > set.count - i - 1u ? room - (set.count - i - 1u) : 1u;
+            for (;;) {
+                one.count = 1;
+                one.truncated = 0;
+                one.lines[0] = *box;
+                one.lines[0].x -= ox;
+                one.lines[0].y -= oy;
+                rc = vocr_refine_lines(&bim, flags, ws + l->refine_off, l->refine_bytes, &one, &rows);
+                st->refine_rows += rows;
+                if (rc || one.count <= room || !(flags & VOCR_REFINE_SPLIT)) break;
+                flags &= ~VOCR_REFINE_SPLIT;
+                st->refine_capped++;
+            }
+            if (rc && !st->refine_rc) st->refine_rc = rc;
+            if (!rc) { /* 1 to room lines */
+                parts = one;
+                for (unsigned k = 0; k < parts.count; k++) {
+                    parts.lines[k].x += ox;
+                    parts.lines[k].y += oy;
+                }
+                st->refine_boxes++;
+                st->refine_lines += parts.count;
+                st->refine_split += parts.count > 1;
+            }
+            st->refine_us += clock_us(p) - r0;
+        }
+        /* the box's estimate of the time still to read, now by its parts */
+        for (unsigned k = 0; k < parts.count; k++) len_left += line_length(&parts.lines[k]);
+        for (unsigned k = 0; k < parts.count; k++, li++) {
+        const VocrLine *ln = &parts.lines[k];
+        const unsigned char *pixels = box_pixels + (size_t)(ln->y - box->y) * box_stride + (ln->x - box->x);
+        size_t stride = box_stride;
         vocr_image img;
         vocr_extra extra;
         VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
@@ -960,9 +1028,6 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         len_left -= line_len;
         if (cancelled(im)) return VJO_E_CANCELLED;
         if (start + 1 >= cap) return VJO_E_TOO_LARGE;
-        pixels = line_pixels(s, ln, &stride);
-        if (s->err) return s->err;
-        if (!pixels) continue; /* taller than a strip and no line buffer: left out */
         if (pol->blank || pol->line) {
             uint32_t b0 = clock_us(p);
             blank = vjo_vocr_ink(pixels, stride, ln->w, ln->h, &ink);
@@ -973,7 +1038,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         if (blank) {
             if (st->blank < VJO_VOCR_BLANK_LOGGED) {
                 VjoVocrBlankStat *b = &st->blank_line[st->blank];
-                b->index = (uint16_t)i;
+                b->index = (uint16_t)li;
                 b->width = (uint16_t)ln->w;
                 b->height = (uint16_t)ln->h;
                 b->x = (uint16_t)ln->x;
@@ -982,7 +1047,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
             st->blank++;
             if (pol->line) {
-                VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0, "",
+                VjoVocrLineInfo info = {li, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 1, "", 0, "",
                                         VJO_VOCR_LINE_CONF_NONE};
                 pol->line(pol->ud, &info);
             }
@@ -1122,7 +1187,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             ls->us = line_us; /* without a re-read: frames and time are the job's model's */
         }
         if (pol->line) {
-            VjoVocrLineInfo info = {i, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
+            VjoVocrLineInfo info = {li, ln->x, ln->y, ln->w, ln->h, ln->dark, pixels, stride, ink, 0,
                                     text + start, clock_us(p) - line_t0, greedy, flags};
             pol->line(pol->ud, &info);
         }
@@ -1141,6 +1206,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 rused = rstart + gn;
             }
         }
+        } /* the box's parts */
     }
     st->recognize_us = clock_us(p) - t0 - st->cascade_us; /* the re-reads are cascade_us */
     return VJO_OK;
@@ -1170,6 +1236,18 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     front = one_shot ? ALIGN16(mi->bytes) : 0;
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
+    if (policy && policy->refine) {
+        /* The refinement's arena ends the job's own workspace; without room the
+         * boxes are read as found. */
+        size_t rb = vjo_vocr_refine_bytes(image->width, image->height);
+        if (workspace && rb && workspace_size >= front + l.total + rb) {
+            l.refine_off = l.total;
+            l.refine_bytes = rb;
+            l.total += rb;
+        } else {
+            stats->refine_rc = VJO_E_OOM;
+        }
+    }
     {
         /* The LM extras (the top-K, for the LM and for each line's confidence)
          * follow the job's workspace, and the cascade's follow them; without

@@ -20,6 +20,11 @@ int vjo_game_is_candidate(const char *id)
            strncmp(id, "main", 4) && strncmp(id, "VITASHELL", 9);
 }
 
+int vjo_game_is_psp(const char *id)
+{
+    return !strcmp(id, "NPXS10028") || !strncmp(id, "PSPEMU", 6);
+}
+
 void vjo_games_defaults(VjoGames *g)
 {
     memset(g, 0, sizeof(*g));

@@ -149,6 +149,8 @@ size_t vjo_vocr_lm_job_bytes(const char *model);
  * again with the larger model `cascade` (its arena, structs and LM decoder); 0
  * for a model this build does not pin. */
 size_t vjo_vocr_cascade_job_bytes(const char *cascade);
+/* The refinement's arena for a width x height region (VjoVocrPolicy.refine). */
+size_t vjo_vocr_refine_bytes(unsigned width, unsigned height);
 
 /* The line finder returns at most this many lines (vocr_lines.h VOCR_LINES_MAX). */
 #define VJO_VOCR_MAX_LINES 16u
@@ -270,6 +272,14 @@ typedef struct {
     unsigned cascade_changed; /* of those, lines whose text it changed */
     unsigned cascade_blanked; /* of those, lines it read as empty where the job's model read text */
     unsigned cascade_skipped; /* doubtful lines not read again: the time ceiling */
+    /* The finder's boxes refined (VjoVocrPolicy.refine, vita-vn-ocr's vocr_lines_refine.h). */
+    unsigned refine_boxes;   /* boxes refined */
+    unsigned refine_lines;   /* the lines they became (a box can split into several) */
+    unsigned refine_split;   /* boxes split into two or more */
+    unsigned refine_capped;  /* boxes refined without their split, which would pass VJO_VOCR_MAX_LINES lines */
+    int refine_rc;           /* 0, or the first refusal (VOCR_LINES_E_*, the box then kept as found) */
+    unsigned long refine_rows; /* rows the refinement read (from memory: the strip or the line's block) */
+    uint32_t refine_us;      /* refining, all boxes */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -338,7 +348,16 @@ typedef struct {
  * time ceiling, per capture attempt (a job read again after the screen changed
  * starts it again). The workspace must hold vjo_vocr_lm_job_bytes() and
  * vjo_vocr_cascade_job_bytes() more. When the model cannot be used the job goes
- * on without it and says why in stats->cascade_rc. */
+ * on without it and says why in stats->cascade_rc.
+ *
+ * refine: VOCR_REFINE_* steps (vita-vn-ocr's vocr_lines_refine.h; 0: off, the
+ * finder's boxes as found, exactly). Each box is refined on the pixels the job
+ * already holds for it (its strip, or a tall line's block: no read more): cut to
+ * its text band, frame rows and cursors ignored, a box of several text rows split
+ * into one line each, the same lines as vocr_refine_lines() on the whole region:
+ * a split that would take the job past VJO_VOCR_MAX_LINES lines is not made (the
+ * box keeps its main band). The workspace must hold vjo_vocr_refine_bytes() more,
+ * before the LM extras. */
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;
@@ -355,8 +374,13 @@ typedef struct {
     VjoVocrResident *cascade_res;
     uint32_t cascade_us;
     unsigned cascade_conf;
+    unsigned refine;
 } VjoVocrPolicy;
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
+/* VjoVocrPolicy.refine: every step of vita-vn-ocr's refinement
+ * (VOCR_REFINE_DEFAULT, vocr_lines_refine.h: tighten, frames, split, cursor,
+ * portrait), the set its development measurements used. */
+#define VJO_VOCR_REFINE_ALL 0x1Fu
 /* The confidence under which the cascade reads a line again (vita-vn-ocr #82:
  * under 0.7 flags about 1 line in 5 and 3 of 4 misread lines). */
 #define VJO_VOCR_CASCADE_CONF 700u

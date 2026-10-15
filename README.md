@@ -331,6 +331,17 @@ The greedy reading, each line's confidence and what the cascade read again are
 logged beside the shown text
 ([beam + LM decoding](docs/vita-vn-ocr.md#beam--lm-decoding-api-20),
 [confidence cascade](docs/vita-vn-ocr.md#confidence-cascade-api-20)).
+In PSP games the line finder's boxes are also refined, cut back to their text
+and split where two text rows were merged (`ocr_refine_lines = psp`; `on` for
+every game, `off`). vita-vn-ocr #83 measured a dialogue gain with it on native
+480×272 PSP frames; on native Vita text it was level or worse, and worse on
+CLANNAD for five of six models. The overlay sees a PSP game as
+Adrenaline shows it, 2× through a bilinear filter, where its accuracy is
+untested and the host's box fit is level, so `psp` is the next test build's
+trial, which that build's logs decide. Refined lines are read wider: on the
+host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
+22-23 ms more per line found with VOCR3-H15 on the console
+([finder refinement](docs/vita-vn-ocr.md#finder-refinement-api-20)).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 

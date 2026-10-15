@@ -28,6 +28,7 @@
 #include <string.h> /* strlen: shell/libc_shim.c */
 
 #include "../core/anki.h"
+#include "../core/games.h"
 #include "../core/local_dict.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/utf.h"
@@ -277,9 +278,7 @@ static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
     sceKernelUnlockMutex(box_lock, 1);
     vjo_anki_misc_info(misc, cap, n->game, clock ? &d : NULL); /* no date rather than a wrong one */
     n->misc = misc;
-    n->platform = !n->title_id ? NULL
-                  : !sceClibStrcmp(n->title_id, "NPXS10028") || !sceClibStrcmp(n->title_id, "PSPEMUCFW") ? "psp"
-                                                                                                        : "vita";
+    n->platform = !n->title_id ? NULL : vjo_game_is_psp(n->title_id) ? "psp" : "vita";
     n->ocr_engine = acfg->ocr_backend == VJO_OCR_LENS ? "lens" : "vocr";
     /* To the minute, as MiscInfo: the same card saved again within it is the same record (its ID). */
     n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;

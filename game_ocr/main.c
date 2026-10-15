@@ -222,6 +222,10 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
+/* A PSP game (vjo_game_is_psp: NPXS10028, or a PSPEMU* bubble): the refinement's
+ * "psp" mode applies (set by module_start from the title). */
+static int psp_title;
+
 /* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens;
  * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
@@ -850,7 +854,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     VjoVocrStats stats = {0};
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
+    unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
+        refine_mode > VJO_GAME_OCR_REFINE_PSP ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         !r->fb_width || r->fb_width > VJO_OCR_MAX_WIDTH || !r->fb_height || r->fb_height > VJO_OCR_MAX_HEIGHT ||
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
@@ -863,12 +870,18 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
     const VjoVocrModel *model = vjo_vocr_model(r->model);
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
+    unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
+                      ? VJO_VOCR_REFINE_ALL : 0u;
+    size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t bytes = vjo_vocr_job_bytes(r->model, r->width, r->height);
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
     if (!bytes || !capture_bytes) { rc = model ? VJO_E_OCR_REGION : VJO_E_OCR_MODEL; goto done; }
+    bytes += refine_bytes;
     /* A fallback is used only if it is another pinned model needing less memory. */
     const VjoVocrModel *fallback = r->fallback[0] ? vjo_vocr_model(r->fallback) : NULL;
     size_t fallback_bytes = fallback ? vjo_vocr_job_bytes(r->fallback, r->width, r->height) : 0;
+    if (fallback_bytes) fallback_bytes += refine_bytes;
     if (!fallback_bytes || fallback == model ||
         PAGE_ROUND(fallback_bytes) + PAGE_ROUND(fallback->bytes) >= PAGE_ROUND(bytes) + PAGE_ROUND(model->bytes))
         fallback = NULL;
@@ -909,9 +922,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         use_bytes = fallback_bytes;
         casc = casc_model && casc_model->bytes > fallback->bytes ? casc_model : NULL;
         fits = check_with_lm(out, fallback, fallback_bytes, capture_bytes, lm_max, &casc, &lm);
-        step_add(VJO_GSTEP_FALLBACK, 0, forced ? 1u : 0u, 0, 0, 0, 0, 0);
+        /* The fallback's check (arg 1) is the record that the fallback runs, and its sum
+         * says whether the self-test forced it: no FALLBACK step, so the first job of a
+         * PSP game (the refinement's step besides the LM's and the cascade's) fits the log. */
         step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 1, fits ? 0 : 1,
-                 out->need_workspace + out->need_weights, 0, 0, 0);
+                 out->need_workspace + out->need_weights, forced ? 1u : 0u, 0, 0);
     }
     stats.workspace = use_bytes;
     if (!fits) {
@@ -961,6 +976,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         policy.cascade_us = casc_us;
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
+    policy.refine = refine;
     open_which = use == model ? VJO_GAME_OCR_OPEN_MODEL : VJO_GAME_OCR_OPEN_FALLBACK;
     open_cascade = casc != NULL;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base, use_bytes + core_extra,
@@ -982,6 +998,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
                  (uint32_t)(b->ink.hi - b->ink.lo) << 16 | b->ink.edges, stats.blank_us ? stats.blank_us : 1u, 0);
     }
+    if (refine && stats.lines) /* each count at most VJO_VOCR_MAX_LINES: the boxes of one try */
+        step_add(VJO_GSTEP_REFINE, refine_mode, stats.refine_lines, stats.refine_rc,
+                 stats.refine_boxes << 16 | (stats.refine_capped & 0xFFu) << 8 | (stats.refine_split & 0xFFu),
+                 (uint32_t)stats.refine_rows, stats.refine_us + 1u, 0);
     if (stats.model_loaded || stats.model_cached)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT, 0, 0,
                  resident_bytes(), 0, stats.load_us, 1);
@@ -1166,6 +1186,7 @@ int module_start(SceSize args, void *argp)
      * treated the same way: nothing is started, nothing stays. Candidate
      * games keep an idle worker until the Shell confirms their games.ini policy. */
     if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
+    psp_title = vjo_game_is_psp(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */

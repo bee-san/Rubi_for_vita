@@ -11,6 +11,8 @@
 #include "vocr_lm.h"
 #include "../../core/fbgrey.h"
 #include "../../include/vjo_vocr_sizes.h"
+#include "vocr_lines.h"
+#include "vocr_lines_refine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1127,6 +1129,398 @@ static void test_the_lm_paths(void)
     free(ws);
 }
 
+/* ---- the finder's boxes refined (VjoVocrPolicy.refine) ---- */
+#define RW 480u  /* the procedural regions' largest */
+#define RH 300u
+#define RMW 960u /* the buffers: any region (the crowded ones go up to 960 x 544) */
+#define RMH 544u
+static unsigned char refine_rgba[RMH * RMW * 4], refine_grey[RMH * RMW];
+static unsigned refine_w, refine_h;
+static VocrLine parts_got[VJO_VOCR_MAX_LINES];
+static unsigned parts_n;
+static unsigned long refine_px_lines, refine_px_bad, refine_index_bad;
+static uint32_t refine_rng = 0x5eed1234u;
+
+static unsigned refine_below(unsigned n)
+{
+    refine_rng ^= refine_rng << 13;
+    refine_rng ^= refine_rng >> 17;
+    refine_rng ^= refine_rng << 5;
+    return n ? refine_rng % n : 0u;
+}
+
+static void refine_px(unsigned x, unsigned y, unsigned v)
+{
+    unsigned char *q = refine_rgba + ((size_t)y * RMW + x) * 4;
+    q[0] = q[1] = q[2] = (unsigned char)v;
+    q[3] = 255;
+    refine_grey[(size_t)y * RMW + x] = (unsigned char)vjo_grey(v, v, v);
+}
+
+/* A procedural dialogue region (as vita-vn-ocr's own refinement test draws
+ * them): a plain or gradient ground, a frame or a panel, rows of glyph-like
+ * strokes (some set close together), cursor-like blobs and portrait-like slabs. */
+static void refine_draw(unsigned w, unsigned h)
+{
+    unsigned x, y, i, lines = 1u + refine_below(5), boxes = refine_below(3), blobs = refine_below(3);
+    unsigned paper = refine_below(256), ink = (paper + 96u + refine_below(64)) & 255u;
+    int gradient = refine_below(3) == 0;
+    refine_w = w;
+    refine_h = h;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) refine_px(x, y, gradient ? (paper + x * 64u / w + y) & 255u : paper);
+    for (i = 0; i < boxes; i++) {
+        unsigned x0 = refine_below(w), y0 = refine_below(h), bw = refine_below(w - x0) + 1u, bh = refine_below(h - y0) + 1u;
+        unsigned v = refine_below(256), fill = refine_below(2);
+        for (y = y0; y < y0 + bh; y++)
+            for (x = x0; x < x0 + bw; x++)
+                if (fill || y == y0 || y + 1u == y0 + bh || x == x0 || x + 1u == x0 + bw) refine_px(x, y, v);
+    }
+    for (i = 0; i < lines; i++) {
+        unsigned lh = 8u + refine_below(30), y0 = refine_below(h), x0 = refine_below(w), x1, pitch = 4u + refine_below(20);
+        unsigned v = refine_below(3) ? ink : refine_below(256);
+        if (y0 + lh > h) lh = h - y0;
+        x1 = x0 + refine_below(w - x0 + 1u);
+        for (y = y0; y < y0 + lh; y++)
+            for (x = x0; x < x1; x++) {
+                unsigned cx = (x - x0) % pitch, cy = y - y0;
+                if (cx < pitch * 3u / 4u && (cx % 4u < 2u || cy % 7u < 2u || (cx + cy) % 9u == 0u)) refine_px(x, y, v);
+            }
+    }
+    for (i = 0; i < blobs; i++) {
+        unsigned bw = 3u + refine_below(30), bh = 3u + refine_below(h), x0 = refine_below(w), y0 = refine_below(h);
+        unsigned v = refine_below(256);
+        for (y = y0; y < y0 + bh && y < h; y++)
+            for (x = x0; x < x0 + bw && x < w; x++) refine_px(x, y, v);
+    }
+}
+
+/* Glyph-like strokes lh rows tall from x0 to x1 (as refine_draw's), cut at the region's edge. */
+static void refine_strokes(unsigned y0, unsigned lh, unsigned x0, unsigned x1, unsigned v)
+{
+    unsigned pitch = 6u + (lh > 12u ? lh / 2u : 6u);
+    for (unsigned y = y0; y < y0 + lh && y < refine_h; y++)
+        for (unsigned x = x0; x < x1 && x < refine_w; x++) {
+            unsigned cx = (x - x0) % pitch, cy = y - y0;
+            if (cx < pitch * 3u / 4u && (cx % 4u < 2u || cy % 7u < 2u || (cx + cy) % 9u == 0u)) refine_px(x, y, v);
+        }
+}
+
+/* A crowded region (up to 960 x 544): text rows down to its bottom, about half of
+ * them pairs set 1-2 rows apart, which the finder takes as one box and the
+ * refinement splits, so that the splits often pass 16 lines. */
+static void refine_draw_crowded(void)
+{
+    unsigned w = 300u + refine_below(RMW - 299u), h = 330u + refine_below(RMH - 329u);
+    unsigned paper = refine_below(90), ink = 170u + refine_below(86), y = 2u + refine_below(4), lh0 = 11u + refine_below(6);
+    refine_w = w;
+    refine_h = h;
+    for (unsigned yy = 0; yy < h; yy++)
+        for (unsigned x = 0; x < w; x++) refine_px(x, yy, paper);
+    while (y + lh0 < h) {
+        unsigned x0 = 4u + refine_below(30), x1 = w - 4u - refine_below(60), lh = lh0 + refine_below(3);
+        if (refine_below(2)) {
+            unsigned gap = 1u + refine_below(2);
+            refine_strokes(y, lh, x0, x1, ink);
+            refine_strokes(y + lh + gap, lh, x0, x1, ink);
+            y += 2u * lh + gap + 5u + refine_below(4);
+        } else {
+            refine_strokes(y, lh, x0, x1, ink);
+            y += lh + 5u + refine_below(4);
+        }
+    }
+}
+
+/* A plain region of one row of strokes, for the tests that need just a line. */
+static void refine_clear(unsigned w, unsigned h)
+{
+    refine_w = w;
+    refine_h = h;
+    for (unsigned y = 0; y < h; y++)
+        for (unsigned x = 0; x < w; x++) refine_px(x, y, 20);
+}
+
+static void refine_text(unsigned y0, unsigned rows, unsigned x0, unsigned x1)
+{
+    for (unsigned y = y0; y < y0 + rows; y++)
+        for (unsigned x = x0; x < x1; x++) {
+            unsigned k = (x - x0) % 13, r = y - y0;
+            if (k < 2 || (k < 10 && (r == rows / 2 || r == 1)) || (k == 6 && r % 3 == 0)) refine_px(x, y, 235);
+        }
+}
+
+static unsigned char refine_line_mem[RMH * RMW];
+static void *refine_line_buffer(void *ud, size_t bytes)
+{
+    (void)ud;
+    return bytes <= sizeof(refine_line_mem) ? refine_line_mem : NULL;
+}
+
+/* Each line the job reads: its place among the job's lines, and the pixels it is
+ * read from, which must be the region's own at its (x, y), w x h. */
+static void refine_record(void *ud, const VjoVocrLineInfo *info)
+{
+    (void)ud;
+    refine_index_bad += info->index != parts_n;
+    refine_px_lines++;
+    for (unsigned r = 0; r < info->h; r++)
+        if (memcmp(info->pixels + (size_t)r * info->stride, refine_grey + (size_t)(info->y + r) * RMW + info->x,
+                   info->w)) {
+            refine_px_bad++;
+            break;
+        }
+    if (parts_n < VJO_VOCR_MAX_LINES) parts_got[parts_n] = (VocrLine){info->x, info->y, info->w, info->h, info->dark};
+    parts_n++;
+}
+
+/* The job's lines with refinement steps `flags` (every line skipped as blank:
+ * no weights needed); the in-memory finder's lines on the same pixels (found),
+ * the runtime's own whole-set refinement of them on the whole region (whole),
+ * and how many of them a refinement of that box alone splits (splittable).
+ * Returns the job's rc. */
+static int refine_job(unsigned flags, VocrLineSet *found, VocrLineSet *whole, unsigned *splittable, VjoVocrStats *st)
+{
+    static unsigned char arena[600 * 1024] __attribute__((aligned(16)));
+    VjoRgbaImage rgba = {refine_rgba, refine_w, refine_h, (size_t)RMW * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = refine_record, .refine = flags};
+    VocrLinesImage gim = {refine_grey, refine_w, refine_h, RMW, VOCR_LINES_GREY};
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", refine_w, refine_h) + vjo_vocr_refine_bytes(refine_w, refine_h);
+    unsigned char *ws = NULL;
+    char text[64];
+    int rc;
+    vjo_grey_source_rgba(&rgba, &src);
+    src.line_buffer = refine_line_buffer;
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, job) == 0);
+    memset(ws, 0xA5, job); /* nothing may depend on a zeroed workspace */
+    parts_n = 0;
+    rc = vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &src, &res, ws, job, capture,
+                             vjo_vocr_capture_bytes(refine_w, refine_h), &pol, text, sizeof(text), st);
+    free(ws);
+    TEST_ASSERT(vocr_lines_arena_bytes(refine_w, refine_h) <= sizeof(arena));
+    TEST_CHECK(vocr_find_lines(&gim, VOCR_LINES_GRAD, arena, sizeof(arena), found) == VOCR_LINES_OK);
+    *whole = *found;
+    *splittable = 0;
+    if (!flags) return rc;
+    for (unsigned i = 0; i < found->count; i++) {
+        VocrLineSet one = {.count = 1};
+        one.lines[0] = found->lines[i];
+        TEST_CHECK(vocr_refine_lines(&gim, flags, arena, sizeof(arena), &one, NULL) == VOCR_LINES_OK);
+        *splittable += one.count > 1;
+    }
+    TEST_CHECK(vocr_refine_lines(&gim, flags, arena, sizeof(arena), whole, NULL) == VOCR_LINES_OK);
+    return rc;
+}
+
+static int same_lines(const VocrLineSet *a, const VocrLine *b, unsigned nb)
+{
+    if (a->count != nb) return 0;
+    for (unsigned i = 0; i < nb; i++)
+        if (memcmp(&a->lines[i], &b[i], sizeof(b[i]))) return 0;
+    return 1;
+}
+
+typedef struct {
+    unsigned regions, changed, split, capped, capped_regions, tall, left_out, mismatch, counts, lefts, tops;
+} RefineTally;
+
+/* One region, refinement off and on. Off: the finder's lines exactly, nothing read.
+ * On: #83's whole-set refinement of the whole region, line for line, the 16-line
+ * cap included (a split past it not made, the box refined without it); every box
+ * refined, the split and capped ones those a refinement alone would split, and
+ * every line in its place in the job. */
+static void refine_region(RefineTally *t, unsigned n)
+{
+    VocrLineSet found, whole;
+    VjoVocrStats st;
+    unsigned splittable = 0, bad = 0;
+    TEST_CHECK(refine_job(0, &found, &whole, &splittable, &st) == VJO_OK);
+    if (!found.count) return;
+    t->regions++;
+    TEST_CHECK(same_lines(&found, parts_got, parts_n) && !st.refine_boxes && !st.refine_rows && !st.refine_capped);
+    TEST_CHECK(refine_job(VJO_VOCR_REFINE_ALL, &found, &whole, &splittable, &st) == VJO_OK);
+    t->tall += st.tall;
+    if (st.tall_skipped) { /* a box left out (no line buffer that large): the job's room differs */
+        t->left_out++;
+        return;
+    }
+    if (parts_n > VJO_VOCR_MAX_LINES || !same_lines(&whole, parts_got, parts_n)) {
+        t->mismatch++;
+        TEST_MSG("region %u (%ux%u): %u lines refined per box, %u by the whole set", n, refine_w, refine_h, parts_n,
+                 whole.count);
+    }
+    bad += st.refine_lines != parts_n || st.lines != found.count || st.refine_rc || st.refine_boxes != found.count;
+    bad += st.refine_split + st.refine_capped != splittable || st.blank != parts_n;
+    for (unsigned k = 0; k < st.blank && k < VJO_VOCR_BLANK_LOGGED; k++) bad += st.blank_line[k].index != k;
+    if (bad) {
+        t->counts++;
+        TEST_MSG("region %u (%ux%u): refined %u of %u boxes into %u lines (%u read), %u split + %u capped of %u "
+                 "splittable, rc %d, %u blank", n, refine_w, refine_h, st.refine_boxes, found.count, st.refine_lines,
+                 parts_n, st.refine_split, st.refine_capped, splittable, st.refine_rc, st.blank);
+    }
+    t->changed += !same_lines(&found, parts_got, parts_n);
+    t->split += st.refine_split;
+    t->capped += st.refine_capped;
+    t->capped_regions += st.refine_capped > 0;
+    /* the lines cut on the left or at the top of their box: their pixels start inside it */
+    for (unsigned k = 0; k < parts_n && k < VJO_VOCR_MAX_LINES; k++)
+        for (unsigned b = 0; b < found.count; b++) {
+            const VocrLine *l = &parts_got[k], *x = &found.lines[b];
+            if (l->x >= x->x && l->y >= x->y && l->x + l->w <= x->x + x->w && l->y + l->h <= x->y + x->h) {
+                t->lefts += l->x > x->x;
+                t->tops += l->y > x->y;
+                break;
+            }
+        }
+}
+
+/* Each box refined on the pixels the job holds for it (its strip, the box made
+ * strip-relative; or a tall line's own block) gives exactly the lines the
+ * runtime's whole-set refinement gives on the whole region: over 300 procedural
+ * regions of one strip and of several (boxes across strips, taller than one),
+ * and 120 crowded ones whose splits pass the 16-line cap; it does refine (boxes
+ * tightened, cut on the left, split), and each line is read from the region's own
+ * pixels. Off, the lines are the finder's, exactly, and nothing is read for it. */
+static void test_refined_boxes_match_the_whole_set_refinement(void)
+{
+    RefineTally t = {0}, c = {0};
+    refine_px_lines = refine_px_bad = refine_index_bad = 0;
+    for (unsigned i = 0; i < 300; i++) {
+        unsigned w = 64u + refine_below(RW - 63u), h = 24u + refine_below(RH - 23u);
+        refine_draw(w, h);
+        refine_region(&t, i);
+    }
+    TEST_CHECK(!t.mismatch && !t.counts && !t.left_out && t.regions >= 200 && t.changed >= 30 && t.split >= 5);
+    for (unsigned i = 0; i < 120; i++) {
+        refine_draw_crowded();
+        refine_region(&c, i);
+    }
+    TEST_CHECK(!c.mismatch && !c.counts && !c.left_out && c.regions == 120 && c.capped_regions >= 40 && c.split >= 120);
+    TEST_CHECK(!refine_px_bad && !refine_index_bad && refine_px_lines > 1000 && t.lefts + c.lefts > 0 &&
+               t.tops + c.tops > 0);
+    TEST_MSG("%u regions with lines: %u refined differently from the finder, %u boxes split, %u capped, %u tall lines, "
+             "%u mismatches; crowded: %u regions, %u split, %u capped in %u regions, %u mismatches; %lu lines read, "
+             "%u cut on the left, %u at the top, %lu with other pixels", t.regions, t.changed, t.split, t.capped, t.tall,
+             t.mismatch, c.regions, c.split, c.capped, c.capped_regions, c.mismatch, refine_px_lines, t.lefts + c.lefts,
+             t.tops + c.tops, refine_px_bad);
+    if (getenv("REFINE_DEBUG"))
+        printf("refine: %u regions with lines, %u refined differently, %u split, %u capped, %u tall lines, %u mismatches;"
+               " crowded: %u regions, %u split, %u capped in %u regions, %u mismatches; %lu lines, %u cut left, %u top, "
+               "%lu other pixels\n", t.regions, t.changed, t.split, t.capped, t.tall, t.mismatch, c.regions, c.split,
+               c.capped, c.capped_regions, c.mismatch, refine_px_lines, t.lefts + c.lefts, t.tops + c.tops, refine_px_bad);
+}
+
+/* A workspace without the refinement's room: the boxes as found, and why. */
+static void test_refinement_without_room_reads_the_boxes_as_found(void)
+{
+    VjoRgbaImage rgba = {refine_rgba, RW, 60, (size_t)RMW * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = refine_record, .refine = VJO_VOCR_REFINE_ALL};
+    VjoVocrStats st;
+    char text[64];
+    refine_clear(RW, 60);
+    refine_text(18, 22, 30, 420);
+    vjo_grey_source_rgba(&rgba, &src);
+    p.file_open = no_file;
+    p.now_us = now;
+    parts_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &src, &res, ws_mem, vjo_vocr_job_bytes("FL10_w8.vocr", RW, 60),
+                                   capture, vjo_vocr_capture_bytes(RW, 60), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.refine_rc == VJO_E_OOM && !st.refine_boxes && parts_n == st.lines && st.lines == 1);
+    TEST_CHECK(vjo_vocr_refine_bytes(RW, 60) > 0 && vjo_vocr_refine_bytes(0, 60) == 0 &&
+               vjo_vocr_refine_bytes(961, 60) == 0);
+}
+
+/* The refinement's arena ends the job's own workspace and the LM extras follow it:
+ * the workspace the job reports holds both, and with room for only one of them the
+ * job refines its boxes and reads greedily (the LM extras never overlap the arena). */
+static void test_the_refinement_arena_comes_before_the_lm_extras(void)
+{
+    const char *name = "FL10_w8.vocr";
+    VjoRgbaImage rgba = {refine_rgba, RW, 60, (size_t)RMW * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrLmResident lres = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = refine_record, .refine = VJO_VOCR_REFINE_ALL,
+                         .lm = vjo_vocr_lm_tier(2), .lm_res = &lres};
+    VjoVocrStats st;
+    size_t job = vjo_vocr_job_bytes(name, RW, 60), rb = vjo_vocr_refine_bytes(RW, 60), lmb = vjo_vocr_lm_job_bytes(name);
+    char text[64];
+    TEST_ASSERT(pol.lm && rb && lmb && rb <= lmb && job + rb + lmb <= sizeof(ws_mem));
+    refine_clear(RW, 60);
+    refine_text(18, 22, 30, 420);
+    vjo_grey_source_rgba(&rgba, &src);
+    p.file_open = no_file;
+    p.now_us = now;
+    parts_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", name, &src, &res, ws_mem, job + rb + lmb, capture,
+                                   vjo_vocr_capture_bytes(RW, 60), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.workspace == job + rb + lmb && !st.refine_rc && st.refine_boxes == 1 && !st.lm_rc);
+    TEST_MSG("workspace %zu B: job %zu + refine %zu + LM %zu", st.workspace, job, rb, lmb);
+    parts_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", name, &src, &res, ws_mem, job + lmb, capture,
+                                   vjo_vocr_capture_bytes(RW, 60), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.workspace == job + rb && !st.refine_rc && st.refine_boxes == 1 && st.lm_rc == VJO_E_OOM);
+}
+
+/* With the release weights and the 1 MB LM: refined lines, two of them split from
+ * one box each, are read and decoded in place (each from the region's own pixels,
+ * its index its place in the job), and the LM decodes them with the refinement's
+ * arena before its extras. */
+static void test_refined_lines_are_read_and_decoded_in_place(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
+    const VjoVocrLm *lm = vjo_vocr_lm_tier(2);
+    VjoRgbaImage rgba = {refine_rgba, RW, 120, (size_t)RMW * 4};
+    VjoGreySource src;
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 2)) {
+        TEST_SKIP("no VOCR3-FL10 and 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && lm);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    lres.ud = &lres;
+    VjoVocrPolicy pol = {.line = refine_record, .refine = VJO_VOCR_REFINE_ALL, .lm = lm, .lm_res = &lres};
+    refine_clear(RW, 120);
+    refine_text(8, 16, 30, 420); /* two pairs of rows set one row apart */
+    refine_text(25, 16, 30, 420);
+    refine_text(62, 16, 30, 300);
+    refine_text(79, 16, 30, 300);
+    vjo_grey_source_rgba(&rgba, &src);
+    ws_bytes = vjo_vocr_job_bytes(fl10->name, RW, 120) + vjo_vocr_refine_bytes(RW, 120) +
+               vjo_vocr_lm_job_bytes(fl10->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    memset(ws, 0xA5, ws_bytes);
+    refine_px_lines = refine_px_bad = refine_index_bad = 0;
+    parts_n = 0;
+    TEST_ASSERT(vjo_vocr_ocr_policy(&p, dir, fl10->name, &src, &res, ws, ws_bytes, capture,
+                                    vjo_vocr_capture_bytes(RW, 120), &pol, text, sizeof(text), &st) == VJO_OK);
+    TEST_CHECK(st.lines == 2 && st.refine_boxes == 2 && st.refine_split == 2 && st.refine_lines == 4 &&
+               parts_n == 4 && st.recognized == 4 && !refine_index_bad && !refine_px_bad);
+    TEST_CHECK(st.lm == lm && !st.lm_rc && st.workspace == ws_bytes);
+    TEST_MSG("%u boxes, %u lines read, %u decoded: '%s'", st.lines, parts_n, st.lm_lines, text);
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 /* The ink statistics: an even area or a smooth ramp holds no text-like ink;
  * strokes do, also small, dark on light, and soft (shown 2x with bilinear
  * filtering, or blurred); under 24 levels of contrast nothing is text. */
@@ -1285,6 +1679,10 @@ TEST_LIST = {
     {"the_cascade_reads_doubtful_lines_again", test_the_cascade_reads_doubtful_lines_again},
     {"the_cascade_ceiling_counts_the_time_spent_the_reread_and_the_rest", test_the_cascade_ceiling_counts_spent_reread_and_rest},
     {"the_lm_decodes_rereads_skips_empty_lines_and_keeps_greedy_on_failure", test_the_lm_paths},
+    {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
+    {"refinement_without_room_reads_the_boxes_as_found", test_refinement_without_room_reads_the_boxes_as_found},
+    {"the_refinement_arena_comes_before_the_lm_extras", test_the_refinement_arena_comes_before_the_lm_extras},
+    {"refined_lines_are_read_and_decoded_in_place", test_refined_lines_are_read_and_decoded_in_place},
     {"ink_statistics_and_the_blank_rule", test_ink_and_blank},
     {"blank_lines_are_skipped_and_open_no_weights", test_blank_lines_open_no_weights},
     {NULL, NULL}

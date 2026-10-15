@@ -18,6 +18,9 @@ typedef struct {
 int vjo_game_id_valid(const char *id);
 /* Adrenaline is allowed: its PSP games share NPXS10028. */
 int vjo_game_is_candidate(const char *id);
+/* A PSP game: Adrenaline runs them as NPXS10028, or from a PSPEMU* bubble (its own
+ * PSPEMUCFW, an Adrenaline Bubble Manager bubble). */
+int vjo_game_is_psp(const char *id);
 void vjo_games_defaults(VjoGames *games);
 int vjo_games_enabled(const VjoGames *games, const char *id);
 int vjo_games_set(VjoGames *games, const char *id, int enabled);
