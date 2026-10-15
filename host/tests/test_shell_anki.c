@@ -80,6 +80,9 @@ int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
     return (int)n;
 }
 
+/* The ledger's table is logged in a batch (shell/log_vita.c): lines here go out one by one. */
+int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap) { (void)b; (void)buf; (void)cap; return 0; }
+void vjo_log_batch_end(VjoLogBatch *b) { (void)b; }
 /* Formats like the Vita's, so every log call's arguments are exercised. */
 static char last_log[512], last_queue_log[512];
 static char all_logs[32768]; /* every line since reset(), for logged() */

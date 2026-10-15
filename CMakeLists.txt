@@ -225,6 +225,13 @@ target_include_directories(vjo-hachidori-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-hachidori-tests vjo_host)
 add_test(NAME hachidori COMMAND vjo-hachidori-tests)
 # Real shell control policy, with host-only substitutes for Vita SDK I/O.
+# shell/log_vita.c on an in-memory file system: a batch of lines (vjo_log_batch_begin/end)
+# writes the same bytes in the same order as line by line, with one append per file.
+add_executable(vjo-shell-log-tests host/tests/test_shell_log.c)
+target_include_directories(vjo-shell-log-tests PRIVATE third_party/acutest/include host/tests/log_stubs)
+target_compile_definitions(vjo-shell-log-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-shell-log-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME shell_log COMMAND vjo-shell-log-tests)
 add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-worker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

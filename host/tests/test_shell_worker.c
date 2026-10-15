@@ -126,11 +126,41 @@ void vjo_log_configure(const VjoConfig *c) {}
 /* The last log lines, for the game OCR measurement tests. */
 static char log_lines[32][256];
 static unsigned log_count;
+/* The logger's batches (shell/log_vita.c vjo_log_batch_begin/end), by its own
+ * rules: a line outside a batch is one append of log.txt; a batch's lines go
+ * out together when it ends, or when the next one would pass its
+ * VJO_LOG_BATCH_LINES lines or its buffer (host/tests/test_shell_log.c shows
+ * the real logger writes exactly these appends, byte for byte as line by line). */
+static VjoLogBatch *open_batch;
+static int batch_lines_held, batch_bytes_held, batch_cap;
+static unsigned log_appends, batched_lines;
+int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap)
+{
+    (void)buf;
+    if (open_batch || !b || cap <= 0) return 0;
+    open_batch = b; batch_cap = cap; batch_lines_held = batch_bytes_held = 0;
+    return 1;
+}
+void vjo_log_batch_end(VjoLogBatch *b)
+{
+    if (open_batch != b) return;
+    if (batch_lines_held) log_appends++;
+    open_batch = NULL;
+}
 void vjo_log(const char *fmt, ...)
 {
     va_list ap; va_start(ap, fmt);
-    vsnprintf(log_lines[log_count % 32], sizeof(log_lines[0]), fmt, ap);
+    int n = vsnprintf(log_lines[log_count % 32], sizeof(log_lines[0]), fmt, ap);
     va_end(ap); log_count++;
+    n = (n > 254 ? 254 : n) + 1; /* the line and its '\n', as vjo_log writes it */
+    if (!open_batch) { log_appends++; return; }
+    batched_lines++;
+    if (batch_lines_held < VJO_LOG_BATCH_LINES && batch_cap - batch_bytes_held >= n) {
+        batch_lines_held++; batch_bytes_held += n;
+        return;
+    }
+    if (batch_lines_held) log_appends++; /* the batch so far goes out first */
+    batch_lines_held = 1; batch_bytes_held = n;
 }
 static const char *logged(const char *needle)
 {
@@ -233,8 +263,10 @@ static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
+static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
+    TEST_CHECK(!open_batch); /* no log batch is held across the game's exchange */
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
     TEST_CHECK(capture_held_now); /* the game captures with the Shell's capture lock held */
@@ -256,6 +288,7 @@ static int fake_republish, republish_reads, captured_while_void;
 int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
 {
     TEST_CHECK(seq == 12);
+    TEST_CHECK(!open_batch);
     if (fake_republish && republish_reads < 2) {
         if (republish_reads++ == 0) state.region_seq = 0;
         else { captured_while_void = job_captured; state.capture_scene = state.scene = state.region_scene = 3; state.region_seq = 5; }
@@ -325,6 +358,21 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         for (unsigned i = 0; i < fake_lines; i++)
             fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i),
                                                         fake_line_flags ? fake_line_flags : 0x3FFu, 52100u + i};
+        if (fake_steps) {
+            static const uint8_t ids[] = {VJO_GSTEP_MEM, VJO_GSTEP_CHECK, VJO_GSTEP_ALLOC, VJO_GSTEP_ALLOC,
+                                          VJO_GSTEP_PASS, VJO_GSTEP_SIG, VJO_GSTEP_FIND, VJO_GSTEP_SETTLE,
+                                          VJO_GSTEP_LOAD, VJO_GSTEP_RECOGNIZE, VJO_GSTEP_LM, VJO_GSTEP_NORM,
+                                          VJO_GSTEP_FREE, VJO_GSTEP_FREE};
+            for (unsigned k = 0; k < sizeof(ids); k++) {
+                VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
+                memset(s, 0, sizeof(*s));
+                s->id = ids[k];
+                s->kind = ids[k] == VJO_GSTEP_ALLOC || ids[k] == VJO_GSTEP_FREE ? VJO_GAME_OCR_MEM_USER : 0;
+                s->arg = ids[k] == VJO_GSTEP_ALLOC || ids[k] == VJO_GSTEP_FREE ? VJO_GITEM_CAPTURE + (k & 1) : 1;
+                s->bytes = 57344; s->free_main = 90177536; s->free_cdram = 12582912; s->free_phycont = 27262976;
+                s->us = 1000u * k + 17u;
+            }
+        }
         if (fake_cascade_frames) {
             VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
             memset(s, 0, sizeof(*s));
@@ -380,6 +428,8 @@ static void reset(void)
     fake_recognized_text = NULL;
     fake_lines = 2;
     fake_line_flags = 0;
+    fake_steps = 0;
+    fake_cascade_frames = fake_cascade_us = 0;
     fake_free_user = 5000000;
     fake_need_weights = 659456;
     fake_reserve = 4194304;
@@ -1111,6 +1161,35 @@ static void test_vocr_logs_memory_check_and_frames(void)
 
 /* The job policy in the request (API 20): the stable-text wait from its keys,
  * the blank-line check only with ocr_skip_blank_lines = on (off by default). */
+/* A job's log on main's defaults (15 steps with the cascade, two lines, the
+ * lookup): the result's lines (vocr_run_one) and the text's (log_text_lines)
+ * each go out as one append, the rest one each, and no batch is held across
+ * the game's exchange (vjoOcrSubmit/Read check it). On the console an append
+ * of log.txt costs 12-46 ms (#81's self-test timestamps). */
+static void test_vocr_job_log_is_appended_in_batches(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫が\n好き"; fake_lines = 2;
+    fake_steps = 1; fake_cascade_frames = 40; fake_cascade_us = 202000;
+    unsigned lines0 = log_count, appends0 = log_appends;
+    batched_lines = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK);
+    unsigned lines = log_count - lines0, appends = log_appends - appends0;
+    /* rc, capture, memory, speed, cascade speed, lines, 15 steps: 21 in one append; 2 text lines in one */
+    TEST_CHECK(batched_lines == 23);
+    TEST_CHECK(lines - appends == 23 - 2);
+    TEST_CHECK(!open_batch);
+    TEST_MSG("%u lines, %u appends, %u batched", lines, appends, batched_lines);
+    printf("\n  a job's %u log lines: %u appends of log.txt (line by line: %u)\n", lines, appends, lines);
+    /* every line is still logged, the steps and the text included */
+    TEST_CHECK(logged("game vocr rc=0") != NULL);
+    TEST_CHECK(logged("gstep job 18 ") != NULL); /* the cascade's step (this file's vjo_gstep_format) */
+    TEST_CHECK(logged("game vocr text 1: ") != NULL);
+    fake_steps = 0; fake_cascade_frames = fake_cascade_us = 0;
+    mem_free();
+}
+
 static void test_vocr_request_carries_the_job_policy(void)
 {
     reset();
@@ -3072,6 +3151,7 @@ TEST_LIST = {
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
+    {"vocr_job_log_is_appended_in_batches", test_vocr_job_log_is_appended_in_batches},
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
