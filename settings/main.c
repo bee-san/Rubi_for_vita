@@ -1,5 +1,6 @@
 /* Standalone LiveArea settings app: no plugin imports. Its only network use
  * is the Anki page's (anki_page.c: AnkiConnect on the LAN). */
+#include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/kernel/processmgr.h>
@@ -708,6 +709,70 @@ static void draw(void)
     vita2d_swap_buffers();
 }
 
+/* ---- what the app ran with, in log.txt (log_file = on, the default) ---- */
+
+/* settings/sysapp.c: newlib's heap, one block of this size taken before main. */
+extern int _newlib_heap_size_user;
+
+/* The budget sceAppMgrGetBudgetInfo reports (it answers a system application
+ * only) and its main memory now: s holds the line's words, "" when it failed. */
+static int budget_words(char *s, size_t cap, int *rc)
+{
+    SceAppMgrBudgetInfo budget;
+    memset(&budget, 0, sizeof(budget));
+    budget.size = sizeof(budget);
+    *rc = sceAppMgrGetBudgetInfo(&budget);
+    s[0] = '\0';
+    if (*rc < 0) return 0;
+    snprintf(s, cap, "budget mode %d: main memory %u of %u B free, phycont %u of %u B, CDRAM %u of %u B",
+             budget.app_mode, budget.free_user_rw, budget.total_user_rw_mem, budget.free_phycont_mem,
+             budget.total_phycont_mem, budget.free_cdram_mem, budget.total_cdram_mem);
+    return 1;
+}
+
+/* One line at start: the budget the system gives the app and its heap
+ * (settings/sysapp.c and vita/CMakeLists.txt set both; a console run's log
+ * shows what it got). */
+static void log_start(void)
+{
+    char words[160];
+    int rc;
+    if (budget_words(words, sizeof(words), &rc))
+        vjo_log("start: %s; heap %d B", words, _newlib_heap_size_user);
+    else
+        vjo_log("start: no system-application budget (sceAppMgrGetBudgetInfo 0x%08X); heap %d B", (unsigned)rc,
+                _newlib_heap_size_user);
+}
+
+/* The frame interval, once, over the first FRAME_LOG frames, and the main
+ * memory then free: as a system application the app likely draws at 30 Hz,
+ * two vblanks a frame (vita2d_end_drawing waits for one there and the loop
+ * for another; an inference from libvita2d's source), which a console run's
+ * log shows. The stick goes by the clock either way (core/stick_scroll.h). */
+#define FRAME_LOG 60
+static void log_frame_rate(uint64_t now)
+{
+    static uint64_t first, last;
+    static unsigned shortest = 0xFFFFFFFFu, longest;
+    static int intervals = -1;
+    if (intervals >= FRAME_LOG) return;
+    if (intervals >= 0) {
+        unsigned d = now > last ? (unsigned)(now - last) : 0;
+        if (d < shortest) shortest = d;
+        if (d > longest) longest = d;
+    } else {
+        first = now;
+    }
+    last = now;
+    if (++intervals < FRAME_LOG) return;
+    char words[160];
+    int rc;
+    unsigned total = now > first ? (unsigned)(now - first) : 0;
+    budget_words(words, sizeof(words), &rc);
+    vjo_log("frames: %d in %u us, %u us a frame (shortest %u, longest %u)%s%s", FRAME_LOG, total, total / FRAME_LOG,
+            shortest, longest, words[0] ? "; " : "", words);
+}
+
 int main(void)
 {
     read_buttons();
@@ -716,6 +781,8 @@ int main(void)
     writable = load >= 0;
     saved = policy;
     load_preferences();
+    vjo_log_enable(preferences.log_file);
+    log_start();
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
@@ -745,15 +812,16 @@ int main(void)
         if (sceCtrlPeekBufferPositive(0, &pad, 1) < 1)
             pad.ly = VJO_STICK_CENTER; /* a failed read: no buttons and the stick at rest, not pushed up */
         uint32_t pressed = pad.buttons & ~previous;
+        uint64_t now = sceKernelGetProcessTimeWide();
+        log_frame_rate(now);
         /* The left stick moves the selection as Up/Down would (core/stick_scroll.h),
-         * stopping at a list's first and last row. Counted every frame; the
-         * keyboard and a page change latch it, so a stick still pushed then
-         * moves nothing until it is let go, as a held button is no new press. */
-        int stick = vjo_stick_scroll(&stick_state, pad.ly);
-        uint32_t stick_key = stick < 0 ? SCE_CTRL_UP : stick > 0 ? SCE_CTRL_DOWN : 0;
+         * stopping at a list's first and last row, by the clock: held, as many
+         * rows a second at 30 Hz as at 60. Counted every frame; the keyboard and
+         * a page change latch it, so a stick still pushed then moves nothing
+         * until it is let go, as a held button is no new press. */
+        int stick = vjo_stick_scroll(&stick_state, pad.ly, now);
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-        uint64_t now = sceKernelGetProcessTimeWide();
         if (page == 2 && vjo_anki_page_modal()) {
             /* The system keyboard has every button and the touch screen; a
              * finger, button or stick still down when it closes is no new press. */
@@ -774,7 +842,6 @@ int main(void)
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
-            stick_key = 0;
             if (page == 2) vjo_anki_page_show(&scratch);
         }
         if (page == 2) {
@@ -799,8 +866,8 @@ int main(void)
             /* A key just pressed acts at once; one held repeats. */
             list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
-        } else if (!page && stick_key) {
-            list_key(stick_key); /* the d-pad first (VitaShell takes Up first, from either) */
+        } else if (!page && stick) {
+            move(stick); /* the d-pad first (VitaShell takes Up first, from either) */
         }
         previous = pad.buttons;
         SceTouchData touch;

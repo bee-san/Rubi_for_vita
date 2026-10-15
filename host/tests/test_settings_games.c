@@ -32,6 +32,7 @@
 #define TEST_ASSERT(c) do { if (!(c)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #c); _exit(2); } } while (0)
 #define TEST_ONLY __attribute__((unused)) /* the tests' helpers, unused by the benchmark */
 #endif
+#include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/io/dirent.h>
@@ -83,6 +84,7 @@ typedef struct {
 } Frame;
 typedef struct {
     int frames, exited, main_rc;
+    int budget_size, budget_calls; /* sceAppMgrGetBudgetInfo's info->size, and its calls */
     /* GPU rules broken, and other totals */
     int free_while_drawing, free_in_flight, stale_fields, drawn_after_free, double_free, pool_empty;
     int loads, live_at_exit, max_live, decode_errors;
@@ -175,8 +177,25 @@ static long since(const struct timespec *t)
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (now.tv_sec - t->tv_sec) * 1000000000L + (now.tv_nsec - t->tv_nsec);
 }
-uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * 16667u; }
+/* The frame interval the clock advances by: 60 Hz unless a test sets another
+ * (card() sets it back). */
+static uint64_t frame_us = 16667u;
+uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * frame_us; }
 int sceKernelExitProcess(int status) { session->exited = status; return 0; }
+/* settings/sysapp.c's heap, and the budget the harness reports (main.c logs both;
+ * budget_rc < 0: refused, as for an ordinary app). */
+int _newlib_heap_size_user = 8 * 1024 * 1024;
+static int budget_rc;
+int sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo *info)
+{
+    session->budget_size = info->size;
+    session->budget_calls++;
+    if (budget_rc < 0) return budget_rc;
+    info->app_mode = 2;
+    info->total_user_rw_mem = 0xC800u * 1024u;
+    info->free_user_rw = 0xC800u * 1024u - 23u * 1024u * 1024u - (unsigned)frame * 4096u;
+    return 0;
+}
 /* The console's /CONFIG/SYSTEM/button_assign: × enters unless a test sets ○. */
 static int button_assign = VJO_BUTTON_ASSIGN_CROSS;
 int sceRegMgrGetKeyInt(const char *category, const char *name, int *buf)
@@ -545,6 +564,8 @@ static void card(int n, int (*kind)(int))
     mkdir("ux0:data", 0777); mkdir("ux0:data/VitaJPOverlay", 0777); mkdir("ux0:app", 0777);
     game_count = n;
     frame_hook = NULL;
+    frame_us = 16667u;
+    budget_rc = 0;
     for (int i = 0; i < n; i++) {
         Game *g = &games[i];
         snprintf(g->id, sizeof(g->id), "VJOT%05d", i);
@@ -1150,6 +1171,107 @@ static void stick_scrolls_like_vitashell(void)
     TEST_CHECK_(selected_of(r) == 26 && selected_of(r + 4) == 27, "%d, %d", selected_of(r), selected_of(r + 4));
 }
 
+/* At 30 Hz (the app's likely rate as a system application: frames of 33,333 us)
+ * the stick moves the list as many rows by the same time as at 60 Hz
+ * (core/stick_scroll.h): the push's row, the same 166.7 ms pause, then two rows
+ * a frame. */
+static void stick_scrolls_at_the_same_speed_at_30_hz(void)
+{
+    int sel60[80], sel30[40];
+    for (int pass = 0; pass < 2; pass++) {
+        card(200, NULL);
+        spec_list();
+        int n = pass ? 40 : 80; /* 1.33 s either way */
+        if (pass) frame_us = 33333u;
+        at = 0;
+        hold(0, 10);
+        int p = at;
+        hold_stick(127, n);
+        hold(0, 10);
+        int frames = run(at);
+        TEST_CHECK(frames == at);
+        for (int k = 0; k < n; k++)
+            (pass ? sel30 : sel60)[k] = selected_of(p + k);
+    }
+    /* frame k at 30 Hz is frame 2k at 60 Hz: the same time, the same row */
+    int bad = 0;
+    for (int k = 0; k < 40; k++)
+        if (sel30[k] != sel60[2 * k] && bad++ < 5)
+            TEST_MSG("%d ms: row %d at 30 Hz, %d at 60 Hz", k * 33333 / 1000, sel30[k], sel60[2 * k]);
+    TEST_CHECK(bad == 0);
+    TEST_CHECK_(sel30[0] == 1 && sel30[4] == 1 && sel30[5] == 2 && sel30[6] == 4 && sel30[39] == 70,
+                "the push %d, 133 ms %d, 167 ms %d, 200 ms %d, 1.3 s %d", sel30[0], sel30[4], sel30[5], sel30[6],
+                sel30[39]);
+}
+
+/* log.txt's lines (the Anki page stub writes main.c's vjo_log as the page does). */
+static int log_lines(char lines[][256], int cap)
+{
+    FILE *f = fopen("ux0:data/VitaJPOverlay/log.txt", "r");
+    int n = 0;
+    if (!f) return -1;
+    while (n < cap && fgets(lines[n], 256, f)) {
+        lines[n][strcspn(lines[n], "\n")] = '\0';
+        n++;
+    }
+    fclose(f);
+    return n;
+}
+
+/* At start, one line of the budget the system gives the app and its heap
+ * (settings/sysapp.c's 8 MiB): sceAppMgrGetBudgetInfo with the SDK's 0x88-byte
+ * structure. Refused (an ordinary app), the line says so. log_file = off: none. */
+static void the_start_line_names_the_budget_and_the_heap(void)
+{
+    char lines[8][256];
+    card(5, NULL);
+    at = 0;
+    hold(0, 5);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK_(session->budget_size == 0x88 && session->budget_calls == 1, "info->size %d, %d calls",
+                session->budget_size, session->budget_calls);
+    TEST_CHECK(log_lines(lines, 8) == 1);
+    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: budget mode 2: main memory 28311552 of 52428800 B free, "
+                                  "phycont 0 of 0 B, CDRAM 0 of 0 B; heap 8388608 B"), "%s", lines[0]);
+    card(5, NULL);
+    budget_rc = (int)0x80800001;
+    at = 0;
+    hold(0, 70);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK(log_lines(lines, 8) == 2);
+    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: no system-application budget (sceAppMgrGetBudgetInfo "
+                                  "0x80800001); heap 8388608 B"), "%s", lines[0]);
+    TEST_CHECK_(!strcmp(lines[1], "overlay app: frames: 60 in 1000020 us, 16667 us a frame (shortest 16667, "
+                                  "longest 16667)"), "%s", lines[1]);
+    card(5, NULL);
+    put_file("ux0:data/VitaJPOverlay/config.ini", "log_file = off\n", 15);
+    at = 0;
+    hold(0, 70);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK_(log_lines(lines, 8) == -1, "log_file = off: no log.txt");
+}
+
+/* The frame interval goes to log.txt once, over the first 60 frames, with the
+ * main memory then free: 16,667 us at 60 Hz, 33,333 us at 30 Hz. */
+static void the_frame_interval_is_logged_once(void)
+{
+    static const unsigned rates[] = {16667u, 33333u};
+    for (int i = 0; i < 2; i++) {
+        char lines[8][256], want[256];
+        card(30, NULL);
+        frame_us = rates[i];
+        at = 0;
+        hold(0, 200);
+        TEST_CHECK(run(at) == at);
+        TEST_CHECK(log_lines(lines, 8) == 2);
+        snprintf(want, sizeof(want), "overlay app: frames: 60 in %u us, %u us a frame (shortest %u, longest %u); "
+                 "budget mode 2: main memory 28065792 of 52428800 B free, phycont 0 of 0 B, CDRAM 0 of 0 B",
+                 60 * rates[i], rates[i], rates[i], rates[i]);
+        TEST_CHECK_(!strcmp(lines[1], want), "%u us frames: %s", rates[i], lines[1]);
+        TEST_CHECK_(session->budget_calls == 2, "%d budget queries", session->budget_calls);
+    }
+}
+
 /* The list keys act on the Games page only: on the OCR & lookup and Anki pages
  * Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
@@ -1649,6 +1771,9 @@ TEST_LIST = {
     {"held_keys_repeat_and_new_presses_act", held_keys_repeat_and_new_presses_act},
     {"list_keys_only_on_the_games_page", list_keys_only_on_the_games_page},
     {"stick_scrolls_like_vitashell", stick_scrolls_like_vitashell},
+    {"stick_scrolls_at_the_same_speed_at_30_hz", stick_scrolls_at_the_same_speed_at_30_hz},
+    {"the_start_line_names_the_budget_and_the_heap", the_start_line_names_the_budget_and_the_heap},
+    {"the_frame_interval_is_logged_once", the_frame_interval_is_logged_once},
     {"stick_stops_at_the_first_and_last_card", stick_stops_at_the_first_and_last_card},
     {"a_page_change_or_the_keyboard_latch_the_stick", a_page_change_or_the_keyboard_latch_the_stick},
     {"a_touched_tab_latches_the_stick", a_touched_tab_latches_the_stick},

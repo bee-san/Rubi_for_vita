@@ -1,12 +1,19 @@
 /* Scrolling a list with the left stick, as VitaShell does (TheOfficialFloW/
  * VitaShell utils.c readPad, browser.c): the stick pushed more than
  * VJO_STICK_THRESHOLD from its centre counts as up or down; it moves one row
- * as it crosses, then nothing for nine frames, then one row every frame while
- * it stays out ("hold2": a count that reaches VJO_STICK_HOLD_FRAMES and stays
- * there). Up wins over down, as there; the stick's other axis is unused.
+ * as it crosses, then, held, nothing for VJO_STICK_HOLD_US and then a row
+ * every VJO_STICK_ROW_US while it stays out. VitaShell counts frames ("hold2":
+ * nine quiet frames, then a row every frame); at its 60 Hz that is 166.7 ms,
+ * then 60 rows a second. The Overlay app likely draws at 30 Hz as a system
+ * application (libvita2d's vita2d_end_drawing waits for a vblank there and the
+ * loop for another: an inference, not measured; the app logs its frame
+ * interval once at start), so the stick goes by the clock instead of the
+ * frame: held, it moves two rows a frame at 30 Hz, one at 60 Hz, at the same
+ * speed. Up wins over down, as there; the stick's other axis is unused.
  *
- * One call per frame (the Overlay app waits for vblank: 60 a second), no SDK
- * calls: host/tests/test_stick_scroll.c drives it frame by frame. */
+ * One call per frame, with the frame's clock (sceKernelGetProcessTimeWide's
+ * microseconds), and no SDK calls: host/tests/test_stick_scroll.c drives it
+ * at 20 to 60 Hz. */
 #ifndef VJO_STICK_SCROLL_H
 #define VJO_STICK_SCROLL_H
 
@@ -18,45 +25,54 @@ extern "C" {
 
 #define VJO_STICK_CENTER 128       /* VitaShell ANALOG_CENTER */
 #define VJO_STICK_THRESHOLD 64     /* VitaShell ANALOG_THRESHOLD */
-#define VJO_STICK_HOLD_FRAMES 10   /* VitaShell readPad's hold2_count limit */
+#define VJO_STICK_HOLD_US 166667   /* VitaShell's ten frames at 60 Hz (hold2_count's limit) before it repeats */
+#define VJO_STICK_ROW_US 16667     /* then a row a frame at 60 Hz: 60 rows a second */
+/* A row is due within this much of its time. The clock counts whole
+ * microseconds, so ten frames at exactly 60 Hz read 166,666 or 166,667 us,
+ * and five at 30 Hz 166,665: none of them is a reason to wait a frame more. */
+#define VJO_STICK_SLACK_US 1000
+/* A frame's time counts at most this much (as core/region_select.h's step): a
+ * stalled frame moves the list at most three rows. */
+#define VJO_STICK_MAX_STEP_US 50000
 
 typedef struct {
-    uint8_t old_up, old_down;     /* the previous frame's state, as VitaShell's old_pad */
-    uint8_t count_up, count_down; /* frames held, as hold2_count */
-    uint8_t latched;              /* vjo_stick_latch: at rest until let back inside the threshold */
+    int8_t dir;         /* -1 up, 1 down: pushed at the previous call; 0 at rest */
+    uint8_t latched;    /* vjo_stick_latch: at rest until let back inside the threshold */
+    int32_t credit_us;  /* time held since the push or the last row, less the slack's early rows */
+    int32_t wait_us;    /* the time from the push or the last row to the next row */
+    uint64_t last_us;   /* the previous call's clock */
 } VjoStickScroll;
 
-/* One axis of VitaShell's hold2 for one direction: fires on the press, then
- * every frame once held for VJO_STICK_HOLD_FRAMES. */
-static inline int vjo_stick_hold2(int current, uint8_t *old, uint8_t *count)
+/* The frame's left-stick y (0 top, 255 bottom) at now_us: the rows to move,
+ * negative up, 0 none; at most three either way. */
+static inline int vjo_stick_scroll(VjoStickScroll *s, uint8_t ly, uint64_t now_us)
 {
-    int fire = current && !*old;
-    if (current) {
-        if (*count >= VJO_STICK_HOLD_FRAMES) {
-            fire = 1;
-            *count = VJO_STICK_HOLD_FRAMES;
-        }
-        (*count)++;
-    } else {
-        *count = 0;
-    }
-    *old = (uint8_t)current;
-    return fire;
-}
-
-/* The frame's left-stick y (0 top, 255 bottom): -1 to move up a row, 1 down,
- * 0 not this frame. */
-static inline int vjo_stick_scroll(VjoStickScroll *s, uint8_t ly)
-{
-    int up = ly < VJO_STICK_CENTER - VJO_STICK_THRESHOLD;
-    int down = !up && ly > VJO_STICK_CENTER + VJO_STICK_THRESHOLD;
+    int dir = ly < VJO_STICK_CENTER - VJO_STICK_THRESHOLD ? -1 : ly > VJO_STICK_CENTER + VJO_STICK_THRESHOLD ? 1 : 0;
+    uint64_t step = now_us > s->last_us ? now_us - s->last_us : 0; /* a clock going back counts nothing */
+    s->last_us = now_us;
+    if (step > VJO_STICK_MAX_STEP_US)
+        step = VJO_STICK_MAX_STEP_US;
     if (s->latched) {
-        if (!up && !down) s->latched = 0;
-        up = down = 0; /* at rest until then: the next push is a push */
+        if (!dir) s->latched = 0;
+        dir = 0; /* at rest until then: the next push is a push */
     }
-    int fire_up = vjo_stick_hold2(up, &s->old_up, &s->count_up);
-    int fire_down = vjo_stick_hold2(down, &s->old_down, &s->count_down);
-    return fire_up ? -1 : fire_down ? 1 : 0;
+    if (dir != s->dir) {
+        /* pushed from rest, let go, or straight to the other way: afresh */
+        s->dir = (int8_t)dir;
+        s->credit_us = 0;
+        s->wait_us = VJO_STICK_HOLD_US;
+        return dir; /* the push's row */
+    }
+    if (!dir)
+        return 0;
+    int rows = 0;
+    s->credit_us += (int32_t)step;
+    while (s->credit_us + VJO_STICK_SLACK_US >= s->wait_us) {
+        s->credit_us -= s->wait_us;
+        s->wait_us = VJO_STICK_ROW_US;
+        rows++;
+    }
+    return dir * rows;
 }
 
 /* A page change or the system keyboard, after this frame's vjo_stick_scroll:
@@ -65,13 +81,13 @@ static inline int vjo_stick_scroll(VjoStickScroll *s, uint8_t ly)
  * affected: its next push is a push. */
 static inline void vjo_stick_latch(VjoStickScroll *s)
 {
-    if (s->old_up || s->old_down) s->latched = 1;
+    if (s->dir) s->latched = 1;
 }
 
 /* The selection of a list of n rows after the stick's move (vjo_stick_scroll's
- * -1, 0 or 1): one row, but never past the first or the last, as VitaShell's
- * lists stop there (browser.c, settings.c), also where the d-pad wraps round.
- * A held stick runs to the end and stays there. */
+ * rows): never past the first or the last, as VitaShell's lists stop there
+ * (browser.c, settings.c), also where the d-pad wraps round. A held stick runs
+ * to the end and stays there. */
 static inline int vjo_stick_step(int selected, int n, int move)
 {
     int next = selected + move;

@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -98,3 +99,77 @@ class SettingsAssets(unittest.TestCase):
                        struct.pack(">I", binascii.crc32(chunk) & 0xFFFFFFFF) + original[position:])
         with self.assertRaisesRegex(ValueError, "opaque"):
             assets.check_png(transparent, "icon0.png", (128, 128))
+
+    @staticmethod
+    def with_chunk(original, kind, payload):
+        """The real image with one valid chunk inserted before its first IDAT."""
+        position = 8
+        while original[position + 4:position + 8] != b"IDAT":
+            position += 12 + struct.unpack_from(">I", original, position)[0]
+        chunk = kind + payload
+        return (original[:position] + struct.pack(">I", len(payload)) + chunk +
+                struct.pack(">I", binascii.crc32(chunk) & 0xFFFFFFFF) + original[position:])
+
+    @staticmethod
+    def padded_to(original, size):
+        """The real image grown to exactly size bytes with a valid private chunk after IHDR."""
+        payload = b"\0" * (size - len(original) - 12)
+        chunk = b"prVt" + payload
+        return (original[:33] + struct.pack(">I", len(payload)) + chunk +
+                struct.pack(">I", binascii.crc32(chunk) & 0xFFFFFFFF) + original[33:])
+
+    def checked_as(self, name, data, temporary):
+        """check() of a VPK and of an assets directory with the committed art, data as name."""
+        vpk = Path(temporary) / "settings.vpk"
+        directory = Path(temporary) / "assets"
+        directory.mkdir(exist_ok=True)
+        with zipfile.ZipFile(vpk, "w") as archive:
+            for other in assets.ASSETS:
+                art = data if other == name else (ROOT / "settings/assets" / Path(other).name).read_bytes()
+                archive.writestr(other, art)
+                (directory / Path(other).name).write_bytes(art)
+        return vpk, directory
+
+    def test_reject_text_chunks_in_any_image(self):
+        # A text chunk is what an image editor adds (its name, a comment): no display data, which
+        # the SDK's specification asks the icon and the start-up image to hold only.
+        texts = {b"tEXt": b"Software\0GIMP 2.10",
+                 b"zTXt": b"Comment\0\0" + zlib.compress(b"made in an image editor"),
+                 b"iTXt": b"Description\0\0\0\0\0Overlay"}
+        for name, size in assets.ASSETS.items():
+            original = (ROOT / "settings/assets" / Path(name).name).read_bytes()
+            for kind, payload in texts.items():
+                with self.subTest(name=name, kind=kind):
+                    data = self.with_chunk(original, kind, payload)
+                    with self.assertRaisesRegex(ValueError, f"a {kind.decode()} chunk"):
+                        assets.check_png(data, name, size, assets.MAX_BYTES.get(name))
+                    with tempfile.TemporaryDirectory() as temporary:
+                        for source in self.checked_as(name, data, temporary):
+                            with self.assertRaisesRegex(ValueError, f"a {kind.decode()} chunk"):
+                                assets.check(source)
+        # other ancillary chunks are not text: a private one still passes (the size tests use it)
+        icon = (ROOT / "settings/assets/icon0.png").read_bytes()
+        assets.check_png(self.with_chunk(icon, b"prVt", b"\0" * 8), "icon0.png", (128, 128), 32768)
+
+    def test_art_of_exactly_the_limit_passes(self):
+        # The SDK's limits are "or less": an icon0.png of exactly 32,768 B is allowed (C7, `>=`).
+        for name, size in (("sce_sys/icon0.png", (128, 128)), ("sce_sys/pic0.png", (960, 544))):
+            limit = assets.MAX_BYTES[name]
+            with self.subTest(name=name):
+                exact = self.padded_to((ROOT / "settings/assets" / Path(name).name).read_bytes(), limit)
+                self.assertEqual(len(exact), limit)
+                self.assertEqual(assets.check_png(exact, name, size, limit)["bytes"], limit)
+                with tempfile.TemporaryDirectory() as temporary:
+                    for source in self.checked_as(name, exact, temporary):
+                        self.assertEqual(assets.check(source)[name]["bytes"], limit)
+
+    def test_the_directory_check_enforces_the_limits(self):
+        # The manual pre-build check of settings/assets applies the same caps as the VPK's (C8).
+        for name in ("sce_sys/icon0.png", "sce_sys/pic0.png"):
+            limit = assets.MAX_BYTES[name]
+            with self.subTest(name=name):
+                large = self.padded_to((ROOT / "settings/assets" / Path(name).name).read_bytes(), limit + 1)
+                with tempfile.TemporaryDirectory() as temporary:
+                    _, directory = self.checked_as(name, large, temporary)
+                    with self.assertRaisesRegex(ValueError, f"at most {limit}"):
+                        assets.check(directory)

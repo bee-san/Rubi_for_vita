@@ -10,6 +10,7 @@
  * VJO_VOCR_MODEL_INFO_TEST naming a later package's table, where generation
  * VOCR5 is pinned: the app then names the local engine VOCR5 unchanged. */
 #include "acutest.h"
+#include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
 #include <psp2/io/fcntl.h>
@@ -119,6 +120,15 @@ static int font_dummy;
 
 uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * 16667u; }
 int sceKernelExitProcess(int status) { exited = status; return 0; }
+/* settings/sysapp.c's heap and a system application's budget (main.c logs both at start). */
+int _newlib_heap_size_user = 8 * 1024 * 1024;
+int sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo *info)
+{
+    if (info->size != (int)sizeof(*info)) return (int)0x80800001;
+    info->total_user_rw_mem = 50u << 20;
+    info->free_user_rw = 30u << 20;
+    return 0;
+}
 /* /CONFIG/SYSTEM/button_assign: 1, × enters (the scripts press × and leave with ○). */
 int sceRegMgrGetKeyInt(const char *category, const char *name, int *buf)
 {
