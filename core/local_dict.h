@@ -14,6 +14,34 @@
 /* One maximum-size payload plus its vocabulary, token and alignment. */
 #define VJO_LOCAL_SELECTED_BUDGET (VJO_LOCAL_MAX_ENTRY + 256u)
 
+#ifdef VJO_LOCAL_STATS
+/* Host benchmark counters (host/dict_bench.c, tools/dict_lookup_bench.py),
+ * compiled only into the benchmark: every other build has none of this code.
+ * Reads are counted where local_dict.c reads the file, by what they fetch. */
+enum { VJO_READ_HEADER, VJO_READ_INDEX, VJO_READ_GROUP, VJO_READ_HEAD, VJO_READ_PAYLOAD,
+       VJO_READ_FILTER, VJO_READ_KINDS };
+typedef struct {
+    uint64_t spans;        /* source spans tried, longest first */
+    uint64_t candidates;   /* deinflect() output: the span itself and its deinflections */
+    uint64_t probes;       /* candidate x dictionary searches */
+    uint64_t filtered;     /* probes a key filter answered (absent) without an index read */
+    uint64_t miss_cached;  /* probes the per-request absent-hash cache answered */
+    /* v2: probes whose hash is in the index (rule-compatible or not); v1: not counted */
+    uint64_t hash_present;
+    /* v2: probes that found the full key with fitting rules; v1: the key is in the
+     * index, whatever its rules (take_postings filters them) */
+    uint64_t found;
+    uint64_t ranked;       /* postings ranked (a payload head each) */
+    uint64_t absent_reads; /* index and group reads of probes that found no key */
+    uint64_t reads[VJO_READ_KINDS], bytes[VJO_READ_KINDS];
+} VjoLocalStats;
+extern VjoLocalStats vjo_local_stats;
+/* Optional: every candidate search, its key and how it ended
+ * (VJO_PROBE_*), for designing key filters offline. */
+enum { VJO_PROBE_ABSENT, VJO_PROBE_CACHED, VJO_PROBE_FILTERED, VJO_PROBE_HASH, VJO_PROBE_FOUND };
+extern void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, int outcome);
+#endif
+
 /* Validate comma-separated, relative .vjdict filenames (no directory traversal). */
 int vjo_local_names_valid(const char *names);
 /* Number of valid names (1..8), or 0 when the list is invalid. */

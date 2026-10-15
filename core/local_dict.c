@@ -16,6 +16,21 @@
 #define HASH_PAGE_RECORDS 170u
 #define MAX_HASH_CHAIN 64u
 
+#ifdef VJO_LOCAL_STATS
+VjoLocalStats vjo_local_stats;
+void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, int outcome);
+static int read_kind;
+#define STAT(field) (vjo_local_stats.field++)
+#define STAT_ADD(field, n) (vjo_local_stats.field += (uint64_t)(n))
+#define READ_KIND(kind) (read_kind = (kind))
+#define STAT_READ(n) (vjo_local_stats.reads[read_kind]++, vjo_local_stats.bytes[read_kind] += (uint64_t)(n))
+#else
+#define STAT(field) ((void)0)
+#define STAT_ADD(field, n) ((void)0)
+#define READ_KIND(kind) ((void)0)
+#define STAT_READ(n) ((void)0)
+#endif
+
 typedef struct {
     const char *in, *out;
     uint8_t in_len, out_len;
@@ -151,6 +166,7 @@ static int cached_read(Workspace *w, Dictionary *d, uint64_t off, void *dst, siz
             page->dict = NULL;
             page->off = base;
             page->len = remaining < PAGE_SIZE ? (size_t)remaining : PAGE_SIZE;
+            STAT_READ(page->len);
             if (d->file.read(d->file.ctx, base, page->bytes, page->len)) return VJO_E_LOCAL_IO;
             page->dict = d;
         }
@@ -179,6 +195,8 @@ static int check_header(Dictionary *d)
 {
     uint8_t h[HEADER_SIZE];
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
+    READ_KIND(VJO_READ_HEADER);
+    STAT_READ(sizeof(h));
     if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
     d->version = u32(h + 8);
     d->count = u32(h + 16);
@@ -222,13 +240,16 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
 static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *key)
 {
     uint8_t bytes[INDEX_SIZE];
-    int rc = cached_read(w, d, HEADER_SIZE + (uint64_t)i * INDEX_SIZE, bytes, sizeof(bytes));
+    int rc;
+    READ_KIND(VJO_READ_INDEX);
+    rc = cached_read(w, d, HEADER_SIZE + (uint64_t)i * INDEX_SIZE, bytes, sizeof(bytes));
     if (rc) return rc;
     r->key_off = u64(bytes); r->entry_off = u64(bytes + 8);
     r->key_len = u16(bytes + 16); r->rules = u16(bytes + 18); r->entry_len = u32(bytes + 20);
     if (!r->key_len || r->key_len > VJO_LOCAL_MAX_KEY || (r->rules & ~RULE_MASK) ||
         r->key_off < d->data || r->entry_off < d->data || r->entry_len < 4 ||
         r->entry_len > VJO_LOCAL_MAX_ENTRY || !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
+    READ_KIND(VJO_READ_GROUP);
     rc = cached_read(w, d, r->key_off, key, r->key_len);
     if (rc) return rc;
     if (memchr(key, 0, r->key_len)) return VJO_E_LOCAL_FORMAT;
@@ -322,7 +343,10 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, const Quer
     char head[HEAD_BYTES];
     size_t n = r->entry_len < HEAD_BYTES ? r->entry_len : HEAD_BYTES, spelling;
     const char *reading;
-    int rc = cached_read(w, d, r->entry_off, head, n);
+    int rc;
+    STAT(ranked);
+    READ_KIND(VJO_READ_HEAD);
+    rc = cached_read(w, d, r->entry_off, head, n);
     *score = r->entry_len;
     if (rc) return rc;
     if (!(reading = memchr(head, 0, n))) return VJO_OK; /* longer than any written text */
@@ -350,6 +374,7 @@ static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_
         char key[VJO_LOCAL_MAX_KEY + 1];
         return record_at(w, d, (uint32_t)group + j, r, key);
     }
+    READ_KIND(VJO_READ_GROUP);
     if ((rc = cached_read(w, d, group + key_len + j * 16, post, sizeof(post)))) return rc;
     r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
     r->key_off = group; r->key_len = key_len;
@@ -414,6 +439,7 @@ static int find_matches_v1(Workspace *w, int di, const Candidate *c, Query *q, i
         if ((rc = record_at(w, d, lo + n, &r, key))) return rc;
         if (strcmp(key, c->key)) break;
     }
+    if (n) STAT(found);
     return n ? take_postings(w, di, c, q, limit, lo, 0, n) : VJO_OK;
 }
 
@@ -435,19 +461,24 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
     uint64_t hash = key_hash(c->key), page = PAGE_SIZE + (hash & (d->buckets - 1)) * PAGE_SIZE;
     unsigned miss = (unsigned)(hash >> 32) & (MISS_SLOTS - 1);
     int rc, hash_present = 0;
-    if (w->misses[miss].dict == (unsigned)di + 1 && w->misses[miss].hash == hash) return VJO_OK;
+    if (w->misses[miss].dict == (unsigned)di + 1 && w->misses[miss].hash == hash) {
+        STAT(miss_cached);
+        return VJO_OK;
+    }
     for (unsigned chain = 0; ; chain++) {
         uint8_t header[16], slot[24];
         uint32_t count, lo = 0, hi;
         uint64_t next;
         if (chain >= MAX_HASH_CHAIN || page < PAGE_SIZE || page >= d->data || page % PAGE_SIZE)
             return VJO_E_LOCAL_FORMAT;
+        READ_KIND(VJO_READ_INDEX); /* also an overflow page after a key group's read */
         if ((rc = cached_read(w, d, page, header, sizeof(header)))) return rc;
         count = u32(header + 4); next = u64(header + 8);
         if (memcmp(header, "VJHP", 4) || count > HASH_PAGE_RECORDS ||
             (next && (next <= page || next < PAGE_SIZE + (uint64_t)d->buckets * PAGE_SIZE ||
                       next >= d->data || next % PAGE_SIZE))) return VJO_E_LOCAL_FORMAT;
         hi = count;
+        READ_KIND(VJO_READ_INDEX);
         while (lo < hi) {
             uint32_t mid = lo + (hi - lo) / 2;
             if ((rc = cached_read(w, d, page + 16 + mid * 24, slot, sizeof(slot)))) return rc;
@@ -458,8 +489,10 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
             uint32_t n;
             uint16_t key_len, rules;
             char key[VJO_LOCAL_MAX_KEY + 1];
+            READ_KIND(VJO_READ_INDEX);
             if ((rc = cached_read(w, d, page + 16 + lo * 24, slot, sizeof(slot)))) return rc;
             if (u64(slot) != hash) break;
+            if (!hash_present) STAT(hash_present);
             hash_present = 1;
             group = u64(slot + 8); n = u32(slot + 16);
             key_len = u16(slot + 20); rules = u16(slot + 22);
@@ -467,8 +500,10 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
                 (rules & ~RULE_MASK) || group < d->data || !range_ok(d, group, key_len) ||
                 (uint64_t)n * 16 > d->file.size - group - key_len) return VJO_E_LOCAL_FORMAT;
             if (key_len != c->len || (c->rules && !(c->rules & rules))) continue;
+            READ_KIND(VJO_READ_GROUP);
             if ((rc = cached_read(w, d, group, key, key_len))) return rc;
             if (memcmp(key, c->key, key_len)) continue;
+            STAT(found);
             if (n > MAX_HOMONYMS) n = MAX_HOMONYMS;
             return take_postings(w, di, c, q, limit, group, key_len, n);
         }
@@ -490,6 +525,23 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     q->written_len = c ? cand->len : raw_len;
     q->key = !c && (raw_len != cand->len || memcmp(raw, cand->key, raw_len)) ? cand : NULL;
     q->preferred = preferred_for(cand->key);
+    STAT(probes);
+#ifdef VJO_LOCAL_STATS
+    {
+        VjoLocalStats before = vjo_local_stats;
+        int rc = w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit)
+                                           : find_matches_v1(w, di, cand, q, limit);
+        int outcome = vjo_local_stats.found > before.found ? VJO_PROBE_FOUND
+                    : vjo_local_stats.hash_present > before.hash_present ? VJO_PROBE_HASH
+                    : vjo_local_stats.filtered > before.filtered ? VJO_PROBE_FILTERED
+                    : vjo_local_stats.miss_cached > before.miss_cached ? VJO_PROBE_CACHED : VJO_PROBE_ABSENT;
+        if (outcome != VJO_PROBE_FOUND)
+            vjo_local_stats.absent_reads += vjo_local_stats.reads[VJO_READ_INDEX] - before.reads[VJO_READ_INDEX] +
+                                            vjo_local_stats.reads[VJO_READ_GROUP] - before.reads[VJO_READ_GROUP];
+        if (vjo_local_trace) vjo_local_trace(di, c, cand->depth, cand->key, outcome);
+        return rc;
+    }
+#endif
     return w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
 }
 
@@ -537,6 +589,8 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
     char *payload = vjo_arena_alloc(out, len), *reading, *meaning;
     size_t left;
     if (!payload) return VJO_E_TOO_LARGE;
+    READ_KIND(VJO_READ_PAYLOAD);
+    STAT_READ(len);
     if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
     if (!payload[0] || payload[len - 1]) return VJO_E_LOCAL_FORMAT;
     reading = memchr(payload, 0, len);
@@ -611,6 +665,8 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             Query q = {0};
             key[lengths[k]] = 0;
             candidates = deinflect(w->candidates, key);
+            STAT(spans);
+            STAT_ADD(candidates, candidates);
             w->n_matches = 0;
             /* Exact matches in all dictionaries precede deinflected matches;
              * each key's best-ranked posting comes first. */
@@ -740,6 +796,8 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
         unsigned fell_back = 0, found = 0, exact = 0;
         key[lengths[k]] = 0;
         candidates = deinflect(w->candidates, key);
+        STAT(spans);
+        STAT_ADD(candidates, candidates);
         /* Phase 0: the text itself in each dictionary; phase 1: its inflections.
          * With one result, the first dictionary that has an entry ends it. */
         for (int phase = 0; phase < 2; phase++)

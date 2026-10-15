@@ -113,6 +113,30 @@ for multi-dictionary comparisons. `tools/benchmark_local_dictionary.py` remains
 a reproducible synthetic size/memory stress test and now uses the timed driver
 instead of timing CLI process startup.
 
+## Real recognized lines (2026-10-15)
+
+`tools/dict_lookup_bench.py` drives `vjo-dict-bench`, the production lookup with every read
+attributed. It runs over the committed real VOCR lines and over line-label pools whose text stays
+local. Each line is looked up as the Shell does: the first word, Right through the text, or every
+letter. A per-screen sum and a console estimate from the owner's logs come with each run, and a
+golden check fails on any change in what is shown (`tools/dict_lookup_golden.tsv`, CTest
+`dict_lookup_golden`).
+
+On main 8f1ec8f with the bundled `plaintext.vjdict`, a lookup makes 12.6-16.0 reads:
+- 5.8-8.5 for deinflection candidates that are not keys, nearly all of them index pages;
+- the found key's bucket page, its key group, 2.6-4.0 payload heads to rank its entries, a
+  header and the shown payload.
+
+The console estimate is 56-74 ms at p50. The analysis, hoshidicts' design, the method and all
+results are in [reports/dict-lookup-speed.md](../reports/dict-lookup-speed.md), with the raw
+numbers in [dict-lookup-baseline-20261015.json](benchmarks/dict-lookup-baseline-20261015.json).
+
+```sh
+python3 tools/dict_lookup_bench.py --bench build/host/vjo-dict-bench --directory build/host/plaintext \
+  [--before OTHER_BENCH | --before-directory DIR | --before-dicts FILES] \
+  [--pool LABELS.jsonl --reserved /path/to/vita-vn-ocr/eval/manifests/reserved.json] --rounds 21 -o out.json
+```
+
 ## Dictionary pages
 
 `tools/benchmark_dictionary_pages.py` measures the selected-character lookup
