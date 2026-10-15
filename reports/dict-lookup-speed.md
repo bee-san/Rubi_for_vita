@@ -182,7 +182,8 @@ The fastest lookup at each of the 21 read counts follows 10.2 + 3.49 x reads.
 
 - **The fixed part** covers the open, size seek and close, and the CPU (0.19-0.64 ms on the A9,
   `docs/performance.md`). For the cursor lookups the user waits on, it is about 11 ms. A first-word
-  lookup is logged after the OCR job's other steps, which add their waits.
+  lookup's logged time also starts just before the lookup (`shell/worker.c:1100-1104`), so the OCR
+  job's steps are not in it. Why its intercept is higher (35 ms) is unmeasured.
 - **Bytes.** They do not improve the fit. Reads above 4 KiB, which those lookups never made, are
   bounded at 0.146 ms per extra KiB: the 1,155,968 B of VOCR3-H15 weights load in 32 KiB reads
   within 218-231 ms, the A9 SHA-256 estimate included.
