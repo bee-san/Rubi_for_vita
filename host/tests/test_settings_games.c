@@ -979,6 +979,30 @@ static void letter_jumps_go_to_the_next_initial(void)
     }
     TEST_CHECK(selected_of(frames - 1) == 0);
     TEST_MSG("%d groups among %d entries", n + 1, list_count);
+    /* Left from inside a letter goes to that letter's first game, not the previous letter's. */
+    int first = -1; /* the first game of a letter with two or more games, not the list's first letter */
+    for (int i = 1; i + 1 < list_count && first < 0; i++)
+        if (spec_group(list[i].title) != spec_group(list[i - 1].title) &&
+            spec_group(list[i + 1].title) == spec_group(list[i].title)) first = i;
+    TEST_ASSERT(first > 0);
+    at = 0;
+    hold(0, 12);
+    int k = 0;
+    for (int i = 0; i < first; i = stops[k++]) tap(SCE_CTRL_RIGHT, 8); /* Right to that letter */
+    int at_first = at - 1;
+    tap(DOWN, 8);
+    int inside = at - 1;
+    tap(SCE_CTRL_LEFT, 8);
+    int back = at - 1;
+    tap(SCE_CTRL_LEFT, 8);
+    int prev = at - 1;
+    run(at);
+    int prev_first = first - 1;
+    while (prev_first > 0 && spec_group(list[prev_first - 1].title) == spec_group(list[first - 1].title)) prev_first--;
+    TEST_CHECK_(selected_of(at_first) == first && selected_of(inside) == first + 1, "at %d, inside %d, want %d, %d",
+                selected_of(at_first), selected_of(inside), first, first + 1);
+    TEST_CHECK_(selected_of(back) == first, "Left inside: %d, want %d", selected_of(back), first);
+    TEST_CHECK_(selected_of(prev) == prev_first, "Left again: %d, want %d", selected_of(prev), prev_first);
     /* Lower case is listed with its letter: every group is one run. */
     int runs = 1;
     for (int k = 1; k < list_count; k++) runs += spec_group(list[k].title) != spec_group(list[k - 1].title);
@@ -1050,7 +1074,7 @@ static void held_keys_repeat_and_new_presses_act(void)
         uint64_t now = (uint64_t)f * 16667u;
         if (f == p) { sel++; repeat = now + 350000; }
         else if (f == q) { sel += ROWS; repeat = now + 350000; } /* a page; the row is kept */
-        else if (now >= repeat) { sel += f < q ? 1 : ROWS; repeat = now + 90000; }
+        else if (now >= repeat) { sel++; repeat = now + 90000; } /* held together, Down repeats */
         if (selected_of(f) != sel && bad++ < 5) TEST_MSG("frame %d: selection %d, want %d", f - p, selected_of(f), sel);
     }
     TEST_CHECK(bad == 0);
@@ -1226,9 +1250,14 @@ static void install_new_game(int f)
     Game g = {"VJOT09999", "0 New Synthetic Game", ICON_OK};
     install(&g, 9999);
 }
+TEST_ONLY static int kind_every_third(int i) { return i % 3 == 1 ? ICON_DAMAGED : ICON_OK; }
+static int loadable_kind(int kind) { return kind == ICON_OK || kind == ICON_RGBA || kind == ICON_SMALL; }
 static void rescan_only_on_start(void)
 {
-    card(60, kind_mixed);
+    card(60, kind_every_third);
+    Game before[MAX_GAMES + 1]; /* the list before the rescan */
+    spec_list();
+    memcpy(before, list, sizeof(Game) * (size_t)list_count);
     /* the list after the rescan: the new game, then Adrenaline's entry */
     snprintf(games[game_count].id, sizeof(games[0].id), "VJOT09999");
     snprintf(games[game_count].title, sizeof(games[0].title), "0 New Synthetic Game");
@@ -1265,6 +1294,14 @@ static void rescan_only_on_start(void)
     TEST_CHECK_(sum_loads(start, frames) == loadable, "%d loads after Start, %d loadable icons in the window",
                 sum_loads(start, frames), loadable);
     TEST_CHECK(top > ROWS && loads_in_order(start, start + 3 * ROWS + 2, 1));
+    /* The new game sorts first, so each later entry moved down one place. The case
+     * that per-place state (failures, layouts) must not survive: a place in the
+     * window whose old entry's icon was broken, and was tried, now holds a good one. */
+    int moved = 0;
+    for (int i = top - ROWS; i < top + 2 * ROWS; i++)
+        moved += i >= 1 && i < list_count && !strcmp(list[0].id, "VJOT09999") && !loadable_kind(before[i].icon) &&
+                 loadable_kind(list[i].icon);
+    TEST_CHECK_(moved >= 1, "no window place went from a broken icon to a good one");
     /* From the rescan on, every card shows its own game's rows and icon. */
     int bad = 0;
     ref_measure = stub_width;

@@ -332,14 +332,18 @@ static void title_order(void)
         if (!ab) TEST_CHECK(!strcmp(a->title, b->title) && !strcmp(a->id, b->id));
     }
     /* Case: letters fold, then a capital comes first; equal titles go by ID. */
+    /* ("aC" after "Abd": c after b, whatever the case; a prefix before its longer titles) */
     static const Entry cased[] = {{"abc", "B"}, {"aBc", "A"}, {"ABC", "D"}, {"Abc", "C"}, {"abc", "A"},
-                                  {"ab", "Z"}, {"Abd", "E"}, {"echo", "F"}, {"Fish", "G"}, {"Echo", "H"}};
-    static const char *const want[] = {"ab", "ABC", "Abc", "aBc", "abc", "abc", "Abd", "Echo", "echo", "Fish"};
-    static const char *const want_id[] = {"Z", "D", "C", "A", "A", "B", "E", "H", "F", "G"};
-    Entry c[10];
+                                  {"ab", "Z"}, {"Abd", "E"}, {"echo", "F"}, {"Fish", "G"}, {"Echo", "H"},
+                                  {"aC", "J"}, {"Ab", "I"}};
+    static const char *const want[] = {"Ab", "ab", "ABC", "Abc", "aBc", "abc", "abc", "Abd", "aC", "Echo", "echo",
+                                       "Fish"};
+    static const char *const want_id[] = {"I", "Z", "D", "C", "A", "A", "B", "E", "J", "H", "F", "G"};
+    enum { CASED = sizeof(cased) / sizeof(cased[0]) };
+    Entry c[CASED];
     memcpy(c, cased, sizeof(c));
-    qsort(c, 10, sizeof(c[0]), entry_order);
-    for (int i = 0; i < 10; i++)
+    qsort(c, CASED, sizeof(c[0]), entry_order);
+    for (int i = 0; i < CASED; i++)
         TEST_CHECK_(!strcmp(c[i].title, want[i]) && !strcmp(c[i].id, want_id[i]), "%d: %s %s, want %s %s", i,
                     c[i].title, c[i].id, want[i], want_id[i]);
 }
