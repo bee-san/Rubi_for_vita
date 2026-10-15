@@ -1392,6 +1392,11 @@ static void check_oom_message(const char *advice, const char *must, const char *
     TEST_CHECK(strlen(text) < sizeof(g_view.status)); /* shown whole in the status line */
     if (must) TEST_CHECK(strstr(text, must) != NULL);
     if (must_not) TEST_CHECK(strstr(text, must_not) == NULL);
+    /* No size, reserve or fallback on screen, in any memory advice (owner 2026-10-15 04:54Z). */
+    static const char *const hints[] = {"smallest", "smaller", "fallback", "fall back", "falls back", "instead",
+                                        "did not fit in", "Small", "Normal", "Large", "MiB", "tier", "size"};
+    for (unsigned i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
+        TEST_CHECK_(strstr(text, hints[i]) == NULL, "'%s' in: %s", hints[i], text);
     TEST_MSG("%s", text);
 }
 
@@ -1400,15 +1405,16 @@ static void test_vocr_oom_advice_names_the_stage(void)
     /* The game worker's memory check, from its reported numbers (game_ocr/main.c):
      * job = reserve 4194304 + workspace 245760 = 4440064. */
     /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. A job asks by
-     * tiers (API 21): the weights its last check refused are its smallest tier's, so no advice
-     * names a smaller model or a model file. */
+     * tiers (API 21): the weights its last check refused are its smallest tier's. No advice
+     * names a model, a model file, a size, a reserve, or that a smaller one was tried (owner
+     * 2026-10-15 04:54Z: no fallback hint on screen); check_oom_message checks every text. */
     const struct { int32_t free_user; uint32_t weights; const char *advice, *must, *must_not; } cases[] = {
-        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "tighter"},        /* below the reserve */
+        {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "MiB"},            /* below the reserve */
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
-        {5200000, 1159168, OOM_GAME_SMALLEST, "already the smallest", "vocr"},
-        {5000000, 1159168, OOM_GAME_SMALLEST, "already the smallest", "VOCR3"},
-        {5000000, 659456, OOM_GAME_SMALLEST, "already the smallest", "Select FL10"}, /* FL10's weights */
+        {5200000, 1159168, OOM_GAME_SMALLEST, "for the OCR model's weights", "vocr"},
+        {5000000, 1159168, OOM_GAME_SMALLEST, "tighter dialogue region", "VOCR3"},
+        {5000000, 659456, OOM_GAME_SMALLEST, "for the OCR model's weights", "Select FL10"}, /* FL10's weights */
         {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
         {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},
         {(int32_t)0x80020001u, 659456, OOM_GAME_UNKNOWN, "could not be checked", "FL10"},

@@ -1518,6 +1518,78 @@ static void tier_jobs_open_their_models_by_tier(void)
     psp_title = 0;
 }
 
+/* model-tiers 1.5's release term: a resident block of another size counts as free memory for a
+ * size's check (the check step's sum), and is released before the job takes its own blocks;
+ * two weights blocks are never held at once (the stub asserts that at every allocation).
+ * From audit-overlay-ux-tiers' scratch test (its mutants X2 and X6 survived the others). */
+static int step_index(const VjoGameOcrResult *o, unsigned id, unsigned arg)
+{
+    for (unsigned i = 0; i < o->n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (o->step[i].id == id && o->step[i].arg == arg) return (int)i;
+    return -1;
+}
+static void tier_release_counts_other_sizes_as_free(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
+        char path[600]; FILE *f;
+        snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, tier_names[t - 1u]);
+        if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(path, "rb"))) { TEST_SKIP("no release weights"); return; }
+        fclose(f);
+    }
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *h15 = vjo_vocr_model(VJO_VOCR_TIER2_NAME),
+                       *w20 = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
+    line();
+    r.tiers = 3u; snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME); r.flags = 0;
+    uint32_t n2 = tier_need(&r, 2, 0);
+    /* 1: Normal does not fit, Small runs: FL10 resident */
+    available = (int)n2 - 4096;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.fallback == 1 && resident.model == fl10 && weights_live);
+    uint32_t fl10_block = weights_block;
+    /* 2: free is FL10's block short of Normal's need: Normal fits only with FL10 counted as free */
+    available = (int)n2;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK_(out.fallback == 0 && resident.model == h15, "fallback %u", (unsigned)out.fallback);
+    TEST_CHECK(check_steps(&out, s) == 1 && s[0]->rc == 0 && s[0]->sum == fl10_block);
+    TEST_MSG("check sum %u, FL10 block %u", s[0] ? (unsigned)s[0]->sum : 0u, fl10_block);
+    int fw = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS), ac = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_CAPTURE);
+    TEST_CHECK_(fw >= 0 && ac > fw, "FL10 freed at step %d, capture taken at %d", fw, ac);
+    uint32_t h15_block = weights_block;
+    /* 3: 4 KiB less: Normal (its weights resident, need 0 for them) refused; Small runs with H15 counted */
+    available = (int)n2 - 4096;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.fallback == 1 && resident.model == fl10);
+    TEST_CHECK(check_steps(&out, s) == 2 && s[0]->rc == 1 && s[0]->sum == 0 && s[1]->rc == 0 && s[1]->sum == h15_block);
+    /* 4: Normal with the Large cascade, both resident; then Large at its exact edge: H15's weights
+     * and the W20 cascade block both count as free, and both are released first */
+    TEST_CHECK(!drop_resident());
+    available = 64 * 1024 * 1024; test_cascade_conf = 1001;
+    r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(resident.model == h15 && cascade_res.model == w20 && weights_live && cascade_live);
+    uint32_t held = live_bytes;
+    /* the Shell sets the cascade ceiling on every job (ocr_cascade_ms): Large has no cascade, so the
+     * resident W20 cascade block is one the check counts as free */
+    r.tiers = 7u; snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+    uint32_t n3 = tier_need(&r, 3, 0);
+    available = (int)n3; /* free = n3 - (H15 + W20 blocks); with them released, exactly Large's need */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK_(out.fallback == 0 && resident.model == w20 && !cascade_live, "fallback %u", (unsigned)out.fallback);
+    TEST_CHECK(check_steps(&out, s) == 1 && s[0]->rc == 0 && s[0]->sum == held);
+    TEST_MSG("held %u, sum %u", held, s[0] ? (unsigned)s[0]->sum : 0u);
+    int fc = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_CASCADE);
+    fw = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS); ac = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_CAPTURE);
+    TEST_CHECK_(fw >= 0 && fc >= 0 && ac > fw && ac > fc, "weights freed %d, cascade freed %d, capture %d", fw, fc, ac);
+    /* 5: 4 KiB less: Large refused, Normal runs (W20's weights counted as free, then released) */
+    available = (int)n3 - 4096;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.fallback == 1 && resident.model == h15 && check_steps(&out, s) == 2 && s[1]->sum == PAGE_ROUND(w20->bytes));
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !cascade_live);
+    test_cascade_conf = 0;
+}
+
 TEST_LIST = {
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},
     {"allocation base free failure and retry", memory_failure_and_retry},
@@ -1554,5 +1626,7 @@ TEST_LIST = {
     {"model tiers: the self-test's fallback stage runs the smallest", forced_fallback_by_tiers_runs_the_smallest},
     {"model tiers: real jobs open each size and its cascade by tier; a failed file names its tier",
      tier_jobs_open_their_models_by_tier},
+    {"model tiers: another size's resident blocks count as free and are released first",
+     tier_release_counts_other_sizes_as_free},
     {NULL, NULL}
 };

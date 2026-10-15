@@ -96,6 +96,34 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("\nvocr_tier = large\n", text)
         self.assertEqual(text.count("vocr_tier ="), 1)
 
+    def test_an_unreadable_model_size_is_ignored_as_core_config_does(self):
+        """core/config.c ignores a vocr_tier it cannot read (a warning) and reads vocr_model: the
+        installed file names the size the plugin would run, in either order of the lines."""
+        for old in ("vocr_tier = huge\nvocr_model = W20_w8.vocr\n", "vocr_model = W20_w8.vocr\nvocr_tier = huge\n"):
+            text, report = self.migrate(old)
+            self.assertIn("\nvocr_tier = large\n", text, old)
+            self.assertNotIn("huge", text)
+            self.assertNotIn("vocr_model", text)
+            self.assertIn("config.ini: vocr_tier = large", report)
+        # without a model line: the template's size, the plugin's default
+        text, _ = self.migrate("vocr_tier = huge\n")
+        self.assertIn("\nvocr_tier = normal\n", text)
+        self.assertNotIn("huge", text)
+        # a readable size wins over an older model line, in any case
+        text, _ = self.migrate("vocr_model = FL10_w8.vocr\nvocr_tier = Large\n")
+        self.assertIn("\nvocr_tier = Large\n", text)
+        # a model name core/config.c refuses (valid_vocr_model) gives no size
+        for name in ("FL10", "FL10_w8.bin", "dir/FL10_w8.vocr", "x" * 60 + "FL10.vocr"):
+            text, _ = self.migrate("vocr_model = %s\n" % name)
+            self.assertIn("\nvocr_tier = normal\n", text, name)
+        # an unreadable --set vocr_tier is not written, and does not win over a --set vocr_model
+        text, report = self.migrate("vocr_tier = large\n", "vocr_tier=huge", "vocr_model=FL10_w8.vocr")
+        self.assertIn("\nvocr_tier = small\n", text)
+        self.assertNotIn("huge", text)
+        self.assertIn("vocr_tier huge is not a model size", report)
+        text, _ = self.migrate("vocr_tier = large\n", "vocr_tier=")
+        self.assertIn("\nvocr_tier = large\n", text)
+
     def test_release_installer_keeps_the_chosen_model_size(self):
         # The Overlay app's Model size is the user's: the installer sets no size and no model, so an
         # update keeps the choice; a first install gets the template's Normal.

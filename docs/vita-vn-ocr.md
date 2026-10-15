@@ -34,7 +34,7 @@ models and estimates); the self-test analyser reads it, and
 The times are estimates: vita-vn-ocr `docs/ctc-lm-decode.md`'s `vita/a9_cycles.py`
 figures for a greedy box of 3 lines of about 640 px (main 57b6622, high bound),
 calibrated so that VOCR3-H15 costs its measured 5.0-5.2 ms per CTC frame (the
-v0.8.0-test.1 console logs; only VOCR3-H15 has run on a console). "Game memory a
+v0.8.0-test.1 console logs: 1,027 frames over 11 jobs; only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console). "Game memory a
 job takes" is a job's page-rounded weights, workspace and capture block at the full
 screen (the game worker's memory check), without the character LM, the cascade's
 model or the PSP refinement, which a job leaves out first when memory is short. The
@@ -47,7 +47,10 @@ the owner's ceilings of 2026-10-14 (weights Small < 1 MB, Normal <= 1.6 MB, Larg
 first whose job fits the game's free USER memory beside that size's reserve
 (vita-vn-ocr `docs/model-tiers.md` 1.5, the reserve the largest size the job holds,
 the cascade's included), its own resident blocks of another size counted as free
-because they are released first. Each try is a `check` step of the job
+because they are released first. §1.5 gives each size its own reserve; the job keeps
+the largest held size's because §1.3's reason for a larger reserve is the resident
+block, not the size's name: Normal reading with Large's model as its cascade holds a
+Large-sized block, so it leaves Large's 16 MiB. Each try is a `check` step of the job
 (`include/vjo_game_ocr.h` VJO_GSTEP_CHECK: the size in the kind, refused or
 passed, what it needed). Nothing on screen says that a smaller size ran (owner
 2026-10-15 04:54Z): the Shell writes it to `log.txt`, e.g.
@@ -505,7 +508,7 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 - **Keeping:** kept between jobs while the game is the active one.
 - **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, and on exit.
 - **Tier choice:** a job takes the largest tier up to `ocr_lm` that fits the memory check (free
-  USER minus the 4 MiB reserve must cover the workspace, the weights, the LM and the cascade's
+  USER minus the job's reserve (4, 8 or 16 MiB: the largest size it holds) must cover the workspace, the weights, the LM and the cascade's
   model), else a smaller tier, else none (greedy).
 - **Workspace:** the job's workspace holds the decoder's extras (the top-K of every frame, the LM
   context and the beam workspace: 56,928 B, bounded for every pinned model and LM) and 4 KiB for
@@ -743,7 +746,7 @@ vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0
 for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
 repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
 dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
-and only VOCR3-H15 has run on a console: they are the sizes of the test builds by the owner's
+and only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console: they are the sizes of the test builds by the owner's
 choice (2026-10-14, Normal the default 2026-10-15). VOCR4-W20 (vita-vn-ocr #78, F20's shape) did
 not qualify as a default under that repository's gates either; it is the Large size and Normal's
 confidence cascade. The v0.2.0 models are no longer shipped or selectable (no size names them),
@@ -931,13 +934,12 @@ copied, and the settings above. Close other apps first.
    wording with the `game vocr memory:` log line:
    - *the kernel could not allocate this region's screen capture*: kernel
      memory; select a tighter region (the model does not matter) or restart;
-   - *the game has too little free memory for any OCR right now*: below its
-     4 MiB reserve; try later or restart the game;
+   - *the game has too little free memory for any OCR right now*: below the
+     job's reserve (4, 8 or 16 MiB by size); try later or restart the game;
    - *... for OCR of this region*: select a tighter region;
-   - *... for the OCR model's weights, already the smallest*: no size fits; a
-     tighter region or later in the game;
-   - *... the OCR model's weights, already the smallest*: a tighter region or
-     try again later;
+   - *... for the OCR model's weights*: no size fits, the smallest one asked for
+     included; a tighter region or later in the game. Like every message it names
+     no size (log.txt has the `tier ... did not fit` lines);
    - *could not be allocated although the memory check passed*: try again;
    - *the Shell has too little memory for the overlay's results*: restart the
      Vita (region and model do not matter).

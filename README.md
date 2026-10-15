@@ -314,7 +314,7 @@ v0.2.0 H15's 2.21%, VOCR3-FL10 2.13% against v0.2.0 FL10's 3.82%; neither passed
 that repository's promotion gate ([models](docs/vita-vn-ocr.md#models)). Their
 estimated times for a 3-line textbox are 0.7 s (Small), 1.3 s (Normal) and
 1.7 s (Large), calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame on the
-console; only VOCR3-H15 has run on a console. A job runs the chosen size when the
+console; only VOCR3-H15 has a per-frame console timing; v0.2.0's FL10 (Small's shape) recognized lines on the console in older builds, without frame counts; VOCR3-FL10 and VOCR4-W20 have not recognized text on a console. A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
 fit in PCSG00415 (need N, free F); using normal`, and so does the `--collect`
@@ -508,8 +508,9 @@ together (API 21 since the model sizes) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 299,008 B
-of SceShell's partition (down from 405,504 B in 0.7.12's successor builds): the
+64 KiB result arena and no TLS pool for local lookup. Its module holds 294,912 B
+of SceShell's partition, of the 299,008 B declared (down from 405,504 B in 0.7.12's
+successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
 does not open that time and the game keeps its input. Local OCR-only/subtitle

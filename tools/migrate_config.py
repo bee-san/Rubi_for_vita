@@ -7,8 +7,10 @@ file and applying key=value overrides.
 OLD may be missing (first install). Renamed settings are carried over, removed
 ones are dropped, and values of removed features (ocr_backend = vocr2, meiki or
 ncnn) are replaced. An older build's model choice (vocr_model) becomes its model
-size (vocr_tier) unless the file already has one; vocr_model and
-vocr_fallback_model go. Prints what changed (credentials, an API key or the audio
+size (vocr_tier) unless the file already names a valid one; vocr_model and
+vocr_fallback_model go. A vocr_tier core/config.c cannot read is replaced by
+the size the plugin would run (the old model's, else the template's), as the
+plugin ignores it. Prints what changed (credentials, an API key or the audio
 source URL, only as set/empty). Exit
 status 0 = OUT should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
@@ -30,10 +32,21 @@ REPLACED_VALUES = {"ocr_backend": {"vocr2": "vocr", "meiki": "vocr", "ncnn": "vo
 # An older build's vocr_model, by the shape its file name carries (core/config.c vjo_vocr_tier_of_model):
 # the FL10 family Small, H15 Normal, F20 and W20 Large; any other name keeps the template's size.
 MODEL_TIER = (("FL10", "small"), ("H15", "normal"), ("W20", "large"), ("F20", "large"))
+# What core/config.c reads: vjo_vocr_tier_parse's ids (any case), and valid_vocr_model's names
+# (6-63 characters of [0-9A-Za-z._-], ending in .vocr).
+TIERS = ("small", "normal", "large")
+VALID_MODEL = re.compile(r"[0-9A-Za-z._-]{1,58}\.vocr")
+
+
+def valid_tier(value):
+    """Whether core/config.c reads value as a model size."""
+    return value.lower() in TIERS
 
 
 def model_tier(name):
-    """The vocr_tier of an older vocr_model value, or None."""
+    """The vocr_tier of an older vocr_model value core/config.c accepts, or None."""
+    if not VALID_MODEL.fullmatch(name):
+        return None
     return next((tier for shape, tier in MODEL_TIER if shape in name), None)
 
 
@@ -69,17 +82,28 @@ def main():
         k = RENAMED.get(k, k)
         if k not in REMOVED and not k.startswith(REMOVED_PREFIXES):
             vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
-    # An older build's model choice is its model size, unless the file already names one.
-    if old and "vocr_tier" not in old and model_tier(old.get("vocr_model", "")):
+    # An older build's model choice is its model size, unless the file already names a valid one.
+    # core/config.c ignores a vocr_tier it cannot read (with a warning): so does this, in either
+    # order of the two lines, so the installed file says the size the plugin would run.
+    old_tier = (old or {}).get("vocr_tier")
+    if old_tier is not None and not valid_tier(old_tier):
+        del vals["vocr_tier"]  # the template's size, unless the old model's below
+        old_tier = None
+    if old and old_tier is None and model_tier(old.get("vocr_model", "")):
         vals["vocr_tier"] = model_tier(old["vocr_model"])
     explicit = set()
+    set_tier = any(o.partition("=")[0].strip().lower() == "vocr_tier" and valid_tier(o.partition("=")[2].strip())
+                   for o in sets)
     for s in sets:
         k, _, v = s.partition("=")
         k, v = k.strip().lower(), v.strip()
-        if k == "vocr_model":  # an older installer's model choice: its size (a vocr_tier set wins)
-            if model_tier(v) and not any(o.partition("=")[0].strip().lower() == "vocr_tier" for o in sets):
+        if k == "vocr_model":  # an older installer's model choice: its size (a valid vocr_tier set wins)
+            if model_tier(v) and not set_tier:
                 vals["vocr_tier"] = model_tier(v)
                 explicit.add("vocr_tier")
+            continue
+        if k == "vocr_tier" and not valid_tier(v):  # the plugin would ignore it: not written
+            print("config.ini: vocr_tier %s is not a model size (small, normal or large); not set" % (v or "empty"))
             continue
         if k == "vocr_fallback_model":
             continue

@@ -254,7 +254,7 @@ assumptions the console still has to confirm (none of these is measured yet):
     any other is refused (format error) and logged with its value. SceDisplay documents no
     RGB565 value, so none is handled.
   - The game's free USER memory: 91,226,112 B was measured in CLANNAD in an earlier session
-    (docs/vita-memory.md); a job is refused below its need plus the 4 MiB reserve, and the
+    (docs/vita-memory.md); a job is refused below its need plus its size's reserve (4, 8 or 16 MiB), and the
     memory ladder (USER -> CDRAM -> PHYCONT) logs each refusal.
   - The three memory-query routes (block, PSVshell's address-space block, faps-coredump's
     process route) are untested on 3.65; each reports its own result and step. They are

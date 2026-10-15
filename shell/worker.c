@@ -561,10 +561,10 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
     "dialogue region with Square."
 #define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
     "dialogue region with Square."
-#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a 4 MiB " \
-    "reserve). Try again later in the game, or restart it."
-#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights, already " \
-    "the smallest. Select a tighter dialogue region with Square, or try again later."
+#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a " \
+    "reserve for the game). Try again later in the game, or restart it."
+#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights. Select " \
+    "a tighter dialogue region with Square, or try again later."
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
     "passed. Try again."
 #define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
@@ -575,8 +575,9 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 /* Which part of the game worker's memory check failed: no OCR can fit
  * beside the reserve; the region's job workspace; the model's weights; an
  * allocation after a passed check; or the check itself. A job asks by tiers
- * (API 21): its last check is its smallest tier's, so the weights that did not
- * fit are already the smallest it may run. */
+ * (API 21): its last check is its smallest tier's. The advice names no model,
+ * size or reserve: the screen never says which size ran or was tried (owner
+ * 2026-10-15 04:54Z); log.txt has the tier lines. */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
     int64_t job, free_bytes;

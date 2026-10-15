@@ -2,7 +2,7 @@
 
 A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, never "Latest") with a
 single zip that has everything: the three plugins, the **Overlay** settings app, the OCR models
-(VOCR3-H15 and VOCR3-FL10, plus v0.2.0's H15 and FL10), the frozen dictionary, the installer and
+(the three model sizes: VOCR3-FL10, VOCR3-H15 and VOCR4-W20), the frozen dictionary, the installer and
 the analyser. It needs no git, no `gh` and no packaging. Its install issue names the tag and gives
 the zip's SHA-256. The installer registers the OCR worker only for the games named with `--title`
 (here CLANNAD, `PCSG00415`), never under `*ALL`. "est." marks an estimate; nothing of a test build
