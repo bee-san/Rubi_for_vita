@@ -48,7 +48,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 299,008 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 81,920 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #92's quiet refresh makes it 214,376 B of text and 77,956 B of data/bss (2,712 and 3,964 B free) | packaged SELF segments [measured] |
+| Shell module pages | 299,008 | `VitaJPOverlay_Shell.suprx`: 217,088 text + 81,920 data/bss, permanent (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #88's normalised text and its log make it 214,816 B of text (main `94d608e`); #92's quiet refresh makes it 214,672 B of text and 77,956 B of data/bss (2,416 and 3,964 B free) | packaged SELF segments [measured] |
 | OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is registered per game (one `*TITLEID` section each, the installer's `--title`), never under `*ALL`, so taiHEN does not load it into SceShell. Were it loaded there (an older install's `*ALL` line, a hand edit), its `module_start` returns `NO_RESIDENT`, which unloads it at once (it held 45,056 B there before PR #68) | `tools/patch_tai_config.py`; `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
 | VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
@@ -115,12 +115,12 @@ one 64 KiB result arena (`VJO_SL_PAF_RESULTS`) stays held during it instead of b
 the job, its text stays in the worker's static result until the control thread compares it in its
 24 KiB scratch, and a new text is copied into the existing 4 KiB `local_text`. The item's worst case
 is unchanged (the arena was already held with the overlay open). Its code (and the SCREEN_CHANGED
-pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,148 B of Shell text
-(object text, Vita build, `-Os`: `shell/worker.c` +1,054, `shell/selftest.c` +129,
+pacing, the self-test's text gate, the job submission's BUSY retry) adds 1,116 B of Shell text
+(object text, Vita build, `-Os`: `shell/worker.c` +1,022, `shell/selftest.c` +129,
 `shell/game_ocr_client.c` +66, `core/client.c` −101), paid for by building six more cold files with
 `-Os` (`vita/CMakeLists.txt`: −1,204 B). The module stays at 299,008 B: the build log's module row
-goes from 214,480 to 214,376 B of text and from 77,908 to 77,956 B of data and `.bss` (+48 B of
-state) [measured: `.refs/ci.sh … vita` on main 7f0f9de and on this change].
+goes from 214,816 to 214,672 B of text and from 77,908 to 77,956 B of data and `.bss` (+48 B of
+state) [measured: `.refs/ci.sh … vita` on main 94d608e and on this change].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
