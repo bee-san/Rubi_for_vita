@@ -185,21 +185,21 @@ a record at a time, the press's settle cap, the done line's exchange and log tim
 allocation and no item. A self-test record's group is a 2 KiB buffer on the stack of the thread
 that writes it, and no thread's deepest chain changes: on VjoNet `vjo_selftest_stage_end`'s frame
 is 2,432 B, called by `run_selftest_stages` after `vocr_run_one` (5,000 B) has returned; on
-VjoControl the game record's chain is 3,332 B (`ctl_main` 136, `activate_game` 168,
+VjoControl the game record's chain is 3,324 B (`ctl_main` 136, `activate_game` 160,
 `vjo_selftest_game` 2,120, `sample` 408, `report` 276, the group's flush and the logger's append
 below it 224) of its 16 KiB, under the same thread's
-config load (136 + 168 + `apply_config` 1,784 + `vjo_config_load` 128 + `vjo_config_parse`
-1,760 = 3,976 B); `vjo_selftest_init`'s 3,148 B chain runs on the boot's thread after the same
+config load (136 + 160 + `apply_config` 1,720 + `vjo_config_load` 128 + `vjo_config_parse`
+1,760 = 3,904 B); `vjo_selftest_init`'s 3,148 B chain runs on the boot's thread after the same
 config load [measured: `arm-vita-eabi-gcc -Os -fstack-usage -fcallgraph-info=su` with the build's
-flags, the SDK's calls counted as 0]. The Shell's text goes from 210,184 to
-210,280 B and its data and `.bss` from 71,204 to 71,264 B (the last text job's capture, the idle
-time, the log's append counters), the same 286,720 B of pages: object text `shell/worker.c` +882,
+flags, the SDK's calls counted as 0]. The Shell's text goes from 206,192 to
+206,240 B and its data and `.bss` from 71,020 to 71,072 B (the last text job's capture, the idle
+time, the log's append counters), the same 282,624 B of pages: object text `shell/worker.c` +834,
 `shell/selftest.c` +280, `shell/log_vita.c` +88, `core/config.c` +175 (the new key and its range),
 paid for by building `core/jpegsw.c` (Lens's encoder, −888) and `core/utf.c` (−396; the Overlay
 app's copy −392, not a plugin) with `-Os`. The worker's text goes from 70,124 to 70,812 B
 (`game_ocr/main.c` +252, `core/vocr_ocr.c` +440: the warm-up and its steps, the NO_GAME grace, the
 TEAR step's retry time) and its data and `.bss` from 14,200 to 14,208 B, the same 90,112 B of pages
-[measured: the build log's module rows, main `a5d79f2` and this change, vita-vn-ocr `d214a05`].
+[measured: the build log's module rows, main `f85b5d9` and this change, vita-vn-ocr `d214a05`].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
