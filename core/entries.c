@@ -6,9 +6,19 @@
 #include "port.h"
 #include "utf.h"
 
-char *vjo_entry_format(VjoArena *a, const VjoVocab *v)
+const char *vjo_rank_badge(char *buf, int rank, const char *source)
+{
+    if (rank > 0)
+        vjo_snprintf(buf, VJO_RANK_BADGE_MAX, " #%d", rank);
+    else
+        vjo_snprintf(buf, VJO_RANK_BADGE_MAX, "%s", source ? " unranked" : "");
+    return buf;
+}
+
+char *vjo_entry_format(VjoArena *a, const VjoVocab *v, const char *source)
 {
     VjoBuf b;
+    char badge[VJO_RANK_BADGE_MAX];
     vjo_buf_init(&b, a);
     vjo_buf_puts(&b, v->spelling);
     if (strcmp(v->spelling, v->reading) != 0) {
@@ -16,7 +26,7 @@ char *vjo_entry_format(VjoArena *a, const VjoVocab *v)
         vjo_buf_puts(&b, v->reading);
         vjo_buf_puts(&b, ")");
     }
-    vjo_buf_printf(&b, " %d", v->rank);
+    vjo_buf_puts(&b, vjo_rank_badge(badge, v->rank, source));
     for (int i = 0; i < v->n_meanings; i++) {
         vjo_buf_putc(&b, '\n');
         vjo_buf_puts(&b, v->meanings[i]);
@@ -106,7 +116,7 @@ int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r,
     if (!texts || !out->entries)
         return -1;
     for (int k = 0; k < n; k++)
-        if (!(texts[k] = vjo_entry_format(a, &r->vocab[k])))
+        if (!(texts[k] = vjo_entry_format(a, &r->vocab[k], r->source)))
             return -1;
 
     for (int t = 0; t < r->n_tokens; t++) {

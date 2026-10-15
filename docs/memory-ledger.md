@@ -29,7 +29,7 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell paf (Google Lens)            (opt-in)      707,840      985,088      277,248
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared (36,640->36,864 + 77,768->77,824)
-      VitaJPOverlay_Shell       262,144 B of    266,240 B declared (186,416->188,416 + 70,112->73,728)
+      VitaJPOverlay_Shell       262,144 B of    266,240 B declared (187,552->188,416 + 70,128->73,728)
       VitaJPOverlay_OCR          90,112 B of     90,112 B declared (70,812->73,728 + 14,208->16,384)
 ```
 
@@ -223,6 +223,13 @@ Shell share. The check's file I/O is not measured on a console: two open/read/cl
 VjoControl after the game is active (an estimate from [docs/performance.md](performance.md)'s console
 figures: 15.3 ms per open/seek/read/close, 9.4-47 ms per append); an L+R in the same control tick waits
 that long (est.).
+
+The bundled dictionary's frequency ranks (#127: the format 3 reader, the rank badge, its
+`frequency_badge` switch and the ranked files' usual spellings) add no allocation, thread or table
+held in memory: the rank is read with each payload the lookup already reads, and the tables are
+constant strings in the module. The build log's module row goes from 186,416 to 187,552 B of text and
+from 70,112 to 70,128 B of data and `.bss` (`VjoView.frequency_badge`), the same 262,144 B of pages
+(864 and 3,600 B free) [measured: the Vita builds of main `ac905b1` and of this change].
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 

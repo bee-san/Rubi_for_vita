@@ -214,7 +214,7 @@ when opening the overlay. With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card; the Overlay app exports the queue as an `.apkg`. The card has no screenshot yet: the old full-frame capture is the
 kernel buffer #74's console refused, and one from the game's own strips is
-not built yet ([Anki](docs/anki.md#the-record-version-3)).
+not built yet ([Anki](docs/anki.md#the-record-version-4)).
 
 ### Drawing the region
 
@@ -427,17 +427,20 @@ The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
 The next release bundles one frozen disk-backed `plaintext.vjdict`, combining
-**Daijirin4 → Sankoku8 → JMdict** in that priority order. The original archives
+**Daijirin4 → Sankoku8 → JMdict** in that priority order, with the **Jiten
+global frequency rank** of every entry. The original archives
 and processed file are committed in the private
-[plaintext-dicts repository](https://github.com/bee-san/plaintext-dicts).
+[plaintext-dicts repository](https://github.com/bee-san/plaintext-dicts)
+(commit `6f841ce`, its #1).
 The public release includes the processed dictionary and its attribution.
-The 2026-10-13 snapshot is pinned by exact commit and SHA-256; builds perform
-no dictionary updates and need no conversion or current upstream snapshot.
+The 2026-10-13 snapshot and the 2026-10-15 frequency list are pinned by exact
+commit and SHA-256; builds perform no dictionary updates and need no
+conversion or current upstream snapshot.
 
 Deduplication keeps a spelling and normalized reading pair from the first
 source that contains it, preserving that source's separate senses, distinct
 readings and inflection rules. The result has 485,410 entries (301,927
-Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 135 MiB on disk,
+Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 137 MiB on disk,
 904 KiB of it a key filter that answers most inflection guesses that are not
 words without an index read ([key filter](docs/local-dictionaries.md#key-filter)).
 It stays on disk and is never loaded whole into RAM. Twelve definitions carry
@@ -446,6 +449,15 @@ source rows cannot be indexed. Exact provenance and counts are in
 [docs/plaintext-dictionaries.json](docs/plaintext-dictionaries.json), with
 [attribution](docs/plaintext-attribution.txt) and the
 [JMdict license](docs/JMdict-LICENSE.html).
+
+Every entry carries its rank in the [Jiten](https://jiten.moe) global
+frequency list (CC BY-SA 4.0), or is explicitly unranked: 53.63% of the
+entries are ranked, and a tap on 99.24% of the word occurrences in Jiten's
+2,162 visual-novel scripts shows a ranked entry. The popup shows the rank after the
+reading (`猫 (ねこ) #1536`; `frequency_badge = off` hides it), Anki cards record
+it, and when the text ranks two entries alike the more frequent one is shown
+([frequency ranks](docs/local-dictionaries.md#frequency-ranks)). The rank
+travels inside each entry on disk: no table of ranks is held in memory.
 
 You can add your own Yomitan dictionaries with
 [the converter and installation guide](docs/local-dictionaries.md).
@@ -485,7 +497,7 @@ ignored, and the installer drops it.
 Card mining is off by default (the test builds turn it on). With it on, Enter
 saves cards as readable JSON files, text only (this build takes no
 screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts
-and need no network. Each record (version 3) keeps everything known at the
+and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
 with the word's offsets, the game, its title ID and platform, the time, and
@@ -800,6 +812,8 @@ Thanks to [meikidroid](https://github.com/rtr46/meikidroid),
 jsmn, acutest, and Yomichan for its Japanese deinflection rules.
 Pinned sources and attribution are in `third_party/`.
 
-Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0. The beam + LM decoder's character
+Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0. The bundled dictionary's frequency
+ranks: the Jiten global frequency list by Jiten (https://jiten.moe), CC BY-SA 4.0, attached to
+its entries ([attribution](docs/plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
 `ocr/LM-ATTRIBUTION.md`, which ships beside them.

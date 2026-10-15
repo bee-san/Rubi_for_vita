@@ -47,6 +47,7 @@ typedef struct {
     int local_cursor_mode;    /* local dictionary: select UTF-8 positions for point lookups */
     int japanese_only_selection; /* restrict local navigation to Han/kana */
     int highlight_mode;       /* whole matched word or selected source character */
+    int frequency_badge;      /* config frequency_badge: the entry's frequency rank is shown */
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */
     uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
     int dict_page;            /* local: dictionary page shown or requested at the cursor */

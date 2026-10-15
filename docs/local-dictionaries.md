@@ -136,6 +136,21 @@ files remain readable, including alongside version 2 files, but keep their
 older index. `--format-version 1` is available when converting for an older
 plugin; older plugins cannot read version 2 files.
 
+### Frequency ranks for your own dictionaries
+
+Add a rank-based Yomitan frequency dictionary (`"frequencyMode": "rank-based"`
+in its `index.json`, such as Jiten's from https://jiten.moe/frequency-dictionaries)
+with `--frequency` to give every entry its rank, written as format 3
+([frequency ranks](#frequency-ranks)):
+
+```sh
+python3 tools/convert_dictionary.py Jitendex.zip -o main.vjdict --frequency jiten_freq_global.zip
+```
+
+The report's `frequency` part counts the ranked entries and how they matched.
+Format 3 needs this build or later; earlier plugins refuse it with a format
+error, and this build still reads formats 1 and 2 (without ranks).
+
 ## Several dictionaries
 
 Up to eight `.vjdict` files can be enabled in priority order:
@@ -294,8 +309,9 @@ only each one's spelling and reading (one bounded head read): first a short
 built-in list of common readings of very frequent words (私 → わたし, 僕 → ぼく,
 こう → 斯う; `preferred_readings` in `core/local_dict.c`, every pair checked to
 exist in the bundle), then the spelling as written, then an entry that has a
-reading (Daijirin4's kanji-character articles have none), then the longer
-article. With several dictionaries, at one span an entry written as the
+reading (Daijirin4's kanji-character articles have none), then, in a
+dictionary with [frequency ranks](#frequency-ranks), the more frequent entry
+(with a few usual spellings where the ranks mislead), then the longer article. With several dictionaries, at one span an entry written as the
 text is (in any dictionary) beats a homograph in an earlier dictionary, an
 exact hit in a later dictionary still beats an inflected hit in an earlier
 one, and otherwise configured dictionary order decides. This is
@@ -307,13 +323,88 @@ fixture's filter allows (`tools/collect_word_lookup_lines.py`), stepping with
 Right, the ranking changed 375 of 1,376 shown entries (164 of 625 on the 50
 committed lines), and no matched span. An independent audit judged a random
 sample of 80 changes: 51 better, 25 the same, 4 worse. The remaining losses
-are mostly single kanji whose longer article is a rarer reading (泉 せん, 比
-ころ, 校 きょう) and same-depth inflection ties (飛ばされ → 飛ぶ); a frequency
-signal would be the real fix
+were mostly single kanji whose longer article is a rarer reading (泉 せん, 比
+ころ, 校 きょう) and same-depth inflection ties (飛ばされ → 飛ぶ), which the
+frequency ranks now decide
 ([word lookup](touch-lookup.md#word-lookup-on-recognized-text)).
 The caps above can omit lower-priority matches or unusually complex inflections.
 Missing or corrupt enabled files fail the lookup with an actionable error;
 there is no network or cloud fallback.
+
+## Frequency ranks
+
+The bundled dictionary (format 3) gives every entry a rank from the Jiten
+global frequency list (jiten.moe, CC BY-SA 4.0; [attribution](plaintext-attribution.txt)):
+#1 is the most frequent word, and an entry the list does not rank is
+explicitly unranked (rank 0, `VJO_NO_RANK`). The popup shows the rank after
+the reading (`猫 (ねこ) #1536`, or `unranked`); `frequency_badge = off` in
+`config.ini` hides it. An Anki card records it (`rank`, `source` "Jiten";
+[the record](anki.md)). The lookup log line ends with it.
+
+Format 3 is format 2 with two additions, so it needs nothing in memory:
+
+- page 0 bytes 64..127: the frequency list's name, NUL-padded (read with
+  the 64-byte header, in the same read);
+- every payload starts with a 32-bit little-endian frequency word: bits 0-23
+  the rank, bit 24 set when a kanji spelling borrows its word's rank in kana
+  (Jiten's `N㋕`), bits 25-31 for the converter's report. The ranking's head
+  read and the shown entry's payload read include it: no extra read, 4 bytes
+  more in each.
+
+Ranking uses it as a tie-break only, after the flags above (a preferred
+reading, the text as written, katakana as hiragana, a reading): first a
+word's usual spelling where the ranks mislead (below), then an entry's
+own rank before a borrowed one, then the lower rank, compared as 13 bits
+(exact below rank 256, within 1/128 of an octave above it, where the longer
+article decides). The same score chooses between dictionary forms at the
+same number of inflection steps (かった: かう, かる and かつ are one step each;
+the more frequent is shown, where the longer article was). Formats 1 and 2
+have no ranks and rank as before. A frequency never overrides the longest
+span, the text before its inflections, fewer inflection steps, or the
+dictionary order the user set. Within those it comes where Yomitan puts its
+frequency order: after the length of the inflection chain and the exact
+match of the source text (yomidevs/yomitan@67db60d `translator.js`
+2197-2207), as bee-san/hachidori#576 adopted after the #575 analysis.
+Across dictionary files it does not: Yomitan's single sort dictionary ranks
+every file's entries, but here each file carries its own list, whose ranks
+do not compare with another list's, so the configured order decides.
+
+Measured with the overlay's lookup itself (`tools/frequency_eval.py`, a tap
+at each word form's first character through `vjo_overlay_lookup_at`), over
+the word forms of Jiten's 2,162 visual-novel deck exports weighted by their
+491,025,510 occurrences (CC BY-SA 4.0, not committed). Before is the format 2
+file, without ranks, on which this lookup shows the previous build's entry for
+every one of the 246,426 forms:
+
+| | Before (no ranks) | With ranks |
+| --- | ---: | ---: |
+| Shown entry carries a rank (of the 99.96% of tokens with an entry) | 0% | 99.28% |
+| Shown reading is the one Jiten's parser read | 95.81% | 97.17% |
+| Same, where the whole word matched | 97.06% | 98.44% |
+| Shown entry changed | | 2.77% of tokens: 1.40% to Jiten's reading, 0.04% away from it, 1.32% other |
+
+The changes that most often move to Jiten's reading are kanji whose first or
+longest article was a rarer reading: 良い よい (was いい), 奥 おく (おう), 指 ゆび
+(さし), 達 たち (たつ), 瞳 ひとみ (め), 年 ねん (とし). Most "other" changes pick
+the more frequent of several spellings of one reading: わたし 私 (was 渡し),
+おまえ お前 (御前), せい 所為 (姓). Where the ranks alone pick a rarer word, a short
+list of usual spellings decides, in files with ranks only (`usual_spellings` in
+`core/local_dict.c`, every pair checked in the bundle): kana text whose word has
+no entry spelled in kana ranks the kanji spellings by how often each is written
+(いつか would show ５日, not 何時か; なくなる 亡くなる, not 無くなる), and Jiten ranks
+kana text by its parser's lemma, so kana やめる is 辞める "to resign" at rank 135
+where visual novels' やめて means 止める "to stop" (and おじさん 叔父さん "uncle" for
+小父さん); Jiten also ranks 身体 しんたい (2,603) just above the からだ (2,805) the
+text reads. The list orders one key's entries and nothing more: the text's own
+entry still comes before an inflection's (なくして shows 無くして "without", not
+無くす). Rank ties within 1/128 of an octave and readings both spellings share
+stay on the article's length. Of the kana-written forms whose entry changed
+(5,147,077 tokens), Jiten's kana-form ranks (`N㋕`) write the new entry's word
+in kana more often for 38.23%, less often for 4.03% (mostly names now shown in
+katakana: あやめ アヤメ, つぐみ ツグミ) and as often for 57.74%. Coverage of the dictionary itself, and how an entry's rank is
+matched to Jiten's list, are in
+[plaintext-dictionaries.json](plaintext-dictionaries.json) (`frequency`) and
+bee-san/plaintext-dicts' README.
 
 A selected-entry allocation or file error is reported explicitly. Lookup does
 not grow the worker arena or silently display a partial definition. The older
@@ -323,7 +414,8 @@ whole-sentence host API remains available for benchmark compatibility; its
 ## Supported content and tradeoffs
 
 - Term dictionaries only. Frequency-only, pitch-accent-only and kanji-only ZIPs
-  are rejected with an explanation. Frequency ranks/pitch data are not imported.
+  are rejected as inputs with an explanation; a rank-based frequency
+  dictionary can add ranks with `--frequency`. Pitch data are not imported.
 - Definitions are plain text, decided once on the computer: HTML glossaries
   and Yomitan structured content are flattened when converting, and the Vita
   displays the stored text without parsing markup or applying CSS. Block
@@ -384,6 +476,25 @@ each request; the host OS file cache is warm. These are **not physical Vita or
 SD-card measurements**. The synthetic size/memory benchmark above uses the
 same driver, and regression tests check that arena use does not grow with
 dictionary size.
+
+### Binary format, version 3 (with frequency ranks)
+
+Version 3 is version 2 with two additions; `--frequency` writes it, and the
+bundled dictionary is one.
+
+- The header has magic `VJDICT3\0` and version=3, the rest as in version 2.
+  Bytes 64..127 of page 0 hold the frequency list's name: 1-63 bytes of UTF-8
+  text without control characters, then NUL padding to byte 127. The runtime
+  reads it with the 64-byte header, in the same read. Bytes 128..4095 are not
+  read; they are left for an index's own data.
+- Every payload starts with a u32 frequency word, then the three strings as in
+  version 2. Bits 0-23 are the rank (1 = the most frequent; 0 = the list does
+  not rank the entry). Bit 24 marks a borrowed rank: a kanji spelling ranked
+  with its word's rank written in kana. Bits 25-27 record how the rank matched,
+  for the converter's report; bits 28-31 are zero. A payload is at least 8
+  bytes.
+- A posting's last u16 is not read (version 2 requires it to be zero), so an
+  index may use it.
 
 ### Binary format, version 2 (default)
 

@@ -472,7 +472,80 @@ static void bundled_dictionary_deinflects(void)
     }
 }
 
+/* The built-in table of common readings (local_dict.c preferred_readings):
+ * with the bundled dictionary, the text of each key alone shows the entry
+ * with the listed reading (or, for a kana key, spelling), over the whole key.
+ * A pair whose entry is missing, or that something ranks above, fails. */
+static void preferred_readings_exist_in_the_bundle(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    int pairs = 0;
+    setup(&cfg, &p, &pp);
+    for (const char *key = vjo_local_preferred_table(); *key; key += strlen(key) + 1) {
+        const char *value = key + strlen(key) + 1;
+        VjoArena a; VjoOverlayData d;
+        TEST_CASE_("%s -> %s", key, value);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, key, &d) == VJO_OK);
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &d) == VJO_OK && d.list.n_entries == 1);
+        const VjoVocab *v = d.list.entries[0].vocab;
+        TEST_CHECK_((size_t)d.list.entries[0].hl_end == strlen(key), "span %d of %zu",
+                    d.list.entries[0].hl_end, strlen(key));
+        TEST_CHECK_(!strcmp(v->spelling, value) || !strcmp(v->reading, value), "shows %s (%s)", v->spelling,
+                    v->reading);
+        key = value;
+        pairs++;
+    }
+    printf("  %d pairs\n", pairs);
+    TEST_CHECK(pairs == 70); /* a truncated table would test fewer */
+}
+
+/* The ranked files' usual spellings (local_dict.c usual_spellings): with the
+ * bundled dictionary (format 3), each key alone shows the listed spelling (or
+ * reading) over the whole key, as do its inflections; and the text's own entry
+ * still comes before an inflection's usual spelling (audit-dict-freq-b). */
+static void usual_spellings_win_in_the_bundle(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    int pairs = 0;
+    static const char *const forms[][3] = {
+        {"やめて", "やめて", "止める"}, {"やめろ", "やめろ", "止める"}, {"やめなさい", "やめなさい", "止める"},
+        {"おじさんが", "おじさん", "小父さん"}, {"せいで", "せい", "所為"}, {"なくなった", "なくなった", "無くなる"},
+        {"なくして", "なくして", "無くして"}, {"によらず", "によらず", "に依らず"}};
+    setup(&cfg, &p, &pp);
+    for (const char *key = vjo_local_usual_table(); *key; key += strlen(key) + 1) {
+        const char *value = key + strlen(key) + 1;
+        VjoArena a; VjoOverlayData d;
+        TEST_CASE_("%s -> %s", key, value);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, key, &d) == VJO_OK);
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &d) == VJO_OK && d.list.n_entries == 1);
+        const VjoVocab *v = d.list.entries[0].vocab;
+        TEST_CHECK_((size_t)d.list.entries[0].hl_end == strlen(key), "span %d of %zu",
+                    d.list.entries[0].hl_end, strlen(key));
+        TEST_CHECK_(!strcmp(v->spelling, value) || !strcmp(v->reading, value), "shows %s (%s)", v->spelling,
+                    v->reading);
+        TEST_CHECK_(v->rank != VJO_NO_RANK, "a ranked entry"); /* the bundle has ranks */
+        key = value;
+        pairs++;
+    }
+    printf("  %d pairs\n", pairs);
+    TEST_CHECK(pairs == 15);
+    for (const auto &f : forms) {
+        VjoArena a; VjoOverlayData d;
+        TEST_CASE(f[0]);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, f[0], &d) == VJO_OK);
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &d) == VJO_OK && d.list.n_entries == 1);
+        TEST_CHECK_((size_t)d.list.entries[0].hl_end == strlen(f[1]) &&
+                        !strcmp(d.list.entries[0].vocab->spelling, f[2]),
+                    "span %d, shows %s", d.list.entries[0].hl_end, d.list.entries[0].vocab->spelling);
+    }
+}
+
 TEST_LIST = {
+    {"preferred_readings_exist_in_the_bundle", preferred_readings_exist_in_the_bundle},
+    {"usual_spellings_win_in_the_bundle", usual_spellings_win_in_the_bundle},
     {"bundled_dictionary_deinflects", bundled_dictionary_deinflects},
     {"real_lines_walk_word_by_word", real_lines_walk_word_by_word},
     {"expected_entries_at_real_lines", expected_entries_at_real_lines},

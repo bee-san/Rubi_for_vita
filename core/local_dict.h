@@ -97,4 +97,12 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
 int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const VjoLocalPages *pages, int page,
                         VjoDictResult *res, VjoErr *err);
+
+#ifdef VJO_HOST
+/* Host tests: the built-in common-reading table and the ranked files' usual
+ * spellings, key then value, each NUL terminated, ending with an empty key
+ * (local_dict.c). Not in the Vita build. */
+const char *vjo_local_preferred_table(void);
+const char *vjo_local_usual_table(void);
+#endif
 #endif

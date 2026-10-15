@@ -7,6 +7,16 @@
 #define HEADER_SIZE 64u
 #define INDEX_SIZE 24u
 #define PAGE_SIZE 4096u
+/* Version 3 (version 2's layout): page 0 bytes 64..127 hold the frequency
+ * list's name, and every payload starts with one 32-bit frequency word whose
+ * bits 0-23 are the entry's rank (0: the list does not rank it). Bit 24 marks
+ * a borrowed rank (a kanji spelling's word ranked as written in kana), which
+ * ranks below every entry's own; bits 25-31 say how it matched, for the
+ * converter's report only. */
+#define FREQ_TITLE_SIZE 64u
+#define FREQ_PREFIX 4u
+#define FREQ_RANK_MASK 0xffffffu
+#define FREQ_BORROWED (1u << 24)
 #define MAX_CANDIDATES 128
 #define MAX_SCAN_CHARS 32
 #define MAX_HOMONYMS 64
@@ -56,6 +66,8 @@ typedef struct {
     VjoFile file;
     uint32_t count, version, buckets;
     uint64_t data;
+    uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
+    char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
     /* The key filter (filter_blocks 0: none): where its blocks start, and the one
      * block this lookup's candidates use (NO_BLOCK: none yet), covering prefixes
      * [lo, hi). */
@@ -213,9 +225,13 @@ static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *nam
     return VJO_OK;
 }
 
-/* Validates the 64-byte header h of an opened file. */
+/* Validates the header h of an opened file: its 64 bytes and v3's frequency
+ * list name after them (h holds at least HEADER_SIZE + FREQ_TITLE_SIZE bytes
+ * when the file has them). */
 static int parse_header(Dictionary *d, const uint8_t *h)
 {
+    d->prefix = 0;
+    d->freq_title[0] = 0;
     d->version = u32(h + 8);
     d->count = u32(h + 16);
     d->data = u64(h + 32);
@@ -226,25 +242,38 @@ static int parse_header(Dictionary *d, const uint8_t *h)
         if (memcmp(h, "VJDICT1\0", 8) || u64(h + 24) != HEADER_SIZE ||
             d->data != HEADER_SIZE + (uint64_t)d->count * INDEX_SIZE ||
             u64(h + 48) || u64(h + 56)) return VJO_E_LOCAL_FORMAT;
-    } else if (d->version == 2) {
+    } else if (d->version == 2 || d->version == 3) {
         uint64_t buckets = u64(h + 48), pages = u64(h + 56);
-        if (memcmp(h, "VJDICT2\0", 8) || u64(h + 24) != PAGE_SIZE ||
+        if (memcmp(h, d->version == 2 ? "VJDICT2\0" : "VJDICT3\0", 8) || u64(h + 24) != PAGE_SIZE ||
             !buckets || buckets > UINT32_MAX || (buckets & (buckets - 1)) ||
             pages < buckets || pages > UINT32_MAX || d->data != PAGE_SIZE + pages * PAGE_SIZE)
             return VJO_E_LOCAL_FORMAT;
         d->buckets = (uint32_t)buckets;
+        if (d->version == 3) {
+            /* 1-63 bytes of text, then NUL padding: shown as an Anki card's
+             * frequency source. */
+            const uint8_t *t = h + HEADER_SIZE, *end = memchr(t, 0, FREQ_TITLE_SIZE);
+            size_t len = end ? (size_t)(end - t) : FREQ_TITLE_SIZE;
+            if (!len || len >= FREQ_TITLE_SIZE) return VJO_E_LOCAL_FORMAT;
+            for (size_t i = 0; i < FREQ_TITLE_SIZE; i++)
+                if (i < len ? t[i] < 0x20 || t[i] == 0x7f : t[i] != 0) return VJO_E_LOCAL_FORMAT;
+            memcpy(d->freq_title, t, len + 1);
+            d->prefix = FREQ_PREFIX;
+        }
     } else return VJO_E_LOCAL_FORMAT;
     return VJO_OK;
 }
 
-/* Reads and validates only the 64-byte header (a page change: no cache). */
+/* Reads and validates only the header (a page change: no cache), with v3's
+ * frequency list name in the same read. */
 static int check_header(Dictionary *d)
 {
-    uint8_t h[HEADER_SIZE];
+    uint8_t h[HEADER_SIZE + FREQ_TITLE_SIZE];
+    size_t n = d->file.size < sizeof(h) ? HEADER_SIZE : sizeof(h);
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     READ_KIND(VJO_READ_HEADER);
-    STAT_READ(sizeof(h));
-    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
+    STAT_READ(n);
+    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, n)) return VJO_E_LOCAL_IO;
     return parse_header(d, h);
 }
 
@@ -343,6 +372,12 @@ static void filter_restart(Workspace *w)
     for (int i = 0; i < w->n_dicts; i++) w->dicts[i].block = NO_BLOCK;
 }
 
+/* The smallest payload: a spelling byte and three NULs, after v3's word. */
+static uint32_t min_entry(const Dictionary *d)
+{
+    return 4u + d->prefix;
+}
+
 static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig *cfg, VjoErr *err)
 {
     const char *names = cfg->local_dictionaries;
@@ -389,15 +424,39 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
  * spelled exactly as the text is written (kana text: the kana word, such as
  * the particle から or the verb する; inflected text: the dictionary form),
  * then for katakana text one written so in hiragana (って for ッて), then one with a reading (Daijirin4's kanji-character articles have none),
- * then the longer article. Equal ranks keep source order. */
-#define RANK_PREFERRED (1u << 23)
-#define RANK_WRITTEN (1u << 22)
-#define RANK_KANA (1u << 21) /* katakana text, an entry written so in hiragana */
-#define RANK_READING (1u << 20)
+ * then, in a v3 dictionary, the word's usual spelling where the ranks
+ * mislead (usual_spellings), then the more frequent entry (freq_key: a rank
+ * of the entry's own spelling before a borrowed one, then the lower rank),
+ * then the longer article. Equal ranks keep source order. A score is the
+ * flags, the frequency key and the article's length (at most 8192, 14 bits). */
+#define RANK_PREFERRED (1u << 31)
+#define RANK_WRITTEN (1u << 30)
+#define RANK_KANA (1u << 29) /* katakana text, an entry written so in hiragana */
+#define RANK_READING (1u << 28)
+#define RANK_USUAL (1u << 27) /* v3: usual_spellings' entry for the key */
+#define FREQ_KEY_SHIFT 14
 #define HEAD_BYTES 160u /* a payload's spelling (<= 32 characters) and reading */
 
+/* A frequency word's rank as 13 bits, higher for a more frequent entry and 0
+ * for an unranked one: 4096 for a rank of the entry's own spelling (above
+ * any borrowed one, FREQ_BORROWED), plus 4095 - (e * 128 + m) for rank
+ * 2^e * (1 + m / 128 + ...), e <= 23. Exact below rank 256; above it, ranks
+ * within 1/128 of an octave of each other tie, and the longer article
+ * decides. 13 bits fit an index's spare posting field, but the flags above
+ * it depend on the query and the payload's spelling and reading, so storing
+ * the key there alone saves no head read. */
+static uint32_t freq_key(uint32_t word)
+{
+    uint32_t rank = word & FREQ_RANK_MASK, e = 0, m;
+    if (!rank) return 0;
+    while (rank >> (e + 1)) e++;
+    m = e >= 7 ? (rank >> (e - 7)) & 127u : (rank << (7 - e)) & 127u;
+    return (word & FREQ_BORROWED ? 0u : 4096u) + 4095u - (e * 128u + m);
+}
+
 /* Key, then the reading (or, for kana keys, the spelling) its frequent sense
- * uses; checked to exist in the bundled dictionary. Ends with an empty key. */
+ * uses; checked to exist in the bundled dictionary (word_lookup's
+ * preferred_readings_exist_in_the_bundle). Ends with an empty key. */
 static const char preferred_readings[] =
     "私\0わたし\0僕\0ぼく\0彼\0かれ\0何\0なに\0今日\0きょう\0一\0いち\0日\0ひ\0火\0ひ\0水\0みず\0"
     "上\0うえ\0下\0した\0中\0なか\0後\0あと\0間\0あいだ\0方\0ほう\0様\0さま\0次\0つぎ\0別\0べつ\0"
@@ -409,6 +468,38 @@ static const char preferred_readings[] =
     "たち\0達\0私達\0わたしたち\0致す\0いたす\0立場\0たちば\0形相\0ぎょうそう\0"
     "米\0こめ\0神\0かみ\0服\0ふく\0羽\0はね\0和\0わ\0性\0せい\0美女\0びじょ\0小路\0こうじ\0";
 
+/* The same form, for the frequency ranks alone: in a file with ranks, the
+ * key's entry with this spelling (or reading) ranks above the ranks' choice,
+ * as the more frequent entry would. Kana text whose word has no entry spelled
+ * in kana ranks the kanji spellings by how often each is written, and
+ * Jiten's ranks for kana text are its parser's lemma's: so the text's word
+ * lost to a homograph's spelling (いつか: ５日, による: 似寄る, なくなる:
+ * 亡くなる, audit-dict-freq N1; やめる: 辞める "resign" for 止める "stop",
+ * おじさん: 叔父さん "uncle" for 小父さん "mister", せい: 性 for 所為 "because
+ * of", audit-dict-freq-b; measured with tools/frequency_eval.py
+ * --frequency), and Jiten ranks 身体 しんたい just above the からだ visual
+ * novels use more. Unlike preferred_readings it only orders one key's
+ * entries: it never makes an entry count as written as the text, so the
+ * text's own entry (無くして, に依らず) still comes before its inflections'
+ * (無くす, に依る), and a file without ranks reads as before. Checked like
+ * preferred_readings (word_lookup's usual_spellings_win_in_the_bundle). */
+static const char usual_spellings[] =
+    "なくなる\0無くなる\0いつか\0何時か\0による\0に依る\0いえいえ\0否々\0なくす\0無くす\0"
+    "よそ\0余所\0いわば\0言わば\0ほうき\0箒\0いっぺん\0一遍\0身体\0からだ\0"
+    "やめる\0止める\0おじさん\0小父さん\0おばさん\0小母さん\0おじちゃん\0小父ちゃん\0せい\0所為\0";
+
+#ifdef VJO_HOST
+const char *vjo_local_preferred_table(void)
+{
+    return preferred_readings;
+}
+
+const char *vjo_local_usual_table(void)
+{
+    return usual_spellings;
+}
+#endif
+
 typedef struct {
     const char *written;   /* the text as written: the source span, or a dictionary form */
     size_t written_len;
@@ -416,6 +507,7 @@ typedef struct {
      * full width): an entry spelled so in hiragana also counts as written. */
     const Candidate *key;
     const char *preferred; /* preferred_readings' value for the key, or NULL */
+    const char *usual;     /* usual_spellings' value for the key, or NULL */
     /* Strict: only an entry written so (or preferred) is taken; the best
      * other one goes to *fallback, once, for when no candidate has one. */
     int strict, fell_back;
@@ -423,9 +515,9 @@ typedef struct {
     uint32_t score; /* the taken posting's rank */
 } Query;
 
-static const char *preferred_for(const char *key)
+static const char *table_value(const char *table, const char *key)
 {
-    for (const char *p = preferred_readings; *p; p += strlen(p) + 1) {
+    for (const char *p = table; *p; p += strlen(p) + 1) {
         const char *value = p + strlen(p) + 1;
         if (!strcmp(p, key)) return value;
         p = value;
@@ -461,35 +553,47 @@ static int normalized_equal(const char *s, size_t n, const Candidate *key)
     return k == key->len;
 }
 
-/* Reads the payload's spelling and reading (one bounded head) to rank it. */
+/* A table's value is the entry's spelling, or the start of its reading
+ * (at most avail bytes from reading). */
+static int spelled_or_read(const char *value, const char *head, size_t spelling, const char *reading, size_t avail)
+{
+    size_t m;
+    if (!value) return 0;
+    m = strlen(value) + 1;
+    return (spelling + 1 == m && !memcmp(head, value, m)) || (avail >= m && !memcmp(reading, value, m));
+}
+
+/* Reads the payload's spelling and reading (one bounded head; in v3 after
+ * the frequency word, read with it) to rank it. */
 static int rank_posting(Workspace *w, Dictionary *d, const Record *r, const Query *q, uint32_t *score)
 {
-    char head[HEAD_BYTES];
-    size_t n = r->entry_len < HEAD_BYTES ? r->entry_len : HEAD_BYTES, spelling;
+    char bytes[FREQ_PREFIX + HEAD_BYTES], *head = bytes + d->prefix;
+    size_t n = r->entry_len < d->prefix + HEAD_BYTES ? r->entry_len : d->prefix + HEAD_BYTES, spelling;
     const char *reading;
     int rc;
     STAT(ranked);
     READ_KIND(VJO_READ_HEAD);
-    rc = cached_read(w, d, r->entry_off, head, n);
+    rc = cached_read(w, d, r->entry_off, bytes, n);
     *score = r->entry_len;
     if (rc) return rc;
+    if (d->prefix) *score |= freq_key(u32((const uint8_t *)bytes)) << FREQ_KEY_SHIFT;
+    n -= d->prefix;
     if (!(reading = memchr(head, 0, n))) return VJO_OK; /* longer than any written text */
     spelling = (size_t)(reading - head);
     reading++;
     if (spelling == q->written_len && !memcmp(head, q->written, spelling)) *score |= RANK_WRITTEN | RANK_KANA;
     else if (q->key && normalized_equal(head, spelling, q->key)) *score |= RANK_KANA;
     if (reading < head + n && *reading) *score |= RANK_READING;
-    if (q->preferred) {
-        size_t m = strlen(q->preferred) + 1;
-        if ((spelling + 1 == m && !memcmp(head, q->preferred, m)) ||
-            ((size_t)(head + n - reading) >= m && !memcmp(reading, q->preferred, m)))
-            *score |= RANK_PREFERRED;
-    }
+    if (spelled_or_read(q->preferred, head, spelling, reading, (size_t)(head + n - reading)))
+        *score |= RANK_PREFERRED;
+    if (d->prefix && spelled_or_read(q->usual, head, spelling, reading, (size_t)(head + n - reading)))
+        *score |= RANK_USUAL;
     return VJO_OK;
 }
 
-/* Posting j of a key: v2, the group's 16-byte postings; v1, index record
- * group + j (group is the key's first record). */
+/* Posting j of a key: v2/v3, the group's 16-byte postings; v1, index record
+ * group + j (group is the key's first record). v3 leaves a posting's last
+ * u16 to later index hints: this reader ignores it, v2 requires it zero. */
 static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_len, uint32_t j, Record *r)
 {
     uint8_t post[16];
@@ -502,8 +606,8 @@ static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_
     if ((rc = cached_read(w, d, group + key_len + j * 16, post, sizeof(post)))) return rc;
     r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
     r->key_off = group; r->key_len = key_len;
-    if (u16(post + 14) || (r->rules & ~RULE_MASK) || r->entry_off < d->data ||
-        r->entry_len < 4 || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
+    if ((d->version == 2 && u16(post + 14)) || (r->rules & ~RULE_MASK) || r->entry_off < d->data ||
+        r->entry_len < min_entry(d) || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
         !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
     return VJO_OK;
 }
@@ -650,12 +754,13 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     q->written = c ? cand->key : raw;
     q->written_len = c ? cand->len : raw_len;
     q->key = !c && (raw_len != cand->len || memcmp(raw, cand->key, raw_len)) ? cand : NULL;
-    q->preferred = preferred_for(cand->key);
+    q->preferred = table_value(preferred_readings, cand->key);
+    q->usual = table_value(usual_spellings, cand->key);
     STAT(probes);
 #ifdef VJO_LOCAL_STATS
     {
         VjoLocalStats before = vjo_local_stats;
-        int rc = w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit)
+        int rc = w->dicts[di].version >= 2 ? find_matches_v2(w, di, cand, q, limit)
                                            : find_matches_v1(w, di, cand, q, limit);
         int outcome = vjo_local_stats.found > before.found ? VJO_PROBE_FOUND
                     : vjo_local_stats.hash_present > before.hash_present ? VJO_PROBE_HASH
@@ -668,7 +773,7 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
         return rc;
     }
 #endif
-    return w->dicts[di].version == 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
+    return w->dicts[di].version >= 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
 }
 
 static int deinflect(Candidate *c, const char *key)
@@ -709,15 +814,23 @@ static int boundary(uint32_t cp)
 }
 
 /* Reads one payload, three NUL-terminated strings (spelling, reading and
- * plain-text definition), into out. The definition is displayed verbatim. */
+ * plain-text definition), into out; in v3 after the frequency word, which
+ * gives the rank. The definition is displayed verbatim. */
 static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t len, VjoVocab *v)
 {
     char *payload = vjo_arena_alloc(out, len), *reading, *meaning;
     size_t left;
+    int rank = VJO_NO_RANK;
     if (!payload) return VJO_E_TOO_LARGE;
+    if (len < min_entry(d)) return VJO_E_LOCAL_FORMAT;
     READ_KIND(VJO_READ_PAYLOAD);
     STAT_READ(len);
     if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
+    if (d->prefix) {
+        rank = (int)(u32((const uint8_t *)payload) & FREQ_RANK_MASK);
+        payload += d->prefix;
+        len -= d->prefix;
+    }
     if (!payload[0] || payload[len - 1]) return VJO_E_LOCAL_FORMAT;
     reading = memchr(payload, 0, len);
     if (!reading) return VJO_E_LOCAL_FORMAT;
@@ -727,10 +840,24 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
     if (!meaning || meaning + 1 >= payload + len) return VJO_E_LOCAL_FORMAT;
     meaning++;
     if (memchr(meaning, 0, len - (size_t)(meaning - payload) - 1)) return VJO_E_LOCAL_FORMAT;
-    v->spelling = payload; v->reading = *reading ? reading : payload; v->rank = VJO_NO_RANK;
+    v->spelling = payload; v->reading = *reading ? reading : payload; v->rank = rank;
     v->meanings = vjo_arena_alloc(out, sizeof(char *));
     if (!v->meanings) return VJO_E_TOO_LARGE;
     v->meanings[0] = meaning; v->n_meanings = 1;
+    return VJO_OK;
+}
+
+/* The result's frequency source: the list naming the first v3 entry's rank,
+ * copied after it (64 bytes at most); NULL while no entry has one. */
+static int set_source(VjoArena *out, const Dictionary *d, VjoDictResult *res)
+{
+    size_t n;
+    char *s;
+    if (res->source || !d->freq_title[0]) return VJO_OK;
+    n = strlen(d->freq_title) + 1;
+    if (!(s = vjo_arena_alloc(out, n))) return VJO_E_TOO_LARGE;
+    memcpy(s, d->freq_title, n);
+    res->source = s;
     return VJO_OK;
 }
 
@@ -746,7 +873,8 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
         }
     }
     if (n >= VJO_LOCAL_MAX_RESULTS || res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-    if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n])))
+    if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n])) ||
+        (rc = set_source(a, &w->dicts[m->dict], res)))
         return rc;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
     res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16};
@@ -808,6 +936,11 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         }
         if (!matched) pos16 += vjo_utf16_units(vjo_utf8_next(text, len, &off));
     }
+    /* The result names a frequency list only when every entry's dictionary
+     * has that one: an entry of a v2 file (or of another list) is not
+     * "unranked" in it. */
+    for (int i = 0; i < res->n_vocab && res->source; i++)
+        if (strcmp(w->dicts[w->seen_dict[i]].freq_title, res->source)) res->source = NULL;
 done:
     for (int i = 0; i < w->n_dicts; i++)
         if (w->dicts[i].file.close) w->dicts[i].file.close(w->dicts[i].file.ctx);
@@ -1033,10 +1166,11 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         err->detail = "A dictionary file changed. Close and reopen the overlay.";
         rc = VJO_E_LOCAL_IO;
     }
-    if (!rc && (pg->entry_off < d.data || pg->entry_len < 4 || pg->entry_len > VJO_LOCAL_MAX_ENTRY ||
+    if (!rc && (pg->entry_off < d.data || pg->entry_len < min_entry(&d) || pg->entry_len > VJO_LOCAL_MAX_ENTRY ||
                 !range_ok(&d, pg->entry_off, pg->entry_len)))
         rc = VJO_E_LOCAL_FORMAT;
     if (!rc) rc = read_entry(&output, &d, pg->entry_off, pg->entry_len, &res->vocab[0]);
+    if (!rc) rc = set_source(&output, &d, res);
     if (opened && d.file.close) d.file.close(d.file.ctx);
     if (rc) {
         memset(res, 0, sizeof(*res));

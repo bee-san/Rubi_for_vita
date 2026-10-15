@@ -591,7 +591,8 @@ static void test_enter_saves_offline(void)
     only_id(id);
     json = queue_file(id, "json", &len);
     TEST_ASSERT(json != NULL);
-    TEST_CHECK(!strcmp(json, "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"ねこ\",\"sentence\":\"猫が好き猫\","
+    /* version 4 (3's keys, rank 0 for none) */
+    TEST_CHECK(!strcmp(json, "{\"version\":4,\"spelling\":\"猫\",\"reading\":\"ねこ\",\"sentence\":\"猫が好き猫\","
                              "\"rank\":1500,\"hl_start\":0,\"hl_end\":3,\"picture\":false,"
                              "\"meanings\":[\"cat\",\"shamisen \\\"neko\\\"\"],\"sentence_furigana\":\"猫が好き猫\","
                              "\"sf_hl_start\":0,\"sf_hl_end\":3,\"source\":null,\"pitch\":[],\"pos\":[],"
@@ -708,7 +709,7 @@ static void test_japanese_and_escaping_round_trip(void)
     json = queue_file(id, "json", &len);
     TEST_ASSERT(json != NULL);
     vjo_arena_init(&a, mem, sizeof(mem));
-    TEST_ASSERT(vjo_queue_decode(&a, json, len, &n, &picture) == 3);
+    TEST_ASSERT(vjo_queue_decode(&a, json, len, &n, &picture) == 4);
     TEST_CHECK(!strcmp(n.spelling, "𠮷野家") && !strcmp(n.reading, "よしのや") && n.rank == 1234 &&
                n.n_meanings == 3 && !strcmp(n.meanings[0], meanings[0]) && !strcmp(n.meanings[1], "back\\slash") &&
                !strcmp(n.meanings[2], "日本語𠮷") && !strcmp(n.sentence, "𠮷野家で\r\n\"牛丼\" & <b>\\") && !picture &&
@@ -993,7 +994,7 @@ static void test_enter_records_every_dictionary(void)
     /* the note an export makes of it: every dictionary in its Glossary (the
      * lookup's result stays in mem for the second save below) */
     vjo_arena_init(&na, note_mem, sizeof(note_mem));
-    TEST_ASSERT(vjo_queue_decode(&na, json, len, &n, &picture) == 3);
+    TEST_ASSERT(vjo_queue_decode(&na, json, len, &n, &picture) == 4);
     TEST_CHECK(!strcmp(vjo_anki_field_value(&na, VJO_LAPIS_GLOSSARY, &n),
                        "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
                        "<li data-dictionary=\"Daijirin4 Plain\"><i>(Daijirin4 Plain)</i> <span>liked; favourite"
@@ -1127,7 +1128,10 @@ static void test_record_format(void)
         "{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]},{\"meanings\":[]}]}",
         "{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
         "\"picture\":false,\"meanings\":[],\"furigana\":7}",
-        "{\"version\":4,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "{\"version\":5,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1,\"hl_start\":0,\"hl_end\":0,"
+        "\"picture\":false,\"meanings\":[]}",
+        /* version 4: no rank is 0, never negative */
+        "{\"version\":4,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":-1,\"hl_start\":0,\"hl_end\":0,"
         "\"picture\":false,\"meanings\":[]}",
     };
     static const char *jm[] = {"[JMdict]\nto come"};
@@ -1155,7 +1159,7 @@ static void test_record_format(void)
                             "\"platform\":\"vita\",\"ocr_engine\":\"vocr\",\"ocr_model\":\"VOCR3_FL10_w8.vocr\","
                             "\"time\":4102444800,\"ocr_confidence\":null}\n") != NULL);
     TEST_MSG("%s", json);
-    TEST_ASSERT(vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 3);
+    TEST_ASSERT(vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 4);
     TEST_CHECK(!strcmp(d.furigana, "来[く]る") && !strcmp(d.dictionary, "Jiten") && d.n_more == 1 &&
                !strcmp(d.more[0].dictionary, "JMdict") && !strcmp(d.more[0].spelling, "来る") &&
                d.more[0].n_meanings == 1 && !strcmp(d.more[0].meanings[0], jm[0]));
@@ -1173,6 +1177,35 @@ static void test_record_format(void)
         vjo_arena_reset(&a);
         TEST_CHECK(vjo_queue_decode(&a, bad[i], strlen(bad[i]), &d, &picture) == -1);
         TEST_MSG("record %u", i);
+    }
+    /* No rank: 99999 in versions 1-3 (jpdb's), 0 in version 4, where 99999 is
+     * one of Jiten's ranks; an encoded note without one writes 0. */
+    {
+        static const struct { const char *json; int version, rank; } ranks[] = {
+            {"{\"version\":1,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":99999,\"hl_start\":0,"
+             "\"hl_end\":0,\"picture\":false,\"meanings\":[]}", 1, VJO_NO_RANK},
+            {"{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":99999,\"hl_start\":0,"
+             "\"hl_end\":0,\"picture\":false,\"meanings\":[]}", 3, VJO_NO_RANK},
+            {"{\"version\":3,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":1536,\"hl_start\":0,"
+             "\"hl_end\":0,\"picture\":false,\"meanings\":[]}", 3, 1536},
+            {"{\"version\":4,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":99999,\"hl_start\":0,"
+             "\"hl_end\":0,\"picture\":false,\"meanings\":[]}", 4, 99999},
+            {"{\"version\":4,\"spelling\":\"猫\",\"reading\":\"\",\"sentence\":\"\",\"rank\":0,\"hl_start\":0,"
+             "\"hl_end\":0,\"picture\":false,\"meanings\":[]}", 4, VJO_NO_RANK}};
+        for (unsigned i = 0; i < sizeof(ranks) / sizeof(*ranks); i++) {
+            vjo_arena_reset(&a);
+            TEST_CHECK(vjo_queue_decode(&a, ranks[i].json, strlen(ranks[i].json), &d, &picture) == ranks[i].version);
+            TEST_CHECK_(d.rank == ranks[i].rank, "record %u: rank %d", i, d.rank);
+        }
+        VjoAnkiNote none = n;
+        none.rank = VJO_NO_RANK;
+        vjo_arena_reset(&a);
+        json = vjo_queue_encode(&a, &none, 0);
+        TEST_ASSERT(json && strstr(json, "{\"version\":4,") == json && strstr(json, ",\"rank\":0,"));
+        TEST_CHECK(vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 4 && d.rank == VJO_NO_RANK);
+        none.rank = 99999;
+        json = vjo_queue_encode(&a, &none, 0);
+        TEST_CHECK(json && vjo_queue_decode(&a, json, strlen(json), &d, &picture) == 4 && d.rank == 99999);
     }
     /* over the size bound: neither written nor read */
     memset(oversized, 'x', sizeof(oversized) - 1);

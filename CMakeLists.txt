@@ -375,6 +375,9 @@ set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
 # Counts production file reads and times lookup only (no OCR or process startup).
 add_executable(vjo-local-bench host/local_bench.c)
 target_link_libraries(vjo-local-bench vjo_host)
+# The overlay's lookup at many words' first characters (tools/frequency_eval.py).
+add_executable(vjo-word-forms host/word_forms.c)
+target_link_libraries(vjo-word-forms vjo_host)
 
 # The Shell's word lookups over real recognized lines, every read attributed
 # (tools/dict_lookup_bench.py): its own local_dict.c with the counters on.

@@ -131,6 +131,18 @@ The console estimate is 56-74 ms at p50. The analysis, hoshidicts' design, the m
 results are in [reports/dict-lookup-speed.md](../reports/dict-lookup-speed.md), with the raw
 numbers in [dict-lookup-baseline-20261015.json](benchmarks/dict-lookup-baseline-20261015.json).
 
+The bundled dictionary with frequency ranks (format 3, #127) costs about the same. On the committed
+lines, main `ac905b1` with its bundle (format 2 and the key filter) against this change with the
+format 3 bundle and the same filter, a lookup makes 8.48 → 8.42 reads (first word), 8.59 → 8.62
+(Right through the text) and 9.28 → 9.37 (every letter). The difference is in the ranking's payload
+heads (3.40 → 3.28, 3.52 → 3.55, 4.00 → 4.09): other entries are shown, and each payload is 4 B
+longer, which shifts page boundaries. The console estimate's mean moves by -0.2 to +0.4 ms (53.5 →
+53.3, 54.0 → 54.1, 56.5 → 56.9 ms) and its p50 by one read's step at most (48.0 → 51.7, 48.4 → 48.0,
+51.7 → 51.7 ms; estimates). The result arena's peak is 53,840 → 54,416 B of its 65,536. The golden
+file is recorded on the format 3 bundle with the filter. Every digest changes, because an entry's
+text now carries its rank. With the badge text held equal, the ranks change the entry shown for 6 of
+50 first words, 36 of 629 word steps and 97 of 1,321 letters.
+
 ```sh
 python3 tools/dict_lookup_bench.py --bench build/host/vjo-dict-bench --directory build/host/plaintext \
   [--before OTHER_BENCH | --before-directory DIR | --before-dicts FILES] \

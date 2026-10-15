@@ -600,6 +600,161 @@ class LocalDictionaryTest(unittest.TestCase):
             self.assertIn(result.returncode, (0, 1), result.stderr)
 
 
+def freq(term_, rank, reading=None, kana=False):
+    """A Jiten-shaped rank-based frequency row: kana-form ranks show ㋕."""
+    value = {"value": rank, "displayValue": f"{rank}㋕" if kana else str(rank)}
+    return [term_, "freq", value if reading is None else {"reading": reading, "frequency": value}]
+
+
+def v3_entries(path):
+    """{(spelling, reading): frequency word} of every entry of a format 3 file."""
+    data = path.read_bytes()
+    magic, version, _, _, _, _, _, size, _, pages = convert.HEADER.unpack_from(data)
+    assert magic == b"VJDICT3\0" and version == 3 and size == len(data)
+    out = {}
+    for page in range(pages):
+        base = convert.PAGE_SIZE * (1 + page)
+        count = struct.unpack_from("<I", data, base + 4)[0]
+        for slot in range(count):
+            _, group, postings, key_len, _ = convert.HASH_RECORD.unpack_from(data, base + 16 + 24 * slot)
+            for j in range(postings):
+                offset, length, _, _ = convert.POSTING.unpack_from(data, group + key_len + 16 * j)
+                spelling, reading, _ = data[offset + 4:offset + length].split(b"\0", 2)
+                out[(spelling.decode(), reading.decode())] = struct.unpack_from("<I", data, offset)[0]
+    return out
+
+
+class FrequencyTest(unittest.TestCase):
+    """--frequency: a rank in every entry (format 3), matched as Yomitan matches, read by the overlay."""
+
+    setUp, tearDown = LocalDictionaryTest.setUp, LocalDictionaryTest.tearDown
+    archive, lookup = LocalDictionaryTest.archive, LocalDictionaryTest.lookup
+
+    def frequency(self, rows, index=None, name="freq.zip"):
+        path = self.directory / name
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+            z.writestr("index.json", json.dumps(index or {"format": 3, "title": "Jiten", "revision": "test",
+                                                          "frequencyMode": "rank-based"}))
+            z.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+        return path
+
+    def build_ranked(self, terms, rows, **kwargs):
+        path = self.directory / "main.vjdict"
+        stats = convert.convert([self.archive(terms)], path, frequency=self.frequency(rows), **kwargs)
+        return path, stats
+
+    def test_every_entry_gets_a_rank_or_the_unranked_zero(self):
+        terms = [term("猫", "ねこ", ["cat"]), term("猫", "ネコ", ["cat in katakana reading"]),
+                 term("ネコ", "", ["katakana spelling"]), term("から", "", ["particle"]),
+                 term("先", "さき", ["ahead"]), term("先", "さっき", ["a while ago"]),
+                 term("皆んな", "", ["variant spelling"]), term("凄い", "すごい", ["amazing"]),
+                 term("珍品", "ちんぴん", ["rarity"]), term("ＩＤ", "", ["identity"]),
+                 term("一", "", ["the character one"])]
+        rows = [freq("猫", 1536, "ねこ"), freq("猫", 18226, "ねこ", kana=True),
+                freq("ねこ", 18226, kana=True), freq("ネコ", 9209, kana=True), freq("から", 11, kana=True),
+                freq("先", 221, "さっき", kana=True), freq("先", 416, "さき"), freq("先", 10533, "さき", kana=True),
+                freq("先", 213803, "さっき"), freq("皆んな", 119, "みんな", kana=True),
+                freq("凄い", 174, "すごい", kana=True), freq("凄い", 3866, "すごい"), freq("ID", 18980, "アイディー"),
+                freq("一", 113075, "ひと"), freq("一", 795, "いち"), freq("一", 4158, "いち", kana=True)]
+        path, stats = self.build_ranked(terms, rows)
+        words = v3_entries(path)
+        rank = {k: w & convert.FREQ_RANK_MAX for k, w in words.items()}
+        self.assertEqual(stats["format_version"], 3)
+        self.assertEqual(rank[("猫", "ねこ")], 1536)        # the reading's own (kanji-form) row
+        self.assertEqual(rank[("猫", "ネコ")], 1536)        # after kana normalisation
+        self.assertTrue(words[("猫", "ネコ")] & convert.FREQ_NORMALIZED)
+        self.assertEqual(rank[("ネコ", "")], 9209)          # its spelling's own row before ねこ's
+        self.assertEqual(rank[("から", "")], 11)            # spelling-only row
+        self.assertEqual(rank[("先", "さき")], 416)         # not the kana-form 10533㋕
+        self.assertEqual(rank[("先", "さっき")], 213803)    # 先 read さっき, not さっき in kana (221)
+        self.assertEqual(rank[("凄い", "すごい")], 3866)
+        self.assertEqual(rank[("皆んな", "")], 119)         # no reading: its spelling's reading rows,
+        self.assertTrue(words[("皆んな", "")] & convert.FREQ_BORROWED)  # only a kana-form one: borrowed
+        self.assertEqual(rank[("ＩＤ", "")], 18980)          # full width as ASCII
+        self.assertEqual(rank[("一", "")], 795)             # the lowest of its own (kanji-form) rows
+        self.assertFalse(words[("一", "")] & convert.FREQ_BORROWED)
+        self.assertEqual(words[("珍品", "ちんぴん")], 0)       # unranked: the explicit zero
+        coverage = stats["frequency"]
+        self.assertEqual((coverage["entries_ranked"], coverage["entries_unranked"]), (10, 1))
+        self.assertEqual(coverage["borrowed_ranks"], 1)
+        self.assertEqual(coverage["unranked_value"], 0)
+        self.assertEqual(coverage["by_match"]["unranked"], 1)
+        self.assertEqual(sum(coverage["by_match"].values()), stats["entries"])
+        # format 3's header: the list's name after version 2's 64 bytes
+        data = path.read_bytes()
+        self.assertEqual(data[:8], b"VJDICT3\0")
+        self.assertEqual(data[64:128], b"Jiten".ljust(64, b"\0"))
+        # deterministic
+        again = self.directory / "again.vjdict"
+        convert.convert([self.archive(terms)], again, frequency=self.frequency(rows))
+        self.assertEqual(again.read_bytes(), data)
+
+    def test_reading_rows_decide_before_spelling_only_rows(self):
+        # Jiten has both kinds for あらら: the reading's row decides, even with a lower spelling-only rank;
+        # the spelling-only row ranks the entries its reading rows do not cover.
+        terms = [term("あらら", "あらら", ["oh dear"]), term("あらら", "アララ", ["katakana reading"]),
+                 term("嗚呼", "ああ", ["ah"]), term("嗚呼", "あー", ["ah, long"])]
+        rows = [freq("あらら", 94919, "あらら", kana=True), freq("あらら", 6888, kana=True),
+                freq("嗚呼", 69, "ああ", kana=True), freq("嗚呼", 352)]
+        path, _ = self.build_ranked(terms, rows)
+        rank = {k: w & convert.FREQ_RANK_MAX for k, w in v3_entries(path).items()}
+        self.assertEqual(rank[("あらら", "あらら")], 94919)
+        self.assertEqual(rank[("あらら", "アララ")], 94919)  # its reading normalises to あらら's
+        self.assertEqual(rank[("嗚呼", "ああ")], 69)
+        self.assertEqual(rank[("嗚呼", "あー")], 352)       # no row for あー: the spelling-only one
+
+    def test_the_overlay_reads_the_rank_and_breaks_ties_with_it(self):
+        terms = [term("解答", "かいとう", ["answer, with the longest article of the two"]),
+                 term("回答", "かいとう", ["reply"]), term("珍品", "ちんぴん", ["rarity"]),
+                 term("猫", "ねこ", ["cat"])]
+        rows = [freq("解答", 6000, "かいとう"), freq("回答", 3000, "かいとう"), freq("猫", 1536, "ねこ")]
+        self.build_ranked(terms, rows)
+        output = self.lookup("猫").stdout
+        self.assertIn("猫 (ねこ) #1536", output)
+        self.assertIn("珍品 (ちんぴん) unranked", self.lookup("珍品").stdout)
+        # 回答 is the more frequent: it comes first, the longer article second
+        both = self.lookup("かいとう").stdout
+        self.assertLess(both.index("回答 (かいとう) #3000"), both.index("解答 (かいとう) #6000"))
+        # without ranks (format 2) the longer article came first
+        convert.convert([self.archive(terms)], self.directory / "main.vjdict")
+        plain = self.lookup("かいとう").stdout
+        self.assertLess(plain.index("解答 (かいとう)"), plain.index("回答 (かいとう)"))
+        self.assertNotIn("#", plain)
+
+    def test_frequency_dictionaries_are_checked(self):
+        terms = [term("猫", "ねこ")]
+        with self.assertRaisesRegex(ValueError, "rank-based"):
+            convert.convert([self.archive(terms)], self.directory / "main.vjdict",
+                            frequency=self.frequency([freq("猫", 1)], {"format": 3, "title": "Counts",
+                                                                        "frequencyMode": "occurrence-based"}))
+        with self.assertRaisesRegex(ValueError, "no usable frequency rows"):
+            self.build_ranked(terms, [["猫", "pitch", {"reading": "ねこ", "pitches": []}]])
+        with self.assertRaisesRegex(ValueError, "format 3"):
+            convert.convert([self.archive(terms)], self.directory / "main.vjdict", format_version=3)
+        with self.assertRaisesRegex(ValueError, "format 3"):
+            convert.convert([self.archive(terms)], self.directory / "main.vjdict", format_version=2,
+                            frequency=self.frequency([freq("猫", 1)]))
+        # unusable values are counted and skipped, never guessed
+        rows = [freq("猫", 0, "ねこ"), freq("猫", -3, "ねこ"), freq("猫", 1 << 24, "ねこ"), freq("猫", 1.5, "ねこ"),
+                ["猫", "freq", {"reading": "ねこ", "frequency": "12㋕"}], ["猫", "freq", True],
+                ["猫", "freq", {"reading": "", "frequency": 5}], ["猫", "pitch", {"reading": "ねこ", "pitches": []}],
+                ["猫", "freq", {"reading": "ねこ", "frequency": "77"}]]
+        path, stats = self.build_ranked(terms, rows)
+        self.assertEqual(stats["frequency"]["unusable_rows"], 7)
+        self.assertEqual(stats["frequency"]["other_mode_rows"], 1)
+        self.assertEqual(v3_entries(path)[("猫", "ねこ")] & convert.FREQ_RANK_MAX, 77)  # a numeric string
+        with self.assertRaisesRegex(ValueError, "expected \\[term, mode, data\\]"):
+            self.build_ranked(terms, [["猫", "freq"]])
+        # the list's name is clipped to 63 bytes of whole characters
+        long_title = "長" * 30
+        path = self.directory / "main.vjdict"
+        convert.convert([self.archive(terms)], path, frequency=self.frequency(
+            [freq("猫", 1, "ねこ")], {"format": 3, "title": long_title, "frequencyMode": "rank-based"}))
+        title = path.read_bytes()[64:128].rstrip(b"\0").decode()
+        self.assertEqual(title, "長" * 21)
+        self.assertIn("猫 (ねこ) #1", self.lookup("猫").stdout)
+
+
 class FakeFTP:
     def __init__(self, files=None, fail_replace=False, vitashell_dele=False):
         self.files = files or {}

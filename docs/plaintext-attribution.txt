@@ -1,4 +1,4 @@
-Frozen plaintext dictionary bundle, 2026-10-13
+Frozen plaintext dictionary bundle, 2026-10-13 (frequency ranks 2026-10-15)
 
 Priority: Daijirin4 -> Sankoku8 -> JMdict.
 Deduplication selects the first source for each spelling and normalized reading,
@@ -17,6 +17,14 @@ JMdict copyright: James William Breen and the Electronic Dictionaries Research G
 JMdict licence: CC BY-SA 4.0, https://www.edrdg.org/edrdg/licence.html
 See JMdict-LICENSE.html. Dictionary data retains its original ownership;
 the plugin software license does not relicense dictionary content.
+
+Frequency ranks: the Jiten global frequency list (revision "Jiten 26-10-09",
+retrieved 2026-10-15) by Jiten, https://jiten.moe
+(https://jiten.moe/frequency-dictionaries), licensed under CC BY-SA 4.0,
+https://creativecommons.org/licenses/by-sa/4.0/.
+Change made: each dictionary entry carries the rank of its word in that list
+(0, shown as "unranked", when the list has none). These attached ranks, an
+adaptation of the list, are shared under CC BY-SA 4.0.
 
 Exact snapshots, hashes and conversion counts: plaintext-dictionaries.json.
 No automatic dictionary updates are performed.

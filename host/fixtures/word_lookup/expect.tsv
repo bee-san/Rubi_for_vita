@@ -34,7 +34,9 @@ vita_tight_v1015_151321	H15	そうなんだ	そうなんだ	そうなんだ	-	ka
 vita_tight_v12178_127145	H15	して	して	して	-	kana
 vita_tight_v12178_127145	H15	ましょう	ましょう	ましょう	-	kana
 vita_tight_v12178_127145	H15	こう	こう	斯う	こう	kana
-vita_tight_v18449_89742	H15	ありがとう	ありがとう	有り難う	ありがとう	kana
+# Two spellings of ありがとう, one Daijirin4 article each: Jiten ranks 有難う (#48228) above
+# 有り難う (#63168), so the frequency tie-break shows it.
+vita_tight_v18449_89742	H15	ありがとう	ありがとう	有難う	ありがとう	kana
 vita_tight_v18449_89742	H15	うふふ	うふふ	うふふ	-	kana
 vita_tight_v13090_154662	H15	から	から	から	-	kana
 vita_tight_v13090_154662	H15	ほとんど	ほとんど	ほとんど	-	kana
@@ -56,7 +58,9 @@ vita_tight_v15231_88272	H15	僕	僕	僕	ぼく	common reading
 vita_tight_v13766_88834	H15	先生	先生	先生	せんせい	common reading
 vita_tight_v17641_99842	H15	お姫様	お姫様	お姫様	おひめさま	common reading
 vita_tight_v1015_151321	FL10	美味しいつて	美味しい	美味しい	おいしい	ocr error
-vita_tight_v13090_154661	FL10	入生	入	入	にゅう	ocr error
+# 入 alone: the frequency tie-break shows JMdict's ranked 入 (いり, Jiten #8367) before
+# Daijirin4's unranked character article (にゅう) with the longer text.
+vita_tight_v13090_154661	FL10	入生	入	入	いり	ocr error
 psp_tight_v8591_53476	H15	脱組んで	脱	脱	だつ	ocr error
 psp_tight_v8591_53476	FL10	友違	友	友	とも	ocr error
 psp_tight_v6723_36095	H15	士に	士	士	し	ocr error

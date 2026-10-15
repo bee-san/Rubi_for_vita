@@ -14,7 +14,7 @@ import secrets
 import sys
 import time
 
-from convert_dictionary import HEADER, MAGIC, MAGIC_V2, RECORD, PAGE_SIZE
+from convert_dictionary import HEADER, MAGIC, MAGIC_V2, MAGIC_V3, RECORD, PAGE_SIZE
 
 DATA_DIR = "/ux0:/data/VitaJPOverlay"
 DICT_DIR = DATA_DIR + "/dictionaries"
@@ -34,7 +34,7 @@ def inspect(path):
                         and data <= size and size == path.stat().st_size and size <= 0x7FFFFFFFFFFFFFFF)
         v1_valid = (version == 1 and magic == MAGIC and index == HEADER.size
                     and data == header + count * stride and r1 == 0 and r2 == 0)
-        v2_valid = (version == 2 and magic == MAGIC_V2 and index == PAGE_SIZE
+        v2_valid = (version in (2, 3) and magic == (MAGIC_V2 if version == 2 else MAGIC_V3) and index == PAGE_SIZE
                     and 0 < r1 <= 0xFFFFFFFF and not (r1 & (r1 - 1))
                     and r1 <= r2 <= 0xFFFFFFFF and data == PAGE_SIZE * (1 + r2))
         if not common_valid or not (v1_valid or v2_valid):

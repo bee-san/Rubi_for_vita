@@ -90,7 +90,7 @@ class SaveRestartTests(Storage):
             self.assertEqual((saved["status"], saved["count"], saved["connects"]), ("Saved for Anki", count, 0))
         self.assertEqual(self.run_step(SHELL, "save")["status"], "Already queued")
         records = [json.loads((self.queue / f"{i}.json").read_text("utf-8")) for i in self.records(self.queue)]
-        self.assertEqual({r["version"] for r in records}, {3})
+        self.assertEqual({r["version"] for r in records}, {4})
         self.assertEqual(sorted(r["spelling"] for r in records), ["好き", "猫"])
         self.assertEqual({(r["game"], r["title_id"], r["platform"]) for r in records}, {("CLANNAD", "PCSG00415", "vita")})
         self.assertFalse([p for p in self.queue.iterdir() if p.name.endswith((".jpg", ".tmp"))])

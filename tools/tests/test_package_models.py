@@ -65,7 +65,7 @@ class PackageModels(unittest.TestCase):
         if write_models:
             self.write_models()
         dictionary = self.root / "jmdict.vjdict"
-        dictionary.write_bytes(b"VJDICT2\0synthetic dictionary fixture")
+        dictionary.write_bytes(b"VJDICT3\0synthetic dictionary fixture")
         snapshot = {"bytes": dictionary.stat().st_size, "sha256": release.digest(dictionary)}
         license_file = self.root / "fixture-license.txt"
         license_file.write_text("Unit-test fixture")
