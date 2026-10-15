@@ -140,7 +140,7 @@ metrics. The "before" column is main `7ed16d8`'s `main.c` in the same harness
 | | before | after |
 |---|---:|---:|
 | idle frame, glyphs measured | 3,323 | 61 |
-| scroll (Down held 30+ rows and back): frames that move the view, mean / max ms | 0.516 / 0.565 | 0.165 / 0.220 |
+| scroll (Down held 30+ rows and back): frames that move the view, mean / max ms | 0.517 / 0.581 | 0.166 / 0.220 |
 | scroll: PNG decodes per view move | 2.9 | 0.91 |
 | scroll: icon file reads in 440 frames | 2,352 | 106 |
 | scroll: glyphs measured per frame, mean | 4,681 | 95 |
@@ -153,7 +153,8 @@ The milliseconds are this host's, not the Vita's: the console's PVF calls, its
 memory card reads and its texture allocation are not modelled, and none of it
 has been timed on the console. The counts are what the change removes there.
 With 512 games the after column is the same; before, an idle frame measured
-6,049 glyphs. Run it with
+6,049 glyphs. The four tables (100 and 512 games, before and after) are in
+[benchmarks/settings-gamelist-20261015.md](benchmarks/settings-gamelist-20261015.md). Run it with
 `cmake --build build/host --target vjo-settings-bench && build/host/vjo-settings-bench 100 5`.
 
 ### Tests
