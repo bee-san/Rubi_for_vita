@@ -146,6 +146,8 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     r->need_workspace = ws + cap; r->need_weights = weights == 1 ? (fallback ? 659456 : 1159168) : 0;
     add(r, VJO_GSTEP_MEM, 0, 0, 0, 0, freem, 10);
     add(r, VJO_GSTEP_CHECK, 0, 0, 0, r->need_workspace + r->need_weights + r->reserve_bytes, freem, 20);
+    if (fallback) /* the fallback's check, which the self-test forced */
+        add(r, VJO_GSTEP_CHECK, 0, 1, 0, r->need_workspace + r->need_weights + r->reserve_bytes, freem, 20)->sum = 1;
     if (cdram) {
         add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_USER, VJO_GITEM_CAPTURE, (int32_t)0x80024302u, cap, freem, 30);
         add(r, VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_CDRAM, VJO_GITEM_CAPTURE, 0x41, held, freem, 31)->free_cdram -= 262144;
@@ -169,7 +171,6 @@ static void region_job(VjoGameOcrResult *r, int full, int weights, int fallback,
     add(r, VJO_GSTEP_SIG, src, 0, 0, 960, freem, 0)->sum = 960u << 16 | 544u;
     add(r, VJO_GSTEP_FIND, 0, lines, 0, 0, freem, full ? 48000 : 9000);
     if (weights == 1) add(r, VJO_GSTEP_LOAD, 0, 0, 0, r->need_weights, freem, fallback ? 610000 : 1050000);
-    if (fallback) add(r, VJO_GSTEP_FALLBACK, 0, 1, 0, 0, freem, 0);
     add(r, VJO_GSTEP_RECOGNIZE, 0, lines, 0, 0, freem, full ? 1400000 : 820000);
     add(r, VJO_GSTEP_FREE, VJO_GAME_OCR_MEM_USER, VJO_GITEM_WORKSPACE, 0, ws, freem += (int32_t)ws, 0);
     if (cdram) add(r, VJO_GSTEP_FREE, cmem, VJO_GITEM_CAPTURE, 0, held, freem, 0);

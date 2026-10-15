@@ -890,6 +890,28 @@ static void the_first_job_logs_the_lm_cascade_and_norm(void)
     TEST_CHECK(weights_live && lm_live && cascade_live && blocks_held == 3 && blocks_kept() == 3);
     TEST_MSG("%u steps: lm %u cascade %u norm %u settle %u free %u", out.n_steps, lm, casc, norm, settle, frees);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live && !cascade_live);
+    /* the same first job with the refinement (a PSP game's): its step too, all within the log */
+    {
+        VjoGameOcrRequest p = setup(); VjoGameOcrResult o;
+        unsigned seen = 0;
+        line();
+        available = 64 * 1024 * 1024;
+        frame_us = 16667;
+        test_cascade_conf = 1001;
+        snprintf(p.model, sizeof(p.model), "H15_w8.vocr");
+        snprintf(p.fallback, sizeof(p.fallback), "FL10_w8.vocr");
+        p.flags = r.flags | VJO_GAME_OCR_REFINE_ON << VJO_GAME_OCR_REFINE_SHIFT;
+        TEST_ASSERT(vjo_game_ocr_run_request(&p, &o) == 0 && o.fallback == 1);
+        for (unsigned i = 0; i < o.n_steps; i++) {
+            unsigned id = o.step[i].id;
+            seen |= (id == VJO_GSTEP_REFINE) << 0 | (id == VJO_GSTEP_LM) << 1 | (id == VJO_GSTEP_CASCADE) << 2 |
+                    (id == VJO_GSTEP_NORM && o.text[0]) << 3;
+        }
+        TEST_CHECK(seen == (o.text[0] ? 15u : 7u) && o.n_steps <= VJO_GAME_OCR_STEPS &&
+                   o.step[o.n_steps - 1].id == VJO_GSTEP_FREE && o.step[o.n_steps - 2].id == VJO_GSTEP_FREE);
+        TEST_MSG("with the refinement: %u steps, seen 0x%x", o.n_steps, seen);
+        TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live && !cascade_live);
+    }
 }
 
 /* API 20, the beam + LM decoder: with the LMs beside the models, a request
@@ -1102,7 +1124,8 @@ static void forced_fallback_runs_the_fallback(void)
     TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && out.fallback == 1);
     int forced = 0;
     for (unsigned i = 0; i < out.n_steps; i++)
-        if (out.step[i].id == VJO_GSTEP_FALLBACK && out.step[i].arg == 1) forced = 1;
+        if (out.step[i].id == VJO_GSTEP_CHECK && out.step[i].arg == 1 && out.step[i].sum == 1) forced = 1;
+    for (unsigned i = 0; i < out.n_steps; i++) TEST_CHECK(out.step[i].id != VJO_GSTEP_FALLBACK);
     TEST_CHECK(forced);
 }
 TEST_LIST = {

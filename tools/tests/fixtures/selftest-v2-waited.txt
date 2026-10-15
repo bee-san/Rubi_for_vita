@@ -34,6 +34,7 @@ stage fallback wait t=152799 rc=0 screens=3/30
 stage fallback begin t=156799 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr
 gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep fallback check kind=0 arg=0 rc=0x00000000 bytes=5103616 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
+gstep fallback check kind=0 arg=1 rc=0x00000000 bytes=5103616 sum=0x00000001 main=91226112 cdram=117440512 phycont=0 us=20
 gstep fallback alloc kind=user arg=capture rc=0x00000041 bytes=61440 sum=0x00000000 main=91164672 cdram=117440512 phycont=0 us=30
 gstep fallback alloc kind=user arg=workspace rc=0x00000042 bytes=188416 sum=0x00000000 main=90976256 cdram=117440512 phycont=0 us=40
 gstep fallback alloc kind=user arg=weights rc=0x00000043 bytes=659456 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=50
@@ -42,7 +43,6 @@ gstep fallback pass kind=hook arg=3 rc=0x00000000 bytes=114625 sum=0x00000000 ma
 gstep fallback sig kind=hook arg=0 rc=0x00000000 bytes=960 sum=0x03C00220 main=90316800 cdram=117440512 phycont=0 us=0
 gstep fallback find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=9000
 gstep fallback load kind=- arg=0 rc=0x00000000 bytes=659456 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=610000
-gstep fallback fallback kind=- arg=1 rc=0x00000000 bytes=0 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=0
 gstep fallback recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=90316800 cdram=117440512 phycont=0 us=820000
 gstep fallback free kind=user arg=workspace rc=0x00000000 bytes=188416 sum=0x00000000 main=90505216 cdram=117440512 phycont=0 us=0
 gstep fallback free kind=user arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=90566656 cdram=117440512 phycont=0 us=0

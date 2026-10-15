@@ -110,7 +110,8 @@ typedef struct {
 enum {
     VJO_GSTEP_NONE = 0,
     VJO_GSTEP_MEM,       /* a memory sample (rc: the query's) */
-    VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's */
+    VJO_GSTEP_CHECK,     /* the memory check: rc 0 passed, 1 refused; bytes needed; arg 1 = the fallback's, which
+                            then runs (sum 1: forced by the self-test) */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
     VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
@@ -119,7 +120,7 @@ enum {
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
-    VJO_GSTEP_FALLBACK,  /* the fallback model runs: arg 1 = forced by the self-test */
+    VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
                             arg = width, sum = pixel format, rc the query's */
     VJO_GSTEP_PROBE,     /* a probe capture: kind VJO_GAME_OCR_SRC_*, arg VJO_GAME_OCR_MEM_*, sum the

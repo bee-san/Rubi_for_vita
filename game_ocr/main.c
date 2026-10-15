@@ -929,9 +929,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         use_bytes = fallback_bytes;
         casc = casc_model && casc_model->bytes > fallback->bytes ? casc_model : NULL;
         fits = check_with_lm(out, fallback, fallback_bytes, capture_bytes, lm_max, &casc, &lm);
-        step_add(VJO_GSTEP_FALLBACK, 0, forced ? 1u : 0u, 0, 0, 0, 0, 0);
+        /* The fallback's check (arg 1) is the record that the fallback runs, and its sum
+         * says whether the self-test forced it: no FALLBACK step, so the first job of a
+         * PSP game (the refinement's step besides the LM's and the cascade's) fits the log. */
         step_add(VJO_GSTEP_CHECK, (lm ? lm->tier : 0u) | (casc ? 8u : 0u), 1, fits ? 0 : 1,
-                 out->need_workspace + out->need_weights, 0, 0, 0);
+                 out->need_workspace + out->need_weights, forced ? 1u : 0u, 0, 0);
     }
     stats.workspace = use_bytes;
     if (!fits) {

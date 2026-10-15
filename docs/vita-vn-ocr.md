@@ -452,9 +452,11 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 - The job's 20-step log reserves a slot only for the release of a block this job can still free:
   its capture and workspace blocks, a tall line's buffer, and a resident block (weights, LM, W20)
   only while its contents are not verified. The self-test's first stage, the job that first reads
-  all three, then logs exactly 20 steps and keeps its `lm`, `cascade` and `norm` steps, which carry
-  their first read times. One step more (a torn read, the capture block refused by USER) drops
-  `norm`; a tall line's two drop `cascade` as well.
+  all three, then logs 19 steps, and 20 in a PSP game with the finder refinement's `refine` step;
+  it keeps its `lm`, `cascade` and `norm` steps, which carry their first read times. The fallback
+  that stage forces needs no step of its own: its `check` (arg 1) records it. A step more than the
+  log holds (a torn read, the capture block refused by USER, a tall line's two) drops the last of
+  them, `norm` first.
 - `game vocr lines:` gives each line's confidence (`c0`-`c1000`, the smallest top-class probability
   over the frames that emit a character), `*` when the text shown differs from the greedy
   reading, and `^` when the cascade read the line again.
