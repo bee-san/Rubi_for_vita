@@ -505,6 +505,26 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("already has a key filter", result.stderr)
 
+    def test_key_filter_keeps_page_zero_bytes_192_to_255(self):
+        """Page-0 bytes 192..255 hold a dictionary title elsewhere: added around, kept as they are."""
+        rows = [*self.FILTER_ROWS, *self.filler(1200)]
+        convert.convert([self.archive(rows)], self.directory / "plain.vjdict", key_filter=False)
+        plain = bytearray((self.directory / "plain.vjdict").read_bytes())
+        plain[192:207] = b"A fixture title"
+        (self.directory / "titled.vjdict").write_bytes(plain)
+        convert.add_key_filter(self.directory / "titled.vjdict", self.directory / "out.vjdict")
+        out = (self.directory / "out.vjdict").read_bytes()
+        self.assertEqual(out[192:256], bytes(plain[192:256]))
+        self.assertEqual(out[convert.FILTER_DESCRIPTOR_OFFSET:convert.FILTER_DESCRIPTOR_OFFSET + 4], b"VJKF")
+        self.assertEqual(self.shown("out.vjdict"), self.shown("plain.vjdict"))
+        for spot in (160, 191, 256, 4095):  # the filter's own bytes must be empty
+            bad = bytearray(plain)
+            bad[spot] = 1
+            (self.directory / "bad.vjdict").write_bytes(bad)
+            with self.assertRaisesRegex(ValueError, "not empty"):
+                convert.add_key_filter(self.directory / "bad.vjdict", self.directory / "never.vjdict")
+        self.assertFalse((self.directory / "never.vjdict").exists())
+
     def test_corrupt_key_filter_does_not_crash_runtime(self):
         path, _ = self.build([*self.FILTER_ROWS, *self.filler(1200)])
         original = path.read_bytes()

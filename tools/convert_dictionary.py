@@ -40,6 +40,8 @@ RULES = {"v1": 1, "v5": 2, "vs": 4, "vk": 8, "vz": 16, "adj-i": 32, "iru": 64}
 FILTER_MAGIC = b"VJKF"
 FILTER_DESCRIPTOR = struct.Struct("<4sIIIQII")  # magic, version 1, blocks, hashes, offset, keys, 0
 FILTER_DESCRIPTOR_OFFSET = 128
+# Page-0 bytes 192..255 belong to the dictionary's title (bee-san/plaintext-dicts), not the filter.
+FILTER_TITLE_GAP = (192, 256)
 FILTER_DIRECTORY_OFFSET = 256  # one u32 first prefix per block
 FILTER_MAX_BLOCKS = (PAGE_SIZE - FILTER_DIRECTORY_OFFSET) // 4
 FILTER_BLOCK_BITS = PAGE_SIZE * 8
@@ -377,8 +379,9 @@ def add_key_filter(path, output=None):
             raise ValueError(f"{path}: not a version 2 or later dictionary")
         if page0[FILTER_DESCRIPTOR_OFFSET:FILTER_DESCRIPTOR_OFFSET + 4] == FILTER_MAGIC:
             raise ValueError(f"{path}: already has a key filter")
-        if any(page0[FILTER_DESCRIPTOR_OFFSET:]):
-            raise ValueError(f"{path}: page 0 after byte {FILTER_DESCRIPTOR_OFFSET} is not empty")
+        if any(page0[FILTER_DESCRIPTOR_OFFSET:FILTER_TITLE_GAP[0]]) or any(page0[FILTER_DIRECTORY_OFFSET:]):
+            raise ValueError(f"{path}: page 0's bytes {FILTER_DESCRIPTOR_OFFSET}..{FILTER_TITLE_GAP[0] - 1} or "
+                             f"{FILTER_DIRECTORY_OFFSET}..{PAGE_SIZE - 1} are not empty")
         size = struct.unpack_from("<Q", page0, 40)[0]
         if size != path.stat().st_size:
             raise ValueError(f"{path}: size does not match its header")

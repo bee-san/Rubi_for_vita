@@ -424,7 +424,9 @@ read it as before.
   u32 block count; u32 hash count=7; u64 offset of the first block; u32 key
   count; u32 reserved=0.
 - **Directory.** From byte 256 of page 0: one u32 per block, the block's first
-  prefix. The first is 0, the rest increase.
+  prefix. The first is 0, the rest increase. Bytes 160..191 are reserved (0), and
+  bytes 192..255 are not the filter's: a dictionary title may use them
+  (bee-san/plaintext-dicts).
 - **Blocks.** Page-aligned, 4 KiB each, and they end the file (the header's file
   size includes them). Each is a 32,768-bit Bloom filter, bit `i` being byte
   `i / 8`, bit `i % 8`. A key sets bits `(h1 + k * h2) mod 32768` for k = 0..6,
