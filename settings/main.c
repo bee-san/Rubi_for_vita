@@ -19,6 +19,7 @@
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
 #include "../vita/buttons_vita.h"
+#include "../core/stick_scroll.h"
 
 #define ROWS 3
 #define TAB_Y 52
@@ -647,17 +648,24 @@ int main(void)
     }
     if (em_width > 0) font_em = (float)em_width;
     vita2d_set_clear_color(BG);
-    sceCtrlSetSamplingMode(SCE_CTRL_MODE_DIGITAL);
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;
+    VjoStickScroll stick_state;
+    memset(&stick_state, 0, sizeof(stick_state));
     for (;;) {
         SceCtrlData pad;
         memset(&pad, 0, sizeof(pad));
         sceCtrlPeekBufferPositive(0, &pad, 1);
         uint32_t pressed = pad.buttons & ~previous;
+        /* The left stick moves the selection as Up/Down would (core/stick_scroll.h).
+         * Counted every frame, also under the keyboard, so a stick still held
+         * when it closes is no new move. */
+        int stick = vjo_stick_scroll(&stick_state, pad.ly);
+        uint32_t stick_key = stick < 0 ? SCE_CTRL_UP : stick > 0 ? SCE_CTRL_DOWN : 0;
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
         uint64_t now = sceKernelGetProcessTimeWide();
@@ -682,8 +690,9 @@ int main(void)
         if (page == 2) {
             /* anki_page.c reads its own buttons and touches */
         } else if (page) {
-            if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
-            if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
+            if ((pressed | stick_key) & SCE_CTRL_UP)
+                preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
+            if ((pressed | stick_key) & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
             if (pressed & buttons.enter) toggle_preference();
             if (pressed & SCE_CTRL_LEFT) set_preference(0);
             if (pressed & SCE_CTRL_RIGHT) set_preference(1);
@@ -698,6 +707,8 @@ int main(void)
             /* A key just pressed acts at once; one held repeats. */
             list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
+        } else if (!page && stick_key) {
+            list_key(stick_key); /* the d-pad first, as in VitaShell */
         }
         previous = pad.buttons;
         SceTouchData touch;
@@ -757,7 +768,7 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page == 2) vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
+        if (page == 2) vjo_anki_page_frame(&anki_ui, pressed | stick_key, touch_x, touch_y, &scratch);
         else if (page) draw_preferences(); else draw();
         sceDisplayWaitVblankStart();
     }

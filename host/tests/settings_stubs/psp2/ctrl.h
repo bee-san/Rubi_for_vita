@@ -9,6 +9,7 @@ enum {
     SCE_CTRL_CIRCLE = 0x00002000, SCE_CTRL_CROSS = 0x00004000, SCE_CTRL_SQUARE = 0x00008000
 };
 #define SCE_CTRL_MODE_DIGITAL 0
+#define SCE_CTRL_MODE_ANALOG 1
 typedef struct {
     uint64_t timeStamp;
     unsigned int buttons;

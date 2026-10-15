@@ -156,6 +156,11 @@ target_include_directories(vjo-region-select-tests PRIVATE third_party/acutest/i
 target_link_libraries(vjo-region-select-tests vjo_host)
 target_compile_options(vjo-region-select-tests PRIVATE -Wall -Wextra)
 add_test(NAME region_select COMMAND vjo-region-select-tests)
+# The Overlay app's left-stick list scrolling (core/stick_scroll.h), against VitaShell's readPad.
+add_executable(vjo-stick-scroll-tests host/tests/test_stick_scroll.c)
+target_include_directories(vjo-stick-scroll-tests PRIVATE third_party/acutest/include core)
+target_compile_options(vjo-stick-scroll-tests PRIVATE -Wall -Wextra)
+add_test(NAME stick_scroll COMMAND vjo-stick-scroll-tests)
 
 # End-to-end word lookup on real VOCR output with the bundled dictionary
 # (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts
