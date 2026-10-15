@@ -50,7 +50,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 116 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 122 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-arm-linux-gnueabihf`, `qemu-user-static`). It
 is not a Vita: no firmware, no taiHEN, no SceShell, no budgets; a pass here says the C is
