@@ -393,9 +393,16 @@ if [ -n "$PACKAGE_DIR" ]; then
   done
 fi
 # The Overlay app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
-# the record of it the Shell plugin compares the installed app with.
+# the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
+# was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another
+# build's app.
 if [ -f "$APP_VPK" ]; then put "$APP_VPK" "ux0:/data/JPOverlaySettings.vpk"; fi
-if [ -f "$APP_STAMP" ]; then put "$APP_STAMP" "ux0:/data/VitaJPOverlay/vjo_app.txt"; fi
+if [ -f "$APP_STAMP" ]; then
+  put "$APP_STAMP" "ux0:/data/VitaJPOverlay/vjo_app.txt"
+else
+  : > "$TMP/app.none"
+  put "$TMP/app.none" "ux0:/data/VitaJPOverlay/vjo_app.txt"
+fi
 for f in ${VOCR_MODELS[@]+"${VOCR_MODELS[@]}"}; do
   # The plugin checks the file's size and SHA-256 before it parses it.
   put "$f" "ux0:/data/VitaJPOverlay/ocr/$(basename "$f")"

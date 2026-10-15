@@ -351,8 +351,13 @@ elif '-o' in a:
             shutil.copyfile(plugin, build / plugin.name)
         shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco",
                         build / "vitajpoverlay.rco")
+        # an earlier build's record of its app: this build has no stamp (its VPK was not built)
+        (self.data / "vjo_app.txt").write_text("vjoapp1 api=20 build=0123456789abcdef\n")
         result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # the record is emptied, never left describing another build's app; the box cannot tell
+        self.assertEqual((self.data / "vjo_app.txt").read_bytes(), b"")
+        self.assertIn("Overlay app: not checked", result.stdout)
         config = (self.data / "config.ini").read_text()
         for setting in ("ocr_backend = lens", "vocr_tier = normal", "font_size_ja = 24"):
             self.assertIn(setting, config)
