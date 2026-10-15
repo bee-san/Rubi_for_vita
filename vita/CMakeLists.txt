@@ -316,6 +316,7 @@ vita_create_self(eboot.bin VitaJPOverlay_Settings UNSAFE ATTRIBUTE 0x0E MEMSIZE 
 vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
   VERSION "01.00" NAME "Overlay"
   FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png
+       ${ROOT}/settings/assets/pic0.png sce_sys/pic0.png
        ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
        ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png
        ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml)

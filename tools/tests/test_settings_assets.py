@@ -15,7 +15,7 @@ import check_settings_assets as assets
 class SettingsAssets(unittest.TestCase):
     def test_committed_and_packaged_assets_meet_native_constraints(self):
         directory = ROOT / "settings/assets"
-        self.assertEqual(len(assets.check(directory)), 3)
+        self.assertEqual(len(assets.check(directory)), 4)
         with tempfile.TemporaryDirectory() as temporary:
             vpk = Path(temporary) / "settings.vpk"
             with zipfile.ZipFile(vpk, "w") as archive:

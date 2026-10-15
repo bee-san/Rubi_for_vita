@@ -60,7 +60,8 @@ paints the bubble's inside white and draws あ from hand-made Bezier strokes in 
 outline colour. It writes `icon0.png` (the whole picture, 128 x 128), `startup.png`
 (the mascot cut out of her background, with an "Overlay" wordmark drawn from round
 strokes, no font) and `bg.png` (a soft gradient with faint あ bubbles, sparkles, the
-mascot and the wordmark), each quantized to at most 256 colours as an opaque 8-bit
+mascot and the wordmark; `pic0.png`, the 960 x 544 launch splash, is the same
+picture scaled to the full height with its plain edges extended), each quantized to at most 256 colours as an opaque 8-bit
 palette PNG.
 
 ## The other candidates

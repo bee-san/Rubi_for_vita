@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the Overlay app's LiveArea art (settings/assets/{icon0,startup,bg}.png).
+"""Rebuild the Overlay app's LiveArea art (settings/assets/{icon0,startup,bg,pic0}.png).
 
 Needs tools/requirements-assets.txt. The mascot is settings/assets/icon-source.png,
 a FLUX.1 [schnell] image whose model, licence, checksums, prompt and seed are
@@ -191,6 +191,19 @@ def save_indexed(image, name, max_bytes=None):
     return path
 
 
+def splash(bg):
+    """The launch splash (pic0.png, 960 x 544): bg scaled to the full height, its plain
+    edge columns extended into the margins, so the wordmark is not cropped."""
+    width = round(bg.width * 544 / bg.height)
+    scaled = bg.resize((width, 544), Image.LANCZOS)
+    left = (960 - width) // 2
+    canvas = Image.new("RGB", (960, 544))
+    canvas.paste(scaled.crop((0, 0, 1, 544)).resize((left, 544)), (0, 0))
+    canvas.paste(scaled.crop((width - 1, 0, width, 544)).resize((960 - left - width, 544)), (left + width, 0))
+    canvas.paste(scaled, (left, 0))
+    return canvas
+
+
 def main():
     art = mascot()
     save_indexed(art.resize((128, 128), Image.LANCZOS), "icon0.png", ICON0_MAX_BYTES)
@@ -217,6 +230,7 @@ def main():
     paths, _ = wordmark_paths(816 - width, 428, 34)   # right-aligned at x 816
     sticker_text(bg, paths, 8, 4)
     save_indexed(bg, "bg.png")
+    save_indexed(splash(bg), "pic0.png")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ import zipfile
 
 ASSETS = {
     "sce_sys/icon0.png": (128, 128),
+    "sce_sys/pic0.png": (960, 544),  # the launch splash: bg.png, scaled
     "sce_sys/livearea/contents/bg.png": (840, 500),
     "sce_sys/livearea/contents/startup.png": (280, 158),
 }
