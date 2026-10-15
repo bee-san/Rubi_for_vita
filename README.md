@@ -555,6 +555,12 @@ record) or delete `ur0:data/VitaJPOverlay/boot.txt`. See
 hold L while powering on to skip plugins, start VitaShell FTP, and run
 `bash tools/install_ftp.sh --uninstall VITA_IP`. Uninstalling preserves data.
 
+The Overlay app is not a plugin and never starts by itself, so it cannot stop
+the Vita from starting. If it misbehaves, close it from its LiveArea page. To go
+back, install the previous `JPOverlaySettings.vpk` over it in VitaShell (the same
+title ID, so its settings stay) or delete the app; the plugins keep reading
+`games.ini` and `config.ini` without it.
+
 ## Build and validation
 
 The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can

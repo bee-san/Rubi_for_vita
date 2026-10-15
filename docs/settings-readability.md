@@ -122,20 +122,22 @@ smooth on the console has not been checked.
 
 ### Memory
 
-libvita2d allocates every texture as its own `USER_CDRAM_RW` block, rounded up
-to 256 KiB ([libvita2d `utils.c`, `get_aligned_size`](https://github.com/xerpi/libvita2d/blob/master/libvita2d/source/utils.c);
-the app's `ScePhyMemPartGameCdram` is 112 MiB, in 256 KiB units,
-[vita-memory.md](vita-memory.md#31-physical-budgets-retail-firmware)). A
-128 × 128 icon's 64 KiB of pixels and the largest accepted, 256 × 256 (256 KiB),
-both take one block, so the cache holds at most 9 × 256 KiB = 2,304 KiB
-(2.25 MiB) of CDRAM, against 768 KiB for the old three icons. If CDRAM refuses,
-libvita2d's `gpu_alloc` tries `USER_RW` (0x0C20D060, rounded to 4 KiB: 256 KiB
-for the largest icon) and then `USER_MAIN_PHYCONT_RW` (0x0C80D060, rounded to
-1 MiB), the pinned `libvita2d.a`'s instructions and `psp2common/kernel/sysmem.h`'s
-constants. So the 2.25 MiB bound is the CDRAM case; if CDRAM and `USER_RW` both
-refused every icon, the cache could hold up to 9 MiB of phycont, of the app's
-26 MiB phycont budget ([vita-memory.md](vita-memory.md#31-physical-budgets-retail-firmware)). These
-figures are from the source; the console's free CDRAM in the app, and whether
+The Overlay app is a system application
+([vita-memory.md §5.4](vita-memory.md#54-the-overlay-app-a-system-application)), and
+libvita2d then allocates every texture as its own `USER_RW` block in the app's
+50 MiB budget, rounded up to 4 KiB (pinned libvita2d a8f15ab: `vita2d.c` sets the
+texture type to `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW` in system-app mode;
+[`utils.c`, `get_aligned_size`](https://github.com/xerpi/libvita2d/blob/a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed/libvita2d/source/utils.c)).
+An icon is drawn from 4 bytes per pixel, so a 128 × 128 icon's texture is 64 KiB
+and the largest accepted, 256 × 256, is 256 KiB: the cache holds at most
+9 × 256 KiB = 2,304 KiB (2.25 MiB), against 768 KiB for the old three icons. If
+`USER_RW` refuses, libvita2d's `gpu_alloc` tries `USER_CDRAM_RW` (rounded to
+256 KiB) and then `USER_MAIN_PHYCONT_RW` (rounded to 1 MiB); a texture that gets
+neither is NULL and the card shows the placeholder. Before the app became a
+system application, its textures were `USER_CDRAM_RW` blocks of 256 KiB each in
+the game CDRAM budget (`ScePhyMemPartGameCdram`), with `USER_RW` and phycont as
+the fallbacks. These
+figures are from the source; the app's free memory on the console, and whether
 either fallback is ever taken, have not been measured. In the
 app's own memory (`.bss`, Vita build): the file buffer 262,160 B, the title
 rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, the PNG CRC table
