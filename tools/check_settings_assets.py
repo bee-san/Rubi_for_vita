@@ -3,7 +3,8 @@
 
 The Vita promoter requires 8-bit indexed, non-interlaced PNGs. See
 https://github.com/hammerill/livearea-specs for the native asset constraints.
-Sony's content information specification also limits icon0.png to 32 KiB.
+Sony's content information specification also limits icon0.png to 32 KiB and
+the start-up image pic0.png to 600 KiB.
 Pass the assets directory to check committed artwork before a Vita build.
 """
 import argparse
@@ -20,7 +21,7 @@ ASSETS = {
     "sce_sys/livearea/contents/bg.png": (840, 500),
     "sce_sys/livearea/contents/startup.png": (280, 158),
 }
-MAX_BYTES = {"sce_sys/icon0.png": 32 * 1024}
+MAX_BYTES = {"sce_sys/icon0.png": 32 * 1024, "sce_sys/pic0.png": 600 * 1024}
 
 
 def check_png(data, name, dimensions, max_bytes=None):

@@ -17,6 +17,8 @@
 #include "preferences.h"
 #include "../core/anki_app.h"
 #include "../shell/anki_queue.h"
+/* As in main.c: no vita2d_fini in the system application. */
+#pragma GCC poison vita2d_fini
 
 #define HOST_PATH "ux0:data/VitaJPOverlay/anki_host.txt"
 #define LOG_PATH "ux0:data/VitaJPOverlay/log.txt"

@@ -92,11 +92,13 @@ typedef struct {
 /* Each run is one process of the app, as on the console: settings/main.c keeps
  * its state in statics, so it runs in a forked child, and the frames it shows
  * come back through shared memory. */
-typedef struct { int frames, exited, main_rc; Frame shown[MAX_FRAMES]; } Session;
+typedef struct { int frames, exited, main_rc, finis; Frame shown[MAX_FRAMES]; } Session;
 static Session *session;
 static Frame *shown;
 static const Input *script;
 static int script_frames, frame, exited = -1;
+static int finis;      /* vita2d_fini calls in this process */
+static int font_fails; /* vita2d_load_default_pvf returns NULL */
 static Frame drawing;
 static int font_dummy;
 
@@ -155,7 +157,7 @@ int sceDisplayWaitVblankStart(void)
 }
 
 int vita2d_init(void) { return 0; }
-int vita2d_fini(void) { return 0; }
+int vita2d_fini(void) { finis++; return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
 void vita2d_start_drawing(void) { memset(&drawing, 0, sizeof(drawing)); }
 void vita2d_end_drawing(void) {}
@@ -171,7 +173,7 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
     if (drawing.rects < (int)(sizeof(drawing.rect) / sizeof(drawing.rect[0])))
         drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color};
 }
-vita2d_pvf *vita2d_load_default_pvf(void) { return (vita2d_pvf *)&font_dummy; }
+vita2d_pvf *vita2d_load_default_pvf(void) { return font_fails ? NULL : (vita2d_pvf *)&font_dummy; }
 void vita2d_free_pvf(vita2d_pvf *font) { (void)font; }
 /* Stub metrics: 10 units for an ASCII character, 18 for any other, at scale 1. */
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
@@ -272,8 +274,10 @@ static void card(const char *config)
     if (config) put_file(VJO_PREFERENCES_PATH, config);
 }
 /* Runs the app, in a new process, over the inputs (then Circle); returns the
- * number of frames it showed. */
-static int run(const Input *inputs, int n)
+ * number of frames it showed. The app must end its process with code (main
+ * returning the same), and never through vita2d_fini (settings/main.c: in a
+ * system application it clears a display buffer libvita2d never set). */
+static int run_to(const Input *inputs, int n, int code)
 {
     if (!session) {
         session = mmap(NULL, sizeof(*session), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -287,18 +291,22 @@ static int run(const Input *inputs, int n)
     pid_t pid = fork();
     TEST_ASSERT(pid >= 0);
     if (pid == 0) {
-        frame = 0; exited = -1;
+        frame = 0; exited = -1; finis = 0;
         session->main_rc = vjo_settings_main();
         session->frames = frame;
         session->exited = exited;
+        session->finis = finis;
         _exit(0);
     }
     int status = 0;
     TEST_ASSERT(waitpid(pid, &status, 0) == pid);
     TEST_CHECK_(WIFEXITED(status) && !WEXITSTATUS(status), "the app's process ended with status %d", status);
-    TEST_CHECK(session->main_rc == 0 && session->exited == 0);
+    TEST_CHECK_(session->main_rc == code && session->exited == code, "main returned %d, exit code %d, expected %d",
+                session->main_rc, session->exited, code);
+    TEST_CHECK_(session->finis == 0, "vita2d_fini ran %d times", session->finis);
     return session->frames;
 }
+static int run(const Input *inputs, int n) { return run_to(inputs, n, 0); }
 
 /* What frame f showed. */
 static const Text *text_at(int f, int y, int x_min, int x_max)
@@ -596,8 +604,24 @@ static void test_engine_buttons_and_backends(void)
     }
 }
 
+/* The app leaves by ending its process, never through vita2d_fini: as a system
+ * application its libvita2d leaves the third display buffer unset, and
+ * vita2d_fini clears it (settings/main.c). Both ways out: Cancel (code 0)
+ * and a font that does not load (code 1, before the first frame). Every other
+ * run checks the same through run_to. */
+static void test_exit_ends_the_process_without_vita2d_fini(void)
+{
+    static const Input in[] = {OCR_PAGE};
+    card(NULL);
+    TEST_CHECK(run(in, 2) >= 2);
+    font_fails = 1;
+    TEST_CHECK(run_to(in, 2, 1) == 0);
+    font_fails = 0;
+}
+
 TEST_LIST = {
     {"two_engines_the_local_one_named_VOCR3_after_its_model_generation", test_two_engines_local_named_after_its_generation},
+    {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},
     {"touching_a_button_chooses_and_saves_that_engine_gaps_only_focus", test_touch_chooses_and_saves_each_engine},
     {"left_right_choose_local_or_lens_cross_toggles", test_controller_left_right_choose_and_cross_toggles},
     {"removed_engine_VOCR2_Meiki_ncnn_shows_local_and_next_save_writes_vocr", test_removed_engine_shows_local_and_next_save_rewrites_it},
