@@ -342,6 +342,10 @@ if(VJO_SETTINGS_SMOKE)
     -Wl,--wrap=vita2d_load_PNG_file,--wrap=vita2d_free_texture,--wrap=vita2d_wait_rendering_done
     -Wl,--wrap=vita2d_draw_texture_scale)
   target_link_libraries(vjo_settings_smoke ${VJO_SETTINGS_LIBS})
+  # An ordinary app, from the plugins' flags: vita_create_self (a macro) leaves the eboot's
+  # in these, since #109 a list (-c;-at;0x0E;-m;0xC800) that the shell splits at each ';'.
+  set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
+  set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
   vita_create_self(vjo_settings_smoke.self vjo_settings_smoke UNSAFE)
   # vita_create_vpk (a macro) appends to these: start again, not from the Settings VPK's.
   set(VITA_MKSFOEX_FLAGS "")
