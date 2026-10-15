@@ -817,7 +817,7 @@
         color: #4660f1;
       }
 
-      /* the Lapis card (donkuri/lapis, GPL-3.0: light theme) */
+      /* the Lapis card (donkuri/lapis 1.7.0, GPL-3.0: styling.css, light theme, PC sizes) */
       .anki-window {
         width: 700px;
         border-radius: 18px;
@@ -846,37 +846,41 @@
         font-weight: 600;
       }
       .lapis {
-        padding: 18px 34px 26px;
-        color: #333;
+        padding: 0 34px 22px;
+        color: #333333;
         text-align: center;
+        font-family: "Promo Serif", serif;
+        font-size: 16px;
       }
       .lapis .lp-top {
-        height: 26px;
+        height: 40px;
+        line-height: 40px;
         text-align: right;
+        font-family: "Promo Sans", sans-serif;
         font-size: 16px;
         color: rgba(0, 0, 0, 0.6);
       }
       .lapis .lp-head {
         background: rgba(0, 0, 0, 0.03);
         border-radius: 5px;
-        padding: 16px;
+        padding: 0.52em;
+        font-size: 30px;
       }
       .lapis .lp-vocab {
         font-size: 60px;
-        line-height: 1.25;
+        line-height: 1.5;
       }
       .lapis .lp-vocab rt {
-        font-size: 22px;
+        font-size: 0.5em;
       }
       .lapis .lp-info {
+        font-family: "Promo Sans", sans-serif;
         font-size: 23px;
-        color: #333;
       }
       .lapis .lp-sentence {
-        margin: 20px 0 6px;
-        font-size: 33px;
+        margin: 18px 0 4px;
+        font-size: 35px;
         line-height: 1.5;
-        font-family: "Promo Sans", serif;
       }
       .lapis .lp-sentence b {
         color: #4660f1;
@@ -885,32 +889,32 @@
       .lapis .lp-def {
         background: rgba(0, 0, 0, 0.03);
         border-left: 5px solid #ccc;
-        padding: 10px 14px;
-        margin: 12px 0 10px;
+        padding: 0.5em 10px;
+        margin: 5px 0 10px;
         text-align: left;
-        font-size: 21px;
-        line-height: 1.6;
+        font-family: "Promo Sans", sans-serif;
+        font-size: 20px;
+        line-height: 1.75em;
       }
-      .lapis .lp-def small {
-        display: block;
-        font-size: 15px;
-        color: rgba(0, 0, 0, 0.5);
+      .lapis .lp-def i {
+        font-style: italic;
       }
       .lapis .lp-misc {
+        font-family: "Promo Sans", sans-serif;
         font-size: 16px;
-        color: rgba(0, 0, 0, 0.55);
+        text-align: left;
       }
       .lapis .lp-tags {
-        margin-top: 14px;
+        margin-top: 16px;
         text-align: left;
       }
       .lapis .lp-tags span {
         display: inline-block;
-        padding: 1px 8px;
-        margin-right: 6px;
+        padding: 1px 5px;
         border-radius: 5px;
-        background: rgba(0, 0, 0, 0.05);
-        font-size: 15px;
+        background: rgba(0, 0, 0, 0.03);
+        font-family: "Promo Sans", sans-serif;
+        font-size: 14.4px;
       }
 
       /* the exported file */

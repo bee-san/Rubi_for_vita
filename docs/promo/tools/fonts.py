@@ -39,6 +39,10 @@ FONTS = [
      "fe24426b9c8b5523a0146a8235c8674eccf0493af354a53ec895c3596d9eb745",
      "zen-maru-gothic-bold.woff2", "zenmarugothic/OFL.txt",
      "2a20cf7ce1909d8ee1e949095d340f7d7656705f7c810a2d6faf56800ad0cb3d"),
+    ("notoserifjp/NotoSerifJP%5Bwght%5D.ttf",
+     "2fd527ba12b6a44ec30d796d633360da0aeba6c5d4af1304ce12bb4dc15a7dfc",
+     "noto-serif-jp.woff2", "notoserifjp/OFL.txt",
+     "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6"),
     ("jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
      "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
      "jetbrains-mono.woff2", "jetbrainsmono/OFL.txt",
@@ -47,6 +51,7 @@ FONTS = [
 LICENCE_NAMES = {
     "notosansjp/OFL.txt": "OFL-NotoSansJP.txt",
     "zenmarugothic/OFL.txt": "OFL-ZenMaruGothic.txt",
+    "notoserifjp/OFL.txt": "OFL-NotoSerifJP.txt",
     "jetbrainsmono/OFL.txt": "OFL-JetBrainsMono.txt",
 }
 

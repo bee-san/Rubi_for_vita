@@ -31,24 +31,33 @@ export const VN = {
   line3: "「流れ星が見えたら、願い事しようね。」",
 };
 
-// Scene 4: what a mined card is (set from the merged .apkg export, #118).
+// Scene 4: what a mined card is, as the merged .apkg export (#125) writes it.
 export const CAP4 = {
   h: "Export them as <em>Lapis</em> cards for Anki",
   p: "with the word, its reading, the sentence and the definition",
 };
 
-// The overlay's body lines that depend on Anki mining (shell/overlay.cpp).
+// The overlay's body lines that depend on Anki mining (shell/overlay.cpp, #125).
 export const OVERLAY = {
-  queueBefore: "Anki queue: 2 · △ send",
-  queueAfter: "Anki queue: 3 · △ send",
-  hint: `Tap / ◀▶▲▼ word · ${ENTER} queue · △ send · stick scroll · □ region · ○ close`,
+  queueBefore: "Anki queue: 2 · export in the Overlay app",
+  queueAfter: "Anki queue: 3 · export in the Overlay app",
+  hint: `Tap / ◀▶▲▼ word · ${ENTER} queue · stick scroll · □ region · ○ close`,
 };
 
+// The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125).
+// The size is what that export wrote for three text-only cards in its host
+// test (host/tests/test_apkg.c: 86,234 B, shown as 85 KB); measured on the
+// host, not on a console.
 export const APKG = {
   dir: "ux0:data/VitaJPOverlay/anki/",
   name: "2026-10-15_142530-3cards.apkg",
-  progress: "Writing 3 cards…",
-  result: "Saved 2026-10-15_142530-3cards.apkg (3 cards). Copy it from ux0:data/VitaJPOverlay/anki/ to a computer or phone (VitaShell: FTP or USB), then open it in Anki.",
+  progress: "Writing the cards… 2 of 3",
+  result:
+    "Exported 3 cards (85 KB) to 2026-10-15_142530-3cards.apkg. Copy it from ux0:data/VitaJPOverlay/anki/ " +
+    "by VitaShell's FTP or USB, or on the SD2Vita card, and open it in Anki.",
+  copy:
+    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell) " +
+    "or on the SD2Vita card in a card reader, then open it in Anki.",
 };
 
 // install-vita.sh's output for one game, in order (tools/install-vita.sh,

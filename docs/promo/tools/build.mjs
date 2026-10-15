@@ -173,27 +173,25 @@ function appPages() {
   return [before, moved, off].join("\n");
 }
 
-// The Anki page (settings/anki_page.c after the .apkg export, #118): card
-// mining, Export cards, Export all cards and the status box.
-function ankiPage(id, { selected = 1, busy = false, busyText = "", queued = 3, total = 3, footer }) {
+// The Anki page (settings/anki_page.c, #125): card mining, Export cards,
+// Export all cards, and the box with the last result or how to copy the file.
+function ankiPage(id, { busy = false, busyText = "", queued = 3, total = 3, footer }) {
   const p = new Page();
   header(p, 2);
   const MINING_Y = 112, EXPORT_Y = 188, ALL_Y = 296, CARD_H = 68, ACTION_H = 100;
-  focusCard(p, MINING_Y, CARD_H, selected === 0);
+  focusCard(p, MINING_Y, CARD_H, false);
   p.text(42, MINING_Y + 30, C.WHITE, 28, "Card mining");
   badge(p, 812, MINING_Y + 6, 108, 34, "ON", true);
   p.text(42, MINING_Y + 60, C.DIM, 24, `${ENTER} in the overlay saves the word to a queue on the memory card.`);
-  const count = (n, what) => `${n} card${n === 1 ? "" : "s"} ${what}`;
-  focusCard(p, EXPORT_Y, ACTION_H, selected === 1);
-  p.text(42, EXPORT_Y + 30, C.WHITE, 28, "Export cards");
-  p.text(500, EXPORT_Y + 30, C.DIM, 24, count(queued, "queued"));
+  focusCard(p, EXPORT_Y, ACTION_H, true);
+  p.text(42, EXPORT_Y + 30, C.WHITE, 28, `Export cards (${queued} queued)`);
   badge(p, 760, EXPORT_Y + 6, 160, 34, busy ? "Exporting…" : "Export", busy);
   p.wrapped(42, EXPORT_Y + 62, 870, C.DIM, 22, 24, 2, busy
     ? busyText
-    : `A new .apkg of Lapis cards in ${S.APKG.dir.replace(/\/$/, "")}/. The queue is cleared once the file is written and checked.`);
-  focusCard(p, ALL_Y, ACTION_H, selected === 2);
+    : "A new .apkg of Lapis cards in ux0:data/VitaJPOverlay/anki/. The queue is cleared once the file is written and checked.");
+  focusCard(p, ALL_Y, ACTION_H, false);
   p.text(42, ALL_Y + 30, C.WHITE, 28, "Export all cards");
-  p.text(500, ALL_Y + 30, C.DIM, 24, count(total, "in all"));
+  p.text(500, ALL_Y + 30, C.DIM, 24, `${total} card${total === 1 ? "" : "s"} in all`);
   badge(p, 760, ALL_Y + 6, 160, 34, "Export all", false);
   p.wrapped(42, ALL_Y + 62, 870, C.DIM, 22, 24, 2,
     "Every card again, the exported ones too (a new device, a lost file): Anki adds only the notes it does not have.");
@@ -203,27 +201,30 @@ function ankiPage(id, { selected = 1, busy = false, busyText = "", queued = 3, t
   return p.svg(id);
 }
 function ankiPages() {
-  const copy = `Copy the .apkg from ${S.APKG.dir.replace(/\/$/, "")}/ to a computer or phone (VitaShell: FTP with Select, or USB with Start), then open it in Anki: File > Import.`;
   return [
-    ankiPage("app-anki-a", { footer: copy }),
-    ankiPage("app-anki-b", { busy: true, busyText: S.APKG.progress, footer: copy }),
+    ankiPage("app-anki-a", { footer: S.APKG.copy }),
+    ankiPage("app-anki-b", { busy: true, busyText: S.APKG.progress, footer: S.APKG.copy }),
     ankiPage("app-anki-c", { queued: 0, footer: S.APKG.result }),
   ].join("\n");
 }
 
-// The Lapis card's back (donkuri/lapis src/back.html, light theme), with the
-// fields the export writes (#118).
+// The card's back as Anki shows it with the Lapis note type (donkuri/lapis
+// 1.7.0, the one the export embeds: src/back.html and src/styling.css, light
+// theme), with the fields the export writes (core/anki.c, #125): FreqSort is
+// 9999999 for a word without a frequency, the Sentence is the whole
+// recognized text with the word in <b>, MainDefinition one JMdict entry, no
+// Picture, MiscInfo collapsed, the tag vita-jp-overlay.
 function lapisCard() {
   return `<div class="lapis">
-            <div class="lp-top">&#160;</div>
+            <div class="lp-top">9999999</div>
             <div class="lp-head">
               <div class="lp-vocab"><ruby>一緒<rt>いっしょ</rt></ruby>に</div>
               <div class="lp-info">いっしょに</div>
             </div>
-            <div class="lp-sentence">明日も、ここで<b>一緒に</b>見ようよ。</div>
-            <div class="lp-def"><small>JMdict Plain</small>together (with); at the same time; in one lump | in the same category</div>
-            <div class="lp-misc">星空ダイアリー · HSDY00001</div>
-            <div class="lp-tags"><span>VitaJPOverlay</span></div>
+            <div class="lp-sentence">「キラキラ光る星、本当にきれいだね。<br />明日も、ここで<b>一緒に</b>見ようよ。」</div>
+            <div class="lp-def"><i>(JMdict Plain)</i> together (with); at the same time; in one lump | in the same category</div>
+            <div class="lp-misc">▸ Misc. info</div>
+            <div class="lp-tags"><span>vita-jp-overlay</span></div>
           </div>`;
 }
 

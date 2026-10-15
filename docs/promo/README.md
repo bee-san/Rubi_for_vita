@@ -60,7 +60,7 @@ renders in under two minutes on this project's build host. After changing on-scr
 | 2 | 4–9 s | Look up words from the games you play, *entirely offline* | L + R opens the overlay on キラキラ; a tap on 一緒に looks it up. |
 | 3 | 9–13.5 s | Create flashcards of *words you don't know* | × queues the word; the queue goes from 2 to 3 cards. |
 | 4 | 13.5–16.5 s | Export them as *Lapis* cards for Anki | The card as Anki shows it with the Lapis note type. |
-| 4b | 16.5–20 s | Export cards to a dated *.apkg* file | The Overlay app's Anki page writes the file; import it into Anki. |
+| 4b | 16.5–20 s | Export cards to a dated *.apkg* file | The Overlay app's Anki page writes the file and clears the queue; import it into Anki. |
 | 5 | 20–24 s | It only runs in *the games you turn on* | New text types out, settles and is read once. |
 | 6 | 24–29.5 s | *Easy install*, plus a one-time setup | VitaShell's FTP server, `install-vita.sh`, the VPK in VitaShell, reboot. |
 | 7 | 29.5–33.5 s | Now it's installed: go to your game and press *L + R* to look up words. | L + R opens the overlay. |
@@ -69,7 +69,7 @@ renders in under two minutes on this project's build host. After changing on-scr
 
 ## What the video claims
 
-Every caption was checked against the code on `main` (8f1ec8f, plus #118 for the Anki export).
+Every caption was checked against the code on `main` (8f1ec8f, plus #125 for the Anki export).
 Where the original script said something that is not true of today's code, the video says what is
 true instead. Those lines are marked **changed**.
 
@@ -79,15 +79,14 @@ true instead. Those lines are marked **changed**.
 | 2 | Entirely offline; recognition and the dictionary run on the Vita | The default engine (`ocr_backend = vocr`) runs in the game's process (`game_ocr/`), and the bundled `plaintext.vjdict` is read from the memory card (`core/local_dict.c`). The lookups shown are the ones `vjo_overlay_lookup_at` returns from the bundled dictionary for the mock line at those characters: キラキラ and 一緒に, both JMdict entries. |
 | 3 | × saves the word to a queue | With card mining on (off by default; the Overlay app's Anki page turns it on), the enter button queues the word on the memory card, offline (`shell/anki.c`, `shell/overlay.cpp`: "Queued for Anki"). |
 | 4 | **changed**: the script said "With screenshots" | This build takes no card screenshots (`VJO_ANKI_SCREENSHOT` is 0 in `shell/anki.c`), so the card's Picture field is empty. The caption names the fields that are filled: the word, its reading, the sentence and the definition. |
-| 4b | A dated .apkg file; import it into Anki | `settings/anki_page.c` writes `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg` and clears the queue only after the file is written and checked (#118). Anki's desktop and mobile apps import .apkg files ([Anki manual](https://docs.ankiweb.net/manual/importing/packaged-decks), [AnkiMobile](https://github.com/ankitects/ankimobile-docs/blob/main/src/collection-transfer.md)). |
+| 4b | A dated .apkg file; import it into Anki | `settings/anki_page.c` writes `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg` and clears the queue only after the file is written and checked (#125). The size in the result line, 85 KB, is what that export wrote for three text-only cards in its host test (`host/tests/test_apkg.c`, 86,234 B), not a console measurement. Anki's desktop and mobile apps import .apkg files ([Anki manual](https://docs.ankiweb.net/manual/importing/packaged-decks), [AnkiMobile](https://github.com/ankitects/ankimobile-docs/blob/main/src/collection-transfer.md)). |
 | 5 | **changed**: the script said "It only runs when you go to look up words, so battery isn't wasted" | With `ocr_mode = auto`, the default, a game that is turned on has each new settled screen recognized without a press. So the caption says what the code does. A game turned off is never made active (`shell/worker.c` `activate_game`), so the kernel computes no region checks (`kernel/display.c`) and no recognition runs. In a game that is on, the kernel checks the region every 8th frame (`VJO_CHECK_EVERY_FRAMES`) and the Shell starts one job per settled new screen (`auto_prefetch`). `ocr_mode = on_press` in `config.ini` recognizes only when the overlay opens. Battery and CPU use are not measured. |
 | 6 | **changed**: the script said "as easy as clicking install in VitaShell" | Today's install needs `install-vita.sh` on a computer over VitaShell's FTP server, then the VPK in VitaShell and a reboot (README, "Install"). The terminal shows the script's real output: `tools/install_ftp.sh`'s lines, and the diff `tools/patch_tai_config.py` makes of a stock HENkaku `config.txt`. The VitaShell dialogs use VitaShell's own strings. What a one-click install would need is [#119](https://github.com/bee-san/vita-jp-overlay/issues/119). |
 | 7 | L + R | The default `toggle_button` is `l+r` (`core/config.c`). |
 | 8 | Turn it off per game; the app opens beside the suspended game | The Overlay app is a system application since #109. The Games page saves a game's ON/OFF to `games.ini`, and a game turned off gets no overlay capture or input filtering. The status line is the app's own: "Saved. Resume or restart your game to apply." |
 
-Not in the video, by the owner's decisions of 2026-10-15: jiten.moe and jpdb.io, Hachidori, Google
-Lens and the OCR engine or model-size choice. The overlay is going offline only, and the original
-scene 9 was dropped.
+By the owner's decisions of 2026-10-15, the video shows only what stays: the overlay is going
+offline only, and the script's scene 9 (choosing an OCR engine) was dropped.
 
 ## Licences
 
@@ -98,7 +97,7 @@ scene 9 was dropped.
 | The mock game's art and the fictional game icons (`assets/vn/`) | drawn from scratch for this video | GPL-3.0-only |
 | The Overlay app's icon, LiveArea background and gate (`assets/app/`) | copies of `settings/assets/` ([provenance](../../settings/assets/ICON-SOURCE.md)) | GPL-3.0-only |
 | The music and the sound effects (`assets/audio/`) | synthesized by `tools/make_audio.py`; no samples | CC0-1.0 |
-| Noto Sans JP, Zen Maru Gothic, JetBrains Mono (`assets/fonts/`, subsets) | [google/fonts@9430147](https://github.com/google/fonts/tree/94301472b4d809299b4775bc6502592b83dd6934/ofl) | SIL OFL 1.1 (`assets/fonts/OFL-*.txt`) |
+| Noto Sans JP, Noto Serif JP, Zen Maru Gothic, JetBrains Mono (`assets/fonts/`, subsets) | [google/fonts@9430147](https://github.com/google/fonts/tree/94301472b4d809299b4775bc6502592b83dd6934/ofl) | SIL OFL 1.1 (`assets/fonts/OFL-*.txt`) |
 | The dictionary entries shown (キラキラ, 一緒に) | JMdict, © the Electronic Dictionary Research and Development Group, as converted in the bundled `plaintext.vjdict` | CC BY-SA 4.0 ([licence](../JMdict-LICENSE.html)) |
 | The Anki card's design | the [Lapis](https://github.com/donkuri/lapis) note type, recreated in HTML | GPL-3.0 |
 | VitaShell's dialog text | [VitaShell](https://github.com/TheOfficialFloW/VitaShell) `resources/english_us.txt`, as the app shows it | GPL-3.0 |
