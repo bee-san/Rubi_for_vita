@@ -1,7 +1,8 @@
 /* Every stage of an OCR job and of the Shell's lookups, on the real sources
  * (stage_bench.h, docs/performance.md). Each stage runs its setup once, one
- * untimed warm-up iteration, then `iters` timed iterations of identical work,
- * so the Cortex-A9 lane can difference two runs with different counts and keep
+ * untimed warm-up iteration, then `iters` timed iterations of identical work
+ * (scene_update_typing's flip a different cell each time: within 6%), so the
+ * Cortex-A9 lane can difference two runs with different counts and keep
  * exactly the per-iteration instructions. Only string.h functions are called
  * here: on that lane this file is built by the Vita compiler and linked with
  * the plugins' own libraries. */
@@ -332,6 +333,14 @@ static int stage_recognize(const BenchIn *in, unsigned iters, BenchOut *out)
 
 /* ---- the whole game-worker job (core/vocr_ocr.c) ---- */
 
+/* The job's clock, simulated: the display hook answers each strip with the
+ * game's next frame (1/fps s), and the worker's sleep (sceKernelDelayThread) lets
+ * that much time pass; recognition takes none of it. So the stable-text wait
+ * reads exactly the passes it would at that frame rate, and the cascade's time
+ * ceiling never binds (docs/performance.md says so). */
+static uint64_t sim_us;
+static uint32_t sim_frame_us = 16667u;
+
 typedef struct {
     const BenchIn *in;
     uint64_t strips, rows;
@@ -347,7 +356,19 @@ static int plane_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, siz
     for (unsigned r = 0; r < n; r++) memcpy(dst + (size_t)r * stride, grey + (size_t)(y + r) * s->in->w, s->in->w);
     s->strips++;
     s->rows += n;
+    sim_us += sim_frame_us;
     return (int)n;
+}
+
+static uint64_t sim_now(void *ud)
+{
+    (void)ud;
+    return sim_us;
+}
+
+static void sim_sleep(uint32_t us)
+{
+    sim_us += us;
 }
 
 static void *tall_line(void *ud, size_t bytes)
@@ -356,64 +377,145 @@ static void *tall_line(void *ud, size_t bytes)
     return bytes <= sizeof(line_block) ? line_block : NULL;
 }
 
-/* The weights as a file in memory, as the game reads them through the kernel. */
+/* The weights, the LM and the cascade's weights as files in memory, as the game
+ * reads them through the kernel's model broker. */
+typedef struct {
+    const uint8_t *data;
+    uint32_t bytes;
+} MemFile;
+static MemFile mem_files[3];
 static int mem_read(void *ctx, uint64_t off, void *dst, size_t n)
 {
-    const BenchIn *in = (const BenchIn *)ctx;
-    if (off > in->model_bytes || n > in->model_bytes - off) return -1;
-    memcpy(dst, in->model + off, n);
+    const MemFile *f = (const MemFile *)ctx;
+    if (off > f->bytes || n > f->bytes - off) return -1;
+    memcpy(dst, f->data + off, n);
     return 0;
 }
 static void mem_close(void *ctx) { (void)ctx; }
 static const BenchIn *mem_in;
+static int ends_with(const char *path, const char *name)
+{
+    size_t p = strlen(path), n = name ? strlen(name) : 0;
+    return n && p >= n && !strcmp(path + p - n, name) && (p == n || path[p - n - 1] == '/');
+}
 static int mem_open(void *ud, const char *path, VjoFile *f)
 {
-    (void)ud; (void)path;
-    *f = (VjoFile){(void *)mem_in, mem_in->model_bytes, mem_read, mem_close, 1};
-    return 0;
+    const char *names[3] = {mem_in->model_name, mem_in->lm_name, mem_in->cascade_name};
+    (void)ud;
+    for (unsigned i = 0; i < 3; i++)
+        if (mem_files[i].data && ends_with(path, names[i])) {
+            *f = (VjoFile){&mem_files[i], mem_files[i].bytes, mem_read, mem_close, 1};
+            return 0;
+        }
+    return -1;
 }
 
-/* mode 0: weights resident (unchanged file, as every job after a game's
- * first); mode 1: one-shot, read and SHA-256 checked for every job (the
- * first job of a game: weights=read). */
+/* The resident blocks' memory (the game's USER_RW blocks), static here. */
+static unsigned char lm_mem[1u << 20] __attribute__((aligned(64)));
+static unsigned char cascade_mem[2u << 20] __attribute__((aligned(64)));
+static void *weights_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(weights) ? weights : NULL; }
+static void *lm_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(lm_mem) ? lm_mem : NULL; }
+static void *cascade_alloc(void *ud, size_t bytes) { (void)ud; return bytes <= sizeof(cascade_mem) ? cascade_mem : NULL; }
+static int no_release(void *ud) { (void)ud; return 0; }
+
+/* mode: the game worker's job policy (game_ocr/main.c vjo_game_ocr_run_request,
+ * with the config defaults of core/config.c), in bits:
+ *   1: a game's first job: the weights (and the LM) read and SHA-256 checked in
+ *      every iteration, as at a game's first job; else resident, as every later
+ *      job with the files unchanged;
+ *   2: beam + LM decoding with in->lm (ocr_lm = 1000k: tier 2);
+ *   4: the confidence cascade with in->cascade (VOCR4-W20, ocr_cascade_ms = 2000,
+ *      lines under VJO_VOCR_CASCADE_CONF read again);
+ *   8: the stable-text wait (ocr_settle_ms = 150, ocr_settle_max_ms = 2000), on
+ *      the simulated clock at in->fps;
+ *  16: the finder's boxes refined (ocr_refine_lines: a PSP game by default).
+ * 2 | 4 | 8 is a Vita game's job on main's defaults; 0 is API 19's job. */
+#define JOB_FIRST 1u
+#define JOB_LM 2u
+#define JOB_CASCADE 4u
+#define JOB_SETTLE 8u
+#define JOB_REFINE 16u
 static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
 {
     VjoPlatform p;
-    VjoVocrResident res;
-    VjoVocrStats st;
+    static VjoVocrResident res, cres;
+    static VjoVocrLmResident lres;
+    static VjoVocrStats st;
+    VjoVocrPolicy pol;
+    static char raw[VJO_OCR_TEXT_CAP];
     const VjoVocrModel *mi = in->model_name ? vjo_vocr_model(in->model_name) : NULL;
+    const VjoVocrModel *ci = in->cascade_name ? vjo_vocr_model(in->cascade_name) : NULL;
+    const VjoVocrLm *lm = in->lm_name ? vjo_vocr_lm(in->lm_name) : NULL;
     StripSrc ss = {in, 0, 0};
     VjoGreySource src = {&ss, in->w, in->h, plane_strip, NULL, tall_line};
     size_t ws, cap = vjo_vocr_capture_bytes(in->w, in->h);
-    int one_shot = (int)(in->mode & 1u);
-    uint64_t t0 = 0, strips0 = 0, rows0 = 0;
+    unsigned mode = in->mode;
+    uint64_t t0 = 0, strips0 = 0, rows0 = 0, sim0 = 0;
     if (!region_ok(in) || !mi || !in->model || in->model_bytes != mi->bytes) return -1;
-    ws = one_shot ? vjo_vocr_workspace_bytes(mi->name, in->w, in->h) : vjo_vocr_job_bytes(mi->name, in->w, in->h);
+    if ((mode & JOB_LM) && (!lm || !in->lm || in->lm_bytes != lm->bytes)) return -1;
+    if ((mode & JOB_CASCADE) && (!ci || !in->cascade || in->cascade_bytes != ci->bytes)) return -1;
+    memset(&pol, 0, sizeof(pol));
+    ws = vjo_vocr_job_bytes(mi->name, in->w, in->h);
+    if (mode & JOB_REFINE) {
+        pol.refine = VJO_VOCR_REFINE_ALL;
+        ws += vjo_vocr_refine_bytes(in->w, in->h);
+    }
+    if (mode & (JOB_LM | JOB_CASCADE)) /* game_ocr/main.c extra_job_bytes, the greedy text aside */
+        ws += vjo_vocr_lm_job_bytes(mi->name) + (mode & JOB_CASCADE ? vjo_vocr_cascade_job_bytes(ci->name) : 0);
     if (!ws || ws > sizeof(workspace) || !cap || cap > sizeof(capture_block)) return -1;
+    if (mode & JOB_LM) {
+        pol.lm = lm;
+        pol.lm_res = &lres;
+        pol.raw = raw;
+        pol.raw_cap = sizeof(raw);
+    }
+    if (mode & JOB_CASCADE) {
+        pol.cascade = ci;
+        pol.cascade_res = &cres;
+        pol.cascade_us = 2000000u;
+        pol.cascade_conf = 0; /* game_ocr/main.c VJO_GAME_CASCADE_CONF: the core's VJO_VOCR_CASCADE_CONF */
+    }
+    if (mode & JOB_SETTLE) {
+        pol.settle_us = 150000u;
+        pol.settle_max_us = 2000000u;
+        pol.sleep = sim_sleep;
+    }
+    sim_frame_us = 1000000u / (in->fps ? in->fps : 60u);
     grey_plane(in);
     memset(&p, 0, sizeof(p));
     p.file_open = mem_open;
+    p.now_us = sim_now;
     mem_in = in;
+    mem_files[0] = (MemFile){in->model, in->model_bytes};
+    mem_files[1] = (MemFile){mode & JOB_LM ? in->lm : NULL, in->lm_bytes};
+    mem_files[2] = (MemFile){mode & JOB_CASCADE ? in->cascade : NULL, in->cascade_bytes};
     memset(&res, 0, sizeof(res));
-    if (!one_shot) {
-        memcpy(weights, in->model, in->model_bytes);
-        res.model = mi;
-        res.data = weights;
-        res.capacity = in->model_bytes;
-        res.size = in->model_bytes;
-        res.stamp = 1;
-    }
+    memset(&cres, 0, sizeof(cres));
+    memset(&lres, 0, sizeof(lres));
+    res.alloc = weights_alloc;
+    res.release = no_release;
+    cres.alloc = cascade_alloc;
+    cres.release = no_release;
+    lres.alloc = lm_alloc;
+    lres.release = no_release;
     for (unsigned it = 0; it <= iters; it++) {
         int rc;
-        if (it == 1) { t0 = now_ns(in); strips0 = ss.strips; rows0 = ss.rows; }
-        rc = one_shot ? vjo_vocr_ocr(&p, "bench", mi->name, &src, workspace, ws, capture_block, cap, out->text,
-                                     sizeof(out->text), &st)
-                      : vjo_vocr_ocr_resident(&p, "bench", mi->name, &src, &res, workspace, ws, capture_block, cap,
-                                              out->text, sizeof(out->text), &st);
+        if (it == 1) { t0 = now_ns(in); strips0 = ss.strips; rows0 = ss.rows; sim0 = sim_us; }
+        if (mode & JOB_FIRST) { /* a game's first job: nothing resident */
+            vjo_vocr_resident_drop(&res);
+            vjo_vocr_resident_drop(&cres);
+            vjo_vocr_lm_drop(&lres);
+        }
+        rc = vjo_vocr_ocr_policy(&p, "bench", mi->name, &src, &res, workspace, ws, capture_block, cap, &pol, out->text,
+                                 sizeof(out->text), &st);
         if (rc) return -2;
+        /* with lines, the LM must have decoded them and the cascade been usable */
+        if ((mode & JOB_LM) && st.lines && (st.lm != lm || st.lm_rc)) return -3;
+        if ((mode & JOB_CASCADE) && st.lines && st.cascade_rc) return -4;
     }
     out->ns = now_ns(in) - t0;
     out->check = fnv64s(0, out->text);
+    if (mode & JOB_LM) out->check = fnv64s(out->check, raw);
     out->ops = 1;
     out->c[0] = iters ? (ss.strips - strips0) / iters : 0;
     out->c[1] = st.lines;
@@ -427,6 +529,14 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
     out->c[9] = st.strip_rows;
     out->c[10] = st.model_loaded;
     out->c[11] = st.model_cached;
+    out->c[12] = st.settle_passes;
+    out->c[13] = st.lm_lines;
+    out->c[14] = st.lm_changed;
+    out->c[15] = st.cascade_lines;
+    out->c[16] = st.cascade_frames;
+    out->c[17] = st.lm_loaded;
+    out->c[18] = iters ? (sim_us - sim0) / iters / 1000u : 0; /* simulated ms per job: the display frames */
+    out->c[19] = st.refine_lines;
     return 0;
 }
 
@@ -579,49 +689,75 @@ static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
         vjo_config_parse(&cfg, text, len);
     }
     out->ns = now_ns(in) - t0;
-    out->check = fnv64(0, &cfg.ocr_backend, sizeof(cfg.ocr_backend));
-    out->check = fnv64s(out->check, cfg.vocr_model);
+    /* Every parsed setting: VjoConfig is ints and char arrays only (no pointer,
+     * no padding), laid out alike by both compilers, and zeroed by
+     * vjo_config_defaults first, so its bytes are the output. */
+    out->check = fnv64(0, &cfg, sizeof(cfg));
     out->ops = 1;
     out->c[0] = len;
     out->c[1] = (uint64_t)cfg.n_warnings;
+    out->c[2] = sizeof(cfg);
     return 0;
 }
 
-/* Formatting a job's log lines (shell/worker.c's own format strings, with a
- * typical job's values). Only the formatting: the file writes are counted by
- * tools/bench_stages.py. */
+/* Formatting one Auto OCR job's log lines: a copy of the Shell's own format
+ * strings (shell/worker.c vocr_run_one, log_vocr_measurements, log_text_lines,
+ * log_lookup; shell/selftest.c vjo_gstep_format for the game worker's steps),
+ * with a typical job's values, in the order a job on main's defaults logs
+ * them. It is a replica (the Shell's code calls the SDK), so it measures the
+ * formatting only: the file system's cost per line is the console's
+ * (docs/performance.md, console calibration). The checksum is the formatted
+ * bytes. */
 static int stage_log(const BenchIn *in, unsigned iters, BenchOut *out)
 {
+    /* a resident job's steps on main's defaults (game_ocr/main.c vjo_game_ocr_run_request) */
+    static const char *const steps[] = {"mem",  "check",     "alloc", "alloc",   "pass", "sig",  "find", "settle",
+                                        "load", "recognize", "lm",    "cascade", "norm", "free", "free"};
     char line[256];
-    uint64_t t0 = 0, bytes = 0;
+    uint64_t t0 = 0, bytes = 0, h = 0;
     unsigned lines = 0;
     for (unsigned it = 0; it <= iters; it++) {
         if (it == 1) t0 = now_ns(in);
         bytes = lines = 0;
-#define LOGF(...) do { int k_ = vjo_snprintf(line, sizeof(line) - 1, __VA_ARGS__); bytes += k_ > 0 ? (uint64_t)k_ + 1 : 0; lines++; } while (0)
+#define LOGF(...)                                                                                                      \
+    do {                                                                                                               \
+        int k_ = vjo_snprintf(line, sizeof(line) - 1, __VA_ARGS__);                                                    \
+        if (k_ > (int)sizeof(line) - 2) k_ = (int)sizeof(line) - 2;                                                    \
+        if (k_ >= 0) {                                                                                                 \
+            line[k_++] = '\n';                                                                                         \
+            bytes += (uint64_t)k_;                                                                                     \
+            if (it == 0) h = fnv64(h, line, (size_t)k_);                                                               \
+        }                                                                                                              \
+        lines++;                                                                                                       \
+    } while (0)
         LOGF("job start (%s)%s", "auto: screen settled", "");
-        LOGF("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
-             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-             0, "VOCR3_H15_w8.vocr", "", 917u, 125u, 22u, 400u, 960u, 544u, 0u, 3u, 188416u, "resident", 1159168u,
-             41u, 2u, 610u, 240u, 0u, 0u, 0);
+        LOGF("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s "
+             "resident=%u, find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
+             0, "VOCR3_H15_w8.vocr", "", 883u, 112u, 46u, 416u, 960u, 544u, 0u, 1u, 186704u, "resident", 1159168u,
+             100u, 1u, 392u, 77u, 0u, 0u, 0);
         LOGF("game vocr capture: %s into %s, %u B block, %u-row strips, %u strips in %u ms, %u rows changed, sum 0x%08X",
-             "hook", "USER", 61440u, 62u, 8u, 140u, 0u, 0x1234ABCDu);
+             "hook", "USER", 57344u, 64u, 5u, 70u, 0u, 0x1E037CFDu);
         LOGF("game vocr memory: free USER=%d, needs workspace %u + weights %u + reserve %u: check %s, headroom %d",
-             91226112, 249856u, 0u, 4194304u, "passed", 86781952);
-        LOGF("game vocr speed: %u frames in %u us, %u us per frame", 240u, 610000u, 2541u);
-        LOGF("game vocr lines: %ux%u %uf %u.%ums %ux%u %uf %u.%ums %ux%u %uf %u.%ums", 860u, 32u, 80u, 210u, 3u, 820u,
-             32u, 76u, 199u, 1u, 610u, 32u, 84u, 201u, 7u);
-        for (int s = 0; s < 11; s++)
-            LOGF("job step %d %s kind=%u arg=%u rc=0x%08X bytes=%u sum=0x%08X main=%d cdram=%d phycont=%d us=%u", s,
-                 "alloc", 1u, 2u, 0u, 61440u, 0u, 91226112, 117440512, 0, 1234u + (unsigned)s);
-        LOGF("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", 0, 0, 912, 41216u, 1, 1);
+             90177536, 245760u, 0u, 4194304u, "passed", 85737472);
+        LOGF("game vocr speed: %u frames in %u us, %u us per frame", 77u, 392000u, 5090u);
+        LOGF("%s %ux%u %uf %u.%ums c%u%s%s", "game vocr lines:", 384u, 22u, 77u, 392u, 0u, 912u, "", "");
+        for (unsigned s = 0; s < sizeof(steps) / sizeof(steps[0]); s++)
+            LOGF("gstep %s %s kind=%s arg=%s rc=0x%08X bytes=%u sum=0x%08X main=%d cdram=%d phycont=%d us=%u", "job",
+                 steps[s], s == 2 || s == 3 || s >= 13 ? "user" : "-",
+                 s == 2 || s == 13 ? "capture" : s == 3 || s == 14 ? "workspace" : "0", 0u, 57344u, 0u, 90177536,
+                 12582912, 27262976, 1000u * s + 17u);
+        LOGF("game vocr text %u: %s", 0u, "\"朝ごはん、もう冷\"");
+        LOGF("result arenas Paf allocation: free=%u requested=%u reserve=%u success=%d", 2685496u, 65536u, 1572864u, 1);
+        LOGF("local dictionary workspace: %u bytes, %d %u-byte results, %u-byte connection pool", 65536u, 1, 65536u, 0u);
         LOGF("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
-             "first word", 0u, 2, "1/1", 1, 1, 15u, 61440u, 0, 12u, "朝ごはん、もう冷", "朝御飯", " (", "あさごはん", ")",
+             "first word", 0u, 2, "1/1", 1, 1, 15u, 49349u, 0, 85u, "朝ごはん、もう冷", "朝御飯", " (", "あさごはん", ")",
              " [", "Daijirin4 Plain", "]");
+        LOGF("subtitle text ready in %d ms", 1353);
+        LOGF("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", 0, 0, 1392, 53552u, 1, 1);
 #undef LOGF
     }
     out->ns = now_ns(in) - t0;
-    out->check = fnv64(0, &bytes, sizeof(bytes));
+    out->check = h;
     out->ops = lines;
     out->c[0] = lines;
     out->c[1] = bytes;
@@ -668,11 +804,11 @@ static int stage_anki(const BenchIn *in, unsigned iters, BenchOut *out)
             VjoAnkiNote note;
             char *json;
             vjo_arena_init(&a, scratch_mem, sizeof(scratch_mem));
-            if (vjo_anki_note_from_entry(&a, &cfg, &d[i].list, 0, &note)) return -2;
+            if (vjo_anki_note_from_entry(&a, &d[i].list, 0, &note)) return -2;
             json = vjo_queue_encode(&a, &note, 0);
             if (!json) return -3;
             bytes += strlen(json);
-            if (it == 0) out->check = fnv64(out->check, &bytes, sizeof(bytes));
+            if (it == 0) out->check = fnv64s(out->check, json); /* the record itself, every byte */
         }
     }
     out->ns = now_ns(in) - t0;
@@ -727,12 +863,13 @@ static const Stage stages[] = {
     {"find", stage_find, {"lines", "row_reads", "arena_bytes"}},
     {"recognize", stage_recognize, {"lines", "frames", "text_bytes", "arena_bytes", "params"}},
     {"job", stage_job, {"strips", "lines", "frames", "tears", "tries", "tall", "workspace_bytes", "capture_bytes",
-                        "rows_read", "strip_rows", "model_loaded", "model_cached"}},
+                        "rows_read", "strip_rows", "model_loaded", "model_cached", "settle_passes", "lm_lines",
+                        "lm_changed", "cascade_lines", "cascade_frames", "lm_loaded", "display_ms", "refine_lines"}},
     {"sha256", stage_sha256, {"bytes"}},
     {"postproc", stage_postproc, {"texts", "bytes_in", "bytes_out"}},
     {"lookup", stage_lookup, {"lookups", "entries", "opens", "reads", "read_bytes", "repeat_reads", "pages",
                               "arena_peak"}},
-    {"config", stage_config, {"bytes", "warnings"}},
+    {"config", stage_config, {"bytes", "warnings", "struct_bytes"}},
     {"log", stage_log, {"lines", "bytes"}},
     {"anki", stage_anki, {"cards", "json_bytes"}},
     {"furigana", stage_furigana, {"words", "bytes"}},

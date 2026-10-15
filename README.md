@@ -616,9 +616,11 @@ memory on the console remain the self-test's to answer.
 [docs/performance.md](docs/performance.md) is the stage benchmark
 (`tools/bench_stages.py`): every stage of an OCR job and of the Shell's lookups on
 the real sources, timed on the host and counted as the Vita compiler builds them
-on a Cortex-A9 under qemu-arm, with a model of one job's latency (estimates, not
-console measurements). Its smoke run (ctest `stage_bench_smoke`) checks that no
-speed change alters a stage's output.
+on a Cortex-A9 under qemu-arm, with a model of one job's latency calibrated with
+#81's console logs (estimates where the console measured nothing). Its smoke run
+(ctest `stage_bench_smoke`) checks every stage's output against a recorded
+checksum, so a speed change that alters one fails; the log stage is a replica of
+the Shell's formatting, so for logging it checks the formatted bytes only.
 
 Controller regressions exercise all 12 hooked read/peek variants, including
 negative logic and 64-sample batches. The [pinned VitaSDK headers](https://github.com/vitasdk/vita-headers/blob/e66ebe90b73d1fa4cce005a5b2072cec27322544/include/psp2/ctrl.h)

@@ -25,6 +25,13 @@ typedef struct {
     const uint8_t *model;     /* weights (a pinned release asset), or NULL */
     uint32_t model_bytes;
     const char *model_name;   /* its name in core/vocr_ocr.c's table */
+    const uint8_t *lm;        /* the job stage's character LM (a pinned asset), or NULL */
+    uint32_t lm_bytes;
+    const char *lm_name;
+    const uint8_t *cascade;   /* the job stage's cascade weights (VOCR4-W20), or NULL */
+    uint32_t cascade_bytes;
+    const char *cascade_name;
+    uint32_t fps;             /* the job stage's simulated display rate: one strip per frame (0: 60) */
     const char *text;         /* lines of text, '\n'-separated (lookup, postproc, anki, furigana) */
     const char *dict_dir;     /* directory holding plaintext.vjdict */
     const char *config_text;  /* config.ini text (config stage); NULL: the built-in default */
@@ -35,7 +42,7 @@ typedef struct {
     uint64_t (*clock_ns)(void);
 } BenchIn;
 
-#define BENCH_COUNTERS 12
+#define BENCH_COUNTERS 20
 typedef struct {
     uint64_t ops;                   /* units of work per iteration (strips, lines, lookups...) */
     uint64_t check;                 /* FNV-1a of the stage's output: equal before and after a change */

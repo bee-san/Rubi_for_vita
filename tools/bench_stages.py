@@ -7,9 +7,12 @@ leaves out). This script runs it in four ways:
 
   bench_stages.py smoke --binary build/host/vjo-stage-bench [--models DIR]
       every stage once on the committed inputs; each output checksum must equal the
-      recorded one (tools/bench_stages_expected.json): a speed change that alters any
-      output fails here. Stages whose input is absent (weights, the dictionary) are
-      reported skipped. ctest runs this (stage_bench_smoke).
+      recorded one (tools/bench_stages_expected.json): the checksums hash each stage's whole
+      output (grey bytes and signature, lines, text, entries and spans, every parsed setting,
+      the Anki record's bytes; the log stage's formatted lines, though that stage is a replica
+      of the Shell's formatting, not its code), so a speed change that alters an output fails
+      here. Stages whose input is absent (weights, the dictionary) are reported skipped.
+      ctest runs this (stage_bench_smoke).
   bench_stages.py host --binary build/host/vjo-stage-bench --models DIR --dict DIR [--runs 5] -o host.json
       the median host time of each workload (x86-64; never a Vita figure).
   bench_stages.py a9 --vita-build build/vita --models DIR --dict DIR -o a9.json [--no-cache]
@@ -21,8 +24,10 @@ leaves out). This script runs it in four ways:
       333 MHz. Estimates, not console measurements.
   bench_stages.py dev --binary ... --models DIR --manifests DIR --shots DIR [--shots DIR] -o dev.json
       the game worker's job on every region of vita-vn-ocr's linefind dev manifests
-      (protected sets excluded, as tools/capture_parity.py does): strips (display frames),
-      lines and CTC frames per job, the inputs of the job model.
+      (protected sets excluded, as tools/capture_parity.py does), twice: API 19's job and
+      main's default one (the stable-text wait on a simulated display at 60 and 30 fps, beam + LM, the
+      cascade; refined boxes in the PSP regions): strips (display frames), lines, CTC frames,
+      cascade re-reads per job, the inputs of the job model.
   bench_stages.py report --host host.json --a9 a9.json [--dev dev.json] -o OUT.json [--md OUT.md]
       the stage table and the end-to-end job model (docs/performance.md).
 
@@ -52,7 +57,17 @@ FB = (960, 544)
 # The sample's dialogue box (host/samples/vn_textbox.jpg, tools/make_test_screens.py): 2 lines.
 REGION = (32, 362, 896, 156)
 FULL = (0, 0, 960, 544)
-MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")
+MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR4_W20_w8.vocr")
+# The game worker's default job on main (core/config.c defaults): beam + LM decoding with the
+# 1000k LM (ocr_lm = 1000k), the confidence cascade with VOCR4-W20 (ocr_cascade_ms = 2000) and
+# the stable-text wait (ocr_settle_ms = 150); host/bench/stage_bench.c stage_job's mode bits.
+LM = "vocr_lm_o3_1000k.vlm"
+CASCADE = MODELS[2]
+JOB_FIRST, JOB_LM, JOB_CASCADE, JOB_SETTLE, JOB_REFINE = 1, 2, 4, 8, 16
+JOB_DEFAULT = JOB_LM | JOB_CASCADE | JOB_SETTLE
+DEV_FPS = (60, 30)
+DEFAULT_KEYS = ("strips", "lines", "frames", "rows_read", "display_ms", "settle_passes", "lm_lines", "lm_changed",
+                "cascade_lines", "cascade_frames", "tries")
 CLOCKS = (444, 333)
 DEV_MANIFESTS = ("vita_dev.jsonl", "psp_dev.jsonl")
 PROTECTED_SETS = {"vita-test", "psp-test", "vita_test", "psp_test", "native", "fresh-native", "fresh_native", "clannad"}
@@ -62,6 +77,10 @@ PROTECTED_VNS = {"v4"}  # CLANNAD
 def W(name, stage, needs=(), mode=0, region=REGION, fmt="abgr", model=None, unit="op", what=""):
     return {"name": name, "stage": stage, "needs": set(needs), "mode": mode, "region": region, "fmt": fmt,
             "model": model, "unit": unit, "what": what}
+
+
+def job_needs(mode):
+    return ("frame", "model") + (("lm",) if mode & JOB_LM else ()) + (("cascade",) if mode & JOB_CASCADE else ())
 
 
 # The workloads. unit: what one "op" of the stage is (ms per op are reported).
@@ -85,10 +104,17 @@ WORKLOADS = [
       what="game worker: VOCR3-H15 on each found line (resident weights)"),
     W("recognize_fl10", "recognize", ("frame", "model"), model=MODELS[1], unit="line",
       what="game worker: VOCR3-FL10 on each found line (the fallback)"),
-    W("job_h15", "job", ("frame", "model"), model=MODELS[0], unit="job",
-      what="game worker: the whole job (core/vocr_ocr.c: strips, checksums, finder, recognition), resident weights"),
-    W("job_h15_first", "job", ("frame", "model"), mode=1, model=MODELS[0], unit="job",
-      what="the same as a game's first job: the weights read in 32 KiB pieces and SHA-256 checked"),
+    W("recognize_w20", "recognize", ("frame", "model"), model=MODELS[2], unit="line",
+      what="game worker: VOCR4-W20 on each found line (the cascade's model, greedy)"),
+    W("job_h15", "job", job_needs(JOB_DEFAULT), mode=JOB_DEFAULT, model=MODELS[0], unit="job",
+      what="game worker: the whole job on main's defaults (core/vocr_ocr.c: strips, checksums, finder, the "
+           "stable-text wait, VOCR3-H15 with beam + 1000k LM, the cascade), resident weights and LM"),
+    W("job_h15_first", "job", job_needs(JOB_DEFAULT | JOB_FIRST), mode=JOB_DEFAULT | JOB_FIRST, model=MODELS[0],
+      unit="job", what="the same as a game's first job: weights and LM read in 32 KiB pieces and SHA-256 checked"),
+    W("job_h15_lm", "job", job_needs(JOB_LM), mode=JOB_LM, model=MODELS[0], unit="job",
+      what="the job with beam + LM decoding only (no wait, no cascade)"),
+    W("job_h15_greedy", "job", job_needs(0), mode=0, model=MODELS[0], unit="job",
+      what="API 19's job: greedy decoding, no wait, no cascade (the previous baseline's job_h15)"),
     W("sha256_h15", "sha256", ("model",), model=MODELS[0], unit="model",
       what="SHA-256 of the VOCR3-H15 weights (1,155,968 B), BearSSL"),
     W("postproc", "postproc", ("texts",), unit="text",
@@ -144,6 +170,10 @@ def bench_args(w, frame, models, dictionary, iters, rel=False):
         a += ["--model-name", w["model"]]
         if "model" in w["needs"]:
             a += ["--model", f(model_path(models, w["model"]))]
+    if "lm" in w["needs"]:
+        a += ["--lm", f(model_path(models, LM)), "--lm-name", LM]
+    if "cascade" in w["needs"]:
+        a += ["--cascade", f(model_path(models, CASCADE)), "--cascade-name", CASCADE]
     if "texts" in w["needs"]:
         a += ["--texts", f(TEXTS)]
     if "dict" in w["needs"]:
@@ -157,6 +187,10 @@ def available(w, models, dictionary):
     missing = []
     if "model" in w["needs"] and not model_path(models, w["model"]):
         missing.append(f"weights {w['model']} (--models)")
+    if "lm" in w["needs"] and not model_path(models, LM):
+        missing.append(f"LM {LM} (--models)")
+    if "cascade" in w["needs"] and not model_path(models, CASCADE):
+        missing.append(f"cascade weights {CASCADE} (--models)")
     if "dict" in w["needs"] and not dictionary:
         missing.append("plaintext.vjdict (--dict or VJO_PLAINTEXT_DIR)")
     return missing
@@ -252,8 +286,9 @@ def cmd_dev(args):
                 continue
             rows.append((name, row))
     model = model_path(args.models, args.model)
-    if not model:
-        die(f"no {args.model} in --models")
+    lm, cascade = model_path(args.models, LM), model_path(args.models, CASCADE)
+    if not model or not lm or not cascade:
+        die(f"no {args.model}, {LM} or {CASCADE} in --models")
     out = {"model": args.model, "regions": [], "excluded": excluded}
     frames = {}
     with tempfile.TemporaryDirectory(prefix="vjo-bench-dev-") as tmp:
@@ -284,14 +319,26 @@ def cmd_dev(args):
                 continue
             # The kernel crops x to an even pixel (kernel/capture.c capture_crop_of): the same here.
             x0 &= ~1
-            r = run_json([args.binary, "job", "--iters", "1", "--frame", str(raw), "--fb", f"{fw}x{fh}",
-                          "--region", f"{x0},{y0},{x1 - x0},{y1 - y0}", "--model", str(model),
-                          "--model-name", args.model])
-            c = r["counters"]
-            out["regions"].append({"manifest": name, "id": row["id"], "w": x1 - x0, "h": y1 - y0,
-                                   "gt_lines": len(row.get("lines", [])), "strips": c["strips"], "lines": c["lines"],
-                                   "frames": c["frames"], "tall": c["tall"], "rows_read": c["rows_read"],
-                                   "strip_rows": c["strip_rows"], "ns": r["ns_per_iter"]})
+            base = [args.binary, "job", "--iters", "1", "--frame", str(raw), "--fb", f"{fw}x{fh}",
+                    "--region", f"{x0},{y0},{x1 - x0},{y1 - y0}", "--model", str(model), "--model-name", args.model]
+            # API 19's job (greedy, no wait), and main's default job: a PSP game's also refines the finder's
+            # boxes (ocr_refine_lines = psp; the psp_dev frames stand in for Adrenaline's).
+            r0 = run_json([*base, "--mode", "0"])
+            mode = JOB_DEFAULT | (JOB_REFINE if name.startswith("psp") else 0)
+            reg = {"manifest": name, "id": row["id"], "w": x1 - x0, "h": y1 - y0,
+                   "gt_lines": len(row.get("lines", [])), "mode": mode, "ns": r0["ns_per_iter"]}
+            c0 = r0["counters"]
+            # API 19's job
+            reg.update({"strips": c0["strips"], "lines": c0["lines"], "frames": c0["frames"], "tall": c0["tall"],
+                        "rows_read": c0["rows_read"], "strip_rows": c0["strip_rows"]})
+            # main's default job, its display at each rate (d60_*, d30_*)
+            for fps in DEV_FPS:
+                r = run_json([*base, "--mode", str(mode), "--fps", str(fps), "--lm", str(lm), "--lm-name", LM,
+                              "--cascade", str(cascade), "--cascade-name", CASCADE])
+                c = r["counters"]
+                reg.update({f"d{fps}_{k}": c[k] for k in DEFAULT_KEYS})
+                reg[f"d{fps}_ns"] = r["ns_per_iter"]
+            out["regions"].append(reg)
     regs = out["regions"]
     out["summary"] = summarize(regs)
     Path(args.out).write_text(json.dumps(out, indent=1) + "\n")
@@ -305,9 +352,23 @@ def summarize(regs):
         return {"mean": statistics.mean(v), "median": statistics.median(v), "p90": v[int(0.9 * (len(v) - 1))],
                 "max": v[-1]}
     with_text = [r for r in regs if r["lines"]]
-    return {"regions": len(regs), "with_lines": len(with_text), "strips": dist("strips"), "lines": dist("lines"),
-            "frames": dist("frames"), "rows_read_per_row": statistics.mean(r["rows_read"] / r["h"] for r in regs),
-            "tall": sum(r["tall"] for r in regs)}
+    out = {"regions": len(regs), "with_lines": len(with_text), "strips": dist("strips"), "lines": dist("lines"),
+           "frames": dist("frames"), "rows_read_per_row": statistics.mean(r["rows_read"] / r["h"] for r in regs),
+           "pixels_read": statistics.mean(r["rows_read"] * r["w"] for r in regs),
+           "tall": sum(r["tall"] for r in regs)}
+    for fps in DEV_FPS:
+        p = f"d{fps}_"
+        if not regs or p + "strips" not in regs[0]:
+            continue
+        d = {k: dist(p + k) for k in DEFAULT_KEYS if k not in ("tries", "rows_read")}
+        d["rows_read_per_row"] = statistics.mean(r[p + "rows_read"] / r["h"] for r in regs)
+        d["pixels_read"] = statistics.mean(r[p + "rows_read"] * r["w"] for r in regs)
+        d["retried_jobs"] = sum(r[p + "tries"] > 1 for r in regs)
+        d["cascade_share"] = sum(r[p + "cascade_lines"] for r in regs) / max(1, sum(r[p + "lm_lines"] for r in regs))
+        d["lm_changed_share"] = sum(r[p + "lm_changed"] for r in regs) / max(1, sum(r[p + "lm_lines"] for r in regs))
+        d["jobs_with_cascade"] = sum(r[p + "cascade_lines"] > 0 for r in regs)
+        out[f"default_{fps}fps"] = d
+    return out
 
 
 # ---------------------------------------------------------------- the A9 lane
@@ -475,7 +536,7 @@ def cmd_a9(args):
         shutil.copy2(exe, stage / exe.name)
         for p in (TEXTS, CONFIG):
             shutil.copy2(p, stage / p.name)
-        for name in MODELS:
+        for name in (*MODELS, LM):
             if model_path(args.models, name):
                 shutil.copy2(model_path(args.models, name), stage / name)
         if dictionary:
@@ -525,13 +586,34 @@ def cmd_a9(args):
 
 # ---------------------------------------------------------------- report
 
+def strip_text(lane):
+    """A lane's results without the recognized text (the bundle holds counts and geometry only)."""
+    if not lane:
+        return lane
+    out = dict(lane)
+    out["workloads"] = {k: {kk: vv for kk, vv in v.items() if kk != "text"} for k, v in lane.get("workloads", {}).items()}
+    return out
+
+
+DEV_COLUMNS = ("w", "h", "strips", "lines", "frames", "tall", "rows_read", "strip_rows", "d60_strips", "d60_frames",
+               "d60_display_ms", "d60_settle_passes", "d60_cascade_lines", "d60_cascade_frames", "d30_strips",
+               "d30_display_ms")
+
+
 def cmd_report(args):
     from bench_model import build_report  # tools/bench_model.py: the job model and the tables
+    import datetime
     host = json.loads(Path(args.host).read_text()) if args.host else None
     a9 = json.loads(Path(args.a9).read_text()) if args.a9 else None
     dev = json.loads(Path(args.dev).read_text()) if args.dev else None
     report, md = build_report(host, a9, dev, WORKLOADS)
-    Path(args.out).write_text(json.dumps(report, indent=1, ensure_ascii=False) + "\n")
+    bundle = {"what": "tools/bench_stages.py report: the stage table and job model (report), the A9 and host lanes' "
+                      "results without recognized text, the dev regions' summary and per-region counts (dev_rows, "
+                      "columns dev_columns; no shot names)",
+              "date": datetime.date.today().isoformat(), "report": report, "a9": strip_text(a9),
+              "host": strip_text(host), "dev": (dev or {}).get("summary"), "dev_columns": list(DEV_COLUMNS),
+              "dev_rows": [[r.get(c) for c in DEV_COLUMNS] for r in (dev or {}).get("regions", [])]}
+    Path(args.out).write_text(json.dumps(bundle, indent=1, ensure_ascii=False) + "\n")
     if args.md:
         Path(args.md).write_text(md)
     else:

@@ -1,0 +1,11328 @@
+{
+ "what": "tools/bench_stages.py report: the stage table and job model (report), the A9 and host lanes' results without recognized text, the dev regions' summary and per-region counts (dev_rows, columns dev_columns; no shot names)",
+ "date": "2026-10-15",
+ "report": {
+  "stages": [
+   {
+    "workload": "capture_abgr",
+    "unit": "strip",
+    "what": "display hook: a strip of region rows to grey (A8B8G8R8), one rows call per display frame",
+    "ops_per_iter": 3,
+    "host_ms": 0.0663228,
+    "a9_insns": 627170.0,
+    "a9_444": [
+     0.7062725225225225,
+     1.904707207207207
+    ],
+    "a9_333": [
+     0.9416966966966966,
+     2.5396096096096095
+    ],
+    "l1d_misses": 7284.0,
+    "libc_share": 0.1046351069088126,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "counters_from": "a9",
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (mean 52.0 rows of 64-row strips); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_abgr_sig",
+    "unit": "strip",
+    "what": "the same, first pass: also the capture's scene signature",
+    "ops_per_iter": 3,
+    "host_ms": 0.06802206666666667,
+    "a9_insns": 642162.6666666666,
+    "a9_444": [
+     0.7231561561561561,
+     1.9433168168168167
+    ],
+    "a9_333": [
+     0.9642082082082082,
+     2.591089089089089
+    ],
+    "l1d_misses": 7355.666666666667,
+    "libc_share": 0.10219217560659605,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "counters_from": "a9",
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (mean 52.0 rows of 64-row strips); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_a2b10",
+    "unit": "strip",
+    "what": "the same, A2B10G10R10",
+    "ops_per_iter": 3,
+    "host_ms": 0.11111886666666665,
+    "a9_insns": 1187418.0,
+    "a9_444": [
+     1.3371824324324324,
+     3.166527027027027
+    ],
+    "a9_333": [
+     1.78290990990991,
+     4.222036036036036
+    ],
+    "l1d_misses": 7284.0,
+    "libc_share": 0.05526613206132971,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "counters_from": "a9",
+    "memory": "reads 186,368 B of the frame, writes 46,592 B of grey per strip (mean 52.0 rows of 64-row strips); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_a1b5",
+    "unit": "strip",
+    "what": "the same, A1B5G5R5 (PSP emulator)",
+    "ops_per_iter": 3,
+    "host_ms": 0.11065613333333335,
+    "a9_insns": 1209573.0,
+    "a9_444": [
+     1.3621317567567568,
+     3.019668918918919
+    ],
+    "a9_333": [
+     1.8161756756756757,
+     4.026225225225225
+    ],
+    "l1d_misses": 4372.0,
+    "libc_share": 0.03379043679050375,
+    "parity": true,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "counters_from": "a9",
+    "memory": "reads 93,184 B of the frame, writes 46,592 B of grey per strip (mean 52.0 rows of 64-row strips); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "capture_full_abgr",
+    "unit": "strip",
+    "what": "display hook, full screen (the self-test's stage), A8B8G8R8",
+    "ops_per_iter": 10,
+    "host_ms": 0.07495212,
+    "a9_insns": 703333.2,
+    "a9_444": [
+     0.7920418918918919,
+     2.3513434594594598
+    ],
+    "a9_333": [
+     1.0560558558558557,
+     3.0905966126126123
+    ],
+    "l1d_misses": 8164.0,
+    "libc_share": 0.10534523324080251,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    },
+    "counters_from": "a9",
+    "memory": "reads 208,896 B of the frame, writes 52,224 B of grey per strip (mean 54.4 rows of 59-row strips); kernel scratch 2 x 3,840 B (static)"
+   },
+   {
+    "workload": "scene_sig",
+    "unit": "signature",
+    "what": "display hook: the region's change-detection signature (every 8th game frame)",
+    "ops_per_iter": 1,
+    "host_ms": 0.004158,
+    "a9_insns": 67766.0,
+    "a9_444": [
+     0.07631306306306307,
+     0.3299234234234234
+    ],
+    "a9_333": [
+     0.10175075075075075,
+     0.4398978978978979
+    ],
+    "l1d_misses": 2624.0,
+    "libc_share": 0.33533040167635686,
+    "parity": true,
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    },
+    "counters_from": "a9",
+    "memory": "sampled rows of the 896x156 region (A8B8G8R8), 25-column grid"
+   },
+   {
+    "workload": "scene_update",
+    "unit": "update",
+    "what": "kernel worker: one signature into the scene tracker (every 64 ms), screen unchanged",
+    "ops_per_iter": 1,
+    "host_ms": 0.000528,
+    "a9_insns": 9421.0,
+    "a9_444": [
+     0.010609234234234235,
+     0.02121846846846847
+    ],
+    "a9_333": [
+     0.014145645645645646,
+     0.028291291291291293
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0,
+    "parity": true,
+    "counters": {
+     "events": 1
+    },
+    "counters_from": "a9",
+    "memory": ""
+   },
+   {
+    "workload": "scene_update_typing",
+    "unit": "update",
+    "what": "the same while text types out (a cell changes every signature)",
+    "ops_per_iter": 1,
+    "host_ms": 0.001114,
+    "a9_insns": 14201.0,
+    "a9_444": [
+     0.015992117117117118,
+     0.03202927927927928
+    ],
+    "a9_333": [
+     0.021322822822822822,
+     0.042705705705705706
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.0063375818604323635,
+    "parity": true,
+    "counters": {
+     "events": 0
+    },
+    "counters_from": "a9",
+    "memory": ""
+   },
+   {
+    "workload": "find",
+    "unit": "region",
+    "what": "game worker: the line finder, one region",
+    "ops_per_iter": 1,
+    "host_ms": 0.8871194,
+    "a9_insns": 16492224.5,
+    "a9_444": [
+     18.5723384009009,
+     37.93582094594595
+    ],
+    "a9_333": [
+     24.76311786786787,
+     50.581094594594596
+    ],
+    "l1d_misses": 11704.0,
+    "libc_share": 0.0006546721456526377,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    },
+    "counters_from": "a9",
+    "memory": "31,971 B arena; 382 row reads (two passes) of the region"
+   },
+   {
+    "workload": "recognize_h15",
+    "unit": "line",
+    "what": "game worker: VOCR3-H15 on each found line (resident weights)",
+    "ops_per_iter": 2,
+    "host_ms": 33.0549192,
+    "a9_insns": 63151996.0,
+    "a9_444": [
+     111.56665315315315,
+     202.5146418918919
+    ],
+    "a9_333": [
+     148.75553753753755,
+     270.01952252252255
+    ],
+    "l1d_misses": 569905.5,
+    "libc_share": 0.025305589707726735,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    },
+    "counters_from": "a9",
+    "memory": "182,944 B arena + resident weights; 54 CTC frames per line"
+   },
+   {
+    "workload": "recognize_fl10",
+    "unit": "line",
+    "what": "game worker: VOCR3-FL10 on each found line (the fallback)",
+    "ops_per_iter": 2,
+    "host_ms": 17.6711996,
+    "a9_insns": 37241875.5,
+    "a9_444": [
+     63.325450450450454,
+     118.79894932432433
+    ],
+    "a9_333": [
+     84.43393393393393,
+     158.3985990990991
+    ],
+    "l1d_misses": 302429.0,
+    "libc_share": 0.02861210628342281,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    },
+    "counters_from": "a9",
+    "memory": "124,832 B arena + resident weights; 54 CTC frames per line"
+   },
+   {
+    "workload": "recognize_w20",
+    "unit": "line",
+    "what": "game worker: VOCR4-W20 on each found line (the cascade's model, greedy)",
+    "ops_per_iter": 2,
+    "host_ms": 48.9211095,
+    "a9_insns": 86255223.5,
+    "a9_444": [
+     158.14078378378377,
+     278.81153193693694
+    ],
+    "a9_333": [
+     210.85437837837839,
+     371.74588591591595
+    ],
+    "l1d_misses": 870089.0,
+    "libc_share": 0.022143545892035165,
+    "parity": true,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 241056,
+     "params": 1423499
+    },
+    "counters_from": "a9",
+    "memory": "241,056 B arena + resident weights; 54 CTC frames per line"
+   },
+   {
+    "workload": "job_h15",
+    "unit": "job",
+    "what": "game worker: the whole job on main's defaults (core/vocr_ocr.c: strips, checksums, finder, the stable-text wait, VOCR3-H15 with beam + 1000k LM, the cascade), resident weights and LM",
+    "ops_per_iter": 1,
+    "host_ms": 68.648478,
+    "a9_insns": 156233395.5,
+    "a9_444": [
+     228.2268018018018,
+     488.4704363513514
+    ],
+    "a9_333": [
+     304.3024024024024,
+     649.6847618018019
+    ],
+    "l1d_misses": 1247314.0,
+    "libc_share": 0.02199828653151176,
+    "parity": true,
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 538624,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 233,
+     "refine_lines": 0
+    },
+    "counters_from": "a9",
+    "memory": "538,624 B workspace + 63,000 B capture block; 13 strips, 796 rows read for a 64-row strip; 2 lines decoded with the LM, 1 settle pass"
+   },
+   {
+    "workload": "job_h15_first",
+    "unit": "job",
+    "what": "the same as a game's first job: weights and LM read in 32 KiB pieces and SHA-256 checked",
+    "ops_per_iter": 1,
+    "host_ms": 76.194506,
+    "a9_insns": 238341790.5,
+    "a9_444": [
+     269.598714527027,
+     712.2236014864865
+    ],
+    "a9_333": [
+     359.4649527027027,
+     943.9129719819821
+    ],
+    "l1d_misses": 1445834.0,
+    "libc_share": 0.024153829623932442,
+    "parity": true,
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 538624,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 1,
+     "display_ms": 233,
+     "refine_lines": 0
+    },
+    "counters_from": "a9",
+    "memory": "538,624 B workspace + 63,000 B capture block; 13 strips, 796 rows read for a 64-row strip; 2 lines decoded with the LM, 1 settle pass"
+   },
+   {
+    "workload": "job_h15_lm",
+    "unit": "job",
+    "what": "the job with beam + LM decoding only (no wait, no cascade)",
+    "ops_per_iter": 1,
+    "host_ms": 68.43474979999999,
+    "a9_insns": 154967672.0,
+    "a9_444": [
+     228.12946396396396,
+     484.5101423423423
+    ],
+    "a9_333": [
+     304.1726186186186,
+     644.4082564564565
+    ],
+    "l1d_misses": 1231173.0,
+    "libc_share": 0.021835851028335768,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 243440,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    },
+    "counters_from": "a9",
+    "memory": "243,440 B workspace + 63,000 B capture block; 10 strips, 604 rows read for a 64-row strip; 2 lines decoded with the LM"
+   },
+   {
+    "workload": "job_h15_greedy",
+    "unit": "job",
+    "what": "API 19's job: greedy decoding, no wait, no cascade (the previous baseline's job_h15)",
+    "ops_per_iter": 1,
+    "host_ms": 67.606631,
+    "a9_insns": 146857280.0,
+    "a9_444": [
+     223.4397027027027,
+     455.67844594594595
+    ],
+    "a9_333": [
+     297.9196036036036,
+     607.5712612612613
+    ],
+    "l1d_misses": 1204295.0,
+    "libc_share": 0.02298195908299541,
+    "parity": true,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 186704,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 0,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    },
+    "counters_from": "a9",
+    "memory": "186,704 B workspace + 63,000 B capture block; 10 strips, 604 rows read for a 64-row strip"
+   },
+   {
+    "workload": "sha256_h15",
+    "unit": "model",
+    "what": "SHA-256 of the VOCR3-H15 weights (1,155,968 B), BearSSL",
+    "ops_per_iter": 1,
+    "host_ms": 3.9942164,
+    "a9_insns": 43966006.0,
+    "a9_444": [
+     49.755362612612615,
+     104.43820945945946
+    ],
+    "a9_333": [
+     66.34048348348348,
+     139.25094594594594
+    ],
+    "l1d_misses": 36198.0,
+    "libc_share": 0.021365279347867076,
+    "parity": true,
+    "counters": {
+     "bytes": 1155968
+    },
+    "counters_from": "a9",
+    "memory": "1,155,968 B of weights"
+   },
+   {
+    "workload": "postproc",
+    "unit": "text",
+    "what": "Shell: the recognized text filtered and trimmed, its first selectable letter",
+    "ops_per_iter": 50,
+    "host_ms": 0.00036763999999999997,
+    "a9_insns": 5319.7,
+    "a9_444": [
+     0.005990653153153153,
+     0.011981306306306306
+    ],
+    "a9_333": [
+     0.007987537537537536,
+     0.015975075075075073
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.17164125796567475,
+    "parity": true,
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    },
+    "counters_from": "a9",
+    "memory": "92 B of text"
+   },
+   {
+    "workload": "lookup_first",
+    "unit": "lookup",
+    "what": "Shell: the first word's lookup with the bundled dictionary (Auto OCR prepares it)",
+    "ops_per_iter": 50,
+    "host_ms": 0.046294032,
+    "a9_insns": 127155.55,
+    "a9_444": [
+     0.14349507882882884,
+     0.47910921171171167
+    ],
+    "a9_333": [
+     0.1913267717717718,
+     0.6388122822822823
+    ],
+    "l1d_misses": 2829.56,
+    "libc_share": 0.7023031240083504,
+    "parity": true,
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53552
+    },
+    "counters_from": "a9",
+    "memory": "14.3 reads, 49.6 KiB and 1 open per lookup; arena peak 53,552 B of the Shell's 64 KiB"
+   },
+   {
+    "workload": "lookup_every",
+    "unit": "lookup",
+    "what": "Shell: a lookup at every selectable letter (Right in Character mode, a tap)",
+    "ops_per_iter": 1321,
+    "host_ms": 0.046318174867524604,
+    "a9_insns": 116184.50605601817,
+    "a9_444": [
+     0.13138343912610567,
+     0.3842920434628421
+    ],
+    "a9_333": [
+     0.17517791883480754,
+     0.5123893912837895
+    ],
+    "l1d_misses": 1778.0787282361848,
+    "libc_share": 0.6501532702371631,
+    "parity": true,
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53552
+    },
+    "counters_from": "a9",
+    "memory": "14.0 reads, 48.8 KiB and 1 open per lookup; arena peak 53,552 B of the Shell's 64 KiB"
+   },
+   {
+    "workload": "config",
+    "unit": "parse",
+    "what": "Shell: config.ini parsed (every overlay open)",
+    "ops_per_iter": 1,
+    "host_ms": 0.007198,
+    "a9_insns": 128179.0,
+    "a9_444": [
+     0.14434572072072072,
+     0.28891666666666665
+    ],
+    "a9_333": [
+     0.19246096096096096,
+     0.38522222222222224
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 0.09290133329172486,
+    "parity": true,
+    "counters": {
+     "bytes": 4283,
+     "warnings": 0,
+     "struct_bytes": 2388
+    },
+    "counters_from": "a9",
+    "memory": "4,283 B of config.ini into a 2,388 B VjoConfig"
+   },
+   {
+    "workload": "log",
+    "unit": "line",
+    "what": "Shell: formatting a job's log lines (formatting only)",
+    "ops_per_iter": 27,
+    "host_ms": 0.0002508222222222222,
+    "a9_insns": 2786.6296296296296,
+    "a9_444": [
+     0.003138096429763096,
+     0.006321237904571238
+    ],
+    "a9_333": [
+     0.004184128573017462,
+     0.008428317206094984
+    ],
+    "l1d_misses": 0.0,
+    "libc_share": 1.0,
+    "parity": true,
+    "counters": {
+     "lines": 27,
+     "bytes": 2981
+    },
+    "counters_from": "a9",
+    "memory": "110 B per line"
+   },
+   {
+    "workload": "anki",
+    "unit": "card",
+    "what": "Shell: an Anki card's note and queue record",
+    "ops_per_iter": 50,
+    "host_ms": 0.003629804,
+    "a9_insns": 58577.92,
+    "a9_444": [
+     0.06596963963963964,
+     0.13404036036036035
+    ],
+    "a9_333": [
+     0.08795951951951952,
+     0.17872048048048048
+    ],
+    "l1d_misses": 22.36,
+    "libc_share": 0.34768834400402066,
+    "parity": true,
+    "counters": {
+     "cards": 50,
+     "json_bytes": 49873
+    },
+    "counters_from": "a9",
+    "memory": "997 B queue record per card"
+   },
+   {
+    "workload": "furigana",
+    "unit": "word",
+    "what": "Shell: a word's reading aligned with its spelling (subtitle strip, network dictionaries)",
+    "ops_per_iter": 50,
+    "host_ms": 0.00012956,
+    "a9_insns": 1715.4,
+    "a9_444": [
+     0.0019317567567567568,
+     0.0038689189189189187
+    ],
+    "a9_333": [
+     0.002575675675675676,
+     0.0051585585585585585
+    ],
+    "l1d_misses": 0.08,
+    "libc_share": 0.5145155648828261,
+    "parity": true,
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    },
+    "counters_from": "a9",
+    "memory": ""
+   }
+  ],
+  "source": {
+   "worker_take_poll_ms": 100,
+   "shell_result_poll_ms": 50,
+   "control_poll_ms": 50,
+   "kernel_tick_ms": 16,
+   "signature_every_frames": 8,
+   "settle_ms": 300
+  },
+  "console": {
+   "h15_ms_per_frame": [
+    5.056,
+    "VOCR3-H15: 664 CTC frames in 10 jobs' recognize= times (the owner: 5.0-5.2 ms); vita-vn-ocr's A9 model gives 5.00 ms at its 333 MHz upper bound"
+   ],
+   "fs_line_ms": [
+    20.0,
+    40.0,
+    38.3,
+    "one log line's open/append/close on ux0 with the game running: of each job's Shell time, what the game's job, the lookup and the polls (at their mean) leave, per line it logged: median 38.3 ms (11 jobs, 19-24 lines each); the self-test's own timestamps give 20-30 ms per file append. Low 20, high 40, estimate 38.3"
+   ],
+   "lookup_fixed_ms": [
+    15.3,
+    "a lookup's open, header and CPU: the intercept of ms against reads, 30 lookups"
+   ],
+   "lookup_read_ms": [
+    3.82,
+    "one dictionary read (4 KiB at a random offset of the 134 MiB file): the slope"
+   ],
+   "first_load_ms": [
+    218.0,
+    231.0,
+    "load= of the 4 jobs that read the weights: 1,155,968 B read and SHA-256 checked"
+   ],
+   "jobs": {
+    "n": 11,
+    "shell_ms_mean": 1392.7,
+    "shell_ms_median": 1368.0,
+    "game_ms_mean": 488.6,
+    "lookup_ms_mean": 88.5,
+    "unexplained_ms_mean": 823.7,
+    "log_lines_mean": 19.1,
+    "strips_mean": 5.5,
+    "capture_ms_mean": 87.8,
+    "find_ms_mean": 104.6,
+    "frames_mean": 66.4,
+    "lines": 1,
+    "lookup_reads": 15.2,
+    "region": [
+     883,
+     112
+    ]
+   }
+  },
+  "job_log": {
+   "start": 1,
+   "result": 4,
+   "steps_api19": 11,
+   "steps": 15,
+   "after": 4,
+   "subtitle": 1
+  },
+  "host_cpu": "AMD EPYC 9R14",
+  "dev": {
+   "regions": 372,
+   "with_lines": 367,
+   "strips": {
+    "mean": 7.28494623655914,
+    "median": 8.0,
+    "p90": 12,
+    "max": 18
+   },
+   "lines": {
+    "mean": 2.4166666666666665,
+    "median": 2.0,
+    "p90": 4,
+    "max": 8
+   },
+   "frames": {
+    "mean": 86.19086021505376,
+    "median": 77.5,
+    "p90": 158,
+    "max": 433
+   },
+   "rows_read_per_row": 3.9867958617069914,
+   "pixels_read": 201523.24193548388,
+   "tall": 41,
+   "default_60fps": {
+    "strips": {
+     "mean": 9.362903225806452,
+     "median": 10.0,
+     "p90": 15,
+     "max": 22
+    },
+    "lines": {
+     "mean": 2.4166666666666665,
+     "median": 2.0,
+     "p90": 4,
+     "max": 8
+    },
+    "frames": {
+     "mean": 93.44623655913979,
+     "median": 84.0,
+     "p90": 179,
+     "max": 433
+    },
+    "display_ms": {
+     "mean": 211.83064516129033,
+     "median": 216.0,
+     "p90": 249,
+     "max": 366
+    },
+    "settle_passes": {
+     "mean": 0.9865591397849462,
+     "median": 1.0,
+     "p90": 1,
+     "max": 1
+    },
+    "lm_lines": {
+     "mean": 2.2016129032258065,
+     "median": 2.0,
+     "p90": 4,
+     "max": 7
+    },
+    "lm_changed": {
+     "mean": 0.7231182795698925,
+     "median": 0.0,
+     "p90": 2,
+     "max": 6
+    },
+    "cascade_lines": {
+     "mean": 0.9408602150537635,
+     "median": 1.0,
+     "p90": 2,
+     "max": 6
+    },
+    "cascade_frames": {
+     "mean": 35.064516129032256,
+     "median": 22.0,
+     "p90": 96,
+     "max": 326
+    },
+    "rows_read_per_row": 5.2895266613387335,
+    "pixels_read": 261034.5940860215,
+    "retried_jobs": 0,
+    "cascade_share": 0.42735042735042733,
+    "lm_changed_share": 0.32844932844932845,
+    "jobs_with_cascade": 229
+   },
+   "default_30fps": {
+    "strips": {
+     "mean": 9.096774193548388,
+     "median": 10.0,
+     "p90": 14,
+     "max": 20
+    },
+    "lines": {
+     "mean": 2.4166666666666665,
+     "median": 2.0,
+     "p90": 4,
+     "max": 8
+    },
+    "frames": {
+     "mean": 93.44623655913979,
+     "median": 84.0,
+     "p90": 179,
+     "max": 433
+    },
+    "display_ms": {
+     "mean": 323.51344086021504,
+     "median": 333.0,
+     "p90": 466,
+     "max": 666
+    },
+    "settle_passes": {
+     "mean": 0.9032258064516129,
+     "median": 1.0,
+     "p90": 1,
+     "max": 1
+    },
+    "lm_lines": {
+     "mean": 2.2016129032258065,
+     "median": 2.0,
+     "p90": 4,
+     "max": 7
+    },
+    "lm_changed": {
+     "mean": 0.7231182795698925,
+     "median": 0.0,
+     "p90": 2,
+     "max": 6
+    },
+    "cascade_lines": {
+     "mean": 0.9408602150537635,
+     "median": 1.0,
+     "p90": 2,
+     "max": 6
+    },
+    "cascade_frames": {
+     "mean": 35.064516129032256,
+     "median": 22.0,
+     "p90": 96,
+     "max": 326
+    },
+    "rows_read_per_row": 5.186159394749093,
+    "pixels_read": 251372.8306451613,
+    "retried_jobs": 0,
+    "cascade_share": 0.42735042735042733,
+    "lm_changed_share": 0.32844932844932845,
+    "jobs_with_cascade": 229
+   }
+  },
+  "jobs": [
+   {
+    "mhz": 444,
+    "fps": 60,
+    "kind": "default",
+    "first_job": false,
+    "strips": 9.362903225806452,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 211.83064516129033,
+      "high": 249.76646610723628,
+      "estimate": 249.76646610723628,
+      "note": "9.4 strips, one display frame each at 60 fps (212 ms, the stable-text wait's pass and sleep included); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 197.12229875507228,
+      "high": 375.39514618238303,
+      "estimate": 379.5721266144748,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.07-3.75 ms a frame + the LM's 0.04-0.27 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 104.21022533958687,
+      "high": 190.40511481893182,
+      "estimate": 192.52373155347655,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 2.93-5.16 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     1152.897496278254,
+     2207.628550995503
+    ],
+    "estimate": 2078.6593894524617,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "kind": "default",
+    "first_job": false,
+    "strips": 9.096774193548388,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 323.51344086021504,
+      "high": 361.44926180616096,
+      "estimate": 361.44926180616096,
+      "note": "9.1 strips, one display frame each at 30 fps (324 ms, the stable-text wait's pass and sleep included); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 197.12229875507228,
+      "high": 375.39514618238303,
+      "estimate": 379.5721266144748,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.07-3.75 ms a frame + the LM's 0.04-0.27 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 104.21022533958687,
+      "high": 190.40511481893182,
+      "estimate": 192.52373155347655,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 2.93-5.16 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     1264.5802919771788,
+     2319.3113466944274
+    ],
+    "estimate": 2190.3421851513863,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "kind": "default",
+    "first_job": false,
+    "strips": 9.362903225806452,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 211.83064516129033,
+      "high": 262.4117397558849,
+      "estimate": 262.4117397558849,
+      "note": "9.4 strips, one display frame each at 60 fps (212 ms, the stable-text wait's pass and sleep included); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 262.8297316734297,
+      "high": 499.1379159406421,
+      "estimate": 504.69176853836905,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.75-5.00 ms a frame + the LM's 0.06-0.34 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 138.94696711944917,
+      "high": 253.35046886450968,
+      "estimate": 256.1694716184616,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 3.90-6.88 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     1253.3914995538012,
+     2406.965942216757
+    ],
+    "estimate": 2280.0740388587583,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "kind": "default",
+    "first_job": false,
+    "strips": 9.096774193548388,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 323.51344086021504,
+      "high": 374.09453545480966,
+      "estimate": 374.09453545480966,
+      "note": "9.1 strips, one display frame each at 30 fps (324 ms, the stable-text wait's pass and sleep included); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 262.8297316734297,
+      "high": 499.1379159406421,
+      "estimate": 504.69176853836905,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.75-5.00 ms a frame + the LM's 0.06-0.34 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 138.94696711944917,
+      "high": 253.35046886450968,
+      "estimate": 256.1694716184616,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 3.90-6.88 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     1365.074295252726,
+     2518.6487379156815
+    ],
+    "estimate": 2391.756834557683,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 60,
+    "kind": "default",
+    "first_job": true,
+    "strips": 9.362903225806452,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 211.83064516129033,
+      "high": 249.76646610723628,
+      "estimate": 249.76646610723628,
+      "note": "9.4 strips, one display frame each at 60 fps (212 ms, the stable-text wait's pass and sleep included); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 197.12229875507228,
+      "high": 375.39514618238303,
+      "estimate": 379.5721266144748,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.07-3.75 ms a frame + the LM's 0.04-0.27 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 104.21022533958687,
+      "high": 190.40511481893182,
+      "estimate": 192.52373155347655,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 2.93-5.16 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights + LM: read + SHA-256 (first job)": {
+      "low": 404.2480622300963,
+      "high": 428.3545980511571,
+      "estimate": 416.3013301406267,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 49.8-104.4 ms, A9); the 987,600 B LM scaled by its bytes"
+     }
+    },
+    "total": [
+     1557.1455585083504,
+     2635.98314904666
+    ],
+    "estimate": 2494.9607195930885,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "kind": "default",
+    "first_job": true,
+    "strips": 9.096774193548388,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 323.51344086021504,
+      "high": 361.44926180616096,
+      "estimate": 361.44926180616096,
+      "note": "9.1 strips, one display frame each at 30 fps (324 ms, the stable-text wait's pass and sleep included); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 197.12229875507228,
+      "high": 375.39514618238303,
+      "estimate": 379.5721266144748,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.07-3.75 ms a frame + the LM's 0.04-0.27 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 104.21022533958687,
+      "high": 190.40511481893182,
+      "estimate": 192.52373155347655,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 2.93-5.16 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights + LM: read + SHA-256 (first job)": {
+      "low": 404.2480622300963,
+      "high": 428.3545980511571,
+      "estimate": 416.3013301406267,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 49.8-104.4 ms, A9); the 987,600 B LM scaled by its bytes"
+     }
+    },
+    "total": [
+     1668.8283542072752,
+     2747.6659447455845
+    ],
+    "estimate": 2606.643515292013,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "kind": "default",
+    "first_job": true,
+    "strips": 9.362903225806452,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 211.83064516129033,
+      "high": 262.4117397558849,
+      "estimate": 262.4117397558849,
+      "note": "9.4 strips, one display frame each at 60 fps (212 ms, the stable-text wait's pass and sleep included); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 262.8297316734297,
+      "high": 499.1379159406421,
+      "estimate": 504.69176853836905,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.75-5.00 ms a frame + the LM's 0.06-0.34 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 138.94696711944917,
+      "high": 253.35046886450968,
+      "estimate": 256.1694716184616,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 3.90-6.88 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights + LM: read + SHA-256 (first job)": {
+      "low": 404.2480622300963,
+      "high": 428.3545980511571,
+      "estimate": 416.3013301406267,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 66.3-139.3 ms, A9); the 987,600 B LM scaled by its bytes"
+     }
+    },
+    "total": [
+     1657.6395617838975,
+     2835.320540267914
+    ],
+    "estimate": 2696.375368999385,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "kind": "default",
+    "first_job": true,
+    "strips": 9.096774193548388,
+    "lines": 2.4166666666666665,
+    "frames": 93.44623655913979,
+    "log_lines": 29.03225806451613,
+    "cascade_frames": 35.064516129032256,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder + wait": {
+      "low": 323.51344086021504,
+      "high": 374.09453545480966,
+      "estimate": 374.09453545480966,
+      "note": "9.1 strips, one display frame each at 30 fps (324 ms, the stable-text wait's pass and sleep included); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15, beam + LM)": {
+      "low": 262.8297316734297,
+      "high": 499.1379159406421,
+      "estimate": 504.69176853836905,
+      "note": "A9 estimate, 93 CTC frames (2.4 lines): 2.75-5.00 ms a frame + the LM's 0.06-0.34 ms; console 5.056 ms a frame"
+     },
+     "cascade (VOCR4-W20 re-reads)": {
+      "low": 138.94696711944917,
+      "high": 253.35046886450968,
+      "estimate": 256.1694716184616,
+      "note": "35 CTC frames a job read again (dev mean: 43% of the lines), 3.90-6.88 ms a frame (A9) + the LM"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 580.6451612903227,
+      "high": 1161.2903225806454,
+      "estimate": 1111.9354838709678,
+      "note": "29 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights + LM: read + SHA-256 (first job)": {
+      "low": 404.2480622300963,
+      "high": 428.3545980511571,
+      "estimate": 416.3013301406267,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 66.3-139.3 ms, A9); the 987,600 B LM scaled by its bytes"
+     }
+    },
+    "total": [
+     1769.3223574828223,
+     2947.0033359668387
+    ],
+    "estimate": 2808.0581646983096,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 60,
+    "kind": "api19",
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 159.35159155526497,
+      "estimate": 159.35159155526497,
+      "note": "7.3 strips, one display frame each at 60 fps (121 ms); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07455197379278,
+      "high": 323.23909612603194,
+      "estimate": 326.8357419354839,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.07-3.75 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     798.5794883150937,
+     1593.3621889876033
+    ],
+    "estimate": 1473.648914797055,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "kind": "api19",
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 280.767362164584,
+      "estimate": 280.767362164584,
+      "note": "7.3 strips, one display frame each at 30 fps (243 ms); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07455197379278,
+      "high": 323.23909612603194,
+      "estimate": 326.8357419354839,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.07-3.75 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     919.9952589244128,
+     1714.7779595969223
+    ],
+    "estimate": 1595.064685406374,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "kind": "api19",
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 171.99686520391361,
+      "estimate": 171.99686520391361,
+      "note": "7.3 strips, one display frame each at 60 fps (121 ms); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43273596505705,
+      "high": 430.98546150137594,
+      "estimate": 435.7809892473119,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     857.9875008836855,
+     1713.7578217803648
+    ],
+    "estimate": 1595.2434295263006,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "kind": "api19",
+    "first_job": false,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 293.4126358132326,
+      "estimate": 293.4126358132326,
+      "note": "7.3 strips, one display frame each at 30 fps (243 ms); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43273596505705,
+      "high": 430.98546150137594,
+      "estimate": 435.7809892473119,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     979.4032714930045,
+     1835.1735923896838
+    ],
+    "estimate": 1716.6592001356196,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 60,
+    "kind": "api19",
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 159.35159155526497,
+      "estimate": 159.35159155526497,
+      "note": "7.3 strips, one display frame each at 60 fps (121 ms); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07455197379278,
+      "high": 323.23909612603194,
+      "estimate": 326.8357419354839,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.07-3.75 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 218.0,
+      "high": 231.0,
+      "estimate": 224.5,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 49.8-104.4 ms, A9)"
+     }
+    },
+    "total": [
+     1016.5794883150937,
+     1824.3621889876033
+    ],
+    "estimate": 1698.148914797055,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 444,
+    "fps": 30,
+    "kind": "api19",
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 280.767362164584,
+      "estimate": 280.767362164584,
+      "note": "7.3 strips, one display frame each at 30 fps (243 ms); the finder's 18.6-37.9 ms (A9) inside them (low) or after them (high); the hook's CPU (0.71-1.90 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 178.07455197379278,
+      "high": 323.23909612603194,
+      "estimate": 326.8357419354839,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.07-3.75 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 3-6 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.005990653153153153,
+      "high": 0.011981306306306306,
+      "estimate": 0.011981306306306306,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.08317507882883,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.14-0.48 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 218.0,
+      "high": 231.0,
+      "estimate": 224.5,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 49.8-104.4 ms, A9)"
+     }
+    },
+    "total": [
+     1137.9952589244128,
+     1945.7779595969223
+    ],
+    "estimate": 1819.564685406374,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 60,
+    "kind": "api19",
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 121.41577060931901,
+      "high": 171.99686520391361,
+      "estimate": 171.99686520391361,
+      "note": "7.3 strips, one display frame each at 60 fps (121 ms); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43273596505705,
+      "high": 430.98546150137594,
+      "estimate": 435.7809892473119,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 218.0,
+      "high": 231.0,
+      "estimate": 224.5,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 66.3-139.3 ms, A9)"
+     }
+    },
+    "total": [
+     1075.9875008836855,
+     1944.7578217803648
+    ],
+    "estimate": 1819.7434295263006,
+    "mean_polling_ms": 75.0
+   },
+   {
+    "mhz": 333,
+    "fps": 30,
+    "kind": "api19",
+    "first_job": true,
+    "strips": 7.28494623655914,
+    "lines": 2.4166666666666665,
+    "frames": 86.19086021505376,
+    "log_lines": 22,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 242.83154121863802,
+      "high": 293.4126358132326,
+      "estimate": 293.4126358132326,
+      "note": "7.3 strips, one display frame each at 30 fps (243 ms); the finder's 24.8-50.6 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 237.43273596505705,
+      "high": 430.98546150137594,
+      "estimate": 435.7809892473119,
+      "note": "A9 estimate, 86 CTC frames (2.4 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 440.0,
+      "high": 880.0,
+      "estimate": 842.5999999999999,
+      "note": "22 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 59.13100677177177,
+      "high": 80.75952,
+      "estimate": 69.8496,
+      "note": "console: 15.3 ms + 3.82 ms a read, 14.3 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     },
+     "weights: read + SHA-256 (first job)": {
+      "low": 218.0,
+      "high": 231.0,
+      "estimate": 224.5,
+      "note": "console: 218-231 ms for the 1,155,968 B weights (SHA-256 alone 66.3-139.3 ms, A9)"
+     }
+    },
+    "total": [
+     1197.4032714930045,
+     2066.173592389684
+    ],
+    "estimate": 1941.1592001356196,
+    "mean_polling_ms": 75.0
+   }
+  ],
+  "console_check": {
+   "model": {
+    "mhz": 333,
+    "fps": 60,
+    "kind": "api19",
+    "first_job": false,
+    "strips": 5.5,
+    "lines": 1,
+    "frames": 66.4,
+    "log_lines": 19.1,
+    "cascade_frames": 0.0,
+    "parts": {
+     "take (game worker poll)": {
+      "low": 0.0,
+      "high": 100.0,
+      "estimate": 50.0,
+      "note": "0-100 ms, mean 50: game_ocr/main.c worker_main: sceKernelDelayThread(100000) between vjoOcrTake calls"
+     },
+     "capture + finder": {
+      "low": 91.66666666666667,
+      "high": 127.45441228127166,
+      "estimate": 127.45441228127166,
+      "note": "5.5 strips, one display frame each at 60 fps (92 ms); the finder's 17.5-35.8 ms (A9) inside them (low) or after them (high); the hook's CPU (0.94-2.54 ms per strip) is the game's, in its display call"
+     },
+     "recognition (VOCR3-H15)": {
+      "low": 182.91421652763876,
+      "high": 332.02400547213887,
+      "estimate": 335.7184000000001,
+      "note": "A9 estimate, 66 CTC frames (1.0 lines): 2.75-5.00 ms a frame; console 5.056 ms a frame"
+     },
+     "result (Shell poll)": {
+      "low": 0.0,
+      "high": 50.0,
+      "estimate": 25.0,
+      "note": "0-50 ms, mean 25: shell/game_ocr_client.c vjo_game_ocr_exchange: delay_us(50000) between vjoOcrRead calls"
+     },
+     "log.txt": {
+      "low": 382.0,
+      "high": 764.0,
+      "estimate": 731.53,
+      "note": "19 lines, each an open/append/close (twice while status.txt < 64 KiB): console 20-40 ms a line (estimate 38.3); formatting 4-8 µs a line"
+     },
+     "text post-processing": {
+      "low": 0.007987537537537536,
+      "high": 0.015975075075075073,
+      "estimate": 0.015975075075075073,
+      "note": "A9 estimate"
+     },
+     "first-word lookup": {
+      "low": 61.942526771771774,
+      "high": 84.97679999999998,
+      "estimate": 73.36399999999999,
+      "note": "console: 15.3 ms + 3.82 ms a read, 15.2 reads (CPU 0.19-0.64 ms, A9, inside the console's 15.3 ms); ±20% on the reads"
+     }
+    },
+    "total": [
+     718.5313975036148,
+     1458.4711928284858
+    ],
+    "estimate": 1343.082787356347,
+    "mean_polling_ms": 75.0
+   },
+   "measured": {
+    "n": 11,
+    "shell_ms_mean": 1392.7,
+    "shell_ms_median": 1368.0,
+    "game_ms_mean": 488.6,
+    "lookup_ms_mean": 88.5,
+    "unexplained_ms_mean": 823.7,
+    "log_lines_mean": 19.1,
+    "strips_mean": 5.5,
+    "capture_ms_mean": 87.8,
+    "find_ms_mean": 104.6,
+    "frames_mean": 66.4,
+    "lines": 1,
+    "lookup_reads": 15.2,
+    "region": [
+     883,
+     112
+    ]
+   }
+  }
+ },
+ "a9": {
+  "lane": "a9",
+  "cache": true,
+  "iters": [
+   1,
+   3
+  ],
+  "workloads": {
+   "capture_abgr": {
+    "insns_per_op": 627170.0,
+    "share": {
+     "libc": 0.1046351069088126,
+     "plugin": 0.8953648930911874
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93340.0,
+    "ls_per_op": 152379.0,
+    "l1d_misses_per_op": 7284.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561338.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ],
+     [
+      "read_row.constprop.0",
+      208.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      313585.0,
+      845690.0
+     ],
+     "333": [
+      313585.0,
+      845690.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7062725225225225,
+      1.904707207207207
+     ],
+     "333": [
+      0.9416966966966966,
+      2.5396096096096095
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_abgr_sig": {
+    "insns_per_op": 642162.6666666666,
+    "share": {
+     "libc": 0.10219217560659605,
+     "plugin": 0.897807824393404
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 95072.66666666667,
+    "ls_per_op": 155525.66666666666,
+    "l1d_misses_per_op": 7355.666666666667,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561598.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ],
+     [
+      "scene_acc_row",
+      14593.666666666666
+     ],
+     [
+      "read_row.constprop.0",
+      208.0
+     ],
+     [
+      "scene_acc_begin",
+      137.33333333333334
+     ],
+     [
+      "capture_sig_begin",
+      1.6666666666666667
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      321081.3333333333,
+      862832.6666666666
+     ],
+     "333": [
+      321081.3333333333,
+      862832.6666666666
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7231561561561561,
+      1.9433168168168167
+     ],
+     "333": [
+      0.9642082082082082,
+      2.591089089089089
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "57c8dd5523fb84bc",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_a2b10": {
+    "insns_per_op": 1187418.0,
+    "share": {
+     "libc": 0.05526613206132971,
+     "plugin": 0.9447338679386703
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93340.0,
+    "ls_per_op": 245875.0,
+    "l1d_misses_per_op": 7284.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      561338.0
+     ],
+     [
+      "read_row.constprop.0",
+      560456.0
+     ],
+     [
+      "memcpy",
+      65624.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      593709.0,
+      1405938.0
+     ],
+     "333": [
+      593709.0,
+      1405938.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      1.3371824324324324,
+      3.166527027027027
+     ],
+     "333": [
+      1.78290990990991,
+      4.222036036036036
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_a1b5": {
+    "insns_per_op": 1209573.0,
+    "share": {
+     "libc": 0.03379043679050375,
+     "plugin": 0.9662095632094962
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 104.0,
+    "mul_per_op": 93392.0,
+    "ls_per_op": 222579.0,
+    "l1d_misses_per_op": 4372.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "read_row.constprop.0",
+      607360.0
+     ],
+     [
+      "capture_grey_rows",
+      561341.0
+     ],
+     [
+      "memcpy",
+      40872.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      604786.5,
+      1340733.0
+     ],
+     "333": [
+      604786.5,
+      1340733.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      1.3621317567567568,
+      3.019668918918919
+     ],
+     "333": [
+      1.8161756756756757,
+      4.026225225225225
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "c409a398540f05ca",
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    },
+    "parity": true
+   },
+   "capture_full_abgr": {
+    "insns_per_op": 703333.2,
+    "share": {
+     "libc": 0.10534523324080251,
+     "plugin": 0.8946547667591975
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 108.8,
+    "mul_per_op": 104611.2,
+    "ls_per_op": 170726.2,
+    "l1d_misses_per_op": 8164.0,
+    "l2_misses_per_op": 1214.4,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "capture_grey_rows",
+      629022.8
+     ],
+     [
+      "memcpy",
+      74092.8
+     ],
+     [
+      "read_row.constprop.0",
+      217.6
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      351666.6,
+      1043996.496
+     ],
+     "333": [
+      351666.6,
+      1029168.6719999999
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.7920418918918919,
+      2.3513434594594598
+     ],
+     "333": [
+      1.0560558558558557,
+      3.0905966126126123
+     ]
+    },
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 10,
+    "check": "bba813e898da8726",
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    },
+    "parity": true
+   },
+   "scene_sig": {
+    "insns_per_op": 67766.0,
+    "share": {
+     "libc": 0.33533040167635686,
+     "plugin": 0.6646695983236431
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 23.0,
+    "mul_per_op": 5248.0,
+    "ls_per_op": 30007.0,
+    "l1d_misses_per_op": 2624.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_acc_row",
+      43249.0
+     ],
+     [
+      "memcpy",
+      22724.0
+     ],
+     [
+      "__udivmoddi4",
+      785.0
+     ],
+     [
+      "scene_acc_begin",
+      412.0
+     ],
+     [
+      "region_sig_hook",
+      409.0
+     ],
+     [
+      "read_row.constprop.0",
+      92.0
+     ],
+     [
+      "capture_crop_of",
+      59.0
+     ],
+     [
+      "__aeabi_uldivmod",
+      36.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      33883.0,
+      146486.0
+     ],
+     "333": [
+      33883.0,
+      146486.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.07631306306306307,
+      0.3299234234234234
+     ],
+     "333": [
+      0.10175075075075075,
+      0.4398978978978979
+     ]
+    },
+    "stage": "scene_sig",
+    "unit": "signature",
+    "ops": 1,
+    "check": "1be6f203f8214077",
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    },
+    "parity": true
+   },
+   "scene_update": {
+    "insns_per_op": 9421.0,
+    "share": {
+     "plugin": 1.0
+    },
+    "neon_insns_per_op": 0.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 2255.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_update",
+      9421.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      4710.5,
+      9421.0
+     ],
+     "333": [
+      4710.5,
+      9421.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.010609234234234235,
+      0.02121846846846847
+     ],
+     "333": [
+      0.014145645645645646,
+      0.028291291291291293
+     ]
+    },
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "0f6ac6889dc93ab4",
+    "counters": {
+     "events": 1
+    },
+    "parity": true
+   },
+   "scene_update_typing": {
+    "insns_per_op": 14201.0,
+    "share": {
+     "libc": 0.0063375818604323635,
+     "plugin": 0.9936624181395677
+    },
+    "neon_insns_per_op": 34.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 3459.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "scene_update",
+      10148.5
+     ],
+     [
+      "fits",
+      3962.5
+     ],
+     [
+      "memcpy",
+      90.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      7100.5,
+      14221.0
+     ],
+     "333": [
+      7100.5,
+      14221.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.015992117117117118,
+      0.03202927927927928
+     ],
+     "333": [
+      0.021322822822822822,
+      0.042705705705705706
+     ]
+    },
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "47a591be264574a5",
+    "counters": {
+     "events": 0
+    },
+    "parity": true
+   },
+   "find": {
+    "insns_per_op": 16492224.5,
+    "share": {
+     "plugin": 0.9993453278543474,
+     "libc": 0.0006546721456526377
+    },
+    "neon_insns_per_op": 9.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 1355.0,
+    "ls_per_op": 3932167.0,
+    "l1d_misses_per_op": 11704.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "row_kept",
+      825066.0
+     ],
+     [
+      "pix_dark",
+      394460.0
+     ],
+     [
+      "memset",
+      10696.0
+     ],
+     [
+      "strcmp",
+      101.0
+     ],
+     [
+      "vocr_find_lines_rows",
+      82.0
+     ],
+     [
+      "vocr_lines_arena_bytes",
+      27.0
+     ],
+     [
+      "vjo_vocr_model",
+      14.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      8246118.25,
+      16843504.5
+     ],
+     "333": [
+      8246118.25,
+      16843504.5
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      18.5723384009009,
+      37.93582094594595
+     ],
+     "333": [
+      24.76311786786787,
+      50.581094594594596
+     ]
+    },
+    "stage": "find",
+    "unit": "region",
+    "ops": 1,
+    "check": "80623443cd1ef05e",
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    },
+    "parity": true
+   },
+   "recognize_h15": {
+    "insns_per_op": 63151996.0,
+    "share": {
+     "libc": 0.025305589707726735,
+     "plugin": 0.9746944102922732
+    },
+    "neon_insns_per_op": 34584910.0,
+    "vfp_insns_per_op": 769266.0,
+    "mul_per_op": 720942.0,
+    "ls_per_op": 18309809.5,
+    "l1d_misses_per_op": 569905.5,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      43504702.0
+     ],
+     [
+      "step_op",
+      9858574.0
+     ],
+     [
+      "run_head",
+      6005086.5
+     ],
+     [
+      "memset",
+      1597677.0
+     ],
+     [
+      "quant16",
+      1266296.0
+     ],
+     [
+      "resized_px",
+      649728.0
+     ],
+     [
+      "vocr_run",
+      238249.0
+     ],
+     [
+      "col_coef",
+      28695.0
+     ],
+     [
+      "line_setup",
+      1985.0
+     ],
+     [
+      "vocr_class_text",
+      332.5
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      49535594.0,
+      89916501.0
+     ],
+     "333": [
+      49535594.0,
+      89916501.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      111.56665315315315,
+      202.5146418918919
+     ],
+     "333": [
+      148.75553753753755,
+      270.01952252252255
+     ]
+    },
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    },
+    "parity": true
+   },
+   "recognize_fl10": {
+    "insns_per_op": 37241875.5,
+    "share": {
+     "libc": 0.02861210628342281,
+     "plugin": 0.9713878937165772
+    },
+    "neon_insns_per_op": 18864568.0,
+    "vfp_insns_per_op": 532554.0,
+    "mul_per_op": 522222.0,
+    "ls_per_op": 11594366.0,
+    "l1d_misses_per_op": 302429.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      23749898.0
+     ],
+     [
+      "step_op",
+      6696490.0
+     ],
+     [
+      "run_head",
+      3926704.0
+     ],
+     [
+      "memset",
+      1065147.0
+     ],
+     [
+      "quant16",
+      883976.0
+     ],
+     [
+      "resized_px",
+      649728.0
+     ],
+     [
+      "vocr_run",
+      238249.0
+     ],
+     [
+      "col_coef",
+      28695.0
+     ],
+     [
+      "line_setup",
+      1985.0
+     ],
+     [
+      "vocr_class_text",
+      332.5
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      28116500.0,
+      52746733.5
+     ],
+     "333": [
+      28116500.0,
+      52746733.5
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      63.325450450450454,
+      118.79894932432433
+     ],
+     "333": [
+      84.43393393393393,
+      158.3985990990991
+     ]
+    },
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    },
+    "parity": true
+   },
+   "recognize_w20": {
+    "insns_per_op": 86255223.5,
+    "share": {
+     "libc": 0.022143545892035165,
+     "plugin": 0.9778564541079648
+    },
+    "neon_insns_per_op": 50579692.0,
+    "vfp_insns_per_op": 781426.0,
+    "mul_per_op": 906438.0,
+    "ls_per_op": 23640610.0,
+    "l1d_misses_per_op": 870089.0,
+    "l2_misses_per_op": 77.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      62751626.0
+     ],
+     [
+      "step_op",
+      13020658.0
+     ],
+     [
+      "run_head",
+      6005088.0
+     ],
+     [
+      "memset",
+      1909575.0
+     ],
+     [
+      "quant16",
+      1648616.0
+     ],
+     [
+      "resized_px",
+      649728.0
+     ],
+     [
+      "vocr_run",
+      238249.0
+     ],
+     [
+      "col_coef",
+      28695.0
+     ],
+     [
+      "line_setup",
+      1985.0
+     ],
+     [
+      "vocr_class_text",
+      332.5
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      70214508.0,
+      123792320.18
+     ],
+     "333": [
+      70214508.0,
+      123791380.01
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      158.14078378378377,
+      278.81153193693694
+     ],
+     "333": [
+      210.85437837837839,
+      371.74588591591595
+     ]
+    },
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 241056,
+     "params": 1423499
+    },
+    "parity": true
+   },
+   "job_h15": {
+    "insns_per_op": 156233395.5,
+    "share": {
+     "libc": 0.021998196921989063,
+     "plugin": 0.9780017134684882,
+     "printf": 8.960952269644553e-08
+    },
+    "neon_insns_per_op": 69288776.0,
+    "vfp_insns_per_op": 2758636.0,
+    "mul_per_op": 2233984.0,
+    "ls_per_op": 44611843.0,
+    "l1d_misses_per_op": 1247314.0,
+    "l2_misses_per_op": 43886.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      16364371.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "stream_read.constprop.0",
+      5041431.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3208419.0
+     ],
+     [
+      "quant16",
+      2532592.0
+     ],
+     [
+      "vocr_lm_load",
+      1796130.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      101332700.0,
+      216880873.74
+     ],
+     "333": [
+      101332700.0,
+      216345025.68
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      228.2268018018018,
+      488.4704363513514
+     ],
+     "333": [
+      304.3024024024024,
+      649.6847618018019
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 538624,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 233,
+     "refine_lines": 0
+    },
+    "parity": true
+   },
+   "job_h15_first": {
+    "insns_per_op": 238341790.5,
+    "share": {
+     "libc": 0.02415377088475804,
+     "plugin": 0.9758461703760676,
+     "printf": 5.8739174404246994e-08
+    },
+    "neon_insns_per_op": 69958695.0,
+    "vfp_insns_per_op": 2792198.0,
+    "mul_per_op": 2233984.0,
+    "ls_per_op": 57575918.0,
+    "l1d_misses_per_op": 1445834.0,
+    "l2_misses_per_op": 155959.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "br_sha2small_round",
+      75832680.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      16364371.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "stream_read.constprop.0",
+      5041431.0
+     ],
+     [
+      "br_range_dec32be",
+      3316005.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3208541.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      119701829.25,
+      316227279.06
+     ],
+     "333": [
+      119701829.25,
+      314323019.67
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      269.598714527027,
+      712.2236014864865
+     ],
+     "333": [
+      359.4649527027027,
+      943.9129719819821
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 538624,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 1,
+     "display_ms": 233,
+     "refine_lines": 0
+    },
+    "parity": true
+   },
+   "job_h15_lm": {
+    "insns_per_op": 154967672.0,
+    "share": {
+     "libc": 0.021835838122418204,
+     "plugin": 0.9781641489716643,
+     "printf": 1.2905917564535654e-08
+    },
+    "neon_insns_per_op": 69288776.0,
+    "vfp_insns_per_op": 2758444.0,
+    "mul_per_op": 2061364.0,
+    "ls_per_op": 44221124.0,
+    "l1d_misses_per_op": 1231173.0,
+    "l2_misses_per_op": 43780.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      16364371.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "stream_read.constprop.0",
+      3829291.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3208419.0
+     ],
+     [
+      "quant16",
+      2532592.0
+     ],
+     [
+      "vocr_lm_load",
+      1796130.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      101289482.0,
+      215122503.2
+     ],
+     "333": [
+      101289482.0,
+      214587949.4
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      228.12946396396396,
+      484.5101423423423
+     ],
+     "333": [
+      304.1726186186186,
+      644.4082564564565
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 243440,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    },
+    "parity": true
+   },
+   "job_h15_greedy": {
+    "insns_per_op": 146857280.0,
+    "share": {
+     "libc": 0.02298195908299541,
+     "plugin": 0.9770180409170046
+    },
+    "neon_insns_per_op": 69169851.0,
+    "vfp_insns_per_op": 1539140.0,
+    "mul_per_op": 1987583.0,
+    "ls_per_op": 41805998.0,
+    "l1d_misses_per_op": 1204295.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "neon_vfp_issue",
+    "top_functions": [
+     [
+      "mm_i16",
+      87009404.0
+     ],
+     [
+      "step_op",
+      19717148.0
+     ],
+     [
+      "run_head",
+      12010173.0
+     ],
+     [
+      "contrast_row",
+      6169456.0
+     ],
+     [
+      "contrast_load",
+      5878080.0
+     ],
+     [
+      "stream_read.constprop.0",
+      3829291.0
+     ],
+     [
+      "find_grad.constprop.0.isra.0",
+      3214237.0
+     ],
+     [
+      "memset",
+      3208138.0
+     ],
+     [
+      "quant16",
+      2532592.0
+     ],
+     [
+      "resized_px",
+      1299456.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      99207228.0,
+      202321230.0
+     ],
+     "333": [
+      99207228.0,
+      202321230.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      223.4397027027027,
+      455.67844594594595
+     ],
+     "333": [
+      297.9196036036036,
+      607.5712612612613
+     ]
+    },
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 186704,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 0,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    },
+    "parity": true
+   },
+   "sha256_h15": {
+    "insns_per_op": 43966006.0,
+    "share": {
+     "libc": 0.021365279347867076,
+     "plugin": 0.978634720652133
+    },
+    "neon_insns_per_op": 361263.0,
+    "vfp_insns_per_op": 18063.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 6701825.0,
+    "l1d_misses_per_op": 36198.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "br_sha2small_round",
+      40894632.0
+     ],
+     [
+      "br_range_dec32be",
+      1788237.0
+     ],
+     [
+      "memcpy",
+      939285.0
+     ],
+     [
+      "br_sha224_update",
+      343682.0
+     ],
+     [
+      "memset",
+      61.0
+     ],
+     [
+      "br_range_enc32be",
+      51.0
+     ],
+     [
+      "sha2small_out",
+      44.0
+     ],
+     [
+      "br_sha256_init",
+      12.0
+     ],
+     [
+      "br_sha256_out",
+      2.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      22091381.0,
+      46370565.0
+     ],
+     "333": [
+      22091381.0,
+      46370565.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      49.755362612612615,
+      104.43820945945946
+     ],
+     "333": [
+      66.34048348348348,
+      139.25094594594594
+     ]
+    },
+    "stage": "sha256",
+    "unit": "model",
+    "ops": 1,
+    "check": "dfecd73969bab9ef",
+    "counters": {
+     "bytes": 1155968
+    },
+    "parity": true
+   },
+   "postproc": {
+    "insns_per_op": 5319.7,
+    "share": {
+     "libc": 0.17164125796567475,
+     "plugin": 0.8283587420343252
+    },
+    "neon_insns_per_op": 19.36,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 840.96,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2435.92
+     ],
+     [
+      "vjo_utf8_next",
+      1591.76
+     ],
+     [
+      "strchr",
+      412.14
+     ],
+     [
+      "strlen",
+      411.12
+     ],
+     [
+      "vjo_filter_lines",
+      133.98
+     ],
+     [
+      "buf_reserve",
+      91.76
+     ],
+     [
+      "memcpy",
+      89.82
+     ],
+     [
+      "vjo_buf_append",
+      85.88
+     ],
+     [
+      "vjo_arena_alloc",
+      18.0
+     ],
+     [
+      "vjo_java_trim",
+      17.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      2659.85,
+      5319.7
+     ],
+     "333": [
+      2659.85,
+      5319.7
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.005990653153153153,
+      0.011981306306306306
+     ],
+     "333": [
+      0.007987537537537536,
+      0.015975075075075073
+     ]
+    },
+    "stage": "postproc",
+    "unit": "text",
+    "ops": 50,
+    "check": "03b3a86926a580ab",
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    },
+    "parity": true
+   },
+   "lookup_first": {
+    "insns_per_op": 127155.55,
+    "share": {
+     "libc": 0.6851776426589323,
+     "printf": 0.017125481349418093,
+     "plugin": 0.2976968759916496
+    },
+    "neon_insns_per_op": 719.76,
+    "vfp_insns_per_op": 31.2,
+    "mul_per_op": 427.46,
+    "ls_per_op": 29920.88,
+    "l1d_misses_per_op": 2829.56,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      47983.16
+     ],
+     [
+      "memset",
+      22629.2
+     ],
+     [
+      "find_matches",
+      15051.8
+     ],
+     [
+      "cached_read",
+      7750.2
+     ],
+     [
+      "strcmp",
+      7338.26
+     ],
+     [
+      "__memcmpeq",
+      5878.78
+     ],
+     [
+      "deinflect",
+      5282.58
+     ],
+     [
+      "memcpy",
+      2544.58
+     ],
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2435.92
+     ],
+     [
+      "vjo_local_lookup_pages",
+      2166.88
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      63711.815,
+      212724.49
+     ],
+     "333": [
+      63711.815,
+      212724.49
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.14349507882882884,
+      0.47910921171171167
+     ],
+     "333": [
+      0.1913267717717718,
+      0.6388122822822823
+     ]
+    },
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 50,
+    "check": "a4142e2f67d614c9",
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53552
+    },
+    "parity": true
+   },
+   "lookup_every": {
+    "insns_per_op": 116184.50605601817,
+    "share": {
+     "libc": 0.6330500804071965,
+     "printf": 0.01710318982996664,
+     "plugin": 0.3498467297628369
+    },
+    "neon_insns_per_op": 888.4163512490537,
+    "vfp_insns_per_op": 54.442089326267975,
+    "mul_per_op": 330.1029523088569,
+    "ls_per_op": 26693.10295230886,
+    "l1d_misses_per_op": 1778.0787282361848,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      42360.66161998486
+     ],
+     [
+      "memset",
+      13686.844057532173
+     ],
+     [
+      "find_matches",
+      12978.191521574565
+     ],
+     [
+      "cached_read",
+      8000.274791824376
+     ],
+     [
+      "strcmp",
+      7616.172596517789
+     ],
+     [
+      "__memcmpeq",
+      6140.061317183951
+     ],
+     [
+      "deinflect",
+      5788.50340651022
+     ],
+     [
+      "vjo_utf8_next",
+      4433.838001514005
+     ],
+     [
+      "vjo_utf8_japanese_cursor_step",
+      2996.2611657834973
+     ],
+     [
+      "memcpy",
+      2705.009841029523
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      58334.24697199091,
+      170625.6672975019
+     ],
+     "333": [
+      58334.24697199091,
+      170625.6672975019
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.13138343912610567,
+      0.3842920434628421
+     ],
+     "333": [
+      0.17517791883480754,
+      0.5123893912837895
+     ]
+    },
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 1321,
+    "check": "487865c8197030a2",
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53552
+    },
+    "parity": true
+   },
+   "config": {
+    "insns_per_op": 128179.0,
+    "share": {
+     "libc": 0.08729199010758393,
+     "printf": 0.005609343184140928,
+     "plugin": 0.9070986667082751
+    },
+    "neon_insns_per_op": 160.0,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 21.0,
+    "ls_per_op": 27669.0,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_config_parse",
+      64585.0
+     ],
+     [
+      "vjo_ieq",
+      44725.0
+     ],
+     [
+      "strlen",
+      5085.0
+     ],
+     [
+      "strchr",
+      3800.0
+     ],
+     [
+      "find_str_setting",
+      2340.0
+     ],
+     [
+      "is_space",
+      1953.0
+     ],
+     [
+      "memcpy",
+      1330.0
+     ],
+     [
+      "vjo_ieq_prefix",
+      985.0
+     ],
+     [
+      "memset",
+      706.0
+     ],
+     [
+      "valid_vocr_model",
+      483.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      64089.5,
+      128279.0
+     ],
+     "333": [
+      64089.5,
+      128279.0
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.14434572072072072,
+      0.28891666666666665
+     ],
+     "333": [
+      0.19246096096096096,
+      0.38522222222222224
+     ]
+    },
+    "stage": "config",
+    "unit": "parse",
+    "ops": 1,
+    "check": "afb847d247b504a2",
+    "counters": {
+     "bytes": 4283,
+     "warnings": 0,
+     "struct_bytes": 2388
+    },
+    "parity": true
+   },
+   "log": {
+    "insns_per_op": 2786.6296296296296,
+    "share": {
+     "libc": 0.1436489054878454,
+     "printf": 0.8563510945121546
+    },
+    "neon_insns_per_op": 10.296296296296296,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 35.074074074074076,
+    "ls_per_op": 916.4074074074074,
+    "l1d_misses_per_op": 0.0,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "__printf_buffer",
+      1263.9259259259259
+     ],
+     [
+      "__printf_buffer_write",
+      477.4074074074074
+     ],
+     [
+      "_itoa_word",
+      314.44444444444446
+     ],
+     [
+      "memcpy",
+      280.85185185185185
+     ],
+     [
+      "__strchrnul",
+      270.22222222222223
+     ],
+     [
+      "strlen",
+      92.55555555555556
+     ],
+     [
+      "__printf_buffer_pad_1",
+      29.333333333333332
+     ],
+     [
+      "memset",
+      26.88888888888889
+     ],
+     [
+      "__printf_buffer_done",
+      20.0
+     ],
+     [
+      "sceClibSnprintf",
+      11.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      1393.3148148148148,
+      2806.6296296296296
+     ],
+     "333": [
+      1393.3148148148148,
+      2806.6296296296296
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.003138096429763096,
+      0.006321237904571238
+     ],
+     "333": [
+      0.004184128573017462,
+      0.008428317206094984
+     ]
+    },
+    "stage": "log",
+    "unit": "line",
+    "ops": 27,
+    "check": "022f2251ec5c5aef",
+    "counters": {
+     "lines": 27,
+     "bytes": 2981
+    },
+    "parity": true
+   },
+   "anki": {
+    "insns_per_op": 58577.92,
+    "share": {
+     "libc": 0.26425007921073335,
+     "printf": 0.0834382647932873,
+     "plugin": 0.6523116559959794
+    },
+    "neon_insns_per_op": 153.4,
+    "vfp_insns_per_op": 0.3,
+    "mul_per_op": 47.16,
+    "ls_per_op": 24091.8,
+    "l1d_misses_per_op": 22.36,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "vjo_buf_append",
+      12569.02
+     ],
+     [
+      "memcpy",
+      10949.86
+     ],
+     [
+      "vjo_json_write_stringn",
+      10549.7
+     ],
+     [
+      "buf_reserve",
+      8717.44
+     ],
+     [
+      "vjo_buf_putc",
+      4383.82
+     ],
+     [
+      "strlen",
+      4228.24
+     ],
+     [
+      "__printf_buffer",
+      2403.2
+     ],
+     [
+      "__printf_buffer_write",
+      1202.0
+     ],
+     [
+      "__strchrnul",
+      840.0
+     ],
+     [
+      "vjo_furigana_rubies",
+      321.64
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      29290.52,
+      59513.92
+     ],
+     "333": [
+      29290.52,
+      59513.92
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.06596963963963964,
+      0.13404036036036035
+     ],
+     "333": [
+      0.08795951951951952,
+      0.17872048048048048
+     ]
+    },
+    "stage": "anki",
+    "unit": "card",
+    "ops": 50,
+    "check": "ce50f691ae9d300c",
+    "counters": {
+     "cards": 50,
+     "json_bytes": 49873
+    },
+    "parity": true
+   },
+   "furigana": {
+    "insns_per_op": 1715.4,
+    "share": {
+     "libc": 0.5145155648828261,
+     "plugin": 0.4854844351171738
+    },
+    "neon_insns_per_op": 0.24,
+    "vfp_insns_per_op": 0.0,
+    "mul_per_op": 0.0,
+    "ls_per_op": 465.8,
+    "l1d_misses_per_op": 0.08,
+    "l2_misses_per_op": 0.0,
+    "low_bound": "dual_issue",
+    "top_functions": [
+     [
+      "strlen",
+      621.02
+     ],
+     [
+      "vjo_furigana_rubies",
+      376.56
+     ],
+     [
+      "__memcmpeq",
+      246.34
+     ],
+     [
+      "vjo_utf8_next",
+      200.56
+     ],
+     [
+      "vjo_is_kanji",
+      81.68
+     ],
+     [
+      "buf_reserve",
+      46.0
+     ],
+     [
+      "vjo_furigana_align",
+      37.0
+     ],
+     [
+      "vjo_arena_alloc",
+      36.0
+     ],
+     [
+      "vjo_buf_append",
+      19.0
+     ],
+     [
+      "vjo_furigana_render",
+      16.0
+     ]
+    ],
+    "cycles_per_op": {
+     "444": [
+      857.7,
+      1717.8
+     ],
+     "333": [
+      857.7,
+      1717.8
+     ]
+    },
+    "ms_per_op": {
+     "444": [
+      0.0019317567567567568,
+      0.0038689189189189187
+     ],
+     "333": [
+      0.002575675675675676,
+      0.0051585585585585585
+     ]
+    },
+    "stage": "furigana",
+    "unit": "word",
+    "ops": 50,
+    "check": "cb44e11fb03dd38d",
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    },
+    "parity": true
+   }
+  }
+ },
+ "host": {
+  "lane": "host",
+  "cpu": "AMD EPYC 9R14",
+  "runs": 5,
+  "workloads": {
+   "capture_abgr": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "ns_per_iter": 198968.4,
+    "ms_per_op": 0.0663228,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_abgr_sig": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "57c8dd5523fb84bc",
+    "ns_per_iter": 204066.2,
+    "ms_per_op": 0.06802206666666667,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_a2b10": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "42a8e046f598658b",
+    "ns_per_iter": 333356.6,
+    "ms_per_op": 0.11111886666666665,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 559104,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_a1b5": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 3,
+    "check": "c409a398540f05ca",
+    "ns_per_iter": 331968.4,
+    "ms_per_op": 0.11065613333333335,
+    "counters": {
+     "strips": 3,
+     "rows": 156,
+     "pixels": 139776,
+     "fb_bytes_read": 279552,
+     "grey_bytes_written": 139776,
+     "strip_rows": 64
+    }
+   },
+   "capture_full_abgr": {
+    "stage": "capture",
+    "unit": "strip",
+    "ops": 10,
+    "check": "bba813e898da8726",
+    "ns_per_iter": 749521.2,
+    "ms_per_op": 0.07495212,
+    "counters": {
+     "strips": 10,
+     "rows": 544,
+     "pixels": 522240,
+     "fb_bytes_read": 2088960,
+     "grey_bytes_written": 522240,
+     "strip_rows": 59
+    }
+   },
+   "scene_sig": {
+    "stage": "scene_sig",
+    "unit": "signature",
+    "ops": 1,
+    "check": "1be6f203f8214077",
+    "ns_per_iter": 4158.0,
+    "ms_per_op": 0.004158,
+    "counters": {
+     "sig_w": 896,
+     "sig_h": 156,
+     "grid_cols": 25
+    }
+   },
+   "scene_update": {
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "0f6ac6889dc93ab4",
+    "ns_per_iter": 528.0,
+    "ms_per_op": 0.000528,
+    "counters": {
+     "events": 1
+    }
+   },
+   "scene_update_typing": {
+    "stage": "scene_update",
+    "unit": "update",
+    "ops": 1,
+    "check": "47a591be264574a5",
+    "ns_per_iter": 1114.0,
+    "ms_per_op": 0.001114,
+    "counters": {
+     "events": 0
+    }
+   },
+   "find": {
+    "stage": "find",
+    "unit": "region",
+    "ops": 1,
+    "check": "80623443cd1ef05e",
+    "ns_per_iter": 887119.4,
+    "ms_per_op": 0.8871194,
+    "counters": {
+     "lines": 2,
+     "row_reads": 382,
+     "arena_bytes": 31971
+    }
+   },
+   "recognize_h15": {
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "ns_per_iter": 66109838.4,
+    "ms_per_op": 33.0549192,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 182944,
+     "params": 1038507
+    }
+   },
+   "recognize_fl10": {
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "ns_per_iter": 35342399.2,
+    "ms_per_op": 17.6711996,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 124832,
+     "params": 579661
+    }
+   },
+   "recognize_w20": {
+    "stage": "recognize",
+    "unit": "line",
+    "ops": 2,
+    "check": "e4344aaecdc0dc39",
+    "ns_per_iter": 97842219.0,
+    "ms_per_op": 48.9211095,
+    "counters": {
+     "lines": 2,
+     "frames": 108,
+     "text_bytes": 105,
+     "arena_bytes": 241056,
+     "params": 1423499
+    }
+   },
+   "job_h15": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "ns_per_iter": 68648478.0,
+    "ms_per_op": 68.648478,
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 540816,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 233,
+     "refine_lines": 0
+    }
+   },
+   "job_h15_first": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "ns_per_iter": 76194506.0,
+    "ms_per_op": 76.194506,
+    "counters": {
+     "strips": 13,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 540816,
+     "capture_bytes": 63000,
+     "rows_read": 796,
+     "strip_rows": 64,
+     "model_loaded": 1,
+     "model_cached": 0,
+     "settle_passes": 1,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 1,
+     "display_ms": 233,
+     "refine_lines": 0
+    }
+   },
+   "job_h15_lm": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "dd6569dbcaa66395",
+    "ns_per_iter": 68434749.8,
+    "ms_per_op": 68.43474979999999,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 244624,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 2,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    }
+   },
+   "job_h15_greedy": {
+    "stage": "job",
+    "unit": "job",
+    "ops": 1,
+    "check": "6ffadefbb19d0d61",
+    "ns_per_iter": 67606631.0,
+    "ms_per_op": 67.606631,
+    "counters": {
+     "strips": 10,
+     "lines": 2,
+     "frames": 108,
+     "tears": 0,
+     "tries": 1,
+     "tall": 0,
+     "workspace_bytes": 187696,
+     "capture_bytes": 63000,
+     "rows_read": 604,
+     "strip_rows": 64,
+     "model_loaded": 0,
+     "model_cached": 1,
+     "settle_passes": 0,
+     "lm_lines": 0,
+     "lm_changed": 0,
+     "cascade_lines": 0,
+     "cascade_frames": 0,
+     "lm_loaded": 0,
+     "display_ms": 166,
+     "refine_lines": 0
+    }
+   },
+   "sha256_h15": {
+    "stage": "sha256",
+    "unit": "model",
+    "ops": 1,
+    "check": "dfecd73969bab9ef",
+    "ns_per_iter": 3994216.4,
+    "ms_per_op": 3.9942164,
+    "counters": {
+     "bytes": 1155968
+    }
+   },
+   "postproc": {
+    "stage": "postproc",
+    "unit": "text",
+    "ops": 50,
+    "check": "03b3a86926a580ab",
+    "ns_per_iter": 18382.0,
+    "ms_per_op": 0.00036763999999999997,
+    "counters": {
+     "texts": 50,
+     "bytes_in": 4587,
+     "bytes_out": 4591
+    }
+   },
+   "lookup_first": {
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 50,
+    "check": "a4142e2f67d614c9",
+    "ns_per_iter": 2314701.6,
+    "ms_per_op": 0.046294032,
+    "counters": {
+     "lookups": 50,
+     "entries": 50,
+     "opens": 50,
+     "reads": 714,
+     "read_bytes": 2539909,
+     "repeat_reads": 56,
+     "pages": 658,
+     "arena_peak": 53648
+    }
+   },
+   "lookup_every": {
+    "stage": "lookup",
+    "unit": "lookup",
+    "ops": 1321,
+    "check": "487865c8197030a2",
+    "ns_per_iter": 61186309.0,
+    "ms_per_op": 0.046318174867524604,
+    "counters": {
+     "lookups": 1321,
+     "entries": 1309,
+     "opens": 1321,
+     "reads": 18448,
+     "read_bytes": 65973680,
+     "repeat_reads": 3821,
+     "pages": 14627,
+     "arena_peak": 53648
+    }
+   },
+   "config": {
+    "stage": "config",
+    "unit": "parse",
+    "ops": 1,
+    "check": "afb847d247b504a2",
+    "ns_per_iter": 7198.0,
+    "ms_per_op": 0.007198,
+    "counters": {
+     "bytes": 4283,
+     "warnings": 0,
+     "struct_bytes": 2388
+    }
+   },
+   "log": {
+    "stage": "log",
+    "unit": "line",
+    "ops": 27,
+    "check": "022f2251ec5c5aef",
+    "ns_per_iter": 6772.2,
+    "ms_per_op": 0.0002508222222222222,
+    "counters": {
+     "lines": 27,
+     "bytes": 2981
+    }
+   },
+   "anki": {
+    "stage": "anki",
+    "unit": "card",
+    "ops": 50,
+    "check": "ce50f691ae9d300c",
+    "ns_per_iter": 181490.2,
+    "ms_per_op": 0.003629804,
+    "counters": {
+     "cards": 50,
+     "json_bytes": 49873
+    }
+   },
+   "furigana": {
+    "stage": "furigana",
+    "unit": "word",
+    "ops": 50,
+    "check": "cb44e11fb03dd38d",
+    "ns_per_iter": 6478.0,
+    "ms_per_op": 0.00012956,
+    "counters": {
+     "words": 50,
+     "bytes": 261
+    }
+   }
+  }
+ },
+ "dev": {
+  "regions": 372,
+  "with_lines": 367,
+  "strips": {
+   "mean": 7.28494623655914,
+   "median": 8.0,
+   "p90": 12,
+   "max": 18
+  },
+  "lines": {
+   "mean": 2.4166666666666665,
+   "median": 2.0,
+   "p90": 4,
+   "max": 8
+  },
+  "frames": {
+   "mean": 86.19086021505376,
+   "median": 77.5,
+   "p90": 158,
+   "max": 433
+  },
+  "rows_read_per_row": 3.9867958617069914,
+  "pixels_read": 201523.24193548388,
+  "tall": 41,
+  "default_60fps": {
+   "strips": {
+    "mean": 9.362903225806452,
+    "median": 10.0,
+    "p90": 15,
+    "max": 22
+   },
+   "lines": {
+    "mean": 2.4166666666666665,
+    "median": 2.0,
+    "p90": 4,
+    "max": 8
+   },
+   "frames": {
+    "mean": 93.44623655913979,
+    "median": 84.0,
+    "p90": 179,
+    "max": 433
+   },
+   "display_ms": {
+    "mean": 211.83064516129033,
+    "median": 216.0,
+    "p90": 249,
+    "max": 366
+   },
+   "settle_passes": {
+    "mean": 0.9865591397849462,
+    "median": 1.0,
+    "p90": 1,
+    "max": 1
+   },
+   "lm_lines": {
+    "mean": 2.2016129032258065,
+    "median": 2.0,
+    "p90": 4,
+    "max": 7
+   },
+   "lm_changed": {
+    "mean": 0.7231182795698925,
+    "median": 0.0,
+    "p90": 2,
+    "max": 6
+   },
+   "cascade_lines": {
+    "mean": 0.9408602150537635,
+    "median": 1.0,
+    "p90": 2,
+    "max": 6
+   },
+   "cascade_frames": {
+    "mean": 35.064516129032256,
+    "median": 22.0,
+    "p90": 96,
+    "max": 326
+   },
+   "rows_read_per_row": 5.2895266613387335,
+   "pixels_read": 261034.5940860215,
+   "retried_jobs": 0,
+   "cascade_share": 0.42735042735042733,
+   "lm_changed_share": 0.32844932844932845,
+   "jobs_with_cascade": 229
+  },
+  "default_30fps": {
+   "strips": {
+    "mean": 9.096774193548388,
+    "median": 10.0,
+    "p90": 14,
+    "max": 20
+   },
+   "lines": {
+    "mean": 2.4166666666666665,
+    "median": 2.0,
+    "p90": 4,
+    "max": 8
+   },
+   "frames": {
+    "mean": 93.44623655913979,
+    "median": 84.0,
+    "p90": 179,
+    "max": 433
+   },
+   "display_ms": {
+    "mean": 323.51344086021504,
+    "median": 333.0,
+    "p90": 466,
+    "max": 666
+   },
+   "settle_passes": {
+    "mean": 0.9032258064516129,
+    "median": 1.0,
+    "p90": 1,
+    "max": 1
+   },
+   "lm_lines": {
+    "mean": 2.2016129032258065,
+    "median": 2.0,
+    "p90": 4,
+    "max": 7
+   },
+   "lm_changed": {
+    "mean": 0.7231182795698925,
+    "median": 0.0,
+    "p90": 2,
+    "max": 6
+   },
+   "cascade_lines": {
+    "mean": 0.9408602150537635,
+    "median": 1.0,
+    "p90": 2,
+    "max": 6
+   },
+   "cascade_frames": {
+    "mean": 35.064516129032256,
+    "median": 22.0,
+    "p90": 96,
+    "max": 326
+   },
+   "rows_read_per_row": 5.186159394749093,
+   "pixels_read": 251372.8306451613,
+   "retried_jobs": 0,
+   "cascade_share": 0.42735042735042733,
+   "lm_changed_share": 0.32844932844932845,
+   "jobs_with_cascade": 229
+  }
+ },
+ "dev_columns": [
+  "w",
+  "h",
+  "strips",
+  "lines",
+  "frames",
+  "tall",
+  "rows_read",
+  "strip_rows",
+  "d60_strips",
+  "d60_frames",
+  "d60_display_ms",
+  "d60_settle_passes",
+  "d60_cascade_lines",
+  "d60_cascade_frames",
+  "d30_strips",
+  "d30_display_ms"
+ ],
+ "dev_rows": [
+  [
+   362,
+   125,
+   9,
+   3,
+   66,
+   0,
+   573,
+   64,
+   11,
+   66,
+   233,
+   1,
+   0,
+   0,
+   11,
+   366
+  ],
+  [
+   424,
+   150,
+   11,
+   3,
+   66,
+   0,
+   662,
+   64,
+   14,
+   66,
+   249,
+   1,
+   0,
+   0,
+   14,
+   466
+  ],
+  [
+   435,
+   154,
+   13,
+   4,
+   131,
+   0,
+   794,
+   64,
+   16,
+   131,
+   266,
+   1,
+   1,
+   48,
+   13,
+   433
+  ],
+  [
+   547,
+   163,
+   13,
+   4,
+   136,
+   0,
+   803,
+   64,
+   16,
+   136,
+   266,
+   1,
+   1,
+   28,
+   13,
+   433
+  ],
+  [
+   325,
+   52,
+   2,
+   1,
+   38,
+   0,
+   104,
+   52,
+   3,
+   38,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   382,
+   75,
+   4,
+   1,
+   38,
+   0,
+   203,
+   64,
+   6,
+   38,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   789,
+   160,
+   13,
+   4,
+   141,
+   0,
+   800,
+   64,
+   16,
+   141,
+   266,
+   1,
+   1,
+   42,
+   16,
+   533
+  ],
+  [
+   820,
+   184,
+   13,
+   5,
+   185,
+   0,
+   824,
+   64,
+   16,
+   185,
+   266,
+   1,
+   2,
+   86,
+   16,
+   533
+  ],
+  [
+   341,
+   83,
+   8,
+   2,
+   47,
+   0,
+   467,
+   64,
+   10,
+   47,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   748,
+   141,
+   12,
+   3,
+   170,
+   0,
+   717,
+   64,
+   15,
+   170,
+   249,
+   1,
+   2,
+   108,
+   12,
+   399
+  ],
+  [
+   779,
+   172,
+   13,
+   3,
+   149,
+   1,
+   757,
+   64,
+   16,
+   149,
+   266,
+   1,
+   2,
+   87,
+   13,
+   433
+  ],
+  [
+   771,
+   125,
+   8,
+   2,
+   115,
+   0,
+   509,
+   64,
+   10,
+   115,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   839,
+   125,
+   8,
+   2,
+   115,
+   0,
+   509,
+   64,
+   10,
+   115,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   786,
+   174,
+   12,
+   3,
+   100,
+   0,
+   750,
+   64,
+   15,
+   100,
+   249,
+   1,
+   3,
+   100,
+   15,
+   499
+  ],
+  [
+   830,
+   189,
+   12,
+   3,
+   100,
+   0,
+   765,
+   64,
+   15,
+   100,
+   249,
+   1,
+   3,
+   100,
+   15,
+   499
+  ],
+  [
+   361,
+   113,
+   5,
+   1,
+   7,
+   0,
+   305,
+   64,
+   8,
+   7,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   596,
+   150,
+   12,
+   3,
+   97,
+   0,
+   726,
+   64,
+   15,
+   97,
+   249,
+   1,
+   2,
+   64,
+   15,
+   499
+  ],
+  [
+   654,
+   183,
+   12,
+   3,
+   97,
+   0,
+   759,
+   64,
+   15,
+   97,
+   249,
+   1,
+   2,
+   64,
+   15,
+   499
+  ],
+  [
+   531,
+   182,
+   13,
+   4,
+   150,
+   0,
+   822,
+   64,
+   16,
+   150,
+   266,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   609,
+   210,
+   16,
+   4,
+   149,
+   0,
+   978,
+   64,
+   20,
+   149,
+   333,
+   1,
+   0,
+   0,
+   16,
+   533
+  ],
+  [
+   492,
+   153,
+   13,
+   4,
+   168,
+   0,
+   793,
+   64,
+   16,
+   168,
+   266,
+   1,
+   2,
+   110,
+   16,
+   533
+  ],
+  [
+   547,
+   186,
+   13,
+   5,
+   179,
+   0,
+   826,
+   64,
+   16,
+   179,
+   266,
+   1,
+   2,
+   110,
+   16,
+   533
+  ],
+  [
+   666,
+   123,
+   9,
+   3,
+   97,
+   0,
+   571,
+   64,
+   11,
+   97,
+   233,
+   1,
+   0,
+   0,
+   11,
+   366
+  ],
+  [
+   621,
+   88,
+   8,
+   2,
+   111,
+   0,
+   472,
+   64,
+   10,
+   111,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   691,
+   99,
+   8,
+   2,
+   114,
+   0,
+   483,
+   64,
+   10,
+   114,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   397,
+   91,
+   4,
+   1,
+   23,
+   0,
+   219,
+   64,
+   6,
+   23,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   438,
+   88,
+   8,
+   2,
+   90,
+   0,
+   472,
+   64,
+   10,
+   90,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   689,
+   152,
+   14,
+   4,
+   182,
+   0,
+   856,
+   64,
+   17,
+   182,
+   283,
+   1,
+   1,
+   75,
+   17,
+   566
+  ],
+  [
+   744,
+   179,
+   14,
+   5,
+   224,
+   1,
+   839,
+   64,
+   17,
+   224,
+   283,
+   1,
+   3,
+   132,
+   14,
+   466
+  ],
+  [
+   435,
+   138,
+   12,
+   2,
+   27,
+   1,
+   693,
+   64,
+   15,
+   27,
+   249,
+   1,
+   1,
+   17,
+   12,
+   399
+  ],
+  [
+   310,
+   157,
+   13,
+   4,
+   99,
+   0,
+   797,
+   64,
+   16,
+   99,
+   266,
+   1,
+   3,
+   77,
+   13,
+   433
+  ],
+  [
+   335,
+   166,
+   15,
+   4,
+   100,
+   1,
+   874,
+   64,
+   18,
+   100,
+   299,
+   1,
+   2,
+   57,
+   15,
+   499
+  ],
+  [
+   704,
+   204,
+   17,
+   5,
+   190,
+   0,
+   1036,
+   64,
+   21,
+   190,
+   349,
+   1,
+   3,
+   116,
+   17,
+   566
+  ],
+  [
+   740,
+   217,
+   18,
+   5,
+   190,
+   1,
+   1060,
+   64,
+   22,
+   190,
+   366,
+   1,
+   3,
+   110,
+   18,
+   599
+  ],
+  [
+   577,
+   147,
+   10,
+   3,
+   123,
+   0,
+   595,
+   64,
+   13,
+   123,
+   233,
+   1,
+   1,
+   64,
+   13,
+   433
+  ],
+  [
+   638,
+   184,
+   12,
+   4,
+   134,
+   0,
+   760,
+   64,
+   15,
+   134,
+   249,
+   1,
+   2,
+   80,
+   15,
+   499
+  ],
+  [
+   487,
+   87,
+   5,
+   2,
+   112,
+   0,
+   279,
+   64,
+   8,
+   112,
+   199,
+   1,
+   2,
+   112,
+   8,
+   266
+  ],
+  [
+   500,
+   130,
+   10,
+   2,
+   88,
+   0,
+   578,
+   64,
+   13,
+   88,
+   233,
+   1,
+   1,
+   45,
+   13,
+   433
+  ],
+  [
+   419,
+   87,
+   8,
+   1,
+   20,
+   1,
+   430,
+   64,
+   10,
+   20,
+   216,
+   1,
+   1,
+   20,
+   10,
+   333
+  ],
+  [
+   422,
+   89,
+   8,
+   2,
+   80,
+   0,
+   473,
+   64,
+   10,
+   80,
+   216,
+   1,
+   1,
+   33,
+   10,
+   333
+  ],
+  [
+   478,
+   122,
+   8,
+   2,
+   82,
+   0,
+   506,
+   64,
+   10,
+   82,
+   216,
+   1,
+   1,
+   33,
+   10,
+   333
+  ],
+  [
+   493,
+   40,
+   2,
+   1,
+   53,
+   0,
+   80,
+   40,
+   3,
+   53,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   572,
+   66,
+   5,
+   1,
+   52,
+   0,
+   258,
+   64,
+   8,
+   52,
+   199,
+   1,
+   1,
+   52,
+   8,
+   266
+  ],
+  [
+   640,
+   115,
+   8,
+   2,
+   69,
+   0,
+   499,
+   64,
+   10,
+   69,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   674,
+   139,
+   10,
+   2,
+   69,
+   0,
+   587,
+   64,
+   13,
+   69,
+   233,
+   1,
+   1,
+   9,
+   13,
+   433
+  ],
+  [
+   316,
+   61,
+   2,
+   1,
+   8,
+   0,
+   122,
+   61,
+   3,
+   8,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   479,
+   107,
+   8,
+   2,
+   53,
+   0,
+   491,
+   64,
+   10,
+   53,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   552,
+   162,
+   10,
+   2,
+   51,
+   0,
+   610,
+   64,
+   13,
+   51,
+   233,
+   1,
+   1,
+   8,
+   13,
+   433
+  ],
+  [
+   404,
+   131,
+   12,
+   1,
+   13,
+   1,
+   646,
+   64,
+   15,
+   13,
+   249,
+   1,
+   1,
+   13,
+   12,
+   399
+  ],
+  [
+   523,
+   182,
+   13,
+   4,
+   99,
+   0,
+   822,
+   64,
+   16,
+   99,
+   266,
+   1,
+   0,
+   0,
+   16,
+   533
+  ],
+  [
+   599,
+   198,
+   15,
+   4,
+   100,
+   0,
+   902,
+   64,
+   19,
+   100,
+   316,
+   1,
+   0,
+   0,
+   19,
+   633
+  ],
+  [
+   385,
+   96,
+   8,
+   1,
+   16,
+   1,
+   448,
+   64,
+   10,
+   16,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   482,
+   77,
+   8,
+   1,
+   25,
+   1,
+   410,
+   64,
+   10,
+   25,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   378,
+   112,
+   8,
+   2,
+   40,
+   0,
+   496,
+   64,
+   10,
+   40,
+   216,
+   1,
+   1,
+   32,
+   10,
+   333
+  ],
+  [
+   434,
+   140,
+   10,
+   2,
+   39,
+   0,
+   588,
+   64,
+   13,
+   39,
+   233,
+   1,
+   2,
+   39,
+   13,
+   433
+  ],
+  [
+   688,
+   137,
+   11,
+   3,
+   152,
+   0,
+   649,
+   64,
+   14,
+   152,
+   249,
+   1,
+   2,
+   111,
+   14,
+   466
+  ],
+  [
+   713,
+   154,
+   13,
+   4,
+   179,
+   0,
+   794,
+   64,
+   16,
+   179,
+   266,
+   1,
+   3,
+   150,
+   13,
+   433
+  ],
+  [
+   551,
+   169,
+   12,
+   4,
+   188,
+   0,
+   745,
+   64,
+   15,
+   188,
+   249,
+   1,
+   4,
+   188,
+   15,
+   499
+  ],
+  [
+   642,
+   209,
+   16,
+   7,
+   433,
+   0,
+   977,
+   64,
+   20,
+   433,
+   333,
+   1,
+   6,
+   326,
+   16,
+   533
+  ],
+  [
+   490,
+   173,
+   12,
+   4,
+   169,
+   0,
+   749,
+   64,
+   15,
+   169,
+   249,
+   1,
+   3,
+   159,
+   15,
+   499
+  ],
+  [
+   591,
+   205,
+   14,
+   4,
+   170,
+   0,
+   845,
+   64,
+   18,
+   170,
+   299,
+   1,
+   4,
+   170,
+   18,
+   599
+  ],
+  [
+   824,
+   56,
+   2,
+   1,
+   84,
+   0,
+   112,
+   56,
+   3,
+   84,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   864,
+   70,
+   4,
+   1,
+   84,
+   0,
+   198,
+   64,
+   6,
+   84,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   745,
+   92,
+   8,
+   2,
+   145,
+   0,
+   476,
+   64,
+   10,
+   145,
+   216,
+   1,
+   1,
+   70,
+   10,
+   333
+  ],
+  [
+   792,
+   98,
+   8,
+   2,
+   145,
+   0,
+   482,
+   64,
+   10,
+   145,
+   216,
+   1,
+   1,
+   70,
+   10,
+   333
+  ],
+  [
+   544,
+   180,
+   13,
+   4,
+   153,
+   0,
+   820,
+   64,
+   16,
+   153,
+   266,
+   1,
+   1,
+   42,
+   13,
+   433
+  ],
+  [
+   564,
+   186,
+   13,
+   4,
+   152,
+   0,
+   826,
+   64,
+   16,
+   152,
+   266,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   512,
+   108,
+   8,
+   1,
+   17,
+   1,
+   472,
+   64,
+   10,
+   17,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   570,
+   57,
+   2,
+   1,
+   66,
+   0,
+   114,
+   57,
+   3,
+   66,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   618,
+   71,
+   4,
+   1,
+   66,
+   0,
+   199,
+   64,
+   6,
+   66,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   377,
+   61,
+   2,
+   1,
+   39,
+   0,
+   122,
+   61,
+   3,
+   39,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   445,
+   89,
+   4,
+   1,
+   39,
+   0,
+   217,
+   64,
+   6,
+   39,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   493,
+   42,
+   2,
+   1,
+   54,
+   0,
+   84,
+   42,
+   3,
+   54,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   578,
+   63,
+   2,
+   1,
+   54,
+   0,
+   126,
+   63,
+   3,
+   54,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   617,
+   149,
+   12,
+   4,
+   235,
+   0,
+   725,
+   64,
+   15,
+   235,
+   249,
+   1,
+   0,
+   0,
+   12,
+   399
+  ],
+  [
+   526,
+   93,
+   8,
+   2,
+   94,
+   0,
+   477,
+   64,
+   10,
+   94,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   631,
+   129,
+   7,
+   1,
+   45,
+   0,
+   385,
+   64,
+   11,
+   45,
+   216,
+   1,
+   1,
+   45,
+   11,
+   366
+  ],
+  [
+   406,
+   123,
+   8,
+   3,
+   121,
+   0,
+   507,
+   64,
+   10,
+   121,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   468,
+   140,
+   10,
+   3,
+   121,
+   0,
+   588,
+   64,
+   13,
+   121,
+   233,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   298,
+   124,
+   8,
+   3,
+   89,
+   0,
+   508,
+   64,
+   10,
+   89,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   337,
+   129,
+   10,
+   3,
+   89,
+   0,
+   577,
+   64,
+   13,
+   89,
+   233,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   451,
+   94,
+   8,
+   2,
+   57,
+   0,
+   478,
+   64,
+   10,
+   57,
+   216,
+   1,
+   1,
+   48,
+   10,
+   333
+  ],
+  [
+   509,
+   126,
+   8,
+   2,
+   57,
+   0,
+   510,
+   64,
+   10,
+   57,
+   216,
+   1,
+   1,
+   48,
+   10,
+   333
+  ],
+  [
+   256,
+   46,
+   2,
+   1,
+   33,
+   0,
+   92,
+   46,
+   3,
+   33,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   346,
+   73,
+   4,
+   2,
+   83,
+   0,
+   201,
+   64,
+   6,
+   83,
+   183,
+   1,
+   1,
+   50,
+   6,
+   216
+  ],
+  [
+   521,
+   74,
+   4,
+   1,
+   13,
+   0,
+   202,
+   64,
+   6,
+   13,
+   183,
+   1,
+   1,
+   13,
+   6,
+   216
+  ],
+  [
+   391,
+   126,
+   9,
+   2,
+   18,
+   1,
+   511,
+   64,
+   11,
+   18,
+   233,
+   1,
+   1,
+   11,
+   11,
+   366
+  ],
+  [
+   347,
+   87,
+   8,
+   2,
+   78,
+   0,
+   471,
+   64,
+   10,
+   78,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   361,
+   88,
+   8,
+   2,
+   78,
+   0,
+   472,
+   64,
+   10,
+   78,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   378,
+   75,
+   5,
+   2,
+   89,
+   0,
+   267,
+   64,
+   8,
+   89,
+   199,
+   1,
+   1,
+   52,
+   8,
+   266
+  ],
+  [
+   462,
+   103,
+   5,
+   2,
+   89,
+   0,
+   295,
+   64,
+   8,
+   89,
+   199,
+   1,
+   1,
+   52,
+   8,
+   266
+  ],
+  [
+   452,
+   80,
+   8,
+   1,
+   26,
+   1,
+   405,
+   64,
+   10,
+   26,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   544,
+   97,
+   8,
+   2,
+   79,
+   0,
+   481,
+   64,
+   10,
+   79,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   578,
+   108,
+   8,
+   2,
+   79,
+   0,
+   492,
+   64,
+   10,
+   79,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   310,
+   77,
+   8,
+   2,
+   53,
+   0,
+   461,
+   64,
+   10,
+   53,
+   216,
+   1,
+   2,
+   53,
+   10,
+   333
+  ],
+  [
+   418,
+   106,
+   8,
+   2,
+   64,
+   0,
+   490,
+   64,
+   10,
+   64,
+   216,
+   1,
+   2,
+   64,
+   10,
+   333
+  ],
+  [
+   650,
+   117,
+   9,
+   3,
+   148,
+   0,
+   565,
+   64,
+   11,
+   148,
+   233,
+   1,
+   2,
+   116,
+   11,
+   366
+  ],
+  [
+   516,
+   145,
+   12,
+   3,
+   108,
+   0,
+   721,
+   64,
+   15,
+   108,
+   249,
+   1,
+   1,
+   9,
+   15,
+   499
+  ],
+  [
+   579,
+   178,
+   13,
+   3,
+   118,
+   1,
+   759,
+   64,
+   16,
+   118,
+   266,
+   1,
+   2,
+   75,
+   16,
+   533
+  ],
+  [
+   443,
+   109,
+   8,
+   2,
+   76,
+   0,
+   493,
+   64,
+   10,
+   76,
+   216,
+   1,
+   1,
+   30,
+   10,
+   333
+  ],
+  [
+   524,
+   128,
+   8,
+   2,
+   75,
+   0,
+   512,
+   64,
+   10,
+   75,
+   216,
+   1,
+   1,
+   29,
+   10,
+   333
+  ],
+  [
+   536,
+   92,
+   8,
+   2,
+   100,
+   0,
+   476,
+   64,
+   10,
+   100,
+   216,
+   1,
+   1,
+   58,
+   10,
+   333
+  ],
+  [
+   594,
+   133,
+   10,
+   1,
+   36,
+   1,
+   518,
+   64,
+   13,
+   36,
+   233,
+   1,
+   1,
+   36,
+   13,
+   433
+  ],
+  [
+   439,
+   62,
+   2,
+   0,
+   0,
+   0,
+   124,
+   62,
+   2,
+   0,
+   33,
+   0,
+   0,
+   0,
+   2,
+   66
+  ],
+  [
+   381,
+   57,
+   2,
+   1,
+   44,
+   0,
+   114,
+   57,
+   3,
+   44,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   416,
+   78,
+   4,
+   1,
+   44,
+   0,
+   206,
+   64,
+   6,
+   44,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   560,
+   142,
+   11,
+   3,
+   147,
+   0,
+   654,
+   64,
+   14,
+   147,
+   249,
+   1,
+   1,
+   52,
+   14,
+   466
+  ],
+  [
+   709,
+   147,
+   12,
+   3,
+   130,
+   0,
+   723,
+   64,
+   15,
+   130,
+   249,
+   1,
+   1,
+   49,
+   12,
+   399
+  ],
+  [
+   591,
+   150,
+   12,
+   3,
+   106,
+   0,
+   726,
+   64,
+   15,
+   106,
+   249,
+   1,
+   2,
+   68,
+   15,
+   499
+  ],
+  [
+   628,
+   172,
+   12,
+   3,
+   107,
+   0,
+   748,
+   64,
+   15,
+   107,
+   249,
+   1,
+   2,
+   69,
+   15,
+   499
+  ],
+  [
+   486,
+   122,
+   8,
+   2,
+   19,
+   0,
+   506,
+   64,
+   10,
+   19,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   393,
+   90,
+   8,
+   2,
+   45,
+   0,
+   474,
+   64,
+   10,
+   45,
+   216,
+   1,
+   1,
+   14,
+   10,
+   333
+  ],
+  [
+   448,
+   127,
+   8,
+   2,
+   45,
+   0,
+   511,
+   64,
+   10,
+   45,
+   216,
+   1,
+   1,
+   14,
+   10,
+   333
+  ],
+  [
+   317,
+   131,
+   10,
+   2,
+   37,
+   0,
+   579,
+   64,
+   13,
+   37,
+   233,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   508,
+   118,
+   8,
+   1,
+   17,
+   1,
+   492,
+   64,
+   10,
+   17,
+   216,
+   1,
+   1,
+   17,
+   10,
+   333
+  ],
+  [
+   538,
+   136,
+   11,
+   3,
+   134,
+   0,
+   648,
+   64,
+   14,
+   134,
+   249,
+   1,
+   3,
+   134,
+   14,
+   466
+  ],
+  [
+   608,
+   155,
+   11,
+   3,
+   134,
+   0,
+   667,
+   64,
+   14,
+   134,
+   249,
+   1,
+   3,
+   134,
+   14,
+   466
+  ],
+  [
+   568,
+   138,
+   12,
+   2,
+   73,
+   1,
+   692,
+   64,
+   15,
+   73,
+   249,
+   1,
+   0,
+   0,
+   15,
+   499
+  ],
+  [
+   619,
+   143,
+   11,
+   3,
+   146,
+   0,
+   655,
+   64,
+   14,
+   146,
+   249,
+   1,
+   3,
+   146,
+   14,
+   466
+  ],
+  [
+   381,
+   97,
+   8,
+   3,
+   161,
+   0,
+   481,
+   64,
+   10,
+   161,
+   216,
+   1,
+   2,
+   121,
+   10,
+   333
+  ],
+  [
+   426,
+   120,
+   5,
+   1,
+   32,
+   0,
+   312,
+   64,
+   8,
+   32,
+   199,
+   1,
+   1,
+   32,
+   8,
+   266
+  ],
+  [
+   276,
+   90,
+   8,
+   2,
+   64,
+   0,
+   474,
+   64,
+   10,
+   64,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   381,
+   114,
+   8,
+   1,
+   22,
+   1,
+   436,
+   64,
+   10,
+   22,
+   216,
+   1,
+   1,
+   22,
+   10,
+   333
+  ],
+  [
+   696,
+   125,
+   8,
+   3,
+   132,
+   0,
+   509,
+   64,
+   10,
+   132,
+   216,
+   1,
+   1,
+   84,
+   10,
+   333
+  ],
+  [
+   782,
+   154,
+   10,
+   3,
+   132,
+   0,
+   602,
+   64,
+   13,
+   132,
+   233,
+   1,
+   1,
+   84,
+   13,
+   433
+  ],
+  [
+   356,
+   67,
+   8,
+   1,
+   22,
+   1,
+   390,
+   64,
+   10,
+   22,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   406,
+   89,
+   8,
+   2,
+   56,
+   0,
+   473,
+   64,
+   10,
+   56,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   440,
+   130,
+   10,
+   3,
+   100,
+   0,
+   578,
+   64,
+   13,
+   100,
+   233,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   296,
+   125,
+   9,
+   3,
+   62,
+   0,
+   573,
+   64,
+   11,
+   62,
+   233,
+   1,
+   0,
+   0,
+   11,
+   366
+  ],
+  [
+   359,
+   151,
+   11,
+   3,
+   48,
+   0,
+   663,
+   64,
+   14,
+   48,
+   249,
+   1,
+   0,
+   0,
+   14,
+   466
+  ],
+  [
+   455,
+   78,
+   8,
+   2,
+   53,
+   0,
+   462,
+   64,
+   10,
+   53,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   263,
+   109,
+   8,
+   2,
+   40,
+   0,
+   493,
+   64,
+   10,
+   40,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   343,
+   127,
+   8,
+   2,
+   55,
+   0,
+   511,
+   64,
+   10,
+   55,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   581,
+   158,
+   12,
+   3,
+   120,
+   0,
+   734,
+   64,
+   15,
+   120,
+   249,
+   1,
+   0,
+   0,
+   15,
+   499
+  ],
+  [
+   630,
+   176,
+   12,
+   3,
+   120,
+   0,
+   752,
+   64,
+   15,
+   120,
+   249,
+   1,
+   0,
+   0,
+   15,
+   499
+  ],
+  [
+   318,
+   76,
+   8,
+   2,
+   34,
+   0,
+   460,
+   64,
+   10,
+   34,
+   216,
+   1,
+   1,
+   29,
+   10,
+   333
+  ],
+  [
+   741,
+   114,
+   8,
+   1,
+   45,
+   1,
+   436,
+   64,
+   10,
+   45,
+   216,
+   1,
+   1,
+   45,
+   10,
+   333
+  ],
+  [
+   813,
+   193,
+   15,
+   3,
+   181,
+   1,
+   852,
+   64,
+   19,
+   181,
+   316,
+   1,
+   1,
+   40,
+   19,
+   633
+  ],
+  [
+   736,
+   155,
+   10,
+   1,
+   35,
+   1,
+   559,
+   64,
+   13,
+   35,
+   233,
+   1,
+   1,
+   35,
+   13,
+   433
+  ],
+  [
+   822,
+   183,
+   10,
+   1,
+   37,
+   1,
+   592,
+   64,
+   13,
+   37,
+   233,
+   1,
+   1,
+   37,
+   13,
+   433
+  ],
+  [
+   641,
+   92,
+   8,
+   2,
+   101,
+   0,
+   476,
+   64,
+   10,
+   101,
+   216,
+   1,
+   1,
+   30,
+   10,
+   333
+  ],
+  [
+   737,
+   134,
+   10,
+   3,
+   164,
+   0,
+   582,
+   64,
+   13,
+   164,
+   233,
+   1,
+   1,
+   51,
+   13,
+   433
+  ],
+  [
+   516,
+   123,
+   8,
+   1,
+   21,
+   1,
+   457,
+   64,
+   10,
+   21,
+   216,
+   1,
+   1,
+   21,
+   10,
+   333
+  ],
+  [
+   418,
+   124,
+   9,
+   3,
+   110,
+   0,
+   572,
+   64,
+   11,
+   110,
+   233,
+   1,
+   2,
+   90,
+   11,
+   366
+  ],
+  [
+   468,
+   149,
+   11,
+   3,
+   112,
+   0,
+   661,
+   64,
+   14,
+   112,
+   249,
+   1,
+   2,
+   90,
+   14,
+   466
+  ],
+  [
+   420,
+   123,
+   8,
+   3,
+   103,
+   0,
+   507,
+   64,
+   10,
+   103,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   526,
+   159,
+   10,
+   3,
+   104,
+   0,
+   607,
+   64,
+   13,
+   104,
+   233,
+   1,
+   0,
+   0,
+   13,
+   433
+  ],
+  [
+   449,
+   113,
+   8,
+   4,
+   201,
+   0,
+   497,
+   64,
+   10,
+   201,
+   216,
+   1,
+   2,
+   146,
+   10,
+   333
+  ],
+  [
+   504,
+   141,
+   11,
+   4,
+   176,
+   0,
+   653,
+   64,
+   14,
+   176,
+   249,
+   1,
+   1,
+   58,
+   14,
+   466
+  ],
+  [
+   352,
+   140,
+   11,
+   4,
+   105,
+   0,
+   652,
+   64,
+   14,
+   105,
+   249,
+   1,
+   0,
+   0,
+   14,
+   466
+  ],
+  [
+   451,
+   38,
+   2,
+   1,
+   67,
+   0,
+   76,
+   38,
+   3,
+   67,
+   166,
+   1,
+   1,
+   67,
+   3,
+   183
+  ],
+  [
+   511,
+   73,
+   8,
+   2,
+   83,
+   0,
+   457,
+   64,
+   10,
+   83,
+   216,
+   1,
+   1,
+   72,
+   10,
+   333
+  ],
+  [
+   304,
+   71,
+   4,
+   2,
+   89,
+   0,
+   199,
+   64,
+   6,
+   89,
+   183,
+   1,
+   1,
+   46,
+   6,
+   216
+  ],
+  [
+   403,
+   88,
+   4,
+   2,
+   89,
+   0,
+   216,
+   64,
+   6,
+   89,
+   183,
+   1,
+   1,
+   46,
+   6,
+   216
+  ],
+  [
+   439,
+   38,
+   2,
+   1,
+   55,
+   0,
+   76,
+   38,
+   3,
+   55,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   525,
+   69,
+   8,
+   4,
+   337,
+   0,
+   453,
+   64,
+   10,
+   337,
+   216,
+   1,
+   1,
+   26,
+   10,
+   333
+  ],
+  [
+   436,
+   78,
+   8,
+   2,
+   84,
+   0,
+   462,
+   64,
+   10,
+   84,
+   216,
+   1,
+   2,
+   84,
+   10,
+   333
+  ],
+  [
+   474,
+   108,
+   8,
+   2,
+   85,
+   0,
+   492,
+   64,
+   10,
+   85,
+   216,
+   1,
+   2,
+   85,
+   10,
+   333
+  ],
+  [
+   328,
+   107,
+   8,
+   3,
+   107,
+   0,
+   491,
+   64,
+   10,
+   107,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   455,
+   105,
+   9,
+   2,
+   13,
+   1,
+   493,
+   64,
+   11,
+   13,
+   233,
+   1,
+   1,
+   5,
+   11,
+   366
+  ],
+  [
+   529,
+   234,
+   16,
+   8,
+   260,
+   0,
+   1002,
+   64,
+   20,
+   260,
+   333,
+   1,
+   3,
+   59,
+   20,
+   666
+  ],
+  [
+   599,
+   241,
+   16,
+   7,
+   253,
+   0,
+   1009,
+   64,
+   20,
+   253,
+   333,
+   1,
+   3,
+   84,
+   20,
+   666
+  ],
+  [
+   489,
+   110,
+   4,
+   1,
+   24,
+   0,
+   238,
+   64,
+   6,
+   24,
+   183,
+   1,
+   1,
+   24,
+   6,
+   216
+  ],
+  [
+   520,
+   123,
+   9,
+   3,
+   77,
+   0,
+   571,
+   64,
+   11,
+   77,
+   233,
+   1,
+   1,
+   9,
+   11,
+   366
+  ],
+  [
+   471,
+   205,
+   17,
+   5,
+   158,
+   1,
+   978,
+   64,
+   21,
+   158,
+   349,
+   1,
+   1,
+   23,
+   17,
+   566
+  ],
+  [
+   536,
+   122,
+   9,
+   3,
+   137,
+   0,
+   570,
+   64,
+   11,
+   137,
+   233,
+   1,
+   1,
+   42,
+   11,
+   366
+  ],
+  [
+   619,
+   162,
+   13,
+   3,
+   125,
+   1,
+   750,
+   64,
+   16,
+   125,
+   266,
+   1,
+   3,
+   125,
+   13,
+   433
+  ],
+  [
+   509,
+   168,
+   13,
+   4,
+   122,
+   0,
+   808,
+   64,
+   16,
+   122,
+   266,
+   1,
+   1,
+   16,
+   13,
+   433
+  ],
+  [
+   545,
+   199,
+   15,
+   5,
+   141,
+   0,
+   903,
+   64,
+   19,
+   141,
+   316,
+   1,
+   0,
+   0,
+   19,
+   633
+  ],
+  [
+   537,
+   87,
+   5,
+   2,
+   85,
+   0,
+   279,
+   64,
+   8,
+   85,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   611,
+   131,
+   7,
+   2,
+   85,
+   0,
+   387,
+   64,
+   11,
+   85,
+   216,
+   1,
+   0,
+   0,
+   11,
+   366
+  ],
+  [
+   463,
+   92,
+   8,
+   1,
+   21,
+   1,
+   440,
+   64,
+   10,
+   21,
+   216,
+   1,
+   1,
+   21,
+   10,
+   333
+  ],
+  [
+   533,
+   148,
+   12,
+   1,
+   15,
+   1,
+   680,
+   64,
+   15,
+   15,
+   249,
+   1,
+   1,
+   15,
+   12,
+   399
+  ],
+  [
+   501,
+   71,
+   8,
+   1,
+   17,
+   1,
+   398,
+   64,
+   10,
+   17,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   521,
+   123,
+   9,
+   4,
+   124,
+   0,
+   571,
+   64,
+   11,
+   124,
+   233,
+   1,
+   2,
+   43,
+   11,
+   366
+  ],
+  [
+   295,
+   88,
+   5,
+   2,
+   45,
+   0,
+   280,
+   64,
+   8,
+   45,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   365,
+   92,
+   5,
+   2,
+   49,
+   0,
+   284,
+   64,
+   8,
+   49,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   372,
+   111,
+   10,
+   3,
+   43,
+   1,
+   571,
+   64,
+   12,
+   43,
+   249,
+   1,
+   3,
+   43,
+   12,
+   399
+  ],
+  [
+   336,
+   130,
+   12,
+   2,
+   44,
+   1,
+   646,
+   64,
+   15,
+   44,
+   249,
+   1,
+   2,
+   44,
+   12,
+   399
+  ],
+  [
+   406,
+   121,
+   8,
+   1,
+   16,
+   1,
+   483,
+   64,
+   10,
+   16,
+   216,
+   1,
+   1,
+   16,
+   10,
+   333
+  ],
+  [
+   401,
+   102,
+   8,
+   4,
+   68,
+   0,
+   486,
+   64,
+   10,
+   68,
+   216,
+   1,
+   1,
+   8,
+   10,
+   333
+  ],
+  [
+   324,
+   69,
+   8,
+   1,
+   19,
+   1,
+   394,
+   64,
+   10,
+   19,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   521,
+   61,
+   2,
+   1,
+   35,
+   0,
+   122,
+   61,
+   3,
+   35,
+   166,
+   1,
+   1,
+   35,
+   3,
+   183
+  ],
+  [
+   576,
+   112,
+   8,
+   3,
+   118,
+   0,
+   496,
+   64,
+   10,
+   118,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   615,
+   135,
+   12,
+   5,
+   309,
+   0,
+   711,
+   64,
+   15,
+   309,
+   249,
+   1,
+   3,
+   218,
+   12,
+   399
+  ],
+  [
+   496,
+   136,
+   10,
+   3,
+   105,
+   0,
+   584,
+   64,
+   13,
+   105,
+   233,
+   1,
+   2,
+   58,
+   13,
+   433
+  ],
+  [
+   448,
+   175,
+   13,
+   4,
+   151,
+   0,
+   815,
+   64,
+   16,
+   151,
+   266,
+   1,
+   1,
+   34,
+   13,
+   433
+  ],
+  [
+   523,
+   207,
+   15,
+   4,
+   155,
+   0,
+   911,
+   64,
+   19,
+   155,
+   316,
+   1,
+   1,
+   38,
+   19,
+   633
+  ],
+  [
+   561,
+   130,
+   12,
+   2,
+   64,
+   1,
+   654,
+   64,
+   15,
+   64,
+   249,
+   1,
+   0,
+   0,
+   12,
+   399
+  ],
+  [
+   583,
+   132,
+   11,
+   3,
+   112,
+   0,
+   644,
+   64,
+   14,
+   112,
+   249,
+   1,
+   1,
+   15,
+   14,
+   466
+  ],
+  [
+   632,
+   130,
+   11,
+   3,
+   115,
+   0,
+   642,
+   64,
+   14,
+   115,
+   249,
+   1,
+   1,
+   18,
+   14,
+   466
+  ],
+  [
+   309,
+   63,
+   2,
+   1,
+   9,
+   0,
+   126,
+   63,
+   3,
+   9,
+   166,
+   1,
+   1,
+   9,
+   3,
+   183
+  ],
+  [
+   600,
+   172,
+   13,
+   4,
+   201,
+   0,
+   812,
+   64,
+   16,
+   201,
+   266,
+   1,
+   2,
+   107,
+   16,
+   533
+  ],
+  [
+   646,
+   210,
+   18,
+   6,
+   349,
+   0,
+   1106,
+   64,
+   22,
+   349,
+   366,
+   1,
+   2,
+   127,
+   18,
+   599
+  ],
+  [
+   241,
+   89,
+   8,
+   2,
+   58,
+   0,
+   473,
+   64,
+   10,
+   58,
+   216,
+   1,
+   1,
+   31,
+   10,
+   333
+  ],
+  [
+   297,
+   101,
+   8,
+   2,
+   48,
+   0,
+   485,
+   64,
+   10,
+   48,
+   216,
+   1,
+   1,
+   22,
+   10,
+   333
+  ],
+  [
+   454,
+   107,
+   8,
+   1,
+   17,
+   1,
+   470,
+   64,
+   10,
+   17,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   326,
+   106,
+   8,
+   3,
+   112,
+   0,
+   490,
+   64,
+   10,
+   112,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   402,
+   140,
+   13,
+   2,
+   44,
+   2,
+   669,
+   64,
+   16,
+   44,
+   266,
+   1,
+   2,
+   44,
+   13,
+   433
+  ],
+  [
+   871,
+   159,
+   12,
+   3,
+   168,
+   0,
+   735,
+   64,
+   15,
+   168,
+   249,
+   1,
+   0,
+   0,
+   15,
+   499
+  ],
+  [
+   902,
+   195,
+   15,
+   4,
+   189,
+   0,
+   888,
+   63,
+   19,
+   189,
+   316,
+   1,
+   0,
+   0,
+   19,
+   633
+  ],
+  [
+   590,
+   119,
+   8,
+   1,
+   19,
+   1,
+   494,
+   64,
+   10,
+   19,
+   216,
+   1,
+   1,
+   19,
+   10,
+   333
+  ],
+  [
+   821,
+   148,
+   12,
+   3,
+   124,
+   0,
+   724,
+   64,
+   15,
+   124,
+   249,
+   1,
+   0,
+   0,
+   15,
+   499
+  ],
+  [
+   885,
+   185,
+   12,
+   3,
+   126,
+   0,
+   761,
+   64,
+   15,
+   126,
+   249,
+   1,
+   1,
+   28,
+   12,
+   399
+  ],
+  [
+   409,
+   139,
+   11,
+   3,
+   85,
+   0,
+   651,
+   64,
+   14,
+   85,
+   249,
+   1,
+   0,
+   0,
+   14,
+   466
+  ],
+  [
+   430,
+   173,
+   11,
+   3,
+   85,
+   0,
+   685,
+   64,
+   14,
+   85,
+   249,
+   1,
+   0,
+   0,
+   14,
+   466
+  ],
+  [
+   130,
+   43,
+   2,
+   2,
+   47,
+   0,
+   86,
+   43,
+   3,
+   58,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   169,
+   59,
+   2,
+   2,
+   44,
+   0,
+   118,
+   59,
+   3,
+   60,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   182,
+   67,
+   8,
+   3,
+   74,
+   0,
+   451,
+   64,
+   10,
+   100,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   217,
+   96,
+   8,
+   3,
+   71,
+   0,
+   480,
+   64,
+   10,
+   107,
+   216,
+   1,
+   1,
+   46,
+   10,
+   333
+  ],
+  [
+   240,
+   55,
+   2,
+   1,
+   14,
+   0,
+   110,
+   55,
+   3,
+   14,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   238,
+   71,
+   8,
+   3,
+   65,
+   0,
+   455,
+   64,
+   10,
+   72,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   266,
+   77,
+   8,
+   3,
+   62,
+   0,
+   461,
+   64,
+   10,
+   62,
+   216,
+   1,
+   1,
+   10,
+   10,
+   333
+  ],
+  [
+   331,
+   81,
+   8,
+   4,
+   161,
+   0,
+   465,
+   64,
+   10,
+   206,
+   216,
+   1,
+   1,
+   23,
+   10,
+   333
+  ],
+  [
+   367,
+   102,
+   8,
+   5,
+   202,
+   0,
+   486,
+   64,
+   10,
+   257,
+   216,
+   1,
+   1,
+   33,
+   10,
+   333
+  ],
+  [
+   125,
+   22,
+   2,
+   1,
+   24,
+   0,
+   44,
+   22,
+   3,
+   30,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   172,
+   42,
+   2,
+   1,
+   21,
+   0,
+   84,
+   42,
+   3,
+   39,
+   166,
+   1,
+   1,
+   39,
+   3,
+   183
+  ],
+  [
+   182,
+   30,
+   2,
+   1,
+   25,
+   0,
+   60,
+   30,
+   3,
+   25,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   303,
+   57,
+   2,
+   2,
+   63,
+   0,
+   114,
+   57,
+   3,
+   80,
+   166,
+   1,
+   1,
+   71,
+   3,
+   183
+  ],
+  [
+   327,
+   69,
+   4,
+   2,
+   67,
+   0,
+   197,
+   64,
+   6,
+   85,
+   183,
+   1,
+   1,
+   71,
+   6,
+   216
+  ],
+  [
+   376,
+   66,
+   5,
+   3,
+   146,
+   0,
+   258,
+   64,
+   8,
+   184,
+   199,
+   1,
+   1,
+   87,
+   8,
+   266
+  ],
+  [
+   420,
+   89,
+   8,
+   3,
+   146,
+   0,
+   473,
+   64,
+   10,
+   245,
+   216,
+   1,
+   1,
+   90,
+   10,
+   333
+  ],
+  [
+   233,
+   60,
+   2,
+   2,
+   40,
+   0,
+   120,
+   60,
+   3,
+   84,
+   166,
+   1,
+   2,
+   40,
+   3,
+   183
+  ],
+  [
+   253,
+   73,
+   8,
+   3,
+   53,
+   0,
+   457,
+   64,
+   10,
+   97,
+   216,
+   1,
+   2,
+   40,
+   10,
+   333
+  ],
+  [
+   354,
+   99,
+   8,
+   4,
+   203,
+   0,
+   483,
+   64,
+   10,
+   215,
+   216,
+   1,
+   2,
+   104,
+   10,
+   333
+  ],
+  [
+   389,
+   110,
+   8,
+   4,
+   200,
+   0,
+   494,
+   64,
+   10,
+   210,
+   216,
+   1,
+   2,
+   99,
+   10,
+   333
+  ],
+  [
+   283,
+   68,
+   8,
+   1,
+   17,
+   1,
+   392,
+   64,
+   10,
+   17,
+   216,
+   1,
+   1,
+   17,
+   10,
+   333
+  ],
+  [
+   241,
+   35,
+   2,
+   0,
+   0,
+   0,
+   70,
+   35,
+   2,
+   0,
+   33,
+   0,
+   0,
+   0,
+   2,
+   66
+  ],
+  [
+   218,
+   95,
+   8,
+   4,
+   92,
+   0,
+   479,
+   64,
+   10,
+   115,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   274,
+   112,
+   8,
+   5,
+   162,
+   0,
+   496,
+   64,
+   10,
+   138,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   171,
+   48,
+   2,
+   0,
+   0,
+   0,
+   96,
+   48,
+   2,
+   0,
+   33,
+   0,
+   0,
+   0,
+   2,
+   66
+  ],
+  [
+   173,
+   65,
+   8,
+   3,
+   93,
+   0,
+   449,
+   64,
+   10,
+   193,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   191,
+   72,
+   8,
+   3,
+   95,
+   0,
+   456,
+   64,
+   10,
+   183,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   328,
+   84,
+   8,
+   4,
+   211,
+   0,
+   468,
+   64,
+   10,
+   263,
+   216,
+   1,
+   1,
+   57,
+   10,
+   333
+  ],
+  [
+   371,
+   102,
+   9,
+   3,
+   123,
+   0,
+   550,
+   64,
+   11,
+   144,
+   233,
+   1,
+   2,
+   97,
+   11,
+   366
+  ],
+  [
+   250,
+   21,
+   2,
+   1,
+   48,
+   0,
+   42,
+   21,
+   3,
+   59,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   299,
+   43,
+   2,
+   1,
+   28,
+   0,
+   86,
+   43,
+   3,
+   29,
+   166,
+   1,
+   1,
+   29,
+   3,
+   183
+  ],
+  [
+   370,
+   85,
+   8,
+   3,
+   121,
+   0,
+   469,
+   64,
+   10,
+   135,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   397,
+   98,
+   8,
+   3,
+   116,
+   0,
+   482,
+   64,
+   10,
+   132,
+   216,
+   1,
+   1,
+   42,
+   10,
+   333
+  ],
+  [
+   289,
+   30,
+   2,
+   1,
+   37,
+   0,
+   60,
+   30,
+   3,
+   37,
+   166,
+   1,
+   1,
+   37,
+   3,
+   183
+  ],
+  [
+   246,
+   85,
+   8,
+   3,
+   97,
+   0,
+   469,
+   64,
+   10,
+   117,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   258,
+   101,
+   8,
+   4,
+   153,
+   0,
+   485,
+   64,
+   10,
+   174,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   160,
+   40,
+   2,
+   1,
+   20,
+   0,
+   80,
+   40,
+   3,
+   22,
+   166,
+   1,
+   1,
+   22,
+   3,
+   183
+  ],
+  [
+   286,
+   41,
+   2,
+   2,
+   85,
+   0,
+   82,
+   41,
+   3,
+   88,
+   166,
+   1,
+   1,
+   52,
+   3,
+   183
+  ],
+  [
+   311,
+   55,
+   2,
+   2,
+   78,
+   0,
+   110,
+   55,
+   3,
+   88,
+   166,
+   1,
+   1,
+   52,
+   3,
+   183
+  ],
+  [
+   184,
+   43,
+   2,
+   1,
+   14,
+   0,
+   86,
+   43,
+   3,
+   14,
+   166,
+   1,
+   1,
+   14,
+   3,
+   183
+  ],
+  [
+   338,
+   77,
+   8,
+   3,
+   64,
+   0,
+   461,
+   64,
+   10,
+   67,
+   216,
+   1,
+   2,
+   58,
+   10,
+   333
+  ],
+  [
+   356,
+   96,
+   8,
+   3,
+   64,
+   0,
+   480,
+   64,
+   10,
+   67,
+   216,
+   1,
+   2,
+   59,
+   10,
+   333
+  ],
+  [
+   205,
+   41,
+   2,
+   1,
+   18,
+   0,
+   82,
+   41,
+   3,
+   18,
+   166,
+   1,
+   1,
+   18,
+   3,
+   183
+  ],
+  [
+   342,
+   49,
+   2,
+   2,
+   108,
+   0,
+   98,
+   49,
+   3,
+   114,
+   166,
+   1,
+   1,
+   77,
+   3,
+   183
+  ],
+  [
+   364,
+   56,
+   2,
+   1,
+   41,
+   0,
+   112,
+   56,
+   3,
+   33,
+   166,
+   1,
+   1,
+   33,
+   3,
+   183
+  ],
+  [
+   136,
+   106,
+   8,
+   6,
+   147,
+   0,
+   490,
+   64,
+   10,
+   188,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   174,
+   111,
+   8,
+   6,
+   155,
+   0,
+   495,
+   64,
+   10,
+   160,
+   216,
+   1,
+   1,
+   31,
+   10,
+   333
+  ],
+  [
+   424,
+   73,
+   4,
+   1,
+   32,
+   0,
+   201,
+   64,
+   6,
+   32,
+   183,
+   1,
+   1,
+   32,
+   6,
+   216
+  ],
+  [
+   454,
+   79,
+   4,
+   1,
+   32,
+   0,
+   207,
+   64,
+   6,
+   32,
+   183,
+   1,
+   1,
+   32,
+   6,
+   216
+  ],
+  [
+   208,
+   65,
+   8,
+   1,
+   13,
+   1,
+   386,
+   64,
+   10,
+   16,
+   216,
+   1,
+   1,
+   16,
+   10,
+   333
+  ],
+  [
+   318,
+   30,
+   2,
+   1,
+   43,
+   0,
+   60,
+   30,
+   3,
+   44,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   344,
+   49,
+   2,
+   1,
+   35,
+   0,
+   98,
+   49,
+   3,
+   43,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   306,
+   79,
+   8,
+   4,
+   145,
+   0,
+   463,
+   64,
+   10,
+   182,
+   216,
+   1,
+   1,
+   22,
+   10,
+   333
+  ],
+  [
+   342,
+   100,
+   8,
+   6,
+   236,
+   0,
+   484,
+   64,
+   10,
+   261,
+   216,
+   1,
+   3,
+   101,
+   10,
+   333
+  ],
+  [
+   169,
+   44,
+   2,
+   2,
+   37,
+   0,
+   88,
+   44,
+   3,
+   47,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   216,
+   72,
+   8,
+   2,
+   45,
+   0,
+   456,
+   64,
+   10,
+   76,
+   216,
+   1,
+   1,
+   42,
+   10,
+   333
+  ],
+  [
+   164,
+   43,
+   2,
+   1,
+   16,
+   0,
+   86,
+   43,
+   3,
+   25,
+   166,
+   1,
+   1,
+   25,
+   3,
+   183
+  ],
+  [
+   156,
+   36,
+   2,
+   2,
+   47,
+   0,
+   72,
+   36,
+   3,
+   47,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   205,
+   37,
+   2,
+   1,
+   30,
+   0,
+   74,
+   37,
+   3,
+   30,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   254,
+   31,
+   2,
+   1,
+   39,
+   0,
+   62,
+   31,
+   3,
+   54,
+   166,
+   1,
+   1,
+   54,
+   3,
+   183
+  ],
+  [
+   289,
+   52,
+   2,
+   1,
+   42,
+   0,
+   104,
+   52,
+   3,
+   47,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   188,
+   88,
+   8,
+   4,
+   102,
+   0,
+   472,
+   64,
+   10,
+   137,
+   216,
+   1,
+   3,
+   124,
+   10,
+   333
+  ],
+  [
+   228,
+   106,
+   8,
+   4,
+   101,
+   0,
+   490,
+   64,
+   10,
+   137,
+   216,
+   1,
+   3,
+   124,
+   10,
+   333
+  ],
+  [
+   253,
+   53,
+   2,
+   2,
+   77,
+   0,
+   106,
+   53,
+   3,
+   78,
+   166,
+   1,
+   1,
+   20,
+   3,
+   183
+  ],
+  [
+   277,
+   70,
+   5,
+   1,
+   26,
+   0,
+   262,
+   64,
+   8,
+   27,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   294,
+   44,
+   2,
+   1,
+   29,
+   0,
+   88,
+   44,
+   3,
+   31,
+   166,
+   1,
+   1,
+   31,
+   3,
+   183
+  ],
+  [
+   325,
+   67,
+   5,
+   1,
+   25,
+   0,
+   259,
+   64,
+   8,
+   25,
+   199,
+   1,
+   1,
+   25,
+   8,
+   266
+  ],
+  [
+   270,
+   64,
+   2,
+   3,
+   55,
+   0,
+   128,
+   64,
+   3,
+   61,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   273,
+   40,
+   2,
+   1,
+   8,
+   0,
+   80,
+   40,
+   3,
+   8,
+   166,
+   1,
+   1,
+   8,
+   3,
+   183
+  ],
+  [
+   357,
+   82,
+   8,
+   3,
+   147,
+   0,
+   466,
+   64,
+   10,
+   164,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   373,
+   101,
+   8,
+   3,
+   138,
+   0,
+   485,
+   64,
+   10,
+   148,
+   216,
+   1,
+   2,
+   103,
+   10,
+   333
+  ],
+  [
+   432,
+   123,
+   9,
+   4,
+   114,
+   0,
+   571,
+   64,
+   11,
+   135,
+   233,
+   1,
+   2,
+   52,
+   11,
+   366
+  ],
+  [
+   460,
+   145,
+   11,
+   4,
+   114,
+   0,
+   657,
+   64,
+   14,
+   135,
+   249,
+   1,
+   2,
+   52,
+   14,
+   466
+  ],
+  [
+   164,
+   60,
+   2,
+   1,
+   8,
+   0,
+   120,
+   60,
+   3,
+   8,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   212,
+   55,
+   2,
+   2,
+   67,
+   0,
+   110,
+   55,
+   3,
+   89,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   234,
+   81,
+   5,
+   1,
+   24,
+   0,
+   273,
+   64,
+   8,
+   41,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ],
+  [
+   180,
+   61,
+   2,
+   1,
+   14,
+   0,
+   122,
+   61,
+   3,
+   14,
+   166,
+   1,
+   1,
+   14,
+   3,
+   183
+  ],
+  [
+   142,
+   57,
+   2,
+   2,
+   43,
+   0,
+   114,
+   57,
+   3,
+   59,
+   166,
+   1,
+   1,
+   29,
+   3,
+   183
+  ],
+  [
+   150,
+   63,
+   2,
+   2,
+   43,
+   0,
+   126,
+   63,
+   3,
+   54,
+   166,
+   1,
+   1,
+   29,
+   3,
+   183
+  ],
+  [
+   435,
+   29,
+   2,
+   1,
+   67,
+   0,
+   58,
+   29,
+   3,
+   80,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   457,
+   45,
+   2,
+   1,
+   46,
+   0,
+   90,
+   45,
+   3,
+   84,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   169,
+   54,
+   2,
+   1,
+   13,
+   0,
+   108,
+   54,
+   3,
+   13,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   288,
+   61,
+   2,
+   1,
+   29,
+   0,
+   122,
+   61,
+   3,
+   30,
+   166,
+   1,
+   1,
+   30,
+   3,
+   183
+  ],
+  [
+   326,
+   66,
+   8,
+   2,
+   70,
+   0,
+   450,
+   64,
+   10,
+   70,
+   216,
+   1,
+   2,
+   70,
+   10,
+   333
+  ],
+  [
+   254,
+   41,
+   2,
+   1,
+   25,
+   0,
+   82,
+   41,
+   3,
+   114,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   284,
+   52,
+   2,
+   1,
+   25,
+   0,
+   104,
+   52,
+   3,
+   114,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   457,
+   47,
+   2,
+   2,
+   114,
+   0,
+   94,
+   47,
+   3,
+   123,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   474,
+   68,
+   5,
+   3,
+   123,
+   0,
+   260,
+   64,
+   8,
+   137,
+   199,
+   1,
+   1,
+   13,
+   8,
+   266
+  ],
+  [
+   351,
+   61,
+   2,
+   2,
+   79,
+   0,
+   122,
+   61,
+   3,
+   82,
+   166,
+   1,
+   2,
+   82,
+   3,
+   183
+  ],
+  [
+   368,
+   82,
+   8,
+   2,
+   67,
+   0,
+   466,
+   64,
+   10,
+   78,
+   216,
+   1,
+   2,
+   78,
+   10,
+   333
+  ],
+  [
+   262,
+   41,
+   2,
+   1,
+   23,
+   0,
+   82,
+   41,
+   3,
+   23,
+   166,
+   1,
+   1,
+   23,
+   3,
+   183
+  ],
+  [
+   390,
+   65,
+   8,
+   2,
+   81,
+   0,
+   449,
+   64,
+   10,
+   81,
+   216,
+   1,
+   2,
+   81,
+   10,
+   333
+  ],
+  [
+   406,
+   66,
+   8,
+   2,
+   80,
+   0,
+   450,
+   64,
+   10,
+   80,
+   216,
+   1,
+   2,
+   80,
+   10,
+   333
+  ],
+  [
+   326,
+   93,
+   8,
+   5,
+   174,
+   0,
+   477,
+   64,
+   10,
+   225,
+   216,
+   1,
+   4,
+   164,
+   10,
+   333
+  ],
+  [
+   365,
+   112,
+   8,
+   5,
+   196,
+   0,
+   496,
+   64,
+   10,
+   219,
+   216,
+   1,
+   3,
+   116,
+   10,
+   333
+  ],
+  [
+   246,
+   56,
+   2,
+   2,
+   65,
+   0,
+   112,
+   56,
+   3,
+   65,
+   166,
+   1,
+   1,
+   32,
+   3,
+   183
+  ],
+  [
+   337,
+   74,
+   8,
+   3,
+   110,
+   0,
+   458,
+   64,
+   10,
+   126,
+   216,
+   1,
+   1,
+   42,
+   10,
+   333
+  ],
+  [
+   359,
+   83,
+   8,
+   3,
+   109,
+   0,
+   467,
+   64,
+   10,
+   124,
+   216,
+   1,
+   1,
+   39,
+   10,
+   333
+  ],
+  [
+   260,
+   26,
+   2,
+   1,
+   47,
+   0,
+   52,
+   26,
+   3,
+   58,
+   166,
+   1,
+   1,
+   58,
+   3,
+   183
+  ],
+  [
+   296,
+   32,
+   2,
+   1,
+   47,
+   0,
+   64,
+   32,
+   3,
+   58,
+   166,
+   1,
+   1,
+   58,
+   3,
+   183
+  ],
+  [
+   293,
+   50,
+   2,
+   2,
+   63,
+   0,
+   100,
+   50,
+   3,
+   65,
+   166,
+   1,
+   1,
+   37,
+   3,
+   183
+  ],
+  [
+   190,
+   36,
+   2,
+   1,
+   18,
+   0,
+   72,
+   36,
+   3,
+   12,
+   166,
+   1,
+   1,
+   12,
+   3,
+   183
+  ],
+  [
+   473,
+   63,
+   2,
+   1,
+   30,
+   0,
+   126,
+   63,
+   3,
+   30,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   480,
+   61,
+   2,
+   1,
+   32,
+   0,
+   122,
+   61,
+   3,
+   32,
+   166,
+   1,
+   1,
+   32,
+   3,
+   183
+  ],
+  [
+   300,
+   56,
+   2,
+   1,
+   22,
+   0,
+   112,
+   56,
+   3,
+   22,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   336,
+   69,
+   5,
+   1,
+   21,
+   0,
+   261,
+   64,
+   8,
+   21,
+   199,
+   1,
+   1,
+   21,
+   8,
+   266
+  ],
+  [
+   231,
+   79,
+   8,
+   2,
+   27,
+   0,
+   463,
+   64,
+   10,
+   28,
+   216,
+   1,
+   2,
+   28,
+   10,
+   333
+  ],
+  [
+   242,
+   103,
+   8,
+   3,
+   53,
+   0,
+   487,
+   64,
+   10,
+   59,
+   216,
+   1,
+   2,
+   28,
+   10,
+   333
+  ],
+  [
+   231,
+   62,
+   2,
+   2,
+   63,
+   0,
+   124,
+   62,
+   3,
+   67,
+   166,
+   1,
+   2,
+   67,
+   3,
+   183
+  ],
+  [
+   272,
+   79,
+   8,
+   3,
+   110,
+   0,
+   463,
+   64,
+   10,
+   98,
+   216,
+   1,
+   1,
+   40,
+   10,
+   333
+  ],
+  [
+   397,
+   75,
+   8,
+   3,
+   139,
+   0,
+   459,
+   64,
+   10,
+   167,
+   216,
+   1,
+   1,
+   19,
+   10,
+   333
+  ],
+  [
+   447,
+   89,
+   8,
+   3,
+   153,
+   0,
+   473,
+   64,
+   10,
+   181,
+   216,
+   1,
+   1,
+   33,
+   10,
+   333
+  ],
+  [
+   412,
+   77,
+   8,
+   3,
+   119,
+   0,
+   461,
+   64,
+   10,
+   146,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   459,
+   103,
+   8,
+   3,
+   115,
+   0,
+   487,
+   64,
+   10,
+   148,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   235,
+   61,
+   2,
+   2,
+   29,
+   0,
+   122,
+   61,
+   3,
+   29,
+   166,
+   1,
+   1,
+   17,
+   3,
+   183
+  ],
+  [
+   199,
+   42,
+   2,
+   2,
+   43,
+   0,
+   84,
+   42,
+   3,
+   56,
+   166,
+   1,
+   1,
+   47,
+   3,
+   183
+  ],
+  [
+   243,
+   47,
+   2,
+   2,
+   43,
+   0,
+   94,
+   47,
+   3,
+   56,
+   166,
+   1,
+   1,
+   47,
+   3,
+   183
+  ],
+  [
+   171,
+   42,
+   2,
+   2,
+   38,
+   0,
+   84,
+   42,
+   3,
+   47,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   205,
+   60,
+   2,
+   3,
+   69,
+   0,
+   120,
+   60,
+   3,
+   85,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   285,
+   68,
+   8,
+   3,
+   121,
+   0,
+   452,
+   64,
+   10,
+   166,
+   216,
+   1,
+   2,
+   103,
+   10,
+   333
+  ],
+  [
+   314,
+   89,
+   8,
+   4,
+   144,
+   0,
+   473,
+   64,
+   10,
+   186,
+   216,
+   1,
+   2,
+   98,
+   10,
+   333
+  ],
+  [
+   280,
+   63,
+   2,
+   3,
+   128,
+   0,
+   126,
+   63,
+   3,
+   173,
+   166,
+   1,
+   1,
+   51,
+   3,
+   183
+  ],
+  [
+   318,
+   83,
+   8,
+   3,
+   127,
+   0,
+   467,
+   64,
+   10,
+   167,
+   216,
+   1,
+   1,
+   41,
+   10,
+   333
+  ],
+  [
+   204,
+   35,
+   2,
+   1,
+   12,
+   0,
+   70,
+   35,
+   3,
+   12,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   303,
+   48,
+   2,
+   2,
+   67,
+   0,
+   96,
+   48,
+   3,
+   77,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   331,
+   58,
+   2,
+   2,
+   64,
+   0,
+   116,
+   58,
+   3,
+   77,
+   166,
+   1,
+   1,
+   19,
+   3,
+   183
+  ],
+  [
+   227,
+   39,
+   2,
+   0,
+   0,
+   0,
+   78,
+   39,
+   2,
+   0,
+   33,
+   0,
+   0,
+   0,
+   2,
+   66
+  ],
+  [
+   197,
+   62,
+   2,
+   2,
+   52,
+   0,
+   124,
+   62,
+   3,
+   50,
+   166,
+   1,
+   2,
+   50,
+   3,
+   183
+  ],
+  [
+   226,
+   74,
+   4,
+   2,
+   56,
+   0,
+   202,
+   64,
+   6,
+   67,
+   183,
+   1,
+   2,
+   67,
+   6,
+   216
+  ],
+  [
+   335,
+   72,
+   8,
+   3,
+   130,
+   0,
+   456,
+   64,
+   10,
+   138,
+   216,
+   1,
+   2,
+   71,
+   10,
+   333
+  ],
+  [
+   372,
+   76,
+   8,
+   3,
+   133,
+   0,
+   460,
+   64,
+   10,
+   133,
+   216,
+   1,
+   1,
+   34,
+   10,
+   333
+  ],
+  [
+   137,
+   24,
+   2,
+   1,
+   28,
+   0,
+   48,
+   24,
+   3,
+   36,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   184,
+   42,
+   2,
+   1,
+   28,
+   0,
+   84,
+   42,
+   3,
+   36,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   270,
+   51,
+   2,
+   1,
+   21,
+   0,
+   102,
+   51,
+   3,
+   21,
+   166,
+   1,
+   1,
+   21,
+   3,
+   183
+  ],
+  [
+   317,
+   93,
+   8,
+   3,
+   102,
+   0,
+   477,
+   64,
+   10,
+   146,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   357,
+   102,
+   8,
+   3,
+   106,
+   0,
+   486,
+   64,
+   10,
+   162,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   400,
+   112,
+   8,
+   2,
+   52,
+   0,
+   496,
+   64,
+   10,
+   104,
+   216,
+   1,
+   2,
+   70,
+   10,
+   333
+  ],
+  [
+   410,
+   126,
+   8,
+   2,
+   46,
+   0,
+   510,
+   64,
+   10,
+   96,
+   216,
+   1,
+   3,
+   96,
+   10,
+   333
+  ],
+  [
+   195,
+   35,
+   2,
+   1,
+   21,
+   0,
+   70,
+   35,
+   3,
+   21,
+   166,
+   1,
+   1,
+   21,
+   3,
+   183
+  ],
+  [
+   211,
+   89,
+   8,
+   3,
+   73,
+   0,
+   473,
+   64,
+   10,
+   80,
+   216,
+   1,
+   3,
+   80,
+   10,
+   333
+  ],
+  [
+   246,
+   99,
+   8,
+   3,
+   75,
+   0,
+   483,
+   64,
+   10,
+   82,
+   216,
+   1,
+   2,
+   59,
+   10,
+   333
+  ],
+  [
+   170,
+   38,
+   2,
+   0,
+   0,
+   0,
+   76,
+   38,
+   2,
+   0,
+   33,
+   0,
+   0,
+   0,
+   2,
+   66
+  ],
+  [
+   318,
+   82,
+   8,
+   3,
+   132,
+   0,
+   466,
+   64,
+   10,
+   170,
+   216,
+   1,
+   1,
+   71,
+   10,
+   333
+  ],
+  [
+   338,
+   89,
+   8,
+   3,
+   136,
+   0,
+   473,
+   64,
+   10,
+   121,
+   216,
+   1,
+   0,
+   0,
+   10,
+   333
+  ],
+  [
+   290,
+   64,
+   2,
+   3,
+   108,
+   0,
+   128,
+   64,
+   3,
+   127,
+   166,
+   1,
+   1,
+   14,
+   3,
+   183
+  ],
+  [
+   330,
+   72,
+   8,
+   3,
+   145,
+   0,
+   456,
+   64,
+   10,
+   161,
+   216,
+   1,
+   1,
+   48,
+   10,
+   333
+  ],
+  [
+   194,
+   64,
+   2,
+   3,
+   78,
+   0,
+   128,
+   64,
+   3,
+   90,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   230,
+   80,
+   8,
+   1,
+   12,
+   1,
+   416,
+   64,
+   10,
+   13,
+   216,
+   1,
+   1,
+   13,
+   10,
+   333
+  ],
+  [
+   157,
+   66,
+   8,
+   2,
+   36,
+   0,
+   450,
+   64,
+   10,
+   36,
+   216,
+   1,
+   2,
+   36,
+   10,
+   333
+  ],
+  [
+   241,
+   25,
+   2,
+   1,
+   44,
+   0,
+   50,
+   25,
+   3,
+   53,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   287,
+   44,
+   2,
+   1,
+   44,
+   0,
+   88,
+   44,
+   3,
+   53,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   280,
+   125,
+   9,
+   4,
+   101,
+   0,
+   573,
+   64,
+   11,
+   101,
+   233,
+   1,
+   3,
+   70,
+   11,
+   366
+  ],
+  [
+   314,
+   138,
+   13,
+   4,
+   96,
+   0,
+   778,
+   64,
+   16,
+   96,
+   266,
+   1,
+   4,
+   96,
+   13,
+   433
+  ],
+  [
+   272,
+   51,
+   2,
+   2,
+   84,
+   0,
+   102,
+   51,
+   3,
+   98,
+   166,
+   1,
+   1,
+   38,
+   3,
+   183
+  ],
+  [
+   313,
+   77,
+   5,
+   1,
+   30,
+   0,
+   269,
+   64,
+   8,
+   30,
+   199,
+   1,
+   1,
+   30,
+   8,
+   266
+  ],
+  [
+   242,
+   78,
+   8,
+   3,
+   92,
+   0,
+   462,
+   64,
+   10,
+   125,
+   216,
+   1,
+   1,
+   38,
+   10,
+   333
+  ],
+  [
+   251,
+   89,
+   8,
+   4,
+   154,
+   0,
+   473,
+   64,
+   10,
+   199,
+   216,
+   1,
+   2,
+   80,
+   10,
+   333
+  ],
+  [
+   233,
+   43,
+   2,
+   2,
+   84,
+   0,
+   86,
+   43,
+   3,
+   106,
+   166,
+   1,
+   1,
+   52,
+   3,
+   183
+  ],
+  [
+   275,
+   60,
+   2,
+   3,
+   135,
+   0,
+   120,
+   60,
+   3,
+   242,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   336,
+   102,
+   8,
+   4,
+   169,
+   0,
+   486,
+   64,
+   10,
+   193,
+   216,
+   1,
+   2,
+   105,
+   10,
+   333
+  ],
+  [
+   353,
+   117,
+   9,
+   4,
+   160,
+   0,
+   565,
+   64,
+   11,
+   184,
+   233,
+   1,
+   1,
+   31,
+   11,
+   366
+  ],
+  [
+   368,
+   65,
+   4,
+   3,
+   98,
+   0,
+   193,
+   64,
+   6,
+   121,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   397,
+   67,
+   4,
+   3,
+   98,
+   0,
+   195,
+   64,
+   6,
+   121,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   268,
+   41,
+   2,
+   1,
+   26,
+   0,
+   82,
+   41,
+   3,
+   11,
+   166,
+   1,
+   0,
+   0,
+   3,
+   183
+  ],
+  [
+   200,
+   68,
+   4,
+   3,
+   65,
+   0,
+   196,
+   64,
+   6,
+   84,
+   183,
+   1,
+   0,
+   0,
+   6,
+   216
+  ],
+  [
+   203,
+   84,
+   5,
+   3,
+   63,
+   0,
+   276,
+   64,
+   8,
+   84,
+   199,
+   1,
+   0,
+   0,
+   8,
+   266
+  ]
+ ]
+}

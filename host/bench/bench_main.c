@@ -6,6 +6,7 @@
  *
  *   vjo-stage-bench STAGE [--iters N] [--frame RAW --fb WxH --region X,Y,W,H]
  *       [--fmt abgr|a2b10|a1b5] [--strip-rows N] [--model FILE --model-name NAME]
+ *       [--lm FILE --lm-name NAME] [--cascade FILE --cascade-name NAME] [--fps N]
  *       [--texts TSV | --text TEXT] [--dict DIR] [--config FILE] [--mode N]
  *
  * RAW: R, G, B, A bytes, W x H. TSV: host/fixtures/word_lookup/vocr_lines.tsv
@@ -42,8 +43,11 @@ int sceClibSnprintf(char *dst, size_t cap, const char *fmt, ...)
 #define SEEN_SLOTS 4096u
 static uint64_t io_opens, io_reads, io_bytes, io_repeats, io_pages;
 static uint64_t seen[SEEN_SLOTS]; /* 4 KiB pages read since bench_io_text, +1 (0 = empty) */
-/* VJO_BENCH_TRACE=FILE: every read as "TEXT OFFSET BYTES" (TEXT counts bench_io_text calls),
- * every open as "TEXT open", for cache studies (tools/bench_stages.py dict-trace). */
+/* VJO_BENCH_TRACE=FILE (host only): every file read as "TEXT OFFSET BYTES" (TEXT counts
+ * bench_io_text calls) and every open as "TEXT open", for ad-hoc studies. These are the reads
+ * that reach the file, after local_dict.c's own per-lookup page cache: replaying them through a
+ * bigger cache is not what that cache would do (docs/performance.md says how the cache figures
+ * were measured). */
 static FILE *trace;
 static unsigned trace_text;
 
@@ -192,7 +196,7 @@ int main(int argc, char **argv)
 {
     BenchIn in;
     static BenchOut out;
-    const char *stage, *frame = NULL, *model = NULL, *texts = NULL, *config = NULL;
+    const char *stage, *frame = NULL, *model = NULL, *texts = NULL, *config = NULL, *lm = NULL, *cascade = NULL;
     unsigned iters = 1;
     size_t len = 0;
     int rc;
@@ -216,6 +220,11 @@ int main(int argc, char **argv)
         else if (!strcmp(a, "--strip-rows")) in.strip_rows = (uint32_t)strtoul(v, NULL, 10);
         else if (!strcmp(a, "--model")) model = v;
         else if (!strcmp(a, "--model-name")) in.model_name = v;
+        else if (!strcmp(a, "--lm")) lm = v;
+        else if (!strcmp(a, "--lm-name")) in.lm_name = v;
+        else if (!strcmp(a, "--cascade")) cascade = v;
+        else if (!strcmp(a, "--cascade-name")) in.cascade_name = v;
+        else if (!strcmp(a, "--fps")) in.fps = (uint32_t)strtoul(v, NULL, 10);
         else if (!strcmp(a, "--texts")) texts = v;
         else if (!strcmp(a, "--text")) in.text = v;
         else if (!strcmp(a, "--dict")) in.dict_dir = v;
@@ -233,6 +242,14 @@ int main(int argc, char **argv)
     if (model) {
         if (!(in.model = read_file(model, &len))) { fprintf(stderr, "%s: unreadable\n", model); return 2; }
         in.model_bytes = (uint32_t)len;
+    }
+    if (lm) {
+        if (!(in.lm = read_file(lm, &len))) { fprintf(stderr, "%s: unreadable\n", lm); return 2; }
+        in.lm_bytes = (uint32_t)len;
+    }
+    if (cascade) {
+        if (!(in.cascade = read_file(cascade, &len))) { fprintf(stderr, "%s: unreadable\n", cascade); return 2; }
+        in.cascade_bytes = (uint32_t)len;
     }
     if (texts && !(in.text = read_texts(texts))) { fprintf(stderr, "%s: unreadable\n", texts); return 2; }
     if (config && !(in.config_text = read_file(config, NULL))) { fprintf(stderr, "%s: unreadable\n", config); return 2; }

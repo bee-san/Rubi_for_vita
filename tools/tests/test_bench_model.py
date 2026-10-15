@@ -43,6 +43,30 @@ class BenchModelTest(unittest.TestCase):
         self.assertEqual([r["workload"] for r in report["stages"]], ["config"])
         self.assertIn("| `config` | parse | 12.3 µs | – | – | – | – | – |", md)
 
+    def test_job_log_lines(self):
+        # API 19's one-line job: job start, 4 result lines + 1 "lines", 11 steps, 4 after, subtitle; the
+        # Shell's own job time holds 19 of them (no start, done or subtitle), as #81's console jobs logged
+        self.assertEqual(bench_model.job_log_lines("api19", 1), 22)
+        self.assertEqual(bench_model.job_log_lines("api19", 1) - 3, 19)
+        self.assertAlmostEqual(bench_model.CONSOLE["jobs"]["log_lines_mean"], 19.1, places=1)
+        # main's: 15 steps, a text line per line, the cascade's speed line when it read a line again
+        self.assertEqual(bench_model.job_log_lines("default", 1), 27)
+        self.assertEqual(bench_model.job_log_lines("default", 1, cascade_jobs=1), 28)
+
+    def test_committed_baseline_reproduces_its_console_check(self):
+        bundle = json.loads((ROOT / "docs/benchmarks/pipeline-stages-20261015.json").read_text())
+        dev = {"summary": bundle["dev"]}
+        report, md = bench_model.build_report(bundle["host"], bundle["a9"], dev, bench_stages.WORKLOADS)
+        self.assertEqual(report["jobs"], bundle["report"]["jobs"])
+        chk = report["console_check"]
+        measured = chk["measured"]["shell_ms_mean"]
+        # the model of API 19's job at the console jobs' own means lands within 10% of what they took
+        self.assertLess(abs(chk["model"]["estimate"] - measured) / measured, 0.10)
+        lo, hi = chk["model"]["total"]
+        self.assertLess(lo, measured)
+        self.assertGreater(hi, measured)
+        self.assertIn("| **total** |", md)
+
 
 if __name__ == "__main__":
     unittest.main()
