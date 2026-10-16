@@ -1422,8 +1422,8 @@ def like_for_like(off, raised):
 def _kind(s):
     """A job's kind for like_for_like: as many recognized lines, the same helpers and trigger, and the same game (its
     window's title: another game's load is not this one's). The title is not printed: a kind of another game is one
-    not on the other side."""
-    return s["lines"], s["helpers"], s["trigger"], s["title"] or ""
+    not on the other side. A window whose game the log does not name is not compared (boost_compare)."""
+    return s["lines"], s["helpers"], s["trigger"], s["title"]
 
 
 def _shares(samples):
@@ -1467,15 +1467,18 @@ def boost_compare(samples):
         if "off" not in g or "raised" not in g:
             continue
         mine = [s for s in samples if s["model"] == m and s["side"] in ("off", "raised")]
-        ok = [s for s in mine if not s["stage"] and s["trigger"] not in (None, "self-test") and s["helpers"] is not None]
+        # the user's jobs whose kind is known: what started them, their helpers and their game (a window before the
+        # log's first "game TITLE started" line, the start of a rotated log, has none)
+        users = [s for s in mine if not s["stage"] and s["trigger"] not in (None, "self-test")]
+        ok = [s for s in users if s["helpers"] is not None and s["title"] is not None]
         off, raised = [s for s in ok if s["side"] == "off"], [s for s in ok if s["side"] == "raised"]
         pooled = like_for_like(off, raised)
         matched = {(k["lines"], k["helpers"], k["trigger"], k["title"]) for k in (pooled or {}).get("strata", [])}
         out = {"pooled": pooled, "left_out": {
             "selftest": sum(bool(s["stage"]) or s["trigger"] == "self-test" for s in mine),
             "reason_unknown": sum(not s["stage"] and not s["trigger"] for s in mine),
-            "helpers_unknown": sum(not s["stage"] and s["trigger"] not in (None, "self-test") and s["helpers"] is None
-                                   for s in mine),
+            "helpers_unknown": sum(s["helpers"] is None for s in users),
+            "game_unknown": sum(s["helpers"] is not None and s["title"] is None for s in users),
             "unmatched": sum(_kind(s) not in matched for s in ok)}, "windows": []}
         for w in sorted({s["window"] for s in ok}):
             here = [s for s in ok if s["window"] == w]
@@ -1746,6 +1749,8 @@ def render_clock_windows(lg, tai=None, configured=None):
         left = [f"{_n(out['selftest'], 'job')} of the self-test's stages"] if out["selftest"] else []
         left += [f"{_n(out['reason_unknown'], 'job')} with no start line"] if out["reason_unknown"] else []
         left += [f"{_n(out['helpers_unknown'], 'job')} whose helpers are not logged"] if out["helpers_unknown"] else []
+        left += [f"{_n(out['game_unknown'], 'job')} of a window whose game the log does not name (it began before the "
+                 "log's first line)"] if out.get("game_unknown") else []
         left += [f"{_n(out['unmatched'], 'job')} of a kind not on the other side"] if out["unmatched"] else []
         head = (f"    {m}, like for like (not the self-test's stages; jobs of one kind on both sides: the same game, as "
                 "many recognized lines, the same helpers, and both auto (Auto's job, the overlay closed) or both overlay "

@@ -1456,7 +1456,7 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertEqual((round(p["ratio"], 2), p["off"]["jobs"], p["raised"]["jobs"], p["raised_windows"]),
                          (1.32, 3, 3, [1, 4]))
         self.assertEqual(lg["clock_like"][self.H15]["left_out"],
-                         {"selftest": 3, "reason_unknown": 0, "helpers_unknown": 0, "unmatched": 1})
+                         {"selftest": 3, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 1})
         # the off window's neighbours with a job of its kind: windows 1 and 4 (window 2 read only 2 lines)
         (w3,) = [w for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"]
         self.assertEqual((w3["window"], w3["neighbours"], round(w3["near"]["ratio"], 2)), (3, [1, 4], 1.32))
@@ -1519,7 +1519,7 @@ class BoostLikeForLike(unittest.TestCase):
                       "raised jobs (all jobs: 1.27); between the two thresholds; yes at 1.25 to 1.42", text)
         # the serial stage is its own kind (3 lines, no helper): it is never matched with Auto's jobs
         self.assertEqual(lg["clock_like"][self.H15]["left_out"], {"selftest": 3, "reason_unknown": 0,
-                                                                  "helpers_unknown": 0, "unmatched": 0})
+                                                                  "helpers_unknown": 0, "game_unknown": 0, "unmatched": 0})
         # builds before #116 ran the stages inside the user's own job (an auto one): their begin records still
         # mark them; and the job after a stage is the user's again
         log = log.replace("job start (self-test)\n", "job start (auto: screen settled)\n")
@@ -1579,7 +1579,7 @@ class BoostLikeForLike(unittest.TestCase):
                                                      {"lines": 3, "helpers": 0, "trigger": "auto", "title": t, "jobs": 1},
                                                      {"lines": 3, "helpers": 2, "trigger": "overlay", "title": t,
                                                       "jobs": 2}]})
-        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 0, "unmatched": 6})
+        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 6})
         self.assertIn("3 lines, 2 helpers, auto: off 2,925 us (2 jobs; a core's share 99%), raised 2,200 us (2 jobs; a "
                       "core's share 99%): 1.33; left out: 6 jobs of a kind not on the other side", self.text(lg))
         # the overlay's own jobs (a press, its refresh) match the overlay's own: a second boost-off window of them
@@ -1621,7 +1621,7 @@ class BoostLikeForLike(unittest.TestCase):
         # a job with no start line (the start of a rotated log): what started it is not known
         lg = a.summarise_log(BOOT22 + START + game_job(per_frame(2200), RAISED, helpers=2) + log[len(BOOT22):])
         self.assertEqual(lg["clock_like"][self.H15]["left_out"],
-                         {"selftest": 0, "reason_unknown": 1, "helpers_unknown": 1, "unmatched": 0})
+                         {"selftest": 0, "reason_unknown": 1, "helpers_unknown": 1, "game_unknown": 0, "unmatched": 0})
         self.assertIn("left out: 1 job with no start line, 1 job whose helpers are not logged", self.text(lg))
 
     def test_what_started_a_job(self):
@@ -1787,7 +1787,7 @@ class BoostLikeForLike(unittest.TestCase):
         lg = a.summarise_log(log)
         lk = lg["clock_like"][self.H15]
         self.assertIsNone(lk["pooled"])
-        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 2, "unmatched": 6})
+        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 2, "game_unknown": 0, "unmatched": 6})
         (v,) = lg["boost_verdicts"]
         self.assertEqual((v["verdict"], v["ratio"]), ("unclear", None))
         self.assertIn("no kind of job on both sides (left out: 2 jobs whose helpers are not logged, 6 jobs of a kind "
@@ -1921,7 +1921,7 @@ class BoostLikeForLike(unittest.TestCase):
                + START + auto_job(per_frame(2928)) * 2)
         lk = a.summarise_log(log)["clock_like"][self.H15]
         self.assertEqual((lk["left_out"], lk["pooled"]["raised"]["jobs"]),
-                         ({"selftest": 2, "reason_unknown": 0, "helpers_unknown": 0, "unmatched": 0}, 2))
+                         ({"selftest": 2, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 0}, 2))
         # a Shell job's start ends a stage's mark that no job took: the next job is the user's
         log = (BOOT22 + START + auto_job(per_frame(2400), RAISED)
                + "stage textbox begin t=90000 flags=0x0 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE\n"
@@ -1970,6 +1970,17 @@ class BoostLikeForLike(unittest.TestCase):
                 label = f"{model} ({name}, the size config.ini had at collect time)"
                 (self.assertIn if model == marked else self.assertNotIn)(label, text)
                 self.assertIn(f"{model} ({name}", text)
+
+    def test_a_window_whose_game_the_log_does_not_name_is_left_out(self):
+        # the audit's m8 (invented): log.old.txt starts inside the boost-off window, so its "game TITLE started" line
+        # is gone; its game is not known, so its jobs are compared with none, and the line says why
+        lg = a.summarise_log(BOOT22 + auto_job(per_frame(2925)) * 2 + START + auto_job(per_frame(2200), RAISED) * 2)
+        self.assertEqual([(r["title"], r["state"]) for r in lg["clock_windows"]], [(None, "off"), ("PCSG00415", "on")])
+        lk = lg["clock_like"][self.H15]
+        self.assertEqual((lk["pooled"], lk["left_out"]["game_unknown"]), (None, 2))
+        self.assertIn("left out: 2 jobs of a window whose game the log does not name (it began before the log's first "
+                      "line)", self.text(lg))
+        self.assertEqual(lg["boost_verdicts"][0]["verdict"], "unclear")
 
     def test_a_windows_position_across_the_rotated_log(self):
         # a window that starts on log.old.txt's last line is log.old.txt's (collect: log.old.txt first, then
