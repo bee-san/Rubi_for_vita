@@ -42,7 +42,9 @@
 #define K VJO_TAI_KERNEL
 #define S VJO_TAI_SHELL
 #define W VJO_TAI_WORKER
-#define STAMP "vjoapp1 api=22 build=0123456789abcdef"
+#define VJO_STR_(x) #x
+#define VJO_STR(x) VJO_STR_(x)
+#define STAMP "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=0123456789abcdef"
 
 static const VjoInstallBuild build = {VJO_API_VERSION, "0.8.0", VJO_VARIANT, VJO_TAI_WORKER_KERNEL};
 
@@ -479,7 +481,7 @@ static void update_over_a_test3_install(void)
         size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
         put(vjo_payload_dest(i), bytes, n);
     }
-    put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=22 build=fedcba9876543210\n");
+    put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
     put_text(VJO_PREFERENCES_PATH_TEST, "vocr_tier = large\nocr_mode = on_press\nlog_file = off\n");
     VjoInstallScan s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_UPDATE, "state %d %s", s.state, s.title);
@@ -891,7 +893,7 @@ static void the_manifest_is_exactly_the_builds(void)
     TEST_CHECK(!strcmp(p.version, "0.8.0") && p.worker == VJO_TAI_WORKER_KERNEL && !p.sets);
     static const struct { const char *from, *to, *why; } cases[] = {
         {"vjopayload 1\n", "vjopayload 2\n", "not a payload manifest"},
-        {"api 22", "api 21", "not this app's build"},
+        {"api " VJO_STR(VJO_API_VERSION) "\n", "api 21\n", "not this app's build"},
         {"worker kernel", "worker lines", "not this app's build"},
         {"variant " VJO_VARIANT "\n", VJO_DEBUG ? "variant normal\n" : "variant debug\n", "not this app's build"},
         {"app_version 0.8.0", "app_version 0.8.1", "not this app's build"},

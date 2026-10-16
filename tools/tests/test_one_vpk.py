@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import package_vpk as vpk  # noqa: E402
+# the tree's API (include/vjo_api.h): the app's stamp in these fixtures
+API = int(re.search(r"#define VJO_API_VERSION (\d+)", (ROOT / "include/vjo_api.h").read_text()).group(1))
 
 
 def make_self(imports=(), strings=b""):
@@ -63,7 +65,7 @@ def app_eboot(version="0.8.0", debug=False, worker="kernel", imports=(("SceShell
 
 
 def app_vpk(eboot):
-    stamp = f"vjoapp1 api=22 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
+    stamp = f"vjoapp1 api={API} build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("sce_sys/param.sfo", b"\0PSF fixture")
@@ -160,13 +162,13 @@ class Package(unittest.TestCase):
             self.assertGreater(min(names.index("licenses/" + n) for n in LICENCES), names.index("payload/manifest.txt"))
             self.assertNotIn("licenses/docs/console-test.md", names)
         lines = text.splitlines()
-        self.assertEqual(lines[:7], ["vjopayload 1", "version 0.8.0", "app_version 0.8.0", "variant normal", "api 22",
+        self.assertEqual(lines[:7], ["vjopayload 1", "version 0.8.0", "app_version 0.8.0", "variant normal", f"api {API}",
                                      "worker kernel", "build " + lines[6].split()[1]])
         self.assertIn("set anki_mining on", lines)
         self.assertNotIn("set log_file on", lines)
         self.assertTrue(re.fullmatch(r"file ur0:tai/VitaJPOverlay_Kernel\.skprx \d+ [0-9a-f]{64} copy", lines[7 + 9]))
         record = vpk.installed_record(text)
-        self.assertRegex(record, r"^vjoinst1 version=0\.8\.0 variant=normal api=22 build=[0-9a-f]{16} manifest=[0-9a-f]{64}\n$")
+        self.assertRegex(record, rf"^vjoinst1 version=0\.8\.0 variant=normal api={API} build=[0-9a-f]{{16}} manifest=[0-9a-f]{{64}}\n$")
         self.assertIn("manifest=" + hashlib.sha256(text.encode()).hexdigest(), record)
 
     def test_the_debug_build_turns_its_log_on(self):
