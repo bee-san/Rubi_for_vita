@@ -182,10 +182,11 @@ lines since the boot's start; the bootstrap lines before that (about 1 KiB, `sta
 counted (in test.3 both points fall in job 12).
 
 **The normal build** writes none of a job's lines between the end of its recognition and the control
-thread taking its result, nor before an overlay opened meanwhile shows it. The network thread opens a
-log batch at a job's wake unless it is open (`shell/worker.c` `net_main`, its 2 KiB buffer on the
-thread's stack), which holds every line it logs (the job's line, a size that did not fit, the clock, a
-refused memory check, an unusable model, a refused Paf allocation, a failed lookup). Its wait for the next job is timed only while the batch holds a line: when that wait
+thread taking its result, nor before an overlay opened meanwhile shows it (but for the exceptions
+below). The network thread opens a log batch at a job's wake unless it is open (`shell/worker.c`
+`net_main`, its 2 KiB buffer on the thread's stack), which holds every line it logs (the job's line, a
+size that did not fit, the clock, a refused memory check, an unusable model, a refused Paf allocation,
+a failed lookup). Its wait for the next job is timed only while the batch holds a line: when that wait
 ends (0.5 s, `LOG_IDLE_US`, with no job) and the control thread has taken the result, it writes them, one
 append per file. A job's wake never writes them (the control thread marks its job running before it
 wakes the thread): jobs started meanwhile keep the held lines across their exchanges and add their own;
@@ -213,7 +214,9 @@ unchanged (its three plugins and RCO are main's bytes, sha256).
   loses what is held: at most 24 lines or 2 KiB.
 - The write takes the network thread one append per file (est. 24-92 ms at #81's 12-46 ms an append;
   test.3's jobs averaged 19 ms an append, the median of the per-job means over its 63 jobs), 0.5 s after a
-  result at the earliest; a job posted during it waits for its end.
+  result at the earliest. A press that lands during it waits for its end: the overlay's opening (its
+  `config.ini` re-read, `vjo_log_configure`, takes the log's lock, before the result shows) and a job's
+  start (the network thread is writing).
 - Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left,
   and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B [measured:
   audit-t3-log-path-c's Vita builds of main `836259e` and that form, `8cc1c3b`]. This one adds 96 B of

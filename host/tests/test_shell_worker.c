@@ -4832,7 +4832,7 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     TEST_ASSERT(job_running && (posted & NET_EV_JOB));
     as_network_thread(); /* the job: the exchange, its lines, the lookup; job_done */
     TEST_CHECK(job_done && held_lines() == 2 && appends_recorded == mark); /* held: nothing written yet */
-    TEST_CHECK(logged("ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ") != NULL && logged("clock: 333 -> 444 MHz") != NULL);
+    TEST_CHECK(logged("ocr rc=0 " VJO_VOCR_TIER2_NAME ": 2 lines, ") != NULL && logged("clock: 333 -> 444 MHz") != NULL);
     TEST_CHECK(net_log.n == 2); /* what net_main's next wait reads: a timed one */
     as_network_thread(); /* a timeout before the control thread took the result: nothing (its job runs) */
     TEST_CHECK(held_lines() == 2 && appends_recorded == mark);
@@ -4925,13 +4925,13 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
      *    job line, the unusable model, the retry's job line and the clock's) held across the retry's
      *    exchange, then one append after the result. */
     game_generation = 103;
-    fake_missing_model = "VOCR3_H15_w8.vocr";
+    fake_missing_model = VJO_VOCR_TIER2_NAME;
     mark = appends_recorded; log_count = 0;
     next_scene(37); stable_pending = 1; control_tick(0);
     as_network_thread();
     TEST_CHECK(job_done && log_count == 4 && held_lines() == 4 && appends_recorded == mark);
-    TEST_CHECK(logged("ocr rc=-115 VOCR3_H15_w8.vocr") != NULL && logged("is unusable here") != NULL &&
-               logged("ocr rc=0 VOCR3_FL10_w8.vocr: 2 lines") != NULL);
+    TEST_CHECK(logged("ocr rc=-115 " VJO_VOCR_TIER2_NAME) != NULL && logged("is unusable here") != NULL &&
+               logged("ocr rc=0 " VJO_VOCR_TIER1_NAME ": 2 lines") != NULL);
     control_tick(0); as_network_thread();
     TEST_CHECK(net_appends_since(mark, &lines, &recognizing) == 1 && lines == 4 && !recognizing);
     fake_missing_model = NULL;
@@ -5240,7 +5240,7 @@ static void test_session_log_appends(void)
                 fake_screen_changes = session_next(100) < 5;
                 fake_cancel_on_read = session_next(100) < 4;
                 read_fail = session_next(100) < 5;
-                fake_missing_model = session_next(100) < 2 ? "VOCR4_W20_w8.vocr" : NULL;
+                fake_missing_model = session_next(100) < 2 ? VJO_VOCR_TIER3_NAME : NULL;
                 {
                     unsigned t = session_next(100);
                     fake_tier_checks = t < 70 ? 0u : t < 90 ? large : large | normal;
