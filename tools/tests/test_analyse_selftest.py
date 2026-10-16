@@ -1917,8 +1917,10 @@ class BoostLikeForLike(unittest.TestCase):
 
     def test_the_premises_in_the_source(self):
         shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        # each Shell job's reason, and ", refresh" for the open overlay's quiet refresh (JOB_START)
-        self.assertIn('vjo_log("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");', shell)
+        # each Shell job's reason, and ", refresh" for the open overlay's quiet refresh (JOB_START); a debug-build line
+        # since the two builds (vjo_dlog, include/vjo_build.h), as every job and step line the comparison reads
+        self.assertRegex(shell, r'vjo_d?log\("job start \(%s\)%s", why, refresh \? ", refresh" : lookup \? "" : '
+                                r'", OCR only"\);')
         self.assertTrue(a.JOB_START.match("job start (auto: screen settled), OCR only"))
         # Auto's job: only with the overlay closed; the open overlay's refresh is a refresh
         body = shell[shell.index("static void auto_prefetch(void)"):]
@@ -1936,8 +1938,13 @@ class BoostLikeForLike(unittest.TestCase):
         selftest = (ROOT / "shell/selftest.c").read_text(encoding="utf-8")
         self.assertIn('"stage %s begin t=%lld flags=0x%X model=%s fallback=%s speed=0x%X"', selftest)
         self.assertIn("i == STAGE_SERIAL ? configured & ~VJO_GAME_OCR_S_HELPERS_MASK : configured", selftest)
+        # PACE, the only sign that PAR had room: the kernel adds it only with a slot left (and only in the debug
+        # build, whose step log the comparison reads); every FREE keeps its slot in a full log, so a FREE is no sign
+        kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")
+        self.assertRegex(kernel, r"if \((?:VJO_DEBUG && )?pace_job && result\.n_steps < VJO_GAME_OCR_STEPS\) \{")
         # no PAR step for a serial job with no line from the cache (a job's helpers: PAR's arg)
         worker = (ROOT / "game_ocr/main.c").read_text(encoding="utf-8")
+        self.assertIn("if (id != VJO_GSTEP_FREE && log_to->n_steps + reserve >= VJO_GAME_OCR_STEPS) return NULL;", worker)
         par = worker.index("step_add(VJO_GSTEP_PAR, 0, stats.helpers,")
         cond = worker.index("if (stats.lines && (want_helpers || stats.cached)) {")
         self.assertLess(cond, par)
