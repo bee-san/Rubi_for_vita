@@ -4961,6 +4961,55 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
   }
 }
 
+/* The network thread woke for NET_EV_LOG and runs before it sees the NET_EV_JOB the control thread posts
+ * right after (another core): job_running is set by then. */
+static void log_wake_before_the_job(unsigned bits)
+{
+    if ((bits & NET_EV_JOB) && (posted & NET_EV_LOG)) {
+        int thread = test_thread;
+        posted &= ~NET_EV_LOG;
+        test_thread = NET_THREAD;
+        net_log_taken();
+        test_thread = thread;
+    }
+}
+
+/* The idle write yields to a job asked for as the network thread wakes for it: a lookup keeps the held
+ * lines (its whole run is its result's path) and they go out after its result; an OCR job writes them
+ * once the game has it. */
+static void test_normal_build_idle_write_yields_to_a_new_job(void)
+{
+    for (int ocr = 0; ocr < 2; ocr++) {
+        unsigned mark, lines, recognizing;
+        cursor_setup();
+        fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+        game_generation = 140u + (uint32_t)ocr;
+        next_scene(70); open_overlay(); /* an activation's first job: its 2 lines held */
+        as_network_thread(); control_tick(0);
+        TEST_ASSERT(!job_running && g_view.open && net_log->open);
+        mark = appends_recorded;
+        test_now += LOG_IDLE_US; control_tick(0); /* NET_EV_LOG posted; the network thread not woken yet */
+        TEST_CHECK(posted & NET_EV_LOG);
+        on_event_flag = log_wake_before_the_job;
+        if (!ocr) {
+            vjo_post_cursor(3, local_text_generation); control_tick(0); /* a lookup, as the thread wakes */
+            TEST_ASSERT(job_running && job_cursor_only);
+        } else {
+            close_overlay(); next_scene(71); open_overlay(); /* a new screen's OCR job */
+            TEST_ASSERT(job_running && !job_cursor_only);
+        }
+        on_event_flag = NULL;
+        TEST_CHECK(!(posted & NET_EV_LOG) && appends_recorded == mark && net_log->open); /* not written: a job runs */
+        as_network_thread(); /* the job */
+        TEST_CHECK(appends_recorded == mark + (unsigned)ocr); /* the OCR job wrote them while the game recognized */
+        control_tick(0); test_now += LOG_IDLE_US; control_tick(0); as_network_thread();
+        TEST_CHECK(net_appends_since(mark, &lines, &recognizing) == 1 && lines == 2 && recognizing == (unsigned)ocr);
+        close_overlay();
+        fake_clock_on = 0;
+        mem_free();
+    }
+}
+
 /* An activation's first job, then (log_wake) the idle pause and NET_EV_LOG, or the worker's stop. */
 static unsigned net_main_mark;
 static int log_wake;
@@ -5424,6 +5473,7 @@ TEST_LIST = {
     {"normal_build_logs_flapping_tier_misses_once", test_normal_build_logs_flapping_tier_misses_once},
     {"normal_build_writes_a_jobs_lines_after_its_result", test_normal_build_writes_a_jobs_lines_after_its_result},
     {"normal_build_net_main_writes_held_lines", test_normal_build_net_main_writes_held_lines},
+    {"normal_build_idle_write_yields_to_a_new_job", test_normal_build_idle_write_yields_to_a_new_job},
 #endif
 #ifdef VJO_WITH_VOCR
     {"session_log_appends", test_session_log_appends},
