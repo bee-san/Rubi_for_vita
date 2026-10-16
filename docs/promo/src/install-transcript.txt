@@ -1,7 +1,7 @@
 $ bash install-vita.sh --title HSDY00001 192.168.1.42
-Verified 65 package files
-Verified 65 package files
-backup: build/device/backup/20261015-142112-CMP1uq
+Verified 63 package files
+Verified 63 package files
+backup: build/device/backup/20261015-142112-xxorBF
 --- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):
 5a6
 > ur0:tai/VitaJPOverlay_Kernel.skprx
@@ -59,7 +59,6 @@ config.ini: local_dictionary_results = 1
 config.ini: log_file = on
 config.ini: log_host = empty
 config.ini: non_japanese_filter = lines
-config.ini: ocr_backend = vocr
 config.ini: ocr_boost_clock = on
 config.ini: ocr_cascade_ms = 2000
 config.ini: ocr_lm = 1000k

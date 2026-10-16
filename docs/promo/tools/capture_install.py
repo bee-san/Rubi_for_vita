@@ -48,17 +48,17 @@ HOST, PORT = "192.168.1.42", 1337
 TITLE = "HSDY00001"  # the mock game's title ID
 PROMPT = "Press Enter once the app is installed to check it again (Ctrl-C to skip): "
 
-# The release's base zip (vita/CMakeLists.txt's release target, as CI built it on ac905b1): the
+# The release's base zip (vita/CMakeLists.txt's release target, as CI built it on 1ed95ca): the
 # repository's own files, then the stand-ins.
 REPO_FILES = [
     "LICENSE", "README.md",
-    "docs/JMdict-LICENSE.html", "docs/anki.md", "docs/jmdict-source.json", "docs/lens-performance.md",
+    "docs/JMdict-LICENSE.html", "docs/anki.md", "docs/jmdict-source.json",
     "docs/local-dictionaries.md", "docs/local-ocr.md", "docs/lookup-performance.md",
     "docs/plaintext-attribution.txt", "docs/plaintext-dictionaries.json", "docs/project-lessons.md",
     "docs/settings-png-runtime.md", "docs/settings-readability.md", "docs/todo-20261011.md",
     "docs/touch-lookup.md", "docs/vita-vn-ocr.md",
     "docs/benchmarks/daijirin-import-20261010.json", "docs/benchmarks/daijirin-v3-selected-20261011.json",
-    "docs/benchmarks/kernel-startup-20261010.json", "docs/benchmarks/lens-connections-20261010.json",
+    "docs/benchmarks/kernel-startup-20261010.json",
     "docs/benchmarks/local-character-memory-20261011.json", "docs/benchmarks/local-lookup-jitendex.json",
     "docs/benchmarks/local-result-memory-20261011.json", "docs/benchmarks/vocr-release-20261011.json",
     "docs/benchmarks/vocr-vs-ncnn-20261010.json", "docs/benchmarks/vocr2-candidate-20261012.json",

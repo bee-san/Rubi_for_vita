@@ -48,11 +48,11 @@ export const OVERLAY = {
 
 // The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125, merged as e53d9fb).
 // The size is what that export wrote for three text-only cards in its host
-// test on main 6020c0b (host/tests/test_apkg.c: 86,234 B, shown as 85 KB);
+// test on main 6020c0b (host/tests/test_apkg.c: 86,234 B, shown as 85 KB; the export is unchanged on 1ed95ca);
 // measured on the host, not on a console.
-// VitaShell's size for the app's VPK (getSizeString(): 2 decimals, 1024-based): 493,267 B in
-// CI's release zip of main 6020c0b.
-export const VPK_SIZE = "481.71 KB";
+// VitaShell's size for the app's VPK (getSizeString(): 2 decimals, 1024-based): 491,554 B in
+// CI's release zip of main 1ed95ca.
+export const VPK_SIZE = "480.03 KB";
 
 export const APKG = {
   dir: "ux0:data/VitaJPOverlay/anki/",
