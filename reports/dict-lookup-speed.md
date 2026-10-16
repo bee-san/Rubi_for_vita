@@ -269,7 +269,8 @@ Raw numbers: [`docs/benchmarks/dict-key-filter-20261015.json`](../docs/benchmark
   53,648 B to 53,840 B (host build) of the 64 KiB arena. Nothing stays resident between lookups.
 - **Disk.** The bundled file grows by 904 KiB (226 blocks, 661,469 keys), from 140,556,089 B to
   141,484,032 B.
-- **Shell code.** +626 B. On main (Vita build) it fits the Shell module's existing text pages, as
+- **Shell code.** +638 B in `core/local_dict.o`, +648 B in the Shell's text. On main (Vita build)
+  it fits the Shell module's existing text pages, as
   measured on the base this merges onto (the PR body has the rows). Before #117 removed 6.6 KB of
   Shell text, on ba5f69a, it would have added a page.
 - **Compatibility, both ways.**
@@ -292,11 +293,13 @@ Whole word):
   when a candidate's prefix leaves the block's range: +0.02.
 - **Bits per key:** 10 is the bundled filter, 226 blocks. It leaves 1.13-1.15 index reads per
   lookup (measured; candidates that are not keys 0.12-0.14). 8 bits would leave 1.22-1.28 index
-  searches with 178 blocks, and 6 bits 1.49-1.65 with 131 blocks (both simulated with the
-  converter's packing rule).
+  searches with 178 blocks, and 6 bits 1.44-1.60 with 139 blocks (the converter at those
+  settings, measured by audit-dict-lookup-speed-2 and -2-b; a simulation of the packing rule
+  gave 1.22-1.28 and 1.49-1.65).
 - **Small dictionaries.** On JMdict subsets, the filter saves reads only from 4 hash buckets up
-  (`FILTER_MIN_BUCKETS`). Reads per lookup, Whole word, on the fixture lines, without → with the
-  filter:
+  (`FILTER_MIN_BUCKETS`). Each subset is the first N rows of JMdict Plain's term banks after a
+  shuffle with a fixed seed (7), converted with and without the filter. Reads per lookup, Whole
+  word, on the fixture lines, without → with the filter:
 
   | rows | keys | buckets | reads |
   |---:|---:|---:|---|
