@@ -45,7 +45,7 @@ export function drawBrowser(g, { pointer = null, click = 0, hover = false, dl = 
   ['#ff6159', '#ffbd2e', '#28c941'].forEach((c, i) => { g.fillStyle = c; g.beginPath(); g.arc(44 + i * 40, 48, 13, 0, Math.PI * 2); g.fill(); });
   g.fillStyle = '#fff'; rr(g, 180, 22, W - 220, 52, 26); g.fill();
   g.fillStyle = '#57606a'; g.font = `500 30px ${FONT}`; g.textBaseline = 'middle';
-  g.fillText('github.com/bee-san/vita-jp-overlay/releases', 214, 49);
+  g.fillText('github.com/bee-san/Rubi_for_vita/releases', 214, 49);
   // page
   g.fillStyle = '#1f2328'; g.font = `700 50px ${FONT}`; g.fillText('Releases', 60, 170);
   g.fillStyle = '#fff'; g.strokeStyle = '#d0d7de'; g.lineWidth = 3; rr(g, 50, 220, W - 100, H - 270, 18); g.fill(); g.stroke();

@@ -21,7 +21,7 @@ export const STEPS = [
   { t: 21.3, done: 22.4, text: 'Download the .vpk from GitHub Releases' },
   { t: 22.4, done: 22.95, text: 'Copy it to the Vita' },
   { t: 22.95, done: 24.3, text: 'Install it in VitaShell' },
-  { t: 24.36, done: 25.42, text: 'Open Overlay and press Install' },
+  { t: 24.36, done: 25.42, text: 'Open Rubi and press Install' },
   { t: 25.45, done: 26.12, text: 'Restart the Vita: done' },
 ];
 STEPS.window = { t0: 21.3, t1: 27.0 };
@@ -29,7 +29,7 @@ STEPS.window = { t0: 21.3, t1: 27.0 };
 // Shots that show features still landing (named in the preview comment).
 export const MOCKUPS = [
   { t0: 14.0, t1: 17.2, what: 'the Anki card with its game screenshot (PR #150, overlay-anki-screenshot)' },
-  { t0: 19.5, t1: 21.2, what: 'the Overlay app\'s "Read text" setting (PR #146)' },
-  { t0: 21.2, t1: 26.12, what: 'the one-VPK install: the release page, VitaShell\'s install, the Overlay app\'s Install page and the restart (feat/one-vpk-install)' },
+  { t0: 19.5, t1: 21.2, what: 'the app\'s "Read text" setting (PR #146)' },
+  { t0: 21.2, t1: 26.12, what: 'the one-VPK install: the release page, VitaShell\'s install, the app\'s Install page and the restart (feat/one-vpk-install)' },
   { t0: 26.12, t1: 34.7, what: 'after that install, OCR in any game with no per-game setup (PR #148: the kernel loads the worker in every enabled game)' },
 ];

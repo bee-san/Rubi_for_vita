@@ -1,8 +1,8 @@
 # Promo video, made from scratch (promo-scratch)
 
-A 44-second promo for Vita JP Overlay in two cuts, 1920×1080 and 1080×1920. It shows one continuous play
+A 44-second promo for Rubi (Rubi for Vita, formerly Vita JP Overlay) in two cuts, 1920×1080 and 1080×1920. It shows one continuous play
 session on a white PCH-1000: a visual novel types out, L + R opens the overlay, the cursor walks the
-words, × mines cards, the card turns over, the install runs, and a game is turned off in the Overlay app.
+words, × mines cards, the card turns over, the install runs, and a game is turned off in the Rubi app.
 
 Nothing here uses HyperFrames or a video editor. The console is a three.js model built in code
 (`src/device.js`), its screen is a canvas redrawn every frame (`src/screen.js`), and every frame is
@@ -43,11 +43,11 @@ The captions are the owner's script lines (PR #134, 2026-10-16 06:59Z) as the co
 | 5.0–10.2 | Look up words from the games you play, entirely offline | Both index fingers press L + R (top-edge view); the overlay comes up on また明日; the left thumb presses Right: 一緒に |
 | 10.2–14.0 | Create flashcards of words you don't know | × saves 一緒に ("Saving card…", "Saved for Anki", queue 1) and a card flies out of the screen; Right, × saves 見に行く (queue 2) |
 | 14.0–17.0 | With screenshots | The 一緒に card comes forward and turns over; the camera pushes in on its picture: the game screen as it was at the × |
-| 17.0–21.2 | It only reads the text when it changes | ○ closes the overlay, × advances to a new scene; once the text has stopped typing, one sweep reads it. PS, the Overlay app: Read text, Automatically ⇄ Only when I press L + R |
-| 21.2–26.6 | Easy install | The release page, the .vpk copied to the Vita, VitaShell's install, the Overlay app's Install page, the power button's restart; the current step large on screen |
+| 17.0–21.2 | It only reads the text when it changes | ○ closes the overlay, × advances to a new scene; once the text has stopped typing, one sweep reads it. PS, the Rubi app: Read text, Automatically ⇄ Only when I press L + R |
+| 21.2–26.6 | Easy install | The release page (github.com/bee-san/Rubi_for_vita/releases), the .vpk copied to the Vita, VitaShell's install, the app's Install page ("Open Rubi and press Install"), the power button's restart; the current step large on screen |
 | 26.6–34.7 | Now it's installed, go to your game / and press L + R to look up words. | Home, the game's LiveArea, Start; the hilltop scene types; L + R; キラキラ → 子供の頃 → みたい |
-| 34.7–41.4 | Turn it off for specific games, so it doesn't get in the way | PS, the Overlay app from the home screen, the Games page: Neon Drift OFF ("Saved. Resume or restart your game to apply."); PS, Continue, the game goes on |
-| 41.4–44.0 | (end card) | Vita JP Overlay · Free · Offline · Open source · github.com/bee-san/vita-jp-overlay; credits and "Not affiliated with or endorsed by Sony Interactive Entertainment." |
+| 34.7–41.4 | Turn it off for specific games, so it doesn't get in the way | PS, the Rubi app from the home screen (its LiveArea titled Rubi), the Games page: Neon Drift OFF ("Saved. Resume or restart your game to apply."); PS, Continue, the game goes on |
+| 41.4–44.0 | (end card) | Rubi for Vita (with ルビ over Rubi) · Free · Offline · Open source · github.com/bee-san/Rubi_for_vita; credits and "Not affiliated with or endorsed by Sony Interactive Entertainment." |
 
 The 1080×1920 cut has the same events, reframed: the caption above the console, and below it a large
 call-out of each looked-up word (the cards fly into it as they are saved), and the install steps.
@@ -75,12 +75,28 @@ Mock-ups of features landing for test.4 (named in the preview comment; swap in r
 | Time | Shot | Branch |
 | --- | --- | --- |
 | 14.0–17.2 | The Lapis card with its game screenshot (made by that branch's encoder and exporter, rendered by Anki 26.09.3) | PR #150 (overlay-anki-screenshot) |
-| 19.5–21.2 | The Overlay app's "Read text" setting: Vita3K captures of the PR branch's app | PR #146 (`feat/ocr-mode-setting` 21488a7) |
-| 21.2–26.1 | The one-VPK install: the release's assets (docs/one-vpk-install.md), VitaShell's install prompts, the Overlay app's Install page (promo-assets' mock-up drawn by the app's own code), the restart | `feat/one-vpk-install` |
+| 19.5–21.2 | The app's "Read text" setting: Vita3K captures of the PR branch's app | PR #146 (`feat/ocr-mode-setting` 21488a7) |
+| 21.2–26.1 | The one-VPK install: the release's assets (docs/one-vpk-install.md), VitaShell's install prompts, the app's Install page (promo-assets' mock-up drawn by the app's own code), the restart | `feat/one-vpk-install` |
 | 26.1–34.7 | After that install, OCR in any game with no per-game setup | PR #148 (the kernel loads the worker in every enabled game) |
 
 The one-VPK install also needs HENkaku's "Enable Unsafe Homebrew" once (off by default), which the
 film leaves out and the preview says.
+
+The rename to Rubi (owner, 2026-10-16 13:04Z) lands later. Everything the video draws itself says Rubi:
+the captions, the end card, the release page's address, the install step and the app's LiveArea title.
+Internal names stay as the code has them (title ID VJOSET001, `ux0:data/VitaJPOverlay/`, the
+`VitaJPOverlay_*` plugins, the VPK and zip names). These real captures still show the old name and are
+re-captured after the rename merges:
+
+| Time | Capture | Old name on screen |
+| --- | --- | --- |
+| 5.1–16.9 | the overlay with card mining on (promo-assets `overlay/s1`) | "Anki queue: N · export in the Overlay app" |
+| 14.0–17.2 | the Lapis card renders | the note's tag `vita-jp-overlay` |
+| 19.5–21.2 | #146's app pages | header "Overlay v0.8.0" |
+| 21.2–24.3 | the release page's assets and VitaShell's file row | `VitaJPOverlay-0.8.0.vpk` (and its zips): names not decided yet |
+| 24.7–26.0 | the Install page mock-up | header "Overlay v0.8.0", "Install the overlay (v0.8.0)", "The overlay is installed" |
+| 35.95–36.5, 39.3–39.75 | the app's LiveArea art (`settings/assets/bg.png`, `startup.png`) | "Overlay" in the art and on the gate |
+| 36.5–39.3 | the Games page (main 1ed95ca) | header "Overlay" |
 
 Simplified renditions (not our UI, drawn here): the home screen, the LiveArea pages and the browser.
 VitaShell is drawn as VitaShell 2.02 draws it with its Default theme (`resources/default/colors.txt`, its

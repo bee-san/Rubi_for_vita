@@ -123,12 +123,20 @@ export function drawEnd(g, t, cut, t0) {
   g.save(); g.textAlign = 'center'; g.textBaseline = 'alphabetic';
   g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 18;
   const yT = portrait ? 420 : 150;
-  g.globalAlpha = k(0); g.fillStyle = '#fff'; g.font = `900 ${portrait ? 104 : 96}px ${FONT}`;
-  g.fillText('Vita JP Overlay', W / 2, yT + (1 - k(0)) * 30);
+  // "Rubi for Vita", with ルビ over "Rubi" as its furigana (the name's meaning)
+  const ts = portrait ? 104 : 96, dy0 = (1 - k(0)) * 30;
+  g.font = `900 ${ts}px ${FONT}`; const wR = g.measureText('Rubi').width;
+  g.font = `700 ${ts}px ${FONT}`; const wF = g.measureText(' for Vita').width;
+  const x0 = W / 2 - (wR + wF) / 2;
+  g.textAlign = 'left'; g.globalAlpha = k(0); g.fillStyle = '#fff'; g.font = `900 ${ts}px ${FONT}`;
+  g.fillText('Rubi', x0, yT + dy0);
+  g.globalAlpha = k(0) * 0.86; g.font = `700 ${ts}px ${FONT}`; g.fillText(' for Vita', x0 + wR, yT + dy0);
+  g.textAlign = 'center'; g.globalAlpha = k(0.08); g.fillStyle = '#7ff0e3'; g.font = `700 ${Math.round(ts * 0.36)}px ${FONT}`;
+  g.fillText('ルビ', x0 + wR / 2, yT - ts * 0.86 + dy0);
   g.globalAlpha = k(0.15); g.fillStyle = '#7ff0e3'; g.font = `700 ${portrait ? 50 : 44}px ${FONT}`;
   g.fillText('Free · Offline · Open source', W / 2, yT + (portrait ? 84 : 72) + (1 - k(0.15)) * 24);
   g.globalAlpha = k(0.3); g.fillStyle = '#e8eef7'; g.font = `600 ${portrait ? 40 : 36}px ${FONT}`;
-  g.fillText('github.com/bee-san/vita-jp-overlay', W / 2, portrait ? 1376 : H - 128);
+  g.fillText('github.com/bee-san/Rubi_for_vita', W / 2, portrait ? 1376 : H - 128);
   g.globalAlpha = k(0.45) * 0.8; g.fillStyle = '#c3cfdd'; g.font = `500 ${portrait ? 24 : 22}px ${FONT}`;
   g.shadowBlur = 6;
   const fine = 'Dictionary: JMdict (EDRDG, CC BY-SA 4.0) · Frequency ranks: Jiten (CC BY-SA 4.0) · Cards: Lapis note type (GPL-3.0) · The game shown is an original mock-up';

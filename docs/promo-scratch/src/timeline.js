@@ -264,7 +264,7 @@ export function buildTimeline(S) {
   { const g = gateArt.getContext('2d'); g.drawImage(img['vn/s3/s3-m1-notext@2x.png'], 560, 60, 800, 697, 0, 0, 436, 380);
     g.fillStyle = 'rgba(10,14,30,0.35)'; g.fillRect(0, 290, 436, 90); g.fillStyle = '#fff'; g.font = '700 40px "Noto Sans JP", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('夕凪ステップ', 218, 336); }
   const gameLA = (gate, pressK, extra = {}) => screen.liveArea({ art: img['vn/s1/s1-m2-notext@2x.png'], artRect: [0, 0, 1920, 760], icon: icons.yuunagi, title: '夕凪ステップ', gate, gateImg: gateArt, pressK, ...extra });
-  const appLA = (pressK, extra = {}) => screen.liveArea({ art: img['repo/bg.png'], icon: icons.overlay, title: 'Overlay', gate: 'Start', gateImg: img['repo/startup.png'], pressK, ...extra });
+  const appLA = (pressK, extra = {}) => screen.liveArea({ art: img['repo/bg.png'], icon: icons.overlay, title: 'Rubi', gate: 'Start', gateImg: img['repo/startup.png'], pressK, ...extra });
   const VPK_ROW = { name: 'VitaJPOverlay-0.8.0.vpk', kind: 'archive', info: '50.55 MB', date: '2026/10/16 21:03' };
   const zoomFrom = (name, k, cx, cy) => { // the app opening from its bubble (the video's transition)
     const g = screen.g, e = easeOut(k), s = lerp(0.14, 1, e);
