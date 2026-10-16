@@ -102,9 +102,12 @@ larger next size up: the same model would read a doubtful line the same again),
 so a Normal job keeps Normal's 8 MiB reserve; Small's cascade is that model,
 opened as Normal's. A job opens the file as its own size, the one its request
 allows (a Large-only request as Large's), and the weights stay resident when the
-other size runs them. A bad file leaves out both of its sizes at once. The package
-ships the file once; its manifest entry names both sizes (`"tier": "normal"`,
-`"tiers": ["normal", "large"]`). Host tests run this with Normal and Large both
+other size runs them. A bad file leaves out both of its sizes at once. The release
+zip ships the file once; its manifest entry names both sizes (`"tier": "normal"`,
+`"tiers": ["normal", "large"]`). The one-VPK install's payload list
+(`include/vjo_payload.h`) still names one file per size, and the Overlay app refuses a
+payload that names a file twice, so `tools/package_vpk.py` refuses such a list: a pin
+edit that gives two sizes one model has to name that file once there first. Host tests run this with Normal and Large both
 VOCR4-W20 (`game_vocr_shared_tiers`, `shell_worker_shared_tiers`,
 `host/tests/test_shared_tiers.h`).
 

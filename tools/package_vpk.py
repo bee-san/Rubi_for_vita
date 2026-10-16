@@ -76,6 +76,12 @@ def payload_files():
             dest += part[1:-1] if part.startswith('"') else strings.get(part, names.get(part, "?" + part))
         if "?" in dest:
             raise ValueError("include/vjo_payload.h: cannot read " + args)
+        # The app refuses a manifest that names a file twice (core/payload.c): so does the packaging, rather
+        # than ship a VPK the app cannot install. Two model sizes with one model (a size that kept the model
+        # of the size below it) name that file twice here: the payload list has to name it once first.
+        if any(dest == d for d, _ in out):
+            raise ValueError(f"include/vjo_payload.h names {dest} twice (two model sizes with one model?): "
+                             "the Overlay app refuses such a payload")
         out.append((dest, kind.lower()))
     return out
 
