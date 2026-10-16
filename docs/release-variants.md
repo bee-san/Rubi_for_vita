@@ -173,44 +173,54 @@ rounded):
 | lookups | 31 | 1,854 ms | 476 ms (25.7 %) | all of it, and their done lines' about 476 ms |
 
 The 8,611 ms job (4,415 ms in 50 appends) is the self-test's own background job: no one waited for it
-([first-ocr.md](first-ocr.md)). A job's appends averaged 19 ms (the median of the jobs' means); in jobs
-7 and 10, with the overlay opening during them, 66-69 ms. The grouping reproduces the done line's own
+([first-ocr.md](first-ocr.md)). A job's appends averaged 19 ms, the median of the per-job means over all
+63 jobs of the boot (21.8 ms over its 31 OCR jobs, 14 ms over its 31 lookups; `--json`); in jobs 7 and
+10, with the overlay opening during them, 66-69 ms. The grouping reproduces the done line's own
 append count for 51 of the 62 jobs; in the other 11 it counts one to five of the other threads' lines
 that fell outside the done line's interval. `status.txt`'s fill point is estimated from `log.txt`'s
 lines since the boot's start; the bootstrap lines before that (about 1 KiB, `status.txt` only) are not
 counted (in test.3 both points fall in job 12).
 
 **The normal build** writes none of a job's lines between the end of its recognition and the control
-thread taking its result. The network thread opens a log batch at each job's wake (`shell/worker.c`
-`net_main`, its 2 KiB buffer on the thread's stack), which holds every line it logs (the job's line, a
-size that did not fit, the clock, a refused memory check, an unusable model, a refused Paf allocation,
-a failed lookup). Its wait for the next job is timed only while the batch holds a line: when that wait
+thread taking its result, nor before an overlay opened meanwhile shows it. The network thread opens a
+log batch at a job's wake unless it is open (`shell/worker.c` `net_main`, its 2 KiB buffer on the
+thread's stack), which holds every line it logs (the job's line, a size that did not fit, the clock, a
+refused memory check, an unusable model, a refused Paf allocation, a failed lookup). Its wait for the next job is timed only while the batch holds a line: when that wait
 ends (0.5 s, `LOG_IDLE_US`, with no job) and the control thread has taken the result, it writes them, one
 append per file. A job's wake never writes them (the control thread marks its job running before it
 wakes the thread): jobs started meanwhile keep the held lines across their exchanges and add their own;
-they go out together after the last one's result. The files get the same lines in the
-same order as line by line (`host/tests/test_shell_log.c`); the debug build is unchanged (its three
-plugins and RCO are main's bytes, sha256).
+they go out together after the last one's result. The batch then closes; the next job opens it again,
+the only time a job's wake takes the log's lock (a quiet job in an open batch takes none). The files get
+the same lines in the same order as line by line (`host/tests/test_shell_log.c`); the debug build is
+unchanged (its three plugins and RCO are main's bytes, sha256).
 - A steady-state successful job logs nothing, so there is nothing to write and the wait stays untimed.
   An activation's first job and a failed one hold a few lines (at most 5 at once in the host session
   below); the batch takes 24 lines and 2 KiB. Only a run of more than 23 held lines with no 0.5 s pause
   (failing lookups or jobs back to back) writes them in the job whose line does not fit: one append per
   file per 24 lines.
-- A line another thread logs (an Anki save or screenshot line, the overlay's refusals, a game start, the
-  ledger's table) writes the held lines first, on that thread, then its own; so does `config.ini`'s
-  re-read at every overlay open (`vjo_log_configure`), on the control thread. Neither is on the network
-  thread's result path, but a press that opens the overlay then waits for that append. A line the network
-  thread logs while another thread's batch is open (the ledger's table, microseconds) goes out at once.
-  A crash before a write loses what is held: at most 24 lines or 2 KiB.
+- `config.ini`'s re-read at every overlay open, game start and strip start (`vjo_log_configure`, on the
+  control thread) keeps the held lines in the normal build (`shell/log_vita.c`; the debug build's, as
+  main's, writes an open batch): a press in the pause after a job that held lines shows the result with
+  no append, and the network thread writes them after
+  (`normal_build_open_in_the_pause_writes_nothing`). Only a change of `log_file` writes them first, to
+  the files they were logged for.
+- A line another thread logs (an Anki save or screenshot line, the overlay's refusals, a config warning
+  that changed, a game start) writes the held lines first, on that thread, then its own. While the batch
+  is open, after any job until a pause writes it, the ledger's table at a game start or exit goes out a
+  line at a time, one append per file more than main's normal build makes there
+  (`normal_build_ledger_table_beside_an_open_batch`). A line the network thread logs while another
+  thread's batch is open (the ledger's table, microseconds) goes out at once. A crash before a write
+  loses what is held: at most 24 lines or 2 KiB.
 - The write takes the network thread one append per file (est. 24-92 ms at #81's 12-46 ms an append;
-  test.3's jobs averaged 19 ms an append, the median of their means), 0.5 s after a result at the
-  earliest; a job posted during it waits for its end.
+  test.3's jobs averaged 19 ms an append, the median of the per-job means over its 63 jobs), 0.5 s after a
+  result at the earliest; a job posted during it waits for its end.
 - Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left,
-  and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B. This one adds
-  80 B of text and 72 B of data/bss: on main `74f8de8`, 89,892 → 89,972 B and 69,756 → 69,828 B, the same
-  163,840 B of pages, 140 B of text room left [measured: the Vita builds of main `74f8de8` and this
+  and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B [measured:
+  audit-t3-log-path-c's Vita builds of main `836259e` and that form, `8cc1c3b`]. This one adds 96 B of
+  text and 72 B of data/bss: on main `c354cfb` (#156), 88,132 → 88,228 B and 69,796 → 69,868 B, the same
+  163,840 B of pages, 1,884 B of text room left [measured: the Vita builds of main `c354cfb` and this
   branch]. No new allocation or thread. The VjoNet thread's deepest chain in the normal build goes from
-  2,712 to 4,768 B (`net_main`'s frame 88 → 2,144 B), under the debug build's unchanged 5,504 B, in its
+  2,664 to 4,720 B (`net_main`'s frame 88 → 2,144 B), under the debug build's unchanged 5,504 B, in its
   16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's
   and `vjo_core_vita`'s C sources with each object's flags from the Vita build; a lower bound, without
   the SDK's own frames].
@@ -222,16 +232,18 @@ network thread's wait timing out at random) [measured: host suites]:
 | build | jobs (lookups) | lines | appends | the network thread's | in a job's result path | lines in one append, at most |
 |---|---:|---:|---:|---:|---:|---:|
 | debug | 376 (98) | 3,593 | 2,061 | 1,236 | 1,236 | 11 |
-| normal | 376 (98) | 147 | 95 | 63 | **0** | 5 |
+| normal | 376 (98) | 147 | 98 | 63 | **0** | 5 |
 
 `normal_build_writes_a_jobs_lines_after_its_result` walks each case: an activation's first job (held
 through its exchange, its lookup and a timeout before the result was taken; written by the next
 timeout), a quiet job, a failed job the overlay waits for, a failed lookup, lookups that keep held
 lines, a job asked for before the timeout (it keeps them across its exchange), an unusable model and its
 smaller retry, a game without its worker (`-117`). `normal_build_net_main_writes_held_lines` runs
-`net_main` itself on a scripted wait: untimed with nothing held, timed (`LOG_IDLE_US`) once a job logged,
-no write while the job's result is not taken, the write at the timeout after, and at the stop. Not
-measured: a console run of the normal build.
+`net_main` itself on a scripted wait: untimed with nothing held, timed (0.5 s) once a job logged, no
+write while the job's result is not taken, the write at the timeout after, and at the stop;
+`normal_build_net_main_more_jobs` the batch opened again after a write, a single held line, and a quiet
+job's wake with no lock; `every_job_post_finds_job_running` that every job's post comes after its
+`job_running`, over the whole session (both builds). Not measured: a console run of the normal build.
 
 ## Building
 

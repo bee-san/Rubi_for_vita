@@ -748,8 +748,8 @@ at boot.
 before it, except that a burst of lines formatted at once (a job's result, about
 21 lines, its recognized text, the memory ledger's table) is written in one
 append, as a file append costs the console 12-46 ms (#81's self-test timestamps). The normal build
-holds a job's few lines until the overlay has taken its result and writes them after half a second
-with no job, one append per file (a crash before that loses them: at most 24 lines;
+holds a job's few lines until its result is taken (shown, or kept for the overlay's next open) and writes
+them after half a second with no job, one append per file (a crash before that loses them: at most 24 lines;
 [no append on the result path](docs/release-variants.md#no-log-append-on-the-result-path)); `kernel.txt`
 holds up to 256 KB per boot (the previous boot's is
 `kernel.prev.txt`). `bash tools/install_ftp.sh --collect VITA_IP` fetches all of
