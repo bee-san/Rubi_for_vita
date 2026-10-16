@@ -1423,7 +1423,9 @@ static int net_main(SceSize args, void *argp)
         unsigned int timeout = LOG_IDLE_US;
         if (!bits && !job_running)
             net_log_rewrite(held_buf);
-        bits = 0;
+        /* bits: the flag's value at the wake; at a timeout, its value then (SDK: Kernel-Reference,
+         * sceKernelWaitEventFlag), 0, as only NET_EV_JOB and NET_EV_QUIT are ever set and either ends
+         * the wait */
         sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
                                &bits, net_log.n ? &timeout : NULL);
 #endif
