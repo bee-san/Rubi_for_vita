@@ -15,7 +15,6 @@ let s = '# promo-scratch draft $n (' + new Date().toISOString().slice(0, 16) + '
 for (const c of CAPTIONS) s += f(c.t0) + '-' + f(c.t1) + '  line ' + c.line + ': ' + c.text + '\n';
 s += '\n## Install steps (line 6, on screen with the caption)\n';
 for (const st of STEPS) s += f(st.t) + '  ' + st.text + '\n';
-s += f(STEPS.note.t) + '  (note) ' + STEPS.note.text + '\n';
 s += '\n## Mock-up shots (features landing for test.4)\n';
 for (const m of MOCKUPS) s += f(m.t0) + '-' + f(m.t1) + '  ' + m.what + '\n';
 process.stdout.write(s);
