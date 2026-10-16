@@ -1,7 +1,9 @@
 /* Baseline JPEG encoder (YCbCr 4:2:0, the standard Huffman tables, an AAN float
  * DCT): the Anki screenshot's (docs/anki.md). Linked into the game worker only,
- * never into SceShell (AGENTS.md rule 1; tools/tests/test_jpegsw_placement.py
- * checks the builds). Restored from the Shell's Google Lens encoder (removed in
+ * never into SceShell (AGENTS.md rule 1): vita/CMakeLists.txt builds it into the
+ * worker alone, so a Shell call to it fails the link, and
+ * tools/check_vita_syscall_abi.py fails a Shell that imports the shot's write
+ * syscalls. Restored from the Shell's Google Lens encoder (removed in
  * #130), which encoded the region then; this one takes the picture a band of 16
  * rows (one row of MCUs) at a time, so its caller holds one band of pixels and
  * the JPEG, never the frame. */

@@ -186,9 +186,12 @@ static int ends_with(const char *s, const char *suffix)
     size_t n = strlen(s), k = strlen(suffix);
     return n >= k && !strcmp(s + n - k, suffix);
 }
+static int jpg_opens; /* sceIoOpen of a .jpg or .jpg.tmp: SceShell never opens one (AGENTS.md rule 1) */
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int fd = open(p, flags, mode);
+    if (ends_with(p, ".jpg") || ends_with(p, ".jpg.tmp"))
+        jpg_opens++;
     if (fd >= 0 && (flags & O_WRONLY)) {
         write_fd = fd;
         snprintf(write_path, sizeof(write_path), "%s", p);
@@ -379,10 +382,21 @@ void vjo_platform_vita(VjoPlatform *p)
  * the game worker's with the real kernel (test_game_shot.c) are tested apart;
  * here, what the Shell does with them. The Shell never sees a JPEG byte: these
  * fakes write the file, anki.c only names it. */
-static const uint8_t shot_jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
-                                    0x12, 0x34, 0x56, 0xFF, 0xD9};
+/* A JPEG of a real one's size, the median of the 294 Vita screens at quality 70 (docs/anki.md), so that a
+ * Shell that read it would show in its arena's peak: a JFIF start, bytes no marker, its end. */
+#define SHOT_JPEG_BYTES 56934u
+static uint8_t shot_jpeg[SHOT_JPEG_BYTES];
+static void make_shot_jpeg(void)
+{
+    static const uint8_t head[] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0};
+    memcpy(shot_jpeg, head, sizeof(head));
+    for (size_t i = sizeof(head); i < SHOT_JPEG_BYTES - 2; i++)
+        shot_jpeg[i] = (uint8_t)(i * 131u % 251u); /* never 0xFF */
+    shot_jpeg[SHOT_JPEG_BYTES - 2] = 0xFF;
+    shot_jpeg[SHOT_JPEG_BYTES - 1] = 0xD9;
+}
 static int shot_jobs, shot_rc, shot_submit_rc, shot_no_file, slot_busy, slot_begins, slot_ends, shot_close_overlay;
-static int shot_reads;
+static int shot_reads, shot_job_rc;
 static uint32_t shot_seq;
 static char shot_id[VJO_QUEUE_ID_SIZE];
 int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us)
@@ -416,12 +430,27 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
         return shot_submit_rc;
     memcpy(shot_id, r->shot, sizeof(shot_id));
     shot_jobs++;
-    if (!shot_rc && !shot_no_file) { /* the game's JPEG, through the kernel, beside the card to be */
-        snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.jpg", r->shot);
+    shot_job_rc = shot_rc;
+    if (!shot_rc && !shot_no_file) {
+        /* The game's JPEG, through the kernel, beside the card to be, as kernel/game_ocr.c saves it: written
+         * to <id>.jpg.tmp, then renamed. That rename never replaces a file (on the Vita it fails, EEXIST;
+         * test_kernel_game_ocr.c), so the shot fails and the card goes without it unless the Shell removed
+         * an earlier save's <id>.jpg first. */
+        char final[sizeof(path) - 8];
+        struct stat st;
+        snprintf(final, sizeof(final), VJO_ANKI_QUEUE_DIR "/%s.jpg", r->shot);
+        snprintf(path, sizeof(path), "%s.tmp", final);
         TEST_ASSERT((f = fopen(path, "wb")) != NULL);
         TEST_ASSERT(fwrite(shot_jpeg, 1, sizeof(shot_jpeg), f) == sizeof(shot_jpeg));
         TEST_ASSERT(fclose(f) == 0);
-        crash_at("jpeg_saved"); /* on the card, its record not yet */
+        TEST_CHECK_(stat(final, &st) < 0, "a screenshot asked for over an existing %s", final);
+        if (stat(final, &st) == 0) {
+            unlink(path); /* the kernel removes its .tmp, and the shot fails (VJO_E_LOCAL_IO) */
+            shot_job_rc = VJO_E_LOCAL_IO;
+        } else {
+            TEST_ASSERT(rename(path, final) == 0);
+            crash_at("jpeg_saved"); /* on the card, its record not yet */
+        }
     }
     if (shot_close_overlay)
         __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE); /* the user closes it meanwhile */
@@ -434,23 +463,23 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     memset(out, 0, sizeof(*out));
     out->size = sizeof(*out);
     out->seq = seq;
-    out->rc = shot_rc;
+    out->rc = shot_job_rc;
     out->width = 960;
     out->height = 544;
     out->shot_quality = 70;
     out->shot_tries = 1;
     out->shot_block = VJO_BUDGET_GAME_SHOT;
-    out->shot_bytes = shot_rc ? 0 : (uint32_t)sizeof(shot_jpeg);
+    out->shot_bytes = shot_job_rc ? 0 : (uint32_t)sizeof(shot_jpeg);
     out->n_steps = 1;
     out->step[0].id = VJO_GSTEP_SHOT;
-    out->step[0].rc = shot_rc;
+    out->step[0].rc = shot_job_rc;
     return 0;
 }
 int vjoOcrCancel(uint32_t seq) { (void)seq; return 0; }
 static void shot_reset(void)
 {
     shot_jobs = shot_rc = shot_submit_rc = shot_no_file = slot_busy = slot_begins = slot_ends = 0;
-    shot_close_overlay = shot_reads = 0;
+    shot_close_overlay = shot_reads = shot_job_rc = jpg_opens = 0;
     shot_id[0] = '\0';
 }
 
@@ -605,6 +634,7 @@ static void finish(void)
     TEST_CHECK(!heap_live && heap_allocs == heap_frees);
     TEST_CHECK(threads_created == threads_deleted);
     TEST_CHECK(!held_box && !held_view);
+    TEST_CHECK_(jpg_opens == 0, "SceShell opened a card's JPEG %d time(s): it only names it (AGENTS.md rule 1)", jpg_opens);
 }
 
 /* Enter on entry of the shown list: the job runs to its end. */
@@ -1400,11 +1430,17 @@ static void screenshots_on(void)
 static void test_enter_saves_the_screenshot_beside_the_card(void)
 {
     char id[VJO_QUEUE_ID_SIZE];
-    size_t len;
+    size_t len, text_peak;
     const char *json, *jpg;
     VjoConfig d;
     vjo_config_defaults(&d);
     TEST_CHECK(d.anki_screenshot == 1); /* on unless anki_screenshot = off */
+    /* the same card without its screenshot first: the arena peak a screenshot may add to is this one's */
+    reset();
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 0);
+    text_peak = last_peak;
+    finish();
     reset();
     screenshots_on();
     enter(0);
@@ -1417,11 +1453,16 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
     TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
     TEST_CHECK(shot_jobs == 1 && shot_reads == 1 && slot_begins == 1 && slot_ends == 1);
     TEST_CHECK(!heap_live && heap_allocs == 1 && heap_frees == 1 && heap_last == ANKI_TEXT_MEM);
-    printf("measure: save with a screenshot: arena peak %u of %u\n", (unsigned)last_peak, (unsigned)ANKI_TEXT_MEM);
-    TEST_CHECK(last_peak < ANKI_TEXT_MEM / 4);
+    printf("measure: save with a screenshot: arena peak %u of %u (%u without it)\n", (unsigned)last_peak,
+           (unsigned)ANKI_TEXT_MEM, (unsigned)text_peak);
+    /* SceShell holds the job's request and result for the screenshot, never its JPEG (AGENTS.md rule 1; the
+     * fake's is a real one's size, 56,934 B): at most those above the text-only save (8 B: the arena's
+     * alignment), and no .jpg opened (finish) */
+    TEST_CHECK_(last_peak <= text_peak + sizeof(VjoGameOcrRequest) + sizeof(VjoGameOcrResult) + 8,
+                "peak %u, %u without the screenshot", (unsigned)last_peak, (unsigned)text_peak);
     /* the debug build logs every screenshot and the record; the normal build only a failed one */
 #if VJO_DEBUG
-    TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 25 B; block 450560 B") && logged(" + .jpg\n"));
+    TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 56934 B; block 450560 B") && logged(" + .jpg\n"));
 #else
     TEST_CHECK(!logged("anki: screenshot") && !logged(" + .jpg\n") && logged("anki: save rc=0, "));
 #endif
@@ -1647,6 +1688,7 @@ static void remove_test_dir(void)
 
 int main(int argc, char **argv)
 {
+    make_shot_jpeg();
     if (argc >= 2 && !strcmp(argv[1], "--restart-step"))
         return restart_step(argc, argv);
     /* One storage directory for every test (reset empties the queue). */

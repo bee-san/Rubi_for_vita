@@ -195,7 +195,12 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
 - `<id>.jpg`: the card's screenshot, a baseline JPEG of the game's screen
   ([below](#the-screenshot)), when its record says `"picture": true`. A JPEG
   whose record is not there (a save that stopped between the two) is no card:
-  it is ignored, and the next save of that card replaces it.
+  it is ignored and never exported. The next save of that card in the same
+  minute (the same ID) removes it first; a later save is another card, with
+  another ID, so a JPEG left by a power loss or a crash between the two writes
+  (or a `<id>.jpg.tmp` left by one during the JPEG's write) stays, about 56 KiB,
+  until it is deleted by hand: a `.jpg` or `.jpg.tmp` with no `.json` of the
+  same name beside it is safe to delete.
 - `exported/<id>.json`: a card an export has put in a package (and
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
 - `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
@@ -270,7 +275,10 @@ seam between two bands of rows.
    A quiet refresh of the open overlay yields to it; a running OCR job is waited
    for, at most 4 s.
 2. The game worker checks the game's free memory (its block beside the 4 MiB
-   every job leaves to the game), takes one block of 450,560 B (`USER_RW`, else
+   every job leaves to the game: a screenshot holds no model, and the larger
+   reserves, 8 and 16 MiB, follow the largest model a job holds, so it keeps
+   the base one even beside Large's resident weights), takes one block of
+   450,560 B (`USER_RW`, else
    CDRAM, else phycont) and reads the frame in colour, 64 rows a frame, through
    the OCR capture's own path: the display hook copies the rows as A8B8G8R8
    words straight into the block (`VJO_ROWS_RGBA`), or, when it cannot write
@@ -291,8 +299,12 @@ seam between two bands of rows.
    there. Any failure on the way leaves no file and saves the card without one
    (`Saved for Anki, without a screenshot (log.txt)`). The Shell waits at most
    15 s for the whole screenshot; the game worker waits up to 30 s for a slow
-   memory card's save, and a screenshot given up, by either, has its file
-   removed by the kernel's worker thread, the worker free for the next job.
+   memory card's save and 30 s more for its file's close, and a screenshot
+   given up, by either, has its file removed by the kernel's worker thread. A
+   save that ends within that minute leaves the worker free for the next job;
+   one slower still leaves it refusing jobs until the game restarts, as any
+   file the kernel holds for the game does (it never acknowledges a file it
+   has not closed), and its `.tmp` until the kernel's close runs.
 
 SceShell holds no pixel and no byte of the JPEG, only the job's request and
 result (5,404 B) in the Anki job's arena. Closing the overlay stops a
@@ -336,7 +348,8 @@ the Cortex-A9 (`tools/bench_stages.py`'s `jpeg_shot`, the Vita compiler's code
 counted under qemu-arm, `docs/performance.md`): 69 to 149 ms at 444 MHz, 93 to
 198 ms at 333 MHz (a screenshot keeps the game's clock); it runs at the lowest
 priority on the game's cores, so every game thread goes first. The memory
-card's writes and its two syncs are unmeasured.
+card's writes and its two syncs are unmeasured. The screenshot's load on CPU3
+is unmeasured too (AGENTS.md rule 8): no PSVshell reading exists.
 
 In the game, the screenshot's block is 450,560 B (the encoder's state, one
 strip of 64 colour rows and the JPEG, page-rounded; `VJO_BUDGET_GAME_SHOT`),
