@@ -370,9 +370,16 @@ add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1 VJO_VERSION_STRING="${VJO_VERSION}")
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc ${ROOT}/third_party/taihen-parser/include)
 target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
+# __sce_headroom: VitaSDK's linker script (armelf.x, 2026.08 and later: ". += DEFINED(__sce_headroom) ?
+# __sce_headroom : 0" before the data segment's 64 KiB alignment) keeps that many bytes free after the code
+# segment for the SCE data vita-elf-create appends there (the module info and the import tables: 2,612 B
+# for this app). Without it the gap is whatever the code's size leaves below the next 64 KiB boundary, and
+# vita-elf-create refuses, then crashes, when that is less ("Cannot allocate 2612 bytes for SCE data at end
+# of segment 0; segment 1 overlaps": CI's normal build of the one-VPK install). The gap costs no memory:
+# only the segments are loaded, and tools/check_settings_self.py counts them.
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
-  -Wl,--wrap=sceKernelCreateThread)
+  -Wl,--wrap=sceKernelCreateThread -Wl,--defsym,__sce_headroom=0x4000)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
