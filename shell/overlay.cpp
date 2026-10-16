@@ -132,9 +132,15 @@ static VjoRowNav s_nav; /* the arrow keys: Right's history, Up/Down's column, co
 static uint32_t s_tap; /* the L or R being tapped: dictionary pages */
 static int s_ja_px;    /* the header's point size: a row's last cell */
 
-/* logged when the overlay closes */
+/* logged when the overlay closes: the debug build's counts and timings
+ * (docs/release-variants.md); the normal build keeps none */
+#if VJO_DEBUG
 static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
 static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre */
+#define COUNT_MOVE() s_moves++
+#else
+#define COUNT_MOVE() ((void)0)
+#endif
 static int s_mode;
 static uint32_t s_prev_buttons;
 static int s_prev_touch;
@@ -673,11 +679,15 @@ static void open_page(void)
     s_highlight_retry_frames = 0;
     s_n_entries = 0;
     s_header_has_text = 0;
+#if VJO_DEBUG
     s_frames = s_moves = 0;
+#endif
     s_nav.row_moves = s_nav.wraps = s_nav.no_layout = 0;
     s_tap = 0;
+#if VJO_DEBUG
     s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
+#endif
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_prev_touch = 1;
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
@@ -706,9 +716,11 @@ static void close_page(int handback)
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
-    vjo_dlog("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+#if VJO_DEBUG
+    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
             "%d without layout, slowest key %d us", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000),
             s_nav.row_moves, s_nav.wraps, s_nav.no_layout, (int)s_key_max_us);
+#endif
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
     s_header.text = s_body.text = NULL;
     s_separator = s_band_mid = NULL;
@@ -803,7 +815,7 @@ static void input_header_touch(void)
     if (byte == s_cursor_byte) return;
     s_cursor_byte = (uint32_t)byte;
     s_nav.words.count = 0; /* a tap starts a new navigation path */
-    s_moves++;
+    COUNT_MOVE();
     vjo_dlog("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
     vjo_post_cursor(s_cursor_byte, s_text_generation);
     render(0);
@@ -842,7 +854,7 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         }
         if (cursor != s_cursor_byte) {
             s_cursor_byte = cursor;
-            s_moves++;
+            COUNT_MOVE();
             /* The command detaches the previous definition immediately;
              * only its asynchronous lookup touches dictionary storage. */
             vjo_post_cursor(cursor, s_text_generation);
@@ -853,7 +865,7 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * result arena. */
             int page = s_dict_page + tap;
             if (tap && page >= 0 && page < s_dict_pages && vjo_post_page(page, s_text_generation)) {
-                s_moves++;
+                COUNT_MOVE();
                 render(0);
             }
         }
@@ -868,7 +880,7 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
             next = entry_vertical(0);
         if (next != s_selected) {
             s_selected = next;
-            s_moves++;
+            COUNT_MOVE();
             render(0);
         }
     }
@@ -876,8 +888,10 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     dy = (int)in->ly - 128;
     if (dy > -STICK_DEADZONE && dy < STICK_DEADZONE)
         dy = (int)in->ry - 128;
+#if VJO_DEBUG
     if ((dy < 0 ? -dy : dy) > s_stick_max)
         s_stick_max = dy < 0 ? -dy : dy;
+#endif
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
     /* Enter saves the shown word (in a character lookup, the match at the

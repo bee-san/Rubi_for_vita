@@ -594,6 +594,9 @@ static void reset(void)
     ov = OV_CLOSED;
     active = -1;
     game_generation = job_generation = 0;
+#if !VJO_DEBUG
+    first_job_generation = 0xFFFFFFFFu; /* the normal build's first-job line: no generation yet (tests start at 0) */
+#endif
     cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
@@ -3886,14 +3889,16 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
 #if !VJO_DEBUG
 /* ---- the normal build's short log (docs/release-variants.md) ---- */
 
-/* One line per OCR job: its result, the model that ran, the lines and the time; never
- * the recognized text, the capture, a passed memory check, the step log or the timings. */
-static void test_normal_build_logs_one_line_per_job(void)
+/* A job's line for the first job of each game that read its screen and for every failed
+ * one: its result, the size that ran, the lines and the time; never the recognized text,
+ * the capture, a passed memory check, the step log or the timings of every job. */
+static void test_normal_build_logs_the_first_job_and_failures(void)
 {
     reset();
     cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫が鳴いた";
     fake_steps = 1;
+    game_generation = job_generation = 51;
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫が鳴いた"));
     const char *line = logged("ocr rc=0 ");
     TEST_CHECK(line && !strncmp(line, "ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ", 37));
@@ -3902,6 +3907,26 @@ static void test_normal_build_logs_one_line_per_job(void)
     for (unsigned i = 0; i < log_count && i < 32; i++)
         TEST_CHECK_(!strstr(log_lines[i], "猫") && !strstr(log_lines[i], "game vocr") && !strstr(log_lines[i], "gstep"),
                     "%s", log_lines[i]);
+    mem_free();
+    /* the same game's next jobs: nothing */
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && log_count == 0);
+    mem_free();
+    /* a screen that changed under every read is retried quietly: nothing */
+    fake_screen_changes = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_SCREEN_CHANGED && log_count == 0);
+    mem_free();
+    /* a failed one: its line, every time */
+    fail_vocr_user = 1;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM && logged("ocr rc=-103 VOCR3_H15_w8.vocr: ") != NULL);
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM && logged("ocr rc=-103 ") != NULL);
+    fail_vocr_user = 0;
+    mem_free();
+    /* the next game: its first job again */
+    log_count = 0;
+    job_generation = 52;
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("ocr rc=0 VOCR3_H15_w8.vocr: ") != NULL);
     mem_free();
 }
 
@@ -3917,7 +3942,7 @@ static void test_normal_build_logs_the_clock_once_and_on_change(void)
     TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 333 -> 444 MHz while reading, 333 after") != NULL);
     mem_free();
     log_count = 0;
-    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("clock:") && logged("ocr rc=0 ") != NULL); /* the same: nothing */
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("clock:")); /* the same clock: nothing */
     mem_free();
     fake_clock_rc = 1; fake_clock_mhz[0] = fake_clock_mhz[1] = fake_clock_mhz[2] = 500; /* PSVshell's 500 */
     TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 500 MHz, left as it is while reading (444 or more)") != NULL);
@@ -4180,7 +4205,7 @@ TEST_LIST = {
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
     {"overlay_app_check_runs_after_the_game_is_active", test_overlay_app_check_runs_after_the_game_is_active},
 #if !VJO_DEBUG
-    {"normal_build_logs_one_line_per_job", test_normal_build_logs_one_line_per_job},
+    {"normal_build_logs_the_first_job_and_failures", test_normal_build_logs_the_first_job_and_failures},
     {"normal_build_logs_the_clock_once_and_on_change", test_normal_build_logs_the_clock_once_and_on_change},
     {"normal_build_logs_a_failed_lookup_only", test_normal_build_logs_a_failed_lookup_only},
     {"normal_build_has_no_selftest", test_normal_build_has_no_selftest},

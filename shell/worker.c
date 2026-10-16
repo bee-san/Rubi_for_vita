@@ -174,7 +174,9 @@ static volatile int job_selftest;
  * is done. */
 static uint32_t text_scene, text_seq, text_generation;
 static int64_t idle_since_us; /* the last job's end or the overlay's close */
+#if VJO_DEBUG
 static int64_t job_game_us;   /* the job's exchanges with the game worker (network thread) */
+#endif
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
@@ -724,6 +726,20 @@ static int vocr_poll_cancelled(void *ud)
     return vocr_cancelled(ud);
 }
 
+#if !VJO_DEBUG
+/* The normal build logs the first job of each game that read its screen
+ * (vocr_run_one): 1 when the game generation's first job is logged already,
+ * else 0, and it counts as logged from now on. Generations start at 1 (0: none). */
+static uint32_t first_job_generation;
+static int first_job_logged(uint32_t generation)
+{
+    if (first_job_generation == generation)
+        return 1;
+    first_job_generation = generation;
+    return 0;
+}
+#endif
+
 #if VJO_DEBUG
 /* The game worker's step log: one log.txt line per step (`step/rc/bytes/free`). */
 static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
@@ -847,7 +863,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     int64_t t0 = now_us();
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
-    job_game_us += now_us() - t0;
+#if VJO_DEBUG
+    job_game_us += now_us() - t0; /* the done line's (net_job) */
+#endif
     vocr_note_capture();
 #if VJO_DEBUG
     /* weights: read = from the card and SHA-256 checked, resident = kept from
@@ -887,11 +905,18 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
     vjo_log_batch_end(&batch);
 #else
-    /* The normal build: one line per job (its result, the model that ran, the lines
-     * found, the time in the game), then the sizes that did not fit, a refused
-     * memory check, and the clock line when it changes (docs/release-variants.md). */
-    vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, vjo_vocr_tier_model((int)*ran), (unsigned)result->lines,
-            (unsigned)((now_us() - t0) / 1000));
+    /* The normal build: a job's line when it failed, and for the first job of each game
+     * that read its screen (its result, the size that ran, the lines found, the time in
+     * the game); then the sizes that did not fit, a refused memory check, and the clock
+     * line when it changes (docs/release-variants.md). A cancelled job, or one whose
+     * screen changed under it, is retried quietly as the overlay does: no line. */
+    {
+        int failed = rc != VJO_OK && rc != VJO_E_CANCELLED && rc != VJO_E_SCREEN_CHANGED;
+        if (failed || (rc == VJO_OK && !first_job_logged(job_generation))) {
+            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, vjo_vocr_tier_model((int)*ran), (unsigned)result->lines,
+                    (unsigned)((now_us() - t0) / 1000));
+        }
+    }
     log_tier_checks(result);
     log_vocr_measurements(result);
     log_vocr_clock(result);
@@ -1156,8 +1181,8 @@ static void net_job(void)
 #if VJO_DEBUG
     int64_t t0 = now_us();
     uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
-#endif
     job_game_us = 0;
+#endif
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                              : run_job(&results[idx], &cache_data[idx]);
 #if VJO_DEBUG
@@ -1896,7 +1921,7 @@ static void set_subtitles(int on)
     VjoState st;
     subtitles = on;
     vjo_strip_configure(on, &cfg);
-    vjo_log("subtitles %s", on ? "on" : "off");
+    vjo_dlog("subtitles %s", on ? "on" : "off");
     if (!on) {
         vjo_strip_show("", VJO_STRIP_SENTENCE, 0);
         return;
@@ -2053,7 +2078,7 @@ static void classify_pending(void)
     if (ret == 0) {
         pending_pid = 0;
         if (id.mode == VJO_GAME_NONE) {
-            vjo_log("%s: system app, not a game", id.key);
+            vjo_dlog("%s: system app, not a game", id.key);
             vjoSetGameActive(pid, VJO_GAME_NONE);
         } else {
             activate_game(pid, &id);
