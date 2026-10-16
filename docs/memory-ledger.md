@@ -411,14 +411,17 @@ pages than its budget fails too, so the normal budgets are always the measured p
 | `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,708 + 14,208) | the same pages (one budget for both since #124) |
 
 The normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its data/bss has 3,740 B.
-#138's worker loader adds one kernel text page to each build: 118,784 B (40,648 + 77,824) debug and 114,688 B
-(36,444 + 76,136) normal against main `c08db18`'s 114,688 and 110,592 B; the worker (71,372 and 70,008 B of
-text) and the Shell (99,244 and 89,196 B) keep their pages [measured: both builds, main `c08db18` and #138].
 On main `3aa08a6` it is 91,016 B of text (#140), and #132's VjoNet stack paint and check make it
 91,464 B of text and 70,004 B of data/bss, the same pages (2,744 and 3,724 B of room); the normal
 build's shell pages are then 208,896 B permanent and 278,528 B at worst (258,048 and 327,680 B
 before: VjoNet's stack is the same in both builds) [measured: the build log's module rows and
-ledger, both builds of main `3aa08a6` and of #132].
+ledger, both builds of main `3aa08a6` and of #132]. With the network stack gone (#145, main
+`c08db18`) the normal Shell is 163,840 B (89,220 + 69,700) against the debug Shell's 176,128 B
+(99,268 + 69,772), three SceShell pages fewer [measured: CI's module rows of both builds, Release
+run 38899320744].
+#138's worker loader adds one kernel text page to each build: 118,784 B (40,648 + 77,824) debug and 114,688 B
+(36,444 + 76,136) normal against main `c08db18`'s 114,688 and 110,592 B; the worker (71,372 and 70,008 B of
+text) and the Shell (99,244 and 89,196 B) keep their pages [measured: both builds, main `c08db18` and #138].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

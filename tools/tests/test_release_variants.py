@@ -130,6 +130,8 @@ class Ledger(unittest.TestCase):
             for text in ("#if VJO_DEBUG == 0\n#define A 1u\n#else\n#define A 2u\n#endif\n",
                          "#if (VJO_DEBUG)\n#define A 1u\n#endif\n", "#ifdef VJO_DEBUG\n#define A 1u\n#endif\n",
                          "#ifndef VJO_DEBUG\n#define A 1u\n#endif\n", "#if 1\n#define A 1u\n#elif 0\n#endif\n",
+                         "#if VJO_DEBUG\n#define A 1u\n#elifdef OTHER\n#define A 2u\n#endif\n",
+                         "#if !VJO_DEBUG\n#define A 1u\n#elifndef OTHER\n#define A 2u\n#endif\n",
                          "#define A 1u\n#define A 2u\n",
                          "#ifdef OTHER\n#define A 1u\n#else\n#define A 2u\n#endif\n"):
                 path.write_text(text)
@@ -210,6 +212,10 @@ class DerivedStrings(unittest.TestCase):
                 "#if Z\ng\n#elif W\nh\n#endif\n")
         got = {line: flag for line, flag in zip(text.split("\n"), variant._debug_lines(text)) if line and line[0] != "#"}
         self.assertEqual(got, {"a": True, "b": False, "c": False, "d": False, "e": True, "f": True, "g": False, "h": False})
+        # audit-c note 1: C23's #elifdef and #elifndef are an #elif (the Vita's GCC accepts them)
+        text = "#if VJO_DEBUG\na\n#elifdef X\nb\n#endif\n#if !VJO_DEBUG\nc\n#elifndef Y\nd\n#else\ne\n#endif\n"
+        got = {line: flag for line, flag in zip(text.split("\n"), variant._debug_lines(text)) if line and line[0] != "#"}
+        self.assertEqual(got, {"a": True, "b": False, "c": False, "d": True, "e": True})
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "shell").mkdir()
@@ -245,6 +251,22 @@ class DerivedStrings(unittest.TestCase):
             problems = variant.check("normal", blobs, sources=root)
             self.assertTrue(any("debug-only strings" in p and "a debug-only line %d" in p for p in problems), problems)
             self.assertEqual(variant.check("normal", {"shell": module("shell", "normal")}, sources=root), [])
+
+    def test_check_with_sources_fails_a_debug_module_that_has_none(self):
+        """audit-c note 6: a module built with VJO_DEBUG=0 in a debug build (the worker has no fixed marker) carries
+        none of its sources' debug-only strings; one of them is enough (the compiler may drop unused ones)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "game_ocr").mkdir()
+            (root / "game_ocr" / "main.c").write_text('#if VJO_DEBUG\nprobe("VjoGameVocrProbe");\n'
+                                                       'probe("another debug-only name");\n#endif\n')
+            worker = b"\0kept strings of the worker\0"
+            problems = variant.check("debug", {"worker": worker}, sources=root)
+            self.assertTrue(any("worker: the debug build carries none of its sources' 2 debug-only strings" in p
+                                for p in problems), problems)
+            self.assertEqual(variant.check("debug", {"worker": worker + b"VjoGameVocrProbe\0"}, sources=root), [])
+            self.assertEqual(variant.check("debug", {"worker": worker}), [])  # without sources: the fixed markers only
+            self.assertEqual(variant.check("normal", {"worker": worker}, sources=root), [])
 
 
 class ConfigIsTheSame(unittest.TestCase):
@@ -394,6 +416,15 @@ class PackageVariants(unittest.TestCase):
         self.assertIn("the bases are not this release's two builds", str(caught.exception))
         self.assertIn("junk.zip", str(caught.exception))
         self.assertFalse((self.root / "out3").exists())
+        # and so is a directory, or a path with no file (audit-c note 3)
+        (self.root / "a-directory.zip").mkdir()
+        for bad in (self.root / "a-directory.zip", self.root / "missing.zip"):
+            with self.subTest(base=bad.name), self.assertRaises(SystemExit) as caught:
+                self.run_main("--normal", bad, "--debug", self.base("debug"), "--models", self.models, "--version",
+                              "0.8.0", "-o", self.root / "out4")
+            self.assertIn("the bases are not this release's two builds", str(caught.exception))
+            self.assertIn(bad.name, str(caught.exception))
+            self.assertFalse((self.root / "out4").exists())
         # and package_variants says so as a refusal, not a traceback
         with self.assertRaises(SystemExit) as caught:
             self.run_main("--normal", mixed, "--debug", self.base("debug"), "--models", self.models, "--version", "0.8.0",

@@ -11,7 +11,8 @@ name: Release
 # Two builds (docs/release-variants.md): the host and vita jobs run once for each, VJO_DEBUG=ON (the
 # debug build, the test builds' own) and OFF (the normal build, the release's main download). The
 # debug build's zip is the artifact `VitaJPOverlay`, as before (exactly one zip in it); the normal
-# build's is `VitaJPOverlay-normal`. tools/package_variants.py makes the release's two zips of them.
+# build's is `VitaJPOverlay-normal`. tools/package_variants.py makes the release's two zips of them;
+# the `package` job does so on every run and checks each with tools/e2e_package.py.
 on:
   push:
     branches: [main]
@@ -241,6 +242,63 @@ jobs:
           # Published releases keep their own assets. The default would be 90 days, and a build
           # was about 43 MB on 2026-10-14.
           retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
+
+  # The release's two zips, made of the two vita jobs' artifacts as the final release makes them
+  # (docs/release-variants.md: tools/package_variants.py with the pinned models and LMs, no --set),
+  # and each run through tools/e2e_package.py: the package's own install-vita.sh and install_ftp.sh
+  # against a simulated Vita (docs/offline-testing.md). The models come from vita-vn-ocr's public
+  # releases, checked against tools/prepare_ocr.py's pins: no secret is needed for them. Without the
+  # dictionary (a fork's pull request) there is no release zip, so there is nothing to package.
+  package:
+    name: package e2e (both builds)
+    needs: [changes, vita]
+    if: ${{ needs.changes.outputs.code == 'true' && needs.changes.outputs.dicts != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: VitaJPOverlay
+          path: ci/debug
+      - uses: actions/download-artifact@v4
+        with:
+          name: VitaJPOverlay-normal
+          path: ci/normal
+      - name: The pinned models and LMs
+        run: |
+          python3 tools/prepare_ocr.py --backend vocr-tiers --output ci/models
+          python3 tools/prepare_ocr.py --backend vocr-lm --output ci/models
+      - name: The release's two zips (tools/package_variants.py)
+        shell: bash
+        run: |
+          normal=(ci/normal/VitaJPOverlay-*.zip)
+          debug=(ci/debug/VitaJPOverlay-*-debug.zip)
+          [ ${#normal[@]} = 1 ] && [ -f "${normal[0]}" ] && [ ${#debug[@]} = 1 ] && [ -f "${debug[0]}" ] \
+            || { echo "::error::want one zip in each artifact: ${normal[*]} / ${debug[*]}"; exit 1; }
+          version=$(basename "${normal[0]}" .zip)
+          version=${version#VitaJPOverlay-}
+          python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
+            --version "$version" --source-revision "$(git rev-parse HEAD)" -o ci/release
+      - name: tools/e2e_package.py on each zip
+        shell: bash
+        run: |
+          rc=0
+          for zip in ci/release/VitaJPOverlay-*.zip; do
+            echo "::group::$(basename "$zip")"
+            python3 tools/e2e_package.py "$zip" || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc
+      # The scenarios' logs (the installs' and --collect's output)
+      - name: The e2e logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-package-logs
+          path: build/e2e-package/*/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen

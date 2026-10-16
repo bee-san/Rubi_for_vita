@@ -17,6 +17,7 @@ partition, and taiHEN loading our modules into firmware processes
 | Shell plugin: the Paf UI (`overlay.cpp`, `strip.cpp`) | header-level tests (`test_header_highlight.cpp`, `test_word_navigation.cpp`, `test_touch_hold.c`: what the page's close does with the touch region, #104); the arrows' row walk (`core/text_rows.c`) against a layout double (`test_text_rows.c`) | `test_text_rows.c` only | no | only here |
 | game worker: memory check and the model-size ladder (API 21), the capture ladder and probe, resident weights, model I/O through the broker, cancellation, the safe-boot exit | real `game_ocr/main.c` with stubs, real FL10/H15 when the models are present; with the real kernel (rows syscall, display-hook copy) in `test_game_model_broker.c` and under #74's measured pools in `test_alloc_sim.c` | the capture parity test (API 18's capture against API 19's, `test_capture_parity.c`) | as a plugin it could load into a game through Vita3K's taiHEN HLE, but its `vjoOcr*` syscalls come from our kernel plugin, which cannot load. `tools/vita3k_smoke.sh` runs its job code as a homebrew app instead, with an in-process kernel stand-in: a crash check, nothing more | only here |
 | packaged modules: syscall ABI, firmware-independent kernel imports, ARM-only instructions, page budgets | `check_vita_syscall_abi.py`, `check_kernel_instructions.py`, `check_memory_ledger.py` in the `vita` job | | | |
+| the release zips: their installer, `install_ftp.sh` (`--check-app`, `--self-test`, `--collect` and its analysis, `--uninstall`) | `tools/e2e_package.py` in the `package` job, on both builds' zips: the package's own scripts against the Vita's partitions as directories behind an FTP mock (`tools/tests/ftp_mock.py`) | | no | VitaShell's FTP server and the real partitions |
 | SceShell's memory under our footprint | the replay model (section 4), from console samples | | not modelled: no budgets, no SceShell | the self-test ([self-test.md](self-test.md)) |
 
 ## 2. What CI runs (and why it is real code)
@@ -38,7 +39,10 @@ AnkiDroid and AnkiMobile have not imported one.
 Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
 build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
 (`VJO_DEBUG=0` for `tools/arm_host_tests.sh`). The debug build's zip is the `VitaJPOverlay`
-artifact as before; the normal build's is `VitaJPOverlay-normal`. `tools/preflight.sh` checks
+artifact as before; the normal build's is `VitaJPOverlay-normal`. The `package` job makes the
+release's two zips of them as the final release does (`tools/package_variants.py`, with the models
+and LMs `tools/prepare_ocr.py` downloads from vita-vn-ocr's public releases and checks against their
+pins) and runs `tools/e2e_package.py` on each. `tools/preflight.sh` checks
 either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in its own directory.
 
 ### CI's Vita build in its container

@@ -772,8 +772,8 @@ Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
 build.
 
 `-DVJO_DEBUG=OFF` builds the normal build, the release's main download, without
-the debug build's log lines, self-test, timings and traces (8 KiB of SceShell
-pages fewer); `ON`, the default, is the debug build, which the test builds are. The
+the debug build's log lines, self-test, timings and traces (12 KiB of SceShell
+pages fewer on main `c08db18`); `ON`, the default, is the debug build, which the test builds are. The
 `release_variants` target builds the other one too and, with
 `-DVJO_RELEASE_MODELS=/path/to/models`, packages both as
 `VitaJPOverlay-<version>.zip` and `-debug.zip` with their `SHA256SUMS`; CI builds
@@ -802,7 +802,10 @@ attribution. `tools/package_release.py BASE.zip -o RELEASE.zip --models
 (`tools/package_variants.py` does it for both builds' bases at once).
 Packaging reads the dictionary already in the base ZIP, requires its exact
 checksum, and never substitutes a newer JMdict-only snapshot. Publication
-still happens explicitly after validation.
+still happens explicitly after validation. `python3 tools/e2e_package.py RELEASE.zip` runs a
+package's own installer and `tools/install_ftp.sh` against a simulated Vita (an FTP mock of its
+partitions): an update over an older build, a fresh install, `--check-app`, `--self-test`,
+`--collect` and `--uninstall`. CI runs it on both builds' zips of every pull request.
 
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell

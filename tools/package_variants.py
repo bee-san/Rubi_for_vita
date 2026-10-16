@@ -47,7 +47,8 @@ def check_bases(normal, debug, version):
         try:
             with zipfile.ZipFile(path) as z:
                 got, app = release.base_variant(z)
-        except (ValueError, KeyError, zipfile.BadZipFile) as e:  # modules of both builds, a missing plugin, not a zip
+        except (ValueError, KeyError, zipfile.BadZipFile, OSError) as e:  # both builds' modules, a missing plugin,
+            # not a zip, no file (a directory, a missing path)
             problems.append(f"{path.name}: {e}")
             continue
         if got != want:
