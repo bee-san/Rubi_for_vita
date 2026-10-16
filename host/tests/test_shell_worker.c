@@ -4259,6 +4259,58 @@ static void test_reopen_during_a_cancelled_lookup_gets_its_own_recognition(void)
     }
 }
 
+/* Opened while Auto's job reads the screen (OV_OPEN_OLD_JOB: the opening waits
+ * for it), its text shown as soon as it is read (on_job_text), and a move made
+ * before the job ends: the job's end looks the moved-to word up instead
+ * (on_job_done), and that lookup's end settles what the opening waited for, as
+ * #159 item 1's does (on_cursor_done, restart_old_job). The text still shows the
+ * screen: its word is shown and the overlay is an ordinary open one again,
+ * whose refreshes follow the screen (before, it stayed OV_OPEN_OLD_JOB, and no
+ * refresh ran for the rest of that opening). A screen that changed meanwhile
+ * gets a recognition of its own. */
+static void test_a_move_before_the_end_of_the_job_an_opening_waits_for(void)
+{
+    for (int changed = 0; changed < 2; changed++) {
+        cursor_setup();
+        stable_pending = 1; auto_prefetch(); /* Auto, Whole word: the first word too */
+        TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+        open_overlay(); /* before the job has read the text */
+        TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting && !strcmp(g_view.status, "Recognizing…"));
+        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* the network thread: text, then the word */
+        on_job_text(); /* the control thread: the text at once */
+        TEST_ASSERT(g_view.list && !strcmp(g_view.list->header, "猫犬鳥") && g_view.local_cursor_mode);
+        vjo_post_cursor(3, local_text_generation); on_command(); /* Right, while the job ends */
+        TEST_CHECK(cursor_waiting);
+        job_done = 1; on_job_done(); /* its word is superseded: the move's lookup */
+        TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+        if (changed) { /* the screen moved on during the lookup */
+            next_scene(8);
+            fake_recognized_text = "犬";
+        }
+        finish_by_tick();
+        if (changed) {
+            TEST_ASSERT_(job_running && !job_cursor_only && !strcmp(g_view.status, "Recognizing…"),
+                         "the changed screen: job_running %d, a lookup %d, status '%s'", job_running, job_cursor_only,
+                         g_view.status);
+            TEST_CHECK(DLOGGED("job start (result was for an earlier screen)"));
+            finish_by_tick();
+            check_shown("犬", "dog", 0);
+        } else {
+            check_shown("猫犬鳥", "dog", 3);
+        }
+        TEST_CHECK_(ov == OV_OPEN, "ov %d (OV_OPEN %d)", ov, OV_OPEN);
+        /* A screen that settles now gets the open overlay's quiet refresh. */
+        next_scene(20);
+        test_now += REFRESH_IDLE_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_ASSERT_(job_running && job_refresh, "no refresh: job_running %d, refresh_pending %d", job_running,
+                     refresh_pending);
+        finish_by_tick();
+        if (changed) check_shown("犬", "dog", 0);
+        else check_shown("猫犬鳥", "dog", 3);
+        close_overlay(); mem_free();
+    }
+}
+
 /* #95 item 3a (#92's audit): Select + R right after Cancel, while the closed
  * overlay's lookup or refresh still runs. The strip says "Recognizing…" and
  * waits for the job in progress (subtitles_show), which brings it nothing: a
@@ -6071,6 +6123,7 @@ TEST_LIST = {
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
     {"reopen_during_a_cancelled_lookup_gets_its_own_recognition (#159 1)",
      test_reopen_during_a_cancelled_lookup_gets_its_own_recognition},
+    {"a_move_before_the_end_of_the_job_an_opening_waits_for", test_a_move_before_the_end_of_the_job_an_opening_waits_for},
     {"subtitles_on_during_a_closed_overlays_lookup_or_refresh (#95 3a)",
      test_subtitles_on_during_a_closed_overlays_lookup_or_refresh},
     {"a_refused_job_after_a_cancelled_lookup_and_a_move_shows_its_error (#95 3b)",
