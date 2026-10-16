@@ -41,12 +41,14 @@ bash install-vita.sh VITA_IP:1337
   ```
   The installer ends with a box saying the same. In #101 the app was not reinstalled, so test.1's app ran
   beside test.2's plugins: it still showed VOCR2, had no Anki page and wrote `ocr_backend = vocr2`.
-  From this build on, the plugins notice an old app at the next game start, and the first overlay opened
-  then says `Overlay app is out of date: …` once.
+  The plugins notice an app of another build at the next game start, and the first overlay opened then
+  says `Overlay app and plugins are different builds: open the Overlay app.` once (`core/app_stamp.h`).
 - [ ] Arm the self-test: `bash tools/install_ftp.sh --self-test VITA_IP`.
-- The installer first backs up both taiHEN configurations: on the PC in `build/device/backup/`, and
-  on the Vita as `config.txt.vjo-bak` next to each `config.txt`. It also keeps your `config.ini`'s
-  values (the copy it replaced is in the same backup folder).
+- The installer first backs up both taiHEN configurations on the PC, in `build/device/backup/`. On the
+  Vita it backs up each configuration it changes, next to its `config.txt`, as `config.txt.vjo-bak` and as
+  a dated `config.txt.vjo-<date-time>.bak` that is never reused or deleted; one it leaves unchanged is not
+  backed up there. It also keeps your `config.ini`'s values (the copy it replaced is in the same backup
+  folder).
 - It adds the kernel plugin under `*KERNEL` and the Shell plugin under `*main`, removes the OCR
   worker's lines older installs left (the kernel loads the worker now), and prints each change.
 - It prints `package settings: ...` for the test build's own settings (`anki_mining=on`).

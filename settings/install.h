@@ -17,8 +17,8 @@
 enum {
     VJO_INSTALL_INSTALLED = 0, /* this app's overlay, every file and line in place */
     VJO_INSTALL_NOT_INSTALLED, /* no configuration loads the overlay */
-    VJO_INSTALL_UPDATE,        /* another build's overlay (installed.txt, the plugins' record, a plugin) */
-    VJO_INSTALL_REPAIR,        /* this build, but a file or a line is missing */
+    VJO_INSTALL_UPDATE,        /* another build's overlay, or one with no installed.txt */
+    VJO_INSTALL_REPAIR,        /* this build (installed.txt), but a file, a line or the plugins' record is not its own */
     VJO_INSTALL_CANNOT,        /* Unsafe Homebrew off, a damaged package, a configuration the editor refuses */
     VJO_INSTALL_NO_PAYLOAD,    /* the zip's app: no overlay files in it (install-vita.sh installs them) */
     VJO_INSTALL_INTERRUPTED    /* a config.txt.vjo-new or .vjo-old left by a stopped swap, beside a config.txt or none */
@@ -29,9 +29,11 @@ enum { VJO_INSTALL_ACT_INSTALL = 1, VJO_INSTALL_ACT_UNINSTALL = 2, VJO_INSTALL_A
 /* What a config.txt beside a leftover is now. */
 enum { VJO_TAI_NOW_OTHER = 0, VJO_TAI_NOW_STOCK = 1, VJO_TAI_NOW_OURS = 2 };
 
+/* A plan has at most VJO_INSTALL_LINES lines: a longer one shows fewer of its exact config.txt and
+ * config.ini lines (the rest counted), and its closing lines (the restart and the recovery) always fit. */
 #define VJO_INSTALL_LINES 40
-#define VJO_INSTALL_DIFF 8 /* exact config.txt lines a plan shows per file */
-#define VJO_INSTALL_INI_CHANGES 12 /* config.ini changes a plan lists */
+#define VJO_INSTALL_DIFF 8 /* exact config.txt lines a plan shows per file (fewer when it is long) */
+#define VJO_INSTALL_INI_CHANGES 12 /* config.ini changes a plan lists (fewer when it is long) */
 #define VJO_INSTALL_LINE 320
 
 /* What the app is (core/payload.h): the page passes its compiled values; the host tests vary them. */
@@ -48,6 +50,8 @@ typedef struct {
                                 * of .vjo-old, or, with no .vjo-old (the swap never started), of the current
                                 * config.txt byte for byte; else .vjo-old */
     int finish_ok;             /* FINISH has a whole file to put back: use_new, or a .vjo-old */
+    int stopped_run;           /* the run whose .vjo-new it is (VJO_INSTALL_ACT_INSTALL or _UNINSTALL), 0 when it
+                                * cannot be told (an empty file, or a start both runs would write) */
     int refused;               /* the editor refuses an install (why) */
     char why[224];
     int install_changes, uninstall_changes;
@@ -55,8 +59,9 @@ typedef struct {
     int has_kernel;            /* a kernel line of ours that is not a comment */
     int loads_ours;            /* taiHEN loads the kernel plugin and the Shell from it now */
     uint8_t sha256[32];        /* its text's, so that a run knows the plan is still the card's */
-    /* the exact lines an install (0) or an uninstall (1) adds (+) or removes (-), in file order
-     * (AGENTS.md rule 7: the plan shows the exact edits); more than VJO_INSTALL_DIFF are counted */
+    /* the exact lines an install (0) or an uninstall (1) adds (+) or removes (-), in file order: a minimal
+     * line diff (vjo_install_diff; AGENTS.md rule 7: the plan shows the exact edits); more than
+     * VJO_INSTALL_DIFF are counted */
     char diff[2][VJO_INSTALL_DIFF][VJO_TAI_LINE_MAX + 4];
     int diff_count[2], diff_more[2];
 } VjoInstallConfig;
@@ -78,9 +83,11 @@ typedef struct {
     int dict_index;            /* its payload index */
     int record_ok;             /* the plugins' record (vjo_app.txt) is this app's stamp */
     char own_stamp[64];
-    int config_ini;            /* config.ini: 0 kept as it is, 1 patched (lines listed), 2 written from the template */
+    int config_ini;            /* config.ini: 0 kept as it is, 1 patched (lines listed), 2 written from the template,
+                                * 3 written from its backup config.ini.bak (missing beside it; over this build) */
     char config_changes[VJO_INSTALL_INI_CHANGES][120]; /* config.ini's changed lines, for the plan */
     int config_change_count;
+    int config_change_more;    /* changed lines past VJO_INSTALL_INI_CHANGES (counted, not listed) */
     char stamp[20];            /* the backups' date: YYYYMMDD-HHMMSS (local time) */
     char before_overlay[2][128];/* each folder's newest backup without our kernel line ("" none) */
     char storage[40];          /* a storage plugin in ur0's *KERNEL: taiHEN reads ur0's at boot */
@@ -89,8 +96,17 @@ typedef struct {
 /* Reads the card into s (writes nothing). */
 void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build);
 
-/* The plan of action, one entry per line (the page wraps them): their count. */
+/* The plan of action, one entry per line (the page wraps them): their count (at most max). */
 int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTALL_LINE], int max);
+
+/* The lines that make old (old_len bytes) new, in file order, each given to emit with its sign ('-' a
+ * line of old, '+' one of new; its text without its line end: CRLF, CR or LF): a minimal line diff,
+ * the fewest such lines. Of the minimal ones it keeps the most lines that do not name the overlay,
+ * then shows a removal before an addition. A changed stretch of more than 1,024 lines, or 256 changed
+ * lines or more, gets a greedy walk instead (still the edit, not always the shortest). The plan's
+ * exact lines and log.txt's (code audit note 1). */
+void vjo_install_diff(const char *old, int old_len, const char *neu, int new_len,
+                      void (*emit)(void *ctx, char sign, const char *s, int n), void *ctx);
 
 typedef struct {
     /* step: what is being done; done/total: bytes of the step (0/0 when it has no size) */

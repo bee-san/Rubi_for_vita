@@ -33,6 +33,7 @@
 #include "../../core/config.h"
 #include "../../core/payload.h"
 #include "../../core/taicfg.h"
+#include "../../include/vjo_vocr_sizes.h"
 #include "../../settings/install.h"
 #include "../../settings/install_page.h"
 
@@ -984,7 +985,8 @@ static char drawn[64][300];
 static int drawn_count;
 static void d_text(int x, int y, unsigned c, float px, const char *s) { (void)x; (void)y; (void)c; (void)px; if (drawn_count < 64) snprintf(drawn[drawn_count++], 300, "%s", s); }
 static int d_measure(float px, const char *s) { return (int)(strlen(s) * (size_t)(px * 0.5f)); }
-static void d_rect(int x, int y, int w, int h, unsigned c) { (void)x; (void)y; (void)w; (void)h; (void)c; }
+static int bar_rects; /* rectangles right of the plan's text (its scroll bar) in the last frame */
+static void d_rect(int x, int y, int w, int h, unsigned c) { (void)y; (void)w; (void)h; (void)c; if (x >= 900) bar_rects++; }
 static void d_card(int y, int h, int f) { (void)y; (void)h; (void)f; }
 static void d_badge(int x, int y, int w, int h, const char *l, int a)
 {
@@ -1004,6 +1006,7 @@ static int shown(const char *needle)
 static void frame(uint32_t pressed)
 {
     drawn_count = 0;
+    bar_rects = 0;
     vjo_install_page_frame(&draw, pressed, -1, -1);
 }
 
@@ -1014,7 +1017,7 @@ static void the_page_shows_the_plan_and_runs_it(void)
     frame(0);
     for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
     TEST_CHECK(shown(VJO_DEBUG ? "Install the overlay (v0.8.0, debug build)" : "Install the overlay (v0.8.0)"));
-    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: exit"));
+    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down, L/R: scroll   ○: exit"));
     TEST_CHECK(shown("1. Copy the 3 plugins"));
     frame(SCE_CTRL_CROSS); /* the stubs run the thread at once */
     frame(0);
@@ -1186,7 +1189,590 @@ static void a_write_fault_in_the_swap_keeps_config_txt(void)
     }
 }
 
+/* ---------------- the code audit's notes (audit-overlay-one-vpk-install-b: 1-6, N5, N17, N24) ---------------- */
+
+/* A plan's "Exactly:" block under the line naming path: its lines (at most cap) and their count, -1 when none. */
+static int exact_block(const char plan[][VJO_INSTALL_LINE], int n, const char *path, const char *out[], int cap)
+{
+    int at = -1, k = 0;
+    for (int i = 0; i < n && at < 0; i++)
+        if (strstr(plan[i], path) && strstr(plan[i], "Exactly:")) at = i;
+    if (at < 0) return -1;
+    for (int i = at + 1; i < n && !strncmp(plan[i], "   ", 3); i++)
+        if (k < cap) out[k++] = plan[i];
+    return k;
+}
+
+static int same_lines(const char *const got[], int n, const char *const want[])
+{
+    int w = 0;
+    while (want[w]) w++;
+    if (n != w) return 0;
+    for (int i = 0; i < n; i++)
+        if (strcmp(got[i], want[i])) return 0;
+    return 1;
+}
+
+#define DIS "# Mainline OCR: "
+/* Note 1: when a line the editor comments out has a copy further on, the exact lines are still the edit:
+ * the fewest lines, and never a user's kept line shown as removed and added. The first three are the
+ * code audit's; in the fourth our line moves up past one user line, where a minimal diff could keep
+ * either (GNU diff shows *ALL as removed and added). */
+static void the_plan_shows_the_edit_when_lines_repeat(void)
+{
+    static const struct { const char *name, *text, *want[5]; } cases[] = {
+        {"our Shell line under *ALL and *main (fixture shell-under-all)",
+         "*KERNEL\n" K "\n*ALL\n" S "\nur0:tai/every.suprx\n*main\n" S "\nur0:tai/henkaku.suprx\n",
+         {"   - " S, "   + " DIS S, NULL}},
+        {"our kernel line under *ALL before *KERNEL",
+         "*ALL\n" K "\n*KERNEL\nur0:tai/user.skprx\n*main\n" S "\nur0:tai/henkaku.suprx\n",
+         {"   - " K, "   + " DIS K, "   + " K, NULL}},
+        {"our Shell line under *NPXS10015 before *main",
+         "*KERNEL\n" K "\n*NPXS10015\n" S "\nur0:tai/henkaku.suprx\n*main\nur0:tai/henkaku.suprx\n",
+         {"   - " S, "   + " DIS S, "   + " S, NULL}},
+        {"our kernel line under *ALL right after an empty *KERNEL",
+         "*KERNEL\n*ALL\n" K "\nur0:tai/every.suprx\n*main\n" S "\nur0:tai/henkaku.suprx\n",
+         {"   + " K, "   - " K, "   + " DIS K, NULL}},
+    };
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        fresh_card(1);
+        put_text("ux0:tai/config.txt", cases[c].text);
+        VjoInstallScan s = scan_now();
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        const char *got[16];
+        int k = exact_block((const char (*)[VJO_INSTALL_LINE])plan, n, "ux0:tai/config.txt", got, 16);
+        TEST_CHECK_(same_lines(got, k, cases[c].want), "%s", cases[c].name);
+        for (int i = 0; i < k; i++) TEST_MSG("[%s]", got[i]);
+    }
+}
+
+/* N17: CRLF, CR-only and mixed line ends: each line end is one, whatever its bytes. */
+static void the_plan_reads_every_line_end_as_one(void)
+{
+    static const char *const ends[] = {"\r\n", "\r", "mixed"};
+    for (int e = 0; e < 3; e++) {
+        fresh_card(1);
+        char text[2048];
+        size_t used = 0;
+        int line = 0;
+        for (const char *p = stock; *p; p++) {
+            if (*p == '\n') {
+                const char *end = e < 2 ? ends[e] : (line++ % 2 ? "\r\n" : "\n");
+                used += (size_t)snprintf(text + used, sizeof(text) - used, "%s", end);
+            } else {
+                text[used++] = *p;
+                text[used] = '\0';
+            }
+        }
+        put_text("ux0:tai/config.txt", text);
+        VjoInstallScan s = scan_now();
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        const char *got[16];
+        static const char *const install[] = {"   + " K, "   + " S, NULL}, *const uninstall[] = {"   - " K, "   - " S, NULL};
+        int k = exact_block((const char (*)[VJO_INSTALL_LINE])plan, n, "ux0:tai/config.txt", got, 16);
+        TEST_CHECK_(same_lines(got, k, install), "line ends %d: %d lines", e, k);
+        VjoInstallResult r;
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        s = scan_now();
+        n = vjo_install_plan(&s, VJO_INSTALL_ACT_UNINSTALL, plan, VJO_INSTALL_LINES);
+        k = exact_block((const char (*)[VJO_INSTALL_LINE])plan, n, "Back up ux0:tai/config.txt", got, 16);
+        TEST_CHECK_(same_lines(got, k, uninstall), "uninstall, line ends %d: %d lines", e, k);
+    }
+}
+
+/* N5: a Put it back whose rename fails puts the current config.txt back as it was. */
+static void a_failed_put_back_puts_the_current_one_back(void)
+{
+    static char out[VJO_TAI_TEXT_MAX + 1];
+    fresh_card(0);
+    char *before = strdup(slurp("ur0:tai/config.txt", NULL));
+    VjoTaiReport rep;
+    int n = vjo_tai_edit(before, strlen(before), VJO_TAI_INSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+    TEST_ASSERT(n > 0);
+    put("ur0:tai/config.txt.vjo-new", out, (size_t)n); /* the whole edit: Put it back is offered */
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(s.actions & VJO_INSTALL_ACT_FINISH);
+    fault.pattern = "ur0:tai/config.txt";
+    fault.rename = 2; /* 1: the current one to its dated backup; 2: .vjo-new to config.txt */
+    fault.calls = 0;
+    VjoInstallResult r;
+    int rc = run(&s, VJO_INSTALL_ACT_FINISH, &r);
+    memset(&fault, 0, sizeof(fault));
+    char *now = slurp("ur0:tai/config.txt", NULL);
+    TEST_CHECK_(rc < 0 && now && !strcmp(now, before) && there("ur0:tai/config.txt.vjo-new"),
+                "a failed put-back leaves config.txt as it was");
+    TEST_CHECK(has_line(r.lines, r.count, "the current one is back as it was"));
+    /* the Install page says what is left; Install alone would stop beside the leftover */
+    TEST_CHECK(has_line(r.lines, r.count, "the Install page shows what is left to do"));
+    TEST_CHECK(!has_line(r.lines, r.count, "Install again finishes the job"));
+    free(before);
+}
+
+/* The card of the code audit's note 2: an update over a card whose two configurations still have four games'
+ * worker sections each (test.3's --title), an older config.ini with many changes, dated backups from before the
+ * overlay in both folders, and two backup names (ux0's folder already has this second's). */
+static void long_plan_card(void)
+{
+    fresh_card(1);
+    static const char *const games[] = {"PCSG00415", "PCSE00001", "ULJS00378", "PSPEMUCFW"};
+    static char text[VJO_TAI_TEXT_MAX + 1];
+    for (int c = 0; c < 2; c++) {
+        char base[2048];
+        snprintf(base, sizeof(base), "%s%s", c ? "# This file is used as an alternative if ux0:tai/config.txt is not found.\n" : "", stock);
+        VjoTaiReport rep;
+        int m = vjo_tai_edit(base, strlen(base), VJO_TAI_INSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, text, sizeof(text), &rep);
+        TEST_ASSERT(m > 0);
+        size_t used = (size_t)m;
+        for (int g = 0; g < 4; g++) used += (size_t)snprintf(text + used, sizeof(text) - used, "\n*%s\n" W "\n", games[g]);
+        put_text(c ? "ur0:tai/config.txt" : "ux0:tai/config.txt", text);
+        put_text(c ? "ur0:tai/config.txt.vjo-20261001-120000.bak" : "ux0:tai/config.txt.vjo-20261001-120000.bak", stock);
+    }
+    put_text("ux0:tai/config.txt.vjo-20261016-071503.bak", stock);
+    mkdir("ux0:data/VitaJPOverlay", 0777);
+    put_text(VJO_PREFERENCES_PATH_TEST, "dictionary = jpdb\nlocal_dictionaries = mine.vjdict\nanki_mining = off\nlog_file = off\n"
+             "frequency_filter = 5\n");
+    install_app(1, "0.8.0-test.5", "set anki_mining on\nset log_file on\n");
+}
+
+/* Note 2: a plan longer than the page's lines still shows its restart and recovery lines (AGENTS.md rule 7)
+ * and each configuration's exact lines, fewer of them, the rest counted. */
+static void a_long_plan_keeps_its_restart_and_recovery_lines(void)
+{
+    long_plan_card();
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(s.state == VJO_INSTALL_UPDATE);
+    static char all[80][VJO_INSTALL_LINE];
+    int whole = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, all, 80);
+    TEST_CHECK_(whole > VJO_INSTALL_LINES, "the case is longer than a page's plan: %d lines", whole);
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+    TEST_CHECK(n <= VJO_INSTALL_LINES);
+    TEST_CHECK(has_line(plan, n, "Then restart the Vita yourself: this app never restarts it."));
+    TEST_CHECK(has_line(plan, n, VJO_INSTALL_RECOVERY_BOOT) && has_line(plan, n, VJO_INSTALL_RECOVERY_GAME));
+    TEST_CHECK(has_line(plan, n, "(ux0:tai/config.txt.vjo-20261016-071503.bak is the configuration from before the overlay.)"));
+    TEST_CHECK(has_line(plan, n, "(ur0:tai/config.txt.vjo-20261001-120000.bak is the configuration from before the overlay.)"));
+    TEST_CHECK(has_line(plan, n, "A dated backup is the configuration from before this install"));
+    TEST_CHECK(has_line(plan, n, "Back up ux0:tai/config.txt as config.txt.vjo-20261016-071503-2.bak (kept)."));
+    TEST_CHECK(has_line(plan, n, "Read everything back to check it."));
+    /* both configurations' exact lines, cut and counted: every changed line is shown or counted */
+    for (int c = 0; c < 2; c++) {
+        const char *got[16];
+        int k = exact_block((const char (*)[VJO_INSTALL_LINE])plan, n, c ? "ur0:tai/config.txt" : "ux0:tai/config.txt", got, 16);
+        const VjoInstallConfig *g = &s.cfg[c];
+        int more = 0;
+        TEST_ASSERT(k >= 2);
+        TEST_CHECK_(sscanf(got[k - 1], "   and %d more line", &more) == 1, "[%s]", got[k - 1]);
+        TEST_CHECK_(k - 1 + more == g->diff_count[0] + g->diff_more[0], "%d shown + %d counted, of %d", k - 1, more,
+                    g->diff_count[0] + g->diff_more[0]);
+        TEST_CHECK(k - 1 >= 2); /* never fewer than two of them */
+    }
+    /* config.ini's: the first changes, then the rest counted */
+    int at = -1;
+    for (int i = 0; i < n; i++)
+        if (strstr(plan[i], "config.ini: these lines change")) at = i;
+    TEST_ASSERT(at >= 0);
+    int listed = 0, more = -1;
+    for (int i = at + 1; i < n && !strncmp(plan[i], "   ", 3); i++)
+        if (sscanf(plan[i], "   and %d more", &more) != 1) listed++;
+    TEST_CHECK_(more < 0 ? listed == s.config_change_count : listed + more == s.config_change_count + s.config_change_more,
+                "config.ini: %d listed, %d counted, of %d", listed, more, s.config_change_count);
+    /* a plan that fits is the whole plan */
+    fresh_card(1);
+    s = scan_now();
+    TEST_CHECK(vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES) == vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, all, 80));
+}
+
+static int first_shown(const char *needle)
+{
+    for (int i = 0; i < drawn_count; i++)
+        if (!strncmp(drawn[i], needle, strlen(needle))) return 1;
+    return 0;
+}
+
+/* Note 2 on the page: L and R page through a long plan, a box at a time, and a bar shows where the view is. */
+static void the_page_pages_through_a_long_plan(void)
+{
+    long_plan_card();
+    TEST_CHECK(vjo_install_page_start() == 1);
+    frame(0);
+    TEST_CHECK(first_shown("1. Copy the 3 plugins") && !shown("If a game does not start"));
+    TEST_CHECK_(bar_rects > 0, "a scroll bar beside a plan longer than its box");
+    TEST_CHECK(shown("Left/Right: action   Up/Down, L/R: scroll   ○: exit"));
+    int pages = 0;
+    while (!shown("If a game does not start") && pages < 12) {
+        frame(SCE_CTRL_RTRIGGER);
+        frame(0);
+        pages++;
+    }
+    TEST_CHECK_(shown("If a game does not start") && pages > 1 && pages < 8, "R reaches the plan's end in %d pages", pages);
+    TEST_CHECK(!shown("1. Copy the 3 plugins"));
+    frame(SCE_CTRL_RTRIGGER); /* at the end it stays */
+    frame(0);
+    TEST_CHECK(shown("If a game does not start"));
+    for (int i = 0; i < pages + 1 && !shown("1. Copy the 3 plugins"); i++) {
+        frame(SCE_CTRL_LTRIGGER);
+        frame(0);
+    }
+    TEST_CHECK(first_shown("1. Copy the 3 plugins"));
+    /* a plan that fits its box has no bar */
+    fresh_card(0);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    vjo_install_page_start();
+    frame(SCE_CTRL_RIGHT); /* Uninstall's plan: one short block */
+    frame(0);
+    TEST_CHECK_(bar_rects == 0, "%d", bar_rects);
+    TEST_CHECK(shown("hints: ×: Uninstall   Left/Right: action   ○: exit"));
+}
+
+/* N24: the page shows a reason a sentence a line: each sentence starts a row. */
+static void the_reason_is_shown_a_sentence_a_line(void)
+{
+    static char out[VJO_TAI_TEXT_MAX + 1];
+    fresh_card(0);
+    char *before = strdup(slurp("ur0:tai/config.txt", NULL));
+    VjoTaiReport rep;
+    int n = vjo_tai_edit(before, strlen(before), VJO_TAI_INSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+    TEST_ASSERT(n > 100);
+    put("ur0:tai/config.txt.vjo-new", out, (size_t)n / 2); /* an install's write, stopped */
+    VjoInstallScan s = scan_now();
+    TEST_ASSERT(s.state == VJO_INSTALL_INTERRUPTED);
+    vjo_install_page_start();
+    frame(0);
+    int sentences = 0;
+    for (const char *at = s.reason; *at;) {
+        const char *end = strstr(at, ". ");
+        char start[24];
+        snprintf(start, sizeof(start), "%.20s", at);
+        TEST_CHECK_(first_shown(start), "a row starts with [%s]", start);
+        sentences++;
+        if (!end) break;
+        at = end + 2;
+    }
+    TEST_CHECK_(sentences >= 2, "%d sentences: %s", sentences, s.reason);
+    for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
+    free(before);
+}
+
+/* Note 4: a stopped uninstall's file is named an uninstall's, and its next step is Uninstall. */
+static void a_stopped_uninstall_is_named_one(void)
+{
+    static char out[VJO_TAI_TEXT_MAX + 1];
+    for (int whole = 0; whole < 2; whole++) {
+        fresh_card(0);
+        VjoInstallScan s = scan_now();
+        VjoInstallResult r;
+        TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        char *installed = strdup(slurp("ur0:tai/config.txt", NULL));
+        VjoTaiReport rep;
+        int n = vjo_tai_edit(installed, strlen(installed), VJO_TAI_UNINSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+        TEST_ASSERT(n > 100 && rep.changed);
+        /* the write stopped part way (or it was whole), before the swap */
+        put("ur0:tai/config.txt.vjo-new", out, whole ? (size_t)n : (size_t)n / 2);
+        s = scan_now();
+        TEST_CHECK(s.state == VJO_INSTALL_INTERRUPTED && s.cfg[1].stopped_run == VJO_INSTALL_ACT_UNINSTALL);
+        TEST_CHECK_(strstr(s.reason, "a stopped uninstall's config.txt.vjo-new") && strstr(s.reason, "choose Uninstall again") &&
+                    !strstr(s.reason, "stopped install's") && strstr(s.reason, "stopped before it changed config.txt, which is as it was"),
+                    "%s", s.reason);
+        free(installed);
+    }
+    /* a swap that had started (.vjo-old) and h-encore's text since: Put it back names the uninstall's file */
+    fresh_card(0);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    char *installed = strdup(slurp("ur0:tai/config.txt", NULL));
+    VjoTaiReport rep;
+    int n = vjo_tai_edit(installed, strlen(installed), VJO_TAI_UNINSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+    TEST_ASSERT(n > 0);
+    TEST_ASSERT(rename("ur0:tai/config.txt", "ur0:tai/config.txt.vjo-old") == 0);
+    put("ur0:tai/config.txt.vjo-new", out, (size_t)n);
+    char stock_ur0[2048];
+    snprintf(stock_ur0, sizeof(stock_ur0), "# This file is used as an alternative if ux0:tai/config.txt is not found.\n%s", stock);
+    put_text("ur0:tai/config.txt", stock_ur0);
+    s = scan_now();
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int lines = vjo_install_plan(&s, VJO_INSTALL_ACT_FINISH, plan, VJO_INSTALL_LINES);
+    TEST_CHECK(has_line(plan, lines, "config.txt.vjo-new (the stopped uninstall's new configuration, checked against config.txt.vjo-old)"));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_FINISH, &r) == 0 && has_line(r.lines, r.count, "the stopped uninstall's new configuration"));
+    free(installed);
+    /* an empty file beside a configuration both would change: either */
+    fresh_card(0);
+    put_text("ur0:tai/config.txt", "*KERNEL\n" K "\n*main\nur0:tai/henkaku.suprx\n");
+    put_text("ur0:tai/config.txt.vjo-new", "");
+    s = scan_now();
+    TEST_CHECK(s.state == VJO_INSTALL_INTERRUPTED && s.cfg[1].stopped_run == 0);
+    TEST_CHECK_(strstr(s.reason, "a stopped install's or uninstall's config.txt.vjo-new") &&
+                strstr(s.reason, "choose Install or Uninstall again"), "%s", s.reason);
+    /* and an install's is an install's */
+    fresh_card(0);
+    put_text("ur0:tai/config.txt.vjo-new", "");
+    s = scan_now();
+    TEST_CHECK(s.cfg[1].stopped_run == VJO_INSTALL_ACT_INSTALL);
+    TEST_CHECK_(strstr(s.reason, "a stopped install's config.txt.vjo-new") && strstr(s.reason, "choose Install again"), "%s", s.reason);
+}
+
+/* Note 4: a run that stops part way says what finishes the job: the same action, or the Install page when a
+ * stopped swap's file is left (it offers to put it back or keep the current one first). */
+static void a_stopped_uninstall_says_uninstall_again(void)
+{
+    for (int left = 0; left < 2; left++) {
+        fresh_card(1);
+        VjoInstallScan s = scan_now();
+        VjoInstallResult r;
+        TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        s = scan_now();
+        /* ux0's swap is done; ur0's first rename fails (nothing left), or its second (its .vjo-new is left) */
+        fault.pattern = "ur0:tai/config.txt";
+        fault.rename = left ? 2 : 1;
+        fault.calls = 0;
+        int rc = run(&s, VJO_INSTALL_ACT_UNINSTALL, &r);
+        memset(&fault, 0, sizeof(fault));
+        TEST_CHECK(rc < 0 && r.written);
+        TEST_CHECK(!has_line(r.lines, r.count, "Install again finishes the job."));
+        TEST_CHECK_(has_line(r.lines, r.count, left ? "the Install page shows what is left to do" : "Uninstall again finishes the job."),
+                    "left %d", left);
+        s = scan_now();
+        if (left) {
+            TEST_CHECK(s.state == VJO_INSTALL_INTERRUPTED && (s.actions & VJO_INSTALL_ACT_KEEP));
+            TEST_CHECK(run(&s, VJO_INSTALL_ACT_KEEP, &r) == 0);
+            s = scan_now();
+        }
+        TEST_CHECK_(s.actions & VJO_INSTALL_ACT_UNINSTALL, "left %d: state %d", left, s.state);
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_UNINSTALL, &r) == 0 && scan_now().state == VJO_INSTALL_NOT_INSTALLED);
+    }
+}
+
+/* Note 4: this build with a damaged plugin or another record of the app is a Repair, not "another build". */
+static void this_build_damaged_is_a_repair(void)
+{
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    for (int what = 0; what < 2; what++) {
+        if (what == 0) {
+            size_t n;
+            char *sh = slurp("ur0:tai/VitaJPOverlay_Shell.suprx", &n);
+            TEST_ASSERT(sh && n > 10);
+            sh[3] ^= 1; /* the same size: the hash tells */
+            put("ur0:tai/VitaJPOverlay_Shell.suprx", sh, n);
+        } else {
+            put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
+        }
+        s = scan_now();
+        TEST_CHECK_(s.state == VJO_INSTALL_REPAIR && !strcmp(s.title, "Repair the overlay (v0.8.0)"), "%d: state %d, %s", what,
+                    s.state, s.title);
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+        TEST_CHECK(what == 0 ? has_line(plan, n, "Replace 1 of the plugins")
+                             : has_line(plan, n, "vjo_app.txt (the plugins' record of their app) is written again: it is missing or names another build of this app."));
+        TEST_CHECK(!has_line(plan, n, "does not undo the update"));
+        vjo_install_page_start();
+        frame(0);
+        TEST_CHECK(shown("[Repair*]"));
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && scan_now().state == VJO_INSTALL_INSTALLED);
+    }
+}
+
+/* Note 6: over this build, a config.ini missing beside its config.ini.bak (a save stopped between its two
+ * renames) is written again from the backup: the plugins read config.ini, the app the backup. */
+static void a_missing_config_ini_is_written_from_its_backup(void)
+{
+    for (int keyed = 0; keyed < 2; keyed++) {
+        fresh_card(1);
+        VjoInstallScan s = scan_now();
+        VjoInstallResult r;
+        TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        char mine[VJO_CONFIG_TEXT_MAX + 1];
+        snprintf(mine, sizeof(mine), "%svocr_tier = large\nanki_mining = off\n%s", slurp(VJO_PREFERENCES_PATH_TEST, NULL),
+                 keyed ? "jpdb_api_key = secret-key\n" : "");
+        put_text(VJO_PREFERENCES_PATH_TEST ".bak", mine);
+        TEST_ASSERT(remove(VJO_PREFERENCES_PATH_TEST) == 0);
+        s = scan_now();
+        TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED && s.config_ini == 3, "state %d config_ini %d", s.state, s.config_ini);
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+        TEST_CHECK(has_line(plan, n, "config.ini is missing beside its backup config.ini.bak (a save that stopped): it is "
+                                     "written again from the backup, your settings as they were."));
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.written);
+        char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+        TEST_ASSERT(ini != NULL);
+        VjoConfig cfg;
+        vjo_config_defaults(&cfg);
+        vjo_config_parse(&cfg, ini, strlen(ini));
+        TEST_CHECK((unsigned)cfg.vocr_tier == VJO_VOCR_TIER_LARGE && !cfg.anki_mining);
+        TEST_CHECK(!strstr(ini, "secret") && !strstr(ini, "api_key")); /* as the app's own save writes it */
+        char *bak = slurp(VJO_PREFERENCES_PATH_TEST ".bak", NULL);
+        TEST_CHECK(!bak || !strstr(bak, "secret"));
+        TEST_CHECK(scan_now().config_ini == 0 && scan_now().state == VJO_INSTALL_INSTALLED);
+    }
+}
+
+/* Note 1, the diff itself (vjo_install_diff) against a reference on random texts: its lines are an edit of
+ * old into new (old's lines it does not remove are new's it does not add, in order); within its bounds they
+ * are the fewest (old's and new's lines less twice the longest common subsequence), and of those the ones
+ * that keep the most lines not naming the overlay; past them (a long changed stretch, many changes) the
+ * greedy walk's, still an edit. Line ends are CR, LF or CRLF, mixed, with or without a last one. */
+typedef struct { const char *old, *neu; int old_len, new_len, lines[2], n, bad; int side[4096], index[4096]; char sign[4096]; } DiffSeen;
+static int split_lines(const char *t, int len, int starts[], int lens[], int cap)
+{
+    int n = 0, i = 0;
+    while (i < len && n < cap) {
+        int b = i;
+        while (i < len && t[i] != '\r' && t[i] != '\n') i++;
+        starts[n] = b;
+        lens[n++] = i - b;
+        if (i < len && t[i] == '\r') { i++; if (i < len && t[i] == '\n') i++; }
+        else if (i < len) i++;
+    }
+    return n;
+}
+static int ref_starts[2][4096], ref_lens[2][4096];
+static void seen_line(void *ctx, char sign, const char *s, int n)
+{
+    DiffSeen *d = ctx;
+    const char *t = sign == '-' ? d->old : d->neu;
+    int side = sign == '+', len = sign == '-' ? d->old_len : d->new_len, at = (int)(s - t), lo = 0, hi = d->lines[side] - 1;
+    if (s < t || at > len || d->n >= 4096) { d->bad = 1; return; }
+    while (lo < hi) { /* the line that starts there (the starts ascend) */
+        int mid = (lo + hi) / 2;
+        if (ref_starts[side][mid] < at) lo = mid + 1;
+        else hi = mid;
+    }
+    int k = hi >= 0 && ref_starts[side][lo] == at && ref_lens[side][lo] == n ? lo : -1;
+    if (k < 0) { d->bad = 1; return; }
+    d->side[d->n] = side;
+    d->index[d->n] = k;
+    d->sign[d->n++] = sign;
+}
+static int ref_user(const char *s, int n)
+{
+    for (int i = 0; i + 13 <= n; i++)
+        if (!strncasecmp(s + i, "vitajpoverlay", 13)) return 0;
+    return 1;
+}
+static int ref_same(const DiffSeen *d, int i, int j)
+{
+    return ref_lens[0][i] == ref_lens[1][j] && !memcmp(d->old + ref_starts[0][i], d->neu + ref_starts[1][j], (size_t)ref_lens[0][i]);
+}
+/* the longest common subsequence's length, and for small texts the most user lines it can keep */
+static int ref_lcs(const DiffSeen *d, int n, int m, int *user)
+{
+    static int row[2][4097];
+    static long best[64][64];
+    memset(row, 0, sizeof(row));
+    for (int i = n - 1; i >= 0; i--)
+        for (int j = m - 1; j >= 0; j--)
+            row[i & 1][j] = ref_same(d, i, j) ? row[(i + 1) & 1][j + 1] + 1
+                          : row[(i + 1) & 1][j] > row[i & 1][j + 1] ? row[(i + 1) & 1][j] : row[i & 1][j + 1];
+    *user = -1;
+    if (n < 64 && m < 64) {
+        for (int i = n; i >= 0; i--)
+            for (int j = m; j >= 0; j--)
+                best[i][j] = i == n || j == m ? 0
+                           : ref_same(d, i, j) ? best[i + 1][j + 1] + 1000 + ref_user(d->old + ref_starts[0][i], ref_lens[0][i])
+                           : best[i + 1][j] > best[i][j + 1] ? best[i + 1][j] : best[i][j + 1];
+        *user = (int)(best[0][0] % 1000);
+    }
+    return n && m ? row[0][0] : 0;
+}
+
+static uint64_t diff_seed = 0x9E3779B97F4A7C15ull;
+static int rnd(int k)
+{
+    diff_seed = diff_seed * 6364136223846793005ull + 1442695040888963407ull;
+    return (int)((diff_seed >> 33) % (uint64_t)k);
+}
+
+static void the_exact_lines_are_a_shortest_edit(void)
+{
+    static const char *const words[] = {"*KERNEL", "*main", "*ALL", "*PCSG00415", "*NPXS10015", K, S, W, DIS K, DIS S,
+                                         "ur0:tai/henkaku.suprx", "ux0:tai/a.suprx", "", "# a comment", "# VitaJPOverlay note",
+                                         "ur0:tai/every.suprx"};
+    static const char *const ends[] = {"\n", "\r\n", "\r"};
+    static char old[1 << 16], neu[1 << 16];
+    static DiffSeen d;
+    int exact = 0, greedy = 0, cases = 0;
+    for (int c = 0; c < 4000; c++) {
+        /* the size: mostly small; some long with few changes (exact), some past the bounds (greedy) */
+        int big = c % 200 == 199 ? 2 : c % 200 == 198 ? 1 : 0;
+        int lines = big == 2 ? 1200 + rnd(400) : big == 1 ? 600 + rnd(300) : rnd(40);
+        int alphabet = c % 3 == 0 ? 4 : (int)(sizeof(words) / sizeof(words[0]));
+        int ol = 0, nl = 0, mixed = c % 5;
+        for (int i = 0; i < lines; i++) {
+            const char *w = words[rnd(alphabet)], *e = mixed ? ends[rnd(3)] : ends[c % 3];
+            ol += snprintf(old + ol, sizeof(old) - (size_t)ol, "%s%s", w, i + 1 < lines || rnd(4) ? e : "");
+        }
+        /* new: old with lines removed, commented out and added, as the editor does (and more) */
+        int starts[4096], lens[4096], n0 = split_lines(old, ol, starts, lens, 4096);
+        int edits = big ? 1 + rnd(big == 2 ? 600 : 8) : rnd(8);
+        for (int i = 0; i <= n0; i++) {
+            if (i < n0) {
+                int r = rnd(lines + 1);
+                if (r < edits && rnd(3) == 0) continue; /* removed */
+                const char *e = mixed ? ends[rnd(3)] : ends[c % 3];
+                if (r < edits && rnd(2) == 0) nl += snprintf(neu + nl, sizeof(neu) - (size_t)nl, DIS "%.*s%s", lens[i], old + starts[i], e);
+                else nl += snprintf(neu + nl, sizeof(neu) - (size_t)nl, "%.*s%s", lens[i], old + starts[i], e);
+            }
+            if (rnd(lines + 1) < edits && rnd(3) == 0)
+                nl += snprintf(neu + nl, sizeof(neu) - (size_t)nl, "%s%s", words[rnd(alphabet)], mixed ? ends[rnd(3)] : ends[c % 3]);
+        }
+        TEST_ASSERT(ol < (int)sizeof(old) && nl < (int)sizeof(neu));
+        int n = split_lines(old, ol, ref_starts[0], ref_lens[0], 4096), m = split_lines(neu, nl, ref_starts[1], ref_lens[1], 4096);
+        memset(&d, 0, sizeof(d));
+        d.old = old; d.neu = neu; d.old_len = ol; d.new_len = nl; d.lines[0] = n; d.lines[1] = m;
+        vjo_install_diff(old, ol, neu, nl, seen_line, &d);
+        cases++;
+        TEST_ASSERT_(!d.bad, "case %d: a line that is not one of the texts'", c);
+        /* an edit: in file order on each side, and old's kept lines are new's kept lines */
+        static unsigned char gone[2][4096];
+        memset(gone, 0, sizeof(gone));
+        int last[2] = {-1, -1}, ordered = 1;
+        for (int k = 0; k < d.n; k++) {
+            ordered &= d.index[k] > last[d.side[k]];
+            last[d.side[k]] = d.index[k];
+            gone[d.side[k]][d.index[k]] = 1;
+        }
+        int i = 0, j = 0, edit = ordered;
+        while (edit && (i < n || j < m)) {
+            while (i < n && gone[0][i]) i++;
+            while (j < m && gone[1][j]) j++;
+            if (i == n || j == m) { edit = i == n && j == m; break; }
+            edit = ref_same(&d, i, j);
+            i++;
+            j++;
+        }
+        TEST_CHECK_(edit, "case %d (%d and %d lines): not an edit of old into new", c, n, m);
+        int user, lcs = ref_lcs(&d, n, m, &user), kept_user = 0;
+        for (int k = 0; k < n; k++) kept_user += !gone[0][k] && ref_user(old + ref_starts[0][k], ref_lens[0][k]);
+        if (d.n == n + m - 2 * lcs) exact++;
+        else greedy++;
+        if (!big || big == 1) TEST_CHECK_(d.n == n + m - 2 * lcs, "case %d (%d and %d lines): %d lines, the fewest %d", c, n, m, d.n, n + m - 2 * lcs);
+        if (user >= 0) TEST_CHECK_(kept_user == user, "case %d: %d user lines kept, %d could be", c, kept_user, user);
+    }
+    TEST_MSG("%d cases: %d shortest, %d longer (past the bounds)", cases, exact, greedy);
+    TEST_CHECK(exact > 3500);
+}
+
 TEST_LIST = {
+    {"the_exact_lines_are_a_shortest_edit", the_exact_lines_are_a_shortest_edit},
+    {"the_plan_shows_the_edit_when_lines_repeat", the_plan_shows_the_edit_when_lines_repeat},
+    {"the_plan_reads_every_line_end_as_one", the_plan_reads_every_line_end_as_one},
+    {"a_failed_put_back_puts_the_current_one_back", a_failed_put_back_puts_the_current_one_back},
+    {"a_long_plan_keeps_its_restart_and_recovery_lines", a_long_plan_keeps_its_restart_and_recovery_lines},
+    {"the_page_pages_through_a_long_plan", the_page_pages_through_a_long_plan},
+    {"the_reason_is_shown_a_sentence_a_line", the_reason_is_shown_a_sentence_a_line},
+    {"a_stopped_uninstall_is_named_one", a_stopped_uninstall_is_named_one},
+    {"a_stopped_uninstall_says_uninstall_again", a_stopped_uninstall_says_uninstall_again},
+    {"this_build_damaged_is_a_repair", this_build_damaged_is_a_repair},
+    {"a_missing_config_ini_is_written_from_its_backup", a_missing_config_ini_is_written_from_its_backup},
     {"fresh_install_on_both_configurations", fresh_install_on_both_configurations},
     {"update_over_a_test3_install", update_over_a_test3_install},
     {"config_ini_from_0712", config_ini_from_0712},

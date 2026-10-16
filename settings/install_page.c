@@ -233,22 +233,65 @@ static int entry_rows(const VjoInstallDraw *ui, int i)
     return layout[i].rows ? layout[i].rows : 1;
 }
 
+#define TEXT_TOP (BOX_Y + 28)
+#define TEXT_BOTTOM (BOX_Y + BOX_H - 6)
+/* The box drawn from entry first: the index after the last entry it holds whole. */
+static int shown_from(const VjoInstallDraw *ui, int first)
+{
+    int y = TEXT_TOP, i = first;
+    for (; i < line_count; i++) {
+        int rows = entry_rows(ui, i);
+        if (i > first && y + (rows - 1) * LINE_H > TEXT_BOTTOM) break;
+        y += rows * LINE_H + 6;
+    }
+    return i;
+}
+
+/* L and R: a box up or down (code audit note 2: a long plan is read a box at a time). R starts the box at
+ * the first entry not shown whole; L at the earliest one from which the box still reaches the top's. */
+static void page_scroll(const VjoInstallDraw *ui, int direction)
+{
+    if (direction > 0) {
+        int end = shown_from(ui, scroll);
+        if (end < line_count) scroll = end;
+        return;
+    }
+    int top = scroll;
+    while (top > 0 && shown_from(ui, top - 1) >= scroll) top--;
+    scroll = top < scroll ? top : scroll > 0 ? scroll - 1 : 0;
+}
+
+/* The bar right of the text: where the view is in the whole, by rows. */
+static void draw_scrollbar(const VjoInstallDraw *ui, int end)
+{
+    int total = 0, from = 0, seen = 0;
+    for (int i = 0; i < line_count; i++) {
+        int rows = entry_rows(ui, i);
+        total += rows;
+        if (i < scroll) from += rows;
+        else if (i < end) seen += rows;
+    }
+    if (total <= 0 || seen >= total) return;
+    int y = BOX_Y + 8, h = BOX_H - 16, thumb = h * seen / total;
+    if (thumb < 12) thumb = 12;
+    ui->rect(BOX_X + BOX_W + 4, y, 6, h, ui->selected);
+    ui->rect(BOX_X + BOX_W + 4, y + (h - thumb) * from / (total - seen > 0 ? total - seen : 1), 6, thumb, ui->dim);
+}
+
 static void draw_lines(const VjoInstallDraw *ui, int error)
 {
     char row[512];
-    int y = BOX_Y + 28, bottom = BOX_Y + BOX_H - 6;
-    for (int i = scroll; i < line_count; i++) {
+    int y = TEXT_TOP, end = shown_from(ui, scroll);
+    for (int i = scroll; i < end; i++) {
         int rows = entry_rows(ui, i);
-        if (y + (rows - 1) * LINE_H > bottom) {
-            ui->text(BOX_X + BOX_W - 40, BOX_Y + BOX_H - 8, ui->dim, 20, "more");
-            break;
-        }
         for (int r = 0; r < rows; r++) {
             vjo_text_layout_row(lines[i], &layout[i], r, row);
             ui->text(BOX_X, y + r * LINE_H, error && i == 0 ? ui->off : i == 0 ? ui->white : ui->dim, TEXT_PX, row);
         }
         y += rows * LINE_H + 6;
     }
+    if (end < line_count) ui->text(BOX_X + BOX_W - 40, BOX_Y + BOX_H - 8, ui->dim, 20, "more");
+    draw_scrollbar(ui, end);
 }
 
 void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touch_x, int touch_y)
@@ -278,7 +321,12 @@ void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touc
         }
         if ((pressed & SCE_CTRL_UP) || stick < 0) { if (scroll > 0) scroll--; }
         if ((pressed & SCE_CTRL_DOWN) || stick > 0) { if (scroll + 1 < line_count) scroll++; }
+        if (showing != SHOW_RUNNING && (pressed & SCE_CTRL_LTRIGGER)) page_scroll(ui, -1);
+        if (showing != SHOW_RUNNING && (pressed & SCE_CTRL_RTRIGGER)) page_scroll(ui, 1);
     }
+    /* a text longer than its box: Up/Down and L/R scroll it, and the hints say so */
+    const char *scrolling = showing != SHOW_RUNNING && (scroll > 0 || shown_from(ui, scroll) < line_count)
+                          ? "Up/Down, L/R: scroll   " : "";
     char step_text[120], controls[120];
     uint64_t done = 0, total = 0;
     if (running && lock_uid >= 0) {
@@ -318,12 +366,12 @@ void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touc
     if (running)
         snprintf(controls, sizeof(controls), "Working: it cannot be stopped part way");
     else if (showing == SHOW_RESULT)
-        snprintf(controls, sizeof(controls), "%s: back   Up/Down: scroll   Select: page   %s: exit", ui->buttons->enter_glyph,
+        snprintf(controls, sizeof(controls), "%s: back   %sSelect: page   %s: exit", ui->buttons->enter_glyph, scrolling,
                  ui->buttons->cancel_glyph);
     else if (action_count)
-        snprintf(controls, sizeof(controls), "%s: %s   Left/Right: action   Up/Down: scroll   %s: exit", ui->buttons->enter_glyph,
-                 action_name(actions[action_index]), ui->buttons->cancel_glyph);
+        snprintf(controls, sizeof(controls), "%s: %s   Left/Right: action   %s%s: exit", ui->buttons->enter_glyph,
+                 action_name(actions[action_index]), scrolling, ui->buttons->cancel_glyph);
     else
-        snprintf(controls, sizeof(controls), "Up/Down: scroll   Select: page   %s: exit", ui->buttons->cancel_glyph);
+        snprintf(controls, sizeof(controls), "%sSelect: page   %s: exit", scrolling, ui->buttons->cancel_glyph);
     ui->hints(controls);
 }
