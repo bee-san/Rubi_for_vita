@@ -518,6 +518,42 @@ the same pages (1,652 and 3,428 B of text room) [measured: both builds' module r
 and `nm -S`, main `a7abad7` and this change]. No
 allocation, no new static; the kernel and the worker are byte-identical to main's in both builds.
 
+Words across a line break and the overlay's own line breaks (owner 2026-10-16, item 4;
+[touch-lookup.md](touch-lookup.md#words-split-over-two-lines)), on main `7385500`: the Shell gets 1,824 B
+of new code (the join rule, `core/textjoin.c`; the line-break rule, `core/linebreak.c`; the re-wrap,
+`shell/wrap_fix.h` and its callers in `overlay.cpp` and `strip.cpp`; `vjo_styled_insert`; the lookup's
+scan, `vjo_local_lookup_pages` +66 B) and 261 B of new tables, where the normal Shell's code segment
+had 1,388 B of room. The read-only tables go to the data segment ("Tables in the data segment"
+below): the line-break rule's 217 B, the join rule's 44 B, and from main's `.rodata` the lookup's
+`preferred_readings` (924 B) and `usual_spellings` (310 B), so the code segment grows by 590 B. So:
+
+| | main `7385500` | this change | room left |
+|---|---:|---:|---:|
+| normal Shell, text | 88,724 B | 89,316 B (+592) | 796 B of 90,112 |
+| normal Shell, data/bss | 69,796 B | 71,508 B (+1,712) | 2,220 B of 73,728 |
+| debug Shell, text | 99,276 B | 99,868 B (+592) | 2,532 B of 102,400 |
+| debug Shell, data/bss | 69,860 B | 71,572 B (+1,712) | 2,156 B of 73,728 |
+
+The pages stay 163,840 B (exact) and 176,128 B; the data/bss growth is the 1,495 B of tables and
+217 B of new state (the header's and the popup's shown texts and their re-wrap, 16 break positions,
+the strip's 16 more units). The kernel and the worker are byte-identical to main's in both builds.
+No allocation, thread, lock or PAF block is added: the overlay's text arena keeps its 20,480 B and
+its 17,952 B worst case (the header's shown text stays in it across the renders that keep it, as a
+render that rebuilds it holds it) [measured: the build log's module rows, both builds of main
+`7385500` and this change; per-function sizes with `arm-vita-eabi-nm -S`].
+
+### Tables in the data segment
+
+The normal Shell's code segment had 1,388 B of room and its data segment 3,932 B. A read-only table
+marked `VJO_DATA_TABLE` (`core/port.h`) is placed in the data segment (`.data.vjo.<name>`) by the
+Vita build; it stays `const` and is never written, and the host build keeps it in `.rodata`. It costs
+nothing more at run time (one copy, loaded with the module; the Shell is loaded into SceShell only)
+and moves no page: it uses the data segment's last page, which the module holds anyway. It is the
+cheaper of the two ways to keep the Shell's pages when its code grows (the other is `-Os`, which
+costs instructions a lookup), and both segments are checked exactly by `tools/check_memory_ledger.py`.
+Only tables of the Shell's own core code are so marked (`core/local_dict.c`, `core/linebreak.c`,
+`core/textjoin.c`).
+
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
 then fail. Split it into the two `#if VJO_DEBUG` branches first, as the Shell's and the kernel's are,

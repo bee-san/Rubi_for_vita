@@ -135,7 +135,7 @@ else
   echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; fail=1
 fi
 if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
-  WL=(host/tests/word_lookup_parity.c core/local_dict.c core/utf.c core/arena.c)
+  WL=(host/tests/word_lookup_parity.c core/local_dict.c core/textjoin.c core/utf.c core/arena.c)
   WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)
   "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity" "${WL[@]}"
   "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"

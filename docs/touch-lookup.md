@@ -413,9 +413,12 @@ bundled `plaintext.vjdict`, the header range the overlay recolors, the popup
 entry, and the Shell's own Right/Left navigation and touch hit test. Every
 lookup gives one entry or none, the highlight starts at the cursor and ends on
 a character boundary, and Right always advances. With the bundled dictionary,
-1,317 of the 1,321 Japanese letters lie inside a matched word (625 entries in
-629 lookups); a character without an entry stays highlighted and Right steps
-one character. The 56 cases of `expect.tsv` cover inflections
+1,319 of the 1,321 Japanese letters lie inside a matched word (614 entries in
+616 lookups; 617 in 619 before a word could cross a line break the text joins:
+five do on these lines, 呼び / ましょう and 頑 / 張ろう among them, and 彼氏様 /
+だもんね's 様だ, as the unbroken line gives it;
+[words split over two lines](#words-split-over-two-lines)); a character
+without an entry stays highlighted and Right steps one character. The 56 cases of `expect.tsv` cover inflections
 (会ってなかった → 会う, 殺されてしまう → 殺す, した → する), 静かな (静か; な is
 the next word, as in Yomitan), kana words (から, して, ありがとう), katakana loanwords,
 names, common readings (私 わたし, 先生 せんせい) and OCR errors (FL10's
@@ -446,6 +449,95 @@ test) and `vjo_log` never cuts it. On the host the lookup takes
 ([measurements](benchmarks/word-lookup-20261014.json)); one A9 core at 444 MHz
 is **estimated** at about 3–15 ms on average and under 45 ms at worst, mostly
 memory-card reads. The console's log lines measure it.
+
+## Words split over two lines
+
+A game wraps its dialogue where a line is full, often inside a word: どうしてお母 / さんも, 他の人間を求 /
+める姿を, だったら、プロ / ポーズみたい (vita-test). The overlay reads the recognized lines as the one running text they are
+(owner, 2026-10-16, item 4: "watashi wo tabe / ru kana?" is taberu):
+
+- **Which breaks join** (`core/textjoin.h`). A break joins the lines on either side when the line
+  before it is full: as wide as the text's widest line within two characters (a mark pushed to the
+  next row or hanging), at least eight characters wide (a half-width character counts half), not
+  ending with a sentence's end or a closing bracket (。．！？!?」』）】…), and the next line not
+  starting with an opening one (「『（【…). So a speaker's name line (short, or in brackets), a new
+  sentence and a line the game broke short keep their break.
+- **The lookup** (`core/local_dict.c`) crosses a joining break as if the lines were one: the key
+  and the text as written leave the break out, the matched span keeps it. At every character it
+  finds what it finds in the unbroken line (host test `joined_lines_match_as_one_line`). The word's
+  highlight runs over both parts, the end of one line and the start of the next.
+- **The cursor**: in Whole word mode Right skips the joined word, as any matched word, to the first
+  character after its end on the next line, and Left retraces it ([rows and arrow keys](#rows-and-arrow-keys)).
+- **Anki**: the card's Sentence is the text with its joining breaks removed, the word in it
+  (`core/anki.c`, at export in the Overlay app); the queue's record keeps the text as recognized,
+  so a card queued before this build exports joined too. A name's line keeps its own `<br>`.
+- The header, the strip and the log show the lines as recognized, breaks and all.
+
+How often it happens, measured on the real line sets (`tools/cross_line_eval.py`; text only, the
+private sets' text stays local): a pair is two consecutive lines of one text box, and a word
+crosses its break when the overlay's longest-match segmentation of the first line, over the two
+joined, has a word that starts on the first line and ends on the second (the raw count, before the
+join rule). Then how many of those breaks the rule joins, and how many of the breaks after a
+speaker's name line it joins.
+
+| set | lines | line pairs | a word crosses the break | breaks joined | crossings joined | breaks after a name joined |
+|---|---:|---:|---:|---:|---:|---:|
+| vita-test (16 games) | 206 | 122 | 20 (16.4 %) | 46 of 120 | 18 (90 %) | 0 of 53 |
+| psp-test (14 games) | 245 | 152 | 12 (7.9 %) | 39 of 152 | 9 (75 %) | 0 of 61 |
+| CLANNAD long run | 3,048 | 1,002 | 104 (10.4 %) | 167 of 989 | 99 (99 %) | 0 of 815 |
+| realplus-v3 (training pool) | 100,915 | 28,943 | 5,225 (18.1 %) | 11,146 of 28,943 | 4,974 (95 %) | 3 of 2,432 |
+| all | 104,414 | 30,219 | 5,361 (17.7 %) | 11,398 of 30,204 | 5,100 (95 %) | 3 of 3,361 |
+
+So about one line in six that has a next line in its box ends inside a word: 5.1 % of all
+lines, counting the last lines of boxes and one-line boxes. Not every such crossing is a word the
+game split: on review, 56 of 60 sampled realplus-v3 crossings that the overlay shows across a
+joined break were split words or grammatical units (the other four: longest matches across a phrase
+boundary, as the unbroken line gives them), and 22 of the 32 vita-test and psp-test ones, one
+more doubtful (the rest are longest matches across a phrase boundary, きた / おばあ様 → きたお). The rule leaves the
+crossings it does not join at a short or hand-broken line (次のコンサートも / いい演奏), a name's line or
+a line clearly shorter than the box's widest. Realplus-v3's boxes are line labels grouped by
+position (consecutive labels just below each other), so its counts include some lines that are no
+dialogue box. [measured: host build of this change, the bundled dictionary, 2026-10-16]
+
+`host/fixtures/cross_lines` holds 56 of the reviewed realplus-v3 boxes, each a word looked up
+whole across its break (`split_words_are_looked_up_whole`), and 32 breaks that must stay
+(`kept_breaks_stay_breaks`: 20 after a name, 12 at a sentence's end); `host/tests/test_textjoin.c`
+the rule, `test_local_cursor.c` the lookup, its pages, its highlight and the card, all on
+synthetic texts too.
+
+## The overlay's own line breaks
+
+Where the overlay wraps text itself it never breaks inside a word (the owner: "we shouldn't split a
+word down the middle either"). `core/linebreak.h` says where a line may break: after a space, after
+punctuation or a closing mark, before an opening mark, and where a Japanese phrase starts after kana
+(a kanji or katakana after hiragana, 彼女は|学校へ, but not after the prefixes お ご, not after one
+hiragana between kanji that is no particle, 振り返る, and not before a suffix such as 様 達); never
+inside a run of kanji, katakana or kana, between kanji and its kana, inside a Latin word or number,
+or between Latin and Japanese; and by the Japanese line-breaking rules (kinsoku): no line starts
+with 、。」』）！？…ー っ ゃ and the like, none ends with 「『（.
+
+- **The recognized text, the popup and the subtitle strip** are paf texts that paf wraps (word wrap
+  and kinsoku on, which still breaks Japanese anywhere). Once a text is laid out, the overlay looks
+  for the first line paf started inside a word (`shell/wrap_fix.h`) and puts a line break at the
+  last place that line may break instead, sets the text again, and repeats a frame later, up to 16
+  breaks a text. Only paf's own layout of the text is read (its lines and character positions), so
+  the console's glyph widths decide. A word wider than the line keeps paf's break. The header's
+  breaks are mapped back to the recognized text's own characters for the cursor, taps, arrows and
+  the highlight. The popup's definitions, mostly English, already break at spaces; its Japanese
+  (headwords, examples, kanji lines) is what this changes.
+- **The Overlay app**'s rows (`settings/text_layout.c`) end at the last space that fits, as before,
+  or later where a line may break: a Japanese game title no longer breaks inside a word, and Latin
+  text breaks as before (host test `latin_text_breaks_as_before`).
+
+Host tests: `test_linebreak.c` (the places, kinsoku, the UTF-16 and UTF-8 walks), `test_wrap_fix.cpp`
+(the re-wrap on a model of paf's layout: greedy lines, Japanese broken anywhere, Latin at its last
+space, a layout missing or one text behind; the header's unit map), `test_settings_layout.c` (the
+app's rows). Not verified on a console: how soon paf lays a text out after it is set (the step
+waits two frames, then up to six more), that a position past the end of an older layout is refused
+(which tells a layout of the text before the last break; one read too early can only end a line
+early, never inside a word), and the frame time it takes (a binary search of the text's units per
+line, at most once a frame per text) [estimate: well under a millisecond for the header, unmeasured
+for a long definition; the debug build's close line logs the slowest frame].
 
 ## Installation checkpoint
 

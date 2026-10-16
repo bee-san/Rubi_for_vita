@@ -25,9 +25,9 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 63 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 62 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 62 and 61,
+failed joins, cancelled jobs and crashes between steps are injected there. 66 ctest suites with
+the release models (`VJO_VOCR_MODEL_DIR`), 65 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 65 and 64,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
@@ -126,9 +126,11 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | touch_hold | 6 | the overlay page's hold on SceShell's front touch region (`shell/touch_hold.h`, #104) against a model of the region |
 | region_select | 15 | the region selector's stick cursor (`core/region_select.c`): its 1/256-pixel position, speed and timer arithmetic in 32 bits |
 | text_rows | 12 | the overlay arrows' row walk (`core/text_rows.c`, #81; across rows since the owner's 2026-10-16 rule): float cell edges and 32-bit offsets on the Vita's FPU |
+| text_join | 6 | which line breaks of the recognized text join its lines (`core/textjoin.c`), and the join's byte offsets, with 32-bit `size_t` |
+| linebreak | 6 | where the overlay's own wrapping may break a line (`core/linebreak.c`): its UTF-16 and UTF-8 walks agree on the Vita's word size |
 | stick_cursor | 26 | the overlay's left stick (`core/stick_cursor.h`, #138): its 32-bit microsecond differences across the clock's wrap and its credit by the clock at 20-60 Hz, the cap, the deferred lookup, and the step along the text (the arrows' Left/Right without the wrap) with 32-bit offsets |
 | cursor_nav | 13 | the cursor over several lines (the owner, 2026-10-16): the d-pad's Left/Right across rows to the text's ends, and the stick's four directions against the d-pad's from every character of nine layouts, with 32-bit offsets and float cells |
-| settings_layout | 12 | the Overlay app's text layouts, icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
+| settings_layout | 14 | the Overlay app's text layouts (rows that end between words since 2026-10-16), icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
 | shell_log | 13 (12 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
 | apkg | 23 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the four packages it writes (`--write`) are byte-identical to the host build's |
 | psp | 10 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the title IDs a bubble's row may carry (`core/taicfg.c` `vjo_tai_title_ok`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
