@@ -161,7 +161,10 @@
  * of the Shell's own code is 5,616 B: net_main 144, a job's vocr_run_one 5,000 (its log batch), then
  * vjo_log down to the file write 472 [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su
  * of this build, on main 3aa08a6 with #132 and the network's removal; 5,624 B with the UDP send;
- * the SDK's own code and the indirect-call sites are not counted]. The thread paints its
+ * the SDK's own code and the indirect-call sites are not counted]. The normal build's is 4,832 B:
+ * net_main 2,208 (the log batch that holds a job's lines until its result is shown, shell/worker.c
+ * net_log_hold), then a lookup down to the dictionary's page cache [measured the same way, t3-log-path].
+ * The thread paints its
  * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
  * so a console run measures it. */
 #define VJO_STACK_SHELL_NET 16384u

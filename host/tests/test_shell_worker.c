@@ -5017,6 +5017,7 @@ static int script_first_job(int step)
 {
     switch (step) {
     case 0: /* the control thread starts the job */
+        net_main_mark = appends_recorded; /* after the thread's start: its stack paint (#132) may log a line */
         next_scene(60 + (unsigned)log_wake); stable_pending = 1; control_tick(0);
         TEST_CHECK(job_running && (posted & NET_EV_JOB));
         return 1;
@@ -5039,7 +5040,6 @@ static void test_normal_build_net_main_writes_held_lines(void)
         cursor_setup();
         fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
         game_generation = 130u + (uint32_t)log_wake;
-        net_main_mark = appends_recorded;
         wait_script = script_first_job; wait_step = 0;
         test_thread = NET_THREAD;
         net_main(0, NULL); /* the network thread, from its start to its stop */
