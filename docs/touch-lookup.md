@@ -45,7 +45,10 @@ cancels a refresh in progress, and a refresh starts only once no lookup has
 started for 1.5 s and at least 2 s after the previous one. A refresh whose
 screen changed under every read is tried again at the pace of any such job
 ([in-game capture](ingame-capture.md)); one that fails (the game's memory, say)
-shows nothing and backs off as any OCR job, 2 s doubling to 60 s. No refresh
+shows nothing and backs off the next refresh, 2 s doubling to 60 s, until a job
+reads its screen again. That backoff is the refreshes' own (#95): after Cancel,
+Auto reads a settled screen at once, as when no job ran while the overlay was
+open. No refresh
 runs while the self-test is armed. Region and game changes still retire the text.
 
 In v0.7.10, a highlight change explicitly invalidates the header drawing after

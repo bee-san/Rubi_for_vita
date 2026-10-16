@@ -830,6 +830,7 @@ static void reset(void)
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
+    memset(&refresh_backoff, 0, sizeof(refresh_backoff));
     memset(cache_data, 0, sizeof(cache_data));
     app_state = -1;
     app_installed_rc = app_record_rc = (int)0x80010002u; /* neither stamp: a package from before them */
@@ -4170,8 +4171,9 @@ static void test_refresh_names_its_model_on_the_cards_only_when_it_replaces(void
 
 /* A refresh logs its own lines only: no "subtitle text ready" (it has no
  * sentence until it is compared). A failing one (here the game's memory)
- * shows nothing, keeps the shown text, and backs off as any OCR job: 2 s,
- * 4 s, ... between tries; a refresh that works ends the backoff. */
+ * shows nothing, keeps the shown text, and backs off the refreshes: 2 s,
+ * 4 s, ... between tries; Auto's backoff stays clear (#95 item 1); a refresh
+ * that works ends the backoff. */
 static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
 {
     cursor_setup();
@@ -4188,14 +4190,15 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh);
     finish_by_tick();
-    TEST_CHECK(DLOGGED("refresh rc=-103: kept") && ocr_backoff.us == BACKOFF_MIN_US);
+    TEST_CHECK(DLOGGED("refresh rc=-103: kept") && refresh_backoff.us == BACKOFF_MIN_US);
+    TEST_CHECK(!ocr_backoff.us && !ocr_backoff.until);
     check_shown("猫犬鳥", "cat", 0);
     TEST_CHECK(!g_view.status_is_error && !g_view.status[0]);
     next_scene(10);
     test_now += BACKOFF_MIN_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh); /* 2 s later: the next try */
     finish_by_tick();
-    TEST_CHECK(ocr_backoff.us == 2 * BACKOFF_MIN_US);
+    TEST_CHECK(refresh_backoff.us == 2 * BACKOFF_MIN_US && !ocr_backoff.until);
     next_scene(11);
     test_now += BACKOFF_MIN_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_CHECK(!job_running && refresh_pending); /* backing off: 4 s now */
@@ -4203,7 +4206,7 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     test_now += BACKOFF_MIN_US; control_tick(0);
     TEST_ASSERT(job_running && job_refresh);
     finish_by_tick();
-    TEST_CHECK(!ocr_backoff.us && !ocr_backoff.until);
+    TEST_CHECK(!refresh_backoff.us && !refresh_backoff.until && !ocr_backoff.until);
     check_shown("猫犬鳥", "cat", 0);
     close_overlay(); mem_free();
 }
@@ -4284,7 +4287,8 @@ static void test_subtitles_on_during_a_closed_overlays_lookup_or_refresh(void)
         TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, want),
                     "after 8 s: strip '%s' (kind %d, busy %d), job_running %d; the region shows %s", g_view.strip_text,
                     g_view.strip_kind, g_view.strip_busy, job_running, want);
-        TEST_CHECK(vocr_allocs == inferences + (unsigned)moved); /* a job only for a screen not read yet */
+        TEST_CHECK_(vocr_allocs == inferences + (unsigned)moved, "moved %d: %u jobs read the screen, expected %d", moved,
+                    vocr_allocs - inferences, moved); /* a job only for a screen not read yet */
         subtitles = 0;
         mem_free();
     }
@@ -4344,6 +4348,34 @@ static void test_a_refused_job_after_a_cancelled_lookup_and_a_move_shows_its_err
     finish_by_tick();
     check_shown("猫犬鳥", "cat", 0);
     close_overlay(); mem_free();
+
+    /* The same, reopened while Auto's job for the new screen runs (Whole word:
+     * it would look the word up), so its end goes through restart_old_job: the
+     * job is for the screen shown, and the game refused it. */
+    cursor_setup();
+    stable_pending = 1; auto_prefetch(); finish_current_job();
+    open_overlay();
+    check_shown("猫犬鳥", "cat", 0); /* Auto's word, at once */
+    uint32_t generation = local_text_generation;
+    vjo_post_cursor(3, generation); on_command(); /* Right: a lookup */
+    TEST_ASSERT(job_running && job_cursor_only);
+    vjo_post_cursor(6, generation); on_command(); /* and again: it waits */
+    TEST_CHECK(cursor_waiting);
+    close_overlay(); finish_by_tick();
+    TEST_CHECK(!job_running && local_cursor_seq != job_cursor_seq);
+    fail_vocr_user = 1; fake_free_user = 1000;
+    next_scene(8);
+    control_tick(VJO_EV_REGION_STABLE); /* Auto's job for it */
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    open_overlay();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting);
+    finish_by_tick();
+    run_for_seconds(8);
+    TEST_CHECK_(!job_running && !view_waiting && g_view.status_is_error && strstr(g_view.status, "not enough memory"),
+                "reopened during Auto's job, after 8 s: ov %d, job_running %d, view_waiting %d, status '%s' (error %d)",
+                ov, job_running, view_waiting, g_view.status, g_view.status_is_error);
+    TEST_CHECK(ov == OV_OPEN);
+    close_overlay(); mem_free();
 }
 
 /* #95 item 1 (#92's audit): refreshes that fail (here the game's memory, until
@@ -4377,7 +4409,21 @@ static void test_failing_refreshes_do_not_delay_auto_after_close(void)
     open_overlay(); /* the screen's text and word at once */
     TEST_CHECK(!job_running);
     check_shown("犬猫", "dog", 0);
+    /* OCR works again (Auto's job read its screen): the next refresh need not
+     * wait for the failed ones' 60 s, as with one backoff for every job. */
+    TEST_CHECK(!refresh_backoff.us && !refresh_backoff.until && !ocr_backoff.until);
+    fake_recognized_text = "鳥";
+    next_scene(31);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_by_tick(); finish_by_tick();
+    check_shown("鳥", "bird", 0);
     close_overlay(); mem_free();
+    /* A game's start (or resume) ends it too, as the other backoffs. */
+    backoff_note(&refresh_backoff, 1);
+    TEST_CHECK(refresh_backoff.until > now_us());
+    activate(state.game_pid, "PCSG00415", VJO_GAME);
+    TEST_CHECK(!refresh_backoff.us && !refresh_backoff.until);
 }
 
 /* #95 item 2b (#92's audit): a refresh takes its capture for the text it shows,
