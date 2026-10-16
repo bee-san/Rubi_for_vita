@@ -14,6 +14,18 @@ lookup makes 12.6-16.0 file reads. Of those:
 The console estimate is 56-74 ms at p50 and 123-156 ms at p95 per lookup. A screen read word by
 word takes 0.5-1.0 s at p50 and 1.5-2.2 s at p95. The CPU part is 0.04-0.05 ms on the host.
 
+**Results** (§6; Whole word stepping over the 50 committed lines and 500 screens each of two label
+pools, every shown entry and highlight identical at each step):
+
+| step | reads per lookup | console ms p50 (est.) | RAM added | disk |
+|---|---:|---:|---:|---:|
+| baseline (#118) | 13.5-15.8 | 66.7-70.4 | | |
+| key filter (#123, 6.1) | 8.3-8.6 | 48.0-48.4 | 0 | +904 KiB |
+| posting hints (6.3) | 5.3-5.5 | 40.5 | 0 | 0 |
+
+The dictionary stays on disk: nothing of it is resident between lookups, and the Shell's permanent
+memory is unchanged.
+
 All console times here are **estimates**, made from read counts with a fit of the owner's console
 logs (§4). Read counts are exact host measurements of the production code.
 
@@ -311,12 +323,65 @@ Whole word):
 
   Below 4 buckets, the few index pages mostly stay in the page cache.
 
+### 6.3 Posting hints: rank a key's entries without their payloads (format 3)
+
+Ranking a key's postings read a 160-byte head of each payload: spelling, reading, and in format 3
+the frequency word. Format 3 (#127) leaves each posting's last u16 to index hints, and this change
+fills it:
+- bit 0: the spelling is the key;
+- bit 1: the spelling normalizes to the key;
+- bit 2: the entry has a reading;
+- bits 3-15: the 13-bit frequency key of the payload's frequency word.
+
+Page-0 bytes 160..167 (`VJPH`, version 1) announce them, so a v3 file without hints reads as
+before. `rank_posting` builds the score from the hint exactly as from the head. It still reads the
+head in two cases:
+- for a key in the preferred-readings table, or in #127's usual-spellings table;
+- for katakana or full-width text whose entry's spelling normalizes to the key without being it,
+  since only the head says whether it is spelled as the text is.
+
+The bundled file gets the hints in `tools/prepare_plaintext.py`, deterministically, before the key
+filter: 840,994 postings, 17 s on the host. `--frequency` writes them when converting. The file's
+size is unchanged.
+
+Bundled dictionary (format 3, with the key filter), the same lookups, every shown entry and
+highlight identical (36,521 lookups):
+
+| set | mode | lookups | reads before → after | payload-head reads | console ms p50 before → after (est.) | p95 | per screen p50 | per screen p95 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| fixture (50 lines) | first | 50 | 8.42 → 6.22 | 3.28 → 1.08 | 51.7 → 40.5 | 70.4 → 66.7 | 52 → 40 | 70 → 67 |
+| fixture (50 lines) | words | 629 | 8.62 → 5.51 | 3.55 → 0.46 | 48.0 → 40.5 | 81.6 → 59.2 | 714 → 553 | 1198 → 859 |
+| fixture (50 lines) | letters | 1,321 | 9.37 → 5.57 | 4.09 → 0.34 | 51.7 → 40.5 | 85.3 → 59.2 | 1509 → 1128 | 2412 → 1778 |
+| realplus-v3 (500 screens) | first | 500 | 7.87 → 5.59 | 2.72 → 0.48 | 48.0 → 40.5 | 74.1 → 51.7 | 48 → 40 | 74 → 52 |
+| realplus-v3 (500 screens) | words | 5,005 | 8.38 → 5.35 | 3.26 → 0.26 | 48.0 → 40.5 | 81.6 → 48.0 | 358 → 288 | 1368 → 1058 |
+| realplus-v3 (500 screens) | letters | 10,905 | 9.06 → 5.41 | 3.83 → 0.22 | 51.7 → 40.5 | 81.6 → 51.7 | 858 → 650 | 3043 → 2224 |
+| owner-pool-2 (500 screens) | first | 500 | 7.69 → 5.49 | 2.56 → 0.41 | 48.0 → 40.5 | 70.4 → 48.0 | 48 → 40 | 70 → 48 |
+| owner-pool-2 (500 screens) | words | 5,423 | 8.39 → 5.34 | 3.25 → 0.23 | 48.0 → 40.5 | 77.8 → 48.0 | 516 → 402 | 1249 → 948 |
+| owner-pool-2 (500 screens) | letters | 12,188 | 9.01 → 5.43 | 3.74 → 0.20 | 51.7 → 40.5 | 81.6 → 51.7 | 1213 → 925 | 3050 → 2316 |
+
+Raw numbers: [`docs/benchmarks/dict-posting-hints-20261015.json`](../docs/benchmarks/dict-posting-hints-20261015.json).
+
+- **Heads.** Payload-head reads fall from 2.6-4.1 to 0.2-1.1 per lookup, as 3.5-10.5 postings per
+  lookup are ranked from their hints. The worst lookup's reads fall from 23-38 to 20-22, and bytes
+  per lookup from 27-34 KiB to 18-21 KiB.
+- **Host CPU.** 29-35 µs at p50 instead of 33-42 µs.
+- **Memory and code.** No RAM is added. The Workspace stays 45,872 B (ARMv7) and 45,968 B (host):
+  the hint is passed from the posting read to the ranking, not stored, and the file's hint flag
+  sits in a `Dictionary`'s padding. The Shell's text grows inside its pages (Vita build; the PR
+  body has the rows).
+- **Remaining reads.** A Whole word lookup now reads, on average:
+  - the header page and the filter block, about 1 each;
+  - index pages, about 1.1;
+  - the key group, about 1;
+  - payload heads, 0.2-0.5;
+  - the shown payload, 1.
+
 ### 6.2 What else was considered, by gain per KB of memory
 
 | change | RAM (SceShell) | disk | reads saved per lookup | status |
 |---|---:|---:|---:|---|
 | key filter (6.1) | 0 (existing page cache) | +904 KiB | 4.7-7.5 (measured) | this work |
-| posting rank hints: spelling = key, normalized spelling = key, has a reading, in the v3 postings' u16 that dict-freq leaves to this work (bits 0-2; its 13-bit frequency key fills bits 3-15) | 0 | 0 | 2.2-3.7 simulated: heads 2.7-4.0 → 0.2-1.2, since keys with a preferred reading and katakana spellings of katakana text still read their heads | next, after dict-freq's v3 |
+| posting rank hints (6.3): spelling = key, normalized spelling = key, has a reading and the 13-bit frequency key, in the v3 postings' u16 | 0 | 0 | 2.2-3.8 (measured: heads 2.6-4.1 → 0.2-1.1) | this work |
 | keep the file open across one overlay session's lookups | 0 (a descriptor; overlay-shell-slim: fine) | 0 | 1 header read and the open/seek/close: the fixed part, est. about 11 ms for a cursor lookup | needs a console test: on the host nothing can measure `sceIoOpen` |
 | bigger page cache kept across one text's lookups | 16-128 KiB resident in SceShell | 0 | 0-2.8% (audit-overlay-perf-1: 4 pages 0.0%, 8 pages 1.5%, 32 pages 2.8%) | rejected: AGENTS.md rule 1, and too small |
 | block index / sorted prefix table instead of the hash | 0 | about 0 | ≤ 0.1 after the filter (index reads are at the floor) | not worth a format change |

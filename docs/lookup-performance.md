@@ -168,6 +168,21 @@ The filter costs 0.91-1.00 reads and 0 bytes of RAM, and adds 904 KiB to the bun
 Results for every mode and set:
 [dict-key-filter-20261015.json](benchmarks/dict-key-filter-20261015.json).
 
+### Posting hints
+
+Format 3's posting hints ([format](local-dictionaries.md)) rank a key's entries without reading
+their payloads' heads. On the bundled file with the key filter, with Whole word stepping, the same
+lookups and every shown entry identical:
+
+| line set | lookups | reads | payload-head reads | console ms p50 / p95 (est.) | per screen p50 / p95 (est.) |
+|---|---:|---:|---:|---:|---:|
+| 50 committed VOCR lines | 629 | 8.62 → 5.51 | 3.55 → 0.46 | 48.0 → 40.5 / 81.6 → 59.2 | 714 → 553 / 1198 → 859 ms |
+| 500 realplus-v3 screens | 5,005 | 8.38 → 5.35 | 3.26 → 0.26 | 48.0 → 40.5 / 81.6 → 48.0 | 358 → 288 / 1368 → 1058 ms |
+| 500 owner-pool-2 screens | 5,423 | 8.39 → 5.34 | 3.25 → 0.23 | 48.0 → 40.5 / 77.8 → 48.0 | 516 → 402 / 1249 → 948 ms |
+
+Results for every mode and set:
+[dict-posting-hints-20261015.json](benchmarks/dict-posting-hints-20261015.json).
+
 ## Dictionary pages
 
 `tools/benchmark_dictionary_pages.py` measures the selected-character lookup

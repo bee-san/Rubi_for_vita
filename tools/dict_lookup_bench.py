@@ -45,7 +45,7 @@ CONSOLE = {
                "32 KiB reads took at most 165 ms (load 218-231 ms less the A9 SHA-256 estimate)"),
 }
 COUNTS = ("reads", "bytes", "excess_bytes", "pages", "nonsequential", "spans", "candidates", "probes",
-          "filtered", "miss_cached", "hash_present", "found", "ranked", "absent_reads")
+          "filtered", "miss_cached", "hash_present", "found", "ranked", "hinted", "absent_reads")
 KINDS = ("header", "index", "group", "head", "payload", "filter")
 
 

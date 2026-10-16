@@ -73,6 +73,13 @@ FILTER_BITS_PER_KEY = 10
 # the filter's own block read costs more than it saves (JMdict subsets: 2 buckets 2.82 -> 3.08
 # reads a lookup, 4 buckets 4.07 -> 3.16; reports/dict-lookup-speed.md, 6.1).
 FILTER_MIN_BUCKETS = 4
+# Posting hints (version 3): each posting's last u16 ranks it without reading its payload's
+# head (core/local_dict.c rank_posting), announced by HINTS_MAGIC at page-0 byte 160.
+HINTS_MAGIC = b"VJPH"
+HINTS_DESCRIPTOR = struct.Struct("<4sI")  # magic, version 1
+HINTS_DESCRIPTOR_OFFSET = 160
+HINT_SPELLING, HINT_NORMALIZED, HINT_READING, HINT_FREQ_SHIFT = 1, 2, 4, 3
+HEAD_BYTES = 160  # the reader's head window after the frequency word (core/local_dict.c HEAD_BYTES)
 
 
 def normalize(text):
@@ -449,6 +456,85 @@ def key_hash(key):
     return h ^ (h >> 33)
 
 
+def freq_key(word):
+    """core/local_dict.c freq_key: a frequency word's rank as 13 bits, higher for a more
+    frequent entry, 0 unranked; an own rank (no FREQ_BORROWED) above any borrowed one."""
+    rank = word & FREQ_RANK_MAX
+    if not rank:
+        return 0
+    e = rank.bit_length() - 1
+    m = (rank >> (e - 7)) & 127 if e >= 7 else (rank << (7 - e)) & 127
+    return (0 if word & FREQ_BORROWED else 4096) + 4095 - (e * 128 + m)
+
+
+def posting_hint(key, payload_head, entry_len):
+    """A version 3 posting's hint: what rank_posting reads from the payload's head, which
+    is payload_head (at least the first min(entry_len, 4 + HEAD_BYTES) payload bytes).
+    Spelling and reading count only inside the reader's window, as there."""
+    word = struct.unpack_from("<I", payload_head)[0]
+    hint = freq_key(word) << HINT_FREQ_SHIFT
+    n = min(entry_len, 4 + HEAD_BYTES) - 4
+    head = payload_head[4:4 + n]
+    end = head.find(b"\0")
+    if end < 0:
+        return hint  # the spelling fills the window: no flags, as the reader decides
+    spelling = head[:end]
+    if spelling == key:
+        hint |= HINT_SPELLING
+    if normalize(spelling.decode("utf-8")) == key:
+        hint |= HINT_NORMALIZED
+    if end + 1 < n and head[end + 1] != 0:
+        hint |= HINT_READING
+    return hint
+
+
+def add_index_hints(path, output=None):
+    """Writes the posting hints into an existing version 3 file without them (deterministic;
+    entries, index and payloads unchanged, readers that predate them ignore the u16)."""
+    path, output = Path(path), Path(output or path)
+    with path.open("rb") as stream:
+        page0 = stream.read(PAGE_SIZE)
+        if page0[:8] != MAGIC_V3:
+            raise ValueError(f"{path}: posting hints need a version 3 dictionary")
+        if any(page0[HINTS_DESCRIPTOR_OFFSET:HINTS_DESCRIPTOR_OFFSET + HINTS_DESCRIPTOR.size]):
+            raise ValueError(f"{path}: page 0's hint descriptor bytes are not empty")
+        pages = HEADER.unpack_from(page0)[9]
+        with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".tmp", dir=output.parent,
+                                         delete=False) as final:
+            try:
+                stream.seek(0)
+                shutil.copyfileobj(stream, final, length=1024 * 1024)
+                postings = 0
+                for page in range(pages):
+                    stream.seek(PAGE_SIZE * (1 + page))
+                    block = stream.read(PAGE_SIZE)
+                    count = PAGE_HEADER.unpack_from(block)[1]
+                    for slot in range(count):
+                        _, group, n, length, _ = HASH_RECORD.unpack_from(block, PAGE_HEADER.size + slot * HASH_RECORD.size)
+                        stream.seek(group)
+                        key = stream.read(length)
+                        raw = stream.read(n * POSTING.size)
+                        for j in range(n):
+                            entry_off, entry_len, _, old = POSTING.unpack_from(raw, j * POSTING.size)
+                            if old:
+                                raise ValueError(f"{path}: a posting already has a hint")
+                            stream.seek(entry_off)
+                            hint = posting_hint(key, stream.read(min(entry_len, 4 + HEAD_BYTES)), entry_len)
+                            final.seek(group + length + j * POSTING.size + 14)
+                            final.write(struct.pack("<H", hint))
+                            postings += 1
+                final.seek(HINTS_DESCRIPTOR_OFFSET)
+                final.write(HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 1))
+                final.flush()
+                os.fsync(final.fileno())
+                os.chmod(final.name, path.stat().st_mode & 0o777)
+            except BaseException:
+                Path(final.name).unlink(missing_ok=True)
+                raise
+    os.replace(final.name, output)
+    return {"hinted_postings": postings}
+
+
 def filter_prefix(key):
     """A key's filter block is chosen by its first two code points, 16 bits each (0xFFFF
     beyond the BMP), the second 0 for a one-character key: nearly every candidate searched
@@ -565,9 +651,13 @@ def add_key_filter(path, output=None):
             raise ValueError(f"{path}: not a version 2 or later dictionary")
         if page0[FILTER_DESCRIPTOR_OFFSET:FILTER_DESCRIPTOR_OFFSET + 4] == FILTER_MAGIC:
             raise ValueError(f"{path}: already has a key filter")
-        if any(page0[FILTER_DESCRIPTOR_OFFSET:FILTER_TITLE_GAP[0]]) or any(page0[FILTER_DIRECTORY_OFFSET:]):
-            raise ValueError(f"{path}: page 0's bytes {FILTER_DESCRIPTOR_OFFSET}..{FILTER_TITLE_GAP[0] - 1} or "
-                             f"{FILTER_DIRECTORY_OFFSET}..{PAGE_SIZE - 1} are not empty")
+        # Not the filter's: the posting hints' descriptor (160..167) and a dictionary title (192..255).
+        hints_end = HINTS_DESCRIPTOR_OFFSET + HINTS_DESCRIPTOR.size
+        if (any(page0[FILTER_DESCRIPTOR_OFFSET:HINTS_DESCRIPTOR_OFFSET]) or any(page0[hints_end:FILTER_TITLE_GAP[0]])
+                or any(page0[FILTER_DIRECTORY_OFFSET:])):
+            raise ValueError(f"{path}: page 0's bytes {FILTER_DESCRIPTOR_OFFSET}..{HINTS_DESCRIPTOR_OFFSET - 1}, "
+                             f"{hints_end}..{FILTER_TITLE_GAP[0] - 1} or {FILTER_DIRECTORY_OFFSET}..{PAGE_SIZE - 1} "
+                             f"are not empty")
         size = struct.unpack_from("<Q", page0, 40)[0]
         if size != path.stat().st_size:
             raise ValueError(f"{path}: size does not match its header")
@@ -624,7 +714,11 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
                 db.execute("UPDATE hash_keys SET n=?, off=?, rules=? WHERE key=?", (n, group_off, rules_union, current))
             current, group_off, n, rules_union = key, final.tell(), 0, 0
             final.write(key)
-        final.write(POSTING.pack(data_off + entry_off, length, rules, 0))
+        hint = 0
+        if frequency_title is not None:  # version 3: rank the posting without its head
+            data.seek(entry_off)
+            hint = posting_hint(key, data.read(min(length, 4 + HEAD_BYTES)), length)
+        final.write(POSTING.pack(data_off + entry_off, length, rules, hint))
         n += 1
         rules_union |= rules
     db.execute("UPDATE hash_keys SET n=?, off=?, rules=? WHERE key=?", (n, group_off, rules_union, current))
@@ -637,6 +731,8 @@ def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
                            PAGE_SIZE, data_off, size, buckets, pages))
     if frequency_title is not None:
         final.write(FREQ_TITLE.pack(frequency_title.encode("utf-8")))
+        final.seek(HINTS_DESCRIPTOR_OFFSET)
+        final.write(HINTS_DESCRIPTOR.pack(HINTS_MAGIC, 1))
     records = iter(db.execute("SELECT hash, off, n, key, rules FROM hash_keys ORDER BY bucket, hash, key"))
     overflow = buckets
     for bucket, number in enumerate(page_counts):

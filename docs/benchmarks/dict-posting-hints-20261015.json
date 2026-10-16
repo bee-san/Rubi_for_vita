@@ -1,0 +1,2810 @@
+{
+ "method": "The Shell's local word lookup over real recognized lines: file reads (what they fetch), bytes, deinflection candidates generated / searched / found, the arena peak and the time, per lookup and per screen, with a console latency model. Compares two builds or dictionaries and fails unless every lookup shows exactly the same entries (a golden check).",
+ "console_model": {
+  "fixed_ms": 21.9,
+  "read_ms": 3.73,
+  "excess_kib_ms": 0.146,
+  "source": "estimate: least-squares fit over the 57 distinct lookups of the v0.8.0-test.2 console log.txt, whose first 4,966 lines are test.1's whole log (ms = 21.9 + 3.73 x reads, R^2 0.52, reads 5-33). By kind: cursor (n 35) 11.2 + 3.76 x reads, R^2 0.85; first word and on open (n 22) 35.4 + 3.91 x reads, R^2 0.27. docs/performance.md's 30-lookup fit: 15.3 + 3.82. A read's bytes beyond 4 KiB at most 0.146 ms/KiB: the 1,155,968 B of VOCR3-H15 weights in 32 KiB reads took at most 165 ms (load 218-231 ms less the A9 SHA-256 estimate)"
+ },
+ "rounds": 21,
+ "dicts": "plaintext.vjdict",
+ "sets": {
+  "host/fixtures/word_lookup/vocr_lines.tsv": {
+   "first": {
+    "after": {
+     "lookups": 50,
+     "with_entry": 50,
+     "opened_files": 50,
+     "host_us": {
+      "mean": 33.828,
+      "p50": 29.01,
+      "p95": 61.781,
+      "max": 74.06
+     },
+     "host_lookups_per_s": 29561.6,
+     "console_ms": {
+      "mean": 45.1,
+      "p50": 40.5,
+      "p95": 66.7,
+      "max": 96.5
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 6.22,
+      "p50": 5,
+      "p95": 12,
+      "max": 20
+     },
+     "bytes": {
+      "mean": 21797.6,
+      "p50": 16847,
+      "p95": 45379,
+      "max": 78541
+     },
+     "excess_bytes": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "pages": {
+      "mean": 6.02,
+      "p50": 5,
+      "p95": 11,
+      "max": 19
+     },
+     "nonsequential": {
+      "mean": 4.92,
+      "p50": 4,
+      "p95": 8,
+      "max": 17
+     },
+     "spans": {
+      "mean": 5.34,
+      "p50": 4,
+      "p95": 14,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 9.24,
+      "p50": 4,
+      "p95": 34,
+      "max": 40
+     },
+     "probes": {
+      "mean": 8.98,
+      "p50": 4,
+      "p95": 34,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 7.88,
+      "p50": 3,
+      "p95": 33,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "hash_present": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 2
+     },
+     "found": {
+      "mean": 1,
+      "p50": 1,
+      "p95": 1,
+      "max": 1
+     },
+     "ranked": {
+      "mean": 2.36,
+      "p50": 0,
+      "p95": 7,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 3.5,
+      "p50": 1,
+      "p95": 9,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.1,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.08,
+      "group": 1.06,
+      "head": 1.08,
+      "payload": 1,
+      "filter": 1
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4423.7,
+      "group": 4341.8,
+      "head": 4423.7,
+      "payload": 416.5,
+      "filter": 4096
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 33.8,
+       "p50": 29.0,
+       "p95": 61.8,
+       "max": 74.1
+      },
+      "console_ms": {
+       "mean": 45.1,
+       "p50": 40.5,
+       "p95": 66.7,
+       "max": 96.5
+      },
+      "reads": {
+       "mean": 6.2,
+       "p50": 5,
+       "p95": 12,
+       "max": 20
+      }
+     }
+    },
+    "before": {
+     "lookups": 50,
+     "with_entry": 50,
+     "opened_files": 50,
+     "host_us": {
+      "mean": 37.087,
+      "p50": 32.69,
+      "p95": 64.07,
+      "max": 73.451
+     },
+     "host_lookups_per_s": 26963.3,
+     "console_ms": {
+      "mean": 53.3,
+      "p50": 51.7,
+      "p95": 70.4,
+      "max": 145.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 8.42,
+      "p50": 8,
+      "p95": 13,
+      "max": 33
+     },
+     "bytes": {
+      "mean": 30808.8,
+      "p50": 28860,
+      "p95": 49665,
+      "max": 131561
+     },
+     "excess_bytes": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "pages": {
+      "mean": 7.32,
+      "p50": 7,
+      "p95": 12,
+      "max": 26
+     },
+     "nonsequential": {
+      "mean": 6.9,
+      "p50": 6,
+      "p95": 10,
+      "max": 25
+     },
+     "spans": {
+      "mean": 5.34,
+      "p50": 4,
+      "p95": 14,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 9.24,
+      "p50": 4,
+      "p95": 34,
+      "max": 40
+     },
+     "probes": {
+      "mean": 8.98,
+      "p50": 4,
+      "p95": 34,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 7.88,
+      "p50": 3,
+      "p95": 33,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "hash_present": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 2
+     },
+     "found": {
+      "mean": 1,
+      "p50": 1,
+      "p95": 1,
+      "max": 1
+     },
+     "ranked": {
+      "mean": 5.86,
+      "p50": 3,
+      "p95": 18,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.1,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.08,
+      "group": 1.06,
+      "head": 3.28,
+      "payload": 1,
+      "filter": 1
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4423.7,
+      "group": 4341.8,
+      "head": 13434.9,
+      "payload": 416.5,
+      "filter": 4096
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 37.1,
+       "p50": 32.7,
+       "p95": 64.1,
+       "max": 73.5
+      },
+      "console_ms": {
+       "mean": 53.3,
+       "p50": 51.7,
+       "p95": 70.4,
+       "max": 145.0
+      },
+      "reads": {
+       "mean": 8.4,
+       "p50": 8,
+       "p95": 13,
+       "max": 33
+      }
+     }
+    },
+    "golden": "50 lookups, every shown entry and highlight identical"
+   },
+   "words": {
+    "after": {
+     "lookups": 629,
+     "with_entry": 625,
+     "opened_files": 629,
+     "host_us": {
+      "mean": 33.87,
+      "p50": 31.3,
+      "p95": 51.24,
+      "max": 84.04
+     },
+     "host_lookups_per_s": 29524.8,
+     "console_ms": {
+      "mean": 42.4,
+      "p50": 40.5,
+      "p95": 59.2,
+      "max": 104.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.51,
+      "p50": 5,
+      "p95": 10,
+      "max": 22
+     },
+     "bytes": {
+      "mean": 19287.53,
+      "p50": 16834,
+      "p95": 36937,
+      "max": 86209
+     },
+     "excess_bytes": {
+      "mean": 13.54,
+      "p50": 0,
+      "p95": 0,
+      "max": 2811
+     },
+     "pages": {
+      "mean": 5.6,
+      "p50": 5,
+      "p95": 9,
+      "max": 21
+     },
+     "nonsequential": {
+      "mean": 4.37,
+      "p50": 4,
+      "p95": 8,
+      "max": 17
+     },
+     "spans": {
+      "mean": 4.55,
+      "p50": 3,
+      "p95": 13,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 8.43,
+      "p50": 6,
+      "p95": 25,
+      "max": 40
+     },
+     "probes": {
+      "mean": 7.95,
+      "p50": 5,
+      "p95": 24,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 6.79,
+      "p50": 4,
+      "p95": 23,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.1,
+      "p50": 1,
+      "p95": 2,
+      "max": 5
+     },
+     "found": {
+      "mean": 1.03,
+      "p50": 1,
+      "p95": 1,
+      "max": 3
+     },
+     "ranked": {
+      "mean": 0.93,
+      "p50": 0,
+      "p95": 5,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 7.67,
+      "p50": 2,
+      "p95": 30,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.12,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.129,
+      "group": 1.033,
+      "head": 0.459,
+      "payload": 0.994,
+      "filter": 0.892
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4623.5,
+      "group": 4232.8,
+      "head": 1881.9,
+      "payload": 800.2,
+      "filter": 3653.2
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 12.58,
+       "p50": 13,
+       "p95": 21,
+       "max": 23
+      },
+      "host_us": {
+       "mean": 426.1,
+       "p50": 458.4,
+       "p95": 675.9,
+       "max": 750.8
+      },
+      "console_ms": {
+       "mean": 533.9,
+       "p50": 552.8,
+       "p95": 859.3,
+       "max": 944.4
+      },
+      "reads": {
+       "mean": 69.3,
+       "p50": 69,
+       "p95": 107,
+       "max": 118
+      }
+     }
+    },
+    "before": {
+     "lookups": 629,
+     "with_entry": 625,
+     "opened_files": 629,
+     "host_us": {
+      "mean": 39.761,
+      "p50": 37.58,
+      "p95": 60.4,
+      "max": 86.81
+     },
+     "host_lookups_per_s": 25150.6,
+     "console_ms": {
+      "mean": 54.1,
+      "p50": 48.0,
+      "p95": 81.6,
+      "max": 145.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 8.62,
+      "p50": 7,
+      "p95": 16,
+      "max": 33
+     },
+     "bytes": {
+      "mean": 32057.41,
+      "p50": 25875,
+      "p95": 63076,
+      "max": 131561
+     },
+     "excess_bytes": {
+      "mean": 13.54,
+      "p50": 0,
+      "p95": 0,
+      "max": 2811
+     },
+     "pages": {
+      "mean": 7.48,
+      "p50": 6,
+      "p95": 13,
+      "max": 26
+     },
+     "nonsequential": {
+      "mean": 6.72,
+      "p50": 6,
+      "p95": 11,
+      "max": 25
+     },
+     "spans": {
+      "mean": 4.55,
+      "p50": 3,
+      "p95": 13,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 8.43,
+      "p50": 6,
+      "p95": 25,
+      "max": 40
+     },
+     "probes": {
+      "mean": 7.95,
+      "p50": 5,
+      "p95": 24,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 6.79,
+      "p50": 4,
+      "p95": 23,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.1,
+      "p50": 1,
+      "p95": 2,
+      "max": 5
+     },
+     "found": {
+      "mean": 1.03,
+      "p50": 1,
+      "p95": 1,
+      "max": 3
+     },
+     "ranked": {
+      "mean": 8.6,
+      "p50": 3,
+      "p95": 30,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.12,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.129,
+      "group": 1.033,
+      "head": 3.548,
+      "payload": 0.994,
+      "filter": 0.921
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4623.5,
+      "group": 4232.8,
+      "head": 14534.6,
+      "payload": 800.2,
+      "filter": 3770.4
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 12.58,
+       "p50": 13,
+       "p95": 21,
+       "max": 23
+      },
+      "host_us": {
+       "mean": 500.2,
+       "p50": 519.8,
+       "p95": 840.1,
+       "max": 899.4
+      },
+      "console_ms": {
+       "mean": 680.2,
+       "p50": 713.6,
+       "p95": 1198.4,
+       "max": 1261.4
+      },
+      "reads": {
+       "mean": 108.5,
+       "p50": 113,
+       "p95": 198,
+       "max": 203
+      }
+     }
+    },
+    "golden": "629 lookups, every shown entry and highlight identical"
+   },
+   "letters": {
+    "after": {
+     "lookups": 1321,
+     "with_entry": 1309,
+     "opened_files": 1321,
+     "host_us": {
+      "mean": 34.07,
+      "p50": 31.5,
+      "p95": 52.38,
+      "max": 84.42
+     },
+     "host_lookups_per_s": 29351.4,
+     "console_ms": {
+      "mean": 42.7,
+      "p50": 40.5,
+      "p95": 59.2,
+      "max": 104.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.57,
+      "p50": 5,
+      "p95": 10,
+      "max": 22
+     },
+     "bytes": {
+      "mean": 19554.03,
+      "p50": 16900,
+      "p95": 37010,
+      "max": 86209
+     },
+     "excess_bytes": {
+      "mean": 16.61,
+      "p50": 0,
+      "p95": 0,
+      "max": 2923
+     },
+     "pages": {
+      "mean": 5.68,
+      "p50": 5,
+      "p95": 9,
+      "max": 21
+     },
+     "nonsequential": {
+      "mean": 4.46,
+      "p50": 4,
+      "p95": 8,
+      "max": 17
+     },
+     "spans": {
+      "mean": 4.38,
+      "p50": 3,
+      "p95": 12,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 8.41,
+      "p50": 6,
+      "p95": 24,
+      "max": 40
+     },
+     "probes": {
+      "mean": 7.8,
+      "p50": 5,
+      "p95": 24,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 6.5,
+      "p50": 4,
+      "p95": 23,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.25,
+      "p50": 1,
+      "p95": 3,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.09,
+      "p50": 1,
+      "p95": 2,
+      "max": 6
+     },
+     "ranked": {
+      "mean": 0.6,
+      "p50": 0,
+      "p95": 1,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 10.54,
+      "p50": 3,
+      "p95": 45,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.19,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.258,
+      "group": 1.111,
+      "head": 0.335,
+      "payload": 0.991,
+      "filter": 0.871
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5153.3,
+      "group": 4548.7,
+      "head": 1370.5,
+      "payload": 816.6,
+      "filter": 3568.9
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 26.42,
+       "p50": 27,
+       "p95": 43,
+       "max": 43
+      },
+      "host_us": {
+       "mean": 900.1,
+       "p50": 933.3,
+       "p95": 1373.2,
+       "max": 1379.9
+      },
+      "console_ms": {
+       "mean": 1127.1,
+       "p50": 1128.4,
+       "p95": 1777.6,
+       "max": 1822.0
+      },
+      "reads": {
+       "mean": 147.0,
+       "p50": 146,
+       "p95": 224,
+       "max": 236
+      }
+     }
+    },
+    "before": {
+     "lookups": 1321,
+     "with_entry": 1309,
+     "opened_files": 1321,
+     "host_us": {
+      "mean": 40.628,
+      "p50": 38.35,
+      "p95": 61.55,
+      "max": 114.68
+     },
+     "host_lookups_per_s": 24613.4,
+     "console_ms": {
+      "mean": 56.9,
+      "p50": 51.7,
+      "p95": 85.3,
+      "max": 159.9
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 9.37,
+      "p50": 8,
+      "p95": 17,
+      "max": 37
+     },
+     "bytes": {
+      "mean": 35138.05,
+      "p50": 29130,
+      "p95": 66590,
+      "max": 148804
+     },
+     "excess_bytes": {
+      "mean": 16.61,
+      "p50": 0,
+      "p95": 0,
+      "max": 2923
+     },
+     "pages": {
+      "mean": 8.15,
+      "p50": 7,
+      "p95": 15,
+      "max": 28
+     },
+     "nonsequential": {
+      "mean": 7.23,
+      "p50": 6,
+      "p95": 14,
+      "max": 28
+     },
+     "spans": {
+      "mean": 4.38,
+      "p50": 3,
+      "p95": 12,
+      "max": 17
+     },
+     "candidates": {
+      "mean": 8.41,
+      "p50": 6,
+      "p95": 24,
+      "max": 40
+     },
+     "probes": {
+      "mean": 7.8,
+      "p50": 5,
+      "p95": 24,
+      "max": 40
+     },
+     "filtered": {
+      "mean": 6.5,
+      "p50": 4,
+      "p95": 23,
+      "max": 39
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.25,
+      "p50": 1,
+      "p95": 3,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.09,
+      "p50": 1,
+      "p95": 2,
+      "max": 6
+     },
+     "ranked": {
+      "mean": 11.14,
+      "p50": 4,
+      "p95": 49,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.2,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.264,
+      "group": 1.111,
+      "head": 4.087,
+      "payload": 0.991,
+      "filter": 0.917
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5178.1,
+      "group": 4548.7,
+      "head": 16740.6,
+      "payload": 816.6,
+      "filter": 3758.0
+     },
+     "per_screen": {
+      "screens": 50,
+      "lookups": {
+       "mean": 26.42,
+       "p50": 27,
+       "p95": 43,
+       "max": 43
+      },
+      "host_us": {
+       "mean": 1073.4,
+       "p50": 1084.1,
+       "p95": 1661.1,
+       "max": 1684.8
+      },
+      "console_ms": {
+       "mean": 1502.1,
+       "p50": 1508.9,
+       "p95": 2411.7,
+       "max": 2415.5
+      },
+      "reads": {
+       "mean": 247.6,
+       "p50": 254,
+       "p95": 394,
+       "max": 395
+      }
+     }
+    },
+    "golden": "1321 lookups, every shown entry and highlight identical"
+   }
+  },
+  "pool:realplus-v3/labels_v3i7.jsonl:500 screens": {
+   "first": {
+    "after": {
+     "lookups": 500,
+     "with_entry": 499,
+     "opened_files": 500,
+     "host_us": {
+      "mean": 33.496,
+      "p50": 28.59,
+      "p95": 57.12,
+      "max": 91.7
+     },
+     "host_lookups_per_s": 29854.7,
+     "console_ms": {
+      "mean": 42.7,
+      "p50": 40.5,
+      "p95": 51.7,
+      "max": 100.2
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.59,
+      "p50": 5,
+      "p95": 8,
+      "max": 21
+     },
+     "bytes": {
+      "mean": 19191.68,
+      "p50": 16724,
+      "p95": 29081,
+      "max": 82113
+     },
+     "excess_bytes": {
+      "mean": 5.62,
+      "p50": 0,
+      "p95": 0,
+      "max": 2811
+     },
+     "pages": {
+      "mean": 5.51,
+      "p50": 5,
+      "p95": 7,
+      "max": 20
+     },
+     "nonsequential": {
+      "mean": 4.49,
+      "p50": 4,
+      "p95": 6,
+      "max": 16
+     },
+     "spans": {
+      "mean": 4.59,
+      "p50": 2,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 8.08,
+      "p50": 3,
+      "p95": 31,
+      "max": 52
+     },
+     "probes": {
+      "mean": 7.7,
+      "p50": 3,
+      "p95": 30,
+      "max": 52
+     },
+     "filtered": {
+      "mean": 6.56,
+      "p50": 1,
+      "p95": 29,
+      "max": 51
+     },
+     "miss_cached": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.1,
+      "p50": 1,
+      "p95": 2,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 3
+     },
+     "ranked": {
+      "mean": 0.64,
+      "p50": 0,
+      "p95": 2,
+      "max": 42
+     },
+     "hinted": {
+      "mean": 4.44,
+      "p50": 2,
+      "p95": 20,
+      "max": 53
+     },
+     "absent_reads": {
+      "mean": 0.09,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.112,
+      "group": 1.046,
+      "head": 0.484,
+      "payload": 0.998,
+      "filter": 0.946
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4554.8,
+      "group": 4284.4,
+      "head": 1982.5,
+      "payload": 399.2,
+      "filter": 3874.8
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 33.5,
+       "p50": 28.6,
+       "p95": 57.1,
+       "max": 91.7
+      },
+      "console_ms": {
+       "mean": 42.7,
+       "p50": 40.5,
+       "p95": 51.7,
+       "max": 100.2
+      },
+      "reads": {
+       "mean": 5.6,
+       "p50": 5,
+       "p95": 8,
+       "max": 21
+      }
+     }
+    },
+    "before": {
+     "lookups": 500,
+     "with_entry": 499,
+     "opened_files": 500,
+     "host_us": {
+      "mean": 39.122,
+      "p50": 34.93,
+      "p95": 65.41,
+      "max": 97.81
+     },
+     "host_lookups_per_s": 25560.8,
+     "console_ms": {
+      "mean": 51.2,
+      "p50": 48.0,
+      "p95": 74.1,
+      "max": 107.7
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 7.87,
+      "p50": 7,
+      "p95": 14,
+      "max": 23
+     },
+     "bytes": {
+      "mean": 28538.75,
+      "p50": 24741,
+      "p95": 53298,
+      "max": 90658
+     },
+     "excess_bytes": {
+      "mean": 5.62,
+      "p50": 0,
+      "p95": 0,
+      "max": 2811
+     },
+     "pages": {
+      "mean": 6.8,
+      "p50": 6,
+      "p95": 12,
+      "max": 20
+     },
+     "nonsequential": {
+      "mean": 6.48,
+      "p50": 6,
+      "p95": 11,
+      "max": 19
+     },
+     "spans": {
+      "mean": 4.59,
+      "p50": 2,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 8.08,
+      "p50": 3,
+      "p95": 31,
+      "max": 52
+     },
+     "probes": {
+      "mean": 7.7,
+      "p50": 3,
+      "p95": 30,
+      "max": 52
+     },
+     "filtered": {
+      "mean": 6.56,
+      "p50": 1,
+      "p95": 29,
+      "max": 51
+     },
+     "miss_cached": {
+      "mean": 0.0,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.1,
+      "p50": 1,
+      "p95": 2,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 3
+     },
+     "ranked": {
+      "mean": 5.08,
+      "p50": 2,
+      "p95": 22,
+      "max": 53
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.09,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.114,
+      "group": 1.048,
+      "head": 2.722,
+      "payload": 0.998,
+      "filter": 0.986
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4562.9,
+      "group": 4292.6,
+      "head": 11149.3,
+      "payload": 399.2,
+      "filter": 4038.7
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 39.1,
+       "p50": 34.9,
+       "p95": 65.4,
+       "max": 97.8
+      },
+      "console_ms": {
+       "mean": 51.2,
+       "p50": 48.0,
+       "p95": 74.1,
+       "max": 107.7
+      },
+      "reads": {
+       "mean": 7.9,
+       "p50": 7,
+       "p95": 14,
+       "max": 23
+      }
+     }
+    },
+    "golden": "500 lookups, every shown entry and highlight identical"
+   },
+   "words": {
+    "after": {
+     "lookups": 5005,
+     "with_entry": 4984,
+     "opened_files": 5005,
+     "host_us": {
+      "mean": 36.287,
+      "p50": 32.43,
+      "p95": 59.54,
+      "max": 113.91
+     },
+     "host_lookups_per_s": 27558.0,
+     "console_ms": {
+      "mean": 41.8,
+      "p50": 40.5,
+      "p95": 48.0,
+      "max": 104.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.35,
+      "p50": 5,
+      "p95": 7,
+      "max": 22
+     },
+     "bytes": {
+      "mean": 18589.61,
+      "p50": 16812,
+      "p95": 25241,
+      "max": 86209
+     },
+     "excess_bytes": {
+      "mean": 11.9,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 5.47,
+      "p50": 5,
+      "p95": 7,
+      "max": 21
+     },
+     "nonsequential": {
+      "mean": 4.28,
+      "p50": 4,
+      "p95": 6,
+      "max": 17
+     },
+     "spans": {
+      "mean": 5.69,
+      "p50": 4,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 10.87,
+      "p50": 7,
+      "p95": 33,
+      "max": 79
+     },
+     "probes": {
+      "mean": 10.39,
+      "p50": 6,
+      "p95": 33,
+      "max": 79
+     },
+     "filtered": {
+      "mean": 9.22,
+      "p50": 5,
+      "p95": 31,
+      "max": 78
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 3
+     },
+     "hash_present": {
+      "mean": 1.12,
+      "p50": 1,
+      "p95": 2,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 0.39,
+      "p50": 0,
+      "p95": 1,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 7.32,
+      "p50": 2,
+      "p95": 30,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.13,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.142,
+      "group": 1.048,
+      "head": 0.263,
+      "payload": 0.996,
+      "filter": 0.897
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4677.9,
+      "group": 4293.2,
+      "head": 1077.8,
+      "payload": 769.4,
+      "filter": 3675.4
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 10.01,
+       "p50": 7,
+       "p95": 25,
+       "max": 180
+      },
+      "host_us": {
+       "mean": 363.2,
+       "p50": 234.8,
+       "p95": 997.5,
+       "max": 7422.3
+      },
+      "console_ms": {
+       "mean": 418.9,
+       "p50": 288.1,
+       "p95": 1058.5,
+       "max": 7568.4
+      },
+      "reads": {
+       "mean": 53.5,
+       "p50": 37,
+       "p95": 137,
+       "max": 972
+      }
+     }
+    },
+    "before": {
+     "lookups": 5005,
+     "with_entry": 4984,
+     "opened_files": 5005,
+     "host_us": {
+      "mean": 42.789,
+      "p50": 39.43,
+      "p95": 68.74,
+      "max": 119.06
+     },
+     "host_lookups_per_s": 23370.6,
+     "console_ms": {
+      "mean": 53.2,
+      "p50": 48.0,
+      "p95": 81.6,
+      "max": 159.9
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 8.38,
+      "p50": 7,
+      "p95": 16,
+      "max": 37
+     },
+     "bytes": {
+      "mean": 31021.65,
+      "p50": 24927,
+      "p95": 62358,
+      "max": 148804
+     },
+     "excess_bytes": {
+      "mean": 11.9,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 7.25,
+      "p50": 6,
+      "p95": 12,
+      "max": 26
+     },
+     "nonsequential": {
+      "mean": 6.6,
+      "p50": 6,
+      "p95": 11,
+      "max": 22
+     },
+     "spans": {
+      "mean": 5.69,
+      "p50": 4,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 10.87,
+      "p50": 7,
+      "p95": 33,
+      "max": 79
+     },
+     "probes": {
+      "mean": 10.39,
+      "p50": 6,
+      "p95": 33,
+      "max": 79
+     },
+     "filtered": {
+      "mean": 9.22,
+      "p50": 5,
+      "p95": 31,
+      "max": 78
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 3
+     },
+     "hash_present": {
+      "mean": 1.12,
+      "p50": 1,
+      "p95": 2,
+      "max": 7
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 7.71,
+      "p50": 2,
+      "p95": 30,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.13,
+      "p50": 0,
+      "p95": 1,
+      "max": 3
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.143,
+      "group": 1.049,
+      "head": 3.264,
+      "payload": 0.996,
+      "filter": 0.93
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4682.8,
+      "group": 4297.3,
+      "head": 13367.4,
+      "payload": 769.4,
+      "filter": 3808.7
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 10.01,
+       "p50": 7,
+       "p95": 25,
+       "max": 180
+      },
+      "host_us": {
+       "mean": 428.3,
+       "p50": 278.7,
+       "p95": 1153.9,
+       "max": 8813.8
+      },
+      "console_ms": {
+       "mean": 532.2,
+       "p50": 358.4,
+       "p95": 1368.1,
+       "max": 9683.3
+      },
+      "reads": {
+       "mean": 83.9,
+       "p50": 58,
+       "p95": 217,
+       "max": 1539
+      }
+     }
+    },
+    "golden": "5005 lookups, every shown entry and highlight identical"
+   },
+   "letters": {
+    "after": {
+     "lookups": 10905,
+     "with_entry": 10792,
+     "opened_files": 10905,
+     "host_us": {
+      "mean": 36.691,
+      "p50": 33.01,
+      "p95": 59.67,
+      "max": 117.93
+     },
+     "host_lookups_per_s": 27254.3,
+     "console_ms": {
+      "mean": 42.1,
+      "p50": 40.5,
+      "p95": 51.7,
+      "max": 104.0
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.41,
+      "p50": 5,
+      "p95": 8,
+      "max": 22
+     },
+     "bytes": {
+      "mean": 18865.22,
+      "p50": 16909,
+      "p95": 29150,
+      "max": 86209
+     },
+     "excess_bytes": {
+      "mean": 9.36,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 5.51,
+      "p50": 5,
+      "p95": 8,
+      "max": 21
+     },
+     "nonsequential": {
+      "mean": 4.33,
+      "p50": 4,
+      "p95": 7,
+      "max": 18
+     },
+     "spans": {
+      "mean": 5.46,
+      "p50": 4,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 10.58,
+      "p50": 7,
+      "p95": 33,
+      "max": 79
+     },
+     "probes": {
+      "mean": 9.98,
+      "p50": 6,
+      "p95": 32,
+      "max": 79
+     },
+     "filtered": {
+      "mean": 8.71,
+      "p50": 4,
+      "p95": 31,
+      "max": 78
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 3
+     },
+     "hash_present": {
+      "mean": 1.2,
+      "p50": 1,
+      "p95": 3,
+      "max": 9
+     },
+     "found": {
+      "mean": 1.06,
+      "p50": 1,
+      "p95": 1,
+      "max": 6
+     },
+     "ranked": {
+      "mean": 0.36,
+      "p50": 0,
+      "p95": 1,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 9.96,
+      "p50": 3,
+      "p95": 45,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.19,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.23,
+      "group": 1.098,
+      "head": 0.222,
+      "payload": 0.99,
+      "filter": 0.871
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5039.9,
+      "group": 4499.0,
+      "head": 910.8,
+      "payload": 751.2,
+      "filter": 3568.3
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 21.81,
+       "p50": 15,
+       "p95": 52,
+       "max": 388
+      },
+      "host_us": {
+       "mean": 800.2,
+       "p50": 532.8,
+       "p95": 2019.7,
+       "max": 16238.7
+      },
+      "console_ms": {
+       "mean": 917.9,
+       "p50": 649.8,
+       "p95": 2223.7,
+       "max": 16405.6
+      },
+      "reads": {
+       "mean": 118.0,
+       "p50": 84,
+       "p95": 285,
+       "max": 2120
+      }
+     }
+    },
+    "before": {
+     "lookups": 10905,
+     "with_entry": 10792,
+     "opened_files": 10905,
+     "host_us": {
+      "mean": 43.191,
+      "p50": 39.85,
+      "p95": 69.18,
+      "max": 124.54
+     },
+     "host_lookups_per_s": 23152.8,
+     "console_ms": {
+      "mean": 55.7,
+      "p50": 51.7,
+      "p95": 81.6,
+      "max": 159.9
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 9.06,
+      "p50": 8,
+      "p95": 16,
+      "max": 37
+     },
+     "bytes": {
+      "mean": 33798.25,
+      "p50": 28816,
+      "p95": 63902,
+      "max": 148804
+     },
+     "excess_bytes": {
+      "mean": 9.36,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 7.84,
+      "p50": 7,
+      "p95": 14,
+      "max": 28
+     },
+     "nonsequential": {
+      "mean": 7.03,
+      "p50": 6,
+      "p95": 13,
+      "max": 28
+     },
+     "spans": {
+      "mean": 5.46,
+      "p50": 4,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 10.58,
+      "p50": 7,
+      "p95": 33,
+      "max": 79
+     },
+     "probes": {
+      "mean": 9.98,
+      "p50": 6,
+      "p95": 32,
+      "max": 79
+     },
+     "filtered": {
+      "mean": 8.71,
+      "p50": 4,
+      "p95": 31,
+      "max": 78
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 3
+     },
+     "hash_present": {
+      "mean": 1.2,
+      "p50": 1,
+      "p95": 3,
+      "max": 9
+     },
+     "found": {
+      "mean": 1.06,
+      "p50": 1,
+      "p95": 1,
+      "max": 6
+     },
+     "ranked": {
+      "mean": 10.32,
+      "p50": 4,
+      "p95": 45,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.19,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.232,
+      "group": 1.099,
+      "head": 3.829,
+      "payload": 0.99,
+      "filter": 0.908
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5047.0,
+      "group": 4500.9,
+      "head": 15684.6,
+      "payload": 751.2,
+      "filter": 3718.5
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 21.81,
+       "p50": 15,
+       "p95": 52,
+       "max": 388
+      },
+      "host_us": {
+       "mean": 942.0,
+       "p50": 646.7,
+       "p95": 2472.3,
+       "max": 19003.4
+      },
+      "console_ms": {
+       "mean": 1214.5,
+       "p50": 858.2,
+       "p95": 3043.4,
+       "max": 21534.4
+      },
+      "reads": {
+       "mean": 197.6,
+       "p50": 139,
+       "p95": 493,
+       "max": 3495
+      }
+     }
+    },
+    "golden": "10905 lookups, every shown entry and highlight identical"
+   }
+  },
+  "pool:owner-pool-2/labels.jsonl:500 screens": {
+   "first": {
+    "after": {
+     "lookups": 500,
+     "with_entry": 500,
+     "opened_files": 500,
+     "host_us": {
+      "mean": 36.027,
+      "p50": 30.65,
+      "p95": 62.65,
+      "max": 80.94
+     },
+     "host_lookups_per_s": 27756.9,
+     "console_ms": {
+      "mean": 42.4,
+      "p50": 40.5,
+      "p95": 48.0,
+      "max": 100.2
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.49,
+      "p50": 5,
+      "p95": 7,
+      "max": 21
+     },
+     "bytes": {
+      "mean": 18803.71,
+      "p50": 16682,
+      "p95": 25043,
+      "max": 82113
+     },
+     "excess_bytes": {
+      "mean": 22.36,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 5.42,
+      "p50": 5,
+      "p95": 7,
+      "max": 20
+     },
+     "nonsequential": {
+      "mean": 4.38,
+      "p50": 4,
+      "p95": 6,
+      "max": 16
+     },
+     "spans": {
+      "mean": 5.54,
+      "p50": 3,
+      "p95": 18,
+      "max": 27
+     },
+     "candidates": {
+      "mean": 9.84,
+      "p50": 4,
+      "p95": 34,
+      "max": 55
+     },
+     "probes": {
+      "mean": 9.42,
+      "p50": 4,
+      "p95": 32,
+      "max": 55
+     },
+     "filtered": {
+      "mean": 8.28,
+      "p50": 3,
+      "p95": 31,
+      "max": 54
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.08,
+      "p50": 1,
+      "p95": 2,
+      "max": 4
+     },
+     "found": {
+      "mean": 1.03,
+      "p50": 1,
+      "p95": 1,
+      "max": 2
+     },
+     "ranked": {
+      "mean": 1.06,
+      "p50": 0,
+      "p95": 2,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 4.07,
+      "p50": 2,
+      "p95": 13,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.08,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.096,
+      "group": 1.014,
+      "head": 0.414,
+      "payload": 1,
+      "filter": 0.964
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4489.2,
+      "group": 4153.3,
+      "head": 1695.7,
+      "payload": 420.9,
+      "filter": 3948.5
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 36.0,
+       "p50": 30.6,
+       "p95": 62.6,
+       "max": 80.9
+      },
+      "console_ms": {
+       "mean": 42.4,
+       "p50": 40.5,
+       "p95": 48.0,
+       "max": 100.2
+      },
+      "reads": {
+       "mean": 5.5,
+       "p50": 5,
+       "p95": 7,
+       "max": 21
+      }
+     }
+    },
+    "before": {
+     "lookups": 500,
+     "with_entry": 500,
+     "opened_files": 500,
+     "host_us": {
+      "mean": 39.951,
+      "p50": 35.81,
+      "p95": 66.5,
+      "max": 97.95
+     },
+     "host_lookups_per_s": 25030.8,
+     "console_ms": {
+      "mean": 50.6,
+      "p50": 48.0,
+      "p95": 70.4,
+      "max": 137.5
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 7.69,
+      "p50": 7,
+      "p95": 13,
+      "max": 31
+     },
+     "bytes": {
+      "mean": 27831.3,
+      "p50": 24697,
+      "p95": 50025,
+      "max": 124811
+     },
+     "excess_bytes": {
+      "mean": 22.36,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 6.59,
+      "p50": 6,
+      "p95": 11,
+      "max": 24
+     },
+     "nonsequential": {
+      "mean": 6.3,
+      "p50": 5,
+      "p95": 10,
+      "max": 22
+     },
+     "spans": {
+      "mean": 5.54,
+      "p50": 3,
+      "p95": 18,
+      "max": 27
+     },
+     "candidates": {
+      "mean": 9.84,
+      "p50": 4,
+      "p95": 34,
+      "max": 55
+     },
+     "probes": {
+      "mean": 9.42,
+      "p50": 4,
+      "p95": 32,
+      "max": 55
+     },
+     "filtered": {
+      "mean": 8.28,
+      "p50": 3,
+      "p95": 31,
+      "max": 54
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 1
+     },
+     "hash_present": {
+      "mean": 1.08,
+      "p50": 1,
+      "p95": 2,
+      "max": 4
+     },
+     "found": {
+      "mean": 1.03,
+      "p50": 1,
+      "p95": 1,
+      "max": 2
+     },
+     "ranked": {
+      "mean": 5.13,
+      "p50": 2,
+      "p95": 19,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.08,
+      "p50": 0,
+      "p95": 1,
+      "max": 2
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.1,
+      "group": 1.026,
+      "head": 2.564,
+      "payload": 1,
+      "filter": 1.002
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4505.6,
+      "group": 4202.5,
+      "head": 10502.1,
+      "payload": 420.9,
+      "filter": 4104.2
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 1,
+       "p50": 1,
+       "p95": 1,
+       "max": 1
+      },
+      "host_us": {
+       "mean": 40.0,
+       "p50": 35.8,
+       "p95": 66.5,
+       "max": 98.0
+      },
+      "console_ms": {
+       "mean": 50.6,
+       "p50": 48.0,
+       "p95": 70.4,
+       "max": 137.5
+      },
+      "reads": {
+       "mean": 7.7,
+       "p50": 7,
+       "p95": 13,
+       "max": 31
+      }
+     }
+    },
+    "golden": "500 lookups, every shown entry and highlight identical"
+   },
+   "words": {
+    "after": {
+     "lookups": 5423,
+     "with_entry": 5402,
+     "opened_files": 5423,
+     "host_us": {
+      "mean": 36.716,
+      "p50": 33.22,
+      "p95": 60.52,
+      "max": 107.57
+     },
+     "host_lookups_per_s": 27236.4,
+     "console_ms": {
+      "mean": 41.8,
+      "p50": 40.5,
+      "p95": 48.0,
+      "max": 100.2
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.34,
+      "p50": 5,
+      "p95": 7,
+      "max": 21
+     },
+     "bytes": {
+      "mean": 18546.21,
+      "p50": 16807,
+      "p95": 25006,
+      "max": 82113
+     },
+     "excess_bytes": {
+      "mean": 14.77,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 5.47,
+      "p50": 5,
+      "p95": 7,
+      "max": 20
+     },
+     "nonsequential": {
+      "mean": 4.28,
+      "p50": 4,
+      "p95": 6,
+      "max": 17
+     },
+     "spans": {
+      "mean": 6.04,
+      "p50": 5,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 11.65,
+      "p50": 8,
+      "p95": 35,
+      "max": 84
+     },
+     "probes": {
+      "mean": 11.13,
+      "p50": 7,
+      "p95": 34,
+      "max": 84
+     },
+     "filtered": {
+      "mean": 9.93,
+      "p50": 6,
+      "p95": 32,
+      "max": 83
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 4
+     },
+     "hash_present": {
+      "mean": 1.13,
+      "p50": 1,
+      "p95": 2,
+      "max": 6
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 0.4,
+      "p50": 0,
+      "p95": 1,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 7.36,
+      "p50": 2,
+      "p95": 30,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.14,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.153,
+      "group": 1.042,
+      "head": 0.231,
+      "payload": 0.996,
+      "filter": 0.914
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4722.9,
+      "group": 4269.7,
+      "head": 945.6,
+      "payload": 768.7,
+      "filter": 3743.3
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 10.85,
+       "p50": 10,
+       "p95": 22,
+       "max": 62
+      },
+      "host_us": {
+       "mean": 398.2,
+       "p50": 341.4,
+       "p95": 910.1,
+       "max": 2699.4
+      },
+      "console_ms": {
+       "mean": 453.4,
+       "p50": 401.8,
+       "p95": 948.0,
+       "max": 2552.1
+      },
+      "reads": {
+       "mean": 57.9,
+       "p50": 51,
+       "p95": 124,
+       "max": 320
+      }
+     }
+    },
+    "before": {
+     "lookups": 5423,
+     "with_entry": 5402,
+     "opened_files": 5423,
+     "host_us": {
+      "mean": 43.278,
+      "p50": 40.03,
+      "p95": 68.6,
+      "max": 116.16
+     },
+     "host_lookups_per_s": 23106.2,
+     "console_ms": {
+      "mean": 53.2,
+      "p50": 48.0,
+      "p95": 77.8,
+      "max": 159.9
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 8.39,
+      "p50": 7,
+      "p95": 15,
+      "max": 37
+     },
+     "bytes": {
+      "mean": 31055.51,
+      "p50": 24968,
+      "p95": 59806,
+      "max": 148804
+     },
+     "excess_bytes": {
+      "mean": 14.77,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 7.26,
+      "p50": 6,
+      "p95": 12,
+      "max": 26
+     },
+     "nonsequential": {
+      "mean": 6.6,
+      "p50": 6,
+      "p95": 11,
+      "max": 22
+     },
+     "spans": {
+      "mean": 6.04,
+      "p50": 5,
+      "p95": 16,
+      "max": 31
+     },
+     "candidates": {
+      "mean": 11.65,
+      "p50": 8,
+      "p95": 35,
+      "max": 84
+     },
+     "probes": {
+      "mean": 11.13,
+      "p50": 7,
+      "p95": 34,
+      "max": 84
+     },
+     "filtered": {
+      "mean": 9.93,
+      "p50": 6,
+      "p95": 32,
+      "max": 83
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 4
+     },
+     "hash_present": {
+      "mean": 1.13,
+      "p50": 1,
+      "p95": 2,
+      "max": 6
+     },
+     "found": {
+      "mean": 1.04,
+      "p50": 1,
+      "p95": 1,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 7.77,
+      "p50": 2,
+      "p95": 30,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.14,
+      "p50": 0,
+      "p95": 1,
+      "max": 4
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.154,
+      "group": 1.044,
+      "head": 3.249,
+      "payload": 0.996,
+      "filter": 0.947
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 4727.4,
+      "group": 4278.0,
+      "head": 13307.7,
+      "payload": 768.7,
+      "filter": 3877.7
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 10.85,
+       "p50": 10,
+       "p95": 22,
+       "max": 62
+      },
+      "host_us": {
+       "mean": 469.4,
+       "p50": 407.7,
+       "p95": 1048.6,
+       "max": 3091.6
+      },
+      "console_ms": {
+       "mean": 577.0,
+       "p50": 515.5,
+       "p95": 1249.2,
+       "max": 3279.5
+      },
+      "reads": {
+       "mean": 91.0,
+       "p50": 80,
+       "p95": 194,
+       "max": 515
+      }
+     }
+    },
+    "golden": "5423 lookups, every shown entry and highlight identical"
+   },
+   "letters": {
+    "after": {
+     "lookups": 12188,
+     "with_entry": 12058,
+     "opened_files": 12188,
+     "host_us": {
+      "mean": 38.547,
+      "p50": 35.03,
+      "p95": 62.9,
+      "max": 115.06
+     },
+     "host_lookups_per_s": 25942.7,
+     "console_ms": {
+      "mean": 42.1,
+      "p50": 40.5,
+      "p95": 51.7,
+      "max": 100.2
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 5.43,
+      "p50": 5,
+      "p95": 8,
+      "max": 21
+     },
+     "bytes": {
+      "mean": 18936.77,
+      "p50": 16923,
+      "p95": 29337,
+      "max": 82113
+     },
+     "excess_bytes": {
+      "mean": 10.53,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 5.53,
+      "p50": 5,
+      "p95": 8,
+      "max": 20
+     },
+     "nonsequential": {
+      "mean": 4.35,
+      "p50": 4,
+      "p95": 7,
+      "max": 18
+     },
+     "spans": {
+      "mean": 5.84,
+      "p50": 4,
+      "p95": 16,
+      "max": 32
+     },
+     "candidates": {
+      "mean": 11.45,
+      "p50": 8,
+      "p95": 34,
+      "max": 84
+     },
+     "probes": {
+      "mean": 10.83,
+      "p50": 7,
+      "p95": 33,
+      "max": 84
+     },
+     "filtered": {
+      "mean": 9.53,
+      "p50": 6,
+      "p95": 32,
+      "max": 83
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 8
+     },
+     "hash_present": {
+      "mean": 1.22,
+      "p50": 1,
+      "p95": 3,
+      "max": 13
+     },
+     "found": {
+      "mean": 1.06,
+      "p50": 1,
+      "p95": 2,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 0.34,
+      "p50": 0,
+      "p95": 1,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 9.86,
+      "p50": 4,
+      "p95": 44,
+      "max": 64
+     },
+     "absent_reads": {
+      "mean": 0.22,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.251,
+      "group": 1.093,
+      "head": 0.202,
+      "payload": 0.989,
+      "filter": 0.894
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5122.4,
+      "group": 4475.4,
+      "head": 827.4,
+      "payload": 753.8,
+      "filter": 3661.8
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 24.38,
+       "p50": 22,
+       "p95": 55,
+       "max": 120
+      },
+      "host_us": {
+       "mean": 939.6,
+       "p50": 807.2,
+       "p95": 2154.4,
+       "max": 5216.7
+      },
+      "console_ms": {
+       "mean": 1027.4,
+       "p50": 925.2,
+       "p95": 2316.5,
+       "max": 4960.0
+      },
+      "reads": {
+       "mean": 132.3,
+       "p50": 118,
+       "p95": 295,
+       "max": 625
+      }
+     }
+    },
+    "before": {
+     "lookups": 12188,
+     "with_entry": 12058,
+     "opened_files": 12188,
+     "host_us": {
+      "mean": 44.975,
+      "p50": 41.56,
+      "p95": 72.01,
+      "max": 120.73
+     },
+     "host_lookups_per_s": 22234.6,
+     "console_ms": {
+      "mean": 55.5,
+      "p50": 51.7,
+      "p95": 81.6,
+      "max": 163.6
+     },
+     "arena_peak_max": 54416,
+     "reads": {
+      "mean": 9.01,
+      "p50": 8,
+      "p95": 16,
+      "max": 38
+     },
+     "bytes": {
+      "mean": 33602.46,
+      "p50": 28861,
+      "p95": 63076,
+      "max": 152540
+     },
+     "excess_bytes": {
+      "mean": 10.53,
+      "p50": 0,
+      "p95": 0,
+      "max": 2929
+     },
+     "pages": {
+      "mean": 7.8,
+      "p50": 7,
+      "p95": 14,
+      "max": 27
+     },
+     "nonsequential": {
+      "mean": 7.0,
+      "p50": 6,
+      "p95": 12,
+      "max": 26
+     },
+     "spans": {
+      "mean": 5.84,
+      "p50": 4,
+      "p95": 16,
+      "max": 32
+     },
+     "candidates": {
+      "mean": 11.45,
+      "p50": 8,
+      "p95": 34,
+      "max": 84
+     },
+     "probes": {
+      "mean": 10.83,
+      "p50": 7,
+      "p95": 33,
+      "max": 84
+     },
+     "filtered": {
+      "mean": 9.53,
+      "p50": 6,
+      "p95": 32,
+      "max": 83
+     },
+     "miss_cached": {
+      "mean": 0.01,
+      "p50": 0,
+      "p95": 0,
+      "max": 8
+     },
+     "hash_present": {
+      "mean": 1.22,
+      "p50": 1,
+      "p95": 3,
+      "max": 13
+     },
+     "found": {
+      "mean": 1.06,
+      "p50": 1,
+      "p95": 2,
+      "max": 4
+     },
+     "ranked": {
+      "mean": 10.21,
+      "p50": 4,
+      "p95": 45,
+      "max": 64
+     },
+     "hinted": {
+      "mean": 0,
+      "p50": 0,
+      "p95": 0,
+      "max": 0
+     },
+     "absent_reads": {
+      "mean": 0.22,
+      "p50": 0,
+      "p95": 1,
+      "max": 8
+     },
+     "reads_by": {
+      "header": 1,
+      "index": 1.252,
+      "group": 1.094,
+      "head": 3.74,
+      "payload": 0.989,
+      "filter": 0.934
+     },
+     "bytes_by": {
+      "header": 4096,
+      "index": 5129.4,
+      "group": 4480.1,
+      "head": 15317.7,
+      "payload": 753.8,
+      "filter": 3825.5
+     },
+     "per_screen": {
+      "screens": 500,
+      "lookups": {
+       "mean": 24.38,
+       "p50": 22,
+       "p95": 55,
+       "max": 120
+      },
+      "host_us": {
+       "mean": 1096.3,
+       "p50": 945.6,
+       "p95": 2522.2,
+       "max": 6038.0
+      },
+      "console_ms": {
+       "mean": 1353.0,
+       "p50": 1213.4,
+       "p95": 3049.9,
+       "max": 6575.1
+      },
+      "reads": {
+       "mean": 219.6,
+       "p50": 197,
+       "p95": 493,
+       "max": 1058
+      }
+     }
+    },
+    "golden": "12188 lookups, every shown entry and highlight identical"
+   }
+  }
+ },
+ "pools": [
+  {
+   "set": "pool:realplus-v3/labels_v3i7.jsonl:500 screens",
+   "labels": "vita-vn-ocr realplus-v3 line labels, the snapshot $HERD/shared/artifacts/realplus-v3/labels_v3i7.jsonl (text not committed)",
+   "labels_sha256": "259729cefd76272bed1d689c2dc86c7b03c08fd42ffdcf03e29865af14a29437",
+   "screens": 500,
+   "lines": 1096,
+   "selection_sha256": "98dea3a45a189b16282be5b11ecafb5575d1f9183000d8831c662d88ad8490c1"
+  },
+  {
+   "set": "pool:owner-pool-2/labels.jsonl:500 screens",
+   "labels": "owner-pool-2 line labels of the owner's screenshots ($HERD/shared/private/owner-games/_build2/owner-pool-2/labels.jsonl; private, text not committed)",
+   "labels_sha256": "b16a529edcfb1d788661c60e1b5fd912f79a18f07cee6a72ab206c4dcd5f279f",
+   "screens": 500,
+   "lines": 987,
+   "selection_sha256": "6e7e52ce9c3acbe0457002b45076366698737a0d1caceccffb889f50fa79a84e"
+  }
+ ],
+ "before": {
+  "build": "this change's core/local_dict.c on #127 (format 3, usual_spellings); the file has no hints, so it reads as before",
+  "dictionary": "plaintext.vjdict (format 3, plaintext-dicts 6f841ce) with the key filter, sha256 e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b, 143,425,536 B"
+ },
+ "after": {
+  "build": "this change's core/local_dict.c (vjo-dict-bench)",
+  "dictionary": "the same file with the posting hints and the key filter (tools/prepare_plaintext.py), sha256 e3ac485e76c39e64ea16633c2e9b735f8bc5b59a88c096617c40873247cf6e19, 143,425,536 B"
+ },
+ "host": "gcc 11.5 RelWithDebInfo, x86-64, warm OS file cache; 21 rounds, median of 20 timed per lookup; lines normalised as the game worker returns them",
+ "reserved": "vita-vn-ocr a540027 eval/manifests/reserved.json 'test' VNs left out of both pools"
+}

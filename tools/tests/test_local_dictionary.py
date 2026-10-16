@@ -517,7 +517,7 @@ class LocalDictionaryTest(unittest.TestCase):
         self.assertEqual(out[192:256], bytes(plain[192:256]))
         self.assertEqual(out[convert.FILTER_DESCRIPTOR_OFFSET:convert.FILTER_DESCRIPTOR_OFFSET + 4], b"VJKF")
         self.assertEqual(self.shown("out.vjdict"), self.shown("plain.vjdict"))
-        for spot in (160, 191, 256, 4095):  # the filter's own bytes must be empty
+        for spot in (159, 168, 191, 256, 4095):  # the filter's own bytes must be empty (160..167: posting hints)
             bad = bytearray(plain)
             bad[spot] = 1
             (self.directory / "bad.vjdict").write_bytes(bad)
@@ -642,6 +642,97 @@ class FrequencyTest(unittest.TestCase):
         path = self.directory / "main.vjdict"
         stats = convert.convert([self.archive(terms)], path, frequency=self.frequency(rows), **kwargs)
         return path, stats
+
+    def test_format_3_uses_its_key_filter_and_hints(self):
+        """A v3 file with enough keys gets the key filter and the hints; lookups use both
+        and show what the same file without either shows."""
+        bench = os.environ.get("VJO_DICT_BENCH")
+        if not bench:
+            self.skipTest("VJO_DICT_BENCH is set by CTest")
+        terms = [term("食べる", "たべる", ["eat"], "v1"), term("猫", "ねこ", ["cat"]), term("見る", "みる", ["see"], "v1"),
+                 *[term(f"語彙{i:05d}", gloss=[f"filler {i}"]) for i in range(1200)]]
+        rows = [freq("猫", 1536, "ねこ"), freq("食べる", 900, "たべる")]
+        full, stats = self.build_ranked(terms, rows)
+        self.assertEqual(stats["format_version"], 3)
+        self.assertGreater(stats.get("filter_blocks", 0), 0)
+        bare = self.directory / "bare.vjdict"
+        convert.convert([self.archive(terms)], bare, frequency=self.frequency(rows), key_filter=False)
+        data = bytearray(bare.read_bytes())  # without the hints too: the head path
+        data[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8] = bytes(8)
+        bare.write_bytes(data)
+        lines = self.directory / "lines.tsv"
+        lines.write_text("# id\tmodel\t-\t-\t-\ttext\nline\tfixture\t-\t-\t-\t猫を見ませんでした。食べたくない\n")
+        def run(name):
+            proc = subprocess.run([bench, str(self.directory), name, str(lines), "words", "1"],
+                                  capture_output=True, text=True, check=True)
+            return [json.loads(row) for row in proc.stdout.splitlines() if '"summary"' not in row]
+        with_both, without = run("main.vjdict"), run("bare.vjdict")
+        self.assertEqual([q["digest"] for q in with_both], [q["digest"] for q in without])
+        self.assertGreater(sum(q["filtered"] for q in with_both), 0)
+        self.assertGreater(sum(q["hinted"] for q in with_both), 0)
+        self.assertEqual(sum(q["filtered"] + q["hinted"] for q in without), 0)
+        self.assertLess(sum(q["reads"] for q in with_both), sum(q["reads"] for q in without))
+
+    def test_posting_hints_change_no_lookup_and_need_no_head(self):
+        """Version 3 postings carry hints (S, N, R, freq_key): the converter writes them, add_index_hints adds
+        them to a file without them byte for byte the same, and every lookup shows what the head path shows."""
+        terms = [term("猫", "ねこ", ["cat"]), term("ねこ", "", ["hiragana cat"]), term("ネコ", "", ["katakana cat"]),
+                 term("食べる", "たべる", ["eat"], "v1"), term("から", "", ["particle"]), term("空", "から", ["empty"]),
+                 term("私", "わたし", ["I"]), term("私", "あたし", ["I casual"]), term("ＩＤ", "", ["identity"]),
+                 term("先", "さき", ["ahead"]), term("先", "さっき", ["a while ago"])]
+        rows = [freq("猫", 1536, "ねこ"), freq("ねこ", 50, kana=True), freq("ネコ", 90000, kana=True),
+                freq("から", 11, kana=True), freq("空", 39553, "から"), freq("先", 416, "さき"),
+                freq("先", 221, "さっき", kana=True)]
+        hinted, _ = self.build_ranked(terms, rows)
+        data = hinted.read_bytes()
+        self.assertEqual(data[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8],
+                         convert.HINTS_DESCRIPTOR.pack(convert.HINTS_MAGIC, 1))
+        # Every posting's hint, as add_index_hints computes it from the payloads.
+        plain = self.directory / "plain.vjdict"
+        bare = bytearray(data)
+        bare[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8] = bytes(8)
+        _, _, _, _, _, _, _, _, _, pages = convert.HEADER.unpack_from(data)
+        postings = 0
+        for page in range(pages):
+            base = convert.PAGE_SIZE * (1 + page)
+            for slot in range(struct.unpack_from("<I", data, base + 4)[0]):
+                _, group, n, key_len, _ = convert.HASH_RECORD.unpack_from(data, base + 16 + 24 * slot)
+                key = data[group:group + key_len]
+                for j in range(n):
+                    entry_off, entry_len, _, hint = convert.POSTING.unpack_from(data, group + key_len + 16 * j)
+                    self.assertEqual(hint, convert.posting_hint(key, data[entry_off:entry_off + entry_len], entry_len))
+                    at = group + key_len + 16 * j + 14
+                    bare[at:at + 2] = bytes(2)
+                    postings += 1
+        # The flags of a few known postings: the katakana spelling of ねこ normalizes to its key but is not it.
+        flags = {}
+        for page in range(pages):
+            base = convert.PAGE_SIZE * (1 + page)
+            for slot in range(struct.unpack_from("<I", data, base + 4)[0]):
+                _, group, n, key_len, _ = convert.HASH_RECORD.unpack_from(data, base + 16 + 24 * slot)
+                for j in range(n):
+                    entry_off, entry_len, _, hint = convert.POSTING.unpack_from(data, group + key_len + 16 * j)
+                    spelling = data[entry_off + 4:entry_off + entry_len].split(b"\0")[0].decode()
+                    flags[(data[group:group + key_len].decode(), spelling)] = hint & 7
+        self.assertEqual(flags[("ねこ", "ねこ")], convert.HINT_SPELLING | convert.HINT_NORMALIZED)
+        self.assertEqual(flags[("ねこ", "ネコ")], convert.HINT_NORMALIZED)
+        self.assertEqual(flags[("ねこ", "猫")], convert.HINT_READING)
+        self.assertEqual(flags[("ID", "ＩＤ")], convert.HINT_NORMALIZED)
+        plain.write_bytes(bare)
+        added = convert.add_index_hints(plain, self.directory / "added.vjdict")
+        self.assertEqual(added["hinted_postings"], postings)
+        self.assertEqual((self.directory / "added.vjdict").read_bytes(), data)
+        with self.assertRaisesRegex(ValueError, "already has a hint|not empty"):
+            convert.add_index_hints(hinted, self.directory / "never.vjdict")
+        v2 = self.directory / "v2.vjdict"
+        convert.convert([self.archive(terms)], v2, format_version=2)
+        with self.assertRaisesRegex(ValueError, "version 3"):
+            convert.add_index_hints(v2, self.directory / "never.vjdict")
+        self.assertFalse((self.directory / "never.vjdict").exists())
+        text = "ネコは猫とねこで、私から先に食べた。ＩＤ"
+        self.assertEqual(self.lookup(text, "main.vjdict").stdout, self.lookup(text, "plain.vjdict").stdout)
+        self.assertIn("katakana cat", self.lookup("ネコ", "main.vjdict").stdout)  # written as the text is
+        self.assertIn("hiragana cat", self.lookup("ねこ", "main.vjdict").stdout)
 
     def test_every_entry_gets_a_rank_or_the_unranked_zero(self):
         terms = [term("猫", "ねこ", ["cat"]), term("猫", "ネコ", ["cat in katakana reading"]),

@@ -31,7 +31,8 @@ typedef struct {
     /* v2: probes that found the full key with fitting rules; v1: the key is in the
      * index, whatever its rules (take_postings filters them) */
     uint64_t found;
-    uint64_t ranked;       /* postings ranked (a payload head each) */
+    uint64_t ranked;       /* postings ranked by their payload's head (a read unless cached) */
+    uint64_t hinted;       /* postings ranked by their posting hints, without the head */
     uint64_t absent_reads; /* index and group reads of probes that found no key */
     uint64_t reads[VJO_READ_KINDS], bytes[VJO_READ_KINDS];
 } VjoLocalStats;

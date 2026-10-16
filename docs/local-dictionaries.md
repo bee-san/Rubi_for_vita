@@ -350,6 +350,24 @@ Format 3 is format 2 with two additions, so it needs nothing in memory:
   (Jiten's `N㋕`), bits 25-31 for the converter's report. The ranking's head
   read and the shown entry's payload read include it: no extra read, 4 bytes
   more in each.
+- optional **posting hints**, announced by magic `VJPH` and u32 version=1 at
+  page-0 byte 160. Every posting's last u16 then ranks it without reading its
+  payload's head:
+  - bit 0: the spelling is the key;
+  - bit 1: the spelling normalizes to the key;
+  - bit 2: the entry has a reading;
+  - bits 3-15: the 13-bit frequency key of its frequency word (below).
+
+  Spelling and reading count only within the first 160 bytes after the
+  frequency word, as the ranking's head read sees them. The head is still read
+  for a key with a preferred reading or a usual spelling, and for katakana or full-width text
+  whose entry's spelling only normalizes to the key. `--frequency` writes the
+  hints; `tools/prepare_plaintext.py` adds them to the bundled file
+  (`convert_dictionary.add_index_hints`, deterministic). Without the magic
+  (files from earlier converters) the u16 is ignored, and a reader that
+  predates the hints ignores it too. On the bundled file the hints take a
+  lookup's payload-head reads from 2.6-4.0 to 0.2-1.2, with every shown entry
+  identical (`tools/dict_lookup_bench.py`, `reports/dict-lookup-speed.md`).
 
 Ranking uses it as a tie-break only, after the flags above (a preferred
 reading, the text as written, katakana as hiragana, a reading): first a
@@ -547,9 +565,9 @@ read it as before.
   u32 block count; u32 hash count=7; u64 offset of the first block; u32 key
   count; u32 reserved=0.
 - **Directory.** From byte 256 of page 0: one u32 per block, the block's first
-  prefix. The first is 0, the rest increase. Bytes 160..191 are reserved (0), and
-  bytes 192..255 are not the filter's: a dictionary title may use them
-  (bee-san/plaintext-dicts).
+  prefix. The first is 0, the rest increase. Bytes 160..191 are not the filter's
+  (format 3's posting hints use 160..167), nor are bytes 192..255: a dictionary
+  title may use them (bee-san/plaintext-dicts).
 - **Blocks.** Page-aligned, 4 KiB each, and they end the file (the header's file
   size includes them). Each is a 32,768-bit Bloom filter, bit `i` being byte
   `i / 8`, bit `i % 8`. A key sets bits `(h1 + k * h2) mod 32768` for k = 0..6,

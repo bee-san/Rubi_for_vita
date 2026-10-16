@@ -170,6 +170,59 @@ static void add_filter(Fixture *f, const Row *rows, int n, const uint32_t *start
     f->size = off + (size_t)blocks * 4096;
     put64(f->bytes + 40, f->size);
 }
+/* The converter's posting hints (tools/convert_dictionary.py posting_hint) into a
+ * built v3 fixture: every posting's u16, from its payload, and the VJPH descriptor. */
+static uint32_t fixture_freq_key(uint32_t word)
+{
+    uint32_t rank = word & 0xffffffu, e = 0, m;
+    if (!rank) return 0;
+    while (rank >> (e + 1)) e++;
+    m = e >= 7 ? (rank >> (e - 7)) & 127u : (rank << (7 - e)) & 127u;
+    return (word & (1u << 24) ? 0u : 4096u) + 4095u - (e * 128u + m);
+}
+static int normalizes_to(const uint8_t *s, size_t n, const uint8_t *key, size_t key_len)
+{
+    size_t i = 0, k = 0;
+    while (i < n) {
+        char enc[4];
+        uint32_t cp = vjo_utf8_next((const char *)s, n, &i);
+        int m;
+        if (cp >= 0x30a1 && cp <= 0x30f6) cp -= 0x60;
+        if (cp >= 0xff01 && cp <= 0xff5e) cp -= 0xfee0;
+        m = vjo_utf8_encode(cp, enc);
+        if (k + (size_t)m > key_len || memcmp(key + k, enc, (size_t)m)) return 0;
+        k += (size_t)m;
+    }
+    return k == key_len;
+}
+static void add_hints(Fixture *f)
+{
+    uint32_t count = (uint32_t)(f->bytes[4100] | f->bytes[4101] << 8);
+    TEST_ASSERT(!memcmp(f->bytes, "VJDICT3", 7));
+    for (uint32_t slot = 0; slot < count; slot++) {
+        const uint8_t *rec = f->bytes + 4096 + 16 + slot * 24;
+        size_t group = (size_t)(rec[8] | rec[9] << 8 | rec[10] << 16), key_len = (size_t)(rec[20] | rec[21] << 8);
+        uint32_t postings = (uint32_t)(rec[16] | rec[17] << 8);
+        for (uint32_t j = 0; j < postings; j++) {
+            uint8_t *post = f->bytes + group + key_len + j * 16;
+            size_t entry = (size_t)(post[0] | post[1] << 8 | post[2] << 16);
+            size_t len = (size_t)(post[8] | post[9] << 8), n = (len < 164 ? len : 164) - 4, sp;
+            const uint8_t *head = f->bytes + entry + 4, *nul = memchr(head, 0, n);
+            uint32_t word = (uint32_t)(f->bytes[entry] | f->bytes[entry + 1] << 8 | f->bytes[entry + 2] << 16 |
+                                       (uint32_t)f->bytes[entry + 3] << 24);
+            uint16_t hint = (uint16_t)(fixture_freq_key(word) << 3);
+            if (nul) {
+                sp = (size_t)(nul - head);
+                if (sp == key_len && !memcmp(head, f->bytes + group, key_len)) hint |= 1;
+                if (normalizes_to(head, sp, f->bytes + group, key_len)) hint |= 2;
+                if (sp + 1 < n && head[sp + 1]) hint |= 4;
+            }
+            put16(post + 14, hint);
+        }
+    }
+    memcpy(f->bytes + 160, "VJPH", 4);
+    put32(f->bytes + 164, 1);
+}
 static int read_file(void *ctx, uint64_t off, void *dst, size_t n)
 {
     Fixture *f = ctx;
@@ -1227,7 +1280,73 @@ static void key_filter_descriptor_is_validated(void)
     }
 }
 
+/* Posting hints rank every posting exactly as its payload's head does (#127's
+ * tie-break cases, katakana text, a preferred reading), with fewer reads; without
+ * the descriptor the u16 is ignored (0xa5a5 in the fixture). */
+static void posting_hints_rank_as_the_head_does(void)
+{
+    const Row rows[] = {
+        {"かいとう", "解答", "かいとう", "answer, the longest article of the three", 0, 6000},
+        {"かいとう", "回答", "かいとう", "reply", 0, 3000},
+        {"かいとう", "怪盗", "かいとう", "phantom thief", 0, 0},
+        {"から", "空", "から", "empty, a frequent homograph", 0, 39553},
+        {"から", "から", "", "particle: from", 0, 0},
+        {"私", "私", "あたし", "I (casual)", 0, 1678},
+        {"私", "私", "わたし", "I", 0, 32000},
+        {"人", "人", "", "the character", 0, 65},
+        {"人", "人", "ひと", "person", 0, 9000},
+        {"せい", "性", "せい", "nature, a long article for its rank", 0, 201},
+        {"せい", "所為", "せい", "because of", 0, 200},
+        {"もと", "元", "もと", "origin", 0, 0},
+        {"もと", "本", "もと", "basis", 0, 400000},
+        {"先", "先", "さっき", "a while ago", 0, 1u << 24 | 221u},
+        {"先", "先", "さき", "ahead", 0, 416},
+        {"かう", "かう", "", "to buy", 2, 500},
+        {"かる", "かる", "", "to cut, an article longer than the other two", 2, 80000},
+        /* katakana text: a frequent hiragana spelling, a rare katakana one (written
+         * as the text is: it wins, which only its head can tell) and a kanji one */
+        {"ねこ", "ねこ", "", "hiragana spelling", 0, 50},
+        {"ねこ", "ネコ", "", "katakana spelling", 0, 90000},
+        {"ねこ", "猫", "ねこ", "kanji spelling", 0, 10},
+        /* a usual spelling (usual_spellings: やめる 止める) beats a more frequent one */
+        {"やめる", "辞める", "やめる", "to quit", 1, 500},
+        {"やめる", "止める", "やめる", "to stop", 1, 2000}};
+    const char *texts[] = {"かいとう", "から", "私", "人", "せい", "もと", "先", "かった", "かう", "ネコ", "ねこ", "猫",
+                           "やめる"};
+    for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+        char plain[256], hinted[256];
+        int plain_reads, hinted_reads;
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "plain.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+        build(&fixtures[1], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+        add_hints(&fixtures[1]);
+        TEST_CASE(texts[t]);
+        plain_reads = shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
+        hinted_reads = shown("main.vjdict", texts[t], 0, hinted, sizeof(hinted));
+        TEST_CHECK_(!strcmp(plain, hinted), "%s vs %s", plain, hinted);
+        TEST_CHECK_(hinted_reads <= plain_reads, "%d reads, %d without hints", hinted_reads, plain_reads);
+        /* a wrong magic: the u16 is ignored, as #127's reader does */
+        memcpy(fixtures[1].bytes + 160, "XXXX", 4);
+        shown("main.vjdict", texts[t], 0, hinted, sizeof(hinted));
+        TEST_CHECK_(!strcmp(plain, hinted), "no descriptor: %s vs %s", plain, hinted);
+    }
+    {
+        /* a descriptor of another version is refused */
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        char out[256], want[32];
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+        add_hints(&fixtures[0]);
+        put32(fixtures[0].bytes + 164, 2);
+        shown("main.vjdict", "から", 0, out, sizeof(out));
+        snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
+        TEST_CHECK_(!strcmp(out, want), "%s", out);
+    }
+}
+
 TEST_LIST = {
+    {"posting_hints_rank_as_the_head_does", posting_hints_rank_as_the_head_does},
     {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
     {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},

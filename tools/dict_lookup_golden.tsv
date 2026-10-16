@@ -2,7 +2,7 @@
 # shown entry's text and highlight; no text). Re-record after an intended change of what is shown:
 #   python3 tools/dict_lookup_bench.py --bench build/host/vjo-dict-bench --directory DIR --rounds 1 \
 #       --write-golden tools/dict_lookup_golden.tsv -o /dev/null
-# recorded with	plaintext.vjdict	sha256 e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b
+# recorded with	plaintext.vjdict	sha256 e3ac485e76c39e64ea16633c2e9b735f8bc5b59a88c096617c40873247cf6e19
 # mode	id	model	cursor:digest ...
 first	vita_tight_v1015_151320	H15	0:d0b274365b9e2a07
 first	vita_tight_v1015_151320	FL10	0:d0b274365b9e2a07
