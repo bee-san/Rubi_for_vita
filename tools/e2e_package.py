@@ -21,13 +21,17 @@ Scenario A, the owner's case (#101): a Vita with v0.8.0-test.2 installed and tes
 still on it: test.2's taiHEN lines (*KERNEL, *main, *PCSG00415, the commented *ALL, Meiki and Text
 lines), its model files, its VPK in ux0:data, and the config.ini the old app left (ocr_backend =
 vocr2, vocr_model/vocr_fallback_model, jpdb/jiten API keys, Anki on with an address).
-install-vita.sh --title PCSG00415; --check-app with no app, test.2's app and this package's;
+install-vita.sh --title PCSG00415 (a package whose worker mode is kernel, the manifest's "worker", ignores
+--title with a note and removes the worker's lines: the kernel plugin loads it, docs/one-vpk-install.md;
+lines mode registers it under *PCSG00415); --check-app with no app, test.2's app and this package's;
 --self-test; a console session simulated in the plugins' log formats (a model size that did not
 fit, an Anki save, the Overlay app's export); --collect (read-only: one zip and its analysis);
 --uninstall.
-Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: install-vita.sh --title.
+Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: install-vita.sh --title
+(kernel mode removes the *ALL worker line, lines mode comments it out).
 Scenario C, an older choice migrated: vocr_model = VOCR4_W20_w8.vocr becomes vocr_tier = large,
-dictionary = jpdb becomes local, and the registered game is kept without --title.
+dictionary = jpdb becomes local, and the registered game's line goes with its section (kernel mode) or
+is kept without --title (lines mode).
 Before them, the package itself: its manifest names the build its modules are (tools/check_variant.py's
 markers, read as tools/package_release.py reads a base, and all four modules, the worker too, checked as
 the Vita build checks them, against this tree's sources) and the Overlay app's version (a manifest without
@@ -132,6 +136,9 @@ class E2E:
         self.checks = []
         self.manifest = json.loads((pkg / "package-manifest.json").read_text())
         self.variant = self.manifest.get("variant")
+        # where the OCR worker comes from (package_release.py "worker"): kernel, the kernel plugin loads it
+        # and the installer writes no line for it; lines (an older package), one *TITLEID section per game
+        self.worker = self.manifest.get("worker", "lines")
         self.settings = self.manifest.get("install_settings", {})
         self.shown = " ".join(f"{k}={v}" for k, v in self.settings.items())
         self.template = config_values((pkg / "config.ini").read_text())
@@ -176,15 +183,29 @@ class E2E:
         for part in part_configs:
             t = (dev / part / "tai/config.txt").read_bytes()
             lines = t.split(b"\r\n")
-            check(lines.count(b"ur0:tai/VitaJPOverlay_OCR.suprx") == 1
-                  and b"*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx" in t,
-                  f"{label} {part}: the worker once, under *PCSG00415 only")
+            if self.worker == "kernel":
+                check(not re.search(rb"(?im)^[ \t]*[^#\r\n][^\r\n]*VitaJPOverlay_OCR\.suprx", t),
+                      f"{label} {part}: no worker line (the kernel plugin loads the worker)")
+            else:
+                check(lines.count(b"ur0:tai/VitaJPOverlay_OCR.suprx") == 1
+                      and b"*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx" in t,
+                      f"{label} {part}: the worker once, under *PCSG00415 only")
             check(not re.search(rb"\*ALL\r\nur0:tai/VitaJPOverlay_OCR", t), f"{label} {part}: no live *ALL worker line")
             check(lines.count(b"ur0:tai/VitaJPOverlay_Kernel.skprx") == 1
                   and lines.count(b"ur0:tai/VitaJPOverlay_Shell.suprx") == 1
                   and b"henkaku" in t, f"{label} {part}: kernel and shell once each, henkaku kept, CRLF kept")
             check((dev / part / "tai/config.txt.vjo-bak").read_bytes() == before[part],
                   f"{label} {part}: config.txt.vjo-bak is the original")
+            dated = sorted((dev / part / "tai").glob("config.txt.vjo-*.bak"))
+            check(dated and re.fullmatch(r"config\.txt\.vjo-\d{8}-\d{6}(-\d+)?\.bak", dated[0].name)
+                  and dated[0].read_bytes() == before[part], f"{label} {part}: a dated backup of the original, kept")
+        payload = pkg / "payload-manifest.txt"
+        if payload.is_file():  # the one-VPK install's record, the line the Overlay app writes (core/payload.h)
+            sys.path.insert(0, str(ROOT / "tools"))
+            import package_vpk
+            record = dev / "ux0/data/VitaJPOverlay/installed.txt"
+            check(record.is_file() and record.read_text() == package_vpk.installed_record(payload.read_text()),
+                  f"{label} installed.txt is this package's record")
         for rel in self.device_files:
             dst = dev / ("ux0/data/JPOverlaySettings.vpk" if rel == "JPOverlaySettings.vpk" else rel)
             check(dst.is_file() and dst.read_bytes() == (pkg / rel).read_bytes(), f"{label} uploaded and identical: {rel}")
@@ -308,6 +329,8 @@ class E2E:
             self.save_log("A-install.log", log)
             check(r.returncode == 0 and "Installed. Reboot the Vita" in r.stdout,
                   f"A install-vita.sh --title PCSG00415: rc {r.returncode}")
+            if self.worker == "kernel":
+                check("--title is not needed" in r.stdout, "A install-vita.sh says --title is not needed (kernel mode)")
             if self.shown:
                 check(f"package settings: {self.shown}" in r.stdout,
                       f"A install-vita.sh names the package settings: {self.shown}")
@@ -436,7 +459,11 @@ class E2E:
               f"A analysis: {m.group(0) if m else 'no installed-files line'} (want {n_hashed} of {n_hashed})")
         check("installed files:" in a and not re.search(r"DIFFER|absent", a.split("installed files:")[1].split("\n\n")[0]),
               "A analysis: no installed file DIFFERs or is absent")
-        for want_text in ("OCR worker under ['PCSG00415']", "PASS: every stage completed", "memory headroom per stage",
+        worker_text = ("no OCR worker line (the kernel loads it)" if self.worker == "kernel"
+                       else "OCR worker under ['PCSG00415']")
+        install_text = ("one-VPK install (installed.txt): " if (self.pkg / "payload-manifest.txt").is_file()
+                        else "one-VPK install: no installed.txt")
+        for want_text in (worker_text, install_text, "PASS: every stage completed", "memory headroom per stage",
                           "recommendation:", "not decided here", "crash dumps: psp2core",
                           "model sizes that did not fit (log only, never shown): large in PCSG00415 x1",
                           "Overlay app: the plugins' (vjoapp1 "):
@@ -464,8 +491,12 @@ class E2E:
             self.installed_right(dev, run_pkg, ["ur0", "ux0"], {"ur0": tai_b, "ux0": tai_b}, "B")
             for part in ("ur0", "ux0"):
                 t = (dev / part / "tai/config.txt").read_bytes()
-                check(b"*ALL\r\n# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx" in t,
-                      f"B {part}: the *ALL worker line is commented out")
+                if self.worker == "kernel":
+                    check(b"VitaJPOverlay_OCR" not in t and t.endswith(b"*ALL\r\n"),
+                          f"B {part}: the *ALL worker line is removed, the empty *ALL kept")
+                else:
+                    check(b"*ALL\r\n# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx" in t,
+                          f"B {part}: the *ALL worker line is commented out")
             cfg = config_values((dev / "ux0/data/VitaJPOverlay/config.ini").read_text())
             want = {"vocr_tier": "normal", "log_file": "on", **self.settings}
             if "ocr_boost_clock" in self.template:
@@ -487,11 +518,16 @@ class E2E:
             r = self.sh(run_pkg, "install-vita.sh", host)
             self.save_log("C-install.log", r.stdout + r.stderr)
             check(r.returncode == 0 and "Installed. Reboot the Vita" in r.stdout,
-                  f"C install-vita.sh (no --title; kept *PCSG00415): rc {r.returncode}")
+                  f"C install-vita.sh (no --title; a registered *PCSG00415): rc {r.returncode}")
             self.no_secret(r.stdout + r.stderr, "C install")
             t = (dev / "ur0/tai/config.txt").read_bytes()
-            check(t.split(b"\r\n").count(b"ur0:tai/VitaJPOverlay_OCR.suprx") == 1
-                  and b"*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx" in t, "C the registered game is kept without --title")
+            if self.worker == "kernel":
+                check(b"VitaJPOverlay_OCR" not in t and b"*PCSG00415" not in t,
+                      "C the registered game's worker line goes, and the section it was alone in")
+            else:
+                check(t.split(b"\r\n").count(b"ur0:tai/VitaJPOverlay_OCR.suprx") == 1
+                      and b"*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx" in t,
+                      "C the registered game is kept without --title")
             cfg = config_values((dev / "ux0/data/VitaJPOverlay/config.ini").read_text())
             want = {"vocr_tier": "large", "dictionary": "local", "log_file": "on", **self.settings}
             for k, v in want.items():
