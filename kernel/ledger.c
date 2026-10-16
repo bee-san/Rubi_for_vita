@@ -3,7 +3,7 @@
  * and a starting game's games.ini read (VjoPolicy, loader.c) are the only
  * blocks the kernel ever allocates (the full-frame VjoCapture went in API 24);
  * the worker thread's stack and the module's pages are the permanent part.
- * Printed to kernel.txt on every change. */
+ * Printed to kernel.txt once a boot, at the kernel's start (kernel/main.c). */
 #include "../core/ledger.h"
 #include "../include/vjo_ledger_budget.h"
 #include "vjo_kernel.h"

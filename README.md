@@ -732,7 +732,8 @@ pools, which process each plugin runs in, and the budgets each context can use.
 three plugins take from those pools: a budget table checked in CI (an allocation
 outside the wrappers, a worst case over a pool's limit, or a module that grew by a
 page fails the build), printed in the build log and, with current and peak per
-pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
+pool, in `status.txt` at boot and at each game start and exit and in `kernel.txt`
+at boot.
 
 `log_file = on`, the default, records bounded diagnostic logs:
 `ux0:data/VitaJPOverlay/log.txt` holds at most 1 MB and one rotated

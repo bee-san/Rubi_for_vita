@@ -551,7 +551,8 @@ ledger   Paf plugin (est.): current=8192 peak=8192
 
 `free=` is the PAF heap's free size as `GetFreeSize()` reports it (0 before Paf is ready). Stacks
 include their 4 KiB of TLS. The kernel writes `ledger kernel: current=… peak=… limit=…` and its
-items to `kernel.txt` at start and at every capture. The game worker keeps its ledger in the
+items to `kernel.txt` once a boot, at its start (`kernel/main.c`; until API 24 also at every
+full-frame capture, from the removed `VjoCapture` allocator). The game worker keeps its ledger in the
 game's process, which has no file access; its numbers reach the Shell log through the job result
 (`game vocr memory: free USER=… need …`, `workspace_bytes`, `resident_bytes`).
 
