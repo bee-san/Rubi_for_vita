@@ -1,6 +1,6 @@
 /* Control thread (kernel events, overlay state, auto/on-press policy) and
- * network thread (capture -> JPEG -> Lens, or capture -> local vita-vn-ocr;
- * then the dictionary). */
+ * network thread (a job of the game worker: vita-vn-ocr in the game; then the
+ * dictionary). The overlay is offline: Google Lens was removed (2026-10-15). */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/processmgr.h>
@@ -23,32 +23,19 @@
 #include "shell.h"
 #include "touch_hold.h"
 
-/* Network memory (Google Lens): two result arenas (the overlay shows one while
- * the worker fills the other) and a kept connection. Local OCR retires its
- * prior view before OCR, so its lookup needs only one arena. OCR-only local
- * jobs use bounded static text. Control-thread config/region/messages use
- * separate scratch. */
-#define RESULT_ARENA_SIZE (256 * 1024)
+/* Result memory: one 64 KiB arena for the local dictionary's lookup, taken
+ * after OCR and freed before the next job's OCR (the game holds the job's
+ * memory meanwhile). OCR-only jobs use bounded static text. Control-thread
+ * config/region/messages use separate scratch. Every job is local: Google
+ * Lens and the Hachidori relay, the network paths (two 256 KiB arenas and a
+ * connection pool), were removed. */
 #define LOCAL_RESULT_ARENA_SIZE (64 * 1024)
 #define SCRATCH_SIZE      (24 * 1024)
 typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 : -1];
-#define POOL_SLOTS        1 /* Lens, the only host the Shell's jobs connect to */
-#define POOL_SIZE         ((vjo_net_pool_size(POOL_SLOTS) + 15) & ~(size_t)15)
-#define MEM_SIZE          (2 * RESULT_ARENA_SIZE + POOL_SIZE)
-/* Well within Lens's (it closes an idle connection after 4 minutes), and
- * short enough that one a network dropped silently (a hotspot's NAT) is
- * rarely met: that costs a read timeout. */
-#define NET_IDLE_US       (60 * 1000 * 1000)
-/* Connections are readied when the region starts changing (for this long),
- * this often at most: a region that never settles readies them once. */
-#define WARM_WINDOW_MS    3000u
-#define WARM_GAP_US       2000000LL
-#define WARM_CONNECT_US   5000000
 
 #define POLL_TIMEOUT_US   50000
 #define BACKOFF_MIN_US    2000000LL
 #define BACKOFF_MAX_US    60000000LL
-#define JPEG_QUALITY      80
 #define SUBTITLE_GAP_US   1000000LL /* between subtitle jobs */
 #define UNSETTLED_US      2000000LL /* subtitles: a region that keeps changing is recognized this often */
 /* The open overlay's quiet refresh (#81 request 4): at most one per settled
@@ -75,7 +62,6 @@ static volatile int running = 1;
 static SceUID mem_uid = -1;
 static void *mem_heap; /* bounded allocation from ScePaf's existing heap */
 static size_t mem_bytes; /* what either holds, for the ledger */
-static int mem_local;
 static VjoArena results[2];
 static VjoArena scratch; /* static; control thread only */
 static uint8_t scratch_mem[SCRATCH_SIZE];
@@ -107,7 +93,6 @@ static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
 static int anki_on;        /* vjo_anki_configure(&cfg): enter saves cards to the queue */
 static VjoPlatform plat;
-static VjoNetPool pool; /* plat's; network thread only, except mem_free while it idles */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
@@ -161,7 +146,6 @@ static int64_t job_started_us;
 /* network job */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
-#define NET_EV_WARM 4u
 static volatile int job_running;
 static volatile int job_done;
 static volatile int job_idx;
@@ -186,10 +170,6 @@ static int64_t job_game_us;   /* the job's exchanges with the game worker (netwo
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
-static const char *job_cached_text;
-/* The job's text is job_cached_text: no lookup, the cached result stays
- * (and is now for the job's screen). */
-static volatile int job_same_text;
 /* The job's capture is done (job_capture_scene, job_capture_seq: its
  * VjoState.capture_scene and region_seq). */
 static volatile int job_captured;
@@ -198,9 +178,6 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
  * is dropped. */
 static volatile int job_cancelled;
 static VjoNetCancel net_cancel = {-1, -1, 0}; /* the network thread's requests */
-/* The network thread opens the Lens connection for the next job. */
-static volatile int warm_running;
-static int64_t warm_asked_us;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
@@ -421,32 +398,16 @@ static int has_result_memory(void)
     return mem_heap != NULL || mem_uid >= 0;
 }
 
-static int game_ocr_backend(int backend)
-{
-    return backend == VJO_OCR_VOCR;
-}
-
-/* The local pipeline: OCR in the game, the local dictionaries' cursor lookups
- * in one arena. Google Lens is the network path (two arenas and the pool). */
-static int local_pipeline(const VjoConfig *c)
-{
-    return game_ocr_backend(c->ocr_backend);
-}
-
-static int mem_alloc_for(const VjoConfig *c)
+/* The lookup's result arena, taken when a lookup needs it (after OCR). */
+static int mem_alloc(void)
 {
     void *base = NULL;
-    uint8_t *p;
-    int local = local_pipeline(c);
-    size_t arena_size = local ? LOCAL_RESULT_ARENA_SIZE : RESULT_ARENA_SIZE;
-    size_t bytes = local ? arena_size : MEM_SIZE;
-    if (has_result_memory() && mem_local != local)
-        mem_free();
+    size_t bytes = LOCAL_RESULT_ARENA_SIZE;
     if (has_result_memory())
         return 0;
 #ifdef VJO_PAF_ALLOC
     /* Games can exhaust USER while SceShell still has reserved heap pages.
-     * Result arenas and kept TLS sessions have one bounded owner. */
+     * The result arena has one bounded owner. */
     mem_heap = vjo_shell_heap_alloc_for(VJO_SL_PAF_RESULTS, bytes);
     if (!mem_heap) {
         vjo_log("result workspace Paf allocation failed (%u KiB)", (unsigned)(bytes >> 10));
@@ -462,21 +423,13 @@ static int mem_alloc_for(const VjoConfig *c)
         return mem_uid;
     mem_bytes = bytes;
 #endif
-    p = (uint8_t *)base;
-    vjo_arena_init(&results[0], p, arena_size);
-    vjo_arena_init(&results[1], local ? NULL : p + arena_size, local ? 0 : arena_size);
-    vjo_net_pool_init(&pool, local ? NULL : p + 2 * arena_size,
-                      local ? 0 : POOL_SIZE, NET_IDLE_US);
-    mem_local = local;
-    vjo_log("%s workspace: %u bytes, %u %u-byte results, %u-byte connection pool",
-            local ? "local dictionary" : "network", (unsigned)bytes,
-            (unsigned)(local ? 1 : 2), (unsigned)arena_size, (unsigned)(local ? 0 : POOL_SIZE));
+    vjo_arena_init(&results[0], (uint8_t *)base, bytes);
+    vjo_arena_init(&results[1], NULL, 0);
+    vjo_log("local dictionary workspace: %u bytes", (unsigned)bytes);
     active = -1;
     cache_ok = 0;
     return 0;
 }
-
-static int mem_alloc(void) { return mem_alloc_for(&cfg); }
 
 /* Called by the idle control thread or by the network thread owning its job. */
 static void mem_free(void)
@@ -485,8 +438,6 @@ static void mem_free(void)
         vjo_view_lock();
         g_view.list = NULL;
         vjo_view_unlock();
-        vjo_net_pool_close(&plat);
-        vjo_net_pool_init(&pool, NULL, 0, NET_IDLE_US);
         if (mem_heap)
             vjo_shell_heap_free(VJO_SL_PAF_RESULTS, mem_heap, mem_bytes);
         else
@@ -512,7 +463,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.list_seq++;
     sceClibSnprintf(g_view.status, sizeof(g_view.status), "%s", status ? status : "");
     g_view.status_is_error = is_error;
-    g_view.local_cursor_mode = local_pipeline(&cfg) && local_text_valid && list &&
+    g_view.local_cursor_mode = local_text_valid && list &&
                                list->header == local_text;
     g_view.cursor_byte = local_cursor_byte;
     /* The static header placeholder keeps the requested page while its
@@ -558,27 +509,10 @@ static void view_show_cache(void)
 
 /* ---------------- network thread ---------------- */
 
-typedef struct {
-    const uint8_t *data;
-} MemJpeg;
-
-static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
-{
-    sceClibMemcpy(dst, ((MemJpeg *)ud)->data + off, len);
-    return 0;
-}
-
-/* ---- local OCR: vita-vn-ocr (ocr_backend = vocr) ---- */
+/* ---- OCR: vita-vn-ocr in the game worker ---- */
 
 /* Out-of-memory advice, by where the memory ran out (#53). Each fits the
  * status line after "Text recognition failed: not enough memory. ". */
-#define OOM_KERNEL_CAPTURE "The kernel could not allocate this region's screen capture (kernel memory " \
-    "shared by all plugins); the OCR model does not affect it. Select a tighter dialogue region with Square, " \
-    "or restart the Vita."
-#define OOM_SHELL_RESULTS "The Shell has too little memory for the overlay's results; the region and " \
-    "the OCR model do not affect it. Restart the Vita and try again."
-#define OOM_SCREENSHOT "The screenshot did not fit the overlay's result memory. Select a tighter " \
-    "dialogue region with Square."
 #define OOM_TEXT_BUFFER "The recognized text did not fit the overlay's text buffer. Select a tighter " \
     "dialogue region with Square."
 #define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
@@ -590,8 +524,6 @@ static int mem_jpeg_read(void *ud, uint32_t off, void *dst, uint32_t len)
 #define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
     "passed. Try again."
 #define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
-/* Any other OCR-stage shortage (Lens result arena, recognized text). */
-#define OOM_OCR_OTHER "Select a tighter dialogue region with Square."
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -845,11 +777,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     }
     /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
-    vjo_capture_hold(); /* no Lens capture while the game captures for this job */
     int64_t t0 = now_us();
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
     job_game_us += now_us() - t0;
-    vjo_capture_release();
     vocr_note_capture();
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
@@ -1037,7 +967,7 @@ static int run_vocr(VjoOverlayData *out)
     __sync_synchronize();
     local_text_valid = 1;
     sceKernelUnlockMutex(cmd_lock, 1);
-    if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc_for(&job_cfg) == 0)
+    if (!job_lookup || !len || job_cursor_byte >= len || mem_alloc() == 0)
         return VJO_OK;
     out->failed_stage = VJO_STAGE_DICT;
     out->err.dict = VJO_DICT_LOCAL;
@@ -1047,82 +977,32 @@ static int run_vocr(VjoOverlayData *out)
 #else
 static int run_vocr(VjoOverlayData *out)
 {
-    out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR, "
-                      "or set ocr_backend = lens.";
+    out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR.";
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
 }
 #endif
 
 static int run_job(VjoArena *a, VjoOverlayData *out)
 {
-    VjoState st;
-    VjoJpegSource src;
-    VjoBuf jb;
-    MemJpeg mem;
-
     sceClibMemset(out, 0, sizeof(*out));
     out->list.header = "";
-    /* Warm connections may still own the old pool when a configuration change
-     * requests a job. Only this thread can retire it once that work finishes.
-     * A refresh and the self-test's job keep the arena: the overlay's entry lives in it. */
-    if (local_pipeline(&job_cfg)) {
-        if (!job_refresh && !job_selftest)
-            mem_free();
-    } else if (mem_alloc_for(&job_cfg) < 0) {
-        out->failed_stage = VJO_STAGE_OCR;
-        out->err.detail = OOM_SHELL_RESULTS;
-        return out->err.rc = VJO_E_OOM;
-    }
+    /* A refresh and the self-test's job keep the arena: the overlay's entry lives in it. */
+    if (!job_refresh && !job_selftest)
+        mem_free();
     vjo_arena_reset(a);
-    if (game_ocr_backend(job_cfg.ocr_backend)) {
-        /* On the console only: no image or connection leaves it. */
-        if (run_vocr(out) != VJO_OK) {
-            if (!out->failed_stage)
-                out->failed_stage = VJO_STAGE_OCR;
-            if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
-                out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
-            return out->err.rc;
-        }
-        if (job_selftest)
-            return VJO_OK;
-        goto recognized;
-    }
-    vjo_buf_init(&jb, a);
-    st.capture_scene = 0;
-    st.capture_result = 0;
-    if ((out->err.rc = vjo_capture_jpeg(a, 0, JPEG_QUALITY, &jb, &st)) != VJO_OK) {
-        out->failed_stage = VJO_STAGE_OCR;
-        if (out->err.rc == VJO_E_OOM)
-            out->err.detail = st.capture_result == VJO_ERR_NO_MEMORY ? OOM_KERNEL_CAPTURE : OOM_SCREENSHOT;
+    /* On the console only: no image or connection leaves it. */
+    if (run_vocr(out) != VJO_OK) {
+        if (!out->failed_stage)
+            out->failed_stage = VJO_STAGE_OCR;
+        if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
+            out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
         return out->err.rc;
     }
-    job_capture_scene = st.capture_scene;
-    job_capture_seq = st.region_seq;
-    __sync_synchronize(); /* the scene is visible before job_captured */
-    job_captured = 1;
-    sceClibMemset(&src, 0, sizeof(src));
-    src.width = st.width;
-    src.height = st.height;
-    mem.data = jb.data;
-    src.ud = &mem;
-    src.read = mem_jpeg_read;
-    src.size = (uint32_t)jb.len;
-    if (vjo_overlay_ocr(a, &plat, &job_cfg, &src, out)) {
-        if (out->err.rc == VJO_E_OOM && out->failed_stage == VJO_STAGE_OCR && !out->err.detail)
-            out->err.detail = OOM_OCR_OTHER;
-        return out->err.rc;
-    }
-recognized:
-    /* The screen changed only in pixels (a mark, a cursor, an effect):
-     * the cached lookup is this text's. */
-    job_same_text = job_cached_text && out->filtered && !sceClibStrcmp(out->filtered, job_cached_text);
+    if (job_selftest)
+        return VJO_OK;
     __sync_synchronize(); /* the sentence is visible before job_text_ready */
     job_text_ready = 1;
-    if (!job_lookup || job_same_text) return VJO_OK;
-    if (local_pipeline(&job_cfg) &&
-        job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
-    if (!local_pipeline(&job_cfg))
-        return vjo_overlay_lookup(a, &plat, &job_cfg, out);
+    if (!job_lookup || job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     int64_t t0 = now_us();
     vjo_dict_reads = vjo_dict_read_bytes = 0;
     int rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
@@ -1161,7 +1041,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     out->ocr_text = out->filtered = out->sentence = local_text;
     out->list.header = local_text;
     if (job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
-    if (mem_alloc_for(&job_cfg) < 0) {
+    if (mem_alloc() < 0) {
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
         out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
@@ -1206,16 +1086,10 @@ static int net_main(SceSize args, void *argp)
     (void)argp;
     while (running) {
         unsigned int bits = 0;
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_WARM | NET_EV_QUIT,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
         if (bits & NET_EV_QUIT)
             break;
-        if ((bits & NET_EV_WARM) && !(bits & NET_EV_JOB)) /* a job opens them itself */
-            vjo_overlay_warm(&plat, WARM_CONNECT_US);
-        if (bits & NET_EV_WARM) {
-            __sync_synchronize();
-            warm_running = 0;
-        }
         if (bits & NET_EV_JOB)
             net_job();
     }
@@ -1226,7 +1100,7 @@ static int net_main(SceSize args, void *argp)
 static int net_busy(void)
 {
     __sync_synchronize();
-    return job_running || warm_running;
+    return job_running;
 }
 
 /* lookup = 0: OCR only (the subtitles' sentence). refresh: the open
@@ -1237,14 +1111,13 @@ static void start_job_kind(const char *why, int lookup, int refresh)
 {
     if (job_running)
         return;
-    if (local_pipeline(&cfg) && !refresh) {
+    if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
         retire_local_text(0); /* atomic request exclusion and view detachment */
         if (ov != OV_CLOSED)
             view_publish(1, NULL, "Recognizing…", 0);
-        if (!warm_running)
-            mem_free();
+        mem_free();
     }
     vjo_log("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
     job_refresh = refresh;
@@ -1252,13 +1125,11 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_prepares = ov == OV_CLOSED;
     job_cursor_only = 0;
     job_text_generation = 0;
-    job_idx = refresh ? 1 : local_pipeline(&cfg) ? 0 : active == 0 ? 1 : 0;
+    job_idx = refresh ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
     job_generation = game_generation;
     sceClibMemcpy(job_title, title_id, sizeof(job_title));
     job_title[sizeof(job_title) - 1] = '\0';
-    job_cached_text = !local_pipeline(&cfg) && cache_ok ? cache_data[active].filtered : NULL;
-    job_same_text = 0;
     job_captured = 0;
     job_capture_scene = 0;
     job_capture_seq = 0;
@@ -1297,7 +1168,7 @@ static void start_cursor_job(void)
         job_cancelled |= job_refresh;
         return;
     }
-    if (ov == OV_CLOSED || !title_id[0] || !local_pipeline(&cfg) || !local_text_valid ||
+    if (ov == OV_CLOSED || !title_id[0] || !local_text_valid ||
         local_text_game_generation != game_generation) {
         cursor_waiting = 0;
         return;
@@ -1315,8 +1186,7 @@ static void start_cursor_job(void)
     job_cursor_seq = local_cursor_seq;
     job_page = local_page;
     cursor_waiting = 0;
-    job_cached_text = NULL;
-    job_same_text = job_cancelled = job_done = job_text_ready = 0;
+    job_cancelled = job_done = job_text_ready = 0;
     job_captured = 1;
     job_capture_scene = local_text_scene;
     job_capture_seq = local_text_capture_seq;
@@ -1334,15 +1204,12 @@ static void start_cursor_job(void)
 
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
 {
-    if (a->ocr_backend != b->ocr_backend ||
-        a->non_japanese_filter != b->non_japanese_filter ||
+    if (a->non_japanese_filter != b->non_japanese_filter ||
         a->japanese_only_selection != b->japanese_only_selection)
         return 0;
-    if (game_ocr_backend(a->ocr_backend) &&
-        (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
-         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
-         a->ocr_refine_lines != b->ocr_refine_lines ||
-         (a->ocr_backend == VJO_OCR_VOCR && a->vocr_tier != b->vocr_tier)))
+    if (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
+        a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
+        a->ocr_refine_lines != b->ocr_refine_lines || a->vocr_tier != b->vocr_tier)
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
@@ -1407,7 +1274,7 @@ static int game_active(void)
 }
 
 /* The running job captured another screen than the one settled now: it is
- * abandoned (Lens and the dictionary take seconds), so the job for this
+ * abandoned (recognition and a relay's lookup take seconds), so the job for this
  * screen can start at once. Returns 1 if it was. A lookup in the shown text
  * is never abandoned: it does not depend on the screen. */
 static int cancel_outdated_job(const VjoState *st)
@@ -1468,13 +1335,9 @@ static void open_overlay(void)
     apply_config(); /* settings are re-read on every open */
     if (anki_on)
         vjo_anki_post_count(); /* the queue line's count (Anki's thread, no allocation) */
-    if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
-        view_publish(1, NULL, "Not enough memory for the overlay", 1);
-        return;
-    }
     st.size = sizeof(st);
     vjoGetState(&st);
-    if (local_pipeline(&cfg) && local_text_valid &&
+    if (local_text_valid &&
         local_text_game_generation == game_generation &&
         shows_screen(local_text_scene, local_text_capture_seq, &st)) {
         /* Reopening a completed lookup must not replace its word with the
@@ -1605,7 +1468,7 @@ static int restart_old_job(int has_lookup)
     vjoGetState(&st);
     if (shows_screen(job_capture_scene, job_capture_seq, &st) && has_lookup)
         return 0;
-    if (local_pipeline(&cfg) && local_text_valid &&
+    if (local_text_valid &&
         local_text_game_generation == game_generation &&
         shows_screen(local_text_scene, local_text_capture_seq, &st)) {
         start_cursor_job();
@@ -1815,28 +1678,12 @@ static void on_job_done(void)
     backoff_note(&ocr_backoff, ocr_failed);
     if (subtitles)
         strip_show_result(d);
-    if (job_same_text) {
-        /* The cached result's text: that result (its arena stays active)
-         * is this screen's. A region change meanwhile cleared cache_ok, but
-         * the lookup depends on the text only. */
-        vjo_log("same text as the cached result: kept for this screen");
-        vjo_view_lock();
-        cache_ok = 1;
-        cache_scene = job_capture_scene;
-        cache_seq = job_capture_seq;
-        vjo_view_unlock();
-        if (ov == OV_OPEN && !job_lookup)
-            return; /* OCR only: the overlay already shows a result */
-        if (!restart_old_job(1) && ov != OV_CLOSED)
-            view_show_cache();
-        return;
-    }
     if (!ocr_failed && job_lookup)
         backoff_note(&dict_backoff, d->err.rc != VJO_OK);
     /* Character moves received while initial lookup was working supersede
      * that definition; the saved OCR sentence is already immutable. So does
      * a local_dictionary_results change loaded by the overlay's opening. */
-    if (local_pipeline(&job_cfg) && local_text_valid && ov != OV_CLOSED &&
+    if (local_text_valid && ov != OV_CLOSED &&
         (cursor_waiting || (job_lookup && (job_cursor_seq != local_cursor_seq ||
                                            job_cfg.local_dictionary_results != cfg.local_dictionary_results)))) {
         start_cursor_job();
@@ -1847,10 +1694,9 @@ static void on_job_done(void)
          * (and its arena stays active); the strip took the sentence */
         return;
     }
-    /* Publish the new arena; the old one becomes the next job's target. */
-    int local = local_pipeline(&job_cfg);
-    if (local) sceKernelLockMutex(cmd_lock, 1, NULL);
-    if (local && ov != OV_CLOSED && job_lookup && job_cursor_seq != local_cursor_seq) {
+    /* Publish the result. */
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    if (ov != OV_CLOSED && job_lookup && job_cursor_seq != local_cursor_seq) {
         sceKernelUnlockMutex(cmd_lock, 1);
         start_cursor_job();
         return;
@@ -1859,20 +1705,20 @@ static void on_job_done(void)
     active = idx;
     /* The overlay needs the lookup, made with the current page count. */
     cache_ok = d->err.rc == VJO_OK && job_lookup &&
-               (!local || job_cfg.local_dictionary_results == cfg.local_dictionary_results);
+               job_cfg.local_dictionary_results == cfg.local_dictionary_results;
     cache_scene = job_capture_scene;
     cache_seq = job_capture_seq;
     vjo_view_unlock();
     int needs_restart = ov == OV_OPEN_OLD_JOB;
     if (!needs_restart && ov != OV_CLOSED)
         view_show_cache();
-    if (local) sceKernelUnlockMutex(cmd_lock, 1);
+    sceKernelUnlockMutex(cmd_lock, 1);
     /* Restart helpers may take cmd_lock; never call them while holding it. */
     if (needs_restart && !restart_old_job(job_lookup) && ov != OV_CLOSED) {
-        if (local) sceKernelLockMutex(cmd_lock, 1, NULL);
-        int newer = local && job_lookup && job_cursor_seq != local_cursor_seq;
+        sceKernelLockMutex(cmd_lock, 1, NULL);
+        int newer = job_lookup && job_cursor_seq != local_cursor_seq;
         if (!newer) view_show_cache();
-        if (local) sceKernelUnlockMutex(cmd_lock, 1);
+        sceKernelUnlockMutex(cmd_lock, 1);
         if (newer) start_cursor_job();
     }
 }
@@ -1884,8 +1730,7 @@ static void on_job_done(void)
  * for a local dictionary. */
 static int want_lookup(void)
 {
-    return (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO &&
-              (!local_pipeline(&cfg) || cfg.highlight_mode == VJO_HIGHLIGHT_WORD))) &&
+    return (ov != OV_CLOSED || (cfg.ocr_mode == VJO_OCR_AUTO && cfg.highlight_mode == VJO_HIGHLIGHT_WORD)) &&
            now_us() >= dict_backoff.until;
 }
 
@@ -1903,7 +1748,7 @@ static void on_job_text(void)
         vjo_strip_show(sentence, VJO_STRIP_SENTENCE, 1);
     /* The overlay waits for this job: the sentence now, the words after
      * the lookup (if the job is for the screen shown). */
-    if (ov != OV_CLOSED && view_waiting && job_lookup && !job_same_text && sentence) {
+    if (ov != OV_CLOSED && view_waiting && job_lookup && sentence) {
         VjoState st;
         st.size = sizeof(st);
         vjoGetState(&st);
@@ -1951,10 +1796,6 @@ static void set_subtitles(int on)
         vjo_strip_show("", VJO_STRIP_SENTENCE, 0);
         return;
     }
-    if (!net_busy() && !local_pipeline(&cfg) && mem_alloc() < 0) {
-        vjo_strip_show("Not enough memory for subtitles", VJO_STRIP_ERROR, 0);
-        return;
-    }
     /* settings were re-read before choosing the backend */
     st.size = sizeof(st);
     vjoGetState(&st);
@@ -1995,7 +1836,7 @@ static void on_command(void)
 
     switch (cmd) {
     case VJO_CMD_CURSOR:
-        if (ov == OV_CLOSED || !local_pipeline(&cfg) || !local_text_valid ||
+        if (ov == OV_CLOSED || !local_text_valid ||
             cursor_generation != local_text_generation || cursor_byte != local_cursor_byte)
             break;
         if (!job_running || !job_cursor_only || job_cursor_seq != local_cursor_seq)
@@ -2087,8 +1928,6 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         vjo_anki_set_game(id->disc[0] ? id->disc : tid, id->name[0] ? id->name : name, id->psp);
     }
     apply_config();
-    if (!net_busy() && !local_pipeline(&cfg))
-        mem_alloc();
     push_region();
     backoff_note(&ocr_backoff, 0);
     backoff_note(&dict_backoff, 0);
@@ -2189,7 +2028,7 @@ static void on_trigger(void)
  * overlay) and the subtitles' refresh (whatever ocr_mode says). */
 static int background_wanted(void)
 {
-    return subtitles || (cfg.ocr_mode == VJO_OCR_AUTO && (local_pipeline(&cfg) || want_lookup()));
+    return subtitles || cfg.ocr_mode == VJO_OCR_AUTO;
 }
 
 static int background_throttled(void)
@@ -2251,32 +2090,11 @@ static void background_open(void)
         start_job_kind("auto: screen settled", 0, 1);
 }
 
-/* When the region starts changing, the network thread readies the next
- * job's Lens connection (keeping a usable one), so its request skips the
- * handshake. */
-static void warm_connections(void)
-{
-    VjoState st;
-    if (!game_active() || !has_result_memory() || net_busy() || now_us() - warm_asked_us < WARM_GAP_US)
-        return;
-    if (cfg.ocr_backend != VJO_OCR_LENS) /* local OCR opens no Lens connection */
-        return;
-    st.size = sizeof(st);
-    vjoGetState(&st);
-    if (!st.unsettled_ms || st.unsettled_ms > WARM_WINDOW_MS)
-        return;
-    warm_asked_us = now_us();
-    vjo_net_cancel_clear(&net_cancel);
-    warm_running = 1;
-    __sync_synchronize();
-    sceKernelSetEventFlag(net_evf, NET_EV_WARM);
-}
-
 /* The self-test's stages run in a background job of their own, never in a
  * job the user waits for (test.2's first scans took 9-15 s beside them,
  * docs/first-ocr.md): once the last job read text in the region, while its
  * screen is shown, the overlay is closed and nothing has run for
- * SELFTEST_IDLE_US; the local engine only (never a Lens upload). It shows
+ * SELFTEST_IDLE_US. It shows
  * nothing (job_selftest). Its job's capture stays the last job's, the text's
  * (job_capture_*: a lookup's is the shown text's, the same; vocr_note_capture
  * leaves it), so a new screen stops it as any job (cancel_outdated_job), and
@@ -2290,8 +2108,8 @@ static void selftest_job_due(void)
      * active one and no OCR backoff or retry pace holds; a settled screen not read yet is Auto's
      * (auto_prefetch runs first: its job makes net_busy()). */
     if (!vjo_selftest_stages() || ov != OV_CLOSED || net_busy() || text_generation != game_generation ||
-        !game_ocr_backend(cfg.ocr_backend) || now_us() - idle_since_us < SELFTEST_IDLE_US ||
-        vjoGetState(&st) < 0 || !shows_screen(text_scene, text_seq, &st))
+        now_us() - idle_since_us < SELFTEST_IDLE_US || vjoGetState(&st) < 0 ||
+        !shows_screen(text_scene, text_seq, &st))
         return;
     /* Its stages publish their own captures (the kernel's region_seq moves on): a shown text and
      * a cached lookup that show this screen are tagged with its scene, so they still do after. */
@@ -2303,7 +2121,7 @@ static void selftest_job_due(void)
     vjo_log("job start (self-test)");
     job_selftest = job_prepares = 1;
     job_refresh = job_lookup = job_cursor_only = job_cancelled = 0;
-    job_idx = active == 0 ? 1 : 0; /* never the shown result's */
+    job_idx = 1; /* results[1], always empty (one arena since the network pipeline went): never the shown result's */
     job_cfg = cfg;
     job_generation = game_generation;
     job_done = job_text_ready = 0;
@@ -2380,7 +2198,6 @@ static void control_tick(uint32_t bits)
     auto_prefetch();
     background_open();
     selftest_job_due();
-    warm_connections();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
@@ -2418,12 +2235,11 @@ int vjo_worker_start(void)
     view_lock = sceKernelCreateMutex("VjoView", 0, 0, NULL);
     cmd_lock = sceKernelCreateMutex("VjoCmd", 0, 0, NULL);
     net_evf = sceKernelCreateEventFlag("VjoNetEv", 0, 0, NULL);
-    if (view_lock < 0 || cmd_lock < 0 || vjo_capture_init() < 0 || net_evf < 0 || vjo_net_cancel_init(&net_cancel) < 0) {
+    if (view_lock < 0 || cmd_lock < 0 || net_evf < 0 || vjo_net_cancel_init(&net_cancel) < 0) {
         vjo_worker_stop();
         return -1;
     }
     vjo_platform_vita(&plat, &net_cancel);
-    plat.pool = &pool; /* no slots until mem_alloc */
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
@@ -2485,7 +2301,6 @@ int vjo_worker_stop(void)
         sceKernelDeleteEventFlag(net_evf);
     if (cmd_lock >= 0)
         sceKernelDeleteMutex(cmd_lock);
-    vjo_capture_fini();
     if (view_lock >= 0)
         sceKernelDeleteMutex(view_lock);
     if (net_cancel.lock >= 0)

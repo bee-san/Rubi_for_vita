@@ -570,6 +570,18 @@ class SharedTierTable(unittest.TestCase):
     def table(self):
         return json.loads(TIERS_JSON.read_text(encoding="utf-8"))
 
+    def test_any_ocr_backend_line_is_one_to_delete(self):
+        # VOCR is the only engine since Google Lens's removal: the plugins warn for a removed engine's
+        # value (core/config.c removed_engine) and ignore vocr; the app's next save and the installer
+        # delete the line either way
+        for value in ("lens", "Lens", "vocr2", "meiki", "NCNN"):
+            line = a.backend_line(value)
+            self.assertIn(f"ocr_backend={value}: a removed engine", line)
+            self.assertIn("deletes the line", line)
+        self.assertEqual(a.backend_line("vocr"), "    ocr_backend=vocr: no longer a setting (VOCR is the only "
+                                                 "engine); today's app or installer deletes the line")
+        self.assertIsNone(a.backend_line(None))
+
     def test_the_analyser_prices_the_shared_tables_tiers(self):
         table = self.table()
         self.assertIsNone(a.TIERS_ERROR)

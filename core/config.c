@@ -36,7 +36,6 @@ void vjo_config_defaults(VjoConfig *c)
     c->toggle_button = VJO_TRIGGER_L_R;
     c->subtitle_button = VJO_TRIGGER_SELECT_R;
     c->ocr_mode = VJO_OCR_AUTO;
-    c->ocr_backend = VJO_OCR_VOCR;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
     /* Normal (VOCR3-H15) where the game's memory allows; a smaller tier otherwise. */
@@ -101,10 +100,7 @@ const char *vjo_config_default_text(void)
            "; Text is read from screenshots using OCR.\n"
            "text_source = ocr\n"
            "\n"
-           "; OCR engine: vocr (offline on the Vita; the Overlay app names it after its\n"
-           "; model's generation, e.g. VOCR3: docs/vita-vn-ocr.md) | lens (Google, online)\n"
-           "; Local OCR never falls back to uploading the screen.\n"
-           "ocr_backend = vocr\n"
+           "; OCR: vita-vn-ocr, offline on the Vita (docs/vita-vn-ocr.md)\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
            "; vocr model size (the Overlay app's Model size): small (fastest) | normal\n"
            "; (the default, balanced) | large (most accurate)\n"
@@ -127,7 +123,7 @@ const char *vjo_config_default_text(void)
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
            "\n"
-           "; auto: recognize text in the background when the region changes (lens, vocr)\n"
+           "; auto: recognize text in the background when the region changes\n"
            "; on_press: recognize only when the overlay is opened\n"
            "ocr_mode = auto\n"
            "\n"
@@ -214,6 +210,9 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
         return VJO_LINE_DROP;
     v = e;
     while (v < n && is_space(line[v])) v++;
+    /* the engine choice: VOCR is the only engine (core/config.h) */
+    if (e - b == 11 && vjo_ieq_prefix(line + b, "ocr_backend") && v < n && line[v] == '=')
+        return VJO_LINE_DROP_SETTING;
     if (e - b != 10 || !vjo_ieq_prefix(line + b, "dictionary") || v >= n || line[v] != '=')
         return VJO_LINE_KEEP;
     for (v++; v < n && is_space(line[v]); v++) {}
@@ -232,11 +231,12 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
 }
 
 /* An ocr_backend value of a removed engine: why it no longer runs (the config
- * warning), or NULL. Such a file loads as vocr; the Overlay app's next save
- * and the installer (tools/migrate_config.py REPLACED_VALUES) rewrite it. */
+ * warning), or NULL. The setting itself is gone (VOCR is the only engine): the
+ * Overlay app's next save and the installer (tools/migrate_config.py) drop the line. */
 static const char *removed_engine(const char *v)
 {
     static const char *const removed[][2] = {
+        {"lens", "Google Lens was removed (the overlay is offline)"}, /* the upstream's engine, removed 2026-10-15 */
         {"vocr2", "VOCR2 was removed"},  /* the experimental trial, v0.7.12 to v0.8.0-test.1 */
         {"meiki", "Meiki was removed"},  /* the manual single-line trial, v0.7.6 to v0.7.12 */
         {"ncnn", "ncnn runs only in host tools"}, /* vjo-ocr --backend ncnn; never on the Vita */
@@ -464,16 +464,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "ocr")) c->text_source = VJO_SOURCE_OCR;
         else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "ocr_backend")) {
-        const char *removed;
-        if (vjo_ieq(val, "lens"))
-            c->ocr_backend = VJO_OCR_LENS;
-        else if (vjo_ieq(val, "vocr"))
-            c->ocr_backend = VJO_OCR_VOCR;
-        else if ((removed = removed_engine(val)) != NULL) {
-            c->ocr_backend = VJO_OCR_VOCR;
+        /* The removed engine choice (core/config.h): vocr is the only engine. */
+        const char *removed = removed_engine(val);
+        if (removed)
             warn(c, "%s: %s; using vocr", key, removed);
-        }
-        else
+        else if (!vjo_ieq(val, "vocr"))
             warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "vocr_tier")) {
         int t = vjo_vocr_tier_parse(val);
@@ -577,18 +572,17 @@ static int preference_key(const char *line, size_t n)
     if (end == n || line[end] != '=') return -1;
     memcpy(key, line + begin, key_len);
     key[key_len] = 0;
-    return vjo_ieq(key, "ocr_backend") ? 0 :
-           vjo_ieq(key, "japanese_only_selection") ? 1 :
-           vjo_ieq(key, "highlight_mode") ? 2 :
-           vjo_ieq(key, "local_dictionary_results") ? 3 :
-           vjo_ieq(key, "vocr_tier") ? 4 :
+    return vjo_ieq(key, "japanese_only_selection") ? 0 :
+           vjo_ieq(key, "highlight_mode") ? 1 :
+           vjo_ieq(key, "local_dictionary_results") ? 2 :
+           vjo_ieq(key, "vocr_tier") ? 3 :
            /* an older build's model choice, which vocr_tier replaces: dropped */
            vjo_ieq(key, "vocr_model") || vjo_ieq(key, "vocr_fallback_model") ? DROPPED_PREFERENCE : -1;
 }
 
-#define OWNED_PREFERENCES 5
+#define OWNED_PREFERENCES 4
 
-int vjo_config_patch_preferences(const char *text, size_t len, int backend, int vocr_tier,
+int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
                                  int japanese_only, int highlight_mode,
                                  int dictionary_results, char *out, size_t cap)
 {
@@ -596,24 +590,19 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend, int 
     char results_line[40], tier_line[32];
     size_t i = 0, used = 0;
     unsigned seen = 0;
-    static const char *const backend_values[] = {
-        [VJO_OCR_LENS] = "ocr_backend = lens\n", [VJO_OCR_VOCR] = "ocr_backend = vocr\n"
-    };
-    if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap ||
-        (backend != VJO_OCR_LENS && backend != VJO_OCR_VOCR) || !vjo_vocr_tier_id(vocr_tier) ||
+    if ((!text && len) || len > VJO_CONFIG_TEXT_MAX || !out || !cap || !vjo_vocr_tier_id(vocr_tier) ||
         (japanese_only != 0 && japanese_only != 1) ||
         (highlight_mode != VJO_HIGHLIGHT_WORD && highlight_mode != VJO_HIGHLIGHT_CHARACTER) ||
         dictionary_results < 1 || dictionary_results > VJO_LOCAL_MAX_DICTS ||
         (len && memchr(text, 0, len)))
         return -1;
-    values[0] = backend_values[backend];
-    values[1] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
-    values[2] = highlight_mode == VJO_HIGHLIGHT_WORD
+    values[0] = japanese_only ? "japanese_only_selection = on\n" : "japanese_only_selection = off\n";
+    values[1] = highlight_mode == VJO_HIGHLIGHT_WORD
         ? "highlight_mode = word\n" : "highlight_mode = character\n";
     vjo_snprintf(results_line, sizeof(results_line), "local_dictionary_results = %d\n", dictionary_results);
-    values[3] = results_line;
+    values[2] = results_line;
     vjo_snprintf(tier_line, sizeof(tier_line), "vocr_tier = %s\n", vjo_vocr_tier_id(vocr_tier));
-    values[4] = tier_line;
+    values[3] = tier_line;
     /* Keep a BOM even when the first line is an owned preference. */
     if (len >= 3 && !memcmp(text, "\xEF\xBB\xBF", 3)) {
         if (cap <= 3) return -1;
@@ -633,7 +622,7 @@ int vjo_config_patch_preferences(const char *text, size_t len, int backend, int 
             line = values[key]; bytes = strlen(line);
         } else {
             int removed = vjo_config_removed_line(line, bytes, &replacement);
-            if (removed == VJO_LINE_DROP) continue;
+            if (removed == VJO_LINE_DROP || removed == VJO_LINE_DROP_SETTING) continue;
             if (removed == VJO_LINE_REPLACE) { line = replacement; bytes = strlen(line); }
         }
         if (bytes >= cap - used) return -1;

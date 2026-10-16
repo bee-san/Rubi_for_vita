@@ -136,7 +136,6 @@ jobs:
         env:
           VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
           VJO_REQUIRE_ANKI: '1'
-      - run: python3 tools/test_jpegsw.py
       # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
       # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).
       # GCC 14: the pinned vita-vn-ocr runtime's NEON kernels (#85) use vld1q_*_x2, which GCC's

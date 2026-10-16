@@ -217,7 +217,7 @@ card can be made into a note later, by any version that reads the record:
 | `picture` | Whether `<id>.jpg` goes with it |
 | `misc` | MiscInfo: `CLANNAD (2026-10-14 17:12)` |
 | `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp`. A PSP game started from an Adrenaline bubble is recorded with the title and disc ID the Overlay app read from the file it boots (`ux0:data/VitaJPOverlay/psp/<bubble ID>.txt`), else with the bubble's own; games started from inside Adrenaline are recorded as `PSPEMUCFW`, under the name AppMgr gives that process (not checked on a console), or as `NPXS10028`, named `PSP`, when the Shell cannot tell which app started the emulator |
-| `ocr_engine`, `ocr_model` | The engine, and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
+| `ocr_engine`, `ocr_model` | The engine, `vocr` (a record of a build before Google Lens's removal may say `lens`), and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
 | `time` | When Enter was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC); the note's creation and modification time |
 

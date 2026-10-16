@@ -311,10 +311,10 @@ data pages; a Shell change that adds a page breaks AGENTS.md rule 1. Without the
 dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `ba5f69a`, with API 21's model
 sizes and API 22), with 2,808 B left in its code pages (210,184 of 212,992) and 2,524 B in its data
 pages, and without the Hachidori relay client 282,624 B, with 2,704 B left in its code pages
-(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 3,408 B left in its code pages (189,104 of 192,512, with #123's key filter) and 3,624 B in its data pages [main `c641bdf`]. The kernel module has
+(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 3,408 B left in its code pages (189,104 of 192,512, with #123's key filter) and 3,624 B in its data pages [main `c641bdf`]; with #122's app check, without the config template, 262,144 B, with 2,000 B left in its code pages (186,416 of 188,416) and 3,616 B in its data pages [main `ac905b1`], and with #127's frequency ranks 864 and 3,600 B (187,552 and 70,128 B) [main `9f92bc6`]; without Google Lens it holds 176,128 B, with 2,040 B left in its code pages (100,360 of 102,400) and 3,672 B in its data pages [main `9f92bc6` and #130]. The kernel module has
 224 B (code) and 56 B (data) left (36,640 of 36,864 and 77,768 of 77,824), the game worker 2,916 B
 and 2,176 B (70,812 of 73,728 and 14,208 of 16,384) [measured: the build log's module rows, main
-`e53d9fb`].
+`9f92bc6` and #130].
 
 ## Reproduce
 

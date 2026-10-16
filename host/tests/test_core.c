@@ -10,10 +10,8 @@
 #include "furigana.h"
 #include "http.h"
 #include "json.h"
-#include "jpegsw.h"
-#include "lens.h"
 #include "styled.h"
-#include "pb.h"
+#include "vjo_vocr_sizes.h"
 #include "regions.h"
 #include "render.h"
 #include "replay.h"
@@ -34,30 +32,6 @@ static void setup(void)
 }
 
 /* ---------- pb ---------- */
-
-static void test_pb_roundtrip(void)
-{
-    VjoBuf b;
-    PbReader r;
-    PbField f;
-    setup();
-    vjo_buf_init(&b, &A);
-    pb_put_uint(&b, 1, 300);
-    pb_put_string(&b, 2, "abc");
-    pb_put_fixed32(&b, 3, 0x3f800000u); /* 1.0f */
-    pb_put_uint(&b, 1000, UINT64_MAX);
-    TEST_CHECK(!b.oom);
-    pb_reader_init(&r, b.data, b.len);
-    TEST_CHECK(pb_next(&r, &f) == 1 && f.field == 1 && f.varint == 300);
-    TEST_CHECK(pb_next(&r, &f) == 1 && f.field == 2 && f.len == 3 && !memcmp(f.data, "abc", 3));
-    TEST_CHECK(pb_next(&r, &f) == 1 && f.field == 3 && pb_as_float(&f) == 1.0f);
-    TEST_CHECK(pb_next(&r, &f) == 1 && f.field == 1000 && f.varint == UINT64_MAX);
-    TEST_CHECK(pb_next(&r, &f) == 0);
-    TEST_CHECK(pb_len_field_size(1, 200) == 1 + 2 + 200);
-
-    pb_reader_init(&r, "\x0a\x05zz", 4); /* truncated */
-    TEST_CHECK(pb_next(&r, &f) == -1);
-}
 
 static void test_buf_interleaved(void)
 {
@@ -80,144 +54,6 @@ static void test_buf_interleaved(void)
             TEST_CHECK_(0, "byte %d", i);
     p = vjo_buf_cstr(&x);
     TEST_CHECK(p && strlen(p) == 300);
-}
-
-/* ---------- lens ---------- */
-
-static int find_field(const uint8_t *p, size_t n, uint32_t field, PbField *out)
-{
-    PbReader r;
-    PbField f;
-    pb_reader_init(&r, p, n);
-    while (pb_next(&r, &f) > 0)
-        if (f.field == field) {
-            *out = f;
-            return 1;
-        }
-    return 0;
-}
-
-static void test_lens_request_layout(void)
-{
-    uint8_t rnd[24], jpeg[1000], *full;
-    VjoLensRequest lr;
-    PbField objreq, ctx, img, payload, bytes, meta, f, cc, loc;
-    setup();
-    for (int i = 0; i < 24; i++)
-        rnd[i] = (uint8_t)i;
-    for (int i = 0; i < 1000; i++)
-        jpeg[i] = (uint8_t)(i * 7);
-    TEST_ASSERT(vjo_lens_build_request(&A, rnd, 960, 544, sizeof(jpeg), &lr) == 0);
-    full = vjo_arena_alloc(&A, lr.body_len);
-    memcpy(full, lr.prefix, lr.prefix_len);
-    memcpy(full + lr.prefix_len, jpeg, sizeof(jpeg));
-    memcpy(full + lr.prefix_len + sizeof(jpeg), lr.suffix, lr.suffix_len);
-
-    TEST_ASSERT(find_field(full, lr.body_len, 1, &objreq));
-    TEST_CHECK(objreq.data + objreq.len == full + lr.body_len);
-    TEST_ASSERT(find_field(objreq.data, objreq.len, 1, &ctx));
-    TEST_ASSERT(find_field(objreq.data, objreq.len, 3, &img));
-    TEST_ASSERT(find_field(img.data, img.len, 1, &payload));
-    TEST_ASSERT(find_field(payload.data, payload.len, 1, &bytes));
-    TEST_CHECK(bytes.len == sizeof(jpeg) && !memcmp(bytes.data, jpeg, sizeof(jpeg)));
-    TEST_ASSERT(find_field(img.data, img.len, 3, &meta));
-    TEST_CHECK(find_field(meta.data, meta.len, 1, &f) && f.varint == 960);
-    TEST_CHECK(find_field(meta.data, meta.len, 2, &f) && f.varint == 544);
-
-    TEST_ASSERT(find_field(ctx.data, ctx.len, 4, &cc));
-    TEST_CHECK(find_field(cc.data, cc.len, 1, &f) && f.varint == 3);  /* PLATFORM_WEB */
-    TEST_CHECK(find_field(cc.data, cc.len, 2, &f) && f.varint == 4);  /* SURFACE_CHROMIUM */
-    TEST_ASSERT(find_field(cc.data, cc.len, 4, &loc));
-    TEST_CHECK(find_field(loc.data, loc.len, 1, &f) && f.len == 2 && !memcmp(f.data, "ja", 2));
-    TEST_CHECK(find_field(loc.data, loc.len, 2, &f) && f.len == 2 && !memcmp(f.data, "JP", 2));
-    TEST_CHECK(find_field(loc.data, loc.len, 3, &f) && f.len == 10 && !memcmp(f.data, "Asia/Tokyo", 10));
-    TEST_CHECK(find_field(cc.data, cc.len, 17, &f));                  /* client_filters */
-    TEST_ASSERT(find_field(ctx.data, ctx.len, 3, &f));                /* request_id */
-    {
-        PbField uuid, aid, ri;
-        TEST_CHECK(find_field(f.data, f.len, 1, &uuid) && uuid.varint == 0x0706050403020100ull);
-        TEST_CHECK(find_field(f.data, f.len, 4, &aid) && aid.len == 16 && aid.data[0] == 8);
-        TEST_CHECK(find_field(f.data, f.len, 6, &ri) && ri.len == 0);
-    }
-}
-
-static void put_word(VjoBuf *line, const char *text, const char *sep)
-{
-    VjoBuf w;
-    VjoArena *a = line->arena;
-    (void)a;
-    /* words are built in a scratch arena region to avoid VjoBuf nesting */
-    static uint8_t wmem[512];
-    VjoArena wa;
-    vjo_arena_init(&wa, wmem, sizeof(wmem));
-    vjo_buf_init(&w, &wa);
-    pb_put_string(&w, 2, text);
-    if (sep)
-        pb_put_string(&w, 3, sep);
-    pb_put_bytes(line, 1, w.data, w.len);
-}
-
-static void test_lens_response_parse(void)
-{
-    /* Two paragraphs: "こんにちは 世界" and "Hello" */
-    static uint8_t m1[1024], m2[1024], m3[1024], m4[1024];
-    VjoArena a1, a2, a3, a4;
-    VjoBuf line1, para1, line2, para2, layout, text, objs, resp;
-    VjoLensResult r;
-    char *t;
-
-    vjo_arena_init(&a1, m1, sizeof(m1));
-    vjo_arena_init(&a2, m2, sizeof(m2));
-    vjo_arena_init(&a3, m3, sizeof(m3));
-    vjo_arena_init(&a4, m4, sizeof(m4));
-
-    vjo_buf_init(&line1, &a1);
-    put_word(&line1, "こんにちは", " ");
-    put_word(&line1, "世界", NULL);
-    vjo_buf_init(&para1, &a2);
-    pb_put_bytes(&para1, 2, line1.data, line1.len);
-    pb_put_uint(&para1, 4, 2);
-
-    vjo_buf_init(&line2, &a3);
-    put_word(&line2, "Hello", NULL);
-    vjo_buf_init(&para2, &a4);
-    pb_put_bytes(&para2, 2, line2.data, line2.len);
-
-    setup();
-    vjo_buf_init(&layout, &A);
-    pb_put_bytes(&layout, 1, para1.data, para1.len);
-    pb_put_bytes(&layout, 1, para2.data, para2.len);
-    {
-        static uint8_t m5[4096];
-        VjoArena a5;
-        vjo_arena_init(&a5, m5, sizeof(m5));
-        vjo_buf_init(&text, &a5);
-        pb_put_bytes(&text, 1, layout.data, layout.len);
-        {
-            static uint8_t m6[4096];
-            VjoArena a6;
-            vjo_arena_init(&a6, m6, sizeof(m6));
-            vjo_buf_init(&objs, &a6);
-            pb_put_bytes(&objs, 3, text.data, text.len);
-            {
-                static uint8_t m7[4096];
-                VjoArena a7;
-                vjo_arena_init(&a7, m7, sizeof(m7));
-                vjo_buf_init(&resp, &a7);
-                pb_put_bytes(&resp, 2, objs.data, objs.len);
-            }
-        }
-    }
-    TEST_ASSERT(vjo_lens_parse_response(&A, resp.data, resp.len, &r) == 0);
-    TEST_CHECK(r.n_paragraphs == 2);
-    TEST_CHECK(r.paragraphs[0].writing_direction == 2);
-    TEST_CHECK(r.paragraphs[0].n_lines == 1 && r.paragraphs[0].lines[0].n_words == 2);
-    t = vjo_lens_text(&A, &r);
-    TEST_CHECK(strcmp(t, "こんにちは 世界\nHello") == 0);
-    TEST_MSG("got '%s'", t);
-
-    TEST_CHECK(vjo_lens_parse_response(&A, (const uint8_t *)"\x12\x09", 2, &r) == -1);
-    TEST_CHECK(vjo_lens_parse_response(&A, (const uint8_t *)"", 0, &r) == 0 && r.n_paragraphs == 0);
 }
 
 /* ---------- text ---------- */
@@ -787,6 +623,7 @@ static void test_config(void)
         static const char *const keep[] = {"dictionary = local\n", "dictionary = hachidorix\n", "dictionary = jpdbx\n",
                                            "hachidori_host = 192.168.1.20\n", "dictionary = hachidori-relay\n",
                                            "; dictionary = jpdb\n", "dictionaryx = jpdb\n", "lens_api_key = x\n",
+                                           "ocr_backendx = lens\n", "; ocr_backend = lens\n", "ocr_backend lens\n",
                                            "my_api_key = x\n", "anki_mining = on\n", "anki_hosts = x\n",
                                            "anki_field = x\n", "anki_hosts\n", "anki_mining\n", "jpdb_api_ke = x\n",
                                            "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
@@ -804,11 +641,18 @@ static void test_config(void)
             TEST_CHECK(vjo_config_removed_line(keep[i], strlen(keep[i]), &r) == VJO_LINE_KEEP && !r);
             TEST_MSG("%s", keep[i]);
         }
+        /* The removed engine choice: dropped whatever its value, and not a secret. */
+        static const char *const setting[] = {"ocr_backend = lens\n", "ocr_backend = vocr\n", "OCR_BACKEND=Lens\r\n",
+                                              "  ocr_backend =\n", "ocr_backend = vocr2 ; old\n", "ocr_backend\t= meiki"};
+        for (size_t i = 0; i < sizeof(setting) / sizeof(setting[0]); i++) {
+            TEST_CHECK(vjo_config_removed_line(setting[i], strlen(setting[i]), &r) == VJO_LINE_DROP_SETTING && !r);
+            TEST_MSG("%s", setting[i]);
+        }
     }
     vjo_config_defaults(&c);
-    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = LENS\n";
+    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = VOCR\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
-    TEST_CHECK(!c.japanese_only_selection && c.ocr_backend == VJO_OCR_LENS && c.n_warnings == 0);
+    TEST_CHECK(!c.japanese_only_selection && c.n_warnings == 0);
     /* Anki mining is off unless anki_mining says on; an older file's anki_host
      * (AnkiConnect's, removed) is ignored without a warning */
     vjo_config_defaults(&c);
@@ -822,10 +666,14 @@ static void test_config(void)
     mining = "anki_mining = yes\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(!c.anki_mining && c.n_warnings == 1);
-    /* Two engines: vocr and lens. A choice of a removed engine (the VOCR2 and Meiki
-     * trials, ncnn of the host tools) loads as vocr and says so, in any case. */
+    /* One engine, vocr: the engine choice is gone (core/config.h). A saved vocr
+     * says nothing; a removed engine (Google Lens, the VOCR2 and Meiki trials,
+     * ncnn of the host tools) says so, in any case; anything else is invalid.
+     * Nothing else changes either way. */
     {
         static const struct { const char *ini, *warning; } removed[] = {
+            {"ocr_backend = lens\n", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
+            {"ocr_backend = Lens\n", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
             {"ocr_backend = vocr2\n", "ocr_backend: VOCR2 was removed; using vocr"},
             {"ocr_backend = VOCR2\n", "ocr_backend: VOCR2 was removed; using vocr"},
             {"ocr_backend = Meiki\n", "ocr_backend: Meiki was removed; using vocr"},
@@ -833,34 +681,27 @@ static void test_config(void)
             {"ocr_backend = ncnn\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
             {"ocr_backend = NCNN\n", "ocr_backend: ncnn runs only in host tools; using vocr"},
         };
+        VjoConfig d;
+        vjo_config_defaults(&d);
         for (size_t i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
             vjo_config_defaults(&c);
-            c.ocr_backend = VJO_OCR_LENS;
             vjo_config_parse(&c, removed[i].ini, strlen(removed[i].ini));
-            TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
-            TEST_CHECK(!strcmp(c.warnings[0], removed[i].warning));
-            TEST_MSG("%s: %s", removed[i].ini, c.warnings[0]);
+            TEST_CHECK(c.n_warnings == 1 && !strcmp(c.warnings[0], removed[i].warning));
+            TEST_MSG("%s: %s", removed[i].ini, c.n_warnings ? c.warnings[0] : "(none)");
+            TEST_CHECK(c.dictionary == d.dictionary && c.vocr_tier == d.vocr_tier && c.ocr_mode == d.ocr_mode);
         }
-        /* Anything else is not an engine: the value before it stays, with a warning. */
         static const char *const invalid[] = {"ocr_backend = vocr3\n", "ocr_backend = google\n",
                                               "ocr_backend =\n", "ocr_backend = vocr22\n"};
         for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
             vjo_config_defaults(&c);
-            c.ocr_backend = VJO_OCR_LENS;
             vjo_config_parse(&c, invalid[i], strlen(invalid[i]));
-            TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && c.n_warnings == 1);
-            TEST_CHECK(strstr(c.warnings[0], "invalid value") != NULL);
-            TEST_MSG("%s: %s", invalid[i], c.warnings[0]);
+            TEST_CHECK(c.n_warnings == 1 && strstr(c.warnings[0], "invalid value") != NULL);
+            TEST_MSG("%s: %s", invalid[i], c.n_warnings ? c.warnings[0] : "(none)");
         }
-        const char *engines = "ocr_backend = Lens\n";
+        const char *engines = "ocr_backend = VOCR\nvocr_tier = large\n";
         vjo_config_defaults(&c);
         vjo_config_parse(&c, engines, strlen(engines));
-        TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && !c.n_warnings);
-        engines = "ocr_backend = VOCR\n";
-        vjo_config_parse(&c, engines, strlen(engines));
-        TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && !c.n_warnings);
-        /* The IDs the self-test reports (config backend=) do not move. */
-        TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_VOCR == 2);
+        TEST_CHECK(!c.n_warnings && c.vocr_tier == VJO_VOCR_TIER_LARGE);
     }
     vjo_config_defaults(&c);
     const char *invalid_selection = "japanese_only_selection = maybe\n";
@@ -1001,10 +842,10 @@ static void test_highlight_config(void)
     vjo_config_defaults(&c);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD);
     /* Existing saved configs gain word highlighting without changing choices. */
-    const char old[] = "ocr_backend = lens\njapanese_only_selection = off\n";
+    const char old[] = "ocr_backend = vocr\njapanese_only_selection = off\n";
     vjo_config_parse(&c, old, sizeof(old) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_LENS && !c.japanese_only_selection);
+    TEST_CHECK(!c.japanese_only_selection);
     const char character[] = "HIGHLIGHT_MODE = CHARACTER\n";
     vjo_config_parse(&c, character, sizeof(character) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_CHARACTER && c.n_warnings == 0);
@@ -1431,127 +1272,6 @@ static void test_styled(void)
     TEST_CHECK(st.len == 3 && st.text[0] == 0xD83D && st.text[1] == 0xDE00 && st.truncated);
     TEST_CHECK(vjo_utf16_index("😀猫", 4) == 2 && vjo_utf16_index("a\r\nb", 3) == 2);
     TEST_CHECK(vjo_font_px(15) == 23 && vjo_font_px(8) == 12);
-}
-
-/* ---------- software JPEG ---------- */
-
-static int grad_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
-{
-    uint32_t w = *(uint32_t *)ud;
-    for (uint32_t y = 0; y < n; y++)
-        for (uint32_t x = 0; x < w; x++) {
-            uint8_t *p = dst + (y * w + x) * 4;
-            p[0] = (uint8_t)x;
-            p[1] = (uint8_t)(row + y);
-            p[2] = (uint8_t)((x + row + y) & 0x80 ? 255 : 0);
-            p[3] = 255;
-        }
-    return (int)n;
-}
-
-/* Pseudo-random pixels: dense entropy data, so 0xFF bytes occur. */
-static int noise_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
-{
-    uint32_t w = *(uint32_t *)ud;
-    for (uint32_t i = 0; i < n * w * 4; i++) {
-        uint32_t x = (row * w * 4 + i) * 2654435761u;
-        dst[i] = (uint8_t)(x >> 24);
-    }
-    return (int)n;
-}
-
-static void test_jpegsw(void)
-{
-    VjoBuf out;
-    uint32_t w = 37;
-    setup();
-    vjo_buf_init(&out, &A);
-    TEST_ASSERT(vjo_jpeg_encode(&A, w, 21, w * 4, grad_rows, &w, 90, &out) == 0);
-    TEST_CHECK(out.len > 600);
-    TEST_CHECK(out.data[0] == 0xFF && out.data[1] == 0xD8);
-    TEST_CHECK(out.data[out.len - 2] == 0xFF && out.data[out.len - 1] == 0xD9);
-    /* no unstuffed 0xFF inside the entropy-coded data: past the SOS header
-     * every FF is followed by 00 (stuffing), RSTn or EOI */
-    w = 64;
-    vjo_buf_init(&out, &A);
-    TEST_ASSERT(vjo_jpeg_encode(&A, w, 64, w * 4, noise_rows, &w, 95, &out) == 0);
-    {
-        size_t i = 2, ecs = 0;
-        int stuffed = 0;
-        while (!ecs && i + 4 <= out.len && out.data[i] == 0xFF) {
-            size_t seg = ((size_t)out.data[i + 2] << 8) | out.data[i + 3];
-            if (out.data[i + 1] == 0xDA)
-                ecs = i + 2 + seg;
-            i += 2 + seg;
-        }
-        TEST_ASSERT(ecs > 0 && ecs < out.len);
-        for (i = ecs; i + 1 < out.len; i++) {
-            uint8_t m = out.data[i + 1];
-            if (out.data[i] != 0xFF)
-                continue;
-            if (m == 0x00)
-                stuffed++;
-            else if (!(m >= 0xD0 && m <= 0xD7) && !(m == 0xD9 && i + 2 == out.len))
-                TEST_CHECK_(0, "unstuffed FF %02X at %lu", m, (unsigned long)i);
-        }
-        TEST_CHECK_(stuffed > 0, "%d stuffed FF bytes", stuffed);
-    }
-    vjo_buf_init(&out, &A);
-    TEST_CHECK(vjo_jpeg_encode(&A, 0, 21, 0, grad_rows, &w, 90, &out) == -1);
-}
-
-/* ---------- recorded fixtures (host/fixtures/<name>/{lens.pb,expected.txt}) ---------- */
-
-static void test_fixtures(void)
-{
-    static uint8_t fmem[1u << 20];
-    VjoArena files;
-    DIR *d = opendir(VJO_FIXTURES);
-    struct dirent *e;
-    int n = 0;
-    TEST_ASSERT_(d != NULL, "fixtures dir %s", VJO_FIXTURES);
-    while ((e = readdir(d))) {
-        char dir[1024], path[1100];
-        VjoConfig cfg;
-        VjoOverlayData od;
-        size_t len;
-        char *expected, *got;
-        if (e->d_name[0] == '.')
-            continue;
-        snprintf(dir, sizeof(dir), "%s/%s", VJO_FIXTURES, e->d_name);
-        snprintf(path, sizeof(path), "%s/expected.txt", dir);
-        setup();
-        expected = vjo_read_file(&A, path, &len);
-        if (!expected)
-            continue;
-        /* same config as tools/record_fixtures.sh's vjo-cli --replay */
-        vjo_config_defaults(&cfg);
-        cfg.ocr_backend = VJO_OCR_LENS; /* these fixtures replay Lens responses */
-        vjo_arena_init(&files, fmem, sizeof(fmem));
-        TEST_CASE(e->d_name);
-        TEST_CHECK(vjo_replay_ocr(&A, &files, dir, &cfg, &od) == VJO_OK);
-        TEST_CHECK(od.failed_stage == VJO_STAGE_NONE && od.err.rc == VJO_OK);
-        /* the sentence (the subtitle, the overlay's header before a lookup) */
-        TEST_CHECK(od.sentence && od.list.header == od.sentence && !od.list.n_entries);
-        got = vjo_render_overlay(&A, &od);
-        TEST_CHECK(!strcmp(got, expected));
-        TEST_MSG("fixture %s differs:\n--- got ---\n%s\n--- expected ---\n%s", e->d_name, got, expected);
-        n++;
-    }
-    closedir(d);
-    TEST_CHECK_(n > 0, "%d fixtures", n);
-    /* without a recording the replay fails like an offline network */
-    setup();
-    {
-        VjoConfig cfg;
-        VjoOverlayData od;
-        vjo_config_defaults(&cfg);
-        cfg.ocr_backend = VJO_OCR_LENS;
-        vjo_arena_init(&files, fmem, sizeof(fmem));
-        TEST_CHECK(vjo_replay_ocr(&A, &files, VJO_FIXTURES "/word_lookup", &cfg, &od) == VJO_E_NET);
-        TEST_CHECK(od.failed_stage == VJO_STAGE_OCR);
-    }
-    TEST_CHECK(!strcmp(vjo_fixture_file(VJO_LENS_HOST), "lens.pb") && !vjo_fixture_file("192.168.1.20"));
 }
 
 /* kernel/triggers.c (pad masks as SCE_CTRL_*) */
@@ -2490,10 +2210,7 @@ static void test_scene_many_frames(void)
 }
 
 TEST_LIST = {
-    {"pb_roundtrip", test_pb_roundtrip},
     {"buf_interleaved", test_buf_interleaved},
-    {"lens_request_layout", test_lens_request_layout},
-    {"lens_response_parse", test_lens_response_parse},
     {"filter_lines", test_filter_lines},
     {"utf", test_utf},
     {"utf_character_cursor", test_utf_character_cursor},
@@ -2536,7 +2253,5 @@ TEST_LIST = {
     {"http", test_http},
     {"net_pool", test_net_pool},
     {"styled", test_styled},
-    {"jpegsw", test_jpegsw},
-    {"fixtures", test_fixtures},
     {NULL, NULL},
 };

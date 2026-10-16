@@ -687,7 +687,6 @@ static const char nondefault_config[] =
     "font_size_ja = 30\n"
     "font_size_en = 18\n"
     "ocr_mode = on_press\n"
-    "ocr_backend = lens\n"
     "vocr_tier = small\n"
     "ocr_settle_ms = 0\n"
     "ocr_settle_max_ms = 500\n"

@@ -1,6 +1,6 @@
 # Local OCR sources
 
-The release defaults to `ocr_backend = vocr`: the
+The overlay's only OCR engine is the
 [vita-vn-ocr](vita-vn-ocr.md) recognizer and polarity-agnostic line finder run
 inside each enabled game through the game OCR worker, registered for each game
 (`*TITLEID`, the installer's `--title`); the `*main` plugin owns
@@ -11,20 +11,21 @@ memory ([model sizes](vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). Wi
 recognition/lookup pipeline needs no network. See the guide for real-screenshot
 host measurements, memory bounds and the physical-console validation limits.
 
-Google Lens remains opt-in with `ocr_backend = lens`. Local OCR never falls
-back to uploading an image. These are the two engines the Overlay app offers;
-it names the local one after its model's generation, VOCR3
-([the engine's name](vita-vn-ocr.md#the-engines-name-the-model-generation)).
+Google Lens, the upstream's online engine, was removed (2026-10-15): the overlay
+is offline, and no image ever leaves the Vita. A saved `ocr_backend` line is
+ignored (`lens` with a config warning) and the Overlay app's next save and the
+installer delete it; the last build with Google Lens is the tag
+`archive/online-last`. The Overlay app names the engine after its model's
+generation, VOCR3 ([the engine's name](vita-vn-ocr.md#the-engines-name-the-model-generation)).
 
 The earlier CPU-only ncnn adapter is available for host experiments with
 `-DVJO_WITH_NCNN=ON` (`vjo-ocr --backend ncnn`). This does not enable ncnn in
-the Shell worker: a saved `ocr_backend = ncnn` loads as `vocr`. Native text
+the Shell worker: a saved `ocr_backend = ncnn` loads as the local engine. Native text
 extraction has a separate experiment branch; its code is not part of this
 release. The Meiki single-line trial was removed after v0.7.12. The FTP installer
 comments out their old registrations when installing the mainline release.
 The VOCR2 trial, which ran in the same game worker, was removed after
-v0.8.0-test.1; a saved `meiki` or `vocr2` loads as `vocr`, and the installer
-writes `vocr` in its place.
+v0.8.0-test.1; a saved `meiki` or `vocr2` loads as the local engine, and the
+installer deletes the line.
 
-[Local dictionary memory limits](local-dictionaries.md) and the historic
-[Lens connection measurements](lens-performance.md) describe the two pipelines.
+[Local dictionary memory limits](local-dictionaries.md) describe the lookup's memory.

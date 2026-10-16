@@ -1,10 +1,11 @@
 # vita-vn-ocr: local OCR on the Vita CPU
 
-`ocr_backend = vocr` reads the selected dialogue region on the console with
-[vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr): a small Japanese CTC line
-recognizer made for visual-novel dialogue, and its line finder, both plain C99
-with no `malloc`. Nothing leaves the Vita: no image upload, no Lens connection
-and no cloud fallback. With `dictionary = local` the whole lookup is offline.
+The overlay's OCR engine, its only one, reads the selected dialogue region on the
+console with [vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr): a small Japanese
+CTC line recognizer made for visual-novel dialogue, and its line finder, both plain
+C99 with no `malloc`. Nothing leaves the Vita: no image upload, no connection and
+no cloud fallback (Google Lens, the upstream's online engine, was removed on
+2026-10-15). With `dictionary = local` the whole lookup is offline.
 
 **Status: default in v0.7.5; physical recognition validation is still pending.** It builds with VitaSDK and
 passes the host tests; everything below the "Host measurements" heading was
@@ -105,17 +106,17 @@ but are no longer shipped.
 
 ## The engine's name: the model generation
 
-The Overlay app offers two OCR engines: this local one and Google Lens. It names
-the local engine after the generation of the model the game worker loads: the
-chosen size's when its file is there at its release size, else the largest smaller
-size's that is (a job leaves a missing size out): **VOCR3** for this package's
-Small and Normal, **VOCR4** for its Large. With no file at or below the chosen size
-nothing runs; the button keeps the chosen size's generation. The card's last line
-names the size and its model (`Normal: default, balanced. VOCR3-H15 found.`), or
-that file missing. "Found" means the file is there at its release size: the app
-reads no weights, so a damaged file of the right size shows as found until the
-game worker's SHA-256 check refuses it and the game's jobs leave that size out.
-A job that runs a smaller size for memory is never shown.
+The Overlay app has no engine button since Google Lens's removal: the OCR card's
+last line names the chosen size and its model, and the model's name carries its
+generation (`Normal: default, balanced. VOCR3-H15 found.`): **VOCR3** for this
+package's Small and Normal, **VOCR4** for its Large. When the chosen size's file
+is not there at its release size the line says so (`VOCR4-W20 missing. Reinstall
+the package.`) and names no other model, though a job then runs the largest
+smaller size whose file is there (a job leaves a missing size out; with no file at
+or below the chosen size nothing runs). "Found" means the file is there at its
+release size: the app reads no weights, so a damaged file of the right size shows
+as found until the game worker's SHA-256 check refuses it and the game's jobs
+leave that size out. A job that runs a smaller size for memory is never shown.
 
 The overlay counts every v0.2.0 model as generation VOCR1, so the card says
 `VOCR1-H15` for v0.2.0's `H15_w8.vocr`, which vita-vn-ocr's reports call
@@ -147,8 +148,9 @@ The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
 `VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
 v0.8.0-test.1) has been removed: its strict per-title promotion guard failed
 ([its results](benchmarks/vocr2-candidate-20261012.json)). A saved
-`ocr_backend = vocr2`, `meiki` or `ncnn` loads as `vocr`, with a config warning
-in `log.txt`; the app's next save and the installer write `vocr`. The kernel no
+`ocr_backend = vocr2`, `meiki` or `ncnn` (or `lens`) loads as the local engine,
+with a config warning in `log.txt`; the app's next save and the installer delete
+the line, as they do any `ocr_backend` line (the engine is no setting). The kernel no
 longer opens `VOCR2_FL10_w8.vocr`; the file may be deleted.
 
 ## What a recognition does
@@ -273,7 +275,7 @@ the game exits. A job that finds no line reads them (and the LM and the cascade'
 model) if they are not resident, so the first job with text does not wait for them
 (docs/first-ocr.md). If the kernel cannot read the file's modification time, every
 job reads and checks the weights again, as before. Local
-lookup uses one 64 KiB result arena, with no Lens connection pool. The prior
+lookup uses one 64 KiB result arena, with no connection pool. The prior
 view/cache is retired before a local job begins, so a second arena is unnecessary;
 a refresh of the open overlay (docs/touch-lookup.md) keeps the view and the arena
 and leaves its text in the worker's result until the control thread compares it;
@@ -832,8 +834,8 @@ cmake --build build/host && ctest --test-dir build/host --output-on-failure
 `vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`) against their SHA-256 at that commit
 and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
-Without `VJO_WITH_VOCR` the Shell is the Lens-only build; `ocr_backend = vocr`
-then reports that the backend is missing instead of uploading anything.
+Without `VJO_WITH_VOCR` the Shell has no OCR engine: a job reports that the
+backend is missing (install a build made with `VJO_WITH_VOCR`).
 
 ## Install
 
@@ -858,11 +860,10 @@ steps below cover a source build or adding another model.
    ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
    vocr-tiers --output ocr` fetches the three sizes' models), or let the FTP installer do
-   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set ocr_backend=vocr VITA_IP`.
+   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini
-   ocr_backend = vocr
    ocr_model_dir = ux0:data/VitaJPOverlay/ocr
    vocr_tier = normal
    ocr_mode = auto
@@ -988,7 +989,6 @@ copied, and the settings above. Close other apps first.
 8. **Stability.** Leave `ocr_mode = auto` with subtitles on (Select+R) for ten
    minutes of reading. Watch for game slowdown, audio stutter, or a SceShell
    crash (`tools/install_ftp.sh --dumps VITA_IP` fetches crash dumps).
-9. **Back to Lens.** Set `ocr_backend = lens`: nothing else changes.
 
 ## Limits
 

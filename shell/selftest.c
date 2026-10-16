@@ -189,7 +189,8 @@ void vjo_selftest_init(const VjoConfig *cfg)
                b.prev_mode, b.prev_stage, b.prev_inert, b.prev_fault, b.failures, (unsigned)b.write_status);
     /* model: the configured tier's (API 21); fallback: the smallest tier's, which
      * the fallback stage runs ("-": the configured tier is the smallest). */
-    report(&g, "config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", cfg->ocr_backend,
+    /* backend=2: the old VOCR id, kept so that reports keep their form (VOCR is the only engine) */
+    report(&g, "config backend=%d model=%s fallback=%s tier=%s dictionary=%d anki=%d", 2,
            vjo_vocr_tier_model(cfg->vocr_tier) ? vjo_vocr_tier_model(cfg->vocr_tier) : "-",
            cfg->vocr_tier > (int)VJO_VOCR_TIER_SMALL ? vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL) : "-",
            vjo_vocr_tier_id(cfg->vocr_tier) ? vjo_vocr_tier_id(cfg->vocr_tier) : "-", cfg->dictionary,

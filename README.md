@@ -14,22 +14,22 @@ notes into an `.apkg` file that you copy to Anki yourself (FTP, VitaShell's USB
 mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
 AnkiConnect or AnkiWeb sync.
 
-Open the **Overlay** app, press **Select**, and choose one of the two engines
-in the OCR engine row: the local engine, named after the generation of the
-model it runs (**VOCR3** in this package), or **Google Lens**.
-Tap an engine directly, or use **Left** (local) and **Right** (Lens); **Enter**
-switches to the other one.
-The local engine is the default and supports automatic or manual OCR on the
-Vita, offline. Under it, **Model size** chooses its recognizer: **Small**
+Text is recognized on the Vita, offline, by the local engine, named after the
+generation of the model it runs (**VOCR3** in this package), automatically or
+when the overlay opens. In the **Overlay** app (press **Select** for the
+OCR & lookup page), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
 shown with its estimated time per textbox and the game memory it takes
 ([model sizes](docs/vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). When
 a game has too little free memory for the chosen size, a job runs the next
-smaller one by itself; only `log.txt` says so. Google Lens requires
-Wi-Fi and sends the selected image to Google, using the original
-[upstream implementation](https://github.com/Dartv/vita-jp-overlay).
-The release stores the local models; choosing an engine keeps them installed
-and applies when you next open the overlay.
+smaller one by itself; only `log.txt` says so. The release stores the three
+sizes' models; a choice applies when you next open the overlay.
+
+Google Lens, the [upstream's](https://github.com/Dartv/vita-jp-overlay) online
+engine, has been removed: recognition never uses the network. A saved
+`ocr_backend` line is ignored (`lens` with a config warning in `log.txt` and the
+overlay), and the Overlay app's next save and the installer delete it. The last
+build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
@@ -42,8 +42,8 @@ are generation VOCR1.
 The experimental VOCR2 trial (a separately trained FL10-sized model with a
 textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
 has been removed. A saved `ocr_backend = vocr2` now loads as the local engine
-with a config warning, the app's next save writes `vocr`, and the installer
-rewrites it; so does `ncnn`, which only the host tools run. The no-longer-used
+with a config warning, and the app's next save and the installer delete the
+line; so does `ncnn`, which only the host tools run. The no-longer-used
 `ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted. The
 [`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
@@ -53,7 +53,7 @@ Meiki, a manual single-line recognizer, has been removed from the source after
 0.7.12. Its MNN engine had to be copied into each game's own `app0:` folder
 through a per-title rePatch mount, and two observed jobs took about eight
 seconds each. A saved `ocr_backend = meiki` now loads as VOCR with a config
-warning, and the installer rewrites it to `vocr`. Files copied for it,
+warning, and the installer deletes the line. Files copied for it,
 `ux0:data/VitaJPOverlay/ocr/meiki-stream-int8.mnn` and any
 `ux0:rePatch/TITLEID/VitaJPOverlay/meiki/` folders, are no longer used and can be deleted.
 
@@ -193,7 +193,7 @@ app when it starts.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Move along the displayed row: skip matched words in Whole word mode, one character in Character mode; Right from the row's last wraps to its first, Left from its first to its last |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position; with Google Lens, move to the looked-up word above or below |
+| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
@@ -265,23 +265,23 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
-or touch a row changes its choice: OCR engine, the local engine's Model size,
-Japanese-only selection, whole-word/character highlighting, or how many
-dictionaries are shown. Touch an engine button, a size or a number to choose it
-directly; Left/Right choose the local engine or Google Lens on the engine row,
-the next smaller or larger size on the Model size row (Enter goes round them),
-OFF/ON on the selection card, Whole word/Character on the Highlight card, or 1–8
-on Dictionaries shown. Each size button shows its estimated time for a 3-line
+or touch a row changes its choice: the Model size, Japanese-only selection,
+whole-word/character highlighting, or how many dictionaries are shown. Touch a
+size or a number to choose it directly; Left/Right choose the next smaller or
+larger size on the Model size row (Enter goes round them), OFF/ON on the
+selection card, Whole word/Character on the Highlight card, or 1–8 on
+Dictionaries shown. Each size button shows its estimated time for a 3-line
 textbox and the game memory a job of it takes (`1.3 s, 1.4 MB` for Normal), from
-the models' pinned metadata; with Google Lens chosen the row stays, dimmed. The
+the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
 VOCR3-H15 found.`), or reports that file missing; it never says that a game ran a
 smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
-Model files remain stored; only the selected engine runs. Start reloads
+Model files remain stored. Start reloads
 the saved preferences. Other config values, including dictionary priority,
 paths and capture mode, are preserved; only the lines of removed features are
 rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
-API keys go, and `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`).
+API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
+removed engine choice's `ocr_backend` line goes).
 
 Japanese-only selection is **ON by default**. The initial cursor and the
 arrows skip Latin text, digits, punctuation and Hangul while selecting kana
@@ -350,8 +350,9 @@ whatever it holds.
 the plugins do not know or cannot use is listed in red in the open overlay and
 logged in `log.txt` once, and again only when the set of such lines changes
 (test.2's log had 76 lines from 8 of them, #101). A removed engine
-(`ocr_backend = vocr2`, `meiki`, `ncnn`) runs the local engine, and the app's
-next save writes `vocr`. The installer, the package's own copy and the Overlay
+(`ocr_backend = lens`, `vocr2`, `meiki`, `ncnn`) runs the local engine with a
+config warning, and the app's next save and the installer delete the line (any
+`ocr_backend` line: VOCR is the only engine). The installer, the package's own copy and the Overlay
 app write the file; the Shell plugin never does, and with no file it runs on
 these defaults:
 
@@ -361,7 +362,6 @@ local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = plaintext.vjdict
 local_dictionary_results = 1
 text_source = ocr
-ocr_backend = vocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
 ocr_mode = auto
@@ -397,9 +397,8 @@ error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
 takes no kernel memory for the screen since API 19: the game reads its own
-screen ([in-game capture](docs/ingame-capture.md)). Google Lens still uses the
-kernel's capture buffer, where a tighter region helps; Anki cards take no
-screenshot in this build, so they never use it. A Shell UI memory error
+screen ([in-game capture](docs/ingame-capture.md)). The kernel's capture buffer
+is only for an Anki card's screenshot, which this build does not take. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
@@ -496,13 +495,9 @@ through files for the selected word. The combined bundle is one file, so
 it displays the preferred source; add separate dictionaries to page through
 other definitions. Only the page on screen is held in memory.
 
-Google Lens can also be selected with `ocr_backend = lens`; it uploads the
-selected image to Google and looks the words up in the same local
-dictionaries. Selecting an OCR engine preserves the dictionaries, OCR mode and
-other settings. The subtitle strip (Select + R) shows the recognized text,
-without readings, and adds no lookups for it. Dictionary lookup never uses the
-network: the local dictionaries are the only ones. Local defaults make no OCR
-or dictionary network requests and have no cloud fallback.
+The subtitle strip (Select + R) shows the recognized text, without readings,
+and adds no lookups for it. Recognition and dictionary lookup make no network
+request and have no cloud fallback: the local dictionaries are the only ones.
 
 The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
 been removed (the local Jitendex and every other Yomitan dictionary still
@@ -551,7 +546,7 @@ and memory.
 
 ## Memory and troubleshooting
 
-The game OCR worker runs the selected local OCR engine in the enabled game's process, allocating its
+The game OCR worker runs the local OCR engine in the enabled game's process, allocating its
 region-sized workspace from that game's `USER_RW`. taiHEN loads it only into the
 games it is registered for (one `*TITLEID` section each), never into SceShell or
 the system apps. It still checks the title at startup and unloads itself at once
@@ -627,10 +622,11 @@ together (API 22 since the OCR speed settings) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
-64 KiB result arena and no TLS pool for local lookup. Its module holds 262,144 B
-of SceShell's partition, of 266,240 B declared (266,240 B before the default
-`config.ini` template left it, #101; 282,624 B before AnkiConnect was removed, 286,720 B before
-the Hachidori relay client's removal, 294,912 B before the online dictionaries', of
+64 KiB result arena, taken after recognition, and no connection pool. Its module
+holds 176,128 B of SceShell's partition (262,144 B, of 266,240 B declared, before Google
+Lens's removal; 266,240 B before the default `config.ini` template left it, #101; 282,624 B
+before AnkiConnect was removed, 286,720 B before the Hachidori relay client's removal,
+294,912 B before the online dictionaries', of
 299,008 B declared then; 405,504 B in 0.7.12's successor builds): the
 overlay's text arena is a 20 KiB Paf allocation taken when the overlay opens and
 returned when it closes, never a static buffer; if it is refused, the overlay
@@ -641,8 +637,7 @@ reads only the selected position and shows zero or one entry. With Dictionaries
 shown above 1 it also keeps a 208-byte table locating the other dictionaries'
 entries in the same arena; an L or R tap releases the shown entry and reads one
 other payload, so several definitions are never resident together.
-The previous local result is retired before either is reused; Google Lens jobs
-retain two result arenas and one kept connection. Paf allocations preserve a 1.5 MiB UI reserve. If a
+The previous local result is retired before it is reused. Paf allocations preserve a 1.5 MiB UI reserve. If a
 local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.

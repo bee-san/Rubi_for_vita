@@ -6,14 +6,14 @@ file and applying key=value overrides.
 
 OLD may be missing (first install). Removed settings are dropped (the API keys of
 jpdb.io and jiten.moe, the removed online dictionaries, among them: printed as removed,
-never their values; the removed Hachidori relay's hachidori_host too), and values of removed
-features (ocr_backend = vocr2, meiki or ncnn; dictionary = jpdb, jiten or hachidori) are
-replaced. An older build's model choice (vocr_model) becomes its model size (vocr_tier)
-unless the file already names a valid one; vocr_model and vocr_fallback_model go. A
-vocr_tier core/config.c cannot read is replaced by the size the plugin would run (the old
-model's, else the template's), as the plugin ignores it. Prints what changed (a credential,
-the audio source URL, only as set/empty). Exit status 0 = OUT should be uploaded, 1 = OLD is
-already identical, 2 = migration failed.
+never their values; the removed Hachidori relay's hachidori_host too; and the engine choice,
+ocr_backend: VOCR is the only engine), and values of removed features (dictionary = jpdb,
+jiten or hachidori) are replaced. An older build's model choice (vocr_model) becomes its
+model size (vocr_tier) unless the file already names a valid one; vocr_model and
+vocr_fallback_model go. A vocr_tier core/config.c cannot read is replaced by the size the
+plugin would run (the old model's, else the template's), as the plugin ignores it. Prints
+what changed (a credential, the audio source URL, only as set/empty). Exit status 0 = OUT
+should be uploaded, 1 = OLD is already identical, 2 = migration failed.
 """
 import os
 import re
@@ -30,7 +30,10 @@ REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            # API 21: the model and its fallback became one model size (vocr_tier, MODEL_TIER below).
            "vocr_model", "vocr_fallback_model",
            # The Hachidori relay's computer (dictionary = hachidori, removed): core/config.c ignores it.
-           "hachidori_host"}
+           "hachidori_host",
+           # The engine choice: VOCR is the only engine since Google Lens was removed (the overlay
+           # is offline); core/config.c ignores a vocr line and warns for a removed engine's.
+           "ocr_backend"}
 REMOVED_PREFIXES = ("anki_field_",)
 # The removed online dictionaries' API keys (secrets; api_key: jpdb_api_key's older name): a key
 # that starts with one is dropped, and reported by that name only, as its line's text may hold the
@@ -39,11 +42,9 @@ SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 # Why a removed setting went, printed beside it (the log line the installer shows).
 REMOVED_WHY = {"anki_host": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg",
                "anki_audio_url": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg"}
-# Values whose feature was removed, with their replacement. ocr_backend offers two engines,
-# vocr and lens; the others load as vocr already (core/config.c removed_engine). dictionary
-# offers local only; jpdb, jiten and hachidori load as local (core/config.c removed_dictionary).
-REPLACED_VALUES = {"ocr_backend": {"vocr2": "vocr", "meiki": "vocr", "ncnn": "vocr"},
-                   "dictionary": {"jpdb": "local", "jiten": "local", "hachidori": "local"}}
+# Values whose feature was removed, with their replacement. dictionary offers local only;
+# jpdb, jiten and hachidori load as local (core/config.c removed_dictionary).
+REPLACED_VALUES = {"dictionary": {"jpdb": "local", "jiten": "local", "hachidori": "local"}}
 # An older build's vocr_model, by the shape its file name carries (core/config.c vjo_vocr_tier_of_model):
 # the FL10 family Small, H15 Normal, F20 and W20 Large; any other name keeps the template's size.
 MODEL_TIER = (("FL10", "small"), ("H15", "normal"), ("W20", "large"), ("F20", "large"))

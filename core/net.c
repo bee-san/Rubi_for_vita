@@ -333,8 +333,6 @@ int vjo_http_request(VjoArena *a, const VjoPlatform *p, int port, int use_tls, c
         memmove(dst, resp->body, resp->body_len + 1);
         resp->body = (char *)dst;
     }
-    if (p->on_response)
-        p->on_response(p->ud, req->host, resp->body, resp->body_len);
     if (resp->status < 200 || resp->status > 299) {
         err->http_status = resp->status;
         return err->rc = VJO_E_STATUS;

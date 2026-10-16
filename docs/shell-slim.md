@@ -103,16 +103,31 @@ Expected pages before → after; **[estimate]** until the step's PR measures it.
 | Step | PR | Shell |
 |---|---|---|
 | jpdb.io and jiten.moe | #117 (overlay-remove-online-dicts) | 299,008 → 286,720 B of module pages [measured] |
-| the Hachidori relay client | overlay-remove-hachidori | about −1 page [estimate] |
-| AnkiConnect: the send, the audio URL, the picture upload, the app's Anki network page | overlay-apkg | about −3 pages [estimate] |
-| the `config.ini` template (the Shell no longer writes `config.ini`) | overlay-app-mismatch | −3,488 B of code [measured by its author] |
+| the Hachidori relay client | #126 (overlay-remove-hachidori) | 286,720 → 282,624 B [measured by its author, on #117 `6b04af0`] |
+| AnkiConnect: the send, the audio URL, the picture upload, the app's Anki network page | #125 (overlay-apkg) | 282,624 → 266,240 B [measured by its author, on main `5e68ecd`] |
+| the `config.ini` template (the Shell no longer writes `config.ini`) | #122 (overlay-app-mismatch) | 189,104 → 186,416 B of text (−2,688 B), 266,240 → 262,144 B of module pages (266,240 B still declared) [measured: the build log's module rows, main `0b95c9d` and `ac905b1`] |
 
 ### 4.2 Step 1: the network, all of it (this series, after the PRs above)
 
-- **Google Lens**: the engine, the engine choice in the Overlay app (VOCR is the only engine; the
-  model-size picker stays), `ocr_backend` (a saved value loads as VOCR with one config warning; the
-  app's save and the installer drop the line), `core/lens.c`, `core/pb.c`, `core/jpegsw.c`,
-  `shell/capture.c`, the host's Lens tools, fixtures and benchmarks.
+In two PRs. **PR-A, Google Lens** [measured]: the engine, the engine choice in the Overlay app
+(VOCR is the only engine; the model-size picker stays), `ocr_backend` (a saved line loads as VOCR,
+a removed engine's with one config warning; the app's save and the installer drop the line, the
+installer saying so once), `core/lens.c`, `core/pb.c`, the worker's capture → JPEG → Lens job and
+its connection warm-up, the host's Lens CLI, replay, fixtures and benchmark; and, with #126's relay
+gone too, the Shell worker's network pipeline (the two 256 KiB arenas, the pool, the cached-sentence
+comparison; `VJO_BUDGET_PAF_RESULTS_NET` goes). With overlay-apkg's #125 merged first (the Anki
+screenshot gone), PR-A also deletes the Shell's capture → JPEG path: `shell/capture.c`,
+`core/jpegsw.c`, the capture lock a local OCR job held, and their tests and tool. Lens was the
+Shell's last TLS connection, so its link no longer keeps BearSSL's TLS, the roots or the HTTP
+client (`--gc-sections`; only SHA-256 stays, the queue's IDs), though their sources stay for PR-B.
+On main `9f92bc6` the Shell's text segment goes from 187,552 to 100,360 B (`.text` −66,720 B,
+`.rodata` −20,424 B) and data and `.bss` from 70,128 to 70,056 B: 262,144 → 176,128 B of module
+pages, 21 text pages, and the declared budget from 266,240 to 176,128 B [measured: the build log's
+module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](memory-ledger.md)]. The kernel's
+capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B**: the rest of this
+step.
+
+- **Google Lens** (PR-A, above).
 - **The network stack**: `core/net.c`, `core/http.c`, `core/tls.c`, `core/tls_roots.c` and
   `third_party/roots`, BearSSL but its SHA-256 and SHA-1 (the queue's IDs, the models' hashes,
   the `.apkg`'s checksums), the sockets, resolver and cancellation in `shell/platform_vita.c`, the
@@ -126,12 +141,16 @@ Expected pages before → after; **[estimate]** until the step's PR measures it.
   batch) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's sources,
   main `ea7bcc3`].
 
-| | before (#117) | after [estimate] |
-|---|---:|---:|
-| Shell code + rodata | 209,904 B | about 120,000 B |
-| Shell module pages | 286,720 B | about 196,000 B |
-| Shell permanent (module + stacks + TLS) | 376,832 B | about 237,000 B |
-| PAF worst case (network configuration) | 707,840 B | the network configuration is gone: 225,280 B |
+| | before (#117) | after #126 | after #125 (main `9f92bc6`, with #123, #122 and #127) [measured] | after PR-A [measured] |
+|---|---:|---:|---:|---:|
+| Shell code + rodata | 210,184 B | 206,192 B | 187,552 B | 100,360 B |
+| Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) |
+| Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B |
+| PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one |
+
+PR-B now removes sources the link already drops, plus the sockets the UDP log and the cancel
+paths keep (SceNet, SceNetCtl): a few pages at most [estimate], against this plan's earlier
+"about 196,000 B" for both PRs together. VjoNet's 64 KiB stack is PR-A2's (#132).
 
 ### 4.3 Step 2: the kernel's full-frame capture
 
@@ -143,8 +162,11 @@ changes the syscall table, so it raises `VJO_API_VERSION`.
 
 ### 4.4 Step 3: the rest
 
-- **Log strings**: shorter free-text messages where no tool parses them (`tools/analyse_selftest.py`,
-  `tools/collect_vita.py` and their tests pin the parsed ones); about 1-2 KiB [estimate].
+- **Log strings**: handed to overlay-release-variants (2026-10-15), which gates the debug-only
+  lines, the self-test and the ledger tables behind a `VJO_DEBUG` build option (the release's
+  Normal zip leaves them out, its `-debug` zip keeps them) and shortens only the lines that stay in
+  Normal and that no tool parses (`tools/analyse_selftest.py`, `tools/collect_vita.py` and their
+  tests pin the parsed ones). Both edit the same call sites, so one owner.
 - **Local lookup in the game**: evaluated, not moved. Its code is 27,682 B with its tables, and its
   64 KiB arena is in the PAF heap only while a game runs. In the game it would need a kernel file
   broker for the 134 MiB dictionary (some games have no `ux0:`, the reason the model broker exists),

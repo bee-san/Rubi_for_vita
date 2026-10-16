@@ -492,8 +492,8 @@ static void list_key(uint32_t keys)
 
 static void check_models(void)
 {
-    /* The local engine's model sizes: which tiers' files are there, and the
-     * generation of the model that loads. */
+    /* The local engine's model sizes: which tiers' files are there (the card
+     * names the chosen size's model, or reports it missing). */
     vjo_engine_card(&preferences, &engine);
 }
 
@@ -516,7 +516,7 @@ static void change_preference(int tier, int japanese_only, int highlight_mode, i
         snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
         return;
     }
-    int rc = vjo_preferences_save(VJO_OCR_VOCR, tier, japanese_only, highlight_mode, dictionary_results, &scratch);
+    int rc = vjo_preferences_save(tier, japanese_only, highlight_mode, dictionary_results, &scratch);
     /* Re-read even on failure: final sync can fail after publication. */
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;

@@ -1,4 +1,4 @@
-/* Actual Lens control policy with only Vita scheduling and memory stubbed. */
+/* The actual Shell worker (shell/worker.c) with only Vita scheduling and memory stubbed. */
 #include "acutest.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -18,7 +18,7 @@ static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled 
 static uint8_t storage[2 * 1024 * 1024];
 /* Separate simulated game process workspace. Shell allocator must never own it. */
 static uint8_t vocr_storage[2 * 1024 * 1024] __attribute__((aligned(64)));
-static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs, jpeg_captures;
+static unsigned vocr_allocs, vocr_frees, vocr_paf_allocs;
 static int fail_vocr_user, fail_vocr_paf;
 static int phases_checked, vocr_live, fail_join;
 static unsigned char raw_region[200 * 60 * 4];
@@ -63,22 +63,22 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
     *base = fail_base ? NULL : storage; return fail_base ? -1 : 0;
 }
 int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) { vocr_frees++; vocr_live = 0; } else user_frees++; return 0; }
-int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
-{
-    if (row >= raw_state.height) return -1;
-    if (n > raw_state.height - row) n = raw_state.height - row;
-    memcpy(dst, raw_region + (size_t)row * raw_state.raw_stride, (size_t)n * raw_state.raw_stride);
-    return (int)n;
-}
 
 #include "../../shell/worker.c"
 #include "../../shell/ledger.c" /* the ledger worker.c counts in */
 #include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
 
+/* audit-overlay-shell-slim-1 A5: the overlay's thread posts a cursor move at the
+ * n-th cmd_lock acquisition from now (vjo_post_cursor runs on Paf's thread). */
+static int race_on_lock;
+static void post_local_lookup(uint32_t generation);
+static void cursor_race(void) { local_cursor_byte = 3; post_local_lookup(local_text_generation); }
+
 int sceKernelLockMutex(SceUID uid, int count, void *timeout)
 {
     if (uid == 81) { TEST_CHECK(!held_view); held_view++; }
-    if (uid == 82) { TEST_CHECK(!held_cmd && !held_view); held_cmd++; }
+    if (uid == 82) { TEST_CHECK(!held_cmd && !held_view); held_cmd++;
+        if (race_on_lock && --race_on_lock == 0) cursor_race(); }
     return 0;
 }
 int sceKernelUnlockMutex(SceUID uid, int count)
@@ -272,22 +272,6 @@ void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *c) {}
 int vjo_net_cancel_init(VjoNetCancel *c) { return 0; }
 void vjo_net_cancel(VjoNetCancel *c) { c->cancelled = 1; cancels++; }
 void vjo_net_cancel_clear(VjoNetCancel *c) { c->cancelled = 0; }
-int vjo_capture_init(void) { return 0; }
-void vjo_capture_fini(void) {}
-/* The capture lock: a local OCR job holds it from submission to result. */
-static int capture_held_now, capture_holds;
-void vjo_capture_hold(void) { TEST_CHECK(!capture_held_now); capture_held_now = 1; capture_holds++; }
-void vjo_capture_release(void) { TEST_CHECK(capture_held_now); capture_held_now = 0; }
-/* capture.c's contract: a failed capture leaves the kernel's error in
- * s->capture_result; VJO_ERR_NO_MEMORY means its buffer was refused. */
-static int capture_kernel_oom, jpeg_encoder_oom;
-int vjo_capture_jpeg(VjoArena *a, uint32_t f, int q, VjoBuf *b, VjoState *s)
-{
-    jpeg_captures++;
-    if (capture_kernel_oom) { s->capture_result = VJO_ERR_NO_MEMORY; return VJO_E_OOM; }
-    if (jpeg_encoder_oom) { s->capture_result = 0; return VJO_E_OOM; }
-    return VJO_E_SOURCE;
-}
 /* shell/game.c (its own suite, shell_game): not readable unless a test says. */
 static int identify_rc = -1, enabled_psp = -1;
 static VjoGameId identified;
@@ -351,7 +335,6 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     TEST_CHECK(!open_batch); /* no log batch is held across the game's exchange */
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
-    TEST_CHECK(capture_held_now); /* the game captures with the Shell's capture lock held */
     if (submits < 8) selftest_flags_seen[submits] = r->flags, selftest_speed_seen[submits] = r->speed;
     submits++;
     fake_game_request.seq = 12;
@@ -500,6 +483,7 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 
 static void reset(void)
 {
+    race_on_lock = 0;
     if (has_result_memory()) mem_free();
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
@@ -516,10 +500,8 @@ static void reset(void)
     pending_cursor_byte = pending_cursor_generation = 0;
     memset(&state, 0, sizeof(state));
     memset(&plat, 0, sizeof(plat));
-    plat.pool = &pool;
     vjo_config_defaults(&loaded);
     loaded.dictionary = VJO_DICT_LOCAL;
-    loaded.ocr_backend = VJO_OCR_LENS; /* existing Lens policy regression matrix */
     cfg = loaded;
     memcpy(title_id, "PCSG00415", 10);
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
@@ -531,7 +513,7 @@ static void reset(void)
     fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
     game_enabled = 1;
     running = 1; threads_started = 0;
-    vocr_allocs = vocr_frees = vocr_paf_allocs = jpeg_captures = 0;
+    vocr_allocs = vocr_frees = vocr_paf_allocs = 0;
     fail_vocr_user = fail_vocr_paf = 0;
 #ifdef VJO_WITH_VOCR
     fake_model_io_error = 0;
@@ -550,7 +532,6 @@ static void reset(void)
     fake_tier_checks = 0;
     memset(job_title, 0, sizeof(job_title));
     log_count = 0;
-    capture_kernel_oom = jpeg_encoder_oom = 0;
     fake_screen_changes = 0;
 #endif
     selftest_waits = 0;
@@ -580,7 +561,7 @@ static void reset(void)
     ov = OV_CLOSED;
     active = -1;
     game_generation = job_generation = 0;
-    cache_ok = subtitles = stable_pending = warm_running = job_running = job_cancelled = 0;
+    cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
@@ -600,10 +581,14 @@ static void test_local_open(void)
     TEST_CHECK(job_running && job_lookup && input_blocked);
     TEST_CHECK(posted & NET_EV_JOB);
     TEST_CHECK(!g_view.status_is_error && want_lookup());
-    TEST_CHECK(pool.n == POOL_SLOTS);
+    /* Opening takes no memory: the job takes its one lookup arena after OCR
+     * (in the network thread). */
+    TEST_CHECK(!has_result_memory() && !user_allocs && !heap_allocs);
+    TEST_ASSERT(mem_alloc() == 0); /* the job's lookup arena */
+    TEST_CHECK(results[0].size == LOCAL_RESULT_ARENA_SIZE && !results[1].size);
     job_running = 0;
     mem_free();
-    TEST_CHECK(!has_result_memory() && pool.n == 0);
+    TEST_CHECK(!has_result_memory());
 #ifdef VJO_PAF_ALLOC
     TEST_CHECK(heap_allocs == 1 && heap_frees == 1 && user_allocs == 0);
 #else
@@ -626,7 +611,7 @@ static void test_config_cache(void)
     TEST_CHECK(!cache_ok);
     /* the removed Hachidori relay's choice loads as local: the same pipeline, the cache kept */
     {
-        const char *old = "dictionary = hachidori\nhachidori_host = 192.168.1.2\nocr_backend = lens\n"
+        const char *old = "dictionary = hachidori\nhachidori_host = 192.168.1.2\n"
                           "local_dictionary_dir = ux0:data/other\n"
                           "local_dictionaries = daijirin.vjdict,main.vjdict\n";
         VjoConfig c;
@@ -692,7 +677,6 @@ static void test_removed_relay_opens_as_local(void)
         reset();
         snprintf(ini, sizeof(ini), "dictionary = hachidori\nhachidori_host = %s\n", hosts[i]);
         vjo_config_defaults(&loaded);
-        loaded.ocr_backend = VJO_OCR_LENS; /* reset()'s Lens policy matrix */
         vjo_config_parse(&loaded, ini, strlen(ini));
         TEST_CHECK(loaded.dictionary == VJO_DICT_LOCAL && loaded.n_warnings == 1);
         cfg = loaded;
@@ -706,17 +690,17 @@ static void test_removed_relay_opens_as_local(void)
     }
 }
 
+/* The lookup's result arena (taken after OCR): a refusal leaves nothing held
+ * and the next allocation succeeds; a block whose base cannot be read is freed
+ * again (the host build's memory-block path). A job's refused arena keeps its
+ * recognized text: test_shell_result_oom_preserves_recognition. */
 static void test_alloc_failure(void)
 {
     reset();
     fail_alloc = 1;
-    open_overlay();
-    TEST_CHECK(!has_result_memory() && !job_running && g_view.status_is_error);
-    TEST_CHECK(strstr(g_view.status, "memory") != NULL);
+    TEST_CHECK(mem_alloc() < 0 && !has_result_memory());
     fail_alloc = 0;
-    open_overlay();
-    TEST_CHECK(has_result_memory() && job_running);
-    job_running = 0;
+    TEST_CHECK(mem_alloc() == 0 && has_result_memory() && results[0].size == LOCAL_RESULT_ARENA_SIZE);
     mem_free();
 #ifndef VJO_PAF_ALLOC
     fail_base = 1;
@@ -730,10 +714,9 @@ static void test_ocr_config_migration(void)
     VjoConfig c;
     const char old[] = "text_source = hooks\nocr_backend = meiki\n";
     vjo_config_defaults(&c);
-    c.ocr_backend = VJO_OCR_LENS;
     vjo_config_parse(&c, old, sizeof(old)-1);
-    /* Both removed features fall back to the local screenshot pipeline. */
-    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.ocr_backend == VJO_OCR_VOCR);
+    /* Both removed features fall back to the local screenshot pipeline, each with a warning. */
+    TEST_CHECK(c.text_source == VJO_SOURCE_OCR && c.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(c.n_warnings == 2);
 }
 
@@ -746,12 +729,11 @@ static void test_changed_dictionary_drops_running_result(void)
     cache_data[0].filtered = "日本語";
     start_job("test", 1);
     ov = OV_OPEN_OLD_JOB;
-    job_same_text = 1;
     strcpy(loaded.local_dictionaries, "new.vjdict");
     apply_config();
     TEST_CHECK(job_cancelled && cancels == 1 && !cache_ok);
     on_job_done();
-    TEST_CHECK(job_running && !job_cached_text && !job_same_text && !cache_ok);
+    TEST_CHECK(job_running && !cache_ok);
     TEST_CHECK(strcmp(job_cfg.local_dictionaries, "new.vjdict") == 0);
     TEST_CHECK(g_view.list != &cache_data[0].list);
     job_running = 0;
@@ -768,7 +750,7 @@ static void test_game_exit_drains_previous_job(void)
     cache_scene = state.scene;
     cache_seq = state.region_seq;
     start_job("old game", 1);
-    job_same_text = 1;
+    TEST_ASSERT(mem_alloc() == 0); /* the job's lookup arena, taken after its OCR */
     ov = OV_OPEN;
     input_blocked = 1;
 
@@ -781,7 +763,7 @@ static void test_game_exit_drains_previous_job(void)
     TEST_CHECK(!job_running && !cache_ok && !stable_pending);
     TEST_CHECK(!g_view.list);
     mem_free();
-    TEST_CHECK(!has_result_memory() && pool.n == 0);
+    TEST_CHECK(!has_result_memory());
 }
 
 static void test_game_start_rejects_previous_generation(void)
@@ -797,7 +779,6 @@ static void test_game_start_rejects_previous_generation(void)
     cache_data[job_idx].sentence = "old game text";
     job_capture_scene = state.scene;
     job_capture_seq = state.region_seq;
-    job_same_text = 1;
     ov = OV_OPEN;
     input_blocked = 1;
     state.game_pid = 101;
@@ -816,7 +797,7 @@ static void test_game_start_rejects_previous_generation(void)
     TEST_CHECK(!g_view.list && !view_job_text);
     on_job_done();
     TEST_CHECK(job_running && job_generation == game_generation);
-    TEST_CHECK(!job_cached_text && !job_same_text && !cache_ok);
+    TEST_CHECK(!cache_ok);
     TEST_CHECK(!g_view.list);
     job_running = 0;
     mem_free();
@@ -928,7 +909,7 @@ static void test_close_just_before_ps_leaves_touch_to_shell(void)
     mem_free();
 }
 
-/* ---- ocr_backend = vocr ---- */
+/* ---- OCR: the game worker's vita-vn-ocr ---- */
 
 static int run_vocr_job(void)
 {
@@ -951,7 +932,6 @@ static void test_vocr_ran_names_outlive_the_job(void)
     VjoGameOcrResult result;
     unsigned ran = 0;
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     TEST_ASSERT(mem_alloc() == 0);
     job_cfg = cfg;
@@ -981,7 +961,6 @@ static void test_vocr_ran_names_outlive_the_job(void)
 static void test_vocr_capture_follows_the_retry(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     fake_republish = 1; republish_reads = captured_while_void = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(republish_reads == 2 && !captured_while_void);
@@ -999,7 +978,6 @@ static void test_vocr_capture_follows_the_retry(void)
 static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "コ一ヒ一！？\n統ー的．．．";
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(!strcmp(cache_data[0].sentence, "コーヒー!?\n統一的…"));
@@ -1014,12 +992,11 @@ static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
 }
 #endif
 
-static void test_vocr_never_uses_lens(void)
+/* Every job is the game worker's: on the console, no image or connection leaves it. */
+static void test_vocr_empty_region(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     int rc = run_vocr_job();
-    TEST_CHECK(jpeg_captures == 0);
 #ifdef VJO_WITH_VOCR
     /* An empty region: no line, no model read, the workspace is released. */
     TEST_CHECK(rc == VJO_OK && cache_data[0].failed_stage == VJO_STAGE_NONE);
@@ -1034,28 +1011,25 @@ static void test_vocr_never_uses_lens(void)
     mem_free();
 }
 
-/* A config.ini that still chooses the removed VOCR2 trial (or ncnn) runs the
- * local engine: the configured model with its fallback, in the game, with no
- * screenshot and no Lens connection. */
+/* A config.ini that still chooses a removed engine (Google Lens, the VOCR2
+ * trial, ncnn) runs the local engine: the configured size with the smaller
+ * ones, in the game, with no screenshot and no connection. */
 static void test_removed_engine_choice_runs_the_local_engine(void)
 {
-    /* Only the local engine runs in the game: the retired IDs (1 ncnn, 3 Meiki, 4 VOCR2) never do. */
-    for (int id = -1; id <= 5; id++) TEST_CHECK_(game_ocr_backend(id) == (id == VJO_OCR_VOCR), "backend %d", id);
-    static const char *const ini[] = {"ocr_backend = vocr2\n", "ocr_backend = ncnn\n"};
-    static const char *const warning[] = {"config warning: ocr_backend: VOCR2 was removed; using vocr",
-                                          "config warning: ocr_backend: ncnn runs only in host tools; using vocr"};
-    for (unsigned i = 0; i < 2; i++) {
+    static const char *const ini[] = {"ocr_backend = lens\n", "ocr_backend = vocr2\n", "ocr_backend = ncnn\n"};
+    static const char *const warning[] = {
+        "config warning: ocr_backend: Google Lens was removed (the overlay is offline); using vocr",
+        "config warning: ocr_backend: VOCR2 was removed; using vocr",
+        "config warning: ocr_backend: ncnn runs only in host tools; using vocr"};
+    for (unsigned i = 0; i < 3; i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_LENS;
         vjo_config_defaults(&loaded);
-        loaded.ocr_backend = VJO_OCR_LENS;
         vjo_config_parse(&loaded, ini[i], strlen(ini[i]));
         apply_config();
-        TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
-        TEST_CHECK(local_pipeline(&cfg) && background_wanted());
+        TEST_CHECK(cfg.n_warnings == 1);
+        TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && background_wanted());
         TEST_CHECK_(logged(warning[i]) != NULL, "%s", warning[i]);
         int rc = run_vocr_job();
-        TEST_CHECK(!jpeg_captures);
 #ifdef VJO_WITH_VOCR
         TEST_CHECK(rc == VJO_OK && job_captured && vocr_allocs == 1 && vocr_frees == 1);
         TEST_CHECK(!strcmp(fake_game_request.model, "VOCR3_H15_w8.vocr"));
@@ -1065,29 +1039,22 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
         TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
 #endif
-        warm_connections();
-        TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
+        TEST_CHECK(!cancels); /* nothing to cancel: no request leaves the console */
         mem_free();
     }
 }
 
-/* The cached result belongs to its engine and, for the local engine, to its
- * model files: switching engine, model, fallback or directory drops it; the
- * local engine's model settings do not matter to Google Lens. */
+/* The cached result belongs to its model files: switching the size or the
+ * models' directory drops it; a setting that is no pipeline's keeps it. */
 static void test_engine_cache_tracks_backend_models_and_storage(void)
 {
     reset();
-    loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     cache_ok = 1;
-    loaded.ocr_backend = VJO_OCR_LENS;
+    loaded.font_size_ja = 18; /* the overlay's look: no pipeline's */
     apply_config();
-    TEST_CHECK(!cache_ok);
-    cache_ok = 1;
+    TEST_CHECK(cache_ok);
     loaded.vocr_tier = VJO_VOCR_TIER_SMALL;
-    apply_config();
-    TEST_CHECK(cache_ok); /* Lens runs no local model */
-    loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
@@ -1111,12 +1078,12 @@ static void test_vocr_config(void)
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
     /* Normal (VOCR3-H15) by default; a job runs Small (VOCR3-FL10) when the game's memory has no room for it. */
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
     TEST_CHECK(!strcmp(vjo_vocr_tier_model(c.vocr_tier), "VOCR3_H15_w8.vocr") &&
                !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL), "VOCR3_FL10_w8.vocr") &&
                !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_LARGE), "VOCR4_W20_w8.vocr"));
     vjo_config_parse(&c, ini, sizeof(ini) - 1); /* v0.2.0's FL10 chose the smallest size */
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.vocr_tier == VJO_VOCR_TIER_SMALL && c.n_warnings == 0);
+    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_SMALL && c.n_warnings == 0);
     vjo_config_defaults(&c);
     vjo_config_parse(&c, bad, sizeof(bad) - 1);
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.n_warnings == 3); /* each kept the default */
@@ -1124,34 +1091,16 @@ static void test_vocr_config(void)
     vjo_config_defaults(&c);
     vjo_config_parse(&c, fallbacks, sizeof(fallbacks) - 1); /* no longer read: the tiers fall back */
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && !c.n_warnings);
-    TEST_CHECK(VJO_OCR_LENS == 0 && VJO_OCR_VOCR == 2); /* 1, 3, 4: removed engines; IDs never move */
     /* A saved VOCR2 choice keeps the configured model's size: the local engine runs it. */
     const char old_ini[] = "ocr_backend = VoCr2\nvocr_model = H15_w8.vocr\n";
     vjo_config_defaults(&c);
     vjo_config_parse(&c, old_ini, sizeof(old_ini) - 1);
-    TEST_CHECK(c.ocr_backend == VJO_OCR_VOCR && c.n_warnings == 1);
-    TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL);
-}
-
-static void test_vocr_warms_no_lens_connection(void)
-{
-    reset();
-    TEST_ASSERT(mem_alloc() == 0);
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    state.unsettled_ms = 100;
-    warm_connections();
-    TEST_CHECK(!(posted & NET_EV_WARM) && !warm_running);
-    cfg.ocr_backend = VJO_OCR_LENS;
-    warm_connections();
-    TEST_CHECK((posted & NET_EV_WARM) && warm_running);
-    warm_running = 0;
-    mem_free();
+    TEST_CHECK(c.n_warnings == 1 && c.vocr_tier == VJO_VOCR_TIER_NORMAL);
 }
 
 static void test_vocr_model_change_invalidates_cache(void)
 {
     reset();
-    loaded.ocr_backend = VJO_OCR_VOCR;
     apply_config();
     cache_ok = 1;
     loaded.vocr_tier = VJO_VOCR_TIER_SMALL;
@@ -1177,7 +1126,6 @@ static void strokes(unsigned y0, unsigned y1)
 static void test_vocr_missing_model_releases_workspace(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     cfg.vocr_tier = VJO_VOCR_TIER_SMALL; /* the smallest size: one job, one error */
     strokes(15, 39); /* one light line on black */
     int rc = run_vocr_job();
@@ -1185,7 +1133,6 @@ static void test_vocr_missing_model_releases_workspace(void)
     TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 1 && vocr_frees == 1 && fake_game_request.tiers == 1u);
     mem_free();
     reset(); /* the default size, both files missing: two jobs, the smaller one's error */
-    cfg.ocr_backend = VJO_OCR_VOCR;
     strokes(15, 39);
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && cache_data[0].failed_stage == VJO_STAGE_OCR);
     TEST_CHECK(!cache_data[0].sentence && vocr_allocs == 2 && vocr_frees == 2);
@@ -1202,7 +1149,6 @@ static void test_vocr_missing_model_releases_workspace(void)
 static void test_vocr_unusable_model_uses_the_fallback(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_missing_model = "VOCR3_H15_w8.vocr";
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
@@ -1227,7 +1173,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     mem_free();
     /* Large chosen and Normal's file bad: Large stays in this game's ladder, Normal is left out. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
     fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u); /* Large does not fit this game */
     fake_missing_model = "VOCR3_H15_w8.vocr"; fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2);
@@ -1249,7 +1195,6 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
     const int32_t transient[] = {VJO_ERR_TIMEOUT, (int32_t)0x80010013u, VJO_ERR_CANCELLED};
     for (unsigned i = 0; i < 3; i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = transient[i];
         fake_recognized_text = "猫";
         TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && !strcmp(fake_game_request.model, "VOCR3_FL10_w8.vocr"));
@@ -1264,7 +1209,6 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
     }
     /* A hash/format rejection (io 0) is a bad file: sticky, like a missing one. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_missing_model = "VOCR3_H15_w8.vocr"; fake_missing_io = 0; fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && vocr_unusable == 1u << (VJO_VOCR_TIER_NORMAL - 1u));
     mem_free();
@@ -1276,7 +1220,6 @@ static void test_vocr_transient_model_failure_is_not_sticky(void)
 static void test_vocr_model_error_retry_limits(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_memory_fallback = 1; fake_missing_model = "VOCR3_FL10_w8.vocr"; fake_missing_with_fallback = 1;
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && vocr_unusable == 1u);
     mem_free();
@@ -1286,13 +1229,12 @@ static void test_vocr_model_error_retry_limits(void)
     TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK && fake_game_request.tiers == 2u); /* Normal alone */
     mem_free();
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_missing_model = "VOCR3_H15_w8.vocr"; fake_cancel_on_model_error = 1;
     run_vocr_job();
     TEST_CHECK(vocr_allocs == 1 && !vocr_unusable);
     mem_free();
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_SMALL;
+    cfg.vocr_tier = VJO_VOCR_TIER_SMALL;
     fake_missing_model = "VOCR3_FL10_w8.vocr";
     TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_game_request.tiers == 1u);
     mem_free();
@@ -1302,7 +1244,6 @@ static void test_vocr_model_error_retry_limits(void)
 static void test_vocr_refused_fallback_is_labelled(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1; fake_memory_fallback = 1; fake_free_user = 4300000;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     TEST_CHECK(logged("game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too):") != NULL);
@@ -1310,7 +1251,7 @@ static void test_vocr_refused_fallback_is_labelled(void)
     mem_free();
     /* every tier refused by the ladder: one line per tier, the last says nothing smaller fits */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
     fake_tier_checks = VJO_VOCR_TIERS_ALL; fake_free_user = 4300000;
     memcpy(job_title, "PCSG00415", 10);
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
@@ -1328,7 +1269,6 @@ static void test_vocr_refused_fallback_is_labelled(void)
 static void test_vocr_memory_fallback_is_logged(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
     fake_recognized_text = "猫";
     fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u) | 1u << (VJO_VOCR_TIER_NORMAL - 1u);
@@ -1351,14 +1291,13 @@ static void test_vocr_memory_fallback_is_logged(void)
     mem_free();
     /* the largest tier fitted: no tier line at all */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR; cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
     fake_recognized_text = "猫"; fake_tier_checks = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK && !logged("did not fit") && !strcmp(anki_model, "VOCR4_W20_w8.vocr"));
     mem_free();
     /* a job's game is the title it started in, kept while the job runs */
     reset();
     memcpy(title_id, "PCSB00123", 10);
-    loaded.ocr_backend = cfg.ocr_backend = VJO_OCR_VOCR;
     TEST_ASSERT(mem_alloc() == 0);
     start_job("test", 0);
     TEST_CHECK(!strcmp(job_title, "PCSB00123"));
@@ -1371,7 +1310,6 @@ static void test_vocr_memory_fallback_is_logged(void)
 static void test_vocr_allocation_fallback_and_failure(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1;
     int rc = run_vocr_job();
     TEST_CHECK(rc == VJO_E_OOM && cache_data[0].failed_stage == VJO_STAGE_OCR);
@@ -1382,7 +1320,6 @@ static void test_vocr_allocation_fallback_and_failure(void)
 static void test_vocr_logs_memory_check_and_frames(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1; /* refused: the numbers are logged, not workspace=0 */
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     const char *line = logged("game vocr rc=");
@@ -1396,7 +1333,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     mem_free();
 
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1; fake_free_user = (int32_t)0x80020001u; /* the query itself failed */
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     line = logged("game vocr memory:");
@@ -1406,7 +1342,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     mem_free();
 
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_lines = 14; /* three log lines of at most six */
     TEST_CHECK(run_vocr_job() == VJO_OK); /* blank region: the fake result is published */
@@ -1431,7 +1366,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     /* API 20: lines the LM decoded carry their confidence, a '*' where it changed the text;
      * still six to a log line and under vjo_log's limit at the longest */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_lines = 6;
     fake_line_flags = 0x8000u | 0x4000u | 612u;
@@ -1441,7 +1375,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     TEST_MSG("%s", line ? line : "(no lines)");
     TEST_CHECK(line && strlen(line) < 254 && !logged("game vocr lines (cont)"));
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_lines = 1;
     fake_line_flags = 0x4000u | 999u; /* decoded, unchanged */
@@ -1451,7 +1384,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     TEST_MSG("%s", line ? line : "(no lines)");
     /* read again by the cascade's larger model (its reading and confidence shown), changed */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_lines = 1;
     fake_line_flags = 0x8000u | 0x4000u | 0x0400u | 845u;
@@ -1462,7 +1394,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
     TEST_CHECK(!logged("game vocr cascade speed:"));
     /* the cascade's model, from its step: its frames and time apart from the job's model's */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_lines = 1;
     fake_line_flags = 0x8000u | 0x4000u | 0x0400u | 845u;
@@ -1489,7 +1420,6 @@ static void test_vocr_logs_memory_check_and_frames(void)
 static void test_vocr_job_log_is_appended_in_batches(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫が\n好き"; fake_lines = 2;
     fake_steps = 1; fake_cascade_frames = 40; fake_cascade_us = 202000;
     unsigned lines0 = log_count, appends0 = log_appends;
@@ -1513,7 +1443,6 @@ static void test_vocr_job_log_is_appended_in_batches(void)
 static void test_vocr_request_carries_the_job_policy(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_BLANK));
@@ -1524,7 +1453,6 @@ static void test_vocr_request_carries_the_job_policy(void)
     mem_free();
     /* a screen the kernel has not seen settle (VjoState.stable 0): the job waits first */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     state.stable = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK);
@@ -1533,7 +1461,6 @@ static void test_vocr_request_carries_the_job_policy(void)
     mem_free();
     /* ... unless the wait is off: then nothing of it is sent */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     cfg.ocr_settle_ms = 0;
     fake_recognized_text = "猫";
     state.stable = 0;
@@ -1542,7 +1469,6 @@ static void test_vocr_request_carries_the_job_policy(void)
                !(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
     mem_free();
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     cfg.ocr_skip_blank_lines = 1;
     cfg.ocr_settle_ms = 0;
     fake_recognized_text = "猫";
@@ -1556,7 +1482,6 @@ static void test_vocr_request_carries_the_job_policy(void)
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         if (i) cfg.ocr_refine_lines = (int)modes[i];
         fake_recognized_text = "猫";
         TEST_CHECK(run_vocr_job() == VJO_OK);
@@ -1568,7 +1493,6 @@ static void test_vocr_request_carries_the_job_policy(void)
     static const struct { int ms; unsigned units; } cascade[] = {{2000, 8}, {0, 0}, {100, 1}, {375, 2}, {3750, 15}};
     for (unsigned i = 0; i < sizeof(cascade) / sizeof(cascade[0]); i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         cfg.ocr_cascade_ms = cascade[i].ms;
         fake_recognized_text = "猫";
         TEST_CHECK(run_vocr_job() == VJO_OK);
@@ -1581,7 +1505,6 @@ static void test_vocr_request_carries_the_job_policy(void)
         {3, 100, 1, 2}, {14, 2000, 1, 40}, {15, 2000, 2, 40}, {1000, 10000, 100, 200}};
     for (unsigned i = 0; i < sizeof(units) / sizeof(units[0]); i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         cfg.ocr_settle_ms = units[i].ms;
         cfg.ocr_settle_max_ms = units[i].max_ms;
         fake_recognized_text = "猫";
@@ -1599,7 +1522,6 @@ static void test_vocr_request_carries_the_job_policy(void)
         {1000, 500, 0, 0, 10}, {300, 2000, 0, 0, 6}};
     for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         cfg.ocr_settle_press_ms = press[i].press;
         cfg.ocr_settle_max_ms = press[i].max_ms;
         job_prepares = press[i].prepares;
@@ -1661,7 +1583,6 @@ static void test_vocr_oom_advice_names_the_stage(void)
     };
     for (unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         fail_vocr_user = 1; fake_free_user = cases[i].free_user; fake_need_weights = cases[i].weights;
         TEST_CHECK(run_vocr_job() == VJO_E_OOM);
         TEST_CASE_("memory check %u", i);
@@ -1670,40 +1591,10 @@ static void test_vocr_oom_advice_names_the_stage(void)
     }
     /* A game OOM without the check's numbers gets no specific advice. */
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fail_vocr_user = 1; fake_reserve = 0;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     check_oom_message(NULL, "not enough memory", "FL10");
     TEST_CHECK(!strcmp(ocr_error_text(), "Text recognition failed: not enough memory"));
-    mem_free();
-    /* #74: the kernel cannot give its capture buffer. Local OCR does not use one
-     * (API 19): the game reads its own screen, so the job still runs. */
-    reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    capture_kernel_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 1 && !jpeg_captures);
-    mem_free();
-    /* Lens shares the kernel capture; its own JPEG encoding uses Shell memory. */
-    reset();
-    cfg.ocr_backend = VJO_OCR_LENS;
-    capture_kernel_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM && jpeg_captures == 1);
-    check_oom_message(OOM_KERNEL_CAPTURE, "screen capture", "FL10");
-    mem_free();
-    reset();
-    cfg.ocr_backend = VJO_OCR_LENS;
-    jpeg_encoder_oom = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    check_oom_message(OOM_SCREENSHOT, "screenshot did not fit", "FL10");
-    mem_free();
-    /* Lens's result memory in the Shell, before any capture (local OCR's dictionary
-     * arena comes after recognition: the text stays, test_*_oom_keeps_text). */
-    reset();
-    cfg.ocr_backend = VJO_OCR_LENS;
-    job_cfg = cfg; job_cancelled = 0; job_captured = 0; fail_alloc = 1;
-    TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_E_OOM && !vocr_allocs && !jpeg_captures);
-    check_oom_message(OOM_SHELL_RESULTS, "Restart the Vita", "FL10");
-    fail_alloc = 0;
     mem_free();
 }
 
@@ -1717,7 +1608,6 @@ static void test_vocr_storage_errors_are_specific(void)
     };
     for (unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         fake_model_io_error = (int32_t)cases[i].io;
         strokes(15, 39);
         TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL);
@@ -1732,7 +1622,6 @@ static void test_vocr_storage_errors_are_specific(void)
         mem_free();
     }
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     cfg.vocr_tier = VJO_VOCR_TIER_SMALL; /* the smallest size: no smaller tier to repeat the job with */
     fake_model_io_error = (int32_t)0x80010013u;
     strokes(15, 39);
@@ -1874,20 +1763,17 @@ static void test_psp_launch_uses_its_identity(void)
 
 static void test_failed_join_keeps_allocations(void)
 {
-    for (int local = 0; local < 2; local++) {
-        reset();
-        if (local) cfg.ocr_backend = VJO_OCR_VOCR;
-        TEST_ASSERT(mem_alloc() == 0);
-        uint8_t *base = results[0].base;
-        size_t bytes = results[0].size;
-        threads_started = 1;
-        fail_join = 1;
-        TEST_CHECK(vjo_worker_stop() < 0);
-        TEST_CHECK(has_result_memory() && results[0].base == base && results[0].size == bytes && threads_started == 1);
-        fail_join = 0;
-        TEST_CHECK(vjo_worker_stop() == 0);
-        TEST_CHECK(!has_result_memory() && threads_started == 0);
-    }
+    reset();
+    TEST_ASSERT(mem_alloc() == 0);
+    uint8_t *base = results[0].base;
+    size_t bytes = results[0].size;
+    threads_started = 1;
+    fail_join = 1;
+    TEST_CHECK(vjo_worker_stop() < 0);
+    TEST_CHECK(has_result_memory() && results[0].base == base && results[0].size == bytes && threads_started == 1);
+    fail_join = 0;
+    TEST_CHECK(vjo_worker_stop() == 0);
+    TEST_CHECK(!has_result_memory() && threads_started == 0);
 }
 
 /* Anki is off by default; anki_mining reaches the overlay with each config
@@ -1999,7 +1885,6 @@ static void cursor_setup(void)
     reset(); cursor_build_dict();
     cursor_opens = cursor_reads = cursor_closes = 0;
     cursor_handle_live = read_action = 0;
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     cfg.non_japanese_filter = loaded.non_japanese_filter = VJO_FILTER_NONE;
     cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_AUTO;
     strcpy(cfg.local_dictionaries, "main.vjdict");
@@ -2023,7 +1908,7 @@ static void cursor_saved_text(void)
     finish_current_job();
     TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥"));
     TEST_CHECK(!has_result_memory() && !cursor_opens && !user_allocs && !heap_allocs);
-    TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && !jpeg_captures);
+    TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1);
 }
 static void check_current_definition(const char *meaning, uint32_t cursor)
 {
@@ -2316,7 +2201,7 @@ static void test_character_coalesces_and_drops_inflight_definition(void)
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 6);
     TEST_CHECK(g_view.cursor_byte == 6 && !g_view.list->n_entries);
     finish_current_job(); check_current_definition("bird", 6);
-    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(local_text_generation == generation && vocr_allocs == 1);
 }
 static void test_character_close_reopen_and_retirement(void)
 {
@@ -2538,7 +2423,7 @@ static void test_dictionary_pages_read_one_entry_each(void)
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     check_page("extra cat", 0, 1, 3);
     /* Paging never reallocates, recaptures, or needs lookup scratch. */
-    TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1 && !jpeg_captures);
+    TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1);
     TEST_CHECK(results[0].peak <= first_peak && results[0].size == 64 * 1024 && !results[1].size);
     TEST_CHECK(local_text_generation == generation);
 
@@ -2587,7 +2472,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     close_overlay(); loaded.local_dictionary_results = 2;
     open_overlay(); finish_current_job();
     check_page("main. cat", 0, 0, 2);
-    TEST_CHECK(vocr_allocs == 1 && !jpeg_captures && local_text_generation == generation);
+    TEST_CHECK(vocr_allocs == 1 && local_text_generation == generation);
     /* An unchanged count keeps the cached page. */
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     close_overlay(); open_overlay();
@@ -2613,7 +2498,7 @@ static void test_dictionary_count_change_relooks_up_without_ocr(void)
     TEST_CHECK(!job_running && !cache_ok);
     open_overlay(); TEST_ASSERT(job_running && job_cursor_only);
     finish_current_job(); check_page("main. cat", 0, 0, 2);
-    TEST_CHECK(vocr_allocs == 3 && !jpeg_captures);
+    TEST_CHECK(vocr_allocs == 3);
     close_overlay(); mem_free();
 }
 
@@ -2658,7 +2543,6 @@ static void test_dictionary_pages_oom_keeps_text_and_disables_paging(void)
 static void test_shell_result_oom_preserves_recognition(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     cfg.non_japanese_filter = VJO_FILTER_LINES;
     fake_recognized_text = "HUD only\r\n  日本語です  \r\nEnglish only";
     subtitles = 1;
@@ -2706,7 +2590,6 @@ static void test_shell_result_oom_keeps_max_worker_text(void)
     longest[sizeof(longest) - 1] = 0;
     for (int mode = VJO_FILTER_NONE; mode <= VJO_FILTER_LINES; mode++) {
         reset();
-        cfg.ocr_backend = VJO_OCR_VOCR;
         cfg.non_japanese_filter = mode;
         fake_recognized_text = longest;
         fail_alloc = 1;
@@ -2724,13 +2607,12 @@ static void test_shell_result_oom_keeps_max_worker_text(void)
 static void test_local_phases_and_recovery(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     phases_checked = 1;
     for (int i = 0; i < 50; i++) {
         start_job("local phase check", 0);
-        TEST_CHECK(!has_result_memory() && pool.n == 0 && g_view.list == NULL);
+        TEST_CHECK(!has_result_memory() && g_view.list == NULL);
         TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-        TEST_CHECK(!has_result_memory() && !results[0].size && !results[1].size && pool.n == 0);
+        TEST_CHECK(!has_result_memory() && !results[0].size && !results[1].size);
         TEST_CHECK(!user_allocs && !heap_allocs);
         TEST_CHECK(vocr_allocs == vocr_frees && !vocr_live);
         job_running = 0;
@@ -2749,17 +2631,16 @@ static void test_local_phases_and_recovery(void)
     phases_checked = 0;
 }
 
-static void test_local_lookup_single_arena_and_network_double_buffers(void)
+static void test_local_lookup_single_arena(void)
 {
     cursor_setup(); /* This allocation gate needs an actual selectable sentence. */
-    cfg.ocr_backend = VJO_OCR_VOCR;
     phases_checked = 1;
     ov = OV_OPEN;
     start_job("local lookup", 1);
     TEST_CHECK(job_idx == 0 && !g_view.list);
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     TEST_CHECK(has_result_memory() && results[0].size == 64 * 1024);
-    TEST_CHECK(!results[1].base && !results[1].size && !pool.n);
+    TEST_CHECK(!results[1].base && !results[1].size);
     on_job_done();
     TEST_CHECK(cache_ok && active == 0 && g_view.list == &cache_data[0].list);
     start_job("local OCR only replaces cached lookup", 0);
@@ -2767,44 +2648,104 @@ static void test_local_lookup_single_arena_and_network_double_buffers(void)
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     TEST_CHECK(!has_result_memory());
     job_running = 0;
-
     phases_checked = 0;
-    cfg.ocr_backend = VJO_OCR_LENS;
-    TEST_CHECK(mem_alloc() == 0 && !mem_local);
-    TEST_CHECK(results[0].size == RESULT_ARENA_SIZE && results[1].size == RESULT_ARENA_SIZE);
-    TEST_CHECK(results[1].base == results[0].base + RESULT_ARENA_SIZE && pool.n == POOL_SLOTS);
-    active = 0;
-    start_job("network keeps double buffering", 0);
-    TEST_CHECK(job_idx == 1);
-    job_running = 0;
     mem_free();
 }
 
-static void test_local_switch_drains_warm_pool(void)
+#endif
+
+/* ---- the Shell worker's one result arena (audit-overlay-shell-slim-1's A1, A1b, A4, A5) ---- */
+static void next_scene(uint32_t scene);
+static void check_shown(const char *text, const char *gloss, uint32_t cursor);
+#ifdef VJO_WITH_VOCR
+static unsigned audit_live(void) { return heap_allocs + user_allocs - heap_frees - user_frees; }
+
+/* A1: a game exit while the first open's lookup still runs. The job owns the
+ * arena it took after OCR: the exit never frees it under the job; once the job
+ * ends, with no game active, the same control tick frees it. */
+static void test_audit_exit_during_lookup_frees_the_arena_after_the_job(void)
 {
-    reset();
-    TEST_ASSERT(mem_alloc() == 0 && pool.n > 0);
+    cursor_setup();
+    open_overlay();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only && !job_refresh && job_idx == 0);
+    TEST_CHECK(!has_result_memory()); /* opening takes no memory */
+    /* the network thread: OCR in the game, then the lookup's arena */
+    job_rc = run_job(&results[job_idx], &cache_data[job_idx]);
+    TEST_CHECK(job_rc == VJO_OK && has_result_memory() && results[0].size == LOCAL_RESULT_ARENA_SIZE);
+    on_game_exit(); /* before the control thread saw job_done */
+    TEST_CHECK(has_result_memory() && audit_live() == 1); /* still the job's */
+    job_done = 1;
+    control_tick(0); /* the job's end, then the idle check */
+    TEST_CHECK(!job_running && !has_result_memory() && audit_live() == 0);
+    TEST_CHECK(!held_cmd && !held_view);
+}
+
+/* A1b: the same with a cursor job (a word lookup in the shown text). */
+static void test_audit_exit_during_cursor_job_frees_the_arena_after_the_job(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(has_result_memory() && cache_ok && active == 0);
+    vjo_post_cursor(3, local_text_generation);
+    on_command();
+    TEST_ASSERT(job_running && job_cursor_only);
+    job_rc = run_cursor_job(&results[0], &cache_data[0]);
+    on_game_exit();
+    TEST_CHECK(has_result_memory() && audit_live() == 1);
+    job_done = 1;
+    control_tick(0);
+    TEST_CHECK(!job_running && !has_result_memory() && audit_live() == 0);
+    TEST_CHECK(!held_cmd && !held_view);
+}
+
+/* A4: a refresh (job_idx 1) has no arena of its own: results[1] stays {NULL, 0},
+ * the job allocates nothing, and the shown entry's arena is left as it was. */
+static void test_audit_refresh_has_no_arena(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(has_result_memory() && active == 0 && cache_ok);
     uint8_t *base = results[0].base;
-    warm_running = 1;
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    active = 0; /* old network result must not select local result1 */
-    start_job("switch from warm Lens to local OCR", 0);
-    TEST_CHECK(job_idx == 0);
-    /* The control thread must not free a pool still used by the worker. */
-    TEST_CHECK(has_result_memory() && results[0].base == base && pool.n > 0);
-    TEST_CHECK(job_cached_text == NULL);
-    warm_running = 0;
-    phases_checked = 1;
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-    TEST_CHECK(!has_result_memory() && pool.n == 0 && !results[0].size && !results[1].size);
-    phases_checked = 0;
-    job_running = 0;
-    cfg.ocr_backend = VJO_OCR_LENS;
-    start_job("switch from local OCR to Lens", 0);
-    TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_E_SOURCE);
-    TEST_CHECK(!mem_local && pool.n > 0 && results[0].size == RESULT_ARENA_SIZE);
-    job_running = 0;
-    mem_free();
+    size_t used = results[0].used;
+    unsigned allocs = heap_allocs + user_allocs;
+    next_scene(8);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh && job_idx == 1 && !job_lookup);
+    TEST_CHECK(!results[1].base && !results[1].size);
+    job_rc = run_job(&results[1], &cache_data[1]);
+    TEST_CHECK(job_rc == VJO_OK && !results[1].base && !results[1].size && !results[1].used && !results[1].peak);
+    TEST_CHECK(results[0].base == base && results[0].used == used && heap_allocs + user_allocs == allocs);
+    TEST_CHECK(cache_data[1].ocr_text != NULL && !cache_data[1].list.n_entries && !cache_data[1].pages);
+    job_done = 1;
+    on_job_done();
+    TEST_CHECK(logged("refresh rc=0: same text") != NULL && has_result_memory() && results[0].base == base);
+    TEST_CHECK(!held_cmd && !held_view);
+    close_overlay(); mem_free();
+}
+#endif
+
+#ifdef VJO_WITH_VOCR
+/* A5: on_job_done's publish path when the overlay's thread posts a cursor move
+ * just before on_job_done takes cmd_lock (vjo_post_cursor runs on Paf's thread,
+ * under cmd_lock): the newer lookup runs, with cmd_lock released first. The
+ * lock stub fires cursor_race at that acquisition. */
+static void test_audit_cursor_posted_while_publishing(void)
+{
+    cursor_setup();
+    open_overlay();
+    TEST_ASSERT(job_running && job_lookup && !job_cursor_only);
+    job_rc = run_job(&results[0], &cache_data[0]);
+    job_done = 1;
+    uint32_t seq = local_cursor_seq;
+    race_on_lock = 1; /* the first cmd_lock taken from here: on_job_done's publish */
+    on_job_done();
+    TEST_CHECK(race_on_lock == 0 && local_cursor_seq != seq);
+    TEST_CHECK(!held_cmd && !held_view);
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    TEST_CHECK(!held_cmd && !held_view);
+    close_overlay(); mem_free();
 }
 #endif
 
@@ -2862,12 +2803,11 @@ static void test_boot_guard_ok_after_a_stable_minute(void)
     TEST_CHECK(boot_ok_attempts == -1);
 }
 
-/* The ledger's static table must describe this code: the network result
- * memory (Google Lens) is MEM_SIZE, the local arena LOCAL_RESULT_ARENA_SIZE,
+/* The ledger's static table must describe this code: the result memory is the
+ * local arena, LOCAL_RESULT_ARENA_SIZE (the only one: the overlay is offline),
  * and every allocation is counted in and out of the pool it comes from. */
 static void test_ledger_counts_result_memory_against_the_budget(void)
 {
-    TEST_CHECK_(MEM_SIZE == VJO_BUDGET_PAF_RESULTS_NET, "MEM_SIZE %u", (unsigned)MEM_SIZE);
     TEST_CHECK(LOCAL_RESULT_ARENA_SIZE == VJO_BUDGET_PAF_RESULTS_LOCAL);
     TEST_CHECK(VJO_WORST_SHELL_PAF <= VJO_LIMIT_SHELL_PAF);
     TEST_CHECK(VJO_WORST_SHELL_PAGES <= VJO_LIMIT_SHELL_PAGES);
@@ -2878,27 +2818,26 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
     mem_free();
     fail_alloc = 0;
-    loaded.ocr_backend = VJO_OCR_LENS;
     cfg = loaded;
 #ifdef VJO_PAF_ALLOC
     TEST_CHECK(mem_alloc() == 0);
-    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
-    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN + VJO_BUDGET_PAF_RESULTS_NET);
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_LOCAL);
+    TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN + VJO_BUDGET_PAF_RESULTS_LOCAL);
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAGES) ==
                VJO_BUDGET_SHELL_MODULE_PAGES + VJO_BUDGET_WORKER_IN_SHELL_PAGES);
     mem_free();
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_RESULTS) == 0);
-    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_NET);
+    TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_RESULTS) == VJO_BUDGET_PAF_RESULTS_LOCAL);
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 8192 &&
-               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 556288); /* 8,192 + 548,096 */
+               vjo_ledger_pool_peak(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == 73728); /* 8,192 + 65,536 */
 #else
     TEST_CHECK(mem_alloc() == 0);
-    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == ((VJO_BUDGET_PAF_RESULTS_NET + 0xFFF) & ~0xFFFu));
+    TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == VJO_BUDGET_PAF_RESULTS_LOCAL);
     TEST_CHECK(vjo_ledger_pool_current(&g_shell_ledger, VJO_LEDGER_POOL_SHELL_PAF) == VJO_BUDGET_PAF_PLUGIN);
     mem_free();
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_USERRW_RESULTS) == 0);
 #endif
-    loaded.dictionary = VJO_DICT_LOCAL; loaded.ocr_backend = VJO_OCR_VOCR;
+    loaded.dictionary = VJO_DICT_LOCAL;
     cfg = loaded;
     vjo_ledger_shell_log("test");
     TEST_CHECK(!open_batch); /* the ledger table's batch is closed: no pointer into this stack frame */
@@ -2938,14 +2877,12 @@ static void test_selftest_keeps_the_user_region_and_auto_ocr(void)
 static void test_selftest_stages_run_in_one_job_and_finish(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
-    selftest_begins = selftest_ends = submits = 0; capture_holds = 0;
+    selftest_begins = selftest_ends = submits = 0;
     fake_recognized_text = "猫";
     job_selftest = 1;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && submits == 5 && selftest_done);
-    TEST_CHECK(capture_holds == 5 && !capture_held_now); /* held for each stage's job, released after */
     /* The stage's own flags, and the job policy every stage carries (API 20):
      * the default 150 ms stable-text wait (15 x 10 ms), its 2 s limit (40 x 50
      * ms); blank lines are kept by default. */
@@ -2975,7 +2912,6 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     mem_free();
     /* A failing stage still gets its record and the test still finishes. */
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_begins = selftest_ends = submits = 0;
     fail_vocr_user = 1; fake_free_user = 1000; fake_need_weights = 659456; fake_reserve = 4194304;
     job_selftest = 1;
@@ -2996,7 +2932,6 @@ static void test_selftest_waits_for_text_in_the_region(void)
     /* The stage's own bits (a job's policy may ride in the other flags). */
     const uint32_t stage = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_FORCE_FALLBACK | VJO_GAME_OCR_F_PROBE;
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
     selftest_begins = selftest_ends = submits = 0;
     job_selftest = 1;
@@ -3016,7 +2951,6 @@ static void test_selftest_waits_for_text_in_the_region(void)
     mem_free();
     /* Bounded: after VJO_SELFTEST_WAITS empty screens the stages run on the next anyway. */
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
     selftest_begins = selftest_ends = submits = 0;
     job_selftest = 1;
@@ -3541,7 +3475,6 @@ static void test_subtitles_on_during_the_selftest_job(void)
 static void test_the_done_line_has_the_exchange_and_log_times(void)
 {
     reset();
-    cfg.ocr_backend = loaded.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_exchange_us = 7000;
     for (int k = 0; k < 2; k++) {
@@ -3820,18 +3753,6 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
     finish_current_job();
     TEST_CHECK(selftest_begins == 5 && selftest_ends == 5 && selftest_done);
 
-    /* With Google Lens chosen meanwhile it never runs: its stages are the local engine's, and
-     * its job must never upload the screen. */
-    selftest_done = 0; selftest_begins = 0;
-    cfg.ocr_backend = VJO_OCR_LENS;
-    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
-    TEST_CHECK(!job_running && !selftest_begins && !jpeg_captures);
-    cfg.ocr_backend = VJO_OCR_VOCR;
-    test_now += 2 * SELFTEST_IDLE_US; control_tick(0);
-    TEST_ASSERT(job_running && job_selftest); /* the screen read last is still shown */
-    finish_current_job();
-    TEST_CHECK(selftest_done);
-
     /* The overlay opened while the stages run on a screen the shown text is not
      * from (the next line, not settled yet): it waits for its own recognition,
      * which starts once the self-test's job has stopped. */
@@ -3899,7 +3820,6 @@ static void test_config_warnings_are_logged_once_per_change(void)
     TEST_CHECK_(config_warning_logs == 2, "%u config warning lines", config_warning_logs);
     TEST_CHECK(warnings_logged("ocr_backend: VOCR2 was removed; using vocr") == 1);
     TEST_CHECK(warnings_logged("unknown setting 'meiki_layout'") == 1);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR);
     /* the file changes: its new set is logged once */
     vjo_config_defaults(&loaded);
     vjo_config_parse(&loaded, "ocr_backend = vocr2\n", 20);
@@ -3913,7 +3833,7 @@ static void test_config_warnings_are_logged_once_per_change(void)
     apply_config();
     apply_config();
     TEST_CHECK(config_warning_logs == 4 && warnings_logged("ocr_backend: Meiki was removed; using vocr") == 1);
-    /* repaired (the app's next save writes vocr): nothing more is logged or shown */
+    /* repaired (the app's next save drops the engine line): nothing more is logged or shown */
     vjo_config_defaults(&loaded);
     apply_config();
     open_overlay();
@@ -4113,6 +4033,12 @@ TEST_LIST = {
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
+#ifdef VJO_WITH_VOCR
+    {"game_exit_during_a_lookup_frees_its_arena_after_the_job", test_audit_exit_during_lookup_frees_the_arena_after_the_job},
+    {"game_exit_during_a_cursor_job_frees_its_arena_after_the_job", test_audit_exit_during_cursor_job_frees_the_arena_after_the_job},
+    {"a_refresh_has_no_arena_and_leaves_the_shown_one", test_audit_refresh_has_no_arena},
+    {"a_cursor_posted_while_publishing_runs_after_cmd_lock_is_released", test_audit_cursor_posted_while_publishing},
+#endif
     {"subtitles_are_ocr_only", test_subtitles_are_ocr_only},
     {"removed_relay_opens_as_local", test_removed_relay_opens_as_local},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
@@ -4138,11 +4064,10 @@ TEST_LIST = {
     {"dictionary_pages_OOM_keeps_text_and_disables_paging", test_dictionary_pages_oom_keeps_text_and_disables_paging},
     {"Shell_result_OOM_preserves_OCR_sentence_and_dictionary_backoff", test_shell_result_oom_preserves_recognition},
     {"Shell_result_OOM_preserves_maximum_filtered_worker_text", test_shell_result_oom_keeps_max_worker_text},
-    {"local_lookup_uses_one_arena_and_network_keeps_two", test_local_lookup_single_arena_and_network_double_buffers},
+    {"local_lookup_uses_one_arena", test_local_lookup_single_arena},
     {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
-    {"local_switch_waits_for_warm_pool_and_restores_network_memory", test_local_switch_drains_warm_pool},
 #endif
-    {"vocr_never_uploads_to_lens", test_vocr_never_uses_lens},
+    {"vocr_empty_region_reads_no_line_and_frees_the_workspace", test_vocr_empty_region},
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
@@ -4151,7 +4076,6 @@ TEST_LIST = {
     {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},
     {"engine_cache_tracks_backend_local_models_and_storage", test_engine_cache_tracks_backend_models_and_storage},
     {"vocr_config_parses_and_validates", test_vocr_config},
-    {"vocr_opens_no_lens_connection", test_vocr_warms_no_lens_connection},
     {"vocr_model_change_invalidates_cache", test_vocr_model_change_invalidates_cache},
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},

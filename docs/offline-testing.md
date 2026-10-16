@@ -26,8 +26,8 @@ The host suites compile the plugin sources themselves (`#include "../../shell/wo
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
 failed joins, cancelled jobs and crashes between steps are injected there. 55 ctest suites
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
-word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out); `test_jpegsw.py`
-completes it (the Hachidori relay's contract test went with the relay client). The Overlay app's `.apkg` packages are imported there by Anki itself:
+word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
+test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder). The Overlay app's `.apkg` packages are imported there by Anki itself:
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.
@@ -134,20 +134,21 @@ front, 98,304 B free, the build holding 462,848 B):
 
 ```
 step                                        held      headroom
-Shell module loaded into SceShell        266,240       294,912
-OCR worker pages in SceShell             266,240       294,912   (0: registered per game, not loaded there)
-VjoNet thread                            335,872       225,280
-VjoControl thread (boot complete)        356,352       204,800
-game start: result memory (local)        356,352       204,800
-Anki card saved: job thread              425,984       135,168
+Shell module loaded into SceShell        176,128       385,024
+OCR worker pages in SceShell             176,128       385,024   (0: registered per game, not loaded there)
+VjoNet thread                            245,760       315,392
+VjoControl thread (boot complete)        266,240       294,912
+game start: result memory (local)        266,240       294,912
+Anki card saved: job thread              335,872       225,280
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
 299,008 to 286,720 B, 12,288 B less at every step above, the Hachidori relay client's to
-282,624 B, 4,096 B less again, and AnkiConnect's to 266,240 B, 16,384 B less again; the packaged
-module went from 294,912 B, main `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main
-`9824b55`; #116 and #111 kept those pages) and then to 266,240 B [measured: the build log's module
-row].)
+282,624 B, 4,096 B less again, AnkiConnect's to 266,240 B, 16,384 B less again, and Google
+Lens's to 176,128 B, 90,112 B less again; the packaged module went from 294,912 B, main
+`ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main `9824b55`; #116 and #111 kept those
+pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, and `9f92bc6`; still
+266,240 B declared) and then to 176,128 B [measured: the build log's module row].)
 
 What this says, and what it does not:
 
@@ -156,8 +157,9 @@ What this says, and what it does not:
   in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
   the overlay's text arena out of `.bss`) held 389,120 B, 73,728 B below the v0.7.4 build that
   ran beside a game, and left 172,032 B at the end of boot in the same session; without
-  AnkiConnect the build holds 356,352 B and leaves 204,800 B (the model, with the module's
-  266,240 B).
+  AnkiConnect the build held 356,352 B and left 204,800 B (the model, with the module's
+  266,240 B), and without Google Lens it holds 266,240 B and leaves 294,912 B (the module's
+  176,128 B).
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily

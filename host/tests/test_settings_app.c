@@ -104,7 +104,7 @@ typedef struct { int x, y, w, h; unsigned color; } Rect;
 typedef struct {
     Text text[160]; int texts;
     Rect rect[96]; int rects;
-    char backend[16]; /* config.ini's ocr_backend value after this frame */
+    char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
     char tier[16];    /* its vocr_tier value */
     int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
@@ -453,8 +453,10 @@ static void check_no_fallback_hint(int frames)
 #define CARD_TITLE TAP(100, 140)  /* the size row's title: focus only */
 
 static const char *const SIZES[3] = {"Small", "Normal", "Large"};
-/* config.ini's ocr_backend after an app save: the line is written as vocr, the only engine. */
-#define SAVED_BACKEND "vocr"
+/* config.ini's ocr_backend after an app save: none. The engine is no setting
+ * (VOCR is the only one), so a save drops the line (core/config.h
+ * vjo_config_removed_line). */
+#define SAVED_BACKEND ""
 
 #ifndef VJO_VOCR_MODEL_INFO_TEST
 static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR3-H15 found.";
@@ -592,13 +594,35 @@ static void test_model_size_touch_keys_and_save(void)
     TEST_CHECK(bar_card == 1 && bar_next == 1);
 }
 
-/* A config.ini that chose a removed engine (Google Lens since the overlay went
- * offline, VOCR2, Meiki, ncnn) shows the Model size as for any other (it loads as
- * vocr), and the app's next save rewrites its line. */
-static void test_removed_engine_shows_the_size_and_next_save_rewrites_it(void)
+/* A tap in the card's top band (y OCR_Y to OCR_SIZE_Y - 1, above the size buttons) focuses
+ * the card and chooses nothing, wherever the focus was before (audit-overlay-shell-slim-1 M12). */
+static int focus_bar_at(int f, int y)
 {
-    static const char *const removed[] = {"lens", "vocr2", "meiki", "ncnn"};
-    for (unsigned i = 0; i < 4; i++) {
+    int n = 0;
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        n += r->x == 24 && r->w == 4 && r->color == ACCENT && r->y == y;
+    }
+    return n;
+}
+static void test_the_cards_top_band_focuses_it(void)
+{
+    card("vocr_tier = small\nfont_size_ja = 22\n");
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), TAP(300, OCR_Y + 2), PRESS(SCE_CTRL_RIGHT)};
+    run(in, (int)(sizeof(in) / sizeof(in[0])));
+    TEST_CHECK_(focus_bar_at(3, SELECTION_Y) == 1 && !focus_bar_at(3, OCR_Y), "frame 3: the next card focused");
+    TEST_CHECK_(focus_bar_at(5, OCR_Y) == 1 && !focus_bar_at(5, SELECTION_Y), "frame 5: the tap focused the card");
+    TEST_CHECK_(!strcmp(shown[5].tier, "small"), "the tap chose a size: '%s'", shown[5].tier); /* still the file's */
+    TEST_CHECK_(!strcmp(shown[6].tier, "normal"), "Right then steps the size: '%s'", shown[6].tier);
+}
+
+/* A config.ini that chose an engine (vocr, or a removed one: Google Lens since
+ * the overlay went offline, VOCR2, Meiki, ncnn) shows the Model size as for any
+ * other (it loads as vocr), and the app's next save drops its line. */
+static void test_engine_line_shows_the_size_and_next_save_drops_it(void)
+{
+    static const char *const removed[] = {"vocr", "lens", "vocr2", "meiki", "ncnn"};
+    for (unsigned i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
         char config[128];
         snprintf(config, sizeof(config), "; mine\nocr_backend = %s\nfont_size_ja = 22\n", removed[i]);
         card(config);
@@ -608,7 +632,7 @@ static void test_removed_engine_shows_the_size_and_next_save_rewrites_it(void)
         check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
         TEST_CHECK_(!strcmp(shown[3].backend, removed[i]), "%s: unchanged until a choice", removed[i]);
         TEST_CHECK_(!strcmp(shown[4].backend, SAVED_BACKEND) && !strcmp(shown[4].tier, "large"),
-                    "%s: rewritten as '%s'", removed[i], shown[4].backend);
+                    "%s: left as '%s'", removed[i], shown[4].backend);
         for (int f = 0; f < 6; f++) TEST_CHECK(!shows(f, "VOCR2") && !shows(f, "Lens"));
     }
 }
@@ -829,7 +853,7 @@ static void test_banner_is_drawn_on_every_page(void)
         TEST_CHECK_(!strcmp(text, want), "frame %d: banner '%s'", f, text);
         TEST_CHECK(!text_at(f, 35, 0, 700)); /* the title row is the banner's */
     }
-    check_card(1, "VOCR3", 0, NORMAL_STATUS, DIM);
+    check_status(1, NORMAL_STATUS, DIM); /* the OCR card below the banner is unchanged */
     /* the files agree: the title is back and nothing is red */
     snprintf(status, sizeof(status), "bootstrap: shell API %d entered\n", VJO_API_VERSION);
     app_card(own, own, status);
@@ -861,9 +885,10 @@ static void test_banner_is_drawn_on_every_page(void)
 
 TEST_LIST = {
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
+    {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},
     {"model_size_by_touch_and_keys_saved_as_vocr_tier_the_status_names_its_model", test_model_size_touch_keys_and_save},
-    {"removed_engine_Lens_VOCR2_Meiki_ncnn_shows_the_size_and_next_save_rewrites_it", test_removed_engine_shows_the_size_and_next_save_rewrites_it},
+    {"engine_line_vocr_Lens_VOCR2_Meiki_ncnn_shows_the_size_and_next_save_drops_it", test_engine_line_shows_the_size_and_next_save_drops_it},
     {"status_follows_the_configured_models_and_files", test_status_follows_the_configured_models},
     {"unreadable_config_selects_and_saves_nothing", test_unreadable_config_selects_and_saves_nothing},
     {"engine_card_and_size_lines", test_engine_card_and_size_lines},

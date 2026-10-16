@@ -215,6 +215,9 @@ class Collect(unittest.TestCase):
         for text in ("installed files: 7 of 8 match the package; DIFFER or absent: ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"
                      "; not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                      "API keys redacted: jpdb_api_key, jiten_api_key, jpdb_api_key, lens_api_key",
+                     # the engine choice went with Google Lens: even ocr_backend = vocr is a line to delete
+                     "    ocr_backend=vocr: no longer a setting (VOCR is the only engine); today's app or installer "
+                     "deletes the line",
                      "games: PCSG00415 x1 (ocr_mode auto, Local dictionaries)",
                      "Shell jobs (OCR + dictionary): 1 (rc ok (rc 0) x1)",
                      "SceShell refused memory 2 time(s)",
@@ -323,7 +326,8 @@ class Collect(unittest.TestCase):
                     self.assertFalse(any(n.endswith("eboot.bin") for n in z.namelist()))
                 analysis = (folder / "analysis.txt").read_text()
                 self.assertIn(text, analysis)
-                self.assertIn("ocr_backend=vocr2: a removed engine, which an older Overlay app writes", analysis)
+                self.assertIn("ocr_backend=vocr2: a removed engine, which an older Overlay app writes; the plugins run "
+                              "vocr, and today's app or installer deletes the line", analysis)
                 self.assertNotIn("not in this package: ux0:/app", analysis)
                 shutil.rmtree(folder)
                 Path(str(folder) + ".zip").unlink()

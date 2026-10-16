@@ -238,7 +238,7 @@ no dictionary-sized persistent allocation is added.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
-| Network worker result arenas (Google Lens) | Two 256 KiB arenas, plus a one-connection pool |
+| Network worker result arenas | none since Google Lens and the Hachidori relay were removed (they were two 256 KiB arenas, plus a connection pool) |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
 | Input text | Up to 4,095 UTF-8 bytes plus NUL |
@@ -280,7 +280,7 @@ The [Daijirin import measurement](benchmarks/daijirin-import-20261010.json)
 records conversion of the bilingual v2 archive: 334,741 entries, two reading-only
 headwords preserved, ten unindexable rows skipped, and 53 unusually long
 definitions clipped to the explicit 7,000-byte conversion limit. All 110 lookup
-samples and 30 combined JPEG/recorded-Lens samples passed on the host. These
+samples and 30 combined JPEG/recorded-Lens samples (Google Lens has since been removed) passed on the host. These
 results establish the core bounds; physical Vita UI and network memory still
 require manual testing.
 

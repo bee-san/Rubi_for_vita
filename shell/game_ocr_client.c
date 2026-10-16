@@ -4,7 +4,7 @@
 
 /* The kernel answers a submission BUSY while the worker still cleans up the
  * previous job (one cancelled a moment ago: a lookup went first, the screen
- * changed) or a Lens capture is in flight. That passes in a few ms, so
+ * changed) or a raw capture is in flight. That passes in a few ms, so
  * the submission is repeated every SUBMIT_RETRY_US for SUBMIT_BUSY_US; only
  * then is the worker taken for unavailable. */
 #define SUBMIT_RETRY_US 20000u

@@ -1,6 +1,5 @@
 /* POSIX implementation of VjoPlatform for the host CLI and tests. */
 #include "net_posix.h"
-#include "replay.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -143,22 +142,6 @@ static void posix_log(void *ud, const char *msg)
         fprintf(stderr, "[vjo] %s\n", msg);
 }
 
-static void posix_on_response(void *ud, const char *host, const char *body, size_t len)
-{
-    PosixPlatform *pp = (PosixPlatform *)ud;
-    char path[1024];
-    const char *name = vjo_fixture_file(host);
-    FILE *f;
-    if (!pp->record_dir || !name) /* only Lens is recorded */
-        return;
-    snprintf(path, sizeof(path), "%s/%s", pp->record_dir, name);
-    f = fopen(path, "wb");
-    if (!f)
-        return;
-    fwrite(body, 1, len, f);
-    fclose(f);
-}
-
 /* No stdio buffering: local_dict.c owns its bounded page cache. */
 static int local_read(void *ctx, uint64_t off, void *dst, size_t n)
 {
@@ -205,5 +188,4 @@ void posix_platform_init(PosixPlatform *pp, VjoPlatform *p)
     p->unix_time = posix_time;
     p->now_us = posix_now_us;
     p->log = posix_log;
-    p->on_response = posix_on_response;
 }

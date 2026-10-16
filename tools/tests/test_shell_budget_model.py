@@ -15,7 +15,7 @@ import shell_budget_model as m  # noqa: E402
 BUDGET = {
     "VJO_BUDGET_SHELL_MODULE_PAGES": 300_000, "VJO_BUDGET_WORKER_IN_SHELL_PAGES": 40_000,
     "VJO_BUDGET_SHELL_NET_STACK": 70_000, "VJO_BUDGET_SHELL_CTL_STACK": 20_000, "VJO_BUDGET_SHELL_ANKI_STACK": 70_000,
-    "VJO_BUDGET_PAF_PLUGIN": 8_000, "VJO_BUDGET_PAF_RESULTS_LOCAL": 64_000, "VJO_BUDGET_PAF_RESULTS_NET": 570_000,
+    "VJO_BUDGET_PAF_PLUGIN": 8_000, "VJO_BUDGET_PAF_RESULTS_LOCAL": 64_000,
     "VJO_BUDGET_PAF_ANKI": 390_000,
 }
 SAMPLES = {
@@ -58,9 +58,9 @@ class ShellBudgetModel(unittest.TestCase):
         self.assertEqual(paf["worst_headroom"], 46_000)
 
     def test_overrides_model_another_build(self):
-        r = m.replay(BUDGET, SAMPLES, shell_pages=200_000, worker_pages=0, network=True)
+        r = m.replay(BUDGET, SAMPLES, shell_pages=200_000, worker_pages=0)
         self.assertEqual(r["steps"][5]["pages"], 200_000 + 70_000 + 20_000)
-        self.assertEqual(r["peak_paf"], 8_000 + 570_000)
+        self.assertEqual(r["peak_paf"], 8_000 + 64_000)
         pages = next(s for s in r["scenarios"] if s["id"] == "pages")
         self.assertEqual(pages["worst_headroom"], 580_000 - 290_000)
 

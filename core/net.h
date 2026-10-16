@@ -1,5 +1,6 @@
 /* Platform services (sockets, time, randomness) and one HTTP request over
- * them: the transport shared by the Lens/dictionary client and Anki; with a
+ * them: Anki's transport (AnkiConnect, an audio source), the only network use
+ * left since Google Lens and the Hachidori relay were removed; with a
  * VjoNetPool, connections are kept for the next request to the host. */
 #ifndef VJO_NET_H
 #define VJO_NET_H
@@ -46,11 +47,9 @@ typedef struct {
     int (*acquire)(void *ud, VjoConn *c);
     /* optional, with pool: a connection is kept, idle */
     void (*release)(void *ud, VjoConn *c);
-    /* optional: raw response bodies (host CLI --record) */
-    void (*on_response)(void *ud, const char *host, const char *body, size_t len);
 #ifdef VJO_HOST
-    /* Plain HTTP over connect()'s stream instead of TLS (host replay of
-     * recorded responses); random/unix_time are then unused. Host-only:
+    /* Plain HTTP over connect()'s stream instead of TLS (the host tests'
+     * fake connections); random/unix_time are then unused. Host-only:
      * the Vita build has no way to skip TLS. */
     int plain_http;
 #endif
@@ -65,7 +64,7 @@ typedef struct {
 } VjoErr;
 
 /* One HTTP request to req->host:port, over TLS when use_tls is set (except
- * host replay: VjoPlatform.plain_http). The response body is in the arena;
+ * the host tests: VjoPlatform.plain_http). The response body is in the arena;
  * a non-2xx status is VJO_E_STATUS (resp still filled). With p->pool, a
  * request reuses the host's kept connection (retried once on a new one when
  * that gives no reply: closed meanwhile) and keeps its connection. */

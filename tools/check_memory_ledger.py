@@ -63,14 +63,13 @@ POOLS = (
 # whose overshoot the runtime reserve guard turns into a survivable refusal
 # (shell/memory.cpp; host tests): reported as a warning with the exact bytes,
 # never hidden, never a build failure.
-SOFT = (
-    ("shell paf (Google Lens)", "VJO_WORST_SHELL_PAF_NET", "VJO_LIMIT_SHELL_PAF"),
-)
+# None since Google Lens and the Hachidori relay were removed: their network path's two arenas and
+# connection pool were the only one (shell paf (network dictionary), later (Google Lens)).
+SOFT = ()
 ITEMS = {
     "shell pages": ("VJO_BUDGET_SHELL_MODULE_PAGES", "VJO_BUDGET_WORKER_IN_SHELL_PAGES", "VJO_BUDGET_SHELL_NET_STACK",
                     "VJO_BUDGET_SHELL_CTL_STACK", "VJO_BUDGET_SHELL_ANKI_STACK", "VJO_BUDGET_SHELL_USERRW_RESULTS"),
-    "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_RESULTS_NET", "VJO_BUDGET_PAF_ANKI",
-                  "VJO_BUDGET_PAF_UI"),
+    "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_ANKI", "VJO_BUDGET_PAF_UI"),
     # VJO_BUDGET_KERNEL_OCR_STRIP is never held with the capture (kernel/buffers.c): not in the sum
     "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE",
                "VJO_BUDGET_KERNEL_OCR_STRIP"),
