@@ -292,7 +292,9 @@ Then the network stack itself went (PR-B): the sources the link had stopped keep
 but its SHA-1 and SHA-224/256), and the network's last users, which it still kept: the sockets,
 DNS resolver and cancellation of `shell/platform_vita.c` (with its random numbers and RTC time,
 only TLS's), the UDP log (`log_host`, a removed setting now, and `tools/udp_log_listener.py`) and
-the worker's `VjoNetCancel`. The Shell imports no SceNet or SceNetCtl any more: 17 function stubs
+the worker's `VjoNetCancel`. No module imports a network library any more, which the Vita build
+checks (`tools/check_offline_imports.py`; the Overlay app's three newlib references to SceNet are
+defined in `settings/no_net.c`, docs/shell-slim.md). The Shell imports no SceNet or SceNetCtl: 17 function stubs
 fewer (72 → 55 `sce[A-Z]*` names by `arm-vita-eabi-nm`), three import libraries fewer (SceNet,
 SceNetCtl, SceLibRng's `sceKernelGetRandomNumber`) [measured: `nm` and `readelf -S` of the two
 builds]. The module keeps its pages: the text segment goes from 101,488 to 99,268 B (`.text` 62,640

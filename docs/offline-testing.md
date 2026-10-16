@@ -24,10 +24,11 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 55 ctest suites
+failed joins, cancelled jobs and crashes between steps are injected there. 54 ctest suites
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
-test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder). The Overlay app's `.apkg` packages are imported there by Anki itself:
+test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder, and the HTTP
+transport test, `vjo-http-transport-tests`, with the network stack). The Overlay app's `.apkg` packages are imported there by Anki itself:
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.

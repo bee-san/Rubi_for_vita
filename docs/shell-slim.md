@@ -134,10 +134,15 @@ rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 â†
   `third_party/roots`, BearSSL but its SHA-256 and SHA-1 (the queue's IDs, the models' hashes,
   the `.apkg`'s checksums), the sockets, resolver and cancellation in `shell/platform_vita.c`, the
   UDP log (`log_host`, `tools/udp_log_listener.py`), the SceNet and SceNetCtl imports of the Shell
-  (the worker had none; nothing imported SceHttp or SceSsl since Lens). The Overlay app still
-  imports `sceNetRecv`, `sceNetSend` and `sceNetSocketClose`: VitaSDK's newlib calls them in
-  `read`, `write` and `close` for a socket descriptor (`libc.a`'s `syscalls.o`), which the app never
-  opens [measured: the app's link map].
+  (the worker had none; nothing imported SceHttp or SceSsl since Lens) and of the Overlay app. The
+  app's three were newlib's: VitaSDK's `libc.a` calls `sceNetRecv` and `sceNetSend` in `_read_r` and
+  `_write_r` (`syscalls.o`) and `sceNetSocketClose` in `__vita_fd_drop` (`io.o`, which crt0's
+  `_init_vita_io` pulls in) for a socket descriptor, which the app can never hold, as newlib's
+  `socket()` is not linked [measured: the app's link map, `--trace-symbol`].
+  `settings/no_net.c` defines the three to fail as for a bad descriptor, so the app imports no
+  SceNet, and the Vita build checks every module: `tools/check_offline_imports.py` fails it when
+  the kernel plugin, the Shell, the worker or the app imports a SceNet*, SceHttp* or SceSsl*
+  library.
 - **The Shell worker's network pipeline**: the double-buffered 2 Ã— 256 KiB result arenas, the
   connection pool, the warm-up and its 50 ms timer path, the cached-sentence comparison; one 64 KiB
   arena remains, as the local pipeline always used.

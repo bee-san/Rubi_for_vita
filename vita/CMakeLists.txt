@@ -324,7 +324,7 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC
-  ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
+  ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
   ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c
@@ -448,6 +448,21 @@ add_custom_target(vjo_variant ALL
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_VARIANT_WORKER_DEPS} eboot.bin-self
     ${ROOT}/tools/check_variant.py
   COMMENT "Checking the modules are the ${VJO_VARIANT} build")
+
+# ---------------- no network imports ----------------
+# The overlay is offline (owner, 2026-10-15): no module imports SceNet*, SceHttp* or SceSsl*
+# (tools/check_offline_imports.py reads each ELF's import stub sections).
+set(VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_Kernel> $<TARGET_FILE:VitaJPOverlay_Shell>
+  $<TARGET_FILE:VitaJPOverlay_Settings>)
+set(VJO_OFFLINE_DEPS VitaJPOverlay_Kernel VitaJPOverlay_Shell VitaJPOverlay_Settings)
+if(VJO_WITH_VOCR)
+  list(APPEND VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_OCR>)
+  list(APPEND VJO_OFFLINE_DEPS VitaJPOverlay_OCR)
+endif()
+add_custom_target(vjo_offline_imports ALL
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_offline_imports.py ${VJO_OFFLINE_MODULES}
+  DEPENDS ${VJO_OFFLINE_DEPS} ${ROOT}/tools/check_offline_imports.py
+  COMMENT "Checking that no module imports a network library")
 
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)
