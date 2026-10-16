@@ -3,7 +3,9 @@
  * Every line is its own open/append/close, so a crash loses no written line,
  * except within a batch (vjo_log_batch_begin): the lines one thread logs in one
  * burst, from data it already holds, are written with one open/write/close per
- * file, byte for byte what line-by-line writes give, in the same order. */
+ * file, byte for byte what line-by-line writes give, in the same order. The
+ * normal build's held lines (vjo_log_hold) are such a batch too, kept until the
+ * network thread has its job's result taken. */
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
@@ -22,6 +24,20 @@ static SceOff file_size = -1;
 /* The open batch, or NULL; under log_mutex (it lives on its thread's stack). */
 static VjoLogBatch *batch;
 static void batch_flush_locked(void);
+#if !VJO_DEBUG
+/* The normal build's held lines (vjo_log_hold): one thread, the Shell worker's network thread, has its
+ * lines kept in its own batch until it writes them (vjo_log_release), so that none is appended between
+ * a recognition and its result (docs/release-variants.md). Its batch begins at its first line, under
+ * log_mutex as every line is, so a job that logs nothing takes no lock. held: the holder's batch, its
+ * buffer and thread (under log_mutex). held_lines: the lines its batch holds; only the holder's own
+ * lines raise it and only a flush lowers it (to 0), each under log_mutex, so the holder may read it
+ * without the lock to know whether anything is held. */
+static VjoLogBatch *held;
+static char *held_buf;
+static int held_cap;
+static SceUID held_owner;
+static int held_lines; /* written under log_mutex, read by the holder without it (__atomic) */
+#endif
 /* The time spent in file appends (log.txt, status.txt) and their count, since
  * boot: a job's done line says what logging cost it (docs/first-ocr.md).
  * Written under log_mutex (status.txt's appends before configure, at boot, by
@@ -56,10 +72,13 @@ void vjo_log_configure(const VjoConfig *cfg)
     batch_flush_locked(); /* lines logged before the change go out as they were */
 #else
     /* Lines logged before the change go out as they were; a batch goes to the same files when
-     * log_file stays as it is, so the network thread's held lines (worker.c net_log_hold) stay held:
-     * an overlay opened during a job's lookup does not write them before its result. */
-    if (file_on != cfg->log_file)
+     * log_file stays as it is, so the network thread's held lines (vjo_log_hold) stay held: an
+     * overlay opened during a job's lookup does not write them before its result. */
+    if (file_on != cfg->log_file) {
         batch_flush_locked();
+        if (batch == held)
+            batch = NULL; /* written: the holder's next line begins its batch again */
+    }
 #endif
     file_on = cfg->log_file;
     file_size = -1;
@@ -194,6 +213,10 @@ static void batch_flush_locked(void)
         file_append_lines(b->buf, b->len, b->n);
     b->n = 0;
     b->used = 0;
+#if !VJO_DEBUG
+    if (b == held)
+        __atomic_store_n(&held_lines, 0, __ATOMIC_RELAXED);
+#endif
 }
 
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap)
@@ -236,6 +259,16 @@ void vjo_log_raw(const char *line, int len)
         return;
     }
     sceKernelLockMutex(log_mutex, 1, NULL);
+#if !VJO_DEBUG
+    if (!batch && held && held_owner == sceKernelGetThreadId()) {
+        /* the holder's first line since its lines were last written: its batch begins */
+        held->buf = held_buf;
+        held->cap = held_cap;
+        held->used = held->n = 0;
+        held->owner = held_owner;
+        batch = held;
+    }
+#endif
     if (batch && batch->owner == sceKernelGetThreadId() && batch->n < VJO_LOG_BATCH_LINES &&
         batch->cap - batch->used >= len) {
         sceClibMemcpy(batch->buf + batch->used, line, len);
@@ -245,6 +278,10 @@ void vjo_log_raw(const char *line, int len)
         /* Another thread's line, or one the batch cannot hold: the batch's
          * lines go first, so the files keep the order of the calls. */
         batch_flush_locked();
+#if !VJO_DEBUG
+        if (batch == held && held_owner != sceKernelGetThreadId())
+            batch = NULL; /* written by another thread's line: the holder's next line begins it again */
+#endif
         if (batch && batch->owner == sceKernelGetThreadId() && batch->cap >= len) {
             sceClibMemcpy(batch->buf, line, len);
             batch->used = len;
@@ -255,8 +292,46 @@ void vjo_log_raw(const char *line, int len)
                 file_append_lines(line, &n, 1);
         }
     }
+#if !VJO_DEBUG
+    if (batch && batch == held)
+        __atomic_store_n(&held_lines, batch->n, __ATOMIC_RELAXED);
+#endif
     sceKernelUnlockMutex(log_mutex, 1);
 }
+
+#if !VJO_DEBUG
+void vjo_log_hold(VjoLogBatch *b, char *buf, int cap)
+{
+    if (log_mutex < 0 || !b || !buf || cap <= 0)
+        return; /* not configured: the lines go out at once, as always */
+    sceKernelLockMutex(log_mutex, 1, NULL);
+    if (batch && batch == held) { /* an earlier holder's lines */
+        batch_flush_locked();
+        batch = NULL;
+    }
+    held = b;
+    held_buf = buf;
+    held_cap = cap;
+    held_owner = sceKernelGetThreadId();
+    sceKernelUnlockMutex(log_mutex, 1);
+}
+
+void vjo_log_release(int stop)
+{
+    if (log_mutex < 0 || (!stop && !__atomic_load_n(&held_lines, __ATOMIC_RELAXED)))
+        return; /* nothing held: no lock */
+    sceKernelLockMutex(log_mutex, 1, NULL);
+    if (held && held_owner == sceKernelGetThreadId()) {
+        if (batch == held) {
+            batch_flush_locked();
+            batch = NULL;
+        }
+        if (stop)
+            held = NULL;
+    }
+    sceKernelUnlockMutex(log_mutex, 1);
+}
+#endif
 
 /* Whether a line can go anywhere: with no file and status.txt
  * full (or never opened), vjo_log formats nothing. */

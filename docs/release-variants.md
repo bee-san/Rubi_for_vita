@@ -146,7 +146,9 @@ build writes, per activation of a game (each start or resume), the first job tha
 its first that found a line, the clock line, and each model-size miss, once (the clock again when it
 changes); and every failed job with its refused memory check
 (`normal_build_logs_the_first_jobs_and_failures`, `normal_build_logs_tier_misses_once_and_on_change`,
-`normal_build_logs_flapping_tier_misses_once`). A job cancelled during its exchange logs nothing
+`normal_build_logs_flapping_tier_misses_once`, `normal_build_logs_a_fifth_tier_miss_after_eviction`). A
+job cancelled during its exchange logs no job line; what a result that arrived says of the activation
+(a size that did not fit, the clock, a refused memory check) is logged as from any job's, once
 (`normal_build_cancelled_job_is_quiet`).
 
 ## No log append on the result path
@@ -160,54 +162,61 @@ job]. Each done line counts every thread's appends during the job. Of those, the
 its exchange with the game (the result's lines and the text's as one batch each, every other line
 alone; each twice while `status.txt` is under 64 KiB) stand between the recognition and `job_done`; the
 other threads' (the overlay opening, the control thread) delay it only where the network thread
-waited for the log's lock, which the log does not say. Costed at each job's own mean per append (est.):
+waited for the log's lock, which the log does not say. Costed at each job's own mean per append (est.;
+rounded):
 
 | | jobs | time | log appends | of them in the result path (est.) |
 |---|---:|---:|---:|---:|
-| OCR jobs a user could wait for (the self-test's own job left out) | 31 | 38,264 ms | 8,623 ms (22.5 %) | 4,847 ms (12.7 %), and the done lines' about 1,153 ms |
+| OCR jobs a user could wait for (the self-test's own job left out) | 31 | 38,264 ms | 8,623 ms (22.5 %) | 4,848 ms (12.7 %), and the done lines' about 1,154 ms |
 | job 7 (overlay opened during it) | 1 | 3,175 ms | 1,510 ms, 22 appends | 10 appends, 686 ms (68.6 ms an append) |
-| job 10 (overlay opened) | 1 | 2,676 ms | 1,449 ms, 22 appends | 10 appends, 658 ms |
-| job 11 (overlay opened) | 1 | 2,687 ms | 542 ms, 26 appends | 14 appends, 291 ms |
-| lookups | 31 | 1,854 ms | 476 ms (25.7 %) | all of it |
+| job 10 (overlay opened) | 1 | 2,676 ms | 1,449 ms, 22 appends | 10 appends, 659 ms |
+| job 11 (overlay opened) | 1 | 2,687 ms | 542 ms, 26 appends | 14 appends, 292 ms |
+| lookups | 31 | 1,854 ms | 476 ms (25.7 %) | all of it, and their done lines' about 476 ms |
 
 The 8,611 ms job (4,415 ms in 50 appends) is the self-test's own background job: no one waited for it
-([first-ocr.md](first-ocr.md)). A job's appends averaged 19 ms (the median of the jobs' means); in jobs 7 and 10, with the
-overlay opening during them, 66-69 ms. The grouping reproduces the done line's own append count for 51 of the
-62 jobs; in the other 11 it counts one to five of the other threads' lines that fell outside the done
-line's interval.
+([first-ocr.md](first-ocr.md)). A job's appends averaged 19 ms (the median of the jobs' means); in jobs
+7 and 10, with the overlay opening during them, 66-69 ms. The grouping reproduces the done line's own
+append count for 51 of the 62 jobs; in the other 11 it counts one to five of the other threads' lines
+that fell outside the done line's interval. `status.txt`'s fill point is estimated from `log.txt`'s
+lines since the boot's start; the bootstrap lines before that (about 1 KiB, `status.txt` only) are not
+counted (in test.3 both points fall in job 12).
 
 **The normal build** writes none of a job's lines between the end of its recognition and the control
-thread taking its result (`shell/worker.c` `net_log_hold`). The network thread holds what it logs in a
-job (the job's line, a size that did not fit, the clock, a refused memory check, an unusable model, a
-refused Paf allocation, a failed lookup) in a log batch on its own stack, from its exchange with the
-game (a lookup's: from its start), and writes them in one append per file once the result is shown:
-while the game recognizes the next OCR job (after its submission is taken), or once the network thread
-has had nothing to do for 0.5 s (`LOG_IDLE_US`, `NET_EV_LOG`), whichever comes first. A lookup started
-meanwhile keeps them. A job that reads again with a smaller model (its model unusable) writes its first
-try's lines while the game reads again: two appends for that job. The files get the same lines in the
-same order as line by line (`host/tests/test_shell_log.c`); the debug build is unchanged (its three
-plugins and RCO are main's bytes, sha256).
+thread taking its result. Every line the network thread logs (the job's line, a size that did not fit,
+the clock, a refused memory check, an unusable model, a refused Paf allocation, a failed lookup) waits
+in a log batch on its own stack (`shell/log_vita.c` `vjo_log_hold`, from `net_main`), begun at its first
+line under the log's lock that every line takes: a job that logs nothing takes no log lock at all, so
+it never waits for another thread's append either. The lines go out in one append per file once the
+result is taken (`vjo_log_release`): while the game recognizes the next OCR job (after its submission
+is taken), or once the network thread has had nothing to do for 0.5 s (`LOG_IDLE_US`, `NET_EV_LOG`),
+whichever comes first. A lookup started meanwhile keeps them. A job that reads again with a smaller
+model (its model unusable) writes its first try's lines while the game reads again: two appends for
+that job. The files get the same lines in the same order as line by line (`host/tests/test_shell_log.c`);
+the debug build is unchanged (its three plugins and RCO are main's bytes, sha256).
 - A steady-state successful job logs nothing, so there is nothing to write. An activation's first job
   and a failed one hold a few lines (at most 4 at once in the host session below); the batch takes 24
   lines and 2 KiB. Only a run of more than 23 held lines with the network thread never idle (failing
   lookups, each started as the last one's result shows) writes them in the job whose line does not
   fit: one append per file per 24 lines.
 - A line another thread logs (an Anki save, the overlay's refusals, a game start) writes the held lines
-  first, on that thread, as before; so does a change of `log_file`. Opening the overlay re-reads
-  `config.ini` and keeps them held (`shell/log_vita.c`). A crash before the write loses that job's
-  held lines.
+  first, on that thread, then its own; so does a change of `log_file`. Opening the overlay re-reads
+  `config.ini` and keeps them held. A line the network thread logs in the microseconds while another
+  thread's batch is being formatted (the ledger's table at a game start or exit) goes out at once, in
+  its job's result path. A crash before a write loses what is held: at most 24 lines or 2 KiB (the last
+  OCR job's lines and those of any lookups since).
 - The write takes the network thread one append per file (est. 24-92 ms at #81's 12-46 ms an append;
   test.3's jobs averaged 19 ms an append, the median of their means). Made while the game recognizes,
   it ends before the result unless the recognition is the shorter (est.: test.3's shortest game job,
-  one without a line, took 115 ms). Made after the idle pause, a press that lands during it waits for
-  its end before its job is submitted.
+  one without a line, took 115 ms; a refused memory check may return in a few ms, unmeasured). Made
+  after the idle pause, a press that lands during it waits for its end: the overlay's opening (its
+  `config.ini` re-read takes the log's lock) and its job's submission.
 - The VjoNet thread's deepest chain in the normal build goes from 2,712 to 4,832 B (`net_main`'s frame
   88 → 2,208 B), under the debug build's unchanged 5,616 B, in its 16 KiB stack (#132) [measured:
   `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources
   with each object's flags from the Vita build; a lower bound, without the SDK's own frames]. No new
-  allocation. The normal Shell's text grows 89,196 → 89,484 B and its data/bss 69,700 → 69,728 B: the
-  same 163,840 B of pages, 628 → 340 B of text left in its last page [measured: the Vita builds of main
-  `dcb7b31` and this branch].
+  allocation. The normal Shell's text grows 89,196 → TEXTHEAD B and its data/bss 69,700 → DATAHEAD B:
+  the same 163,840 B of pages, 916 → ROOMHEAD B of text left in its last page [measured: the Vita builds
+  of main `29983a3` and this branch].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses and the clock)
@@ -221,10 +230,12 @@ through the real worker, with failures, changed screens, cancelled jobs, size mi
 In the normal build's session, 51 jobs logged a line and the network thread made 52 appends: a job
 that reads again with a smaller model may make two (3 such jobs here; the test bounds the appends by
 the jobs that logged plus those). `normal_build_writes_a_jobs_lines_after_its_result` walks each case:
-an activation's first job (nothing before the 0.5 s pause, then one append), a job that logs nothing, a
-failed job the overlay waits for, a failed lookup, lookups 250 ms apart that keep held lines, a job
-asked for before the pause ends, an unusable model and its smaller retry, a game without its worker
-(`-117`), the worker's stop; each with the network thread woken at once and later. Not measured: a
+an activation's first job (nothing before the 0.5 s pause, then one append), jobs that log nothing (no
+batch begun), a failed job the overlay waits for, a failed lookup, lookups 250 ms apart that keep held
+lines, a job asked for before the pause ends, an unusable model and its smaller retry, a game without
+its worker (`-117`, its refused submission writes nothing:
+`normal_build_refused_submission_keeps_held_lines`); each with the network thread woken at once and
+later. `normal_build_net_main_writes_held_lines` runs `net_main` itself to its stop. Not measured: a
 console run of the normal build.
 
 ## Building

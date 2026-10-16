@@ -38,7 +38,7 @@ the debug build writes a job's result lines and its text's as a batch each (#100
 alone. The other threads' appends meanwhile (the overlay opening, the control thread) delay it only
 where the network thread waited for the log's lock, which the log does not say. The estimate prices
 the result path's appends at the job's own mean (log ms / appends). The normal build holds its few
-lines until after the result (shell/worker.c net_log_hold) and logs no timing at all.
+lines until after the result (shell/log_vita.c vjo_log_hold) and logs no timing at all.
 
 Sessions: a game process from its `game TITLE started` to the next start; kernel.txt's `game pid`
 lines (--collect) count the processes.

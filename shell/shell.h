@@ -280,10 +280,6 @@ void vjo_status_close(void);
  * meanwhile writes them out first). For a burst of lines formatted from data
  * at hand only, never across a wait, I/O or a call that may log at length: a
  * crash loses the batch's unwritten lines. begin and end in one function.
- * One exception, the normal build's network thread (worker.c net_log_hold):
- * it holds a job's few short-log lines from its game exchange until the
- * control thread has taken the result, across the job's lookup, so that no
- * append stands between a recognition and its result (docs/release-variants.md).
  * Returns 1 when the batch is open, 0 when another one is (lines then go out
  * one by one, as always). */
 #define VJO_LOG_BATCH_LINES 24
@@ -295,6 +291,17 @@ typedef struct {
 } VjoLogBatch;
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap);
 void vjo_log_batch_end(VjoLogBatch *b);
+#if !VJO_DEBUG
+/* The normal build's held lines (docs/release-variants.md "No log append on the
+ * result path"): every line the calling thread (the worker's network thread)
+ * logs from now on waits in b, a batch on its stack, begun at its first line, so
+ * a job that logs nothing takes no lock; vjo_log_release writes them, one append
+ * per file, and takes no lock when nothing is held; stop: the thread holds no
+ * more (its stack is going). Another thread's line, a change of log_file, or a
+ * line b cannot take writes them at once, in their order, as for any batch. */
+void vjo_log_hold(VjoLogBatch *b, char *buf, int cap);
+void vjo_log_release(int stop);
+#endif
 /* The microseconds spent in log file appends since boot (every thread's), and
  * their count: the debug build's job lines (the normal build keeps no timing). */
 #if VJO_DEBUG

@@ -201,11 +201,19 @@ static unsigned warnings_logged(const char *text)
  * VJO_LOG_BATCH_LINES lines or its buffer, or when another thread logs a line
  * (that line is then written at once, after them) (host/tests/test_shell_log.c
  * shows the real logger writes exactly these appends, byte for byte as line by
- * line). test_thread: the thread logging (the harness runs the network thread's
- * work as NET_THREAD: as_network_thread, finish_current_job, run_vocr_job). */
+ * line). The normal build's held lines (vjo_log_hold) are such a batch, begun
+ * at the holder's first line and ended by vjo_log_release; another thread's
+ * line that writes them also closes it. test_thread: the thread logging (the
+ * harness runs the network thread's work as NET_THREAD: as_network_thread,
+ * finish_current_job, run_vocr_job). */
 enum { CTL_THREAD = 1, NET_THREAD = 2 };
 static int test_thread = CTL_THREAD, batch_owner;
 static VjoLogBatch *open_batch;
+/* The holder (vjo_log_hold): its batch and thread; held_open(): its lines are held now. */
+static VjoLogBatch *hold_b;
+static int hold_cap, hold_owner;
+static unsigned hold_begins; /* the holder's batch begun (at a first line): the real logger's lock, taken anyway */
+static int held_open(void) { return hold_b && open_batch == hold_b; }
 static int batch_lines_held, batch_bytes_held, batch_cap;
 static unsigned log_appends, batched_lines;
 /* Each append: its lines, the thread that made it, and whether a job was running then (job_running:
@@ -251,6 +259,20 @@ void vjo_log_batch_end(VjoLogBatch *b)
     b->n = 0;
     open_batch = NULL;
 }
+void vjo_log_hold(VjoLogBatch *b, char *buf, int cap)
+{
+    (void)buf;
+    if (!b || cap <= 0) return;
+    if (held_open()) vjo_log_batch_end(open_batch); /* an earlier holder's lines */
+    hold_b = b; hold_cap = cap; hold_owner = test_thread;
+}
+void vjo_log_release(int stop)
+{
+    if (hold_b && hold_owner == test_thread) {
+        if (held_open()) vjo_log_batch_end(hold_b);
+        if (stop) hold_b = NULL;
+    }
+}
 void vjo_log(const char *fmt, ...)
 {
     va_list ap; va_start(ap, fmt);
@@ -266,11 +288,16 @@ void vjo_log(const char *fmt, ...)
     lines_logged++;
     net_lines_logged += test_thread == NET_THREAD;
     n = (n > 254 ? 254 : n) + 1; /* the line and its '\n', as vjo_log writes it */
+    if (!open_batch && hold_b && hold_owner == test_thread) { /* the holder's first line: its batch begins */
+        open_batch = hold_b; batch_cap = hold_cap; batch_lines_held = batch_bytes_held = 0;
+        batch_owner = test_thread; hold_b->n = 0; hold_begins++;
+    }
     if (!open_batch) { note_append(1); return; }
     if (batch_owner != test_thread) { /* another thread's line: the batch's lines first, then this one */
         if (batch_lines_held) note_append((unsigned)batch_lines_held);
         batch_lines_held = batch_bytes_held = 0;
         open_batch->n = 0;
+        if (open_batch == hold_b) open_batch = NULL; /* written: the holder's next line begins it again */
         note_append(1);
         return;
     }
@@ -468,14 +495,14 @@ static void fake_check(unsigned tier, unsigned top, int refused)
     s->sum = 4096u * tier;      /* own resident blocks it would release first */
 }
 /* No log batch is held across the game's exchange (#100). The normal build's network thread may come
- * to a submission with lines held (worker.c net_log_hold: an earlier job's, or this job's from its first
+ * to a submission with lines held (vjo_log_hold: an earlier job's, or this job's from its first
  * exchange), which it writes once the game has the job (ocr_submit): at a read, nothing is held. */
 static int exchange_batch_ok(void)
 {
 #if VJO_DEBUG
     return !open_batch;
 #else
-    return !open_batch || open_batch == &net_log->batch;
+    return !open_batch || held_open();
 #endif
 }
 /* #138: what the kernel answers when no worker is registered for the game (none
@@ -664,7 +691,9 @@ static void reset(void)
     thread_info_below_sp = 0;
     race_on_lock = 0;
     if (has_result_memory()) mem_free();
-    /* the logger stub: no batch open, no append recorded; the harness runs as the control thread */
+    /* the logger stub: no batch open, no append recorded; the harness runs as the control thread. A
+     * batch other than the held one left open by the last test is a leak (audit-t3-log-path N9). */
+    TEST_CHECK_(!open_batch || held_open(), "a log batch was left open");
     open_batch = NULL;
     batch_lines_held = batch_bytes_held = 0;
     appends_recorded = result_path_appends = recognizing_appends = lines_appended = most_lines_appended = 0;
@@ -674,13 +703,16 @@ static void reset(void)
     on_event_flag = NULL;
     fail_input_unblock = 0;
 #if !VJO_DEBUG
-    /* net_main's batch for the jobs' held lines, as the network thread sets it up */
+    /* net_main's hold, as the network thread sets it up (vjo_log_hold) */
     {
-        static NetLog held;
+        static VjoLogBatch held;
         memset(&held, 0, sizeof(held));
-        net_log = &held;
+        hold_b = &held; hold_cap = NET_LOG_BYTES; hold_owner = NET_THREAD;
     }
+#else
+    hold_b = NULL;
 #endif
+    hold_begins = 0;
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
     cmd_lock = 82;
@@ -1129,7 +1161,7 @@ static int run_vocr_job(void)
     rc = run_job(&results[0], &cache_data[0]);
     net_phase = NET_IDLE;
 #if !VJO_DEBUG
-    net_log_write(); /* its result is the test's now: the held lines go out (net_log_taken) */
+    vjo_log_release(0); /* its result is the test's now: the held lines go out (net_log_taken) */
 #endif
     test_thread = CTL_THREAD;
     return rc;
@@ -4655,21 +4687,41 @@ static void test_normal_build_has_no_selftest(void)
 }
 
 /* audit-overlay-release-variants-b note A: a job cancelled during its exchange (a new screen, a game
- * exit: vocr_cancelled) logs nothing, as one whose screen changed under it, and leaves the activation's
- * first job line to the next job that reads its screen. */
+ * exit: vocr_cancelled) logs no job line, as one whose screen changed under it, and leaves the
+ * activation's first job line to the next job that reads its screen. What a result that arrived says
+ * (a size that did not fit, the clock, a refused memory check) is logged as from any job's, each once
+ * per activation (audit-t3-log-path N2): the boost or the memory miss happened whether or not its text
+ * was wanted. */
 static void test_normal_build_cancelled_job_is_quiet(void)
 {
-    reset();
-    fake_recognized_text = "猫";
-    game_generation = job_generation = 81;
-    fake_cancel_on_read = 1; /* the job is cancelled while the game reads */
-    TEST_CHECK(run_vocr_job() == VJO_E_CANCELLED);
-    TEST_CHECK(log_count == 0);
-    TEST_MSG("%u lines: %s", log_count, log_count ? log_lines[0] : "");
-    fake_cancel_on_read = 0;
-    mem_free();
-    TEST_CHECK(run_vocr_job() == VJO_OK && logged("ocr rc=0 VOCR3_H15_w8.vocr: 2 lines") != NULL && log_count == 1);
-    mem_free();
+    const unsigned large = 1u << (VJO_VOCR_TIER_LARGE - 1u);
+    for (int kind = 0; kind < 3; kind++) { /* 0: nothing in the result; 1: Large refused and the clock; 2: OOM */
+        reset();
+        fake_recognized_text = "猫";
+        cfg.vocr_tier = kind == 1 ? VJO_VOCR_TIER_LARGE : VJO_VOCR_TIER_NORMAL;
+        memcpy(job_title, "PCSG00415", 10);
+        fake_clock_on = kind == 1; fake_clock_rc = 0;
+        fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+        fake_tier_checks = kind == 1 ? large : 0;
+        fail_vocr_user = kind == 2;
+        game_generation = job_generation = 81u + (uint32_t)kind;
+        fake_cancel_on_read = 1; /* the job is cancelled while the game reads; its result arrives */
+        TEST_CHECK(run_vocr_job() == VJO_E_CANCELLED);
+        TEST_CHECK(!logged("ocr rc=")); /* no job line */
+        TEST_CHECK(log_count == (kind == 1 ? 2u : kind == 2 ? 1u : 0u));
+        TEST_CHECK(kind != 1 || (logged("tier large did not fit in PCSG00415") && logged("clock: 333 -> 444 MHz")));
+        TEST_CHECK(kind != 2 || logged("check refused") != NULL);
+        TEST_MSG("kind %d: %u line(s), the first '%s'", kind, log_count, log_count ? log_lines[0] : "");
+        mem_free();
+        /* the next job that reads its screen: the activation's first job line; the rest only once */
+        log_count = 0;
+        fail_vocr_user = 0;
+        TEST_CHECK(run_vocr_job() == VJO_OK && logged("ocr rc=0 ") != NULL);
+        TEST_CHECK(log_count == 1 && !logged("clock:") && !logged("did not fit"));
+        TEST_MSG("kind %d, the next job: %u line(s)", kind, log_count);
+        mem_free();
+        fake_clock_on = 0; fake_tier_checks = 0;
+    }
 }
 
 /* audit-overlay-release-variants-b note A: a refused input block is logged, on open (the overlay cannot
@@ -4748,7 +4800,7 @@ static void test_normal_build_logs_flapping_tier_misses_once(void)
  * logs in a job is held from the job's exchange with the game (a lookup's: from its start) and written
  * with one append per file only once the control thread has taken the result: while the game
  * recognizes the next OCR job, or once the network thread has been idle LOG_IDLE_US (shell/worker.c
- * net_log_hold). The logger stub records each append with the thread that made it and its phase
+ * vjo_log_hold). The logger stub records each append with the thread that made it and its phase
  * (net_phase): in a job's result path (NET_RESULT: the result known, until job_done; a lookup's whole
  * run) or while the game recognizes (NET_RECOGNIZING). */
 
@@ -4812,7 +4864,7 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     next_scene(30); stable_pending = 1; control_tick(0);
     TEST_ASSERT(job_running && (posted & NET_EV_JOB));
     as_network_thread(); /* the job: the exchange, its lines, the lookup; job_done */
-    TEST_CHECK(job_done && net_log->open && appends_recorded == mark); /* held: nothing written yet */
+    TEST_CHECK(job_done && held_open() && appends_recorded == mark); /* held: nothing written yet */
     TEST_CHECK(logged("ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ") != NULL && logged("clock: 333 -> 444 MHz") != NULL);
     control_tick(0); /* the result is the control thread's */
     TEST_CHECK(!job_running && cache_ok && !(posted & NET_EV_LOG) && appends_recorded == mark);
@@ -4824,7 +4876,7 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
         as_network_thread(); /* NET_EV_LOG, nothing running: the held lines go out */
     }
     TEST_CHECK(net_appends_since(mark, &lines, &recognizing) == 1 && lines == 2 && !recognizing);
-    TEST_CHECK(appends_recorded == mark + 1 && !appends_seen[mark].job_running && !net_log->open);
+    TEST_CHECK(appends_recorded == mark + 1 && !appends_seen[mark].job_running && !held_open());
     test_now += 10 * LOG_IDLE_US; control_tick(0);
     TEST_CHECK(!(posted & NET_EV_LOG)); /* once per result taken */
 
@@ -4833,7 +4885,7 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     next_scene(31); stable_pending = 1; control_tick(0);
     TEST_ASSERT(job_running);
     as_network_thread();
-    TEST_CHECK(job_done && !net_log->open);
+    TEST_CHECK(job_done && !held_open());
     control_tick(0); test_now += LOG_IDLE_US; control_tick(0); as_network_thread();
     TEST_CHECK(!job_running && log_count == count && appends_recorded == mark);
 
@@ -4889,7 +4941,7 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
         TEST_ASSERT(job_running && job_cursor_only);
         as_network_thread(); /* the lookup: the held lines stay held */
         control_tick(0);
-        TEST_CHECK(!job_running && appends_recorded == mark && net_log->open);
+        TEST_CHECK(!job_running && appends_recorded == mark && held_open());
     }
     check_shown(local_text, "bird", 6);
     test_now += LOG_IDLE_US; control_tick(0);
@@ -4944,15 +4996,20 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     close_overlay();
     test_now += BACKOFF_MAX_US;
 
-    /* 9. The worker stops while lines are held: they go out (net_main's end). */
+    /* 9. Quiet jobs (the activation's first logged already): no line, so the holder's batch never begins
+     *    (the real logger takes no lock for them: shell_log's quiet_holder_takes_no_lock), no append. The
+     *    worker's stop with lines held is normal_build_net_main_writes_held_lines's (the real net_main). */
     game_generation = g + 5;
-    mark = appends_recorded;
     next_scene(39); stable_pending = 1; control_tick(0);
-    as_network_thread();
-    TEST_CHECK(net_log->open && appends_recorded == mark);
-    test_thread = NET_THREAD; net_log_write(); test_thread = CTL_THREAD; /* net_main after NET_EV_QUIT */
-    TEST_CHECK(net_appends_since(mark, &lines, NULL) == 1 && lines == 2);
-    control_tick(0);
+    job_then_idle(eager); /* the activation's first job: its 2 lines, after the pause */
+    mark = appends_recorded; count = log_count;
+    unsigned begins = hold_begins;
+    for (int k = 0; k < 3; k++) {
+        next_scene(40 + (unsigned)k); stable_pending = 1; control_tick(0);
+        TEST_ASSERT(job_running);
+        job_then_idle(eager);
+    }
+    TEST_CHECK(appends_recorded == mark && log_count == count && hold_begins == begins && !held_open());
     TEST_CHECK(result_path_appends == 0 && lines_appended == lines_logged); /* every line written, none held */
     TEST_MSG("%u lines logged, %u written, %u appends in a result path", lines_logged, lines_appended,
              result_path_appends);
@@ -4987,7 +5044,7 @@ static void test_normal_build_idle_write_yields_to_a_new_job(void)
         game_generation = 140u + (uint32_t)ocr;
         next_scene(70); open_overlay(); /* an activation's first job: its 2 lines held */
         as_network_thread(); control_tick(0);
-        TEST_ASSERT(!job_running && g_view.open && net_log->open);
+        TEST_ASSERT(!job_running && g_view.open && held_open());
         mark = appends_recorded;
         test_now += LOG_IDLE_US; control_tick(0); /* NET_EV_LOG posted; the network thread not woken yet */
         TEST_CHECK(posted & NET_EV_LOG);
@@ -5000,7 +5057,7 @@ static void test_normal_build_idle_write_yields_to_a_new_job(void)
             TEST_ASSERT(job_running && !job_cursor_only);
         }
         on_event_flag = NULL;
-        TEST_CHECK(!(posted & NET_EV_LOG) && appends_recorded == mark && net_log->open); /* not written: a job runs */
+        TEST_CHECK(!(posted & NET_EV_LOG) && appends_recorded == mark && held_open()); /* not written: a job runs */
         as_network_thread(); /* the job */
         TEST_CHECK(appends_recorded == mark + (unsigned)ocr); /* the OCR job wrote them while the game recognized */
         control_tick(0); test_now += LOG_IDLE_US; control_tick(0); as_network_thread();
@@ -5009,6 +5066,102 @@ static void test_normal_build_idle_write_yields_to_a_new_job(void)
         fake_clock_on = 0;
         mem_free();
     }
+}
+
+/* audit-t3-log-path N1 (its A5): a job whose submission is refused (no worker in the game: the refusal
+ * is its result) while an earlier job's lines are held writes nothing before its result is taken
+ * (ocr_submit writes only once the game has the job), and all three lines go out after the pause. */
+static void test_normal_build_refused_submission_keeps_held_lines(void)
+{
+    unsigned mark, lines;
+    cursor_setup();
+    fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+    game_generation = 210;
+    mark = appends_recorded;
+    next_scene(80); stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_cursor_only);
+    as_network_thread();
+    control_tick(0); /* the activation's first job: its 2 lines held, its result taken */
+    TEST_ASSERT(!job_running && held_open() && appends_recorded == mark);
+    fake_submit_rc = VJO_ERR_NO_GAME;
+    next_scene(81); stable_pending = 1; control_tick(0); /* before the pause: Auto's next screen */
+    TEST_ASSERT(job_running && !job_cursor_only);
+    as_network_thread();
+    TEST_CHECK(job_done && appends_recorded == mark && logged("ocr rc=-117 ") != NULL);
+    TEST_MSG("%u appends before the refused job's result was taken", appends_recorded - mark);
+    control_tick(0); test_now += LOG_IDLE_US; control_tick(0); as_network_thread();
+    TEST_CHECK(net_appends_since(mark, &lines, NULL) == 1 && lines == 3);
+    fake_submit_rc = 0; fake_clock_on = 0;
+    mem_free();
+}
+
+/* audit-t3-log-path N1 (its A9): the pause is the network thread's idle time since the result was
+ * taken, not the job's age: after a job of 0.6 s (most of test.3's took longer than 0.5 s) nothing is
+ * posted at the next poll, and the lines go out 0.5 s after the result. */
+static void test_normal_build_pause_counts_from_the_result(void)
+{
+    unsigned mark;
+    cursor_setup();
+    fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+    fake_exchange_us = 600000; /* the game's job: 0.6 s */
+    game_generation = 250;
+    mark = appends_recorded;
+    next_scene(95); stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    as_network_thread();
+    control_tick(0); /* the result is taken */
+    test_now += 50000; control_tick(0); /* the next poll, 50 ms later */
+    TEST_CHECK(!(posted & NET_EV_LOG) && appends_recorded == mark);
+    test_now += LOG_IDLE_US - 50000; control_tick(0); as_network_thread();
+    TEST_CHECK(appends_recorded == mark + 1);
+    fake_exchange_us = 0; fake_clock_on = 0;
+    mem_free();
+}
+
+/* audit-t3-log-path N8 (its A13): more distinct misses in one activation than the four kept (Large or
+ * Normal configured, memory flapping): a fifth evicts the oldest, which then logs again, and the newer
+ * ones stay quiet; never more than three tier lines in one job. */
+static unsigned tier_job(unsigned top, unsigned tiers, unsigned refused)
+{
+    unsigned before = log_count;
+    memset(&fake_game_result, 0, sizeof(fake_game_result));
+    for (unsigned t = top; t >= 1u; t--) {
+        int r;
+        if (!(tiers & (1u << (t - 1u)))) continue;
+        r = (int)((refused >> (t - 1u)) & 1u);
+        fake_check(t, top, r);
+        if (!r) break;
+    }
+    log_tier_checks(&fake_game_result);
+    return log_count - before;
+}
+static void test_normal_build_logs_a_fifth_tier_miss_after_eviction(void)
+{
+    const unsigned L = 1u << (VJO_VOCR_TIER_LARGE - 1u), N = 1u << (VJO_VOCR_TIER_NORMAL - 1u),
+                   S = 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    const struct { unsigned top, tiers, refused, lines; } miss[] = {
+        {3, L | N | S, L, 1}, {3, L | N | S, L | N, 2}, {3, L | N | S, L | N | S, 3}, {2, N | S, N, 1},
+        {2, N | S, N | S, 2}};
+    reset();
+    memcpy(job_title, "PCSG00415", 10);
+    job_generation = 240;
+    for (unsigned k = 0; k < 5; k++) { /* each a new miss: its lines; the fifth evicts the first */
+        unsigned n = tier_job(miss[k].top, miss[k].tiers, miss[k].refused);
+        TEST_CHECK_(n == miss[k].lines, "miss %u: %u tier lines", k, n);
+    }
+    TEST_CHECK(tier_job(miss[4].top, miss[4].tiers, miss[4].refused) == 0); /* still kept */
+    TEST_CHECK(tier_job(miss[1].top, miss[1].tiers, miss[1].refused) == 0);
+    TEST_CHECK(tier_job(miss[0].top, miss[0].tiers, miss[0].refused) == 1); /* evicted: again, and kept */
+    TEST_CHECK(tier_job(miss[0].top, miss[0].tiers, miss[0].refused) == 0);
+    TEST_CHECK(tier_job(miss[2].top, miss[2].tiers, miss[2].refused) == 0); /* the second now goes: the third stays */
+    TEST_CHECK(tier_job(miss[1].top, miss[1].tiers, miss[1].refused) == 2); /* evicted by the first's return */
+    for (unsigned round = 0, most = 0; round < 4; round++) /* flapping over all five: bounded */
+        for (unsigned k = 0; k < 5; k++) {
+            unsigned n = tier_job(miss[k].top, miss[k].tiers, miss[k].refused);
+            if (n > most) most = n;
+            TEST_CHECK_(most <= 3, "%u tier lines in one job", n);
+        }
+    log_count = 0;
 }
 
 /* An activation's first job, then (log_wake) the idle pause and NET_EV_LOG, or the worker's stop. */
@@ -5024,13 +5177,13 @@ static int script_first_job(int step)
         return 1;
     case 1: /* it takes the result; nothing written yet */
         control_tick(0);
-        TEST_CHECK(!job_running && appends_recorded == net_main_mark && net_log && net_log->open);
+        TEST_CHECK(!job_running && appends_recorded == net_main_mark && held_open());
         if (!log_wake) return 0; /* the worker stops before the pause ends */
         test_now += LOG_IDLE_US; control_tick(0); /* posts NET_EV_LOG */
         TEST_CHECK(posted & NET_EV_LOG);
         return 1;
     default: /* NET_EV_LOG wrote them */
-        TEST_CHECK(appends_recorded == net_main_mark + 1 && !net_log->open);
+        TEST_CHECK(appends_recorded == net_main_mark + 1 && !held_open());
         return 0;
     }
 }
@@ -5046,13 +5199,13 @@ static void test_normal_build_net_main_writes_held_lines(void)
         net_main(0, NULL); /* the network thread, from its start to its stop */
         test_thread = CTL_THREAD;
         wait_script = NULL;
-        TEST_CHECK(wait_step == (log_wake ? 3 : 2) && !net_log && !open_batch); /* its batch went with it */
+        TEST_CHECK(wait_step == (log_wake ? 3 : 2) && !hold_b && !open_batch); /* its hold went with it */
         TEST_CHECK(net_appends_since(net_main_mark, &lines, NULL) == 1 && lines == 2);
         TEST_CHECK(appends_seen[net_main_mark].thread == NET_THREAD && !appends_seen[net_main_mark].in_result_path);
         TEST_MSG("log_wake %d: %u appends", log_wake, appends_recorded - net_main_mark);
         fake_clock_on = 0;
         running = 1;
-        reset(); /* net_log back to the harness's */
+        reset(); /* the harness's hold again */
     }
 }
 #endif
@@ -5197,7 +5350,7 @@ static void test_session_log_appends(void)
     TEST_MSG("%u network appends, %u jobs with lines, %u model misses", net_appends, session_jobs_with_net_lines,
              fake_model_misses);
     TEST_CHECK(most_lines_held < VJO_LOG_BATCH_LINES); /* never full: no append forced by the batch */
-    TEST_CHECK(recognizing_appends <= net_appends);
+    TEST_CHECK(recognizing_appends > 0); /* some went out while the game recognized the next job (ocr_submit) */
 #else
     TEST_CHECK(result_path_appends > 0); /* the debug build's lines, as they were */
 #endif
@@ -5475,6 +5628,9 @@ TEST_LIST = {
     {"normal_build_writes_a_jobs_lines_after_its_result", test_normal_build_writes_a_jobs_lines_after_its_result},
     {"normal_build_net_main_writes_held_lines", test_normal_build_net_main_writes_held_lines},
     {"normal_build_idle_write_yields_to_a_new_job", test_normal_build_idle_write_yields_to_a_new_job},
+    {"normal_build_refused_submission_keeps_held_lines", test_normal_build_refused_submission_keeps_held_lines},
+    {"normal_build_pause_counts_from_the_result", test_normal_build_pause_counts_from_the_result},
+    {"normal_build_logs_a_fifth_tier_miss_after_eviction", test_normal_build_logs_a_fifth_tier_miss_after_eviction},
 #endif
 #ifdef VJO_WITH_VOCR
     {"session_log_appends", test_session_log_appends},
