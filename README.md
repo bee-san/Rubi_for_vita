@@ -231,8 +231,10 @@ open, its text stays usable for lookups and Anki whatever the screen does, with 
 "dialogue changed" message: in Auto mode a newly settled screen is recognized in the
 background and replaces the text quietly only when it reads a different one
 ([touch lookup](docs/touch-lookup.md)). A job that read a screen changing under it
-shows nothing and is retried quietly. Set `ocr_mode = on_press` to recognize only
-when opening the overlay. With card mining on, Enter saves the shown word,
+shows nothing and is retried quietly. The Overlay app's **Read text** chooses this, **Automatically
+(when it changes)**, the default, or **Only when I press L + R** (`ocr_mode = on_press`), which recognizes
+only when the overlay opens: nothing runs before, and the press then waits for the reading
+([what each costs, and test.3's times](docs/auto-vs-press.md)). With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card; the Overlay app exports the queue as an `.apkg`. The card has no screenshot yet: the old full-frame capture is the
 kernel buffer #74's console refused, and one from the game's own strips is
@@ -280,12 +282,20 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
-or touch a row changes its choice: the Model size, Japanese-only selection,
-whole-word/character highlighting, or how many dictionaries are shown. Touch a
-size or a number to choose it directly; Left/Right choose the next smaller or
-larger size on the Model size row (Enter goes round them), OFF/ON on the
-selection card, Whole word/Character on the Highlight card, or 1–8 on
-Dictionaries shown. Each size button shows its estimated time for a 3-line
+or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
+reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, or how many
+dictionaries are shown. Touch a size, a Read text choice or a number to choose it directly;
+Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost and selection cards,
+Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown. The page is taller
+than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
+at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
+bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
+settled text in the background (**Automatically (when it changes)**, the default: the popup is
+ready when you press) or only once the overlay opens (**Only when I press L + R**, named after
+`toggle_button`: nothing runs until you press, and the press waits for the reading); the Speed
+boost (`ocr_boost_clock`, ON by default) runs the ARM clock at 444 MHz only while text is read
+([docs/auto-vs-press.md](docs/auto-vs-press.md)). Each size button shows its estimated time for a 3-line
 textbox and the game memory a job of it takes (`1.3 s, 1.4 MB` for Normal), from
 the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
@@ -408,7 +418,8 @@ summary, but nothing on screen. A size whose model file is missing or corrupt
 is left out for that game the same way. An older `config.ini`'s `vocr_model`
 becomes its size (the FL10 family Small, H15 Normal, F20 and W20 Large), and
 `vocr_fallback_model` is no longer read; the app's next save and the installer
-rewrite them. `install-vita.sh` keeps the chosen size on an update. A memory
+rewrite them. `install-vita.sh` keeps the chosen size on an update, and the app's Read text
+(`ocr_mode`) and Speed boost (`ocr_boost_clock`) too. A memory
 error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
@@ -461,7 +472,7 @@ decode, the cascade's re-read and its place in the text still follow line order 
 thread, so the text is the serial job's (except where the cascade's time ceiling decides: a job that
 recognizes its lines sooner may read more doubtful ones again). A line whose pixels are unchanged
 since an earlier job gets that job's text without being recognized again. `ocr_boost_clock = on`
-(the default; `off` keeps the game's clock) raises the ARM clock to 444 MHz while a job recognizes and
+(the default, the Overlay app's **Speed boost while reading**; `off` keeps the game's clock) raises the ARM clock to 444 MHz while a job recognizes and
 puts it back after; a clock already at 444 MHz or more, such as PSVshell's 500, is left as it is, and
 the bus and GPU clocks are never changed. The
 log shows each job's helpers, its lines' share of a core, the clock, and the game's frame pacing

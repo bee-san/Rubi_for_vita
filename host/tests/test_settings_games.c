@@ -84,6 +84,7 @@ typedef struct {
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
     int focus;                                               /* the focused card, -1 */
     int bar_y;                                               /* the focus bar's y (any page), -1 */
+    char bar_title[48];                                      /* that card's title (x 42, 30 below its top), "" */
     int anki_rows;                                           /* the stick's moves given to the Anki page so far */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
     long ns;
@@ -470,6 +471,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
     }
     if (x == 40 && (y == STATUS_Y || y == STATUS_Y + 28)) copy(cur.status[(y - STATUS_Y) / 28], sizeof(cur.status[0]), text);
+    if (x == 42 && cur.bar_y >= 0 && y == cur.bar_y + 30) copy(cur.bar_title, sizeof(cur.bar_title), text);
     return 0;
 }
 TEST_ONLY static int stub_width(float pixels, const char *s)
@@ -1365,6 +1367,17 @@ static void list_keys_only_on_the_games_page(void)
  * VitaShell's lists do (core/stick_scroll.h): held down, the focus only goes
  * down and stays on the last card; held up, it only goes up and stays on the
  * first. The d-pad still wraps round there. */
+/* The OCR & lookup page's focused card in frame f: its place among the page's
+ * cards (settings/main.c PREF_*), by its title, or -1. */
+#define OCR_CARDS 6
+static int ocr_card(const Frame *f)
+{
+    static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
+                                                  "Japanese characters only", "Highlight", "Dictionaries shown"};
+    for (int i = 0; i < OCR_CARDS; i++)
+        if (!strcmp(f->bar_title, titles[i])) return i;
+    return -1;
+}
 static void stick_stops_at_the_first_and_last_card(void)
 {
     card(30, NULL);
@@ -1384,21 +1397,24 @@ static void stick_stops_at_the_first_and_last_card(void)
     int frames = run(at);
     TEST_CHECK(frames == at);
     const Frame *f = session->shown;
-    int first = f[first_at].bar_y, last = f[up - 1].bar_y;
-    TEST_CHECK_(first >= 0 && last > first, "first card at %d, last at %d", first, last);
-    TEST_CHECK_(f[down].bar_y > first, "the push moves: %d", f[down].bar_y);
+    /* by the focused card's place in the page (the page scrolls, so its bar's y can go up as the focus goes down) */
+    int first = ocr_card(&f[first_at]), last = ocr_card(&f[up - 1]);
+    TEST_CHECK_(first == 0 && last == OCR_CARDS - 1, "first card %d, last %d", first, last);
+    TEST_CHECK_(ocr_card(&f[down]) == first + 1, "the push moves one card: %d", ocr_card(&f[down]));
     for (int i = down + 1; i < down + 10; i++) /* nine quiet frames */
-        TEST_CHECK_(f[i].bar_y == f[down].bar_y, "frame %d: %d", i - down, f[i].bar_y);
+        TEST_CHECK_(ocr_card(&f[i]) == ocr_card(&f[down]), "frame %d: %d", i - down, ocr_card(&f[i]));
     for (int i = down; i < up; i++) /* never back to the top */
-        TEST_CHECK_(f[i].bar_y >= f[i - 1].bar_y, "down, frame %d: %d after %d", i - down, f[i].bar_y, f[i - 1].bar_y);
+        TEST_CHECK_(ocr_card(&f[i]) >= ocr_card(&f[i - 1]), "down, frame %d: %d after %d", i - down, ocr_card(&f[i]),
+                    ocr_card(&f[i - 1]));
     for (int i = down + 20; i < up; i++) /* runs to the last card and stays */
-        TEST_CHECK_(f[i].bar_y == last, "down, frame %d: %d", i - down, f[i].bar_y);
+        TEST_CHECK_(ocr_card(&f[i]) == last, "down, frame %d: %d", i - down, ocr_card(&f[i]));
     for (int i = up; i < keys; i++)
-        TEST_CHECK_(f[i].bar_y <= f[i - 1].bar_y, "up, frame %d: %d after %d", i - up, f[i].bar_y, f[i - 1].bar_y);
+        TEST_CHECK_(ocr_card(&f[i]) <= ocr_card(&f[i - 1]), "up, frame %d: %d after %d", i - up, ocr_card(&f[i]),
+                    ocr_card(&f[i - 1]));
     for (int i = up + 20; i < keys; i++)
-        TEST_CHECK_(f[i].bar_y == first, "up, frame %d: %d", i - up, f[i].bar_y);
-    TEST_CHECK_(f[keys].bar_y == last, "the d-pad's Up wraps to the last card: %d", f[keys].bar_y);
-    TEST_CHECK_(f[keys + 9].bar_y == first, "the d-pad's Down wraps to the first: %d", f[keys + 9].bar_y);
+        TEST_CHECK_(ocr_card(&f[i]) == first && f[i].bar_y == 112, "up, frame %d: %d", i - up, ocr_card(&f[i]));
+    TEST_CHECK_(ocr_card(&f[keys]) == last, "the d-pad's Up wraps to the last card: %d", ocr_card(&f[keys]));
+    TEST_CHECK_(ocr_card(&f[keys + 9]) == first, "the d-pad's Down wraps to the first: %d", ocr_card(&f[keys + 9]));
 }
 
 /* settings/main.c's OCR_Y: the OCR & lookup page's first card, focused when the app starts. */

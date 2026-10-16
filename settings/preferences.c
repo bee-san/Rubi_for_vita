@@ -206,10 +206,11 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
     return used > VJO_CONFIG_TEXT_MAX ? -1 : (int)used;
 }
 
-int vjo_preferences_save_anki(int mining, VjoArena *a)
+/* Saves `n` keys (vjo_config_patch_keys: each replaced where it is, appended
+ * when missing, every other line kept but a removed feature's), published as
+ * the other saves are. */
+static int save_keys(const char *const *keys, const char *const *values, int n, VjoArena *a)
 {
-    static const char *const keys[] = {"anki_mining"};
-    const char *values[] = {mining ? "on" : "off"};
     size_t mark = vjo_arena_mark(a), bytes = 0;
     char *old = NULL;
     int primary, rc = -1;
@@ -217,10 +218,28 @@ int vjo_preferences_save_anki(int mining, VjoArena *a)
         goto done;
     size_t cap = bytes + bytes / 4 + 160;
     char *next = vjo_arena_alloc(a, cap);
-    int len = next ? vjo_config_patch_keys(old, bytes, keys, values, 1, next, cap) : -1;
+    int len = next ? vjo_config_patch_keys(old, bytes, keys, values, n, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     rc = publish(next, len, primary);
 done:
     vjo_arena_release(a, mark);
     return rc;
+}
+
+int vjo_preferences_save_anki(int mining, VjoArena *a)
+{
+    static const char *const keys[] = {"anki_mining"};
+    const char *values[] = {mining ? "on" : "off"};
+    return save_keys(keys, values, 1, a);
+}
+
+int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *a)
+{
+    static const char *const keys[] = {"ocr_mode", "ocr_boost_clock"};
+    const char *values[2];
+    if ((ocr_mode != VJO_OCR_AUTO && ocr_mode != VJO_OCR_ON_PRESS) || (boost_clock != 0 && boost_clock != 1))
+        return -1;
+    values[0] = ocr_mode == VJO_OCR_ON_PRESS ? "on_press" : "auto"; /* core/config.c's values */
+    values[1] = boost_clock ? "on" : "off";
+    return save_keys(keys, values, 2, a);
 }

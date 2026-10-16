@@ -1814,6 +1814,194 @@ def render_clock_windows(lg, tai=None, configured=None):
     return L
 
 
+# ---- presses and re-reads by ocr_mode (the Overlay app's Read text; docs/auto-vs-press.md)
+
+# shell/worker.c: open_overlay logs the press's input block, then what the open found (no such line: the shown text was
+# kept and only its word is looked up); start_job_kind a job's start; on_job_text its text posted, ms after its start;
+# net_job its end (a done line with no start before it is a cursor lookup, which logs none); log_text_lines its text
+PRESS_OPEN = re.compile(r"^input block on rc=(-?\d+) ")
+PRESS_FOUND = re.compile(r"^open: (saved local word|background result|background job still running|no background result"
+                         r"|screen changed since the background result)\b")
+PRESS_CLOSE = re.compile(r"^overlay close ")
+JOB_BEGIN = re.compile(r"^job start \((.*?)\)(, refresh|, OCR only)?$")
+JOB_TEXT = re.compile(r"^subtitle text ready in (\d+) ms")
+JOB_END = re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms")
+TEXT_LINE = re.compile(r"^game vocr text (\d+)( shown)?: (.*)$")
+
+
+def presses_and_rereads(text):
+    """What each overlay open (a press of the toggle, L + R by default) found and how long its text took, by the game
+    window's ocr_mode; and each job whose text the next one's went on from: read before its line had finished typing
+    out (or before the game added to the box). Numbers and log.txt line numbers only, never the text.
+
+    A press found its text at once (the saved word, a background result, or the shown text kept, its word looked up by
+    a cursor job, which logs no start; no `open:` line), a background job still running (it waits for that job: the
+    word comes with the job's end, at most the job's whole time after the press, which came during it; the log has no
+    time for a job's start), or nothing to show (a job starts on the press: its text comes `subtitle text ready` ms
+    after the press, its word with its `done` line). A job that begins while the overlay is open, after one that was
+    running at the press, brings the press's text when the running one read an earlier screen. A quiet refresh of
+    the open overlay is no press's. Jobs run one at a time on the Shell's network thread, from their `job start` to
+    their `done` line; the self-test's job is left out. As in clock_windows, windows of builds before API 22 are left
+    out: their logs have neither the times nor the texts."""
+    windows, win, api, job, press = [], None, None, None, None
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        m = SHELL_STARTED.match(line)
+        if m:
+            api, win, job, press = int(m.group(1)), None, None, None
+            continue
+        m = LOG["game"].match(line)
+        if m:  # a start or a resume: config.ini read again, so one ocr_mode for the window
+            win = {"line": n, "api": api, "ocr_mode": m.group(6), "presses": [], "jobs": []}
+            windows.append(win)
+            job = press = None
+            continue
+        if win is None or (api is not None and api < BOOST_API):
+            continue
+        m = PRESS_OPEN.match(line)
+        if m:
+            press = {"line": n, "found": None, "running": job, "jobs": []} if int(m.group(1)) >= 0 else None
+            if press:
+                win["presses"].append(press)
+            continue
+        m = PRESS_FOUND.match(line)
+        if m and press is not None and press["found"] is None:
+            press["found"] = m.group(1)
+            continue
+        if PRESS_CLOSE.match(line):
+            press = None
+            continue
+        m = JOB_BEGIN.match(line)
+        if m:
+            job = {"line": n, "why": m.group(1), "text_ms": None, "done_ms": None, "rc": None, "raw": {}, "shown": {},
+                   "settle": None}
+            if m.group(1) != "self-test":
+                win["jobs"].append(job)
+                if press is not None and not m.group(2):  # the press's own job (not a quiet refresh, not subtitles)
+                    press["jobs"].append(job)
+            continue
+        if job is None:
+            continue
+        m = JOB_TEXT.match(line)
+        if m:
+            job["text_ms"] = int(m.group(1))
+            continue
+        m = TEXT_LINE.match(line)
+        if m:
+            (job["shown"] if m.group(2) else job["raw"])[int(m.group(1))] = m.group(3)
+            continue
+        m = LOG["settle"].match(line)
+        if m:  # passes, rc (1 held, 2 the limit), ms
+            job["settle"] = (int(m.group(1)), int(m.group(2), 16), int(m.group(5)) // 1000)
+            continue
+        m = JOB_END.match(line)
+        if m:
+            job["rc"], job["done_ms"], job = int(m.group(2)), int(m.group(3)), None
+    out = {"modes": {}, "pairs": 0, "same": 0, "early": [], "text_jobs": 0, "windows": 0}
+    for w in windows:
+        if not w["presses"] and not w["jobs"]:
+            continue
+        out["windows"] += 1
+        md = out["modes"].setdefault(w["ocr_mode"], {"presses": 0, "windows": 0, "at_once": 0, "waited": [],
+                                                     "read_text": [], "read_word": [], "read_settle": [],
+                                                     "then_text": [], "then_word": [], "read_without_text": 0,
+                                                     "unclear": 0})
+        md["windows"] += 1 if w["presses"] else 0
+        for p in w["presses"]:
+            md["presses"] += 1
+            jobs = p["jobs"]  # the jobs that began while the overlay was open: all after the press
+            text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None), None)
+            if p["found"] in ("saved local word", "background result") or (p["found"] is None and not jobs):
+                md["at_once"] += 1  # (no "open:" line: the shown text kept, only its word looked up)
+            elif jobs:  # the press's text is the first of them that read text
+                if text_job is None:
+                    md["read_without_text"] += 1
+                elif text_job is jobs[0] and jobs[0]["why"] == "overlay opened":  # begun at the press
+                    md["read_text"].append(text_job["text_ms"])
+                    md["read_word"].append(text_job["done_ms"])
+                    if text_job["settle"] and text_job["settle"][1] in (1, 2):
+                        md["read_settle"].append(text_job["settle"][2])
+                else:  # after a job running at the press, or a retry: the jobs before it, then its own times
+                    before = sum(j["done_ms"] or 0 for j in jobs[:jobs.index(text_job)])
+                    md["then_text"].append(before + text_job["text_ms"])
+                    md["then_word"].append(before + text_job["done_ms"])
+            elif p["found"] == "background job still running" and p["running"] and p["running"]["done_ms"] is not None:
+                md["waited"].append(p["running"]["done_ms"])
+            else:
+                md["unclear"] += 1  # closed before its job began, or a job the log does not end
+        texts = []
+        for j in w["jobs"]:
+            if j["raw"]:
+                texts.append((j, "".join(j["shown"].get(i, j["raw"][i]) for i in sorted(j["raw"]))))
+        out["text_jobs"] += len(texts)
+        for (a, ta), (b, tb) in zip(texts, texts[1:]):
+            out["pairs"] += 1
+            ta, tb = re.sub(r"\s+", "", ta), re.sub(r"\s+", "", tb)
+            if ta == tb:
+                out["same"] += 1
+            elif ta and tb.startswith(ta):
+                out["early"].append({"line": a["line"], "why": a["why"], "chars": len(ta), "settle": a["settle"],
+                                     "next_line": b["line"], "next_why": b["why"], "next_chars": len(tb)})
+    return out
+
+
+def _secs(values):
+    """ms values as seconds: '1.2 s' or '0.9-1.7 s (median 1.4 s)'."""
+    v = sorted(values)
+    if len(v) == 1:
+        return f"{v[0] / 1000:.1f} s"
+    return f"{v[0] / 1000:.1f}-{v[-1] / 1000:.1f} s (median {v[len(v) // 2] / 1000:.1f} s)"
+
+
+def render_presses(lg):
+    """The presses by ocr_mode and the jobs read before their text had finished (presses_and_rereads)."""
+    pr = lg.get("presses") or {}
+    if not pr.get("windows"):
+        return []
+    L = []
+    for mode, m in sorted(pr["modes"].items()):
+        if not m["presses"]:
+            continue
+        L.append(f"  presses (the overlay opened) with ocr_mode {mode}: {m['presses']} in {_n(m['windows'], 'game window')}"
+                 f"; {m['at_once']} shown at once (the saved word, a background result, or the shown text kept with "
+                 "its word looked up)")
+        if m["waited"]:
+            L.append(f"    {len(m['waited'])} waited for a background job still running: the word at most "
+                     f"{_secs(m['waited'])} after the press (that job's whole time: the press came during it, and the log "
+                     "has no time for a job's start)")
+        if m["read_text"]:
+            settle = (f"; of it, waiting for the text to hold still {_secs(m['read_settle'])}" if m["read_settle"] else "")
+            L.append(f"    {len(m['read_text'])} recognized on the press: the text {_secs(m['read_text'])} after it, the "
+                     f"word {_secs(m['read_word'])}{settle}")
+        if m["then_text"]:
+            L.append(f"    {len(m['then_text'])} recognized by a later job (after the one running at the press, whose "
+                     "result was for an earlier screen or had no lookup, or a retry): the text at least "
+                     f"{_secs(m['then_text'])} after the press, the word at least {_secs(m['then_word'])} (the jobs' "
+                     "own times, the gaps between them not counted)")
+        if m["read_without_text"]:
+            L.append(f"    {m['read_without_text']} with no text from any job while the overlay was open (no line, "
+                     "the screen changed under them, cancelled, or a failed job)")
+        if m["unclear"]:
+            L.append(f"    {m['unclear']} not counted (closed before a job began, or a job the log does not end)")
+    if not pr["text_jobs"]:
+        L.append("  read before finished: no job's text is in this log, so nothing to compare")
+        return L
+    early = pr["early"]
+    L.append(f"  read before finished: {len(early)} of {_n(pr['pairs'], 'pair')} of a game window's jobs with text, one "
+             "after the other (the next job's text began with the whole of this one's and went on: a line read while "
+             f"it was still typing out, or text the game added to the box after a press); {pr['same']} read the same "
+             "text again")
+    for e in early[:10]:
+        st = e["settle"]
+        wait = (f"its wait held after {_n(st[0], 'pass', 'passes')} ({st[2]:,} ms)" if st and st[1] == 1 else
+                f"its wait reached the limit ({st[2]:,} ms)" if st and st[1] == 2 else "no wait logged")
+        L.append(f"    log.txt:{e['line']} ({e['why']}), {e['chars']} characters, {wait} -> log.txt:{e['next_line']} "
+                 f"({e['next_why']}), {e['next_chars']} characters")
+    if len(early) > 10:
+        L.append(f"    ... and {len(early) - 10} more")
+    return L
+
+
 def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
     s = {"lines": 0, "boot": [], "shell_starts": 0, "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
@@ -2158,6 +2346,7 @@ def summarise_log(text):
     s["clock_windows"], s["clock_windows_older"], samples = clock_windows(windows)
     s["clock_compare"], s["clock_like"] = boost_compare(samples)
     s["boost_verdicts"] = boost_verdicts(s["clock_windows"], s["clock_compare"], s["clock_like"])
+    s["presses"] = presses_and_rereads(text)
     return s
 
 
@@ -2628,6 +2817,7 @@ def render_collect(c):
                      f"{st['timeout']}, no line to wait for in {st['none']}; waited {_span(st['ms'])} ms "
                      f"({_span(st['passes'])} passes); {st['changes']} row change(s) seen while waiting (text typing "
                      f"out); rows toggling (an icon) in {st['toggling_jobs']} job(s)")
+        L += render_presses(lg)
         lm = lg.get("lm") or {}
         if lm.get("jobs"):
             conf = sorted(lm["conf"])

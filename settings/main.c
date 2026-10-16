@@ -41,39 +41,52 @@
 /* The OCR card: the local engine's Model size, three buttons (settings/engine.h),
  * the row's title at the left, the card's status line below them. VOCR is the
  * only engine since the overlay went offline (owner 2026-10-15): Google Lens and
- * its engine row are gone. */
+ * its engine row are gone. Offsets from the card's top. */
 #define OCR_ROW_TITLE_X 42
 #define OCR_SIZE_X 232
-#define OCR_SIZE_Y (OCR_Y + 6)
+#define OCR_SIZE_DY 6
 #define OCR_SIZE_W 220
 #define OCR_SIZE_H 54
 #define OCR_SIZE_PITCH 233
-#define OCR_STATUS_Y (OCR_Y + 85)
-/* The three compact preference cards share one layout: title and choices on
- * the first row, help on the second. */
+#define OCR_STATUS_DY 85
+/* The Read text card (config.ini ocr_mode): its title, then its two choices side
+ * by side, each a button with its one-line explanation below its name. */
+#define READ_H 102
+#define READ_BUTTON_X 42
+#define READ_BUTTON_DY 42
+#define READ_BUTTON_W 433
+#define READ_BUTTON_H 54
+#define READ_BUTTON_PITCH 445
+/* The compact preference cards share one layout: title and choices on the
+ * first row, help on the second. */
 #define CARD_H 68
 #define CARD_TITLE_Y 30
 #define CARD_HELP_Y 60
 #define CARD_BADGE_Y 6
 #define CARD_BADGE_H 34
-#define SELECTION_Y (OCR_Y + OCR_H + 4)
-#define SELECTION_H CARD_H
-#define HIGHLIGHT_Y (SELECTION_Y + CARD_H + 4)
-#define HIGHLIGHT_H CARD_H
-#define RESULTS_Y (HIGHLIGHT_Y + CARD_H + 4)
-#define RESULTS_H CARD_H
 #define RESULT_BADGE_X 540
 #define RESULT_BADGE_W 44
 #define RESULT_BADGE_PITCH 48
-/* The OCR page's one-line status sits below the fourth card. */
-#define PREFERENCE_FOOTER_Y (RESULTS_Y + CARD_H + 4)
-#define PREFERENCE_FOOTER_H 30
-/* The rows Up/Down select: the Model size, then the three cards. */
-#define PREFERENCES 4
+/* The rows Up/Down select, the page's cards top to bottom: how text is read
+ * (the Model size, Read text, Speed boost), then the three lookup cards. They
+ * are more than the room between the tabs and the status line: the page
+ * scrolls a card at a time, the selected card always whole; a card cut at the
+ * bottom shows there is more, and a bar at the right where the view is. */
 #define PREF_SIZE 0
-#define PREF_SELECTION 1
-#define PREF_HIGHLIGHT 2
-#define PREF_RESULTS 3
+#define PREF_READ 1
+#define PREF_BOOST 2
+#define PREF_SELECTION 3
+#define PREF_HIGHLIGHT 4
+#define PREF_RESULTS 5
+#define PREFERENCES 6
+#define PREF_GAP 4
+#define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
+#define PREF_VIEW_END 422 /* to above the status line */
+#define PREF_SCROLL_X 942
+#define PREF_SCROLL_W 6
+/* The OCR page's one-line status sits below the cards. */
+#define PREFERENCE_FOOTER_Y (PREF_VIEW_END + 4)
+#define PREFERENCE_FOOTER_H 30
 #define BG RGBA8(9, 15, 23, 255)
 #define CARD RGBA8(21, 31, 44, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
@@ -523,15 +536,19 @@ static void load_preferences(void)
     check_models();
 }
 
-static void change_preference(int tier, int japanese_only, int highlight_mode, int dictionary_results)
+/* Nothing is saved while config.ini cannot be read; says so. */
+static int preferences_locked(void)
 {
-    if (!preferences_writable) {
-        preference_error = 1;
-        snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
-        return;
-    }
-    int rc = vjo_preferences_save(tier, japanese_only, highlight_mode, dictionary_results, &scratch);
-    /* Re-read even on failure: final sync can fail after publication. */
+    if (preferences_writable) return 0;
+    preference_error = 1;
+    snprintf(preference_status, sizeof(preference_status), "Cannot read config.ini. Choices have not been changed.");
+    return 1;
+}
+
+/* After a save (rc): the file read again for the displayed choices, even on
+ * failure (a final sync can fail after publication). */
+static void preference_saved(int rc)
+{
     int read_rc = vjo_preferences_load(&preferences, &scratch);
     preferences_writable = read_rc >= 0;
     preference_error = rc < 0 || read_rc < 0;
@@ -539,6 +556,22 @@ static void change_preference(int tier, int japanese_only, int highlight_mode, i
     snprintf(preference_status, sizeof(preference_status), "%s", rc < 0 || read_rc < 0
         ? "Save not confirmed. Check the displayed choices, then retry."
         : "Saved. Resume your game, then reopen the overlay.");
+}
+
+static void change_preference(int tier, int japanese_only, int highlight_mode, int dictionary_results)
+{
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save(tier, japanese_only, highlight_mode, dictionary_results, &scratch));
+}
+
+/* Read text (ocr_mode) and Speed boost while reading (ocr_boost_clock), saved
+ * together; the Shell reads them when the game resumes and each time the
+ * overlay opens. */
+static void set_reading(int ocr_mode, int boost_clock)
+{
+    if (ocr_mode == preferences.ocr_mode && boost_clock == preferences.ocr_boost_clock) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_reading(ocr_mode, boost_clock, &scratch));
 }
 
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
@@ -567,13 +600,23 @@ static void toggle_preference(void)
         set_tier(preferences.vocr_tier % (int)VJO_VOCR_TIERS + 1);
         return;
     }
+    if (preference_selected == PREF_READ) {
+        set_reading(preferences.ocr_mode == VJO_OCR_AUTO ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO,
+                    preferences.ocr_boost_clock);
+        return;
+    }
+    if (preference_selected == PREF_BOOST) {
+        set_reading(preferences.ocr_mode, !preferences.ocr_boost_clock);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
         preferences.local_dictionary_results);
 }
 
-/* Left/Right choose the left/right option of the selected card. */
+/* Left/Right choose the left/right option of the selected card (OFF/ON on the
+ * ON/OFF cards). */
 static void set_preference(int right)
 {
     if (preference_selected == PREF_RESULTS) {
@@ -584,6 +627,14 @@ static void set_preference(int right)
         set_tier(preferences.vocr_tier + (right ? 1 : -1));
         return;
     }
+    if (preference_selected == PREF_READ) {
+        set_reading(right ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO, preferences.ocr_boost_clock);
+        return;
+    }
+    if (preference_selected == PREF_BOOST) {
+        set_reading(preferences.ocr_mode, right);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -591,30 +642,58 @@ static void set_preference(int right)
         preferences.local_dictionary_results);
 }
 
+/* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
+static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H};
+static int pref_top; /* the first card in view */
+
+/* Card i's top in the column (the first card's: 0). */
+static int pref_offset(int i)
+{
+    int y = 0;
+    for (int k = 0; k < i; k++) y += pref_height[k] + PREF_GAP;
+    return y;
+}
+
+/* Card i's top on screen. */
+static int pref_y(int i) { return PREF_VIEW_Y + pref_offset(i) - pref_offset(pref_top); }
+
+/* Card i is all in view. */
+static int pref_whole(int i) { return i >= pref_top && pref_y(i) + pref_height[i] <= PREF_VIEW_END; }
+
+/* Scrolls by the fewest cards that bring card i all into view. */
+static void pref_show(int i)
+{
+    if (i < pref_top) pref_top = i;
+    while (pref_top < i && pref_y(i) + pref_height[i] > PREF_VIEW_END) pref_top++;
+}
+
+/* The card shown at y in the cards' room, or -1 (a gap between two). */
+static int pref_card_at(int y)
+{
+    for (int i = pref_top; i < PREFERENCES && pref_y(i) < PREF_VIEW_END; i++)
+        if (y >= pref_y(i) && y < pref_y(i) + pref_height[i]) return i;
+    return -1;
+}
+
 /* A Model size button: the tier's name and, smaller, its estimates. */
-static void size_button(int tier, int x, int chosen)
+static void size_button(int tier, int x, int y, int chosen)
 {
     const VjoVocrTierInfo *t = vjo_vocr_tier_info((unsigned)tier);
     char detail[32];
-    vita2d_draw_rectangle(x, OCR_SIZE_Y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
+    vita2d_draw_rectangle(x, y, OCR_SIZE_W, OCR_SIZE_H, chosen ? ACCENT : SELECTED);
     vjo_engine_tier_detail(tier, detail, sizeof(detail));
-    centered_text(x, OCR_SIZE_Y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
-    centered_text(x, OCR_SIZE_Y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
+    centered_text(x, y + 24, OCR_SIZE_W, chosen ? BG : WHITE, 24, t ? t->name : "?");
+    centered_text(x, y + 47, OCR_SIZE_W, chosen ? BG : DIM, 22, detail);
 }
 
-static void draw_preferences(void)
+static void draw_size_card(int y)
 {
-    vita2d_start_drawing();
-    vita2d_clear_screen();
-    header();
-    focus_card(OCR_Y, OCR_H, preference_selected == PREF_SIZE);
-    vita2d_enable_clipping();
-    vita2d_set_clip_rectangle(28, OCR_Y + 2, 932, OCR_Y + OCR_H - 2);
     /* The Model size (estimates from the models' metadata). */
-    text(OCR_ROW_TITLE_X, OCR_SIZE_Y + 24, preferences_writable ? WHITE : DIM, 28, "Model size");
-    text(OCR_ROW_TITLE_X, OCR_SIZE_Y + 47, DIM, 22, "estimated"); /* the buttons' time and memory */
+    text(OCR_ROW_TITLE_X, y + OCR_SIZE_DY + 24, preferences_writable ? WHITE : DIM, 28, "Model size");
+    text(OCR_ROW_TITLE_X, y + OCR_SIZE_DY + 47, DIM, 22, "estimated"); /* the buttons' time and memory */
     for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++)
-        size_button(t, OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH, preferences_writable && preferences.vocr_tier == t);
+        size_button(t, OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH, y + OCR_SIZE_DY,
+                    preferences_writable && preferences.vocr_tier == t);
     char label[120];
     unsigned color = DIM;
     if (!preferences_writable) {
@@ -623,35 +702,87 @@ static void draw_preferences(void)
     } else if (vjo_engine_status(&engine, label, sizeof(label))) {
         color = OFF;
     }
-    wrapped_text(42, OCR_STATUS_Y, 870, color, 24, 26, 1, label);
-    vita2d_disable_clipping();
-    focus_card(SELECTION_Y, SELECTION_H, preference_selected == PREF_SELECTION);
-    vita2d_enable_clipping();
-    vita2d_set_clip_rectangle(28, SELECTION_Y + 2, 932, SELECTION_Y + SELECTION_H - 2);
-    text(42, SELECTION_Y + CARD_TITLE_Y, WHITE, 28, "Japanese characters only");
-    badge(812, SELECTION_Y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+    wrapped_text(42, y + OCR_STATUS_DY, 870, color, 24, 26, 1, label);
+}
+
+/* The buttons that open the overlay (config.ini toggle_button, l+r unless
+ * changed) as the Read text card names them; NULL for the rear touchpad's
+ * double tap. */
+static const char *open_buttons(int trigger)
+{
+    switch (trigger) {
+    case VJO_TRIGGER_SELECT: return "Select";
+    case VJO_TRIGGER_START: return "Start";
+    case VJO_TRIGGER_SELECT_L: return "Select + L";
+    case VJO_TRIGGER_SELECT_R: return "Select + R";
+    case VJO_TRIGGER_REAR_DOUBLE_TAP: return NULL;
+    default: return "L + R";
+    }
+}
+
+/* A Read text choice: its name and, smaller, what it means for the popup. */
+static void read_button(int x, int y, const char *name, const char *meaning, int chosen)
+{
+    vita2d_draw_rectangle(x, y, READ_BUTTON_W, READ_BUTTON_H, chosen ? ACCENT : SELECTED);
+    centered_text(x, y + 24, READ_BUTTON_W, chosen ? BG : WHITE, 22, name);
+    centered_text(x, y + 47, READ_BUTTON_W, chosen ? BG : DIM, 20, meaning);
+}
+
+/* Read text: recognized in the background when the screen settles (auto: the
+ * popup ready at the press), or only once the overlay is opened (on_press:
+ * nothing runs before; the press then waits for the reading). docs/auto-vs-press.md. */
+static void draw_read_card(int y)
+{
+    const char *keys = open_buttons(preferences.toggle_button), *verb = keys ? "press" : "tap";
+    char name[48], ready[48], waits[48];
+    if (keys) snprintf(name, sizeof(name), "Only when I press %s", keys);
+    else snprintf(name, sizeof(name), "Only when I double-tap the back");
+    snprintf(ready, sizeof(ready), "The popup is ready when you %s", verb);
+    snprintf(waits, sizeof(waits), "Nothing runs until you %s", verb);
+    text(42, y + CARD_TITLE_Y, preferences_writable ? WHITE : DIM, 28, "Read text");
+    read_button(READ_BUTTON_X, y + READ_BUTTON_DY, "Automatically (when it changes)", ready,
+                preferences_writable && preferences.ocr_mode == VJO_OCR_AUTO);
+    read_button(READ_BUTTON_X + READ_BUTTON_PITCH, y + READ_BUTTON_DY, name, waits,
+                preferences_writable && preferences.ocr_mode == VJO_OCR_ON_PRESS);
+}
+
+/* Speed boost while reading: the game worker raises the ARM clock to 444 MHz
+ * while a job recognizes and puts it back after; a clock already at 444 MHz or
+ * more is left as it is (game_ocr/main.c). */
+static void draw_boost_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Speed boost while reading (444 MHz)");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.ocr_boost_clock ? "ON" : "OFF", preferences_writable && preferences.ocr_boost_clock);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON reads faster: 444 MHz only while text is read.");
+}
+
+static void draw_selection_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Japanese characters only");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
           preferences.japanese_only_selection ? "ON" : "OFF",
           preferences_writable && preferences.japanese_only_selection);
-    text(42, SELECTION_Y + CARD_HELP_Y, DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
-    vita2d_disable_clipping();
-    focus_card(HIGHLIGHT_Y, HIGHLIGHT_H, preference_selected == PREF_HIGHLIGHT);
-    vita2d_enable_clipping();
-    vita2d_set_clip_rectangle(28, HIGHLIGHT_Y + 2, 932, HIGHLIGHT_Y + HIGHLIGHT_H - 2);
-    text(42, HIGHLIGHT_Y + CARD_TITLE_Y, WHITE, 28, "Highlight");
-    badge(532, HIGHLIGHT_Y + CARD_BADGE_Y, 176, CARD_BADGE_H, "Whole word",
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON skips Latin, numbers, punctuation and Hangul.");
+}
+
+static void draw_highlight_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Highlight");
+    badge(532, y + CARD_BADGE_Y, 176, CARD_BADGE_H, "Whole word",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_WORD);
-    badge(724, HIGHLIGHT_Y + CARD_BADGE_Y, 196, CARD_BADGE_H, "Character",
+    badge(724, y + CARD_BADGE_Y, 196, CARD_BADGE_H, "Character",
           preferences_writable && preferences.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
-    text(42, HIGHLIGHT_Y + CARD_HELP_Y, DIM, 24, "Word skips matched text. Character moves one character.");
-    vita2d_disable_clipping();
-    focus_card(RESULTS_Y, RESULTS_H, preference_selected == PREF_RESULTS);
-    vita2d_enable_clipping();
-    vita2d_set_clip_rectangle(28, RESULTS_Y + 2, 932, RESULTS_Y + RESULTS_H - 2);
-    text(42, RESULTS_Y + CARD_TITLE_Y, WHITE, 28, "Dictionaries shown");
+    text(42, y + CARD_HELP_Y, DIM, 24, "Word skips matched text. Character moves one character.");
+}
+
+static void draw_results_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Dictionaries shown");
     for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
         char number[4];
         snprintf(number, sizeof(number), "%d", i + 1);
-        badge(RESULT_BADGE_X + i * RESULT_BADGE_PITCH, RESULTS_Y + CARD_BADGE_Y, RESULT_BADGE_W, CARD_BADGE_H,
+        badge(RESULT_BADGE_X + i * RESULT_BADGE_PITCH, y + CARD_BADGE_Y, RESULT_BADGE_W, CARD_BADGE_H,
               number, preferences_writable && preferences.local_dictionary_results == i + 1);
     }
     char results_help[120];
@@ -665,12 +796,104 @@ static void draw_preferences(void)
                  enabled, enabled == 1 ? "dictionary" : "dictionaries");
     else
         snprintf(results_help, sizeof(results_help), "Best match, then others with an L/R tap. %d enabled.", enabled);
-    text(42, RESULTS_Y + CARD_HELP_Y, DIM, 24, results_help);
-    vita2d_disable_clipping();
+    text(42, y + CARD_HELP_Y, DIM, 24, results_help);
+}
+
+static void draw_card(int i, int y)
+{
+    switch (i) {
+    case PREF_SIZE: draw_size_card(y); break;
+    case PREF_READ: draw_read_card(y); break;
+    case PREF_BOOST: draw_boost_card(y); break;
+    case PREF_SELECTION: draw_selection_card(y); break;
+    case PREF_HIGHLIGHT: draw_highlight_card(y); break;
+    default: draw_results_card(y); break;
+    }
+}
+
+/* Where the view is in the column: a thin bar right of the cards. */
+static void draw_scrollbar(void)
+{
+    int room = PREF_VIEW_END - PREF_VIEW_Y, total = pref_offset(PREFERENCES - 1) + pref_height[PREFERENCES - 1];
+    int from = pref_offset(pref_top), shown = total - from < room ? total - from : room;
+    if (total <= room) return;
+    vita2d_draw_rectangle(PREF_SCROLL_X, PREF_VIEW_Y, PREF_SCROLL_W, room, CARD);
+    vita2d_draw_rectangle(PREF_SCROLL_X, PREF_VIEW_Y + room * from / total, PREF_SCROLL_W, room * shown / total, DIM);
+}
+
+static void draw_preferences(void)
+{
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    pref_show(preference_selected); /* the selected card all in view */
+    for (int i = pref_top; i < PREFERENCES && pref_y(i) < PREF_VIEW_END; i++) {
+        int y = pref_y(i), end = y + pref_height[i] < PREF_VIEW_END ? y + pref_height[i] : PREF_VIEW_END;
+        int whole = end == y + pref_height[i];
+        if (!whole) { /* cut at the bottom of the room: its card as well as its text */
+            vita2d_enable_clipping();
+            vita2d_set_clip_rectangle(24, y, 936, end);
+        }
+        focus_card(y, pref_height[i], preference_selected == i);
+        vita2d_enable_clipping();
+        vita2d_set_clip_rectangle(28, y + 2, 932, whole ? end - 2 : end);
+        draw_card(i, y);
+        vita2d_disable_clipping();
+    }
+    draw_scrollbar();
     footer_at(PREFERENCE_FOOTER_Y, PREFERENCE_FOOTER_H, PREFERENCE_FOOTER_Y + 22, 1,
               preference_status, preference_error, preference_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
+}
+
+/* A touch at x, y in the cards' room. A card not all in view (cut at the
+ * bottom) is only selected, which scrolls it into view; on a card in view, a
+ * touch acts as its controls do. */
+static void touch_preference(int x, int y)
+{
+    int i = pref_card_at(y), dy;
+    if (i < 0) return; /* a gap between two cards */
+    dy = y - pref_y(i);
+    preference_selected = i;
+    if (!pref_whole(i)) return;
+    switch (i) {
+    case PREF_SIZE:
+        /* Touch a size to choose it; the row's title and the status line only focus. */
+        if (dy >= OCR_SIZE_DY && dy < OCR_SIZE_DY + OCR_SIZE_H)
+            for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++) {
+                int left = OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH;
+                if (x >= left && x < left + OCR_SIZE_W) set_tier(t);
+            }
+        break;
+    case PREF_READ:
+        /* Touch a choice to take it; the title row and the gap between them only focus. */
+        if (dy >= READ_BUTTON_DY && dy < READ_BUTTON_DY + READ_BUTTON_H)
+            for (int k = 0; k < 2; k++) {
+                int left = READ_BUTTON_X + k * READ_BUTTON_PITCH;
+                if (x >= left && x < left + READ_BUTTON_W)
+                    set_reading(k ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO, preferences.ocr_boost_clock);
+            }
+        break;
+    case PREF_HIGHLIGHT: {
+        int on_badges = dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H;
+        if (on_badges && x >= 532 && x < 708)
+            set_preference(0);
+        else if (on_badges && x >= 724 && x < 920)
+            set_preference(1);
+        else toggle_preference();
+        break;
+    }
+    case PREF_RESULTS:
+        /* Touch a number to choose it; the rest of the card only focuses. */
+        if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= RESULT_BADGE_X &&
+            (x - RESULT_BADGE_X) % RESULT_BADGE_PITCH < RESULT_BADGE_W &&
+            (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
+            set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
+        break;
+    default: /* the ON/OFF cards: Speed boost and Japanese characters only */
+        toggle_preference();
+    }
 }
 
 /* The room kept at the right of the Games page's hints for "512/512". */
@@ -899,36 +1122,8 @@ int main(void)
                 page = tab;
             }
             else if (page == 2) { touch_x = x; touch_y = y; }
-            else if (page && x >= 24 && x < 936 && y >= OCR_Y && y < OCR_Y + OCR_H) {
-                /* Touch a size to choose it; the row's title and the status line only focus. */
-                preference_selected = PREF_SIZE;
-                if (y >= OCR_SIZE_Y && y < OCR_SIZE_Y + OCR_SIZE_H) {
-                    for (int t = 1; t <= (int)VJO_VOCR_TIERS; t++) {
-                        int left = OCR_SIZE_X + (t - 1) * OCR_SIZE_PITCH;
-                        if (x >= left && x < left + OCR_SIZE_W) set_tier(t);
-                    }
-                }
-            }
-            else if (page && x >= 24 && x < 936 && y >= SELECTION_Y && y < SELECTION_Y + SELECTION_H) {
-                preference_selected = PREF_SELECTION; toggle_preference();
-            }
-            else if (page && x >= 24 && x < 936 && y >= HIGHLIGHT_Y && y < HIGHLIGHT_Y + HIGHLIGHT_H) {
-                preference_selected = PREF_HIGHLIGHT;
-                int on_badges = y >= HIGHLIGHT_Y + CARD_BADGE_Y && y < HIGHLIGHT_Y + CARD_BADGE_Y + CARD_BADGE_H;
-                if (on_badges && x >= 532 && x < 708)
-                    set_preference(0);
-                else if (on_badges && x >= 724 && x < 920)
-                    set_preference(1);
-                else toggle_preference();
-            }
-            else if (page && x >= 24 && x < 936 && y >= RESULTS_Y && y < RESULTS_Y + RESULTS_H) {
-                /* Touch a number to choose it; the rest of the card only focuses. */
-                preference_selected = PREF_RESULTS;
-                if (y >= RESULTS_Y + CARD_BADGE_Y && y < RESULTS_Y + CARD_BADGE_Y + CARD_BADGE_H &&
-                    x >= RESULT_BADGE_X && (x - RESULT_BADGE_X) % RESULT_BADGE_PITCH < RESULT_BADGE_W &&
-                    (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
-                    set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
-            }
+            else if (page == 1 && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
+                touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page) { /* no game actions on the OCR page */ }
             else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();
             else if (x >= 572 && x < 936 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) change_filter();
