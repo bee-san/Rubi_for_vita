@@ -1873,6 +1873,7 @@ static void on_cursor_done(void)
                 local_text_valid && job_text_generation == local_text_generation &&
                 same_pipeline(&job_cfg, &cfg) && ov != OV_CLOSED;
     int valid = current && !job_cancelled;
+    job_cancelled = 0;
     /* Reopened during the lookup on a screen its text was not read from
      * (open_overlay's OV_OPEN_OLD_JOB; the close dropped the lookup): as after
      * any job, that opening gets the screen's own recognition, or this text's
@@ -1892,7 +1893,6 @@ static void on_cursor_done(void)
             backoff_note(&dict_backoff, cache_data[0].err.rc != VJO_OK);
             view_show_cache();
         }
-        job_cancelled = 0;
         sceKernelUnlockMutex(cmd_lock, 1);
         /* A close cancels the old result; a reopen may already be waiting for
          * another lookup of this still-current saved text. */
