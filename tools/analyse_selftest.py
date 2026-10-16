@@ -1111,8 +1111,10 @@ def clock_windows(windows):
     clock line alone says nothing. A window's boost is read from its jobs that recognized a line (frames > 0) and
     had room for the clock's step (their step log goes on past its place: find, recognize): every one logged the
     clock (on), none did (off), or some did (mixed: left out of the comparison). Per CTC frame: each recognized line's
-    own time over its frames, frame-weighted (a cached line logs its frames and 0.0 ms); a helper's line is its
-    recognizer run, so it is one thread's whatever ocr_threads is.
+    own time over its frames, frame-weighted (a cached line logs its frames and 0.0 ms). A line's time is its
+    recognizer run and LM decode on whichever thread ran it (core/vocr_ocr.c finish_line), the cascade's re-read not,
+    so it does not shrink with ocr_threads; the jobs' share of a core (the par step) says whether game threads took
+    the core meanwhile.
 
     Returns the windows' rows, how many windows of older builds had jobs, and per model the "off", "raised", "left"
     (at 444 MHz or more already) and "not_raised" (the set call refused, or the clock not moved) groups."""
