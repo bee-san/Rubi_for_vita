@@ -342,6 +342,26 @@ elif '-o' in a:
             self.assertNotIn("vocr_model", config)
             self.assertNotIn("config.ini: vocr_tier", result.stdout)
 
+    def test_an_update_keeps_read_text_and_the_speed_boost(self):
+        # The Overlay app's Read text (ocr_mode) and Speed boost while reading (ocr_boost_clock) are the
+        # user's: an update keeps them as the app saved them; a first install gets the template's auto, on.
+        for mode, boost in (("on_press", "off"), ("auto", "off"), ("on_press", "on")):
+            (self.data / "config.ini").write_text("ocr_mode = %s\nocr_boost_clock = %s\nfont_size_ja = 24\n" % (mode, boost))
+            result = self.install("install-vita.sh", "--title", "PCSG00415")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            config = (self.data / "config.ini").read_text()
+            for line in ("\nocr_mode = %s\n" % mode, "\nocr_boost_clock = %s\n" % boost, "\nfont_size_ja = 24\n"):
+                self.assertIn(line, config)
+            self.assertEqual((config.count("\nocr_mode ="), config.count("\nocr_boost_clock =")), (1, 1))
+            self.assertNotIn("config.ini: ocr_mode =", result.stdout)  # (not ocr_model_dir's line)
+            self.assertNotIn("config.ini: ocr_boost_clock =", result.stdout)
+        (self.data / "config.ini").unlink()
+        result = self.install("install-vita.sh", "--title", "PCSG00415")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = (self.data / "config.ini").read_text()
+        self.assertIn("\nocr_mode = auto\n", config)
+        self.assertIn("\nocr_boost_clock = on\n", config)
+
     def test_package_settings_are_validated_again_and_keys_are_masked(self):
         # A crafted manifest: no shell runs, a line break of any kind or an unknown key is dropped
         # (a removed online dictionary's API key too: the template has none), an API key's value

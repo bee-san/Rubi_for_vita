@@ -40,7 +40,9 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 
 /* settings/main.c's layout: the OCR card, the local engine's three Model size
  * buttons (VOCR is the only engine: the overlay is offline), then the card's
- * status line; the three cards below it. */
+ * status line; below it the Read text card (ocr_mode), its two choices, and the
+ * Speed boost card (ocr_boost_clock); then the three lookup cards, scrolled
+ * into the room above the status line a card at a time. */
 #define OCR_Y 112
 #define OCR_H 94
 #define SIZE_X 232
@@ -51,7 +53,15 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define SIZE_NAME_Y (SIZE_Y + 24)
 #define SIZE_DETAIL_Y (SIZE_Y + 47)
 #define STATUS_Y (OCR_Y + 85)
-#define SELECTION_Y (OCR_Y + OCR_H + 4) /* the first of the three cards */
+#define READ_Y (OCR_Y + OCR_H + 4) /* the card after the OCR card */
+#define READ_H 102
+#define READ_BUTTON_Y (READ_Y + 42)
+#define READ_BUTTON_W 433
+#define READ_BUTTON_H 54
+#define READ_BUTTON_X(k) (42 + (k) * 445)
+#define BOOST_Y (READ_Y + READ_H + 4)
+#define CARD_H 68
+#define ROOM_END 422 /* the cards' room ends above the status line */
 #define ACCENT RGBA8(91, 220, 207, 255)
 #define SELECTED RGBA8(35, 56, 70, 255)
 #define CARD RGBA8(21, 31, 44, 255)
@@ -100,13 +110,19 @@ int vjo_psp_register(VjoInstalledGame *g, char *msg, size_t cap) { (void)g; snpr
 /* ---- the scripted controller, touch screen and display ---- */
 typedef struct { unsigned buttons; int touch, x, y; } Input; /* x, y in screen pixels */
 #define MAX_FRAMES 64
-typedef struct { int x, y; unsigned color; float scale; char text[128]; } Text;
-typedef struct { int x, y, w, h; unsigned color; } Rect;
+/* Each text and rectangle with the clipping it was drawn under: clipped, and
+ * the clip rectangle's top and bottom (vita2d_set_clip_rectangle's y_min, y_max). */
+typedef struct { int x, y; unsigned color; float scale; char text[128]; int clipped, clip_top, clip_bottom; } Text;
+typedef struct { int x, y, w, h; unsigned color; int clipped, clip_top, clip_bottom; } Rect;
 typedef struct {
     Text text[160]; int texts;
     Rect rect[96]; int rects;
     char backend[16]; /* config.ini's ocr_backend value after this frame ("" without the line) */
     char tier[16];    /* its vocr_tier value */
+    char mode[16];    /* its ocr_mode value */
+    char boost[16];   /* its ocr_boost_clock value */
+    char highlight[16]; /* its highlight_mode value */
+    char results[16];   /* its local_dictionary_results value */
     int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
 /* Each run is one process of the app, as on the console: settings/main.c keeps
@@ -175,7 +191,7 @@ static void saved_value(const char *key, char out[16])
     snprintf(line_key, sizeof(line_key), "\n%s = ", key);
     const char *line = value ? NULL : strstr(text, line_key);
     if (line) value = line + strlen(line_key);
-    if (value) sscanf(value, "%15[a-z0-9]", out);
+    if (value) sscanf(value, "%15[a-z0-9_]", out);
 }
 static void saved_backend(char out[16]) { saved_value("ocr_backend", out); }
 static int has_model_line(void)
@@ -194,6 +210,10 @@ int sceDisplayWaitVblankStart(void)
         shown[frame] = drawing;
         saved_backend(shown[frame].backend);
         saved_value("vocr_tier", shown[frame].tier);
+        saved_value("ocr_mode", shown[frame].mode);
+        saved_value("ocr_boost_clock", shown[frame].boost);
+        saved_value("highlight_mode", shown[frame].highlight);
+        saved_value("local_dictionary_results", shown[frame].results);
         shown[frame].model_line = has_model_line();
     }
     frame++;
@@ -208,14 +228,16 @@ void vita2d_end_drawing(void) {}
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
 void vita2d_wait_rendering_done(void) {}
-void vita2d_enable_clipping(void) {}
-void vita2d_disable_clipping(void) {}
+/* libvita2d keeps the last clip rectangle and applies it while clipping is on. */
+static int clipping, clip_top, clip_bottom;
+void vita2d_enable_clipping(void) { clipping = 1; }
+void vita2d_disable_clipping(void) { clipping = 0; }
 void vita2d_set_clip_rectangle(int x_min, int y_min, int x_max, int y_max)
-{ (void)x_min; (void)y_min; (void)x_max; (void)y_max; }
+{ (void)x_min; (void)x_max; clip_top = y_min; clip_bottom = y_max; }
 void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
 {
     if (drawing.rects < (int)(sizeof(drawing.rect) / sizeof(drawing.rect[0])))
-        drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color};
+        drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color, clipping, clip_top, clip_bottom};
 }
 vita2d_pvf *vita2d_load_default_pvf(void) { return font_fails ? NULL : (vita2d_pvf *)&font_dummy; }
 void vita2d_free_pvf(vita2d_pvf *font) { (void)font; }
@@ -235,6 +257,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
     if (drawing.texts < (int)(sizeof(drawing.text) / sizeof(drawing.text[0]))) {
         Text *t = &drawing.text[drawing.texts++];
         t->x = x; t->y = y; t->color = color; t->scale = scale;
+        t->clipped = clipping; t->clip_top = clip_top; t->clip_bottom = clip_bottom;
         snprintf(t->text, sizeof(t->text), "%s", text);
     }
     return 0;
@@ -460,6 +483,95 @@ static const char *const SIZES[3] = {"Small", "Normal", "Large"};
 #define SAVED_BACKEND ""
 
 #ifndef VJO_VOCR_MODEL_INFO_TEST
+#define CARDS 6 /* the page's cards, top to bottom, by their titles */
+static const char *const CARD_NAMES[CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
+                                              "Japanese characters only", "Highlight", "Dictionaries shown"};
+/* Frame f's card i: its top (its title is drawn 30 below it, at x 42), or -1 when not shown. */
+static int card_top(int f, int i)
+{
+    for (int k = 0; k < shown[f].texts; k++)
+        if (shown[f].text[k].x == 42 && !strcmp(shown[f].text[k].text, CARD_NAMES[i])) return shown[f].text[k].y - 30;
+    return -1;
+}
+/* Frame f's focused card (whose focus bar is drawn at its left edge), or -1. */
+static int focused_card(int f)
+{
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->x == 24 && r->w == 4 && r->color == ACCENT)
+            for (int c = 0; c < CARDS; c++)
+                if (card_top(f, c) == r->y) return c;
+    }
+    return -1;
+}
+/* Frame f draws nothing of a card into the status line or the hints below the
+ * cards' room: whatever reaches past ROOM_END is clipped at it (the status box,
+ * its line and the hints are the footer's own). */
+static void check_room(int f)
+{
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        int bottom = r->y + r->h;
+        if (r->y < OCR_Y || (r->x == 24 && r->w == 912 && r->y == ROOM_END + 4)) continue; /* the header; the status box */
+        if (r->clipped && r->clip_bottom < bottom) bottom = r->clip_bottom;
+        TEST_CHECK_(bottom <= ROOM_END || r->y >= bottom, "frame %d: a %dx%d rectangle at %d,%d reaches %d", f, r->w,
+                    r->h, r->x, r->y, bottom);
+    }
+    for (int i = 0; i < shown[f].texts; i++) {
+        const Text *t = &shown[f].text[i];
+        int bottom = t->y + 8; /* a baseline's descenders */
+        if (t->y < OCR_Y || (t->x == 40 && t->y == ROOM_END + 4 + 22) || t->y == 535) continue; /* status line, hints */
+        if (t->clipped && t->clip_bottom < bottom) bottom = t->clip_bottom;
+        TEST_CHECK_(bottom <= ROOM_END || t->y - 24 >= bottom, "frame %d: '%s' at %d,%d drawn below the room", f,
+                    t->text, t->x, t->y);
+    }
+}
+/* Frame f's Read text card at top y: its title, its two choices (Automatically,
+ * then the press), each with its line; `chosen` (VJO_OCR_*, -1: none) filled. */
+static void check_read(int f, int y, int chosen, const char *press, const char *verb)
+{
+    char ready[64], waits[64];
+    const char *names[2] = {"Automatically (when it changes)", press}, *lines[2] = {ready, waits};
+    snprintf(ready, sizeof(ready), "The popup is ready when you %s", verb);
+    snprintf(waits, sizeof(waits), "Nothing runs until you %s", verb);
+    const Text *title = text_at(f, y + 30, 0, 960);
+    TEST_CHECK_(title && !strcmp(title->text, "Read text") && title->x == 42, "frame %d: the Read text title", f);
+    Buttons b = row_buttons(f, y + 42, READ_BUTTON_H, READ_BUTTON_W, y + 42 + 24, y + 42 + 47);
+    TEST_CHECK_(b.count == 2, "frame %d: %d Read text choices", f, b.count);
+    if (b.count != 2) return;
+    for (int k = 0; k < 2; k++) {
+        int active = chosen == (k ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO);
+        TEST_CHECK_(b.rect[k].x == READ_BUTTON_X(k) && b.rect[k].x + b.rect[k].w <= 920, "frame %d: choice %d at %d", f,
+                    k, b.rect[k].x);
+        TEST_CHECK_(b.rect[k].color == (active ? ACCENT : SELECTED), "frame %d: choice %d colour %08X", f, k,
+                    b.rect[k].color);
+        TEST_CHECK_(b.label[k] && !strcmp(b.label[k]->text, names[k]) && b.label[k]->color == (active ? BG_COLOR : WHITE),
+                    "frame %d: choice %d '%s'", f, k, b.label[k] ? b.label[k]->text : "(none)");
+        TEST_CHECK_(b.detail[k] && !strcmp(b.detail[k]->text, lines[k]) && b.detail[k]->color == (active ? BG_COLOR : DIM),
+                    "frame %d: choice %d line '%s'", f, k, b.detail[k] ? b.detail[k]->text : "(none)");
+        for (int m = 0; m < 2; m++) { /* centred in its button, inside it */
+            const Text *t = m ? b.detail[k] : b.label[k];
+            if (t) TEST_CHECK(t->x == b.rect[k].x + (b.rect[k].w - width(t)) / 2 && width(t) <= READ_BUTTON_W - 8);
+        }
+    }
+}
+/* Frame f's Speed boost card at top y: its title, its ON/OFF badge (label, filled when on), its help. */
+static void check_boost(int f, int y, const char *label, int on)
+{
+    const Text *title = text_at(f, y + 30, 0, 960), *help = text_at(f, y + 60, 0, 960), *badge = text_at(f, y + 32, 812, 920);
+    TEST_CHECK_(title && !strcmp(title->text, "Speed boost while reading (444 MHz)") && title->x + width(title) < 812 - 16,
+                "frame %d: the Speed boost title", f);
+    TEST_CHECK_(badge && !strcmp(badge->text, label), "frame %d: the badge says '%s'", f, badge ? badge->text : "(none)");
+    TEST_CHECK_(help && !strcmp(help->text, "ON reads faster: 444 MHz only while text is read.") &&
+                help->x + width(help) <= 912 - 100, "frame %d: the Speed boost help", f);
+    int filled = 0;
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->x == 812 && r->y == y + 6 && r->w == 108 && r->h == 34) filled = r->color == ACCENT ? 1 : 2;
+    }
+    TEST_CHECK_(filled == (on ? 1 : 2), "frame %d: the badge %s", f, on ? "is not filled" : "is filled");
+}
+
 static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR3-H15 found.";
 /* This package's estimates (core/vocr_models.c): VOCR3-FL10, VOCR3-H15, VOCR4-W20. */
 static const char *const DETAILS[3] = {"0.7 s, 0.9 MB", "1.3 s, 1.4 MB", "1.7 s, 1.9 MB"};
@@ -488,9 +600,10 @@ static void test_one_engine_its_model_size_on_top(void)
         if (r->x == 24 && r->w == 4 && r->color == ACCENT) bar += r->y == OCR_Y && r->h == OCR_H;
     }
     TEST_CHECK(bar == 1);
-    /* the first card below it, one row's height higher than with the engine row */
-    TEST_CHECK(text_at(1, SELECTION_Y + 30, 0, 960) && !strcmp(text_at(1, SELECTION_Y + 30, 0, 960)->text,
-                                                              "Japanese characters only"));
+    /* below it, how text is read: the Read text card, then the Speed boost card; a lookup card peeks */
+    TEST_CHECK(text_at(1, READ_Y + 30, 0, 960) && !strcmp(text_at(1, READ_Y + 30, 0, 960)->text, "Read text"));
+    TEST_CHECK(text_at(1, BOOST_Y + 30, 0, 960) &&
+               !strcmp(text_at(1, BOOST_Y + 30, 0, 960)->text, "Speed boost while reading (444 MHz)"));
 }
 
 /* API 21: the Model size. Touch a size to choose and save it (its edges and the
@@ -588,7 +701,7 @@ static void test_model_size_touch_keys_and_save(void)
     for (int i = 0; i < shown[17].rects; i++) {
         const Rect *r = &shown[17].rect[i];
         if (r->x == 24 && r->w == 4 && r->color == ACCENT) {
-            bar_next += r->y == SELECTION_Y;
+            bar_next += r->y == READ_Y;
             bar_card += r->y == OCR_Y;
         }
     }
@@ -611,8 +724,8 @@ static void test_the_cards_top_band_focuses_it(void)
     card("vocr_tier = small\nfont_size_ja = 22\n");
     static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), TAP(300, OCR_Y + 2), PRESS(SCE_CTRL_RIGHT)};
     run(in, (int)(sizeof(in) / sizeof(in[0])));
-    TEST_CHECK_(focus_bar_at(3, SELECTION_Y) == 1 && !focus_bar_at(3, OCR_Y), "frame 3: the next card focused");
-    TEST_CHECK_(focus_bar_at(5, OCR_Y) == 1 && !focus_bar_at(5, SELECTION_Y), "frame 5: the tap focused the card");
+    TEST_CHECK_(focus_bar_at(3, READ_Y) == 1 && !focus_bar_at(3, OCR_Y), "frame 3: the next card focused");
+    TEST_CHECK_(focus_bar_at(5, OCR_Y) == 1 && !focus_bar_at(5, READ_Y), "frame 5: the tap focused the card");
     TEST_CHECK_(!strcmp(shown[5].tier, "small"), "the tap chose a size: '%s'", shown[5].tier); /* still the file's */
     TEST_CHECK_(!strcmp(shown[6].tier, "normal"), "Right then steps the size: '%s'", shown[6].tier);
 }
@@ -693,6 +806,252 @@ static void test_status_follows_the_configured_models(void)
     check_no_fallback_hint(2);
 }
 
+/* Read text and Speed boost while reading, on a first run (no config.ini: the
+ * defaults, auto and on): below the Model size card, each choice with its line,
+ * a lookup card peeking at the bottom, cut at the room's end; looking saves nothing. */
+static void test_read_text_and_speed_boost_defaults(void)
+{
+    card(NULL);
+    static const Input in[] = {OCR_PAGE};
+    TEST_ASSERT(run(in, 2) == 2);
+    for (int f = 0; f < 2; f++) {
+        check_read(f, READ_Y, VJO_OCR_AUTO, "Only when I press L + R", "press");
+        check_boost(f, BOOST_Y, "ON", 1);
+        check_room(f);
+        TEST_CHECK_(card_top(f, 3) == BOOST_Y + CARD_H + 4, "frame %d: the next card peeks at %d", f, card_top(f, 3));
+    }
+    TEST_CHECK(focused_card(1) == 0 && access(VJO_PREFERENCES_PATH, F_OK) != 0);
+    TEST_CHECK(!shown[1].mode[0] && !shown[1].boost[0]);
+}
+
+/* Read text by the controller (Down to it; Right the press, Left automatically,
+ * Enter in turn) and by touch (a choice takes it; its edges are exact; the
+ * title row, the gap and the margin only focus), saved as ocr_mode; Speed
+ * boost by Enter, Left (OFF), Right (ON) and a touch anywhere on its card, saved
+ * as ocr_boost_clock; every other line of config.ini kept. */
+static void test_read_text_and_speed_boost_by_keys_and_touch(void)
+{
+    card("; mine\nocr_backend = vocr\nocr_mode = auto\nfont_size_ja = 22\nvocr_tier = small\n");
+    static const Input keys[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT),
+                                 PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_CROSS),
+                                 PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT),
+                                 PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_UP)};
+    run(keys, (int)(sizeof(keys) / sizeof(keys[0])));
+    static const struct { int frame; const char *mode, *boost; } want[] = {
+        {2, "auto", ""},            /* Down: Read text, nothing saved */
+        {4, "on_press", "on"},      /* Right: the press (saved with the boost the file had: none, on) */
+        {6, "on_press", "on"},      /* Right again: no change */
+        {8, "auto", "on"},          /* Left: automatically */
+        {10, "on_press", "on"},     /* Enter: in turn */
+        {12, "auto", "on"},
+        {14, "auto", "on"},         /* Down: Speed boost */
+        {16, "auto", "off"},        /* Enter: OFF */
+        {18, "auto", "off"},        /* Left: OFF already */
+        {20, "auto", "on"},         /* Right: ON */
+        {22, "auto", "off"},        /* Left: OFF */
+        {24, "auto", "off"},        /* Up: Read text again */
+    };
+    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        int f = want[i].frame;
+        TEST_CHECK_(!strcmp(shown[f].mode, want[i].mode), "frame %d: ocr_mode '%s', want %s", f, shown[f].mode,
+                    want[i].mode);
+        TEST_CHECK_(!strcmp(shown[f].boost, want[i].boost), "frame %d: ocr_boost_clock '%s', want '%s'", f,
+                    shown[f].boost, want[i].boost);
+        TEST_CHECK_(!strcmp(shown[f].tier, "small") && !strcmp(shown[f].backend, i < 1 ? "vocr" : SAVED_BACKEND),
+                    "frame %d: vocr_tier '%s', ocr_backend '%s'", f, shown[f].tier, shown[f].backend);
+        check_room(f);
+    }
+    check_read(5, READ_Y, VJO_OCR_ON_PRESS, "Only when I press L + R", "press");
+    check_read(9, READ_Y, VJO_OCR_AUTO, "Only when I press L + R", "press");
+    check_boost(17, BOOST_Y, "OFF", 0);
+    check_boost(21, BOOST_Y, "ON", 1);
+    TEST_CHECK(focused_card(3) == 1 && focused_card(15) == 2 && focused_card(25) == 1);
+    {
+        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
+        char text[4096];
+        TEST_ASSERT(file != NULL);
+        size_t n = fread(text, 1, sizeof(text) - 1, file);
+        fclose(file);
+        text[n] = 0;
+        TEST_CHECK(!strcmp(text, "; mine\nocr_mode = auto\nfont_size_ja = 22\nvocr_tier = small\nocr_boost_clock = off\n"));
+        TEST_MSG("%s", text);
+    }
+    /* touch: each edge tap comes when it would change the saved choice were that edge a pixel off.
+     * Automatically spans x 42-474, the press 487-919, both y READ_BUTTON_Y to +53. */
+    static const struct { int x, y; const char *mode; } taps[] = {
+        {474, READ_BUTTON_Y, "auto"},                       /* Automatically, top-right pixel (from the press) */
+        {487, READ_BUTTON_Y, "on_press"},                   /* the press, top-left pixel */
+        {42, READ_BUTTON_Y + READ_BUTTON_H - 1, "auto"},    /* Automatically, bottom-left pixel */
+        {919, READ_BUTTON_Y + READ_BUTTON_H - 1, "on_press"}, /* the press, bottom-right pixel */
+        {475, READ_BUTTON_Y + 20, "on_press"},              /* the gap: focus only */
+        {300, READ_BUTTON_Y + 20, "auto"},
+        {486, READ_BUTTON_Y + 20, "auto"},                  /* the gap's other side */
+        {920, READ_BUTTON_Y + 20, "auto"},                  /* right of the press */
+        {600, READ_BUTTON_Y + 20, "on_press"},
+        {41, READ_BUTTON_Y + 20, "on_press"},               /* left of Automatically */
+        {300, READ_BUTTON_Y - 1, "on_press"},               /* above the choices: the title row */
+        {300, READ_BUTTON_Y + READ_BUTTON_H, "on_press"},   /* below them: the card's margin */
+        {300, READ_Y + 20, "on_press"},                     /* the title */
+    };
+    enum { N = sizeof(taps) / sizeof(taps[0]), BOOST_TAPS = 3 };
+    static Input touch[2 + 2 * N + 2 * BOOST_TAPS] = {OCR_PAGE};
+    card("ocr_mode = on_press\nfont_size_ja = 22\n");
+    for (int i = 0; i < N; i++) touch[2 + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
+    /* then the Speed boost card: a tap anywhere on it switches it (none in the file: on) */
+    static const int boost_taps[BOOST_TAPS][2] = {{500, BOOST_Y + 30}, {100, BOOST_Y + 60}, {900, BOOST_Y + 2}};
+    static const char *const boost_after[BOOST_TAPS] = {"off", "on", "off"};
+    for (int i = 0; i < BOOST_TAPS; i++) touch[2 + 2 * N + 2 * i] = (Input){0, 1, boost_taps[i][0], boost_taps[i][1]};
+    TEST_ASSERT(run(touch, 2 + 2 * N + 2 * BOOST_TAPS) == 2 + 2 * N + 2 * BOOST_TAPS);
+    for (int i = 0; i < N; i++) {
+        int f = 2 + 2 * i;
+        TEST_CHECK_(!strcmp(shown[f].mode, taps[i].mode), "tap %d at %d,%d: ocr_mode '%s', want %s", i, taps[i].x,
+                    taps[i].y, shown[f].mode, taps[i].mode);
+        TEST_CHECK_(focused_card(f) == 1, "tap %d: Read text focused (%d)", i, focused_card(f));
+    }
+    for (int i = 0; i < BOOST_TAPS; i++) {
+        int f = 2 + 2 * N + 2 * i;
+        TEST_CHECK_(!strcmp(shown[f].boost, boost_after[i]) && focused_card(f) == 2 && !strcmp(shown[f].mode, "on_press"),
+                    "Speed boost tap %d: '%s', want %s", i, shown[f].boost, boost_after[i]);
+    }
+}
+
+/* The page scrolls a card at a time: Down from the Model size to the last
+ * card brings each card all into view, with the fewest cards scrolled, and Up
+ * back; Up from the first card wraps to the last. A card cut at the bottom is
+ * only selected by a touch (no change), then a touch on it acts. Nothing of a
+ * card is ever drawn into the status line. */
+static void test_the_page_scrolls_a_card_at_a_time(void)
+{
+    card("vocr_tier = small\njapanese_only_selection = on\n");
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                               PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP),
+                               PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP)};
+    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
+    /* the first card in view after each key: Down to Japanese characters only scrolls one card
+     * (Read text on top), to Highlight one more (Speed boost on top), and the last card fits so */
+    static const struct { int frame, focus, top; } want[] = {
+        {1, 0, 0}, {3, 1, 0}, {5, 2, 0}, {7, 3, 1}, {9, 4, 2}, {11, 5, 2},
+        {13, 4, 2}, {15, 3, 2}, {17, 2, 2}, {19, 1, 1}, {21, 0, 0},
+        {23, 5, 2}, /* Up from the first: the last */
+    };
+    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        int f = want[i].frame, top = card_top(f, want[i].top), mine = card_top(f, want[i].focus);
+        TEST_CHECK_(focused_card(f) == want[i].focus, "frame %d: card %d focused, want %d", f, focused_card(f),
+                    want[i].focus);
+        TEST_CHECK_(top == OCR_Y, "frame %d: card %d at %d, want it first", f, want[i].top, top);
+        for (int c = 0; c < want[i].top; c++) /* the cards above the view are not drawn */
+            TEST_CHECK_(card_top(f, c) < 0, "frame %d: card %d drawn above the view", f, c);
+        int h = want[i].focus == 0 ? OCR_H : want[i].focus == 1 ? READ_H : CARD_H;
+        TEST_CHECK_(mine >= OCR_Y && mine + h <= ROOM_END, "frame %d: the focused card at %d..%d", f, mine, mine + h);
+        check_room(f);
+        /* the scroll bar's thumb: where the view is in the 488-pixel column (310 of it shown) */
+        static const int offset[] = {0, 98, 204};
+        int thumb = 0;
+        for (int k = 0; k < shown[f].rects; k++)
+            if (shown[f].rect[k].x == 942 && shown[f].rect[k].color == DIM)
+                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 488 &&
+                        shown[f].rect[k].h == 310 * (488 - offset[want[i].top] < 310 ? 488 - offset[want[i].top] : 310) / 488;
+        TEST_CHECK_(thumb, "frame %d: the scroll bar's thumb", f);
+    }
+    /* the size buttons' place is Read text's title row once the page has scrolled: a tap there
+     * selects Read text and chooses nothing */
+    static const Input scrolled[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                                     TAP(300, 150), TAP(500, 400), TAP(300, 300)};
+    card("vocr_tier = small\njapanese_only_selection = on\nhighlight_mode = word\n");
+    frames = run(scrolled, (int)(sizeof(scrolled) / sizeof(scrolled[0])));
+    TEST_ASSERT(frames == (int)(sizeof(scrolled) / sizeof(scrolled[0])));
+    TEST_CHECK_(focused_card(9) == 1 && !strcmp(shown[9].tier, "small") && card_top(9, 0) < 0 &&
+                card_top(9, 1) == OCR_Y, "frame 9: card %d focused, Read text at %d", focused_card(9), card_top(9, 1));
+    /* Highlight, cut at the bottom (its top at 362, the room's end 422): selected and scrolled
+     * into view (Speed boost now first), not switched */
+    TEST_CHECK_(focused_card(10) == 4 && card_top(10, 2) == OCR_Y && card_top(10, 4) + CARD_H <= ROOM_END &&
+                !strcmp(shown[10].highlight, "word"), "frame 10: card %d focused, highlight '%s'", focused_card(10),
+                shown[10].highlight);
+    /* a touch on it, all in view now, switches it */
+    TEST_CHECK_(card_top(12, 4) == 256 && !strcmp(shown[12].highlight, "character") && focused_card(12) == 4,
+                "frame 12: highlight '%s'", shown[12].highlight);
+    for (int f = 0; f < frames; f++) check_room(f);
+}
+
+/* The lookup cards' choices once the page has scrolled (Speed boost first: Highlight at y 256, Dictionaries shown
+ * at 328; audit N8): drawn there, and touched there, at their badges' exact edges. A touch elsewhere on Highlight
+ * switches it, as before the page scrolled; on Dictionaries shown only a number chooses. */
+#define HL_Y 256
+#define DICT_Y 328
+static int rect_at(int f, int x, int y, int w, int h)
+{
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->x == x && r->y == y && r->w == w && r->h == h) return 1;
+    }
+    return 0;
+}
+static void test_scrolled_cards_keep_their_touch_targets(void)
+{
+    card("highlight_mode = word\nlocal_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
+    static const struct { int x, y; const char *highlight, *results; } taps[] = {
+        {724, HL_Y + 6, "character", "1"},   /* Character, top-left pixel */
+        {707, HL_Y + 39, "word", "1"},       /* Whole word, bottom-right pixel */
+        {600, HL_Y + 20, "word", "1"},       /* Whole word again: chosen, it stays (a toggle would switch it) */
+        {919, HL_Y + 39, "character", "1"},  /* Character, bottom-right pixel */
+        {800, HL_Y + 20, "character", "1"},  /* Character again: it stays */
+        {532, HL_Y + 6, "word", "1"},        /* Whole word, top-left pixel */
+        {300, HL_Y + 30, "character", "1"},  /* the title: switches */
+        {715, HL_Y + 20, "word", "1"},       /* between the badges: switches */
+        {636, DICT_Y + 6, "word", "3"},      /* 3, top-left pixel */
+        {679, DICT_Y + 39, "word", "3"},     /* 3, bottom-right pixel */
+        {680, DICT_Y + 20, "word", "3"},     /* the gap after 3: focus only */
+        {684, DICT_Y + 20, "word", "4"},     /* 4, left edge */
+        {919, DICT_Y + 20, "word", "8"},     /* 8, right edge */
+        {920, DICT_Y + 20, "word", "8"},     /* right of 8: focus only */
+        {540, DICT_Y + 5, "word", "8"},      /* above the numbers: focus only */
+        {540, DICT_Y + 40, "word", "8"},     /* below them: focus only */
+        {540, DICT_Y + 6, "word", "1"},      /* 1, top-left pixel */
+    };
+    enum { N = sizeof(taps) / sizeof(taps[0]), KEYS = 10 };
+    static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                                     PRESS(SCE_CTRL_DOWN)}; /* Highlight focused: Speed boost on top */
+    for (int i = 0; i < N; i++) in[KEYS + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
+    TEST_ASSERT(run(in, KEYS + 2 * N) == KEYS + 2 * N);
+    TEST_CHECK_(card_top(9, 2) == OCR_Y && card_top(9, 4) == HL_Y && card_top(9, 5) == DICT_Y,
+                "frame 9: Speed boost at %d, Highlight at %d, Dictionaries at %d", card_top(9, 2), card_top(9, 4),
+                card_top(9, 5));
+    TEST_CHECK(rect_at(9, 532, HL_Y + 6, 176, 34) && rect_at(9, 724, HL_Y + 6, 196, 34)); /* the badges, there */
+    for (int k = 0; k < 8; k++) TEST_CHECK_(rect_at(9, 540 + k * 48, DICT_Y + 6, 44, 34), "number %d", k + 1);
+    for (int i = 0; i < N; i++) {
+        int f = KEYS + 2 * i;
+        TEST_CHECK_(!strcmp(shown[f].highlight, taps[i].highlight) && !strcmp(shown[f].results, taps[i].results),
+                    "tap %d at %d,%d: highlight '%s', results '%s'; want %s, %s", i, taps[i].x, taps[i].y,
+                    shown[f].highlight, shown[f].results, taps[i].highlight, taps[i].results);
+        TEST_CHECK_(focused_card(f) == (taps[i].y < DICT_Y ? 4 : 5) && card_top(f, 2) == OCR_Y,
+                    "tap %d: card %d focused, Speed boost at %d", i, focused_card(f), card_top(f, 2));
+        check_room(f);
+    }
+}
+
+/* The press choice names what opens the overlay (config.ini toggle_button). */
+static void test_read_text_names_the_buttons_that_open_the_overlay(void)
+{
+    static const struct { const char *ini, *press, *verb; } triggers[] = {
+        {"toggle_button = select\n", "Only when I press Select", "press"},
+        {"toggle_button = start\n", "Only when I press Start", "press"},
+        {"toggle_button = select+l\n", "Only when I press Select + L", "press"},
+        {"toggle_button = select+r\nsubtitle_button = select+l\n", "Only when I press Select + R", "press"},
+        {"toggle_button = rear_double_tap\n", "Only when I double-tap the back", "tap"},
+        {"toggle_button = l+r\nocr_mode = on_press\n", "Only when I press L + R", "press"},
+        {"toggle_button = nonsense\n", "Only when I press L + R", "press"},
+    };
+    static const Input in[] = {OCR_PAGE};
+    for (unsigned i = 0; i < sizeof(triggers) / sizeof(triggers[0]); i++) {
+        card(triggers[i].ini);
+        run(in, 2);
+        check_read(1, READ_Y, strstr(triggers[i].ini, "on_press") ? VJO_OCR_ON_PRESS : VJO_OCR_AUTO, triggers[i].press,
+                   triggers[i].verb);
+        TEST_MSG("%s", triggers[i].ini);
+    }
+}
+
 /* An unreadable config.ini: nothing is selected and nothing can be saved. */
 static void test_unreadable_config_selects_and_saves_nothing(void)
 {
@@ -712,6 +1071,21 @@ static void test_unreadable_config_selects_and_saves_nothing(void)
     TEST_CHECK(st && !strcmp(st->text, "Cannot read config.ini. Repair it before changing settings.") &&
                st->color == OFF);
     TEST_CHECK(title && title->color == DIM); /* the row's title dimmed: nothing to choose */
+    /* Read text and Speed boost show no choice either, and keys and touches save nothing */
+    static const Input reading[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
+                                    TAP(600, READ_BUTTON_Y + 20), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_CROSS),
+                                    PRESS(SCE_CTRL_RIGHT), TAP(500, BOOST_Y + 30)};
+    run(reading, (int)(sizeof(reading) / sizeof(reading[0])));
+    for (int f = 1; f < (int)(sizeof(reading) / sizeof(reading[0])); f++) {
+        check_read(f, READ_Y, -1, "Only when I press L + R", "press");
+        const Text *read_title = text_at(f, READ_Y + 30, 0, 960), *badge = text_at(f, BOOST_Y + 32, 812, 920);
+        TEST_CHECK_(read_title && read_title->color == DIM && badge && !strcmp(badge->text, "--"),
+                    "frame %d: Read text's title %08X, the Speed boost badge '%s'", f, read_title ? read_title->color : 0,
+                    badge ? badge->text : "(none)");
+    }
+    const Text *why = text_at(17, ROOM_END + 4 + 22, 40, 41); /* the status line (a cut card's help is drawn there, clipped) */
+    TEST_CHECK_(why && !strcmp(why->text, "Cannot read config.ini. Choices have not been changed.") && why->color == OFF,
+                "the status line: '%s'", why ? why->text : "(none)");
     chmod(VJO_PREFERENCES_PATH, 0644);
     char backend[16], tier[16];
     saved_backend(backend);
@@ -892,6 +1266,12 @@ TEST_LIST = {
     {"engine_line_vocr_Lens_VOCR2_Meiki_ncnn_shows_the_size_and_next_save_drops_it", test_engine_line_shows_the_size_and_next_save_drops_it},
     {"status_follows_the_configured_models_and_files", test_status_follows_the_configured_models},
     {"unreadable_config_selects_and_saves_nothing", test_unreadable_config_selects_and_saves_nothing},
+    {"read_text_and_speed_boost_first_run_auto_and_on_below_the_model_size", test_read_text_and_speed_boost_defaults},
+    {"read_text_and_speed_boost_by_keys_and_touch_saved_as_ocr_mode_and_ocr_boost_clock",
+     test_read_text_and_speed_boost_by_keys_and_touch},
+    {"the_page_scrolls_a_card_at_a_time_and_never_draws_into_the_status_line", test_the_page_scrolls_a_card_at_a_time},
+    {"read_text_names_the_buttons_that_open_the_overlay", test_read_text_names_the_buttons_that_open_the_overlay},
+    {"scrolled_highlight_and_dictionaries_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
     {"engine_card_and_size_lines", test_engine_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},

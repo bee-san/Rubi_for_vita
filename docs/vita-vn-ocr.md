@@ -873,8 +873,10 @@ steps below cover a source build or adding another model.
    log_file = on
    ```
 
-   `ocr_mode = auto` also works: each settled dialogue screen is read in the
-   background, which costs a model load and recognition per screen.
+   `auto`, the default (the Overlay app's Read text, Automatically), reads each
+   settled dialogue screen in the background, a recognition per screen; `on_press`
+   (Only when I press L + R) reads only when the overlay opens
+   ([auto-vs-press.md](auto-vs-press.md)).
 5. In the game, open the overlay, press □ and draw a box around the dialogue
    text (the whole text box is fine, name plate included), then × to keep it.
 

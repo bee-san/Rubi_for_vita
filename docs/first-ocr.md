@@ -143,7 +143,9 @@ worker; `L`: every thread's file appends meanwhile).
    from 0.1 s faster to 0.4 s slower on those two presses. It saves up to 1 s only on a region that
    keeps changing for longer than 1 s. It is test.3's experiment: the press jobs' settle steps
    (`limit` against `held`), their tears and tries (`tools/analyse_timeline.py --jobs`) decide whether
-   it stays.
+   it stays. In test.3, 1 of the 9 jobs that waited under the press cap reached it (1,041 ms; the
+   others held after 0.4-1.0 s); how each mode's presses fared is in
+   [auto-vs-press.md](auto-vs-press.md#from-the-press-to-the-popup).
 4. **Measured, not guessed, next time.** The TEAR step's `bytes` is when the last try began (us since
    the job's start), the warm-up's LOAD step has `arg=1`, and the done line has the exchange and log
    times.

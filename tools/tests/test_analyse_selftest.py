@@ -2296,5 +2296,306 @@ class OverlayAppSummary(unittest.TestCase):
         self.assertIn("check_app(); /* after the game is active", worker)
 
 
+def shell_job(why, text_ms=None, done_ms=1000, lines=(), settle=None, rc=0, kind=""):
+    """A Shell job as shell/worker.c logs it: its start (start_job_kind), the game worker's settle step (passes, rc,
+    ms), its text's lines (log_text_lines), the text posted (on_job_text) and its end (net_job)."""
+    out = [f"job start ({why}){kind}"]
+    if settle:
+        out.append(f"gstep job settle kind=- arg={settle[0]} rc=0x{settle[1]:08X} bytes=3 sum=0x00000000 main=0 cdram=0 "
+                   f"phycont=0 us={settle[2] * 1000}")
+    out += [f"game vocr text {i}: {line}" for i, line in enumerate(lines)]
+    if text_ms is not None:
+        out.append(f"subtitle text ready in {text_ms} ms")
+    out.append(f"job 0 done rc={rc} in {done_ms} ms, arena peak 53744, dictionary page 1/1, game {done_ms // 2} ms, "
+               "log 30 ms in 3 appends")
+    return "\n".join(out) + "\n"
+
+
+def press(found=None, rc=0):
+    """An overlay open (open_overlay): its input block, then what it found."""
+    out = [f"input block on rc={rc} ({rc & 0xFFFFFFFF:08X}) t=141395 ms"]
+    if found:
+        out.append(f"open: {found}" + ("" if found in ("saved local word", "background result") else " (stable 1, quiet 0)"))
+    return "\n".join(out) + "\n"
+
+
+CLOSE = "overlay close (in game) t=152468 ms: input block off rc=0\noverlay closed: 596 frames, 0 word moves\n"
+ON_PRESS = START.replace("ocr_mode auto", "ocr_mode on_press")
+
+
+class PressesAndRereads(unittest.TestCase):
+    """The presses by ocr_mode (the Overlay app's Read text) and the jobs read before their text had finished
+    (docs/auto-vs-press.md): what each overlay open found, how long its text and word took, and each job whose text
+    the next job's in the window went on from. The log's text is never printed."""
+
+    def test_each_press_is_classified_and_timed_by_the_windows_ocr_mode(self):
+        log = (BOOT22 + START
+               + shell_job("auto: screen settled", 600, 700, ["あいうえお"]) + press("saved local word") + CLOSE
+               # a press during a background job: its word with that job's end
+               + "job start (auto: screen quiet)\n" + press("background job still running")
+               + "game vocr text 0: かきくけこ\nsubtitle text ready in 2300 ms\n"
+               + "job 0 done rc=0 in 2400 ms, arena peak 53744, dictionary page 1/1, game 2000 ms, log 30 ms in 3 appends\n"
+               + CLOSE
+               # nothing to show: a job on the press, its wait for the text to hold still
+               + press("no background result") + shell_job("overlay opened", 1200, 1400, ["さしすせそ"], (12, 1, 800))
+               + CLOSE
+               + press("screen changed since the background result") + shell_job("overlay opened", None, 900, rc=-120)
+               + CLOSE
+               + press(rc=-2147352557) + "Overlay unavailable\n"  # a refused input block: no open
+               # a job running at the press whose result was for an earlier screen: the next job brings the text;
+               # a quiet refresh of the open overlay after it is not the press's
+               + "job start (auto: screen settled)\n" + press("background job still running")
+               + "job 0 done rc=0 in 500 ms, arena peak 0, dictionary page 1/0, game 400 ms, log 30 ms in 3 appends\n"
+               + shell_job("result was for an earlier screen", 700, 800, ["なにぬねの"])
+               + shell_job("auto: screen settled", 600, 700, ["はひふへほ"], kind=", refresh") + CLOSE
+               # a press's job that the screen changed under, then its retry
+               + press("no background result") + shell_job("overlay opened", None, 600, rc=-120)
+               + shell_job("the screen changed during the last one", 400, 500, ["まみむめも"]) + CLOSE
+               # the shown text kept (no open line), its word looked up by a cursor job (no job start)
+               + press() + "job 0 done rc=0 in 50 ms, arena peak 53744, dictionary page 1/1, game 0 ms, log 19 ms in 1 "
+               "appends\n" + CLOSE
+               # the same game resumed with Read text: Only when I press
+               + ON_PRESS + press("no background result") + shell_job("overlay opened", 900, 1000, ["たちつてと"])
+               + CLOSE + press("saved local word") + CLOSE)
+        pr = a.summarise_log(log)["presses"]
+        auto, on_press = pr["modes"]["auto"], pr["modes"]["on_press"]
+        self.assertEqual((auto["presses"], auto["at_once"], auto["waited"], auto["read_text"], auto["read_word"],
+                          auto["read_settle"], auto["then_text"], auto["then_word"], auto["read_without_text"],
+                          auto["unclear"]),
+                         (7, 2, [2542], [1200], [1400], [800], [700, 1000], [800, 1100], 1, 0))
+        self.assertEqual((on_press["presses"], on_press["at_once"], on_press["read_text"], on_press["read_word"]),
+                         (2, 1, [900], [1000]))
+        text = flat("\n".join(a.render_presses(a.summarise_log(log))))
+        for want in ("presses (the overlay opened) with ocr_mode auto: 7 in 1 game window; 2 shown at once",
+                     "1 waited for a job still running: the word at most 2.5 s after the press (est.: that job's "
+                     "whole time, begun before the press, as the log has no time for a job's start; then its done "
+                     "line's 2 appends at up to 46 ms each and the Shell's 50 ms poll)",
+                     "1 recognized on the press: the text 1.2 s after its job's start, the word 1.4 s; of it, waiting "
+                     "for the text to hold still 0.8 s (the job starts after the press's own handling, its log lines "
+                     "and config.ini's re-read, est. 0.04-0.3 s; each time is taken before its own log line's appends)",
+                     "2 recognized by a later job (after the one running at the press, whose result was for an earlier "
+                     "screen or had no lookup, or a retry): the text at least 0.7-1.0 s (median 1.0 s) after the "
+                     "press, the word at least 0.8-1.1 s (median 1.1 s)",
+                     "1 with no text from any job while the overlay was open",
+                     "presses (the overlay opened) with ocr_mode on_press: 2 in 1 game window; 1 shown at once",
+                     "1 recognized on the press: the text 0.9 s after its job's start, the word 1.0 s"):
+            self.assertIn(want, text)
+        for secret in ("あいうえお", "かきくけこ", "さしすせそ", "たちつてと", "なにぬねの", "はひふへほ", "まみむめも"):
+            self.assertNotIn(secret, text)  # the log's text, never printed
+        # the collect report shows the section, after the stable-text wait's line
+        import inspect
+        source = inspect.getsource(a.render_collect)
+        self.assertLess(source.index("stable-text wait:"), source.index("L += render_presses(lg)"))
+
+    def test_a_press_waits_only_for_a_running_job_that_brings_its_word(self):
+        """audit B1: a job running at the press is the press's wait only when it read text and looked the word up, or,
+        OCR only, when the cursor lookup of its word follows (restart_old_job -> start_cursor_job, which logs no job
+        start): its time and the Shell's poll are added. A job that failed or read no line gives the press no text; the
+        self-test's job (open_overlay stops it) and a refresh are never a press's; a lookup the user makes later is not
+        the press's."""
+        def end(rc, ms):
+            return f"job 0 done rc={rc} in {ms} ms, arena peak 53744, dictionary page 1/1, game {ms // 2} ms, log 30 ms in 3 " \
+                   "appends\n"
+
+        def cursor(ms, rc=0):  # a cursor lookup as net_job logs it: its lookup line and its end, no start
+            return f"lookup cursor at 0: 2 chars, dictionary 1/1, page 1/1, 7 reads 24760 B, rc={rc}, 40 ms; \"x\"\n" + \
+                   end(rc, ms)
+        text = "game vocr text 0: あいうえお\nsubtitle text ready in 1400 ms\n"
+        cases = [
+            ("with a lookup, its text", "", text + end(0, 1800), "", ("waited", 1942, 0)),
+            ("then the user's own lookup", "", text + end(0, 1800), cursor(300), ("waited", 1942, 0)),
+            ("rc -119", "", end(-119, 1800), "", ("read_without_text",)),
+            ("rc -117", "", end(-117, 40), "", ("read_without_text",)),
+            ("no line", "", end(0, 900), "", ("read_without_text",)),
+            # audit-b note C (MB1a2): text, then a failed lookup (rc -113): counted with the failed jobs, as no text
+            ("rc -113 after its text", "", text + end(-113, 1800), "", ("read_without_text",)),
+            ("OCR only, then its word's lookup", ", OCR only", text + end(0, 1520), cursor(400), ("waited", 2204, 1)),
+            ("OCR only, its lookup failed", ", OCR only", text + end(0, 1520), cursor(400, rc=-110), ("unclear",)),
+            # audit-b note C (MB1f): the word's lookup is the first done line after the running job's, not a later one
+            ("OCR only, its word's lookup, then the user's", ", OCR only", text + end(0, 1520), cursor(400) + cursor(300),
+             ("waited", 2204, 1)),
+            ("OCR only, closed before its word's lookup", ", OCR only", text + end(0, 1520), "", ("closed_before",)),
+            ("OCR only, the log ends open", ", OCR only", text + end(0, 1520), None, ("unclear",)),
+        ]
+        for name, kind, running_end, after, want in cases:
+            log = (BOOT22 + START + f"job start (auto: screen settled){kind}\n" + press("background job still running")
+                   + running_end + (after + CLOSE if after is not None else ""))
+            p = a.summarise_log(log)["presses"]
+            mode = p["modes"]["auto"]
+            got = (("waited", mode["waited"][0], mode["waited_ocr_only"]) if mode["waited"] else
+                   next((k,) for k in ("read_without_text", "unclear", "closed_before", "at_once") if mode[k]))
+            self.assertEqual(got, want, name)
+        # the self-test's job running at the press: stopped by it, never a press's, whatever follows
+        for after in ("", cursor(300), shell_job("the running job was OCR only", 900, 1000, ["あ"])):
+            log = (BOOT22 + START + "job start (self-test)\n" + press("background job still running")
+                   + end(-118, 8611) + after + CLOSE)
+            mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+            self.assertEqual(mode["waited"], [])
+            self.assertEqual((mode["unclear"], mode["then_text"]), (0, [900]) if "OCR only" in after else (1, []))
+        # rendered with what it adds
+        log = (BOOT22 + START + "job start (auto: screen settled), OCR only\n" + press("background job still running")
+               + text + end(0, 1520) + cursor(400) + CLOSE)
+        self.assertIn("1 waited for a job still running: the word at most 2.2 s after the press (est.: that job's whole "
+                      "time, begun before the press, as the log has no time for a job's start; then its done line's 2 "
+                      "appends at up to 46 ms each and the Shell's 50 ms poll; for 1 OCR-only job, with the lookup of the "
+                      "word after it)", flat("\n".join(a.render_presses(a.summarise_log(log)))))
+
+    def test_the_waited_bound_counts_what_follows_a_done_line_and_the_press_handling_is_stated(self):
+        """audit-b B1b: net_job takes a job's time, logs its done line (an append to log.txt, and one to status.txt
+        while that is under 64 KiB), and only then sets job_done, which the control thread polls every 50 ms: the bound
+        adds both appends at their most measured time and the poll. A running job whose done line comes before the
+        press's `open:` line ended during the press's own handling: not counted. A press job's times run from its
+        start, after the press's own handling, which the line says."""
+        worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        net_job = worker[worker.index("static void net_job(void)"):]
+        net_job = net_job[:net_job.index("\n}\n")]
+        self.assertLess(net_job.index('vjo_log("job %d done rc=%d in %d ms'), net_job.index("job_done = 1;"))
+        self.assertLess(net_job.index("(int)((now_us() - t0) / 1000)"), net_job.index("job_done = 1;"))
+        self.assertIn("#define POLL_TIMEOUT_US   50000", worker)
+        self.assertIn("#define STATUS_CAP (64 * 1024)", (ROOT / "shell/log_vita.c").read_text(encoding="utf-8"))
+        self.assertIn("12.1-46.0 ms per append", (ROOT / "docs/performance.md").read_text(encoding="utf-8"))
+        self.assertEqual((a.PRESS_POLL_MS, a.PRESS_DONE_APPENDS, a.PRESS_APPEND_MS, a.PRESS_DONE_GAP_MS),
+                         (50, 2, 46, 142))
+        running = "job start (auto: screen quiet)\n"
+        done = ("game vocr text 0: あ\nsubtitle text ready in 900 ms\n"
+                "job 0 done rc=0 in 1000 ms, arena peak 53744, dictionary page 1/1, game 500 ms, log 30 ms in 3 appends\n")
+        after = a.summarise_log(BOOT22 + START + running + press("background job still running") + done + CLOSE)
+        self.assertEqual(after["presses"]["modes"]["auto"]["waited"], [1142])
+        # its done line before the press's open: line (the control thread had not seen its end): not counted
+        during = a.summarise_log(BOOT22 + START + running + "input block on rc=0 (00000000) t=1 ms\n" + done
+                                 + "open: background job still running (stable 1, quiet 0)\n" + CLOSE)
+        mode = during["presses"]["modes"]["auto"]
+        self.assertEqual((mode["waited"], mode["unclear"]), ([], 1))
+        self.assertIn("one that ended during the press's own handling", flat("\n".join(a.render_presses(during))))
+
+    def test_a_refresh_or_a_later_lookup_is_never_the_presss_own_job(self):
+        """audit B3: a quiet refresh while the overlay is open logs no `subtitle text ready` (on_job_text returns for it),
+        so counted as the press's job it would turn an answered press into one with no text."""
+        refresh = shell_job("auto: screen settled", None, 700, ["はひふへほ"], kind=", refresh")
+        log = (BOOT22 + START
+               # waited for a running job, then a refresh
+               + "job start (auto: screen quiet)\n" + press("background job still running")
+               + "game vocr text 0: かきくけこ\nsubtitle text ready in 1500 ms\n"
+               + "job 0 done rc=0 in 1600 ms, arena peak 53744, dictionary page 1/1, game 800 ms, log 30 ms in 3 appends\n"
+               + refresh + CLOSE
+               # the shown text kept, its word looked up (a cursor job: no start), then a refresh
+               + press() + "job 0 done rc=0 in 50 ms, arena peak 53744, dictionary page 1/1, game 0 ms, log 19 ms in 1 "
+               "appends\n" + refresh + CLOSE
+               # a job on the press, then a refresh: the press's job is still its own
+               + press("no background result") + shell_job("overlay opened", 1100, 1200, ["さしすせそ"]) + refresh
+               + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["waited"], mode["at_once"], mode["read_text"], mode["read_without_text"],
+                          mode["unclear"]), (3, [1742], 1, [1100], 0, 0))
+
+    def test_a_press_closed_before_its_text_or_never_opened_is_not_timed(self):
+        """audit N2 and N6: a press closed before its text or word came is no latency sample, nor one whose overlay
+        could not open (shell/overlay.cpp: no Paf memory for its text)."""
+        log = (BOOT22 + START
+               + press("no background result") + "job start (overlay opened)\n" + CLOSE
+               + "game vocr text 0: あ\nsubtitle text ready in 787 ms\n"
+               + "job 0 done rc=0 in 979 ms, arena peak 53744, dictionary page 1/1, game 676 ms, log 30 ms in 3 appends\n"
+               + "job start (auto: screen quiet)\n" + press("background job still running") + CLOSE
+               + "game vocr text 0: い\nsubtitle text ready in 1500 ms\n"
+               + "job 0 done rc=0 in 1600 ms, arena peak 53744, dictionary page 1/1, game 800 ms, log 30 ms in 3 appends\n"
+               + press("no background result") + "overlay not opened: no Paf memory for its text (20 KiB)\n"
+               + shell_job("overlay opened", 900, 1000, ["う"]) + CLOSE
+               + press("no background result") + shell_job("overlay opened", 900, 1000, ["え"]) + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["closed_before"], mode["not_opened"], mode["read_text"], mode["waited"]),
+                         (4, 2, 1, [900], []))
+        text = flat("\n".join(a.render_presses(a.summarise_log(log))))
+        self.assertIn("2 closed before their text or word came (not timed)", text)
+        self.assertIn("1 whose overlay could not open (no Paf memory for its text; not timed)", text)
+
+    def test_a_rotated_log_names_each_jobs_own_file_and_line(self):
+        """audit B2: --collect reads log.old.txt and then log.txt as one text; a flagged job names its own file's line."""
+        def pair():
+            return (shell_job("auto: screen settled", 500, 600, ["彼女は"])
+                    + shell_job("auto: screen settled", 500, 600, ["彼女は振り返った。"]))
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder) / "ux0/data/VitaJPOverlay"
+            data.mkdir(parents=True)
+            (data / "log.old.txt").write_text("ledger   VjoNet stack: current=69632 peak=69632\n" * 5000 + BOOT22 + START
+                                              + pair(), encoding="utf-8")
+            (data / "log.txt").write_text(BOOT22 + START + pair(), encoding="utf-8")
+            text = flat("\n".join(a.render_presses(a.summarise_collect(folder)["log"])))
+        self.assertIn("log.old.txt:5003 (auto: screen settled), 3 characters, no wait logged -> log.old.txt:5007", text)
+        self.assertIn("log.txt:3 (auto: screen settled), 3 characters, no wait logged -> log.txt:7 (auto: screen "
+                      "settled), 9 characters", text)
+        self.assertNotIn("log.txt:5003", text)
+
+    def test_a_job_read_before_its_line_had_typed_out_is_flagged_without_its_text(self):
+        log = (BOOT22 + START
+               + shell_job("auto: screen settled", 500, 600, ["彼女は振り"], (3, 1, 190))  # line 3: read early
+               + shell_job("overlay opened", 900, 1000, ["彼女は振り返って笑った。"])        # went on from it
+               + shell_job("auto: screen settled", 500, 600, ["彼女は振り返って笑った。"])  # the same text again
+               + shell_job("self-test")                                                  # left out
+               + shell_job("auto: screen quiet", 500, 600, ["一行目", "二行"], (2, 2, 2000))  # two lines, the
+               + shell_job("auto: screen settled", 500, 600, kind=", refresh",              # second still typing
+                           lines=["一行目", "二行目です"])
+               + shell_job("auto: screen settled", 500, 600, ["Hello"])
+               + shell_job("auto: screen settled", 500, 600, ["Hello world"])                # spaces do not count
+               + shell_job("auto: screen settled", 500, 600, ["別の文"])                     # a new line: nothing
+               + START + shell_job("auto: screen settled", 500, 600, ["別の文です"]))        # another window: no pair
+        lg = a.summarise_log(log)
+        pr = lg["presses"]
+        self.assertEqual((pr["text_jobs"], pr["pairs"], pr["same"]), (9, 7, 1))
+        self.assertEqual([(e["why"], e["chars"], e["next_why"], e["next_chars"]) for e in pr["early"]],
+                         [("auto: screen settled", 5, "overlay opened", 12), ("auto: screen quiet", 5,
+                                                                              "auto: screen settled", 8),
+                          ("auto: screen settled", 5, "auto: screen settled", 10)])
+        lines = log.splitlines()
+        self.assertEqual(lines[pr["early"][0]["line"] - 1], "job start (auto: screen settled)")
+        text = flat("\n".join(a.render_presses(lg)))
+        self.assertIn("read before finished: 3 of 7 pairs of a game window's jobs with text, one after the other (the "
+                      "next job's text began with the whole of this one's and went on", text)
+        self.assertIn(f"log.txt:{pr['early'][0]['line']} (auto: screen settled), 5 characters, its wait held after 3 "
+                      f"passes (190 ms) -> log.txt:{pr['early'][0]['next_line']} (overlay opened), 12 characters", text)
+        self.assertIn("(auto: screen quiet), 5 characters, its wait reached the limit (2,000 ms)", text)
+        self.assertIn("1 read the same text again", text)
+        for secret in ("彼女", "一行目", "Hello", "別の文"):
+            self.assertNotIn(secret, text)
+
+    def test_older_builds_and_logs_without_text_say_what_they_cannot(self):
+        old = "Vita JP Overlay shell started (kernel API 20)\n" + START + press("no background result") + \
+            shell_job("overlay opened", 900, 1000, ["あいう"]) + CLOSE
+        self.assertEqual(a.render_presses(a.summarise_log(old)), [])
+        # a build that logs no recognized text: the presses still, the re-reads not
+        quiet = BOOT22 + START + press("no background result") + shell_job("overlay opened", 900, 1000) + CLOSE + \
+            shell_job("auto: screen settled", 500, 600)
+        text = flat("\n".join(a.render_presses(a.summarise_log(quiet))))
+        self.assertIn("1 with no text from any job while the overlay was open", text)
+        self.assertIn("read before finished: no job's text is in this log, so nothing to compare", text)
+        self.assertEqual(a.render_presses(a.summarise_log(BOOT22)), [])
+        # #141's normal build logs none of these lines (vjo_dlog, #if VJO_DEBUG): said, never counted as no presses
+        normal = ("Vita JP Overlay shell started (kernel API 22, the normal build: a short log)\n" + START
+                  + "ocr rc=0 VOCR3_H15_w8.vocr: 1 lines, 640 ms\nclock: 333 -> 444 MHz while reading, 333 after\n")
+        self.assertEqual(flat("\n".join(a.render_presses(a.summarise_log(normal)))),
+                         "presses and read before finished: the normal build's short log (1 boot) logs no press, job "
+                         "or recognized text, so its game windows are not read here; the -debug zip logs them")
+        # both builds in one log (an update between two boots): the debug boot's presses, and the note
+        both = normal + BOOT22 + START + press("no background result") + shell_job("overlay opened", 900, 1000, ["あ"])
+        lg = a.summarise_log(both)
+        self.assertEqual((lg["presses"]["modes"]["auto"]["presses"], lg["presses"]["normal_boots"]), (1, 1))
+        text = flat("\n".join(a.render_presses(lg)))
+        self.assertIn("1 recognized on the press: the text 0.9 s after it", text)
+        self.assertTrue(text.endswith("(the normal build's short log (1 boot) logs no press, job or recognized text, so "
+                                      "its game windows are not read here; the -debug zip logs them)"), text)
+
+    def test_the_patterns_are_the_shells_own_lines(self):
+        worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        for fmt in ('"input block on rc=%d (%08X) t=%u ms"', '"open: saved local word"', '"open: background result"',
+                    '"open: %s (stable %u, quiet %u)"', '"background job still running"', '"no background result"',
+                    '"screen changed since the background result"', '"job start (%s)%s"',
+                    '"subtitle text ready in %d ms"', '"game vocr text %u: %s"', '"game vocr text %u shown: %s"',
+                    '", refresh"', '"overlay opened"', '"job start (self-test)"',
+                    '"Vita JP Overlay shell started (kernel API %d, the normal build: a short log)"'):
+            self.assertIn(fmt, worker)
+        self.assertTrue(a.JOB_END.match("job 7 done rc=-120 in 2393 ms, arena peak 0, dictionary page 1/0, game 2343 "
+                                        "ms, log 49 ms in 2 appends"))
+        self.assertTrue(a.PRESS_CLOSE.match("overlay close (game left) t=8 ms: input block off rc=0"))
+
+
 if __name__ == "__main__":
     unittest.main()

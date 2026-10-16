@@ -66,10 +66,11 @@ for k, v in json.load(open(sys.argv[1], encoding="utf-8")).get("install_settings
 [ -z "$SHOWN" ] || echo "package settings:$SHOWN"
 # No model and no model size is set: the Overlay app's Model size (vocr_tier) is the user's, and
 # an update keeps it; a first install gets the template's Normal, and an older build's model
-# choice becomes its size (tools/migrate_config.py).
+# choice becomes its size (tools/migrate_config.py). The same for its Read text (ocr_mode) and
+# Speed boost while reading (ocr_boost_clock): kept, or the template's auto and on.
 exec bash "$PACKAGE/tools/install_ftp.sh" --package-dir "$PACKAGE" ${TITLES[@]+"${TITLES[@]}"} \
   --set dictionary=local --set local_dictionaries=plaintext.vjdict \
   --set local_dictionary_dir=ux0:data/VitaJPOverlay/dictionaries \
   --set text_source=ocr \
-  --set ocr_model_dir=ux0:data/VitaJPOverlay/ocr --set ocr_mode=auto --set log_file=on \
+  --set ocr_model_dir=ux0:data/VitaJPOverlay/ocr --set log_file=on \
   ${PACKAGE_SETS[@]+"${PACKAGE_SETS[@]}"} "$HOST"

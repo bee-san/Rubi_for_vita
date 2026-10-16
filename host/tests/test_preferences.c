@@ -270,6 +270,17 @@ static void test_save_switch_reload_retains_other_settings(void)
  * mapping's anki_deck, anki_note_type, anki_field_*) load without a warning. */
 static int read_back(const char *path, char *text, size_t cap);
 
+/* The app's saves of config.ini, each patching its own keys: 0 the OCR page's
+ * four choices (the arguments), 1 the Anki page's (mining on), 2 the reading
+ * settings (Read text: only on a press; Speed boost while reading: on). */
+#define APP_SAVES 3
+static int app_save(int which, int tier, int japanese_only, int highlight_mode, int results)
+{
+    return which == 1 ? vjo_preferences_save_anki(1, &arena)
+         : which == 2 ? vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 1, &arena)
+                      : vjo_preferences_save(tier, japanese_only, highlight_mode, results, &arena);
+}
+
 /* The removed Anki settings (AnkiConnect's address and audio source, the old
  * field mapping) load without a warning, and either save of the app drops
  * their lines (core/config.h vjo_config_removed_line), the backup included:
@@ -281,15 +292,14 @@ static void test_settings_save_drops_removed_anki_settings(void)
         "anki_note_type = Lapis;v2\nanki_field_picture =\nANKI_FIELD_WORD = Word\n"
         "anki_audio_url = https://a.invalid/?term={term}&key=secret-url\nanki_audio_url https://a.invalid/?k=secret-2\n"
         "anki_host\nfont_size_ja = 22\n";
-    for (int save = 0; save < 2; save++) {
+    for (int save = 0; save < APP_SAVES; save++) {
         char out[sizeof(anki) + 256];
         VjoConfig cfg;
         reset(); put_file(VJO_PREFERENCES_PATH, anki, sizeof(anki)-1);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.n_warnings == 0 && cfg.anki_mining == 1);
         TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena)) == 0);
+        TEST_ASSERT(app_save(save, VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
         TEST_CHECK(!strstr(out, "anki_host") && !strstr(out, "anki_deck") && !strstr(out, "anki_note_type") &&
@@ -301,7 +311,8 @@ static void test_settings_save_drops_removed_anki_settings(void)
         TEST_CHECK_(!strstr(out, "secret") && !strstr(out, "anki_audio_url"), "save %d: config.ini.bak: %s", save, out);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 0 && cfg.font_size_ja == 22 &&
-                   (save || (cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.local_dictionary_results == 3)));
+                   (save || (cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.local_dictionary_results == 3)) &&
+                   (save != 2 || (cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1)));
     }
 }
 
@@ -369,6 +380,140 @@ static void test_anki_page_save(void)
     write_fail = 0;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(!cfg.anki_mining);
+}
+
+/* The lines of text that begin with prefix. */
+static int lines_with(const char *text, const char *prefix)
+{
+    int n = 0;
+    for (const char *p = text; p && *p; p = strchr(p, '\n') ? strchr(p, '\n') + 1 : NULL)
+        n += !strncmp(p, prefix, strlen(prefix));
+    return n;
+}
+
+/* The fixture as the reading settings' save writes it: without its removed
+ * engine line (a save drops it), its ocr_mode line replaced where it is, and
+ * ocr_boost_clock, which it has none of, at the end. */
+static void reading_expected(char *out, size_t cap, const char *mode_line, const char *boost_line)
+{
+    const char *engine = strstr(original, "ocr_backend = lens\n"), *mode = strstr(original, "ocr_mode = on_press\n");
+    TEST_ASSERT(engine && mode == engine + strlen("ocr_backend = lens\n"));
+    snprintf(out, cap, "%.*s%s%s%s", (int)(engine - original), original, mode_line,
+             mode + strlen("ocr_mode = on_press\n"), boost_line);
+}
+
+/* The OCR page's Read text and Speed boost while reading (config.ini ocr_mode,
+ * ocr_boost_clock): each step saved where its line is, every other byte as it
+ * was, read back by the app and by the Shell's own loader; the other saves keep
+ * them and they keep the others; a value outside the two is refused before
+ * anything is read or written; a failed save leaves the saved choice. */
+static void test_reading_settings_save(void)
+{
+    static const struct { int mode, boost; const char *mode_line, *boost_line; } steps[] = {
+        {VJO_OCR_AUTO, 1, "ocr_mode = auto\n", "ocr_boost_clock = on\n"},
+        {VJO_OCR_AUTO, 0, "ocr_mode = auto\n", "ocr_boost_clock = off\n"},
+        {VJO_OCR_ON_PRESS, 0, "ocr_mode = on_press\n", "ocr_boost_clock = off\n"},
+        {VJO_OCR_ON_PRESS, 1, "ocr_mode = on_press\n", "ocr_boost_clock = on\n"},
+    };
+    unsigned char shell_mem[24 * 1024]; VjoArena shell;
+    char out[sizeof(original) + 256], want[sizeof(original) + 256];
+    VjoConfig cfg;
+    vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    /* the fixture: on_press, and no ocr_boost_clock line, so the default (on) */
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1);
+    for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        TEST_ASSERT(vjo_preferences_save_reading(steps[i].mode, steps[i].boost, &arena) == 0);
+        TEST_CHECK(arena.used == 0 && handles == 0);
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
+        reading_expected(want, sizeof(want), steps[i].mode_line, steps[i].boost_line);
+        TEST_CHECK_(!strcmp(out, want), "step %u:\n%s", i, out);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK(cfg.ocr_mode == steps[i].mode && cfg.ocr_boost_clock == steps[i].boost);
+        vjo_config_load(&cfg, &shell); /* shell/files.c: what the overlay runs with after the resume */
+        TEST_CHECK_(cfg.ocr_mode == steps[i].mode && cfg.ocr_boost_clock == steps[i].boost && shell.used == 0,
+                    "step %u: the Shell read ocr_mode %d, ocr_boost_clock %d", i, cfg.ocr_mode, cfg.ocr_boost_clock);
+        /* (the fixture's one warning is its unknown_future_setting) */
+        TEST_CHECK(cfg.n_warnings == 1 && strstr(cfg.warnings[0], "unknown_future_setting"));
+        TEST_CHECK(cfg.font_size_ja == 22 && cfg.local_dictionary_results == 2 && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL &&
+                   !strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
+    }
+    /* the OCR page's other choices and the Anki page's keep them, and they keep those */
+    TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 0 && cfg.vocr_tier == VJO_VOCR_TIER_LARGE &&
+               !cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER &&
+               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1);
+    TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_AUTO, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_AUTO && cfg.ocr_boost_clock == 1 && cfg.vocr_tier == VJO_VOCR_TIER_LARGE &&
+               !cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER &&
+               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1);
+    TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
+    TEST_CHECK(lines_with(out, "ocr_mode =") == 1 && strstr(out, "\nocr_mode = auto\n") && /* each key once */
+               lines_with(out, "ocr_boost_clock =") == 1 && strstr(out, "\nocr_boost_clock = on\n"));
+    TEST_MSG("%s", out);
+    /* any other value: refused before a read or a write, the file as it was */
+    static const int bad[][2] = {{2, 1}, {-1, 1}, {VJO_OCR_AUTO, 2}, {VJO_OCR_ON_PRESS, -1}};
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        written = 0; renames = 0;
+        TEST_CHECK(vjo_preferences_save_reading(bad[i][0], bad[i][1], &arena) < 0);
+        TEST_CHECK(written == 0 && renames == 0 && handles == 0 && arena.used == 0);
+    }
+    TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, want, sizeof(want)) > 0);
+    TEST_CHECK(!strcmp(out, want));
+    /* the file's own spellings: a BOM, CRLF, capitals and duplicates; the first line of each
+     * key replaced where it is, the later ones dropped, every other line kept */
+    {
+        static const char mixed[] = "\xEF\xBB\xBF" "OCR_MODE = on_press\r\nfont_size_ja = 22\r\nocr_mode = auto\n"
+                                    "Ocr_Boost_Clock=on ; mine\nocr_boost_clock = off\n";
+        reset(); put_file(VJO_PREFERENCES_PATH, mixed, sizeof(mixed) - 1);
+        TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_AUTO, 0, &arena) == 0);
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
+        TEST_CHECK(!strcmp(out, "\xEF\xBB\xBF" "ocr_mode = auto\nfont_size_ja = 22\r\nocr_boost_clock = off\n"));
+        TEST_MSG("%s", out);
+    }
+    /* no config.ini yet: the commented template with its two lines set */
+    reset();
+    TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena) == 0);
+    {
+        static char saved[VJO_CONFIG_TEXT_MAX + 1], expect[VJO_CONFIG_TEXT_MAX + 1];
+        const char *t = vjo_config_default_text();
+        const char *boost = strstr(t, "\nocr_boost_clock = on\n"), *mode = strstr(t, "\nocr_mode = auto\n");
+        TEST_ASSERT(boost && mode && boost < mode);
+        const char *after_boost = boost + strlen("\nocr_boost_clock = on\n");
+        snprintf(expect, sizeof(expect), "%.*socr_boost_clock = off\n%.*socr_mode = on_press\n%s",
+                 (int)(boost + 1 - t), t, (int)(mode + 1 - after_boost), after_boost,
+                 mode + strlen("\nocr_mode = auto\n"));
+        TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, saved, sizeof(saved)) > 0);
+        TEST_CHECK(!strcmp(saved, expect));
+        TEST_MSG("%s", saved);
+        VjoConfig shell_cfg;
+        vjo_config_load(&shell_cfg, &shell);
+        TEST_CHECK(shell_cfg.ocr_mode == VJO_OCR_ON_PRESS && !shell_cfg.ocr_boost_clock && !shell_cfg.n_warnings &&
+                   shell.used == 0);
+    }
+    /* a failed write or publication: the saved choice stays */
+    reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
+    write_fail = 1;
+    TEST_CHECK(vjo_preferences_save_reading(VJO_OCR_AUTO, 0, &arena) < 0);
+    write_fail = 0;
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1 && handles == 0 && arena.used == 0);
+    rename_fail = 2; renames = 0; /* the new file's rename: the old primary is put back */
+    TEST_CHECK(vjo_preferences_save_reading(VJO_OCR_AUTO, 0, &arena) < 0);
+    rename_fail = 0;
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1 && handles == 0 && arena.used == 0);
+    /* an unreadable config.ini is never overwritten */
+    read_fail = 1; written = 0;
+    TEST_CHECK(vjo_preferences_save_reading(VJO_OCR_AUTO, 0, &arena) < 0);
+    read_fail = 0;
+    TEST_CHECK(written == 0 && handles == 0 && arena.used == 0);
+    TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) == (int)sizeof(original) - 1 && !strcmp(out, original));
 }
 static void test_save_failure_preserves_or_recovers_actual_choices(void)
 {
@@ -566,7 +711,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         "; jpdb.io API key (needed for dictionary = jpdb): jpdb.io -> Settings -> API key\n"
         "jpdb_api_key = secret-jpdb\n\njiten_api_key = secret-jiten ; mine\napi_key = secret-old\n"
         "JPDB_API_KEY: secret-colon\nocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n";
-    for (int save = 0; save < 2; save++) {
+    for (int save = 0; save < APP_SAVES; save++) {
         char text[sizeof(legacy) + 256];
         VjoConfig cfg;
         unsigned char shell_mem[24 * 1024]; VjoArena shell;
@@ -574,8 +719,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
                    !strcmp(cfg.warnings[0], "dictionary: jpdb.io was removed; using local"));
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_ASSERT(app_save(save, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
         TEST_CHECK(!strstr(text, "secret") && !strstr(text, "api_key =") && !strstr(text, "\ndictionary = jpdb"));
@@ -591,7 +735,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
                    cfg.font_size_ja == 22);
-        TEST_CHECK(!save || cfg.anki_mining == 1);
+        TEST_CHECK(save != 1 || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
@@ -606,14 +750,13 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) == (int)sizeof(legacy) - 1 &&
                    !strcmp(text, legacy));
     }
-    /* A UTF-8 BOM (Notepad) before a key on the very first line (audit B1): both saves find
-     * the key after the BOM, as their patches do, so neither keeps it in the backup. */
-    for (int save = 0; save < 2; save++) {
+    /* A UTF-8 BOM (Notepad) before a key on the very first line (audit B1): every save finds
+     * the key after the BOM, as their patches do, so none keeps it in the backup. */
+    for (int save = 0; save < APP_SAVES; save++) {
         static const char bom[] = "\xEF\xBB\xBF" "jpdb_api_key = secret-bom\nocr_mode = on_press\nfont_size_ja = 22\n";
         char text[256];
         reset(); put_file(VJO_PREFERENCES_PATH, bom, sizeof(bom) - 1);
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_ASSERT(app_save(save, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1) == 0);
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strncmp(text, "\xEF\xBB\xBF", 3) &&
                    !strstr(text, "secret") && strstr(text, "font_size_ja = 22\n"));
         TEST_CHECK_(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0 && !strstr(text, "secret"),
@@ -720,7 +863,7 @@ static void test_removed_relay_rewritten_by_saves(void)
     static const char legacy[] =
         "; Keep this comment\r\nDictionary = Hachidori ; relay\r\nhachidori_host = 192.168.1.20:19633\n"
         "ocr_mode = on_press\nfont_size_ja = 22\n";
-    for (int save = 0; save < 2; save++) {
+    for (int save = 0; save < APP_SAVES; save++) {
         char text[sizeof(legacy) + 256];
         VjoConfig cfg;
         unsigned char shell_mem[24 * 1024]; VjoArena shell;
@@ -733,8 +876,7 @@ static void test_removed_relay_rewritten_by_saves(void)
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 && shell.used == 0);
         renames = 0;
-        TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+        TEST_ASSERT(app_save(save, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0 && renames == 2); /* one publication */
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
         TEST_CHECK(strstr(text, "; Keep this comment\r\ndictionary = local\nhachidori_host = 192.168.1.20:19633\n"
@@ -746,7 +888,7 @@ static void test_removed_relay_rewritten_by_saves(void)
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
                    cfg.font_size_ja == 22);
-        TEST_CHECK(!save || cfg.anki_mining == 1);
+        TEST_CHECK(save != 1 || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
@@ -946,6 +1088,7 @@ static void test_file_line_and_exists(void)
 TEST_LIST = {
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
+    {"read_text_and_speed_boost_save_where_their_lines_are_and_the_Shell_reads_them", test_reading_settings_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
     {"engine_choice_vocr_Lens_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_drops_it", test_engine_choice_loads_as_vocr_and_saves_drop_it},
     {"removed_jpdb_jiten_choice_loads_as_local_and_saves_drop_their_API_keys_and_backup", test_removed_dictionaries_rewritten_by_saves},

@@ -46,7 +46,11 @@ static const Step script[] = {
     TAP(SCE_CTRL_SQUARE, 30), TAP(SCE_CTRL_SQUARE, 30), TAP(SCE_CTRL_SQUARE, 30), /* the filters */
     TAP(ENTER, 20), TAP(SCE_CTRL_UP, 10), TAP(ENTER, 20),               /* both on again */
     {60, SCE_CTRL_DOWN}, TAP(SCE_CTRL_START, 60),                /* a rescan away from the top */
-    TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 60), /* OCR, Anki, Games */
+    TAP(SCE_CTRL_SELECT, 40),                                    /* OCR & lookup */
+    TAP(SCE_CTRL_DOWN, 8), TAP(SCE_CTRL_DOWN, 8), TAP(SCE_CTRL_DOWN, 8), TAP(SCE_CTRL_DOWN, 8), /* scrolled, */
+    TAP(SCE_CTRL_DOWN, 20), TAP(SCE_CTRL_UP, 8), TAP(SCE_CTRL_UP, 8), TAP(SCE_CTRL_UP, 8),      /* cards cut */
+    TAP(SCE_CTRL_UP, 8), TAP(SCE_CTRL_UP, 20),                   /* and back to its top (nothing chosen) */
+    TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 60),          /* Anki, Games */
     {200, SCE_CTRL_DOWN}, TAP(SCE_CTRL_LEFT, 30),
     TAP(CANCEL, 0),
 };

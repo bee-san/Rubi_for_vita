@@ -31,6 +31,45 @@ enabled dictionaries and 2 selected. It used the official 3.74 firmware fonts
 and a build that opens on this page, because injected keys did not reach the
 emulated app; it is not a physical-device check.
 
+### Read text and Speed boost (ocr_mode, ocr_boost_clock)
+
+Two cards come after the Model size card, before the lookup cards: **Read text**
+(`ocr_mode`) and **Speed boost while reading (444 MHz)** (`ocr_boost_clock`)
+([docs/auto-vs-press.md](auto-vs-press.md)). Read text is 102 pixels tall: its
+title on the first row, then two 433 × 54 buttons 12 pixels apart (x 42-474 and
+487-919), **Automatically (when it changes)** with "The popup is ready when you
+press" below it, and **Only when I press L + R** with "Nothing runs until you
+press" (22 and 20 pixel text). The press button names the overlay's
+`toggle_button` (Select, Start, Select + L or R; "Only when I double-tap the
+back", with "tap", for the rear touchpad). The Speed boost card is a 68-pixel
+ON/OFF card like Japanese characters only. Left/Right choose Automatically/the
+press and OFF/ON, Enter switches either, a touch on a Read text button chooses
+it (its title row, the gap and the margins only focus the card) and a touch
+anywhere on the Speed boost card switches it. Both save together
+(`settings/preferences.c` `vjo_preferences_save_reading`: each key replaced
+where its first line is, later duplicates dropped, a missing one appended,
+every other line kept but a removed feature's), and nothing is saved while
+`config.ini` cannot be read.
+
+The six cards (94 + 102 + 4 × 68 pixels and 4-pixel gaps: 488) are taller than
+their room, y 112 to 422 above the status line (310 pixels). The page scrolls a
+whole card at a time (`settings/main.c` `pref_show`): the selected card is
+always all in view, by the fewest cards scrolled, and the cards above the view
+are not drawn. The card after the last whole one shows as far as the room goes,
+cut at 422 (its rectangle and text clipped there), so there is visibly more; a
+6-pixel bar at x 942 shows the view's place in the column. A touch on a card that
+is cut only selects it, which scrolls it into view; once whole, a touch acts as
+on any card. The left stick still stops at the first and last card, and Up/Down
+still wrap round. `host/tests/test_settings_app.c` drives it: both cards'
+labels, lines and colours, every Read text button's edges and the gaps by touch,
+Left/Right/Enter on both cards, the saved `ocr_mode` and `ocr_boost_clock` with
+every other line kept, each `toggle_button`'s name, an unreadable `config.ini`
+(nothing chosen or saved), the scroll position after every Up/Down and the bar,
+the cut card's touch, and no frame drawing a card into the status line.
+`host/tests/test_settings_games.c`'s stick test follows the focused card by its
+title. Text widths are stub metrics, not firmware fonts: the longest Read text labels (31 characters at
+22 pixels, 379 of the button's 433 pixels in the stub's metrics) have not been seen on a console yet.
+
 ## The Games list
 
 The owner found the Games page laggy with many games installed. Three things
