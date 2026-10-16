@@ -168,13 +168,26 @@ this plan's "a few pages at most" estimate and its earlier "about 196,000 B" for
 PR-A2 (#132) lowered VjoNet's stack from 64 to 16 KiB (SceShell's permanent pages 266,240 →
 217,088 B), and PR-B VjoAnki's (the worst case 286,720 → 237,568 B).
 
-### 4.3 Step 2: the kernel's full-frame capture
+### 4.3 Step 2: the kernel's full-frame capture [measured]
 
-Once Lens and the Anki screenshot are gone, nothing reads the kernel's RGBA capture
+Once Lens and the Shell's Anki screenshot were gone, nothing read the kernel's RGBA capture
 (`vjoRequestCapture`, `vjoReadRaw`, `VjoCapture`): local OCR reads its own screen in the game since
-API 19. Removing it takes the kernel pool's worst case from 2,220,032 B to about 200,000 B (the
-2,088,960 B full-frame block is the one #74's console refused) and shrinks the kernel module; it
-changes the syscall table, so it raises `VJO_API_VERSION`.
+API 19, and an Anki card's screenshot since API 23 (#150). API 24 removes it: the two syscalls,
+`kernel/capture_request.c`, the `VjoCapture` allocator, the display hook's copy, the kernel worker's
+completion and timeout, and `VjoState`'s `alloc_status`, `capture_result` and `raw_stride`.
+
+| | before (#150 `45ca193`, API 23) | API 24 [measured] |
+|---|---:|---:|
+| kernel pool worst case (the ledger), debug / normal | 2,248,704 / 2,244,608 B | 225,280 / 221,184 B |
+| kernel text + data/bss, debug | 40,040 + 77,672 B | 37,964 + 77,584 B (118,784 B of pages, unchanged) |
+| kernel text + data/bss, normal | 35,900 + 75,984 B | 33,840 + 75,896 B (114,688 B, unchanged) |
+| Shell text, debug / normal | 100,484 / 90,012 B | 100,396 / 89,924 B (176,128 / 163,840 B, unchanged) |
+
+The estimate was "about 200,000 B"; the measured worst case is the permanent part (the module's
+pages and the worker's stack) plus a kernel strip of at most 64 KiB, which the old worst case left out
+as never held beside the full frame, and a starting game's `games.ini` read [measured: the build log's
+module rows and ledger, both builds]. No module page moves: the kernel's text keeps 2,996 B (debug) and
+3,024 B (normal) of room in its pages.
 
 ### 4.4 Step 3: the rest
 

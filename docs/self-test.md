@@ -88,7 +88,7 @@ kmem boot route=block part=kernel rc=0x00000000 step=0 total=37748736 free=94371
 kmem boot route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem boot route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem boot route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
-kernel boot ledger=131072/131072 limit=2220032 capture=0
+kernel boot ledger=131072/131072 limit=2220032
 step ok t=60999
 ...
 step game t=142999 title=PCSG00415 enabled=1 mode=1 region=user rect=1536,48188,62600,15059

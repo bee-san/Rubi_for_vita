@@ -437,9 +437,9 @@ error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
 takes no kernel memory for the screen since API 19: the game reads its own
-screen ([in-game capture](docs/ingame-capture.md)). The kernel's full-frame capture buffer
-has no user: an Anki card's screenshot is read in the game too, in colour strips, and
-encoded there. A Shell UI memory error
+screen ([in-game capture](docs/ingame-capture.md)). The kernel keeps no capture buffer
+since API 24, which removed the full-frame one nothing used any more: an Anki card's
+screenshot is read in the game too, in colour strips, and encoded there. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
@@ -691,7 +691,7 @@ previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three plugins of one build
-together (API 23 since the Anki screenshot) and reboot; older plugin versions
+together (API 24 since the kernel's full-frame capture was removed) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one

@@ -234,7 +234,11 @@
  * strip, the log) and the request's model directory 256 -> 128 B: 40,648 -> 40,040 B of text and
  * 77,824 -> 77,672 B of data/bss, the data/bss pages no longer full; the normal build 36,444 -> 35,900
  * and 76,136 -> 75,984 B, the same pages too [measured: the build log's module rows, main dcb7b31 and
- * this change, both builds]. */
+ * this change, both builds].
+ * API 24 removes the full-frame capture (kernel/capture_request.c, the VjoCapture allocator, the
+ * display hook's copy, the worker's completion and timeout, two syscalls): 40,040 -> 37,964 B of
+ * text and 77,672 -> 77,584 B of data/bss, the normal build 35,900 -> 33,840 and 75,984 -> 75,896 B,
+ * the same pages [measured: the build log's module rows, both builds of #150 45ca193 and API 24]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else

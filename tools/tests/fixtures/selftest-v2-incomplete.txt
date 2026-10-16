@@ -1,4 +1,4 @@
-selftest v2 api=23
+selftest v2 api=24
 boot seq=2 mode=0 prev=0/0/0/0 failures=0 write=0x00000000
 config backend=2 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr tier=normal dictionary=3 anki=0
 step boot t=0
@@ -8,7 +8,7 @@ kmem boot route=block part=kernel rc=0x00000000 step=0 total=37748736 free=94371
 kmem boot route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem boot route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem boot route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
-kernel boot ledger=131072/131072 limit=2220032 capture=0
+kernel boot ledger=131072/131072 limit=2220032
 step ok t=60999
 mem ok rc=0x00000000 main=-2097152 cdram=0 phycont=0 valid=0 paf_free=2346312
 ledger ok pages=0/0 paf=0/0
@@ -16,7 +16,7 @@ kmem ok route=block part=kernel rc=0x00000000 step=0 total=37748736 free=9437184
 kmem ok route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem ok route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem ok route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
-kernel ok ledger=131072/131072 limit=2220032 capture=0
+kernel ok ledger=131072/131072 limit=2220032
 step game t=142999 title=PCSG00415 enabled=1 mode=1 region=user rect=1536,48188,62600,15059
 mem game rc=0x00000000 main=-2097152 cdram=0 phycont=0 valid=0 paf_free=2346312
 ledger game pages=0/0 paf=0/0
@@ -24,7 +24,7 @@ kmem game route=block part=kernel rc=0x00000000 step=0 total=37748736 free=94371
 kmem game route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
 kmem game route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
 kmem game route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
-kernel game ledger=131072/131072 limit=2220032 capture=0
+kernel game ledger=131072/131072 limit=2220032
 stage fallback begin t=142999 flags=0x2 model=H15_w8.vocr fallback=FL10_w8.vocr speed=0xA
 gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=10
 gstep fallback check kind=0 arg=0 rc=0x00000000 bytes=5103616 sum=0x00000000 main=91226112 cdram=117440512 phycont=0 us=20
