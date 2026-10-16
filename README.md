@@ -81,94 +81,51 @@ for the measured results and remaining hardware checks.
 
 ## Install
 
-Requires a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore.
-Download `VitaJPOverlay-0.7.12.zip` from this fork's
-[release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12) and
-extract it. It includes all three plugins, their RCO, the settings VPK, FL10/H15
-int8 models including the opt-in VOCR2 model, and the complete converted
-JMdict snapshot. The 0.7.12 archive also still carries the Meiki recognizer and
-engine and the VOCR2 model, which have since been removed. Python 3.9+, bash,
-and curl are needed for the computer-side installer.
+You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 210 MB free on the memory card (ux0).
 
-From the next release on, each release has two zips of the same build: the
-normal one, `VitaJPOverlay-<version>.zip`, the one to install, and
-`VitaJPOverlay-<version>-debug.zip`, the test builds' own, with every log line,
-the self-test and the timings. Install the debug zip only when asked for a full
-log; both install the same way, and the settings carry over either way
-([release-variants](docs/release-variants.md)).
+1. Download `VitaJPOverlay-<version>.vpk` from the
+   [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
+2. Copy it to the Vita (in VitaShell, Select starts FTP; or use its USB mode) and install it in
+   VitaShell: press Enter on the file, then Yes to "Do you want to install this package?" and to its
+   notice that the package requests extended permissions.
+3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists exactly what it will
+   do; choose **Install**, then restart the Vita.
 
-Close games, open VitaShell, press Select to start FTP, and run from the
-extracted folder, naming one game (here CLANNAD); OCR then runs in every game
-that is ON in the Overlay app, not only the ones named:
+Nothing is downloaded on the Vita: the VPK holds the plugins, the models and the dictionary
+([how it works](docs/one-vpk-install.md)). Then start a game and press L + R. Every game is ON by
+default and needs no step of its own: the kernel plugin loads the OCR worker into each game that is
+ON as it starts ([worker loading](docs/worker-loading.md)), never into SceShell, a system app,
+VitaShell or the Overlay app, and never while L is held at the game's start. Close the Overlay app
+before installing a VPK over it. These steps are not yet verified on a console: the next test build's
+run checks them.
 
-```sh
-bash install-vita.sh --title PCSG00415 VITA_IP:1337
-```
+**What Install does.** It copies the three plugins to `ur0:tai` and the models to
+`ux0:data/VitaJPOverlay/ocr`, moves the dictionary (143 MB) out of the app rather than copying it,
+backs up every taiHEN configuration it changes as `config.txt.vjo-<date-time>.bak` (kept), adds the
+kernel plugin under `*KERNEL` and the Shell plugin under `*main` in `ux0:tai/config.txt` and
+`ur0:tai/config.txt` (whichever exist; taiHEN reads ux0's first), removes the OCR worker's
+per-game and `*ALL` lines older installs left, keeps your `config.ini` settings (it writes the
+template only when there is none), and reads everything back. Every other plugin of yours loads as
+before: the edit is checked with taiHEN's own parser. It never restarts the Vita and never retries by
+itself; a stop part way leaves every file the old or the new one, and the next start of the app
+finishes the job.
 
-The installer checks the package manifest, backs up both taiHEN configurations
-and your existing overlay settings, uploads and checksum-reads back each file,
-and registers the three plugins without duplicating entries: the kernel plugin
-under `*KERNEL`, the Shell plugin under `*main`, and the game OCR worker in one
-section per game (`*PCSG00415`), never under `*ALL`, which would load it into
-SceShell and every app as well ([why](docs/vita-memory.md#43-what-this-means-for-all)).
-It selects the new local defaults while preserving other settings and per-game
-choices. Older experimental Text registrations, duplicate worker entries and an
-`*ALL` worker line are commented out. The backup is in `build/device/backup/`
-in the extracted folder.
+**Updating** is the same three steps with the new VPK: the app sees that the installed overlay is
+another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
+the overlay's lines (with a dated backup first) and keeps the files and your settings and cards.
 
-The worker's lines are no longer needed for OCR: the kernel plugin loads the
-worker itself into each game that is ON in the Overlay app, as the game starts
-([how](docs/worker-loading.md)), and a game that a line names too keeps one
-worker. This installer still asks for one `--title` on a first install (with
-none given and none registered yet it changes nothing and says so) and keeps
-the games registered by an earlier install; other games, and games installed
-later, need no `--title` and no reboot. The kernel never loads the worker into
-SceShell, a system app, VitaShell or the Overlay app, nor into a game started
-while L is held. `kernel.txt` has a `worker for` line for each game start: the
-worker loaded, or why not (OFF in the app, L held, an unreadable `games.ini`, a
-missing file). The Overlay app shows each game's title ID.
+The release also has `VitaJPOverlay-<version>-debug.vpk`, the test builds' own build with every log
+line, the self-test and the timings. Install it only when asked for a full log; either installs over
+the other and the settings carry over ([release-variants](docs/release-variants.md)).
 
-PSP games run in Sony's PSP emulator. That process most likely has the title ID
-of the app that started it, as Adrenaline's and AdrBubbleBooter's own plugins key
-on it (from their sources; not yet seen on a console): `PSPEMUCFW` for Adrenaline
-itself, and the bubble's own ID for a game started from its own LiveArea bubble
-([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
-bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
-`PSPEMU005` or `ULJS00378`. The kernel plugin loads the worker into these processes
-like any game: by the ID's own row in the Overlay app, else the shared PSP row,
-else the default, so they need no `--title` (a `--title PSPEMUCFW` line an earlier
-install wrote, or the one the [Overlay app](#per-game-settings) adds when you turn
-a bubble ON, is harmless). `NPXS10028`, the emulator's own ID, is treated the same
-should the kernel see it. With `log_file = on` (the installer's default), `log.txt` has a `psp:`
-line for each PSP game as it starts, naming its IDs, its disc ID and the file it
-boots. The 0.7.12 archive's own `install-vita.sh` predates `--title`
-and registers the worker under `*ALL`; use the installer from `main` or a
-later release.
-
-**Then install the Overlay app again, every time:** in VitaShell (press OK on
-its FTP dialog to keep FTP running), open `ux0:data/`, install
-`JPOverlaySettings.vpk`, then reboot the Vita. The plugins and the app come as a
-pair. An older app shows engines and pages that are gone and saves settings the
-plugins no longer use: in [#101](https://github.com/bee-san/vita-jp-overlay/issues/101)
-test.1's app ran beside test.2's plugins, showed VOCR2, had no Anki page and
-wrote `ocr_backend = vocr2`. The installer uploads the VPK with the plugins and
-ends with a box that says whether the Vita's app is this package's;
-`bash install-vita.sh --check-app VITA_IP` asks again, read-only. Each build's
-app carries a version stamp (`vjo_app.txt` in the VPK, which VitaShell installs as
-`ux0:app/VJOSET001/vjo_app.txt`, not yet checked on a console; the API and its
-eboot.bin's hash) and the plugins a record of the app they came with
-(`ux0:data/VitaJPOverlay/vjo_app.txt`). When the two differ, the Shell plugin
-logs it at the next game start and says so once, in red under the recognized
-text of the first overlay opened in a game (`Overlay app is out of date: reinstall
-ux0:data/JPOverlaySettings.vpk in VitaShell.`); the app shows a red banner in
-place of its title when its stamp, the plugins' record or the Shell plugin that
-last started (its API in `status.txt`) is another build's. Apps from before the
-stamps (0.8.0-test.2 and older) cannot show the banner, but the plugins still
-notice them.
-Open **Overlay** from LiveArea to enable or disable individual games. Older
-builds, including 0.7.12, call it **JP Overlay Settings**; the title ID
-(`VJOSET001`) and VPK file name are unchanged, so the new VPK installs over it.
-The settings app itself is always excluded from the overlay.
+Open **Overlay** from LiveArea to enable or disable individual games. Older builds, including
+0.7.12, call it **JP Overlay Settings**; the title ID (`VJOSET001`) and VPK file name are unchanged,
+so the new VPK installs over it. The settings app itself is always excluded from the overlay. Each
+build's app carries a version stamp (`vjo_app.txt`) and the plugins a record of the app they came
+with (`ux0:data/VitaJPOverlay/vjo_app.txt`); when the two differ, the Shell plugin says so once, in
+red under the recognized text of the first overlay opened in a game (`Overlay app and plugins are
+different builds: open the Overlay app.`), and the app's Install page says which way it is.
 
 The Overlay app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
@@ -180,19 +137,49 @@ again.`); preferences apply when the overlay next opens. A
 game that uses extended memory (`ATTRIBUTE2` in its `param.sfo`) may still have
 to close first, as for other system applications.
 
-For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
-(`ux0/` includes the app's record, `ux0/data/VitaJPOverlay/vjo_app.txt`)
-and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
-copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`
-and `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` in the active
-taiHEN config (`ux0:tai/config.txt` if it exists, else `ur0:tai/config.txt`).
-`ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it into
-each game that is ON (from `ux0:tai/` only when `ur0:tai/` has none, so leave no
-older copy there), and a `*TITLEID` line for it that an older install left is
-harmless. Never list it under `*ALL`.
-Disable old `VitaJPOverlay_Text.suprx` entries, an `*ALL` worker line and
-duplicate worker registrations, then reboot. Keep unrelated plugins and
-configuration intact.
+PSP games run in Sony's PSP emulator. That process most likely has the title ID
+of the app that started it, as Adrenaline's and AdrBubbleBooter's own plugins key
+on it (from their sources; not yet seen on a console): `PSPEMUCFW` for Adrenaline
+itself, and the bubble's own ID for a game started from its own LiveArea bubble
+([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
+bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
+`PSPEMU005` or `ULJS00378`. The kernel plugin loads the worker into these processes
+like any game: by the ID's own row in the Overlay app, else the shared PSP row,
+else the default. `NPXS10028`, the emulator's own ID, is treated the same should
+the kernel see it. With `log_file = on` (the default), `log.txt` has a `psp:`
+line for each PSP game as it starts, naming its IDs, its disc ID and the file it
+boots.
+
+### Advanced: install from a computer
+
+Each release also has `VitaJPOverlay-<version>.zip` (and `-debug.zip`) for the computer-side
+installer, the developers' path. It needs Python 3.9+, bash and curl. Close games, open VitaShell,
+press Select to start FTP, and run from the extracted folder:
+
+```sh
+bash install-vita.sh VITA_IP:1337
+```
+
+It checks the package manifest, backs up both taiHEN configurations (on the Vita as
+`config.txt.vjo-bak` and a dated `config.txt.vjo-<date-time>.bak`, and in `build/device/backup/` of the
+extracted folder) and your overlay settings, uploads and checksum-reads back each file, and edits the
+configurations with the same rules as the Overlay app (`tools/patch_tai_config.py`, the app's
+`core/taicfg.c` in Python; both are tested on one set of fixtures). `--title` is no longer needed and
+is ignored with a note. It ends with a box that says whether the Vita's Overlay app is this
+package's: install `ux0:data/JPOverlaySettings.vpk` in VitaShell afterwards (this zip's app carries no
+overlay files of its own, so its Install page names this installer);
+`bash install-vita.sh --check-app VITA_IP` asks again, read-only. The 0.7.12 archive's own
+`install-vita.sh` predates all of this and registers the worker under `*ALL`; use the installer from
+`main` or a later release.
+
+For a manual installation, copy `ur0/` and `ux0/` of the zip to their matching Vita partitions and
+install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before copying the included
+one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and `ur0:tai/VitaJPOverlay_Shell.suprx`
+under `*main` in the active taiHEN config (`ux0:tai/config.txt` if it exists, else
+`ur0:tai/config.txt`). `ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it
+into each game that is ON (from `ux0:tai/` only when `ur0:tai/` has none, so leave no older copy
+there). Never list it under `*ALL`. Disable old `VitaJPOverlay_Text.suprx` entries and old worker
+lines, then reboot. Keep unrelated plugins and configuration intact.
 
 ## Use in a game
 
@@ -738,14 +725,22 @@ themselves, so the Vita starts as if the overlay were not installed, and
 row safe mode stays until you install a new build (the installer resets the
 record) or delete `ur0:data/VitaJPOverlay/boot.txt`. See
 [docs/boot-safety.md](docs/boot-safety.md). If the Vita does not boot at all,
-hold L while powering on to skip plugins, start VitaShell FTP, and run
-`bash tools/install_ftp.sh --uninstall VITA_IP`. Uninstalling preserves data.
+hold L while turning it on (with h-encore or h-encore2: open its menu, holding R as
+h-encore starts, and choose Exit while holding L), so that taiHEN loads no plugin; then
+in VitaShell put `#` before the two `VitaJPOverlay` lines of `ur0:tai/config.txt` (and
+`ux0:tai/config.txt`), or open the Overlay app and choose **Uninstall** on its Install
+page, or from a computer run `bash tools/install_ftp.sh --uninstall VITA_IP`. Restart
+normally. Uninstalling preserves data. A `config.txt.vjo-<date-time>.bak` is the
+configuration from before that install, not before the overlay: an update replaces the
+plugin files its lines name. If one game does not start, turn it OFF in the Overlay app,
+or hold L while starting it ([recovery](docs/one-vpk-install.md#recovery-r1)).
 
 The Overlay app is not a plugin and never starts by itself, so it cannot stop
-the Vita from starting. If it misbehaves, close it from its LiveArea page. To go
-back, install the previous `JPOverlaySettings.vpk` over it in VitaShell (the same
-title ID, so its settings stay) or delete the app; the plugins keep reading
-`games.ini` and `config.ini` without it. With no app installed the overlay says
+the Vita from starting, and its Install page writes nothing until you choose an
+action. If it misbehaves, close it from its LiveArea page. To go back to an older
+build, install that release's VPK and choose Install on its Install page (it names the
+version it goes back to); deleting the app leaves the overlay as it is, and the
+plugins keep reading `games.ini` and `config.ini` without it. With no app installed the overlay says
 nothing about it; an older one than the plugins' is said once a boot, at the first
 overlay opened.
 

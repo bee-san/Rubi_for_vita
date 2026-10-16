@@ -171,7 +171,11 @@ own `install-vita.sh` and `tools/install_ftp.sh` against a simulated Vita (its p
 directories behind an FTP mock), over a v0.8.0-test.2 install, a fresh one and an older config
 (`--check-app`, `--self-test`, `--collect` and its analysis, `--uninstall`).
 
-## The release's two zips
+## The release's packages
+
+A release has five assets (docs/one-vpk-install.md, "What a release ships"): each build's one-VPK
+install, `VitaJPOverlay-<version>.vpk` (normal, the main download) and `-debug.vpk`, each build's zip
+for `install-vita.sh` (the advanced path), and `SHA256SUMS`, the normal VPK first.
 
 From source, one target builds both and packages them (the other build in `variant-<other>/` of the
 same build directory):
@@ -180,7 +184,7 @@ same build directory):
 cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VERSION=0.8.0 -DVJO_RELEASE_MODELS=/path/to/models \
   -DVJO_RELEASE_SOURCE_REVISION=$(git rev-parse HEAD) ...
 cmake --build build/vita --target release_variants
-# build/vita/release-variants/VitaJPOverlay-0.8.0.zip, VitaJPOverlay-0.8.0-debug.zip, SHA256SUMS
+# build/vita/release-variants/VitaJPOverlay-0.8.0.vpk, -debug.vpk, VitaJPOverlay-0.8.0.zip, -debug.zip, SHA256SUMS
 ```
 
 From CI (the final release's way: the push to `main` it is cut from), with that run's two artifacts:
@@ -210,8 +214,12 @@ before anything is read, as it would check nothing), an Overlay app of another v
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
-there, and writes `SHA256SUMS`. Then run the package check on each zip, as CI does on every pull
-request that changes more than Markdown, from a checkout of the zips' own commit:
+there, makes each build's VPK of its zip (`tools/package_vpk.py`: the app, then `payload/` with the
+zip's own files and `payload/manifest.txt`, the app's own facts; it refuses a build whose worker mode
+is not `kernel`, whose payload would install no game's OCR, and anything VitaShell's install scan
+would warn of beyond "extended permissions"), and writes `SHA256SUMS`. `package_vpk.py --verify VPK`
+checks a VPK again. Then run the package check on each zip, as CI does on every pull request
+that changes more than Markdown, from a checkout of the zips' own commit:
 
 ```sh
 python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0.zip
@@ -225,4 +233,16 @@ checks it with the checkout's sources: a normal package with the debug build's w
 against the checkout's pins, and that `ux0/data/VitaJPOverlay/ocr/` holds nothing else (the installer
 uploads every `.vocr` and `.vlm` there).
 
-Publish both zips and `SHA256SUMS` in one release, the normal zip first: it is the main download.
+Publish the five in one release, in this order (the normal VPK first: it is the main download):
+
+```sh
+gh release create v0.8.0 -R bee-san/vita-jp-overlay --title "Vita JP Overlay 0.8.0" --notes-file NOTES.md \
+  out/VitaJPOverlay-0.8.0.vpk out/VitaJPOverlay-0.8.0-debug.vpk \
+  out/VitaJPOverlay-0.8.0.zip out/VitaJPOverlay-0.8.0-debug.zip out/SHA256SUMS
+```
+
+The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
+and install it in VitaShell; open Overlay, choose Install, restart), the requirements (Enable Unsafe
+Homebrew; about 210 MB free on ux0 for VitaShell's step), and the recovery (README "Memory and
+troubleshooting"). A test build packages its debug zip the same way (`package_release.py`, then
+`package_vpk.py`) and ships its VPK first.
