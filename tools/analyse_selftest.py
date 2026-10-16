@@ -1383,11 +1383,8 @@ def like_for_like(off, raised):
     both = sorted(set(a) & set(b), key=order)
     if not both:
         return None
-    strata, num, den, cnum, cden = [], 0, 0.0, 0.0, 0.0
+    strata, num, den, cnum, cden, cpu_off, cpu_raised = [], 0, 0.0, 0.0, 0.0, 0, 0
     used_off, used_raised = [s for k in both for s in a[k]], [s for k in both for s in b[k]]
-    # the same on CPU time: each job's line time x its recognizing threads' share of a core, the time they ran (a
-    # game thread that took the core meanwhile is not in it); only when every job compared logged its share
-    unshared = sum(not s["share"] for s in used_off + used_raised)
     for k in both:
         o, r = _total(a[k]), _total(b[k])
         o["share"], r["share"] = _shares(a[k]), _shares(b[k])
@@ -1396,11 +1393,16 @@ def like_for_like(off, raised):
                        "ratio": per_off / per_raised})
         num += o["us"]
         den += o["frames"] * per_raised
-        if not unshared:
-            cnum += sum(s["us"] * s["share"] / 100 for s in a[k])
-            cden += o["frames"] * sum(s["us"] * s["share"] / 100 for s in b[k]) / r["frames"]
+        # the same on CPU time: each job's line time x its recognizing threads' share of a core, the time they ran (a
+        # game thread that held the core meanwhile is not in it), over the jobs that logged a share (PAR's mean;
+        # test.3's console log has one for 15 of its 22 recognizing jobs), weighted as above
+        so, sr = [x for x in a[k] if x["share"]], [x for x in b[k] if x["share"]]
+        if so and sr:
+            cnum += sum(x["us"] * x["share"] / 100 for x in so)
+            cden += sum(x["frames"] for x in so) * sum(x["us"] * x["share"] / 100 for x in sr) / sum(x["frames"] for x in sr)
+            cpu_off, cpu_raised = cpu_off + len(so), cpu_raised + len(sr)
     pair = _commonest([s["clock"][:2] for s in used_raised if s["clock"]])
-    return {"ratio": num / den, "cpu_ratio": None if unshared else cnum / cden, "unshared": unshared,
+    return {"ratio": num / den, "cpu_ratio": cnum / cden if cden else None, "cpu_jobs": (cpu_off, cpu_raised),
             "strata": strata, "off": _total(used_off), "raised": _total(used_raised),
             "off_windows": sorted({s["window"] for s in used_off}),
             "raised_windows": sorted({s["window"] for s in used_raised}),
@@ -1512,8 +1514,9 @@ def boost_verdicts(rows, groups, like):
     when the ratio cannot decide it alone: fewer than BOOST_MIN_JOBS like-for-like jobs a side, or none; the game's
     own clock not one figure around the raised jobs and next to the off windows (the off side's is assumed from it;
     audit-overlay-analyser-fixes-2 N2), or the raised jobs' clock not one figure; the same ratio on CPU time (each
-    line's share of a core, when every job compared logged it) giving another verdict (B2: game threads that took
-    the core at one clock and not the other); or an off window against its neighbours on the other side of the
+    line's share of a core, over the jobs that logged one) giving another verdict (B2: game threads that took the
+    core at one clock and not the other), or a yes that cannot be checked so (fewer than BOOST_MIN_JOBS jobs a side
+    with a share); or an off window against its neighbours on the other side of the
     threshold the pooled ratio decides by (N1: under yes_at for a yes, over no_at for a no; the windows drifted).
     With no model to compare, one "unclear" saying why."""
     out = []
@@ -1521,7 +1524,7 @@ def boost_verdicts(rows, groups, like):
         if "off" not in g or not ("raised" in g or "left" in g):
             continue
         v = {"model": m, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
-             "all_jobs": None, "cpu_ratio": None, "unshared": 0, "why": None, **_thresholds(BOOST_GAIN)}
+             "all_jobs": None, "cpu_ratio": None, "cpu_jobs": (0, 0), "why": None, **_thresholds(BOOST_GAIN)}
         out.append(v)
         if "raised" not in g:
             v["why"] = (f"no job raised the clock: it was at {BOOST_MHZ} MHz or more already in {_n(g['left']['jobs'], 'job')} "
@@ -1537,7 +1540,7 @@ def boost_verdicts(rows, groups, like):
             continue
         v["ratio"], v["off_jobs"], v["raised_jobs"] = p["ratio"], p["off"]["jobs"], p["raised"]["jobs"]
         v["n"] = v["off_jobs"] + v["raised_jobs"]
-        v["cpu_ratio"], v["unshared"] = p["cpu_ratio"], p["unshared"]
+        v["cpu_ratio"], v["cpu_jobs"] = p["cpu_ratio"], p["cpu_jobs"]
         # the game's own clock: around the matched raised jobs, and the readings nearest each off window
         offs = [r for r in rows if r["window"] in p["off_windows"]]
         own = set(p["own_clocks"]) | {c for r in offs for _, c in nearest_clock(rows, r) if c is not None}
@@ -1553,10 +1556,17 @@ def boost_verdicts(rows, groups, like):
             v["why"] = f"too few jobs to decide: at least {BOOST_MIN_JOBS} a side"
             continue
         wall = _class(p["ratio"], v)
-        if p["cpu_ratio"] is not None and _class(p["cpu_ratio"], v) != wall:
+        checked = p["cpu_ratio"] is not None and min(p["cpu_jobs"]) >= BOOST_MIN_JOBS
+        if checked and _class(p["cpu_ratio"], v) != wall:
             v["why"] = (f"on CPU time (each job's lines' time x their share of a core) the ratio is {p['cpu_ratio']:.2f}, "
                         f"{_class(p['cpu_ratio'], v)}: the shares differ between the sides, so part of the wall time is "
                         "game threads holding the core, not the clock")
+            continue
+        if wall == "yes" and not checked:
+            # a yes changes the decision (1.6 MB): it needs the CPU-time check, which the shares make possible
+            v["why"] = (f"not checked on CPU time: {p['cpu_jobs'][0]} off and {p['cpu_jobs'][1]} raised jobs of the kinds "
+                        f"compared logged their share of a core (at least {BOOST_MIN_JOBS} a side), so game threads "
+                        "holding the core cannot be told from the clock")
             continue
         # an off window against its neighbours on the other side of the decision's threshold: yes needs each at
         # yes_at or more (one above the band only adds its own load), no each at no_at or less
@@ -1589,7 +1599,7 @@ def boost_verdicts(rows, groups, like):
             why += (f"; {'window' if len(mixed) == 1 else 'windows'} {', '.join(map(str, mixed))} MIXED (some recognizing "
                     "jobs logged the clock, some did not: config.ini changed with the game in front?), left out")
         out.append({"model": None, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
-                    "all_jobs": None, "cpu_ratio": None, "unshared": 0, "why": why, **_thresholds(BOOST_GAIN)})
+                    "all_jobs": None, "cpu_ratio": None, "cpu_jobs": (0, 0), "why": why, **_thresholds(BOOST_GAIN)})
     return out
 
 
@@ -1749,9 +1759,9 @@ def render_clock_windows(lg, tai=None, configured=None):
             + f"), raised {round(_per(k['raised'])):,} us ({_n(k['raised']['jobs'], 'job')}"
             + (f"; {_share_text(k['raised']['share'])}" if k["raised"]["share"] else "") + f"): {k['ratio']:.2f}"
             for k in p["strata"])
-        cpu = (f"; on CPU time (each job's lines' time x their share of a core) {p['cpu_ratio']:.2f}"
-               if p["cpu_ratio"] is not None else
-               f"; not on CPU time: {_n(p['unshared'], 'job')} logged no share of a core")
+        cpu = (f"; on CPU time (each job's lines' time x their share of a core; {p['cpu_jobs'][0]} off and "
+               f"{p['cpu_jobs'][1]} raised jobs that logged one) {p['cpu_ratio']:.2f}" if p["cpu_ratio"] is not None else
+               "; not on CPU time: no kind has a job with a share of a core on both sides")
         compared.append(head + f"off / raised = {p['ratio']:.2f} ({p['off']['jobs']} off, {p['raised']['jobs']} raised "
                         f"{'job' if p['raised']['jobs'] == 1 else 'jobs'}{cpu}): {kinds}"
                         + (f"; left out: {', '.join(left)}" if left else ""))
@@ -1786,9 +1796,9 @@ def render_clock_windows(lg, tai=None, configured=None):
                                       if tier else "")
             if v["ratio"] is not None:
                 t += (f" like for like, {v['off_jobs']} off and {v['raised_jobs']} raised jobs (all jobs: "
-                      f"{v['all_jobs']:.2f}; " + (f"on CPU time: {v['cpu_ratio']:.2f})" if v["cpu_ratio"] is not None
-                                                 else f"not on CPU time: {_n(v['unshared'], 'job')} logged no share of "
-                                                      "a core)"))
+                      f"{v['all_jobs']:.2f}; " + (f"on CPU time: {v['cpu_ratio']:.2f}, {v['cpu_jobs'][0]} off and "
+                                                 f"{v['cpu_jobs'][1]} raised jobs with a share)"
+                                                 if v["cpu_ratio"] is not None else "not on CPU time: no share)"))
         if v["why"]:
             t += f"; {v['why']}" if v["model"] else f": {v['why']}"
         before, during = v["gain"]
