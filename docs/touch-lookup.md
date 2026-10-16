@@ -313,9 +313,10 @@ way:
   pressed in them, left the two apart, and the reopened overlay said "Looking
   up words…" with no lookup coming (#156's audit, B1).
 
-The overlay's close line in `log.txt` counts the stick's cursor moves and its
-deferred lookups and names the rest time in force (`stick %d` is now the
-largest deflection either stick reached, 0-128):
+The overlay's close line in `log.txt` (the debug build's) counts the stick's
+cursor moves and its deferred lookups and names the rest time in force
+(`stick %d` is now the largest deflection either stick reached, 0-128). The
+format, with illustrative numbers (no console has logged the stick's fields yet):
 
 ```
 overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row moves, 1 wraps, 0 without layout, slowest key 128 us, 37 stick moves, 3 deferred lookups after 200 ms

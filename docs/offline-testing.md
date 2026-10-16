@@ -25,9 +25,9 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 58 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 57 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 57 and 56,
+failed joins, cancelled jobs and crashes between steps are injected there. 59 ctest suites with
+the release models (`VJO_VOCR_MODEL_DIR`), 58 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 58 and 57,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
@@ -128,7 +128,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | text_rows | 11 | the overlay arrows' row walk (`core/text_rows.c`, #81): float cell edges and 32-bit offsets on the Vita's FPU |
 | stick_cursor | 26 | the overlay's left stick (`core/stick_cursor.h`, #138): its 32-bit microsecond differences across the clock's wrap and its credit by the clock at 20-60 Hz, the cap, the deferred lookup, and the step along the text (`vjo_text_read_step`) with 32-bit offsets |
 | settings_layout | 12 | the Overlay app's text layouts, icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
-| shell_log | 13 | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
+| shell_log | 13 (12 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
 | apkg | 19 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure; the four packages it writes (`--write`) are byte-identical to the host build's |
 | psp | 11 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the worker's taiHEN registration (`core/taicfg.c`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |

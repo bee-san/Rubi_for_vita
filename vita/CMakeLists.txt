@@ -149,13 +149,22 @@ target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, parsers, queue files): built for
-# size, since every page of the Shell module is SceShell's. Lookup and OCR text
-# handling stay at -O2. The UTF-8 helpers (core/utf.c: a few
+# size, since every page of the Shell module is SceShell's. OCR text handling
+# stays at -O2. The UTF-8 helpers (core/utf.c: a few
 # microseconds a text or a key) are built for size since the self-test's own job
 # and the first-scan timings (docs/first-ocr.md): 1,532 -> 1,136 B (the JPEG
 # encoder, built for size then too, went with Google Lens). The property is the directory's, so the
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
+# The dictionary lookup (core/local_dict.c) is built for size since #138's left
+# stick, whose 792 B with API 23's screenshot would otherwise take the normal
+# Shell a text page past its exact budget: 27,407 -> 24,958 B of the object's
+# text and rodata, 2,568 B off the module [measured: the normal Shell's module
+# row, 90,804 -> 88,236 B]. A lookup runs 0.4-0.6 % more instructions on the
+# Cortex-A9 (lookup_first 134,948 -> 135,545, lookup_every 123,845 -> 124,590
+# a lookup; at most 1.6 us more at 444 MHz, tools/bench_stages.py a9 on both
+# builds), against a console lookup's 70-81 ms of mostly file reads
+# (docs/performance.md); the Overlay app's copy is -Os too.
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
@@ -163,6 +172,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/utf.c
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
+  ${ROOT}/core/local_dict.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
