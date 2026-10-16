@@ -176,7 +176,7 @@ API 19, and an Anki card's screenshot since API 23 (#150). API 24 removes it: th
 `kernel/capture_request.c`, the `VjoCapture` allocator, the display hook's copy, the kernel worker's
 completion and timeout, and `VjoState`'s `alloc_status`, `capture_result` and `raw_stride`.
 
-| | before (#150 `45ca193`, API 23) | API 24 [measured] |
+| | before (main `836259e`, #150, API 23) | API 24 [measured] |
 |---|---:|---:|
 | kernel pool worst case (the ledger), debug / normal | 2,248,704 / 2,244,608 B | 225,280 / 221,184 B |
 | kernel text + data/bss, debug | 40,040 + 77,672 B | 37,964 + 77,584 B (118,784 B of pages, unchanged) |

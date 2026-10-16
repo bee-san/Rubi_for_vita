@@ -428,7 +428,7 @@ API 23. The kernel pool's worst case goes from 2,248,704 to 225,280 B (debug) an
 221,184 B (normal), and the limit with it. The kernel's text goes from 40,040 to 37,964 B and its
 data/bss from 77,672 to 77,584 B (normal: 35,900 → 33,840 and 75,984 → 75,896 B), the same pages, and
 the Shell's from 100,484 to 100,396 B of text (normal: 90,012 → 89,924 B), the same pages [measured: the
-build log's module rows and ledger, both builds of #150 `45ca193` and API 24]. `tools/check_vita_syscall_abi.py`
+build log's module rows and ledger, both builds of main `836259e` (#150) and API 24]. `tools/check_vita_syscall_abi.py`
 fails a module that still exports or imports either syscall.
 
 ### Pool "game": `ScePhyMemPartGame` (256 MiB minus the game's own use)
@@ -505,7 +505,7 @@ the worker are byte-identical to main's in both builds.
 API 24 (the kernel's full-frame capture removed): the normal kernel 35,900 → 33,840 B of text and
 75,984 → 75,896 B of data/bss in its 114,688 B, the normal Shell 90,012 → 89,924 B of text in its
 163,840 B (188 B of room in its text pages), and the normal ledger's kernel worst case 221,184 B
-[measured: the build log's module rows and ledger, both builds of #150 `45ca193` and API 24].
+[measured: the build log's module rows and ledger, both builds of main `836259e` (#150) and API 24].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

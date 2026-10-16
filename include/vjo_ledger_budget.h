@@ -238,7 +238,7 @@
  * API 24 removes the full-frame capture (kernel/capture_request.c, the VjoCapture allocator, the
  * display hook's copy, the worker's completion and timeout, two syscalls): 40,040 -> 37,964 B of
  * text and 77,672 -> 77,584 B of data/bss, the normal build 35,900 -> 33,840 and 75,984 -> 75,896 B,
- * the same pages [measured: the build log's module rows, both builds of #150 45ca193 and API 24]. */
+ * the same pages [measured: the build log's module rows, both builds of main 836259e (#150) and API 24]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else
