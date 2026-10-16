@@ -318,18 +318,21 @@ removal, which changes the kernel API.
 
 The release ships two builds of one tree (docs/release-variants.md): the debug build (`VJO_DEBUG=ON`,
 the test builds') and the normal build (`OFF`), which compiles the debug-only logging, the
-self-test and the traces out. Their module pages differ, so the Shell's and the kernel's module budgets have an
-`#if VJO_DEBUG` branch each in `include/vjo_ledger_budget.h`, which `tools/check_memory_ledger.py
---variant debug|normal` reads (the C code sees the same branch). Every other budget is the same.
-[measured: both builds of main `6020c0b` plus the variants change, the build log's module rows]
+self-test and the traces out. Their module pages differ, so the Shell's and the kernel's module
+budgets have an `#if VJO_DEBUG` branch each in `include/vjo_ledger_budget.h`, which
+`tools/check_memory_ledger.py --variant debug|normal` reads (the C code sees the same branch; any other
+conditional naming `VJO_DEBUG`, an `#elif` or a macro defined twice in one build's lines is refused).
+Every other budget is the same. The normal build's check is exact (`--exact`): a module with fewer
+pages than its budget fails too, so the normal budgets are always the measured pages.
+[measured: both builds of main `3805a13` plus the variants change, the build log's module rows]
 
 | module | debug | normal | |
 |---|---:|---:|---|
-| `VitaJPOverlay_Shell.suprx` | 262,144 B (188,000 + 70,132) | 253,952 B (177,608 + 70,052) | 2 SceShell pages fewer |
+| `VitaJPOverlay_Shell.suprx` | 176,128 B (100,792 + 70,060) | 167,936 B (90,768 + 69,988) | 2 SceShell pages fewer |
 | `VitaJPOverlay_Kernel.skprx` | 114,688 B (36,640 + 77,768) | 110,592 B (32,332 + 76,080) | 1 page of the kernel pool fewer |
-| `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,724 + 14,208) | the same pages (one budget for both since #124) |
+| `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,708 + 14,208) | the same pages (one budget for both since #124) |
 
-The normal Shell's text is 177,608 B in 180,224 B of pages (2,616 B of room); its data/bss has 3,676 B.
+The normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its data/bss has 3,740 B.
 
 ## The CI check
 

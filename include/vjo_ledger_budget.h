@@ -73,8 +73,12 @@
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
-/* The normal build: re-measured below (docs/release-variants.md). */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
+/* The normal build (docs/release-variants.md): the self-test (shell/selftest.c), the lines of the
+ * game worker's step log, of the recognized text and of every job and lookup, and the timings and
+ * traces compiled out: 90,768 text + 69,988 data/bss against the debug build's 100,792 + 70,060,
+ * 94,208 + 73,728 B of pages, two text pages fewer [measured: the build log's module rows, both builds
+ * of this tree on main 3805a13 (#130, #142)]. Its check is exact (--exact): this must equal its pages. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,

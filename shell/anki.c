@@ -337,7 +337,11 @@ static void do_save(unsigned seq, int entry)
     note.dictionary = *name ? keep_str(name) : NULL;
     read_more(&note, pages, page);
     rc = vjo_queue_save(&arena, &note);
+#if VJO_DEBUG
     vjo_log("anki: save %s rc=%d, %d ms", note.spelling, rc, (int)((now_us() - t0) / 1000));
+#else
+    vjo_log("anki: save rc=%d, %d ms", rc, (int)((now_us() - t0) / 1000)); /* the normal build logs no looked-up word */
+#endif
     if (rc == VJO_QUEUE_TOO_LARGE) {
         sceClibSnprintf(msg, sizeof(msg), "Card not saved: over %u KiB of text", VJO_QUEUE_TEXT_MAX >> 10);
         publish(seq, msg, VJO_ANKI_STATUS_ERROR, -1, 0);

@@ -149,7 +149,9 @@ def parse_budget(path, variant="debug"):
     """Evaluates the #define lines of the budget header (integer arithmetic) for one build: the
     debug build's (VJO_DEBUG 1, the default) or the normal one's (docs/release-variants.md). Only
     `#if VJO_DEBUG`, `#if !VJO_DEBUG`, `#else` and `#endif` choose between lines; any other
-    conditional (the include guard) keeps its lines."""
+    conditional (the include guard) keeps its lines. Refused, so that this reading and the C
+    compiler's can never differ: another conditional that names VJO_DEBUG (`#if VJO_DEBUG == 0`,
+    `#ifdef VJO_DEBUG`, `#if (VJO_DEBUG)`), an #elif, and a macro defined twice in the lines read."""
     if variant not in ("debug", "normal"):
         raise CheckError(f"unknown build variant {variant!r}")
     values = {}
@@ -166,6 +168,9 @@ def parse_budget(path, variant="debug"):
             if kind in ("if", "ifdef", "ifndef"):
                 take = {"VJO_DEBUG": variant == "debug", "!VJO_DEBUG": variant == "normal"}.get(arg.replace(" ", "")) \
                     if kind == "if" else None
+                if take is None and "VJO_DEBUG" in arg:
+                    raise CheckError(f"{path.name}: only `#if VJO_DEBUG` and `#if !VJO_DEBUG` may choose a build's "
+                                     f"lines, not: {line.strip()}")
                 stack.append((on, take))
                 on = on and take is not False
             elif kind == "else":
@@ -183,6 +188,8 @@ def parse_budget(path, variant="debug"):
         if not m or m.group(1).endswith("_H"):
             continue
         name, expr = m.groups()
+        if name in values:
+            raise CheckError(f"{path.name}: {name} is defined twice in the {variant} build's lines")
         expr = re.sub(r"/\*.*?\*/", "", expr).strip()
         if not expr:
             continue
@@ -236,7 +243,10 @@ def check_budget(values):
     return rows, problems, warnings
 
 
-def check_modules(values, modules):
+def check_modules(values, modules, exact=False):
+    """The packaged modules' pages against their budgets: more pages than the budget is a problem; with
+    exact (the normal build's check, docs/release-variants.md), so is a budget above the pages, which
+    would let the next change grow into the gap unnoticed."""
     rows, problems = [], []
     for key, path in modules.items():
         if not path:
@@ -248,6 +258,10 @@ def check_modules(values, modules):
         if pages > values[macro]:
             problems.append(f"{name}: {pages:,} B of pages, budget {macro} is {values[macro]:,} B (module pages may only shrink; "
                             "lower the footprint or raise the budget deliberately, with the number cited in the PR)")
+        elif exact and pages < values[macro]:
+            problems.append(f"{name}: {pages:,} B of pages, budget {macro} is {values[macro]:,} B: this build's budget must "
+                            f"be its pages exactly; lower it to {pages}u (include/vjo_ledger_budget.h, its "
+                            "`#if VJO_DEBUG` branch for this build)")
     return rows, problems
 
 
@@ -278,13 +292,16 @@ def main():
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     parser.add_argument("--variant", choices=("debug", "normal"), default="debug",
                         help="the build whose budgets apply (VJO_DEBUG; docs/release-variants.md)")
+    parser.add_argument("--exact", action="store_true",
+                        help="also fail when a module has fewer pages than its budget (the normal build's check)")
     args = parser.parse_args()
     problems = []
     try:
         values = parse_budget(args.root / "include/vjo_ledger_budget.h", args.variant)
         sites, scan_problems = scan_sources(args.root)
         budget_rows, budget_problems, warnings = check_budget(values)
-        module_rows, module_problems = check_modules(values, {"kernel": args.kernel, "shell": args.shell, "worker": args.worker})
+        module_rows, module_problems = check_modules(values, {"kernel": args.kernel, "shell": args.shell, "worker": args.worker},
+                                                     args.exact)
         problems = scan_problems + budget_problems + module_problems
     except (CheckError, KeyError, OSError) as e:
         print(f"memory ledger: {e}", file=sys.stderr)

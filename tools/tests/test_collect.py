@@ -410,7 +410,8 @@ class Collect(unittest.TestCase):
             "clock: 444 MHz refused 0x80010016, 333 MHz while reading\n"
             "overlay text Paf allocation refused: free=1500000 requested=20480\n"
             "lookup cursor at 3 failed: rc=-113\n"
-            "anki: save 猫 rc=0, 12 ms\n", encoding="utf-8")
+            "anki: save rc=0, 12 ms\n"
+            "anki: save rc=-110, 9 ms\n", encoding="utf-8")
         (data / "kernel.txt").write_text("Vita JP Overlay kernel 22 started (normal mode, the normal build: a short log)\n"
                                          "hooks: display 0, input 0, procevent 0 (0 = ok)\n"
                                          "ocr worker registered: game pid 0x20000 module 0x30000\n")
@@ -430,6 +431,7 @@ class Collect(unittest.TestCase):
         self.assertIn("MHz before 333-333, during 333-444, after 333-333", a)
         self.assertIn("self-test: armed, but the normal build has none (1 boot(s) said so)", a)
         self.assertIn("OCR jobs: not logged by the normal build", a)
+        self.assertIn("  ARM clock by game window: the normal build's short log (1 boot) logs no job's line or steps", a)
         self.assertNotIn("OCR jobs submitted 0", a)
         self.assertIn("    logged by builds of API 22: 1", a)  # its boot's warning, before its start line
         problems = a.split("lines reporting a problem")[1]
@@ -437,6 +439,7 @@ class Collect(unittest.TestCase):
                      "lookup cursor at N failed"):
             self.assertIn(line, problems)
         self.assertIn("model sizes that did not fit (log only, never shown): large in PCSG00415 x1", a)
+        self.assertIn("  Anki: 2 save(s) (1 failed)", a)  # the normal build's save lines name no word
         record = json.loads((folder / "analysis.json").read_text())
         self.assertEqual(len(record["log"]["short"]["jobs"]), 5)
         self.assertTrue(record["log"]["shell_refusals"])

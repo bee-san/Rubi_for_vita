@@ -289,11 +289,16 @@ if(VJO_WITH_VOCR)
       --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
       --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
     DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self)
+  # The normal build's budgets are its pages exactly (docs/release-variants.md): a budget above them fails too.
+  set(VJO_LEDGER_EXACT)
+  if(NOT VJO_DEBUG)
+    set(VJO_LEDGER_EXACT --exact)
+  endif()
   # The memory ledger (docs/memory-ledger.md): allocation sites, worst cases
   # against the cited limits, and the packaged modules' pages against the
   # declared budget. Its table is this build's record of what we hold.
   add_custom_target(vjo_memory_ledger ALL
-    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_memory_ledger.py --variant ${VJO_VARIANT}
+    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_memory_ledger.py --variant ${VJO_VARIANT} ${VJO_LEDGER_EXACT}
       --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
       --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
       --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
@@ -438,6 +443,7 @@ if(VJO_WITH_VOCR)
 endif()
 add_custom_target(vjo_variant ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_variant.py --variant ${VJO_VARIANT} --version ${VJO_VERSION}
+    --sources ${ROOT}
     --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
     --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${VJO_VARIANT_WORKER_ARGS}
     --app ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin

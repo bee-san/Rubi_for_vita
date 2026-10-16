@@ -727,16 +727,24 @@ static int vocr_poll_cancelled(void *ud)
 }
 
 #if !VJO_DEBUG
-/* The normal build logs the first job of each game that read its screen
- * (vocr_run_one): 1 when the game generation's first job is logged already,
- * else 0, and it counts as logged from now on. Generations start at 1 (0: none). */
-static uint32_t first_job_generation;
-static int first_job_logged(uint32_t generation)
+/* What the normal build has logged of the game's activation in front (a start or
+ * a resume: game_generation moves on at each, invalidate_game_work): its first job
+ * that read its screen, its first job that found a line in the region (often a
+ * later one: a title screen's job finds none), and the model sizes that did not
+ * fit, as the bits of the refused tiers and the tier the job went on to; a job
+ * logs them again only when they change (vocr_run_one, log_tier_checks). */
+enum { SHORT_FIRST_JOB = 1u, SHORT_FIRST_TEXT = 2u, SHORT_TIERS = 4u };
+static uint32_t short_generation; /* the activation the bits below are for */
+static unsigned short_logged;     /* SHORT_* */
+static uint32_t short_tiers;      /* the last tier misses logged */
+
+static void short_activation(uint32_t generation)
 {
-    if (first_job_generation == generation)
-        return 1;
-    first_job_generation = generation;
-    return 0;
+    if (short_generation != generation) {
+        short_generation = generation;
+        short_logged = 0;
+        short_tiers = 0;
+    }
 }
 #endif
 
@@ -803,6 +811,24 @@ static void log_tier_checks(const VjoGameOcrResult *r)
     unsigned n = 0;
     for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS && n < VJO_VOCR_TIERS; i++)
         if (r->step[i].id == VJO_GSTEP_CHECK && VJO_GCHECK_TIER(r->step[i].kind)) check[n++] = &r->step[i];
+#if !VJO_DEBUG
+    {   /* the normal build: once per activation, and again only when what did not fit, or the
+         * tier the job went on to, changes: the refused tiers' bits | the next tier << 8 */
+        uint32_t sig = 0;
+        for (unsigned k = 0; k < n; k++)
+            if (check[k]->rc == 1)
+                sig |= 1u << VJO_GCHECK_TIER(check[k]->kind);
+            else if (!(sig >> 8))
+                sig |= (uint32_t)VJO_GCHECK_TIER(check[k]->kind) << 8;
+        if (!(sig & 0xFFu))
+            return; /* every size it tried fitted: no line */
+        short_activation(job_generation);
+        if ((short_logged & SHORT_TIERS) && short_tiers == sig)
+            return;
+        short_logged |= SHORT_TIERS;
+        short_tiers = sig;
+    }
+#endif
     for (unsigned i = 0; i < n; i++) {
         unsigned t = VJO_GCHECK_TIER(check[i]->kind), next = i + 1u < n ? VJO_GCHECK_TIER(check[i + 1u]->kind) : 0u;
         /* refused: its last try was without the LM and the cascade, so its own reserve */
@@ -905,14 +931,19 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
     vjo_log_batch_end(&batch);
 #else
-    /* The normal build: a job's line when it failed, and for the first job of each game
-     * that read its screen (its result, the size that ran, the lines found, the time in
-     * the game); then the sizes that did not fit, a refused memory check, and the clock
-     * line when it changes (docs/release-variants.md). A cancelled job, or one whose
-     * screen changed under it, is retried quietly as the overlay does: no line. */
+    /* The normal build: a job's line (its result, the size that ran, the lines found, the
+     * time in the game) when it failed, and for the first job of each activation of the game
+     * (a start or a resume) that read its screen and its first that found a line (the first
+     * is often a title screen's, with none); then the sizes that did not fit and the clock,
+     * each once per activation and when it changes, and a refused memory check
+     * (docs/release-variants.md). A cancelled job, or one whose screen changed under it, is
+     * retried quietly as the overlay does: no line. */
     {
         int failed = rc != VJO_OK && rc != VJO_E_CANCELLED && rc != VJO_E_SCREEN_CHANGED;
-        if (failed || (rc == VJO_OK && !first_job_logged(job_generation))) {
+        unsigned want = rc != VJO_OK ? 0u : SHORT_FIRST_JOB | (result->lines ? SHORT_FIRST_TEXT : 0u);
+        short_activation(job_generation);
+        if (failed || (want & ~short_logged)) {
+            short_logged |= want;
             vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, vjo_vocr_tier_model((int)*ran), (unsigned)result->lines,
                     (unsigned)((now_us() - t0) / 1000));
         }

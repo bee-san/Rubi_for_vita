@@ -122,6 +122,39 @@ class Ledger(unittest.TestCase):
         self.assertIn("VJO_BUDGET_SHELL_MODULE_PAGES", differ)  # the normal Shell is smaller
         self.assertEqual(set(debug), set(normal))
 
+    def test_other_spellings_and_twice_defined_macros_are_refused(self):
+        """audit N5: a conditional that names VJO_DEBUG in another form would be read both ways here and one way
+        by the compiler; a macro defined twice in the lines read means the same."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "b.h"
+            for text in ("#if VJO_DEBUG == 0\n#define A 1u\n#else\n#define A 2u\n#endif\n",
+                         "#if (VJO_DEBUG)\n#define A 1u\n#endif\n", "#ifdef VJO_DEBUG\n#define A 1u\n#endif\n",
+                         "#ifndef VJO_DEBUG\n#define A 1u\n#endif\n", "#if 1\n#define A 1u\n#elif 0\n#endif\n",
+                         "#define A 1u\n#define A 2u\n",
+                         "#ifdef OTHER\n#define A 1u\n#else\n#define A 2u\n#endif\n"):
+                path.write_text(text)
+                for v in ("debug", "normal"):
+                    with self.subTest(text=text, variant=v), self.assertRaises(ledger.CheckError):
+                        ledger.parse_budget(path, v)
+
+    def test_the_normal_build_budget_is_its_pages_exactly(self):
+        """audit N4: with --exact (the normal build's check) a budget above the module's pages fails too."""
+        budget = ROOT / "include/vjo_ledger_budget.h"
+        values = ledger.parse_budget(budget, "normal")
+        with tempfile.TemporaryDirectory() as tmp:
+            shell = Path(tmp) / "VitaJPOverlay_Shell.suprx"
+            pages = values["VJO_BUDGET_SHELL_MODULE_PAGES"]
+            # a SELF of one PT_LOAD segment of that many bytes is that many pages
+            shell.write_bytes(fake_self(b"\0" * pages))
+            rows, problems = ledger.check_modules(values, {"shell": shell}, exact=True)
+            self.assertEqual(problems, [])
+            shell.write_bytes(fake_self(b"\0" * (pages - 4096)))
+            rows, problems = ledger.check_modules(values, {"shell": shell}, exact=False)
+            self.assertEqual(problems, [])  # the debug build's check: a budget above the pages passes
+            rows, problems = ledger.check_modules(values, {"shell": shell}, exact=True)
+            self.assertEqual(len(problems), 1)
+            self.assertIn(f"lower it to {pages - 4096}u", problems[0])
+
     def test_conditionals_pick_one_build(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "b.h"
@@ -131,6 +164,68 @@ class Ledger(unittest.TestCase):
             self.assertEqual(ledger.parse_budget(path, "normal"), {"A": 1, "B": 3, "C": 5, "D": 4})
             with self.assertRaises(ledger.CheckError):
                 ledger.parse_budget(path, "release")
+
+
+class DerivedStrings(unittest.TestCase):
+    """audit N3: the normal build is also checked against every literal its sources compile only into the debug
+    build (check_variant.debug_only_strings), as a whole string of its own."""
+
+    def test_the_scan_finds_debug_only_literals_and_nothing_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "shell").mkdir()
+            (root / "core").mkdir()
+            (root / "shell" / "a.c").write_text(
+                '#include "a fairly long include name.h"\n'
+                '/* "a commented out literal here" */\n'
+                'void f(int x) {\n'
+                '#if VJO_DEBUG\n'
+                '    vjo_log("a debug-only line %d", x);\n'
+                '#else\n'
+                '    vjo_log("the normal line, kept");\n'
+                '#endif\n'
+                '#if !VJO_DEBUG\n'
+                '    vjo_log("another normal-only line");\n'
+                '#else\n'
+                '    vjo_log("the debug branch of an if-not");\n'
+                '#endif\n'
+                '    vjo_dlog("a vjo_dlog line, " "two literals", x);\n'
+                '    if (x) vjo_dlog ( /* comment */ "after a comment, dlog");\n'
+                '    vjo_log("kept in both builds %c", \'"\');\n'
+                '#if VJO_DEBUG\n'
+                '    vjo_log("also used by kept code");\n'
+                '#endif\n'
+                '}\n')
+            (root / "core" / "b.c").write_text('const char *k = "also used by kept code";\n')
+            got = {s.decode() for s in variant.debug_only_strings(root, "shell")}
+            self.assertEqual(got, {"a debug-only line %d", "the debug branch of an if-not",
+                                   "a vjo_dlog line, two literals", "after a comment, dlog"})
+            self.assertEqual(variant.debug_only_strings(root, "kernel"), [])
+
+    def test_a_leak_is_a_whole_string_not_a_merged_tail(self):
+        strings = [b"a debug-only line %d"]
+        self.assertEqual(variant.leaked(b"\0kept\0a debug-only line %d\0more\0", strings), strings)
+        self.assertEqual(variant.leaked(b"a debug-only line %d\0", strings), strings)  # at the very start
+        self.assertEqual(variant.leaked(b"\0kept: a debug-only line %d\0", strings), [])  # the tail of a kept string
+        self.assertEqual(variant.leaked(b"\0a debug-only line %dX\0", strings), [])
+
+    def test_the_tree_has_debug_only_strings_and_the_markers_are_among_them(self):
+        for part, minimum in (("shell", 40), ("kernel", 8), ("worker", 1), ("app", 1)):
+            with self.subTest(part=part):
+                found = variant.debug_only_strings(ROOT, part)
+                self.assertGreaterEqual(len(found), minimum)
+                for m in variant.DEBUG_MARKERS.get(part, ()):
+                    self.assertTrue(any(m in s for s in found), m)
+
+    def test_check_with_sources_fails_a_normal_build_that_kept_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "shell").mkdir()
+            (root / "shell" / "a.c").write_text('#if VJO_DEBUG\nvjo_log("a debug-only line %d", x);\n#endif\n')
+            blobs = {"shell": module("shell", "normal") + b"\0a debug-only line %d\0"}
+            problems = variant.check("normal", blobs, sources=root)
+            self.assertTrue(any("debug-only strings" in p and "a debug-only line %d" in p for p in problems), problems)
+            self.assertEqual(variant.check("normal", {"shell": module("shell", "normal")}, sources=root), [])
 
 
 class ConfigIsTheSame(unittest.TestCase):
@@ -265,6 +360,17 @@ class PackageVariants(unittest.TestCase):
                 dst.writestr(info, data)
         with self.assertRaises(ValueError) as caught, contextlib.redirect_stdout(io.StringIO()):
             release.package(mixed, output, self.models, version="0.8.0")
+        self.assertIn("not one build", str(caught.exception))
+        # a refused base leaves no output behind (audit N12)
+        output.unlink(missing_ok=True)
+        with self.assertRaises(ValueError), contextlib.redirect_stdout(io.StringIO()):
+            release.package(self.base("debug"), output, self.models, version="0.8.0", variant="normal")
+        self.assertFalse(output.exists())
+        # and package_variants says so as a refusal, not a traceback
+        with self.assertRaises(SystemExit) as caught:
+            self.run_main("--normal", mixed, "--debug", self.base("debug"), "--models", self.models, "--version", "0.8.0",
+                          "-o", self.root / "out2")
+        self.assertIn("the bases are not this release's two builds", str(caught.exception))
         self.assertIn("not one build", str(caught.exception))
 
 

@@ -595,7 +595,8 @@ static void reset(void)
     active = -1;
     game_generation = job_generation = 0;
 #if !VJO_DEBUG
-    first_job_generation = 0xFFFFFFFFu; /* the normal build's first-job line: no generation yet (tests start at 0) */
+    short_generation = 0xFFFFFFFFu; /* the normal build's lines per activation: none yet (tests start at 0) */
+    short_logged = 0; short_tiers = 0;
 #endif
     cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
     view_waiting = view_job_text = 0;
@@ -1008,7 +1009,6 @@ static void test_vocr_capture_follows_the_retry(void)
 #endif
 
 #ifdef VJO_WITH_VOCR
-#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* The recognizer's text is logged as it read it, a line per line; the sentence
  * shown, saved and looked up is normalised (one form of each mark, ー or 一 by
  * context), and what changed is logged. */
@@ -1019,15 +1019,20 @@ static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
     TEST_CHECK(run_vocr_job() == VJO_OK);
     TEST_CHECK(!strcmp(cache_data[0].sentence, "コーヒー!?\n統一的…"));
     TEST_MSG("shown: %s", cache_data[0].sentence);
+#if VJO_DEBUG /* the text lines: the debug build's */
     TEST_CHECK(logged("game vocr text 0: コ一ヒ一！？") != NULL && logged("game vocr text 1: 統ー的．．．") != NULL);
     TEST_CHECK(logged("game vocr text 0 shown: コーヒー!?") != NULL && logged("game vocr text 1 shown: 統一的…") != NULL);
+#else
+    TEST_CHECK(!logged("game vocr text") && !logged("コ")); /* the normal build logs no recognized text */
+#endif
     fake_recognized_text = "猫";
     log_count = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫"));
+#if VJO_DEBUG
     TEST_CHECK(logged("game vocr text 0: 猫") != NULL && !logged("shown:")); /* unchanged: one line */
+#endif
     mem_free();
 }
-#endif
 #endif
 
 /* Every job is the game worker's: on the console, no image or connection leaves it. */
@@ -2784,7 +2789,7 @@ static void test_audit_refresh_has_no_arena(void)
     TEST_CHECK(cache_data[1].ocr_text != NULL && !cache_data[1].list.n_entries && !cache_data[1].pages);
     job_done = 1;
     on_job_done();
-    TEST_CHECK(logged("refresh rc=0: same text") != NULL && has_result_memory() && results[0].base == base);
+    TEST_CHECK(DLOGGED("refresh rc=0: same text") && has_result_memory() && results[0].base == base);
     TEST_CHECK(!held_cmd && !held_view);
     close_overlay(); mem_free();
 }
@@ -3889,52 +3894,92 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
 #if !VJO_DEBUG
 /* ---- the normal build's short log (docs/release-variants.md) ---- */
 
-/* A job's line for the first job of each game that read its screen and for every failed
- * one: its result, the size that ran, the lines and the time; never the recognized text,
- * the capture, a passed memory check, the step log or the timings of every job. */
-static void test_normal_build_logs_the_first_job_and_failures(void)
+/* A job's line for the first job of each activation of the game (a start or a resume) that read
+ * its screen, for its first job that found a line, and for every failed one: its result, the size
+ * that ran, the lines and the time; never the recognized text, the capture, a passed memory check,
+ * the step log or the timings of every job. */
+static void test_normal_build_logs_the_first_jobs_and_failures(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫が鳴いた";
     fake_steps = 1;
     game_generation = job_generation = 51;
-    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫が鳴いた"));
+    fake_lines = 0; /* a title screen: the first job finds no line */
+    TEST_CHECK(run_vocr_job() == VJO_OK);
     const char *line = logged("ocr rc=0 ");
-    TEST_CHECK(line && !strncmp(line, "ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ", 37));
+    TEST_CHECK(line && !strncmp(line, "ocr rc=0 VOCR3_H15_w8.vocr: 0 lines, ", 37));
     TEST_MSG("%s", line ? line : "(none)");
+    TEST_CHECK(log_count == 1);
+    mem_free();
+    log_count = 0;
+    fake_lines = 2; /* the first job that finds a line: its line too */
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫が鳴いた"));
+    line = logged("ocr rc=0 ");
+    TEST_CHECK(line && !strncmp(line, "ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ", 37));
     TEST_CHECK(log_count == 1); /* that line only */
     for (unsigned i = 0; i < log_count && i < 32; i++)
         TEST_CHECK_(!strstr(log_lines[i], "猫") && !strstr(log_lines[i], "game vocr") && !strstr(log_lines[i], "gstep"),
                     "%s", log_lines[i]);
     mem_free();
-    /* the same game's next jobs: nothing */
+    /* the same activation's next jobs, with or without lines: nothing */
     log_count = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK && log_count == 0);
+    mem_free();
+    fake_lines = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && log_count == 0);
+    fake_lines = 2;
     mem_free();
     /* a screen that changed under every read is retried quietly: nothing */
     fake_screen_changes = 1;
     TEST_CHECK(run_vocr_job() == VJO_E_SCREEN_CHANGED && log_count == 0);
     mem_free();
-    /* a failed one: its line, every time */
+    /* a failed one: its line, every time, and its refused memory check */
     fail_vocr_user = 1;
-    TEST_CHECK(run_vocr_job() == VJO_E_OOM && logged("ocr rc=-103 VOCR3_H15_w8.vocr: ") != NULL);
+    TEST_CHECK(run_vocr_job() == VJO_E_OOM && logged("ocr rc=-103 VOCR3_H15_w8.vocr: ") != NULL &&
+               logged("check refused") != NULL);
     log_count = 0;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM && logged("ocr rc=-103 ") != NULL);
     fail_vocr_user = 0;
     mem_free();
-    /* the next game: its first job again */
+    /* the next activation (a resume moves the generation on too): its first job again */
     log_count = 0;
     job_generation = 52;
-    TEST_CHECK(run_vocr_job() == VJO_OK && logged("ocr rc=0 VOCR3_H15_w8.vocr: ") != NULL);
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("ocr rc=0 VOCR3_H15_w8.vocr: 2 lines") != NULL && log_count == 1);
     mem_free();
+}
+
+/* A model size that did not fit: its lines once per activation, and again when what did not fit
+ * (or the size the job went on to) changes; the debug build logs them for every job. */
+static void test_normal_build_logs_tier_misses_once_and_on_change(void)
+{
+    reset();
+    cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
+    fake_recognized_text = "猫";
+    memcpy(job_title, "PCSG00415", 10);
+    game_generation = job_generation = 61;
+    fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u); /* Large does not fit */
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("tier large did not fit in PCSG00415") != NULL);
+    mem_free();
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("did not fit")); /* the same: nothing */
+    mem_free();
+    fake_tier_checks = 1u << (VJO_VOCR_TIER_LARGE - 1u) | 1u << (VJO_VOCR_TIER_NORMAL - 1u); /* now Normal neither */
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("tier large did not fit") && logged("tier normal did not fit") &&
+               logged("; using small") != NULL);
+    mem_free();
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("did not fit"));
+    mem_free();
+    job_generation = 62; /* the next activation: once again */
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("tier normal did not fit") != NULL);
+    mem_free();
+    fake_tier_checks = 0;
 }
 
 /* The 444 MHz boost's one line: the first job of a game and whenever it changes, never per job. */
 static void test_normal_build_logs_the_clock_once_and_on_change(void)
 {
     reset();
-    cfg.ocr_backend = VJO_OCR_VOCR;
     fake_recognized_text = "猫";
     fake_clock_on = 1; fake_clock_rc = 0;
     fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
@@ -4205,7 +4250,8 @@ TEST_LIST = {
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
     {"overlay_app_check_runs_after_the_game_is_active", test_overlay_app_check_runs_after_the_game_is_active},
 #if !VJO_DEBUG
-    {"normal_build_logs_the_first_job_and_failures", test_normal_build_logs_the_first_job_and_failures},
+    {"normal_build_logs_the_first_jobs_and_failures", test_normal_build_logs_the_first_jobs_and_failures},
+    {"normal_build_logs_tier_misses_once_and_on_change", test_normal_build_logs_tier_misses_once_and_on_change},
     {"normal_build_logs_the_clock_once_and_on_change", test_normal_build_logs_the_clock_once_and_on_change},
     {"normal_build_logs_a_failed_lookup_only", test_normal_build_logs_a_failed_lookup_only},
     {"normal_build_has_no_selftest", test_normal_build_has_no_selftest},
@@ -4294,9 +4340,7 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
-#if VJO_DEBUG
     {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
-#endif
 #endif
     {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},
     {"engine_cache_tracks_backend_local_models_and_storage", test_engine_cache_tracks_backend_models_and_storage},

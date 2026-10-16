@@ -44,8 +44,12 @@ def check_bases(normal, debug, version):
     """Every problem with the two base zips as this release's (empty: none)."""
     problems = []
     for path, want in ((normal, "normal"), (debug, "debug")):
-        with zipfile.ZipFile(path) as z:
-            got, app = release.base_variant(z)
+        try:
+            with zipfile.ZipFile(path) as z:
+                got, app = release.base_variant(z)
+        except (ValueError, KeyError, zipfile.BadZipFile) as e:  # modules of both builds, a missing plugin, not a zip
+            problems.append(f"{path.name}: {e}")
+            continue
         if got != want:
             problems.append(f"{path.name}: the {got} build, given as the {want} one")
         if app != version:

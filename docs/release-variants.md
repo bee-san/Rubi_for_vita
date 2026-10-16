@@ -11,7 +11,7 @@ One tree builds both, chosen at compile time with `-DVJO_DEBUG=ON|OFF` (`include
 | `VitaJPOverlay-<version>-debug.zip` | debug | `ON` (the default) | console tests, and anyone asked for a full log | `VitaJPOverlay` |
 
 The debug build is the test builds' own: its three plugins and RCO are byte-identical to main's
-(`6020c0b`, measured: the same SHA-256s; also on `9f92bc6`, `ac905b1` and `e53d9fb`). Its Overlay app differs in one string: the version beside
+(`3805a13`, measured: the same SHA-256s; also on `6020c0b`, `9f92bc6`, `ac905b1` and `e53d9fb`). Its Overlay app differs in one string: the version beside
 its title, `Overlay v0.8.0 debug` (the normal app shows `Overlay v0.8.0`). Test builds stay debug:
 `VJO_DEBUG` defaults to `ON` in every CMake project, a file compiled without it is the debug build,
 and CI's `VitaJPOverlay` artifact is the debug build as before.
@@ -33,21 +33,21 @@ keep: anything a user-facing feature or a recovery needs stays.
 |---|---|---|
 | the on-device self-test: the marker, the five stages, the report, its memory samples | `shell/selftest.c`, `worker.c` `selftest_job_due`, `run_selftest_stages` | **drop**. An armed marker gives one line, `self-test: armed, but this is the normal build: install the -debug build to run it`, and stays for a debug build |
 | the game worker's step log, one `gstep` line per step | `worker.c` `log_vocr_steps` | **drop** |
-| each job's lines: result, capture, memory check, speed, per-line crops, frames and confidence | `worker.c` `vocr_run_one`, `log_vocr_measurements` | **reduced**: one line, `ocr rc=… MODEL: N lines, T ms`, for each game's first job that read its screen and for every failed job. A refused memory check keeps its numbers |
-| a model size that did not fit (`tier large did not fit in …; using normal`) | `worker.c` `log_tier_checks` | **keep** (the README's "only `log.txt` says so") |
+| each job's lines: result, capture, memory check, speed, per-line crops, frames and confidence | `worker.c` `vocr_run_one`, `log_vocr_measurements` | **reduced**: one line, `ocr rc=… MODEL: N lines, T ms`, for the first job of each activation of the game (a start or a resume: `game_generation`) that read its screen, for its first job that found a line (the first is often a title screen's, with none), and for every failed job, which also logs its refused memory check's numbers |
+| a model size that did not fit (`tier large did not fit in …; using normal`) | `worker.c` `log_tier_checks` | **reduced**: once per activation and again when what did not fit (or the size the job went on to) changes; the debug build logs it for every job (the README's "only `log.txt` says so" holds in both) |
 | a model file unusable (`game vocr: … is unusable here`) | `worker.c` `run_vocr` | **keep** |
-| the 444 MHz boost: before, during, after | `worker.c` (the step log's clock step) | **reduced**: `clock: 333 -> 444 MHz while reading, 333 after` (or `left as it is`, `refused`), for each game's first job and when it changes |
-| the recognized text, raw and as shown | `worker.c` `log_text_lines` | **drop** (the normal log has no game text) |
+| the 444 MHz boost: before, during, after | `worker.c` (the step log's clock step) | **reduced**: `clock: 333 -> 444 MHz while reading, 333 after` (or `left as it is`, `refused`), for each activation's first job that recognized a line and when it changes |
+| the recognized text, raw and as shown | `worker.c` `log_text_lines` | **drop** (the normal log has no recognized or looked-up text: the Anki save line names no word either) |
 | the dictionary lookup line (text at the cursor, entry, reads, time) | `worker.c` `log_lookup` | **reduced**: `lookup … failed: rc=…` only |
 | the job's done line (time, arena peak, game time, log time and appends) | `worker.c` `net_job` | **drop** |
-| job start / cancel / open / refresh / dropped-screen / subtitle traces | `worker.c` | **drop** |
+| job start / cancel / open / refresh / dropped-screen / subtitle traces; the workspace line; `%s: system app, not a game` | `worker.c` | **drop** |
 | input block on/off, the overlay's close with its `t=` | `worker.c` | **drop**; a refused block (the overlay cannot open) is logged |
 | the overlay's close counters (frames, moves, stick, slowest frame and key) | `overlay.cpp` | **drop** (the counters too) |
 | the front touch region's on/off and hand-back trace | `overlay.cpp` | **drop**; a refusal is logged |
-| the region selector's corner and box lines | `overlay.cpp` | **drop**; the saved region (`region set for …`) is kept |
+| the region selector's corner and box lines; a header tap's cursor (`header touch cursor=`) | `overlay.cpp` | **drop**; the saved region (`region set for …`) is kept |
 | every Paf allocation | `memory.cpp` | **reduced**: refusals only (the reserve guard's line is kept) |
 | the ledger's per-item table at boot, game start and exit | `ledger.c` | **reduced**: the two pool lines stay |
-| Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save (`anki: save … rc=…`) and every error are kept |
+| Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save is kept without its word (`anki: save rc=0, 12 ms`; the debug build's names it), and every error |
 | the title's parameter line | `game.c` | **drop** |
 | a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the README's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
@@ -55,7 +55,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | config warnings, the Overlay app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
 | `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log |
 | the UDP log (`log_host`) | `log_vita.c` | keep for now: overlay-shell-slim's PR-B removes it from both builds |
-| Google Lens, its capture and JPEG lines, the network | `capture.c`, `platform_vita.c`, `core/` | untouched: overlay-shell-slim removes them from both builds (#130, PR-B) |
+| the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | untouched: Google Lens and its capture went from both builds with #130; overlay-shell-slim's PR-B removes the rest of the network from both |
 
 ### Kernel plugin (`VitaJPOverlay_Kernel.skprx`)
 
@@ -104,30 +104,33 @@ keep: anything a user-facing feature or a recovery needs stays.
 
 ## Measured
 
-Both builds of this tree on main `6020c0b`, VitaSDK as `tools/setup_toolchain.sh` installs it,
-`tools/check_memory_ledger.py`'s reader (loaded segments rounded to 4 KiB) [measured: `build/rv`, the
-`release_variants` target]:
+Both builds of this tree on main `3805a13` (#130 removed Google Lens from both), VitaSDK as
+`tools/setup_toolchain.sh` installs it, `tools/check_memory_ledger.py`'s reader (loaded segments rounded
+to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 
 | module | debug: text + data/bss | pages | normal: text + data/bss | pages | freed |
 |---|---:|---:|---:|---:|---:|
-| `VitaJPOverlay_Shell.suprx` (SceShell) | 188,000 + 70,132 | 262,144 B | 177,608 + 70,052 | **253,952 B** | **8,192 B (2 pages)** |
+| `VitaJPOverlay_Shell.suprx` (SceShell) | 100,792 + 70,060 | 176,128 B | 90,768 + 69,988 | **167,936 B** | **8,192 B (2 pages)** |
 | `VitaJPOverlay_Kernel.skprx` (the kernel pool) | 36,640 + 77,768 | 114,688 B | 32,332 + 76,080 | 110,592 B | 4,096 B (1 page) |
-| `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,724 + 14,208 | 90,112 B | 0 (1,348 B of text) |
-| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 487,452 + 3,213,744 | 3,706,880 B | 486,980 + 3,213,712 | 3,702,784 B | 4,096 B |
+| `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,708 + 14,208 | 90,112 B | 0 (1,364 B of text) |
+| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
 
 The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
-28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: on
-main `ac905b1`, before #127's frequency ranks, the normal text was 176,080 B, 48 B under a page
-boundary, and the saving three pages; #127 and #124 added 1,528 B to it. The game worker's
-saving (1,348 B of text) no longer frees a page since #124, so both builds share its budget. What is left of the normal Shell's
-strings is the on-screen messages, the short log's lines and the Lens/network code that
-overlay-shell-slim removes from both builds (#130, PR-B); the normal budget is re-measured whenever
-either build's pages change (the ledger check fails otherwise).
+28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: three
+pages on main `ac905b1`, two since #127 and #124, two again after #130. Its budget is checked exactly
+(`--exact`: a normal budget above its pages fails the build too), so whoever changes either build's
+pages re-measures it; the check names the value to set. The game worker's saving (1,364 B of text) no
+longer frees a page since #124, so both builds share its budget. The Overlay app's text differs by
+472 B and its pages not at all with the local SDK; with CI's container SDK, which builds the
+release, its pages are the same in main, debug and normal [measured: audit-overlay-release-variants
+on `b79ecf9`]: it is not SceShell memory either way.
 
-The log a job writes [measured: host suites, `host/tests/test_shell_worker.c`]: the debug build 23
-lines per OCR job (`vocr_job_log_is_appended_in_batches`), its text lines and a lookup line besides;
-the normal build one line for each game's first job and for each failed job, none for the others
-(`normal_build_logs_the_first_job_and_failures`).
+The log [measured: host suites, `host/tests/test_shell_worker.c`]: the debug build writes 23 lines per
+OCR job (`vocr_job_log_is_appended_in_batches`), its text lines and a lookup line besides. The normal
+build writes, per activation of a game (each start or resume), the first job that read its screen,
+its first that found a line, the clock line, and a model size that did not fit, each once and again
+when it changes; and every failed job with its refused memory check
+(`normal_build_logs_the_first_jobs_and_failures`, `normal_build_logs_tier_misses_once_and_on_change`).
 
 ## Building
 
@@ -164,6 +167,16 @@ python3 tools/package_variants.py --normal ci/normal/VitaJPOverlay-0.8.0.zip \
   --debug ci/debug/VitaJPOverlay-0.8.0-debug.zip --models /path/to/models --version 0.8.0 \
   --source-revision SHA -o out/
 ```
+
+The models are the pinned files of `tools/prepare_ocr.py` (its `--backend vocr-tiers` and
+`--backend vocr-lm` download and check them), or the vita-vn-ocr releases' assets checked against
+those pins, as the test builds' packaging fetches them. The final release passes no `--set`, so its
+config template is the repository's (`anki_mining = off`), unless the owner decides otherwise; the test
+builds add `--set anki_mining=on`.
+
+The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
+(`VitaJPOverlay-0.8.0-test.N.zip`, `package_release.py --version 0.8.0-test.N`) shows `Overlay v0.8.0
+debug`, the build its binaries are.
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as, an Overlay app
 of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's

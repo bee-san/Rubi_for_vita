@@ -197,7 +197,8 @@ RC_NAMES = {0: "ok", -100: "connect", -101: "tls", -102: "http", -103: "out of m
             -116: "ocr region", -117: "ocr unavailable", -120: "screen changed"}
 NATIVE = {0xBFFFFFFF: "no game", 0xBFFFFFFE: "no memory", 0xBFFFFFFD: "busy", 0xBFFFFFFC: "timeout",
           0xBFFFFFFB: "format", 0xBFFFFFFA: "argument", 0xBFFFFFF9: "copy", 0xBFFFFFF7: "cancelled",
-          0xBFFFFFF8: "permission", 0x80024302: "NO_FREE_PHYSICAL_PAGE (the partition is out of pages)",
+          0xBFFFFFF8: "permission", 0xBFFFFFF6: "unsupported (not in this build: the normal build's self-test calls)",
+          0x80024302: "NO_FREE_PHYSICAL_PAGE (the partition is out of pages)",
           0x80020001: "SCE_KERNEL_ERROR_ERROR (the call failed)", 0x80010002: "ENOENT", 0x80010013: "ENODEV",
           0x8001000D: "EACCES"}
 
@@ -933,7 +934,8 @@ LOG = {
     "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
     "touch_left": re.compile(r"^touch region left to SceShell t=(\d+) ms"),
     # (an earlier build's line also names the screenshot's bytes)
-    "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
+    # (the normal build's line names no word: "anki: save rc=0, 12 ms", docs/release-variants.md)
+    "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
     # export had no stop count
     "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
@@ -1201,7 +1203,14 @@ def _mhz(values):
 def render_clock_windows(lg):
     """The ARM clock by game window and the time per CTC frame, boost off against raised (clock_windows)."""
     rows, older, groups = lg.get("clock_windows") or [], lg.get("clock_windows_older", 0), lg.get("clock_compare") or {}
+    # the normal build (docs/release-variants.md) logs no job's line or step: its windows have no job here, and
+    # its clock lines are in render_short_log's
+    normal = (lg.get("short") or {}).get("boots", 0)
+    normal_note = (f"  ARM clock by game window: the normal build's short log ({_n(normal, 'boot')}) logs no job's line "
+                   "or steps, so its windows are not read here; its clock lines are above; the -debug zip logs the jobs")
     if not rows:
+        if normal:
+            return [normal_note]
         return ([f"  ARM clock by game window: no window of a build with the boost (API {BOOST_API} on) has an OCR job; "
                  f"{_n(older, 'window')} of older builds {'does' if older == 1 else 'do'} (they log no clock)"]
                 if older else [])
@@ -1239,6 +1248,8 @@ def render_clock_windows(lg):
     if older:
         L.append(f"    ({_n(older, 'window')} of builds before API {BOOST_API}, which have no boost and log no clock, "
                  f"{'is' if older == 1 else 'are'} not listed)")
+    if normal:
+        L.append("    (" + normal_note.strip()[len("ARM clock by game window: "):] + ")")
 
     def per(g):
         return g["us"] / g["frames"]

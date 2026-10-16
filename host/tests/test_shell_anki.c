@@ -603,11 +603,12 @@ static void test_enter_saves_offline(void)
     TEST_MSG("%s", json);
     /* every step logged: the record's bytes, the queue (the debug build's lines); the save
      * itself in both builds (docs/release-variants.md) */
-    TEST_CHECK(logged("anki: save 猫 rc=0, "));
 #if VJO_DEBUG
+    TEST_CHECK(logged("anki: save 猫 rc=0, "));
     TEST_CHECK(logged(" saved, ") && logged(" B record\n") && logged("anki: queue 1 card(s)\n") &&
                logged("anki: arena peak "));
 #else
+    TEST_CHECK(logged("anki: save rc=0, ") && !logged("猫")); /* the normal build logs no looked-up word */
     TEST_CHECK(!logged(" B record\n") && !logged("anki: queue ") && !logged("anki: arena peak "));
 #endif
     TEST_MSG("%s", all_logs);

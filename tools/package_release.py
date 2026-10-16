@@ -280,8 +280,8 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         manifest["install_settings"] = {k: ("set" if v else "") if SECRET.search(k) else v for k, v in settings.items()}
     if source_revision:
         manifest["source_revision"] = source_revision
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    # The base's checks first, so that a refused base leaves no output behind.
+    with zipfile.ZipFile(base) as original:
         if original.testzip() is not None:
             raise ValueError("Base archive is corrupt")
         required = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
@@ -300,6 +300,8 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             manifest["variant"] = found or variant
         if app_version is not None:
             manifest["app_version"] = app_version
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for info in original.infolist():
             if info.is_dir() or info.filename in assets or info.filename == "package-manifest.json":
                 continue
