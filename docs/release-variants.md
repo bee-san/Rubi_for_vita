@@ -93,7 +93,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 
 | item | normal |
 |---|---|
-| `install_ftp.sh --collect` (every log and record in one zip, with its analysis) | **keep**: the way to send a short log when something breaks. The analysis names the build (`package 0.8.0, the normal build (a short log; no self-test)`) |
+| `install_ftp.sh --collect` (every log and record in one zip, with its analysis) | **keep**: the way to send a short log when something breaks. The analysis names the build (`package 0.8.0, the normal build (a short log; no self-test)`, and the log's boots of it) and reads the normal build's own lines: its OCR jobs (each rc, model, lines and time), its clock lines, a refused PAF request, the self-test note; a failed job is a problem line; its kernel.txt logs no job, which the analysis says instead of counting 0. `analyse_timeline.py` says the short log has nothing to time |
 | `install_ftp.sh --self-test` | keep; from the normal package it says the self-test needs the `-debug` zip, and arms the marker for that build |
 | `analyse_selftest.py`, `analyse_timeline.py` | keep (they read either build's files; the timeline is the debug build's lines) |
 | debug config keys | none but `log_host` (above). Every other key is the same in both builds |

@@ -386,6 +386,63 @@ class Collect(unittest.TestCase):
         self.assertEqual(armed.returncode, 0, armed.stdout + armed.stderr)
         self.assertNotIn("normal build", armed.stdout)
 
+    def test_the_normal_builds_short_log_is_read(self):
+        """docs/release-variants.md: the normal build's log has no job, step or timing lines; the analysis reads its
+        own: each game's first job and every failed one, the clock line, a refused PAF request, the self-test note,
+        its boots (the config warnings' API), and its kernel.txt, which logs no job (audit-overlay-release-variants B1)."""
+        data = self.device / "ux0/data/VitaJPOverlay"
+        (data / "log.old.txt").unlink()
+        (data / "selftest-report.txt").unlink()
+        (data / "log.txt").write_text(
+            "bootstrap: shell API 22 entered\n"
+            "config warning: ocr_backend: VOCR2 was removed; using vocr\n"
+            "Vita JP Overlay shell started (kernel API 22, the normal build: a short log)\n"
+            "self-test: armed, but this is the normal build: install the -debug build to run it\n"
+            "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+            "ocr rc=-117 VOCR3_H15_w8.vocr: 0 lines, 1003 ms\n"
+            "ocr rc=-117 VOCR3_H15_w8.vocr: 0 lines, 1002 ms\n"
+            "ocr rc=-108 VOCR3_H15_w8.vocr: 0 lines, 40 ms\n"
+            "tier large did not fit in PCSG00415 (need 18649088, free 12000000); using normal\n"
+            "ocr rc=0 VOCR3_H15_w8.vocr: 3 lines, 2100 ms\n"
+            "clock: 333 -> 444 MHz while reading, 333 after\n"
+            "game PCSE00001 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+            "ocr rc=0 VOCR3_FL10_w8.vocr: 2 lines, 900 ms\n"
+            "clock: 444 MHz refused 0x80010016, 333 MHz while reading\n"
+            "overlay text Paf allocation refused: free=1500000 requested=20480\n"
+            "lookup cursor at 3 failed: rc=-113\n"
+            "anki: save 猫 rc=0, 12 ms\n", encoding="utf-8")
+        (data / "kernel.txt").write_text("Vita JP Overlay kernel 22 started (normal mode, the normal build: a short log)\n"
+                                         "hooks: display 0, input 0, procevent 0 (0 = ok)\n"
+                                         "ocr worker registered: game pid 0x20000 module 0x30000\n")
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        a = (folder / "analysis.txt").read_text()
+        self.assertIn("1 of its 1 boot(s) the normal build's (a short log", a)
+        self.assertIn("  OCR jobs in the normal build's short log (each game's first job that read its screen, and every "
+                      "failed one; not the others): 5; ", a)
+        self.assertRegex(a, r"rc -117\)? x2")
+        self.assertRegex(a, r"rc -108\)? x1")
+        self.assertIn("models VOCR3_H15_w8.vocr x4, VOCR3_FL10_w8.vocr x1; read: 2-3 lines in 900-2,100 ms in the game", a)
+        self.assertIn("  ARM clock (ocr_boost_clock), the normal build's lines (each game's first job and every change): 2; "
+                      "raised in 1, left at 444 or more in 0, refused in 1 (0x80010016", a)
+        self.assertIn("MHz before 333-333, during 333-444, after 333-333", a)
+        self.assertIn("self-test: armed, but the normal build has none (1 boot(s) said so)", a)
+        self.assertIn("OCR jobs: not logged by the normal build", a)
+        self.assertNotIn("OCR jobs submitted 0", a)
+        self.assertIn("    logged by builds of API 22: 1", a)  # its boot's warning, before its start line
+        problems = a.split("lines reporting a problem")[1]
+        for line in ("ocr rc=-N VOCRN_HN_wN.vocr: N lines, N ms", "clock: N MHz refused", "Paf allocation refused",
+                     "lookup cursor at N failed"):
+            self.assertIn(line, problems)
+        self.assertIn("model sizes that did not fit (log only, never shown): large in PCSG00415 x1", a)
+        record = json.loads((folder / "analysis.json").read_text())
+        self.assertEqual(len(record["log"]["short"]["jobs"]), 5)
+        self.assertTrue(record["log"]["shell_refusals"])
+        # the timeline says it has nothing to time, rather than 0 jobs
+        self.assertIn("the normal build's short log", (folder / "timeline.txt").read_text())
+
     def test_collect_without_a_report_or_logs_still_zips_and_says_why(self):
         data = self.device / "ux0/data/VitaJPOverlay"
         for name in ("selftest-report.txt", "log.txt", "log.old.txt"):
