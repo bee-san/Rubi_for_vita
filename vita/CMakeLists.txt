@@ -451,7 +451,9 @@ set(VJO_WORKER_RELEASE_DEPS)
 if(VJO_WITH_VOCR)
   set(VJO_WORKER_RELEASE_COPY COMMAND ${CMAKE_COMMAND} -E copy
     ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx ${CMAKE_CURRENT_BINARY_DIR}/release/ur0/tai/)
-  set(VJO_WORKER_RELEASE_DEPS VitaJPOverlay_OCR.suprx-self vjo_game_syscall_abi)
+  # The memory ledger too: a zip is made only from modules that fit their build's budgets (the
+  # release_variants target builds the other build's zip with `--target release` alone).
+  set(VJO_WORKER_RELEASE_DEPS VitaJPOverlay_OCR.suprx-self vjo_game_syscall_abi vjo_memory_ledger)
 endif()
 # config.ini sits at the zip's top level (the user edits it and copies it to
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites

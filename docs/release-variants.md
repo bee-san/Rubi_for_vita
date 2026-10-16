@@ -11,7 +11,7 @@ One tree builds both, chosen at compile time with `-DVJO_DEBUG=ON|OFF` (`include
 | `VitaJPOverlay-<version>-debug.zip` | debug | `ON` (the default) | console tests, and anyone asked for a full log | `VitaJPOverlay` |
 
 The debug build is the test builds' own: its three plugins and RCO are byte-identical to main's
-(`ac905b1`, measured: the same SHA-256s). Its Overlay app differs in one string: the version beside
+(`9f92bc6`, measured: the same SHA-256s; also on `ac905b1` and `e53d9fb`). Its Overlay app differs in one string: the version beside
 its title, `Overlay v0.8.0 debug` (the normal app shows `Overlay v0.8.0`). Test builds stay debug:
 `VJO_DEBUG` defaults to `ON` in every CMake project, a file compiled without it is the debug build,
 and CI's `VitaJPOverlay` artifact is the debug build as before.
@@ -102,19 +102,24 @@ keep: anything a user-facing feature or a recovery needs stays.
 
 ## Measured
 
-Both builds of this tree, VitaSDK as `tools/setup_toolchain.sh` installs it, `tools/check_memory_ledger.py`'s
-reader (loaded segments rounded to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
+Both builds of this tree on main `9f92bc6`, VitaSDK as `tools/setup_toolchain.sh` installs it,
+`tools/check_memory_ledger.py`'s reader (loaded segments rounded to 4 KiB) [measured: `build/rv`, the
+`release_variants` target]:
 
 | module | debug: text + data/bss | pages | normal: text + data/bss | pages | freed |
 |---|---:|---:|---:|---:|---:|
-| `VitaJPOverlay_Shell.suprx` (SceShell) | 186,416 + 70,112 | 262,144 B | 176,080 + 70,024 | **249,856 B** | **12,288 B (3 pages)** |
+| `VitaJPOverlay_Shell.suprx` (SceShell) | 187,552 + 70,128 | 262,144 B | 177,184 + 70,048 | **253,952 B** | **8,192 B (2 pages)** |
 | `VitaJPOverlay_Kernel.skprx` (the kernel pool) | 36,640 + 77,768 | 114,688 B | 32,332 + 76,080 | 110,592 B | 4,096 B (1 page) |
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 70,812 + 14,208 | 90,112 B | 69,464 + 14,208 | 86,016 B | 4,096 B (1 page) |
-| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 477,948 + 2,906,944 | 3,387,392 B | 477,396 + 2,906,912 | 3,387,392 B | 0 |
+| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 478,188 + 2,906,944 | 3,387,392 B | 477,716 + 2,906,912 | 3,387,392 B | 0 |
 
-The normal Shell's 12,288 B are SceShell's for as long as the console is on (its partition had
-28-98 KiB free beside a game [measured, vita-memory.md 5.1]). Its text segment is 48 B under its
-43rd page: the next change to the Shell may need a page, and the ledger then says so.
+The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
+28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: on
+main `ac905b1`, before #127's frequency ranks, the normal text was 176,080 B, 48 B under a page
+boundary, and the saving three pages; #127 added 1,104 B to it. What is left of the normal Shell's
+strings is the on-screen messages, the short log's lines and the Lens/network code that
+overlay-shell-slim removes from both builds (#130, PR-B); the normal budget is re-measured whenever
+either build's pages change (the ledger check fails otherwise).
 
 The log a job writes [measured: host suites, `host/tests/test_shell_worker.c`]: the debug build 23
 lines per OCR job (`vocr_job_log_is_appended_in_batches`), its text lines and a lookup line besides;
