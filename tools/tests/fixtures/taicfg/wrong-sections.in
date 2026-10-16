@@ -1,0 +1,12 @@
+*KERNEL
+ur0:tai/VitaJPOverlay_Shell.suprx
+ur0:tai/VitaJPOverlay_OCR.suprx
+*main
+ur0:tai/VitaJPOverlay_Kernel.skprx
+ur0:tai/VitaJPOverlay_OCR.suprx
+ur0:tai/henkaku.suprx
+*NPXS10015
+ur0:tai/VitaJPOverlay_OCR.suprx
+ur0:tai/henkaku.suprx
+*ALL
+ur0:tai/VitaJPOverlay_Kernel.skprx

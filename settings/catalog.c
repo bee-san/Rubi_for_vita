@@ -246,7 +246,6 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
         g->kind = VJO_ROW_PSP_SHARED;
         shared = 1;
     }
-    vjo_psp_scan_tai(out, count);
     /* Only a complete list of ux0:app's bubbles says which descriptions are stale. */
     if (ux0_listed && !*truncated) vjo_psp_prune(out, count);
     /* A choice of its own for a title no folder had (CLANNAD in #138's run):

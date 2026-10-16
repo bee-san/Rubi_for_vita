@@ -1,0 +1,12 @@
+# just a comment
+*NPXS10015
+ur0:tai/henkaku.suprx
+# VitaJPOverlay (added by its installer)
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+# VitaJPOverlay (added by its installer)
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+# VitaJPOverlay (added by its installer)
+*PCSG00415
+ur0:tai/VitaJPOverlay_OCR.suprx

@@ -3,9 +3,8 @@
 #include "../core/pspbubble.h"
 #include "../core/psptarget.h"
 #include "../core/sfo.h"
-#include "../core/taicfg.h"
+#include "../core/taicfg.h" /* vjo_tai_title_ok */
 #include "../core/utf.h"
-#include <psp2/io/devctl.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -16,12 +15,6 @@
 #include <zlib.h>
 #define VJO_PSP_DEFLATE 1
 #endif
-
-/* The configuration's largest size the app reads (an installed one is a few KiB). */
-#define TAI_MAX (64 * 1024)
-/* Free space a registration leaves on the card at least, beside the copy and
- * the block: a few clusters (32 KiB on a Sony card, up to 128 KiB on exFAT). */
-#define TAI_ROOM (512 * 1024)
 
 /* At most cap bytes of path: the count read, or -1 when it cannot be opened. */
 static int read_small(const char *path, void *buf, size_t cap)
@@ -211,132 +204,4 @@ void vjo_psp_prune(const VjoInstalledGame *games, int count)
         if (sceIoRemove(file) >= 0) vjo_log("games: %s removed: no bubble has that ID now", file);
     }
     sceIoDclose(dir);
-}
-
-/* ---- taiHEN's configuration ---- */
-
-static char tai_text[TAI_MAX + 1], tai_check[TAI_MAX + 1];
-static char tai_block[VJO_TAI_LINE_MAX * 4];
-
-/* path's text, at most TAI_MAX bytes: its length, or -1. */
-static int read_config(const char *path, char *text)
-{
-    int n = read_small(path, text, TAI_MAX + 1);
-    if (n < 0 || n > TAI_MAX) return -1;
-    text[n] = '\0';
-    return n;
-}
-
-/* A state's rank: blocked, absent, then loaded (VJO_TAI_PRESENT, VJO_TAI_UNDER_ALL). */
-static int rank(int state) { return state == VJO_TAI_BLOCKED ? 0 : state == VJO_TAI_ABSENT ? 1 : 2; }
-
-/* Registered means in every configuration there is, as the PC installer
- * patches them: taiHEN reads ux0:tai/config.txt when ux0 is there at boot
- * (taiHEN 309b380 plugin.c:73-79), and ur0's otherwise, as with Enso and an
- * SD2Vita card (tools/install_ftp.sh). The lowest state counts. */
-void vjo_psp_scan_tai(VjoInstalledGame *games, int count)
-{
-    const char *const paths[2] = {VJO_TAI_UR0, VJO_TAI_UX0};
-    for (int p = 0; p < 2; p++) {
-        if (p && !file_exists(VJO_TAI_UX0)) break;
-        int n = read_config(paths[p], tai_text);
-        for (int i = 0; i < count; i++) {
-            if (!vjo_catalog_registrable(&games[i])) continue;
-            int state = n < 0 ? VJO_TAI_BLOCKED : vjo_tai_worker_state(tai_text, (size_t)n, games[i].id);
-            if (!p || rank(state) < rank(games[i].tai)) games[i].tai = (signed char)state;
-        }
-    }
-}
-
-/* Free bytes on path's device ("ur0:", "ux0:"), or -1 when it does not say. */
-static long long free_bytes(const char *path)
-{
-    SceIoDevInfo info;
-    char dev[5];
-    memcpy(dev, path, 4);
-    dev[4] = '\0';
-    memset(&info, 0, sizeof(info));
-    return sceIoDevctl(dev, 0x3001, NULL, 0, &info, sizeof(info)) < 0 ? -1 : (long long)info.free_size;
-}
-
-/* path back to its verified n bytes (tai_text): cut back to that length,
- * else written again whole. 1 when it reads back as them. */
-static int restore(const char *path, int n)
-{
-    SceIoStat st;
-    memset(&st, 0, sizeof(st));
-    st.st_size = n;
-    if (sceIoChstat(path, &st, SCE_CST_SIZE) < 0 || read_config(path, tai_check) != n ||
-        memcmp(tai_check, tai_text, (size_t)n))
-        write_file(path, tai_text, (size_t)n);
-    sceIoSync(path[1] == 'x' ? "ux0:" : "ur0:", 0);
-    return read_config(path, tai_check) == n && !memcmp(tai_check, tai_text, (size_t)n);
-}
-
-/* One configuration: 0 changed or nothing to change, -1 with why. */
-static int register_in(const char *path, const char *id, const char **why)
-{
-    char backup[64];
-    int n = read_config(path, tai_text);
-    if (n < 0) { *why = "it cannot be read"; return -1; }
-    int state = vjo_tai_worker_state(tai_text, (size_t)n, id);
-    if (state == VJO_TAI_PRESENT || state == VJO_TAI_UNDER_ALL) return 0;
-    if (state != VJO_TAI_ABSENT) { *why = "taiHEN stops reading it early (a long line or *!)"; return -1; }
-    /* A file of a multiple of 4096 B is one taiHEN reads past (its buffer is the size rounded up to
-     * 4 KiB, with no NUL after it): it is not kept as the copy, which a later "copy it back" would
-     * reinstate, and not added to. */
-    if (n % 4096 == 0) { *why = n ? "taiHEN cannot read it safely at this length (a multiple of 4,096 B)" : "it is empty"; return -1; }
-    int add = vjo_tai_worker_block(tai_block, sizeof(tai_block), tai_text, (size_t)n, id);
-    if (add < 0 || (size_t)n + (size_t)add > TAI_MAX) { *why = "the entry does not fit"; return -1; }
-    /* Room first. A full card cuts an append at a cluster, a multiple of 4096 B,
-     * the one size taiHEN reads past: its buffer is the file's size rounded up
-     * to 4 KiB, and the parser reads the text as a C string (plugin.c:95-96). */
-    long long room = free_bytes(path);
-    if (room >= 0 && room < (long long)n + add + TAI_ROOM) { *why = "its memory card is full"; return -1; }
-    /* The copy first: the configuration is only appended to once it is kept. */
-    snprintf(backup, sizeof(backup), "%s" VJO_TAI_APP_BACKUP, path);
-    if (write_file(backup, tai_text, (size_t)n) < 0 || read_config(backup, tai_check) != n ||
-        memcmp(tai_check, tai_text, (size_t)n)) { *why = "its backup could not be written"; return -1; }
-    SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_APPEND, 0);
-    int rc = fd < 0 ? -1 : write_all(fd, tai_block, (size_t)add);
-    if (fd >= 0 && sceIoClose(fd) < 0) rc = -1;
-    sceIoSync(path[1] == 'x' ? "ux0:" : "ur0:", 0);
-    /* Checked: the old text, then the block, and nothing else. */
-    int m = read_config(path, tai_check);
-    if (rc == 0 && m == n + add && !memcmp(tai_check, tai_text, (size_t)n) && !memcmp(tai_check + n, tai_block, (size_t)add) &&
-        vjo_tai_worker_state(tai_check, (size_t)m, id) == VJO_TAI_PRESENT) {
-        vjo_log("taiHEN: *%s added to %s (backup %s)", id, path, backup);
-        return 0;
-    }
-    /* Not confirmed (a full card, an I/O error): back to its old text, whatever
-     * part of the block the append left, since that part could end the file
-     * at a multiple of 4096 B. Not when the old text is no longer its start:
-     * something else changed it. */
-    int intact = m >= n && !memcmp(tai_check, tai_text, (size_t)n);
-    int restored = (m < 0 || (intact && m > n)) ? restore(path, n) : intact;
-    vjo_log("taiHEN: *%s not confirmed in %s: %d B after its %d B (meant %d); %s; backup %s", id, path, m < 0 ? m : m - n,
-            n, add, restored ? "its old text is back" : intact || m < 0 ? "NOT put back" : "it changed meanwhile", backup);
-    *why = restored ? "the write was not confirmed; it is as it was"
-                    : intact || m < 0 ? "the write failed: copy config.txt.vjo-app-bak back over it"
-                                      : "it changed meanwhile: compare it with config.txt.vjo-app-bak";
-    return -1;
-}
-
-int vjo_psp_register(VjoInstalledGame *g, char *msg, size_t cap)
-{
-    const char *why = "", *where = VJO_TAI_UR0;
-    int rc = 0;
-    if (!vjo_tai_title_ok(g->id)) { /* never ALL, KERNEL or main (vjo_psp_scan_app) */
-        snprintf(msg, cap, "Not registered: %s is not a title ID.", g->id);
-        return -1;
-    }
-    /* Both, as the PC installer does: Enso reads ur0's at boot, taiHEN ux0's when it is there. */
-    if (file_exists(VJO_TAI_UX0) && register_in(VJO_TAI_UX0, g->id, &why) < 0) { rc = -1; where = VJO_TAI_UX0; }
-    if (!rc && register_in(VJO_TAI_UR0, g->id, &why) < 0) rc = -1;
-    vjo_psp_scan_tai(g, 1);
-    if (rc < 0)
-        snprintf(msg, cap, "Not registered: %s: %s. Use install-vita.sh --title %s.", where, why, g->id);
-    else
-        snprintf(msg, cap, "%s registered for local OCR. Restart the Vita before you start it.", g->id);
-    return rc;
 }

@@ -16,8 +16,6 @@ typedef struct {
     char icon[160];
     char disc[VJO_TITLE_ID_SIZE]; /* a bubble's game: its disc ID ("" when unknown) */
     signed char kind;             /* VJO_ROW_* */
-    signed char tai;              /* bubbles and Adrenaline: the OCR worker in taiHEN's configuration (VJO_TAI_*) */
-    unsigned char register_failed; /* the app's registration failed since the scan (settings/main.c) */
 } VjoInstalledGame;
 /* Installed ux0/ur0 titles and an inserted gro0 cartridge, deduplicated by ID,
  * then a row for each title of rules (games.ini, may be NULL) that has a
@@ -35,7 +33,4 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
  * without a rule of its own follows the shared row's). */
 static inline int vjo_catalog_psp(const VjoInstalledGame *g)
 { return g->kind == VJO_ROW_BUBBLE || g->kind == VJO_ROW_ADRENALINE || g->kind == VJO_ROW_PSP_SHARED; }
-/* A PSP row whose game the OCR worker can be registered for (bubbles, Adrenaline). */
-static inline int vjo_catalog_registrable(const VjoInstalledGame *g)
-{ return g->kind == VJO_ROW_BUBBLE || g->kind == VJO_ROW_ADRENALINE; }
 #endif
