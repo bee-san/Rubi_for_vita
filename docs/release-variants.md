@@ -184,10 +184,11 @@ counted (in test.3 both points fall in job 12).
 thread taking its result. The network thread opens a log batch at each job's wake (`shell/worker.c`
 `net_main`, its 2 KiB buffer on the thread's stack), which holds every line it logs (the job's line, a
 size that did not fit, the clock, a refused memory check, an unusable model, a refused Paf allocation,
-a failed lookup). Its wait for the next job is timed only while the batch holds a line: when 0.5 s pass
-(`LOG_IDLE_US`) with no job and the control thread has taken the result, it writes them, one append per
-file. Jobs started meanwhile keep the held lines across their exchanges and add their own; they go out
-together after the last one's result. The files get the same lines in the
+a failed lookup). Its wait for the next job is timed only while the batch holds a line: when that wait
+ends (0.5 s, `LOG_IDLE_US`, with no job) and the control thread has taken the result, it writes them, one
+append per file. A job's wake never writes them (the control thread marks its job running before it
+wakes the thread): jobs started meanwhile keep the held lines across their exchanges and add their own;
+they go out together after the last one's result. The files get the same lines in the
 same order as line by line (`host/tests/test_shell_log.c`); the debug build is unchanged (its three
 plugins and RCO are main's bytes, sha256).
 - A steady-state successful job logs nothing, so there is nothing to write and the wait stays untimed.
