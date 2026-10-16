@@ -1,8 +1,8 @@
 /* Adrenaline's PSP games on synthetic data only: AdrBubbleBooter bubble files
  * (core/pspbubble.c), the PARAM.SFO of a bubble's target in every format the
  * Overlay app reads (core/psptarget.c: EBOOT.PBP, ISO 9660, CSO v1/v2, ZSO,
- * built here), and the OCR worker's registration in a taiHEN configuration
- * (core/taicfg.c). No game data: titles, IDs and images are made up. With
+ * built here), and the title IDs a row may carry (core/taicfg.c; the config.txt
+ * editor itself is host/tests/test_taicfg.c's). No game data: titles, IDs and images are made up. With
  * zlib (VJO_TEST_ZLIB) the CSO images' deflate blocks are made and read too. */
 #include "acutest.h"
 #include "games.h"
@@ -631,122 +631,16 @@ static void test_damaged_images_fuzz(void)
     }
 }
 
-/* ---- taiHEN's configuration ---- */
+/* ---- the title IDs a bubble's row may carry (core/taicfg.c vjo_tai_title_ok, used by settings/psp.c) ---- */
 
-static const char *base_config =
-    "# This file is used as an alternative if ux0:tai/config.txt is not found.\n"
-    "*KERNEL\n"
-    "ur0:tai/0syscall6.skprx\n"
-    "ur0:tai/VitaJPOverlay_Kernel.skprx\n"
-    "*main\n"
-    "ur0:tai/henkaku.suprx\n"
-    "ur0:tai/VitaJPOverlay_Shell.suprx\n"
-    "*NPXS10015\n"
-    "ur0:tai/henkaku.suprx\n"
-    "*PCSG00415\n"
-    "ur0:tai/VitaJPOverlay_OCR.suprx\n";
-
-static int state_of(const char *text, const char *title) { return vjo_tai_worker_state(text, strlen(text), title); }
-
-static void test_tai_state(void)
+static void test_title_ok(void)
 {
-    char t[2048];
-    TEST_CHECK(state_of(base_config, "PCSG00415") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of(base_config, "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(vjo_tai_worker_state(base_config, strlen(base_config), "bad id!") == VJO_TAI_BLOCKED);
-    /* Exact section names, white space around them, the halt mark, CRLF, case. */
-    TEST_CHECK(state_of("*ULJS00378 \r\n  ur0:tai/VitaJPOverlay_OCR.suprx\t\r\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("* ULJS00378\nUR0:TAI/vitajpoverlay_ocr.SUPRX\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("*ULJS00378\nur0:/tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("*ULJS00378\nUR0:/tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("*ULJS00378\nuR0:/TAI/vitajpoverlay_ocr.SUPRX\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("*ULJS00378\nux0:/tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*ULJS00378\nur0:tai//VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*uljs00378\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*ULJS003780\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*ULJS00378\n# ur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx # note\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("ur0:tai/VitaJPOverlay_OCR.suprx\n*ULJS00378\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*ULJS00378\n*PCSG00415\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_ABSENT);
-    /* A second section of the same name counts (taiHEN allows repeats). */
-    TEST_CHECK(state_of("*ULJS00378\nux0:x.suprx\n*main\nx\n*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") ==
-               VJO_TAI_PRESENT);
-    /* *ALL loads it everywhere (an old install): no second copy. */
-    TEST_CHECK(state_of("*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_UNDER_ALL);
-    TEST_CHECK(state_of("*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n",
-                        "ULJS00378") == VJO_TAI_PRESENT);
-    /* A halting section that matched stops parsing at the next section. */
-    TEST_CHECK(state_of("*!ULJS00378\nux0:x.suprx\n", "ULJS00378") == VJO_TAI_BLOCKED);
-    TEST_CHECK(state_of("* ! ULJS00378\nux0:x.suprx\n*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") ==
-               VJO_TAI_BLOCKED);
-    TEST_CHECK(state_of("*!ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n", "ULJS00378") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of("*!PCSG00415\nx\n*main\ny\n", "ULJS00378") == VJO_TAI_ABSENT);
-    TEST_CHECK(state_of("*!ALL\nx\n", "ULJS00378") == VJO_TAI_BLOCKED);
-    /* A line of 256 characters or more, or a NUL, ends parsing: nothing after it is read. */
-    memset(t, 0, sizeof(t));
-    memcpy(t, "*main\n", 6);
-    memset(t + 6, 'x', 255);
-    memcpy(t + 261, "\n", 1);
-    TEST_CHECK(state_of(t, "ULJS00378") == VJO_TAI_ABSENT);
-    t[261] = 'x';
-    t[262] = '\n';
-    TEST_CHECK(state_of(t, "ULJS00378") == VJO_TAI_BLOCKED);
-    snprintf(t, sizeof(t), "*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n");
-    memset(t + strlen(t), 'y', 300);
-    TEST_CHECK(state_of(t, "ULJS00378") == VJO_TAI_PRESENT); /* registered before the long line */
-    snprintf(t, sizeof(t), "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n");
-    size_t k = strlen(t);
-    memset(t + k, 'y', 300);
-    t[k + 300] = '\0';
-    TEST_CHECK(state_of(t, "ULJS00378") == VJO_TAI_UNDER_ALL); /* *ALL's worker before it, too */
-    static const char all_nul[] = "*ALL\nur0:tai/VitaJPOverlay_OCR.suprx\n\0*ULJS00378\n";
-    TEST_CHECK(vjo_tai_worker_state(all_nul, sizeof(all_nul) - 1, "ULJS00378") == VJO_TAI_UNDER_ALL);
-    static const char nul[] = "*main\nx\n\0*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n";
-    TEST_CHECK(vjo_tai_worker_state(nul, sizeof(nul) - 1, "ULJS00378") == VJO_TAI_BLOCKED);
-}
-
-static void test_tai_block(void)
-{
-    char text[8192], block[1024];
-    size_t n = strlen(base_config);
-    memcpy(text, base_config, n + 1);
-    int add = vjo_tai_worker_block(block, sizeof(block), text, n, "ULJS00378");
-    TEST_ASSERT(add > 0 && (size_t)add == strlen(block));
-    TEST_CHECK(!strcmp(block, "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
-                              "*ULJS00378\nur0:tai/VitaJPOverlay_OCR.suprx\n"));
-    memcpy(text + n, block, (size_t)add + 1);
-    TEST_CHECK(state_of(text, "ULJS00378") == VJO_TAI_PRESENT && state_of(text, "PCSG00415") == VJO_TAI_PRESENT);
-    TEST_CHECK(state_of(text, "PSPEMU005") == VJO_TAI_ABSENT);
-    for (const char *line = text; *line; line = strchr(line, '\n') + 1) TEST_CHECK(strchr(line, '\n') - line < 256);
-    /* After a last line without its end; in a CRLF file; growing the file to
-     * a multiple of 4096 bytes gets one more line end. */
-    add = vjo_tai_worker_block(block, sizeof(block), "*main\nx", 7, "PSPEMU005");
-    TEST_CHECK(add > 0 && block[0] == '\n' && strstr(block, "\n*PSPEMU005\n"));
-    add = vjo_tai_worker_block(block, sizeof(block), "*main\r\nx\r\n", 10, "PSPEMU005");
-    TEST_CHECK(add > 0 && strstr(block, "\r\n*PSPEMU005\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n") && block[0] == '#');
-    add = vjo_tai_worker_block(block, sizeof(block), NULL, 0, "PSPEMU005");
-    TEST_CHECK(add > 0 && block[0] == '#');
-    int plain = vjo_tai_worker_block(block, sizeof(block), "*main\n", 6, "ULJS00378");
-    TEST_ASSERT(plain > 0);
-    size_t fill = 4096 - (size_t)plain;
-    memset(text, '#', fill);
-    text[fill - 1] = '\n';
-    add = vjo_tai_worker_block(block, sizeof(block), text, fill, "ULJS00378");
-    TEST_CHECK(add == plain + 1 && (fill + (size_t)add) % 4096 && block[add - 1] == '\n' && block[add - 2] == '\n');
-    /* Too small, or not a title ID: never taiHEN's reserved ALL or KERNEL,
-     * SceShell's main, nor anything but nine capitals and digits. */
-    TEST_CHECK(vjo_tai_worker_block(block, 40, "", 0, "ULJS00378") == -1);
     static const char *const bad[] = {"ALL", "KERNEL", "main", "MAIN", "ALL!", "", "ULJS0037", "ULJS003780",
-                                      "uljs00378", "ULJS_0378", "ULJS-0378", "ULJS 0378", "ＵLJS0037"};
-    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
-        TEST_CHECK_(vjo_tai_worker_block(block, sizeof(block), "", 0, bad[i]) == -1, "%s", bad[i]);
-        TEST_CHECK_(!vjo_tai_title_ok(bad[i]), "%s", bad[i]);
-    }
+                                      "uljs00378", "ULJS_0378", "ULJS-0378", "ULJS 0378", "\xEF\xBC\xB5LJS0037"};
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) TEST_CHECK_(!vjo_tai_title_ok(bad[i]), "%s", bad[i]);
     TEST_CHECK(!vjo_tai_title_ok(NULL));
     static const char *const good[] = {"ULJS00378", "PSPEMU005", "PSPEMUCFW", "PCSG00415", "ABCD12345", "000000000"};
-    for (unsigned i = 0; i < sizeof(good) / sizeof(good[0]); i++)
-        TEST_CHECK_(vjo_tai_title_ok(good[i]) && vjo_tai_worker_block(block, sizeof(block), "", 0, good[i]) > 0, "%s", good[i]);
+    for (unsigned i = 0; i < sizeof(good) / sizeof(good[0]); i++) TEST_CHECK_(vjo_tai_title_ok(good[i]), "%s", good[i]);
 }
 
 TEST_LIST = {
@@ -759,7 +653,6 @@ TEST_LIST = {
     {"LZ4 blocks", test_lz4},
     {"CSO v1/v2 and ZSO images", test_compressed_images},
     {"damaged images never read outside the file", test_damaged_images_fuzz},
-    {"taiHEN: where the worker is loaded", test_tai_state},
-    {"taiHEN: the appended registration", test_tai_block},
+    {"title IDs a bubble's row may carry", test_title_ok},
     {NULL, NULL}
 };

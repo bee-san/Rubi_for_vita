@@ -44,7 +44,9 @@ OUT=${1:-build/arm-tests}
 mkdir -p "$OUT"
 # VJO_DEBUG=0: the normal build's suites (docs/release-variants.md); the default, 1, the debug build's.
 VJO_DEBUG=${VJO_DEBUG:-1}
-FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -Wall -Wextra -Wno-unused-parameter
+# -D_FILE_OFFSET_BITS=64: a 32-bit readdir() or stat() fails with EOVERFLOW on a file system whose
+# directory cookies or inode numbers pass 2^32 (XFS: the taicfg fixtures' readdir under qemu-arm)
+FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter
        -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1 -DVJO_DEBUG="$VJO_DEBUG")
 QEMU_ARGS=(-cpu cortex-a9)
 # qemu-arm needs the dynamic loader's directory only for dynamic binaries;
@@ -78,7 +80,11 @@ build region_select host/tests/test_region_select.c core/region_select.c core/re
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
-build psp host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c core/games.c core/sfo.c
+# taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
+TP=(-I third_party/taihen-parser/include third_party/taihen-parser/src/lexer.c third_party/taihen-parser/src/parser.c)
+build psp -DNO_CTYPE -DNO_STRING host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c core/games.c core/sfo.c "${TP[@]}"
+# The one-VPK install's config.txt editor (core/taicfg.c) on its fixtures and corpus, on the Vita's word size.
+build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_taicfg.c core/taicfg.c "${TP[@]}"
 # The Shell's logger (shell/log_vita.c) on an in-memory file system: batched appends, 32-bit sizes.
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
@@ -93,7 +99,7 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows settings_layout shell_log apkg psp)
+TESTS+=(touch_hold text_rows settings_layout shell_log apkg psp taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

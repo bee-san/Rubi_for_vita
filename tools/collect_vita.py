@@ -11,11 +11,14 @@ Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the ins
                            and anki_queue/exported/* (the cards the Overlay app exported); anki/ (its
                            .apkg packages) is listed only
                            vjo_app.txt (the record of the Overlay app the plugins came with)
+                           installed.txt (the one-VPK install's record, core/payload.h)
   ur0:data/VitaJPOverlay/  boot.txt
   ux0:app/VJOSET001/       vjo_app.txt (the installed Overlay app's stamp, core/app_stamp.h); its eboot.bin
                            is hashed, never kept. Both are read as install_ftp.sh --check-app reads them
                            (read_app): through the folder, then by the file's full path (#138)
-  ur0:tai/, ux0:tai/       config.txt and the installer's config.txt.vjo-bak
+  ur0:tai/, ux0:tai/       config.txt, the installer's config.txt.vjo-bak, every dated backup
+                           (config.txt.vjo-YYYYMMDD-HHMMSS.bak) and an interrupted swap's
+                           config.txt.vjo-new / .vjo-old (settings/install.c)
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
 installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs
@@ -50,7 +53,7 @@ APP = f"{APPS}/VJOSET001"  # the Overlay app (JPOverlaySettings.vpk)
 APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
-                                  "region.ini", "vjo_app.txt")]
+                                  "region.ini", "vjo_app.txt", "installed.txt")]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
 # curl's exits for a file that is not there: 9, a CWD on the way refused (VitaShell's FTP enters a folder only if
@@ -72,6 +75,10 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "k
         (f"{DATA}/dictionaries", None, None), ("ux0:/data", "keep", re.compile(r"\.psp2dmp$", re.I)),
         ("ur0:/tai", "hash", re.compile(r"^VitaJPOverlay_.*\.(skprx|suprx)$")),
         ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^JPOverlaySettings\.vpk$"))]
+# the taiHEN configurations' backups (both installers: dated, kept) and an interrupted swap's leftovers
+# (the Overlay app's: settings/install.c), beside each config.txt
+TAI_BACKUPS = re.compile(r"^config\.txt\.vjo-.+$")  # dated, -old/-new, .vjo-bad, .vjo-new/.vjo-old (settings/install.c)
+DIRS += [("ur0:/tai", "keep", TAI_BACKUPS), ("ux0:/tai", "keep", TAI_BACKUPS)]
 # Device paths of the hashed files -> their package path (package-manifest.json "files")
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",
                  f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/JPOverlaySettings.vpk": "JPOverlaySettings.vpk"}
@@ -371,6 +378,9 @@ class Collector:
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         files = manifest.get("files", {})
         self.record["package_app"] = manifest.get("app")  # the package's Overlay app (package_release.py)
+        payload = Path(manifest_path).with_name("payload-manifest.txt")
+        if payload.is_file():  # the one-VPK install's manifest: installed.txt names its SHA-256 (core/payload.h)
+            self.record["package_payload_manifest"] = hashlib.sha256(payload.read_bytes()).hexdigest()
         self.record["package"] = {k: masked(manifest[k]) if k in ("defaults", "install_settings") else manifest[k]
                                   for k in ("version", "variant", "source_revision", "defaults", "install_settings")
                                   if k in manifest}

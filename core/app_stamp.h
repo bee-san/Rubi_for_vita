@@ -27,10 +27,14 @@
 #define VJO_APP_STAMP_MAX 64 /* a stamp's line and its NUL fit */
 
 /* What the plugins' in-game notice says when the installed app is not the
- * one they came with: the VPK the installer put beside the record; or, for an
- * app of a later API than the plugins, the newer package's installer. */
-#define VJO_APP_NOTICE "Overlay app is out of date: reinstall ux0:data/JPOverlaySettings.vpk in VitaShell."
-#define VJO_APP_NOTICE_NEWER "Overlay app is newer than the overlay: run install-vita.sh from its package, then reboot."
+ * one they came with. One neutral line for both directions: with the one-VPK
+ * install (docs/one-vpk-install.md) the app's Install page says which way it is
+ * and what to do (update, go back, or install-vita.sh for the zip's app), and
+ * the Shell cannot tell which side is newer when both have one API. Shorter than
+ * the two it replaces (82 and 89 characters), so SceShell's pages do not grow
+ * (AGENTS.md rule 1); the linker merges the two equal literals. */
+#define VJO_APP_NOTICE "Overlay app and plugins are different builds: open the Overlay app."
+#define VJO_APP_NOTICE_NEWER VJO_APP_NOTICE
 
 enum {
     VJO_APP_OK = 0,       /* the installed app's stamp is the plugins' record */

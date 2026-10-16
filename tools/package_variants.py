@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""The release's two zips from the two builds' base zips (docs/release-variants.md).
+"""The release's packages from the two builds' base zips (docs/release-variants.md, docs/one-vpk-install.md).
 
     package_variants.py --normal VitaJPOverlay-V.zip --debug VitaJPOverlay-V-debug.zip --models DIR \\
         --version V -o OUT_DIR [--source-revision SHA] [--set KEY=VALUE ...]
 
-writes OUT_DIR/VitaJPOverlay-V.zip (the normal build, the main download), OUT_DIR/VitaJPOverlay-V-debug.zip
-(the debug build, the test builds' own) and OUT_DIR/SHA256SUMS. Both are tools/package_release.py's
+writes OUT_DIR/VitaJPOverlay-V.vpk (the normal build's one-VPK install, the main download),
+OUT_DIR/VitaJPOverlay-V-debug.vpk, OUT_DIR/VitaJPOverlay-V.zip and OUT_DIR/VitaJPOverlay-V-debug.zip
+(install-vita.sh, the advanced path) and OUT_DIR/SHA256SUMS, the normal VPK first. Both are tools/package_release.py's
 packages of one tree with the same pinned models, frozen dictionary, config template and --set
 settings, so a config.ini from either works in the other. Before it writes anything it checks the
 bases: each is the build it is given as (tools/check_variant.py, from the modules themselves), the
@@ -23,16 +24,22 @@ import zipfile
 from pathlib import Path
 
 import package_release as release
+import package_vpk
 
 # The files a build makes for itself: everything else of the two packages is the same bytes.
 BUILD_FILES = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
-               "ux0/data/VitaJPOverlay/vjo_app.txt"}  # the app's stamp: its eboot's hash (core/app_stamp.h)
+               "ux0/data/VitaJPOverlay/vjo_app.txt",  # the app's stamp: its eboot's hash (core/app_stamp.h)
+               "payload-manifest.txt"}  # the one-VPK payload's: the build's plugins and app (tools/package_vpk.py)
 MANIFEST = "package-manifest.json"
 
 
 def zip_name(version, variant):
     return f"VitaJPOverlay-{version}{'-debug' if variant == 'debug' else ''}.zip"
+
+
+def vpk_name(version, variant):
+    return f"VitaJPOverlay-{version}{'-debug' if variant == 'debug' else ''}.vpk"
 
 
 def contents(path):
@@ -159,10 +166,26 @@ def main():
     problems = check_packages(zips["normal"], zips["debug"])
     if problems:
         sys.exit("package_variants: the two packages are not one release:\n  " + "\n  ".join(problems))
-    sums = "".join(f"{sha256(zips[v])}  {zips[v].name}\n" for v in ("normal", "debug"))
+    # the worker mode first: no VPK is written of a build whose payload would install no game's OCR
+    with zipfile.ZipFile(zips["normal"]) as z:
+        worker = json.loads(z.read(MANIFEST)).get("worker")
+    if worker != "kernel":
+        # the per-title rules need install-vita.sh --title: no main VPK in that mode without the owner
+        sys.exit("package_variants: the build's worker mode is " + str(worker) + ", not kernel: a VPK of it would "
+                 "install no game's OCR (docs/one-vpk-install.md, lines mode)")
+    # the one-VPK install of each build (tools/package_vpk.py): the zip's own files, the app's own facts
+    vpks = {}
+    for variant in ("normal", "debug"):
+        vpks[variant] = args.output / vpk_name(args.version, variant)
+        try:
+            package_vpk.write_vpk(zips[variant], vpks[variant])
+        except ValueError as e:
+            sys.exit(f"package_variants: {vpks[variant].name}: {e}")
+    assets = [vpks["normal"], vpks["debug"], zips["normal"], zips["debug"]]
+    sums = "".join(f"{sha256(p)}  {p.name}\n" for p in assets)
     (args.output / "SHA256SUMS").write_text(sums)
     print(sums, end="")
-    print(json.dumps({v: {"file": str(p), "bytes": p.stat().st_size, "sha256": sha256(p)} for v, p in zips.items()},
+    print(json.dumps({p.name: {"file": str(p), "bytes": p.stat().st_size, "sha256": sha256(p)} for p in assets},
                      indent=2))
 
 

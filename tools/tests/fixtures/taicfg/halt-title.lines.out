@@ -1,0 +1,11 @@
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+*!PCSG00415
+ur0:tai/VitaJPOverlay_OCR.suprx
+*ALL
+ur0:tai/all.suprx
+# VitaJPOverlay (added by its installer)
+*PCSE00120
+ur0:tai/VitaJPOverlay_OCR.suprx

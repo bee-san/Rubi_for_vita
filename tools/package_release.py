@@ -300,6 +300,16 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             manifest["variant"] = found or variant
         if app_version is not None:
             manifest["app_version"] = app_version
+        # Where the game OCR worker comes from (docs/one-vpk-install.md): the Overlay app's own vjoworker=
+        # mark, never this checkout's header. install-vita.sh passes it to the patcher; an older base
+        # without the mark is the per-title rules'.
+        import package_vpk  # packaging only: --verify (install-vita.sh) needs it not
+        app_vpk = original.read("JPOverlaySettings.vpk")
+        try:
+            facts = package_vpk.app_facts(app_vpk)
+        except ValueError:
+            facts = None  # an app from before the one-VPK install (or a test's placeholder)
+        manifest["worker"] = facts[2] if facts else "lines"
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for info in original.infolist():
@@ -315,6 +325,16 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             with path.open("rb") as stream, archive.open(info, "w") as target:
                 shutil.copyfileobj(stream, target)
             manifest["files"][name] = {"bytes": path.stat().st_size, "sha256": digest(path)}
+        if facts:
+            # The one-VPK install's payload manifest of these same files (tools/package_vpk.py): the line
+            # install-vita.sh records as installed.txt is then the one the Overlay app writes.
+            entries = {n: (f["bytes"], f["sha256"]) for n, f in manifest["files"].items()}
+            text = package_vpk.build_manifest(version, app_vpk, entries, manifest.get("install_settings"))
+            info = zipfile.ZipInfo("payload-manifest.txt", (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, text)
+            manifest["files"]["payload-manifest.txt"] = {"bytes": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest()}
         archive.writestr("package-manifest.json", json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"file": str(output), "bytes": output.stat().st_size, "sha256": digest(output)}))
 

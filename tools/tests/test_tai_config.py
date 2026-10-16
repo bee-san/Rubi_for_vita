@@ -1,197 +1,305 @@
+"""tools/patch_tai_config.py, the PC installer's copy of the Overlay app's config.txt editor
+(core/taicfg.c): the same expected bytes on tools/tests/fixtures/taicfg/, its command line, and,
+when ctest gives it the C build (VJO_TAICFG: host/taicfg_tool.c), the two editors and the two copies
+of taiHEN's parser compared on every fixture and on a generated corpus."""
+import os
+import random
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from patch_tai_config import DISABLED, KERNEL, OCR, SHELL, TEXT, TitleError, patch, registered
+import patch_tai_config as p  # noqa: E402
+from patch_tai_config import (APP_NOTE, DISABLED, KERNEL, NOTE, OCR, SHELL, TEXT, Refused, TitleError,  # noqa: E402
+                              edit, patch, registered, taihen_parse, taihen_validate)
 
 SCRIPT = Path(__file__).resolve().parents[1] / "patch_tai_config.py"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "taicfg"
+TAICFG = os.environ.get("VJO_TAICFG")
+STOCK = (FIXTURES / "henkaku-ux0.in").read_bytes()
+
+
+def fixtures():
+    for path in sorted(FIXTURES.glob("*.in")):
+        name = path.name[:-3]
+        titles_file = FIXTURES / (name + ".titles")
+        titles = titles_file.read_text().split() if titles_file.is_file() else []
+        yield name, path.read_bytes(), titles
 
 
 def active(result):
-    """(section, plugin) for every active plugin line, in file order."""
+    """(section, plugin) for every plugin taiHEN reads in a section (any title), in file order."""
     pairs, current = [], None
-    for line in result.decode().splitlines():
-        item = line.strip()
-        if not item or item.startswith("#"):
-            continue
-        if item.startswith("*"):
-            current = item[1:].lstrip().lstrip("!").lstrip()
-        else:
-            pairs.append((current, item))
+    for line in p.lines_of(result):
+        if line.kind == p.L_SECTION:
+            current = p._name(result, line).decode("latin-1")
+        elif line.kind == p.L_PATH:
+            pairs.append((current, p._content(result, line).decode("latin-1")))
     return pairs
 
 
-def worker_sections(result):
-    return [section for section, plugin in active(result) if plugin == OCR]
+def loads(text, title, kind):
+    return sum(1 for path in taihen_parse(text, title.encode()) if p.ours(path) == kind)
 
 
-class TaiConfigTests(unittest.TestCase):
-    def test_patch_output(self):
-        # The exact bytes for an *ALL install of the previous installer.
-        raw = ("*KERNEL\r\nur0:tai/Other.skprx\r\n*main\r\n*ALL\r\nur0:tai/Every.suprx\r\n"
-               + OCR + "\r\n").encode()
-        expected = ("*KERNEL\r\n" + KERNEL + "\r\nur0:tai/Other.skprx\r\n*main\r\n" + SHELL + "\r\n"
-                    "*ALL\r\nur0:tai/Every.suprx\r\n" + DISABLED + OCR + "\r\n"
-                    "\r\n*PCSG00415\r\n" + OCR + "\r\n").encode()
-        self.assertEqual(patch(raw, titles=["PCSG00415"]), expected)
+class Fixtures(unittest.TestCase):
+    """The expected results host/tests/test_taicfg.c checks the C editor against."""
 
-    def test_ocr_only_and_idempotence(self):
-        raw = ("# existing\r\n*KERNEL\r\nur0:tai/Other.skprx\r\n*PCSG00415\r\n"
-               + TEXT + "\r\n" + OCR + "\r\nur0:tai/Game.suprx\r\n").encode()
-        result = patch(raw, ["ur0:tai/Extra.skprx"], titles=["NPXS10028"])
-        self.assertEqual(result, patch(result, ["ur0:tai/Extra.skprx"], titles=["NPXS10028"]))
-        self.assertEqual(result, patch(result, ["ur0:tai/Extra.skprx"]))
-        pairs = active(result)
-        self.assertNotIn(TEXT, [plugin for _, plugin in pairs])
-        # The registered game is kept, the named one added; one worker line each.
-        self.assertEqual(worker_sections(result), ["PCSG00415", "NPXS10028"])
-        self.assertIn(("*PCSG00415\r\n" + DISABLED + TEXT + "\r\n" + OCR).encode(), result)
-        self.assertIn(("PCSG00415", "ur0:tai/Game.suprx"), pairs)
-        self.assertIn(("KERNEL", "ur0:tai/Other.skprx"), pairs)
-        self.assertNotIn(b"\n", result.replace(b"\r\n", b""))
-        self.assertEqual(pairs.count(("KERNEL", KERNEL)), 1)
-        self.assertEqual(pairs.count(("KERNEL", "ur0:tai/Extra.skprx")), 1)
-        self.assertEqual(pairs.count(("main", SHELL)), 1)
+    def test_the_inputs_are_the_generators(self):
+        r = subprocess.run([sys.executable, str(Path(__file__).with_name("make_taicfg_fixtures.py")), "--check"],
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
-    def test_all_worker_is_migrated_to_the_titles(self):
-        raw = ("*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n*ALL\nur0:tai/Every.suprx\n"
-               + OCR + "\n").encode()
-        result = patch(raw, titles=["PCSG00415", "pcsg00415", "*NPXS10028"])
-        self.assertIn(("*ALL\nur0:tai/Every.suprx\n" + DISABLED + OCR + "\n").encode(), result)
-        self.assertEqual(worker_sections(result), ["PCSG00415", "NPXS10028"])
-        self.assertIn(("ALL", "ur0:tai/Every.suprx"), active(result))
-        self.assertEqual(result.count(OCR.encode()), 3)
-        # Updating again, with or without the titles, changes nothing.
-        self.assertEqual(patch(result, titles=["PCSG00415"]), result)
-        self.assertEqual(patch(result), result)
-        self.assertEqual(registered(result.decode().splitlines()), ["PCSG00415", "NPXS10028"])
+    def test_every_fixture(self):
+        count = 0
+        for name, raw, titles in fixtures():
+            count += 1
+            refused = FIXTURES / (name + ".refused")
+            with self.subTest(name=name):
+                if refused.is_file():
+                    rc, line = (int(field.split("=")[1]) for field in refused.read_text().split())
+                    for op in (p.INSTALL, p.UNINSTALL):
+                        for mode in (p.WORKER_KERNEL, p.WORKER_LINES):
+                            if rc == p.E_CHECK and op == p.UNINSTALL:
+                                continue
+                            with self.assertRaises(Refused) as caught:
+                                edit(raw, op, mode)
+                            self.assertEqual((caught.exception.rc, caught.exception.line), (rc, line))
+                            self.assertTrue(caught.exception.why)
+                    continue
+                for op, mode, ts, suffix in ((p.INSTALL, p.WORKER_KERNEL, [], "kernel"),
+                                             (p.INSTALL, p.WORKER_LINES, titles, "lines"),
+                                             (p.UNINSTALL, p.WORKER_KERNEL, [], "uninstall")):
+                    out, report = edit(raw, op, mode, ts)
+                    self.assertEqual(out, (FIXTURES / f"{name}.{suffix}.out").read_bytes(), suffix)
+                    self.assertEqual(report["changed"], out != raw)
+                    again, report = edit(out, op, mode, ts)
+                    self.assertEqual(again, out, suffix + ": idempotent")
+                    self.assertFalse(report["changed"])
+                    if out != raw:
+                        self.assertNotEqual(len(out) % 4096, 0, suffix)
+        self.assertGreaterEqual(count, 38)
 
-    def test_no_title_and_none_registered_is_refused(self):
-        for raw in (b"", b"*KERNEL\nur0:tai/Other.skprx\n", ("*ALL\n" + OCR + "\n").encode(),
-                    ("*PCSG00415\n" + DISABLED + OCR + "\n").encode(),
-                    ("*main\n" + OCR + "\n*NPXS10015\n" + OCR + "\n*pcsg00415\n" + OCR + "\n").encode()):
-            with self.assertRaises(TitleError) as refusal:
-                patch(raw)
-            self.assertIn("--title", str(refusal.exception))
-            self.assertIn("*ALL", str(refusal.exception))
 
-    def test_titles_the_worker_cannot_serve_are_refused(self):
-        for title in ("ALL", "*ALL", "main", "KERNEL", "NPXS10015", "VITASHELL", "VJOSET001",
-                      "PCSG0041", "PCSG004150", "PCSG 0415", "PCSG0041!", ""):
+class Rules(unittest.TestCase):
+    def test_stock_install_and_uninstall(self):
+        out, report = edit(STOCK)
+        self.assertIn(b"*KERNEL\n" + KERNEL.encode() + b"\n# henkaku.skprx", out)
+        self.assertIn(b"*main\n" + SHELL.encode() + b"\n# main is", out)
+        self.assertEqual((report["added"], report["removed"], report["commented"]), (2, 0, 0))
+        self.assertEqual((loads(out, "KERNEL", p.O_KERNEL), loads(out, "main", p.O_SHELL)), (1, 1))
+        self.assertEqual(loads(out, "PCSG00415", p.O_WORKER), 0)
+        self.assertEqual(edit(out, p.UNINSTALL)[0], STOCK)
+
+    def test_the_kernel_loads_the_worker_so_old_lines_go(self):
+        """v0.7.12's *ALL line and test.3's --title sections (install-vita.sh's blank line, header, worker)."""
+        raw = ("*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n*ALL\nur0:tai/Every.suprx\n" + OCR +
+               "\n\n*PCSG00415\n" + OCR + "\n\n*PSPEMUCFW\n" + OCR + "\n").encode()
+        out, report = edit(raw)
+        self.assertEqual(out, ("*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n*ALL\nur0:tai/Every.suprx\n").encode())
+        self.assertEqual(report["removed_sections"], ["*ALL", "*PCSG00415", "*PSPEMUCFW"])
+        self.assertEqual((report["removed"], report["headers_removed"]), (3, 2))
+        # the same file in lines mode: the games are kept, the *ALL line commented out (the rules before)
+        lines, _ = edit(raw, p.INSTALL, p.WORKER_LINES)
+        self.assertIn(("*ALL\nur0:tai/Every.suprx\n" + DISABLED + OCR + "\n").encode(), lines)
+        self.assertEqual(registered(lines), ["PCSG00415", "PSPEMUCFW"])
+
+    def test_a_header_with_anything_else_stays(self):
+        raw = STOCK + ("*PCSG00415\n# mine\n" + OCR + "\n*!PCSE00120\n" + OCR + "\n*ULJS00378\n" + OCR +
+                       "\nux0:tai/other.suprx\n").encode()
+        out, _ = edit(raw)
+        self.assertIn(b"*PCSG00415\n# mine\n", out)    # a comment of the user's
+        self.assertIn(b"*!PCSE00120\n", out)          # a halting header decides where taiHEN stops
+        self.assertIn(b"*ULJS00378\nux0:tai/other.suprx\n", out)
+        self.assertNotIn(OCR.encode(), out)
+
+    def test_bytes_python_str_splits_are_one_line_to_taihen(self):
+        """The audit's case: "# note\\x0c*ALL" is one comment line to taiHEN; str.splitlines() made it
+        a live *ALL header in the patcher before."""
+        raw = b"# note\x0c*ALL\n*KERNEL\nur0:tai/a.skprx\n*main\nur0:tai/henkaku.suprx\n"
+        out, _ = edit(raw)
+        self.assertIn(b"# note\x0c*ALL\n", out)
+        self.assertEqual(taihen_parse(out, b"PCSG00415"), [])
+        for sep in (b"\x0b", b"\x1c", b"\xc2\x85", "\u2028".encode()):
+            text = b"# x" + sep + b"*ALL\n" + STOCK
+            self.assertEqual(len(list(p.lines_of(text))), len(list(p.lines_of(STOCK))) + 1)
+
+    def test_line_ends_are_kept_per_line(self):
+        raw = b"*KERNEL\r\nur0:tai/a.skprx\n*main\rur0:tai/henkaku.suprx"
+        out, _ = edit(raw)
+        self.assertEqual(out, b"*KERNEL\r\n" + KERNEL.encode() + b"\r\nur0:tai/a.skprx\n*main\r" + SHELL.encode() +
+                         b"\r\nur0:tai/henkaku.suprx")
+        self.assertEqual(edit(b"*KERNEL\r*main\r")[0], b"*KERNEL\r" + KERNEL.encode() + b"\r*main\r" + SHELL.encode() + b"\r")
+
+    def test_refusals(self):
+        cases = {b"": p.E_EMPTY, b"# only\n\n": p.E_NO_SECTION, b"*KERNEL\n\0": p.E_NUL,
+                 b"*KERNEL\n" + b"#" * 256 + b"\n": p.E_LONG_LINE, b"#" * (64 * 1024 + 1): p.E_TOO_LARGE,
+                 b"*KERNEL\nur0:tai/a.skprx\n*!ALL\nx\n*NPXS10015\ny\n": p.E_CHECK}
+        for raw, rc in cases.items():
+            with self.subTest(raw=raw[:30]), self.assertRaises(Refused) as caught:
+                edit(raw)
+            self.assertEqual(caught.exception.rc, rc)
+        for title in ("ALL", "*ALL", "main", "KERNEL", "NPXS10015", "VITASHELL", "VJOSET001", "PCSG0041", "PCSG004150",
+                      "PCSG 0415", ""):
             with self.subTest(title=title), self.assertRaises(TitleError):
-                patch(b"*KERNEL\n", titles=[title])
-        with self.assertRaises(TitleError) as refusal:
-            patch(b"", titles=["NPXS10015"])
-        self.assertIn("system application", str(refusal.exception))
-        self.assertIn("Adrenaline", str(refusal.exception))
-        # Adrenaline's process title is a candidate like any other title (core/games.c).
-        self.assertEqual(worker_sections(patch(b"", titles=["PSPEMUCFW"])), ["PSPEMUCFW"])
+                edit(STOCK, p.INSTALL, p.WORKER_LINES, [title])
+        self.assertIn(b"*PSPEMUCFW\n" + OCR.encode(), edit(STOCK, p.INSTALL, p.WORKER_LINES, ["pspemucfw"])[0])
 
-    def test_kept_titles_come_from_every_configuration(self):
-        ur0 = ("*KERNEL\nur0:tai/Other.skprx\n*ALL\n" + OCR + "\n").encode()
-        ux0 = ("*PCSG00415\n" + OCR + "\n*NPXS10028\nur0:tai/Psp.suprx\n" + OCR + "\n").encode()
-        for raw in (ur0, ux0):
-            result = patch(raw, keep_from=[ur0, ux0])
-            self.assertEqual(worker_sections(result), ["PCSG00415", "NPXS10028"])
-            self.assertEqual(patch(result, keep_from=[ur0, ux0]), result)
-
-    def test_worker_goes_first_into_an_existing_game_section(self):
-        raw = b"*NPXS10028\nur0:tai/Psp.suprx\n*!PCSG00415\nur0:tai/Game.suprx\n"
-        result = patch(raw, titles=["NPXS10028", "PCSG00415"])
-        self.assertIn(("*NPXS10028\n" + OCR + "\nur0:tai/Psp.suprx\n").encode(), result)
-        self.assertIn(("*!PCSG00415\n" + OCR + "\nur0:tai/Game.suprx\n").encode(), result)
-        self.assertEqual(result.count(b"*NPXS10028"), 1)
-        self.assertEqual(result.count(b"PCSG00415"), 1)
-
-    def test_worker_lines_outside_game_sections_are_disabled(self):
-        raw = ("*main\n" + OCR + "\n*NPXS10015\n" + OCR + "\n*pcsg00415\n" + OCR + "\n"
-               "*PCSG00415\n" + OCR + "\n*PCSG00415\n" + OCR + "\n*!PCSE00120\n" + OCR + "\n").encode()
-        result = patch(raw)
-        self.assertEqual(worker_sections(result), ["PCSG00415", "PCSE00120"])
-        self.assertEqual(result.count((DISABLED + OCR).encode()), 4)
-        self.assertEqual(patch(result), result)
-
-    def test_existing_global_registration_is_disabled(self):
-        result = patch(("*ALL\n" + TEXT + "\n").encode(), titles=["PCSG00415"])
-        self.assertIn((DISABLED + TEXT).encode(), result)
-        self.assertEqual(result.count(TEXT.encode()), 1)
-
-    def test_repeated_sections_preserve_existing_registrations(self):
-        raw = ("*KERNEL\nur0:tai/Other.skprx\n*main\nur0:tai/Other.suprx\n"
-               "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n"
-               "*PCSG00415\n" + OCR + "\n").encode()
-        self.assertEqual(patch(raw), raw)
-        self.assertEqual(patch(raw, titles=["PCSG00415"]), raw)
-
-    def test_uninstall_keeps_other_plugins(self):
-        raw = ("*KERNEL\n" + KERNEL + "\nur0:tai/Other.skprx\n*ALL\n" + TEXT
-               + "\n" + OCR + "\n*main\n" + SHELL + "\n").encode()
-        result = patch(raw, uninstall=True)
-        self.assertIn(b"ur0:tai/Other.skprx", result)
-        for plugin in (KERNEL, SHELL, TEXT, OCR):
-            self.assertNotIn(plugin.encode(), result)
-
-    def test_uninstall_after_a_per_title_install(self):
-        raw = ("*KERNEL\nur0:tai/Other.skprx\n*ALL\n" + OCR + "\n*PCSG00415\nur0:tai/Game.suprx\n").encode()
-        installed = patch(raw, titles=["PCSG00415", "NPXS10028"])
-        result = patch(installed, uninstall=True)
-        self.assertEqual(worker_sections(result), [])
-        self.assertEqual(active(result), [("KERNEL", "ur0:tai/Other.skprx"), ("PCSG00415", "ur0:tai/Game.suprx")])
-        self.assertEqual(patch(result, uninstall=True), result)
-        # Nothing of ours stays registered, so the next install has to name its games again.
+    def test_patch_keeps_the_pc_installers_interface(self):
+        self.assertNotIn(OCR.encode(), patch(STOCK, titles=["PCSG00415"]))  # kernel mode ignores --title
         with self.assertRaises(TitleError):
-            patch(result)
+            patch(STOCK, mode=p.WORKER_LINES)  # lines mode needs a game
+        ur0 = ("*KERNEL\n" + KERNEL + "\n*PCSG00415\n" + OCR + "\n").encode()
+        out = patch(STOCK, mode=p.WORKER_LINES, keep_from=[ur0])
+        self.assertEqual(registered(out), ["PCSG00415"])
+        extra = patch(STOCK, extra_kernel=["ur0:tai/NoPowerLimits.skprx"])
+        self.assertIn(b"*KERNEL\nur0:tai/NoPowerLimits.skprx\n" + KERNEL.encode() + b"\n", extra)
+        self.assertEqual(patch(extra, extra_kernel=["ur0:tai/NoPowerLimits.skprx"]), extra)
+        self.assertNotIn(KERNEL.encode(), patch(extra, uninstall=True))
+        self.assertIn(b"NoPowerLimits", patch(extra, uninstall=True))  # another plugin stays
+        # --add-kernel-plugin: a path of 256 bytes or more is refused; a result of 4,096 B gets the pad
+        with self.assertRaises(Refused):
+            patch(STOCK, extra_kernel=["ur0:tai/" + "p" * 242 + ".skprx"])  # 256 bytes
+        self.assertIn(b"p" * 241, patch(STOCK, extra_kernel=["ur0:tai/" + "p" * 241 + ".skprx"]))  # 255
+        raw = STOCK
+        while 4096 - len(edit(raw)[0]) > 200:
+            raw += b"# filler\n"
+        name = "ur0:tai/" + "q" * (4096 - len(edit(raw)[0]) - len("ur0:tai/.skprx\n")) + ".skprx"
+        padded = patch(raw, extra_kernel=[name])
+        self.assertEqual(len(padded), 4097)
+        self.assertTrue(padded.endswith(b"\n\n"))
+
+    def test_notes(self):
+        added = edit(b"*NPXS10015\nur0:tai/henkaku.suprx\n")[0]
+        self.assertTrue(added.endswith(("\n" + NOTE + "\n*KERNEL\n" + KERNEL + "\n" + NOTE + "\n*main\n" + SHELL +
+                                        "\n").encode()))
+        self.assertEqual(edit(added, p.UNINSTALL)[0], b"*NPXS10015\nur0:tai/henkaku.suprx\n")
+        bubble = STOCK + (APP_NOTE + "\n*ULJS00378\n" + OCR + "\n").encode()
+        self.assertEqual(edit(bubble, p.UNINSTALL)[0], STOCK)
+
+
+class CommandLine(unittest.TestCase):
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)], capture_output=True, text=True,
+                              timeout=60)
 
     def test_command_line(self):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / "ur0.txt").write_bytes(("*ALL\r\n" + OCR + "\r\n").encode())
             (folder / "ux0.txt").write_bytes(("*PCSG00415\r\n" + OCR + "\r\n").encode())
-            refused = subprocess.run([sys.executable, str(SCRIPT), str(folder / "ur0.txt"), str(folder / "out")],
-                                     capture_output=True, text=True)
+            missing = self.run_cli(folder / "ur0.txt", folder / "out")
+            self.assertEqual(missing.returncode, 2)  # --worker is required
+            done = self.run_cli(folder / "ur0.txt", folder / "out", "--worker", "kernel", "--title", "PCSG00415")
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("removed the OCR worker's lines from *ALL", done.stdout)
+            self.assertNotIn(OCR.encode(), (folder / "out").read_bytes())
+            refused = self.run_cli(folder / "ur0.txt", folder / "out2", "--worker", "lines")
             self.assertEqual(refused.returncode, 3, refused.stderr)
             self.assertIn("--title PCSG00415", refused.stderr)
-            self.assertNotIn("usage:", refused.stderr)
-            self.assertFalse((folder / "out").exists())
-            invalid = subprocess.run([sys.executable, str(SCRIPT), str(folder / "ur0.txt"), str(folder / "out"),
-                                      "--title", "ALL"], capture_output=True, text=True)
-            self.assertEqual(invalid.returncode, 3, invalid.stderr)
-            self.assertFalse((folder / "out").exists())
-            done = subprocess.run([sys.executable, str(SCRIPT), str(folder / "ur0.txt"), str(folder / "out"),
-                                   "--title", "NPXS10028", "--keep-titles-from", str(folder / "ux0.txt")],
-                                  capture_output=True, text=True)
-            self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertIn("OCR worker registered for NPXS10028, PCSG00415", done.stdout)
-            self.assertEqual(worker_sections((folder / "out").read_bytes()), ["NPXS10028", "PCSG00415"])
+            self.assertFalse((folder / "out2").exists())
+            lines = self.run_cli(folder / "ur0.txt", folder / "out3", "--worker", "lines", "--title", "NPXS10028",
+                                 "--keep-titles-from", folder / "ux0.txt")
+            self.assertEqual(lines.returncode, 0, lines.stderr)
+            self.assertIn("OCR worker registered for NPXS10028, PCSG00415", lines.stdout)
+            (folder / "broken.txt").write_bytes(b"# only comments\n")
+            broken = self.run_cli(folder / "broken.txt", folder / "out4", "--worker", "kernel")
+            self.assertEqual(broken.returncode, 4)
+            self.assertIn("no section", broken.stderr)
+            self.assertFalse((folder / "out4").exists())
+            same = self.run_cli(folder / "out", folder / "out5", "--worker", "kernel")
+            self.assertEqual(same.returncode, 0)
+            self.assertIn("unchanged", same.stdout)
 
 
-class OverlayAppSections(unittest.TestCase):
-    """The Overlay app appends a commented *TITLEID section for an Adrenaline
-    bubble (core/taicfg.c); the installer keeps it as a registered game."""
+def corpus(seed, count):
+    pieces = [b"*KERNEL", b"*main", b"*ALL", b"*!ALL", b"*PCSG00415", b"*!PCSG00415", b"*PSPEMUCFW", b"*NPXS10015",
+              b"*kernel", b"* main", b"*  !  KERNEL", b"*", b"*!", b"# a comment", b"#", b"", b"  ", b"\t",
+              KERNEL.encode(), SHELL.encode(), OCR.encode(), TEXT.encode(), b"ux0:tai/VitaJPOverlay_Kernel.skprx",
+              b"UR0:TAI/VITAJPOVERLAY_SHELL.SUPRX", b"ur0:/tai/VitaJPOverlay_OCR.suprx", b"ur0:tai/henkaku.suprx",
+              b"ur0:tai/other.skprx", NOTE.encode(), APP_NOTE.encode(), (DISABLED + OCR).encode(),
+              b"\xef\xbb\xbf*KERNEL", b"\xef\xbb\xbf# bom", "\u3000".encode() + OCR.encode(), OCR.encode() + b"\xc2\xa0",
+              b"# x\x0c*ALL", b"# y\xc2\x85*main", "# z\u2028*ALL".encode(), b"# s\x1c*ALL", b"ur0:tai/a.skprx\x0b",
+              "日本".encode(), b"caf\xe9", b"*ULJS00378", b"*!main"]
+    ends = [b"\n", b"\r\n", b"\r", b"\n", b"\x85\n"]
+    rng = random.Random(seed)
+    for _ in range(count):
+        out = []
+        for i in range(rng.randint(1, 24)):
+            lead = b"  " if rng.random() < 0.12 else b""
+            trail = b" \t" if rng.random() < 0.12 else b""
+            end = rng.choice(ends) if (i < 23 or rng.random() < 0.7) else b""
+            out.append(lead + rng.choice(pieces) + trail + end)
+        yield b"".join(out)
 
-    def test_an_app_section_is_registered_and_kept(self):
-        base = "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n*PCSG00415\n" + OCR + "\n"
-        raw = (base + "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
-               "*ULJS00378\n" + OCR + "\n").encode()
-        self.assertEqual(registered(raw.decode().splitlines()), ["PCSG00415", "ULJS00378"])
-        result = patch(raw)
-        self.assertEqual(worker_sections(result), ["PCSG00415", "ULJS00378"])
-        self.assertEqual(patch(result), result)
-        self.assertEqual(worker_sections(patch(raw, titles=["pspemu005"])), ["PCSG00415", "ULJS00378", "PSPEMU005"])
 
-    def test_uninstall_removes_the_app_sections(self):
-        base = "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n"
-        note = "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
-        raw = (base + note + "*ULJS00378\n" + OCR + "\n" + note + "*PSPEMU005\n" + OCR + "\nux0:tai/other.suprx\n"
-               + note + "*PSPEMU006\n" + OCR + "\n\n").encode()
-        result = patch(raw, uninstall=True).decode()
-        self.assertNotIn("VitaJPOverlay: the OCR worker", result)
-        self.assertNotIn("*ULJS00378", result)
-        self.assertNotIn("*PSPEMU006", result)
-        self.assertIn("*PSPEMU005\nux0:tai/other.suprx\n", result)  # another plugin keeps its section
-        self.assertEqual(worker_sections(result.encode()), [])
+class VendoredParser(unittest.TestCase):
+    """third_party/taihen-parser is DaveeFTW/taihen-parser 6d817fd unchanged: its five files have the SHA-256s
+    third_party/README.md pins, and the release ships its MIT notice (vita/CMakeLists.txt's release target,
+    then the VPK's licenses/ by tools/package_vpk.py licence_name)."""
+
+    def test_the_pinned_hashes_and_the_licence(self):
+        import hashlib
+        import re
+        root = Path(__file__).resolve().parents[2]
+        readme = (root / "third_party/README.md").read_text()
+        entry = readme[readme.index("- taihen-parser https://github.com/DaveeFTW/taihen-parser 6d817fd (MIT)"):]
+        pins = dict((name, digest) for digest, name in re.findall(r"^ +([0-9a-f]{64})  (\S+)$", entry, re.M)[:5])
+        files = sorted(str(f.relative_to(root / "third_party/taihen-parser"))
+                       for f in (root / "third_party/taihen-parser").rglob("*") if f.is_file())
+        self.assertEqual(sorted(pins), files)
+        for name, digest in pins.items():
+            self.assertEqual(hashlib.sha256((root / "third_party/taihen-parser" / name).read_bytes()).hexdigest(), digest, name)
+        self.assertIn("taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt",
+                      (root / "vita/CMakeLists.txt").read_text())
+        import package_vpk
+        self.assertTrue(package_vpk.licence_name("third_party/licenses/taihen-parser-MIT.txt"))
+
+
+@unittest.skipUnless(TAICFG, "VJO_TAICFG (the C build's vjo-taicfg, set by ctest) is not set")
+class AgainstTheCBuild(unittest.TestCase):
+    """The PC installer's editor and parser against the app's (core/taicfg.c, third_party/taihen-parser)."""
+
+    def c_edit(self, path, op, mode, titles=()):
+        r = subprocess.run([TAICFG, "edit", str(path), op, mode, *titles], capture_output=True, timeout=60)
+        return r.returncode, r.stdout
+
+    def py_edit(self, raw, op, mode, titles=()):
+        try:
+            return 0, edit(raw, op, mode, titles)[0]
+        except Refused as error:
+            return 1, ("REFUSED rc=%d line=%d: %s\n" % (error.rc, error.line, error.why)).encode()
+        except TitleError:
+            return 1, b"TITLE"
+
+    def compare(self, raw, path, label):
+        for op in (p.INSTALL, p.UNINSTALL):
+            for mode in (p.WORKER_KERNEL, p.WORKER_LINES):
+                titles = ["PCSG00415", "ULJS00378"] if mode == p.WORKER_LINES else []
+                self.assertEqual(self.c_edit(path, op, mode, titles), self.py_edit(raw, op, mode, titles),
+                                 f"{label}: {op} {mode}")
+
+    def test_fixtures(self):
+        for name, raw, _ in fixtures():
+            with self.subTest(name=name):
+                self.compare(raw, FIXTURES / (name + ".in"), name)
+
+    def test_corpus(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.txt"
+            for i, raw in enumerate(corpus(20261016, 400)):
+                path.write_bytes(raw)
+                self.compare(raw, path, f"case {i}: {raw!r}")
+                for title in (b"KERNEL", b"main", b"ALL", b"PCSG00415", b"NPXS10015", b"*", b""):
+                    if not title:
+                        continue
+                    r = subprocess.run([TAICFG, "parse", str(path), title.decode()], capture_output=True, timeout=60)
+                    want = b"".join(module + b"\n" for module in taihen_parse(raw, title))
+                    self.assertEqual(r.stdout, want, f"case {i} {title}: {raw!r}")
+                r = subprocess.run([TAICFG, "validate", str(path)], capture_output=True, timeout=60)
+                self.assertEqual(int(r.stdout), taihen_validate(raw), f"case {i}: {raw!r}")
 
 
 if __name__ == "__main__":

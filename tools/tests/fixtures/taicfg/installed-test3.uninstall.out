@@ -1,0 +1,7 @@
+*KERNEL
+ux0:app/PSPEMUCFW/sce_module/adrenaline_kernel.skprx
+*main
+ur0:tai/henkaku.suprx
+*ALL
+ur0:tai/Every.suprx
+# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx

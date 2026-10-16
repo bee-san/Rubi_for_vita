@@ -7,6 +7,16 @@ Vendored sources:
 - acutest  https://github.com/mity/acutest      31751b4089c93b46a9fd8a8183a695f772de66de (MIT)
 - lapis    https://github.com/donkuri/lapis       38238d0b1c072fe7d7cd121e1e4c838a959f8d6b, tag 1.7.0 (GPL-3.0):
            the Anki note type the Overlay app's .apkg export embeds (lapis/README.md)
+- taihen-parser https://github.com/DaveeFTW/taihen-parser 6d817fd (MIT): taiHEN's own config.txt
+           lexer and parser, unchanged, the Overlay app's check of every config.txt edit
+           (core/taicfg.c, docs/one-vpk-install.md). Built as taiHEN 309b380 builds it (its
+           inbuilt ctype and string functions: NO_CTYPE, NO_STRING). SHA-256, checked by
+           tools/tests/test_tai_config.py:
+             b34087aeb19a48190527d7866166a4dcb67d199333e609b5aa3f91cebb3ca42c  LICENSE
+             c0dae41266cd15c9d999e5a3d825ee56c30e2d934ec7954691be411735fe9021  include/taihen/lexer.h
+             c72e21ff3377ca5aba6afd8f78e301982dc1ea60416676cb8cce5426536dc5c8  include/taihen/parser.h
+             6aed254d7872512f22c152f9edbf15529b27f5e041f5247dbe75c3352d5fe318  src/lexer.c
+             5059be0048d4913657b1b9eb96be6242d4b88c1d83c8ee4828e07aaa54e89497  src/parser.c
 
 The standalone Settings app builds libpng 1.6.58 from
 https://codeload.github.com/pnggroup/libpng/tar.gz/refs/tags/v1.6.58,

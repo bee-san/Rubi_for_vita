@@ -20,8 +20,12 @@ int vjo_app_running_api(const char *status);
  * nothing is known not to match. */
 int vjo_app_banner_text(int app_api, const char *own, const char *package, const char *status, char *out,
                         size_t cap);
+/* The same for an app that carries the overlay (its payload, docs/one-vpk-install.md): the banner
+ * names its Install page instead of install-vita.sh or a VPK in ux0:data. */
+int vjo_app_banner_text_for(int app_api, const char *own, const char *package, const char *status, int has_payload,
+                            char *out, size_t cap);
 
 /* The same from the files on the memory card. */
-int vjo_app_banner(char *out, size_t cap);
+int vjo_app_banner(char *out, size_t cap, int has_payload);
 
 #endif

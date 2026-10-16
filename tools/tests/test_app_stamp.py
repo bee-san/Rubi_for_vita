@@ -154,7 +154,7 @@ class AppStamp(unittest.TestCase):
         self.assertEqual(m["VJO_APP_EBOOT_INSTALLED"], "ux0:app/VJOSET001/eboot.bin")
         self.assertEqual(m["VJO_APP_STAMP_PACKAGE"], "ux0:data/VitaJPOverlay/vjo_app.txt")
         self.assertEqual(m["VJO_APP_STAMP_OWN"], "app0:vjo_app.txt")
-        self.assertIn("JPOverlaySettings.vpk", m["VJO_APP_NOTICE"])
+        self.assertEqual("Overlay app and plugins are different builds: open the Overlay app.", m["VJO_APP_NOTICE"])
         ftp = (ROOT / "tools/install_ftp.sh").read_text()
         for path in (m["VJO_APP_STAMP_INSTALLED"], m["VJO_APP_EBOOT_INSTALLED"], m["VJO_APP_STAMP_PACKAGE"]):
             self.assertIn(path.replace(":", ":/", 1), ftp)

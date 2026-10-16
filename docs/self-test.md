@@ -251,8 +251,9 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;
   the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
   the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
-  `anki/`, the Overlay app's `.apkg` packages, and `vjo_app.txt`, the record of the Overlay app the plugins came
-  with;
+  `anki/`, the Overlay app's `.apkg` packages, `vjo_app.txt`, the record of the Overlay app the plugins came
+  with, and `installed.txt`, the one-VPK install's record ([one-vpk-install.md](one-vpk-install.md)), which
+  the analysis compares with the package's `payload-manifest.txt`;
 - `ux0:app/VJOSET001/vjo_app.txt`, the installed Overlay app's version stamp, and the SHA-256 of its
   `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h)). Both are read as `--check-app`
   reads them: through the folder (curl's CWD into each folder on the way), then, when that is answered "not
@@ -262,7 +263,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   `COLLECT.json`'s `app` says which way read each file. When neither can be read, the app's folder is
   listed, and, when it cannot be entered, `ux0:app`, of which only whether it lists `VJOSET001` is kept;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
-  installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
+  installers' `.vjo-bak` copies, their dated backups (`config.txt.vjo-YYYYMMDD-HHMMSS.bak`) and an
+  interrupted swap's `config.txt.vjo-new` / `.vjo-old`; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
   models, the beam + LM decoder's LMs (`*.vlm`) and their `LM-ATTRIBUTION.md` (downloaded to a
   temporary file and deleted, never kept), compared with the package's `package-manifest.json`; the

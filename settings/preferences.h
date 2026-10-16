@@ -24,6 +24,14 @@ int vjo_preferences_save_anki(int mining, int screenshot, VjoArena *scratch);
  * ocr_boost_clock (1 on, 0 off: its Speed boost while reading). Any other
  * value is refused (-1) before anything is read or written. */
 int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *scratch);
+/* config.ini's text as the app's load reads it (into the arena): 0 config.ini; 1 its backup
+ * (config.ini.bak, when config.ini is missing: a save that stopped between its two renames); 2 there
+ * is neither (*out NULL); -1 unreadable. The installer's update patches this text and writes the
+ * template only for 2 (docs/one-vpk-install.md, "config.ini on install and update"). */
+int vjo_preferences_text(VjoArena *scratch, char **out, size_t *bytes);
+/* Publishes next (len bytes, a whole config.ini) as the saves do: a file holding a removed feature's
+ * API key is first published without it, then next, the old file kept as config.ini.bak. 0 or -1. */
+int vjo_preferences_publish_text(const char *next, size_t len, VjoArena *scratch);
 /* text with a `key = value` line for each of the n (0-8, lowercase) keys:
  * a key's first line is replaced, its later duplicates dropped, a missing
  * key appended; every other line kept verbatim but a removed feature's

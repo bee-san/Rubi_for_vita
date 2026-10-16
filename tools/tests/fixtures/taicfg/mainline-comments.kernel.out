@@ -1,0 +1,8 @@
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+# Mainline OCR: ur0:tai/VitaJPOverlay_Kernel.skprx
+# keep ur0:tai/VitaJPOverlay_Kernel.skprx in mind
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+# Mainline OCR: ur0:tai/VitaJPOverlay_Text.suprx
+ur0:tai/henkaku.suprx

@@ -319,5 +319,6 @@ jobs:
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen
-# Daijirin4 -> Sankoku8 -> JMdict bundle: VitaJPOverlay-<version>.zip (normal) and -debug.zip.
-# CI never publishes an incomplete archive lacking local OCR/dictionary data.
+# Daijirin4 -> Sankoku8 -> JMdict bundle: VitaJPOverlay-<version>.zip (normal) and -debug.zip, and each
+# build's one-VPK install, VitaJPOverlay-<version>.vpk and -debug.vpk (tools/package_vpk.py,
+# docs/one-vpk-install.md). CI never publishes an incomplete archive lacking local OCR/dictionary data.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installs this release over VitaShell's FTP. Name each game that should have
-# OCR with --title (repeatable): the OCR worker is registered for those games
-# and the games registered before, never under *ALL. For Adrenaline's PSP
-# games add PSPEMUCFW and each bubble's own ID (README 'Install'). --check-app only checks,
-# read-only, that the Vita's Overlay app is this package's (the install ends with
-# the same check).
+# Installs this release over VitaShell's FTP: the advanced path beside the one-VPK install (README
+# 'Install', docs/one-vpk-install.md). The package's manifest says where the game OCR worker comes
+# from: "kernel", the kernel plugin loads it into every game turned ON in the Overlay app, so no game is
+# named and --title is ignored with a note; "lines" (an older build), one *TITLEID section per game named
+# with --title (repeatable) and per game registered before, never under *ALL. --check-app only checks,
+# read-only, that the Vita's Overlay app is this package's (the install ends with the same check).
 set -euo pipefail
 PACKAGE=$(cd "$(dirname "$0")" && pwd)
 TITLES=()
@@ -23,9 +23,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ $USAGE = 1 ] || [ $HOSTS -ne 1 ]; then
-  echo "Usage: ./install-vita.sh [--title TITLEID]... VITA_IP[:1337]"
+  echo "Usage: ./install-vita.sh VITA_IP[:1337]"
   echo "       ./install-vita.sh --check-app VITA_IP[:1337]"
-  echo "  e.g. ./install-vita.sh --title PCSG00415 192.168.1.50"
+  echo "  (--title TITLEID: only for an older package whose kernel does not load the OCR worker)"
   exit 2
 fi
 if [ $CHECK_APP = 1 ]; then

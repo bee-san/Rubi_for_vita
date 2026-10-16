@@ -6,15 +6,18 @@
 # set of settings. Local copies (backups, logs, dumps) go to build/device/.
 # Needs bash, curl and python3.
 #
-# The game OCR worker is registered per game, one *TITLEID section each, never
-# under *ALL (which would load it into SceShell and every app as well): name
-# each game with --title. Games registered by an earlier install are kept, and
-# an *ALL worker line is commented out. With no --title and no game registered
-# yet, nothing is changed.
+# The game OCR worker: in a package whose manifest says "worker": "kernel" (and in a source tree whose
+# include/vjo_api.h defines VJO_KERNEL_LOADS_WORKER 1), the kernel plugin loads it into every game
+# turned ON in the Overlay app (#138, Agent A): no config line names it, --title is not needed, and
+# the worker lines older installs left are removed (docs/one-vpk-install.md). Otherwise ("lines") it
+# is registered per game, one *TITLEID section each, never under *ALL: name each game with --title;
+# games registered by an earlier install are kept, an *ALL worker line is commented out, and with no
+# --title and no game registered yet nothing is changed.
 #
-#   tools/install_ftp.sh --title PCSG00415 192.168.1.50[:1337]
+#   tools/install_ftp.sh 192.168.1.50[:1337]
 #   tools/install_ftp.sh --title PCSG00415 --title PSPEMUCFW --title ULJS00378 192.168.1.50
-#     (PSPEMUCFW: Adrenaline; ULJS00378: an Adrenaline Bubble Manager bubble's ID, README 'Install')
+#     (a "lines" package only; a "kernel" one ignores --title with a note. PSPEMUCFW: Adrenaline;
+#      ULJS00378: an Adrenaline Bubble Manager bubble's ID, README 'Install')
 #   tools/install_ftp.sh --set ocr_mode=on_press --set local_dictionary_results=3 192.168.1.50
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;
@@ -74,10 +77,23 @@ while [ $# -gt 1 ]; do
 done
 HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--check-app|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
+# Where the game OCR worker comes from (above): the package's manifest says; a source tree's
+# include/vjo_api.h. Anything else is the per-title rules.
+WORKER=lines
+if [ -n "$PACKAGE_DIR" ]; then
+  WORKER=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("worker", "lines"))' \
+    "$PACKAGE_DIR/package-manifest.json")
+elif grep -qE '^#define VJO_KERNEL_LOADS_WORKER 1( |$)' include/vjo_api.h 2>/dev/null; then
+  WORKER=kernel
+fi
+case $WORKER in kernel|lines) ;; *) echo "unknown worker mode in the package manifest: $WORKER"; exit 1 ;; esac
 # How to install from here: the release package has install-vita.sh at its root.
 INSTALL_CMD="bash tools/install_ftp.sh"
 [ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
-if [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP)) -gt 0 ]; then
+if [ -n "${TITLES[*]+x}" ] && [ $WORKER = kernel ]; then
+  echo "Note: --title is not needed: the kernel plugin loads the OCR worker into every game turned ON in the Overlay app."
+  TITLES=()
+elif [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP)) -gt 0 ]; then
   echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
   echo "this command does not change which games the OCR worker is registered for."
 fi
@@ -107,7 +123,7 @@ elif [ -f ux0/data/VitaJPOverlay/vjo_app.txt ]; then
   APP_STAMP=ux0/data/VitaJPOverlay/vjo_app.txt
   APP_VPK=JPOverlaySettings.vpk
 fi
-PATCH_ARGS=()
+PATCH_ARGS=(--worker "$WORKER")
 for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -130,6 +146,17 @@ if digest(sys.argv[1]) != digest(sys.argv[2]):
     raise SystemExit("FTP readback checksum failed: " + sys.argv[3])
 print("verified " + sys.argv[3])
 PY
+}
+
+# A configuration's copy on the Vita before it changes: config.txt.vjo-bak (the latest, as every earlier
+# installer wrote it) and config.txt.vjo-YYYYMMDD-HHMMSS.bak, never reused or deleted (the Overlay app's
+# name, docs/one-vpk-install.md). $1: the local copy, $2: the configuration's path on the Vita.
+STAMP=$(date +%Y%m%d-%H%M%S)
+backup_config() {
+  local dated="${2}.vjo-$STAMP.bak" k=2
+  while exists "$dated"; do dated="${2}.vjo-$STAMP-$k.bak"; k=$((k + 1)); done
+  put "$1" "${2}.vjo-bak"
+  put "$1" "$dated"
 }
 
 # Resets the boot guard's record (docs/boot-safety.md): an empty boot.txt is
@@ -291,7 +318,18 @@ echo "backup: $BK"
 if [ $UNINSTALL = 1 ]; then
   for CFG in "${CFGS[@]}"; do
     n=${CFG%%:*}
-    python3 tools/patch_tai_config.py "$TMP/$n.txt" "$TMP/$n.new" --uninstall
+    patch_status=0
+    python3 tools/patch_tai_config.py "$TMP/$n.txt" "$TMP/$n.new" --worker "$WORKER" --uninstall > /dev/null \
+      2> "$TMP/$n.err" || patch_status=$?
+    if [ "$patch_status" -ne 0 ]; then
+      echo "Nothing was changed in $CFG: $(cat "$TMP/$n.err")"
+      continue
+    fi
+    if cmp -s "$TMP/$n.txt" "$TMP/$n.new"; then
+      echo "$CFG has no line of the overlay"
+      continue
+    fi
+    backup_config "$TMP/$n.txt" "$CFG"
     put "$TMP/$n.new" "$CFG"
     echo "removed the plugin lines from $CFG"
   done
@@ -370,6 +408,10 @@ for CFG in "${CFGS[@]}"; do
   summary=$(python3 tools/patch_tai_config.py "$TMP/$n.txt" "$TMP/$n.new" ${PATCH_ARGS[@]+"${PATCH_ARGS[@]}"} \
     "${KEEP[@]}") || patch_status=$?
   if [ "$patch_status" -ne 0 ]; then
+    if [ "$patch_status" -eq 4 ]; then
+      echo "Nothing was changed on the Vita: $CFG cannot be edited safely (above). Fix it in VitaShell, or restore its"
+      echo "backup (config.txt.vjo-*.bak in the same folder), then run again."
+    fi
     if [ "$patch_status" -eq 3 ]; then
       if [ -n "${TITLES[*]+x}" ]; then
         echo "Nothing was changed on the Vita. Correct the --title value named above and run again, for example:"
@@ -388,7 +430,8 @@ for CFG in "${CFGS[@]}"; do
   n=${CFG%%:*}
   echo "--- $CFG changes (${SUMMARY[$i]}):"; diff "$TMP/$n.txt" "$TMP/$n.new" || true
   i=$((i + 1))
-  put "$TMP/$n.txt" "${CFG}.vjo-bak"
+  # an unchanged configuration is neither backed up nor written (docs/one-vpk-install.md, step 2)
+  cmp -s "$TMP/$n.txt" "$TMP/$n.new" || backup_config "$TMP/$n.txt" "$CFG"
 done
 
 put "$B/VitaJPOverlay_Kernel.skprx" "ur0:/tai/VitaJPOverlay_Kernel.skprx"
@@ -444,8 +487,30 @@ else
   fi
   echo "config.ini is up to date"
 fi
-for CFG in "${CFGS[@]}"; do put "$TMP/${CFG%%:*}.new" "$CFG"; done
-echo "Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on and run: tools/install_ftp.sh --uninstall ${HOST%%:*}"
+for CFG in "${CFGS[@]}"; do
+  cmp -s "$TMP/${CFG%%:*}.txt" "$TMP/${CFG%%:*}.new" || put "$TMP/${CFG%%:*}.new" "$CFG"
+done
+# A copy of ours in ux0:tai (a hand install's): our installers put the plugins in ur0:tai only, and the
+# kernel loads the worker from ux0:tai only when ur0's is missing, so a stale copy there goes aside under
+# a name of its own, <name>.vjo-stale-<date> (renamed, never deleted; docs/one-vpk-install.md step 6). A
+# failed RNTO still answers 226 (libftpvita ftpvita.c:719-723): the rename is checked by the file's absence.
+for name in VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx; do
+  if exists "ux0:/tai/$name"; then
+    aside="$name.vjo-stale-$STAMP"
+    c -o /dev/null -Q "RNFR /ux0:/tai/$name" -Q "RNTO /ux0:/tai/$aside" "$FTP/" 2>/dev/null || true
+    if exists "ux0:/tai/$name"; then echo "could not rename ux0:tai/$name: delete it in VitaShell"
+    else echo "renamed a stale copy: ux0:tai/$name -> $aside"; fi
+  fi
+done
+# The record of the build installed (docs/one-vpk-install.md, "installed.txt"): the package's, the same
+# line the Overlay app writes; a source build's is "no record".
+if [ -n "$PACKAGE_DIR" ] && [ -f "$PACKAGE_DIR/payload-manifest.txt" ]; then
+  python3 tools/package_vpk.py --installed-record "$PACKAGE_DIR" > "$TMP/installed.txt"
+else
+  : > "$TMP/installed.txt"
+fi
+put "$TMP/installed.txt" "ux0:/data/VitaJPOverlay/installed.txt"
+echo "Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on, then in VitaShell put # before the two VitaJPOverlay lines of ur0:tai/config.txt (and ux0:tai/config.txt), or run: tools/install_ftp.sh --uninstall ${HOST%%:*}"
 # Last, so it cannot scroll away: the Overlay app (#101: test.1's app ran beside test.2's plugins). A failed
 # check changes nothing of the install.
 echo

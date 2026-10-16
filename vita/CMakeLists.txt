@@ -349,23 +349,37 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
   ${ROOT}/settings/applog.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
-  ${ROOT}/core/taicfg.c
+  ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
+  ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${VJO_SETTINGS_ANKI_SRC})
+# The one-VPK install's config.txt check is taiHEN's own parser (DaveeFTW/taihen-parser 6d817fd, MIT),
+# built as taiHEN 309b380 builds it: its inbuilt ctype and string functions (docs/one-vpk-install.md).
+set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
+  PROPERTIES COMPILE_DEFINITIONS "NO_CTYPE;NO_STRING" COMPILE_OPTIONS "-w")
 # vjo_bearssl (SHA-256 for the queue's IDs and the screenshots' names, SHA-1 for Anki's field
 # checksum) is the Shell's build: it uses no wchar_t, so its 2-byte setting is harmless here.
+# SceShellSvc: the install's PS button and power-off menu lock (sceShellUtilLock, as VitaShell's installs
+# hold it); SceProcessmgr: its auto-suspend hold (sceKernelPowerTick). Both only while an install runs.
 set(VJO_SETTINGS_LIBS
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
-  SceAppMgr_stub SceAppUtil_stub SceRtc_stub SceRegistryMgr_stub vjo_bearssl)
+  SceAppMgr_stub SceAppUtil_stub SceRtc_stub SceRegistryMgr_stub SceShellSvc_stub SceProcessmgr_stub vjo_bearssl)
 add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 # Its version, beside its title (settings/main.c): this VJO_VERSION, and "debug" in the debug build.
 target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1 VJO_VERSION_STRING="${VJO_VERSION}")
-target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
+target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc ${ROOT}/third_party/taihen-parser/include)
 target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
+# __sce_headroom: VitaSDK's linker script (armelf.x, 2026.08 and later: ". += DEFINED(__sce_headroom) ?
+# __sce_headroom : 0" before the data segment's 64 KiB alignment) keeps that many bytes free after the code
+# segment for the SCE data vita-elf-create appends there (the module info and the import tables: 2,612 B
+# for this app). Without it the gap is whatever the code's size leaves below the next 64 KiB boundary, and
+# vita-elf-create refuses, then crashes, when that is less ("Cannot allocate 2612 bytes for SCE data at end
+# of segment 0; segment 1 overlaps": CI's normal build of the one-VPK install). The gap costs no memory:
+# only the segments are loaded, and tools/check_settings_self.py counts them.
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
-  -Wl,--wrap=sceKernelCreateThread)
+  -Wl,--wrap=sceKernelCreateThread -Wl,--defsym,__sce_headroom=0x4000)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
@@ -410,6 +424,22 @@ vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
        ${ROOT}/settings/assets/startup.png sce_sys/livearea/contents/startup.png
        ${ROOT}/settings/assets/template.xml sce_sys/livearea/contents/template.xml
        ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt vjo_app.txt)
+# The one-VPK install (docs/one-vpk-install.md): the app names the worker mode the tree compiled (its
+# vjoworker= mark, which tools/package_vpk.py writes into the payload manifest), and no module has what
+# VitaShell's install scan warns of (a partition mount call; a plugin with ScePromoterUtil or SceShellSvc).
+file(STRINGS ${ROOT}/include/vjo_api.h VJO_KERNEL_LOADS_WORKER_LINE REGEX "^#define VJO_KERNEL_LOADS_WORKER [01]")
+if(VJO_KERNEL_LOADS_WORKER_LINE MATCHES " 1")
+  set(VJO_WORKER_MODE kernel)
+else()
+  set(VJO_WORKER_MODE lines)
+endif()
+add_custom_target(vjo_one_vpk ALL
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/package_vpk.py --worker ${VJO_WORKER_MODE} --check-build
+    ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
+    ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
+  DEPENDS eboot.bin-self VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self
+    ${ROOT}/tools/package_vpk.py
+  COMMENT "Checking the one-VPK install's modules (tools/package_vpk.py --check-build)")
 add_custom_target(vjo_settings_assets ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_assets.py
     ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk
@@ -425,7 +455,7 @@ if(VJO_SETTINGS_SMOKE)
   set(VJO_SETTINGS_SMOKE_PAD 0 CACHE STRING "Padding bytes in the smoke app's code segment")
   add_executable(vjo_settings_smoke ${VJO_SETTINGS_SRC} ${ROOT}/tools/vita3k_settings_smoke.c)
   target_compile_definitions(vjo_settings_smoke PRIVATE VJO_STANDALONE=1 VJO_SMOKE_PAD=${VJO_SETTINGS_SMOKE_PAD})
-  target_include_directories(vjo_settings_smoke PRIVATE ${ROOT}/third_party/bearssl/inc)
+  target_include_directories(vjo_settings_smoke PRIVATE ${ROOT}/third_party/bearssl/inc ${ROOT}/third_party/taihen-parser/include)
   target_compile_options(vjo_settings_smoke PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
   target_link_options(vjo_settings_smoke PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
     -Wl,--wrap=sceCtrlPeekBufferPositive,--wrap=sceKernelExitProcess,--wrap=vita2d_load_PNG_buffer
@@ -511,7 +541,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
@@ -522,9 +552,10 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
     vjo_offline_imports # a zip is never packaged from modules that import a network library
   COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
 

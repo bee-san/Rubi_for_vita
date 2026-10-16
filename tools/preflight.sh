@@ -143,6 +143,20 @@ else
   fail "Anki export (Overlay app)" "$ae ($log/apkg.log $log/apkg-py.log)"
 fi
 
+# 2d. the one-VPK install (docs/one-vpk-install.md): the config.txt editor against taiHEN's own parser on
+# the fixtures and a corpus, the PC installer's copy of it compared with the C build, the Overlay app's
+# install engine and page on a temporary memory card (faults at every write and rename, the interrupted
+# swap, h-encore's rewrite), and the VPK's packaging rules (VitaShell's install scan, the app's own facts)
+ti=$BUILD/vjo-settings-install-tests
+tc=$BUILD/vjo-taicfg-tests
+if [ -x "$ti" ] && [ -x "$tc" ] && "$tc" > "$log/taicfg.log" 2>&1 && "$ti" > "$log/install.log" 2>&1 \
+   && VJO_TAICFG=$BUILD/vjo-taicfg "$PY" -m unittest tools.tests.test_tai_config tools.tests.test_one_vpk > "$log/one-vpk-py.log" 2>&1 \
+   && ! grep -q "skipped" "$log/one-vpk-py.log"; then
+  pass "one-VPK install" "editor $(grep -c '\[ OK \]' "$log/taicfg.log") groups ($(ls tools/tests/fixtures/taicfg/*.in | wc -l) fixtures, 12,000 corpus edits, taiHEN's parser as the check), app engine $(grep -c '\[ OK \]' "$log/install.log") cases on a temporary card, PC copy + VPK packaging $(grep -o 'Ran [0-9]* tests' "$log/one-vpk-py.log")"
+else
+  fail "one-VPK install" "$log/taicfg.log $log/install.log $log/one-vpk-py.log"
+fi
+
 # 2c. the one-command collect (install_ftp.sh --collect: the real script, curl and ftplib against a
 # VitaShell-like FTP server) and logging on by default in every template the installer uses
 if "$PY" -W ignore -m unittest tools.tests.test_collect > "$log/collect.log" 2>&1 \
@@ -204,8 +218,9 @@ if [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ]; then
     pages=$(grep -E "VitaJPOverlay_(Kernel|Shell|OCR) +[0-9,]+ B of" "$log/vita-build.log" | sort -u | sed -E 's/ +/ /g; s/^ //' | tr '\n' ';')
     if grep -q "memory ledger: pass" "$log/vita-build.log" && grep -q '"result": "pass"' "$log/vita-build.log" \
        && grep -q "no FPU/NEON instructions" "$log/vita-build.log" \
-       && grep -q "\"variant\": \"$VARIANT\"" "$log/vita-build.log"; then
-      pass "Vita build" "ledger pass, syscall ABI pass, kernel without FPU/NEON, the $VARIANT build's modules (tools/check_variant.py)"
+       && grep -q "\"variant\": \"$VARIANT\"" "$log/vita-build.log" \
+       && grep -q "The one-VPK install's modules: vjoworker=" "$log/vita-build.log"; then
+      pass "Vita build" "ledger pass, syscall ABI pass, kernel without FPU/NEON, the $VARIANT build's modules (tools/check_variant.py), the one-VPK module check (tools/package_vpk.py)"
       echo "$pages" | tr ';' '\n' | sed '/^$/d; s/^/           /'
     else
       fail "Vita build" "ledger/ABI/FPU check did not pass ($log/vita-build.log)"

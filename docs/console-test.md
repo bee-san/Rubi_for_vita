@@ -1,15 +1,13 @@
 # Console test of a test build on a PS Vita: one zip, one run, about 20 minutes
 
-A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, never "Latest") with a
-single zip that has everything: the three plugins, the **Overlay** settings app, the OCR models
-(the three model sizes: VOCR3-FL10, VOCR3-H15 and VOCR4-W20), the frozen dictionary, the installer and
-the analyser. It needs no git, no `gh` and no packaging. Its install issue names the tag and gives
-the zip's SHA-256. The installer still registers the OCR worker for the games named with `--title`
-(here CLANNAD, `PCSG00415`), never under `*ALL`; since #138 the kernel plugin loads the worker
-itself into every game that is ON in the Overlay app, so other games (AIR, Adrenaline) need no
-`--title`. "est." marks an estimate; nothing of a test build
-has run on a console before the owner's run. The install issue follows
-[test-build-issue.md](test-build-issue.md), whose first install step is the Overlay app.
+A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, never "Latest") with the
+one-VPK install, `VitaJPOverlay-TAG-debug.vpk` (the **Overlay** app with the three plugins, the OCR models
+of the three model sizes, VOCR3-FL10, VOCR3-H15 and VOCR4-W20, and the frozen dictionary inside it;
+[one-vpk-install.md](one-vpk-install.md)), and the zip of the same build with the installer and the
+analyser (`--collect`). Its install issue names the tag and gives both SHA-256s. Since #138 the kernel
+plugin loads the OCR worker into every game that is ON in the Overlay app, so no game is named
+anywhere. "est." marks an estimate; nothing of a test build has run on a console before the owner's
+run. The install issue follows [test-build-issue.md](test-build-issue.md).
 
 ## What you need
 - A PCH-1000/1001 on 3.60–3.74 with HENkaku/Ensō or h-encore, and VitaShell.
@@ -27,9 +25,13 @@ The last line must say `Verified N package files`. `checksum failed` means a bad
 and download again.
 
 ## 2. Install
+The one-VPK install: copy `VitaJPOverlay-TAG-debug.vpk` to the Vita, install it in VitaShell, open
+**Overlay**, choose **Install** on its Install page and restart the Vita (test-build-issue.md section 2 has
+the checklist; README "Install" the steps). The steps below are the advanced path, from a PC.
+
 On the Vita, close any game, open VitaShell and press **Select** to start FTP. Then, in `vjo`:
 ```sh
-bash install-vita.sh --title PCSG00415 VITA_IP:1337
+bash install-vita.sh VITA_IP:1337
 ```
 - [ ] **Step 1, every time: install the Overlay app again.** In VitaShell (press OK on its FTP dialog to
   keep FTP running) open `ux0:data/`, install `JPOverlaySettings.vpk`, then on the PC check it:
@@ -44,11 +46,12 @@ bash install-vita.sh --title PCSG00415 VITA_IP:1337
 - The installer first backs up both taiHEN configurations: on the PC in `build/device/backup/`, and
   on the Vita as `config.txt.vjo-bak` next to each `config.txt`. It also keeps your `config.ini`'s
   values (the copy it replaced is in the same backup folder).
-- It registers the OCR worker for CLANNAD only (`*PCSG00415`), the kernel plugin under `*KERNEL`
-  and the Shell plugin under `*main`, and prints each change.
+- It adds the kernel plugin under `*KERNEL` and the Shell plugin under `*main`, removes the OCR
+  worker's lines older installs left (the kernel loads the worker now), and prints each change.
 - It prints `package settings: ...` for the test build's own settings (`anki_mining=on`).
 - Keep the screen on until it prints `Installed. Reboot the Vita, then leave it on for a minute. …`
-  and the Overlay app's box after it; `Nothing was changed on the Vita` means you left out `--title`.
+  and the Overlay app's box after it; `Nothing was changed on the Vita` names the configuration it
+  could not edit safely and why.
 - It uploads the Overlay app's VPK to `ux0:data/JPOverlaySettings.vpk` and its record to
   `ux0:data/VitaJPOverlay/vjo_app.txt` with the plugins; installing the VPK is the step above.
 
@@ -85,8 +88,9 @@ Start FTP in VitaShell again, then in `vjo`:
 bash tools/install_ftp.sh --collect VITA_IP
 ```
 It reads everything the overlay wrote (logs, the self-test report, status/kernel/boot records,
-`config.ini` with its API keys and audio source URL redacted, both taiHEN configurations, the Anki queue, crash dumps, the
-installed files' hashes) into one folder and zip under `build/device/collect/`, writes nothing on the
+`config.ini` with its API keys and audio source URL redacted, both taiHEN configurations and their backups, the
+Overlay app's install record `installed.txt`, the Anki queue, crash dumps, the installed files' hashes) into one
+folder and zip under `build/device/collect/`, writes nothing on the
 Vita, and prints the analysis. Leave the Overlay app open in the background if it is: test.3's collect
 could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138)).
 The collect now also reads its two files by their full paths, and the analysis's `Overlay app:` line

@@ -44,10 +44,8 @@ class ReleaseInstall(unittest.TestCase):
                      "ux0/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
-        files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
-                 "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-                 for p in self.package.rglob("*") if p.is_file()}
-        (self.package / "package-manifest.json").write_text(json.dumps({"files": files}))
+        self.worker = "kernel"
+        self.write_manifest()
         self.original_tai = b"*KERNEL\r\nur0:tai/Other.skprx\r\n*main\r\n*ALL\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n"
         for partition in ("ur0", "ux0"):
             (self.device / partition / "tai").mkdir(parents=True)
@@ -70,6 +68,13 @@ a = sys.argv[1:]
 if os.environ.get('CURL_EXIT'): sys.exit(int(os.environ['CURL_EXIT']))  # 7: the Vita cannot be reached
 p = urlparse(a[-1]).path.lstrip('/').replace(':', '')
 remote = pathlib.Path(os.environ['FAKE_DEVICE']) / p
+quotes = [a[i + 1] for i, x in enumerate(a) if x == '-Q']
+if quotes:  # RNFR then RNTO: a rename, which the Vita's rename refuses onto an existing file
+    src = pathlib.Path(os.environ['FAKE_DEVICE']) / quotes[0].split(' ', 1)[1].lstrip('/').replace(':', '')
+    dst = pathlib.Path(os.environ['FAKE_DEVICE']) / quotes[1].split(' ', 1)[1].lstrip('/').replace(':', '')
+    if not src.is_file() or dst.exists(): sys.exit(21)  # curl's quote error
+    src.rename(dst)
+    sys.exit(0)
 if '-T' in a:
     remote.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(a[a.index('-T') + 1], remote)
@@ -88,6 +93,19 @@ elif '-o' in a:
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen(10)
         self.addCleanup(self.listener.close)
+
+    def write_manifest(self, worker=None):
+        """package-manifest.json for the package's files; worker: where the OCR worker comes from
+        (kernel: the kernel plugin loads it, #138 Agent A; lines: one *TITLEID section per game)."""
+        self.worker = worker or self.worker
+        files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
+                 "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                 for p in self.package.rglob("*") if p.is_file() and p.name != "package-manifest.json"}
+        (self.package / "package-manifest.json").write_text(json.dumps({"files": files, "worker": self.worker}))
+
+    def dated_backups(self, partition):
+        return sorted(q.name for q in (self.device / partition / "tai").glob("config.txt.vjo-*.bak")
+                      if q.name != "config.txt.vjo-bak")
 
     def install(self, script="install-vita.sh", *options):
         return subprocess.run(["bash", str(self.package / script), *options,
@@ -109,20 +127,31 @@ elif '-o' in a:
     def test_update_is_verified_idempotent_and_preserves_unrelated_state(self):
         self.assertFalse((self.package / "docs/config.example.ini").exists())
         installed = first = None
-        # The second update names no game: the one registered by the first is kept.
+        # The kernel plugin loads the OCR worker (#138, Agent A): --title is noted and not needed.
         for options in (("--title", "PCSG00415"), ()):
             result = self.install("install-vita.sh", *options)
             first = first or result
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn("test-key", result.stdout)
             self.assertNotIn("migration failed", result.stdout + result.stderr)
-            self.assertIn("OCR worker registered for PCSG00415", result.stdout)
+            self.assertEqual("--title is not needed" in result.stdout, bool(options))
             if installed is not None:
+                # nothing changes, so nothing is backed up or written again
                 self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], installed)
+                self.assertIn("unchanged", result.stdout)
+                for partition in ("ur0", "ux0"):
+                    self.assertEqual(self.dated_backups(partition), backups[partition])
             else:
-                # The Vita's own backup is the configuration from before the update.
+                # The Vita's own backups are the configuration from before the update: the latest
+                # (.vjo-bak) and a dated one, which no install reuses or deletes.
+                self.assertIn("removed the OCR worker's lines from *ALL", result.stdout)
+                backups = {}
                 for partition in ("ur0", "ux0"):
                     self.assertEqual((self.device / partition / "tai/config.txt.vjo-bak").read_bytes(),
+                                     self.original_tai)
+                    backups[partition] = self.dated_backups(partition)
+                    self.assertEqual(len(backups[partition]), 1)
+                    self.assertEqual((self.device / partition / "tai" / backups[partition][0]).read_bytes(),
                                      self.original_tai)
             installed = [self.tai(p) for p in ("ur0", "ux0")]
         for partition in ("ur0", "ux0"):
@@ -130,11 +159,11 @@ elif '-o' in a:
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Kernel.skprx"), 1)
             self.assertEqual(tai.count(b"ur0:tai/VitaJPOverlay_Shell.suprx"), 1)
             self.assertIn(b"ur0:tai/Other.skprx\r\n", tai)
-            # The *ALL worker is commented out; the game's own section loads it.
-            self.assertIn(b"*ALL\r\n# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
-            self.assertIn(b"\r\n*PCSG00415\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
-            self.assertEqual(tai.count(b"\nur0:tai/VitaJPOverlay_OCR.suprx"), 1)
-            self.assertNotIn(b"\n", tai.replace(b"\r\n", b""))
+            # no worker line: the old *ALL one is removed, and no *TITLEID section is added
+            self.assertNotIn(b"VitaJPOverlay_OCR", tai)
+            self.assertEqual(tai, b"*KERNEL\r\nur0:tai/VitaJPOverlay_Kernel.skprx\r\nur0:tai/Other.skprx\r\n*main\r\n"
+                                  b"ur0:tai/VitaJPOverlay_Shell.suprx\r\n*ALL\r\n")
+        self.assertEqual((self.data / "installed.txt").read_bytes(), b"")  # no payload manifest: no record
         config = (self.data / "config.ini").read_text()
         # a first install: the template's model size, Normal; no model line (API 21)
         self.assertNotIn("vocr_model", config)
@@ -172,10 +201,7 @@ elif '-o' in a:
             z.writestr("vjo_app.txt", stamp)
         (self.package / "JPOverlaySettings.vpk").write_bytes(buf.getvalue())
         (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(stamp)
-        files = {str(p.relative_to(self.package)): {"bytes": p.stat().st_size,
-                 "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-                 for p in self.package.rglob("*") if p.is_file() and p.name != "package-manifest.json"}
-        (self.package / "package-manifest.json").write_text(json.dumps({"files": files}))
+        self.write_manifest()
         return eboot, stamp
 
     def device_app(self, eboot=None, stamp=None):
@@ -537,7 +563,9 @@ elif '-o' in a:
         self.assertIn("ocr_backend = lens", (self.data / "config.ini").read_text())
 
     def test_without_a_title_nothing_is_changed(self):
-        # The previous installer's *ALL registration names no game: refused, never kept.
+        # lines mode (a package whose kernel does not load the worker): the previous installer's *ALL
+        # registration names no game: refused, never kept.
+        self.write_manifest("lines")
         for options in ((), ("--title", "ALL"), ("--title", "NPXS10015"), ("--title", "PCSG0041")):
             with self.subTest(options=options):
                 result = self.install("install-vita.sh", *options)
@@ -550,17 +578,19 @@ elif '-o' in a:
                 self.assert_unchanged(result)
 
     def test_titles_are_added_and_kept_in_both_configurations(self):
-        # ux0 already has one game; ur0 only the old *ALL line. Both end with the same games.
+        # lines mode: ux0 already has one game; ur0 only the old *ALL line. Both end with the same games.
+        self.write_manifest("lines")
         (self.device / "ux0/tai/config.txt").write_bytes(
             b"*KERNEL\r\nur0:tai/Other.skprx\r\n*PCSE00120\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n")
         result = self.install("install-vita.sh", "--title", "NPXS10028", "--title", "pcsg00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # Both configurations report the same games, in the same order.
-        self.assertEqual(result.stdout.count("(OCR worker registered for NPXS10028, PCSG00415, PCSE00120)"), 2)
+        self.assertEqual(result.stdout.count("OCR worker registered for NPXS10028, PCSG00415, PCSE00120"), 2)
         for partition in ("ur0", "ux0"):
             tai = self.tai(partition)
             for title in (b"NPXS10028", b"PCSG00415", b"PCSE00120"):
                 self.assertIn(b"*" + title + b"\r\nur0:tai/VitaJPOverlay_OCR.suprx\r\n", tai)
+            self.assertIn(b"# VitaJPOverlay (added by its installer)\r\n*NPXS10028\r\n", tai)
             self.assertEqual(tai.count(b"\nur0:tai/VitaJPOverlay_OCR.suprx"), 3)
             self.assertNotIn(b"*ALL\r\nur0:tai/VitaJPOverlay_OCR.suprx", tai)
         # Options after the address work too, and change nothing more.
@@ -572,6 +602,7 @@ elif '-o' in a:
         self.assertEqual([self.tai(p) for p in ("ur0", "ux0")], before)
 
     def test_uninstall_after_a_per_title_install(self):
+        self.write_manifest("lines")
         self.assertEqual(self.install("install-vita.sh", "--title", "PCSG00415").returncode, 0)
         result = self.install("tools/install_ftp.sh", "--uninstall")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -601,3 +632,54 @@ elif '-o' in a:
         self.assertEqual((self.data / "selftest.txt").read_bytes(), b"")
         for partition in ("ur0", "ux0"):
             self.assertEqual(self.tai(partition), self.original_tai)
+
+    # ---- the kernel loads the worker (#138, Agent A; docs/one-vpk-install.md) ----
+    def test_a_stale_ux0_copy_is_renamed_aside(self):
+        # A hand install's copy in ux0:tai: the kernel loads the worker from there only when ur0's is
+        # missing, so it goes aside under a name of its own (renamed, never deleted).
+        tai = self.device / "ux0/tai"
+        (tai / "VitaJPOverlay_OCR.suprx").write_bytes(b"an old worker")
+        (tai / "VitaJPOverlay_Kernel.skprx").write_bytes(b"an old kernel plugin")
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((tai / "VitaJPOverlay_OCR.suprx").exists())
+        stale = sorted(q.name for q in tai.glob("VitaJPOverlay_*.vjo-stale-*"))
+        self.assertEqual(len(stale), 2, stale)
+        worker = next(n for n in stale if n.startswith("VitaJPOverlay_OCR"))
+        self.assertRegex(worker, r"^VitaJPOverlay_OCR\.suprx\.vjo-stale-\d{8}-\d{6}$")
+        self.assertEqual((tai / worker).read_bytes(), b"an old worker")
+        self.assertFalse(list(tai.glob("*.vjo-old")))
+        self.assertIn("renamed a stale copy: ux0:tai/VitaJPOverlay_OCR.suprx -> " + worker, result.stdout)
+        self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
+                         (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
+
+    def test_a_configuration_taihen_cannot_read_whole_stops_the_install(self):
+        # A line taiHEN stops at, or a comments-only file: nothing reaches the Vita, and the message says why.
+        for broken in (b"*KERNEL\r\n" + b"#" * 300 + b"\r\n*main\r\n", b"# nothing here\r\n"):
+            with self.subTest(broken=broken[:20]):
+                (self.device / "ux0/tai/config.txt").write_bytes(broken)
+                result = self.install("install-vita.sh")
+                self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+                self.assertIn("Nothing was changed on the Vita", result.stdout)
+                self.assertTrue("256 bytes" in result.stderr or "no section" in result.stderr, result.stderr)
+                self.assertEqual((self.device / "ux0/tai/config.txt").read_bytes(), broken)
+                self.assertEqual(self.tai("ur0"), self.original_tai)
+                self.assertFalse((self.device / "ur0/tai/VitaJPOverlay_Kernel.skprx").exists())
+                self.assertEqual(self.dated_backups("ur0"), [])
+
+    def test_uninstall_in_kernel_mode(self):
+        self.assertEqual(self.install("install-vita.sh").returncode, 0)
+        installed = self.tai("ur0")
+        result = self.install("tools/install_ftp.sh", "--uninstall", "--package-dir", str(self.package))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for partition in ("ur0", "ux0"):
+            self.assertEqual(self.tai(partition), b"*KERNEL\r\nur0:tai/Other.skprx\r\n*main\r\n*ALL\r\n")
+            # the configuration before the uninstall is kept too, dated: two dated backups now
+            self.assertEqual(len(self.dated_backups(partition)), 2, self.dated_backups(partition))
+        self.assertTrue(any((self.device / "ur0/tai" / name).read_bytes() == installed
+                            for name in self.dated_backups("ur0")))
+        # a second uninstall finds nothing of ours and writes nothing
+        again = self.install("tools/install_ftp.sh", "--uninstall", "--package-dir", str(self.package))
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertIn("has no line of the overlay", again.stdout)
+        self.assertEqual(len(self.dated_backups("ur0")), 2)

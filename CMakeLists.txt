@@ -32,6 +32,14 @@ add_library(bearssl STATIC ${BEARSSL_SRC})
 target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_party/bearssl/src)
 target_compile_options(bearssl PRIVATE -w)
 
+# taiHEN's own configuration parser (DaveeFTW/taihen-parser 6d817fd, MIT), built as taiHEN 309b380
+# builds it (its inbuilt ctype and string functions): the check of the config.txt editor
+# (core/taicfg.c) is what taiHEN itself would load (docs/one-vpk-install.md).
+add_library(vjo_taihen_parser STATIC third_party/taihen-parser/src/lexer.c third_party/taihen-parser/src/parser.c)
+target_include_directories(vjo_taihen_parser PUBLIC third_party/taihen-parser/include)
+target_compile_definitions(vjo_taihen_parser PRIVATE NO_CTYPE NO_STRING)
+target_compile_options(vjo_taihen_parser PRIVATE -w)
+
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
   core/textfilter.c core/entries.c core/config.c core/regions.c
@@ -39,10 +47,10 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
-target_link_libraries(vjo_core PUBLIC bearssl)
+target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
 target_compile_definitions(vjo_core PUBLIC VJO_HOST=1)
 target_compile_options(vjo_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
 if(VJO_WITH_NCNN)
@@ -398,6 +406,7 @@ if(VJO_DEBUG)
   string(APPEND _vjo_tool_env ";VJO_SELFTEST_WRITER=$<TARGET_FILE:vjo-selftest-writer>")
 endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
+string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -444,6 +453,19 @@ if(ZLIB_FOUND)
   target_link_libraries(vjo-psp-tests ZLIB::ZLIB)
 endif()
 add_test(NAME psp COMMAND vjo-psp-tests)
+# The config.txt editor (core/taicfg.c) on tools/tests/fixtures/taicfg and a generated corpus, with
+# taiHEN's own parser (third_party/taihen-parser) as the check; vjo-taicfg runs it for the PC
+# installer's tests (tools/tests/test_tai_config.py compares the two editors) and writes the
+# fixtures' expected results (vjo-taicfg expect DIR).
+add_executable(vjo-taicfg host/taicfg_tool.c)
+target_link_libraries(vjo-taicfg vjo_core)
+target_compile_options(vjo-taicfg PRIVATE -Wall -Wextra)
+add_executable(vjo-taicfg-tests host/tests/test_taicfg.c)
+target_include_directories(vjo-taicfg-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-taicfg-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(vjo-taicfg-tests vjo_core)
+target_compile_options(vjo-taicfg-tests PRIVATE -Wall -Wextra)
+add_test(NAME taicfg COMMAND vjo-taicfg-tests)
 # The Shell's foreground classification (shell/game.c) with AppMgr, the
 # process title and the memory card stubbed: bubbles, Adrenaline, the
 # emulator's NPXS10028, disc IDs and Vita games.
@@ -469,7 +491,7 @@ foreach(_vjo_variant IN ITEMS app vocr5)
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c vita/games_storage.c
     vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c)
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -512,7 +534,7 @@ foreach(_vjo_games IN ITEMS tests bench)
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c vita/games_storage.c
     vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c)
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -528,6 +550,28 @@ target_compile_definitions(vjo-settings-bench PRIVATE VJO_SETTINGS_BENCH=1)
 # A main.c from elsewhere finds its headers in settings/.
 target_include_directories(vjo-settings-bench PRIVATE settings)
 add_test(NAME settings_games COMMAND vjo-settings-games-tests)
+# The one-VPK install (settings/install.c, install_page.c, core/payload.c, docs/one-vpk-install.md) on a
+# temporary memory card with a payload: fresh installs, updates, config.ini, faults at every write and
+# rename, the interrupted swap, uninstall, the manifest's rules, the page. The kernel loads the worker
+# (VJO_KERNEL_LOADS_WORKER: t3-worker-any-game's include/vjo_api.h; defined here for the test, which also
+# checks the lines mode's refusal of another build's payload).
+add_executable(vjo-settings-install-tests host/tests/test_settings_install.c settings/install.c settings/install_page.c
+  settings/preferences.c settings/text_layout.c host/tests/settings_stubs/anki_page_stub.c)
+target_include_directories(vjo-settings-install-tests PRIVATE third_party/acutest/include host/tests/install_stubs
+  host/tests/settings_stubs host/tests/vita_stubs third_party/bearssl/inc)
+target_compile_definitions(vjo-settings-install-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+  VJO_VERSION_STRING="0.8.0" VJO_KERNEL_LOADS_WORKER=1 VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS
+  VJO_PREFERENCES_PATH_TEST="ux0:data/VitaJPOverlay/config.ini")
+target_compile_options(vjo-settings-install-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-settings-install-tests vjo_host)
+add_test(NAME settings_install COMMAND vjo-settings-install-tests)
+# The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
+add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
+target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs
+  third_party/bearssl/inc)
+target_compile_definitions(vjo-install-e2e PRIVATE VJO_VERSION_STRING="0.8.0" VJO_KERNEL_LOADS_WORKER=1)
+target_compile_options(vjo-install-e2e PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-install-e2e vjo_host)
 add_executable(vjo-game-input-tests host/tests/test_game_input.c kernel/triggers.c)
 target_include_directories(vjo-game-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_link_libraries(vjo-game-input-tests vjo_host)

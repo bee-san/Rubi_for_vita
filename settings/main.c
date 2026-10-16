@@ -14,12 +14,12 @@
 #include "catalog.h"
 #include "engine.h"
 #include "icons.h"
+#include "install_page.h"
 #include "letter.h"
 #include "preferences.h"
 #include "psp.h"
 #include "text_layout.h"
 #include "../core/local_dict.h"
-#include "../core/taicfg.h"
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
 #include "../vita/buttons_vita.h"
@@ -186,10 +186,12 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define VJO_APP_VERSION "v" VJO_VERSION_STRING
 #endif
 
-/* The page tabs: Games, OCR & lookup, Anki. */
-#define PAGES 3
-#define TAB_X(i) (24 + (i) * 304)
-#define TAB_W 296
+/* The page tabs: Games, OCR & lookup, Anki, Install (docs/one-vpk-install.md). */
+#define PAGES 4
+#define PAGE_INSTALL 3
+#define TAB_PITCH 228
+#define TAB_X(i) (24 + (i) * TAB_PITCH)
+#define TAB_W 220
 /* When this app and the overlay plugins do not match (app_check.h), a red
  * band in place of the title row says so on every page, in two rows. */
 #define BANNER_Y 4
@@ -200,7 +202,7 @@ static char app_banner[192];
 
 static void header(void)
 {
-    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki"};
+    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki", "Install"};
     static int version_x; /* after the title, measured once */
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     if (app_banner[0]) {
@@ -243,7 +245,7 @@ static void footer(const char *message, int error, const char *controls)
 
 /* The console's enter and cancel buttons (read once at start) and the hints that name them. */
 static VjoButtons buttons;
-static char preference_hints[96], game_hints[96], games_empty_hints[96], register_hints[96];
+static char preference_hints[96], game_hints[96], games_empty_hints[96];
 
 static void read_buttons(void)
 {
@@ -254,12 +256,15 @@ static void read_buttons(void)
              buttons.enter_glyph, buttons.cancel_glyph);
     snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: page   %s: exit",
              buttons.cancel_glyph);
-    snprintf(register_hints, sizeof(register_hints), "%s: register for local OCR   L/R: page   %s: exit",
-             buttons.enter_glyph, buttons.cancel_glyph);
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
                                   WHITE, DIM, ACCENT, OFF, &buttons};
+
+static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
+static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
+static const VjoInstallDraw install_ui = {text, text_width, rect, focus_card, badge, hints_row, header,
+                                          WHITE, DIM, ACCENT, OFF, SELECTED, &buttons};
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -353,19 +358,6 @@ static int psp_row(const VjoInstalledGame *g)
 /* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row. */
 static int row_on(const VjoInstalledGame *g) { return vjo_games_enabled_as(&policy, g->id, psp_row(g)); }
 
-/* The OCR worker loads in it: registered, or the shared row (not registrable). */
-static int registered(const VjoInstalledGame *g)
-{ return !vjo_catalog_registrable(g) || g->tai == VJO_TAI_PRESENT || g->tai == VJO_TAI_UNDER_ALL; }
-/* A PSP game that is ON but whose taiHEN configuration does not load the OCR
- * worker: Enter registers it (settings/psp.c), once until the next scan; after
- * a failed attempt Enter turns it OFF again. */
-static int needs_registration(const VjoInstalledGame *g)
-{ return writable && vjo_catalog_registrable(g) && !registered(g) && !g->register_failed && row_on(g); }
-static void register_row(VjoInstalledGame *g)
-{
-    status_error = vjo_psp_register(g, status, sizeof(status)) < 0;
-    g->register_failed = (unsigned char)status_error;
-}
 
 static void rebuild(void)
 {
@@ -400,17 +392,13 @@ static void save(void)
     rebuild();
 }
 
-/* Enter: a PSP game that is ON but not registered for the OCR worker is
- * registered; otherwise the game is turned ON or OFF, and a PSP game turned
- * ON is registered too. */
+/* Enter: the game is turned ON or OFF. No taiHEN configuration changes: the
+ * kernel plugin loads the OCR worker into every game that is ON when it starts
+ * (#138, Agent A), PSP bubbles and Adrenaline included. */
 static void toggle(void)
 {
     if (!count) return;
     VjoInstalledGame *g = &library[visible[selected]];
-    if (needs_registration(g)) {
-        register_row(g);
-        return;
-    }
     int on = row_on(g);
     if (vjo_games_set(&policy, g->id, !on) < 0) {
         status_error = 1;
@@ -418,7 +406,6 @@ static void toggle(void)
         return;
     }
     save();
-    if (!on && !status_error && needs_registration(g)) register_row(g);
 }
 
 /* The rules with this choice ("= enabled" or "= disabled"), ", " between them
@@ -491,14 +478,6 @@ static void scan(void)
     total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated, &policy);
     rebuild();
     if (truncated) { status_error = 0; snprintf(status, sizeof(status), "Showing the first 512 installed titles."); }
-    int unregistered = 0;
-    for (int i = 0; i < total; i++) unregistered += needs_registration(&library[i]);
-    if (unregistered == 1 && !status_error)
-        snprintf(status, sizeof(status), "1 PSP game is ON but not registered for local OCR: select it and press %s.",
-                 buttons.enter_glyph);
-    else if (unregistered && !status_error)
-        snprintf(status, sizeof(status), "%d PSP games are ON but not registered for local OCR: press %s on each.",
-                 unregistered, buttons.enter_glyph);
 }
 
 static void move(int delta)
@@ -984,9 +963,9 @@ static void draw(void)
         draw_rows(120, y + 30, WHITE, 26, 32, g->title, title_rows(visible[index]));
         vita2d_disable_clipping();
         badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
-        /* PSP games: the tag, dim while the OCR worker is not registered for it. */
+        /* PSP games: the tag. */
         if (psp_row(g))
-            text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, registered(g) ? ACCENT : DIM, 24, "PSP");
+            text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, ACCENT, 24, "PSP");
         text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
@@ -995,8 +974,7 @@ static void draw(void)
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
         status_box(440, 64, 467, 2, status, status_error);
-        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1,
-                     needs_registration(&library[visible[selected]]) ? register_hints : game_hints);
+        wrapped_text(24, 535, 912 - COUNTER_W, DIM, 24, 26, 1, game_hints);
         snprintf(counter, sizeof(counter), "%d/%d", selected + 1, count);
         text(936 - text_width(24, counter), 535, DIM, 24, counter);
     } else footer(status, status_error, games_empty_hints);
@@ -1080,7 +1058,11 @@ int main(void)
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
-    vjo_app_banner(app_banner, sizeof(app_banner)); /* read once, at start */
+    /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
+     * is another build's, is damaged or was interrupted, or cannot be installed yet. */
+    int open_install = vjo_install_page_start();
+    vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload()); /* at start, and after a run */
+    int install_runs = vjo_install_page_runs();
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
@@ -1099,6 +1081,7 @@ int main(void)
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
+    if (open_install) page = PAGE_INSTALL;
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;
@@ -1122,17 +1105,20 @@ int main(void)
         int stick = vjo_stick_scroll(&stick_state, pad.ly, now);
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy())) break;
-        if (pressed & SCE_CTRL_SELECT) {
+        /* An install runs: the app neither leaves nor changes page (install_page.h). */
+        int installing = vjo_install_page_busy();
+        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy()) && !installing) break;
+        if ((pressed & SCE_CTRL_SELECT) && !installing) {
             page = (page + 1) % PAGES;
             repeat_at = now + 350000;
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
             if (page == 2) vjo_anki_page_show(&scratch);
+            if (page == PAGE_INSTALL) vjo_install_page_show();
         }
-        if (page == 2) {
-            /* anki_page.c reads its own buttons and touches */
+        if (page == 2 || page == PAGE_INSTALL) {
+            /* anki_page.c and install_page.c read their own buttons and touches */
         } else if (page) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
@@ -1163,17 +1149,18 @@ int main(void)
         int touch_x = -1, touch_y = -1;
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 936 && (x - 24) % 304 < TAB_W
-                      ? (x - 24) / 304 : -1;
+            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 24 + PAGES * TAB_PITCH &&
+                      (x - 24) % TAB_PITCH < TAB_W && !installing ? (x - 24) / TAB_PITCH : -1;
             if (tab >= 0) {
                 if (tab == 2 && page != 2) vjo_anki_page_show(&scratch);
+                if (tab == PAGE_INSTALL && page != PAGE_INSTALL) vjo_install_page_show();
                 if (tab != page) { /* as Select */
                     vjo_stick_latch(&stick_state);
                     stick = 0;
                 }
                 page = tab;
             }
-            else if (page == 2) { touch_x = x; touch_y = y; }
+            else if (page == 2 || page == PAGE_INSTALL) { touch_x = x; touch_y = y; }
             else if (page == 1 && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page) { /* no game actions on the OCR page */ }
@@ -1188,7 +1175,18 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page == 2) {
+        if (vjo_install_page_runs() != install_runs) { /* an install changed the card: the banner says what is there now */
+            install_runs = vjo_install_page_runs();
+            vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload());
+        }
+        if (page == PAGE_INSTALL) {
+            vjo_install_page_stick(stick);
+            vita2d_start_drawing();
+            vita2d_clear_screen();
+            vjo_install_page_frame(&install_ui, pressed, touch_x, touch_y);
+            vita2d_end_drawing();
+            vita2d_swap_buffers();
+        } else if (page == 2) {
             vjo_anki_page_stick(stick);
             vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
         }
@@ -1196,6 +1194,7 @@ int main(void)
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();
+    vjo_install_page_quit();
     vita2d_wait_rendering_done();
     clear_icons();
     vita2d_free_pvf(font);
