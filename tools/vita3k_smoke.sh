@@ -29,7 +29,9 @@ V=${VITA3K:-}
 command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
 
 build=$root/build/vita3k-smoke
-cmake -S "$root/tools/vita3k_smoke" -B "$build" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" > "$build.config.log" 2>&1 \
+# VJO_DEBUG=0: the normal build's game worker (docs/release-variants.md)
+cmake -S "$root/tools/vita3k_smoke" -B "$build" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+  -DVJO_DEBUG="$([ "${VJO_DEBUG:-1}" = 0 ] && echo OFF || echo ON)" > "$build.config.log" 2>&1 \
   && cmake --build "$build" -j4 > "$build.build.log" 2>&1 || fail "(the app did not build: $build.build.log)"
 mkdir -p "$out"
 sbx=$(mktemp -d "${TMPDIR:-/tmp}/vjo-vita3k.XXXXXX")

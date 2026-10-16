@@ -192,7 +192,9 @@ static int run(SceSize args, void *argp)
     int failures = 0;
     (void)args; (void)argp;
     draw(VJO_FB_A8B8G8R8);
+#if VJO_DEBUG /* the self-test's probe: the debug build's (the normal worker refuses it) */
     failures += stage("probe", VJO_GAME_OCR_F_PROBE, "H15_w8.vocr", "FL10_w8.vocr", 0) < 0;
+#endif
     failures += stage("fallback", VJO_GAME_OCR_F_FORCE_FALLBACK, "H15_w8.vocr", "FL10_w8.vocr", 0) != 0;
     failures += stage("textbox", 0, "H15_w8.vocr", "FL10_w8.vocr", 0) != 0;
     failures += stage("fullscreen", VJO_GAME_OCR_F_FULL, "H15_w8.vocr", "FL10_w8.vocr", 1) != 0;
