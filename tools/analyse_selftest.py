@@ -1045,8 +1045,9 @@ SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)(,
 # shell/worker.c vocr_run_one's line for each activation's (a start or a resume) first OCR job that read its screen,
 # its first that found a line, and every failed one (not a cancelled job or one whose screen changed under it: those
 # are retried quietly); log_vocr_clock's line on the 444 MHz boost for each activation's first job that recognized a
-# line (only those have the clock step: a job whose lines all came from the cache has none) and whenever it changes (the tier lines too, log_tier_checks); shell/memory.cpp's
-# refused PAF request, and the Shell's note that a self-test was armed under it
+# line (only those have the clock step: a job whose lines all came from the cache has none) and whenever it changes
+# (the tier lines too, log_tier_checks); shell/memory.cpp's refused PAF request, and the Shell's note that a self-test
+# was armed under it
 SHORT_JOB = re.compile(r"^ocr rc=(-?\d+) (\S+): (\d+) lines, (\d+) ms$")
 SHORT_CLOCK = (("set", re.compile(r"^clock: (\d+) -> (\d+) MHz while reading, (\d+) after$")),
                ("left", re.compile(r"^clock: (\d+) MHz, left as it is while reading \(444 or more\)$")),

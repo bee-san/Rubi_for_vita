@@ -265,10 +265,27 @@ jobs:
         with:
           name: VitaJPOverlay-normal
           path: ci/normal
+      # A cached copy is used only after prepare_ocr.py checks it against the pins (a wrong or partial file
+      # is fetched again), and the key changes with the pins and the model sizes. A run's conclusion
+      # includes this job, and test builds take only a successful run, so a download failure is retried
+      # before it fails the run.
+      - name: The pinned models' cache
+        uses: actions/cache@v4
+        with:
+          path: ci/models
+          key: vjo-models-${{ hashFiles('tools/prepare_ocr.py', 'tools/model_tiers.json') }}
       - name: The pinned models and LMs
+        shell: bash
         run: |
-          python3 tools/prepare_ocr.py --backend vocr-tiers --output ci/models
-          python3 tools/prepare_ocr.py --backend vocr-lm --output ci/models
+          for attempt in 1 2 3; do
+            if python3 tools/prepare_ocr.py --backend vocr-tiers --output ci/models &&
+               python3 tools/prepare_ocr.py --backend vocr-lm --output ci/models; then
+              exit 0
+            fi
+            echo "::warning::the pinned models' download failed (attempt $attempt of 3)"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: The release's two zips (tools/package_variants.py)
         shell: bash
         run: |
@@ -279,7 +296,7 @@ jobs:
           version=$(basename "${normal[0]}" .zip)
           version=${version#VitaJPOverlay-}
           python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
-            --version "$version" --source-revision "$(git rev-parse HEAD)" -o ci/release
+            --version "$version" --source-revision "$(git rev-parse HEAD)" --sources . -o ci/release
       - name: tools/e2e_package.py on each zip
         shell: bash
         run: |

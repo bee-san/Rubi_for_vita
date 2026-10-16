@@ -13,7 +13,9 @@ package's own install-vita.sh and tools/install_ftp.sh, against a fake Vita's pa
 DIR may hold other files (the release's out/ with the zip itself): the e2e makes, and on a later run
 replaces, only its own entries (ENTRIES: pkg/, the scenarios' directories and logs) beside its marker
 DIR/.e2e_package, which it writes first, and touches nothing else. It refuses a DIR that already has
-one of those names without the marker, a DIR that is a file, and a package inside one of its entries.
+one of those names without the marker, a DIR that is a file, and a package that is, or is inside, one
+of its entries. After the run it checks that DIR's top-level names are its own entries and the files
+that were there before (what changes inside its entries is its own).
 
 Scenario A, the owner's case (#101): a Vita with v0.8.0-test.2 installed and test.1's Overlay app
 still on it: test.2's taiHEN lines (*KERNEL, *main, *PCSG00415, the commented *ALL, Meiki and Text
@@ -26,12 +28,17 @@ fit, an Anki save, the Overlay app's export); --collect (read-only: one zip and 
 Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: install-vita.sh --title.
 Scenario C, an older choice migrated: vocr_model = VOCR4_W20_w8.vocr becomes vocr_tier = large,
 dictionary = jpdb becomes local, and the registered game is kept without --title.
+Before them, the package itself: its manifest names the build its modules are (tools/check_variant.py's
+markers, read as tools/package_release.py reads a base) and the Overlay app's version, and its models and
+LMs are this tree's pinned files (tools/prepare_ocr.py): run the e2e from a checkout of the package's
+own commit.
 
 CI runs it on both builds' packages (.github/workflows/release.yml, the `package` job). Prints a
 PASS or FAIL line per check and a JSON summary; exits 1 on any failure. After a pass the copies
 are removed unless --keep; DIR keeps the scenarios' logs.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -43,7 +50,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools/tests"))
+sys.path.insert(0, str(ROOT / "tools"))
 from ftp_mock import FtpMock  # noqa: E402
+import package_release as release  # noqa: E402  (the packager's own reading of a package's modules and pins)
 
 FIXTURE = ROOT / "tools/tests/fixtures/selftest-v2-diagnostics.txt"
 SECRET = "e2e-secret-jpdb-key"
@@ -68,10 +77,10 @@ def remove(path):
         path.unlink()
 
 
-def prepare_work(work, package):
+def prepare_work(work, package, default=False):
     """Readies the working directory, or says why it cannot be used (audit-overlay-release-variants-d B1:
     DIR is the caller's, so only the e2e's own entries of an earlier run are removed, and only where its
-    marker says it made them). Returns the problem, or None."""
+    marker says it made them). default: DIR is the e2e's own default. Returns the problem, or None."""
     if work.exists() and not work.is_dir():
         return f"--work {work} is not a directory"
     marker = work / MARKER
@@ -80,9 +89,12 @@ def prepare_work(work, package):
     package = package.resolve()
     for name in ENTRIES:
         if package == work / name or work / name in package.parents:
-            return f"the package is inside {work / name}, which the e2e replaces: choose another --work"
+            return f"the package is, or is inside, {work / name}, which the e2e replaces: choose another --work"
     found = [name for name in ENTRIES if os.path.lexists(work / name)]
     if found and not marker.is_file():
+        if default:  # a run of the e2e from before the marker (#152's first head) left it
+            return (f"{work} has {', '.join(found)} but no {MARKER}: an older run's? Remove it (rm -rf {work}) "
+                    "or choose a --work")
         return (f"--work {work} has {', '.join(found)}, which tools/e2e_package.py did not make (no {MARKER}): "
                 "choose another directory (a new one, or the default)")
     work.mkdir(parents=True, exist_ok=True)
@@ -103,9 +115,17 @@ def unpack(zip_path, dest):
                 path.chmod(mode)
 
 
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 class E2E:
-    def __init__(self, pkg, work):
-        self.pkg, self.work = pkg, work
+    def __init__(self, pkg, work, package=None):
+        self.pkg, self.work, self.package = pkg, work, package
         self.checks = []
         self.manifest = json.loads((pkg / "package-manifest.json").read_text())
         self.variant = self.manifest.get("variant")
@@ -198,6 +218,31 @@ class E2E:
         self.check(r.returncode == want_rc and want_text in flat,
                    f"{label}: install-vita.sh --check-app rc {r.returncode} (want {want_rc}), says {want_text!r}")
         return r
+
+    # ---------------- the package itself (audit-overlay-release-variants-d notes 1 and 4) ----------------
+    def package_checks(self):
+        """--verify checks the files against the manifest, not the manifest: here its variant and app version
+        against the modules, its models and LMs against this tree's pins (a re-hashed altered model fails)."""
+        check, m = self.check, self.manifest
+        try:
+            with zipfile.ZipFile(self.package) as z:
+                got, app_version = release.base_variant(z)
+        except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
+            got, app_version = None, f"unreadable ({type(exc).__name__}: {exc})"
+        want = m.get("variant") or "debug"  # a package from before the two builds names none: all are the debug build
+        check(got == want, f"the package's modules are the {want} build its manifest names (they read as {got})")
+        if "app_version" in m:
+            check(app_version == m["app_version"],
+                  f"the Overlay app is v{app_version}, as the manifest's app_version v{m['app_version']}")
+        for name, assets, tag, role in release.shipped_models():
+            _, size, sha = assets[name]
+            path = self.pkg / "ux0/data/VitaJPOverlay/ocr" / name
+            ok = path.is_file() and path.stat().st_size == size and sha256_file(path) == sha
+            check(ok, f"{name} is the pinned file ({tag}, {role}; this tree's tools/prepare_ocr.py)")
+        _, size, sha = release.VOCR_LM_ATTRIBUTION_PIN[release.VOCR_LM_ATTRIBUTION]
+        path = self.pkg / "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md"
+        check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
+              "LM-ATTRIBUTION.md is the LMs' pinned attribution")
 
     # ---------------- scenario A: over v0.8.0-test.2 with test.1's app (the owner's state, #101) ----------------
     def scenario_a(self):
@@ -353,7 +398,8 @@ class E2E:
                     "ur0/tai/config.txt.vjo-bak", "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp",
                     "COLLECT.json", "analysis.txt", "analysis.json", "timeline.txt"):
             check(top + rel in names, f"A in the zip: {rel}")
-        check(not any(x.endswith(".apkg") for x in names), "A the zip lists the .apkg packages but does not copy them")
+        check(not any(x.endswith(".apkg") for x in names) and "2 exported card(s), 1 .apkg package(s) in anki/" in a,
+              "A the zip lists the .apkg packages (the analysis counts 1) but does not copy them")
         check(not any(s.encode() in blob for s in SECRETS), "A no credential is in any file of the zip")
         m = re.search(r"installed files: (\d+) of (\d+) match the package", a)
         # the hashed files (plugins, RCO, weights, LMs, their attribution), the VPK, and the dictionary by size
@@ -445,21 +491,21 @@ def main():
         sys.exit(f"e2e_package: {args.package.name} has no package-manifest.json: a base zip (the Vita build's own, "
                  "a CI artifact)? Package it with tools/package_release.py or tools/package_variants.py first.")
     work = (args.work or ROOT / "build/e2e-package" / args.package.stem).resolve()
-    problem = prepare_work(work, args.package)
+    problem = prepare_work(work, args.package, default=args.work is None)
     if problem:
         sys.exit(f"e2e_package: {problem}")
     others = {p.name for p in work.iterdir()} - set(ENTRIES) - {MARKER}  # the caller's: never touched
     pkg = work / "pkg"
     unpack(args.package, pkg)
     try:
-        e = E2E(pkg, work)
+        e = E2E(pkg, work, args.package)
     except (OSError, KeyError, ValueError, AttributeError) as exc:  # no config.ini, no app record, a bad manifest
         sys.exit(f"e2e_package: {args.package.name} is not a release package ({type(exc).__name__}: {exc}); "
                  f"its files are in {pkg}")
     m = e.manifest
     print(f"e2e_package: {args.package.name}: the {e.variant or 'unnamed'} build, v{m.get('version')}, source "
           f"{m.get('source_revision', 'not recorded')}, API {e.api}, install settings: {e.shown or 'none'}", flush=True)
-    for scenario in (e.scenario_a, e.scenario_b, e.scenario_c):
+    for scenario in (e.package_checks, e.scenario_a, e.scenario_b, e.scenario_c):
         try:
             scenario()
         except Exception as exc:  # a scenario that stops half way is one failure, and the next still runs
