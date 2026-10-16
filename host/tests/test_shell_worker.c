@@ -110,7 +110,12 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
 }
 int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) { vocr_frees++; vocr_live = 0; } else user_frees++; return 0; }
 
+/* net_main itself in a test: its waits come from the test's script (test_wait_event_flag), not the
+ * SDK stub's (which never wakes). */
+static int test_wait_event_flag(SceUID uid, unsigned int bits, unsigned int mode, unsigned int *out, void *timeout);
+#define sceKernelWaitEventFlag test_wait_event_flag
 #include "../../shell/worker.c"
+#undef sceKernelWaitEventFlag
 #include "../../shell/ledger.c" /* the ledger worker.c counts in */
 #include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
 #include "../../core/stick_cursor.h" /* the overlay's left stick (#138): its close against this worker */
@@ -279,6 +284,23 @@ void vjo_log(const char *fmt, ...)
     if (batch_lines_held) note_append((unsigned)batch_lines_held); /* the batch so far goes out first */
     batch_lines_held = 1; batch_bytes_held = n;
     open_batch->n = 1;
+}
+/* net_main's waits, scripted: each wait (the network thread idle) runs the test's next control-thread
+ * step and returns the bits that step posted, as the event flag gives them (cleared at the wake). */
+static int (*wait_script)(int step);
+static int wait_step;
+static int test_wait_event_flag(SceUID uid, unsigned int bits, unsigned int mode, unsigned int *out, void *timeout)
+{
+    unsigned give;
+    if (!wait_script) return -1; /* as the SDK stub: no thread waits here */
+    net_phase = NET_IDLE; /* waiting: between jobs */
+    test_thread = CTL_THREAD;
+    if (!wait_script(wait_step++)) { running = 0; posted |= NET_EV_QUIT; }
+    test_thread = NET_THREAD;
+    give = posted & bits;
+    posted &= ~give;
+    *out = give;
+    return 0;
 }
 static const char *logged(const char *needle)
 {
@@ -4938,6 +4960,51 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     mem_free();
   }
 }
+
+/* An activation's first job, then (log_wake) the idle pause and NET_EV_LOG, or the worker's stop. */
+static unsigned net_main_mark;
+static int log_wake;
+static int script_first_job(int step)
+{
+    switch (step) {
+    case 0: /* the control thread starts the job */
+        next_scene(60 + (unsigned)log_wake); stable_pending = 1; control_tick(0);
+        TEST_CHECK(job_running && (posted & NET_EV_JOB));
+        return 1;
+    case 1: /* it takes the result; nothing written yet */
+        control_tick(0);
+        TEST_CHECK(!job_running && appends_recorded == net_main_mark && net_log && net_log->open);
+        if (!log_wake) return 0; /* the worker stops before the pause ends */
+        test_now += LOG_IDLE_US; control_tick(0); /* posts NET_EV_LOG */
+        TEST_CHECK(posted & NET_EV_LOG);
+        return 1;
+    default: /* NET_EV_LOG wrote them */
+        TEST_CHECK(appends_recorded == net_main_mark + 1 && !net_log->open);
+        return 0;
+    }
+}
+static void test_normal_build_net_main_writes_held_lines(void)
+{
+    for (log_wake = 0; log_wake < 2; log_wake++) {
+        unsigned lines;
+        cursor_setup();
+        fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+        game_generation = 130u + (uint32_t)log_wake;
+        net_main_mark = appends_recorded;
+        wait_script = script_first_job; wait_step = 0;
+        test_thread = NET_THREAD;
+        net_main(0, NULL); /* the network thread, from its start to its stop */
+        test_thread = CTL_THREAD;
+        wait_script = NULL;
+        TEST_CHECK(wait_step == (log_wake ? 3 : 2) && !net_log && !open_batch); /* its batch went with it */
+        TEST_CHECK(net_appends_since(net_main_mark, &lines, NULL) == 1 && lines == 2);
+        TEST_CHECK(appends_seen[net_main_mark].thread == NET_THREAD && !appends_seen[net_main_mark].in_result_path);
+        TEST_MSG("log_wake %d: %u appends", log_wake, appends_recorded - net_main_mark);
+        fake_clock_on = 0;
+        running = 1;
+        reset(); /* net_log back to the harness's */
+    }
+}
 #endif
 
 #ifdef VJO_WITH_VOCR
@@ -5356,6 +5423,7 @@ TEST_LIST = {
     {"normal_build_logs_refused_input_blocks", test_normal_build_logs_refused_input_blocks},
     {"normal_build_logs_flapping_tier_misses_once", test_normal_build_logs_flapping_tier_misses_once},
     {"normal_build_writes_a_jobs_lines_after_its_result", test_normal_build_writes_a_jobs_lines_after_its_result},
+    {"normal_build_net_main_writes_held_lines", test_normal_build_net_main_writes_held_lines},
 #endif
 #ifdef VJO_WITH_VOCR
     {"session_log_appends", test_session_log_appends},
