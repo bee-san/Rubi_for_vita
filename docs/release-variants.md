@@ -202,8 +202,9 @@ the debug build is unchanged (its three plugins and RCO are main's bytes, sha256
   first, on that thread, then its own; so does a change of `log_file`. Opening the overlay re-reads
   `config.ini` and keeps them held. A line the network thread logs in the microseconds while another
   thread's batch is being formatted (the ledger's table at a game start or exit) goes out at once, in
-  its job's result path. A crash before a write loses what is held: at most 24 lines or 2 KiB (the last
-  OCR job's lines and those of any lookups since).
+  its job's result path; the other way round, that table, begun while lines are held, goes out a line
+  at a time (one more append per file, on the control thread). A crash before a write loses what is
+  held: at most 24 lines or 2 KiB (the last OCR job's lines and those of any lookups since).
 - The write takes the network thread one append per file (est. 24-92 ms at #81's 12-46 ms an append;
   test.3's jobs averaged 19 ms an append, the median of their means). Made while the game recognizes,
   it ends before the result unless the recognition is the shorter (est.: test.3's shortest game job,
