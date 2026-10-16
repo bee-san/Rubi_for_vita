@@ -264,25 +264,27 @@ class E2EPackageEdges(unittest.TestCase):
         and its note that the normal build has no self-test is right only in the normal build's package (a manifest
         that names no variant is the debug build's)."""
         note = "Note: this package is the normal build, which has no self-test."
-        for variant in ("normal", "debug", None):
-            for says in (True, False):
-                with self.subTest(variant=variant, says=says), tempfile.TemporaryDirectory() as tmp, \
-                        contextlib.redirect_stdout(io.StringIO()):
-                    tmp = Path(tmp)
-                    package = fake_package(tmp / "p.zip", variant=variant)
-                    e2e_package.unpack(package, tmp / "pkg")
-                    e = e2e_package.E2E(tmp / "pkg", tmp, package)
-                    dev, run_pkg = tmp / "device", tmp / "run"
-                    (dev / "ux0/data/VitaJPOverlay").mkdir(parents=True)
-                    (run_pkg / "tools").mkdir(parents=True)
-                    marker = dev / "ux0/data/VitaJPOverlay/selftest.txt"  # what the real script uploads
-                    (run_pkg / "tools/install_ftp.sh").write_text(f': > "{marker}"\n' + (f'echo "{note}"\n' if says else ""))
-                    e.self_test(dev, run_pkg, "127.0.0.1:1")
-                    checks = {label: ok for ok, label in e.checks}
-                    self.assertTrue(checks.pop("A --self-test armed the marker"), e.checks)
-                    (label, ok), = checks.items()
-                    self.assertIn("that the normal build has no self-test", label)
-                    self.assertEqual(ok, says == (variant == "normal"), label)
+        cases = [(variant, says, 0) for variant in ("normal", "debug", None) for says in (True, False)]
+        cases += [("normal", True, 1), ("debug", False, 1)]  # --self-test failed: the marker check fails too
+        for variant, says, rc in cases:
+            with self.subTest(variant=variant, says=says, rc=rc), tempfile.TemporaryDirectory() as tmp, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                tmp = Path(tmp)
+                package = fake_package(tmp / "p.zip", variant=variant)
+                e2e_package.unpack(package, tmp / "pkg")
+                e = e2e_package.E2E(tmp / "pkg", tmp, package)
+                dev, run_pkg = tmp / "device", tmp / "run"
+                (dev / "ux0/data/VitaJPOverlay").mkdir(parents=True)
+                (run_pkg / "tools").mkdir(parents=True)
+                marker = dev / "ux0/data/VitaJPOverlay/selftest.txt"  # what the real script uploads
+                (run_pkg / "tools/install_ftp.sh").write_text(
+                    f': > "{marker}"\n' + (f'echo "{note}"\n' if says else "") + f"exit {rc}\n")
+                e.self_test(dev, run_pkg, "127.0.0.1:1")
+                checks = {label: ok for ok, label in e.checks}
+                self.assertEqual(checks.pop("A --self-test armed the marker"), rc == 0, e.checks)
+                (label, ok), = checks.items()
+                self.assertIn("that the normal build has no self-test", label)
+                self.assertEqual(ok, says == (variant == "normal"), label)
 
     def test_the_collect_zip_lists_the_apkg_packages_and_the_analysis_counts_them(self):
         """audit-overlay-release-variants-e note 4 (Q8): --collect lists the Overlay app's .apkg packages without
