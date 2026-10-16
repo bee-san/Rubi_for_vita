@@ -4689,9 +4689,9 @@ static void test_normal_build_has_no_selftest(void)
 /* audit-overlay-release-variants-b note A: a job cancelled during its exchange (a new screen, a game
  * exit: vocr_cancelled) logs no job line, as one whose screen changed under it, and leaves the
  * activation's first job line to the next job that reads its screen. What a result that arrived says
- * (a size that did not fit, the clock, a refused memory check) is logged as from any job's, each once
- * per activation (audit-t3-log-path N2): the boost or the memory miss happened whether or not its text
- * was wanted. */
+ * is logged as from any job's (audit-t3-log-path N2): a size that did not fit and the clock once per
+ * activation, a refused memory check for each job; the boost or the memory miss happened whether or not
+ * its text was wanted. */
 static void test_normal_build_cancelled_job_is_quiet(void)
 {
     const unsigned large = 1u << (VJO_VOCR_TIER_LARGE - 1u);
@@ -4713,6 +4713,13 @@ static void test_normal_build_cancelled_job_is_quiet(void)
         TEST_CHECK(kind != 2 || logged("check refused") != NULL);
         TEST_MSG("kind %d: %u line(s), the first '%s'", kind, log_count, log_count ? log_lines[0] : "");
         mem_free();
+        if (kind == 2) { /* another cancelled job with a refused check: its line again (each job's, as any job's) */
+            log_count = 0;
+            fake_cancel_on_read = 1;
+            TEST_CHECK(run_vocr_job() == VJO_E_CANCELLED && log_count == 1 && logged("check refused") != NULL &&
+                       !logged("ocr rc="));
+            mem_free();
+        }
         /* the next job that reads its screen: the activation's first job line; the rest only once */
         log_count = 0;
         fail_vocr_user = 0;

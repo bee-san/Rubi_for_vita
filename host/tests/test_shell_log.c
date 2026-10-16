@@ -755,13 +755,25 @@ static void quiet_holder_takes_no_lock(void)
     vjo_log_release(0);
     TEST_CHECK(lock_calls == 0);
     TEST_MSG("%u locks for releases with nothing held", lock_calls);
+    /* another thread's line with nothing held: written at once, no batch begun for it (audit-t3-log-path-b
+     * C1: a batch begun as that thread's would hold its lines in the holder's buffer) */
+    thread = 2;
+    vjo_log_raw(line, make_line(line, 9, 30));
+    TEST_CHECK(!batch && lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 30);
+    vjo_log_raw(line, make_line(line, 10, 30)); /* the holder's line next, from thread 1 below, is still held */
+    TEST_CHECK(!batch && lookup(VJO_LOG_PATH, 0)->size == 60);
+    vjo_log_release(0); /* not the holder: nothing held, nothing done */
+    thread = 1;
+    lock_calls = 0;
+    vjo_log_release(0);
+    TEST_CHECK(lock_calls == 0);
     log_path_opens = status_path_opens = 0;
     vjo_log_raw(line, make_line(line, 0, 40)); /* the holder's line: its batch begins, nothing written */
     vjo_log_raw(line, make_line(line, 1, 60));
     TEST_CHECK(lock_calls == 2 && !log_path_opens && !status_path_opens && batch == &b);
     vjo_log_release(0);
     TEST_CHECK(lock_calls == 3 && log_path_opens == 1 && status_path_opens == 1 && !batch);
-    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 100 && lookup(VJO_STATUS_PATH, 0)->size == 100);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 60 + 100 && lookup(VJO_STATUS_PATH, 0)->size == 60 + 100);
     lock_calls = 0;
     vjo_log_release(0); /* written: nothing held again */
     TEST_CHECK(lock_calls == 0);

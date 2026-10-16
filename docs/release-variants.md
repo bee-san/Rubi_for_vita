@@ -33,7 +33,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 |---|---|---|
 | the on-device self-test: the marker, the five stages, the report, its memory samples | `shell/selftest.c`, `worker.c` `selftest_job_due`, `run_selftest_stages` | **drop**. An armed marker gives one line, `self-test: armed, but this is the normal build: install the -debug build to run it`, and stays for a debug build |
 | the game worker's step log, one `gstep` line per step | `worker.c` `log_vocr_steps` | **drop** |
-| each job's lines: result, capture, memory check, speed, per-line crops, frames and confidence | `worker.c` `vocr_run_one`, `log_vocr_measurements` | **reduced**: one line, `ocr rc=… MODEL: N lines, T ms`, for the first job of each activation of the game (a start or a resume: `game_generation`) that read its screen, for its first job that found a line (the first is often a title screen's, with none), and for every failed job, which also logs its refused memory check's numbers. A job's lines are written after its result is shown ([below](#no-log-append-on-the-result-path)) |
+| each job's lines: result, capture, memory check, speed, per-line crops, frames and confidence | `worker.c` `vocr_run_one`, `log_vocr_measurements` | **reduced**: one line, `ocr rc=… MODEL: N lines, T ms`, for the first job of each activation of the game (a start or a resume: `game_generation`) that read its screen, for its first job that found a line (the first is often a title screen's, with none), and for every failed job, which also logs its refused memory check's numbers. A job's lines are written after the control thread has taken its result ([below](#no-log-append-on-the-result-path)) |
 | a model size that did not fit (`tier large did not fit in …; using normal`) | `worker.c` `log_tier_checks` | **reduced**: each miss (what did not fit, and the size the job went on to) once per activation, the last four kept, so a game whose memory flaps between two misses logs each once; the debug build logs it for every job (the README's "only `log.txt` says so" holds in both) |
 | a model file unusable (`game vocr: … is unusable here`) | `worker.c` `run_vocr` | **keep**, written after the job's result |
 | the 444 MHz boost: before, during, after | `worker.c` (the step log's clock step) | **reduced**: `clock: 333 -> 444 MHz while reading, 333 after` (or `left as it is`, `refused`), for each activation's first job that recognized a line not in the line cache (the game worker writes its clock step then, done or failed) and when it changes |
@@ -55,7 +55,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
 | config warnings, the Overlay app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
-| `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log; the network thread's lines of a job go out in one append per file once its result is shown ([below](#no-log-append-on-the-result-path)) |
+| `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log; the network thread's lines of a job go out in one append per file once the control thread has taken its result ([below](#no-log-append-on-the-result-path)) |
 | the UDP log (`log_host`) | `log_vita.c` | gone from both builds with the network stack (#145); `log_host` is a removed setting, a set one gives one config warning in both |
 | the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | gone from both builds: Google Lens and its capture with #130, the sockets, resolver and TLS with #145 |
 
@@ -147,9 +147,9 @@ its first that found a line, the clock line, and each model-size miss, once (the
 changes); and every failed job with its refused memory check
 (`normal_build_logs_the_first_jobs_and_failures`, `normal_build_logs_tier_misses_once_and_on_change`,
 `normal_build_logs_flapping_tier_misses_once`, `normal_build_logs_a_fifth_tier_miss_after_eviction`). A
-job cancelled during its exchange logs no job line; what a result that arrived says of the activation
-(a size that did not fit, the clock, a refused memory check) is logged as from any job's, once
-(`normal_build_cancelled_job_is_quiet`).
+job cancelled during its exchange logs no job line; what a result that arrived says is logged as from
+any job's: a size that did not fit and the clock once per activation, a refused memory check for each
+job (`normal_build_cancelled_job_is_quiet`).
 
 ## No log append on the result path
 
@@ -217,7 +217,7 @@ the debug build is unchanged (its three plugins and RCO are main's bytes, sha256
   with each object's flags from the Vita build; a lower bound, without the SDK's own frames]. No new
   allocation. The normal Shell's text grows 89,196 → 89,660 B and its data/bss 69,700 → 69,748 B: the
   same 163,840 B of pages, 916 → 452 B of text left in its last page (90,112 B of text pages) [measured:
-  the Vita builds of main `ed9fbe7` and this branch].
+  the Vita builds of main `8065ea4` and this branch].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses and the clock)
