@@ -698,6 +698,15 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
     }
 }
 
+/* The dated backup name a run would use for path now: config.txt.vjo-<stamp>.bak, else -2, -3... */
+static void backup_name(const char *path, const char *stamp, char *out, size_t cap)
+{
+    char base[PATH - 16];
+    snprintf(base, sizeof(base), "%s.vjo-%s", path, stamp);
+    snprintf(out, cap, "%s.bak", base);
+    for (int k = 2; exists(out) && k < 100; k++) snprintf(out, cap, "%s-%d.bak", base, k);
+}
+
 /* ---------------- the plans ---------------- */
 
 static int add(char lines[][VJO_INSTALL_LINE], int n, int max, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
@@ -771,9 +780,12 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     if (action == VJO_INSTALL_ACT_UNINSTALL) {
         int k = 1;
         for (int c = 0; c < 2; c++)
-            if (s->cfg[c].uninstall_changes)
-                n = add(lines, n, max, "%d. Back up %s as config.txt.vjo-%s.bak (kept), then remove the overlay's lines from it.",
-                        k++, s->cfg[c].path, s->stamp);
+            if (s->cfg[c].uninstall_changes) {
+                char name[PATH];
+                backup_name(s->cfg[c].path, s->stamp, name, sizeof(name));
+                n = add(lines, n, max, "%d. Back up %s as %s (kept), then remove the overlay's lines from it.", k++,
+                        s->cfg[c].path, strrchr(name, '/') + 1);
+            }
         n = add(lines, n, max, "%d. Keep the plugin files, the models, the dictionary, your settings and your cards: delete "
                 "ur0:tai/VitaJPOverlay_*, ux0:data/VitaJPOverlay and ur0:data/VitaJPOverlay in VitaShell for the room.", k++);
         n = add(lines, n, max, "Then restart the Vita: the overlay no longer loads. This app stays until you delete it.");
@@ -792,11 +804,17 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     int k = 1;
     if (s->state == VJO_INSTALL_INSTALLED)
         n = add(lines, n, max, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
-    else
+    else if (s->state == VJO_INSTALL_NOT_INSTALLED || (plugins_to_write && models_to_write))
         n = add(lines, n, max, "%d. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models "
                 "(%.1f MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.", k++, mb(models));
-    (void)plugins_to_write;
-    (void)models_to_write;
+    else if (plugins_to_write)
+        n = add(lines, n, max, "%d. Replace %d of the plugins and their RCO in ur0:tai and ur0:data/VitaJPOverlay (the models "
+                "already match the package's sizes; every file is checked by SHA-256 first).", k++, plugins_to_write);
+    else if (models_to_write)
+        n = add(lines, n, max, "%d. Copy %d OCR model file%s to ux0:data/VitaJPOverlay/ocr (the plugins already match).", k++,
+                models_to_write, models_to_write == 1 ? "" : "s");
+    else
+        n = add(lines, n, max, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
     if (s->dict_index >= 0) {
         uint64_t d = s->payload.file[s->dict_index].bytes;
         if (s->dict_in_app && !s->file_ok[s->dict_index])
@@ -809,12 +827,18 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     int backups = 0;
     for (int c = 0; c < 2; c++) backups += s->cfg[c].install_changes;
     if (backups) {
-        char which[100];
-        snprintf(which, sizeof(which), "%s%s%s", s->cfg[0].install_changes ? VJO_TAI_UX0 : "",
-                 s->cfg[0].install_changes && s->cfg[1].install_changes ? " and " : "",
-                 s->cfg[1].install_changes ? VJO_TAI_UR0 : "");
-        n = add(lines, n, max, "%d. Back up %s as config.txt.vjo-%s.bak in %s folder (kept).", k++, which, s->stamp,
-                backups > 1 ? "each" : "its");
+        char names[2][PATH];
+        for (int c = 0; c < 2; c++) {
+            names[c][0] = '\0';
+            if (s->cfg[c].install_changes) backup_name(s->cfg[c].path, s->stamp, names[c], sizeof(names[c]));
+        }
+        if (backups > 1 && !strcmp(strrchr(names[0], '/'), strrchr(names[1], '/')))
+            n = add(lines, n, max, "%d. Back up %s and %s as %s in each folder (kept).", k++, VJO_TAI_UX0, VJO_TAI_UR0,
+                    strrchr(names[0], '/') + 1);
+        else
+            for (int c = 0; c < 2; c++)
+                if (names[c][0])
+                    n = add(lines, n, max, "%d. Back up %s as %s (kept).", k++, s->cfg[c].path, strrchr(names[c], '/') + 1);
     }
     for (int c = 0; c < 2; c++) {
         const VjoInstallConfig *g = &s->cfg[c];

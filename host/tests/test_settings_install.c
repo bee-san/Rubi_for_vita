@@ -805,8 +805,8 @@ static void uninstall_keeps_files_and_backups(void)
     char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
     int n = vjo_install_plan(&s, VJO_INSTALL_ACT_UNINSTALL, plan, VJO_INSTALL_LINES);
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
-    TEST_CHECK(has_line(plan, n, "Back up ux0:tai/config.txt as config.txt.vjo-20261016-071503-2.bak (kept), then remove") ||
-               has_line(plan, n, "Back up ux0:tai/config.txt as config.txt.vjo-20261016-071503.bak (kept), then remove"));
+    /* the install made config.txt.vjo-20261016-071503.bak: the plan names the file it will write */
+    TEST_CHECK(has_line(plan, n, "Back up ux0:tai/config.txt as config.txt.vjo-20261016-071503-2.bak (kept), then remove"));
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_UNINSTALL, &r) == 0);
     TEST_CHECK(has_line(r.lines, r.count, "Uninstalled: the overlay's lines are gone. Restart the Vita"));
     TEST_CHECK(!strcmp(slurp("ux0:tai/config.txt", NULL), stock));
