@@ -11,7 +11,7 @@ typedef struct {
     const VjoVocab *vocab;
     int pos16;              /* token position in the lookup text, -1 if none */
     int hl_start, hl_end;   /* byte range in VjoEntryList.header, -1 if none */
-    const char *text;       /* "spelling (reading) rank\nmeaning..." (shared by a word's entries) */
+    const char *text;       /* "spelling (reading) #rank\nmeaning..." (shared by a word's entries) */
 } VjoEntry;
 
 typedef struct {
@@ -31,9 +31,15 @@ int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r,
  * the one before (in text order)? */
 int vjo_entry_in_text(const VjoEntryList *l, int i);
 
-/* Entry format: spelling + " (reading)" if different + " rank",
+/* Entry format: spelling + " (reading)" if different + the frequency badge,
  * then "\n" + each meaning. */
-char *vjo_entry_format(VjoArena *a, const VjoVocab *v);
+char *vjo_entry_format(VjoArena *a, const VjoVocab *v, const char *source);
+
+/* The frequency badge: " #1234" for a ranked entry, " unranked" for one whose
+ * dictionary has a frequency list (source, VjoDictResult.source) that does not
+ * rank it, "" otherwise. Written to buf, VJO_RANK_BADGE_MAX bytes. */
+#define VJO_RANK_BADGE_MAX 16
+const char *vjo_rank_badge(char *buf, int rank, const char *source);
 
 /* Body text: entries joined by a blank line. */
 char *vjo_entries_body(VjoArena *a, const VjoEntryList *l);

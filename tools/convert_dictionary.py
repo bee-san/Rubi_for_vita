@@ -3,6 +3,11 @@
 
 Python 3.9+ standard library only. ZIP banks are streamed one row at a time;
 SQLite sorts the index on disk, and definitions are never retained wholesale.
+
+With --frequency, a rank-based Yomitan frequency dictionary (term_meta_bank
+"freq" rows, such as Jiten's) gives every entry a rank, written as format 3:
+each payload starts with one 32-bit frequency word (0 = unranked), so the
+rank is read with the entry and nothing about it stays in memory.
 """
 import argparse
 import io
@@ -23,7 +28,24 @@ MAGIC = b"VJDICT1\0"
 HEADER = struct.Struct("<8sIIIIQQQQQ")
 RECORD = struct.Struct("<QQHHI")  # Version 1 lexical index.
 MAGIC_V2 = b"VJDICT2\0"
+MAGIC_V3 = b"VJDICT3\0"  # Version 2's layout; each payload starts with a frequency word.
 PAGE_SIZE = 4096
+# Version 3: the frequency list's title, NUL-padded, in the header page's spare bytes.
+FREQ_TITLE = struct.Struct("<64s")
+FREQ_TITLE_OFFSET = HEADER.size
+FREQ_WORD = struct.Struct("<I")  # bits 0-23 rank (0 = unranked), 24-27 how it matched, 28-31 zero
+FREQ_RANK_MAX = (1 << 24) - 1
+# The rank is borrowed: a kanji spelling with no rank of its own for its
+# reading takes the word's rank written in kana (Jiten shows it as N㋕). The
+# overlay ranks borrowed ranks below every entry's own.
+FREQ_BORROWED = 1 << 24
+# Bits 25-26, the rows that decided: 1 reading-specific, 2 spelling-only, 3 the
+# spelling's reading-specific rows for an entry that has no reading.
+FREQ_READING = 1 << 25
+FREQ_SPELLING = 1 << 26
+FREQ_NORMALIZED = 1 << 27  # matched only after kana normalisation
+MATCHES = {FREQ_READING: "reading", FREQ_SPELLING: "spelling", FREQ_READING | FREQ_SPELLING: "spelling_readings"}
+MAX_FREQ_TERM = 256
 HASH_RECORD = struct.Struct("<QQIHH")
 POSTING = struct.Struct("<QIHH")
 PAGE_HEADER = struct.Struct("<4sIQ")
@@ -252,6 +274,170 @@ def read_index(archive):
     return utf8_clip(clean(title.strip()).replace("\n", " "), 128)
 
 
+def frequency_value(data):
+    """(rank, kana form) of one Yomitan frequency value: a number, a numeric
+    string or {"value", "displayValue"}. Jiten marks a kana form's rank with
+    a trailing ㋕ in displayValue. None when there is no whole rank >= 1."""
+    display = None
+    if isinstance(data, dict):
+        display = data.get("displayValue")
+        data = data.get("value")
+    if isinstance(data, str) and re.fullmatch(r"[0-9]{1,9}", data.strip()):
+        data = int(data.strip())
+    if isinstance(data, bool) or not isinstance(data, (int, float)) or not math.isfinite(data) or data != int(data):
+        return None
+    rank = int(data)
+    if not 1 <= rank <= FREQ_RANK_MAX:
+        return None
+    return rank, isinstance(display, str) and display.endswith("㋕")
+
+
+def load_frequency(path, db):
+    """Streams a rank-based Yomitan frequency ZIP into the freq table; returns its stats."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            if len(names) != len(set(names)):
+                raise ValueError("ZIP contains duplicate filenames")
+            title = read_index(archive)
+            index = json.loads(archive.read("index.json").decode("utf-8-sig"))
+            if index.get("frequencyMode") != "rank-based":
+                raise ValueError("the frequency dictionary must declare \"frequencyMode\": \"rank-based\"")
+            banks = sorted((n for n in names if re.fullmatch(r"term_meta_bank_[0-9]+\.json", n)),
+                           key=lambda n: int(n[15:-5]))
+            if not banks:
+                raise ValueError("no term_meta_bank_*.json files")
+            stats = {"title": utf8_clip(title, FREQ_TITLE.size - 1), "revision": index.get("revision"),
+                     "rows": 0, "freq_rows": 0, "reading_rows": 0, "spelling_rows": 0, "kana_form_rows": 0,
+                     "other_mode_rows": 0, "unusable_rows": 0}
+            order = 0
+            for name in banks:
+                with archive.open(name) as raw, io.TextIOWrapper(raw, encoding="utf-8-sig") as bank:
+                    for rownum, row in enumerate(stream_array(bank), 1):
+                        stats["rows"] += 1
+                        if not isinstance(row, list) or len(row) != 3 or not isinstance(row[0], str) \
+                                or not isinstance(row[1], str):
+                            raise ValueError(f"{name}, row {rownum}: expected [term, mode, data]")
+                        term, mode, data = row
+                        if mode != "freq":
+                            stats["other_mode_rows"] += 1
+                            continue
+                        reading = None
+                        if isinstance(data, dict) and "reading" in data:
+                            reading = data.get("reading")
+                            data = data.get("frequency")
+                            if not isinstance(reading, str) or not reading:
+                                stats["unusable_rows"] += 1
+                                continue
+                        value = frequency_value(data)
+                        if (value is None or not term or len(term) > MAX_FREQ_TERM or clean(term) != term
+                                or (reading is not None and (len(reading) > MAX_FREQ_TERM or clean(reading) != reading))):
+                            stats["unusable_rows"] += 1
+                            continue
+                        term.encode("utf-8")  # Reject lone surrogates.
+                        db.execute("INSERT INTO freq VALUES (?,?,?,?,?,?,?)",
+                                   (order, term, reading, normalize(term),
+                                    None if reading is None else normalize(reading), value[0], int(value[1])))
+                        order += 1
+                        stats["freq_rows"] += 1
+                        stats["reading_rows" if reading is not None else "spelling_rows"] += 1
+                        stats["kana_form_rows"] += int(value[1])
+            if not stats["freq_rows"]:
+                raise ValueError("no usable frequency rows")
+            db.execute("CREATE INDEX freq_term ON freq(nterm, ord)")
+            db.commit()
+            return stats
+    except (ValueError, KeyError, UnicodeError, zipfile.BadZipFile, RecursionError, OverflowError) as exc:
+        raise ValueError(f"{path}: {exc}") from exc
+
+
+def frequency_word(db, spelling, reading):
+    """The frequency word of one entry.
+
+    Yomitan (yomidevs/yomitan@67db60d, ext/js/language/translator.js) attaches
+    a frequency row to a headword when the row's term is the headword's
+    spelling and, if the row has a reading, that reading is the headword's
+    (_addTermMeta, 1270-1276); a rank-based sort takes the lowest value
+    (_updateSortFrequencies, 2340-2358). Here the reading-specific rows decide
+    first and the spelling-only ones only when none matches; each exactly,
+    then after the overlay's kana normalisation (katakana as hiragana,
+    full-width ASCII as ASCII; Yomitan compares exactly). An entry with no
+    reading (a variant spelling, or a character article) matches no reading,
+    so last it takes its spelling's reading-specific rows. Within the
+    deciding level, a kanji spelling takes its own form's rows (Jiten's
+    kanji-form ranks, without ㋕): Jiten's kana-form rank of a reading (㋕)
+    counts the word written in kana, so for 先 read さっき it is 221 while 先
+    itself is read so at 213,803 (and さき at 416). Only without an own row
+    does it borrow the kana-form rank, marked FREQ_BORROWED. The lowest rank
+    of the chosen rows wins (Yomitan's sort). No row: 0, the explicit
+    unranked value."""
+    has_reading = bool(reading)
+    reading = reading or spelling
+    rows = db.execute("SELECT term, reading, nreading, rank, kana, ord FROM freq WHERE nterm=? ORDER BY ord",
+                      (normalize(spelling),)).fetchall()
+    if not rows:
+        return 0
+    nreading = normalize(reading)
+    levels = ([r for r in rows if r[1] is not None and r[0] == spelling and r[1] == reading],
+              [r for r in rows if r[1] is not None and r[2] == nreading],
+              [r for r in rows if r[1] is None and r[0] == spelling],
+              [r for r in rows if r[1] is None],
+              [r for r in rows if r[1] is not None and r[0] == spelling and not has_reading],
+              [r for r in rows if r[1] is not None and not has_reading])
+    for level, found in enumerate(levels):
+        if found:
+            # The entry's own written form first: a kanji spelling's rows
+            # without ㋕ (Jiten's kanji-form ranks); its kana-form rows (the
+            # word's rank written in kana) only when it has none, marked
+            # borrowed. A kana spelling's rows are all its own.
+            kana = is_kana(spelling)
+            own = [r for r in found if kana or not r[4]]
+            best = min(own or found, key=lambda r: (r[3], r[4], r[5]))
+            word = best[3] | (FREQ_READING, FREQ_SPELLING, FREQ_READING | FREQ_SPELLING)[level // 2]
+            return word | (FREQ_NORMALIZED if level % 2 else 0) | (0 if own else FREQ_BORROWED)
+    return 0
+
+
+def is_kana(text):
+    """Hiragana, katakana (with ー), half-width katakana only."""
+    return all(0x3040 <= ord(c) <= 0x30FF or 0x31F0 <= ord(c) <= 0x31FF or 0xFF66 <= ord(c) <= 0xFF9F
+               for c in text)
+
+
+def percent(part, whole):
+    return round(100.0 * part / whole, 2) if whole else 0.0
+
+
+def frequency_coverage(db, freq, entries):
+    """How much of the dictionary got a rank, and how much of the list has a
+    ranked entry where the overlay looks its written form up: one spelled so
+    (normalised, as lookups are), or for a kana row also one read so."""
+    freq["entries_unranked"] = entries - freq["entries_ranked"]
+    freq["entries_ranked_percent"] = percent(freq["entries_ranked"], entries)
+    for item in freq["by_dictionary"]:
+        item["ranked_percent"] = percent(item["ranked"], item["entries"])
+    db.executescript("CREATE INDEX ranked_spelling ON ranked_keys(nspelling);"
+                     "CREATE INDEX ranked_reading ON ranked_keys(nreading);")
+    limits = (1000, 10000, 100000)
+    tops = {limit: [0, 0] for limit in limits}
+    covered = 0
+    for rank, hit in db.execute("""
+            SELECT rank, EXISTS(SELECT 1 FROM ranked_keys k WHERE k.nspelling = f.nterm)
+                OR (f.nreading IS NULL AND EXISTS(SELECT 1 FROM ranked_keys k WHERE k.nreading = f.nterm))
+            FROM freq f ORDER BY ord"""):
+        covered += hit
+        for limit in limits:
+            if rank <= limit:
+                tops[limit][0] += hit
+                tops[limit][1] += 1
+    freq["list_rows_with_ranked_entry"] = covered
+    freq["list_rows_with_ranked_entry_percent"] = percent(covered, freq["freq_rows"])
+    freq["list_rows_with_ranked_entry_percent_by_rank"] = {
+        f"rank<={limit}": percent(hit, n) for limit, (hit, n) in tops.items()}
+    freq["unranked_value"] = 0
+    return freq
+
+
 def key_hash(key):
     """FNV-1a-64 plus avalanche; identical to core/local_dict.c."""
     mask = (1 << 64) - 1
@@ -405,7 +591,8 @@ def add_key_filter(path, output=None):
     return {"bytes": end, **stats}
 
 
-def write_v2(db, data, final, count, key_filter=True):
+def write_v2(db, data, final, count, frequency_title=None, key_filter=True):
+    """Version 2 (or, with frequency_title, version 3: the same layout)."""
     # Sorting and all per-key metadata live on the computer's disk, not the Vita.
     db.execute("CREATE INDEX lookup_order ON lookups(key, priority, score, seq)")
     unique = db.execute("SELECT COUNT(DISTINCT key) FROM lookups").fetchone()[0]
@@ -445,8 +632,11 @@ def write_v2(db, data, final, count, key_filter=True):
     if size > 0x7FFFFFFFFFFFFFFF:
         raise ValueError("dictionary exceeds the supported file size")
     final.seek(0)
-    final.write(HEADER.pack(MAGIC_V2, 2, HEADER.size, count, HASH_RECORD.size,
+    version = 2 if frequency_title is None else 3
+    final.write(HEADER.pack(MAGIC_V2 if version == 2 else MAGIC_V3, version, HEADER.size, count, HASH_RECORD.size,
                            PAGE_SIZE, data_off, size, buckets, pages))
+    if frequency_title is not None:
+        final.write(FREQ_TITLE.pack(frequency_title.encode("utf-8")))
     records = iter(db.execute("SELECT hash, off, n, key, rules FROM hash_keys ORDER BY bucket, hash, key"))
     overflow = buckets
     for bucket, number in enumerate(page_counts):
@@ -475,16 +665,21 @@ def write_v2(db, data, final, count, key_filter=True):
     return result
 
 
-def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=2,
-            deduplicate=False, key_filter=True):
-    if format_version not in (1, 2):
-        raise ValueError("format-version must be 1 or 2")
+def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=None,
+            deduplicate=False, frequency=None, key_filter=True):
+    """frequency: a rank-based Yomitan frequency ZIP; it makes the output format 3."""
+    if format_version is None:
+        format_version = 2 if frequency is None else 3
+    if format_version not in (1, 2, 3):
+        raise ValueError("format-version must be 1, 2 or 3")
+    if (format_version == 3) != (frequency is not None):
+        raise ValueError("format 3 needs a frequency dictionary, and a frequency dictionary needs format 3")
     output = Path(output)
     if output.suffix != ".vjdict":
         raise ValueError("output filename must end in .vjdict")
     if not 256 <= max_definition_bytes <= 7000:
         raise ValueError("max-definition-bytes must be between 256 and 7000")
-    if any(Path(p).resolve() == output.resolve() for p in inputs):
+    if any(Path(p).resolve() == output.resolve() for p in [*inputs, *([frequency] if frequency else [])]):
         raise ValueError("output must not replace an input archive")
     output.parent.mkdir(parents=True, exist_ok=True)
     stats = {"format_version": format_version, "entries": 0, "index_records": 0, "truncated_definitions": 0,
@@ -493,6 +688,7 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
     if deduplicate:
         stats.update(deduplication="first dictionary per spelling and normalized reading",
                      deduplicated_rows=0, source_entries=[])
+    freq = None
     # The final temporary file is beside the destination, for atomic replacement.
     final_name = None
     try:
@@ -506,10 +702,19 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                         seq INTEGER, key_off INTEGER, entry_off INTEGER, rules INTEGER, size INTEGER);
                     CREATE TABLE selected_pairs (spelling TEXT, reading BLOB, priority INTEGER,
                         PRIMARY KEY (spelling, reading));
+                    CREATE TABLE freq (ord INTEGER PRIMARY KEY, term TEXT, reading TEXT, nterm BLOB,
+                        nreading BLOB, rank INTEGER, kana INTEGER);
+                    CREATE TABLE ranked_keys (nspelling BLOB, nreading BLOB);
                 """)
+                if frequency is not None:
+                    freq = load_frequency(frequency, db)
+                    matches = [m + n for m in MATCHES.values() for n in ("", "_normalized")]
+                    freq.update(entries_ranked=0, by_match=dict.fromkeys([*matches, "unranked"], 0),
+                                borrowed_ranks=0, by_dictionary=[])
                 with (Path(tmp) / "payload.bin").open("w+b") as data:
                     for priority, source in enumerate(inputs):
                         before = stats["entries"]
+                        ranked_before = freq["entries_ranked"] if freq else 0
                         try:
                             with zipfile.ZipFile(source) as archive:
                                 names = archive.namelist()
@@ -520,7 +725,9 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                 banks = sorted((n for n in names if re.fullmatch(r"term_bank_[0-9]+\.json", n)),
                                                key=lambda n: int(n[10:-5]))
                                 if not banks:
-                                    raise ValueError("no term_bank_*.json files (frequency/pitch/kanji-only dictionaries are unsupported)")
+                                    raise ValueError("no term_bank_*.json files (frequency/pitch/kanji-only dictionaries are "
+                                                     "unsupported as inputs; a rank-based frequency dictionary goes in "
+                                                     "--frequency)")
                                 for name in banks:
                                     with archive.open(name) as raw, io.TextIOWrapper(raw, encoding="utf-8-sig") as bank:
                                         for rownum, row in enumerate(stream_array(bank), 1):
@@ -569,6 +776,18 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                                 definition = utf8_clip(definition, max_definition_bytes - len(suffix)) + suffix
                                                 stats["truncated_definitions"] += 1
                                             payload = (spelling + "\0" + reading + "\0" + definition + "\0").encode()
+                                            if freq is not None:
+                                                word = frequency_word(db, spelling, reading)
+                                                match = "unranked"
+                                                if word:
+                                                    freq["entries_ranked"] += 1
+                                                    freq["borrowed_ranks"] += bool(word & FREQ_BORROWED)
+                                                    match = MATCHES[word & (FREQ_READING | FREQ_SPELLING)]
+                                                    match += "_normalized" if word & FREQ_NORMALIZED else ""
+                                                    db.execute("INSERT INTO ranked_keys VALUES (?,?)",
+                                                               (normalize(spelling), normalize(reading or spelling)))
+                                                freq["by_match"][match] += 1
+                                                payload = FREQ_WORD.pack(word) + payload
                                             if len(payload) > MAX_ENTRY:
                                                 raise ValueError(f"{context}: converted entry is too large")
                                             entry_off = data.tell()
@@ -585,6 +804,10 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                     db.commit()
                                 if deduplicate:
                                     stats["source_entries"].append(stats["entries"] - before)
+                                if freq is not None:
+                                    freq["by_dictionary"].append({"dictionary": title,
+                                                                  "entries": stats["entries"] - before,
+                                                                  "ranked": freq["entries_ranked"] - ranked_before})
                         except (ValueError, KeyError, UnicodeError, zipfile.BadZipFile, RecursionError, OverflowError) as exc:
                             raise ValueError(f"{source}: {exc}") from exc
                     count = stats["index_records"]
@@ -599,8 +822,9 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                     with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".tmp", dir=output.parent,
                                                      delete=False) as final:
                         final_name = Path(final.name)
-                        if format_version == 2:
-                            stats.update(write_v2(db, data, final, count, key_filter))
+                        if format_version >= 2:
+                            stats.update(write_v2(db, data, final, count, freq["title"] if freq else None,
+                                                  key_filter))
                             size = stats["bytes"]
                         else:
                             final.write(HEADER.pack(MAGIC, 1, HEADER.size, count, RECORD.size,
@@ -615,6 +839,8 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                     os.replace(final_name, output)
                     final_name = None
                     stats["bytes"] = size
+                    if freq is not None:
+                        stats["frequency"] = frequency_coverage(db, freq, stats["entries"])
             finally:
                 db.close()
     finally:
@@ -628,12 +854,15 @@ def main():
     parser.add_argument("inputs", nargs="*", type=Path, help="Yomitan term ZIP(s), in priority order")
     parser.add_argument("-o", "--output", type=Path, help="output .vjdict file")
     parser.add_argument("--add-key-filter", type=Path, metavar="VJDICT",
-                        help="add the key filter to an existing version 2 file (in place, or to -o)")
+                        help="add the key filter to an existing version 2 or 3 file (in place, or to -o)")
     parser.add_argument("--no-key-filter", action="store_true",
                         help="write no key filter (lookups then read more of the index)")
     parser.add_argument("--max-definition-bytes", type=int, default=4096)
-    parser.add_argument("--format-version", type=int, choices=(1, 2), default=2,
-                        help="2: page hash index (default); 1: legacy binary-search format")
+    parser.add_argument("--format-version", type=int, choices=(1, 2, 3),
+                        help="2: page hash index (default); 3: version 2 with a frequency rank in every entry "
+                             "(the default with --frequency); 1: legacy binary-search format")
+    parser.add_argument("--frequency", type=Path,
+                        help="rank-based Yomitan frequency dictionary ZIP: every entry gets a rank (0 = unranked)")
     parser.add_argument("--temp-dir", type=Path, help="scratch disk for sorting large dictionaries")
     parser.add_argument("--deduplicate", action="store_true",
                         help="keep each spelling/reading pair only from its first input dictionary; preserve its senses")
@@ -651,7 +880,7 @@ def main():
         parser.error("give the input ZIPs and -o OUTPUT")
     try:
         stats = convert(args.inputs, args.output, args.max_definition_bytes, args.temp_dir,
-                        args.format_version, args.deduplicate, not args.no_key_filter)
+                        args.format_version, args.deduplicate, args.frequency, not args.no_key_filter)
     except (ValueError, OSError, sqlite3.Error, RuntimeError) as exc:
         parser.exit(1, f"Conversion failed: {exc}\n")
     print(json.dumps(stats, ensure_ascii=False, indent=2))

@@ -412,7 +412,7 @@ static void render(int new_content)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
             if (mark == VJO_ANKI_MARK_QUEUED)
                 vjo_styled_puts(&body, "Queued for Anki\n", VJO_RGB_DIM, en);
-            vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED);
+            vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED, g_view.frequency_badge);
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode
                 ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len

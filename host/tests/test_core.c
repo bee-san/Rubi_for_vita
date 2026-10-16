@@ -446,16 +446,29 @@ static void test_entries(void)
     /* the lookup's text "猫が好き" came from filtered "猫が\n好き" */
     TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, &l) == 0);
     TEST_CHECK(!strcmp(l.header, "猫が\n好き"));
-    /* every word gets an entry, in text order */
+    /* every word gets an entry, in text order; a ranked one its badge, an
+     * unranked one none without a frequency list */
     TEST_CHECK(l.n_entries == 3);
-    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) 1500\ncat\nfeline"));
-    TEST_CHECK(!strcmp(l.entries[1].text, "が 50\nindicates subject"));
-    TEST_CHECK(!strcmp(l.entries[2].text, "好き 99999\nliked"));
+    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) #1500\ncat\nfeline"));
+    TEST_CHECK(!strcmp(l.entries[1].text, "が #50\nindicates subject"));
+    TEST_CHECK(!strcmp(l.entries[2].text, "好き\nliked"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "【猫】が\n好き"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "猫【が】\n好き"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 2), "猫が\n【好き】"));
     TEST_CHECK(!strcmp(vjo_entries_body(&A, &l),
-                       "猫 (ねこ) 1500\ncat\nfeline\n\nが 50\nindicates subject\n\n好き 99999\nliked"));
+                       "猫 (ねこ) #1500\ncat\nfeline\n\nが #50\nindicates subject\n\n好き\nliked"));
+    /* with a frequency list (a v3 dictionary's), an unranked word says so */
+    r.source = "Jiten";
+    TEST_ASSERT(vjo_entries_build(&A, "猫が\n好き", &r, &l) == 0);
+    TEST_CHECK(!strcmp(l.source, "Jiten") && !strcmp(l.entries[0].text, "猫 (ねこ) #1500\ncat\nfeline"));
+    TEST_CHECK(!strcmp(l.entries[2].text, "好き unranked\nliked"));
+    {
+        char badge[VJO_RANK_BADGE_MAX];
+        TEST_CHECK(!strcmp(vjo_rank_badge(badge, 99999, NULL), " #99999")); /* a rank, as in Jiten's list */
+        TEST_CHECK(!strcmp(vjo_rank_badge(badge, 16777215, "Jiten"), " #16777215"));
+        TEST_CHECK(!strcmp(vjo_rank_badge(badge, VJO_NO_RANK, "Jiten"), " unranked"));
+        TEST_CHECK(!strcmp(vjo_rank_badge(badge, -5, NULL), ""));
+    }
 
     /* a word used twice: an entry for each, in text order; a word without
      * a token comes last */
@@ -466,7 +479,7 @@ static void test_entries(void)
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 1), "猫【と】猫"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 2), "猫と【猫】"));
     TEST_CHECK(l.entries[2].vocab == l.entries[0].vocab);
-    TEST_CHECK(!strcmp(l.entries[3].text, "犬 (いぬ) 900\ndog") && l.entries[3].hl_start == -1);
+    TEST_CHECK(!strcmp(l.entries[3].text, "犬 (いぬ) #900\ndog") && l.entries[3].hl_start == -1);
 }
 
 static void test_entries_surrogates_and_trim(void)
@@ -489,7 +502,7 @@ static void test_entries_surrogates_and_trim(void)
     TEST_ASSERT(vjo_entries_build(&A, "  😀猫 ", &r, &l) == 0);
     TEST_CHECK(!strcmp(l.header, "😀猫"));
     TEST_CHECK(!strcmp(vjo_render_highlight(&A, &l, 0), "😀【猫】"));
-    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) 900"));
+    TEST_CHECK(!strcmp(l.entries[0].text, "猫 (ねこ) #900"));
 
     /* server positions past the text or huge lengths are clamped */
     test_result(&r, two, 2, past, 2);
@@ -1004,6 +1017,34 @@ static void test_highlight_config(void)
     TEST_CHECK(strstr(c.warnings[0], "highlight_mode") != NULL);
 }
 
+static void test_frequency_badge_config(void)
+{
+    VjoConfig c;
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.frequency_badge == 1);
+    /* A saved config without the key keeps the badge on. */
+    const char old[] = "highlight_mode = word\n";
+    vjo_config_parse(&c, old, sizeof(old) - 1);
+    TEST_CHECK(c.frequency_badge == 1 && c.n_warnings == 0);
+    const char off[] = "FREQUENCY_BADGE = OFF\n";
+    vjo_config_parse(&c, off, sizeof(off) - 1);
+    TEST_CHECK(c.frequency_badge == 0 && c.n_warnings == 0);
+    const char on[] = "frequency_badge = on\n";
+    vjo_config_parse(&c, on, sizeof(on) - 1);
+    TEST_CHECK(c.frequency_badge == 1 && c.n_warnings == 0);
+    const char invalid[] = "frequency_badge = maybe\n";
+    vjo_config_parse(&c, off, sizeof(off) - 1);
+    vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
+    TEST_CHECK(c.frequency_badge == 0 && c.n_warnings == 1); /* an invalid value keeps the setting */
+    TEST_CHECK(strstr(c.warnings[0], "frequency_badge") != NULL);
+    /* The written template carries it, on. */
+    vjo_config_defaults(&c);
+    c.frequency_badge = 0;
+    vjo_config_parse(&c, vjo_config_default_text(), strlen(vjo_config_default_text()));
+    TEST_CHECK(c.frequency_badge == 1 && c.n_warnings == 0);
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nfrequency_badge = on\n") != NULL);
+}
+
 static void test_regions(void)
 {
 #define P(s, t, g) vjo_region_parse(s, strlen(s), t, g)
@@ -1351,19 +1392,38 @@ static void test_styled(void)
     TEST_CHECK(vjo_entry_header_range(&l, 1, &a, &n) && a == 3 && n == 2);
     TEST_CHECK(!vjo_entry_header_range(&l, 2, &a, &n));
 
-    /* body: headword+reading at ja px, rank+meanings at en px */
+    /* body: headword+reading at ja px, badge+meanings at en px */
     TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
-    vjo_styled_entry(&st, &l, 0, 21, 18, 0);
-    TEST_CHECK(st.n_spans == 9); /* 猫 ( ねこ ) rank \n meaning \n meaning */
+    vjo_styled_entry(&st, &l, 0, 21, 18, 0, 1);
+    TEST_CHECK(st.n_spans == 9); /* 猫 ( ねこ ) #rank \n meaning \n meaning */
     TEST_CHECK(st.spans[0].len == 1 && st.spans[0].px == 21 && st.spans[0].rgb == VJO_RGB_HIGHLIGHT);
     TEST_CHECK(st.spans[2].rgb == VJO_RGB_READING && st.spans[2].px == 21);
-    TEST_CHECK(st.spans[4].px == 18 && st.spans[4].rgb == VJO_RGB_RANK); /* " 1500" */
+    TEST_CHECK(st.spans[4].px == 18 && st.spans[4].rgb == VJO_RGB_RANK && st.spans[4].len == 6); /* " #1500" */
+    TEST_CHECK(st.text[st.spans[4].start + 1] == '#' && st.text[st.spans[4].start + 2] == '1');
     TEST_CHECK(st.spans[6].px == 18 && st.spans[6].len == 9);           /* "cat <pet>" unescaped */
-    /* in Anki: a green √ after the rank */
+    /* in Anki: a green √ after the badge */
     TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
-    vjo_styled_entry(&st, &l, 0, 21, 18, 1);
+    vjo_styled_entry(&st, &l, 0, 21, 18, 1, 1);
     TEST_CHECK(st.n_spans == 10 && st.spans[5].rgb == VJO_RGB_OK && st.spans[5].len == 2 &&
                st.text[st.spans[5].start + 1] == 0x221A);
+    /* frequency_badge = off: no badge, the meanings follow the reading */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
+    vjo_styled_entry(&st, &l, 0, 21, 18, 0, 0);
+    TEST_CHECK(st.n_spans == 8 && st.spans[4].rgb == VJO_RGB_DIM && st.spans[5].len == 9);
+    for (int i = 0; i < st.n_spans; i++)
+        TEST_CHECK(st.spans[i].rgb != VJO_RGB_RANK);
+    /* an unranked word: " unranked" with a frequency list, nothing without one */
+    r.vocab[0].rank = VJO_NO_RANK;
+    TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
+    vjo_styled_entry(&st, &l, 0, 21, 18, 0, 1);
+    TEST_CHECK(st.n_spans == 8);
+    l.source = "Jiten";
+    TEST_ASSERT(vjo_styled_init(&st, &A, 256, 16) == 0);
+    vjo_styled_entry(&st, &l, 0, 21, 18, 0, 1);
+    TEST_CHECK(st.n_spans == 9 && st.spans[4].rgb == VJO_RGB_RANK && st.spans[4].len == 9); /* " unranked" */
+    TEST_CHECK(st.text[st.spans[4].start + 1] == 'u');
+    l.source = NULL;
+    r.vocab[0].rank = 1500;
 
     /* surrogate pairs and truncation */
     TEST_ASSERT(vjo_styled_init(&st, &A, 3, 4) == 0);
@@ -2471,6 +2531,7 @@ TEST_LIST = {
     {"scene_many_frames", test_scene_many_frames},
     {"config", test_config},
     {"highlight_config", test_highlight_config},
+    {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},
     {"http", test_http},
     {"net_pool", test_net_pool},

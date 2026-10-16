@@ -29,8 +29,15 @@ class FrozenPlaintext(unittest.TestCase):
             zipped.writestr("index.json", json.dumps({"format": 3, "title": "Frozen fixture"}))
             zipped.writestr("term_bank_1.json", json.dumps([
                 ["食べる", "たべる", "", "v1", 0, ["synthetic frozen verb"], 1, ""]]))
+        frequency = self.root / "frequency.zip"
+        with zipfile.ZipFile(frequency, "w") as zipped:
+            zipped.writestr("index.json", json.dumps({"format": 3, "title": "Fixture frequency",
+                                                      "frequencyMode": "rank-based"}))
+            zipped.writestr("term_meta_bank_1.json", json.dumps([
+                ["食べる", "freq", {"reading": "たべる", "frequency": {"value": 412, "displayValue": "412"}}]],
+                ensure_ascii=False))
         dictionary = self.root / prepare.FILENAME
-        convert.convert([archive], dictionary)
+        convert.convert([archive], dictionary, frequency=frequency)
         self.archive = self.root / "frozen.zip"
         with zipfile.ZipFile(self.archive, "w") as zipped:
             zipped.write(dictionary, prepare.FILENAME)
@@ -49,9 +56,20 @@ class FrozenPlaintext(unittest.TestCase):
                                  "--local-dicts", prepare.FILENAME, "--text", "食べました", "--nav"],
                                 capture_output=True, text=True, check=True)
         self.assertIn("synthetic frozen verb", lookup.stdout)
+        self.assertIn("食べる (たべる) #412", lookup.stdout)  # the frozen rank, shown as the badge
         self.assertEqual(json.loads((stage / "docs/plaintext-dictionaries.json").read_text()), self.pin)
         self.assertIn("Daijirin4", (stage / "docs/plaintext-attribution.txt").read_text())
+        self.assertIn("CC BY-SA 4.0", (stage / "docs/plaintext-attribution.txt").read_text().split("Jiten")[-1])
         self.assertTrue((stage / "docs/JMdict-LICENSE.html").is_file())
+
+    def test_a_dictionary_without_frequency_ranks_is_refused(self):
+        older = self.root / "v2.vjdict"
+        with zipfile.ZipFile(self.root / "source.zip") as zipped:
+            self.assertIn("term_bank_1.json", zipped.namelist())
+        convert.convert([self.root / "source.zip"], older)
+        pin = dict(self.pin, bytes=older.stat().st_size, sha256=prepare.digest(older))
+        with self.assertRaisesRegex(ValueError, "version 3"):
+            prepare.validate(older, pin)
 
     def test_bad_archive_preserves_existing_output(self):
         output = self.root / "output.vjdict"
@@ -123,7 +141,7 @@ class FrozenPlaintext(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             release.verify(self.root / "unpacked")
         wrong = self.root / "wrong.vjdict"
-        wrong.write_bytes(b"VJDICT2\0wrong snapshot")
+        wrong.write_bytes(b"VJDICT3\0wrong snapshot")
         with self.assertRaisesRegex(ValueError, "dictionary checksum"):
             release.package(base, self.root / "rejected.zip", models, wrong)
         self.assertFalse((self.root / "rejected.zip").exists())
@@ -142,9 +160,17 @@ class KeyFilteredRelease(unittest.TestCase):
         with zipfile.ZipFile(source, "w") as zipped:
             zipped.writestr("index.json", json.dumps({"format": 3, "title": "Frozen fixture"}))
             zipped.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+        frequency = self.root / "frequency.zip"
+        with zipfile.ZipFile(frequency, "w") as zipped:
+            zipped.writestr("index.json", json.dumps({"format": 3, "title": "Fixture frequency",
+                                                      "frequencyMode": "rank-based"}))
+            zipped.writestr("term_meta_bank_1.json", json.dumps([
+                ["食べる", "freq", {"reading": "たべる", "frequency": {"value": 412, "displayValue": "412"}}]],
+                ensure_ascii=False))
         frozen = self.root / "frozen" / prepare.FILENAME
         frozen.parent.mkdir()
-        convert.convert([source], frozen, key_filter=False)  # as committed before the filter existed
+        # as committed: format 3, without the filter
+        convert.convert([source], frozen, frequency=frequency, key_filter=False)
         self.archive = self.root / "frozen.zip"
         with zipfile.ZipFile(self.archive, "w") as zipped:
             zipped.write(frozen, prepare.FILENAME)

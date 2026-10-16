@@ -109,17 +109,20 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one (none in this build, see below) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
-| `Frequency` | `<ul><li>SOURCE: 1234</li></ul>`, when the dictionary has a frequency rank |
+| `Frequency` | `<ul><li>SOURCE: 1234</li></ul>`, when the entry has a frequency rank (`<li>Jiten: 1536</li>` with the bundled dictionary) |
 | `FreqSort` | The rank; `9999999` without one, as Yomitan's `{frequency-harmonic-rank}`, so sorting by it puts such cards last |
 | `MiscInfo` | The game's name and the local date and time of the Enter press: `CLANNAD (2026-10-14 17:12)` |
 
 The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
 `SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
 the tag `vita-jp-overlay`. The bundled dictionary (Daijirin4 → Sankoku8 →
-JMdict in one file) has no frequency ranks or pitch accents: with it those
-fields stay empty (and `FreqSort` 9999999), and each entry's own dictionary
-(one of the three) names its glossary item. No local dictionary imports
-frequency ranks or pitch accents ([local dictionaries](local-dictionaries.md)).
+JMdict in one file) gives every entry its Jiten global frequency rank
+([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
+fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
+its `FreqSort` is 9999999. It has no pitch accents, so those fields stay empty,
+and each entry's own dictionary (one of the three) names its glossary item.
+Another local dictionary has ranks when it is converted with `--frequency`;
+none imports pitch accents ([local dictionaries](local-dictionaries.md)).
 jpdb.io and jiten.moe, the online dictionaries that also gave pitch accents and
 readings per word, have been removed; cards they queued before still export
 with all of theirs.
@@ -197,18 +200,18 @@ including leftover `.tmp` files, are ignored. Editing a record changes its
 checksum, so the card is kept and reported as unreadable rather than exported.
 Delete a card's `.json` to drop it.
 
-### The record (version 3)
+### The record (version 4)
 
 Enter records everything it knows about the card when it is pressed, so that a
 card can be made into a note later, by any version that reads the record:
 
 | Key | Content |
 | --- | --- |
-| `version` | 3 |
+| `version` | 4 |
 | `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none, as every one now: only the removed online dictionaries gave one) |
 | `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (from its definition's first line, `[JMdict Plain]`, or `null` without one; older records may name a dictionary that has been removed since) |
 | `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while the record stays within 32 KiB |
-| `rank`, `source`, `pitch`, `pos` | Frequency rank (99999 = none) and its source, pitch-accent downsteps, parts of speech |
+| `rank`, `source`, `pitch`, `pos` | Frequency rank (1 = most frequent, 0 = none) and its source (the frequency list's name, `Jiten` for the bundled dictionary; `null` when there is none), pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
 | `picture` | Whether `<id>.jpg` goes with it |
@@ -218,8 +221,11 @@ card can be made into a note later, by any version that reads the record:
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
 | `time` | When Enter was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC); the note's creation and modification time |
 
-A record is at most 32 KiB. Records of version 2 (#49, v0.8.0-test.1: the same
-keys up to `misc`) and version 1 (#5) still load and export (their notes have
+A record is at most 32 KiB. Version 4 is version 3 with a new "no rank": 0,
+since Jiten's ranks reach 398,255 and include 99999, which versions 1-3 wrote
+for none (jpdb's missing rank). Records of version 3 (v0.8.0-test.2), version 2
+(#49, v0.8.0-test.1: the same keys up to `misc`) and version 1 (#5) still load
+and export, their rank 99999 read as none (the notes of versions 1 and 2 have
 a fixed time, 2023-11-14, the same in every package); a local definition's
 first line names its dictionary there too. A version this build does not know
 is kept, not exported.

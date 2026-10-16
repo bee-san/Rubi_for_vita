@@ -174,10 +174,11 @@ static int show_local_entry(VjoArena *a, VjoOverlayData *out, const VjoDictResul
     entry->pos16 = result->tokens[0].pos16;
     entry->hl_start = (int)cursor_byte;
     entry->hl_end = (int)end;
-    entry->text = vjo_entry_format(a, entry->vocab);
+    entry->text = vjo_entry_format(a, entry->vocab, result->source);
     if (!entry->text) return VJO_E_OOM;
     out->list.entries = entry;
     out->list.n_entries = 1;
+    out->list.source = result->source;
     return VJO_OK;
 }
 

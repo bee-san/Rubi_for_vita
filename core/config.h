@@ -41,6 +41,7 @@ typedef struct {
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */
     int highlight_mode;       /* VJO_HIGHLIGHT_*: match span or selected character */
+    int frequency_badge;      /* 0/1: the popup shows the entry's frequency rank ("#1234") */
     int font_size_ja;         /* 8..40: header, headwords, readings */
     int font_size_en;         /* 8..40: meanings, rank, messages */
     int toggle_button;        /* enum VjoTrigger */

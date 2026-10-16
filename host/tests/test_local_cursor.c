@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "acutest.h"
+#include "anki.h"
+#include "lapis.h"
+#include "anki_queue.h"
 #include "client.h"
 #include "local_dict.h"
 #include "utf.h"
@@ -11,18 +14,21 @@
 typedef struct {
     const char *key, *spelling, *reading, *meaning;
     uint16_t rules;
+    uint32_t rank; /* v3 fixtures: the payload's frequency word (0 = unranked) */
 } Row;
 typedef struct {
     const char *name;
     uint8_t bytes[32768];
     size_t size;
-    uint64_t payload[16];
-    uint32_t payload_size[16];
+    uint64_t payload[24];
+    uint32_t payload_size[24];
     int n_payload, active;
 } Fixture;
 static Fixture fixtures[VJO_LOCAL_MAX_DICTS];
 static uint8_t arena_mem[64 * 1024];
 static int opened, closed, reads, payload_reads, fail_read, opens_by[VJO_LOCAL_MAX_DICTS];
+static size_t read_bytes;
+static int payload_touches; /* reads starting at a payload, of any length */
 
 static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
 static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
@@ -35,10 +41,16 @@ static uint64_t key_hash(const char *s)
     h ^= h >> 33; h *= UINT64_C(0xc4ceb9fe1a85ec53);
     return h ^ (h >> 33);
 }
-static size_t add_payload(Fixture *f, const Row *r, size_t off)
+/* v3: the frequency word first (bits 24-31 set when the rank's high byte
+ * says how it matched: the reader must ignore them). */
+static size_t add_payload(Fixture *f, const Row *r, size_t off, int version)
 {
     size_t start = off;
     const char *parts[] = {r->spelling, r->reading, r->meaning};
+    if (version == 3) {
+        TEST_ASSERT(off + 4 <= sizeof(f->bytes));
+        put32(f->bytes + off, r->rank); off += 4;
+    }
     for (int i = 0; i < 3; i++) {
         size_t n = strlen(parts[i]) + 1;
         TEST_ASSERT(off + n <= sizeof(f->bytes));
@@ -48,12 +60,20 @@ static size_t add_payload(Fixture *f, const Row *r, size_t off)
     f->payload_size[f->n_payload++] = (uint32_t)(off - start);
     return off;
 }
+static const char *fixture_title = "Jiten"; /* v3 header's frequency list */
+/* The longest name a v3 header holds: with a maximum entry it still fits the
+ * selected entry's budget (VJO_LOCAL_SELECTED_BUDGET). */
+static const char longest_title[] = "A frequency list with the longest name a v3 header holds: 63 B!";
+typedef char LongestTitleIs63[(sizeof(longest_title) == 64) ? 1 : -1];
+/* Formats 1 (sorted index), 2 (hash pages) and 3 (2 with the frequency list's
+ * name and a frequency word per payload; a posting's spare u16 is set, as a
+ * later index may use it, and must be ignored). */
 static void build(Fixture *f, const char *name, const Row *rows, int n, int version)
 {
-    int order[16];
+    int order[24];
     size_t off;
     memset(f, 0, sizeof(*f)); f->name = name;
-    TEST_ASSERT(n > 0 && n <= 16);
+    TEST_ASSERT(n > 0 && n <= 24);
     /* Stable sorting preserves first posting priority for identical keys. */
     for (int i = 0; i < n; i++) {
         int j = i;
@@ -66,7 +86,7 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
             int tmp = order[j - 1]; order[j - 1] = order[j]; order[j] = tmp; j--;
         }
     }
-    memcpy(f->bytes, version == 1 ? "VJDICT1\0" : "VJDICT2\0", 8);
+    memcpy(f->bytes, version == 1 ? "VJDICT1\0" : version == 2 ? "VJDICT2\0" : "VJDICT3\0", 8);
     put32(f->bytes + 8, (uint32_t)version); put32(f->bytes + 12, 64);
     put32(f->bytes + 16, (uint32_t)n); put32(f->bytes + 20, 24);
     if (version == 1) {
@@ -78,7 +98,7 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
             size_t key_len = strlen(r->key), payload;
             put64(record, off); put16(record + 16, (uint16_t)key_len);
             memcpy(f->bytes + off, r->key, key_len); off += key_len;
-            payload = off; off = add_payload(f, r, off);
+            payload = off; off = add_payload(f, r, off, version);
             put64(record + 8, payload); put16(record + 18, r->rules);
             put32(record + 20, (uint32_t)(off - payload));
         }
@@ -87,6 +107,7 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
         off = 8192;
         put64(f->bytes + 24, 4096); put64(f->bytes + 32, off);
         put64(f->bytes + 48, 1); put64(f->bytes + 56, 1);
+        if (version == 3) memcpy(f->bytes + 64, fixture_title, strlen(fixture_title));
         memcpy(f->bytes + 4096, "VJHP", 4);
         for (int i = 0; i < n;) {
             int end = i + 1;
@@ -105,9 +126,10 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
             for (int j = i; j < end; j++) {
                 uint8_t *post = f->bytes + posting + (j - i) * 16;
                 size_t payload = off;
-                off = add_payload(f, &rows[order[j]], off);
+                off = add_payload(f, &rows[order[j]], off, version);
                 put64(post, payload); put32(post + 8, (uint32_t)(off - payload));
                 put16(post + 12, rows[order[j]].rules);
+                if (version == 3) put16(post + 14, 0xa5a5);
             }
             groups++; i = end;
         }
@@ -155,8 +177,11 @@ static int read_file(void *ctx, uint64_t off, void *dst, size_t n)
     TEST_CHECK(f->active > 0);
     if (fail_read == reads) return -1;
     if (off > f->size || n > f->size - (size_t)off) return -1;
-    for (int i = 0; i < f->n_payload; i++)
+    read_bytes += n;
+    for (int i = 0; i < f->n_payload; i++) {
         if (off == f->payload[i] && n == f->payload_size[i]) payload_reads++;
+        if (off == f->payload[i]) payload_touches++;
+    }
     memcpy(dst, f->bytes + (size_t)off, n); return 0;
 }
 static void close_file(void *ctx)
@@ -180,6 +205,8 @@ static void setup(VjoArena *a, VjoPlatform *p, VjoConfig *cfg)
     memset(fixtures, 0, sizeof(fixtures));
     memset(opens_by, 0, sizeof(opens_by));
     opened = closed = reads = payload_reads = fail_read = 0;
+    read_bytes = 0;
+    fixture_title = "Jiten";
     vjo_arena_init(a, arena_mem, sizeof(arena_mem));
     memset(p, 0, sizeof(*p)); p->file_open = open_file;
     vjo_config_defaults(cfg); cfg->dictionary = VJO_DICT_LOCAL;
@@ -196,10 +223,10 @@ static int lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 }
 static void longest_and_first_posting(void)
 {
-    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0},
-        {"猫舌", "猫舌", "ねこじた", "first long meaning", 0},
-        {"猫舌", "猫舌", "ねこじた", "other long meaning", 0}};
-    for (int version = 1; version <= 2; version++) {
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0},
+        {"猫舌", "猫舌", "ねこじた", "first long meaning", 0, 0},
+        {"猫舌", "猫舌", "ねこじた", "other long meaning", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 3, version);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "猫舌。猫", 0, &r, &e));
@@ -211,11 +238,11 @@ static void longest_and_first_posting(void)
 }
 static void inflection_and_dictionary_priority(void)
 {
-    const Row first[] = {{"食べる", "食べる", "たべる", "first inflection", 1},
-        {"猫", "猫", "ねこ", "first dictionary", 0}};
-    const Row second[] = {{"食べた", "食べた", "たべた", "exact later dictionary", 0},
-        {"猫", "猫", "ねこ", "second dictionary", 0}};
-    for (int version = 1; version <= 2; version++) {
+    const Row first[] = {{"食べる", "食べる", "たべる", "first inflection", 1, 0},
+        {"猫", "猫", "ねこ", "first dictionary", 0, 0}};
+    const Row second[] = {{"食べた", "食べた", "たべた", "exact later dictionary", 0, 0},
+        {"猫", "猫", "ねこ", "second dictionary", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", first, 2, version);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "食べませんでした。", 0, &r, &e));
@@ -234,7 +261,7 @@ static void inflection_and_dictionary_priority(void)
 }
 static void cursor_boundary_and_no_later_word(void)
 {
-    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0}, {"犬", "犬", "いぬ", "dog", 0}};
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
     setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 2, 2);
     TEST_ASSERT(!lookup(&a, &p, &cfg, "X猫", 0, &r, &e)); TEST_CHECK(r.n_vocab == 0);
@@ -255,10 +282,10 @@ static void cursor_boundary_and_no_later_word(void)
 }
 static void raw_newline_and_supplementary_highlights(void)
 {
-    const Row rows[] = {{"猫犬", "猫犬", "", "must not cross newline", 0},
-        {"猫", "猫", "ねこ", "cat", 0}, {"犬", "犬", "いぬ", "dog", 0},
-        {"𠮷猫", "𠮷猫", "", "supplementary term", 0}};
-    for (int version = 1; version <= 2; version++) {
+    const Row rows[] = {{"猫犬", "猫犬", "", "must not cross newline", 0, 0},
+        {"猫", "猫", "ねこ", "cat", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0},
+        {"𠮷猫", "𠮷猫", "", "supplementary term", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 4, version);
         const char *text = "😀\r\n猫\n犬。𠮷猫";
@@ -281,9 +308,9 @@ static void raw_newline_and_supplementary_highlights(void)
 }
 static void punctuation_and_read_counts_do_not_scan_remainder(void)
 {
-    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0}, {"犬", "犬", "いぬ", "dog", 0},
-        {"猫犬", "猫犬", "", "longer", 0}};
-    for (int version = 1; version <= 2; version++) {
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0},
+        {"猫犬", "猫犬", "", "longer", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
         char long_text[4096];
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 3, version);
@@ -303,19 +330,24 @@ static void punctuation_and_read_counts_do_not_scan_remainder(void)
 static void largest_entry_and_input_fit_64k(void)
 {
     char meaning[8192], text[4096];
-    /* 猫 + NUL, empty reading + NUL, meaning + NUL totals exactly 8192. */
-    memset(meaning, 'M', 8186); meaning[8186] = 0;
+    /* 猫 + NUL, empty reading + NUL, meaning + NUL totals exactly 8192, in v3
+     * with the 4-byte frequency word before them. */
     memcpy(text, "猫。", 6); memset(text + 6, 'X', sizeof(text) - 7); text[4095] = 0;
-    const Row row = {"猫", "猫", "", meaning, 0};
-    for (int version = 1; version <= 2; version++) {
+    for (int version = 1; version <= 3; version++) {
+        size_t meaning_len = version == 3 ? 8182 : 8186;
+        memset(meaning, 'M', meaning_len); meaning[meaning_len] = 0;
+        const Row row = {"猫", "猫", "", meaning, 0, 1536};
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
-        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, version);
+        setup(&a, &p, &cfg); fixture_title = longest_title; build(&fixtures[0], "main.vjdict", &row, 1, version);
         TEST_ASSERT(fixtures[0].payload_size[0] == VJO_LOCAL_MAX_ENTRY);
         out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
         TEST_ASSERT(out.list.n_entries == 1);
-        TEST_CHECK(strlen(out.list.entries[0].vocab->meanings[0]) == 8186);
+        TEST_CHECK(strlen(out.list.entries[0].vocab->meanings[0]) == meaning_len);
         TEST_CHECK(strstr(out.list.entries[0].text, meaning) != NULL);
+        /* v3: the rank and its list's name fit the selected entry's budget too */
+        TEST_CHECK(out.list.entries[0].vocab->rank == (version == 3 ? 1536 : VJO_NO_RANK));
+        TEST_CHECK(version == 3 ? out.list.source && !strcmp(out.list.source, longest_title) : !out.list.source);
         size_t static_peak = a.peak;
         vjo_arena_reset(&a); a.peak = 0; cfg.non_japanese_filter = 0;
         TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, text, &out));
@@ -333,7 +365,7 @@ static void largest_entry_and_input_fit_64k(void)
 }
 static void repeated_lookups_oom_and_io_recovery(void)
 {
-    const Row row = {"猫", "猫", "ねこ", "cat", 0};
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
     setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 2);
     TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。X", &out));
@@ -369,8 +401,8 @@ static void repeated_lookups_oom_and_io_recovery(void)
 }
 static void normalized_source_span_and_invalid_input(void)
 {
-    const Row rows[] = {{"ねこ", "猫", "ねこ", "normalized cat", 0},
-        {"abc", "abc", "", "normalized latin", 0}};
+    const Row rows[] = {{"ねこ", "猫", "ねこ", "normalized cat", 0, 0},
+        {"abc", "abc", "", "normalized latin", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
     char too_long[4098];
     setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 2, 2);
@@ -390,8 +422,8 @@ static void normalized_source_span_and_invalid_input(void)
 
 static void every_file_read_failure_closes_and_rolls_back(void)
 {
-    const Row row = {"猫", "猫", "ねこ", "cat", 0};
-    for (int version = 1; version <= 2; version++) {
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, version);
         TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。", &out));
@@ -440,11 +472,11 @@ static void pages_follow_best_match_then_priority(void)
 {
     /* d2 has the longest span, so it is the single best result. d1 has only
      * an inflected match and d3 has none; they keep configured order. */
-    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0}};
-    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0}, {"猫舌", "猫舌", "", "d1 other", 0}};
-    const Row d2[] = {{"猫舌", "猫舌", "ねこじた", "d2 long", 0}};
-    const Row d3[] = {{"犬", "犬", "いぬ", "d3 dog", 0}};
-    for (int version = 1; version <= 2; version++) {
+    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
+    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 0}, {"猫舌", "猫舌", "", "d1 other", 0, 0}};
+    const Row d2[] = {{"猫舌", "猫舌", "ねこじた", "d2 long", 0, 0}};
+    const Row d3[] = {{"犬", "犬", "いぬ", "d3 dog", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, single; VjoErr e; VjoLocalPages pages;
         setup(&a, &p, &cfg); set_names(&cfg, 4);
         build(&fixtures[0], page_names[0], d0, 1, version);
@@ -487,8 +519,8 @@ static void pages_follow_best_match_then_priority(void)
 
 static void exact_later_dictionary_precedes_inflected_page(void)
 {
-    const Row d0[] = {{"食べる", "食べる", "たべる", "d0 inflected", 1}};
-    const Row d1[] = {{"食べた", "食べた", "たべた", "d1 exact", 0}};
+    const Row d0[] = {{"食べる", "食べる", "たべる", "d0 inflected", 1, 0}};
+    const Row d1[] = {{"食べた", "食べた", "たべた", "d1 exact", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
     setup(&a, &p, &cfg); set_names(&cfg, 2);
     build(&fixtures[0], page_names[0], d0, 1, 2);
@@ -509,15 +541,15 @@ static void exact_later_dictionary_precedes_inflected_page(void)
 static void postings_are_ranked_by_how_the_text_is_written(void)
 {
     const Row rows[] = {
-        {"から", "空", "から", "empty", 0}, {"から", "殻", "から", "shell, much longer article", 0},
-        {"から", "から", "", "particle: from", 0},
-        {"した", "下", "した", "below", 0}, {"する", "剃る", "する", "to shave", 2},
-        {"する", "する", "", "to do", 4},
-        {"わたし", "私", "わたし", "I", 0}, {"私", "私", "あたい", "I (casual)", 0},
-        {"私", "私", "わたし", "I", 0}, {"私", "私", "わっし", "I (old), the longest article of the three", 0},
-        {"人", "人", "", "the character", 0}, {"人", "人", "ひと", "person", 0},
-        {"って", "って", "", "quotative", 0}};
-    for (int version = 1; version <= 2; version++) {
+        {"から", "空", "から", "empty", 0, 0}, {"から", "殻", "から", "shell, much longer article", 0, 0},
+        {"から", "から", "", "particle: from", 0, 0},
+        {"した", "下", "した", "below", 0, 0}, {"する", "剃る", "する", "to shave", 2, 0},
+        {"する", "する", "", "to do", 4, 0},
+        {"わたし", "私", "わたし", "I", 0, 0}, {"私", "私", "あたい", "I (casual)", 0, 0},
+        {"私", "私", "わたし", "I", 0, 0}, {"私", "私", "わっし", "I (old), the longest article of the three", 0, 0},
+        {"人", "人", "", "the character", 0, 0}, {"人", "人", "ひと", "person", 0, 0},
+        {"って", "って", "", "quotative", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
         static const struct { const char *text, *meaning; int len16; } cases[] = {
             {"から", "particle: from", 2}, {"した", "to do", 2}, {"私", "I", 1}, {"人", "person", 1},
@@ -543,19 +575,19 @@ static void postings_are_ranked_by_how_the_text_is_written(void)
 static void katakana_text_prefers_its_spelling_then_hiragana(void)
 {
     const Row rows[] = {
-        {"じゅーす", "汁酢", "じゅーす", "kanji homograph, the longest article of all of these", 0},
-        {"じゅーす", "じゅーす", "", "hiragana spelled, longer article", 0},
-        {"じゅーす", "ジュース", "", "katakana", 0},
-        {"って", "偶て", "って", "kanji homograph with a much longer article", 0},
-        {"って", "って", "", "quotative", 0},
-        {"ok", "OK", "", "ascii", 0}, {"ok", "ＯＫ", "", "full width", 0},
-        {"OK", "OK", "", "ascii upper", 0}, {"OK", "ＯＫ", "", "full width upper", 0}};
+        {"じゅーす", "汁酢", "じゅーす", "kanji homograph, the longest article of all of these", 0, 0},
+        {"じゅーす", "じゅーす", "", "hiragana spelled, longer article", 0, 0},
+        {"じゅーす", "ジュース", "", "katakana", 0, 0},
+        {"って", "偶て", "って", "kanji homograph with a much longer article", 0, 0},
+        {"って", "って", "", "quotative", 0, 0},
+        {"ok", "OK", "", "ascii", 0, 0}, {"ok", "ＯＫ", "", "full width", 0, 0},
+        {"OK", "OK", "", "ascii upper", 0, 0}, {"OK", "ＯＫ", "", "full width upper", 0, 0}};
     static const struct { const char *text, *meaning; } cases[] = {
         {"ジュース", "katakana"}, {"じゅーす", "hiragana spelled, longer article"},
         {"ジューす", "hiragana spelled, longer article"}, /* mixed: both equal as kana, the longer article */
         {"ッて", "quotative"}, {"って", "quotative"}, {"ッテ", "quotative"},
         {"ＯＫ", "full width upper"}, {"OK", "ascii upper"}};
-    for (int version = 1; version <= 2; version++) {
+    for (int version = 1; version <= 3; version++) {
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
         setup(&a, &p, &cfg);
         build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
@@ -575,8 +607,8 @@ static void katakana_text_prefers_its_spelling_then_hiragana(void)
  * beats a homograph in an earlier one; the homograph is still a page. */
 static void written_entry_in_later_dictionary_precedes_homograph(void)
 {
-    const Row d0[] = {{"から", "空", "から", "d0 homograph", 0}};
-    const Row d1[] = {{"から", "から", "", "d1 written", 0}};
+    const Row d0[] = {{"から", "空", "から", "d0 homograph", 0, 0}};
+    const Row d1[] = {{"から", "から", "", "d1 written", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
     setup(&a, &p, &cfg); set_names(&cfg, 2);
     build(&fixtures[0], page_names[0], d0, 1, 2);
@@ -592,7 +624,7 @@ static void single_result_reads_are_unchanged(void)
 {
     /* Limit 1 is the previous single lookup: once d0 matches, d1's index is
      * never searched. Another limit searches d1 but never reads its payload. */
-    const Row row = {"猫", "猫", "ねこ", "cat", 0};
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
     setup(&a, &p, &cfg); set_names(&cfg, 2);
     build(&fixtures[0], page_names[0], &row, 1, 2);
@@ -625,11 +657,14 @@ static void overlay_pages_stream_through_one_arena(void)
     static char meanings[VJO_LOCAL_MAX_DICTS][8192];
     Row rows[VJO_LOCAL_MAX_DICTS];
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
-    setup(&a, &p, &cfg); set_names(&cfg, 8);
+    setup(&a, &p, &cfg); set_names(&cfg, 8); fixture_title = longest_title;
     for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
-        memset(meanings[i], 'a' + i, 8186); meanings[i][8186] = 0;
-        rows[i] = (Row){"猫", "猫", "", meanings[i], 0};
-        build(&fixtures[i], page_names[i], &rows[i], 1, i % 2 ? 1 : 2);
+        /* Formats 3, 2, 1, 3, ...: page 0 (v3) holds the most, its list's name too. */
+        int version = 3 - i % 3;
+        size_t len = version == 3 ? 8182 : 8186;
+        memset(meanings[i], 'a' + i, len); meanings[i][len] = 0;
+        rows[i] = (Row){"猫", "猫", "", meanings[i], 0, version == 3 ? 100u + (uint32_t)i : 0};
+        build(&fixtures[i], page_names[i], &rows[i], 1, version);
         TEST_ASSERT(fixtures[i].payload_size[0] == VJO_LOCAL_MAX_ENTRY);
     }
     const char *text = "猫が好き";
@@ -656,6 +691,8 @@ static void overlay_pages_stream_through_one_arena(void)
             TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, target, &out));
             TEST_CHECK(out.page == target && out.list.n_entries == 1 && out.list.header == text);
             TEST_CHECK(meaning_byte(&out) == 'a' + target);
+            TEST_CHECK(out.list.entries[0].vocab->rank == (int)rows[target].rank);
+            TEST_CHECK(target % 3 ? !out.list.source : out.list.source && !strcmp(out.list.source, longest_title));
             TEST_CHECK(out.list.entries[0].hl_start == 0 && out.list.entries[0].hl_end == 3);
             TEST_CHECK(payload_reads == 1 && opens_by[target] == 1 && opened == closed);
             TEST_CHECK(a.used <= resident); /* one entry resident, never more */
@@ -668,8 +705,8 @@ static void overlay_pages_stream_through_one_arena(void)
 
 static void page_failures_keep_header_and_locators(void)
 {
-    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0}};
-    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0}};
+    const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
+    const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 0}};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
     setup(&a, &p, &cfg); set_names(&cfg, 2); cfg.local_dictionary_results = 2;
     build(&fixtures[0], page_names[0], d0, 1, 2);
@@ -733,7 +770,7 @@ static void page_failures_keep_header_and_locators(void)
 
 static void eight_dictionaries_only_matching_pages(void)
 {
-    const Row cat = {"猫", "猫", "ねこ", "cat", 0}, dog = {"犬", "犬", "いぬ", "dog", 0};
+    const Row cat = {"猫", "猫", "ねこ", "cat", 0, 0}, dog = {"犬", "犬", "いぬ", "dog", 0, 0};
     VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
     setup(&a, &p, &cfg); set_names(&cfg, 8);
     for (int i = 0; i < 8; i++) build(&fixtures[i], page_names[i], i == 1 || i == 4 || i == 6 ? &cat : &dog, 1, 2);
@@ -748,6 +785,317 @@ static void eight_dictionaries_only_matching_pages(void)
     int before = opened;
     TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "。", 0, 8, &pages, &r, &e));
     TEST_CHECK(!pages.count && opened == before && !a.used);
+}
+
+/* ---- format 3: a frequency rank in every payload ---- */
+
+/* The rank and the list's name come with the entry: no extra read, the name
+ * in the result arena, unranked as VJO_NO_RANK; v2 has neither. */
+static void v3_rank_and_source_come_with_the_entry(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 1536}, {"犬", "犬", "いぬ", "dog", 0, 0},
+                        {"あんとわーぬ", "アントワーヌ", "", "a name", 0, 99999}};
+    int reads_v2 = 0;
+    size_t bytes_v2 = 0;
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoOverlayData out;
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 3, version);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK(r.vocab[0].rank == (version == 3 ? 1536 : VJO_NO_RANK));
+        TEST_CHECK(!strcmp(r.vocab[0].spelling, "猫") && !strcmp(r.vocab[0].reading, "ねこ"));
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat") && payload_reads == 1);
+        if (version == 2) {
+            TEST_CHECK(!r.source);
+            reads_v2 = reads; bytes_v2 = read_bytes;
+        } else {
+            TEST_ASSERT(r.source && !strcmp(r.source, "Jiten"));
+            TEST_CHECK((const uint8_t *)r.source >= a.base && (const uint8_t *)r.source < a.base + a.used);
+            /* the same reads as v2: the name is in the header's read, the
+             * rank in the head's and the payload's (4 more bytes each) */
+            TEST_CHECK(reads == reads_v2);
+            TEST_CHECK_(read_bytes <= bytes_v2 + 64 + 4 * 2, "%zu vs %zu", read_bytes, bytes_v2);
+        }
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "犬", 0, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK(r.vocab[0].rank == VJO_NO_RANK && !strcmp(r.vocab[0].meanings[0], "dog"));
+        TEST_CHECK(version == 3 ? r.source && !strcmp(r.source, "Jiten") : !r.source);
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "アントワーヌ", 0, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK(r.vocab[0].rank == (version == 3 ? 99999 : VJO_NO_RANK)); /* a real rank */
+        /* the overlay's entry: the badge and the list's source */
+        vjo_arena_reset(&a);
+        out = (VjoOverlayData){.ocr_text = "猫と犬", .filtered = "猫と犬", .sentence = "猫と犬"};
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) && out.list.n_entries == 1);
+        TEST_CHECK(!strcmp(out.list.entries[0].text, version == 3 ? "猫 (ねこ) #1536\ncat" : "猫 (ねこ)\ncat"));
+        TEST_CHECK(version == 3 ? !strcmp(out.list.source, "Jiten") : !out.list.source);
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 6, &out) && out.list.n_entries == 1);
+        TEST_CHECK(!strcmp(out.list.entries[0].text, version == 3 ? "犬 (いぬ) unranked\ndog" : "犬 (いぬ)\ndog"));
+    }
+    /* A located page reads its own dictionary's rank and name. */
+    {
+        const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
+        const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 777}};
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, one; VjoErr e; VjoLocalPages pages;
+        setup(&a, &p, &cfg); set_names(&cfg, 2);
+        build(&fixtures[0], page_names[0], d0, 1, 2);
+        fixture_title = "Other list";
+        build(&fixtures[1], page_names[1], d1, 1, 3);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 2, &pages, &r, &e) && pages.count == 2);
+        TEST_CHECK(!r.source && r.vocab[0].rank == VJO_NO_RANK); /* page 0: the v2 file */
+        TEST_ASSERT(!vjo_local_read_page(&a, &p, &cfg, &pages, 1, &one, &e));
+        TEST_CHECK(one.vocab[0].rank == 777 && one.source && !strcmp(one.source, "Other list"));
+        TEST_CHECK(!strcmp(one.vocab[0].meanings[0], "d1 cat"));
+    }
+}
+
+/* The frequency decides between postings the text ranks alike: after an
+ * entry written as the text is, a listed common reading and one with a
+ * reading, and before the longer article and source order. Synthetic rows. */
+static void frequency_breaks_ties_after_how_the_text_is_written(void)
+{
+    const Row rows[] = {
+        /* equal flags: the more frequent wins over a longer article first in the file */
+        {"かいとう", "解答", "かいとう", "answer, the longest article of the three", 0, 6000},
+        {"かいとう", "回答", "かいとう", "reply", 0, 3000},
+        {"かいとう", "怪盗", "かいとう", "phantom thief", 0, 0},
+        /* written as the text beats a more frequent homograph */
+        {"から", "空", "から", "empty, a frequent homograph", 0, 39553},
+        {"から", "から", "", "particle: from", 0, 0},
+        /* the preferred-readings table beats the frequency */
+        {"私", "私", "あたし", "I (casual)", 0, 1678},
+        {"私", "私", "わたし", "I", 0, 32000},
+        /* an entry with a reading beats a more frequent reading-less one */
+        {"人", "人", "", "the character", 0, 65},
+        {"人", "人", "ひと", "person", 0, 9000},
+        /* exact below rank 256, whatever the articles' lengths (a key in
+         * neither built-in table) */
+        {"きかん", "期間", "きかん", "period, a long article for its rank", 0, 201},
+        {"きかん", "機関", "きかん", "agency", 0, 200},
+        /* within 1/128 of an octave the ranks tie: the longer article */
+        {"りょう", "量", "りょう", "amount", 0, 100100},
+        {"りょう", "寮", "りょう", "dormitory, the longer article", 0, 100097},
+        /* a ranked entry before an unranked one */
+        {"もと", "元", "もと", "origin", 0, 0},
+        {"もと", "本", "もと", "basis", 0, 400000},
+        /* a kanji spelling's own rank before a borrowed one (the word's rank
+         * in kana, bit 24): Jiten has 先 read さき at 416, さっき in kana at 221 */
+        {"先", "先", "さっき", "a while ago", 0, 1u << 24 | 221u},
+        {"先", "先", "さき", "ahead", 0, 416},
+        /* two borrowed ranks compare as ranks */
+        {"甘", "甘", "うま", "tasty", 0, 1u << 24 | 420u},
+        {"甘", "甘", "あま", "sweet, a longer article", 0, 1u << 24 | 17420u},
+        /* dictionary forms at the same inflection depth (かった: かう, かる, かつ,
+         * one step each): the more frequent, where the longer article decided */
+        {"かう", "かう", "", "to buy", 2, 500},
+        {"かる", "かる", "", "to cut, an article longer than the other two", 2, 80000},
+        {"かつ", "かつ", "", "to win", 2, 0}};
+    static const struct { const char *text, *v2, *v3; } cases[] = {
+        {"かいとう", "answer, the longest article of the three", "reply"},
+        {"から", "particle: from", "particle: from"},
+        {"私", "I", "I"},
+        {"人", "person", "person"},
+        {"きかん", "period, a long article for its rank", "agency"},
+        {"りょう", "dormitory, the longer article", "dormitory, the longer article"},
+        {"もと", "origin", "basis"},
+        {"先", "a while ago", "ahead"},
+        {"甘", "sweet, a longer article", "tasty"},
+        {"かった", "to cut, an article longer than the other two", "to buy"},
+        {"かう", "to buy", "to buy"}}; /* the text itself still before its inflections */
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_CASE_("v%d %s", version, cases[i].text);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], version == 3 ? cases[i].v3 : cases[i].v2),
+                        "got %s", r.vocab[0].meanings[0]);
+        }
+    }
+}
+
+/* usual_spellings (local_dict.c): in a file with ranks, a key's listed
+ * spelling beats a lower rank (やめる: 止める "stop" over 辞める "resign");
+ * without ranks the longer article decides, as before. It only orders one
+ * key's entries: the text's own entry (無くして) still comes before an
+ * inflection's usual spelling (なくす: 無くす), as on main (audit-dict-freq-b). */
+static void usual_spellings_order_one_keys_entries(void)
+{
+    const Row rows[] = {
+        {"やめる", "辞める", "やめる", "to resign, an article longer than to stop's", 1, 1674},
+        {"やめる", "止める", "やめる", "to stop", 1, 86863},
+        {"なくして", "無くして", "なくして", "without", 0, 91039},
+        {"なくす", "亡くす", "なくす", "to lose (a person)", 2, 6000},
+        {"なくす", "無くす", "なくす", "to lose", 2, 8899}};
+    static const struct { const char *text, *v2, *v3; } cases[] = {
+        {"やめる", "to resign, an article longer than to stop's", "to stop"},
+        {"やめて", "to resign, an article longer than to stop's", "to stop"},
+        {"なくして", "without", "without"},
+        {"なくした", "to lose (a person)", "to lose"}};
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_CASE_("v%d %s", version, cases[i].text);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], version == 3 ? cases[i].v3 : cases[i].v2),
+                        "got %s", r.vocab[0].meanings[0]);
+        }
+    }
+}
+
+/* A v3 header's list name must be 1-63 bytes of text, NUL-padded; payloads
+ * hold the frequency word and three strings; v2 still refuses a set spare
+ * posting field, v3 ignores it (and the word's top byte). */
+static void v3_format_is_checked(void)
+{
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0xff000000u | 42u};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+    setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 3);
+    TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e) && r.vocab[0].rank == 42);
+    static const struct { size_t off; uint8_t value; } bad[] = {
+        {64, 0},            /* an empty name */
+        {64 + 6, 'x'},      /* text in the padding after the name's NUL (64 + 5)... */
+        {64 + 2, 0x1f},     /* a control character */
+        {64 + 63, 'x'},     /* ...or none at all, with every byte text */
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 3);
+        if (i == 3) memset(fixtures[0].bytes + 64, 'x', 64);
+        else fixtures[0].bytes[bad[i].off] = bad[i].value;
+        TEST_CASE_("bad name %zu", i);
+        TEST_CHECK(lookup(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_E_LOCAL_FORMAT && !r.n_vocab);
+        TEST_CHECK(opened == closed && a.used == 0);
+    }
+    /* the longest name, 63 bytes */
+    setup(&a, &p, &cfg);
+    fixture_title = "123456789012345678901234567890123456789012345678901234567890123";
+    build(&fixtures[0], "main.vjdict", &row, 1, 3);
+    TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e) && r.source && strlen(r.source) == 63);
+    /* a payload too short for the word and three strings */
+    {
+        const Row tiny = {"a", "a", "", "", 0, 7};
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &tiny, 1, 3);
+        TEST_ASSERT(fixtures[0].payload_size[0] == 8);
+        TEST_CHECK(!lookup(&a, &p, &cfg, "a", 0, &r, &e) && r.n_vocab == 1 && r.vocab[0].rank == 7);
+        /* posting lengths 4-7: shorter than any v3 payload (4 would leave
+         * nothing after the frequency word) */
+        uint8_t *post = fixtures[0].bytes + 8192 + 1;
+        for (uint32_t bad_len = 4; bad_len < 8; bad_len++) {
+            put32(post + 8, bad_len);
+            vjo_arena_reset(&a);
+            TEST_CASE_("posting length %u", (unsigned)bad_len);
+            TEST_CHECK(lookup(&a, &p, &cfg, "a", 0, &r, &e) == VJO_E_LOCAL_FORMAT && !r.n_vocab);
+        }
+    }
+    /* the spare posting field: ignored in v3 (the builder sets it), refused in v2 */
+    setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 2);
+    TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e));
+    put16(fixtures[0].bytes + 8192 + strlen("猫") + 14, 1);
+    vjo_arena_reset(&a);
+    TEST_CHECK(lookup(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_E_LOCAL_FORMAT);
+    /* a v2 magic with version 3, or the other way round */
+    setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 3);
+    memcpy(fixtures[0].bytes, "VJDICT2\0", 8);
+    TEST_CHECK(lookup(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_E_LOCAL_FORMAT);
+    setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, 2);
+    put32(fixtures[0].bytes + 8, 3);
+    TEST_CHECK(lookup(&a, &p, &cfg, "猫", 0, &r, &e) == VJO_E_LOCAL_FORMAT);
+}
+
+/* The rank reaches the card: the note (core/anki.c), its queue record and
+ * the Lapis fields the .apkg export writes (core/lapis.c), with the list's
+ * name as the frequency source; an unranked entry records 0, leaves
+ * Frequency empty and sorts last (FreqSort 9999999, as Yomitan's). */
+static void v3_rank_reaches_the_anki_card(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 1536}, {"犬", "犬", "いぬ", "dog", 0, 0}};
+    static const struct { const char *text; int rank; const char *record, *sort, *freq; } cases[] = {
+        {"猫が", 1536, ",\"rank\":1536,", "1536", "<ul style=\"text-align: left;\"><li>Jiten: 1536</li></ul>"},
+        {"犬が", VJO_NO_RANK, ",\"rank\":0,", "9999999", ""}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out; VjoAnkiNote note, back;
+        char *json, *sort, *freq;
+        int picture;
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 2, 3);
+        out = (VjoOverlayData){.ocr_text = cases[i].text, .filtered = cases[i].text, .sentence = cases[i].text};
+        TEST_CASE(cases[i].text);
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) && out.list.n_entries == 1);
+        TEST_ASSERT(!vjo_anki_note_from_entry(&a, &out.list, 0, &note));
+        TEST_CHECK(note.rank == cases[i].rank && note.source && !strcmp(note.source, "Jiten"));
+        json = vjo_queue_encode(&a, &note, 0);
+        TEST_ASSERT(json != NULL);
+        TEST_CHECK(strstr(json, "{\"version\":4,") == json && strstr(json, cases[i].record) &&
+                   strstr(json, ",\"source\":\"Jiten\","));
+        TEST_MSG("%s", json);
+        TEST_CHECK(vjo_queue_decode(&a, json, strlen(json), &back, &picture) == 4 && back.rank == cases[i].rank);
+        sort = vjo_lapis_field_value(&a, VJO_LAPIS_FREQ_SORT, &back, NULL);
+        freq = vjo_lapis_field_value(&a, VJO_LAPIS_FREQUENCY, &back, NULL);
+        TEST_CHECK(sort && !strcmp(sort, cases[i].sort));
+        TEST_CHECK(freq && !strcmp(freq, cases[i].freq));
+        TEST_MSG("%s / %s", sort ? sort : "(null)", freq ? freq : "(null)");
+    }
+}
+
+/* The whole-text lookup (the host CLI's, vjo_overlay_lookup) can mix
+ * dictionaries: it names a frequency list only when every entry's file has
+ * it, so a v2 file's entry shows no "unranked" and a ranked one its rank. */
+static void whole_text_lookup_names_a_list_every_entry_has(void)
+{
+    const Row d0[] = {{"猫", "猫", "ねこ", "cat", 0, 0}};
+    const Row d1[] = {{"犬", "犬", "いぬ", "dog", 0, 900}, {"鳥", "鳥", "とり", "bird", 0, 0}};
+    static const struct { const char *text; int v2; const char *source, *first, *second; } cases[] = {
+        {"猫犬", 1, NULL, "猫 (ねこ)\ncat", "犬 (いぬ) #900\ndog"},
+        {"犬鳥", 0, "Jiten", "犬 (いぬ) #900\ndog", "鳥 (とり) unranked\nbird"}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        /* that path's 64 KiB result budget and its scratch, beside the cursor's */
+        static uint8_t big[VJO_LOCAL_RESULT_BUDGET + VJO_LOCAL_SCRATCH_BUDGET + 16384];
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoEntryList l;
+        setup(&a, &p, &cfg); set_names(&cfg, 2);
+        vjo_arena_init(&a, big, sizeof(big));
+        build(&fixtures[0], page_names[0], d0, 1, 2);
+        build(&fixtures[1], page_names[1], d1, 2, 3);
+        TEST_CASE(cases[i].text);
+        memset(&e, 0, sizeof(e));
+        TEST_ASSERT_(!vjo_local_lookup(&a, &p, &cfg, cases[i].text, &r, &e) && r.n_vocab == 2, "rc %d", e.rc);
+        TEST_CHECK(cases[i].source ? r.source && !strcmp(r.source, cases[i].source) : !r.source);
+        TEST_ASSERT(vjo_entries_build(&a, cases[i].text, &r, &l) == 0 && l.n_entries == 2);
+        TEST_CHECK_(!strcmp(l.entries[0].text, cases[i].first), "got %s", l.entries[0].text);
+        TEST_CHECK_(!strcmp(l.entries[1].text, cases[i].second), "got %s", l.entries[1].text);
+        TEST_CHECK(opened == closed);
+    }
+}
+
+/* A located page that is too short for any payload (v3: the frequency word and
+ * three strings, 8 B; v2: 4 B) is refused before its payload is read: a page
+ * locator is the caller's memory, and read_entry must never see such a length. */
+static void read_page_refuses_short_locators(void)
+{
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 1536};
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, one; VjoErr e; VjoLocalPages pages;
+        uint32_t shortest = version == 3 ? 8 : 4;
+        setup(&a, &p, &cfg); set_names(&cfg, 2);
+        build(&fixtures[0], page_names[0], &row, 1, version);
+        build(&fixtures[1], page_names[1], &row, 1, version);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 2, &pages, &r, &e) && pages.count == 2);
+        size_t used = a.used;
+        for (uint32_t len = 0; len < shortest; len++) {
+            VjoLocalPages bad = pages;
+            bad.page[1].entry_len = len;
+            payload_touches = 0;
+            TEST_CASE_("v%d length %u", version, (unsigned)len);
+            TEST_CHECK(vjo_local_read_page(&a, &p, &cfg, &bad, 1, &one, &e) == VJO_E_LOCAL_FORMAT);
+            TEST_CHECK(!one.n_vocab && !payload_touches && a.used == used && opened == closed);
+        }
+        /* the real length still reads */
+        TEST_ASSERT(!vjo_local_read_page(&a, &p, &cfg, &pages, 1, &one, &e) && one.n_vocab == 1);
+        TEST_CHECK(one.vocab[0].rank == (version == 3 ? 1536 : VJO_NO_RANK) && !strcmp(one.vocab[0].meanings[0], "cat"));
+    }
 }
 
 /* One lookup's shown entry as text (spelling, reading, meaning, span), and its reads. */
@@ -869,6 +1217,13 @@ TEST_LIST = {
     {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
     {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},
+    {"read_page_refuses_short_locators", read_page_refuses_short_locators},
+    {"whole_text_lookup_names_a_list_every_entry_has", whole_text_lookup_names_a_list_every_entry_has},
+    {"v3_rank_reaches_the_anki_card", v3_rank_reaches_the_anki_card},
+    {"v3_rank_and_source_come_with_the_entry", v3_rank_and_source_come_with_the_entry},
+    {"frequency_breaks_ties_after_how_the_text_is_written", frequency_breaks_ties_after_how_the_text_is_written},
+    {"usual_spellings_order_one_keys_entries", usual_spellings_order_one_keys_entries},
+    {"v3_format_is_checked", v3_format_is_checked},
     {"pages_follow_best_match_then_priority", pages_follow_best_match_then_priority},
     {"exact_later_dictionary_precedes_inflected_page", exact_later_dictionary_precedes_inflected_page},
     {"postings_are_ranked_by_how_the_text_is_written", postings_are_ranked_by_how_the_text_is_written},

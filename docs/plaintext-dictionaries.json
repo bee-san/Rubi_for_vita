@@ -1,5 +1,6 @@
 {
   "snapshot": "2026-10-13",
+  "frequency_snapshot": "2026-10-15",
   "updates": false,
   "priority": [
     "Daijirin4",
@@ -7,14 +8,14 @@
     "JMdict"
   ],
   "archive": "processed/plaintext.vjdict.zip",
-  "archive_bytes": 43125915,
-  "archive_sha256": "bb07edc2a56505d18f5ec889ba2d4bc623316d2ca47cfed571f8d30d0bb72798",
+  "archive_bytes": 43916291,
+  "archive_sha256": "46ee1f0b52d64a4afd39085bc311708ad045551e408334d1f9b461afa8297068",
   "filename": "plaintext.vjdict",
-  "bytes": 140556089,
-  "sha256": "57d482968cb28560ac484e36f499219a5ad82e2bb172a4729614bf161e497568",
+  "bytes": 142497729,
+  "sha256": "db6457a8656d758b477dcf2fc91ffe54ec8d8db7018550a266351e89a35899e3",
   "max_definition_bytes": 7000,
   "conversion": {
-    "format_version": 2,
+    "format_version": 3,
     "entries": 485410,
     "index_records": 840994,
     "truncated_definitions": 12,
@@ -33,7 +34,7 @@
       12561,
       170922
     ],
-    "bytes": 140556089,
+    "bytes": 142497729,
     "unique_keys": 661469,
     "hash_buckets": 8192,
     "index_pages": 8192
@@ -77,12 +78,101 @@
       }
     }
   ],
+  "frequency": {
+    "file": "sources/jiten_freq_global.zip",
+    "bytes": 7840004,
+    "sha256": "df0ab5c6971144e338ce0f3e9c738ff253333390a0f4d10f74d6361292f3bd40",
+    "list": "Jiten global frequency list (every media type combined), Yomitan frequency dictionary",
+    "page": "https://jiten.moe/frequency-dictionaries",
+    "url": "https://api.jiten.moe/api/frequency-list/download",
+    "retrieved": "2026-10-15T14:08:31Z",
+    "http_date": "Thu, 15 Oct 2026 14:08:31 GMT",
+    "index": {
+      "title": "Jiten",
+      "format": 3,
+      "revision": "Jiten 26-10-09",
+      "isUpdatable": true,
+      "indexUrl": "https://api.jiten.moe/api/frequency-list/index",
+      "downloadUrl": "https://api.jiten.moe/api/frequency-list/download",
+      "sequenced": false,
+      "frequencyMode": "rank-based",
+      "author": "Jiten",
+      "url": "https://jiten.moe",
+      "description": "Dictionary based on frequency data of all media from jiten.moe"
+    },
+    "corpus": "3,616,329,738 characters across 17,643 titles (jiten.moe/frequency-dictionaries, 2026-10-15)",
+    "licence": {
+      "name": "CC BY-SA 4.0",
+      "url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "statement": "All frequency lists are licensed under CC BY-SA 4.0 (jiten.moe/frequency-dictionaries, 2026-10-15)"
+    },
+    "attribution": "Frequency ranks: the Jiten global frequency list (revision Jiten 26-10-09) by Jiten, https://jiten.moe, licensed under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Unmodified source in sources/jiten_freq_global.zip; the build attaches its ranks to dictionary entries (tools/convert_dictionary.py).",
+    "csv_export": {
+      "url": "https://api.jiten.moe/api/frequency-list/download?downloadType=csv",
+      "retrieved": "2026-10-15T14:08:38Z",
+      "bytes": 16248480,
+      "sha256": "aff679f1ae21dbf7b1c3525c2fd0389d90f6837b4a62b79e1a4ac4a577081004",
+      "note": "Not used by the build. Byte-identical to the CSV vita-vn-ocr's vocab-expand study fetched at 2026-10-14T06:32:41Z, so that study and this build use the same list revision. The Yomitan dictionary is used instead: it pairs each kanji form with every observed reading and carries the kana-form ranks, which the CSV (main reading only) does not."
+    },
+    "coverage": {
+      "title": "Jiten",
+      "revision": "Jiten 26-10-09",
+      "rows": 583159,
+      "freq_rows": 583159,
+      "reading_rows": 427891,
+      "spelling_rows": 155268,
+      "kana_form_rows": 267845,
+      "other_mode_rows": 0,
+      "unusable_rows": 0,
+      "entries_ranked": 260335,
+      "by_match": {
+        "reading": 186451,
+        "reading_normalized": 1302,
+        "spelling": 56286,
+        "spelling_normalized": 864,
+        "spelling_readings": 13825,
+        "spelling_readings_normalized": 1607,
+        "unranked": 225075
+      },
+      "borrowed_ranks": 2,
+      "by_dictionary": [
+        {
+          "dictionary": "Daijirin4 Plain",
+          "entries": 301927,
+          "ranked": 141611,
+          "ranked_percent": 46.9
+        },
+        {
+          "dictionary": "Sankoku8 Plain",
+          "entries": 12561,
+          "ranked": 7466,
+          "ranked_percent": 59.44
+        },
+        {
+          "dictionary": "JMdict Plain",
+          "entries": 170922,
+          "ranked": 111258,
+          "ranked_percent": 65.09
+        }
+      ],
+      "entries_unranked": 225075,
+      "entries_ranked_percent": 53.63,
+      "list_rows_with_ranked_entry": 421917,
+      "list_rows_with_ranked_entry_percent": 72.35,
+      "list_rows_with_ranked_entry_percent_by_rank": {
+        "rank<=1000": 99.94,
+        "rank<=10000": 99.92,
+        "rank<=100000": 96.57
+      },
+      "unranked_value": 0
+    }
+  },
   "repository": "bee-san/plaintext-dicts",
-  "revision": "8d3d80ace15001500e88709c4981baf664732de4",
+  "revision": "6f841cee43425053064c46d09fc627aa5d512e76",
   "key_filter": {
     "note": "the released file: the frozen file with the key filter added by tools/prepare_plaintext.py (convert_dictionary.add_key_filter, deterministic; docs/local-dictionaries.md)",
-    "bytes": 141484032,
-    "sha256": "ab739112312ef921c80c0112c86a88f7355f18516ed010163758253f409ec81d",
+    "bytes": 143425536,
+    "sha256": "e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b",
     "filter_blocks": 226,
     "filter_bytes": 925696,
     "filter_keys": 661469,

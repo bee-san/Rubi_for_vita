@@ -61,7 +61,8 @@ char *vjo_queue_encode(VjoArena *a, const VjoAnkiNote *n, int picture)
         if (n->more[k].n_meanings < 0 || n->more[k].n_meanings > VJO_QUEUE_MAX_MEANINGS)
             return NULL;
     vjo_buf_init(&b, a);
-    vjo_buf_puts(&b, "{\"version\":3,\"spelling\":");
+    /* Version 4: rank 0 (VJO_NO_RANK) is "none"; 1-3 wrote 99999 for it. */
+    vjo_buf_puts(&b, "{\"version\":4,\"spelling\":");
     put_str(&b, n->spelling);
     vjo_buf_puts(&b, ",\"reading\":");
     put_str(&b, n->reading);
@@ -204,6 +205,10 @@ int vjo_queue_decode(VjoArena *a, const char *json, size_t len, VjoAnkiNote *n, 
         version > VJO_QUEUE_VERSION || number(&j, "rank", &n->rank) || number(&j, "hl_start", &n->hl_start) ||
         number(&j, "hl_end", &n->hl_end) ||
         vjo_json_bool(&j, vjo_json_obj_get(&j, 0, "picture"), picture))
+        return -1;
+    if (version < 4 && n->rank == VJO_QUEUE_OLD_NO_RANK)
+        n->rank = VJO_NO_RANK; /* versions 1-3's "none"; a version 4 rank of 99999 is one */
+    else if (version >= 4 && n->rank < 0)
         return -1;
     n->spelling = string(a, &j, vjo_json_obj_get(&j, 0, "spelling"));
     n->reading = string(a, &j, vjo_json_obj_get(&j, 0, "reading"));

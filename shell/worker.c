@@ -357,19 +357,20 @@ static void log_text(char *out, size_t cap, const char *s, size_t len, int chars
 /* One log.txt line per dictionary lookup: why (first word during OCR, on
  * open, cursor or tap, dictionary page), the cursor byte, the matched span
  * in characters, the dictionary file, the page, the file reads, rc and the
- * time; then the text at the cursor, the entry and the source named in its
- * definition. The numbers come first and the texts are bounded (32 + 31 + 31
- * + 23 bytes, whole characters), so the line fits vjo_log's 254 bytes. */
+ * time; then the text at the cursor, the entry, the source named in its
+ * definition and its frequency badge (" #1234", " unranked" or none). The
+ * numbers come first and the texts are bounded (32 + 31 + 31 + 23 + 15
+ * bytes, whole characters), so the line fits vjo_log's 254 bytes. */
 static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t cursor, int rc, int64_t t0)
 {
-    char query[33], head[32], reading[32], source[24], dict[8];
+    char query[33], head[32], reading[32], source[24], dict[8], rank[VJO_RANK_BADGE_MAX];
     const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
     const char *text = out->sentence ? out->sentence : "";
     size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
     int chars = 0, page = out->page, files = vjo_local_names_count(job_cfg.local_dictionaries);
     /* Which file: known with one, or from the page locators (2-8 shown). */
     int file = files == 1 ? 1 : out->pages && page >= 0 && page < out->pages->count ? out->pages->page[page].dict + 1 : 0;
-    query[0] = head[0] = reading[0] = source[0] = 0;
+    query[0] = head[0] = reading[0] = source[0] = rank[0] = 0;
     if (cursor <= len) log_text(query, sizeof(query), text + cursor, len - cursor, 8);
     if (e) {
         size_t i = (size_t)e->hl_start;
@@ -383,15 +384,16 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
             while (n + 1 < sizeof(source) && m[n] && m[n] != ']') n++;
             if (m[n] == ']') { sceClibMemcpy(source, m, n); source[n] = 0; }
         }
+        vjo_rank_badge(rank, e->vocab->rank, out->list.source);
     }
     if (!e) sceClibSnprintf(dict, sizeof(dict), "-");
     else if (file) sceClibSnprintf(dict, sizeof(dict), "%d/%d", file, files);
     else sceClibSnprintf(dict, sizeof(dict), "?/%d", files);
-    vjo_log("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
+    vjo_log("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s%s",
             why, (unsigned)cursor, chars, dict, page + 1, vjo_overlay_page_count(out),
             (unsigned)vjo_dict_reads, (unsigned)vjo_dict_read_bytes, rc, (unsigned)((now_us() - t0) / 1000),
             query, e ? head : "no entry", reading[0] ? " (" : "", reading, reading[0] ? ")" : "",
-            source[0] ? " [" : "", source, source[0] ? "]" : "");
+            source[0] ? " [" : "", source, source[0] ? "]" : "", rank);
 }
 
 /* Does a result for scene `a` show the current scene `b`? */
@@ -523,6 +525,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     }
     g_view.japanese_only_selection = cfg.japanese_only_selection;
     g_view.highlight_mode = cfg.highlight_mode;
+    g_view.frequency_badge = cfg.frequency_badge;
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;

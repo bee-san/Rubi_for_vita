@@ -56,9 +56,12 @@ void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
 /* UTF-16 range of an entry's highlight in the header; 0 if it has none. */
 int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, uint32_t *len);
 
-/* Body: the selected entry — headword and reading at ja_px, rank and
- * meanings at en_px; a green VJO_ANKI_MARK after the rank when in_anki. */
-void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki);
+/* Body: the selected entry — headword and reading at ja_px, then, with
+ * show_rank (config frequency_badge), the frequency badge (vjo_rank_badge:
+ * " #1234", " unranked" or nothing) and the meanings at en_px; a green
+ * VJO_ANKI_MARK after the badge when in_anki. */
+void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
+                      int show_rank);
 
 /* Local paging: "L/R Dictionary 2 of 3" (page is 0-based) when pages > 1;
  * nothing otherwise. */

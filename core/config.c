@@ -30,6 +30,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 1;
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
+    c->frequency_badge = 1;
     c->font_size_ja = 18;
     c->font_size_en = 14;
     c->toggle_button = VJO_TRIGGER_L_R;
@@ -77,6 +78,10 @@ const char *vjo_config_default_text(void)
            "; Highlight the dictionary match or only the cursor character: word | character.\n"
            "; Word skips the matched source span; character steps one character.\n"
            "highlight_mode = word\n"
+           "\n"
+           "; Show each word's frequency rank after its reading: on | off. #1 is the most\n"
+           "; frequent word; unranked: not in the frequency list its dictionary carries.\n"
+           "frequency_badge = on\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
@@ -431,6 +436,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "highlight_mode")) {
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+        else warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "frequency_badge")) {
+        if (vjo_ieq(val, "on")) c->frequency_badge = 1;
+        else if (vjo_ieq(val, "off")) c->frequency_badge = 0;
         else warn(c, "%s: invalid value '%s'", key, val);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;

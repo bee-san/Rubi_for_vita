@@ -1991,6 +1991,16 @@ static void test_japanese_only_selection_and_config_reload(void)
     TEST_CHECK(g_view.highlight_mode == VJO_HIGHLIGHT_WORD);
     TEST_CHECK(local_text_valid && !job_running && cursor_reads == reads_before);
     TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
+    /* frequency_badge too: the popup's badge follows config.ini, with the
+     * same text and lookup (default on, then off, then on again) */
+    TEST_CHECK(g_view.frequency_badge == 1);
+    close_overlay(); loaded.frequency_badge = 0;
+    open_overlay();
+    TEST_CHECK(g_view.frequency_badge == 0);
+    TEST_CHECK(local_text_valid && !job_running && cursor_reads == reads_before && vocr_allocs == inferences);
+    close_overlay(); loaded.frequency_badge = 1;
+    open_overlay();
+    TEST_CHECK(g_view.frequency_badge == 1 && local_text_valid && !job_running);
     close_overlay(); loaded.japanese_only_selection = 0;
     open_overlay();
     TEST_CHECK(!local_text_valid && job_running && !job_cursor_only);
@@ -2156,7 +2166,11 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     vjo_post_cursor((uint32_t)strlen("伊佐"), generation); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
     TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 2);
-    TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1") && lookup_line("\"那社\" -> 那 (な)"));
+    TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1"));
+    /* Daijirin4 lists its one 那 article under な and だ; Jiten ranks 那 only
+     * read だ (#38948), so the frequency tie-break shows だ. 伊佐那社 is いさな:
+     * neither reading is this line's, and both entries carry the same article. */
+    TEST_CHECK(lookup_line("\"那社\" -> 那 (だ) [Daijirin4 Plain] #38948"));
     /* A tap on 会 looks up the inflected word: 会ってなかった -> 会う. */
     uint32_t at = (uint32_t)(strstr(local_text, "会って") - local_text);
     vjo_post_cursor(at, generation); on_command(); finish_current_job();
@@ -2164,16 +2178,21 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     const VjoEntry *e = &g_view.list->entries[0];
     TEST_CHECK(!strcmp(e->vocab->spelling, "会う") && e->hl_start == (int)at &&
                e->hl_end == (int)(at + strlen("会ってなかった")));
+    /* the bundled dictionary's frequency: 会う's Jiten rank, its list named */
+    TEST_CHECK(e->vocab->rank == 134 && g_view.list->source && !strcmp(g_view.list->source, "Jiten"));
     const char *tap = lookup_line("会ってなかった");
     TEST_ASSERT(tap != NULL);
-    TEST_CHECK(strstr(tap, ": 7 chars, dictionary 1/1, page 1/1, ") && strstr(tap, "-> 会う (あう) [Daijirin4 Plain]"));
+    TEST_CHECK(strstr(tap, ": 7 chars, dictionary 1/1, page 1/1, ") &&
+               strstr(tap, "-> 会う (あう) [Daijirin4 Plain] #134"));
+    /* a name Jiten does not rank is logged so */
+    TEST_CHECK(strstr(first, "-> 伊佐 (いさ) [Daijirin4 Plain] unranked") != NULL);
     printf("\n  %s\n  %s\n  %s\n", first, lookup_line("cursor at 6: "), tap);
     close_overlay(); mem_free();
 }
 /* vjo_log keeps 254 bytes of a line. The lookup line's numbers come first and
  * its texts are bounded in whole characters, so even with every field at its
- * largest (4-byte characters, eight dictionaries, a 4-digit cursor) nothing
- * is cut: the line ends with the source's ']'. */
+ * largest (4-byte characters, eight dictionaries, a 4-digit cursor, the
+ * largest rank) nothing is cut: the line ends with the frequency badge. */
 static void test_lookup_log_line_fits_with_worst_case_fields(void)
 {
     static char text[VJO_LOCAL_MAX_TEXT];
@@ -2187,16 +2206,19 @@ static void test_lookup_log_line_fits_with_worst_case_fields(void)
     for (int i = 0; i < 40; i++) strcat(name, "\xF0\xA0\xAE\xB7");
     memset(&v, 0, sizeof(v)); memset(&e, 0, sizeof(e)); memset(&pages, 0, sizeof(pages)); memset(&out, 0, sizeof(out));
     v.spelling = name; v.reading = name + 4; v.meanings = &meaning; v.n_meanings = 1;
+    v.rank = 16777215; /* the format's largest */
     e.vocab = &v; e.hl_start = 3900; e.hl_end = 3900 + 32 * 4;
     pages.count = 8; pages.page[7].dict = 7;
     out.sentence = text; out.list.entries = &e; out.list.n_entries = 1; out.pages = &pages; out.page = 7;
+    out.list.source = "Jiten";
     strcpy(job_cfg.local_dictionaries, "a1.vjdict,a2.vjdict,a3.vjdict,a4.vjdict,a5.vjdict,a6.vjdict,a7.vjdict,a8.vjdict");
     vjo_dict_reads = 99999; vjo_dict_read_bytes = 9999999;
     log_lookup("first word", &out, 3900, -115, (int64_t)test_now - 99999000);
     const char *line = lookup_line("first word at 3900: 32 chars, dictionary 8/8, page 8/8, 99999 reads 9999999 B, rc=-115, 99999 ms; ");
     TEST_ASSERT(line != NULL);
-    TEST_CHECK_(strlen(line) <= 254 && line[strlen(line) - 1] == ']', "%zu bytes: %s", strlen(line), line);
-    TEST_CHECK(strstr(line, " [Daijirin4 Plain Plain12]") != NULL);
+    TEST_CHECK_(strlen(line) <= 254 && strlen(line) > 10 && !strcmp(line + strlen(line) - 10, " #16777215"),
+                "%zu bytes: %s", strlen(line), line);
+    TEST_CHECK(strstr(line, " [Daijirin4 Plain Plain12] #16777215") != NULL);
     printf("\n  worst case: %zu of 254 bytes\n", strlen(line));
 }
 static void test_character_coalesces_and_drops_inflight_definition(void)

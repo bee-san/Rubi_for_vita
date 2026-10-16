@@ -2,13 +2,15 @@
 #ifndef VJO_DICT_H
 #define VJO_DICT_H
 
-#define VJO_NO_RANK 99999 /* missing frequency rank */
+/* No frequency rank: ranks start at 1. (It was 99999, jpdb's missing
+ * frequency_rank; Jiten's global list ranks to 398,255, 99999 included.) */
+#define VJO_NO_RANK 0
 #define VJO_MAX_PITCH 4   /* pitch accents kept per word */
 
 typedef struct {
     const char *spelling;
     const char *reading;  /* kana */
-    int rank;             /* VJO_NO_RANK if unknown */
+    int rank;             /* frequency rank, 1 = most frequent; VJO_NO_RANK if none */
     const char **meanings;
     int n_meanings;
     const char **pos;     /* part-of-speech codes: "n", "v5r", "adj-i", ... */
@@ -27,7 +29,10 @@ typedef struct {
     int n_vocab;
     VjoToken *tokens;
     int n_tokens;
-    const char *source; /* the frequency rank's source, its name on an Anki card; NULL if none */
+    /* The frequency rank's source, its name on an Anki card: a local v3
+     * dictionary's frequency list ("Jiten"), so its entries are ranked or
+     * explicitly unranked (VJO_NO_RANK); NULL if none. */
+    const char *source;
 } VjoDictResult;
 
 #endif

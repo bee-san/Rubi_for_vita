@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unpack the frozen Daijirin4 -> Sankoku8 -> JMdict dictionary for releases.
 
+Every entry carries its Jiten global frequency rank (format 3, 0 = unranked).
 Use --source /path/to/plaintext-dicts for offline builds. Otherwise use the
 CI checkout in .refs/plaintext-dicts, or authenticated gh for the pinned commit.
 No conversion, latest-branch fetch, or dictionary update happens during builds:
@@ -43,8 +44,8 @@ def validate(path, manifest, frozen=False):
     if path.stat().st_size != pin["bytes"] or digest(path) != pin["sha256"]:
         raise ValueError("Frozen plaintext dictionary checksum failed")
     with path.open("rb") as stream:
-        if stream.read(8) != b"VJDICT2\0":
-            raise ValueError("Expected a version 2 disk-backed dictionary")
+        if stream.read(8) != b"VJDICT3\0":
+            raise ValueError("Expected a version 3 disk-backed dictionary (with frequency ranks)")
 
 
 def prepare(output, source=None):
