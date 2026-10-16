@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <psp2/host_stubs.h>
 #include <psp2kern/host_stubs.h>
 #include <psp2kern/io/fcntl.h>
@@ -536,12 +537,24 @@ TEST_LIST = {
 };
 
 
+/* The tests' own memory card. acutest_main ends in exit() and runs each test in a child
+ * that exits through atexit as well, so the owner process removes it from an atexit
+ * handler (as test_shell_anki.c does). */
 static char test_dir[64];
+static pid_t test_dir_owner;
 static void remove_test_dir(void)
 {
-    if (!test_dir[0] || chdir(test_dir)) return;
-    unlink(jpg_path);
-    unlink(tmp_path);
+    DIR *d;
+    struct dirent *e;
+    char path[sizeof(VJO_GAME_OCR_SHOT_DIR) + 256];
+    if (!test_dir[0] || getpid() != test_dir_owner || chdir(test_dir)) return;
+    if ((d = opendir(VJO_GAME_OCR_SHOT_DIR))) { /* every card's .jpg and .jpg.tmp a test left */
+        while ((e = readdir(d)))
+            if (e->d_name[0] != '.' &&
+                snprintf(path, sizeof(path), "%s/%s", VJO_GAME_OCR_SHOT_DIR, e->d_name) < (int)sizeof(path))
+                unlink(path);
+        closedir(d);
+    }
     rmdir(VJO_GAME_OCR_SHOT_DIR);
     rmdir("ux0:data/VitaJPOverlay");
     rmdir("ux0:data");
@@ -555,7 +568,7 @@ int main(int argc, char **argv)
     snprintf(test_dir, sizeof(test_dir), "/tmp/vjo-game-shot-XXXXXX");
     if (!mkdtemp(test_dir) || chdir(test_dir))
         return 2;
-    int rc = acutest_main(argc, argv);
-    remove_test_dir();
-    return rc;
+    test_dir_owner = getpid();
+    atexit(remove_test_dir);
+    return acutest_main(argc, argv);
 }
