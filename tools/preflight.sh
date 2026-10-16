@@ -152,7 +152,7 @@ tc=$BUILD/vjo-taicfg-tests
 if [ -x "$ti" ] && [ -x "$tc" ] && "$tc" > "$log/taicfg.log" 2>&1 && "$ti" > "$log/install.log" 2>&1 \
    && VJO_TAICFG=$BUILD/vjo-taicfg "$PY" -m unittest tools.tests.test_tai_config tools.tests.test_one_vpk > "$log/one-vpk-py.log" 2>&1 \
    && ! grep -q "skipped" "$log/one-vpk-py.log"; then
-  pass "one-VPK install" "editor $(grep -c '\[ OK \]' "$log/taicfg.log") groups (38 fixtures, 12,000 corpus edits, taiHEN's parser as the check), app engine $(grep -c '\[ OK \]' "$log/install.log") cases on a temporary card, PC copy + VPK packaging $(grep -o 'Ran [0-9]* tests' "$log/one-vpk-py.log")"
+  pass "one-VPK install" "editor $(grep -c '\[ OK \]' "$log/taicfg.log") groups ($(ls tools/tests/fixtures/taicfg/*.in | wc -l) fixtures, 12,000 corpus edits, taiHEN's parser as the check), app engine $(grep -c '\[ OK \]' "$log/install.log") cases on a temporary card, PC copy + VPK packaging $(grep -o 'Ran [0-9]* tests' "$log/one-vpk-py.log")"
 else
   fail "one-VPK install" "$log/taicfg.log $log/install.log $log/one-vpk-py.log"
 fi
