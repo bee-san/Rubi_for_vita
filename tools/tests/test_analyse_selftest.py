@@ -1151,14 +1151,18 @@ class AnkiExportLines(unittest.TestCase):
         self.assertIsNone(a.EXPORT_TROUBLE.search("overlay app: " + self.VERIFIED.strip()))
 
 
-def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True):
+def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True, why=None, helpers=None, share=0):
     """One game job's batch as shell/worker.c logs it (the job line, its lines' crops, frames and times, then the
     game worker's steps). lines: [(frames, ms)], a line from the line cache as (frames, 0): core/vocr_ocr.c logs
     its frames and 0.0 ms. clock: (before, rc, during, after). late: the steps the worker adds after the clock's
     place (game_ocr/main.c: FIND, then RECOGNIZE, once the run that logs the clock has returned); "find": a step log
-    that filled between the two; False: one that filled before both."""
+    that filled between the two; False: one that filled before both. why: the Shell job's reason, its "job start"
+    line first (shell/worker.c start_job_kind). helpers: the job's PAR step (none for 0: a serial job with no line
+    from the cache logs none), then its workspace's free and the kernel's PACE, as API 22 logs them after
+    RECOGNIZE; share: PAR's mean share of a core (0: not known)."""
     frames = sum(f for f, t in lines if t)
-    out = [f"game vocr rc=0 {model}: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines={len(lines)} USER "
+    out = [f"job start ({why})"] if why else []
+    out += [f"game vocr rc=0 {model}: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines={len(lines)} USER "
            f"workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=180 ms "
            f"frames={frames} io=0x00000000 stat=0x00000000 cleanup=0",
            "game vocr lines:" + "".join(f" 742x39 {f}f {t:.1f}ms c900" for f, t in lines),
@@ -1173,7 +1177,34 @@ def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True):
     if late is True:
         out.append(f"gstep job recognize kind=- arg={len(lines)} rc=0x00000000 bytes={frames} sum=0x00000000 main=0 "
                    "cdram=0 phycont=0 us=180000")
+    if late is True and helpers is not None:
+        cached = sum(1 for _, t in lines if not t)
+        if helpers or cached:
+            out.append(f"gstep job par kind=- arg={helpers} rc=0x{min(helpers, len(lines) - 1):08X} bytes=533504 "
+                       f"sum=0x00{cached:02X}{share:02X}{share:02X} main=0 cdram=0 phycont=0 us=180000")
+        out += ["gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 "
+                "cdram=12582912 phycont=27262976 us=487575",
+                "gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 "
+                "phycont=0 us=118"]
     return "\n".join(out) + "\n"
+
+
+def auto_job(lines, clock=None, helpers=2, share=99, **kw):
+    """An ordinary job of test.3's defaults: Auto's background job of a settled screen (the overlay closed), two
+    helpers (ocr_threads = 3), its lines' mean share of a core 99 % (the par step's; 0: not logged)."""
+    return game_job(lines, clock, why="auto: screen settled", helpers=helpers, share=share, **kw)
+
+
+def stage_job(name, lines, clock=None, helpers=2, model="VOCR3_H15_w8.vocr"):
+    """A self-test stage as the Shell logs it in log.txt (shell/selftest.c, shell/worker.c run_selftest_stages): its
+    begin record, its job's batch, its end record. textbox2 runs serially (vjo_selftest_stage_speed)."""
+    speed = (helpers or 0) | (0x4 if clock else 0) | 0x8
+    frames = sum(f for f, _ in lines)
+    return (f"stage {name} begin t=90000 flags=0x0 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr "
+            f"speed=0x{speed:X}\n" + game_job(lines, clock, model=model, helpers=helpers)
+            + f"line {name} i=0 w=742 h=39 frames={lines[0][0]} us={int(lines[0][1] * 1000)}\n"
+            f"stage {name} end rc=0 t=90700 ms=700 region=883x112+46+416 fb=960x544/960/0x00000000 model={model} "
+            f"fallback=0 lines={len(lines)} recognized={len(lines)} frames={frames} text=0x2B7E1516\n")
 
 
 BOOT22 = "Vita JP Overlay shell started (kernel API 22)\n"
@@ -1202,28 +1233,28 @@ class ClockWindows(unittest.TestCase):
         self.assertEqual((rows[0]["before"], rows[0]["during"], rows[0]["after"], rows[0]["raised"]),
                          ([333], [444], [333], 1))
         # per CTC frame, each recognized line's own (frame-weighted); a cached line's 0.0 ms is left out
-        self.assertEqual(rows[2]["per_frame"], {"VOCR3_H15_w8.vocr": {"lines": 2, "frames": 156, "us": 453200}})
+        self.assertEqual(rows[2]["per_frame"], {"VOCR3_H15_w8.vocr": {"jobs": 2, "lines": 2, "frames": 156, "us": 453200}})
         self.assertEqual(lg["clock_windows_older"], 0)
         cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
-        self.assertEqual(cmp_["off"], {"lines": 2, "frames": 156, "us": 453200, "windows": [3]})
-        self.assertEqual(cmp_["raised"], {"lines": 2, "frames": 144, "us": 316800, "windows": [1, 4],
-                                          "before": 333, "during": 444})
+        self.assertEqual(cmp_["off"], {"jobs": 2, "selftest": 0, "lines": 2, "frames": 156, "us": 453200, "windows": [3]})
+        self.assertEqual(cmp_["raised"], {"jobs": 2, "selftest": 0, "lines": 2, "frames": 144, "us": 316800,
+                                          "windows": [1, 4], "before": 333, "during": 444})
         text = flat("\n".join(a.render_clock_windows(lg)))
         for want in ("ARM clock by game window (a window runs from a 'game TITLE started' line, a start or a resume, "
                      "where config.ini is read again, to the next; a job logs the clock only when it recognizes a "
                      "line, so one whose every line came from the cache logs none, boost on or off):",
                      "window from title jobs recognizing clock MHz before / during / after; us per CTC frame",
-                     "1 line 2 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
+                     "1 line 2 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 job, 1 line)",
                      "2 line 14 PCSG00415 1 0 0 no job recognized a line: no clock either way",
-                     "3 line 20 PCSG00415 3 2 0 BOOST OFF (the game's own clock, not logged): no clock line in its 2 "
-                     "recognizing jobs; VOCR3_H15_w8.vocr 2,905 us (2 lines)",
-                     "4 line 36 PCSG00415 1 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
+                     "3 line 20 PCSG00415 3 2 0 BOOST OFF, clock assumed (not logged): no clock line in its 2 "
+                     "recognizing jobs; VOCR3_H15_w8.vocr 2,905 us (2 jobs, 2 lines)",
+                     "4 line 36 PCSG00415 1 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 job, 1 line)",
                      "boost off against on, us per CTC frame (each recognized line's time / its frames, "
-                     "frame-weighted; lines from the cache left out; a core's share: the recognizing threads' run "
-                     "time / wall time, the jobs' means, under 100 when game threads had the core):",
-                     "VOCR3_H15_w8.vocr: off (the game's own clock, not logged) 2,905 us (2 lines; window 3), "
-                     "raised 333 -> 444 MHz 2,200 us (2 lines; windows 1, 4): off / raised = 1.32 (a time that scales "
-                     "with the clock: 444 / 333 = 1.33; no gain: 1.00)"):
+                     "frame-weighted; lines from the cache left out; a core's share: the par step's logged share, the "
+                     "jobs' means, which on the console does not follow the time per frame, test.3):",
+                     "VOCR3_H15_w8.vocr, all jobs: off (assumed 333 MHz, not logged) 2,905 us (2 jobs, 2 lines; "
+                     "window 3), raised 333 -> 444 MHz 2,200 us (2 jobs, 2 lines; windows 1, 4): off / raised = 1.32 "
+                     "(a time that scales with the clock: 444 / 333 = 1.33; no gain: 1.00)"):
             self.assertIn(want, text)
 
     def test_a_window_with_and_without_the_clock_is_mixed_and_left_out_of_the_comparison(self):
@@ -1253,7 +1284,7 @@ class ClockWindows(unittest.TestCase):
         lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + BOOT22 + game_job([(80, 232.8)]))
         self.assertEqual([(r["window"], r["title"], r["state"]) for r in lg["clock_windows"]],
                          [(1, "PCSG00415", "on"), (2, None, "off")])
-        self.assertIn("2 line 10 ? 1 1 0 BOOST OFF (the game's own clock, not logged): no clock line in its 1 "
+        self.assertIn("2 line 10 ? 1 1 0 BOOST OFF, clock assumed (not logged): no clock line in its 1 "
                       "recognizing job", flat("\n".join(a.render_clock_windows(lg))))
 
     def test_a_clock_already_at_444_or_more_is_left_and_compared_apart(self):
@@ -1266,21 +1297,23 @@ class ClockWindows(unittest.TestCase):
         self.assertIn("333-500 / 333-500 / 333-500 (raised in 1, left at 444 or more in 1, not raised in 1)", text)
         cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
         self.assertEqual((cmp_["left"]["before"], cmp_["left"]["lines"], cmp_["raised"]["lines"]), (500, 1, 1))
-        self.assertIn("boost off against on: no window with the boost off in this log (step 6's optional boxes), so "
-                      "nothing to compare", text)
+        self.assertIn("boost effective: unclear (ratio -, n=0): no window with the boost off in this log (step 6's "
+                      "optional boxes); yes at 1.25 to 1.42, no at 1.08 or less", text)
 
     def test_off_against_a_clock_left_at_500_or_read_by_another_model(self):
         # PSVshell's 500 MHz for the game: the boost never raises it, so the off window compares with the left jobs
         lg = a.summarise_log(BOOT22 + START + game_job([(80, 160.0)], (500, 1, 500, 500))
                              + START + game_job([(80, 232.8)]))
         self.assertEqual([r["state"] for r in lg["clock_windows"]], ["on", "off"])
-        self.assertIn("VOCR3_H15_w8.vocr: off (the game's own clock, not logged) 2,910 us (1 line; window 2); left at "
-                      "500 MHz (444 or more already) 2,000 us (1 line; window 1)",
-                      flat("\n".join(a.render_clock_windows(lg))))
+        text = flat("\n".join(a.render_clock_windows(lg)))
+        self.assertIn("VOCR3_H15_w8.vocr, all jobs: off (assumed 500 MHz, not logged) 2,910 us (1 job, 1 line; window 2); "
+                      "left at 500 MHz (444 or more already) 2,000 us (1 job, 1 line; window 1)", text)
+        self.assertIn("boost effective: unclear (ratio -, n=0): VOCR3_H15_w8.vocr (Normal); no job raised the clock: it "
+                      "was at 444 MHz or more already in 1 job (PSVshell's 500, or the game's own)", text)
         # the boost off read with Small's model, on with Normal's: per frame they are not comparable
         lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED)
                              + START + game_job([(80, 120.0)], model="VOCR3_FL10_w8.vocr"))
-        self.assertIn("boost off against on: no model was read both with the boost off and on, so nothing to compare",
+        self.assertIn("boost effective: unclear (ratio -, n=0): no model was read both with the boost off and on",
                       flat("\n".join(a.render_clock_windows(lg))))
 
     PAR = "gstep job par kind=- arg=2 rc=0x00000001 bytes=533504 sum=0x0000{lo:02X}{mean:02X} main=0 cdram=0 phycont=0 us=1\n"
@@ -1292,8 +1325,8 @@ class ClockWindows(unittest.TestCase):
         self.assertEqual([(r["window"], r["state"], r["api"]) for r in lg["clock_windows"]], [(1, "off", None), (2, "on", None)])
         g = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
         self.assertEqual((g["off"]["share"], g["raised"]["share"]), ((95, 95), (99, 99)))
-        self.assertIn("off (the game's own clock, not logged) 2,910 us (1 line; window 1; a core's share 95%), raised "
-                      "333 -> 444 MHz 2,200 us (1 line; window 2; a core's share 99%): off / raised = 1.32",
+        self.assertIn("off (assumed 333 MHz, not logged) 2,910 us (1 job, 1 line; window 1; a core's share 95%), raised "
+                      "333 -> 444 MHz 2,200 us (1 job, 1 line; window 2; a core's share 99%): off / raised = 1.32",
                       flat("\n".join(a.render_clock_windows(lg))))
         # without such a step (an older build's jobs), a window the log does not name is not listed
         lg = a.summarise_log(START + game_job([(80, 400.0)]))
@@ -1318,7 +1351,7 @@ class ClockWindows(unittest.TestCase):
         text = flat("\n".join(a.render_clock_windows(lg)))
         self.assertIn("no clock line in its 1 recognizing job: the boost off, or the game could not call ScePower "
                       "(no job in this log logged the clock)", text)
-        self.assertIn("boost off against on: no job raised the clock, so nothing to compare", text)
+        self.assertIn("boost effective: unclear (ratio -, n=0): no job raised the clock", text)
 
     def test_the_busy_hook_runs_only_for_a_line_to_recognize(self):
         # the premise: the clock's step is written by job_busy, which core/vocr_ocr.c calls after the cache lookup,
@@ -1359,6 +1392,696 @@ class ClockWindows(unittest.TestCase):
         self.assertEqual((lg["trouble"], lg["anki"]["export_ok"]), ({}, 1))
         # the per-line span leaves the cache's lines (0.0 ms) out: 20 recognized of the 30 logged
         self.assertEqual((len(lg["line_ms"]), min(lg["line_ms"]), max(lg["line_ms"])), (20, 140, 233))
+
+
+def per_frame(us, frames=(80, 76, 64)):
+    """A job's recognized lines at `us` per CTC frame each: [(frames, ms)] as the Shell logs them (0.1 ms)."""
+    return [(f, round(f * us / 1000, 1)) for f in frames]
+
+
+def with_selftest_job(base, job):
+    """The test.3-style log with the self-test's own job (API 22, #116) in window 1, after job 3's batch: where its
+    stages run once a scan has read text and the overlay has stayed closed (shell/worker.c selftest_job_due)."""
+    lines = base.splitlines()
+    i = next(n for n, line in enumerate(lines) if line.startswith("job 3 done"))
+    return "\n".join(lines[:i + 1] + job.splitlines() + lines[i + 1:]) + "\n"
+
+
+def log_collect(root, log, tai=None):
+    """A minimal collect folder (tools/collect_vita.py's layout): COLLECT.json, log.txt and, if given, ur0's taiHEN
+    configuration."""
+    data = root / "ux0/data/VitaJPOverlay"
+    data.mkdir(parents=True)
+    (root / "COLLECT.json").write_text(json.dumps({"collected_at": "synthetic", "host": "-", "missing": [],
+                                                   "errors": []}), encoding="utf-8")
+    (data / "log.txt").write_text(log, encoding="utf-8")
+    if tai is not None:
+        (root / "ur0/tai").mkdir(parents=True)
+        (root / "ur0/tai/config.txt").write_text(tai, encoding="utf-8")
+    return root
+
+
+class BoostLikeForLike(unittest.TestCase):
+    """test.3's step 6 decides VOCR5's Normal size (1.26 or 1.6 MB) by the boost-off / raised ratio of the time per
+    CTC frame (audit-overlay-analyser-fixes N1-N3, N5). Pooled over every job, the raised side takes the self-test's
+    stage jobs, textbox2 among them, which runs serially: if a line read beside two other recognizer threads is
+    slower per frame than a serial one (the shared L2; unmeasured), they make the raised side faster and the ratio
+    larger, toward 1.6 MB. So the ratio is also computed like for like: not the self-test's stages, between jobs of
+    one kind on both sides (as many recognized lines, the same helpers, and the same trigger: Auto's job with the
+    overlay closed, or the overlay's own). It is given per model, per window and against the off window's
+    neighbours, with job counts; the off window's clock is said to be assumed, with what the logs hold about it; and
+    a one-line verdict states its thresholds."""
+
+    H15 = "VOCR3_H15_w8.vocr"
+    FL10 = "VOCR3_FL10_w8.vocr"
+    SELFTEST = (FIXTURES / "log-test3-selftest-job.txt").read_text(encoding="utf-8")
+    BASE = (FIXTURES / "log-test3-style.txt").read_text(encoding="utf-8")
+
+    def text(self, lg, tai=None):
+        return flat("\n".join(a.render_clock_windows(lg, tai)))
+
+    def test_the_auditors_variant_134_pooled_is_132_like_for_like(self):
+        # audit-overlay-analyser-fixes v8: the self-test's stages in window 1, textbox2 (serial) invented 10 % faster
+        # per frame; pooled, the raised side's 1,616 frames take 3,509,100 us (2,171 us a frame): 1.34 against the
+        # off window's 2,912; its 3 auto jobs of 3 lines (2,201 us) against the off window's 3 (all of 3 lines): 1.32
+        lg = a.summarise_log(with_selftest_job(self.BASE, self.SELFTEST))
+        g = lg["clock_compare"][self.H15]
+        self.assertEqual((g["raised"]["jobs"], g["raised"]["selftest"], g["raised"]["frames"], g["raised"]["us"]),
+                         (7, 3, 1616, 3509100))
+        self.assertEqual((g["off"]["jobs"], g["off"]["frames"], g["off"]["us"]), (3, 660, 1922100))
+        self.assertEqual(round(_per(g["off"]) / _per(g["raised"]), 2), 1.34)
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual([(k["lines"], k["helpers"], k["trigger"], k["off"]["jobs"], k["raised"]["jobs"])
+                          for k in p["strata"]], [(3, 2, "auto", 3, 3)])
+        self.assertEqual((round(p["ratio"], 2), p["off"]["jobs"], p["raised"]["jobs"], p["raised_windows"]),
+                         (1.32, 3, 3, [1, 4]))
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"],
+                         {"selftest": 3, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 1})
+        # the off window's neighbours with a job of its kind: windows 1 and 4 (window 2 read only 2 lines)
+        (w3,) = [w for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"]
+        self.assertEqual((w3["window"], w3["neighbours"], round(w3["near"]["ratio"], 2)), (3, [1, 4], 1.32))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["model"], v["verdict"], round(v["ratio"], 2), v["n"], round(v["all_jobs"], 2)),
+                         (self.H15, "yes", 1.32, 6, 1.34))
+        # window 1's row keeps the self-test's stages apart: FL10's fallback, then textbox, fullscreen and textbox2
+        # (the probe recognizes nothing)
+        r = lg["clock_windows"][0]
+        self.assertEqual((r["per_frame"][self.H15]["jobs"], r["selftest_per_frame"][self.H15]["jobs"],
+                          r["selftest_per_frame"][self.H15]["lines"], r["selftest_per_frame"][self.FL10]["jobs"]),
+                         (2, 3, 13, 1))
+        text = self.text(lg)
+        for want in ("1 line 10 PCSG00415 8 6 6 333 / 444 / 333 (raised in 6); VOCR3_H15_w8.vocr 2,202 us (2 jobs, 6 "
+                     "lines); the self-test's stages: VOCR3_FL10_w8.vocr 1,300 us (1 job, 3 lines), VOCR3_H15_w8.vocr "
+                     "2,140 us (3 jobs, 13 lines)",
+                     "VOCR3_H15_w8.vocr, all jobs: off (assumed 333 MHz, not logged) 2,912 us (3 jobs, 9 lines; window "
+                     "3; a core's share 99%), raised 333 -> 444 MHz 2,171 us (7 jobs, 3 of them the self-test's stages, "
+                     "24 lines; windows 1, 2, 4; a core's share 99%): off / raised = 1.34",
+                     "VOCR3_H15_w8.vocr, like for like (not the self-test's stages; jobs of one kind on both sides: the "
+                     "same game, as many recognized lines, the same helpers, and both auto (Auto's job, the overlay "
+                     "closed) or both overlay (a press, a retry or a refresh, the overlay open); each kind weighted by "
+                     "the off side's "
+                     "frames): off / raised = 1.32 (3 off, 3 raised jobs; line time x logged share of a core, a "
+                     "diagnostic only (3 off and 3 raised jobs with one; not a measurement on the console, test.3): "
+                     "1.32): 3 lines, 2 helpers, auto: off 2,912 us (3 jobs; a core's share 99%), "
+                     "raised 2,201 us (3 jobs; a core's share 99%): 1.32; left out: 3 jobs of the self-test's stages, 1 "
+                     "job of a kind not on the other side",
+                     "boost effective: yes (ratio 1.32, n=6): VOCR3_H15_w8.vocr (Normal) like for like, 3 off and 3 "
+                     "raised jobs (all jobs: 1.34); not checked: whether other threads took more of the core from one "
+                     "side's lines than from the other's; the logged share of a core, which was to show it, does not "
+                     "follow the time per frame on the console (test.3); yes at 1.25 to 1.42, no at 1.08 or less, "
+                     "unclear "
+                     "between them, above 1.42 or with under 2 jobs a side (444 / 333 = 1.33 if the time scales with "
+                     "the clock, 1.00 without a gain)"):
+            self.assertIn(want, text)
+        # v8b: textbox2 as fast as the parallel stages: 1.32 both ways
+        lg = a.summarise_log(with_selftest_job(self.BASE, self.SELFTEST.replace(
+            "742x39 80f 158.4ms c900 742x39 76f 150.5ms c900 742x39 64f 126.7ms c900",
+            "742x39 80f 176.0ms c900 742x39 76f 167.2ms c900 742x39 64f 140.8ms c900")))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2), round(v["all_jobs"], 2)), ("yes", 1.32, 1.32))
+
+    def test_a_serial_stage_cannot_make_the_call(self):
+        # invented: Auto's lines 1.22x slower with the boost off (unclear), the self-test's serial textbox2 25 % faster
+        # per frame: pooled, 1.27 would read as "yes" (1.6 MB); like for like it stays 1.22, unclear (1.26 MB)
+        st = ("job start (self-test)\n" + stage_job("textbox", per_frame(2400), RAISED)
+              + stage_job("fullscreen", per_frame(2400, (80, 76, 64, 40, 40, 30, 30)), RAISED)
+              + stage_job("textbox2", per_frame(1800), RAISED, helpers=0))
+        log = (BOOT22 + START + auto_job(per_frame(2400), RAISED) + auto_job(per_frame(2400), RAISED) + st
+               + START + "".join(auto_job(per_frame(2928)) for _ in range(3))
+               + START + auto_job(per_frame(2400), RAISED))
+        lg = a.summarise_log(log)
+        self.assertEqual([r["state"] for r in lg["clock_windows"]], ["on", "off", "on"])
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2), v["n"], round(v["all_jobs"], 2)), ("unclear", 1.22, 6, 1.27))
+        text = self.text(lg)
+        self.assertIn("off / raised = 1.27", text)
+        self.assertIn("boost effective: unclear (ratio 1.22, n=6): VOCR3_H15_w8.vocr (Normal) like for like, 3 off and 3 "
+                      "raised jobs (all jobs: 1.27); between the two thresholds; yes at 1.25 to 1.42", text)
+        # the serial stage is its own kind (3 lines, no helper): it is never matched with Auto's jobs
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"], {"selftest": 3, "reason_unknown": 0,
+                                                                  "helpers_unknown": 0, "game_unknown": 0, "unmatched": 0})
+        # builds before #116 ran the stages inside the user's own job (an auto one): their begin records still
+        # mark them; and the job after a stage is the user's again
+        log = log.replace("job start (self-test)\n", "job start (auto: screen settled)\n")
+        lg = a.summarise_log(log + START + auto_job(per_frame(2400), RAISED))
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"]["selftest"], 3)
+        self.assertEqual((round(lg["clock_like"][self.H15]["pooled"]["ratio"], 2),
+                          lg["clock_like"][self.H15]["pooled"]["raised"]["jobs"]), (1.22, 4))
+        # one job a stage: a job after the stage's, with no begin record of its own, is the user's
+        st_old = st.replace("job start (self-test)\n", "job start (auto: screen settled)\n")
+        lg = a.summarise_log(BOOT22 + START + st_old + game_job(per_frame(2400), RAISED, helpers=2)
+                             + START + "".join(auto_job(per_frame(2928)) for _ in range(2)))
+        self.assertEqual((lg["clock_like"][self.H15]["left_out"]["selftest"],
+                          lg["clock_like"][self.H15]["pooled"]["raised"]["jobs"]), (3, 1))
+
+    def test_the_ratio_by_window_and_model_with_job_counts(self):
+        # invented drift: window 3's scene costs more (2,500 us a frame raised, against window 1's 2,200); pooled
+        # 1.24, window 1 alone 1.33, window 3 alone 1.17. FL10 read in the same windows: 1.33, a verdict of its own
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) + auto_job(per_frame(2200), RAISED)
+               + auto_job(per_frame(1300), RAISED, model=self.FL10) + auto_job(per_frame(1300), RAISED, model=self.FL10)
+               + START + "".join(auto_job(per_frame(2925)) for _ in range(3))
+               + auto_job(per_frame(1725), model=self.FL10) + auto_job(per_frame(1725), model=self.FL10)
+               + START + auto_job(per_frame(2500), RAISED) + auto_job(per_frame(2500), RAISED))
+        lg = a.summarise_log(log)
+        windows = lg["clock_like"][self.H15]["windows"]
+        self.assertEqual([(w["window"], w["side"], w["jobs"], round(w["like"]["ratio"], 2)) for w in windows],
+                         [(1, "raised", 2, 1.33), (2, "off", 3, 1.24), (3, "raised", 2, 1.17)])
+        self.assertEqual((windows[1]["neighbours"], round(windows[1]["near"]["ratio"], 2)), ([1, 3], 1.24))
+        self.assertEqual([(v["model"], v["verdict"], round(v["ratio"], 2), v["off_jobs"], v["raised_jobs"])
+                          for v in lg["boost_verdicts"]],
+                         [(self.H15, "unclear", 1.24, 3, 4), (self.FL10, "yes", 1.33, 2, 2)])
+        text = self.text(lg)
+        for want in ("by window, like for like (a raised window against the off side, an off window against the raised "
+                     "side): window 1 (raised, 2 jobs): 1.33; window 2 (off, 3 jobs): 1.24, against its neighbours "
+                     "(windows 1, 3): 1.24 (4 raised jobs); window 3 (raised, 2 jobs): 1.17",
+                     "boost effective: unclear (ratio 1.24, n=7): VOCR3_H15_w8.vocr (Normal)",
+                     "boost effective: yes (ratio 1.33, n=4): VOCR3_FL10_w8.vocr (Small) like for like, 2 off and 2 raised "
+                     "jobs",
+                     "1 line 2 PCSG00415 4 4 4 333 / 444 / 333 (raised in 4); VOCR3_H15_w8.vocr 2,200 us (2 jobs, 6 "
+                     "lines); VOCR3_FL10_w8.vocr 1,300 us (2 jobs, 6 lines)"):
+            self.assertIn(want, text)
+
+    def test_like_for_like_matches_lines_and_helpers_weighted_by_the_off_side(self):
+        refresh = "job start (auto: screen settled), refresh\n" + game_job(per_frame(2000), RAISED, helpers=2)
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) + auto_job(per_frame(2200), RAISED)
+               + auto_job(per_frame(2200, (80, 76)), RAISED) + auto_job(per_frame(2200, (80, 76)), RAISED)
+               + auto_job(per_frame(1980), RAISED, helpers=0)                # ocr_threads = 1: no PAR step
+               + game_job(per_frame(2000), RAISED, why="overlay opened", helpers=2) + refresh
+               + START + auto_job(per_frame(2925)) + auto_job(per_frame(2925)) + auto_job(per_frame(2925, (80,))))
+        lg = a.summarise_log(log)
+        lk = lg["clock_like"][self.H15]
+        p = lk["pooled"]
+        self.assertEqual([(k["lines"], k["helpers"], k["trigger"], round(k["ratio"], 2)) for k in p["strata"]],
+                         [(3, 2, "auto", 1.33)])
+        t = "PCSG00415"
+        self.assertEqual(p["unmatched"], {"off": [{"lines": 1, "helpers": 2, "trigger": "auto", "title": t, "jobs": 1}],
+                                          "raised": [{"lines": 2, "helpers": 2, "trigger": "auto", "title": t, "jobs": 2},
+                                                     {"lines": 3, "helpers": 0, "trigger": "auto", "title": t, "jobs": 1},
+                                                     {"lines": 3, "helpers": 2, "trigger": "overlay", "title": t,
+                                                      "jobs": 2}]})
+        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 6})
+        self.assertIn("3 lines, 2 helpers, auto: off 2,925 us (2 jobs; a core's share 99%), raised 2,200 us (2 jobs; a "
+                      "core's share 99%): 1.33; left out: 6 jobs of a kind not on the other side", self.text(lg))
+        # the overlay's own jobs (a press, its refresh) match the overlay's own: a second boost-off window of them
+        lg = a.summarise_log(log + START + game_job(per_frame(2700), why="overlay opened", helpers=2) * 2)
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual([(k["trigger"], k["off"]["jobs"], k["raised"]["jobs"], round(k["ratio"], 2)) for k in p["strata"]],
+                         [("auto", 2, 2, 1.33), ("overlay", 2, 2, 1.35)])
+        self.assertEqual(round(p["ratio"], 4), round(2475000 / 1848000, 4))  # each kind against its own
+        self.assertIn("3 lines, 2 helpers, auto: off 2,925 us (2 jobs; a core's share 99%), raised 2,200 us (2 jobs; a "
+                      "core's share 99%): 1.33; 3 lines, 2 helpers, overlay: off 2,700 us (2 jobs), raised 2,000 us (2 "
+                      "jobs): 1.35", self.text(lg))
+        # a 1-line kind on both sides: each kind against its own, weighted by the off side's frames:
+        # (2 x 643,500 + 234,000) us / (440 x 2,200 + 80 x 2,250) us = 1.32 (the kinds' own 1.33 and 1.30)
+        lg = a.summarise_log(log + START + auto_job(per_frame(2250, (80,)), RAISED))
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual([(k["lines"], round(k["ratio"], 2)) for k in p["strata"]], [(1, 1.3), (3, 1.33)])
+        self.assertEqual((round(p["ratio"], 4), p["off"]["jobs"], p["raised"]["jobs"]),
+                         (round(1521000 / 1148000, 4), 3, 3))
+        self.assertIn("1 line, 2 helpers, auto: off 2,925 us (1 job; a core's share 99%), raised 2,250 us (1 job; a core's "
+                      "share 99%): 1.30; 3 lines, 2 helpers, auto", self.text(lg))
+        # a serial job matches serial jobs only
+        lg = a.summarise_log(BOOT22 + START + auto_job(per_frame(1980), RAISED, helpers=0)
+                             + auto_job(per_frame(1980), RAISED, helpers=0)
+                             + START + auto_job(per_frame(2640), helpers=0) + auto_job(per_frame(2640), helpers=0))
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual([(k["lines"], k["helpers"]) for k in p["strata"]], [(3, 0)])
+        self.assertIn("3 lines, serial, auto: off 2,640 us (2 jobs), raised 1,980 us (2 jobs): 1.33", self.text(lg))
+
+    def test_a_job_whose_helpers_are_not_logged_is_left_out(self):
+        # a step log that filled before PAR's place (no PAR, no free of the workspace, no PACE): its helpers are not
+        # known, so it is not matched; the pooled ratio still has it
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) + auto_job(per_frame(2200), RAISED)
+               + game_job(per_frame(2200), RAISED, why="auto: screen settled")
+               + START + auto_job(per_frame(2925)) + auto_job(per_frame(2925)))
+        lg = a.summarise_log(log)
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"]["helpers_unknown"], 1)
+        self.assertEqual(lg["clock_compare"][self.H15]["raised"]["jobs"], 3)
+        self.assertIn("left out: 1 job whose helpers are not logged", self.text(lg))
+        # a job with no start line (the start of a rotated log): what started it is not known
+        lg = a.summarise_log(BOOT22 + START + game_job(per_frame(2200), RAISED, helpers=2) + log[len(BOOT22):])
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"],
+                         {"selftest": 0, "reason_unknown": 1, "helpers_unknown": 1, "game_unknown": 0, "unmatched": 0})
+        self.assertIn("left out: 1 job with no start line, 1 job whose helpers are not logged", self.text(lg))
+
+    def test_what_started_a_job(self):
+        # shell/worker.c's job start reasons: Auto's with the overlay closed, the overlay's own, the subtitles', the
+        # self-test's
+        cases = {("auto: screen settled", ""): "auto", ("auto: screen quiet", ""): "auto",
+                 ("auto: screen settled", ", OCR only"): "auto", ("auto: screen settled", ", refresh"): "overlay",
+                 ("overlay opened", ""): "overlay", ("the screen changed during the last one", ""): "overlay",
+                 ("result was for an earlier screen", ""): "overlay", ("the running job was OCR only", ""): "overlay",
+                 ("subtitles on", ""): "subtitles", ("subtitles: screen keeps changing", ", OCR only"): "subtitles",
+                 ("region changed", ""): "subtitles", ("self-test", ""): "self-test"}
+        self.assertEqual({k: a.trigger(k) for k in cases}, cases)
+        self.assertIsNone(a.trigger(None))
+        shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        for why, _ in cases:  # every reason above is one the Shell logs
+            self.assertTrue(f'"{why}"' in shell or f'"job start ({why})"' in shell
+                            or why in ("auto: screen settled", "auto: screen quiet"), why)
+        self.assertIn('start_job(st.stable ? "auto: screen settled" : "auto: screen quiet", want_lookup());', shell)
+
+    def test_the_verdicts_thresholds(self):
+        def verdict(off_us, off_jobs=2, raised_us=2000):
+            log = (BOOT22 + START + "".join(auto_job([(100, raised_us / 10)], RAISED) for _ in range(2))
+                   + START + "".join(auto_job([(100, off_us / 10)]) for _ in range(off_jobs)))
+            (v,) = a.summarise_log(log)["boost_verdicts"]
+            return v["verdict"], round(v["ratio"], 2), v["n"]
+        self.assertEqual(verdict(2700), ("yes", 1.35, 4))
+        self.assertEqual(verdict(2840), ("yes", 1.42, 4))       # 1.42: a quarter over the gain
+        self.assertEqual(verdict(2860), ("unclear", 1.43, 4))   # more than the clock explains
+        self.assertEqual(verdict(2500), ("yes", 1.25, 4))       # 1.25: three quarters of 444 / 333's gain
+        self.assertEqual(verdict(2480), ("unclear", 1.24, 4))
+        self.assertEqual(verdict(2180), ("unclear", 1.09, 4))
+        self.assertEqual(verdict(2160), ("no", 1.08, 4))        # 1.08: a quarter of the gain (1.083), as printed
+        self.assertEqual(verdict(2000), ("no", 1.0, 4))
+        self.assertEqual(verdict(2700, off_jobs=1), ("unclear", 1.35, 3))  # under 2 jobs a side
+        lg = a.summarise_log(BOOT22 + START + auto_job([(100, 200.0)], RAISED) + auto_job([(100, 200.0)], RAISED)
+                             + START + auto_job([(100, 270.0)]))
+        self.assertIn("boost effective: unclear (ratio 1.35, n=3): VOCR3_H15_w8.vocr (Normal) like for like, 1 off and 2 "
+                      "raised jobs (all jobs: 1.35); too few jobs to decide: at least 2 a side; yes at 1.25 to 1.42, no "
+                      "at 1.08 or less", self.text(lg))
+        lg = a.summarise_log(BOOT22 + START + "".join(auto_job([(100, 200.0)], RAISED) for _ in range(2))
+                             + START + "".join(auto_job([(100, 300.0)]) for _ in range(2)))
+        self.assertIn("boost effective: unclear (ratio 1.50, n=4): VOCR3_H15_w8.vocr (Normal) like for like, 2 off and 2 "
+                      "raised jobs (all jobs: 1.50); more than the clock explains: a recognizer's time cannot scale more "
+                      "than its clock, so the off side lost time to something else (the game's load, another scene; see "
+                      "each window's ratio)", self.text(lg))
+        # another clock pair: the thresholds follow its gain (222 -> 444: 2.00; yes at 1.75, no at 1.25)
+        v = a.boost_verdicts([], {self.H15: {"off": {"jobs": 2, "us": 1, "frames": 1}, "raised": {
+            "jobs": 2, "us": 1, "frames": 1, "before": 222, "during": 444}}},
+            {self.H15: {"pooled": None}})[0]
+        self.assertEqual((v["yes_at"], v["no_at"], v["over_at"], v["gain"]), (1.75, 1.25, 2.25, (222, 444)))
+        # rounded as the ratio is printed: 266 -> 444 gives 1.5019, stated and applied as 1.50, so a printed 1.50 is yes
+        self.assertEqual(a._thresholds((266, 444))["yes_at"], 1.5)
+        self.assertEqual(a._class(1.4996, a._thresholds((266, 444))), "yes")
+        # the thresholds follow the commonest clock pair of the raised jobs, not the first job's
+        lg = a.summarise_log(BOOT22 + START + auto_job([(100, 150.0)], (222, 0, 444, 222))
+                             + auto_job([(100, 200.0)], RAISED) * 3 + START + auto_job([(100, 270.0)]) * 2)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["gain"], v["yes_at"]), ((333, 444), 1.25))
+
+    def test_a_clock_the_boost_could_not_raise_gives_no_ratio(self):
+        # a clock plugin holding 333 MHz (the set call returns 0, the clock stays) or a refused set call (rc < 0)
+        log = (BOOT22 + START + auto_job(per_frame(2200), (333, 0, 333, 333))
+               + auto_job(per_frame(2200), (333, -2147352567, 333, 333)) + START + auto_job(per_frame(2925)) * 2)
+        lg = a.summarise_log(log)
+        self.assertEqual(sorted(lg["clock_compare"][self.H15]), ["not_raised", "off"])
+        self.assertIn("boost effective: unclear (ratio -, n=0): no job raised the clock: 2 jobs logged it not raised "
+                      "(the set call refused, or the clock not moved: a clock plugin holding it, say)", self.text(lg))
+
+    def test_the_off_windows_clock_is_assumed_and_its_evidence_shown(self):
+        # invented: the game at 333 MHz, lowered to 222 during window 1's job, still at 222 in window 3
+        log = (BOOT22 + START + auto_job(per_frame(2200), (333, 0, 444, 222)) + START + auto_job(per_frame(2925)) * 2
+               + START + auto_job(per_frame(2200), (222, 0, 444, 222)))
+        lg = a.summarise_log(log)
+        text = self.text(lg)
+        self.assertIn("2 line 13 PCSG00415 2 2 0 BOOST OFF, clock assumed (not logged): no clock line in its 2 "
+                      "recognizing jobs", text)
+        self.assertIn("the boost-off windows' clock is assumed (not logged): with ocr_boost_clock off no job reads it, "
+                      "and no plugin's start line logs it: window 2: assumed 222 MHz, as the jobs nearest it read it: "
+                      "222 after window 1's last job (before it; its jobs 333 MHz before, 222 after), 222 before window "
+                      "3's first job (after it; its jobs 222 MHz before, 222 after)", text)
+        # so the clock the off window ran at is not one figure: no verdict from it
+        self.assertIn("boost effective: unclear (ratio 1.33, n=4): VOCR3_H15_w8.vocr (Normal) like for like, 2 off and 2 "
+                      "raised jobs (all jobs: 1.33); the game's own clock was not one figure around the raised jobs and "
+                      "next to the boost-off windows (222-333 MHz), so the boost-off side's, assumed from it, is not "
+                      "known", text)
+        # a clock plugin in the collect's taiHEN configurations (a commented line is not one)
+        tai = {"ur0:tai/config.txt": a.summarise_tai("*KERNEL\nur0:tai/VitaJPOverlay_Kernel.skprx\n"
+                                                     "ur0:tai/PSVshell.skprx\n# ur0:tai/lolicon.skprx\n")}
+        self.assertEqual(tai["ur0:tai/config.txt"]["clock_plugins"], [("KERNEL", "PSVshell.skprx")])
+        self.assertIn("clock plugins in the taiHEN configurations: PSVshell.skprx under *KERNEL in ur0:tai/config.txt: a "
+                      "clock such a plugin holds for the game (a PSVshell profile) applies in every window, the "
+                      "boost-off one too, and nothing logs it", self.text(lg, tai))
+        self.assertIn("clock plugins in the taiHEN configurations: none (no PSVshell, LOLIcon or oclockvita)",
+                      self.text(lg, {"ur0:tai/config.txt": a.summarise_tai("*KERNEL\nur0:tai/VitaJPOverlay_Kernel.skprx\n")}))
+        self.assertIn("clock plugins in the taiHEN configurations: not known (this collect has no taiHEN configuration)",
+                      self.text(lg, {}))
+        # the collect's analysis reads the configurations it fetched
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = log_collect(Path(tmp) / "c", log, tai="*KERNEL\nur0:tai/PSVshell.skprx\n")
+            rendered = flat(a.render_collect(a.summarise_collect(folder)))
+        self.assertIn("clock plugins in the taiHEN configurations: PSVshell.skprx under *KERNEL in ur0:tai/config.txt",
+                      rendered)
+        self.assertIn("boost effective: unclear (ratio 1.33, n=4)", rendered)
+
+    def test_a_rotated_off_window_is_named_by_its_boots_api_22_lines(self):
+        # N5: log.old.txt starts inside a boot with ocr_threads = 1 and full step logs (no PAR, no PACE): nothing in
+        # the boost-off window names API 22, but the Shell's done lines count their appends since #116, after API 22
+        done = "job 0 done rc=0 in 900 ms, arena peak 4096, dictionary page 1/1, game 700 ms, log 31 ms in 2 appends\n"
+        off = START + game_job(per_frame(2925), why="auto: screen settled") + done
+        lg = a.summarise_log(off)
+        self.assertEqual(([(r["window"], r["state"]) for r in lg["clock_windows"]], lg["clock_windows_older"]),
+                         ([(1, "off")], 0))
+        # or by a later window of the same boot (its clock lines): the boot is one build
+        lg = a.summarise_log(START + game_job(per_frame(2925), why="auto: screen settled")
+                             + START + auto_job(per_frame(2200), RAISED))
+        self.assertEqual([(r["window"], r["state"]) for r in lg["clock_windows"]], [(1, "off"), (2, "on")])
+        # not by a later boot's: its build may be another (an install in between)
+        lg = a.summarise_log(START + game_job(per_frame(2925), why="auto: screen settled")
+                             + BOOT22 + START + auto_job(per_frame(2200), RAISED))
+        self.assertEqual(([r["window"] for r in lg["clock_windows"]], lg["clock_windows_older"]), ([2], 1))
+        # an older build's done line has no appends
+        lg = a.summarise_log(START + game_job(per_frame(2925)) + "job 0 done rc=0 in 900 ms, arena peak 4096, "
+                             "dictionary page 1/1\n")
+        self.assertEqual((lg["clock_windows"], lg["clock_windows_older"]), ([], 1))
+
+    def test_a_mixed_window_is_named_when_no_window_has_the_boost_off(self):
+        # N5: config.ini rewritten with the game in front (a background writer), then an overlay open: the window is
+        # MIXED and left out; the verdict names it rather than reading as if step 6 had been skipped
+        lg = a.summarise_log(BOOT22 + START + auto_job(per_frame(2200), RAISED) + auto_job(per_frame(2925)))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["model"], v["verdict"], v["ratio"]), (None, "unclear", None))
+        self.assertIn("boost effective: unclear (ratio -, n=0): no window with the boost off in this log (step 6's "
+                      "optional boxes); window 1 MIXED (some recognizing jobs logged the clock, some did not: "
+                      "config.ini changed with the game in front?), left out", self.text(lg))
+
+    def test_the_verdict_is_in_the_json(self):
+        lg = a.summarise_log(self.BASE)
+        out = json.loads(json.dumps(lg, default=list))
+        (v,) = out["boost_verdicts"]
+        self.assertEqual((v["model"], v["verdict"], round(v["ratio"], 2), v["n"], v["yes_at"], v["no_at"], v["over_at"],
+                          v["gain"]), (self.H15, "yes", 1.32, 6, 1.25, 1.08, 1.42, [333, 444]))
+        self.assertEqual(out["clock_like"][self.H15]["pooled"]["strata"][0]["off"]["jobs"], 3)
+
+    FREES = ("gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14\n"
+             "gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 "
+             "phycont=27262976 us=487575\n"
+             "gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 "
+             "phycont=27262976 us=487645\n")
+
+    def full_job(self, lines, clock=None):
+        """An auto job whose step log filled before PAR's place: game_ocr/main.c step_add keeps a slot for each block
+        still held, so its two FREEs are its 19th and 20th steps (host/tests/test_game_vocr.c), and the kernel adds
+        no PACE (kernel/game_ocr.c: only with a slot left). Whatever helpers it ran with, the log does not say."""
+        return game_job(lines, clock, why="auto: screen settled") + self.FREES
+
+    def test_a_full_step_log_is_not_read_as_serial(self):
+        # audit-overlay-analyser-fixes-2 B1 (its m2c, invented figures): serial raised windows (ocr_threads = 1, no
+        # PAR, the kernel's PACE) and a parallel off window whose two jobs' logs filled before PAR: the FREEs follow
+        # anyway, so they are no sign of room; read as serial, they would give a "like-for-like" 1.33 (yes)
+        log = (BOOT22 + START + "".join(auto_job(per_frame(1980), RAISED, helpers=0) for _ in range(3))
+               + START + self.full_job(per_frame(2640)) * 2
+               + START + "".join(auto_job(per_frame(1980), RAISED, helpers=0) for _ in range(3)))
+        lg = a.summarise_log(log)
+        lk = lg["clock_like"][self.H15]
+        self.assertIsNone(lk["pooled"])
+        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 2, "game_unknown": 0, "unmatched": 6})
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], v["ratio"]), ("unclear", None))
+        self.assertIn("no kind of job on both sides (left out: 2 jobs whose helpers are not logged, 6 jobs of a kind "
+                      "not on the other side)", self.text(lg))
+        # the reverse (its m2b): a serial off window against raised jobs whose logs filled
+        log = (BOOT22 + START + self.full_job(per_frame(2200), RAISED) * 3
+               + START + "".join(auto_job(per_frame(2640), helpers=0) for _ in range(2)))
+        lk = a.summarise_log(log)["clock_like"][self.H15]
+        self.assertEqual((lk["pooled"], lk["left_out"]["helpers_unknown"]), (None, 3))
+        # a serial job with room for PAR still shows it: the kernel's PACE follows its FREEs
+        lg = a.summarise_log(BOOT22 + START + "".join(auto_job(per_frame(1980), RAISED, helpers=0) for _ in range(2))
+                             + START + "".join(auto_job(per_frame(2640), helpers=0) for _ in range(2)))
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual(([(k["lines"], k["helpers"]) for k in p["strata"]], round(p["ratio"], 2)), ([(3, 0)], 1.33))
+
+    def test_the_share_of_a_core_is_a_diagnostic_and_a_yes_says_what_it_does_not_check(self):
+        # audit-overlay-analyser-fixes-2 B2 asked for a check of the lines' share of a core (its m9b, invented: the
+        # off lines at 90 %, the raised at 99 %: 1.20 on line time x share, 1.32 on wall time). -2-b B3: on the console
+        # the logged share is not a measurement (test.3: for one model at one clock in one window the time per frame
+        # is flat while the share runs 17-92 %, 0 in 3 jobs), so a check on it would pass or veto at random. The
+        # verdict reads the wall time; line time x share is printed as a diagnostic; a yes says what is not checked
+        log = (BOOT22 + START + "".join(auto_job(per_frame(2200), RAISED, share=99) for _ in range(2))
+               + START + "".join(auto_job(per_frame(2904), share=90) for _ in range(2))
+               + START + "".join(auto_job(per_frame(2200), RAISED, share=99) for _ in range(2)))
+        lg = a.summarise_log(log)
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual((round(p["ratio"], 2), round(p["cpu_ratio"], 2), p["cpu_jobs"]), (1.32, 1.2, (2, 4)))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2), v["why"]), ("yes", 1.32, None))
+        text = self.text(lg)
+        self.assertIn("off / raised = 1.32 (2 off, 4 raised jobs; line time x logged share of a core, a diagnostic only (2 "
+                      "off and 4 raised jobs with one; not a measurement on the console, test.3): 1.20): 3 lines, 2 "
+                      "helpers, auto: off 2,904 us (2 jobs; a core's share 90%), raised 2,200 us (4 jobs; a core's share "
+                      "99%): 1.32", text)
+        self.assertIn("boost effective: yes (ratio 1.32, n=6): VOCR3_H15_w8.vocr (Normal) like for like, 2 off and 4 "
+                      "raised jobs (all jobs: 1.32); not checked: whether other threads took more of the core from one "
+                      "side's lines than from the other's; the logged share of a core, which was to show it, does not "
+                      "follow the time per frame on the console (test.3); yes at 1.25 to 1.42", text)
+        # the shares never change the verdict: the same log with test.3-like shares, or none, gives the same line
+        for shares in ((43, 90), (17, 92), (0, 0)):
+            lg = a.summarise_log(log.replace("sum=0x00005A5A", "sum=0x0000%02X%02X" % (shares[0], shares[0]))
+                                 .replace("sum=0x00006363", "sum=0x0000%02X%02X" % (shares[1], shares[1])))
+            (w,) = lg["boost_verdicts"]
+            self.assertEqual((w["verdict"], round(w["ratio"], 2), w["why"], w["note"]), ("yes", 1.32, None, v["note"]))
+            # the diagnostic reads only the jobs that logged a share
+            self.assertEqual(lg["clock_like"][self.H15]["pooled"]["cpu_jobs"], (0, 0) if shares == (0, 0) else (2, 4))
+        # an off job without a share: the diagnostic reads the other one, its frames only (2904 x 90 % against 2200 x 99 %)
+        lg = a.summarise_log(log.replace("sum=0x00005A5A", "sum=0x00000000", 1))
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual((p["cpu_jobs"], round(p["cpu_ratio"], 2), lg["boost_verdicts"][0]["verdict"]), ((1, 4), 1.2, "yes"))
+        # a no and an unclear carry no note
+        lg = a.summarise_log(BOOT22 + START + "".join(auto_job(per_frame(2200), RAISED) for _ in range(2))
+                             + START + "".join(auto_job(per_frame(2250)) for _ in range(2)))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], v["note"]), ("no", None))
+        self.assertNotIn("not checked: whether other threads", self.text(lg))
+
+    def test_an_off_window_against_its_neighbours_that_disagrees_is_unclear(self):
+        # audit-overlay-analyser-fixes-2 N1 (invented): window 4, after the off window, 15 % slower (another scene);
+        # pooled 1.34 (yes), against the windows next to it 1.24 (unclear): the windows drifted
+        log = (BOOT22 + START + auto_job(per_frame(2000), RAISED) * 2 + START + auto_job(per_frame(2200), RAISED) * 2
+               + START + auto_job(per_frame(2925)) * 2
+               + START + auto_job(per_frame(2530), RAISED) * 2 + START + auto_job(per_frame(2000), RAISED) * 2)
+        lg = a.summarise_log(log)
+        (w3,) = [w for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"]
+        self.assertEqual((w3["window"], w3["neighbours"], round(w3["near"]["ratio"], 2)), (3, [2, 4], 1.24))
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("unclear", 1.34))
+        self.assertIn("an off window against its neighbours gives another verdict (window 3: 1.24, unclear) than the "
+                      "pooled 1.34: the windows drifted (another scene, the game's load)", self.text(lg))
+        # the audit's m3 (invented): two off windows, the second 10 % slower: 1.33 and 1.47 against their
+        # neighbours; the second is above 1.42, a load the clock does not explain (audit-overlay-analyser-fixes-2-b
+        # N2), so the pooled 1.40 is not a yes
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2925)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(3234)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        self.assertEqual([round(w["near"]["ratio"], 2) for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"],
+                         [1.33, 1.47])
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("unclear", 1.4))
+        self.assertIn("(window 4: 1.47, unclear) than the pooled 1.40", v["why"])
+        # a pooled no (1.02) with one off window over 1.08 against its neighbours (1.10): unclear
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2150)) * 4
+               + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2420)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("unclear", 1.02))
+        self.assertIn("an off window against its neighbours gives another verdict (window 4: 1.10, unclear) than the "
+                      "pooled 1.02", self.text(lg))
+
+    def test_the_clock_next_to_the_off_window_is_in_the_own_clock_check(self):
+        # audit-overlay-analyser-fixes-2 N2 (its m13, invented): window 2's last job, of a kind the off side lacks,
+        # left the clock at 222; the off-clock section assumes 222-333 MHz, so no verdict
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2
+               + auto_job(per_frame(2200, (80, 76)), (333, 0, 444, 222))
+               + START + auto_job(per_frame(2925)) * 2 + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        self.assertEqual(lg["clock_like"][self.H15]["pooled"]["own_clocks"], [333])  # its matched jobs alone
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual(v["verdict"], "unclear")
+        text = self.text(lg)
+        self.assertIn("window 2: assumed 222-333 MHz, as the jobs nearest it read it", text)
+        self.assertIn("the game's own clock was not one figure around the raised jobs and next to the boost-off windows "
+                      "(222-333 MHz)", text)
+        # a matched job's clock after it counts too (the game lowered it during the job), not only before
+        lg = a.summarise_log(BOOT22 + START + auto_job(per_frame(2200), (333, 0, 444, 222)) + auto_job(per_frame(2200), RAISED)
+                             + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2925)) * 2
+                             + START + auto_job(per_frame(2200), RAISED) * 2)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], lg["clock_like"][self.H15]["pooled"]["own_clocks"]), ("unclear", [222, 333]))
+        # and the raised jobs' own clock: a clock plugin's profile that sets 500 in some of them
+        lg = a.summarise_log(BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + auto_job(per_frame(2000), (333, 0, 500, 333))
+                             + START + auto_job(per_frame(2925)) * 2)
+        (v,) = lg["boost_verdicts"]
+        self.assertIn("the raised jobs' clock was not one figure (444-500 MHz during them", v["why"])
+
+    def test_the_ratio_is_rounded_as_printed_before_the_thresholds(self):
+        # 2,499 / 2,000 = 1.2495, printed 1.25: yes, as printed
+        log = (BOOT22 + START + "".join(auto_job([(100, 200.0)], RAISED) for _ in range(2))
+               + START + "".join(auto_job([(100, 249.9)]) for _ in range(2)))
+        (v,) = a.summarise_log(log)["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 4)), ("yes", 1.2495))
+
+    def test_the_selftests_job_is_left_out_with_or_without_its_begin_records(self):
+        # the report's cap (shell/selftest.c REPORT_CAP) stops its records, the begin lines in log.txt with them: its
+        # jobs are still the self-test's job's (job start (self-test)), never the user's
+        st = "job start (self-test)\n" + game_job(per_frame(2400), RAISED, helpers=2) + game_job(per_frame(1800), RAISED, helpers=0)
+        log = (BOOT22 + START + auto_job(per_frame(2400), RAISED) * 2 + st
+               + START + auto_job(per_frame(2928)) * 2)
+        lk = a.summarise_log(log)["clock_like"][self.H15]
+        self.assertEqual((lk["left_out"], lk["pooled"]["raised"]["jobs"]),
+                         ({"selftest": 2, "reason_unknown": 0, "helpers_unknown": 0, "game_unknown": 0, "unmatched": 0}, 2))
+        # a Shell job's start ends a stage's mark that no job took: the next job is the user's
+        log = (BOOT22 + START + auto_job(per_frame(2400), RAISED)
+               + "stage textbox begin t=90000 flags=0x0 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE\n"
+               + auto_job(per_frame(2400), RAISED) + START + auto_job(per_frame(2928)) * 2)
+        lk = a.summarise_log(log)["clock_like"][self.H15]
+        self.assertEqual((lk["left_out"]["selftest"], lk["pooled"]["raised"]["jobs"]), (0, 2))
+
+    def test_another_games_window_is_not_compared_or_read_for_the_clock(self):
+        # audit-overlay-analyser-fixes-2-b N3 (its b10, invented): AIR (PCSG00940) at 222 MHz just before CLANNAD's
+        # boost-off window. ScePower keeps a clock per process, and another game's load is not this one's: AIR's
+        # jobs are not CLANNAD's kind, and its clock is not a reading next to CLANNAD's off window
+        air = "game PCSG00940 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + air + auto_job(per_frame(1800), (222, 0, 444, 222)) * 2
+               + START + auto_job(per_frame(2925)) * 2 + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual((round(p["ratio"], 2), p["raised"]["jobs"], p["raised_windows"]), (1.33, 4, [1, 4]))
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"]["unmatched"], 2)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual(v["verdict"], "yes")
+        self.assertIn("window 3: assumed 333 MHz, as the jobs nearest it read it: 333 after window 1's last job", self.text(lg))
+
+    def test_the_readings_nearest_the_off_window_are_the_last_and_the_first(self):
+        # the clock the previous window's last job left and the next window's first job found (invented clocks):
+        # window 2's jobs left 333 then 222; window 4's found 222 then 333; window 1, farther, 333
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED)
+               + START + auto_job(per_frame(2200), RAISED) + auto_job(per_frame(2200), (333, 0, 444, 222))
+               + START + auto_job(per_frame(2925)) * 2
+               + START + auto_job(per_frame(2200), (222, 0, 444, 333)) + auto_job(per_frame(2200), RAISED))
+        lg = a.summarise_log(log)
+        (prev, left), (nxt, found) = a.nearest_clock(lg["clock_windows"], lg["clock_windows"][2])
+        self.assertEqual((prev["window"], left, nxt["window"], found), (2, 222, 4, 222))
+        self.assertIn("window 3: assumed 222 MHz, as the jobs nearest it read it: 222 after window 2's last job",
+                      self.text(lg))
+
+    def test_the_size_config_ini_had_is_marked(self):
+        # N8: the verdict line of the size config.ini chose (at collect time: test.3's was left at large) says so
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + auto_job(per_frame(1300), RAISED, model=self.FL10) * 2
+               + START + auto_job(per_frame(2925)) * 2 + auto_job(per_frame(1725), model=self.FL10) * 2)
+        for config, marked in (("vocr_tier = small\n", self.FL10), ("vocr_tier = normal\n", self.H15), ("", self.H15)):
+            with tempfile.TemporaryDirectory() as tmp:
+                folder = log_collect(Path(tmp) / "c", log)
+                (folder / "ux0/data/VitaJPOverlay/config.ini").write_text(config, encoding="utf-8")
+                text = flat(a.render_collect(a.summarise_collect(folder)))
+            for model, name in ((self.H15, "Normal"), (self.FL10, "Small")):
+                label = f"{model} ({name}, the size config.ini had at collect time)"
+                (self.assertIn if model == marked else self.assertNotIn)(label, text)
+                self.assertIn(f"{model} ({name}", text)
+
+    def test_a_window_whose_game_the_log_does_not_name_is_left_out(self):
+        # the audit's m8 (invented): log.old.txt starts inside the boost-off window, so its "game TITLE started" line
+        # is gone; its game is not known, so its jobs are compared with none, and the line says why
+        lg = a.summarise_log(BOOT22 + auto_job(per_frame(2925)) * 2 + START + auto_job(per_frame(2200), RAISED) * 2)
+        self.assertEqual([(r["title"], r["state"]) for r in lg["clock_windows"]], [(None, "off"), ("PCSG00415", "on")])
+        lk = lg["clock_like"][self.H15]
+        self.assertEqual((lk["pooled"], lk["left_out"]["game_unknown"]), (None, 2))
+        self.assertIn("left out: 2 jobs of a window whose game the log does not name (it began before the log's first "
+                      "line)", self.text(lg))
+        self.assertEqual(lg["boost_verdicts"][0]["verdict"], "unclear")
+        # two such windows (the log's first, and a boot's jobs before its first game start) are not one game either
+        lg = a.summarise_log(BOOT22 + auto_job(per_frame(2200), RAISED) * 2 + BOOT22 + auto_job(per_frame(2925)) * 2)
+        self.assertEqual([(r["title"], r["state"]) for r in lg["clock_windows"]], [(None, "on"), (None, "off")])
+        lk = lg["clock_like"][self.H15]
+        self.assertEqual((lk["pooled"], lk["left_out"]["game_unknown"]), (None, 4))
+
+    def test_a_windows_position_across_the_rotated_log(self):
+        # a window that starts on log.old.txt's last line is log.old.txt's (collect: log.old.txt first, then
+        # log.txt), and a log.old.txt without a final newline does not join its last line to log.txt's first
+        for old in (BOOT22 + START, BOOT22 + START.rstrip("\n")):
+            with tempfile.TemporaryDirectory() as tmp:
+                folder = log_collect(Path(tmp) / "c", auto_job(per_frame(2200), RAISED) + START + auto_job(per_frame(2925)))
+                (folder / "ux0/data/VitaJPOverlay/log.old.txt").write_text(old, encoding="utf-8")
+                c = a.summarise_collect(folder)
+            self.assertEqual([(w["where"], w["state"], w["recognizing"]) for w in c["log"]["clock_windows"]],
+                             [("log.old.txt:2", "on", 1), ("log.txt:11", "off", 1)])
+
+    def test_pace_alone_names_an_api_22_boot(self):
+        # log.old.txt's start: no boot line, and the only API 22 step is the kernel's PACE (ocr_threads = 1, the boost
+        # off, no done line)
+        pace = ("gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 "
+                "phycont=0 us=118\n")
+        lg = a.summarise_log(START + game_job(per_frame(2925)) + pace)
+        self.assertEqual(([(r["window"], r["state"]) for r in lg["clock_windows"]], lg["clock_windows_older"]),
+                         ([(1, "off")], 0))
+
+    def test_the_premises_in_the_source(self):
+        shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        # each Shell job's reason, and ", refresh" for the open overlay's quiet refresh (JOB_START); a debug-build line
+        # since the two builds (vjo_dlog, include/vjo_build.h), as every job and step line the comparison reads
+        self.assertRegex(shell, r'vjo_d?log\("job start \(%s\)%s", why, refresh \? ", refresh" : lookup \? "" : '
+                                r'", OCR only"\);')
+        self.assertTrue(a.JOB_START.match("job start (auto: screen settled), OCR only"))
+        # Auto's job: only with the overlay closed; the open overlay's refresh is a refresh
+        body = shell[shell.index("static void auto_prefetch(void)"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn("if (ov != OV_CLOSED || job_running", body)
+        self.assertIn('start_job(st.stable ? "auto: screen settled" : "auto: screen quiet", want_lookup());', body)
+        body = shell[shell.index("static void background_open(void)"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn('start_job_kind("auto: screen settled", 0, 1);', body)
+        # the self-test's stages: each begin record before its job, in a job of its own
+        self.assertIn('vjo_log("job start (self-test)");', shell)
+        body = shell[shell.index("static int run_selftest_stages("):]
+        body = body[:body.index("\n}\n")]
+        self.assertLess(body.index("vjo_selftest_stage_begin("), body.index("vocr_run_one("))
+        selftest = (ROOT / "shell/selftest.c").read_text(encoding="utf-8")
+        self.assertIn('"stage %s begin t=%lld flags=0x%X model=%s fallback=%s speed=0x%X"', selftest)
+        self.assertIn("i == STAGE_SERIAL ? configured & ~VJO_GAME_OCR_S_HELPERS_MASK : configured", selftest)
+        # PACE, the only sign that PAR had room: the kernel adds it only with a slot left (and only in the debug
+        # build, whose step log the comparison reads); every FREE keeps its slot in a full log, so a FREE is no sign
+        kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")
+        self.assertRegex(kernel, r"if \((?:VJO_DEBUG && )?pace_job && result\.n_steps < VJO_GAME_OCR_STEPS\) \{")
+        # no PAR step for a serial job with no line from the cache (a job's helpers: PAR's arg)
+        worker = (ROOT / "game_ocr/main.c").read_text(encoding="utf-8")
+        self.assertIn("if (id != VJO_GSTEP_FREE && log_to->n_steps + reserve >= VJO_GAME_OCR_STEPS) return NULL;", worker)
+        par = worker.index("step_add(VJO_GSTEP_PAR, 0, stats.helpers,")
+        cond = worker.index("if (stats.lines && (want_helpers || stats.cached)) {")
+        self.assertLess(cond, par)
+        self.assertLess(par - cond, 1500)
+        # the done line's appends (DONE_APPENDS), which builds before API 22 do not log
+        self.assertIn('"job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "\n'
+                      '            "appends"', shell)
+        self.assertTrue(a.DONE_APPENDS.match("job 1 done rc=0 in 3300 ms, arena peak 0, dictionary page 1/1, game 3100 "
+                                             "ms, log 62 ms in 6 appends"))
+        # the off window's clock is assumed: only job_busy reads the clock, and it returns first with the boost off;
+        # no start line logs it (a plugin that read it elsewhere would have to be shown beside the assumption)
+        body = worker[worker.index("static void job_busy(void *ud, int on)"):]
+        body = body[:body.index("\n}\n")]
+        reads = {f: (ROOT / f).read_text(encoding="utf-8").count("scePowerGetArmClockFrequency()")
+                 for d in ("game_ocr", "shell", "kernel", "core") for f in
+                 (str(q.relative_to(ROOT)) for q in sorted((ROOT / d).glob("*.c*")))}
+        self.assertEqual({f: n for f, n in reads.items() if n}, {"game_ocr/main.c": body.count("scePowerGetArmClockFrequency()")})
+
+    def test_the_selftest_fixture_is_formatted_as_the_shell_writes(self):
+        # tools/tests/fixtures/log-test3-selftest-job.txt: synthetic (invented figures), the self-test's own job
+        lines = self.SELFTEST.splitlines()
+        self.assertEqual(lines[0], "job start (self-test)")
+        begins = [line for line in lines if line.startswith("stage ") and " begin " in line]
+        self.assertEqual([b.split()[1] for b in begins], ["fallback", "textbox", "fullscreen", "probe", "textbox2"])
+        for b in begins:
+            self.assertRegex(b, r"^stage \w+ begin t=\d+ flags=0x[0-9A-F]+ model=\S+ fallback=\S+ speed=0x[0-9A-F]+$")
+        # the configured helpers with the boost, without the line cache; textbox2 serially
+        self.assertEqual([b.rsplit("speed=", 1)[1] for b in begins], ["0xE", "0xE", "0xE", "0xE", "0xC"])
+        jobs = [n for n, line in enumerate(lines) if line.startswith("game vocr rc=")]
+        self.assertEqual(len(jobs), 5)
+        for n in jobs:
+            self.assertTrue(a.LOG["job"].match(lines[n]), lines[n])
+            self.assertTrue(lines[n - 1].startswith("stage ") and " begin " in lines[n - 1])
+        # textbox2's job logs no PAR (serial, no cache)
+        t2 = lines[jobs[4]:]
+        self.assertFalse(any(line.startswith("gstep job par ") for line in t2))
+        for line in lines:
+            if line.startswith("gstep "):
+                self.assertRegex(line, r"^gstep \w+ \w+ kind=\S+ arg=\S+ rc=0x[0-9A-F]{8} bytes=\d+ sum=0x[0-9A-F]{8} "
+                                       r"main=-?\d+ cdram=-?\d+ phycont=-?\d+ us=\d+$")
+        self.assertTrue(a.DONE_APPENDS.match(lines[-1]))
+
+
+def _per(g):
+    return g["us"] / g["frames"]
 
 
 def flat(text):

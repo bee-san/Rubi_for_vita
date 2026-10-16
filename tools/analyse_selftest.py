@@ -40,8 +40,8 @@ the game's measured free memory allows.
 --collect DIR reads a folder written by `install_ftp.sh --collect` (tools/collect_vita.py):
 the installed files against the package, config.ini (API keys already redacted),
 both taiHEN configurations, boot.txt, kernel.txt, log.txt and log.old.txt (every
-OCR job, its memory and times, the ARM clock by game window, the dictionary, the overlay, Anki and each .apkg
-export's result), the Anki queue,
+OCR job, its memory and times, the ARM clock by game window with the boost's like-for-like ratio and verdict, the
+dictionary, the overlay, Anki and each .apkg export's result), the Anki queue,
 crash dumps, the self-test analysis when a report is there, the tier from the lowest
 free game memory seen, and what this tool cannot decide, with where the data is.
 
@@ -147,6 +147,20 @@ try:
     TIERS_ERROR = None
 except Exception as e:  # noqa: BLE001
     TIERS, TIER_DEFAULT, TIER_BOX, TIERS_ERROR = (), None, None, tiers_error(e)
+
+
+def load_tier_models(path=TIERS_FILE):
+    """Each tier's model file in the shared tier table (its "model", which the Overlay app's tier choice shows):
+    {model: (id, name)}; empty when the table cannot be read (TIERS_ERROR says why)."""
+    try:
+        tiers = json.loads(Path(path).read_text(encoding="utf-8")).get("tiers")
+        return {t["model"]: (t["id"], t["name"]) for t in tiers if isinstance(t, dict) and all(
+            isinstance(t.get(k), str) and t[k] for k in ("model", "id", "name"))}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+TIER_MODELS = load_tier_models()
 
 
 def tier_need(weights, arena):
@@ -982,6 +996,32 @@ EXPORT_TROUBLE = re.compile(r"^overlay app: anki export: .*(?:did not verify|pac
 # activate_game reads config.ini again just before it logs the line, so ocr_boost_clock, which VitaShell changes
 # while the game is closed or suspended, is one setting for a whole window.
 WINDOW_START = re.compile(r"^game (\S+) started: ")
+# shell/worker.c start_job_kind: each Shell job's reason; ", refresh" is the open overlay's quiet refresh
+JOB_START = re.compile(r"^job start \(([^)]*)\)(, refresh|, OCR only)?$")
+TRIGGERS = ("auto", "overlay", "subtitles", "self-test")
+
+
+def trigger(reason):
+    """What started a Shell job (its JOB_START reason and suffix, shell/worker.c): "auto", Auto's background job of a
+    settled or quiet screen, with the overlay closed (auto_prefetch); "subtitles", the subtitle strip's (subtitles
+    on, a region changed with them on, a screen that keeps changing); "self-test", the self-test's own job; else
+    "overlay", the overlay's own (it opened, a retry, a result for an earlier screen, the open overlay's refresh:
+    ", refresh", background_open), which runs beside the overlay's drawing. None without a start line."""
+    if reason is None:
+        return None
+    why, suffix = reason
+    if why == "self-test":
+        return "self-test"
+    if why.startswith("auto") and suffix != ", refresh":
+        return "auto"
+    return "subtitles" if why.startswith("subtitles") or why == "region changed" else "overlay"
+
+
+# shell/selftest.c vjo_selftest_stage_begin: a self-test stage, whose job's lines follow (shell/worker.c
+# run_selftest_stages); its records' copies ("gstep textbox ...", "line textbox ...") are not the job's lines
+STAGE_BEGIN = re.compile(r"^stage (\w+) begin ")
+# shell/worker.c: since #116, which came after API 22 (#93), each Shell job's done line counts its log appends
+DONE_APPENDS = re.compile(r"^job \d+ done rc=-?\d+ in \d+ ms, .* in \d+ appends$")
 BOOST_API = 22  # ocr_boost_clock and its clock step came with API 22 (docs/ocr-speed.md); an older build logs none
 BOOST_MHZ = 444  # game_ocr/main.c BOOST_MHZ: a clock at it or above is left as it is (rc 1)
 
@@ -1231,9 +1271,22 @@ def export_summary(a):
 
 # ---- the ARM clock by game window (ocr_boost_clock, API 22; audit-test-build-3-b D6, test.3's step 6)
 
+# The boost's verdict (test.3's step 6; audit-overlay-analyser-fixes N1-N3): the like-for-like off / raised ratio
+# against the gain of a time that scales with the clock (during / before: 444 / 333 = 1.33). Effective at three
+# quarters of that gain or more (1.25 at 333 -> 444), not at a quarter or less (1.08), unclear between them, and
+# unclear above a quarter more than the gain (1.42): a recognizer's time cannot scale more than its clock, so a
+# wall-time ratio above it means the off side lost time to something other than the clock (boost_verdicts has the
+# other cases).
+BOOST_YES, BOOST_NO, BOOST_OVER, BOOST_MIN_JOBS = 0.75, 0.25, 1.25, 2
+BOOST_GAIN = (333, BOOST_MHZ)  # the thresholds stated when no job logged its clock pair: the Vita's 333 MHz raised
+# Plugins that set the ARM clock themselves (a PSVshell profile per game holds it whatever the game asks for): in
+# the collect's taiHEN configurations; nothing logs the clock they hold
+CLOCK_PLUGIN = re.compile(r"psvshell|lolicon|oclock|overclock", re.I)
+
+
 def clock_windows(windows):
-    """Each game window of a build with the boost, what its jobs logged of the ARM clock, and the time per CTC frame
-    with the boost off against raised, by model.
+    """Each game window of a build with the boost: what its jobs logged of the ARM clock, and each recognizing job's
+    lines as one sample for the comparison (boost_compare).
 
     A job logs the clock (`gstep job clock`) only when it recognizes a line: game_ocr/main.c job_busy is the busy
     hook core/vocr_ocr.c calls at the first line it runs, after the line cache's lookup, and it returns at once with
@@ -1243,32 +1296,25 @@ def clock_windows(windows):
     clock (on), none did (off), or some did (mixed: left out of the comparison). Per CTC frame: each recognized line's
     own time over its frames, frame-weighted (a cached line logs its frames and 0.0 ms). A line's time is its
     recognizer run and LM decode on whichever thread ran it (core/vocr_ocr.c finish_line), the cascade's re-read not,
-    so it does not shrink with ocr_threads; the jobs' share of a core (the par step) says whether game threads took
-    the core meanwhile.
+    so it does not shrink with ocr_threads; the jobs' logged share of a core (the par step) was meant to say whether
+    game threads took the core meanwhile, but is not a measurement on the console (test.3; like_for_like).
 
-    Returns the windows' rows, how many windows of older builds had jobs, and per model the "off", "raised", "left"
-    (at 444 MHz or more already) and "not_raised" (the set call refused, or the clock not moved) groups."""
-    rows, older, groups = [], 0, {}
-
-    def add(model, kind, lines, window, clock=None, share=None):
-        g = groups.setdefault(model, {}).setdefault(kind, {"lines": 0, "frames": 0, "us": 0, "windows": []})
-        for frames, us in lines:
-            g["lines"] += 1
-            g["frames"] += frames
-            g["us"] += us
-        if window not in g["windows"]:
-            g["windows"].append(window)
-        if clock is not None:
-            g.setdefault("pairs", []).append(clock)
-        if share:
-            g.setdefault("shares", []).append(share)
-
+    Returns the windows' rows, how many windows of older builds had jobs, and the samples: one per job that recognized
+    a line in a window whose boost is known, with its window, model, side ("off"; "raised"; "left": at 444 MHz or
+    more already; "not_raised": the set call refused, or the clock not moved), the self-test's stage it ran (or None),
+    what started it (trigger(): "auto", "overlay", "subtitles", "self-test" or None), its helpers (the par step's; 0
+    for a job that logged none and had room for it, which only the kernel's PACE after it shows; None when its step
+    log filled first), its recognized lines, their frames and time, its core share (the par step's mean, percent; 0
+    or None: not logged) and its clock (before, during, after)."""
+    rows, older, samples = [], 0, []
     for number, w in enumerate(windows, 1):
         jobs = w["jobs"]
         if not jobs:
             continue
         clocked = [j for j in jobs if j["clock"]]
-        boost_build = (w["api"] or 0) >= BOOST_API if w["api"] is not None else any(j["api22"] for j in jobs)
+        # a window before the log's first boot line (log.old.txt's start) has no API: its build by API 22's steps or
+        # done lines anywhere in its boot (one boot, one build: taiHEN loads the plugins at boot)
+        boost_build = (w["api"] or 0) >= BOOST_API if w["api"] is not None else w["boot"]["api22"]
         if not clocked and not boost_build:
             older += 1  # a build before the boost: it logs no clock
             continue
@@ -1279,47 +1325,351 @@ def clock_windows(windows):
         row = {"window": number, "title": w["title"], "line": w["line"], "api": w["api"], "state": state,
                "jobs": len(jobs), "recognizing": len(rec), "clock_lines": len(clocked), "without_clock": len(evidence),
                "unsure": len(bare) - len(evidence), "before": [], "during": [], "after": [], "raised": 0, "left": 0,
-               "not_raised": 0, "per_frame": {}}
+               "not_raised": 0, "per_frame": {}, "selftest_per_frame": {}}
         for j in jobs:
             lines = [(f, us) for f, us in j["lines"] if f and us]  # recognized lines only
-            if lines:
-                pf = row["per_frame"].setdefault(j["model"], {"lines": 0, "frames": 0, "us": 0})
-                pf["lines"] += len(lines)
-                pf["frames"] += sum(f for f, _ in lines)
-                pf["us"] += sum(us for _, us in lines)
-            c = j["clock"]
+            c, side = j["clock"], None
             if c:
                 row["before"].append(c["before"])
                 row["during"].append(c["during"])
                 row["after"].append(c["after"])
-                kind = ("raised" if c["rc"] == 0 and c["during"] > c["before"] > 0 else
+                side = ("raised" if c["rc"] == 0 and c["during"] > c["before"] > 0 else
                         "left" if c["rc"] == 1 and c["before"] >= BOOST_MHZ else "not_raised")
-                row[kind] += 1
-                if lines:
-                    add(j["model"], kind, lines, number, (c["before"], c["during"]), j["share"])
-            elif state == "off" and lines:
-                add(j["model"], "off", lines, number, share=j["share"])
+                row[side] += 1
+            elif state == "off":
+                side = "off"
+            if not lines:
+                continue
+            frames, us = sum(f for f, _ in lines), sum(t for _, t in lines)
+            # the window's own jobs, and the self-test's stage jobs apart (N1: textbox2 is serial)
+            pf = row["selftest_per_frame" if j["stage"] else "per_frame"].setdefault(
+                j["model"], {"jobs": 0, "lines": 0, "frames": 0, "us": 0})
+            pf["jobs"] += 1
+            pf["lines"] += len(lines)
+            pf["frames"] += frames
+            pf["us"] += us
+            if side:
+                samples.append({"window": number, "title": w["title"], "model": j["model"], "side": side, "stage": j["stage"],
+                                "trigger": j["trigger"], "helpers": j["helpers"] if j["helpers"] is not None else
+                                0 if j["after_par"] else None, "lines": len(lines), "frames": frames, "us": us,
+                                "share": j["share"], "clock": (c["before"], c["during"], c["after"]) if c else None})
         rows.append(row)
+    return rows, older, samples
+
+
+def _total(samples):
+    return {"jobs": len(samples), "lines": sum(s["lines"] for s in samples),
+            "frames": sum(s["frames"] for s in samples), "us": sum(s["us"] for s in samples)}
+
+
+def _commonest(values):
+    return max(sorted(set(values)), key=values.count) if values else None
+
+
+def like_for_like(off, raised):
+    """off / raised per CTC frame between jobs of the same kind on both sides: as many recognized lines and the same
+    helpers, so as many lines are read at once on each side (a serial job's lines do not share the L2 with other
+    recognizer threads; N1), and the same trigger (Auto's job, with the overlay closed, or the overlay's own). Each
+    kind present on both sides is weighted by the off side's frames: the off lines' time against what the raised
+    jobs of their kind take for as many frames. None when no kind is on both sides."""
+    def kinds(samples):
+        d = {}
+        for s in samples:
+            d.setdefault(_kind(s), []).append(s)
+        return d
+    a, b = kinds(off), kinds(raised)
+
+    def order(k):  # by lines, then helpers (None, not known, first), then trigger, then title
+        return k[0], -1 if k[1] is None else k[1], TRIGGERS.index(k[2]) if k[2] in TRIGGERS else -1, k[3]
+    both = sorted(set(a) & set(b), key=order)
+    if not both:
+        return None
+    strata, num, den, cnum, cden, cpu_off, cpu_raised = [], 0, 0.0, 0.0, 0.0, 0, 0
+    used_off, used_raised = [s for k in both for s in a[k]], [s for k in both for s in b[k]]
+    for k in both:
+        o, r = _total(a[k]), _total(b[k])
+        o["share"], r["share"] = _shares(a[k]), _shares(b[k])
+        per_off, per_raised = o["us"] / o["frames"], r["us"] / r["frames"]
+        strata.append({"lines": k[0], "helpers": k[1], "trigger": k[2], "title": k[3], "off": o, "raised": r,
+                       "ratio": per_off / per_raised})
+        num += o["us"]
+        den += o["frames"] * per_raised
+        # a diagnostic, never part of the verdict: the same ratio on each job's line time x its logged share of a core
+        # (PAR's mean), over the jobs that logged one. The share was meant as the threads' run time over their lines'
+        # wall time, but on the console it is not a measurement: in test.3's log, for one model at one clock in one
+        # window, the time per frame is flat (1.03-1.12x) while the share runs 17-92 % (0 in 3 jobs), so line time
+        # x share varies 1.9-4.9x (audit-overlay-analyser-fixes-2-b B3)
+        so, sr = [x for x in a[k] if x["share"]], [x for x in b[k] if x["share"]]
+        if so and sr:
+            cnum += sum(x["us"] * x["share"] / 100 for x in so)
+            cden += sum(x["frames"] for x in so) * sum(x["us"] * x["share"] / 100 for x in sr) / sum(x["frames"] for x in sr)
+            cpu_off, cpu_raised = cpu_off + len(so), cpu_raised + len(sr)
+    pair = _commonest([s["clock"][:2] for s in used_raised if s["clock"]])
+    return {"ratio": num / den, "cpu_ratio": cnum / cden if cden else None, "cpu_jobs": (cpu_off, cpu_raised),
+            "strata": strata, "off": _total(used_off), "raised": _total(used_raised),
+            "off_windows": sorted({s["window"] for s in used_off}),
+            "raised_windows": sorted({s["window"] for s in used_raised}),
+            "before": pair[0] if pair else None, "during": pair[1] if pair else None,
+            # the game's own clock around the raised jobs (before and after each): the off side's is assumed from it;
+            # and the clock they ran at
+            "own_clocks": sorted({c for s in used_raised if s["clock"] for c in (s["clock"][0], s["clock"][2])}),
+            "during_clocks": sorted({s["clock"][1] for s in used_raised if s["clock"]}),
+            "unmatched": {side: [{"lines": k[0], "helpers": k[1], "trigger": k[2], "title": k[3], "jobs": len(d[k])}
+                                 for k in sorted(set(d) - set(both), key=order)]
+                          for side, d in (("off", a), ("raised", b))}}
+
+
+def _kind(s):
+    """A job's kind for like_for_like: as many recognized lines, the same helpers and trigger, and the same game (its
+    window's title: another game's load is not this one's). The title is not printed: a kind of another game is one
+    not on the other side. A window whose game the log does not name is not compared (boost_compare)."""
+    return s["lines"], s["helpers"], s["trigger"], s["title"]
+
+
+def _shares(samples):
+    shares = [s["share"] for s in samples if s["share"]]
+    return (min(shares), max(shares)) if shares else None
+
+
+def boost_compare(samples):
+    """The samples (clock_windows) by model: every job by side, the self-test's stages included ("off", "raised",
+    "left", "not_raised": jobs, lines, frames, us, windows, the commonest clock before / during, the core share); and,
+    for a model read both with the boost off and raised, like for like (like_for_like) between the user's jobs: not
+    the self-test's stages (N1), with a known trigger and helpers.
+    Pooled, by window (each raised window against the off side, each off window against the raised side and against
+    its neighbours: the nearest raised windows before and after it, N3), and what was left out."""
+    groups, like = {}, {}
+    for s in samples:
+        g = groups.setdefault(s["model"], {}).setdefault(s["side"], {"jobs": 0, "selftest": 0, "lines": 0, "frames": 0,
+                                                                      "us": 0, "windows": []})
+        g["jobs"] += 1
+        g["selftest"] += bool(s["stage"])
+        g["lines"] += s["lines"]
+        g["frames"] += s["frames"]
+        g["us"] += s["us"]
+        if s["window"] not in g["windows"]:
+            g["windows"].append(s["window"])
+        if s["clock"]:
+            g.setdefault("pairs", []).append(s["clock"][:2])
+        if s["share"]:
+            g.setdefault("shares", []).append(s["share"])
     for model in groups.values():
         for g in model.values():
             pairs = g.pop("pairs", None)
             if pairs:  # the clock of most of the group's jobs: before, and during for those raised
-                g["before"], during = max(sorted(set(pairs)), key=pairs.count)
+                g["before"], during = _commonest(pairs)
                 if during != g["before"]:
                     g["during"] = during
             shares = g.pop("shares", None)
             if shares:  # the jobs' recognizing threads' mean share of a core (the par step; percent)
                 g["share"] = (min(shares), max(shares))
-    return rows, older, groups
+    for m, g in groups.items():
+        if "off" not in g or "raised" not in g:
+            continue
+        mine = [s for s in samples if s["model"] == m and s["side"] in ("off", "raised")]
+        # the user's jobs whose kind is known: what started them, their helpers and their game (a window before the
+        # log's first "game TITLE started" line, the start of a rotated log, has none)
+        users = [s for s in mine if not s["stage"] and s["trigger"] not in (None, "self-test")]
+        ok = [s for s in users if s["helpers"] is not None and s["title"] is not None]
+        off, raised = [s for s in ok if s["side"] == "off"], [s for s in ok if s["side"] == "raised"]
+        pooled = like_for_like(off, raised)
+        matched = {(k["lines"], k["helpers"], k["trigger"], k["title"]) for k in (pooled or {}).get("strata", [])}
+        out = {"pooled": pooled, "left_out": {
+            "selftest": sum(bool(s["stage"]) or s["trigger"] == "self-test" for s in mine),
+            "reason_unknown": sum(not s["stage"] and not s["trigger"] for s in mine),
+            "helpers_unknown": sum(s["helpers"] is None for s in users),
+            "game_unknown": sum(s["helpers"] is not None and s["title"] is None for s in users),
+            "unmatched": sum(_kind(s) not in matched for s in ok)}, "windows": []}
+        for w in sorted({s["window"] for s in ok}):
+            here = [s for s in ok if s["window"] == w]
+            side = here[0]["side"]
+            if side == "raised":
+                r = like_for_like(off, here)
+                out["windows"].append({"window": w, "side": side, "jobs": len(here), "like": r})
+            else:
+                # its neighbours: the nearest raised windows before and after it with a job of its kinds (drift
+                # between scenes and game load matters least there)
+                kinds = {_kind(s) for s in here}
+                cand = [s["window"] for s in raised if _kind(s) in kinds]
+                before, after = [x for x in cand if x < w], [x for x in cand if x > w]
+                near = ([max(before)] if before else []) + ([min(after)] if after else [])
+                out["windows"].append({"window": w, "side": side, "jobs": len(here), "like": like_for_like(here, raised),
+                                       "neighbours": near,
+                                       "near": like_for_like(here, [s for s in raised if s["window"] in near])})
+        like[m] = out
+    return groups, like
+
+
+def nearest_clock(rows, r):
+    """The clock readings nearest a boost-off window r in time, from the windows of its own title (ScePower keeps the
+    clock each process asked for, game_ocr/main.c): the previous one that logged the clock and the clock its last job
+    left (after), the next one and the clock its first job found (before); None for a side with no such window."""
+    timed = [t for t in rows if t["clock_lines"] and t["title"] == r["title"]]
+    prev = max((t for t in timed if t["window"] < r["window"]), key=lambda t: t["window"], default=None)
+    nxt = min((t for t in timed if t["window"] > r["window"]), key=lambda t: t["window"], default=None)
+    return (prev, prev["after"][-1] if prev else None), (nxt, nxt["before"][0] if nxt else None)
+
+
+def _class(r, v):
+    """A ratio's verdict at v's thresholds, rounded as it is printed."""
+    r = round(r, 2)
+    return "yes" if v["yes_at"] <= r <= v["over_at"] else "no" if r <= v["no_at"] else "unclear"
+
+
+def boost_verdicts(rows, groups, like):
+    """Whether the boost took effect and the box time scales with the clock (test.3's step 6, which decides VOCR5's
+    Normal size): per model read with the boost off and with it on, from the like-for-like ratio (like_for_like),
+    "yes" at BOOST_YES of the clock's gain to BOOST_OVER of it, "no" at BOOST_NO or less, else "unclear". Unclear too
+    when the ratio cannot decide it alone: fewer than BOOST_MIN_JOBS like-for-like jobs a side, or none; the game's
+    own clock not one figure around the raised jobs and next to the off windows (the off side's is assumed from it;
+    audit-overlay-analyser-fixes-2 N2), or the raised jobs' clock not one figure; or an off window against its
+    neighbours giving another verdict (N1: the windows drifted). A yes carries a note: whether one side's lines had
+    less of a core is not checked, since the logged share is not a measurement on the console (-2-b B3; the
+    line-time x share ratio is printed as a diagnostic only). With no model to compare, one "unclear" saying why."""
+    out = []
+    for m, g in groups.items():
+        if "off" not in g or not ("raised" in g or "left" in g):
+            continue
+        v = {"model": m, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
+             "all_jobs": None, "cpu_ratio": None, "cpu_jobs": (0, 0), "why": None, "note": None,
+             **_thresholds(BOOST_GAIN)}
+        out.append(v)
+        if "raised" not in g:
+            v["why"] = (f"no job raised the clock: it was at {BOOST_MHZ} MHz or more already in {_n(g['left']['jobs'], 'job')} "
+                        "(PSVshell's 500, or the game's own), so the boost did nothing to compare")
+            continue
+        v["all_jobs"] = (g["off"]["us"] / g["off"]["frames"]) / (g["raised"]["us"] / g["raised"]["frames"])
+        p = like[m]["pooled"]
+        before = p["before"] if p and p["before"] else g["raised"]["before"]
+        v.update(_thresholds((before, p["during"] if p and p["during"] else g["raised"].get("during", before))))
+        if not p:
+            v["why"] = (f"no kind of job on both sides (the same game, as many recognized lines, the same helpers and "
+                        f"trigger; the self-test's stages left out); all jobs give {v['all_jobs']:.2f}, which mixes kinds "
+                        "of job")
+            continue
+        v["ratio"], v["off_jobs"], v["raised_jobs"] = p["ratio"], p["off"]["jobs"], p["raised"]["jobs"]
+        v["n"] = v["off_jobs"] + v["raised_jobs"]
+        v["cpu_ratio"], v["cpu_jobs"] = p["cpu_ratio"], p["cpu_jobs"]
+        # the game's own clock: around the matched raised jobs, and the readings nearest each off window
+        offs = [r for r in rows if r["window"] in p["off_windows"]]
+        own = set(p["own_clocks"]) | {c for r in offs for _, c in nearest_clock(rows, r) if c is not None}
+        if len(own) > 1:
+            v["why"] = (f"the game's own clock was not one figure around the raised jobs and next to the boost-off "
+                        f"windows ({_mhz(sorted(own))} MHz), so the boost-off side's, assumed from it, is not known")
+            continue
+        if len(p["during_clocks"]) > 1:
+            v["why"] = (f"the raised jobs' clock was not one figure ({_mhz(p['during_clocks'])} MHz during them: a clock "
+                        "plugin's profile, say)")
+            continue
+        if min(v["off_jobs"], v["raised_jobs"]) < BOOST_MIN_JOBS:
+            v["why"] = f"too few jobs to decide: at least {BOOST_MIN_JOBS} a side"
+            continue
+        wall = _class(p["ratio"], v)
+        # each off window against its neighbours must give the pooled verdict too: under yes_at, or over over_at (a
+        # load the clock does not explain), makes a yes unclear, over no_at a no (audit-overlay-analyser-fixes-2 N1,
+        # -2-b N2: the windows drifted)
+        drift = [(w["window"], w["near"]["ratio"]) for w in like[m]["windows"]
+                 if wall in ("yes", "no") and w["side"] == "off" and w.get("near") and _class(w["near"]["ratio"], v) != wall]
+        if drift:
+            v["why"] = ("an off window against its neighbours gives another verdict ("
+                        + ", ".join(f"window {w}: {r:.2f}, {_class(r, v)}" for w, r in drift)
+                        + f") than the pooled {p['ratio']:.2f}: the windows drifted (another scene, the game's load)")
+            continue
+        v["verdict"] = wall
+        if wall == "yes":
+            # B2's case (one window's lines got less of a core) cannot be told from the clock: the logged share that
+            # would show it is not a measurement on the console (test.3; like_for_like)
+            v["note"] = ("not checked: whether other threads took more of the core from one side's lines than from the "
+                         "other's; the logged share of a core, which was to show it, does not follow the time per frame on "
+                         "the console (test.3)")
+        elif wall == "unclear":
+            v["why"] = ("more than the clock explains: a recognizer's time cannot scale more than its clock, so the off "
+                        "side lost time to something else (the game's load, another scene; see each window's ratio)"
+                        if round(p["ratio"], 2) > v["over_at"] else "between the two thresholds")
+    if not out:
+        mixed = [r["window"] for r in rows if r["state"] == "mixed"]
+        off = any("off" in g for g in groups.values())
+        on = any("raised" in g or "left" in g for g in groups.values())
+        stuck = sum(g["not_raised"]["jobs"] for g in groups.values() if "not_raised" in g)
+        why = ("no model was read both with the boost off and on" if off and on else
+               "no job raised the clock" + (f": {_n(stuck, 'job')} logged it not raised (the set call refused, or the "
+                                            "clock not moved: a clock plugin holding it, say)" if stuck else "")
+               if off else
+               "no window with the boost off in this log (step 6's optional boxes)" if on else
+               "no window with a recognizing job and a known boost")
+        if mixed and not off:
+            why += (f"; {'window' if len(mixed) == 1 else 'windows'} {', '.join(map(str, mixed))} MIXED (some recognizing "
+                    "jobs logged the clock, some did not: config.ini changed with the game in front?), left out")
+        out.append({"model": None, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
+                    "all_jobs": None, "cpu_ratio": None, "cpu_jobs": (0, 0), "why": why, "note": None,
+                    **_thresholds(BOOST_GAIN)})
+    return out
+
+
+def _thresholds(gain):
+    """The verdict's thresholds for a clock raised from before to during MHz: BOOST_YES, BOOST_NO and BOOST_OVER of
+    the gain a time that scales with the clock shows (during / before), rounded as the ratio is printed."""
+    before, during = gain
+    ideal = during / before
+    return {"gain": (before, during), "yes_at": round(1 + BOOST_YES * (ideal - 1), 2),
+            "no_at": round(1 + BOOST_NO * (ideal - 1), 2), "over_at": round(1 + BOOST_OVER * (ideal - 1), 2)}
 
 
 def _mhz(values):
     return str(values[0]) if len(set(values)) == 1 else f"{min(values)}-{max(values)}"
 
 
-def render_clock_windows(lg):
-    """The ARM clock by game window and the time per CTC frame, boost off against raised (clock_windows)."""
+def _per(g):
+    return g["us"] / g["frames"]
+
+
+def _share_text(share):
+    return "" if not share else f"a core's share {share[0]}%" if share[0] == share[1] else \
+        f"a core's share {share[0]}-{share[1]}%"
+
+
+def _windows_text(ws):
+    return f"{'window' if len(ws) == 1 else 'windows'} {', '.join(map(str, ws))}"
+
+
+def render_off_clock(rows, tai=None):
+    """N2: each boost-off window's clock is assumed, never logged (with ocr_boost_clock off game_ocr/main.c job_busy
+    returns before it reads the clock); what the logs hold about it: the readings nearest it (nearest_clock, which
+    the verdict's own-clock check reads too), the windows next to it (the game's own clock before their jobs, and
+    after them), and a clock plugin in the taiHEN configurations."""
+    offs = [r for r in rows if r["state"] == "off"]
+    if not offs:
+        return []
+    L = ["  the boost-off windows' clock is assumed (not logged): with ocr_boost_clock off no job reads it, and no "
+         "plugin's start line logs it:"]
+    for r in offs:
+        # the readings nearest it in time: the clock the previous window's last job left, the next one's first found
+        (prev, left), (nxt, found) = nearest_clock(rows, r)
+        said = ([f"{left} after window {prev['window']}'s last job (before it; its jobs "
+                 f"{_mhz(prev['before'])} MHz before, {_mhz(prev['after'])} after)"] if prev else []) + \
+               ([f"{found} before window {nxt['window']}'s first job (after it; its jobs "
+                 f"{_mhz(nxt['before'])} MHz before, {_mhz(nxt['after'])} after)"] if nxt else [])
+        guess = sorted({c for c in (left, found) if c is not None})
+        L.append(f"    window {r['window']}: "
+                 + (f"assumed {_mhz(guess)} MHz, as the jobs nearest it read it: {', '.join(said)}" if said else
+                    "no window logged a clock to assume it from"))
+    if tai is not None:
+        plugins = [f"{name} under *{section} in {cfg}" for cfg, t in tai.items() for section, name in t.get("clock_plugins", [])]
+        L.append("    clock plugins in the taiHEN configurations: " + (
+            "; ".join(plugins) + ": a clock such a plugin holds for the game (a PSVshell profile) applies in every "
+            "window, the boost-off one too, and nothing logs it (test.3's step 6 asks for its setting)" if plugins else
+            "none (no PSVshell, LOLIcon or oclockvita): the game's own requests set the clock" if tai else
+            "not known (this collect has no taiHEN configuration)"))
+    return L
+
+
+def render_clock_windows(lg, tai=None, configured=None):
+    """The ARM clock by game window, the time per CTC frame boost off against raised (all jobs, and like for like:
+    pooled, by window), the assumed clock of the boost-off windows and the verdict (clock_windows, boost_compare,
+    boost_verdicts). tai: the collect's taiHEN configurations (summarise_tai), for clock plugins; configured: the
+    model of the size config.ini chooses, whose verdict line says so."""
     rows, older, groups = lg.get("clock_windows") or [], lg.get("clock_windows_older", 0), lg.get("clock_compare") or {}
+    like, verdicts = lg.get("clock_like") or {}, lg.get("boost_verdicts") or []
     # the normal build (docs/release-variants.md) logs no job's line or step: its windows have no job here, and
     # its clock lines are in render_short_log's
     normal = (lg.get("short") or {}).get("boots", 0)
@@ -1348,7 +1698,7 @@ def render_clock_windows(lg):
             text = (f"MIXED: {clock} in {_n(r['clock_lines'], 'job')}; {_n(r['without_clock'], 'recognizing job')} "
                     "logged none")
         elif r["state"] == "off":
-            text = (f"BOOST OFF (the game's own clock, not logged): no clock line in its "
+            text = (f"BOOST OFF, clock assumed (not logged): no clock line in its "
                     f"{_n(r['recognizing'], 'recognizing job')}" if seen else
                     f"no clock line in its {_n(r['recognizing'], 'recognizing job')}: the boost off, or the game could "
                     "not call ScePower (no job in this log logged the clock)")
@@ -1357,54 +1707,109 @@ def render_clock_windows(lg):
                     "clock's place")
         else:
             text = "no job recognized a line: no clock either way"
-        speed = "; ".join(f"{m} {round(p['us'] / p['frames']):,} us ({_n(p['lines'], 'line')})"
-                          for m, p in r["per_frame"].items())
+        speed = [f"{m} {round(_per(p)):,} us ({_n(p['jobs'], 'job')}, {_n(p['lines'], 'line')})"
+                 for m, p in r["per_frame"].items()]
+        stages = [f"{m} {round(_per(p)):,} us ({_n(p['jobs'], 'job')}, {_n(p['lines'], 'line')})"
+                  for m, p in r.get("selftest_per_frame", {}).items()]
+        speed += [f"the self-test's stages: {', '.join(stages)}"] if stages else []
         where = r.get("where") or f"line {r['line']}"
         L.append(f"    {r['window']:<6}  {where:<16} {r['title'] or '?'!s:<10} {r['jobs']:>4} {r['recognizing']:>11} "
-                 f"{r['clock_lines']:>5}  {text}" + (f"; {speed}" if speed else ""))
+                 f"{r['clock_lines']:>5}  {text}" + (f"; {'; '.join(speed)}" if speed else ""))
     if older:
         L.append(f"    ({_n(older, 'window')} of builds before API {BOOST_API}, which have no boost and log no clock, "
                  f"{'is' if older == 1 else 'are'} not listed)")
     if normal:
         L.append("    (" + normal_note.strip()[len("ARM clock by game window: "):] + ")")
+    L += render_off_clock(rows, tai)
 
-    def per(g):
-        return g["us"] / g["frames"]
-
-    def us(g):
-        share = g.get("share")
-        return f"{round(per(g)):,} us ({_n(g['lines'], 'line')}; {'window' if len(g['windows']) == 1 else 'windows'} " \
-               f"{', '.join(map(str, g['windows']))}" \
-               + (f"; a core's share {share[0]}%" if share and share[0] == share[1] else
-                  f"; a core's share {share[0]}-{share[1]}%" if share else "") + ")"
+    def side(g):
+        share = _share_text(g.get("share"))
+        return (f"{round(_per(g)):,} us ({_n(g['jobs'], 'job')}"
+                + (f", {g['selftest']} of them the self-test's stages" if g.get("selftest") else "")
+                + f", {_n(g['lines'], 'line')}; {_windows_text(g['windows'])}" + (f"; {share}" if share else "") + ")")
     compared = []
     for m, g in groups.items():
         off = g.get("off")
         if not off or not ("raised" in g or "left" in g):
             continue
-        t = f"    {m}: off (the game's own clock, not logged) {us(off)}"
-        if "raised" in g:
-            on = g["raised"]
-            t += (f", raised {on['before']} -> {on['during']} MHz {us(on)}: off / raised = {per(off) / per(on):.2f} (a "
-                  f"time that scales with the clock: {on['during']} / {on['before']} = {on['during'] / on['before']:.2f}; "
-                  "no gain: 1.00)")
+        on = g.get("raised")
+        assumed = on["before"] if on else g["left"]["before"]
+        t = f"    {m}, all jobs: off (assumed {assumed} MHz, not logged) {side(off)}"
+        if on:
+            t += (f", raised {on['before']} -> {on['during']} MHz {side(on)}: off / raised = {_per(off) / _per(on):.2f} "
+                  f"(a time that scales with the clock: {on['during']} / {on['before']} = "
+                  f"{on['during'] / on['before']:.2f}; no gain: 1.00)")
         if "left" in g:
-            t += f"; left at {g['left']['before']} MHz ({BOOST_MHZ} or more already) {us(g['left'])}"
+            t += f"; left at {g['left']['before']} MHz ({BOOST_MHZ} or more already) {side(g['left'])}"
         compared.append(t)
-    read_off = any("off" in g for g in groups.values())
-    read_on = any("raised" in g or "left" in g for g in groups.values())
+        lk = like.get(m)
+        if not lk:
+            continue
+        p, out = lk["pooled"], lk["left_out"]
+        left = [f"{_n(out['selftest'], 'job')} of the self-test's stages"] if out["selftest"] else []
+        left += [f"{_n(out['reason_unknown'], 'job')} with no start line"] if out["reason_unknown"] else []
+        left += [f"{_n(out['helpers_unknown'], 'job')} whose helpers are not logged"] if out["helpers_unknown"] else []
+        left += [f"{_n(out['game_unknown'], 'job')} of a window whose game the log does not name (it began before the "
+                 "log's first line)"] if out.get("game_unknown") else []
+        left += [f"{_n(out['unmatched'], 'job')} of a kind not on the other side"] if out["unmatched"] else []
+        head = (f"    {m}, like for like (not the self-test's stages; jobs of one kind on both sides: the same game, as "
+                "many recognized lines, the same helpers, and both auto (Auto's job, the overlay closed) or both overlay "
+                "(a press, a retry or a refresh, the overlay open); each kind weighted by the off side's frames): ")
+        if not p:
+            compared.append(head + "no kind of job on both sides" + (f" (left out: {', '.join(left)})" if left else ""))
+            continue
+        kinds = "; ".join(
+            f"{_n(k['lines'], 'line')}, {_n(k['helpers'], 'helper') if k['helpers'] else 'serial'}, {k['trigger']}: off {round(_per(k['off'])):,} us "
+            f"({_n(k['off']['jobs'], 'job')}" + (f"; {_share_text(k['off']['share'])}" if k["off"]["share"] else "")
+            + f"), raised {round(_per(k['raised'])):,} us ({_n(k['raised']['jobs'], 'job')}"
+            + (f"; {_share_text(k['raised']['share'])}" if k["raised"]["share"] else "") + f"): {k['ratio']:.2f}"
+            for k in p["strata"])
+        cpu = (f"; line time x logged share of a core, a diagnostic only ({p['cpu_jobs'][0]} off and "
+               f"{p['cpu_jobs'][1]} raised jobs with one; not a measurement on the console, test.3): {p['cpu_ratio']:.2f}"
+               if p["cpu_ratio"] is not None else "")
+        compared.append(head + f"off / raised = {p['ratio']:.2f} ({p['off']['jobs']} off, {p['raised']['jobs']} raised "
+                        f"{'job' if p['raised']['jobs'] == 1 else 'jobs'}{cpu}): {kinds}"
+                        + (f"; left out: {', '.join(left)}" if left else ""))
+        per = []
+        for w in lk["windows"]:
+            r = w["like"]
+            if w["side"] == "raised":
+                per.append(f"window {w['window']} (raised, {_n(w['jobs'], 'job')}): "
+                           + (f"{r['ratio']:.2f}" if r else "no job of the off side's kinds"))
+            else:
+                t = f"window {w['window']} (off, {_n(w['jobs'], 'job')}): " + (f"{r['ratio']:.2f}" if r else "-")
+                if w["neighbours"]:
+                    nr = w["near"]
+                    t += (f", against its neighbours ({_windows_text(w['neighbours'])}): "
+                          + (f"{nr['ratio']:.2f} ({_n(nr['raised']['jobs'], 'raised job')})" if nr else
+                             "no job of its kinds"))
+                per.append(t)
+        if per:
+            compared.append("      by window, like for like (a raised window against the off side, an off window "
+                            "against the raised side): " + "; ".join(per))
     if compared:
         L.append("  boost off against on, us per CTC frame (each recognized line's time / its frames, frame-weighted; "
-                 "lines from the cache left out; a core's share: the recognizing threads' run time / wall time, the "
-                 "jobs' means, under 100 when game threads had the core):")
+                 "lines from the cache left out; a core's share: the par step's logged share, the jobs' means, which on "
+                 "the console does not follow the time per frame, test.3):")
         L += compared
-    elif read_off and read_on:
-        L.append("  boost off against on: no model was read both with the boost off and on, so nothing to compare")
-    elif read_on:
-        L.append("  boost off against on: no window with the boost off in this log (step 6's optional boxes), so "
-                 "nothing to compare")
-    elif read_off:
-        L.append("  boost off against on: no job raised the clock, so nothing to compare")
+    for v in verdicts:
+        ratio = f"{v['ratio']:.2f}" if v["ratio"] is not None else "-"
+        t = f"  boost effective: {v['verdict']} (ratio {ratio}, n={v['n']})"
+        if v["model"]:
+            tier = TIER_MODELS.get(v["model"])
+            t += f": {v['model']}" + (f" ({tier[1]}{', the size config.ini had at collect time' if v['model'] == configured else ''})"
+                                      if tier else "")
+            if v["ratio"] is not None:
+                t += f" like for like, {v['off_jobs']} off and {v['raised_jobs']} raised jobs (all jobs: {v['all_jobs']:.2f})"
+        if v["why"]:
+            t += f"; {v['why']}" if v["model"] else f": {v['why']}"
+        if v.get("note"):
+            t += f"; {v['note']}"
+        before, during = v["gain"]
+        t += (f"; yes at {v['yes_at']:.2f} to {v['over_at']:.2f}, no at {v['no_at']:.2f} or less, unclear between "
+              f"them, above {v['over_at']:.2f} or with under {BOOST_MIN_JOBS} jobs a side ({during} / {before} = "
+              f"{during / before:.2f} if the time scales with the clock, 1.00 without a gain)")
+        L.append(t)
     return L
 
 
@@ -1434,8 +1839,10 @@ def summarise_log(text):
     api = None  # the API of the Shell build that logged the lines that follow (its "shell started" line)
     boot_run = 0  # config warnings in a row just seen: a boot logs its own before its "shell started" line
     # clock_windows: the game windows, the one the lines are in, and its game job whose batch is being read (the
-    # Shell logs a job's line, its lines' times and its steps in one batch, shell/worker.c)
-    windows, win, job = [], None, None
+    # Shell logs a job's line, its lines' times and its steps in one batch, shell/worker.c); the boot the lines are
+    # in (whether anything in it shows API 22: one boot, one build); the Shell job's reason (its "job start" line)
+    # and the self-test's stage whose begin line came last (its job follows: shell/worker.c run_selftest_stages)
+    windows, win, job, boot, reason, stage = [], None, None, {"api22": False}, None, None
     for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line:
@@ -1457,18 +1864,33 @@ def summarise_log(text):
                     del by[api]
                 by[new_api] = by.get(new_api, 0) + boot_run
             api = new_api
-            win = job = None  # a new boot: its first game start opens the next window
+            win = job = reason = stage = None  # a new boot: its first game start opens the next window
+            boot = {"api22": False}
         m = WINDOW_START.match(line)
         if m:
-            win, job = {"title": m.group(1), "line": n, "api": api, "jobs": []}, None
+            win, job = {"title": m.group(1), "line": n, "api": api, "jobs": [], "boot": boot}, None
             windows.append(win)
+        m = JOB_START.match(line)
+        if m:
+            reason, stage = (m.group(1), m.group(2) or ""), None
+        m = STAGE_BEGIN.match(line)
+        if m:
+            stage = m.group(1)
+        if DONE_APPENDS.match(line):
+            boot["api22"] = True  # only builds from API 22 on count their log's appends (#116 came after #93)
         if job is not None and line.startswith("gstep job "):
             step = line.split(None, 3)[2]
             # FIND and RECOGNIZE come after the clock's place in the step log (game_ocr/main.c adds them once the
             # recognition is over): a job with either had room for the clock's step
             job["late"] |= step in ("find", "recognize")
             # steps only API 22 on logs: a window whose build the log does not name (the start of a rotated log)
-            job["api22"] |= step in ("par", "clock", "pace")
+            if step in ("par", "clock", "pace"):
+                job["api22"] = boot["api22"] = True
+            # the kernel adds PACE only while the step log has a slot left after the worker's steps
+            # (kernel/game_ocr.c), so a job with PACE had room for PAR: one with PACE and no PAR logged none (no
+            # helpers, no line from the cache). Not its FREEs: game_ocr/main.c step_add keeps a slot for every
+            # block still held, so they follow a log that filled before PAR's place too
+            job["after_par"] |= step == "pace"
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
             by = s.setdefault("config_warnings_by_api", {})
@@ -1580,6 +2002,8 @@ def summarise_log(text):
                 pa["share_mean"].append(packed & 0xFF)
                 if job is not None:  # its recognized lines' mean share of a core (run time / wall time)
                     job["share"] = packed & 0xFF
+            if job is not None:  # the helpers it used (0-2)
+                job["helpers"] = int(m.group(1))
             continue
         m = LOG["clock"].match(line)
         if m:
@@ -1613,10 +2037,12 @@ def summarise_log(text):
                               "load": int(m.group(13)), "recognize": int(m.group(14)), "frames": int(m.group(15)),
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
             if win is None:  # jobs before the log's first game start (the oldest part of a rotated log)
-                win = {"title": None, "line": n, "api": api, "jobs": []}
+                win = {"title": None, "line": n, "api": api, "jobs": [], "boot": boot}
                 windows.append(win)
             job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False,
-                   "api22": False, "share": None}
+                   "api22": False, "share": None, "stage": stage, "helpers": None, "after_par": False,
+                   "trigger": trigger(reason)}
+            stage = None  # one job a stage
             win["jobs"].append(job)
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
@@ -1728,7 +2154,9 @@ def summarise_log(text):
             key = re.sub(r"\d+", "N", line)[:120]
             s["trouble"][key] = s["trouble"].get(key, 0) + 1
     s["disabled"] = sorted(s["disabled"])
-    s["clock_windows"], s["clock_windows_older"], s["clock_compare"] = clock_windows(windows)
+    s["clock_windows"], s["clock_windows_older"], samples = clock_windows(windows)
+    s["clock_compare"], s["clock_like"] = boost_compare(samples)
+    s["boost_verdicts"] = boost_verdicts(s["clock_windows"], s["clock_compare"], s["clock_like"])
     return s
 
 
@@ -1893,8 +2321,9 @@ def render_short_log(lg):
 
 
 def summarise_tai(text):
-    """Which section each of our plugins is registered under (comments skipped)."""
-    out = {"kernel": [], "shell": [], "worker": [], "worker_all": False, "commented": 0}
+    """Which section each of our plugins is registered under (comments skipped), and any plugin that sets the ARM
+    clock (CLOCK_PLUGIN: PSVshell and the like) with its section."""
+    out = {"kernel": [], "shell": [], "worker": [], "worker_all": False, "commented": 0, "clock_plugins": []}
     section = None
     for raw in text.splitlines():
         line = raw.strip()
@@ -1914,6 +2343,8 @@ def summarise_tai(text):
         elif name == "VitaJPOverlay_OCR.suprx":
             out["worker"].append(section)
             out["worker_all"] |= section == "ALL"
+        elif CLOCK_PLUGIN.search(name):
+            out["clock_plugins"].append((section, name))
     return out
 
 
@@ -2246,7 +2677,8 @@ def render_collect(c):
             kept = f", left at 444 or more in {ck['kept']}" if ck.get("kept") else ""
             L.append(f"  ARM clock (ocr_boost_clock): {ck['jobs']} job(s), raised in {ck['raised']}{kept}; MHz before "
                      f"{_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
-        L += render_clock_windows(lg)
+        tier = c["config"].get("vocr_tier") or TIER_DEFAULT  # the Shell's default with no vocr_tier line
+        L += render_clock_windows(lg, c.get("tai"), next((m for m, (i, _) in TIER_MODELS.items() if i == tier), None))
         pc = lg.get("pace") or {}
         if pc.get("jobs"):
             L.append(f"  game frames during OCR jobs: {pc['frames']} in {pc['jobs']} job(s), longest gap "

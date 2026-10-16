@@ -1,0 +1,219 @@
+job start (self-test)
+stage fallback begin t=2202000 flags=0x2 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE
+game vocr rc=0 VOCR3_FL10_w8.vocr (fallback): 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=286 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 286000 us, 1300 us per frame
+game vocr lines: 742x39 80f 104.0ms c900 742x39 76f 98.8ms c900 742x39 64f 83.2ms c900
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job check kind=90 arg=1 rc=0x00000000 bytes=1630208 sum=0x00000000 main=0 cdram=0 phycont=0 us=95
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=286000
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=286000
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+gstep fallback mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep fallback check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep fallback check kind=90 arg=1 rc=0x00000000 bytes=1630208 sum=0x00000000 main=0 cdram=0 phycont=0 us=95
+gstep fallback alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep fallback alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep fallback pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep fallback sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep fallback clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep fallback find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep fallback settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep fallback load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep fallback recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=286000
+gstep fallback lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep fallback cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep fallback norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep fallback par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=286000
+gstep fallback free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep fallback free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep fallback pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+line fallback i=0 w=742 h=39 frames=80 us=104000
+line fallback i=1 w=742 h=39 frames=76 us=98800
+line fallback i=2 w=742 h=39 frames=64 us=83200
+stage fallback end rc=0 t=2202700 ms=700 region=883x112+46+416 fb=960x544/960/0x00000000 model=VOCR3_FL10_w8.vocr fallback=1 lines=3 recognized=3 frames=220 text=0x5E1F00D1
+result fallback source=hook mem=user capture=61440 strip_rows=64 strips=9 tears=0 capture_ms=41 workspace=1040384 resident=1159168 weights=resident find_ms=92 load_ms=1 recognize_ms=286
+memory fallback free_user=86921216 reserve=8388608 need_workspace=1040384 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5A3C11F0
+stage textbox begin t=2202800 flags=0x0 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=484 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 484000 us, 2200 us per frame
+game vocr lines: 742x39 80f 176.0ms c900 742x39 76f 167.2ms c900 742x39 64f 140.8ms c900
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=484000
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=484000
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+gstep textbox mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep textbox check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep textbox alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep textbox alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep textbox pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep textbox sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep textbox clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep textbox find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep textbox settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep textbox load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep textbox recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=484000
+gstep textbox lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep textbox cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep textbox norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep textbox par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=484000
+gstep textbox free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep textbox free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep textbox pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+line textbox i=0 w=742 h=39 frames=80 us=176000
+line textbox i=1 w=742 h=39 frames=76 us=167200
+line textbox i=2 w=742 h=39 frames=64 us=140800
+stage textbox end rc=0 t=2203500 ms=700 region=883x112+46+416 fb=960x544/960/0x00000000 model=VOCR3_H15_w8.vocr fallback=0 lines=3 recognized=3 frames=220 text=0x2B7E1516
+result textbox source=hook mem=user capture=61440 strip_rows=64 strips=9 tears=0 capture_ms=41 workspace=1040384 resident=1159168 weights=resident find_ms=92 load_ms=1 recognize_ms=484
+memory textbox free_user=86921216 reserve=8388608 need_workspace=1040384 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5A3C11F0
+stage fullscreen begin t=2203600 flags=0x1 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE
+game vocr rc=0 VOCR3_H15_w8.vocr: 960x544 at 0,0 of 960x544 fmt 0x00000000, lines=7 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=792 ms frames=360 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 360 frames in 792000 us, 2200 us per frame
+game vocr lines: 742x39 80f 176.0ms c900 742x39 76f 167.2ms c900 742x39 64f 140.8ms c900 742x39 40f 88.0ms c900 742x39 40f 88.0ms c900 742x39 30f 66.0ms c900
+game vocr lines (cont): 742x39 30f 66.0ms c900
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=7 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=7 rc=0x00000000 bytes=360 sum=0x00000000 main=0 cdram=0 phycont=0 us=792000
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741831 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=792000
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+gstep fullscreen mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep fullscreen check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep fullscreen alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep fullscreen alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep fullscreen pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep fullscreen sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep fullscreen clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep fullscreen find kind=- arg=7 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep fullscreen settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep fullscreen load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep fullscreen recognize kind=- arg=7 rc=0x00000000 bytes=360 sum=0x00000000 main=0 cdram=0 phycont=0 us=792000
+gstep fullscreen lm kind=2 arg=0 rc=0x00000000 bytes=1073741831 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep fullscreen cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep fullscreen norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep fullscreen par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=792000
+gstep fullscreen free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep fullscreen free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep fullscreen pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+line fullscreen i=0 w=742 h=39 frames=80 us=176000
+line fullscreen i=1 w=742 h=39 frames=76 us=167200
+line fullscreen i=2 w=742 h=39 frames=64 us=140800
+line fullscreen i=3 w=742 h=39 frames=40 us=88000
+line fullscreen i=4 w=742 h=39 frames=40 us=88000
+line fullscreen i=5 w=742 h=39 frames=30 us=66000
+line fullscreen i=6 w=742 h=39 frames=30 us=66000
+stage fullscreen end rc=0 t=2204300 ms=700 region=960x544+0+0 fb=960x544/960/0x00000000 model=VOCR3_H15_w8.vocr fallback=0 lines=7 recognized=7 frames=360 text=0x6A09E667
+result fullscreen source=hook mem=user capture=61440 strip_rows=64 strips=9 tears=0 capture_ms=41 workspace=1040384 resident=1159168 weights=resident find_ms=92 load_ms=1 recognize_ms=792
+memory fullscreen free_user=86921216 reserve=8388608 need_workspace=1040384 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5A3C11F0
+stage probe begin t=2204400 flags=0x4 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xE
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=0 USER workspace=0 weights=none resident=1159168, find=0 ms load=0 ms recognize=0 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 1 strips in 5 ms, 0 rows changed, sum 0x00000000
+gstep probe mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep probe probe kind=hook arg=user rc=0x00000040 bytes=61440 sum=0x00000000 main=0 cdram=0 phycont=0 us=500
+gstep probe probe kind=kstrip arg=user rc=0x00000040 bytes=61440 sum=0x00000000 main=0 cdram=0 phycont=0 us=700
+gstep probe pace kind=- arg=1 rc=0x00004100 bytes=16640 sum=0x00000000 main=16640 cdram=16640 phycont=0 us=1
+gstep probe probe kind=hook arg=user rc=0x00000040 bytes=61440 sum=0x00000000 main=0 cdram=0 phycont=0 us=500
+gstep probe probe kind=kstrip arg=user rc=0x00000040 bytes=61440 sum=0x00000000 main=0 cdram=0 phycont=0 us=700
+stage probe end rc=0 t=2204440 ms=40 region=883x112+46+416 fb=960x544/960/0x00000000 model=VOCR3_H15_w8.vocr fallback=0 lines=0 recognized=0 frames=0 text=0x811C9DC5
+result probe source=hook mem=user capture=61440 strip_rows=64 strips=1 tears=0 capture_ms=5 workspace=0 resident=1159168 weights=none find_ms=0 load_ms=0 recognize_ms=0
+memory probe free_user=86921216 reserve=0 need_workspace=0 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x00000000
+stage textbox2 begin t=2204500 flags=0x0 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr speed=0xC
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=435 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 435600 us, 1980 us per frame
+game vocr lines: 742x39 80f 158.4ms c900 742x39 76f 150.5ms c900 742x39 64f 126.7ms c900
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=435600
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+gstep textbox2 mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep textbox2 check kind=42 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep textbox2 alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep textbox2 alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep textbox2 pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep textbox2 sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep textbox2 clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep textbox2 find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep textbox2 settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep textbox2 load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep textbox2 recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=435600
+gstep textbox2 lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep textbox2 cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep textbox2 norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep textbox2 free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep textbox2 free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep textbox2 pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+line textbox2 i=0 w=742 h=39 frames=80 us=158400
+line textbox2 i=1 w=742 h=39 frames=76 us=150500
+line textbox2 i=2 w=742 h=39 frames=64 us=126700
+stage textbox2 end rc=0 t=2205200 ms=700 region=883x112+46+416 fb=960x544/960/0x00000000 model=VOCR3_H15_w8.vocr fallback=0 lines=3 recognized=3 frames=220 text=0x2B7E1516
+result textbox2 source=hook mem=user capture=61440 strip_rows=64 strips=9 tears=0 capture_ms=41 workspace=1040384 resident=1159168 weights=resident find_ms=92 load_ms=1 recognize_ms=435
+memory textbox2 free_user=86921216 reserve=8388608 need_workspace=1040384 need_weights=0 release=0 io=0x00000000 stat=0x00000000 cleanup=0 sum=0x5A3C11F0
+mem done rc=0x00000000 main=86921216 cdram=12582912 phycont=27262976 valid=1 paf_free=2346312
+ledger done pages=176128/176128 paf=0/20480
+kmem done route=block part=kernel rc=0x00000000 step=0 total=37748736 free=9437184
+kmem done route=block part=shell rc=0x00000000 step=0 total=52428800 free=98304
+kmem done route=cas part=shell rc=0x00000000 step=0 main=98304/52428800 cdram=0/4194304 phycont=0/0
+kmem done route=as part=kernel rc=0x00000000 step=3 parts=2 skipped=1 p0=9437184/37748736 p1=4194304/16777216
+kernel done ledger=131072/131072 limit=2220032 capture=0
+step done t=2205300
+job 1 done rc=0 in 3300 ms, arena peak 0, dictionary page 1/1, game 3100 ms, log 62 ms in 6 appends
