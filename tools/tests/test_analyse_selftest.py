@@ -2449,7 +2449,8 @@ class PressesAndRereads(unittest.TestCase):
         self.assertIn("#define POLL_TIMEOUT_US   50000", worker)
         self.assertIn("#define STATUS_CAP (64 * 1024)", (ROOT / "shell/log_vita.c").read_text(encoding="utf-8"))
         self.assertIn("12.1-46.0 ms per append", (ROOT / "docs/performance.md").read_text(encoding="utf-8"))
-        self.assertEqual((a.POLL_MS, a.DONE_APPENDS, a.APPEND_MS, a.DONE_GAP_MS), (50, 2, 46, 142))
+        self.assertEqual((a.PRESS_POLL_MS, a.PRESS_DONE_APPENDS, a.PRESS_APPEND_MS, a.PRESS_DONE_GAP_MS),
+                         (50, 2, 46, 142))
         running = "job start (auto: screen quiet)\n"
         done = ("game vocr text 0: あ\nsubtitle text ready in 900 ms\n"
                 "job 0 done rc=0 in 1000 ms, arena peak 53744, dictionary page 1/1, game 500 ms, log 30 ms in 3 appends\n")

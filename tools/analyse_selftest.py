@@ -1837,13 +1837,14 @@ PRESS_REASONS = ("overlay opened", "result was for an earlier screen", "the runn
                  "the screen changed during the last one")
 # shell/worker.c POLL_TIMEOUT_US: the control thread wakes for a press at once, but notices a job's end within this
 # (no event for it), and only then shows the result or starts the lookup after it
-POLL_MS = 50
+PRESS_POLL_MS = 50
 # shell/worker.c net_job takes a job's time, then logs its done line, then tells the control thread (job_done): the
 # line's appends come first, one to log.txt and one to status.txt while that is under 64 KiB (shell/log_vita.c
 # STATUS_CAP), 12.1-46.0 ms each on the console (docs/performance.md, #81's self-test timestamps). So from a done line's
-# time to the control thread's seeing the end: at most DONE_APPENDS x APPEND_MS and the poll (est.: the most measured).
-DONE_APPENDS, APPEND_MS = 2, 46
-DONE_GAP_MS = DONE_APPENDS * APPEND_MS + POLL_MS
+# time to the control thread's seeing the end: at most PRESS_DONE_APPENDS x PRESS_APPEND_MS and the poll (est.: the
+# most measured).
+PRESS_DONE_APPENDS, PRESS_APPEND_MS = 2, 46
+PRESS_DONE_GAP_MS = PRESS_DONE_APPENDS * PRESS_APPEND_MS + PRESS_POLL_MS
 # A press's own handling before its job's clock starts (open_overlay, start_job_kind's job_started_us): its input
 # block, `open:` and `job start` lines, 3 appends (status.txt full) to 6, at 12.1-46.0 ms each, and config.ini's
 # re-read (apply_config): est. 0.04-0.3 s
@@ -1860,9 +1861,10 @@ def presses_and_rereads(text):
       text kept, its word looked up by a cursor lookup (no `open:` line): the text at once;
     - a job still running (`open: background job still running`). When its result is for the screen shown and it
       looked the word up, the word comes with its end: at most the job's whole time after the press, which came during
-      it (the log has no time for a job's start), and DONE_GAP_MS, its done line's appends and the control thread's poll
-      (est.: the appends' most measured time). An OCR-only job (Highlight = Character, a dictionary backoff, the
-      subtitles) is followed by a cursor lookup of the word (restart_old_job), whose time and DONE_GAP_MS are added. It
+      it (the log has no time for a job's start), and PRESS_DONE_GAP_MS, its done line's appends and the control
+      thread's poll (est.: the appends' most measured time). An OCR-only job (Highlight = Character, a dictionary
+      backoff, the subtitles) is followed by a cursor lookup of the word (restart_old_job), whose time and
+      PRESS_DONE_GAP_MS are added. It
       is an upper bound on when the Shell has the word (the overlay draws it at its next frame) when the job's done
       line comes after the press's `open:` line; one before it ended during the press's own handling and is not counted; A job that failed or
       read no line gives the press no text. When its result was for an earlier screen, or a retry follows, a job of the
@@ -2029,8 +2031,8 @@ def press_kind(p):
         if c is None or c["rc"] != 0:
             return ("closed_before",) if closed_before(c["done_line"] if c else None) else ("unclear",)
         return (("closed_before",) if closed_before(c["done_line"])
-                else ("waited", r["done_ms"] + DONE_GAP_MS + c["done_ms"] + DONE_GAP_MS, 1))
-    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + DONE_GAP_MS, 0)
+                else ("waited", r["done_ms"] + PRESS_DONE_GAP_MS + c["done_ms"] + PRESS_DONE_GAP_MS, 1))
+    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + PRESS_DONE_GAP_MS, 0)
 
 
 def _secs(values):
@@ -2061,8 +2063,9 @@ def render_presses(lg):
                         if m["waited_ocr_only"] else "")
             L.append(f"    {len(m['waited'])} waited for a job still running: the word at most {_secs(m['waited'])} after "
                      f"the press (est.: that job's whole time, begun before the press, as the log has no time for a job's "
-                     f"start; then its done line's {DONE_APPENDS} appends at up to {APPEND_MS} ms each and the Shell's "
-                     f"{POLL_MS} ms poll{ocr_only})")
+                     f"start; then its done line's {PRESS_DONE_APPENDS} appends at up to {PRESS_APPEND_MS} ms each and "
+                     f"the Shell's "
+                     f"{PRESS_POLL_MS} ms poll{ocr_only})")
         if m["read_text"]:
             settle = (f"; of it, waiting for the text to hold still {_secs(m['read_settle'])}" if m["read_settle"] else "")
             L.append(f"    {len(m['read_text'])} recognized on the press: the text {_secs(m['read_text'])} after its job's "
