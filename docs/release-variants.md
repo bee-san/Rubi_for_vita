@@ -118,7 +118,7 @@ to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,708 + 14,208 | 90,112 B | 0 (1,364 B of text) |
 | `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
 
-With API 23's Anki screenshot (both builds of main `dcb7b31` and that change, the build log's module
+With API 23's Anki screenshot (both builds of main `c6e0a4d` and that change, the build log's module
 rows): the Shell 100,484 + 69,828 and 90,012 + 69,756 (the same pages, 176,128 and 163,840 B; the normal
 one's text has 100 B of room left), the kernel 40,040 + 77,672 and 35,900 + 75,984 (the same pages), the
 game worker 77,004 + 14,160 and 75,688 + 14,160 in 94,208 B, one text page more in both builds for the

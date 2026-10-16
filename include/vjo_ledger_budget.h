@@ -78,8 +78,8 @@
  * change].
  * API 23's Anki screenshot (anki.c's request to the game worker, the queue's second ID, the game
  * worker's job slot in worker.c) makes it 99,244 -> 100,484 text and 69,772 -> 69,828 data/bss, the same
- * pages [measured: the build log's module rows, main dcb7b31 and this change]; the normal build
- * 89,196 -> 90,012 text and 69,700 -> 69,756 data/bss, the same pages, 100 B of text room left (its
+ * pages [measured: the build log's module rows, main c6e0a4d and this change]; the normal build
+ * 89,204 -> 90,012 text and 69,700 -> 69,756 data/bss, the same pages, 100 B of text room left (its
  * normal-build log is a failed screenshot's reason only). The screenshot itself is never in SceShell. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
