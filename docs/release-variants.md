@@ -113,7 +113,7 @@ Both builds of this tree on main `6020c0b`, VitaSDK as `tools/setup_toolchain.sh
 | `VitaJPOverlay_Shell.suprx` (SceShell) | 188,000 + 70,132 | 262,144 B | 177,608 + 70,052 | **253,952 B** | **8,192 B (2 pages)** |
 | `VitaJPOverlay_Kernel.skprx` (the kernel pool) | 36,640 + 77,768 | 114,688 B | 32,332 + 76,080 | 110,592 B | 4,096 B (1 page) |
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,724 + 14,208 | 90,112 B | 0 (1,348 B of text) |
-| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 478,188 + 2,906,944 | 3,387,392 B | 477,716 + 2,906,912 | 3,387,392 B | 0 |
+| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 487,452 + 3,213,744 | 3,706,880 B | 486,980 + 3,213,712 | 3,702,784 B | 4,096 B |
 
 The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
 28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: on
