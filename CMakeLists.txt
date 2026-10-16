@@ -247,6 +247,13 @@ target_include_directories(vjo-shell-log-tests PRIVATE third_party/acutest/inclu
 target_compile_definitions(vjo-shell-log-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-log-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME shell_log COMMAND vjo-shell-log-tests)
+# The Shell's VjoPlatform (shell/platform_vita.c): its files over stubbed sceIo, and its clock.
+add_executable(vjo-platform-vita-tests host/tests/test_platform_vita.c)
+target_include_directories(vjo-platform-vita-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-platform-vita-tests vjo_core)
+target_compile_options(vjo-platform-vita-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME platform_vita COMMAND vjo-platform-vita-tests)
+
 add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-worker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

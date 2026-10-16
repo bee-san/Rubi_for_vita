@@ -545,7 +545,7 @@ static void test_config(void)
     TEST_MSG("warnings: %d, the second '%s'", c.n_warnings, c.n_warnings > 1 ? c.warnings[1] : "");
     /* an empty log_host (the old template's line) says nothing: the app's save and the installer drop it */
     vjo_config_defaults(&c);
-    vjo_config_parse(&c, "log_host =\nLOG_HOST=\n", 20);
+    vjo_config_parse(&c, "log_host =\nLOG_HOST=\n", strlen("log_host =\nLOG_HOST=\n"));
     TEST_CHECK(c.n_warnings == 0);
     /* jpdb.io and jiten.moe, the removed online dictionaries, and the removed
      * Hachidori relay: local, with one warning, in any case; the online ones'

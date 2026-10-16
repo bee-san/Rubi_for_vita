@@ -1794,7 +1794,7 @@ def summarise_collect(folder):
                                              "japanese_only_selection", "highlight_mode")}
     # an older build's settings: the engine choice (VOCR is the only engine) and the model choice
     # (API 20 and before)
-    for k in ("ocr_backend", "vocr_model", "vocr_fallback_model"):
+    for k in ("ocr_backend", "vocr_model", "vocr_fallback_model", "log_host"):
         if k in cfg:
             out["config"][k] = cfg[k]
     out["app"] = summarise_app(folder, record)
@@ -1907,6 +1907,15 @@ def net_stack_lines(lg):
     return out
 
 
+def log_host_line(value):
+    """config.ini's log_host, the removed UDP log's computer: the line to say, or None. Its value (an
+    address on the user's network) is not printed."""
+    if value is None:
+        return None
+    return (f"    log_host ({'set' if value else 'empty'}): the UDP log was removed (the overlay is offline); "
+            "today's app or installer deletes the line")
+
+
 def backend_line(value):
     """config.ini's ocr_backend, which is no setting any more (VOCR is the only engine): the line to say, or None."""
     if value is None:
@@ -1944,6 +1953,8 @@ def render_collect(c):
              + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
     if backend_line(cfg.get("ocr_backend")):
         L.append(backend_line(cfg.get("ocr_backend")))
+    if log_host_line(cfg.get("log_host")):
+        L.append(log_host_line(cfg.get("log_host")))
     for name, t in c["tai"].items():
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
                  f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]

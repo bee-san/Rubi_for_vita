@@ -126,7 +126,8 @@ pages, 21 text pages, and the declared budget from 266,240 to 176,128 B [measure
 module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](memory-ledger.md)]. The kernel's
 capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B** [measured]: the
 rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 → 99,268 B, data and
-`.bss` 70,076 → 69,772 B, on #132 and main `32bfc6a`) and imports no SceNet or SceNetCtl, and VjoAnki's stack goes from
+`.bss` 70,076 → 69,772 B, on #132 and main `3aa08a6`; the normal build loses a page, 167,936 →
+163,840 B) and imports no SceNet or SceNetCtl, and VjoAnki's stack goes from
 64 to 16 KiB (its chain is 1,728 B): the worst case 286,720 → 237,568 B [docs/memory-ledger.md].
 
 - **Google Lens** (PR-A, above).
