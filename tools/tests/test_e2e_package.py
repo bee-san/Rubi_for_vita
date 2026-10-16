@@ -37,11 +37,11 @@ def segments(part, build, version="0.8.0"):
     return b"\0code\0" + b"\0".join(strings) + b"\0rodata\0"
 
 
-def fake_package(path, variant="normal", build=None, worker=None, app_version="0.8.0", ocr=None):
+def fake_package(path, variant="normal", build=None, worker=None, app_version="0.8.0", ocr=None, app_extra=b""):
     """A package as the e2e reads it: its manifest (variant None: a manifest that names none; app_version None: one
     without app_version), the config template, the app's record, the four modules of `build` (default: the
-    manifest's variant, else debug; `worker`: the worker's build, if another) and the files under ocr/ ({name:
-    bytes})."""
+    manifest's variant, else debug; `worker`: the worker's build, if another; app_extra: more strings in the app)
+    and the files under ocr/ ({name: bytes})."""
     build = build or variant or "debug"
     manifest = {"version": "0.8.0", "files": {}}
     if variant is not None:
@@ -50,7 +50,7 @@ def fake_package(path, variant="normal", build=None, worker=None, app_version="0
         manifest["app_version"] = app_version
     vpk = io.BytesIO()
     with zipfile.ZipFile(vpk, "w") as z:
-        z.writestr("eboot.bin", fake_self(segments("app", build)))
+        z.writestr("eboot.bin", fake_self(segments("app", build) + app_extra))
     with zipfile.ZipFile(path, "w") as z:
         z.writestr("package-manifest.json", json.dumps(manifest))
         z.writestr("config.ini", "ocr_lm = 1000k\nocr_cascade_ms = 2000\n")
@@ -227,6 +227,9 @@ class E2EPackageEdges(unittest.TestCase):
              ["worker: the normal build carries 1 of its sources' 1 debug-only strings"]),
             ("a debug package with the normal worker", {"variant": "debug", "worker": "normal"}, {},
              ["worker: the debug build carries none of its sources' 1 debug-only strings"]),
+            ("a normal app that still logs its frames (its start line says normal)",
+             {"app_extra": check_variant.debug_only_strings(ROOT, "app")[0] + b"\0"}, {},
+             ["app: the normal build carries 1 of its sources' 1 debug-only strings"]),
             ("another app version (P3d)", {"app_version": "0.7.12"}, {}, ["the Overlay app is v0.8.0, as the manifest"]),
             ("no app_version (P3e)", {"app_version": None}, {}, ["the manifest has no app_version"]),
             ("no variant, the debug build: a package from before the two builds", {"variant": None, "build": "debug"},
