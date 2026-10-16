@@ -219,12 +219,13 @@ R as h-encore starts, and choose Exit while holding L), then in VitaShell put # 
 VitaJPOverlay lines of ur0:tai/config.txt and ux0:tai/config.txt, or choose Uninstall here.
 If a game does not start: turn it OFF on the Games page, or hold L while you start it.
 [Update]  [Uninstall]
-×: Update   Left/Right: action   Up/Down, L/R: scroll   ○: exit
+×: Update   Left/Right: action   Up/Down: scroll   ○: exit
 ```
 
 **Reading it.** The plan box holds about ten lines. A plan or a result longer than its box scrolls a
-line at a time with Up/Down (or the left stick) and a box at a time with L/R, a bar at its right shows
-where the view is, and the hints name the scroll keys only then. A plan has at most 40 lines: one longer
+line at a time with Up/Down (or the left stick) and a box at a time with L/R (as L/R page the Games
+list), a bar at its right shows where the view is (by entries: only the entries in view are laid out),
+and only then do the hints say `Up/Down: scroll`. A plan has at most 40 lines: one longer
 than that lists fewer of `config.ini`'s changed lines, then fewer of each `config.txt`'s exact lines
 (never fewer than two of either), and counts the rest (`and 6 more lines (log.txt has every one).`); its
 closing lines, the restart, the recovery and the backups from before the overlay, are always shown
@@ -297,7 +298,9 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
    A `.vjo-new` beside an intact `config.txt` and no `.vjo-old` is a stop before the swap began (during
    `.vjo-new`'s own write: empty or a prefix after a power cut): `config.txt` is as it was, so
    **Keep the current one** is offered first, and **Put it back** only when `.vjo-new` is the editor's
-   result of the current `config.txt` byte for byte; a file that is neither is never put in place
+   result of the current `config.txt` byte for byte, a result that changes it (a copy of `config.txt` is
+   no run's whole file: an install that appends its sections, stopped at `config.txt`'s length, leaves
+   one; the follow-ups' audit); a file that is neither is never put in place
    (code audit R2). The reason names the run that was writing it, an install's or an uninstall's (the one
    whose edit of the current `config.txt` starts with the file's bytes; "an install's or uninstall's" when
    both could have, as for an empty file), and what to choose again after Keep. A missing `config.txt`

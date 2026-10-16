@@ -261,21 +261,16 @@ static void page_scroll(const VjoInstallDraw *ui, int direction)
     scroll = top < scroll ? top : scroll > 0 ? scroll - 1 : 0;
 }
 
-/* The bar right of the text: where the view is in the whole, by rows. */
+/* The bar right of the text: where the view is in the whole, by entries (counting rows would lay out every
+ * entry of a long plan at once: about four times the glyph measurements of main's first frame, host count). */
 static void draw_scrollbar(const VjoInstallDraw *ui, int end)
 {
-    int total = 0, from = 0, seen = 0;
-    for (int i = 0; i < line_count; i++) {
-        int rows = entry_rows(ui, i);
-        total += rows;
-        if (i < scroll) from += rows;
-        else if (i < end) seen += rows;
-    }
+    int total = line_count, seen = end - scroll;
     if (total <= 0 || seen >= total) return;
     int y = BOX_Y + 8, h = BOX_H - 16, thumb = h * seen / total;
     if (thumb < 12) thumb = 12;
     ui->rect(BOX_X + BOX_W + 4, y, 6, h, ui->selected);
-    ui->rect(BOX_X + BOX_W + 4, y + (h - thumb) * from / (total - seen > 0 ? total - seen : 1), 6, thumb, ui->dim);
+    ui->rect(BOX_X + BOX_W + 4, y + (h - thumb) * scroll / (total - seen), 6, thumb, ui->dim);
 }
 
 static void draw_lines(const VjoInstallDraw *ui, int error)
@@ -324,9 +319,11 @@ void vjo_install_page_frame(const VjoInstallDraw *ui, uint32_t pressed, int touc
         if (showing != SHOW_RUNNING && (pressed & SCE_CTRL_LTRIGGER)) page_scroll(ui, -1);
         if (showing != SHOW_RUNNING && (pressed & SCE_CTRL_RTRIGGER)) page_scroll(ui, 1);
     }
-    /* a text longer than its box: Up/Down and L/R scroll it, and the hints say so */
+    /* a text longer than its box: Up/Down scroll it (L/R a box at a time), and the hints say so, in main's
+     * words: the row with the longest action name is the app's longest hint, and its width in the console's
+     * font is unmeasured */
     const char *scrolling = showing != SHOW_RUNNING && (scroll > 0 || shown_from(ui, scroll) < line_count)
-                          ? "Up/Down, L/R: scroll   " : "";
+                          ? "Up/Down: scroll   " : "";
     char step_text[120], controls[120];
     uint64_t done = 0, total = 0;
     if (running && lock_uid >= 0) {

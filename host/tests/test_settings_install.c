@@ -984,9 +984,22 @@ static void package_settings_are_applied(void)
 static char drawn[64][300];
 static int drawn_count;
 static void d_text(int x, int y, unsigned c, float px, const char *s) { (void)x; (void)y; (void)c; (void)px; if (drawn_count < 64) snprintf(drawn[drawn_count++], 300, "%s", s); }
-static int d_measure(float px, const char *s) { return (int)(strlen(s) * (size_t)(px * 0.5f)); }
+/* rows laid out in the last frame: fit_line measures each row's first character alone first (plans are ASCII) */
+static int rows_laid_out;
+static int d_measure(float px, const char *s)
+{
+    rows_laid_out += strlen(s) == 1;
+    return (int)(strlen(s) * (size_t)(px * 0.5f));
+}
 static int bar_rects; /* rectangles right of the plan's text (its scroll bar) in the last frame */
-static void d_rect(int x, int y, int w, int h, unsigned c) { (void)y; (void)w; (void)h; (void)c; if (x >= 900) bar_rects++; }
+static int bar_y[2], bar_h[2]; /* the bar's first two: its track, then its thumb */
+static void d_rect(int x, int y, int w, int h, unsigned c)
+{
+    (void)w; (void)c;
+    if (x < 900) return;
+    if (bar_rects < 2) { bar_y[bar_rects] = y; bar_h[bar_rects] = h; }
+    bar_rects++;
+}
 static void d_card(int y, int h, int f) { (void)y; (void)h; (void)f; }
 static void d_badge(int x, int y, int w, int h, const char *l, int a)
 {
@@ -1006,7 +1019,7 @@ static int shown(const char *needle)
 static void frame(uint32_t pressed)
 {
     drawn_count = 0;
-    bar_rects = 0;
+    bar_rects = rows_laid_out = 0;
     vjo_install_page_frame(&draw, pressed, -1, -1);
 }
 
@@ -1017,7 +1030,7 @@ static void the_page_shows_the_plan_and_runs_it(void)
     frame(0);
     for (int i = 0; i < drawn_count; i++) TEST_MSG("%s", drawn[i]);
     TEST_CHECK(shown(VJO_DEBUG ? "Install the overlay (v0.8.0, debug build)" : "Install the overlay (v0.8.0)"));
-    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down, L/R: scroll   ○: exit"));
+    TEST_CHECK(shown("[Install*]") && shown("hints: ×: Install   Left/Right: action   Up/Down: scroll   ○: exit"));
     TEST_CHECK(shown("1. Copy the 3 plugins"));
     frame(SCE_CTRL_CROSS); /* the stubs run the thread at once */
     frame(0);
@@ -1398,15 +1411,26 @@ static void the_page_pages_through_a_long_plan(void)
     long_plan_card();
     TEST_CHECK(vjo_install_page_start() == 1);
     frame(0);
+    int first_rows = rows_laid_out;
     TEST_CHECK(first_shown("1. Copy the 3 plugins") && !shown("If a game does not start"));
-    TEST_CHECK_(bar_rects > 0, "a scroll bar beside a plan longer than its box");
-    TEST_CHECK(shown("Left/Right: action   Up/Down, L/R: scroll   ○: exit"));
+    TEST_CHECK_(bar_rects == 2, "a scroll bar beside a plan longer than its box: %d rectangles", bar_rects);
+    /* its thumb: at the track's top first, shorter than it, inside it at every step, at its bottom at the end */
+    TEST_CHECK_(bar_y[1] == bar_y[0] && bar_h[1] >= 12 && bar_h[1] < bar_h[0], "track %d+%d, thumb %d+%d", bar_y[0], bar_h[0],
+                bar_y[1], bar_h[1]);
+    TEST_CHECK(shown("Left/Right: action   Up/Down: scroll   ○: exit"));
+    /* the first frame lays out only what the box shows and the first entry past it, as main's page did (the
+     * bar counts entries: counting every entry's rows laid out the whole plan at once) */
+    TEST_CHECK_(first_rows <= 16, "%d rows laid out in the first frame", first_rows);
     int pages = 0;
     while (!shown("If a game does not start") && pages < 12) {
         frame(SCE_CTRL_RTRIGGER);
         frame(0);
         pages++;
+        TEST_CHECK_(bar_rects == 2 && bar_y[1] >= bar_y[0] && bar_y[1] + bar_h[1] <= bar_y[0] + bar_h[0],
+                    "page %d: track %d+%d, thumb %d+%d", pages, bar_y[0], bar_h[0], bar_y[1], bar_h[1]);
     }
+    TEST_CHECK_(bar_y[1] + bar_h[1] == bar_y[0] + bar_h[0], "the last box: thumb %d+%d, track %d+%d", bar_y[1], bar_h[1],
+                bar_y[0], bar_h[0]);
     TEST_CHECK_(shown("If a game does not start") && pages > 1 && pages < 8, "R reaches the plan's end in %d pages", pages);
     TEST_CHECK(!shown("1. Copy the 3 plugins"));
     frame(SCE_CTRL_RTRIGGER); /* at the end it stays */
@@ -1761,7 +1785,136 @@ static void the_exact_lines_are_a_shortest_edit(void)
     TEST_CHECK(exact > 3500);
 }
 
+/* The follow-ups' audit: a .vjo-new byte-identical to config.txt (an install that appends its sections,
+ * stopped at exactly config.txt's length) is a stopped install's, never an uninstall's whose edit changed
+ * nothing: Keep only, as for any part of a write, then Install works. */
+static void a_vjo_new_equal_to_config_txt_is_a_stopped_install(void)
+{
+    static char out[VJO_TAI_TEXT_MAX + 1];
+    fresh_card(0);
+    const char *mine = "# my config\n*PCSG00415\nux0:tai/game.suprx\n"; /* no *KERNEL or *main: the install appends them */
+    VjoTaiReport rep;
+    int n = vjo_tai_edit(mine, strlen(mine), VJO_TAI_INSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+    TEST_ASSERT(n > (int)strlen(mine) && !memcmp(out, mine, strlen(mine)) && rep.changed);
+    put_text("ur0:tai/config.txt", mine);
+    put("ur0:tai/config.txt.vjo-new", out, strlen(mine));
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INTERRUPTED && s.actions == VJO_INSTALL_ACT_KEEP && !s.cfg[1].use_new &&
+                s.cfg[1].stopped_run == VJO_INSTALL_ACT_INSTALL, "state %d actions 0x%x use_new %d run %d", s.state,
+                (unsigned)s.actions, s.cfg[1].use_new, s.cfg[1].stopped_run);
+    TEST_CHECK_(strstr(s.reason, "a stopped install's config.txt.vjo-new") && strstr(s.reason, "choose Install again") &&
+                !strstr(s.reason, "Or put the new one in place"), "%s", s.reason);
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_KEEP, &r) == 0 && !strcmp(slurp("ur0:tai/config.txt", NULL), mine));
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(!strcmp(slurp("ur0:tai/config.txt", NULL), out) && scan_now().state == VJO_INSTALL_INSTALLED);
+}
+
+/* The follow-ups' audit, gaps. D7a: a changed stretch of 1,024 lines is diffed exactly, one of 1,025 by the
+ * greedy walk: either is an edit made of the texts' own lines. */
+static void the_diff_at_its_line_bound(void)
+{
+    static char old[1 << 16], neu[1 << 16];
+    static DiffSeen d;
+    for (int lines = 1023; lines <= 1026; lines++) {
+        int ol = 0, nl = 0;
+        for (int i = 0; i < lines; i++) {
+            /* the first and the last line differ: the trim leaves every line in the changed stretch */
+            ol += snprintf(old + ol, sizeof(old) - (size_t)ol, i == 0 ? "first old\n" : i == lines - 1 ? "last old\n" : "ux0:tai/p%04d.suprx\n", i);
+            nl += snprintf(neu + nl, sizeof(neu) - (size_t)nl, i == 0 ? "first new\n" : i == lines - 1 ? "last new\n" : "ux0:tai/p%04d.suprx\n", i);
+        }
+        int n = split_lines(old, ol, ref_starts[0], ref_lens[0], 4096), m = split_lines(neu, nl, ref_starts[1], ref_lens[1], 4096);
+        memset(&d, 0, sizeof(d));
+        d.old = old; d.neu = neu; d.old_len = ol; d.new_len = nl; d.lines[0] = n; d.lines[1] = m;
+        vjo_install_diff(old, ol, neu, nl, seen_line, &d);
+        TEST_CHECK_(!d.bad && d.n == 4 && d.sign[0] == '-' && d.index[0] == 0 && d.sign[1] == '+' && d.index[1] == 0 &&
+                    d.sign[2] == '-' && d.index[2] == n - 1 && d.sign[3] == '+' && d.index[3] == m - 1,
+                    "%d lines: bad %d, %d lines shown", lines, d.bad, d.n);
+    }
+}
+
+/* P1: a plan never writes past max and never returns more, for every action and every max. */
+static void a_plan_stays_within_its_max(void)
+{
+    static char lines[80][VJO_INSTALL_LINE];
+    for (int card = 0; card < 2; card++) {
+        if (card == 0) long_plan_card();
+        else { /* interrupted: Put it back and Keep */
+            fresh_card(0);
+            TEST_ASSERT(rename("ur0:tai/config.txt", "ur0:tai/config.txt.vjo-old") == 0);
+            put_text("ur0:tai/config.txt", "*KERNEL\n*main\nur0:tai/henkaku.suprx\n");
+        }
+        VjoInstallScan s = scan_now();
+        static const int acts[] = {VJO_INSTALL_ACT_INSTALL, VJO_INSTALL_ACT_UNINSTALL, VJO_INSTALL_ACT_FINISH, VJO_INSTALL_ACT_KEEP};
+        for (unsigned a = 0; a < 4; a++)
+            for (int max = 0; max <= VJO_INSTALL_LINES; max++) {
+                for (int i = 0; i < 80; i++) snprintf(lines[i], VJO_INSTALL_LINE, "canary %d", i);
+                int n = vjo_install_plan(&s, acts[a], lines, max);
+                int intact = 1;
+                for (int i = max; i < 80; i++) {
+                    char want[32];
+                    snprintf(want, sizeof(want), "canary %d", i);
+                    intact &= !strcmp(lines[i], want);
+                }
+                TEST_CHECK_(n >= 0 && n <= max && intact, "card %d action %d max %d: %d lines, past max %s", card, acts[a], max, n,
+                            intact ? "intact" : "written");
+            }
+    }
+}
+
+/* I3: over this build, a config.ini.bak too large for the app's save to rewrite is left to the app (it reads
+ * it): config.ini is not written, and the plan says it is unchanged. */
+static void a_backup_too_large_to_rewrite_is_left(void)
+{
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    static char big[VJO_CONFIG_TEXT_MAX + 1];
+    memset(big, '#', VJO_CONFIG_TEXT_MAX);
+    for (int i = 79; i < VJO_CONFIG_TEXT_MAX; i += 80) big[i] = '\n';
+    big[VJO_CONFIG_TEXT_MAX - 1] = '\n';
+    big[VJO_CONFIG_TEXT_MAX] = '\0'; /* comments only: the save would append its four lines */
+    put_text(VJO_PREFERENCES_PATH_TEST ".bak", big);
+    TEST_ASSERT(remove(VJO_PREFERENCES_PATH_TEST) == 0);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED && s.config_ini == 0, "state %d config_ini %d", s.state, s.config_ini);
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    TEST_CHECK(has_line(plan, n, "config.ini: unchanged (your settings stay as they are)."));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && !there(VJO_PREFERENCES_PATH_TEST));
+    size_t m;
+    TEST_CHECK(slurp(VJO_PREFERENCES_PATH_TEST ".bak", &m) && m == VJO_CONFIG_TEXT_MAX);
+}
+
+/* P15: a Repair that writes a configuration backs it up, but says nothing of an update. */
+static void a_repair_with_backups_has_no_update_note(void)
+{
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    char *ux0 = slurp("ux0:tai/config.txt", NULL), mine[4096], *at = strstr(ux0, S "\n");
+    TEST_ASSERT(at != NULL);
+    snprintf(mine, sizeof(mine), "%.*s%s", (int)(at - ux0), ux0, at + strlen(S "\n")); /* our Shell line gone */
+    put_text("ux0:tai/config.txt", mine);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_REPAIR && s.cfg[0].install_changes, "state %d: %s", s.state, s.title);
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+    TEST_CHECK(has_line(plan, n, "Back up ux0:tai/config.txt as config.txt.vjo-20261016-071503-2.bak (kept)."));
+    TEST_CHECK(!has_line(plan, n, "does not undo the update"));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && scan_now().state == VJO_INSTALL_INSTALLED);
+}
+
 TEST_LIST = {
+    {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},
+    {"a_plan_stays_within_its_max", a_plan_stays_within_its_max},
+    {"a_backup_too_large_to_rewrite_is_left", a_backup_too_large_to_rewrite_is_left},
+    {"a_repair_with_backups_has_no_update_note", a_repair_with_backups_has_no_update_note},
+    {"a_vjo_new_equal_to_config_txt_is_a_stopped_install", a_vjo_new_equal_to_config_txt_is_a_stopped_install},
     {"the_exact_lines_are_a_shortest_edit", the_exact_lines_are_a_shortest_edit},
     {"the_plan_shows_the_edit_when_lines_repeat", the_plan_shows_the_edit_when_lines_repeat},
     {"the_plan_reads_every_line_end_as_one", the_plan_reads_every_line_end_as_one},

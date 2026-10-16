@@ -46,9 +46,9 @@ typedef struct {
     int leftover;              /* exists, with a .vjo-old (1) and/or a .vjo-new (2) beside it */
     int swap_files;            /* a .vjo-old (1) and/or a .vjo-new (2) beside it, whether config.txt exists or not */
     int now_kind;              /* VJO_TAI_NOW_*: HENkaku's default (h-encore rewrites it when both are missing) */
-    int use_new;               /* FINISH would put .vjo-new back: the editor's result (an install's or an uninstall's)
-                                * of .vjo-old, or, with no .vjo-old (the swap never started), of the current
-                                * config.txt byte for byte; else .vjo-old */
+    int use_new;               /* FINISH would put .vjo-new back: the editor's result (an install's or an uninstall's,
+                                * one that changes the file) of .vjo-old, or, with no .vjo-old (the swap never
+                                * started), of the current config.txt byte for byte; else .vjo-old */
     int finish_ok;             /* FINISH has a whole file to put back: use_new, or a .vjo-old */
     int stopped_run;           /* the run whose .vjo-new it is (VJO_INSTALL_ACT_INSTALL or _UNINSTALL), 0 when it
                                 * cannot be told (an empty file, or a start both runs would write) */

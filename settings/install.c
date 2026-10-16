@@ -274,14 +274,17 @@ static int ours_text(const char *text, int len, int worker)
            vjo_tai_edit(text, (size_t)len, VJO_TAI_INSTALL, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r) >= 0 && !r.changed;
 }
 
-/* text (n bytes) is the editor's result of ref (an install's or an uninstall's), byte for byte: the run
- * (VJO_INSTALL_ACT_INSTALL or _UNINSTALL), or 0. */
+/* text (n bytes) is the editor's result of ref (an install's or an uninstall's), byte for byte, and that
+ * result changes ref: the run (VJO_INSTALL_ACT_INSTALL or _UNINSTALL), or 0. A run writes a configuration
+ * only when its edit changes it, so a .vjo-new equal to ref is no run's whole file: it is a stopped write
+ * of a longer one (an install's that appends its sections, cut at ref's length; audit-overlay-one-vpk-
+ * followups), never an uninstall's that changed nothing. */
 static int edit_of(const char *ref, int len, const char *text, int n, int worker)
 {
     for (int op = 0; op < 2; op++) {
         VjoTaiReport r;
         int m = vjo_tai_edit(ref, (size_t)len, op, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r);
-        if (m == n && !memcmp(cfg_check, text, (size_t)n))
+        if (m == n && r.changed && !memcmp(cfg_check, text, (size_t)n))
             return op == VJO_TAI_INSTALL ? VJO_INSTALL_ACT_INSTALL : VJO_INSTALL_ACT_UNINSTALL;
     }
     return 0;
