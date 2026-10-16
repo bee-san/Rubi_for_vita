@@ -63,7 +63,7 @@ build() { # build NAME SOURCES...
 build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
 build ledger host/tests/test_ledger.c core/ledger.c
 build fbgrey host/tests/test_fbgrey.c
-build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c core/region_select.c
+build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c core/region_select.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 # #104: the process event hook's input release (LDREX/STREX exchange) and the page's touch hold.
 build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
