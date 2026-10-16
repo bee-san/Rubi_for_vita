@@ -13,6 +13,7 @@ Not a general FTP server: one client at a time per connection thread, binary tra
 """
 import socket
 import socketserver
+import sys
 import threading
 import time
 from pathlib import Path
@@ -215,6 +216,13 @@ class _Handler(socketserver.StreamRequestHandler):
 class _Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # A client that drops its connection (curl after a transfer) is not an error of the mock's: no
+        # traceback in the output of a passing run (audit-overlay-release-variants-d note 12).
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class FtpMock:

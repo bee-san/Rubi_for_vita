@@ -15,6 +15,7 @@ each, unpacked) and that they differ in exactly those files and the manifests' v
 """
 import argparse
 import hashlib
+import io
 import json
 import sys
 import tempfile
@@ -40,19 +41,40 @@ def contents(path):
         return {i.filename: z.read(i) for i in z.infolist() if not i.is_dir()}
 
 
-def check_bases(normal, debug, version):
-    """Every problem with the two base zips as this release's (empty: none)."""
+def module_problems(base, variant, sources):
+    """tools/check_variant.py's check of a base zip's four modules with the sources of `sources` (a checkout of
+    the bases' commit): what the Vita build checks, the worker included, which no fixed marker names (audit-
+    overlay-release-variants-d note 9: a debug base with the normal worker)."""
+    import check_variant as variants
+    names = {"kernel": "ur0/tai/VitaJPOverlay_Kernel.skprx", "shell": "ur0/tai/VitaJPOverlay_Shell.suprx",
+             "worker": "ur0/tai/VitaJPOverlay_OCR.suprx"}
+    blobs = {}
+    with tempfile.TemporaryDirectory(prefix="vjo-variant-") as tmp:
+        for part, name in names.items():
+            (Path(tmp) / part).write_bytes(base.read(name))
+            blobs[part] = variants.segments(Path(tmp) / part)
+        with zipfile.ZipFile(io.BytesIO(base.read("JPOverlaySettings.vpk"))) as vpk:
+            (Path(tmp) / "eboot.bin").write_bytes(vpk.read("eboot.bin"))
+            blobs["app"] = variants.segments(Path(tmp) / "eboot.bin")
+    return variants.check(variant, blobs, sources=sources)
+
+
+def check_bases(normal, debug, version, sources=None):
+    """Every problem with the two base zips as this release's (empty: none); with sources, each base's modules
+    are also checked against them (module_problems)."""
     problems = []
     for path, want in ((normal, "normal"), (debug, "debug")):
         try:
             with zipfile.ZipFile(path) as z:
                 got, app = release.base_variant(z)
+                checked = module_problems(z, want, sources) if sources is not None and got == want else []
         except (ValueError, KeyError, zipfile.BadZipFile, OSError) as e:  # both builds' modules, a missing plugin,
             # not a zip, no file (a directory, a missing path)
             problems.append(f"{path.name}: {e}")
             continue
         if got != want:
             problems.append(f"{path.name}: the {got} build, given as the {want} one")
+        problems += [f"{path.name}: {p}" for p in checked]
         if app != version:
             problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version} "
                             "(set VJO_VERSION in vita/CMakeLists.txt and build again)")
@@ -116,8 +138,10 @@ def main():
     parser.add_argument("--source-revision", help="Exact tested overlay commit for both manifests")
     parser.add_argument("--set", dest="settings", action="append", type=release.parse_setting, default=[],
                         metavar="KEY=VALUE", help="A config.ini setting of both packages (package_release.py --set)")
+    parser.add_argument("--sources", type=Path, help="A checkout of the bases' own commit: their modules are checked "
+                        "as its Vita build checks them (tools/check_variant.py --sources), the worker included")
     args = parser.parse_args()
-    problems = check_bases(args.normal, args.debug, args.version)
+    problems = check_bases(args.normal, args.debug, args.version, args.sources)
     if problems:
         sys.exit("package_variants: the bases are not this release's two builds:\n  " + "\n  ".join(problems))
     args.output.mkdir(parents=True, exist_ok=True)

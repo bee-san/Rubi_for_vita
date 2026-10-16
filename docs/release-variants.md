@@ -182,7 +182,7 @@ gh run download RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D ci/debug
 gh run download RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay-normal -D ci/normal
 python3 tools/package_variants.py --normal ci/normal/VitaJPOverlay-0.8.0.zip \
   --debug ci/debug/VitaJPOverlay-0.8.0-debug.zip --models /path/to/models --version 0.8.0 \
-  --source-revision SHA -o out/
+  --source-revision SHA --sources . -o out/
 ```
 
 The models are the pinned files of `tools/prepare_ocr.py` (its `--backend vocr-tiers` and
@@ -195,13 +195,14 @@ The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test packag
 (`VitaJPOverlay-0.8.0-test.N.zip`, `package_release.py --version 0.8.0-test.N`) shows `Overlay v0.8.0
 debug`, the build its binaries are.
 
-`tools/package_variants.py` refuses bases that are not the builds they are given as, an Overlay app
-of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
+`tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
+a checkout of their commit, each module is checked as the Vita build checks it, the worker included),
+an Overlay app of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
 there, and writes `SHA256SUMS`. Then run the package check on each zip, as CI does on every pull
-request:
+request that changes more than Markdown:
 
 ```sh
 python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0.zip

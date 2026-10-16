@@ -382,6 +382,24 @@ class PackageVariants(unittest.TestCase):
             self.assertIn(why, str(caught.exception))
             self.assertFalse((out / "SHA256SUMS").exists())
 
+    def test_with_sources_a_base_with_the_other_builds_worker_is_refused(self):
+        """audit-overlay-release-variants-d note 9: the fixed markers cannot see the worker; --sources (a
+        checkout of the bases' commit) checks the four modules as the Vita build does."""
+        sources = self.root / "src"
+        (sources / "game_ocr").mkdir(parents=True)
+        (sources / "game_ocr" / "main.c").write_text('#if VJO_DEBUG\nprobe("VjoGameVocrProbe");\n#endif\n')
+        debug = self.base("debug")  # its worker, b"\0worker debug\0", has no debug-only literal: the normal one's
+        with self.assertRaises(SystemExit) as caught:
+            self.run_main("--normal", self.base("normal"), "--debug", debug, "--models", self.models, "--version",
+                          "0.8.0", "-o", self.root / "out-s", "--sources", sources)
+        self.assertIn(f"{debug.name}: worker: the debug build carries none of its sources' 1 debug-only strings",
+                      str(caught.exception))
+        self.assertFalse((self.root / "out-s").exists())
+        # without --sources the fixed markers decide, as before
+        self.run_main("--normal", self.base("normal"), "--debug", debug, "--models", self.models, "--version",
+                      "0.8.0", "-o", self.root / "out-n")
+        self.assertTrue((self.root / "out-n" / "SHA256SUMS").is_file())
+
     def test_package_release_records_and_checks_the_build(self):
         output = self.root / "one.zip"
         with contextlib.redirect_stdout(io.StringIO()):

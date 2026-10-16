@@ -1045,8 +1045,9 @@ SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)(,
 # shell/worker.c vocr_run_one's line for each activation's (a start or a resume) first OCR job that read its screen,
 # its first that found a line, and every failed one (not a cancelled job or one whose screen changed under it: those
 # are retried quietly); log_vocr_clock's line on the 444 MHz boost for each activation's first job that recognized a
-# line (only those have the clock step: a job whose lines all came from the cache has none) and whenever it changes (the tier lines too, log_tier_checks); shell/memory.cpp's
-# refused PAF request, and the Shell's note that a self-test was armed under it
+# line (only those have the clock step: a job whose lines all came from the cache has none) and whenever it changes
+# (the tier lines too, log_tier_checks); shell/memory.cpp's refused PAF request, and the Shell's note that a self-test
+# was armed under it
 SHORT_JOB = re.compile(r"^ocr rc=(-?\d+) (\S+): (\d+) lines, (\d+) ms$")
 SHORT_CLOCK = (("set", re.compile(r"^clock: (\d+) -> (\d+) MHz while reading, (\d+) after$")),
                ("left", re.compile(r"^clock: (\d+) MHz, left as it is while reading \(444 or more\)$")),
@@ -2301,8 +2302,8 @@ def render_short_log(lg):
             models[j["model"]] = models.get(j["model"], 0) + 1
         ok = [j for j in jobs if j["rc"] == 0]
         L.append(f"  OCR jobs in the normal build's short log (per activation of a game, a start or a resume: its first "
-                 f"job that read its screen and its first that found a line; and every failed one, not a cancelled one or one whose "
-                 f"screen changed; not the others): "
+                 f"job that read its screen and its first that found a line; and every failed one, not a cancelled one "
+                 f"or one whose screen changed; not the others): "
                  f"{len(jobs)}; "
                  + ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(rcs.items()))
                  + "; models " + ", ".join(f"{m} x{n}" for m, n in models.items())

@@ -6,12 +6,15 @@
 Reads each SELF's loadable segments (decompressed) and checks them for the markers below: the debug
 build's own format strings must all be in the debug build and none of them in the normal one, which
 carries its own marker instead; the Overlay app names its version and, in the debug build, "debug".
-With --sources (the tree's root; the Vita build passes it), the normal build is also checked against
-every literal its sources compile only into the debug build (`#if VJO_DEBUG` branches, vjo_dlog() and
-klog_d() calls, shell/selftest.c, kernel/meminfo.c): none may be in it as a string of its own, which
-catches a file or target built without VJO_DEBUG=0.
-Exits non-zero with every failure listed. tools/package_release.py uses variant_of() to name a base
-zip's build, and vita/CMakeLists.txt runs this after every build of the four modules.
+With --sources (the tree's root; the Vita build passes it), each module is also checked against the
+literals of 12 bytes or more its sources compile only into the debug build (`#if VJO_DEBUG` branches,
+vjo_dlog() and klog_d() calls, shell/selftest.c, kernel/meminfo.c) and kept code does not use too: none
+may be in the normal build as a string of its own, which catches a file or target built without
+VJO_DEBUG=0, and a debug module must carry at least one of them, which catches one built with
+VJO_DEBUG=0 (the worker has no fixed marker: this is its only check).
+Exits non-zero with every failure listed. tools/package_release.py's base_variant() names a base zip's
+build with classify(), tools/package_variants.py --sources runs check() on the bases, and
+vita/CMakeLists.txt runs this after every build of the four modules.
 """
 import argparse
 import functools
@@ -322,8 +325,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--variant", required=True, choices=("debug", "normal"))
     parser.add_argument("--version", help="The Overlay app's version (VJO_VERSION)")
-    parser.add_argument("--sources", type=Path, help="The tree's root: the normal build is also checked against every "
-                                                     "debug-only literal of its sources (debug_only_strings)")
+    parser.add_argument("--sources", type=Path, help="The tree's root: each module is also checked against its sources' "
+                                                     "debug-only literals (debug_only_strings): none in the normal "
+                                                     "build, at least one in the debug build")
     for part in ("kernel", "shell", "worker", "app"):
         parser.add_argument("--" + part, type=Path)
     args = parser.parse_args()

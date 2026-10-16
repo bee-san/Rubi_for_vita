@@ -805,7 +805,8 @@ checksum, and never substitutes a newer JMdict-only snapshot. Publication
 still happens explicitly after validation. `python3 tools/e2e_package.py RELEASE.zip` runs a
 package's own installer and `tools/install_ftp.sh` against a simulated Vita (an FTP mock of its
 partitions): an update over an older build, a fresh install, `--check-app`, `--self-test`,
-`--collect` and `--uninstall`. CI runs it on both builds' zips of every pull request.
+`--collect` and `--uninstall`. CI runs it on both builds' zips of every pull request that changes
+more than Markdown (a fork's pull request, without the private dictionary, has no zips).
 
 The host suite covers configuration, disk-backed dictionary lookup,
 deinflection, kernel/input ownership, per-game policies, and the actual Shell
