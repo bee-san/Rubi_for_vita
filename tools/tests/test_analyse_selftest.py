@@ -1426,10 +1426,11 @@ class BoostLikeForLike(unittest.TestCase):
     CTC frame (audit-overlay-analyser-fixes N1-N3, N5). Pooled over every job, the raised side takes the self-test's
     stage jobs, textbox2 among them, which runs serially: if a line read beside two other recognizer threads is
     slower per frame than a serial one (the shared L2; unmeasured), they make the raised side faster and the ratio
-    larger, toward 1.6 MB. So the ratio is also computed like for like: Auto's background jobs (the overlay closed),
-    not the self-test's, between jobs with as many recognized lines and the same helpers on both sides. It is given
-    per model, per window and against the off window's neighbours, with job counts; the off window's clock is said
-    to be assumed, with what the logs hold about it; and a one-line verdict states its thresholds."""
+    larger, toward 1.6 MB. So the ratio is also computed like for like: not the self-test's stages, between jobs of
+    one kind on both sides (as many recognized lines, the same helpers, and the same trigger: Auto's job with the
+    overlay closed, or the overlay's own). It is given per model, per window and against the off window's
+    neighbours, with job counts; the off window's clock is said to be assumed, with what the logs hold about it; and
+    a one-line verdict states its thresholds."""
 
     H15 = "VOCR3_H15_w8.vocr"
     FL10 = "VOCR3_FL10_w8.vocr"
@@ -1450,12 +1451,12 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertEqual((g["off"]["jobs"], g["off"]["frames"], g["off"]["us"]), (3, 660, 1922100))
         self.assertEqual(round(_per(g["off"]) / _per(g["raised"]), 2), 1.34)
         p = lg["clock_like"][self.H15]["pooled"]
-        self.assertEqual([(k["lines"], k["helpers"], k["off"]["jobs"], k["raised"]["jobs"]) for k in p["strata"]],
-                         [(3, 2, 3, 3)])
+        self.assertEqual([(k["lines"], k["helpers"], k["trigger"], k["off"]["jobs"], k["raised"]["jobs"])
+                          for k in p["strata"]], [(3, 2, "auto", 3, 3)])
         self.assertEqual((round(p["ratio"], 2), p["off"]["jobs"], p["raised"]["jobs"], p["raised_windows"]),
                          (1.32, 3, 3, [1, 4]))
         self.assertEqual(lg["clock_like"][self.H15]["left_out"],
-                         {"selftest": 3, "not_auto": 0, "helpers_unknown": 0, "unmatched": 1})
+                         {"selftest": 3, "reason_unknown": 0, "helpers_unknown": 0, "unmatched": 1})
         # the off window's neighbours with a job of its kind: windows 1 and 4 (window 2 read only 2 lines)
         (w3,) = [w for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"]
         self.assertEqual((w3["window"], w3["neighbours"], round(w3["near"]["ratio"], 2)), (3, [1, 4], 1.32))
@@ -1475,9 +1476,10 @@ class BoostLikeForLike(unittest.TestCase):
                      "VOCR3_H15_w8.vocr, all jobs: off (assumed 333 MHz, not logged) 2,912 us (3 jobs, 9 lines; window "
                      "3; a core's share 99%), raised 333 -> 444 MHz 2,171 us (7 jobs, 3 of them the self-test's stages, "
                      "24 lines; windows 1, 2, 4; a core's share 99%): off / raised = 1.34",
-                     "VOCR3_H15_w8.vocr, like for like (auto jobs with the overlay closed, not the self-test's stages, "
-                     "with as many recognized lines and the same helpers on both sides; each kind weighted by the off "
-                     "side's frames): off / raised = 1.32 (3 off, 3 raised jobs): 3 lines, 2 helpers: off 2,912 us (3 "
+                     "VOCR3_H15_w8.vocr, like for like (not the self-test's stages; jobs of one kind on both sides: as "
+                     "many recognized lines, the same helpers, and both auto (Auto's job, the overlay closed) or both "
+                     "overlay (a press, a retry or a refresh, the overlay open); each kind weighted by the off side's "
+                     "frames): off / raised = 1.32 (3 off, 3 raised jobs): 3 lines, 2 helpers, auto: off 2,912 us (3 "
                      "jobs; a core's share 99%), raised 2,201 us (3 jobs; a core's share 99%): 1.32; left out: 3 jobs "
                      "of the self-test's stages, 1 job of a kind not on the other side",
                      "boost effective: yes (ratio 1.32, n=6): VOCR3_H15_w8.vocr like for like, 3 off and 3 raised jobs "
@@ -1509,8 +1511,8 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertIn("boost effective: unclear (ratio 1.22, n=6): VOCR3_H15_w8.vocr like for like, 3 off and 3 raised "
                       "jobs (all jobs: 1.27); between the two thresholds; yes at 1.25 or more", text)
         # the serial stage is its own kind (3 lines, no helper): it is never matched with Auto's jobs
-        self.assertEqual(lg["clock_like"][self.H15]["left_out"], {"selftest": 3, "not_auto": 0, "helpers_unknown": 0,
-                                                                  "unmatched": 0})
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"], {"selftest": 3, "reason_unknown": 0,
+                                                                  "helpers_unknown": 0, "unmatched": 0})
         # builds before #116 ran the stages inside the user's own job (an auto one): their begin records still
         # mark them; and the job after a stage is the user's again
         log = log.replace("job start (self-test)\n", "job start (auto: screen settled)\n")
@@ -1561,13 +1563,23 @@ class BoostLikeForLike(unittest.TestCase):
         lg = a.summarise_log(log)
         lk = lg["clock_like"][self.H15]
         p = lk["pooled"]
-        self.assertEqual([(k["lines"], k["helpers"], round(k["ratio"], 2)) for k in p["strata"]], [(3, 2, 1.33)])
-        self.assertEqual(p["unmatched"], {"off": [{"lines": 1, "helpers": 2, "jobs": 1}],
-                                          "raised": [{"lines": 2, "helpers": 2, "jobs": 2},
-                                                     {"lines": 3, "helpers": 0, "jobs": 1}]})
-        self.assertEqual(lk["left_out"], {"selftest": 0, "not_auto": 2, "helpers_unknown": 0, "unmatched": 4})
-        self.assertIn("3 lines, 2 helpers: off 2,925 us (2 jobs), raised 2,200 us (2 jobs): 1.33; left out: 2 jobs not "
-                      "auto with the overlay closed, 4 jobs of a kind not on the other side", self.text(lg))
+        self.assertEqual([(k["lines"], k["helpers"], k["trigger"], round(k["ratio"], 2)) for k in p["strata"]],
+                         [(3, 2, "auto", 1.33)])
+        self.assertEqual(p["unmatched"], {"off": [{"lines": 1, "helpers": 2, "trigger": "auto", "jobs": 1}],
+                                          "raised": [{"lines": 2, "helpers": 2, "trigger": "auto", "jobs": 2},
+                                                     {"lines": 3, "helpers": 0, "trigger": "auto", "jobs": 1},
+                                                     {"lines": 3, "helpers": 2, "trigger": "overlay", "jobs": 2}]})
+        self.assertEqual(lk["left_out"], {"selftest": 0, "reason_unknown": 0, "helpers_unknown": 0, "unmatched": 6})
+        self.assertIn("3 lines, 2 helpers, auto: off 2,925 us (2 jobs), raised 2,200 us (2 jobs): 1.33; left out: 6 jobs "
+                      "of a kind not on the other side", self.text(lg))
+        # the overlay's own jobs (a press, its refresh) match the overlay's own: a second boost-off window of them
+        lg = a.summarise_log(log + START + game_job(per_frame(2700), why="overlay opened", helpers=2) * 2)
+        p = lg["clock_like"][self.H15]["pooled"]
+        self.assertEqual([(k["trigger"], k["off"]["jobs"], k["raised"]["jobs"], round(k["ratio"], 2)) for k in p["strata"]],
+                         [("auto", 2, 2, 1.33), ("overlay", 2, 2, 1.35)])
+        self.assertEqual(round(p["ratio"], 4), round(2475000 / 1848000, 4))  # each kind against its own
+        self.assertIn("3 lines, 2 helpers, auto: off 2,925 us (2 jobs), raised 2,200 us (2 jobs): 1.33; 3 lines, 2 "
+                      "helpers, overlay: off 2,700 us (2 jobs), raised 2,000 us (2 jobs): 1.35", self.text(lg))
         # a 1-line kind on both sides: each kind against its own, weighted by the off side's frames:
         # (2 x 643,500 + 234,000) us / (440 x 2,200 + 80 x 2,250) us = 1.32 (the kinds' own 1.33 and 1.30)
         lg = a.summarise_log(log + START + auto_job(per_frame(2250, (80,)), RAISED))
@@ -1575,15 +1587,15 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertEqual([(k["lines"], round(k["ratio"], 2)) for k in p["strata"]], [(1, 1.3), (3, 1.33)])
         self.assertEqual((round(p["ratio"], 4), p["off"]["jobs"], p["raised"]["jobs"]),
                          (round(1521000 / 1148000, 4), 3, 3))
-        self.assertIn("1 line, 2 helpers: off 2,925 us (1 job), raised 2,250 us (1 job): 1.30; 3 lines, 2 helpers",
-                      self.text(lg))
+        self.assertIn("1 line, 2 helpers, auto: off 2,925 us (1 job), raised 2,250 us (1 job): 1.30; 3 lines, 2 helpers, "
+                      "auto", self.text(lg))
         # a serial job matches serial jobs only
         lg = a.summarise_log(BOOT22 + START + auto_job(per_frame(1980), RAISED, helpers=0)
                              + auto_job(per_frame(1980), RAISED, helpers=0)
                              + START + auto_job(per_frame(2640), helpers=0) + auto_job(per_frame(2640), helpers=0))
         p = lg["clock_like"][self.H15]["pooled"]
         self.assertEqual([(k["lines"], k["helpers"]) for k in p["strata"]], [(3, 0)])
-        self.assertIn("3 lines, serial: off 2,640 us (2 jobs), raised 1,980 us (2 jobs): 1.33", self.text(lg))
+        self.assertIn("3 lines, serial, auto: off 2,640 us (2 jobs), raised 1,980 us (2 jobs): 1.33", self.text(lg))
 
     def test_a_job_whose_helpers_are_not_logged_is_left_out(self):
         # a step log that filled before PAR's place (no PAR, no free of the workspace, no PACE): its helpers are not
@@ -1595,6 +1607,28 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertEqual(lg["clock_like"][self.H15]["left_out"]["helpers_unknown"], 1)
         self.assertEqual(lg["clock_compare"][self.H15]["raised"]["jobs"], 3)
         self.assertIn("left out: 1 job whose helpers are not logged", self.text(lg))
+        # a job with no start line (the start of a rotated log): what started it is not known
+        lg = a.summarise_log(BOOT22 + START + game_job(per_frame(2200), RAISED, helpers=2) + log[len(BOOT22):])
+        self.assertEqual(lg["clock_like"][self.H15]["left_out"],
+                         {"selftest": 0, "reason_unknown": 1, "helpers_unknown": 1, "unmatched": 0})
+        self.assertIn("left out: 1 job with no start line, 1 job whose helpers are not logged", self.text(lg))
+
+    def test_what_started_a_job(self):
+        # shell/worker.c's job start reasons: Auto's with the overlay closed, the overlay's own, the subtitles', the
+        # self-test's
+        cases = {("auto: screen settled", ""): "auto", ("auto: screen quiet", ""): "auto",
+                 ("auto: screen settled", ", OCR only"): "auto", ("auto: screen settled", ", refresh"): "overlay",
+                 ("overlay opened", ""): "overlay", ("the screen changed during the last one", ""): "overlay",
+                 ("result was for an earlier screen", ""): "overlay", ("the running job was OCR only", ""): "overlay",
+                 ("subtitles on", ""): "subtitles", ("subtitles: screen keeps changing", ", OCR only"): "subtitles",
+                 ("region changed", ""): "subtitles", ("self-test", ""): "self-test"}
+        self.assertEqual({k: a.trigger(k) for k in cases}, cases)
+        self.assertIsNone(a.trigger(None))
+        shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        for why, _ in cases:  # every reason above is one the Shell logs
+            self.assertTrue(f'"{why}"' in shell or f'"job start ({why})"' in shell
+                            or why in ("auto: screen settled", "auto: screen quiet"), why)
+        self.assertIn('start_job(st.stable ? "auto: screen settled" : "auto: screen quiet", want_lookup());', shell)
 
     def test_the_verdicts_thresholds(self):
         def verdict(off_us, off_jobs=2, raised_us=2000):

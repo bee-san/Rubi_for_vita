@@ -984,6 +984,25 @@ EXPORT_TROUBLE = re.compile(r"^overlay app: anki export: .*(?:did not verify|pac
 WINDOW_START = re.compile(r"^game (\S+) started: ")
 # shell/worker.c start_job_kind: each Shell job's reason; ", refresh" is the open overlay's quiet refresh
 JOB_START = re.compile(r"^job start \(([^)]*)\)(, refresh|, OCR only)?$")
+TRIGGERS = ("auto", "overlay", "subtitles", "self-test")
+
+
+def trigger(reason):
+    """What started a Shell job (its JOB_START reason and suffix, shell/worker.c): "auto", Auto's background job of a
+    settled or quiet screen, with the overlay closed (auto_prefetch); "subtitles", the subtitle strip's (subtitles
+    on, a region changed with them on, a screen that keeps changing); "self-test", the self-test's own job; else
+    "overlay", the overlay's own (it opened, a retry, a result for an earlier screen, the open overlay's refresh:
+    ", refresh", background_open), which runs beside the overlay's drawing. None without a start line."""
+    if reason is None:
+        return None
+    why, suffix = reason
+    if why == "self-test":
+        return "self-test"
+    if why.startswith("auto") and suffix != ", refresh":
+        return "auto"
+    return "subtitles" if why.startswith("subtitles") or why == "region changed" else "overlay"
+
+
 # shell/selftest.c vjo_selftest_stage_begin: a self-test stage, whose job's lines follow (shell/worker.c
 # run_selftest_stages); its records' copies ("gstep textbox ...", "line textbox ...") are not the job's lines
 STAGE_BEGIN = re.compile(r"^stage (\w+) begin ")
@@ -1267,9 +1286,9 @@ def clock_windows(windows):
     Returns the windows' rows, how many windows of older builds had jobs, and the samples: one per job that recognized
     a line in a window whose boost is known, with its window, model, side ("off"; "raised"; "left": at 444 MHz or
     more already; "not_raised": the set call refused, or the clock not moved), the self-test's stage it ran (or None),
-    whether it was an auto job with the overlay closed, its helpers (the par step's; 0 for a job that logged none and
-    had room for it; None when its step log filled first), its recognized lines, their frames and time, its core
-    share and its clock (before, during, after)."""
+    what started it (trigger(): "auto", "overlay", "subtitles", "self-test" or None), its helpers (the par step's; 0
+    for a job that logged none and had room for it; None when its step log filled first), its recognized lines, their
+    frames and time, its core share and its clock (before, during, after)."""
     rows, older, samples = [], 0, []
     for number, w in enumerate(windows, 1):
         jobs = w["jobs"]
@@ -1314,7 +1333,7 @@ def clock_windows(windows):
             pf["us"] += us
             if side:
                 samples.append({"window": number, "model": j["model"], "side": side, "stage": j["stage"],
-                                "auto": j["auto"], "helpers": j["helpers"] if j["helpers"] is not None else
+                                "trigger": j["trigger"], "helpers": j["helpers"] if j["helpers"] is not None else
                                 0 if j["after_par"] else None, "lines": len(lines), "frames": frames, "us": us,
                                 "share": j["share"], "clock": (c["before"], c["during"], c["after"]) if c else None})
         rows.append(row)
@@ -1333,17 +1352,18 @@ def _commonest(values):
 def like_for_like(off, raised):
     """off / raised per CTC frame between jobs of the same kind on both sides: as many recognized lines and the same
     helpers, so as many lines are read at once on each side (a serial job's lines do not share the L2 with other
-    recognizer threads; N1). Each kind present on both sides is weighted by the off side's frames: the off lines'
-    time against what the raised jobs of their kind take for as many frames. None when no kind is on both sides."""
+    recognizer threads; N1), and the same trigger (Auto's job, with the overlay closed, or the overlay's own). Each
+    kind present on both sides is weighted by the off side's frames: the off lines' time against what the raised
+    jobs of their kind take for as many frames. None when no kind is on both sides."""
     def kinds(samples):
         d = {}
         for s in samples:
-            d.setdefault((s["lines"], s["helpers"]), []).append(s)
+            d.setdefault(_kind(s), []).append(s)
         return d
     a, b = kinds(off), kinds(raised)
 
-    def order(k):  # by lines, then helpers (None, not known, first)
-        return k[0], -1 if k[1] is None else k[1]
+    def order(k):  # by lines, then helpers (None, not known, first), then trigger
+        return k[0], -1 if k[1] is None else k[1], TRIGGERS.index(k[2]) if k[2] in TRIGGERS else -1
     both = sorted(set(a) & set(b), key=order)
     if not both:
         return None
@@ -1352,7 +1372,8 @@ def like_for_like(off, raised):
         o, r = _total(a[k]), _total(b[k])
         o["share"], r["share"] = _shares(a[k]), _shares(b[k])
         per_off, per_raised = o["us"] / o["frames"], r["us"] / r["frames"]
-        strata.append({"lines": k[0], "helpers": k[1], "off": o, "raised": r, "ratio": per_off / per_raised})
+        strata.append({"lines": k[0], "helpers": k[1], "trigger": k[2], "off": o, "raised": r,
+                       "ratio": per_off / per_raised})
         num += o["us"]
         den += o["frames"] * per_raised
     used_off, used_raised = [s for k in both for s in a[k]], [s for k in both for s in b[k]]
@@ -1363,9 +1384,13 @@ def like_for_like(off, raised):
             "before": pair[0] if pair else None, "during": pair[1] if pair else None,
             # the game's own clock around the raised jobs (before and after each): the off side's is assumed from it
             "own_clocks": sorted({c for s in used_raised if s["clock"] for c in (s["clock"][0], s["clock"][2])}),
-            "unmatched": {side: [{"lines": k[0], "helpers": k[1], "jobs": len(d[k])}
+            "unmatched": {side: [{"lines": k[0], "helpers": k[1], "trigger": k[2], "jobs": len(d[k])}
                                  for k in sorted(set(d) - set(both), key=order)]
                           for side, d in (("off", a), ("raised", b))}}
+
+
+def _kind(s):
+    return s["lines"], s["helpers"], s["trigger"]
 
 
 def _shares(samples):
@@ -1376,9 +1401,8 @@ def _shares(samples):
 def boost_compare(samples):
     """The samples (clock_windows) by model: every job by side, the self-test's stages included ("off", "raised",
     "left", "not_raised": jobs, lines, frames, us, windows, the commonest clock before / during, the core share); and,
-    for a model read both with the boost off and raised, like for like (like_for_like) between the ordinary jobs:
-    auto jobs with the overlay closed (the background job of a settled screen, the overlay's own jobs not: a press,
-    a refresh or a retry runs beside the overlay's drawing), not the self-test's stages (N1), with known helpers.
+    for a model read both with the boost off and raised, like for like (like_for_like) between the user's jobs: not
+    the self-test's stages (N1), with a known trigger and helpers.
     Pooled, by window (each raised window against the off side, each off window against the raised side and against
     its neighbours: the nearest raised windows before and after it, N3), and what was left out."""
     groups, like = {}, {}
@@ -1410,15 +1434,16 @@ def boost_compare(samples):
         if "off" not in g or "raised" not in g:
             continue
         mine = [s for s in samples if s["model"] == m and s["side"] in ("off", "raised")]
-        ok = [s for s in mine if not s["stage"] and s["auto"] and s["helpers"] is not None]
+        ok = [s for s in mine if not s["stage"] and s["trigger"] not in (None, "self-test") and s["helpers"] is not None]
         off, raised = [s for s in ok if s["side"] == "off"], [s for s in ok if s["side"] == "raised"]
         pooled = like_for_like(off, raised)
-        matched = {(k["lines"], k["helpers"]) for k in (pooled or {}).get("strata", [])}
+        matched = {(k["lines"], k["helpers"], k["trigger"]) for k in (pooled or {}).get("strata", [])}
         out = {"pooled": pooled, "left_out": {
-            "selftest": sum(bool(s["stage"]) for s in mine),
-            "not_auto": sum(not s["stage"] and not s["auto"] for s in mine),
-            "helpers_unknown": sum(not s["stage"] and s["auto"] and s["helpers"] is None for s in mine),
-            "unmatched": sum((s["lines"], s["helpers"]) not in matched for s in ok)}, "windows": []}
+            "selftest": sum(bool(s["stage"]) or s["trigger"] == "self-test" for s in mine),
+            "reason_unknown": sum(not s["stage"] and not s["trigger"] for s in mine),
+            "helpers_unknown": sum(not s["stage"] and s["trigger"] not in (None, "self-test") and s["helpers"] is None
+                                   for s in mine),
+            "unmatched": sum(_kind(s) not in matched for s in ok)}, "windows": []}
         for w in sorted({s["window"] for s in ok}):
             here = [s for s in ok if s["window"] == w]
             side = here[0]["side"]
@@ -1428,8 +1453,8 @@ def boost_compare(samples):
             else:
                 # its neighbours: the nearest raised windows before and after it with a job of its kinds (drift
                 # between scenes and game load matters least there)
-                kinds = {(s["lines"], s["helpers"]) for s in here}
-                cand = [s["window"] for s in raised if (s["lines"], s["helpers"]) in kinds]
+                kinds = {_kind(s) for s in here}
+                cand = [s["window"] for s in raised if _kind(s) in kinds]
                 before, after = [x for x in cand if x < w], [x for x in cand if x > w]
                 near = ([max(before)] if before else []) + ([min(after)] if after else [])
                 out["windows"].append({"window": w, "side": side, "jobs": len(here), "like": like_for_like(here, raised),
@@ -1460,8 +1485,8 @@ def boost_verdicts(rows, groups, like):
         before = p["before"] if p and p["before"] else g["raised"]["before"]
         v.update(_thresholds((before, p["during"] if p and p["during"] else g["raised"].get("during", before))))
         if not p:
-            v["why"] = (f"no auto job with the overlay closed, not the self-test's, of as many lines and helpers on both "
-                        f"sides; all jobs give {v['all_jobs']:.2f}, which mixes kinds of job")
+            v["why"] = (f"no kind of job on both sides (as many recognized lines, the same helpers and trigger; the "
+                        f"self-test's stages left out); all jobs give {v['all_jobs']:.2f}, which mixes kinds of job")
             continue
         v["ratio"], v["off_jobs"], v["raised_jobs"] = p["ratio"], p["off"]["jobs"], p["raised"]["jobs"]
         v["n"] = v["off_jobs"] + v["raised_jobs"]
@@ -1636,16 +1661,17 @@ def render_clock_windows(lg, tai=None):
             continue
         p, out = lk["pooled"], lk["left_out"]
         left = [f"{_n(out['selftest'], 'job')} of the self-test's stages"] if out["selftest"] else []
-        left += [f"{_n(out['not_auto'], 'job')} not auto with the overlay closed"] if out["not_auto"] else []
+        left += [f"{_n(out['reason_unknown'], 'job')} with no start line"] if out["reason_unknown"] else []
         left += [f"{_n(out['helpers_unknown'], 'job')} whose helpers are not logged"] if out["helpers_unknown"] else []
         left += [f"{_n(out['unmatched'], 'job')} of a kind not on the other side"] if out["unmatched"] else []
-        head = (f"    {m}, like for like (auto jobs with the overlay closed, not the self-test's stages, with as many "
-                "recognized lines and the same helpers on both sides; each kind weighted by the off side's frames): ")
+        head = (f"    {m}, like for like (not the self-test's stages; jobs of one kind on both sides: as many recognized "
+                "lines, the same helpers, and both auto (Auto's job, the overlay closed) or both overlay (a press, a "
+                "retry or a refresh, the overlay open); each kind weighted by the off side's frames): ")
         if not p:
             compared.append(head + "no kind of job on both sides" + (f" (left out: {', '.join(left)})" if left else ""))
             continue
         kinds = "; ".join(
-            f"{_n(k['lines'], 'line')}, {_n(k['helpers'], 'helper') if k['helpers'] else 'serial'}: off {round(_per(k['off'])):,} us "
+            f"{_n(k['lines'], 'line')}, {_n(k['helpers'], 'helper') if k['helpers'] else 'serial'}, {k['trigger']}: off {round(_per(k['off'])):,} us "
             f"({_n(k['off']['jobs'], 'job')}" + (f"; {_share_text(k['off']['share'])}" if k["off"]["share"] else "")
             + f"), raised {round(_per(k['raised'])):,} us ({_n(k['raised']['jobs'], 'job')}"
             + (f"; {_share_text(k['raised']['share'])}" if k["raised"]["share"] else "") + f"): {k['ratio']:.2f}"
@@ -1917,11 +1943,9 @@ def summarise_log(text):
             if win is None:  # jobs before the log's first game start (the oldest part of a rotated log)
                 win = {"title": None, "line": n, "api": api, "jobs": [], "boot": boot}
                 windows.append(win)
-            # auto: the background job of a settled (or quiet) screen with the overlay closed (shell/worker.c
-            # auto_prefetch); the overlay's own jobs (a press, a retry, a refresh: ", refresh") run beside its drawing
             job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False,
                    "api22": False, "share": None, "stage": stage, "helpers": None, "after_par": False,
-                   "auto": reason is not None and reason[0].startswith("auto") and reason[1] != ", refresh"}
+                   "trigger": trigger(reason)}
             stage = None  # one job a stage
             win["jobs"].append(job)
             continue
