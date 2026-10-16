@@ -652,7 +652,7 @@ class FrequencyTest(unittest.TestCase):
         terms = [term("食べる", "たべる", ["eat"], "v1"), term("猫", "ねこ", ["cat"]), term("見る", "みる", ["see"], "v1"),
                  *[term(f"語彙{i:05d}", gloss=[f"filler {i}"]) for i in range(1200)]]
         rows = [freq("猫", 1536, "ねこ"), freq("食べる", 900, "たべる")]
-        full, stats = self.build_ranked(terms, rows)
+        _, stats = self.build_ranked(terms, rows)
         self.assertEqual(stats["format_version"], 3)
         self.assertGreater(stats.get("filter_blocks", 0), 0)
         bare = self.directory / "bare.vjdict"
