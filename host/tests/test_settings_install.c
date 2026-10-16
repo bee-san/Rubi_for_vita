@@ -860,6 +860,7 @@ static void the_manifest_is_exactly_the_builds(void)
         {"vjopayload 1\n", "vjopayload 2\n", "not a payload manifest"},
         {"api 22", "api 21", "not this app's build"},
         {"worker kernel", "worker lines", "not this app's build"},
+        {"variant " VJO_VARIANT "\n", VJO_DEBUG ? "variant normal\n" : "variant debug\n", "not this app's build"},
         {"app_version 0.8.0", "app_version 0.8.1", "not this app's build"},
         {"worker kernel", "worker nothing", "the worker mode"},
         {"build 0123456789abcdef", "build 0123456789ABCDEF", "the app's build"},
@@ -1003,7 +1004,7 @@ static void a_stopped_write_of_vjo_new_keeps_config_txt(void)
 {
     static char out[VJO_TAI_TEXT_MAX + 1];
     for (int both = 0; both < 2; both++)
-        for (int cut = 0; cut < 3; cut++) { /* 0 B, a prefix, the whole edit */
+        for (int cut = 0; cut < 4; cut++) { /* 0 B, half, the whole edit, a prefix ending after our Shell line */
             fresh_card(both);
             install_app(1, "0.8.0", NULL);
             const char *target = both ? "ux0:tai/config.txt" : "ur0:tai/config.txt";
@@ -1013,7 +1014,11 @@ static void a_stopped_write_of_vjo_new_keeps_config_txt(void)
             TEST_ASSERT(n > 200);
             char fresh[64];
             snprintf(fresh, sizeof(fresh), "%s.vjo-new", target);
-            size_t len = cut == 0 ? 0 : cut == 1 ? (size_t)n / 2 : (size_t)n;
+            /* the last cut is a whole configuration of its own: our two lines, the user's later sections lost */
+            const char *shell = strstr(out, VJO_TAI_SHELL "\n");
+            TEST_ASSERT(shell != NULL);
+            size_t len = cut == 0 ? 0 : cut == 1 ? (size_t)n / 2 : cut == 2 ? (size_t)n
+                       : (size_t)(shell - out) + strlen(VJO_TAI_SHELL "\n");
             put(fresh, out, len);
             VjoInstallScan s = scan_now();
             const VjoInstallConfig *g = &s.cfg[both ? 0 : 1];
@@ -1076,6 +1081,76 @@ static void a_stopped_write_of_vjo_new_keeps_config_txt(void)
     free(before);
 }
 
+/* R6 (the code audit's mutants M9, M9b, M13, M14; the first and the last are the auditor's tests) */
+static void a_damaged_payload_file_is_not_installed(void)
+{
+    fresh_card(1);
+    char src[256];
+    vjo_payload_source(VJO_PAYLOAD_KERNEL_INDEX, src, sizeof(src));
+    size_t n;
+    char *k = slurp(src, &n);
+    TEST_ASSERT(k != NULL && n > 10);
+    k[5] ^= 1; /* the same size: only the hash tells */
+    put(src, k, n);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(!there("ur0:tai/VitaJPOverlay_Kernel.skprx") && !there("ur0:tai/VitaJPOverlay_Kernel.skprx.vjo-new"));
+    TEST_CHECK(!strcmp(slurp("ux0:tai/config.txt", NULL), stock));
+}
+
+static void a_damaged_dictionary_in_the_app_stops(void)
+{
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    char src[256];
+    TEST_ASSERT(s.dict_index >= 0 && vjo_payload_source(s.dict_index, src, sizeof(src)) == 0);
+    size_t n;
+    char *d = slurp(src, &n);
+    TEST_ASSERT(d != NULL && n > 10);
+    d[n / 2] ^= 1;
+    put(src, d, n);
+    s = scan_now();
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(has_line(r.lines, r.count, "this app's plaintext.vjdict is damaged: install the VPK again in VitaShell."));
+    /* the dated backups were written first (new files), and nothing else */
+    TEST_CHECK(has_line(r.lines, r.count, "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."));
+    TEST_CHECK(!there(VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict") && there(src));
+    TEST_CHECK(!there("ur0:tai/VitaJPOverlay_Kernel.skprx"));
+    TEST_CHECK(!strcmp(slurp("ux0:tai/config.txt", NULL), stock));
+}
+
+static void interrupted_comes_before_unsafe_homebrew(void)
+{
+    fresh_card(0);
+    TEST_ASSERT(rename("ur0:tai/config.txt", "ur0:tai/config.txt.vjo-old") == 0);
+    unsafe_off = 1;
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INTERRUPTED && s.actions == 0, "state %d actions 0x%x", s.state, (unsigned)s.actions);
+    TEST_CHECK_(strstr(s.reason, "in VitaShell rename ur0:tai/config.txt.vjo-old to config.txt.") != NULL, "%s", s.reason);
+    unsafe_off = 0;
+}
+
+static void a_write_fault_in_the_swap_keeps_config_txt(void)
+{
+    for (int c = 0; c < 2; c++) {
+        fresh_card(1);
+        const char *path = c ? "ur0:tai/config.txt" : "ux0:tai/config.txt";
+        char *before = strdup(slurp(path, NULL));
+        VjoInstallScan s = scan_now();
+        fault.pattern = path;
+        fault.write = 2; /* the dated backup is the first write whose name has the path, the swap's .vjo-new the second */
+        fault.calls = 0;
+        VjoInstallResult r;
+        int rc = run(&s, VJO_INSTALL_ACT_INSTALL, &r);
+        memset(&fault, 0, sizeof(fault));
+        char *now = slurp(path, NULL);
+        TEST_CHECK_(rc < 0 && now && !strcmp(now, before), "%s: a failed write leaves config.txt as it was", path);
+        free(before);
+    }
+}
+
 TEST_LIST = {
     {"fresh_install_on_both_configurations", fresh_install_on_both_configurations},
     {"update_over_a_test3_install", update_over_a_test3_install},
@@ -1087,6 +1162,10 @@ TEST_LIST = {
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
     {"a_swap_healed_by_hencore_is_still_interrupted", a_swap_healed_by_hencore_is_still_interrupted},
     {"a_stopped_write_of_vjo_new_keeps_config_txt", a_stopped_write_of_vjo_new_keeps_config_txt},
+    {"a_damaged_payload_file_is_not_installed", a_damaged_payload_file_is_not_installed},
+    {"a_damaged_dictionary_in_the_app_stops", a_damaged_dictionary_in_the_app_stops},
+    {"interrupted_comes_before_unsafe_homebrew", interrupted_comes_before_unsafe_homebrew},
+    {"a_write_fault_in_the_swap_keeps_config_txt", a_write_fault_in_the_swap_keeps_config_txt},
     {"one_or_two_different_configurations", one_or_two_different_configurations},
     {"uninstall_keeps_files_and_backups", uninstall_keeps_files_and_backups},
     {"the_plan_must_still_be_the_cards", the_plan_must_still_be_the_cards},

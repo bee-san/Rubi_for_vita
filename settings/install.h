@@ -59,7 +59,7 @@ typedef struct {
     VjoInstallBuild build;
     int state, actions;
     char title[128];
-    char reason[320];          /* cannot, no payload, interrupted: why and what to do */
+    char reason[512];          /* cannot, no payload, interrupted: why and what to do */
     int unsafe_off;            /* Enable Unsafe Homebrew is off */
     int has_payload;
     VjoPayload payload;

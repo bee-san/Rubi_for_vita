@@ -44,7 +44,9 @@ OUT=${1:-build/arm-tests}
 mkdir -p "$OUT"
 # VJO_DEBUG=0: the normal build's suites (docs/release-variants.md); the default, 1, the debug build's.
 VJO_DEBUG=${VJO_DEBUG:-1}
-FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -Wall -Wextra -Wno-unused-parameter
+# -D_FILE_OFFSET_BITS=64: a 32-bit readdir() or stat() fails with EOVERFLOW on a file system whose
+# directory cookies or inode numbers pass 2^32 (XFS: the taicfg fixtures' readdir under qemu-arm)
+FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -D_FILE_OFFSET_BITS=64 -Wall -Wextra -Wno-unused-parameter
        -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1 -DVJO_DEBUG="$VJO_DEBUG")
 QEMU_ARGS=(-cpu cortex-a9)
 # qemu-arm needs the dynamic loader's directory only for dynamic binaries;

@@ -143,6 +143,7 @@ typedef struct {
     const VjoInstallUi *ui;
     VjoInstallResult *r;
     uint64_t last_tick;
+    int backed_up;             /* dated backups written (new files: nothing else changed by them) */
     char step[120];
 } Run;
 
@@ -652,8 +653,13 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                      : g->now_kind == VJO_TAI_NOW_OURS ? "the overlay's" : "another configuration");
         if (s->unsafe_off) {
             size_t used = strlen(s->reason);
-            snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
-                     "Homebrew is off): in VitaShell rename config.txt.vjo-new (or .vjo-old) to config.txt.");
+            if (g->interrupted && g->finish_ok)
+                snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
+                         "Homebrew is off): turn it on and open Overlay again, or in VitaShell rename %s.%s to config.txt.",
+                         g->path, g->use_new ? "vjo-new" : "vjo-old");
+            else
+                snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
+                         "Homebrew is off): turn it on and open Overlay again.");
             s->actions = 0;
         }
         return;
@@ -977,7 +983,8 @@ static int stop(Run *x, const char *fmt, const char *arg)
     say(x->r, "Stopped: %s", text);
     vjo_log("install: stopped: %s", text);
     say(x->r, x->r->written ? "Every file on the card is the old one or the new one; Install again finishes the job."
-                            : "Nothing on the card was changed.");
+              : x->backed_up ? "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."
+                             : "Nothing on the card was changed.");
     return -1;
 }
 
@@ -1061,6 +1068,7 @@ static int backups(Run *x, VjoInstallScan *s, int install, char names[2][PATH])
             sceIoRemove(names[c]);
             return stop(x, "the backup of %s could not be written and read back.", tai_path(c));
         }
+        x->backed_up = 1;
         vjo_log("install: %s backed up as %s", tai_path(c), names[c]);
     }
     return 0;

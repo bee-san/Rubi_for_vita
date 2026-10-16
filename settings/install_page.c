@@ -81,8 +81,17 @@ static void set_lines(void)
     }
     line_count = 0;
     if (scan.reason[0] && (scan.state == VJO_INSTALL_CANNOT || scan.state == VJO_INSTALL_NO_PAYLOAD ||
-                           scan.state == VJO_INSTALL_INTERRUPTED))
-        snprintf(lines[line_count++], VJO_INSTALL_LINE, "%s", scan.reason);
+                           scan.state == VJO_INSTALL_INTERRUPTED)) {
+        /* one line per sentence: a plan line holds VJO_INSTALL_LINE bytes in at most VJO_TEXT_ROWS rows */
+        const char *at = scan.reason;
+        while (*at && line_count < VJO_INSTALL_LINES - 1) {
+            const char *end = strstr(at, ". ");
+            int len = end ? (int)(end - at) + 1 : (int)strlen(at);
+            snprintf(lines[line_count++], VJO_INSTALL_LINE, "%.*s", len, at);
+            at += len;
+            while (*at == ' ') at++;
+        }
+    }
     if (action_count)
         line_count += vjo_install_plan(&scan, actions[action_index], lines + line_count, VJO_INSTALL_LINES - line_count);
 }

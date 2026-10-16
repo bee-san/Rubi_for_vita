@@ -224,6 +224,29 @@ def corpus(seed, count):
         yield b"".join(out)
 
 
+class VendoredParser(unittest.TestCase):
+    """third_party/taihen-parser is DaveeFTW/taihen-parser 6d817fd unchanged: its five files have the SHA-256s
+    third_party/README.md pins, and the release ships its MIT notice (vita/CMakeLists.txt's release target,
+    then the VPK's licenses/ by tools/package_vpk.py licence_name)."""
+
+    def test_the_pinned_hashes_and_the_licence(self):
+        import hashlib
+        import re
+        root = Path(__file__).resolve().parents[2]
+        readme = (root / "third_party/README.md").read_text()
+        entry = readme[readme.index("- taihen-parser https://github.com/DaveeFTW/taihen-parser 6d817fd (MIT)"):]
+        pins = dict((name, digest) for digest, name in re.findall(r"^ +([0-9a-f]{64})  (\S+)$", entry, re.M)[:5])
+        files = sorted(str(f.relative_to(root / "third_party/taihen-parser"))
+                       for f in (root / "third_party/taihen-parser").rglob("*") if f.is_file())
+        self.assertEqual(sorted(pins), files)
+        for name, digest in pins.items():
+            self.assertEqual(hashlib.sha256((root / "third_party/taihen-parser" / name).read_bytes()).hexdigest(), digest, name)
+        self.assertIn("taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt",
+                      (root / "vita/CMakeLists.txt").read_text())
+        import package_vpk
+        self.assertTrue(package_vpk.licence_name("third_party/licenses/taihen-parser-MIT.txt"))
+
+
 @unittest.skipUnless(TAICFG, "VJO_TAICFG (the C build's vjo-taicfg, set by ctest) is not set")
 class AgainstTheCBuild(unittest.TestCase):
     """The PC installer's editor and parser against the app's (core/taicfg.c, third_party/taihen-parser)."""

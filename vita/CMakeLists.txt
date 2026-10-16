@@ -552,6 +552,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk

@@ -6,6 +6,7 @@
  * runs the PC installer's copy on the same files and compares the two. */
 #include "acutest.h"
 #include <dirent.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,7 +217,7 @@ static void test_storage_plugin(void)
 }
 
 /* ---- a seeded corpus: lines built from the bytes and names taiHEN and Python's str disagree on ---- */
-static unsigned long seed = 88172645463325252ul;
+static uint64_t seed = 88172645463325252ull; /* 64 bits on every lane: the host's and the ARM lane's corpus are one */
 static unsigned next_rand(void)
 {
     seed ^= seed << 13;
