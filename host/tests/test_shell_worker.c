@@ -214,9 +214,10 @@ static VjoLogBatch *open_batch;
 static int batch_lines_held, batch_bytes_held, batch_cap;
 static unsigned log_appends, batched_lines;
 /* Each append: its lines, the thread that made it, whether a job was running (job_running: the control
- * thread had not taken its result yet), and the network thread's phase then (net_phase). */
+ * thread had not taken its result yet), the network thread's phase then (net_phase), and the overlay's
+ * view version (g_view.version: an append before a result is shown has a smaller one). */
 #define APPEND_LOG 4096
-typedef struct { unsigned lines; int thread, job_running, in_result_path, recognizing; } AppendSeen;
+typedef struct { unsigned lines; int thread, job_running, in_result_path, recognizing; unsigned view; } AppendSeen;
 static AppendSeen appends_seen[APPEND_LOG];
 static unsigned appends_recorded, result_path_appends, recognizing_appends, lines_appended, most_lines_appended;
 static unsigned lines_logged, net_lines_logged, most_lines_held;
@@ -229,7 +230,7 @@ static int net_phase;
 static void note_append(unsigned lines)
 {
     AppendSeen a = {lines, test_thread, job_running, test_thread == NET_THREAD && net_phase == NET_RESULT,
-                    test_thread == NET_THREAD && net_phase == NET_RECOGNIZING};
+                    test_thread == NET_THREAD && net_phase == NET_RECOGNIZING, g_view.version};
     if (appends_recorded < APPEND_LOG)
         appends_seen[appends_recorded] = a;
     appends_recorded++;
@@ -242,6 +243,12 @@ static void note_append(unsigned lines)
 /* net_log_locks: the network thread's calls that take log_mutex without a line to log (a begin or an
  * end; the real logger takes it for every call): a steady-state quiet job makes none. */
 static unsigned net_log_locks;
+/* A flush of the open batch's lines (shell/log_vita.c batch_flush_locked) reads its buffer: it must be set. */
+static void note_batch_append(void)
+{
+    TEST_CHECK_(open_batch->buf != NULL, "a flush of %d held lines with no buffer", batch_lines_held);
+    note_append((unsigned)batch_lines_held);
+}
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap)
 {
     net_log_locks += test_thread == NET_THREAD;
@@ -254,7 +261,7 @@ void vjo_log_batch_end(VjoLogBatch *b)
 {
     net_log_locks += test_thread == NET_THREAD;
     if (!b || open_batch != b) return;
-    if (batch_lines_held) note_append((unsigned)batch_lines_held);
+    if (batch_lines_held) note_batch_append();
     batch_lines_held = batch_bytes_held = 0;
     b->n = 0;
     open_batch = NULL;
@@ -276,7 +283,7 @@ void vjo_log(const char *fmt, ...)
     n = (n > 254 ? 254 : n) + 1; /* the line and its '\n', as vjo_log writes it */
     if (!open_batch) { note_append(1); return; }
     if (batch_owner != test_thread) { /* another thread's line: the batch's lines first, then this one */
-        if (batch_lines_held) note_append((unsigned)batch_lines_held);
+        if (batch_lines_held) note_batch_append();
         batch_lines_held = batch_bytes_held = 0;
         open_batch->n = 0;
         note_append(1);
@@ -289,7 +296,7 @@ void vjo_log(const char *fmt, ...)
         if ((unsigned)batch_lines_held > most_lines_held) most_lines_held = (unsigned)batch_lines_held;
         return;
     }
-    if (batch_lines_held) note_append((unsigned)batch_lines_held); /* the batch so far goes out first */
+    if (batch_lines_held) note_batch_append(); /* the batch so far goes out first */
     batch_lines_held = 1; batch_bytes_held = n;
     open_batch->n = 1;
 }
@@ -303,7 +310,7 @@ static void configure_stub(const VjoConfig *c)
     if (c->log_file != configure_log_file)
 #endif
         if (open_batch && batch_lines_held) {
-            note_append((unsigned)batch_lines_held);
+            note_batch_append();
             configure_writes++;
             batch_lines_held = batch_bytes_held = 0;
             open_batch->n = 0;
@@ -5017,6 +5024,7 @@ static void test_normal_build_net_main_writes_held_lines(void)
         test_thread = CTL_THREAD;
         wait_script = NULL;
         TEST_CHECK(wait_step == (net_main_stop_early ? 4 : 5) && !open_batch); /* its batch went with it */
+        TEST_CHECK(!net_log.buf); /* and no pointer into its stack frame is left */
         TEST_CHECK(net_appends_since(net_main_mark, &lines, NULL) == 1 && lines == 2);
         if (net_main_stop_early) { job_running = 0; job_done = 0; } /* the result never taken: drop it */
         fake_clock_on = 0;
@@ -5092,7 +5100,7 @@ static void test_normal_build_net_main_more_jobs(void)
     net_main(0, NULL);
     test_thread = CTL_THREAD;
     wait_script = NULL;
-    TEST_CHECK(wait_step == 7 && !open_batch);
+    TEST_CHECK(wait_step == 7 && !open_batch && !net_log.buf);
     TEST_CHECK(net_appends_since(more_jobs_mark, &lines, NULL) == 2 && lines == 3);
     TEST_MSG("%d waits, %u lines in the network thread's appends", wait_step, lines);
     fake_clock_on = 0;
@@ -5126,9 +5134,11 @@ static void test_normal_build_open_in_the_pause_writes_nothing(void)
         open_overlay();      /* L + R now */
         TEST_CHECK(ov == OV_OPEN && g_view.open && g_view.list != NULL && !job_running); /* the saved result */
         if (!change) {
+            unsigned shown = g_view.version;
             TEST_CHECK(appends_recorded == mark && held_lines() == 2 && configure_writes == 0);
             as_network_thread(); /* the timeout: written on the network thread, the overlay showing */
             TEST_CHECK(net_appends_since(mark, &lines, NULL) == 1 && lines == 2 && appends_recorded == mark + 1);
+            TEST_CHECK(appends_seen[mark].view >= shown); /* after the result was shown */
         } else {
             TEST_CHECK(appends_recorded == mark + 1 && appends_seen[mark].thread == CTL_THREAD &&
                        appends_seen[mark].lines == 2 && configure_writes == 1 && held_lines() == 0);
@@ -5138,6 +5148,100 @@ static void test_normal_build_open_in_the_pause_writes_nothing(void)
         }
         close_overlay();
     }
+    fake_clock_on = 0;
+    mem_free();
+}
+
+/* The open's exceptions (the PR's list; audit-t3-log-path-e's audit_open_exceptions): (a) an open that logs a
+ * line of its own, a config warning that changed: that line writes the held lines first, on the control
+ * thread, before the overlay shows the result; (b) L + R while an activation's first job still runs: nothing
+ * until its result is shown, then the network thread's timeout writes its lines. */
+static void test_normal_build_open_exceptions(void)
+{
+    unsigned mark, shown;
+    cursor_setup();
+    fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+    game_generation = 180; /* (a) */
+    next_scene(110); stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    as_network_thread(); control_tick(0);
+    TEST_CHECK(!job_running && cache_ok && held_lines() == 2);
+    snprintf(loaded.warnings[0], sizeof(loaded.warnings[0]), "a_key = 1: unknown");
+    loaded.n_warnings = 1;
+    mark = appends_recorded;
+    open_overlay();
+    shown = g_view.version;
+    TEST_CHECK(g_view.open && g_view.list != NULL);
+    TEST_CHECK(appends_recorded == mark + 2 && appends_seen[mark].thread == CTL_THREAD && appends_seen[mark].lines == 2 &&
+               appends_seen[mark + 1].lines == 1 && appends_seen[mark].view < shown); /* the held 2, then its own */
+    as_network_thread(); /* nothing held: the wait is untimed */
+    TEST_CHECK(appends_recorded == mark + 2);
+    loaded.n_warnings = 0;
+    close_overlay();
+    game_generation = 181; /* (b) */
+    next_scene(111); stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    mark = appends_recorded;
+    open_overlay(); /* while the job runs: the overlay waits for its result */
+    TEST_CHECK(g_view.open && job_running && appends_recorded == mark);
+    as_network_thread(); /* the job: its 2 lines held */
+    TEST_CHECK(held_lines() == 2 && appends_recorded == mark);
+    control_tick(0); /* its result is taken and shown */
+    shown = g_view.version;
+    TEST_CHECK(!job_running && appends_recorded == mark && held_lines() == 2);
+    as_network_thread(); /* the timeout */
+    TEST_CHECK(appends_recorded == mark + 1 && appends_seen[mark].thread == NET_THREAD && appends_seen[mark].view >= shown);
+    fake_clock_on = 0;
+    close_overlay();
+    mem_free();
+}
+
+/* A job's wake while another thread's batch is open (the ledger table's, microseconds at a game start or exit):
+ * net_log_wake's begin is refused and leaves buf NULL; the job's lines go out one by one (the documented
+ * exception). The next job's wake opens the batch and holds its lines: a refused begin is retried and leaves no
+ * stale buf (audit-t3-log-path-e's N1; its audit_refused_begin_then_the_next_job_holds). net_main's wake is
+ * taken step by step here, as as_network_thread's own begin would be a second wake. */
+static void test_normal_build_refused_begin_then_the_next_job_holds(void)
+{
+    VjoLogBatch other;
+    static char other_buf[512];
+    unsigned mark, one_by_one = 0;
+    cursor_setup();
+    fake_clock_on = 1; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+    game_generation = 170;
+    next_scene(99); stable_pending = 1; control_tick(0); /* an activation's first job: it logs */
+    TEST_ASSERT(job_running && (posted & NET_EV_JOB));
+    TEST_ASSERT(vjo_log_batch_begin(&other, other_buf, sizeof(other_buf)) == 1); /* the table's (control thread) */
+    mark = appends_recorded;
+    posted &= ~(NET_EV_JOB | NET_EV_QUIT); /* net_main's wake: the bits cleared */
+    test_thread = NET_THREAD;
+    net_log_wake(net_log_test_buf); /* refused: the table's batch is open */
+    TEST_CHECK(!net_log.buf && open_batch == &other);
+    test_thread = CTL_THREAD;
+    vjo_log_batch_end(&other); /* the table's end */
+    test_thread = NET_THREAD;
+    net_phase = NET_IDLE;
+    net_job(); /* with no batch */
+    net_job_end();
+    test_thread = CTL_THREAD;
+    for (unsigned i = mark; i < appends_recorded && i < APPEND_LOG; i++)
+        one_by_one += appends_seen[i].thread == NET_THREAD;
+    TEST_CHECK(one_by_one == 2 && !net_log.buf && !open_batch); /* its 2 lines, one by one */
+    control_tick(0);
+    TEST_CHECK(!job_running);
+    as_network_thread(); /* nothing posted, nothing held: the wait is untimed */
+    TEST_CHECK(!net_log.buf && !open_batch);
+    game_generation = 171;
+    next_scene(100); stable_pending = 1; control_tick(0); /* the next activation's first job */
+    TEST_ASSERT(job_running);
+    mark = appends_recorded;
+    as_network_thread();
+    TEST_CHECK(net_log.buf != NULL && open_batch == &net_log && held_lines() == 2 && appends_recorded == mark);
+    control_tick(0);
+    TEST_CHECK(!job_running && appends_recorded == mark && held_lines() == 2);
+    as_network_thread(); /* the timeout */
+    TEST_CHECK(appends_recorded == mark + 1 && appends_seen[mark].thread == NET_THREAD && appends_seen[mark].lines == 2);
+    TEST_CHECK(!open_batch && !net_log.buf);
     fake_clock_on = 0;
     mem_free();
 }
@@ -5300,6 +5404,13 @@ static void test_session_log_appends(void)
              fake_model_misses);
     TEST_CHECK(most_lines_held < VJO_LOG_BATCH_LINES); /* never full: no append forced by the batch */
     TEST_CHECK(recognizing_appends == 0); /* none while the game reads either: they wait for the idle wait */
+    /* log_file never changes here: no configure (an open, a game start, the strip) writes held lines; and the
+     * network thread's log locks without a line come from its writes (a begin after each, an end at each), not
+     * from every job's wake (audit-t3-log-path-e's N2: the harness's idle step as net_main's wait) */
+    TEST_CHECK(configure_writes == 0);
+    TEST_CHECK(net_log_locks < session_jobs / 2);
+    TEST_MSG("%u configure writes, %u network thread log locks for %u jobs", configure_writes, net_log_locks,
+             session_jobs);
 #else
     TEST_CHECK(result_path_appends > 0); /* the debug build's lines, as they were */
 #endif
@@ -5600,6 +5711,8 @@ TEST_LIST = {
     {"normal_build_net_main_more_jobs", test_normal_build_net_main_more_jobs},
     {"normal_build_open_in_the_pause_writes_nothing", test_normal_build_open_in_the_pause_writes_nothing},
     {"normal_build_ledger_table_beside_an_open_batch", test_normal_build_ledger_table_beside_an_open_batch},
+    {"normal_build_open_exceptions", test_normal_build_open_exceptions},
+    {"normal_build_refused_begin_then_the_next_job_holds", test_normal_build_refused_begin_then_the_next_job_holds},
 #endif
 #ifdef VJO_WITH_VOCR
     {"session_log_appends", test_session_log_appends},

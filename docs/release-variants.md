@@ -219,14 +219,14 @@ unchanged (its three plugins and RCO are main's bytes, sha256).
   start (the network thread is writing).
 - Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left,
   and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B [measured:
-  audit-t3-log-path-c's Vita builds of main `836259e` and that form, `8cc1c3b`]. This one adds 96 B of
-  text and 72 B of data/bss: on main `c354cfb` (#156), 88,132 → 88,228 B and 69,796 → 69,868 B, the same
-  163,840 B of pages, 1,884 B of text room left [measured: the Vita builds of main `c354cfb` and this
-  branch]. No new allocation or thread. The VjoNet thread's deepest chain in the normal build goes from
-  2,664 to 4,720 B (`net_main`'s frame 88 → 2,144 B), under the debug build's unchanged 5,504 B, in its
-  16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's
-  and `vjo_core_vita`'s C sources with each object's flags from the Vita build; a lower bound, without
-  the SDK's own frames].
+  audit-t3-log-path-c's Vita builds of main `836259e` and of that form, `8cc1c3b`, rebased onto it]. This
+  one adds 112 B of text and 72 B of data/bss: on main `438e373` (#153), 88,724 → 88,836 B and 69,796 →
+  69,868 B, the same 163,840 B of pages, 1,276 B of text room left [measured: the Vita builds of main
+  `438e373` and this branch]. No new allocation or thread. The VjoNet thread's deepest chain in the
+  normal build goes from 2,664 to 4,720 B (`net_main`'s frame 88 → 2,144 B), under the debug build's
+  unchanged 5,504 B, in its 16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage
+  -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources with each object's flags from the
+  Vita build, on main `438e373`; a lower bound, without the SDK's own frames].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses, the clock, and the
@@ -245,8 +245,12 @@ smaller retry, a game without its worker (`-117`). `normal_build_net_main_writes
 `net_main` itself on a scripted wait: untimed with nothing held, timed (0.5 s) once a job logged, no
 write while the job's result is not taken, the write at the timeout after, and at the stop;
 `normal_build_net_main_more_jobs` the batch opened again after a write, a single held line, and a quiet
-job's wake with no lock; `every_job_post_finds_job_running` that every job's post comes after its
-`job_running`, over the whole session (both builds). Not measured: a console run of the normal build.
+job's wake with no lock; `normal_build_refused_begin_then_the_next_job_holds` a begin refused beside the
+ledger's table and retried by the next job; `normal_build_open_exceptions` an open that logs a line of its
+own, and one while the job runs; `every_job_post_finds_job_running` that every job's post comes after its
+`job_running`, over the whole session (both builds), in which no configure writes held lines and the
+network thread takes the log's lock without a line far fewer times than it runs jobs. Not measured: a
+console run of the normal build.
 
 ## Building
 
