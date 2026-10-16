@@ -191,11 +191,11 @@ module at once without `module_stop` [SDK: Kernel-Overview, 'module_start Functi
 costs SceShell and the system apps no pages. It still loaded the module there at every process
 start, only to unload it again.
 
-The installer now follows the expert's rule: one `*TITLEID` section per game, never `*ALL`
-[expert]. `install-vita.sh --title PCSG00415 VITA_IP` (repeatable) registers the worker
-under `*PCSG00415`, keeps the games registered by an earlier install, and comments out an
-`*ALL` worker line; with no game named or registered it changes nothing and says so
-(`tools/patch_tai_config.py`, README 'Install'). taiHEN therefore loads the worker only into
+Before #138 the installer followed the expert's rule: one `*TITLEID` section per game, never `*ALL`
+[expert]. `install-vita.sh --title PCSG00415 VITA_IP` (repeatable) registered the worker
+under `*PCSG00415`, kept the games registered by an earlier install, and commented out an
+`*ALL` worker line; with no game named or registered it changed nothing and said so
+(`tools/patch_tai_config.py`'s `lines` mode keeps those rules). taiHEN therefore loaded the worker only into
 those games, never into SceShell or a system app [source: taihen-parser `parser.c`,
 `taihen_config_parse`], which removes the load itself, not only its pages. `NO_RESIDENT` stays
 as the guard for a configuration edited by hand. For Adrenaline's PSP games the README names
@@ -204,9 +204,9 @@ and AdrBubbleBooter's patch [source: Adrenaline `kernel/main.c`, `ksceKernelStar
 AdrBubbleBooter-oss `integration/adrenaline-v7/overlay/kernel/main.c:123-145`]; that taiHEN matches
 them is inferred from those sources, not measured. A bubble's `*TITLEID` also loads the worker into the
 bubble's own starter app (AdrBubbleBooter's eboot, an ordinary process under that ID) when it runs,
-where the worker stays idle until it exits [inference]. The Overlay app appends such a `*TITLEID` section
-for a bubble the user turns ON (`settings/psp.c`, `core/taicfg.c`), never `*ALL`. A game added later
-needed `--title` (or the app) and a reboot.
+where the worker stays idle until it exits [inference]. The Overlay app appended such a `*TITLEID` section
+for a bubble the user turned ON (#124), never `*ALL`. A game added later needed `--title` (or the app)
+and a reboot.
 
 **Since #138 the kernel loads the worker.** test.3's Adrenaline run, and AIR without a line of its
 own, got `rc=-117`: a game the user had turned ON in the Overlay app had no OCR until a line named
@@ -218,7 +218,8 @@ row, a PSP game's shared `NPXS10028` row, the default), with the call taiHEN use
 module into the PSP emulator the same way]. It never loads it into SceShell, a system app
 (`NPXS*` but `NPXS10028`), VitaShell or the Overlay app, nor while L is held at the start, so the
 worker's pages go only where they did with the lines, and into games without one. A game that a
-line still names keeps one copy (the worker checks for an older copy of itself). The prior art, the
+line still names keeps one copy (the worker checks for an older copy of itself); the installers write
+no worker line and remove the ones older installs left ([one-vpk-install.md](one-vpk-install.md)). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
 Overlay app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
 With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 94,208 B of

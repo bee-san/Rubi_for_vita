@@ -49,9 +49,10 @@ thread, static buffer or taiHEN registration.
    (owner's decision, 2026-10-16, #138; this replaces "register one `*TITLEID` section per enabled
    game"): never into SceShell, a system app (the PSP emulator's `NPXS10028` and Adrenaline's
    `PSPEMUCFW` are games), VitaShell or the Overlay app, and nothing while L is held at the start
-   ([docs/worker-loading.md](docs/worker-loading.md)). Installers are to write no worker line
-   (overlay-one-vpk-install; until then the `*TITLEID` lines installers write, and those older
-   installs left, are harmless). `*ALL` loads
+   ([docs/worker-loading.md](docs/worker-loading.md)). Installers write no worker line and remove
+   the ones older installs left (the Overlay app's Install page and `install-vita.sh` share one
+   editor, `core/taicfg.c`, checked with taiHEN's own parser: [docs/one-vpk-install.md](docs/one-vpk-install.md));
+   a leftover line is harmless, as the worker keeps one copy per process. `*ALL` loads
    a module into SceShell and every system app as well, where its pages are permanent: never use
    it. Any module that can still be loaded elsewhere returns `SCE_KERNEL_START_NO_RESIDENT` there,
    and a process keeps one copy of the worker.

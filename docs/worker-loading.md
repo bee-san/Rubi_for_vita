@@ -92,8 +92,9 @@ One `kernel.txt` line per candidate start says what was decided and why (`worker
 The process's start is never changed: the hook returns the original call's result whatever
 happens.
 
-**One worker per process.** The per-title line stays harmless for one release (the installer
-removes it after this change). taiHEN loads it right after the kernel's copy (the chain order
+**One worker per process.** A per-title line stays harmless: the installers remove the ones older
+installs left (the Overlay app's Install page and `install-vita.sh`, [one-vpk-install.md](one-vpk-install.md)),
+and one a hand install keeps loads a second copy that gives itself up. taiHEN loads it right after the kernel's copy (the chain order
 above), so a process can get two. The worker's `module_start` keeps only the oldest copy: it looks
 its module up by name (`taiGetModuleInfo`, which finds the oldest of that name) and returns
 `SCE_KERNEL_START_NO_RESIDENT` when none of that module's segments (`sceKernelGetModuleInfo`) holds
