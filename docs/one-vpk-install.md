@@ -544,7 +544,13 @@ as the app's own saves patch it
   `jmdict.vjdict`, else first. A list that would then hold more than 8 names (`core/config.c` turns an
   invalid list off, `:308,531-540`) is left as it was, with a note in the plan;
 - the package's `set` lines (a test build's `anki_mining on`; the debug VPK's `log_file on`, so that a
-  debug install over 0.7.12's `log_file = off` records its log).
+  debug install over 0.7.12's `log_file = off` records its log);
+- the removed settings the plugins ignore without a warning go (`frequency_filter`, `font_size`,
+  `hw_jpeg`, `combo_delay_ms`, `hachidori_host`), as `tools/migrate_config.py` drops them.
+
+The two installers differ in what the PC path still forces: `install-vita.sh` sets `log_file = on` and
+`local_dictionaries = plaintext.vjdict` on every install (its `--set`s, from before this design), where
+the app sets `log_file` only for the debug build and puts `plaintext.vjdict` into the user's list.
 
 Every other setting is the user's and is kept: `vocr_tier`, `ocr_mode`, `ocr_boost_clock` (the OCR &
 lookup page's choices, overlay-ocr-mode-setting), `log_file`, `anki_mining` (unless the package sets

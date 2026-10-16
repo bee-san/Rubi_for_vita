@@ -525,7 +525,8 @@ static void config_ini_from_0712(void)
 {
     fresh_card(1);
     put_text(VJO_PREFERENCES_PATH_TEST, "dictionary = jpdb\njpdb_api_key = secret-key\nlocal_dictionaries = jmdict.vjdict, mine.vjdict\n"
-             "ocr_backend = vocr\nvocr_model = FL10_w8.vocr\nfont_size_ja = 24\n");
+             "ocr_backend = vocr\nvocr_model = FL10_w8.vocr\nfont_size_ja = 24\nhachidori_host = 192.168.1.5\n"
+             "  FREQUENCY_FILTER = 5\nhw_jpeg=1\nfont_size = 3\ncombo_delay_ms = 10\n");
     VjoInstallScan s = scan_now();
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
@@ -536,6 +537,9 @@ static void config_ini_from_0712(void)
     TEST_CHECK(strstr(ini, "local_dictionaries = plaintext.vjdict, mine.vjdict\n") != NULL);
     TEST_CHECK(strstr(ini, "vocr_tier = small\n") && !strstr(ini, "vocr_model") && !strstr(ini, "ocr_backend"));
     TEST_CHECK(strstr(ini, "font_size_ja = 24\n") != NULL);
+    /* the removed settings go, as tools/migrate_config.py drops them; a key that only starts alike stays */
+    TEST_CHECK(!strstr(ini, "hachidori_host") && !strstr(ini, "FREQUENCY_FILTER") && !strstr(ini, "hw_jpeg") &&
+               !strstr(ini, "font_size =") && !strstr(ini, "combo_delay_ms"));
     TEST_CHECK(!bak || !strstr(bak, "secret")); /* no file keeps the key */
     /* a list of 8 names is left as it is, with a note */
     fresh_card(1);

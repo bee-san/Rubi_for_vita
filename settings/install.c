@@ -487,6 +487,36 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         return -1;
     }
     ini_new_len = n;
+    /* the removed settings the plugins and the app ignore without a warning go, as tools/migrate_config.py
+     * REMOVED drops them for install-vita.sh (the others, API keys, Anki's and the engine choice's, the
+     * app's own save above drops) */
+    {
+        static const char *const gone[] = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms", "hachidori_host"};
+        int w = 0, dropped = 0;
+        for (int pos = 0; pos < ini_new_len;) {
+            int e = pos;
+            while (e < ini_new_len && ini_new[e] != '\n') e++;
+            if (e < ini_new_len) e++; /* the line with its end */
+            int b = pos;
+            while (b < e && (ini_new[b] == ' ' || ini_new[b] == '\t')) b++;
+            int drop = 0;
+            for (unsigned g = 0; g < sizeof(gone) / sizeof(gone[0]) && !drop; g++) {
+                size_t len = strlen(gone[g]);
+                int v = b + (int)len;
+                if (v > e || strncasecmp(ini_new + b, gone[g], len)) continue;
+                while (v < e && (ini_new[v] == ' ' || ini_new[v] == '\t')) v++;
+                drop = v < e && ini_new[v] == '=';
+            }
+            if (drop) dropped++;
+            else { memmove(ini_new + w, ini_new + pos, (size_t)(e - pos)); w += e - pos; }
+            pos = e;
+        }
+        ini_new_len = w;
+        ini_new[w] = '\0';
+        if (dropped && s->config_change_count < 6)
+            snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]),
+                     "%d removed setting%s dropped (no longer read)", dropped, dropped == 1 ? "" : "s");
+    }
     const char *keys[6], *values[6];
     int k = 0;
     keys[k] = "local_dictionary_dir"; values[k++] = "ux0:data/VitaJPOverlay/dictionaries";
