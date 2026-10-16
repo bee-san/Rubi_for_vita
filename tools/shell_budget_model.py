@@ -2,7 +2,7 @@
 """Replay the Shell plugin's boot and game-launch allocation sequence against
 the console's measured SceShell memory (docs/offline-testing.md).
 
-    python3 tools/shell_budget_model.py [--shell-pages N] [--worker-pages N] [--network] [--anki] [--json]
+    python3 tools/shell_budget_model.py [--shell-pages N] [--worker-pages N] [--anki] [--json]
 
 The model takes each item's size from include/vjo_ledger_budget.h (the
 ledger's static table, which CI ties to the packaged modules) and each
@@ -29,11 +29,11 @@ BUDGET = ROOT / "include/vjo_ledger_budget.h"
 WARN = 65536  # one #42-sized change (a 64 KiB buffer broke the boot): within this, a build is one change from failing
 
 
-def steps(v, shell_pages=None, worker_pages=None, network=False, anki=False):
+def steps(v, shell_pages=None, worker_pages=None, anki=False):
     """(name, pages delta, paf delta) in boot and game-launch order."""
     shell_pages = v["VJO_BUDGET_SHELL_MODULE_PAGES"] if shell_pages is None else shell_pages
     worker_pages = v["VJO_BUDGET_WORKER_IN_SHELL_PAGES"] if worker_pages is None else worker_pages
-    arena = v["VJO_BUDGET_PAF_RESULTS_NET"] if network else v["VJO_BUDGET_PAF_RESULTS_LOCAL"]
+    arena = v["VJO_BUDGET_PAF_RESULTS_LOCAL"]  # the only result memory: the overlay is offline
     out = [
         ("kernel module_start (nothing in SceShell)", 0, 0),
         ("Shell module loaded into SceShell", shell_pages, 0),
@@ -41,7 +41,7 @@ def steps(v, shell_pages=None, worker_pages=None, network=False, anki=False):
         ("Paf plugin and RCO", 0, v["VJO_BUDGET_PAF_PLUGIN"]),
         ("VjoNet thread", v["VJO_BUDGET_SHELL_NET_STACK"], 0),
         ("VjoControl thread (boot complete)", v["VJO_BUDGET_SHELL_CTL_STACK"], 0),
-        ("game start: result memory (%s)" % ("Google Lens: two arenas + pool" if network else "local: one arena"), 0, arena),
+        ("game start: result memory (local: one arena)", 0, arena),
     ]
     if anki:
         out.append(("Anki card saved: job thread", v["VJO_BUDGET_SHELL_ANKI_STACK"], 0))
@@ -117,13 +117,12 @@ def main():
     ap.add_argument("--shell-pages", type=int, help="model a build whose Shell module has this many bytes of pages")
     ap.add_argument("--worker-pages", type=int, help="model a build whose OCR worker holds this many bytes in SceShell "
                     "(an *ALL registration; 0: not loaded there, or NO_RESIDENT)")
-    ap.add_argument("--network", action="store_true", help="Google Lens (two arenas and a pool) instead of local OCR's one arena")
     ap.add_argument("--anki", action="store_true", help="include an Anki card save (text-only: no screenshot)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     v = parse_budget(args.budget)
     samples = json.loads(args.samples.read_text())
-    r = replay(v, samples, shell_pages=args.shell_pages, worker_pages=args.worker_pages, network=args.network, anki=args.anki)
+    r = replay(v, samples, shell_pages=args.shell_pages, worker_pages=args.worker_pages, anki=args.anki)
     if args.json:
         print(json.dumps(r, indent=2))
         return 0

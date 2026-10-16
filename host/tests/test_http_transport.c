@@ -1,10 +1,9 @@
-/* Production Lens wire context and HTTP framing used by kept connections.
- * Fake streams split every boundary; no live service or image fixture needed. */
+/* The HTTP client's response framing (core/http.c, Anki's transport), which
+ * decides whether a kept connection can carry the next request. Fake streams
+ * split every boundary; no live service needed. */
 #include "acutest.h"
 #include "http.h"
-#include "lens.h"
 #include "net.h"
-#include "pb.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -33,42 +32,6 @@ static int read_response(const char *data, size_t bytes, size_t split,
     memset(memory,0xa5,sizeof(memory));
     vjo_arena_init(&arena,memory,sizeof(memory));
     return vjo_http_recv(&arena,&connection,maximum,response);
-}
-
-static PbField subfield(const PbField *message, unsigned field)
-{
-    PbReader reader;
-    PbField found = {0}, item;
-    pb_sub_reader(&reader,message);
-    while (pb_next(&reader,&item) > 0)
-        if (item.field == field) { found=item; break; }
-    TEST_ASSERT(!reader.error && found.field == field);
-    return found;
-}
-
-static void test_lens_locale_and_streamed_image(void)
-{
-    unsigned char random[24] = {1}, image[1000], request[2048];
-    VjoLensRequest wire;
-    memset(image,0x5a,sizeof(image));
-    vjo_arena_init(&arena,memory,sizeof(memory));
-    TEST_ASSERT(!vjo_lens_build_request(&arena,random,960,240,sizeof(image),&wire));
-    TEST_ASSERT(wire.body_len < sizeof(request));
-    memcpy(request,wire.prefix,wire.prefix_len);
-    memcpy(request+wire.prefix_len,image,sizeof(image));
-    memcpy(request+wire.prefix_len+sizeof(image),wire.suffix,wire.suffix_len);
-    PbField root = {.wire=PB_LEN,.data=request,.len=wire.body_len};
-    PbField objects=subfield(&root,1), context=subfield(&objects,1);
-    PbField client=subfield(&context,4), locale=subfield(&client,4);
-    PbField language=subfield(&locale,1), region=subfield(&locale,2), zone=subfield(&locale,3);
-    TEST_CHECK(language.len == 2 && !memcmp(language.data,"ja",2));
-    TEST_CHECK(region.len == 2 && !memcmp(region.data,"JP",2));
-    TEST_CHECK(zone.len == 10 && !memcmp(zone.data,"Asia/Tokyo",10));
-    PbField data=subfield(&objects,3), payload=subfield(&data,1), bytes=subfield(&payload,1);
-    TEST_CHECK(bytes.len == sizeof(image) && !memcmp(bytes.data,image,sizeof(image)));
-    PbField metadata=subfield(&data,3), width=subfield(&metadata,1), height=subfield(&metadata,2);
-    TEST_CHECK(width.varint == 960 && height.varint == 240);
-    TEST_CHECK(wire.body_len-sizeof(image) < 128);
 }
 
 static void test_complete_framing_can_be_reused(void)
@@ -162,7 +125,6 @@ static void test_overlong_or_nul_header_is_rejected(void)
 }
 
 TEST_LIST = {
-    {"lens_locale_and_streamed_image",test_lens_locale_and_streamed_image},
     {"complete_framing_can_be_reused",test_complete_framing_can_be_reused},
     {"informational_response_then_final",test_informational_response_then_final},
     {"close_and_unframed_responses_are_not_reused",test_close_and_unframed_responses_are_not_reused},

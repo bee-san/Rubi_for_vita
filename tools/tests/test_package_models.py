@@ -196,7 +196,7 @@ class PackageModels(unittest.TestCase):
                          {"VOCR3_H15_w8.vocr": "VOCR3", "VOCR3_FL10_w8.vocr": "VOCR3", "VOCR4_W20_w8.vocr": "VOCR4"})
         for name in prepare.VOCR_LM_ASSETS:  # an LM is no recognizer: no generation
             self.assertNotIn("generation", manifest["models"][name])
-        self.assertEqual(manifest["defaults"]["ocr_backend"], "vocr")
+        self.assertNotIn("ocr_backend", manifest["defaults"])  # no engine choice: VOCR is the only engine
         self.assertEqual(manifest["defaults"]["ocr_engine"], "VOCR3")
         default = next(n for n, m in manifest["models"].items() if m.get("tier") == manifest["defaults"]["vocr_tier"])
         self.assertEqual(manifest["defaults"]["ocr_engine"], manifest["models"][default]["generation"])
@@ -278,11 +278,13 @@ class PackageModels(unittest.TestCase):
                                                    "ocr_refine_lines", "ocr_lm", "ocr_cascade_ms")},
                          {"ocr_settle_ms": 150, "ocr_settle_max_ms": 2000, "ocr_skip_blank_lines": False,
                           "ocr_refine_lines": "psp", "ocr_lm": "1000k", "ocr_cascade_ms": 2000})
-        # what the manifest said before is still said the same way
-        self.assertEqual({k: defaults[k] for k in ("ocr_backend", "ocr_engine", "vocr_tier",
+        # what the manifest said before is still said the same way, but the engine choice, which
+        # went with Google Lens (the template has no ocr_backend line)
+        self.assertNotIn("ocr_backend", defaults)
+        self.assertEqual({k: defaults[k] for k in ("ocr_engine", "vocr_tier",
                                                    "dictionary", "local_dictionaries", "japanese_only_selection",
                                                    "ocr_mode", "log_file", "anki")},
-                         {"ocr_backend": "vocr", "ocr_engine": "VOCR3", "vocr_tier": "normal",
+                         {"ocr_engine": "VOCR3", "vocr_tier": "normal",
                           "dictionary": "local",
                           "local_dictionaries": "plaintext.vjdict", "japanese_only_selection": True,
                           "ocr_mode": "auto", "log_file": True, "anki": False})

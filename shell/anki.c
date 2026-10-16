@@ -48,7 +48,7 @@ static VjoConfig next_cfg;   /* the control thread's settings, for the next job 
 static char game_name[128];  /* the running game's, for MiscInfo */
 static char game_tid[12];    /* its title ID */
 static int game_psp;         /* a PSP game (the card's platform) */
-static char ocr_model[32];   /* the model of the last recognition ("" for Lens) */
+static char ocr_model[32];   /* the model of the last recognition ("" before the game's first) */
 static int started;          /* vjo_anki_start succeeded; vjo_anki_stop clears it */
 static int job;              /* the running job (JOB_*) */
 static int next_job;         /* run by the same thread after it (a save behind a count) */
@@ -201,12 +201,12 @@ static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
     sceKernelLockMutex(box_lock, 1, NULL);
     n->game = keep_str(game_name);
     n->title_id = keep_str(game_tid);
-    n->ocr_model = acfg->ocr_backend == VJO_OCR_LENS ? NULL : keep_str(ocr_model);
+    n->ocr_model = keep_str(ocr_model);
     n->platform = !n->title_id ? NULL : game_psp ? "psp" : "vita";
     sceKernelUnlockMutex(box_lock, 1);
     vjo_anki_misc_info(misc, cap, n->game, clock ? &d : NULL); /* no date rather than a wrong one */
     n->misc = misc;
-    n->ocr_engine = acfg->ocr_backend == VJO_OCR_LENS ? "lens" : "vocr";
+    n->ocr_engine = "vocr"; /* the only engine (core/config.h); a record of an older build may say "lens" */
     /* To the minute, as MiscInfo: the same card saved again within it is the same record (its ID). */
     n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;
 }

@@ -1,4 +1,4 @@
-# vita-vn-ocr backend (ocr_backend = vocr): bee-san/vita-vn-ocr's plain-C99
+# vita-vn-ocr, the overlay's only OCR engine: bee-san/vita-vn-ocr's plain-C99
 # recognizer and dialogue line finder, plus core/vocr_ocr.c. The runtime is not
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).

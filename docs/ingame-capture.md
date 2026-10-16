@@ -106,8 +106,8 @@ the finder ever report a band that large). A strict 64 KiB bound for those regio
 row-callback form of `vocr_run` in vita-vn-ocr (not done: `vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
 ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
-The Lens JPEG capture still uses the kernel's region-sized buffer (Anki takes no screenshot); #74's refusal would
-reach a full-screen JPEG too (not changed here).
+The kernel's region-sized capture buffer has no Shell user left: Google Lens's JPEG was the last
+(Anki takes no screenshot). #74's refusal would have reached a full-screen JPEG too.
 
 ## Memory queries on 3.60-3.74
 

@@ -159,18 +159,6 @@ void vjo_strip_configure(int on, const VjoConfig *cfg);
 void vjo_strip_show(const char *text, int kind, int busy);
 void vjo_strip_set_busy(int busy);
 
-/* capture.c */
-int vjo_capture_init(void);
-void vjo_capture_fini(void);
-/* Captures the screen (flags: VJO_CAPTURE_*) and encodes it as a JPEG into
- * out; one capture at a time (one kernel buffer). Returns
- * VJO_OK or a VJO_E_* code. When the capture itself failed, st->capture_result
- * holds the kernel's error: VJO_ERR_NO_MEMORY means its capture buffer could
- * not be allocated (VJO_E_OOM); any other VJO_E_OOM is the encoder's (Shell). */
-int vjo_capture_jpeg(VjoArena *a, uint32_t flags, int quality, VjoBuf *out, VjoState *st);
-/* Held by a local OCR job from submission to result (the game captures then). */
-void vjo_capture_hold(void);
-void vjo_capture_release(void);
 
 /* game.c */
 /* The foreground process as the overlay keys it (vjo_game_identify). */

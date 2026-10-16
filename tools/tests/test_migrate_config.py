@@ -21,15 +21,15 @@ class MigrateConfig(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return out.read_text(encoding="utf-8"), result.stdout
 
-    def test_removed_meiki_backend_becomes_vocr_and_keeps_other_values(self):
+    def test_removed_meiki_backend_goes_and_keeps_other_values(self):
         text, report = self.migrate("ocr_backend = Meiki\nocr_mode = on_press\n"
                                     "vocr_model = H15_w8.vocr\njpdb_api_key = secret-key\n")
-        self.assertIn("ocr_backend = vocr\n", text)
+        self.assertNotIn("ocr_backend =", text)
         self.assertNotIn("meiki", text.lower())
         self.assertIn("ocr_mode = on_press\n", text)
         self.assertIn("vocr_tier = normal\n", text)  # H15: Normal
         self.assertNotIn("vocr_model", text)
-        self.assertIn("config.ini: ocr_backend = vocr", report)
+        self.assertEqual(report.count("config.ini: ocr_backend removed\n"), 1)
         # jpdb.io was removed: its API key goes, named, never its value
         self.assertNotIn("secret-key", text + report)
         self.assertIn("config.ini: jpdb_api_key removed", report)
@@ -105,22 +105,24 @@ class MigrateConfig(unittest.TestCase):
         self.assertNotIn("19633", template)
         self.assertIn("\ndictionary = local\n", template)
 
-    def test_removed_engines_become_vocr_and_keep_other_values(self):
-        # The VOCR2 trial (v0.7.12 to v0.8.0-test.1) and ncnn (host tools) are no engines any more.
-        for old in ("vocr2", "VOCR2", "ncnn", "meiki"):
+    def test_the_engine_choice_goes_whatever_its_value(self):
+        # VOCR is the only engine: Google Lens was removed (the overlay is offline), as were the
+        # VOCR2 trial (v0.7.12 to v0.8.0-test.1), Meiki and ncnn (host tools). The line goes, said
+        # once; every other value stays.
+        for old in ("vocr", "VOCR", "lens", "Lens", "vocr2", "VOCR2", "ncnn", "meiki", "other"):
             text, report = self.migrate("ocr_backend = %s\nvocr_model = H15_w8.vocr\nocr_mode = on_press\n" % old)
-            self.assertIn("\nocr_backend = vocr\n", text, old)
-            self.assertNotIn("ocr_backend = " + old, text)
-            self.assertEqual(text.count("ocr_backend ="), 1)
+            self.assertNotIn("ocr_backend", text, old)
             self.assertIn("vocr_tier = normal\n", text)
             self.assertIn("ocr_mode = on_press\n", text)
-            self.assertIn("config.ini: ocr_backend = vocr", report)
+            self.assertEqual(report.count("config.ini: ocr_backend removed\n"), 1, report)
+            self.assertNotIn("config.ini: ocr_backend =", report)
 
-    def test_the_two_engines_are_unchanged(self):
-        for backend in ("vocr", "lens"):
-            text, report = self.migrate("ocr_backend = %s\n" % backend)
-            self.assertIn("\nocr_backend = %s\n" % backend, text)
-            self.assertNotIn("config.ini: ocr_backend", report)
+    def test_the_template_names_no_engine_setting(self):
+        template = (ROOT / "docs/config.example.ini").read_text(encoding="utf-8")
+        self.assertNotIn("\nocr_backend", template)
+        self.assertNotIn("lens", template.lower())
+        text, report = self.migrate("ocr_mode = auto\n")
+        self.assertNotIn("ocr_backend", text + report)
 
     def test_the_clock_is_on_unless_set_off(self):
         # ocr_boost_clock = on is the default (the owner, 2026-10-15): a config that never set it gains it, an
@@ -144,9 +146,13 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_settle_press_ms = %s\n" % value, text)
             self.assertEqual(text.count("ocr_settle_press_ms ="), 1)
 
-    def test_explicit_setting_still_wins(self):
-        text, _ = self.migrate("ocr_backend = meiki\n", "ocr_backend=lens")
-        self.assertIn("ocr_backend = lens\n", text)
+    def test_an_explicit_engine_is_not_set(self):
+        # an older installer's --set ocr_backend=...: no longer a setting, said once, not written
+        for value in ("vocr", "lens"):
+            text, report = self.migrate("ocr_backend = meiki\n", "ocr_backend=" + value)
+            self.assertNotIn("ocr_backend", text, value)
+            self.assertEqual(report.count("config.ini: ocr_backend is no longer a setting, not set\n"), 1, report)
+            self.assertEqual(report.count("config.ini: ocr_backend removed\n"), 1, report)
 
     def test_older_model_choices_become_their_model_size(self):
         # API 21: vocr_model and vocr_fallback_model became one model size, vocr_tier. Each older

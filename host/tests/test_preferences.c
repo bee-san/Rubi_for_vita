@@ -77,50 +77,47 @@ static void reset(void)
     write_fd = -1; written = 0;
     vjo_arena_init(&arena, memory, sizeof(memory));
 }
-static void check_choices(int backend, int japanese, int highlight_mode)
+/* The saved choices (the fixture's tier is normal, from its vocr_model line). */
+static void check_choices(int tier, int japanese, int highlight_mode)
 {
     VjoConfig cfg;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) >= 0);
-    TEST_CHECK(cfg.ocr_backend == backend && cfg.japanese_only_selection == japanese);
+    TEST_CHECK(cfg.vocr_tier == tier && cfg.japanese_only_selection == japanese);
     TEST_CHECK(cfg.highlight_mode == highlight_mode);
     TEST_CHECK(cfg.local_dictionary_results == expected_results);
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.font_size_ja == 22);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-    TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
+    TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
     TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(arena.used == 0 && handles == 0);
 }
 static void test_patch_preserves_unrelated_bytes(void)
 {
-    /* (the removed online dictionaries' API key lines go: test_removed_dictionaries_rewritten_by_saves) */
+    /* (the removed online dictionaries' API key lines go: test_removed_dictionaries_rewritten_by_saves;
+     * so do the removed engine choice's: test_engine_choice_loads_as_vocr_and_saves_drop_it) */
     const char input[] = "\xEF\xBB\xBF  OCR_BACKEND=meiki\r\n"
         "; comment about ocr_backend=x\r\njpdb_api_key = drop-this\r\n"
         "ocr_backend = lens\njapanese_only_selection=off\n"
         "JAPANESE_ONLY_SELECTION = on\nHIGHLIGHT_MODE=character\n"
         "highlight_mode = word\nfuture = raw;#value";
-    const char expected[] = "\xEF\xBB\xBFocr_backend = vocr\n"
-        "; comment about ocr_backend=x\r\n"
+    const char expected[] = "\xEF\xBB\xBF; comment about ocr_backend=x\r\n"
         "japanese_only_selection = on\nhighlight_mode = word\nfuture = raw;#value\n"
         "local_dictionary_results = 1\nvocr_tier = normal\n";
     char out[1024];
-    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
     TEST_CHECK(n == sizeof(expected) - 1 && !strcmp(out, expected));
-    n = vjo_config_patch_preferences("font_size_ja=18", 15, VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
-    TEST_CHECK(n > 0 && strstr(out, "font_size_ja=18\nocr_backend = lens\n"));
-    TEST_CHECK(strstr(out, "japanese_only_selection = off\n") != NULL);
-    TEST_CHECK(strstr(out, "highlight_mode = word\n") != NULL);
-    TEST_CHECK(strstr(out, "local_dictionary_results = 1\n") != NULL);
-    /* Only the two engines can be written: 1 (ncnn), 3 (Meiki) and 4 (VOCR2) were removed. */
-    for (int backend = -1; backend <= 5; backend++) {
-        n = vjo_config_patch_preferences("", 0, backend, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
-        TEST_CHECK((n > 0) == (backend == VJO_OCR_LENS || backend == VJO_OCR_VOCR));
-        TEST_MSG("backend %d: %d", backend, n);
-    }
-    TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, 2, 1, out, sizeof(out)) < 0);
-    TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input)-1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, 5) < 0);
-    TEST_CHECK(vjo_config_patch_preferences("bad\0key", 7, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
-    TEST_CHECK(vjo_config_patch_preferences("", 0, -1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
-    TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 2, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
+    TEST_MSG("%s", out);
+    n = vjo_config_patch_preferences("font_size_ja=18", 15, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+    TEST_CHECK(n > 0 && !strcmp(out, "font_size_ja=18\njapanese_only_selection = off\nhighlight_mode = word\n"
+                                     "local_dictionary_results = 1\nvocr_tier = normal\n"));
+    TEST_MSG("%s", out);
+    /* The engine is no choice (VOCR is the only one): a save never writes it. */
+    TEST_CHECK(!strstr(out, "ocr_backend"));
+    TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_VOCR_TIER_NORMAL, 1, 2, 1, out, sizeof(out)) < 0);
+    TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input)-1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, 5) < 0);
+    TEST_CHECK(vjo_config_patch_preferences("bad\0key", 7, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
+    TEST_CHECK(vjo_config_patch_preferences("", 0, -1, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
+    TEST_CHECK(vjo_config_patch_preferences("", 0, VJO_VOCR_TIER_NORMAL, 2, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out)) < 0);
 }
 
 static void test_dictionary_results_patch_and_parse(void)
@@ -133,15 +130,15 @@ static void test_dictionary_results_patch_and_parse(void)
         "japanese_only_selection = on\nhighlight_mode = word\n";
     const char expected[] = "; local_dictionary_results = 5 in a comment\n"
         "local_dictionary_results = 8\nlocal_dictionaries = a.vjdict,b.vjdict\n"
-        "ocr_backend = vocr\njapanese_only_selection = on\nhighlight_mode = word\nvocr_tier = normal\n";
+        "japanese_only_selection = on\nhighlight_mode = word\nvocr_tier = normal\n";
     char out[512];
-    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 8, out, sizeof(out));
+    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 8, out, sizeof(out));
     TEST_CHECK(n == sizeof(expected) - 1 && !strcmp(out, expected));
     for (int bad = -1; bad <= 9; bad += 10) {
-        TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD,
+        TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD,
                                                 bad, out, sizeof(out)) < 0);
     }
-    TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD,
+    TEST_CHECK(vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD,
                                             0, out, sizeof(out)) < 0);
     VjoConfig cfg;
     vjo_config_defaults(&cfg);
@@ -171,15 +168,15 @@ static void test_model_tier_patch_parse_and_legacy_models(void)
 {
     const char input[] = "; vocr_model = in a comment stays\nVOCR_MODEL = FL10_w8.vocr\nocr_backend = vocr\n"
         "vocr_fallback_model = none\nVocr_Tier=Large\nvocr_tier = small\nfont_size_ja = 22\n";
-    const char expected[] = "; vocr_model = in a comment stays\nocr_backend = vocr\nvocr_tier = normal\n"
+    const char expected[] = "; vocr_model = in a comment stays\nvocr_tier = normal\n"
         "font_size_ja = 22\njapanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n";
     char out[512];
-    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+    int n = vjo_config_patch_preferences(input, sizeof(input) - 1, VJO_VOCR_TIER_NORMAL, 1,
                                          VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
     TEST_CHECK(n == sizeof(expected) - 1 && !strcmp(out, expected));
     TEST_MSG("%s", out);
     for (int tier = -1; tier <= 5; tier++) { /* only the three tiers can be written */
-        n = vjo_config_patch_preferences("", 0, VJO_OCR_VOCR, tier, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+        n = vjo_config_patch_preferences("", 0, tier, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
         TEST_CHECK_((n > 0) == (tier >= 1 && tier <= 3), "tier %d: %d", tier, n);
         if (n > 0) {
             char line[32];
@@ -239,11 +236,12 @@ static void test_model_tier_patch_parse_and_legacy_models(void)
     VjoConfig cfg;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_SMALL && !cfg.n_warnings);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_LARGE, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
     char text[512];
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     ssize_t got = read(fd, text, sizeof(text) - 1); close(fd); TEST_ASSERT(got > 0); text[got] = 0;
-    TEST_CHECK(strstr(text, "vocr_tier = large\n") && !strstr(text, "vocr_model") && strstr(text, "font_size_ja = 22\n"));
+    TEST_CHECK(strstr(text, "vocr_tier = large\n") && !strstr(text, "vocr_model") && strstr(text, "font_size_ja = 22\n") &&
+               !strstr(text, "ocr_backend"));
     TEST_MSG("%s", text);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.font_size_ja == 22 && arena.used == 0 && handles == 0);
@@ -253,18 +251,19 @@ static void test_save_switch_reload_retains_other_settings(void)
 {
     reset(); VjoConfig cfg;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
     TEST_CHECK(cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
     put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
-    check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) == 0);
-    check_choices(VJO_OCR_LENS, 0, VJO_HIGHLIGHT_CHARACTER);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
+    check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_SMALL, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) == 0);
+    check_choices(VJO_VOCR_TIER_SMALL, 0, VJO_HIGHLIGHT_CHARACTER);
     char out[sizeof(original)+128];
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
     TEST_CHECK(strstr(out, "; Keep this comment\r\n") && strstr(out, "unknown_future_setting = unchanged\n"));
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
+    TEST_CHECK(!strstr(out, "ocr_backend")); /* the fixture's Lens choice went with the first save */
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
 }
 /* An OCR choice saved by the app keeps every anki_* line verbatim, and the
  * removed settings of older builds (AnkiConnect's anki_host, the field
@@ -290,20 +289,19 @@ static void test_settings_save_drops_removed_anki_settings(void)
         TEST_CHECK(cfg.n_warnings == 0 && cfg.anki_mining == 1);
         TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
         TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, 3,
-                                                 &arena)) == 0);
+                          : vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena)) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
         TEST_CHECK(!strstr(out, "anki_host") && !strstr(out, "anki_deck") && !strstr(out, "anki_note_type") &&
                    !strstr(out, "anki_field_") && !strstr(out, "ANKI_FIELD_") && !strstr(out, "anki_audio_url") &&
-                   !strstr(out, "secret"));
+                   !strstr(out, "secret") && !strstr(out, "ocr_backend")); /* the engine choice went too */
         TEST_CHECK(strstr(out, "; mine\n") && strstr(out, "anki_mining = on\n") && strstr(out, "font_size_ja = 22\n"));
         TEST_MSG("save %d: %s", save, out);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH ".bak", out, sizeof(out)) > 0);
         TEST_CHECK_(!strstr(out, "secret") && !strstr(out, "anki_audio_url"), "save %d: config.ini.bak: %s", save, out);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 0 && cfg.font_size_ja == 22 &&
-                   (save || (cfg.ocr_backend == VJO_OCR_LENS && cfg.local_dictionary_results == 3)));
+                   (save || (cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.local_dictionary_results == 3)));
     }
 }
 
@@ -319,7 +317,7 @@ static void test_anki_page_save(void)
     char out[512];
     VjoConfig cfg;
     int len = vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, sizeof(out));
-    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\nocr_backend = vocr\n"
+    TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\n"
                                        "log_file = off\nlog_host = 10.0.0.1;x\nfont_size_ja = 22"));
     TEST_MSG("%s", out);
     /* a BOM right before the first line's key: kept, and that line replaced (no stale duplicate) */
@@ -355,8 +353,13 @@ static void test_anki_page_save(void)
         close(fd);
         TEST_ASSERT(n > 0);
         text[n] = 0;
-        TEST_CHECK(!strncmp(text, original, sizeof(original) - 1) &&
-                   !strcmp(text + sizeof(original) - 1, "anki_mining = off\n"));
+        /* the fixture without its removed engine line, the setting appended */
+        const char *engine = strstr(original, "ocr_backend = lens\n");
+        TEST_ASSERT(engine != NULL);
+        size_t head = (size_t)(engine - original), line = strlen("ocr_backend = lens\n");
+        size_t tail = sizeof(original) - 1 - head - line;
+        TEST_CHECK(!strncmp(text, original, head) && !strncmp(text + head, engine + line, tail) &&
+                   !strcmp(text + head + tail, "anki_mining = off\n"));
         TEST_MSG("%s", text);
     }
     /* a failed write leaves the old file */
@@ -377,57 +380,60 @@ static void test_save_failure_preserves_or_recovers_actual_choices(void)
         if (fault == 3) rename_fail = 1;
         if (fault == 4) rename_fail = 2;
         if (fault == 5) sync_fail = 2; /* published, but final confirmation failed */
-        TEST_CHECK(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) < 0);
-        check_choices(fault == 5 ? VJO_OCR_VOCR : VJO_OCR_LENS, fault == 5 ? 0 : 1,
+        TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_SMALL, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) < 0);
+        check_choices(fault == 5 ? VJO_VOCR_TIER_SMALL : VJO_VOCR_TIER_NORMAL, fault == 5 ? 0 : 1,
                       fault == 5 ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD);
         TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) == 0);
     }
     reset(); put_file(VJO_PREFERENCES_PATH ".bak", original, sizeof(original)-1);
     VjoConfig cfg; TEST_CHECK(vjo_preferences_load(&cfg, &arena) == 1);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0); check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
 }
-static void test_lens_choice_loads_shell_and_retains_other_preferences(void)
+static void test_tier_choice_loads_shell_and_retains_other_preferences(void)
 {
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     unsigned char shell_mem[24 * 1024]; VjoArena shell;
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
-    const int backends[] = {VJO_OCR_LENS, VJO_OCR_VOCR, VJO_OCR_LENS, VJO_OCR_VOCR, VJO_OCR_LENS};
-    for (unsigned i = 0; i < sizeof(backends)/sizeof(backends[0]); i++) {
-        TEST_ASSERT(vjo_preferences_save(backends[i], VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
-        check_choices(backends[i], 1, VJO_HIGHLIGHT_WORD);
+    const int tiers[] = {VJO_VOCR_TIER_SMALL, VJO_VOCR_TIER_LARGE, VJO_VOCR_TIER_NORMAL, VJO_VOCR_TIER_LARGE,
+                         VJO_VOCR_TIER_SMALL};
+    for (unsigned i = 0; i < sizeof(tiers)/sizeof(tiers[0]); i++) {
+        TEST_ASSERT(vjo_preferences_save(tiers[i], 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
+        check_choices(tiers[i], 1, VJO_HIGHLIGHT_WORD);
         VjoConfig cfg; vjo_config_load(&cfg, &shell);
-        TEST_CHECK(cfg.ocr_backend == backends[i] && cfg.dictionary == VJO_DICT_LOCAL);
+        TEST_CHECK(cfg.vocr_tier == tiers[i] && cfg.dictionary == VJO_DICT_LOCAL);
         TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
+        /* the fixture's ocr_backend = lens went with the first save: the Shell no longer warns */
+        TEST_CHECK(cfg.n_warnings == 1 && strstr(cfg.warnings[0], "unknown_future_setting"));
         TEST_CHECK(shell.used == 0 && handles == 0);
     }
-    /* Changing the other controls must keep Lens selected. */
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) == 0);
-    check_choices(VJO_OCR_LENS, 0, VJO_HIGHLIGHT_CHARACTER);
+    /* Changing the other controls must keep the size. */
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, expected_results, &arena) == 0);
+    check_choices(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER);
     VjoConfig cfg; vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.dictionary == VJO_DICT_LOCAL);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.dictionary == VJO_DICT_LOCAL);
     TEST_CHECK(!cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER);
-    /* A failed online choice never replaces the last saved local choice. */
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
+    /* A failed save never replaces the last saved choice. */
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
     write_fail = 1; written = 0;
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     write_fail = 0;
-    check_choices(VJO_OCR_VOCR, 1, VJO_HIGHLIGHT_WORD);
+    check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
 }
 static void test_unreadable_or_invalid_config_never_overwritten(void)
 {
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1); read_fail = 1;
     VjoConfig cfg;
     TEST_CHECK(vjo_preferences_load(&cfg, &arena) < 0);
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     TEST_CHECK(written == 0 && renames == 0 && handles == 0);
-    read_fail = 0; check_choices(VJO_OCR_LENS, 1, VJO_HIGHLIGHT_WORD);
+    read_fail = 0; check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
     put_file(VJO_PREFERENCES_PATH, "broken\0config", 13);
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     TEST_CHECK(written == 0 && handles == 0 && arena.used == 0);
     memset(memory, '#', VJO_PREFERENCES_TEXT_MAX);
     put_file(VJO_PREFERENCES_PATH, (char *)memory, VJO_PREFERENCES_TEXT_MAX);
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     TEST_CHECK(written == 0 && handles == 0 && arena.used == 0);
 }
 static void test_highlight_only_switch_loads_actual_shell_without_other_changes(void)
@@ -437,11 +443,11 @@ static void test_highlight_only_switch_loads_actual_shell_without_other_changes(
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     for (int i = 0; i < 4; i++) {
         int highlight_mode = i % 2 ? VJO_HIGHLIGHT_WORD : VJO_HIGHLIGHT_CHARACTER;
-        TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, highlight_mode, expected_results, &arena) == 0);
-        check_choices(VJO_OCR_LENS, 1, highlight_mode);
+        TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, highlight_mode, expected_results, &arena) == 0);
+        check_choices(VJO_VOCR_TIER_NORMAL, 1, highlight_mode);
         VjoConfig cfg; vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.highlight_mode == highlight_mode);
-        TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+        TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
         TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
         TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS);
@@ -449,9 +455,9 @@ static void test_highlight_only_switch_loads_actual_shell_without_other_changes(
     }
     /* Reject invalid mode before any write or rename, preserving the last choice. */
     written = 0; renames = 0;
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, -1, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, -1, expected_results, &arena) < 0);
     TEST_CHECK(written == 0 && renames == 0 && arena.used == 0 && handles == 0);
-    check_choices(VJO_OCR_LENS, 1, VJO_HIGHLIGHT_WORD);
+    check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
 }
 static void test_dictionary_results_switch_loads_actual_shell(void)
 {
@@ -460,10 +466,10 @@ static void test_dictionary_results_switch_loads_actual_shell(void)
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     for (int results = 1; results <= 8; results++) {
         expected_results = results;
-        TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, results, &arena) == 0);
-        check_choices(VJO_OCR_LENS, 1, VJO_HIGHLIGHT_WORD);
+        TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, results, &arena) == 0);
+        check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
         VjoConfig cfg; vjo_config_load(&cfg, &shell);
-        TEST_CHECK(cfg.local_dictionary_results == results && cfg.ocr_backend == VJO_OCR_LENS);
+        TEST_CHECK(cfg.local_dictionary_results == results && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
         TEST_CHECK(cfg.japanese_only_selection == 1 && cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
         TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
         TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
@@ -471,29 +477,29 @@ static void test_dictionary_results_switch_loads_actual_shell(void)
     }
     /* An out-of-range count is rejected before any write; 8 stays saved. */
     written = 0; renames = 0;
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 9, &arena) < 0);
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 0, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 9, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 0, &arena) < 0);
     TEST_CHECK(written == 0 && renames == 0 && arena.used == 0 && handles == 0);
-    check_choices(VJO_OCR_LENS, 1, VJO_HIGHLIGHT_WORD);
+    check_choices(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD);
 }
 static void test_backup_only_loads_actual_shell_without_default_publication(void)
 {
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     rename_fail_after = 2; /* Fail both temp publication and primary restoration. */
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_SMALL, 0, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) < 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) == 0);
     VjoConfig cfg;
     TEST_CHECK(vjo_preferences_load(&cfg, &arena) == 1);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
     TEST_CHECK(cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
     unsigned char shell_mem[VJO_CONFIG_TEXT_MAX + 1];
     VjoArena shell; vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     size_t writes_before = written; int renames_before = renames;
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
-    TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr") && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
+    TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
     TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.font_size_ja == 22);
     TEST_CHECK(written == writes_before && renames == renames_before);
     TEST_CHECK(shell.used == 0 && shell.peak <= sizeof(shell_mem) && handles == 0);
@@ -509,10 +515,11 @@ static void test_backup_only_loads_actual_shell_without_default_publication(void
 }
 static void test_maximum_published_config_fits_actual_shell_scratch(void)
 {
-    /* The file as the app writes it (vocr_tier, no vocr_model line), so a save of the
-     * same choices keeps its length. */
+    /* The file as the app writes it (vocr_tier, no vocr_model, ocr_backend or
+     * API key line: a save drops those), so a save of the same choices keeps
+     * its length. */
     static const char saved[] =
-        "; Keep this comment\r\nocr_backend = lens\nocr_mode = on_press\n"
+        "; Keep this comment\r\nocr_mode = on_press\n"
         "japanese_only_selection = on\n"
         "highlight_mode = word\n"
         "dictionary = local\nlocal_dictionaries = daijirin.vjdict,jmdict.vjdict\n"
@@ -524,20 +531,20 @@ static void test_maximum_published_config_fits_actual_shell_scratch(void)
     memset(near, '#', sizeof(near)); memcpy(near, saved, sizeof(saved)-1);
     near[VJO_CONFIG_TEXT_MAX-1] = '\n'; near[VJO_CONFIG_TEXT_MAX] = 0;
     put_file(VJO_PREFERENCES_PATH, near, VJO_CONFIG_TEXT_MAX);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
     unsigned char shell_mem[24 * 1024]; VjoArena shell;
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     VjoConfig cfg; vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
     TEST_CHECK(!strcmp(cfg.local_dictionaries, "daijirin.vjdict,jmdict.vjdict"));
     TEST_CHECK(!strcmp(cfg.ocr_model_dir, "ux0:data/custom-ocr"));
     TEST_CHECK(shell.peak == sizeof(shell_mem) && shell.used == 0 && handles == 0);
-    /* Adding one byte would exceed the reader, so the original stays intact. */
+    /* Adding one byte (on -> off) would exceed the reader, so the original stays intact. */
     written = 0; renames = 0;
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, expected_results, &arena) < 0);
     TEST_CHECK(written == 0 && renames == 0);
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_LENS && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
 }
 static int read_back(const char *path, char *text, size_t cap)
 {
@@ -568,12 +575,12 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 &&
                    !strcmp(cfg.warnings[0], "dictionary: jpdb.io was removed; using local"));
         TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
         TEST_CHECK(!strstr(text, "secret") && !strstr(text, "api_key =") && !strstr(text, "\ndictionary = jpdb"));
         TEST_CHECK(strstr(text, "; Keep this comment\r\ndictionary = local\nhachidori_host =\n") != NULL);
-        TEST_CHECK(strstr(text, "ocr_mode = on_press\nfont_size_ja = 22\n") != NULL);
+        TEST_CHECK(strstr(text, "\nocr_mode = on_press\nfont_size_ja = 22\n") != NULL && !strstr(text, "ocr_backend"));
         /* comments are never rewritten: the old template's line stays, harmless */
         TEST_CHECK(strstr(text, "; jpdb.io API key (needed for dictionary = jpdb)") != NULL);
         TEST_MSG("%s", text);
@@ -583,7 +590,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         TEST_MSG("%s", text);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
-                   cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
+                   cfg.font_size_ja == 22);
         TEST_CHECK(!save || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
@@ -592,7 +599,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
     /* a failed first publication leaves the old file and saves nothing */
     reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
     write_fail = 1;
-    TEST_CHECK(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) < 0);
     write_fail = 0;
     {
         char text[sizeof(legacy) + 16];
@@ -606,7 +613,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         char text[256];
         reset(); put_file(VJO_PREFERENCES_PATH, bom, sizeof(bom) - 1);
         TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strncmp(text, "\xEF\xBB\xBF", 3) &&
                    !strstr(text, "secret") && strstr(text, "font_size_ja = 22\n"));
         TEST_CHECK_(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0 && !strstr(text, "secret"),
@@ -625,7 +632,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
             reset(); put_file(VJO_PREFERENCES_PATH, legacy, sizeof(legacy) - 1);
             sync_fail = first[k].sync;
             rename_fail = first[k].rename;
-            int rc = vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
+            int rc = vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
             sync_fail = rename_fail = 0;
             TEST_CHECK_(rc < 0, "first-publication fault %u (sync %d, rename %d) fails the save", k, first[k].sync,
                         first[k].rename);
@@ -648,7 +655,7 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         put_file(VJO_PREFERENCES_PATH ".bak", legacy, sizeof(legacy) - 1); /* an older save's backup */
         sync_fail = faults[k].sync;
         rename_fail = faults[k].rename;
-        int rc = vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
+        int rc = vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena);
         TEST_CHECK_(rc < 0, "fault %u fails the save", k); /* sync 5: published, unconfirmed */
         sync_fail = rename_fail = 0;
         for (unsigned f = 0; f < sizeof(files) / sizeof(files[0]); f++) {
@@ -666,14 +673,14 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         reset(); put_file(VJO_PREFERENCES_PATH ".bak", legacy, sizeof(legacy) - 1);
         VjoConfig cfg;
         TEST_CHECK(vjo_preferences_load(&cfg, &arena) == 1 && cfg.dictionary == VJO_DICT_LOCAL);
-        TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+        TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 && !strstr(text, "secret") &&
                    strstr(text, "dictionary = local\n"));
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) > 0 && !strstr(text, "secret"));
     }
     /* only the dictionary is replaced; no key: one publication, the backup is the old file */
     reset(); put_file(VJO_PREFERENCES_PATH, "dictionary = JITEN\nfont_size_ja = 22\n", 37);
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_LENS, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
     {
         char text[512];
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0 &&
@@ -686,10 +693,10 @@ static void test_removed_dictionaries_rewritten_by_saves(void)
         static const char *const keys[] = {"anki_mining"};
         const char *values[] = {"on"};
         char out[256];
-        int n = vjo_config_patch_preferences("Dictionary = Local ; mine\n", 25, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+        int n = vjo_config_patch_preferences("Dictionary = Local ; mine\n", 25, VJO_VOCR_TIER_NORMAL, 1,
                                              VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
         TEST_CHECK(n > 0 && !strncmp(out, "Dictionary = Local ; mine\n", 25));
-        n = vjo_config_patch_preferences("Dictionary = Hachidori ; relay\n", 31, VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1,
+        n = vjo_config_patch_preferences("Dictionary = Hachidori ; relay\n", 31, VJO_VOCR_TIER_NORMAL, 1,
                                          VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
         TEST_CHECK(n > 0 && !strncmp(out, "dictionary = local\n", 19));
         TEST_MSG("%s", out);
@@ -712,7 +719,7 @@ static void test_removed_relay_rewritten_by_saves(void)
 {
     static const char legacy[] =
         "; Keep this comment\r\nDictionary = Hachidori ; relay\r\nhachidori_host = 192.168.1.20:19633\n"
-        "ocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n";
+        "ocr_mode = on_press\nfont_size_ja = 22\n";
     for (int save = 0; save < 2; save++) {
         char text[sizeof(legacy) + 256];
         VjoConfig cfg;
@@ -727,59 +734,68 @@ static void test_removed_relay_rewritten_by_saves(void)
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 1 && shell.used == 0);
         renames = 0;
         TEST_ASSERT((save ? vjo_preferences_save_anki(1, &arena)
-                          : vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
+                          : vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena)) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0 && renames == 2); /* one publication */
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, text, sizeof(text)) > 0);
         TEST_CHECK(strstr(text, "; Keep this comment\r\ndictionary = local\nhachidori_host = 192.168.1.20:19633\n"
-                                "ocr_backend = vocr\nocr_mode = on_press\nfont_size_ja = 22\n") != NULL);
+                                "ocr_mode = on_press\nfont_size_ja = 22\n") != NULL);
         TEST_CHECK(!strstr(text, "achidori ;") && !strstr(text, "Dictionary = "));
         TEST_MSG("%s", text);
         TEST_CHECK(read_back(VJO_PREFERENCES_PATH ".bak", text, sizeof(text)) == (int)sizeof(legacy) - 1 &&
                    !strcmp(text, legacy));
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && cfg.ocr_mode == VJO_OCR_ON_PRESS &&
-                   cfg.font_size_ja == 22 && cfg.ocr_backend == VJO_OCR_VOCR);
+                   cfg.font_size_ja == 22);
         TEST_CHECK(!save || cfg.anki_mining == 1);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
         TEST_CHECK(cfg.dictionary == VJO_DICT_LOCAL && cfg.n_warnings == 0 && shell.used == 0);
     }
 }
-/* A config.ini that chose a removed engine (the VOCR2 and Meiki trials, the
- * host tools' ncnn) loads as the local engine, in the app and in the Shell,
- * and any Settings save writes vocr in its place, keeping every other line. */
-static void test_removed_engine_choice_loads_as_vocr_and_is_rewritten(void)
+/* The engine is no setting any more (VOCR is the only one; Google Lens was
+ * removed, the overlay is offline). A config.ini that chose one loads as VOCR,
+ * in the app and in the Shell: vocr says nothing, a removed engine (Google
+ * Lens, the VOCR2 and Meiki trials, the host tools' ncnn) says so; and the
+ * app's next save drops the line, keeping every other one. */
+static void test_engine_choice_loads_as_vocr_and_saves_drop_it(void)
 {
-    static const struct { const char *value, *warning; } removed[] = {
+    static const struct { const char *value, *warning; } engines[] = {
+        {"vocr", NULL},
+        {"VOCR", NULL},
+        {"lens", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
+        {"Lens", "ocr_backend: Google Lens was removed (the overlay is offline); using vocr"},
         {"vocr2", "ocr_backend: VOCR2 was removed; using vocr"},
         {"meiki", "ocr_backend: Meiki was removed; using vocr"},
         {"NCNN", "ocr_backend: ncnn runs only in host tools; using vocr"},
     };
-    for (unsigned i = 0; i < sizeof(removed) / sizeof(removed[0]); i++) {
+    for (unsigned i = 0; i < sizeof(engines) / sizeof(engines[0]); i++) {
         char legacy[256];
         int len = snprintf(legacy, sizeof(legacy), "; Keep this comment\nocr_backend = %s\nocr_mode = on_press\n"
-                           "japanese_only_selection = off\nfont_size_ja = 22\n", removed[i].value);
+                           "japanese_only_selection = off\nvocr_tier = large\nfont_size_ja = 22\n", engines[i].value);
         reset();
         put_file(VJO_PREFERENCES_PATH, legacy, (size_t)len);
         VjoConfig cfg;
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && !cfg.japanese_only_selection);
-        TEST_CHECK(cfg.n_warnings == 1 && !strcmp(cfg.warnings[0], removed[i].warning));
-        TEST_MSG("%s: %s", removed[i].value, cfg.n_warnings ? cfg.warnings[0] : "(no warning)");
+        TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && !cfg.japanese_only_selection);
+        TEST_CHECK(engines[i].warning ? cfg.n_warnings == 1 && !strcmp(cfg.warnings[0], engines[i].warning)
+                                      : cfg.n_warnings == 0);
+        TEST_MSG("%s: %s", engines[i].value, cfg.n_warnings ? cfg.warnings[0] : "(no warning)");
         unsigned char shell_mem[24 * 1024]; VjoArena shell;
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell);
-        TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.ocr_mode == VJO_OCR_ON_PRESS);
+        TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.ocr_mode == VJO_OCR_ON_PRESS);
+        TEST_CHECK(cfg.n_warnings == (engines[i].warning ? 1 : 0));
         TEST_CHECK(shell.used == 0 && handles == 0);
-        /* Any Settings save replaces the stale value; unrelated lines are kept. */
-        TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+        /* Any Settings save drops the line; unrelated lines are kept. */
+        TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
         char out[sizeof(legacy) + 128];
         int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
         ssize_t n = read(fd, out, sizeof(out)-1); close(fd); TEST_ASSERT(n > 0); out[n] = 0;
-        TEST_CHECK(strstr(out, "\nocr_backend = vocr\n") && !strstr(out, removed[i].value));
-        TEST_CHECK(strstr(out, "; Keep this comment\n") && strstr(out, "font_size_ja = 22\n"));
+        TEST_CHECK(!strstr(out, "ocr_backend") && !strncmp(out, "; Keep this comment\nocr_mode = on_press\n", 40));
+        TEST_CHECK(strstr(out, "font_size_ja = 22\n") && strstr(out, "vocr_tier = large\n"));
+        TEST_MSG("%s", out);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0 && arena.used == 0);
+        TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.n_warnings == 0 && arena.used == 0);
     }
 }
 static size_t read_fixture(const char *name, char *out, size_t cap)
@@ -798,10 +814,11 @@ static size_t read_fixture(const char *name, char *out, size_t cap)
  * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
  * vocr2). Today's Shell and app read it as the local engine with one warning
  * and no unknown setting (its vocr_model gives the Normal size), and the app's
- * next save writes vocr and vocr_tier, drops the two model lines, rewrites the
- * lines of removed features as core/config.c vjo_config_removed_line says (the
- * online dictionaries' keys since #117, the relay's since #126, AnkiConnect's
- * since #125), and keeps every other line. */
+ * next save drops the engine line (VOCR is the only engine since Google Lens's
+ * removal) and the two model lines, writes vocr_tier, rewrites the lines of
+ * removed features as core/config.c vjo_config_removed_line says (the online
+ * dictionaries' keys since #117, the relay's since #126, AnkiConnect's since
+ * #125), and keeps every other line. */
 static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
 {
     static char fixture[8192], expect[8192], out[8192];
@@ -813,7 +830,7 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     VjoConfig cfg;
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
+    TEST_CHECK(cfg.n_warnings == 1);
     TEST_CHECK(!strcmp(cfg.warnings[0], "ocr_backend: VOCR2 was removed; using vocr"));
     TEST_MSG("%d warnings, first '%s'", cfg.n_warnings, cfg.n_warnings ? cfg.warnings[0] : "");
     TEST_CHECK(cfg.anki_mining && cfg.highlight_mode == VJO_HIGHLIGHT_WORD && cfg.japanese_only_selection);
@@ -821,24 +838,25 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     TEST_CHECK(cfg.ocr_lm == 2 && cfg.ocr_cascade_ms == 2000 && cfg.ocr_refine_lines == 2);
     TEST_CHECK(shell.used == 0 && handles == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
-    /* the app's next save: vocr in place of vocr2, the two model lines gone and vocr_tier added (API 21),
-     * the lines of removed features dropped or replaced as core/config.c vjo_config_removed_line says (since
-     * #117 the online dictionaries' empty key lines); every other line kept */
-    TEST_ASSERT(vjo_preferences_save(cfg.ocr_backend, cfg.vocr_tier, cfg.japanese_only_selection, cfg.highlight_mode,
+    TEST_CHECK(cfg.n_warnings == 1);
+    /* the app's next save: the engine line (a removed setting) and the two model lines gone and vocr_tier
+     * added (API 21), the lines of removed features dropped or replaced as core/config.c
+     * vjo_config_removed_line says (since #117 the online dictionaries' empty key lines); every other line kept */
+    TEST_ASSERT(vjo_preferences_save(cfg.vocr_tier, cfg.japanese_only_selection, cfg.highlight_mode,
                                      cfg.local_dictionary_results, &arena) == 0);
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     ssize_t got = read(fd, out, sizeof(out) - 1); close(fd);
     TEST_ASSERT(got > 0); out[got] = 0;
-    size_t used = 0, dropped = 0;
+    size_t used = 0, dropped = 0, settings = 0;
     for (const char *line = fixture; *line;) {
         const char *nl = strchr(line, '\n'), *replacement = NULL;
         size_t len = nl ? (size_t)(nl - line) + 1 : strlen(line);
         int kind = vjo_config_removed_line(line, len, &replacement);
-        if (!strncmp(line, "ocr_backend = vocr2\n", len)) {
-            used += (size_t)snprintf(expect + used, sizeof(expect) - used, "ocr_backend = vocr\n");
-        } else if (!strncmp(line, "vocr_model = ", 13) || !strncmp(line, "vocr_fallback_model = ", 22)) {
+        if (!strncmp(line, "vocr_model = ", 13) || !strncmp(line, "vocr_fallback_model = ", 22)) {
             dropped++;
+        } else if (kind == VJO_LINE_DROP_SETTING) { /* the engine line */
+            dropped++;
+            settings++;
         } else if (kind == VJO_LINE_DROP) {
             dropped++;
         } else if (kind == VJO_LINE_REPLACE) {
@@ -849,7 +867,8 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
         line += len;
     }
     snprintf(expect + used, sizeof(expect) - used, "vocr_tier = normal\n");
-    TEST_CHECK(dropped >= 4); /* the two model lines and (since #117) the two empty key lines at least */
+    TEST_CHECK(dropped >= 5 && settings == 1); /* the engine line, the two model lines and (since #117) the two
+                                                 * empty key lines at least */
     TEST_CHECK(!strcmp(out, expect));
     TEST_MSG("saved:\n%s", out);
     /* whatever the removed features, the user's own settings survive the save */
@@ -858,10 +877,10 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
                                        "\nocr_refine_lines = psp\n", "\n; Vita JP Overlay settings."};
     for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
         TEST_CHECK_(strstr(out, kept[i]) != NULL, "kept: %s", kept[i] + 1);
-    TEST_CHECK(!strstr(out, "\nocr_backend = vocr2\n") && !strstr(out, "\nvocr_model =") &&
-               !strstr(out, "\nvocr_fallback_model =") && strstr(out, "\nocr_backend = vocr\n"));
+    TEST_CHECK(!strstr(out, "\nocr_backend") && !strstr(out, "\nvocr_model =") && /* its comment lines stay */
+               !strstr(out, "\nvocr_fallback_model ="));
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 0);
+    TEST_CHECK(cfg.n_warnings == 0 && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
 }
 
 /* SceShell never writes config.ini: with neither the file nor its backup it
@@ -885,13 +904,14 @@ static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_PREFERENCES_PATH ".tmp", F_OK) != 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) != 0);
     /* what creates it: the Overlay app's first save publishes the commented template with the choice */
-    TEST_ASSERT(vjo_preferences_save(VJO_OCR_VOCR, VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
     static char saved[VJO_CONFIG_TEXT_MAX + 1];
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     TEST_ASSERT(fd >= 0);
     ssize_t n = read(fd, saved, sizeof(saved) - 1); close(fd);
     TEST_ASSERT(n > 0); saved[n] = 0;
     TEST_CHECK(!strncmp(saved, vjo_config_default_text(), 40) && strstr(saved, "\njapanese_only_selection = off\n"));
+    TEST_CHECK(!strstr(saved, "ocr_backend")); /* no engine choice: VOCR is the only engine */
     vjo_config_load(&cfg, &shell);
     TEST_CHECK(!cfg.japanese_only_selection && cfg.n_warnings == 0 && shell.used == 0);
 }
@@ -927,13 +947,13 @@ TEST_LIST = {
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},
-    {"removed_engine_choice_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_rewrites_it", test_removed_engine_choice_loads_as_vocr_and_is_rewritten},
+    {"engine_choice_vocr_Lens_VOCR2_Meiki_ncnn_loads_as_VOCR_and_next_save_drops_it", test_engine_choice_loads_as_vocr_and_saves_drop_it},
     {"removed_jpdb_jiten_choice_loads_as_local_and_saves_drop_their_API_keys_and_backup", test_removed_dictionaries_rewritten_by_saves},
     {"removed_Hachidori_relay_choice_loads_as_local_with_one_warning_and_saves_write_local", test_removed_relay_rewritten_by_saves},
     {"dictionary_results_is_an_owned_validated_preference", test_dictionary_results_patch_and_parse},
     {"model_tier_is_owned_older_vocr_model_lines_map_to_it_and_go_on_save", test_model_tier_patch_parse_and_legacy_models},
-    {"saved_backend_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},
-    {"lens_choice_loads_shell_and_retains_other_preferences", test_lens_choice_loads_shell_and_retains_other_preferences},
+    {"saved_size_and_selection_choices_survive_switch_reload", test_save_switch_reload_retains_other_settings},
+    {"size_choice_loads_shell_and_retains_other_preferences", test_tier_choice_loads_shell_and_retains_other_preferences},
     {"highlight_only_changes_reload_in_actual_Shell_and_preserve_other_choices", test_highlight_only_switch_loads_actual_shell_without_other_changes},
     {"dictionary_count_changes_reload_in_actual_Shell_and_preserve_other_choices", test_dictionary_results_switch_loads_actual_shell},
     {"partial_write_close_sync_and_rename_failures_retain_confirmable_choices", test_save_failure_preserves_or_recovers_actual_choices},

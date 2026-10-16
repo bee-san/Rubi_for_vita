@@ -1,6 +1,7 @@
-/* End-to-end requests: Lens OCR over HTTPS and the dictionary lookup (the
- * local .vjdict files), plus the overlay pipeline that ties them together
- * (same code on host and Vita). */
+/* The dictionary lookup of recognized text (the local .vjdict files) and the
+ * overlay pipeline from the game worker's text to the entries shown (same code
+ * on host and Vita). Recognition itself is the game worker's (game_ocr/,
+ * core/vocr_ocr.h): the overlay is offline, Google Lens was removed. */
 #ifndef VJO_CLIENT_H
 #define VJO_CLIENT_H
 
@@ -11,17 +12,7 @@
 #include "config.h"
 #include "entries.h"
 #include "dict.h"
-#include "lens.h"
 #include "net.h"
-
-
-typedef struct {
-    void *ud;
-    /* Copies len bytes at offset off; returns 0 or < 0 on failure. */
-    int (*read)(void *ud, uint32_t off, void *dst, uint32_t len);
-    uint32_t size;
-    uint32_t width, height;
-} VjoJpegSource;
 
 
 /* Stages for VjoOverlayData.failed_stage */
@@ -44,23 +35,15 @@ typedef struct {
     int page;
 } VjoOverlayData;
 
-#define VJO_LENS_MAX_RESPONSE (256u * 1024u)
-
-int vjo_lens_ocr(VjoArena *a, const VjoPlatform *p, const VjoJpegSource *src,
-                 VjoLensResult *res, const char **text, VjoErr *err);
-
 /* Looks up text in the local .vjdict files (core/local_dict.h), the only
  * dictionaries: no lookup uses the network. */
 int vjo_dict_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, const char *text,
                     VjoDictResult *res, VjoErr *err);
 
-/* A recognition in two phases (the sentence is ready before the lookup):
- * vjo_overlay_ocr: JPEG -> Lens -> filter, sets ocr_text, filtered and
- * sentence; vjo_overlay_lookup: dictionary -> entries (list), after a
- * successful vjo_overlay_ocr. Both return VJO_OK or the error, also in
- * out->err with out->failed_stage. */
-int vjo_overlay_ocr(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
-                    const VjoJpegSource *src, VjoOverlayData *out);
+/* A recognition's text in two phases (the sentence is ready before the lookup):
+ * vjo_overlay_ocr_text (below): the game worker's text -> filter, sets ocr_text,
+ * filtered and sentence; vjo_overlay_lookup: dictionary -> entries (list), after
+ * it. Both return VJO_OK or the error, also in out->err with out->failed_stage. */
 int vjo_overlay_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, VjoOverlayData *out);
 /* Local-only lookup at a raw UTF-8 byte cursor in the existing trimmed
  * sentence. Preserves OCR text/header and returns at most one entry, with
@@ -86,14 +69,6 @@ int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, Vj
 /* OCR text -> filter -> vjo_overlay_lookup. */
 int vjo_overlay_from_text(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                           const char *ocr_text, VjoOverlayData *out);
-
-/* vjo_overlay_ocr, then vjo_overlay_lookup. */
-int vjo_overlay_from_jpeg(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
-                          const VjoJpegSource *src, VjoOverlayData *out);
-
-/* Opens the Lens connection a recognition will use ahead of it, when p keeps
- * connections (p->pool), the connect giving up after timeout_us. */
-void vjo_overlay_warm(const VjoPlatform *p, int timeout_us);
 
 /* Short user-facing description of an error. */
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err);

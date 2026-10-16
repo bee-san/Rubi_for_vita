@@ -44,7 +44,7 @@ void capture_crop_of(const VjoRect *region, uint32_t fb_w, uint32_t fb_h, uint32
     cy = (uint32_t)r.y * fb_h >> 16;
     cw = ((uint32_t)r.w * fb_w + 65535) >> 16;
     ch = ((uint32_t)r.h * fb_h + 65535) >> 16;
-    /* Lens needs some context around tiny selections. */
+    /* A capture's minimum size, 32 x 32 (the region selector's smallest box). */
     if (cw < 32)
         cw = 32;
     if (ch < 32)

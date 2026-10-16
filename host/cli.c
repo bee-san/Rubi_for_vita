@@ -1,70 +1,24 @@
-/* vjo-cli: runs the Vita JP Overlay pipeline on the Mac.
+/* vjo-cli: runs the Vita JP Overlay's lookup pipeline on the Mac, on text (the
+ * game worker recognizes the Vita's screen; on a computer vjo-ocr does).
  *
- *   vjo-cli IMAGE.jpg [--dict local] [--config config.ini]
- *           [--filter lines|none] [--record DIR] [--nav] [-v]
- *   vjo-cli --text "日本語" ...
- *   vjo-cli --replay DIR [--filter lines|none]
- *   vjo-cli --print-default-config
- *
- * IMAGE.jpg is recognized by Google Lens (--record DIR keeps its response as
- * DIR/lens.pb); --replay recognizes a fixture dir's recorded response without
- * the network and prints the sentence (see replay.h). */
+ *   vjo-cli --text "日本語" [--dict local] [--config config.ini]
+ *           [--filter lines|none] [--nav] [-v]
+ *   vjo-cli --print-default-config */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-#include <time.h>
 
 #include "client.h"
 #include "net_posix.h"
 #include "render.h"
 #include "replay.h"
 
-typedef struct {
-    const uint8_t *data;
-    size_t len;
-} MemJpeg;
-
-static int mem_read(void *ud, uint32_t off, void *dst, uint32_t len)
-{
-    MemJpeg *m = (MemJpeg *)ud;
-    if ((size_t)off + len > m->len)
-        return -1;
-    memcpy(dst, m->data + off, len);
-    return 0;
-}
-
-/* Width/height from the first SOFn marker. */
-static int jpeg_size(const uint8_t *p, size_t n, uint32_t *w, uint32_t *h)
-{
-    size_t i = 2;
-    if (n < 4 || p[0] != 0xFF || p[1] != 0xD8)
-        return -1;
-    while (i + 9 < n) {
-        uint8_t m;
-        size_t seg;
-        if (p[i] != 0xFF)
-            return -1;
-        m = p[i + 1];
-        seg = ((size_t)p[i + 2] << 8) | p[i + 3];
-        if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) {
-            *h = ((uint32_t)p[i + 5] << 8) | p[i + 6];
-            *w = ((uint32_t)p[i + 7] << 8) | p[i + 8];
-            return 0;
-        }
-        i += 2 + seg;
-    }
-    return -1;
-}
-
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: vjo-cli IMAGE.jpg [--dict local] [--config FILE]\n"
+            "usage: vjo-cli --text TEXT [--dict local] [--config FILE]\n"
             "               [--local-dir DIR] [--local-dicts main.vjdict,extra.vjdict]\n"
-            "               [--filter lines|none] [--record DIR] [--nav] [--stats] [-v]\n"
-            "       vjo-cli --text TEXT [options]\n"
-            "       vjo-cli --replay DIR [options]\n"
+            "               [--filter lines|none] [--nav] [--stats] [-v]\n"
             );
     exit(2);
 }
@@ -77,7 +31,7 @@ int main(int argc, char **argv)
     PosixPlatform pp = {0};
     VjoPlatform plat;
     VjoOverlayData d;
-    const char *image = NULL, *text = NULL, *replay = NULL, *config = NULL, *dict = NULL;
+    const char *text = NULL, *config = NULL, *dict = NULL;
     const char *local_dir = NULL, *local_dicts = NULL;
     int nav = 0, stats = 0, rc;
 
@@ -98,12 +52,8 @@ int main(int argc, char **argv)
             local_dicts = argv[++i];
         else if (!strcmp(s, "--filter") && more)
             cfg.non_japanese_filter = strcmp(argv[++i], "none") ? 1 : 0;
-        else if (!strcmp(s, "--record") && more)
-            pp.record_dir = argv[++i];
         else if (!strcmp(s, "--text") && more)
             text = argv[++i];
-        else if (!strcmp(s, "--replay") && more)
-            replay = argv[++i];
         else if (!strcmp(s, "--nav"))
             nav = 1;
         else if (!strcmp(s, "--stats"))
@@ -114,8 +64,6 @@ int main(int argc, char **argv)
             fputs(vjo_config_default_text(), stdout);
             return 0;
         }
-        else if (s[0] != '-' && !image)
-            image = s;
         else
             usage();
     }
@@ -144,33 +92,9 @@ int main(int argc, char **argv)
     posix_platform_init(&pp, &plat);
     memset(&d, 0, sizeof(d));
 
-    if (replay) {
-        vjo_replay_ocr(&a, &fa, replay, &cfg, &d);
-    } else if (text) {
-        vjo_overlay_from_text(&a, &plat, &cfg, text, &d);
-    } else if (image) {
-        size_t len;
-        char *jpg = vjo_read_file(&fa, image, &len);
-        MemJpeg m;
-        VjoJpegSource src;
-        if (!jpg) {
-            fprintf(stderr, "cannot read %s\n", image);
-            return 1;
-        }
-        m.data = (const uint8_t *)jpg;
-        m.len = len;
-        memset(&src, 0, sizeof(src));
-        if (jpeg_size(m.data, len, &src.width, &src.height) < 0) {
-            fprintf(stderr, "%s: not a baseline/progressive JPEG\n", image);
-            return 1;
-        }
-        src.ud = &m;
-        src.read = mem_read;
-        src.size = (uint32_t)len;
-        vjo_overlay_from_jpeg(&a, &plat, &cfg, &src, &d);
-    } else {
+    if (!text)
         usage();
-    }
+    vjo_overlay_from_text(&a, &plat, &cfg, text, &d);
 
     rc = d.err.rc ? 1 : 0;
     fputs(vjo_render_overlay(&a, &d), stdout);

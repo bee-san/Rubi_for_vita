@@ -37,7 +37,7 @@ ASSETS = {
 }
 
 
-# vita-vn-ocr int8 recognizers (ocr_backend = vocr), release v0.2.0 of
+# vita-vn-ocr int8 recognizers (the overlay's OCR engine), release v0.2.0 of
 # github.com/bee-san/vita-vn-ocr. The plugin pins the same sizes and hashes
 # (core/vocr_ocr.c).
 VOCR_REPO = 'bee-san/vita-vn-ocr'

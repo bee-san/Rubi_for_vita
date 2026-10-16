@@ -94,11 +94,11 @@ target_compile_definitions(vjo_bearssl PRIVATE BR_USE_URANDOM=0 BR_USE_GETENTROP
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
-  ${ROOT}/core/arena.c ${ROOT}/core/pb.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
-  ${ROOT}/core/lens.c ${ROOT}/core/json.c
+  ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
+  ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
-  ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c ${ROOT}/core/jpegsw.c
+  ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
@@ -108,18 +108,17 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, requests, parsers, queue files): built for
 # size, since every page of the Shell module is SceShell's. Lookup, OCR text
-# handling and TLS stay at -O2. The JPEG encoder (core/jpegsw.c, Lens only: one
-# region a request, seconds of network beside it) and the UTF-8 helpers
-# (core/utf.c: a few microseconds a text or a key) are built for size since the
-# self-test's own job and the first-scan timings (docs/first-ocr.md): 3,802 ->
-# 2,914 and 1,532 -> 1,136 B. The property is the directory's, so the
+# handling and TLS stay at -O2. The UTF-8 helpers (core/utf.c: a few
+# microseconds a text or a key) are built for size since the self-test's own job
+# and the first-scan timings (docs/first-ocr.md): 1,532 -> 1,136 B (the JPEG
+# encoder, built for size then too, went with Google Lens). The property is the directory's, so the
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c ${ROOT}/core/http.c ${ROOT}/core/net.c
-  ${ROOT}/core/lens.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
-  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/pb.c ${ROOT}/core/client.c
-  ${ROOT}/core/jpegsw.c ${ROOT}/core/utf.c
+  ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
+  ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/client.c
+  ${ROOT}/core/utf.c
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   PROPERTIES COMPILE_OPTIONS "-Os")
@@ -146,7 +145,6 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/strip.cpp
   ${ROOT}/shell/strip_view.c
   ${ROOT}/shell/worker.c
-  ${ROOT}/shell/capture.c
   ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/game.c
   ${ROOT}/shell/anki.c
@@ -180,7 +178,7 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/s
 # inlined copies of it shrink).
 set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
   ${ROOT}/shell/files.c ${ROOT}/shell/game.c ${ROOT}/shell/worker.c
-  ${ROOT}/shell/strip_view.c ${ROOT}/shell/capture.c ${ROOT}/shell/game_ocr_client.c
+  ${ROOT}/shell/strip_view.c ${ROOT}/shell/game_ocr_client.c
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
@@ -190,7 +188,7 @@ endif()
 # The Shell imports only the bounded job transport. No vocr inference is linked here.
 # More cold code built for size, which pays for the open overlay's quiet refresh
 # (#81 request 4) within the module's pages: the module and Paf allocator entry
-# points (once per boot or allocation), the entry lists of a Google Lens job's sentence lookup,
+# points (once per boot or allocation), the entry lists of a sentence lookup,
 # the per-tap hit test, the overlay's text styling (once per render) and
 # games.ini storage (the Settings app's copy too). Measured -O2 -> -Os: 54 + 176 + 279 + 108 + 454 + 133 B.
 set_source_files_properties(${ROOT}/shell/main.cpp ${ROOT}/shell/memory.cpp ${ROOT}/core/entries.c
@@ -428,8 +426,8 @@ add_custom_target(release
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/lens-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/lens-connections-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt

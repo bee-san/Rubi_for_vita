@@ -170,7 +170,7 @@ typedef struct {
     int32_t caller_rc;
     uint32_t caller_total, caller_free;
     uint32_t ledger_current, ledger_peak, ledger_limit; /* the kernel ledger's pool */
-    uint32_t capture_bytes;  /* the kernel capture block held right now (Lens), 0 = none */
+    uint32_t capture_bytes;  /* the kernel capture block held right now, 0 = none */
     int32_t kernel_step, caller_step;
     /* Route 2 (PSVshell, PSVshellPlus): the caller's address space control
      * block at +328 (main), +332 (CDRAM), +316 (phycont), each partition's

@@ -984,8 +984,9 @@ SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)\)
 # shell/worker.c check_app: "overlay app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)"
 APP_LINE = re.compile(r"^overlay app (ok|MISMATCH|unknown): ")
 # ocr_backend values of removed engines, which an older Overlay app can still write (#101: test.1's app wrote
-# vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine)
-REMOVED_ENGINES = ("vocr2", "meiki", "ncnn")
+# vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine). Since Google
+# Lens's removal VOCR is the only engine and ocr_backend no setting: today's app and installer delete any line.
+REMOVED_ENGINES = ("lens", "vocr2", "meiki", "ncnn")
 
 
 def summarise_app(folder, record):
@@ -1392,10 +1393,12 @@ def summarise_collect(folder):
         m = re.match(r"^\s*([a-z0-9_]+)\s*=\s*(.*?)\s*$", line)
         if m:
             cfg[m.group(1)] = m.group(2)
-    out["config"] = {k: cfg.get(k) for k in ("ocr_backend", "vocr_tier", "ocr_mode", "dictionary",
+    out["config"] = {k: cfg.get(k) for k in ("vocr_tier", "ocr_mode", "dictionary",
                                              "local_dictionaries", "log_file", "anki_mining",
                                              "japanese_only_selection", "highlight_mode")}
-    for k in ("vocr_model", "vocr_fallback_model"):  # an older build's model choice (API 20 and before)
+    # an older build's settings: the engine choice (VOCR is the only engine) and the model choice
+    # (API 20 and before)
+    for k in ("ocr_backend", "vocr_model", "vocr_fallback_model"):
         if k in cfg:
             out["config"][k] = cfg[k]
     out["app"] = summarise_app(folder, record)
@@ -1484,6 +1487,17 @@ def summarise_collect(folder):
     return out
 
 
+def backend_line(value):
+    """config.ini's ocr_backend, which is no setting any more (VOCR is the only engine): the line to say, or None."""
+    if value is None:
+        return None
+    if value.lower() in REMOVED_ENGINES:
+        return (f"    ocr_backend={value}: a removed engine, which an older Overlay app writes; the plugins "
+                "run vocr, and today's app or installer deletes the line")
+    return (f"    ocr_backend={value}: no longer a setting (VOCR is the only engine); today's app or "
+            "installer deletes the line")
+
+
 def render_collect(c):
     L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
     pkg = c["record"].get("package") or {}
@@ -1505,9 +1519,8 @@ def render_collect(c):
     cfg = c["config"]
     L.append("  config.ini: " + ", ".join(f"{k}={v}" for k, v in cfg.items() if v is not None)
              + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
-    if (cfg.get("ocr_backend") or "").lower() in REMOVED_ENGINES:
-        L.append(f"    ocr_backend={cfg['ocr_backend']}: a removed engine, which an older Overlay app writes; the plugins "
-                 "run vocr, and today's app or installer rewrites it")
+    if backend_line(cfg.get("ocr_backend")):
+        L.append(backend_line(cfg.get("ocr_backend")))
     for name, t in c["tai"].items():
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
                  f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]

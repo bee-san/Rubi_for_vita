@@ -7,13 +7,14 @@
 #include "../include/vjo_api.h"
 
 enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
-/* ocr_backend: the two OCR engines. VJO_OCR_VOCR runs bee-san/vita-vn-ocr on
- * the Vita CPU, in the game (VJO_WITH_VOCR); the Overlay app names it after its
- * model's generation (core/vocr_models.h). VJO_OCR_LENS is Google Lens. The
- * self-test reports the value (config backend=); keep the IDs unchanged. The
- * removed engines' IDs stay unused: 1 ncnn (host experiments), 3 the Meiki
- * trial, 4 the VOCR2 trial; config.ini values naming them load as vocr. */
-enum { VJO_OCR_LENS = 0, VJO_OCR_VOCR = 2 };
+/* One OCR engine: bee-san/vita-vn-ocr on the Vita CPU, in the game
+ * (VJO_WITH_VOCR). The overlay is offline only (owner 2026-10-15): Google Lens
+ * was removed, and with it the ocr_backend setting. A config.ini line naming an
+ * engine (ocr_backend = vocr, lens, or a removed trial: vocr2, meiki, ncnn) is
+ * ignored, Lens and the trials with a config warning; the Overlay app's next
+ * save and the installer (tools/migrate_config.py) drop the line
+ * (vjo_config_removed_line). The self-test still reports backend=2, the old
+ * VOCR id, so its reports keep their form. */
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 /* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
@@ -47,7 +48,6 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int ocr_backend;          /* VJO_OCR_VOCR | VJO_OCR_LENS */
     int text_source;          /* compatibility setting, always screenshot OCR in this build */
     char ocr_model_dir[160];
     /* The local engine's model size (API 21): VJO_VOCR_TIER_SMALL, _NORMAL (the
@@ -102,7 +102,7 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
  * without a file the Shell plugin runs on vjo_config_defaults, the same values. */
 const char *vjo_config_default_text(void);
 
-/* Changes only the app's five OCR/lookup preferences (ocr_backend, vocr_tier,
+/* Changes only the app's four OCR/lookup preferences (vocr_tier,
  * japanese_only_selection, highlight_mode, local_dictionary_results), retaining
  * every other INI line verbatim but the vocr_model and vocr_fallback_model
  * lines of older builds, which vocr_tier replaces, and those of removed
@@ -110,7 +110,7 @@ const char *vjo_config_default_text(void);
  * keys are collapsed. Input/output must not overlap. Returns output bytes (not
  * including NUL), or -1 for invalid choices, embedded NUL, or insufficient
  * capacity. */
-int vjo_config_patch_preferences(const char *text, size_t len, int backend, int vocr_tier,
+int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
                                  int japanese_only, int highlight_mode,
                                  int dictionary_results, char *out, size_t cap);
 
@@ -130,9 +130,11 @@ int vjo_vocr_tier_of_model(const char *name);
  * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
  * older name, in any case, with or without '=') and for the removed Anki
  * settings (vjo_config_removed_anki_key: anki_audio_url's URL can hold a key),
+ * which are secrets; VJO_LINE_DROP_SETTING for a removed setting's line, which
+ * is not (the engine choice: an ocr_backend line, whatever its value);
  * VJO_LINE_REPLACE with *replacement ("dictionary = local\n") for dictionary =
  * jpdb, jiten or hachidori, else VJO_LINE_KEEP. */
-enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2 };
+enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2, VJO_LINE_DROP_SETTING = 3 };
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement);
 
 const char *vjo_trigger_name(int trigger);

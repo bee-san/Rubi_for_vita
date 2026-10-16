@@ -53,37 +53,29 @@ class MemoryLedgerCheck(unittest.TestCase):
         self.assertIn("allocation sites: 9, all in ledger wrappers", result.stdout)
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")
-        self.assertEqual({p["pool"] for p in as_json["pools"]},
-                         {"shell pages", "shell paf", "shell paf (Google Lens)", "kernel", "game"})
+        # one configuration since the network paths (Google Lens, the Hachidori relay) were removed:
+        # no opt-in (soft) row
+        self.assertEqual({p["pool"] for p in as_json["pools"]}, {"shell pages", "shell paf", "kernel", "game"})
         for pool in as_json["pools"]:
-            if not pool.get("soft"):
-                self.assertLessEqual(pool["worst"], pool["limit"])
-        # Anki cards are text-only (shell/anki.c takes no screenshot): the opt-in network configuration (Google Lens) fits too
+            self.assertLessEqual(pool["worst"], pool["limit"])
         self.assertEqual(as_json["warnings"], [])
         self.assertNotIn("WARNING", result.stderr)
-        net = next(p for p in as_json["pools"] if p["pool"] == "shell paf (Google Lens)")
-        self.assertEqual(net["worst"], 8192 + 548096 + 131072 + 20480)
+        paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
+        self.assertEqual(paf["worst"], 8192 + 65536 + 131072 + 20480)
 
-    def test_a_soft_overshoot_is_a_warning_with_the_bytes(self):
-        # a picture card's 384 KiB arena (the screenshot branch, removed with AnkiConnect) fits beside Google Lens's one-slot pool
-        # (969,984 B), but put the network configuration over while the pool had a second slot for the
-        # removed Hachidori relay (571,888 B of results)
-        for results, warning in ((None, None),
-                                 ("571888u", "WARNING: shell paf (Google Lens): worst case 993,776 B exceeds the limit "
-                                             "985,088 B by 8,688 B")):
-            tmp = self.copy_tree()
-            budget = tmp / "include/vjo_ledger_budget.h"
-            text = re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u", budget.read_text())
-            if results:
-                text = re.sub(r"#define VJO_BUDGET_PAF_RESULTS_NET \d+u", "#define VJO_BUDGET_PAF_RESULTS_NET " + results,
-                              text)
-            budget.write_text(text)
-            result = run("--root", str(tmp))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            if warning:
-                self.assertIn(warning, result.stderr)
-            else:
-                self.assertNotIn("WARNING", result.stderr)
+    def test_a_picture_card_fits_the_only_configuration(self):
+        # a 384 KiB Anki arena (the removed screenshot card's) put the network configuration over the
+        # limit by 8,688 B (a warning) while it existed; beside the one 64 KiB arena it fits: 487,424 B
+        tmp = self.copy_tree()
+        budget = tmp / "include/vjo_ledger_budget.h"
+        budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u",
+                                 budget.read_text()))
+        result = run("--root", str(tmp), "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        as_json = json.loads(result.stdout)
+        self.assertEqual(as_json["warnings"], [])
+        paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
+        self.assertEqual(paf["worst"], 8192 + 65536 + 393216 + 20480)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()
@@ -149,7 +141,8 @@ class MemoryLedgerCheck(unittest.TestCase):
         tmp = self.copy_tree()
         values = ledger.parse_budget(ROOT / "include/vjo_ledger_budget.h")
         shell_budget = values["VJO_BUDGET_SHELL_MODULE_PAGES"]
-        rw = 180_224  # the data/bss segment's pages; the text segment takes the rest of the budget
+        rw = 73_728  # the data/bss segment's pages (the packaged module's); the text segment takes the rest
+        self.assertGreater(shell_budget - rw, 4096)
         text = shell_budget - rw
         fits = tmp / "shell.suprx"
         fits.write_bytes(fake_self([(text - 40, 5), (rw - 1_000, 6)]))

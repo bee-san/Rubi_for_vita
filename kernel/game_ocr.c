@@ -310,7 +310,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     if (!shell_caller(pid)) rc = VJO_ERR_PERM;
     else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else if (!registration_current(worker_pid)) rc = VJO_ERR_NO_GAME;
-    else if (g.capture_state != CAPTURE_IDLE) rc = VJO_ERR_BUSY; /* a Lens/Anki capture in flight */
+    else if (g.capture_state != CAPTURE_IDLE) rc = VJO_ERR_BUSY; /* a raw capture in flight */
     else if (sequence == 0x7FFFFFFFu) rc = VJO_ERR_BUSY; /* Never recycle a sequence. */
     else {
         /* The region in the game's last frame. Every row request reads that
@@ -564,7 +564,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         if (__atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) != ROWS_DONE) {
             /* Never seen: the hook still owns dst (and a kernel strip). The caller must
              * not free dst; the kernel worker frees the strip and returns the state to
-             * IDLE once the copy ends, so a later Lens/Anki capture is not refused. */
+             * IDLE once the copy ends, so a later raw capture is not refused. */
             klog("ocr rows: copy still running after %u us", ROWS_COPY_WAIT_US);
             VJO_LOCK();
             rows.abandoned = 1;

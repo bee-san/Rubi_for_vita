@@ -21,7 +21,7 @@
 /* ---- SceShell's partition (ScePhyMemPartShell, 50 MiB; pool "shell pages") ----
  * Module pages are permanent; they may only shrink (AGENTS.md rule 1). The
  * values are the packaged SELF segments rounded to pages [measured, PR #60]. */
-/* VitaJPOverlay_Shell.suprx: 192,512 text + 73,728 data/bss. The fixed Kiku note (#90) took 3,488 B
+/* VitaJPOverlay_Shell.suprx: 102,400 text + 73,728 data/bss. The fixed Kiku note (#90) took 3,488 B
  * off data/bss (the Anki field mapping's 1,152 B per VjoConfig copy); with #86's region selector and
  * #84 (its --gc-sections link; 28 B of new VjoConfig fields) the module is 214,488 text + 77,876
  * data/bss; with #87, #88, #92, #85 and #89 it is 215,216 text + 77,980 data/bss [measured, bcd3cf0],
@@ -54,8 +54,18 @@
  * same pages (docs/memory-ledger.md). #124's identification of Adrenaline's PSP games (shell/game.c:
  * AppMgr's app name and one description read per launch; core/games.c's shared PSP row) makes it
  * 188,000 + 70,132, the same 262,144 B [measured: the build log's module rows, main 9f92bc6 and
- * #124]. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 266240u
+ * #124].
+ * Lowered from 266,240 B by the removal of Google Lens (the overlay is offline): its client and
+ * protobuf codec (core/lens.c, core/pb.c), the worker's capture -> JPEG -> Lens job and its
+ * connection warm-up, the Shell's capture and JPEG encoder (shell/capture.c, core/jpegsw.c), the
+ * worker's network pipeline (two 256 KiB arenas, a connection pool, the whole-sentence lookup only
+ * its jobs made) and the engine choice (ocr_backend). Lens was the last of the Shell's TLS
+ * connections once AnkiConnect was removed, so the link no longer keeps BearSSL's TLS, the roots
+ * or the HTTP client either (only SHA-256, the queue's IDs): 87,208 B off the text segment (.text
+ * -66,728 B, .rodata -20,424 B) and 72 B off data/bss, so the module is 100,792 text + 70,060
+ * data/bss [measured: the build log's module rows and arm-vita-eabi-size, main 6020c0b and this
+ * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
@@ -110,11 +120,10 @@
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
 #define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
-#define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u        /* one result arena, local dictionary (worker.c LOCAL_RESULT_ARENA_SIZE) */
-/* Google Lens: 2 x 262,144 arenas + a 23,808 B one-slot connection pool (worker.c MEM_SIZE; the host's
- * sizeof(VjoNetSlot), 23,800 B, rounded to 16; arm-vita-eabi-gcc's is 23,312 B). The removed Hachidori
- * relay's second slot made it 571,888 B. */
-#define VJO_BUDGET_PAF_RESULTS_NET 548096u
+/* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
+ * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
+ * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
+#define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a text-only card to the queue. The Shell takes no
  * screenshot: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
  * and a 393,216 B arena here) was removed with AnkiConnect. A save with 8 dictionaries' entries
@@ -123,16 +132,10 @@
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
-/* The shipped default (local JMdict): one 64 KiB arena, the overlay open, an
- * Anki card being saved. */
+/* The only configuration (the overlay is offline): one 64 KiB arena, the
+ * overlay open, an Anki card being saved. The opt-in network row went with
+ * Google Lens and the Hachidori relay (707,840 B with one connection slot). */
 #define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
-/* The opt-in network path, Google Lens (two arenas and a connection pool), with
- * the same overlay and Anki card: 707,840 B. A picture card's 384 KiB arena
- * (the screenshot branch, removed with AnkiConnect) put it over the best-case limit by 8,688 B while the
- * pool kept a second slot for the removed Hachidori relay (the checker warns;
- * the runtime reserve guard refuses the last allocation, which the code
- * survives); with one slot it is 969,984 B, 15,104 B under. */
-#define VJO_WORST_SHELL_PAF_NET (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_NET + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code
@@ -146,7 +149,8 @@
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
-/* The Shell's JPEG capture (Lens only: Anki takes no screenshot) at a full frame, KERNEL_RW,
+/* The kernel's full-frame capture (vjoRequestCapture), which no Shell code takes any more: Google
+ * Lens's JPEG and the Anki screenshot were its users, both removed. At a full frame, KERNEL_RW,
  * per request. Local OCR takes no kernel block since API 19 (#74: on the owner's
  * 3.65 this 2,088,960 B request failed with 0x80024302 at every attempt). */
 #define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u)

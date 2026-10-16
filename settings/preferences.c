@@ -126,7 +126,7 @@ static int publish_without_secrets(const char *old, size_t bytes, int *primary, 
     return 0;
 }
 
-int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int highlight_mode,
+int vjo_preferences_save(int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), bytes = 0;
@@ -134,10 +134,10 @@ int vjo_preferences_save(int backend, int vocr_tier, int japanese_only, int high
     int primary, rc = -1;
     if (current_text(a, &old, &bytes, &primary) < 0 || publish_without_secrets(old, bytes, &primary, a) < 0)
         goto done;
-    /* the five owned lines, appended or longer than before, and a replaced line's growth */
+    /* the four owned lines, appended or longer than before, and a replaced line's growth */
     size_t cap = bytes + bytes / 4 + 192;
     char *next = vjo_arena_alloc(a, cap);
-    int len = next ? vjo_config_patch_preferences(old, bytes, backend, vocr_tier, japanese_only,
+    int len = next ? vjo_config_patch_preferences(old, bytes, vocr_tier, japanese_only,
                                                  highlight_mode, dictionary_results, next, cap) : -1;
     if (len < 0 || len > VJO_PREFERENCES_TEXT_MAX) goto done;
     rc = publish(next, len, primary);
@@ -188,7 +188,7 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
         if (k >= 0 && (seen & (1u << k))) continue; /* a duplicate goes */
         /* a removed feature's line (core/config.h vjo_config_removed_line) goes or is replaced */
         removed = k < 0 ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
-        if (removed == VJO_LINE_DROP) continue;
+        if (removed == VJO_LINE_DROP || removed == VJO_LINE_DROP_SETTING) continue;
         int w = k >= 0 ? snprintf(out + used, cap - used, "%s = %s\n", keys[k], values[k])
                 : removed == VJO_LINE_REPLACE ? snprintf(out + used, cap - used, "%s", replacement)
                 : snprintf(out + used, cap - used, "%.*s", (int)(i - begin), text + begin);

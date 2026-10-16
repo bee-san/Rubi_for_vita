@@ -19,9 +19,9 @@ target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_
 target_compile_options(bearssl PRIVATE -w)
 
 set(CORE_SRC
-  core/arena.c core/pb.c core/utf.c core/text_hit.c core/text_rows.c core/lens.c core/json.c
+  core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
   core/textfilter.c core/entries.c core/config.c core/regions.c
-  core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
+  core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
@@ -68,25 +68,13 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
   endif()
 endif()
 
-# Raw RGBA -> JPEG with the software encoder (tools/test_jpegsw.py).
-add_executable(vjo-jpegsw host/jpegsw_tool.c)
-target_link_libraries(vjo-jpegsw vjo_host)
-
-# Bounded live Lens-only fresh/kept-connection timing comparison.
-add_executable(vjo-lens-bench host/benchmark_lens.c)
-target_link_libraries(vjo-lens-bench vjo_host)
 
 enable_testing()
-add_executable(vjo-shell-capture-tests host/tests/test_shell_capture.c)
-target_include_directories(vjo-shell-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_options(vjo-shell-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
-target_link_libraries(vjo-shell-capture-tests vjo_host)
-add_test(NAME shell_capture COMMAND vjo-shell-capture-tests)
-add_executable(vjo-lens-transport-tests host/tests/test_lens_transport.c)
-target_include_directories(vjo-lens-transport-tests PRIVATE third_party/acutest/include)
-target_link_libraries(vjo-lens-transport-tests vjo_host)
-target_compile_options(vjo-lens-transport-tests PRIVATE -Wall -Wextra)
-add_test(NAME lens_transport COMMAND vjo-lens-transport-tests)
+add_executable(vjo-http-transport-tests host/tests/test_http_transport.c)
+target_include_directories(vjo-http-transport-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-http-transport-tests vjo_host)
+target_compile_options(vjo-http-transport-tests PRIVATE -Wall -Wextra)
+add_test(NAME http_transport COMMAND vjo-http-transport-tests)
 add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
   core/region_select.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
@@ -429,9 +417,9 @@ target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-p
 target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME preferences COMMAND vjo-preferences-tests)
 # The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
-# boundary: the OCR engine card's two engines, the local one named after its
-# model's generation; then the same app with a later package's model table
-# (generation VOCR5), which it names unchanged.
+# boundary: the OCR card's Model size, its status line naming the size's model;
+# then the same app with a later package's model table (generation VOCR5),
+# which it names unchanged.
 foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c

@@ -108,10 +108,11 @@ elif '-o' in a:
 
     def test_update_is_verified_idempotent_and_preserves_unrelated_state(self):
         self.assertFalse((self.package / "docs/config.example.ini").exists())
-        installed = None
+        installed = first = None
         # The second update names no game: the one registered by the first is kept.
         for options in (("--title", "PCSG00415"), ()):
             result = self.install("install-vita.sh", *options)
+            first = first or result
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertNotIn("test-key", result.stdout)
             self.assertNotIn("migration failed", result.stdout + result.stderr)
@@ -137,7 +138,10 @@ elif '-o' in a:
         config = (self.data / "config.ini").read_text()
         # a first install: the template's model size, Normal; no model line (API 21)
         self.assertNotIn("vocr_model", config)
-        for setting in ("dictionary = local", "ocr_backend = vocr", "vocr_tier = normal",
+        # the engine choice is gone (VOCR is the only engine): the saved ocr_backend = lens line goes
+        self.assertNotIn("ocr_backend", config)
+        self.assertIn("config.ini: ocr_backend removed", first.stdout)  # said by the first update
+        for setting in ("dictionary = local", "vocr_tier = normal",
                         "log_file = on", "anki_mining = off",
                         "local_dictionaries = plaintext.vjdict", "font_size_ja = 24",
                         "ocr_lm = 1000k", "ocr_cascade_ms = 2000"):
@@ -418,14 +422,16 @@ elif '-o' in a:
         self.assertEqual((self.data / "vjo_app.txt").read_bytes(), b"")
         self.assertIn("Overlay app: not checked", result.stdout)
         config = (self.data / "config.ini").read_text()
-        for setting in ("ocr_backend = lens", "vocr_tier = normal", "font_size_ja = 24"):
+        for setting in ("vocr_tier = normal", "font_size_ja = 24"):
             self.assertIn(setting, config)
+        self.assertNotIn("ocr_backend", config)  # the engine choice is gone, Lens's included
         self.assertNotIn("vocr_model", config)
         self.assertNotIn("test-key", result.stdout)
 
-    def test_source_install_rewrites_a_removed_engine_to_vocr(self):
-        # The source installer keeps the saved engine (no --set ocr_backend), except a removed
-        # one: the VOCR2 trial and ncnn (host tools) become the local engine, vocr.
+    def test_source_install_drops_the_engine_choice(self):
+        # VOCR is the only engine: the source installer drops a saved ocr_backend line, whatever
+        # engine it names (vocr; Google Lens, removed as the overlay went offline; the VOCR2
+        # trial; ncnn of the host tools), and says so once.
         (self.package / "config.ini").unlink()
         (self.package / "docs").mkdir()
         shutil.copyfile(ROOT / "docs/config.example.ini", self.package / "docs/config.example.ini")
@@ -434,19 +440,18 @@ elif '-o' in a:
         for plugin in (self.package / "ur0/tai").iterdir():
             shutil.copyfile(plugin, build / plugin.name)
         shutil.copyfile(self.package / "ur0/data/VitaJPOverlay/vitajpoverlay.rco", build / "vitajpoverlay.rco")
-        for removed in ("vocr2", "ncnn"):
+        for removed in ("vocr", "lens", "vocr2", "ncnn"):
             (self.data / "config.ini").write_text(
                 "ocr_backend = %s\nvocr_model = H15_w8.vocr\nfont_size_ja = 24\njpdb_api_key = test-key\n" % removed)
             result = self.install("tools/install_ftp.sh", "--title", "PCSG00415")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             config = (self.data / "config.ini").read_text()
-            self.assertIn("\nocr_backend = vocr\n", config)
-            self.assertNotIn("ocr_backend = " + removed, config)
+            self.assertNotIn("ocr_backend", config, removed)
             for setting in ("vocr_tier = normal", "font_size_ja = 24"):
                 self.assertIn(setting, config)
             self.assertNotIn("vocr_model", config)
             self.assertNotIn("test-key", config)
-            self.assertIn("config.ini: ocr_backend = vocr", result.stdout)
+            self.assertEqual(result.stdout.count("config.ini: ocr_backend removed"), 1, result.stdout)
             self.assertNotIn("test-key", result.stdout)
 
     def test_source_install_rewrites_a_removed_dictionary_to_local(self):

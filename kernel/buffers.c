@@ -1,6 +1,6 @@
-/* Capture buffer, allocated on request for the selected region: the Shell's
- * JPEG (Lens, an Anki screenshot) only. JPEG readers release it before the Lens
- * upload begins. OCR takes no kernel buffer (game_ocr.c), except the small
+/* Capture buffer, allocated on request for the selected region: no Shell code
+ * requests one since its JPEG users (Google Lens, the Anki screenshot) were
+ * removed. OCR takes no kernel buffer (game_ocr.c), except the small
  * strip below on the last rung of its fallback ladder. */
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
@@ -67,7 +67,7 @@ void buffers_read_done(uint32_t row, uint32_t rows)
 {
     /* JPEG reads each row once; local ncnn OCR rereads rows in multiple passes.
      * Release under the capture lock after the final successful user copy,
-     * before the shell starts Lens upload. */
+     * so the buffer is never held after its reader is done. */
     if (g.capture_once && g.raw_valid && row < g.crop_h && rows >= g.crop_h-row) {
         g.raw_valid = 0;
         g.capture_full = 0;

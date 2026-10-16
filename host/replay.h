@@ -1,6 +1,5 @@
-/* Host replay of recorded responses (vjo-cli --replay/--record and the
- * fixture tests): in-memory connection, fixture file names and a
- * VjoPlatform that serves a fixture dir. */
+/* Host test helpers: a whole file into an arena, and an in-memory
+ * connection (the HTTP clients' tests). */
 #ifndef VJO_REPLAY_H
 #define VJO_REPLAY_H
 
@@ -21,16 +20,5 @@ typedef struct {
 } VjoMemConn;
 
 void vjo_memconn_init(VjoMemConn *m, VjoConn *c);
-
-/* Recorded response file in a fixture dir for a request host: "lens.pb" for
- * Google Lens (--record writes it, the replay reads it), NULL for any other
- * host (not recorded; the replay refuses it like an offline network). */
-const char *vjo_fixture_file(const char *host);
-
-/* vjo_overlay_ocr (empty JPEG) on a VjoPlatform whose connect() serves dir's
- * recorded Lens response as a plain HTTP 200 response, or fails like an
- * offline network when there is none: the sentence, without a lookup. The
- * response is loaded into `files`. Returns vjo_overlay_ocr's result. */
-int vjo_replay_ocr(VjoArena *a, VjoArena *files, const char *dir, const VjoConfig *cfg, VjoOverlayData *out);
 
 #endif

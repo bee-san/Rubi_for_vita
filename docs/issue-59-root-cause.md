@@ -110,7 +110,7 @@ charged somewhere too; its size is unknown and not counted here.
 |---|---|---|---|
 | game start (`activate_game`): config, region, `vjoSetGameActive` | static scratch only | same, plus two `sceAppMgrAppParamGetString` calls (title name for Anki) | none in SceShell |
 | overlay open, local pipeline | result arena 65,536 B when a lookup runs | same | PAF heap, through the 1.5 MiB reserve guard |
-| overlay open, network dictionary (the Hachidori relay, removed since) or Lens | 2 × 262,144 B arenas + connection pool | same | PAF heap |
+| overlay open, network dictionary or Lens (both removed since) | 2 × 262,144 B arenas + connection pool | same | PAF heap |
 | Anki `×`/`△` (`anki_mining = on`, off by default) | not built into the Shell | 131,072 B (393,216 B with a picture field) + a 65,536 B thread stack + 4 KiB TLS, freed after the job | PAF heap; stack from the partition |
 | strip with furigana (needs a jiten/jpdb key; removed with those dictionaries since) | not built | `vjo_strip_ruby_tpl` text widgets, made on demand | PAF heap |
 

@@ -315,7 +315,7 @@ int main(int argc, char **argv)
     if (fd < 0) return 1;
     sceIoClose(fd);
     memset(&cfg, 0, sizeof(cfg));
-    cfg.ocr_backend = 2; cfg.dictionary = 3;
+    cfg.dictionary = 3;
     cfg.vocr_tier = VJO_VOCR_TIER_NORMAL; /* the config record names its model and the smallest tier's */
     vjo_selftest_init(&cfg);
     now_us = 61000000;
