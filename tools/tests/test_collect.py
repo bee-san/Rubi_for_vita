@@ -835,6 +835,9 @@ class Collect(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60, cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("press SELECT to start FTP", result.stdout)
+        # a Vita's VitaShell starts USB on SELECT until its SELECT button setting is FTP (#136)
+        self.assertIn("SELECT button set to FTP in VitaShell's settings", result.stdout)
+        self.assertIn("a Vita's default is USB", result.stdout)
 
     def test_the_lms_and_their_attribution_are_hashed_against_the_package(self):
         # The beam + LM decoder's LMs and their CC BY-SA attribution ship beside the weights (#89).

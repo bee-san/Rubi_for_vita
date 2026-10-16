@@ -3,7 +3,8 @@
 
     python3 tools/collect_vita.py VITA_IP PORT OUT_DIR [--manifest package-manifest.json]
 
-Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the installer does:
+Downloads, over VitaShell's FTP (VitaShell: SELECT button set to FTP in its settings, then SELECT),
+with curl as the installer does:
   ux0:data/VitaJPOverlay/  log.txt log.old.txt selftest-report.txt selftest.txt status.txt
                            status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
                            the audio source URL redacted before anything is written) games.ini
@@ -424,7 +425,8 @@ def main():
     try:
         socket.create_connection((args.host, args.port), 5).close()
     except OSError:
-        print(f"Cannot reach {args.host}:{args.port}. In VitaShell press SELECT to start FTP, and keep the screen on.")
+        print(f"Cannot reach {args.host}:{args.port}. In VitaShell press SELECT to start FTP (with SELECT button set to "
+              "FTP in VitaShell's settings, Start: a Vita's default is USB), and keep the screen on.")
         return 1
     args.out.mkdir(parents=True, exist_ok=True)
     c = Collector(args.host, args.port, args.out, args.timeout)

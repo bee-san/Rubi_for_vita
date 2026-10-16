@@ -1,6 +1,6 @@
 #!/bin/bash
-# Installs Vita JP Overlay over VitaShell's FTP server (VitaShell: SELECT ->
-# FTP). Backs up the taiHEN configs first (locally and as config.txt.vjo-bak on
+# Installs Vita JP Overlay over VitaShell's FTP server (VitaShell: SELECT button
+# set to FTP in its settings, then SELECT). Backs up the taiHEN configs first (locally and as config.txt.vjo-bak on
 # the Vita) and adds plugin entries once. config.ini is created on the
 # first install; later installs keep its values and bring it up to the current
 # set of settings. Local copies (backups, logs, dumps) go to build/device/.
@@ -187,7 +187,7 @@ app_check() {
       0) ;;
       9|19|78) rm -f "$dst" ;;  # not there either way: CWD, SIZE or RETR refused (as tools/collect_vita.py reads them)
       *)  # cannot connect, timed out, a broken transfer: not a Vita without the app
-        echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Overlay app. Start VitaShell's FTP (SELECT) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
+        echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Overlay app. Start VitaShell's FTP (SELECT, with SELECT button set to FTP in its settings) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
         return 2 ;;
     esac
   done
@@ -197,7 +197,7 @@ app_check() {
 
 python3 -c 'import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5).close()' \
     "${HOST%%:*}" "${HOST##*:}" 2>/dev/null || {
-  echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP, and keep the screen on."
+  echo "Cannot reach $HOST. In VitaShell press SELECT to start FTP (with SELECT button set to FTP in VitaShell's settings, Start: a Vita's default is USB), and keep the screen on."
   # --check-app: a Vita that cannot be reached is "cannot tell" (2), never "not this package's app" (1).
   [ $CHECKAPP = 1 ] && exit 2
   exit 1; }

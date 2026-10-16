@@ -331,6 +331,8 @@ elif '-o' in a:
                                     env=self.environment, capture_output=True, text=True, timeout=60, check=False)
             self.assertEqual(result.returncode, 2, script + ": " + result.stdout + result.stderr)
             self.assertIn("Cannot reach 127.0.0.1", result.stdout)
+            # SELECT starts USB on a Vita until VitaShell's SELECT button setting is FTP (#136)
+            self.assertIn("SELECT button set to FTP in VitaShell's settings", result.stdout)
         # a package from before the stamps cannot tell
         (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").unlink()
         result = self.install("install-vita.sh", "--check-app")
