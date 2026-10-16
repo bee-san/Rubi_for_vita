@@ -127,12 +127,20 @@ start and taken before that line's own log appends. Two gaps are not in them:
 A press that waited for a running job has no exact time, as the log has no time for a job's start. The
 analysis gives that job's whole time plus 142 ms, the done line's two appends at their most measured
 46 ms and the poll. For an OCR-only job (Highlight = Character, the subtitles), it also adds the lookup
-of the word after it and 142 ms more. The job began before the press, so this is an upper bound (est.,
-as the appends' times are) on when the Shell has the word; the overlay draws it at its next frame. A
-job whose `done` line comes before the press's `open:` line ended during the press's own handling and is
-not counted. A running job that failed or read no line, the self-test's job and a refresh are never a
-press's wait. A press closed before its text or word came, or whose overlay could not open, is not
-timed.
+of the word after it and 142 ms more. The job began before the press was handled, so this is an upper
+bound (est., as the appends' times are) on when the Shell has the word from that moment; the overlay
+draws it at its next frame. Two things can stretch it, neither seen in test.3's 7 presses:
+- the press itself can come before the job's clock by up to the job start line's own appends and the
+  kernel's 16 ms input poll: the log shows when the Shell handled a press, not when it was made;
+- another thread's log line holding the log's lock when the `done` line is written can add its own
+  appends, two while `status.txt` is open.
+
+A job whose `done` line comes before the press's `open:` line ended during the press's own handling and
+is not counted. A running job that failed or read no line, the self-test's job and a refresh are never a
+press's wait; a job that read text but whose lookup failed is counted with them, as no text, though the
+overlay showed its text. A press closed before its text came, or whose overlay could not open, is not
+timed; one closed after its text but before its word is still timed, its word by its job's end,
+which the user did not wait for.
 
 | What L + R found (19 presses) | Presses | Text | Word |
 |---|---:|---|---|

@@ -2407,8 +2407,13 @@ class PressesAndRereads(unittest.TestCase):
             ("rc -119", "", end(-119, 1800), "", ("read_without_text",)),
             ("rc -117", "", end(-117, 40), "", ("read_without_text",)),
             ("no line", "", end(0, 900), "", ("read_without_text",)),
+            # audit-b note C (MB1a2): text, then a failed lookup (rc -113): counted with the failed jobs, as no text
+            ("rc -113 after its text", "", text + end(-113, 1800), "", ("read_without_text",)),
             ("OCR only, then its word's lookup", ", OCR only", text + end(0, 1520), cursor(400), ("waited", 2204, 1)),
             ("OCR only, its lookup failed", ", OCR only", text + end(0, 1520), cursor(400, rc=-110), ("unclear",)),
+            # audit-b note C (MB1f): the word's lookup is the first done line after the running job's, not a later one
+            ("OCR only, its word's lookup, then the user's", ", OCR only", text + end(0, 1520), cursor(400) + cursor(300),
+             ("waited", 2204, 1)),
             ("OCR only, closed before its word's lookup", ", OCR only", text + end(0, 1520), "", ("closed_before",)),
             ("OCR only, the log ends open", ", OCR only", text + end(0, 1520), None, ("unclear",)),
         ]

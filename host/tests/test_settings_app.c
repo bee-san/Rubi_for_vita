@@ -992,7 +992,9 @@ static void test_scrolled_cards_keep_their_touch_targets(void)
     static const struct { int x, y; const char *highlight, *results; } taps[] = {
         {724, HL_Y + 6, "character", "1"},   /* Character, top-left pixel */
         {707, HL_Y + 39, "word", "1"},       /* Whole word, bottom-right pixel */
+        {600, HL_Y + 20, "word", "1"},       /* Whole word again: chosen, it stays (a toggle would switch it) */
         {919, HL_Y + 39, "character", "1"},  /* Character, bottom-right pixel */
+        {800, HL_Y + 20, "character", "1"},  /* Character again: it stays */
         {532, HL_Y + 6, "word", "1"},        /* Whole word, top-left pixel */
         {300, HL_Y + 30, "character", "1"},  /* the title: switches */
         {715, HL_Y + 20, "word", "1"},       /* between the badges: switches */
