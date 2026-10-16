@@ -135,7 +135,9 @@ class Collect(unittest.TestCase):
                                             f"manifest={hashlib.sha256(payload).hexdigest()}\n")
         (self.device / "ur0/tai/config.txt.vjo-20261016-120000.bak").write_bytes(b"*KERNEL\r\n")
         (self.device / "ux0/tai/config.txt.vjo-new").write_bytes(b"*KERNEL\r\n")
-        (self.device / "ux0/tai/config.txt.vjo-bak.other").write_bytes(b"not fetched\n")
+        (self.device / "ux0/tai/config.txt.vjo-20261016-120000-old.bak").write_bytes(b"*KERNEL\r\n")
+        (self.device / "ux0/tai/config.txt.vjo-bad").write_bytes(b"*KERN")
+        (self.device / "ux0/tai/mine.txt").write_bytes(b"not fetched\n")
         (self.device / "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp").write_bytes(b"\0" * 4096)
         # installed files, and the package's manifest of them (one differs)
         files = {}
@@ -234,7 +236,9 @@ class Collect(unittest.TestCase):
                     "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp", "COLLECT.json", "analysis.txt",
                     "analysis.json", "timeline.txt"):
             self.assertIn(folder.name + "/" + rel, names)
-        self.assertNotIn(folder.name + "/ux0/tai/config.txt.vjo-bak.other", names)
+        for rel in ("ux0/tai/config.txt.vjo-20261016-120000-old.bak", "ux0/tai/config.txt.vjo-bad"):
+            self.assertIn(folder.name + "/" + rel, names)  # every copy the installers make
+        self.assertNotIn(folder.name + "/ux0/tai/mine.txt", names)
         self.assertIn("sessions (game starts):", (folder / "timeline.txt").read_text())
         self.assertTrue(any(n.startswith(folder.name + "/listings/") for n in names))
         self.assertIn(d + "anki_queue/a  b#c%20d?.json", names)
@@ -282,7 +286,9 @@ class Collect(unittest.TestCase):
                      # the one-VPK install: its record against the package, the backups and a leftover
                      "one-VPK install (installed.txt): v0.8.0-test.1, the debug build, API 22, app build 0123456789abcdef; "
                      "this package's payload",
-                     "taiHEN backups: ur0:tai/config.txt.vjo-20261016-120000.bak; an interrupted swap's leftovers: "
+                     "taiHEN backups: ur0:tai/config.txt.vjo-20261016-120000.bak, ur0:tai/config.txt.vjo-bak, "
+                     "ux0:tai/config.txt.vjo-20261016-120000-old.bak, "
+                     "ux0:tai/config.txt.vjo-bad; an interrupted swap's leftovers: "
                      "ux0:tai/config.txt.vjo-new (the Overlay app's Install page finishes the swap or puts it back)",
                      "boot.txt: vjoboot1 seq=3 mode=0 stage=4",
                      "worker registrations 1, OCR jobs submitted 1",
