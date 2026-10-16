@@ -878,6 +878,10 @@ static void test_frequency_badge_config(void)
     vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
     TEST_CHECK(c.frequency_badge == 0 && c.n_warnings == 1); /* an invalid value keeps the setting */
     TEST_CHECK(strstr(c.warnings[0], "frequency_badge") != NULL);
+    vjo_config_parse(&c, on, sizeof(on) - 1);
+    vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
+    TEST_CHECK(c.frequency_badge == 1 && c.n_warnings == 2); /* either setting: on stays on */
+    TEST_CHECK(strstr(c.warnings[1], "frequency_badge") != NULL);
     /* The written template carries it, on. */
     vjo_config_defaults(&c);
     c.frequency_badge = 0;
