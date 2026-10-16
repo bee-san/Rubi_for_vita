@@ -507,7 +507,7 @@ static uint32_t freq_key(uint32_t word)
 /* Key, then the reading (or, for kana keys, the spelling) its frequent sense
  * uses; checked to exist in the bundled dictionary (word_lookup's
  * preferred_readings_exist_in_the_bundle). Ends with an empty key. */
-static const char preferred_readings[] =
+static const char preferred_readings[] VJO_DATA_TABLE(preferred_readings) =
     "私\0わたし\0僕\0ぼく\0彼\0かれ\0何\0なに\0今日\0きょう\0一\0いち\0日\0ひ\0火\0ひ\0水\0みず\0"
     "上\0うえ\0下\0した\0中\0なか\0後\0あと\0間\0あいだ\0方\0ほう\0様\0さま\0次\0つぎ\0別\0べつ\0"
     "母\0はは\0兄\0あに\0弟\0おとうと\0大人\0おとな\0学生\0がくせい\0体\0からだ\0頭\0あたま\0腕\0うで\0"
@@ -533,7 +533,7 @@ static const char preferred_readings[] =
  * text's own entry (無くして, に依らず) still comes before its inflections'
  * (無くす, に依る), and a file without ranks reads as before. Checked like
  * preferred_readings (word_lookup's usual_spellings_win_in_the_bundle). */
-static const char usual_spellings[] =
+static const char usual_spellings[] VJO_DATA_TABLE(usual_spellings) =
     "なくなる\0無くなる\0いつか\0何時か\0による\0に依る\0いえいえ\0否々\0なくす\0無くす\0"
     "よそ\0余所\0いわば\0言わば\0ほうき\0箒\0いっぺん\0一遍\0身体\0からだ\0"
     "やめる\0止める\0おじさん\0小父さん\0おばさん\0小母さん\0おじちゃん\0小父ちゃん\0せい\0所為\0";
@@ -1065,9 +1065,8 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     size_t lengths[MAX_SCAN_CHARS + 1];
     uint8_t raws[MAX_SCAN_CHARS + 1];
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
-    int brk = 0, verified = 0, cut = 0; /* a joined break after brk characters; see the span loop */
     unsigned resolved = 0;
-    char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4], next[VJO_LOCAL_MAX_KEY + 1];
+    char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4];
     Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
     Workspace *w;
@@ -1091,19 +1090,20 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     }
 
     /* Only inspect the prefix at the selected character. Source UTF-16
-     * lengths remain unchanged by kana/fullwidth search normalization. One
-     * line break the text's lines join at (core/textjoin.h: the game wrapped
-     * the sentence there) is crossed: the key and the text as written (raw)
-     * leave it out, the source span and its UTF-16 length keep it. */
+     * lengths remain unchanged by kana/fullwidth search normalization. A line
+     * break the text's lines join at (core/textjoin.h: the game wrapped the
+     * sentence there) is crossed as if the lines were one: the key and the
+     * text as written (raw) leave it out, the source span and its UTF-16
+     * length keep it. So a lookup across it finds what it finds in the
+     * unbroken line (host test joined_lines_match_as_one_line). */
     while (off < len && count < MAX_SCAN_CHARS) {
         size_t at = off;
         uint32_t cp = vjo_utf8_next(text, len, &off);
         char enc[4];
         int n;
-        if ((cp == '\n' || cp == '\r') && count && !brk && vjo_text_joins(text, len, at)) {
+        if ((cp == '\n' || cp == '\r') && count && vjo_text_joins(text, len, at)) {
             off += cp == '\r'; /* its '\n' */
             source_units += (int)(off - at);
-            brk = count;
             continue;
         }
         if (boundary(cp)) break;
@@ -1115,10 +1115,6 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
         count++; lengths[count] = bytes; units[count] = source_units; raws[count] = (uint8_t)raw_bytes;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
-    if (brk) { /* the next line's part of the key, which the span loop below cuts short */
-        verified = count - brk;
-        memcpy(next, key + lengths[brk], lengths[count] - lengths[brk]);
-    }
 
     outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
     w = vjo_arena_zalloc(a, sizeof(*w));
@@ -1175,34 +1171,6 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                 found |= 1u << d;
                 exact |= (unsigned)!c << d;
             }
-        }
-        /* A span across the joined break must not cut the next line's own
-         * first word ("…てきた / おばあ様の": きたお is no word of this text,
-         * "食べ / るかな": 食べる is): it is taken only when no word starting
-         * the next line is longer than the span's part on it. Those words are
-         * probed once, longest first, the key filter switched to their block;
-         * shorter spans across the break then need only the shorter ones. */
-        if (brk && k > brk && (found | fell_back)) {
-            if (!cut && verified > k - brk) {
-                filter_restart(w);
-                while (!cut && verified > k - brk) {
-                    int n2 = verified--, c2;
-                    Query q2 = {0};
-                    next[lengths[brk + n2] - lengths[brk]] = 0;
-                    c2 = deinflect(w->candidates, next);
-                    for (int c = 0; c < c2 && !cut; c++)
-                        for (int d = 0; d < w->n_dicts && !cut; d++) {
-                            int before = w->n_matches;
-                            if ((rc = find_matches(w, d, c, raw + raws[brk], raws[brk + n2] - raws[brk], &q2,
-                                                   before + 1)))
-                                goto done;
-                            cut = w->n_matches > before;
-                            w->n_matches = before;
-                        }
-                }
-                filter_restart(w);
-            }
-            if (cut) continue;
         }
         for (int pass = 0; pass < 3 && !complete; pass++)
             for (int d = 0; d < w->n_dicts && !complete; d++) {

@@ -610,39 +610,55 @@ static void joined_lines_are_one_text(void)
     }
 }
 
-/* At a phrase boundary the lines join too (the sentence goes on), yet the
- * next line starts a word of its own: a longer match across the break that
- * cuts that word is no word of the text ("…てきた / おばあさまの": きたお).
- * It is taken only when no word starting the next line is longer than its
- * part there; the next line's words are probed only once a span across the
- * break matches. */
-static void joined_break_keeps_the_next_lines_first_word(void)
+/* Lines that join are one running text: at every character, the lookup
+ * finds what it finds in the line the two make, unbroken, over the same
+ * characters (the break, a unit of the source, inside the span when it
+ * crosses it). A longest match that runs into the next line's first word
+ * ("…てきた / おばあさまの": きたお) is the one the unbroken line gives too. */
+static void joined_lines_match_as_one_line(void)
 {
     const Row rows[] = {{"きた", "来た", "きた", "came", 0, 0}, {"きたお", "北尾", "きたお", "a surname", 0, 0},
                         {"おばあさま", "お祖母様", "おばあさま", "grandmother", 0, 0},
                         {"かず", "数", "かず", "number", 0, 0}, {"か", "か", "", "question particle", 0, 0},
-                        {"ずっと", "ずっと", "", "all along", 0, 0}};
-    /* line 1 the longest: they join */
-    const char *text = "あいうえおかきくけこてきた\nおばあさまの話";
-    size_t at = (size_t)(strstr(text, "てきた") - text) + 3;
-    for (int version = 1; version <= 3; version++) {
-        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
-        TEST_CASE_("v%d", version);
-        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 6, version);
-        TEST_ASSERT(!lookup(&a, &p, &cfg, text, at, &r, &e) && r.n_vocab == 1);
-        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "came"), "got %s", r.vocab[0].meanings[0]);
-        TEST_CHECK(r.tokens[0].len16 == 2);
-        /* か / ずっと: the particle, not 数 */
-        vjo_arena_reset(&a);
-        TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこさしか\nずっと迷って", 36, &r, &e) && r.n_vocab == 1);
-        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "question particle"), "got %s", r.vocab[0].meanings[0]);
-        /* without a word starting the next line, the match across the break is taken */
-        build(&fixtures[0], "main.vjdict", rows, 2, version);
-        vjo_arena_reset(&a);
-        TEST_ASSERT(!lookup(&a, &p, &cfg, text, at, &r, &e) && r.n_vocab == 1);
-        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "a surname"), "got %s", r.vocab[0].meanings[0]);
-        TEST_CHECK(r.tokens[0].len16 == 4); /* き た, the break, お */
-    }
+                        {"ずっと", "ずっと", "", "all along", 0, 0}, {"食べる", "食べる", "たべる", "eat", 1, 0},
+                        {"るか", "ルカ", "", "Luke", 0, 0}};
+    static const char *const texts[] = {"あいうえおかきくけこてきた\nおばあさまの話", "あいうえおかきくけこさしか\nずっと迷って",
+                                        "あいうえおかきくけこ食べ\nるかな？", "あいうえおかきくけこ食べ\r\nるかな？"};
+    for (int version = 1; version <= 3; version++)
+        for (unsigned t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+            VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, one; VjoErr e;
+            const char *text = texts[t], *nl = strchr(text, '\n');
+            size_t brk = (size_t)(nl - text) - (nl[-1] == '\r'), skip = (size_t)(nl - text) + 1 - brk, len = strlen(text);
+            char line[256];
+            memcpy(line, text, brk);
+            memcpy(line + brk, nl + 1, len - (size_t)(nl - text));
+            TEST_CASE_("v%d %s", version, text);
+            setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 8, version);
+            for (size_t at = 0; at < len;) {
+                size_t next = at, in_line = at < brk ? at : at - skip;
+                char m1[64] = "-", m2[64] = "-";
+                int u1 = 0, u2 = 0;
+                vjo_utf8_next(text, len, &next);
+                if (at >= brk && at < brk + skip) { at = next; continue; } /* the break: no character */
+                vjo_arena_reset(&a);
+                TEST_ASSERT(!lookup(&a, &p, &cfg, text, at, &r, &e));
+                if (r.n_vocab) { snprintf(m1, sizeof(m1), "%s", r.vocab[0].meanings[0]); u1 = r.tokens[0].len16; }
+                vjo_arena_reset(&a);
+                TEST_ASSERT(!lookup(&a, &p, &cfg, line, in_line, &one, &e));
+                if (one.n_vocab) { snprintf(m2, sizeof(m2), "%s", one.vocab[0].meanings[0]); u2 = one.tokens[0].len16; }
+                TEST_CHECK_(!strcmp(m1, m2), "at %zu: %s, the unbroken line %s", at, m1, m2);
+                /* the span: the unbroken one's, with the break's units when it runs across it */
+                TEST_CHECK_(u1 == u2 + (at < brk && u2 > (int)vjo_utf16_index(text + at, brk - at) ? (int)skip : 0),
+                            "at %zu: %d units, the unbroken line %d", at, u1, u2);
+                at = next;
+            }
+            /* the examples: きたお and 数 run across, as in the line; 食べる does */
+            if (t == 2) {
+                vjo_arena_reset(&a);
+                TEST_ASSERT(!lookup(&a, &p, &cfg, text, 30, &r, &e) && r.n_vocab == 1);
+                TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "eat") && r.tokens[0].len16 == 4);
+            }
+        }
 }
 
 /* Every dictionary's page starts at the cursor and spans both parts of the
@@ -1632,7 +1648,7 @@ TEST_LIST = {
     {"raw_newline_and_supplementary_highlights", raw_newline_and_supplementary_highlights},
     {"joined_lines_are_one_text", joined_lines_are_one_text},
     {"joined_word_pages_span_both_lines", joined_word_pages_span_both_lines},
-    {"joined_break_keeps_the_next_lines_first_word", joined_break_keeps_the_next_lines_first_word},
+    {"joined_lines_match_as_one_line", joined_lines_match_as_one_line},
     {"punctuation_and_read_counts_do_not_scan_remainder", punctuation_and_read_counts_do_not_scan_remainder},
     {"largest_entry_and_input_fit_64k", largest_entry_and_input_fit_64k},
     {"repeated_lookups_oom_and_io_recovery", repeated_lookups_oom_and_io_recovery},
