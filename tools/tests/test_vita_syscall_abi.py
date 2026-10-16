@@ -53,7 +53,7 @@ class RemovedSyscalls(unittest.TestCase):
             # the kernel exports it; the worker imports it; the Shell imports it, with or without the kernel's export;
             # and the kernel's and the Shell's in the audit without the worker (the build's vjo_syscall_abi)
             for case in ({"kernel": (name,)}, {"worker": (name,)}, {"kernel": (name,), "shell": (name,)},
-                         {"shell": (name,)}, {"kernel": (name,), "with_worker": False},
+                         {"shell": (name,)}, {"kernel": (name,), "with_worker": False}, {"shell": (name,), "with_worker": False},
                          {"kernel": (name,), "shell": (name,), "with_worker": False}):
                 with self.subTest(name=name, case=sorted(case)), self.assertRaises(abi.InvalidABI) as e:
                     audit(**case)
