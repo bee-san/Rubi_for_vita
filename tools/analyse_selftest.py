@@ -1211,8 +1211,8 @@ def render_clock_windows(lg):
             text = (f"MIXED: {clock} in {_n(r['clock_lines'], 'job')}; {_n(r['without_clock'], 'recognizing job')} "
                     "logged none")
         elif r["state"] == "off":
-            text = (f"BOOST OFF: not logged (none of its {_n(r['recognizing'], 'recognizing job')} logged the clock)"
-                    if seen else
+            text = (f"BOOST OFF (the game's own clock, not logged): no clock line in its "
+                    f"{_n(r['recognizing'], 'recognizing job')}" if seen else
                     f"no clock line in its {_n(r['recognizing'], 'recognizing job')}: the boost off, or the game could "
                     "not call ScePower (no job in this log logged the clock)")
         elif r["state"] == "unknown":

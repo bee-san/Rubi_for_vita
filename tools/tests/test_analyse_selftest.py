@@ -1058,6 +1058,8 @@ class AnkiExportLines(unittest.TestCase):
             "2 unreadable, 0 too large"])
         lg = a.summarise_log(export_line(cards=1, moved=1, too_large=1))
         self.assertEqual((lg["anki"]["export_partial"], len(lg["trouble"])), (1, 1))
+        lg = a.summarise_log(export_line(cards=2, moved=1, kept=1))  # a move failed: the card stays queued
+        self.assertEqual((lg["anki"]["export_partial"], len(lg["trouble"])), (1, 1))
 
     def test_cards_a_stop_or_the_cap_left_queued_are_not_a_problem(self):
         # stopped: the user stopped the queue's clearing; left: over a package's cap. Both are in the next export.
@@ -1100,7 +1102,8 @@ def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True):
     """One game job's batch as shell/worker.c logs it (the job line, its lines' crops, frames and times, then the
     game worker's steps). lines: [(frames, ms)], a line from the line cache as (frames, 0): core/vocr_ocr.c logs
     its frames and 0.0 ms. clock: (before, rc, during, after). late: the steps the worker adds after the clock's
-    place (find, recognize); a step log that filled before it has none."""
+    place (game_ocr/main.c: FIND, then RECOGNIZE, once the run that logs the clock has returned); "find": a step log
+    that filled between the two; False: one that filled before both."""
     frames = sum(f for f, t in lines if t)
     out = [f"game vocr rc=0 {model}: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines={len(lines)} USER "
            f"workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=180 ms "
@@ -1112,10 +1115,11 @@ def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True):
         out.append(f"gstep job clock kind=- arg={before} rc=0x{rc & 0xFFFFFFFF:08X} bytes={during} sum=0x{after:08X} "
                    "main=0 cdram=0 phycont=0 us=300000")
     if late:
-        out += [f"gstep job find kind=- arg={len(lines)} rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 "
-                "phycont=0 us=92000",
-                f"gstep job recognize kind=- arg={len(lines)} rc=0x00000000 bytes={frames} sum=0x00000000 main=0 "
-                "cdram=0 phycont=0 us=180000"]
+        out.append(f"gstep job find kind=- arg={len(lines)} rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 "
+                   "phycont=0 us=92000")
+    if late is True:
+        out.append(f"gstep job recognize kind=- arg={len(lines)} rc=0x00000000 bytes={frames} sum=0x00000000 main=0 "
+                   "cdram=0 phycont=0 us=180000")
     return "\n".join(out) + "\n"
 
 
@@ -1158,8 +1162,8 @@ class ClockWindows(unittest.TestCase):
                      "window from title jobs recognizing clock MHz before / during / after; us per CTC frame",
                      "1 line 2 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
                      "2 line 14 PCSG00415 1 0 0 no job recognized a line: no clock either way",
-                     "3 line 20 PCSG00415 3 2 0 BOOST OFF: not logged (none of its 2 recognizing jobs logged the "
-                     "clock); VOCR3_H15_w8.vocr 2,905 us (2 lines)",
+                     "3 line 20 PCSG00415 3 2 0 BOOST OFF (the game's own clock, not logged): no clock line in its 2 "
+                     "recognizing jobs; VOCR3_H15_w8.vocr 2,905 us (2 lines)",
                      "4 line 36 PCSG00415 1 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
                      "boost off against on, us per CTC frame (each recognized line's time / its frames, "
                      "frame-weighted; lines from the cache left out; a core's share: the recognizing threads' run "
@@ -1186,6 +1190,18 @@ class ClockWindows(unittest.TestCase):
         self.assertEqual(lg["clock_compare"], {})
         lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + game_job([(80, 232.8)], late=False))
         self.assertEqual((lg["clock_windows"][0]["state"], lg["clock_windows"][0]["unsure"]), ("on", 1))
+        # FIND comes after the clock's place too: a log that filled before RECOGNIZE still had room for the clock
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 232.8)], late="find"))
+        self.assertEqual(lg["clock_windows"][0]["state"], "off")
+
+    def test_a_reboot_ends_a_window(self):
+        # config.ini is read again at boot: jobs logged after a boot and before its first game start (a log that
+        # rotated there, say) are not the previous boot's window
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + BOOT22 + game_job([(80, 232.8)]))
+        self.assertEqual([(r["window"], r["title"], r["state"]) for r in lg["clock_windows"]],
+                         [(1, "PCSG00415", "on"), (2, None, "off")])
+        self.assertIn("2 line 10 ? 1 1 0 BOOST OFF (the game's own clock, not logged): no clock line in its 1 "
+                      "recognizing job", flat("\n".join(a.render_clock_windows(lg))))
 
     def test_a_clock_already_at_444_or_more_is_left_and_compared_apart(self):
         # PSVshell's 500 (or the game's own 444): rc 1, never lowered; a set call refused (rc < 0) leaves it too
