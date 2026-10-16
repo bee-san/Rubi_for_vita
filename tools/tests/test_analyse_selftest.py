@@ -2475,8 +2475,16 @@ class PressesAndRereads(unittest.TestCase):
             ("rc -119", "", end(-119, 1800), "", ("read_without_text",)),
             ("rc -117", "", end(-117, 40), "", ("read_without_text",)),
             ("no line", "", end(0, 900), "", ("read_without_text",)),
-            # audit-b note C (MB1a2): text, then a failed lookup (rc -113): counted with the failed jobs, as no text
-            ("rc -113 after its text", "", text + end(-113, 1800), "", ("read_without_text",)),
+            # #159 item 2 (from audit-b note C, MB1a2): text, then a failed lookup (rc -113): its text was shown,
+            # its word not, so a kind of its own, not "no text"
+            ("rc -113 after its text", "", text + end(-113, 1800), "", ("text_no_word", -113)),
+            ("rc -103 after its text", "", "game vocr text 0: あいうえお\n" + end(-103, 1800), "", ("text_no_word", -103)),
+            # audit N1: stale, so nothing shown (on_job_done): cancelled at the press (cancel_outdated_job), or its text
+            # passed over by on_job_text (no `subtitle text ready`) before its lookup failed
+            ("rc -113 after its text, cancelled at the press", "",
+             text + "job cancelled: the screen changed since its capture\n" + end(-113, 1800), "", ("read_without_text",)),
+            ("rc -114 after its text, never posted", "", "game vocr text 0: あいうえお\n" + end(-114, 1800), "",
+             ("read_without_text",)),
             ("OCR only, then its word's lookup", ", OCR only", text + end(0, 1520), cursor(400), ("waited", 2204, 1)),
             ("OCR only, its lookup failed", ", OCR only", text + end(0, 1520), cursor(400, rc=-110), ("unclear",)),
             # audit-b note C (MB1f): the word's lookup is the first done line after the running job's, not a later one
@@ -2490,8 +2498,9 @@ class PressesAndRereads(unittest.TestCase):
                    + running_end + (after + CLOSE if after is not None else ""))
             p = a.summarise_log(log)["presses"]
             mode = p["modes"]["auto"]
-            got = (("waited", mode["waited"][0], mode["waited_ocr_only"]) if mode["waited"] else
-                   next((k,) for k in ("read_without_text", "unclear", "closed_before", "at_once") if mode[k]))
+            got = ((("waited", mode["waited"][0], mode["waited_ocr_only"]) if mode["waited"] else
+                    ("text_no_word", mode["text_no_word"][0]) if mode["text_no_word"] else
+                    next((k,) for k in ("read_without_text", "unclear", "closed_before", "at_once") if mode[k])))
             self.assertEqual(got, want, name)
         # the self-test's job running at the press: stopped by it, never a press's, whatever follows
         for after in ("", cursor(300), shell_job("the running job was OCR only", 900, 1000, ["あ"])):
@@ -2568,13 +2577,55 @@ class PressesAndRereads(unittest.TestCase):
                + "job 0 done rc=0 in 1600 ms, arena peak 53744, dictionary page 1/1, game 800 ms, log 30 ms in 3 appends\n"
                + press("no background result") + "overlay not opened: no Paf memory for its text (20 KiB)\n"
                + shell_job("overlay opened", 900, 1000, ["う"]) + CLOSE
+               # #159 item 2: the page itself refused (shell/overlay.cpp open_page), the second way an open fails
+               + press("no background result") + "overlay page failed to open\n"
+               + shell_job("overlay opened", 900, 1000, ["お"]) + CLOSE
                + press("no background result") + shell_job("overlay opened", 900, 1000, ["え"]) + CLOSE)
         mode = a.summarise_log(log)["presses"]["modes"]["auto"]
         self.assertEqual((mode["presses"], mode["closed_before"], mode["not_opened"], mode["read_text"], mode["waited"]),
-                         (4, 2, 1, [900], []))
+                         (5, 2, 2, [900], []))
         text = flat("\n".join(a.render_presses(a.summarise_log(log))))
         self.assertIn("2 closed before their text or word came (not timed)", text)
-        self.assertIn("1 whose overlay could not open (no Paf memory for its text; not timed)", text)
+        self.assertIn("2 whose overlay could not open (no Paf memory for its text, or its page did not open; not timed)",
+                      text)
+        # the page's line is shell/overlay.cpp's own
+        self.assertIn('vjo_log("overlay page failed to open");',
+                      (ROOT / "shell/overlay.cpp").read_text(encoding="utf-8"))
+
+    def test_a_press_whose_job_read_text_but_not_its_word_has_its_own_line(self):
+        """#159 item 2: a job of the press's own that read text and then failed to look the word up (rc -113, -114,
+        -103 after its text: shell/worker.c run_job, run_vocr) gave the overlay its text: counted apart, with its rc,
+        never as "no text". One closed before that text came is not counted with them, and neither is a stale one,
+        which showed nothing (audit N1: cancelled while it ran, or its text passed over by on_job_text)."""
+        log = (BOOT22 + START
+               + press("no background result") + shell_job("overlay opened", 900, 1000, ["あ"], rc=-114) + CLOSE
+               + press("no background result") + shell_job("overlay opened", None, 1300, ["い"], rc=-103) + CLOSE
+               # a retry after a screen change, then text and a failed lookup
+               + press("no background result") + shell_job("overlay opened", None, 600, rc=-120)
+               + shell_job("the screen changed during the last one", 400, 500, ["う"], rc=-113) + CLOSE
+               # closed before its text came
+               + press("no background result") + "job start (overlay opened)\n" + CLOSE
+               + "game vocr text 0: え\nsubtitle text ready in 787 ms\n"
+               + "job 0 done rc=-113 in 979 ms, arena peak 53744, dictionary page 1/1, game 676 ms, log 30 ms in 3 appends\n"
+               # no line at all: still no text
+               + press("no background result") + shell_job("overlay opened", None, 700) + CLOSE
+               # cancelled while it ran (the screen changed), then its lookup failed; its retry read no line
+               + press("no background result") + "job start (overlay opened)\ngame vocr text 0: か\n"
+               + "subtitle text ready in 700 ms\njob cancelled: the screen changed since its capture\n"
+               + "job 0 done rc=-113 in 900 ms, arena peak 53744, dictionary page 1/1, game 450 ms, log 30 ms in 3 appends\n"
+               + shell_job("the screen changed during the last one", None, 600) + CLOSE
+               # its text passed over by on_job_text (no `subtitle text ready`), then its lookup failed
+               + press("no background result") + shell_job("overlay opened", None, 800, ["き"], rc=-114) + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], sorted(mode["text_no_word"]), mode["read_without_text"], mode["closed_before"],
+                          mode["read_text"]), (7, [-114, -113, -103], 3, 1, []))
+        text = flat("\n".join(a.render_presses(a.summarise_log(log))))
+        self.assertIn("3 whose job read text but not its word (the lookup failed: local format (rc -114): 1, local io "
+                      "(rc -113): 1, out of memory (rc -103): 1); the overlay showed the text and why the word is missing "
+                      "(not timed)", text)
+        self.assertIn("3 with no text from any job while the overlay was open", text)
+        for secret in ("あ", "い", "う", "え", "か", "き"):
+            self.assertNotIn(secret, text)
 
     def test_a_rotated_log_names_each_jobs_own_file_and_line(self):
         """audit B2: --collect reads log.old.txt and then log.txt as one text; a flagged job names its own file's line."""
