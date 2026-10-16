@@ -1016,16 +1016,65 @@ SHORT_REFUSAL = re.compile(r"Paf allocation refused: ")
 SELFTEST_NORMAL = "self-test: armed, but this is the normal build"
 # shell/worker.c check_app: "overlay app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)"
 APP_LINE = re.compile(r"^overlay app (ok|MISMATCH|unknown): ")
+# the installed Overlay app's folder as COLLECT.json names it (collect_vita.py APP)
+APP_FOLDER = "ux0:/app/VJOSET001"
+# the whole line: the installed app's stamp ('' when it could not be read), that read's rc, whether its eboot.bin is
+# there (vjo_file_exists) and the plugins' record
+APP_CHECK = re.compile(r"^overlay app (ok|MISMATCH|unknown): installed '(.*?)' \((0x[0-9A-Fa-f]{8}), app (-?\d+)\), "
+                       r"plugins' '(.*?)' \((0x[0-9A-Fa-f]{8})\)$")
 # ocr_backend values of removed engines, which an older Overlay app can still write (#101: test.1's app wrote
 # vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine). Since Google
 # Lens's removal VOCR is the only engine and ocr_backend no setting: today's app and installer delete any line.
 REMOVED_ENGINES = ("lens", "vocr2", "meiki", "ncnn")
 
 
-def summarise_app(folder, record):
+def app_unread(app):
+    """(why the collect read neither of the installed app's two files, what it found of the app's folder: "absent",
+    "present" or None, nothing either way) from COLLECT.json's "app" (collect_vita.py collect_app; an older
+    collect_vita.py recorded only whether it could list the folder, "listed")."""
+    reads = app.get("reads")
+    if reads is None:  # before #138: the stamp by a CWD into the folder, eboot.bin only if the folder's LIST had it
+        if app.get("listed"):
+            return "no ux0:app/VJOSET001/eboot.bin", "absent"
+        return "its folder could not be entered, and this older collect_vita.py read the app only through it", None
+    errors = [f"{name}, curl exit {r['rc'][-1]} ({r.get('error') or 'no message'})" for name, r in reads.items()
+              if r.get("state") == "error"]
+    if errors:
+        return "reading it failed: " + "; ".join(errors), None
+    if app.get("folder") == "ok":  # entered and listed: the files are not in it
+        if app.get("eboot_listed"):
+            return "its folder lists eboot.bin, but neither it nor vjo_app.txt could be read", "present"
+        return "ux0:app/VJOSET001 has no eboot.bin", "absent"
+    if app.get("apps") == "ok":
+        if app.get("in_apps"):
+            return ("ux0:app lists VJOSET001, but its folder could not be entered and neither its vjo_app.txt nor its "
+                    "eboot.bin could be read by its full path", "present")
+        return "ux0:app has no VJOSET001", "absent"
+    return ("its folder could not be entered, neither file could be read by its full path, and ux0:app could not be "
+            "listed", None)
+
+
+def shell_app_check(log, old_lines=0):
+    """The Shell's last check of the installed app in the log's last boot, with where it is (log.txt:N), or None.
+    shell/worker.c check_app checks at each enabled game's start and logs only a change, so a boot's last line is
+    its answer at every later game start of that boot too."""
+    log = log or {}
+    checks = [c for c in log.get("app_checks") or [] if c["boot"] == log.get("shell_starts", 0)]
+    if not checks:
+        return None
+    c = dict(checks[-1])
+    c["where"] = f"log.old.txt:{c['line']}" if c["line"] <= old_lines else f"log.txt:{c['line'] - old_lines}"
+    return c
+
+
+def summarise_app(folder, record, log=None, old_lines=0):
     """The installed Overlay app against the one the plugins came with (core/app_stamp.h): its stamp
     (ux0/app/VJOSET001/vjo_app.txt), the plugins' record (ux0/data/VitaJPOverlay/vjo_app.txt), the package's
-    (package-manifest.json "app") and the installed eboot.bin's hash (collect_vita.py; never kept)."""
+    (package-manifest.json "app") and the installed eboot.bin's hash, as collect_vita.py read them (the way
+    install_ftp.sh --check-app reads them; the eboot.bin never kept). When the collect read neither file, what it
+    found of the app's folder decides "not installed", and otherwise the Shell's own check in this boot (log, the
+    log summary; old_lines: log.old.txt's lines before log.txt's) answers for it: test.3's collect could not enter
+    ux0:app/VJOSET001 while the Shell read the stamp in it (#138)."""
     def first(rel):
         text = _read(folder, rel)
         return None if text is None else (text.splitlines() or [""])[0].strip()
@@ -1033,9 +1082,13 @@ def summarise_app(folder, record):
     app, pkg = record.get("app"), record.get("package_app") or {}
     want = plugins or pkg.get("stamp")
     eboot = (app or {}).get("eboot")
+    reads = (app or {}).get("reads") or {}
     out = {"installed": installed, "plugins": plugins, "package": pkg.get("stamp"),
            "eboot_sha256": eboot["sha256"] if eboot else None,
-           "eboot_match": None if not (eboot and pkg.get("eboot_sha256")) else eboot["sha256"] == pkg["eboot_sha256"]}
+           "eboot_match": None if not (eboot and pkg.get("eboot_sha256")) else eboot["sha256"] == pkg["eboot_sha256"],
+           "source": "collect", "unread": None, "shell": None,
+           # the files the second way read (collect_vita.py APP_READS), with curl's exit for each way
+           "by_path": {name: r["rc"] for name, r in reads.items() if r.get("state") == "read" and r.get("method") == "nocwd"}}
     if app is None and installed is None:
         out["state"] = "unknown"  # a collect from before the app was collected
     elif not want:
@@ -1045,23 +1098,47 @@ def summarise_app(folder, record):
     elif eboot:
         out["state"] = "MISMATCH"  # an app without a stamp: from before the stamps (v0.8.0-test.2 or older)
     else:
-        out["state"] = "not installed"
+        out["unread"], found = app_unread(app)
+        check = shell_app_check(log, old_lines)
+        seen = check if check and check["state"] in ("ok", "MISMATCH") else None
+        if found == "absent":
+            out["state"], out["shell"] = "not installed", seen  # a check that found one: a note
+        elif seen:
+            out["state"], out["source"], out["shell"] = seen["state"], "shell", seen
+        else:
+            out["state"] = "not read"
     return out
 
 
 def render_app(a):
+    s = a.get("shell")
+    installed, plugins, via = a["installed"], a["plugins"] or a["package"], ""
+    if a.get("source") == "shell":
+        installed, plugins = s["installed"], s["plugins"]
+        via = (f", by the Shell's check at a game start of this boot ({s['where']}); this collect could not read it "
+               f"over FTP: {a['unread']} (#138)")
+    by_path = ("; read by its full path, no CWD, after the way through its folder was answered 'not there': "
+               + ", ".join(f"{n} (curl exit {rc[0]})" for n, rc in sorted(a["by_path"].items()))) if a.get("by_path") else ""
     if a["state"] == "ok":
-        return (f"  Overlay app: the plugins' ({a['installed']})"
+        return (f"  Overlay app: the plugins' ({installed})"
                 + ("; its eboot.bin is the package's" if a["eboot_match"] else
                    "; its eboot.bin is not byte-identical to the package's (the stamp decides; whether VitaShell "
-                   "installs it byte for byte is unmeasured)" if a["eboot_match"] is False else ""))
+                   "installs it byte for byte is unmeasured)" if a["eboot_match"] is False else "") + via + by_path)
     if a["state"] == "MISMATCH":
-        have = a["installed"] or ("an app from before the version stamps, eboot.bin " + (a["eboot_sha256"] or "?")[:16])
-        return (f"  Overlay app: NOT the plugins' (installed: {have}; the plugins came with "
-                f"{a['plugins'] or a['package']}): what the app showed and saved (its engine card, Anki page, "
-                "config.ini values) was another build's; install ux0:data/JPOverlaySettings.vpk in VitaShell")
+        have = installed or ("an app from before the version stamps"
+                             + (f", eboot.bin {a['eboot_sha256'][:16]}" if a["eboot_sha256"] else ""))
+        return (f"  Overlay app: NOT the plugins' (installed: {have}; the plugins came with {plugins}){via}: what the "
+                "app showed and saved (its engine card, Anki page, config.ini values) was another build's; install "
+                "ux0:data/JPOverlaySettings.vpk in VitaShell" + by_path)
     if a["state"] == "not installed":
-        return "  Overlay app: not installed (no ux0:app/VJOSET001/eboot.bin)"
+        return (f"  Overlay app: not installed ({a['unread']})"
+                + (f"; the Shell's check at a game start of this boot found one ({s['installed'] or 'without a stamp'}, "
+                   f"{s['where']}): deleted since, or the listing left it out" if s else ""))
+    if a["state"] == "not read":
+        return (f"  Overlay app: not checked: this collect could not read it over FTP ({a['unread']}), and the Shell "
+                "logged no check of it in this boot; if the Overlay app is open beside VitaShell, close it from its "
+                "LiveArea page and collect again (test.3's collect could not enter its folder, most likely while it "
+                "was open, #138)")
     return "  Overlay app: not checked (no version stamp to compare: the plugins or this collect predate them)"
 
 
@@ -1300,7 +1377,7 @@ def render_clock_windows(lg):
 
 def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
-    s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
+    s = {"lines": 0, "boot": [], "shell_starts": 0, "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
                   "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
@@ -1338,6 +1415,7 @@ def summarise_log(text):
                 s["boot"].append(line)
         m = SHELL_STARTED.match(line)
         if m:
+            s["shell_starts"] += 1  # boots: an app check names the one it is in
             new_api = int(m.group(1))
             by = s.get("config_warnings_by_api")
             if boot_run and by is not None:  # shell/worker.c vjo_worker_start: apply_config, then this line
@@ -1368,6 +1446,12 @@ def summarise_log(text):
         m = APP_LINE.match(line)
         if m:  # the Shell's check of the installed Overlay app at a game start (shell/worker.c check_app)
             s.setdefault("app", []).append(m.group(1))
+            d = APP_CHECK.match(line)
+            s.setdefault("app_checks", []).append({"state": m.group(1), "line": n, "boot": s["shell_starts"],
+                                                   "installed": d.group(2) if d else None,
+                                                   "installed_rc": d.group(3) if d else None,
+                                                   "app": int(d.group(4)) if d else None,
+                                                   "plugins": d.group(5) if d else None})
         short_log_line(s, line)  # the normal build's own lines (summarise_short)
         m = LOG["settle"].match(line)
         if m:
@@ -1834,7 +1918,6 @@ def summarise_collect(folder):
     # network), in the text and in analysis.json alike
     if "log_host" in cfg:
         out["config"]["log_host"] = "set" if cfg["log_host"] else ""
-    out["app"] = summarise_app(folder, record)
     out["tai"] = {}
     for dev in ("ur0", "ux0"):
         t = _read(folder, f"{dev}/tai/config.txt")
@@ -1847,10 +1930,12 @@ def summarise_collect(folder):
     old, new = _read(folder, data + "log.old.txt") or "", _read(folder, data + "log.txt") or ""
     logs = old + ("\n" if old and not old.endswith("\n") else "") + new  # line n: log.old.txt's, then log.txt's
     out["log"] = summarise_log(logs) if logs else None
+    k = len(old.splitlines())
     if out["log"]:
-        k = len(old.splitlines())
         for w in out["log"]["clock_windows"]:
             w["where"] = f"log.old.txt:{w['line']}" if w["line"] <= k else f"log.txt:{w['line'] - k}"
+    # the installed Overlay app; the Shell's check in the log answers for it when the collect could not read it
+    out["app"] = summarise_app(folder, record, out["log"], k)
     out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
@@ -1979,8 +2064,11 @@ def render_collect(c):
         L.append(f"  installed files: {len(pc['match'])} of {pc['checked'] - len(pc['unknown'])} match the package"
                  + (f"; DIFFER or absent: {', '.join(pc['mismatch'])}" if pc["mismatch"] else "")
                  + (f"; not in this package: {', '.join(pc['unknown'])}" if pc["unknown"] else ""))
-    if c["record"].get("missing"):
-        L.append(f"  not on the Vita: {', '.join(c['record']['missing'])}")
+    # the app's own files and folder are the Overlay app line's (an older collect_vita.py listed them here when
+    # it could not enter the folder: test.3's, #138, while the Shell read the stamp in it)
+    missing = [m for m in c["record"].get("missing") or [] if not m.startswith(APP_FOLDER + "/")]
+    if missing:
+        L.append(f"  not on the Vita: {', '.join(missing)}")
     for e in c["record"].get("errors") or []:
         L.append(f"  collect error: {e}")
     if c.get("app"):

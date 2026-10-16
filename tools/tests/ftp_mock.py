@@ -84,7 +84,10 @@ class _Handler(socketserver.StreamRequestHandler):
         server = self.server
         self.reply("220 FTPVita Server ready.")
         while True:
-            raw = self.rfile.readline()
+            try:
+                raw = self.rfile.readline()
+            except ConnectionResetError:  # a client that only checked the port (install_ftp.sh's reachability probe)
+                return
             if not raw:
                 return
             line = raw.decode("utf-8", "replace").rstrip("\r\n")

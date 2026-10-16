@@ -1,0 +1,11 @@
+Vita JP Overlay shell started (kernel API 20)
+VITASHELL: system app, not a game
+Vita JP Overlay shell started (kernel API 22)
+game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+overlay app ok: installed 'vjoapp1 api=22 build=c3e781ad58a5ebe3' (0x00000026, app 1), plugins' 'vjoapp1 api=22 build=c3e781ad58a5ebe3' (0x00000026)
+VJOSET001: system app, not a game
+overlay app: start: budget mode 3: main memory 38899712 of 52428800 B free, phycont 0 of 0 B, CDRAM 0 of 16777216 B; heap 8388608 B
+PCSG00940: JP Overlay disabled; game input passes through
+VJOSET001: system app, not a game
+game PCSG00940 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+VITASHELL: system app, not a game

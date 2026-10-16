@@ -141,7 +141,10 @@ reset_boot_record() {
 
 # Read-only: is the Vita's Overlay app (ux0:app/VJOSET001) the one this install brings? Prints a box with the
 # answer and what to do; returns 0 yes, 1 no, 2 cannot tell (tools/app_stamp.py check). $1: --after-install
-# for the installer's own last words.
+# for the installer's own last words. Each file is read as tools/collect_vita.py's read_app reads it: curl's
+# own way, a CWD into each folder on the way; when that is answered "not there", once more by its full path with
+# no CWD (SIZE and RETR of ux0:/app/VJOSET001/<file>, which VitaShell's FTP opens without entering the folder).
+# test.3's collect (#138) could not enter that folder while the Shell read the stamp in it.
 app_check() {
   local rc pair src dst
   rm -f "$TMP/app.stamp" "$TMP/app.eboot"
@@ -151,8 +154,11 @@ app_check() {
     rc=0
     get "$src" "$dst" 2>/dev/null || rc=$?
     case $rc in
+      9|19|78) rc=0; c --ftp-method nocwd -o "$dst" "$FTP/$src" 2>/dev/null || rc=$? ;;
+    esac
+    case $rc in
       0) ;;
-      9|19|78) rm -f "$dst" ;;  # not there: CWD or RETR refused (as tools/collect_vita.py reads them)
+      9|19|78) rm -f "$dst" ;;  # not there either way: CWD, SIZE or RETR refused (as tools/collect_vita.py reads them)
       *)  # cannot connect, timed out, a broken transfer: not a Vita without the app
         echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Overlay app. Start VitaShell's FTP (SELECT) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
         return 2 ;;

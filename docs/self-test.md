@@ -254,7 +254,13 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   `anki/`, the Overlay app's `.apkg` packages, and `vjo_app.txt`, the record of the Overlay app the plugins came
   with;
 - `ux0:app/VJOSET001/vjo_app.txt`, the installed Overlay app's version stamp, and the SHA-256 of its
-  `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h));
+  `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h)). Both are read as `--check-app`
+  reads them: through the folder (curl's CWD into each folder on the way), then, when that is answered "not
+  there", by the file's full path without entering the folder (`SIZE` and `RETR` of
+  `ux0:/app/VJOSET001/<file>`). test.3's collect could not enter that folder, most likely because the Overlay
+  app was open beside VitaShell, while the Shell read the stamp in it ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138));
+  `COLLECT.json`'s `app` says which way read each file. When neither can be read, the app's folder is
+  listed, and, when it cannot be entered, `ux0:app`, of which only whether it lists `VJOSET001` is kept;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installer's `.vjo-bak` copies; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
@@ -270,7 +276,9 @@ package's version, defaults and install settings, with each API key and the audi
 the summary: whether the installed files match the package (a file it does not ship, such as a
 removed engine's model, is listed as not in this package), whether the installed Overlay app is the
 one the plugins came with (an app from before the stamps, v0.8.0-test.2 and older, is recognised by its
-eboot.bin without one), the configuration (with a note for any `ocr_backend` line, which is no setting
+eboot.bin without one; "not installed" only when a listing shows the folder or its `eboot.bin` is not
+there; when the collect could not read the app, the Shell's own check at a game start of the log's last
+boot answers for it, with where in `log.txt`), the configuration (with a note for any `ocr_backend` line, which is no setting
 any more since VOCR is the only engine: a removed engine's value, which an older app writes, or another,
 and that today's app or installer deletes the line), where taiHEN loads
 each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, the kernel's start and hooks, every

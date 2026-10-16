@@ -3,6 +3,7 @@ server (ftp_mock.py) over a fake device tree. Everything is fetched into one tim
 zip, config.ini's API keys never reach the folder, the Vita is never written, and the analyser
 summarises the logs, the self-test, the tiers and what it cannot decide."""
 import hashlib
+import io
 import json
 import shutil
 import subprocess
@@ -94,7 +95,7 @@ class Collect(unittest.TestCase):
         self.package = self.root / "package"
         (self.package / "tools").mkdir(parents=True)
         for name in ("install_ftp.sh", "collect_vita.py", "analyse_selftest.py", "analyse_timeline.py",
-                     "model_tiers.json", "package_release.py",
+                     "model_tiers.json", "package_release.py", "app_stamp.py",
                      "prepare_ocr.py", "prepare_plaintext.py", "migrate_config.py", "patch_tai_config.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
         shutil.copyfile(ROOT / "tools/install-vita.sh", self.package / "install-vita.sh")
@@ -151,6 +152,47 @@ class Collect(unittest.TestCase):
     def collect(self, ftp):
         return subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--collect", f"127.0.0.1:{ftp.port}"],
                               capture_output=True, text=True, timeout=180, cwd=self.root)
+
+    # ---- the installed Overlay app (core/app_stamp.h): --collect reads it as --check-app does (#138) ----
+    EBOOT = b"SCE\0 the package's eboot.bin"
+    STAMP = f"vjoapp1 api=21 build={hashlib.sha256(EBOOT).hexdigest()[:16]}"
+
+    def stamp_package(self):
+        """The package's app (its manifest's "app", its stamp and VPK, as --check-app reads them from an extracted
+        package's root) and the plugins' record of it on the Vita."""
+        manifest = json.loads((self.package / "package-manifest.json").read_text())
+        manifest["app"] = {"stamp": self.STAMP, "title_id": "VJOSET001", "eboot_bytes": len(self.EBOOT),
+                           "eboot_sha256": hashlib.sha256(self.EBOOT).hexdigest()}
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest))
+        (self.package / "ux0/data/VitaJPOverlay").mkdir(parents=True, exist_ok=True)
+        (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(self.STAMP + "\n")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("eboot.bin", self.EBOOT)
+            z.writestr("vjo_app.txt", self.STAMP + "\n")
+        (self.package / "JPOverlaySettings.vpk").write_bytes(buf.getvalue())
+        (self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(self.STAMP + "\n")
+
+    def device_app(self, eboot=None, stamp=None, folder=True):
+        app = self.device / "ux0/app/VJOSET001"
+        if app.is_file():
+            app.unlink()
+        shutil.rmtree(app, ignore_errors=True)
+        if folder:
+            app.mkdir(parents=True)
+        if eboot is not None:
+            (app / "eboot.bin").write_bytes(eboot)
+        if stamp is not None:
+            (app / "vjo_app.txt").write_text(stamp + "\n")
+
+    def check_app(self, ftp):
+        return subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--check-app", f"127.0.0.1:{ftp.port}"],
+                              capture_output=True, text=True, timeout=120, cwd=self.root)
+
+    def latest(self):
+        """The newest collect folder, its COLLECT.json and its analysis.txt."""
+        folder = max(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        return folder, json.loads((folder / "COLLECT.json").read_text()), (folder / "analysis.txt").read_text()
 
     def test_collect_fetches_everything_read_only_into_one_zip(self):
         with FtpMock(self.device) as ftp:
@@ -301,51 +343,201 @@ class Collect(unittest.TestCase):
 
     def test_the_overlay_app_is_collected_read_only_and_compared(self):
         # The installed Overlay app (core/app_stamp.h): its stamp is fetched, its eboot.bin hashed and never kept,
-        # and both are compared with the plugins' record and the package (#101).
-        eboot, other = b"SCE\0 the package's eboot.bin", b"SCE\0 test.2's eboot.bin"
-        stamp = f"vjoapp1 api=21 build={hashlib.sha256(eboot).hexdigest()[:16]}"
-        manifest = json.loads((self.package / "package-manifest.json").read_text())
-        manifest["app"] = {"stamp": stamp, "title_id": "VJOSET001", "eboot_bytes": len(eboot),
-                           "eboot_sha256": hashlib.sha256(eboot).hexdigest()}
-        (self.package / "package-manifest.json").write_text(json.dumps(manifest))
-        (self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(stamp + "\n")
+        # and both are compared with the plugins' record and the package (#101). --check-app reads the same two
+        # files the same way and gives the same answer (#138: test.3's --collect said "not installed" where
+        # --check-app had said "up to date").
+        self.stamp_package()
+        eboot, other, stamp = self.EBOOT, b"SCE\0 test.2's eboot.bin", self.STAMP
         (self.device / "ux0/data/VitaJPOverlay/config.ini").write_text("ocr_backend = vocr2\n")
-        app = self.device / "ux0/app/VJOSET001"
-        app.mkdir(parents=True)
-        cases = ((other, None, ("Overlay app: NOT the plugins' (installed: an app from before the version stamps, "
-                                f"eboot.bin {hashlib.sha256(other).hexdigest()[:16]}; the plugins came with {stamp})")),
-                 (eboot, stamp, f"Overlay app: the plugins' ({stamp}); its eboot.bin is the package's"),
-                 (None, None, "Overlay app: not installed (no ux0:app/VJOSET001/eboot.bin)"))
-        for i, (body, own, text) in enumerate(cases):
-            with self.subTest(text=text):
-                for f in app.iterdir():
-                    f.unlink()
-                if body is not None:
-                    (app / "eboot.bin").write_bytes(body)
-                if own is not None:
-                    (app / "vjo_app.txt").write_text(own + "\n")
+        (self.device / "ux0/app/PCSG00415").mkdir(parents=True)  # a game: never named by the collect
+        cases = ((dict(eboot=other), ("Overlay app: NOT the plugins' (installed: an app from before the version stamps, "
+                                      f"eboot.bin {hashlib.sha256(other).hexdigest()[:16]}; the plugins came with {stamp})"),
+                  1, "no version stamp"),
+                 (dict(eboot=eboot, stamp=stamp), f"Overlay app: the plugins' ({stamp}); its eboot.bin is the package's",
+                  0, "Overlay app: up to date"),
+                 # a folder without the app's files: the collect lists it to say so
+                 (dict(), "Overlay app: not installed (ux0:app/VJOSET001 has no eboot.bin)", 1,
+                  "No Overlay app is installed"),
+                 # no folder: it cannot be entered, so ux0:app is listed, for VJOSET001 alone
+                 (dict(folder=False), "Overlay app: not installed (ux0:app has no VJOSET001)", 1,
+                  "No Overlay app is installed"),
+                 # a file of that name is no app's folder
+                 (dict(folder=False, file=True), "Overlay app: not installed (ux0:app has no VJOSET001)", 1,
+                  "No Overlay app is installed"))
+        for files, text, code, check_text in cases:
+            with self.subTest(text=text, files=sorted(files)):
+                self.device_app(**{k: v for k, v in files.items() if k != "file"})
+                if files.get("file"):
+                    (self.device / "ux0/app/VJOSET001").write_bytes(b"not a folder")
                 before = {q: q.read_bytes() for q in self.device.rglob("*") if q.is_file()}
                 with FtpMock(self.device) as ftp:
                     result = self.collect(ftp)
+                    check = self.check_app(ftp)
                     writes = list(ftp.stored)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(writes, [])
                 self.assertEqual({q: q.read_bytes() for q in self.device.rglob("*") if q.is_file()}, before)
-                folder = max(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
-                record = json.loads((folder / "COLLECT.json").read_text())
+                folder, record, analysis = self.latest()
                 self.assertEqual(record["package_app"]["stamp"], stamp)
+                body = files.get("eboot")
                 self.assertEqual((record["app"]["eboot"] or {}).get("sha256"),
                                  hashlib.sha256(body).hexdigest() if body else None)
                 self.assertNotIn("ux0:/app/VJOSET001/eboot.bin", record["hashed"])  # not a package file
+                # each file read through its folder, as --check-app's curl does; a file that is not there is
+                # asked for once more by its full path
+                for name, there in (("vjo_app.txt", "stamp" in files), ("eboot.bin", body is not None)):
+                    self.assertEqual(record["app"]["reads"][name]["state"], "read" if there else "absent", name)
+                    self.assertEqual(record["app"]["reads"][name]["method"], "cwd" if there else None, name)
+                # the app's own paths are the Overlay app line's, not "not on the Vita" (#138)
+                self.assertFalse([m for m in record["missing"] if m.startswith("ux0:/app/")], record["missing"])
+                self.assertNotIn("not on the Vita: ux0:/app", analysis)
+                # ux0:app is listed only to find VJOSET001: no other title is kept anywhere
+                self.assertNotIn(b"PCSG00415", (folder / "COLLECT.json").read_bytes())
+                self.assertFalse([p.name for p in (folder / "listings").iterdir() if b"PCSG00415" in p.read_bytes()])
+                self.assertNotIn("ux0:/app", record["listings"])
                 with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
                     self.assertFalse(any(n.endswith("eboot.bin") for n in z.namelist()))
-                analysis = (folder / "analysis.txt").read_text()
                 self.assertIn(text, analysis)
                 self.assertIn("ocr_backend=vocr2: a removed engine, which an older Overlay app writes; the plugins run "
                               "vocr, and today's app or installer deletes the line", analysis)
                 self.assertNotIn("not in this package: ux0:/app", analysis)
+                # --check-app, on the same Vita: the same answer
+                self.assertEqual(check.returncode, code, check.stdout + check.stderr)
+                self.assertIn(check_text, " ".join(check.stdout.replace("|", " ").split()))
                 shutil.rmtree(folder)
                 Path(str(folder) + ".zip").unlink()
+
+    def test_the_app_is_read_by_its_full_path_when_its_folder_cannot_be_entered(self):
+        """#138: test.3's --collect said "Overlay app: not installed" and listed ux0:/app/VJOSET001/ as not on the
+        Vita: every CWD into that folder was refused (curl's for the stamp, ftplib's three spellings for its
+        listing), while --check-app had read it after the install and the Shell read its stamp at the game starts
+        of the same boot. Both tools now read each file through the folder and then by its full path, which
+        VitaShell's FTP opens without entering the folder (libftpvita: SIZE and RETR take a "ux0:/..." argument
+        as a full path; CWD needs the folder to open), and give the same answer."""
+        self.stamp_package()
+        self.device_app(self.EBOOT, self.STAMP)
+        refused = {"CWD": lambda arg: "VJOSET001" in arg}
+        with FtpMock(self.device, fail=refused) as ftp:
+            result = self.collect(ftp)
+            log = list(ftp.log)
+            check = self.check_app(ftp)
+            writes = list(ftp.stored)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(writes, [])
+        folder, record, analysis = self.latest()
+        for name in ("vjo_app.txt", "eboot.bin"):
+            # curl 9: the CWD into the folder refused; then one SIZE and RETR of the full path, no CWD
+            self.assertEqual(record["app"]["reads"][name], {"state": "read", "method": "nocwd", "rc": [9, 0]}, name)
+            self.assertIn(f"RETR ux0:/app/VJOSET001/{name}", log)
+        self.assertEqual(record["app"]["eboot"]["sha256"], hashlib.sha256(self.EBOOT).hexdigest())
+        self.assertEqual(record["files"]["ux0:/app/VJOSET001/vjo_app.txt"]["bytes"], len(self.STAMP) + 1)
+        self.assertNotIn("folder", record["app"])  # a file was read: no folder is listed for it
+        self.assertIn(f"Overlay app: the plugins' ({self.STAMP}); its eboot.bin is the package's; read by its full "
+                      "path, no CWD, after the way through its folder was answered 'not there': eboot.bin (curl exit 9), "
+                      "vjo_app.txt (curl exit 9)", analysis)
+        self.assertNotIn("not on the Vita: ux0:/app", analysis)
+        # --check-app on the same Vita: the same answer
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        flat = " ".join(check.stdout.replace("|", " ").split())
+        self.assertIn("Overlay app: up to date", flat)
+        self.assertIn("Its eboot.bin is the package VPK's.", flat)
+
+    def test_an_app_that_cannot_be_read_is_never_called_not_installed(self):
+        """Nothing under ux0:/app/VJOSET001 can be read either way (a hypothetical worse case than test.3's), but
+        ux0:app lists the folder: the collect says it could not read it and, when the Shell checked the app at a
+        game start of this boot, gives the Shell's answer. An earlier boot's check is not this boot's."""
+        self.stamp_package()
+        self.device_app(self.EBOOT, self.STAMP)
+        (self.device / "ux0/app/PCSG00415").mkdir(parents=True)
+        refused = {cmd: (lambda arg: "VJOSET001/" in arg or arg.endswith("VJOSET001")) for cmd in ("CWD", "SIZE", "RETR")}
+        data = self.device / "ux0/data/VitaJPOverlay"
+        check_line = (f"overlay app ok: installed '{self.STAMP}' (0x00000026, app 1), plugins' '{self.STAMP}' "
+                      "(0x00000026)\n")
+        boot = "Vita JP Overlay shell started (kernel API 22)\n"
+        start = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+        log = (data / "log.txt").read_text()
+        cases = ((log + boot + start + check_line,
+                  f"Overlay app: the plugins' ({self.STAMP}), by the Shell's check at a game start of this boot "
+                  f"(log.txt:{log.count(chr(10)) + 3}); this collect could not read it over FTP: ux0:app lists VJOSET001, "
+                  "but its folder could not be entered and neither its vjo_app.txt nor its eboot.bin could be read by "
+                  "its full path (#138)"),
+                 (log + check_line + boot,
+                  "Overlay app: not checked: this collect could not read it over FTP (ux0:app lists VJOSET001, but its "
+                  "folder could not be entered and neither its vjo_app.txt nor its eboot.bin could be read by its full "
+                  "path), and the Shell logged no check of it in this boot; if the Overlay app is open beside VitaShell, "
+                  "close it from its LiveArea page and collect again"))
+        for text_log, text in cases:
+            with self.subTest(text=text):
+                (data / "log.txt").write_text(text_log)
+                with FtpMock(self.device, fail=refused) as ftp:
+                    result = self.collect(ftp)
+                    writes = list(ftp.stored)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(writes, [])
+                folder, record, analysis = self.latest()
+                app = record["app"]
+                for name in ("vjo_app.txt", "eboot.bin"):
+                    # through the folder (curl 9, its CWD refused), then by its full path (curl 78, SIZE refused)
+                    self.assertEqual(app["reads"][name], {"state": "absent", "method": None, "rc": [9, 78]}, name)
+                self.assertEqual((app["folder"], app["apps"], app["in_apps"]), ("missing", "ok", True))
+                self.assertNotIn("ux0:/app", record["listings"])
+                self.assertNotIn(b"PCSG00415", (folder / "COLLECT.json").read_bytes())  # only VJOSET001 is kept
+                self.assertIn(text, analysis)
+                self.assertNotIn("not installed", analysis.split("Overlay app:", 1)[1].split("\n", 1)[0])
+                shutil.rmtree(folder)
+                Path(str(folder) + ".zip").unlink()
+
+    def test_read_app_tries_the_full_path_only_after_not_there(self):
+        """collect_vita.py read_app, as install_ftp.sh's app_check: the second way (no CWD) only when the first is
+        answered "not there" (curl 9, 19, 78); any other exit (no connection, a timeout, a broken transfer) is an
+        error, never an absent file, and no second way is tried after it."""
+        sys.path.insert(0, str(ROOT / "tools"))
+        import collect_vita
+        cases = (([0], {"state": "read", "method": "cwd", "rc": [0]}),
+                 ([9, 0], {"state": "read", "method": "nocwd", "rc": [9, 0]}),
+                 ([78, 0], {"state": "read", "method": "nocwd", "rc": [78, 0]}),
+                 ([9, 78], {"state": "absent", "method": None, "rc": [9, 78]}),
+                 ([19, 19], {"state": "absent", "method": None, "rc": [19, 19]}),
+                 ([28], {"state": "error", "method": "cwd", "rc": [28], "error": "curl: (28) timed out"}),
+                 ([9, 7], {"state": "error", "method": "nocwd", "rc": [9, 7], "error": "curl: (7) timed out"}))
+        for exits, want in cases:
+            with self.subTest(exits=exits):
+                c = collect_vita.Collector("127.0.0.1", 1, self.root / "out")
+                calls, left = [], list(exits)
+
+                def curl(device_path, dest, *options, calls=calls, left=left):
+                    calls.append((device_path, options))
+                    rc = left.pop(0)
+                    return rc, (f"curl: ({rc}) timed out" if rc else "")
+                c.curl = curl
+                self.assertEqual(c.read_app(collect_vita.APP_EBOOT, self.root / "eboot.bin"), want)
+                self.assertEqual(calls, [(collect_vita.APP_EBOOT, ()), (collect_vita.APP_EBOOT, ("--ftp-method", "nocwd"))]
+                                 [:len(exits)])
+
+    def test_test3s_collect_names_the_app_the_shell_checked(self):
+        """The owner's test.3 collect (#138, vjo-collect-20261016-071743Z.zip, SHA-256 289ec0f9...): its COLLECT.json's
+        app record, missing list and package app, the plugins' record, and its log.txt's boot, game start, Overlay app
+        check and app start lines, verbatim (tools/tests/fixtures/collect-test3-app/; no game text, the host replaced by
+        the docs' example address). Its collect_vita.py could not enter ux0:/app/VJOSET001; the Shell's check at this
+        boot's first game start had read the stamp. The analysis gives the Shell's answer, not "not installed", and
+        leaves the app's paths out of "not on the Vita"."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "vjo-collect-20261016-071743Z"
+            shutil.copytree(FIXTURES / "collect-test3-app", folder)
+            r = subprocess.run([sys.executable, str(ROOT / "tools/analyse_selftest.py"), "--collect", str(folder)],
+                               capture_output=True, text=True, timeout=60)
+            j = subprocess.run([sys.executable, str(ROOT / "tools/analyse_selftest.py"), "--collect", str(folder),
+                                "--json"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("  not on the Vita: ux0:/data/VitaJPOverlay/log.old.txt, ux0:/data/VitaJPOverlay/selftest.txt, "
+                      "ux0:/tai/config.txt, ux0:/tai/config.txt.vjo-bak\n", r.stdout)
+        self.assertIn("  Overlay app: the plugins' (vjoapp1 api=22 build=c3e781ad58a5ebe3), by the Shell's check at a "
+                      "game start of this boot (log.txt:5); this collect could not read it over FTP: its folder could "
+                      "not be entered, and this older collect_vita.py read the app only through it (#138)\n", r.stdout)
+        self.assertNotIn("not installed", r.stdout)
+        self.assertIn("the Shell's Overlay app check: ok x1", r.stdout)
+        app = json.loads(j.stdout)["app"]
+        self.assertEqual((app["state"], app["source"], app["shell"]["where"]), ("ok", "shell", "log.txt:5"))
 
     def test_config_warnings_are_counted_once_each(self):
         log = (self.device / "ux0/data/VitaJPOverlay/log.txt").read_text()

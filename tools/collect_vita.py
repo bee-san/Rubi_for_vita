@@ -13,7 +13,8 @@ Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the ins
                            vjo_app.txt (the record of the Overlay app the plugins came with)
   ur0:data/VitaJPOverlay/  boot.txt
   ux0:app/VJOSET001/       vjo_app.txt (the installed Overlay app's stamp, core/app_stamp.h); its eboot.bin
-                           is hashed, never kept
+                           is hashed, never kept. Both are read as install_ftp.sh --check-app reads them
+                           (read_app): through the folder, then by the file's full path (#138)
   ur0:tai/, ux0:tai/       config.txt and the installer's config.txt.vjo-bak
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
@@ -21,7 +22,8 @@ installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM dec
 and their LM-ATTRIBUTION.md are hashed (downloaded to a temporary file and deleted again, never
 kept) and compared with package-manifest.json when given. Every file keeps its device path
 under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
-COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error.
+COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, and in
+"app" how each of the app's two files was read (collect_app).
 
 Nothing on the Vita is written, renamed or deleted: only CWD, LIST, SIZE and RETR are sent.
 A file that cannot be read is recorded and skipped; the exit status is 1 only when the Vita
@@ -41,13 +43,25 @@ import urllib.parse
 from pathlib import Path
 
 DATA = "ux0:/data/VitaJPOverlay"
-APP = "ux0:/app/VJOSET001"  # the Overlay app (JPOverlaySettings.vpk)
+APPS = "ux0:/app"
+APP = f"{APPS}/VJOSET001"  # the Overlay app (JPOverlaySettings.vpk)
+# The installed app's stamp (kept, as FILES are) and its eboot.bin (hashed, never kept), the two files
+# install_ftp.sh --check-app reads; collect_app reads them its way (read_app), not as FILES
+APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
                                   "region.ini", "vjo_app.txt")]
-FILES += [f"{APP}/vjo_app.txt"]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
+# curl's exits for a file that is not there: 9, a CWD on the way refused (VitaShell's FTP enters a folder only if
+# it can open it); 19 or 78, its SIZE or RETR refused
+NOT_THERE = (9, 19, 78)
+# The two ways read_app and install_ftp.sh's app_check read the app's files, in this order: curl's own, a CWD into
+# each folder on the way (ux0:, app, VJOSET001) before SIZE and RETR; then, when that is answered "not there", no
+# CWD at all (SIZE and RETR of "ux0:/app/VJOSET001/<file>": VitaShell's FTP takes a "ux0:/..." argument as a full
+# path and only opens the file). test.3's collect (#138) could not enter ux0:/app/VJOSET001, by curl's CWDs or
+# ftplib's, while the Shell read the stamp in it at the game starts of the same boot.
+APP_READS = (("cwd", ()), ("nocwd", ("--ftp-method", "nocwd")))
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
 # The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89) and
 # their attribution, LM-ATTRIBUTION.md (package_release.py).
@@ -131,14 +145,15 @@ class Collector:
         self.ftp = None
 
     # ---- transport ----
-    def curl(self, device_path, dest):
+    def curl(self, device_path, dest, *options):
         """RETR through curl, as install_ftp.sh's get() does; (0, "") or (curl's exit, its message). The name is
-        URL-quoted: curl decodes it again, so the server gets the exact name (spaces, #, ?, % included)."""
+        URL-quoted: curl decodes it again, so the server gets the exact name (spaces, #, ?, % included). options:
+        more of curl's (read_app's --ftp-method nocwd)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         limit = DUMP_TIMEOUT if device_path.lower().endswith(".psp2dmp") else self.timeout
         url = f"ftp://{self.host}:{self.port}/" + urllib.parse.quote(device_path, safe="/:")
         r = subprocess.run(["curl", "--fail", "-s", "--show-error", "--connect-timeout", "15", "--max-time", str(limit),
-                            "-o", str(dest), url], capture_output=True, text=True,
+                            *options, "-o", str(dest), url], capture_output=True, text=True,
                            stdin=subprocess.DEVNULL, timeout=limit + 30)
         if r.returncode != 0:
             dest.unlink(missing_ok=True)
@@ -228,11 +243,20 @@ class Collector:
 
     def absent(self, device_path, rc, err):
         # curl 78 (RETR 550) / 19 / 9: the file is not there; anything else is an error worth reading
-        if rc in (9, 19, 78):
+        if rc in NOT_THERE:
             self.record["missing"].append(device_path)
         else:
             self.record["errors"].append(f"{device_path}: curl exit {rc}: {err}")
         return False
+
+    @staticmethod
+    def digest(path):
+        """{"bytes", "sha256"} of a local file, read a block at a time."""
+        h = hashlib.sha256()
+        with path.open("rb") as s:
+            for block in iter(lambda: s.read(1 << 20), b""):
+                h.update(block)
+        return {"bytes": path.stat().st_size, "sha256": h.hexdigest()}
 
     def sha256_remote(self, device_path):
         """{"bytes", "sha256"} of a device file, downloaded to a temporary file and deleted again; None (the
@@ -243,31 +267,64 @@ class Collector:
             if rc:
                 self.record["errors"].append(f"{device_path}: not hashed, curl exit {rc}: {err}")
                 return None
-            h = hashlib.sha256()
-            with tmpfile.open("rb") as s:
-                for block in iter(lambda: s.read(1 << 20), b""):
-                    h.update(block)
-            return {"bytes": tmpfile.stat().st_size, "sha256": h.hexdigest()}
+            return self.digest(tmpfile)
 
     def hash_remote(self, device_path):
         got = self.sha256_remote(device_path)
         if got:
             self.record["hashed"][device_path] = got
 
+    def read_app(self, device_path, dest):
+        """One of the installed app's two files into dest, read as install_ftp.sh's app_check reads it for
+        --check-app: each way of APP_READS in turn, the next only when one is answered "not there". {"state":
+        "read" | "absent" | "error", "method": the way that read it or failed with an error (None: absent),
+        "rc": curl's exit for each way tried, "error": curl's message (an error)}"""
+        rcs = []
+        for method, options in APP_READS:
+            rc, err = self.curl(device_path, dest, *options)
+            rcs.append(rc)
+            if rc == 0:
+                return {"state": "read", "method": method, "rc": rcs}
+            if rc not in NOT_THERE:
+                return {"state": "error", "method": method, "rc": rcs, "error": err}
+        return {"state": "absent", "method": None, "rc": rcs}
+
     def collect_app(self):
-        """The installed Overlay app (core/app_stamp.h): whether its eboot.bin is there, and that file's hash (its
-        stamp is one of FILES). Kept apart from "hashed", whose files the package lists one by one."""
+        """The installed Overlay app (core/app_stamp.h), its two files read as --check-app reads them (read_app),
+        never through a listing of its folder: its stamp, kept as FILES are, and its eboot.bin, hashed and never
+        kept (apart from "hashed", whose files the package lists one by one). When neither can be read, the
+        folders say why, for the analysis: its own, listed when it can be entered (its files are then not in it),
+        else ux0:/app, of which only whether it lists VJOSET001 is recorded (not the other titles)."""
+        app = self.record["app"] = {"reads": {}, "eboot": None}
+        dest = local_path(self.out, APP_STAMP)
+        r = app["reads"]["vjo_app.txt"] = self.read_app(APP_STAMP, dest)
+        if r["state"] == "read":
+            self.record["files"][APP_STAMP] = {"local": str(dest.relative_to(self.out)), **self.digest(dest)}
+        elif r["state"] == "error":
+            self.record["errors"].append(f"{APP_STAMP}: curl exit {r['rc'][-1]}: {r['error']}")
+        with tempfile.TemporaryDirectory(prefix="vjo-collect-") as tmp:
+            eboot = Path(tmp) / "eboot.bin"
+            r = app["reads"]["eboot.bin"] = self.read_app(APP_EBOOT, eboot)
+            if r["state"] == "read":
+                app["eboot"] = self.digest(eboot)
+            elif r["state"] == "error":
+                self.record["errors"].append(f"{APP_EBOOT}: not hashed, curl exit {r['rc'][-1]}: {r['error']}")
+        if any(r["state"] == "read" for r in app["reads"].values()):
+            return
         status, lines = self.listdir(APP)
-        app = {"listed": status == "ok", "eboot": None}
-        if status == "missing":
-            self.record["missing"].append(APP + "/")
-        elif status == "error":
-            self.record["errors"].append(f"{APP}/: LIST failed: {lines}")
+        app["folder"] = status
+        if status == "ok":
+            entries = self.record["listings"][APP] = self.parse_list(lines)
+            app["eboot_listed"] = any(e["name"] == "eboot.bin" and not e["dir"] for e in entries)
+            return
+        if status == "error":
+            app["folder_error"] = lines
+        status, lines = self.listdir(APPS)
+        app["apps"] = status
+        if status == "ok":
+            app["in_apps"] = any(e["name"] == "VJOSET001" and e["dir"] for e in self.parse_list(lines))
         else:
-            self.record["listings"][APP] = entries = self.parse_list(lines)
-            if any(e["name"] == "eboot.bin" and not e["dir"] for e in entries):
-                app["eboot"] = self.sha256_remote(f"{APP}/eboot.bin")
-        self.record["app"] = app
+            app["apps_error"] = lines
 
     def run(self):
         for p in FILES:
