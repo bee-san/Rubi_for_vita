@@ -135,12 +135,19 @@ function gamesPage(id, { games, selected, offset = 0, defaultOn = true, filter =
       p.rect(38, y + 8, 64, 64, C.SELECTED);
       p.centered(38, y + 47, 64, C.ACCENT, 26, "JP");
     }
-    p.text(120, y + 30, C.WHITE, 26, g.title);
+    // draw_rows(): the title in at most two rows of 620 px (settings/text_layout.c)
+    p.wrapped(120, y + 30, 620, C.WHITE, 26, 32, 2, g.title);
     const extra = rowExtra[index] || "";
     p.raw(`<g class="game-badge" data-row="${index}"${extra}>`);
     badge(p, 788, y + 7, 128, 38, g.on ? "ON" : "OFF", g.on);
     p.raw(`</g>`);
-    p.text(920, y + 70, C.DIM, 24, g.id, "end");
+    if (g.psp)
+      // draw(): "PSP" (ACCENT: the shared row needs no registration) 12 px before the ID
+      p.raw(
+        `<text x="920" y="${y + 70}" font-size="24" text-anchor="end" xml:space="preserve">` +
+          `<tspan fill="${C.ACCENT}">PSP</tspan><tspan dx="12" fill="${C.DIM}">${esc(g.id)}</tspan></text>`,
+      );
+    else p.text(920, y + 70, C.DIM, 24, g.id, "end");
   }
   statusBox(p, 440, 64, 467, status, false);
   p.text(24, 535, C.DIM, 24, `${ENTER}: toggle   L/R: page   Left/Right: letter   ${CANCEL}: exit`);
@@ -151,11 +158,12 @@ function gamesPage(id, { games, selected, offset = 0, defaultOn = true, filter =
 
 // The Games page's list, as settings/catalog.c builds it from the titles on the film's home
 // screen: VitaShell (VITASHELL) and the Overlay app (VJOSET001) are not candidates
-// (core/games.c vjo_game_is_candidate); the "Adrenaline / PSP games (shared setting)" row
-// (NPXS10028, no icon: the JP placeholder) is always added; sorted by letter, then title
-// (settings/letter.c: # and A-Z, kana, then other characters, so 星空ダイアリー is last).
+// (core/games.c vjo_game_is_candidate); the shared PSP row (NPXS10028, VJO_CATALOG_PSP_TITLE in
+// settings/catalog.h; no icon: the JP placeholder; a PSP row, so draw() tags it "PSP") is always
+// added; sorted by letter, then title (settings/letter.c: # and A-Z, kana, then other
+// characters, so 星空ダイアリー is last).
 const GAMES = [
-  { title: "Adrenaline / PSP games (shared setting)", id: "NPXS10028", on: true, icon: null },
+  { title: "Adrenaline / PSP games without a setting of their own", id: "NPXS10028", on: true, icon: null, psp: true },
   { title: "Ember Quest", id: "EMBR00001", on: true, icon: "assets/vn/icon-ember.svg" },
   { title: "Neon Drift", id: "NEON00001", on: true, icon: "assets/vn/icon-neon.svg" },
   { title: "Pocket Garden", id: "PCKG00001", on: true, icon: "assets/vn/icon-garden.svg" },
@@ -215,14 +223,20 @@ function ankiPages() {
 }
 
 // The card's back as Anki shows it with the Lapis note type (donkuri/lapis
-// 1.7.0, the one the export embeds: src/back.html and src/styling.css, light
-// theme), with the fields the export writes (core/anki.c, #125): FreqSort is
-// 9999999 for a word without a frequency, the Sentence is the whole
-// recognized text with the word in <b>, MainDefinition one JMdict entry, no
-// Picture, MiscInfo collapsed, the tag vita-jp-overlay.
+// 1.7.0, the one the export embeds: third_party/lapis/back.html and
+// styling.css, light theme), with the fields the export writes (core/anki.c):
+// FreqSort is the word's Jiten rank (125; #127), shown at the top right with
+// the Frequency field's dropdown icon (its list shows on hover only), the
+// Sentence is the whole recognized text with the word in <b>, MainDefinition
+// one JMdict entry, no Picture, MiscInfo collapsed, the tag vita-jp-overlay.
+// The icon's two paths are Lapis's own (back.html).
+const LAPIS_FREQ_ICON =
+  `<svg class="lp-freq-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16">` +
+  `<path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"></path>` +
+  `<path d="M 12.7,6.5 H 3.3 L 8,11 Z"></path></svg>`;
 function lapisCard() {
   return `<div class="lapis">
-            <div class="lp-top">9999999</div>
+            <div class="lp-top">125 ${LAPIS_FREQ_ICON}</div>
             <div class="lp-head">
               <div class="lp-vocab"><ruby>一緒<rt>いっしょ</rt></ruby>に</div>
               <div class="lp-info">いっしょに</div>
@@ -308,14 +322,14 @@ const VS_ROOT = vsRows(
   ],
   4,
 );
-const VS_DATA = vsRows(
-  [
-    ["..", "Folder", "2026/10/14 22:07"],
-    ["VitaJPOverlay/", "Folder", "2026/10/15 14:21"],
-    ["JPOverlaySettings.vpk", "473.45 KB", "2026/10/15 14:21"],
-  ],
-  2,
-);
+// ux0:data/: VitaShell enters a folder with the focus on its first row, ".."; two Downs reach
+// the VPK, listed at VitaShell's size for it (S.VPK_SIZE).
+const VS_DATA_ROWS = [
+  ["..", "Folder", "2026/10/14 22:07"],
+  ["VitaJPOverlay/", "Folder", "2026/10/15 14:21"],
+  ["JPOverlaySettings.vpk", "{{VPK_SIZE}}", "2026/10/15 14:21"],
+];
+
 function vsSettings() {
   const rows = [];
   let y = 87;
@@ -408,7 +422,9 @@ function build(layout) {
     OV_HINT: esc(S.OVERLAY.hint),
     OV_HINT_FRESH: esc(S.OVERLAY.hintFresh),
     VS_ROOT: VS_ROOT,
-    VS_DATA: VS_DATA,
+    VS_DATA_0: vsRows(VS_DATA_ROWS.map((r) => r.map((c) => c.replace("{{VPK_SIZE}}", S.VPK_SIZE))), 0),
+    VS_DATA_1: vsRows(VS_DATA_ROWS.map((r) => r.map((c) => c.replace("{{VPK_SIZE}}", S.VPK_SIZE))), 1),
+    VS_DATA_2: vsRows(VS_DATA_ROWS.map((r) => r.map((c) => c.replace("{{VPK_SIZE}}", S.VPK_SIZE))), 2),
     VS_SETTINGS: vsSettings(),
     ENDCARD_FINE: esc(S.ENDCARD_FINE),
     SFX: sfx(),

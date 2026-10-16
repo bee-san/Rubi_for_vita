@@ -578,9 +578,12 @@
         top: 18px;
         line-height: 23px;
         display: flex;
-        gap: 14px;
+        gap: 12px;
         align-items: center;
         color: #fff;
+      }
+      #vs-ftp-icon {
+        opacity: 0;
       }
       .vs-batt {
         position: relative;
@@ -604,8 +607,7 @@
         line-height: 23px;
         color: rgb(191, 191, 191);
       }
-      #vs-path-data,
-      #vs-data {
+      #vs-path-data {
         opacity: 0;
       }
       .vs-list {
@@ -698,64 +700,62 @@
         left: 0;
         opacity: 0;
       }
-      .vs-dialog {
+      /* VitaShell's own dialogs (uncommon_dialog.c, Default theme): a DIALOG_BG_COLOR box
+         (0xFF2F2F2F), 20 px side and 18 px top margins, white text in rows of 23 px, a blank
+         row, then one centred button line; the progress box is 420 px wide with an 8 px bar
+         (PROGRESS_BAR_BG_COLOR grey, PROGRESS_BAR_COLOR chartreuse) and its percentage. */
+      .vs-dlg {
         position: absolute;
-        left: 220px;
-        top: 170px;
-        width: 520px;
-        padding: 26px 30px 22px;
-        border-radius: 10px;
-        background: rgba(40, 40, 46, 0.97);
-        border: 1px solid rgba(255, 255, 255, 0.35);
-        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-        text-align: center;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         opacity: 0;
       }
-      .vs-dialog p {
-        line-height: 1.5;
-      }
-      .vs-dialog .vs-small {
-        margin-top: 8px;
-        font-size: 19px;
-        line-height: 1.45;
-        color: #d7deea;
-      }
-      .vs-dialog.vs-wide {
-        left: 170px;
-        top: 120px;
-        width: 620px;
-      }
-      .vs-btns span {
-        min-width: 120px;
-        padding: 4px 18px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.08);
-      }
-      .vs-btns {
-        margin-top: 18px;
-        display: flex;
-        justify-content: center;
-        gap: 40px;
-        color: #c8d2e2;
-      }
-      .vs-yes {
+      .vs-box {
+        background: rgb(47, 47, 47);
+        padding: 18px 20px;
         color: #fff;
-        font-weight: 700;
+        font-size: 19px;
+        line-height: 23px;
       }
-      .vs-bar-out {
-        margin: 16px auto 4px;
+      .vs-box .ln {
+        height: 23px;
+        white-space: pre;
+      }
+      .vs-box .btn {
+        text-align: center;
+      }
+      .vs-in {
+        opacity: 0;
+      }
+      .vs-progbox {
         width: 420px;
-        height: 14px;
-        border-radius: 7px;
-        background: rgba(255, 255, 255, 0.15);
+      }
+      .vs-pbar {
+        position: relative;
+        top: 10px;
+        height: 8px;
+        background: rgb(127, 127, 127);
         overflow: hidden;
       }
-      .vs-bar-in {
+      .vs-pfill {
         width: 100%;
         height: 100%;
         background: rgb(127, 255, 0);
         transform-origin: 0 50%;
-        transform: scaleX(0);
+      }
+      .vs-pct {
+        position: relative;
+      }
+      .vs-pct span {
+        position: absolute;
+        left: 0;
+        right: 0;
+        opacity: 0;
+      }
+      .vs-data {
+        opacity: 0;
       }
       #scr-boot {
         background: #000;
@@ -948,6 +948,10 @@
         font-family: "Promo Sans", sans-serif;
         font-size: 16px;
         color: rgba(0, 0, 0, 0.6);
+      }
+      .lapis .lp-freq-icon {
+        vertical-align: -2px;
+        fill: rgba(0, 0, 0, 0.6);
       }
       .lapis .lp-head {
         background: rgba(0, 0, 0, 0.03);

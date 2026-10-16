@@ -1,7 +1,7 @@
 $ bash install-vita.sh --title HSDY00001 192.168.1.42
 Verified 65 package files
 Verified 65 package files
-backup: build/device/backup/20261015-142112-5HNtB1
+backup: build/device/backup/20261015-142112-CMP1uq
 --- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):
 5a6
 > ur0:tai/VitaJPOverlay_Kernel.skprx
@@ -50,6 +50,7 @@ config.ini: anki_mining = off
 config.ini: dictionary = local
 config.ini: font_size_en = 14
 config.ini: font_size_ja = 18
+config.ini: frequency_badge = on
 config.ini: highlight_mode = word
 config.ini: japanese_only_selection = on
 config.ini: local_dictionaries = plaintext.vjdict
@@ -97,3 +98,4 @@ Installed. Reboot the Vita, then leave it on for a minute. A boot that does not 
 | plugins no longer use (test.2's run had test.1's app writing ocr_backend = |
 | vocr2, #101).                                                              |
 +----------------------------------------------------------------------------+
+Press Enter once the app is installed to check it again (Ctrl-C to skip): 

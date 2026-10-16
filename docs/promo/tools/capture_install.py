@@ -17,17 +17,28 @@ the files contain. So this runs the repository's own tools/install-vita.sh, unch
 
 tools/capture_install.sh runs this inside a private user and network namespace (`unshare -rn`),
 so the server can use the video's address, 192.168.1.42:1337. Nothing leaves the machine.
+
+The installer runs in a pseudo-terminal of 80 x 24, as in the film's terminal. With a terminal it
+ends by asking "Press Enter once the app is installed to check it again (Ctrl-C to skip): "
+(tools/install_ftp.sh); the transcript ends at that prompt, where the terminal waits while the
+app is installed in VitaShell.
 """
 import argparse
+import fcntl
 import hashlib
-import io
 import json
 import os
+import pty
+import select
 import shutil
+import signal
+import struct
 import subprocess
 import sys
 import tempfile
+import termios
 import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -35,6 +46,7 @@ PROMO = Path(__file__).resolve().parent.parent
 REPO = PROMO.parent.parent
 HOST, PORT = "192.168.1.42", 1337
 TITLE = "HSDY00001"  # the mock game's title ID
+PROMPT = "Press Enter once the app is installed to check it again (Ctrl-C to skip): "
 
 # The release's base zip (vita/CMakeLists.txt's release target, as CI built it on ac905b1): the
 # repository's own files, then the stand-ins.
@@ -192,14 +204,34 @@ def main():
                                    f'exec {real_date} "$@"\n')
         os.chmod(shim / "date", 0o755)
         cmd = ["bash", "install-vita.sh", "--title", TITLE, HOST]
-        env = dict(os.environ, VJO_NO_PROMPT="1", PATH=f"{shim}:{os.environ['PATH']}")
-        run = subprocess.run(cmd, cwd=pkg, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True, timeout=600)
+        env = dict(os.environ, PATH=f"{shim}:{os.environ['PATH']}", TERM="xterm-256color")
+        env.pop("VJO_NO_PROMPT", None)
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+        proc = subprocess.Popen(cmd, cwd=pkg, env=env, stdin=slave, stdout=slave, stderr=slave,
+                                start_new_session=True, close_fds=True)
+        os.close(slave)
+        out, deadline = b"", time.time() + 600
+        while PROMPT.encode() not in out and proc.poll() is None and time.time() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                try:
+                    out += os.read(master, 65536)
+                except OSError:
+                    break
+        waiting = PROMPT.encode() in out
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM)  # the installer waits at its prompt: stop there
+            proc.wait(timeout=30)
+        os.close(master)
         server.close_all()
-        text = "$ " + " ".join(cmd) + "\n" + run.stdout
-        args.output.write_text(text)
+        if not waiting:
+            sys.exit("the installer did not reach its prompt:\n" + out.decode("utf-8", "replace"))
+        body = out.decode("utf-8").replace("\r\n", "\n")
+        text = "$ " + " ".join(cmd) + "\n" + body + "\n"
         uploaded = sorted(p.relative_to(ftp_root).as_posix() for p in ftp_root.rglob("*") if p.is_file())
-    print(f"package: {count} files; installer exit {run.returncode}; {len(text.splitlines())} lines -> {args.output}")
+        args.output.write_text(text)
+    print(f"package: {count} files; the installer waits at its prompt; {len(text.splitlines())} lines -> {args.output}")
     print("on the console afterwards:", len(uploaded), "files")
 
 

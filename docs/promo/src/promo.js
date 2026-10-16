@@ -90,6 +90,19 @@
           tl.fromTo(sel + " .c", { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: per, immediateRender: false }, t);
         }
 
+        // VitaShell's dialogs (uncommon_dialog.c): the box scales open, then its text shows;
+        // closing hides the text and scales the box away.
+        function vsOpen(sel, t) {
+          fade(sel, t, 0, 1, 0.01);
+          tl.fromTo(sel + " .vs-box", { scale: 0 }, { scale: 1, duration: 0.15, ease: "power2.out", immediateRender: false }, t);
+          fade(sel + " .vs-in", t + 0.15, 0, 1, 0.01);
+        }
+        function vsClose(sel, t) {
+          fade(sel + " .vs-in", t, 1, 0, 0.01);
+          tl.fromTo(sel + " .vs-box", { scale: 1 }, { scale: 0, duration: 0.12, ease: "power2.in", immediateRender: false }, t);
+          fade(sel, t + 0.12, 1, 0, 0.01);
+        }
+
         // ------------------------------------------------------------ layout
         // Camera states and the side panels' places for each frame shape.
         const CAM = P
@@ -249,7 +262,8 @@
         press(s6 + 1.45, "btn-start");
         tl.fromTo("#vs-settings", { y: 0 }, { y: 544, duration: 0.22, ease: "power2.in", immediateRender: false }, s6 + 1.51);
         press(s6 + 1.8, "btn-select");
-        fade("#vs-ftp", s6 + 1.87, 0, 1, 0.1);
+        vsOpen("#vs-ftp", s6 + 1.87);
+        fade("#vs-ftp-icon", s6 + 1.87, 0, 1, 0.01); /* FTP runs from here on */
         light("#step1", s6 + 1.9, false);
         light("#step2", s6 + 1.9, true);
         // the computer: the command types, then its output scrolls as a terminal's does
@@ -261,25 +275,43 @@
           for (let i = VISIBLE; i < lines.length; i++)
             tl.fromTo("#tm-inner", { y: -(i - VISIBLE) * LH }, { y: -(i - VISIBLE + 1) * LH, duration: 0.01, immediateRender: false }, t0 + (i - 1) * per);
         }
-        // OK on the FTP dialog keeps FTP running (the installer's box says to); then ux0:data/
+        // OK on the FTP dialog keeps FTP running (the installer's box says to); × enters
+        // ux0:data/ (the focus on ".."); Down twice to the VPK; × asks to install it; Yes:
+        // "Installing...", then the extended-permissions notice (the app's UNSAFE eboot);
+        // Yes: "Installing..." 50%, 100%; the dialog closes; reboot.
         press(s6 + 4.05, "btn-cross");
-        fade("#vs-ftp", s6 + 4.12, 1, 0, 0.08);
+        vsClose("#vs-ftp", s6 + 4.12);
         light("#step2", s6 + 4.1, false);
         light("#step3", s6 + 4.1, true);
-        swap("#vs-root", "#vs-data", s6 + 4.2, 0.08);
-        swap("#vs-path-root", "#vs-path-data", s6 + 4.2, 0.08);
-        press(s6 + 4.35, "btn-cross");
-        fade("#vs-ask", s6 + 4.42, 0, 1, 0.1);
-        press(s6 + 4.7, "btn-cross");
-        swap("#vs-ask", "#vs-warn", s6 + 4.77, 0.08);
-        press(s6 + 5.05, "btn-cross");
-        swap("#vs-warn", "#vs-prog", s6 + 5.12, 0.08);
-        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power1.inOut", immediateRender: false }, s6 + 5.15);
-        fade("#vs-prog", s6 + 5.5, 1, 0, 0.08);
-        light("#step3", s6 + 5.55, false);
-        light("#step4", s6 + 5.55, true);
-        swap("#scr-shell", "#scr-boot", s6 + 5.6, 0.1);
-        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, s6 + 5.6);
+        press(s6 + 4.3, "btn-cross");
+        swap("#vs-root", "#vs-data-0", s6 + 4.37, 0.06);
+        swap("#vs-path-root", "#vs-path-data", s6 + 4.37, 0.06);
+        press(s6 + 4.5, "dpad-down");
+        swap("#vs-data-0", "#vs-data-1", s6 + 4.56, 0.02);
+        press(s6 + 4.65, "dpad-down");
+        swap("#vs-data-1", "#vs-data-2", s6 + 4.71, 0.02);
+        press(s6 + 4.85, "btn-cross");
+        vsOpen("#vs-ask", s6 + 4.92);
+        press(s6 + 5.15, "btn-cross");
+        vsClose("#vs-ask", s6 + 5.22);
+        vsOpen("#vs-prog-a", s6 + 5.3);
+        vsClose("#vs-prog-a", s6 + 5.47);
+        vsOpen("#vs-warn", s6 + 5.55);
+        press(s6 + 5.8, "btn-cross");
+        vsClose("#vs-warn", s6 + 5.87);
+        vsOpen("#vs-prog", s6 + 5.95);
+        fade("#vs-pct0", s6 + 5.95, 0, 1, 0.01);
+        tl.fromTo("#vs-pfill", { scaleX: 0 }, { scaleX: 0.5, duration: 0.01, immediateRender: false }, s6 + 6.08);
+        fade("#vs-pct0", s6 + 6.08, 1, 0, 0.01);
+        fade("#vs-pct50", s6 + 6.08, 0, 1, 0.01);
+        tl.fromTo("#vs-pfill", { scaleX: 0.5 }, { scaleX: 1, duration: 0.01, immediateRender: false }, s6 + 6.2);
+        fade("#vs-pct50", s6 + 6.2, 1, 0, 0.01);
+        fade("#vs-pct100", s6 + 6.2, 0, 1, 0.01);
+        vsClose("#vs-prog", s6 + 6.27);
+        light("#step3", s6 + 6.3, false);
+        light("#step4", s6 + 6.3, true);
+        swap("#scr-shell", "#scr-boot", s6 + 6.35, 0.1);
+        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, s6 + 6.35);
 
         // ============================================================ S7: L + R in the game
         caption("cap7", T.s7 + 0.1, T.s8 - 0.35);

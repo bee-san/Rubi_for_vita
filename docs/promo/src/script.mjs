@@ -13,9 +13,9 @@ export const T = {
   s4b: 16.5,
   s5: 20,
   s6: 24,
-  s7: 30,
-  s8: 33.5,
-  end: 40.6,
+  s7: 30.5,
+  s8: 34,
+  end: 41.1,
   total: 44,
 };
 
@@ -48,8 +48,12 @@ export const OVERLAY = {
 
 // The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125, merged as e53d9fb).
 // The size is what that export wrote for three text-only cards in its host
-// test on main e53d9fb (host/tests/test_apkg.c: 86,234 B, shown as 85 KB);
+// test on main 6020c0b (host/tests/test_apkg.c: 86,234 B, shown as 85 KB);
 // measured on the host, not on a console.
+// VitaShell's size for the app's VPK (getSizeString(): 2 decimals, 1024-based): 493,267 B in
+// CI's release zip of main 6020c0b.
+export const VPK_SIZE = "481.71 KB";
+
 export const APKG = {
   dir: "ux0:data/VitaJPOverlay/anki/",
   name: "2026-10-15_142530-3cards.apkg",
@@ -68,7 +72,8 @@ export const APKG = {
 
 export const ENDCARD_FINE =
   "Not affiliated with or endorsed by Sony Interactive Entertainment. The game shown is an original mock-up made for this video. " +
-  "Dictionary entries: JMdict (EDRDG, CC BY-SA 4.0). Card design: the Lapis note type (GPL-3.0).";
+  "Dictionary entries: JMdict (EDRDG, CC BY-SA 4.0). Frequency ranks: the Jiten frequency list (CC BY-SA 4.0). " +
+  "Card design: the Lapis note type (GPL-3.0).";
 
 // Sound cues: [file, time, volume]; the music is under them (assets/audio).
 const t = T;
@@ -91,10 +96,13 @@ export const SFX = [
   ["click", t.s6 + 1.45, 0.4],
   ["click", t.s6 + 1.8, 0.4],
   ["click", t.s6 + 4.05, 0.4],
-  ["click", t.s6 + 4.35, 0.4],
-  ["click", t.s6 + 4.7, 0.4],
-  ["click", t.s6 + 5.05, 0.4],
-  ["chime", t.s6 + 5.5, 0.4],
+  ["click", t.s6 + 4.3, 0.4],
+  ["click", t.s6 + 4.5, 0.4],
+  ["click", t.s6 + 4.65, 0.4],
+  ["click", t.s6 + 4.85, 0.4],
+  ["click", t.s6 + 5.15, 0.4],
+  ["click", t.s6 + 5.8, 0.4],
+  ["chime", t.s6 + 6.2, 0.4],
   ["click", t.s7 + 1.55, 0.4],
   ["click", t.s8 + 0.25, 0.4],
   ["home", t.s8 + 0.75, 0.45],
