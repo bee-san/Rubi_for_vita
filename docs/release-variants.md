@@ -49,6 +49,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the ledger's per-item table at boot, game start and exit | `ledger.c` | **reduced**: the two pool lines stay |
 | Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save (`anki: save … rc=…`) and every error are kept |
 | the title's parameter line | `game.c` | **drop** |
+| a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the README's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
 | config warnings, the Overlay app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
@@ -86,6 +87,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the start line (budget, heap) | `settings/main.c` | **keep**, now with the version: `start: v0.8.0 debug; …` or `start: v0.8.0; …` |
 | the version beside the title | `settings/main.c` | `Overlay v<version>` in the normal build, `Overlay v<version> debug` in the debug one |
 | the Anki export's lines (its storage errors, each export) | `settings/anki_export.c`, `anki_page.c` | **keep** |
+| the Adrenaline bubbles found and the taiHEN sections the app adds (#124) | `settings/` | **keep** (a few lines per start; a config.txt the app changed must be traceable) |
 
 ### Tools, package and the rest
 
