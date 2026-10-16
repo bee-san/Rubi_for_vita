@@ -132,6 +132,6 @@ int vjo_queue_save(VjoArena *a, const VjoAnkiNote *note)
     path_for(path, QUEUE_DIR, id, "json");
     if (commit(path, json, strlen(json)) < 0)
         return VJO_QUEUE_FAILED;
-    vjo_log("anki queue: %s saved, %u B record", id, (unsigned)strlen(json));
+    vjo_dlog("anki queue: %s saved, %u B record", id, (unsigned)strlen(json));
     return VJO_QUEUE_SAVED;
 }

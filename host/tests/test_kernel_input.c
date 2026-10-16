@@ -25,6 +25,12 @@ SceUID ksceKernelGetThreadId(void);
 int ksceKernelSetEventFlag(SceUID, unsigned);
 #include "../../kernel/input.c"
 
+/* The debug build reads a blocked call's first sample for its trace line and logs the
+ * trace (kernel/input.c input_trace_claim); the normal build reads none and logs nothing
+ * (docs/release-variants.md). */
+#define TRACE_READS(n) (VJO_DEBUG ? (n) : 0u)
+#define TRACE_LOGS(n) (VJO_DEBUG ? (n) : 0u)
+
 unsigned syscall_depth;
 static SceUID caller;
 static uint64_t now;
@@ -172,10 +178,10 @@ static void test_positive2_block_and_raw_poll(void)
     TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
     TEST_CHECK(continued_ref == 0xC4226A3E && continue_calls == 1);
     check_neutral(&pad, 0, 0);
-    TEST_CHECK(read_calls == 1 && write_calls == 1);
+    TEST_CHECK(read_calls == TRACE_READS(1) && write_calls == 1);
     TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
     check_neutral(&pad, 0, 0);
-    TEST_CHECK(read_calls == 1 && write_calls == 2); /* no per-frame diagnostic reads */
+    TEST_CHECK(read_calls == TRACE_READS(1) && write_calls == 2); /* no per-frame diagnostic reads */
     caller = KERNEL_PID;
     input_poll();
     TEST_CHECK(g.raw_buttons == SCE_CTRL_CROSS && g.last_input.buttons == SCE_CTRL_CROSS);
@@ -190,7 +196,7 @@ static void test_negative_and_full_batch(void)
     g.input_block = 1;
     batch.before = batch.after = UINT64_C(0xFEED123456789ABC);
     TEST_CHECK(read_neg2_patched(0, batch.pads, 64) == 64);
-    TEST_CHECK(continued_ref == 0x27A0C5FB && read_calls == 1 && write_calls == 64);
+    TEST_CHECK(continued_ref == 0x27A0C5FB && read_calls == TRACE_READS(1) && write_calls == 64);
     for (unsigned i = 0; i < 64; i++) check_neutral(&batch.pads[i], i, 1);
     TEST_CHECK(batch.before == UINT64_C(0xFEED123456789ABC));
     TEST_CHECK(batch.after == UINT64_C(0xFEED123456789ABC));
@@ -220,7 +226,7 @@ static void test_blocked_write_failure(void)
     g.input_block = 1;
     fail_write_at = 2;
     TEST_CHECK(read_pos2_patched(0, pads, 3) == copy_error);
-    TEST_CHECK(read_calls == 1 && write_calls == 2);
+    TEST_CHECK(read_calls == TRACE_READS(1) && write_calls == 2);
     check_neutral(&pads[0], 0, 0);
     TEST_CHECK(pads[1].buttons == SCE_CTRL_CROSS); /* failure cannot report these as valid */
     TEST_CHECK(!hold_busy);
@@ -273,24 +279,24 @@ static void test_diagnostics_are_bounded(void)
     TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
     g.raw_buttons = SCE_CTRL_CROSS;
     TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
-    TEST_CHECK(read_calls == 2 && log_calls == 2);
+    TEST_CHECK(read_calls == TRACE_READS(2) && log_calls == TRACE_LOGS(2));
     for (unsigned i = 0; i < 256; i++) {
         fail_write_at = write_calls + 1;
         TEST_CHECK(read_pos2_patched(0, &pad, 1) == copy_error);
     }
-    TEST_CHECK(read_calls == 2 && log_calls == 3);
+    TEST_CHECK(read_calls == TRACE_READS(2) && log_calls == TRACE_LOGS(3));
     fail_write_at = 0;
     caller = 99;
     for (unsigned i = 0; i < 256; i++) TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
-    TEST_CHECK(log_calls == 4);
+    TEST_CHECK(log_calls == TRACE_LOGS(4));
     caller = g.game_pid;
     original_error = -456;
     for (unsigned i = 0; i < 256; i++) TEST_CHECK(read_pos2_patched(0, &pad, 1) == -456);
-    TEST_CHECK(log_calls == 5 && longest_log <= 190);
+    TEST_CHECK(log_calls == TRACE_LOGS(5) && longest_log <= 190);
     input_trace_reset();
     original_error = 0;
     TEST_CHECK(read_pos2_patched(0, &pad, 1) == 1);
-    TEST_CHECK(read_calls == 3 && log_calls == 6);
+    TEST_CHECK(read_calls == TRACE_READS(3) && log_calls == TRACE_LOGS(6));
 }
 
 static void test_scene_input_tracks_delivered_samples(void)
@@ -479,15 +485,19 @@ static void test_containment_diagnostics_are_bounded(void)
     physical.buttons = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
     physical.lt = 197; physical.rt = 251;
     TEST_ASSERT(read_pos2_patched(0, &pad, 1) == 1);
+#if VJO_DEBUG
     TEST_CHECK(strstr(last_log, "in=00000C00 out=00000000") != NULL);
     TEST_CHECK(strstr(last_log, "L1R1=0/0 write=00000000") != NULL);
+#endif
     for (unsigned i = 0; i < 256; i++) TEST_ASSERT(read_pos2_patched(0, &pad, 1) == 1);
-    TEST_CHECK(log_calls == 1 && longest_log <= 190);
+    TEST_CHECK(log_calls == TRACE_LOGS(1) && longest_log <= 190);
     input_trace_reset();
     g.input_block = 1;
     TEST_ASSERT(read_pos2_patched(0, &pad, 1) == 1);
+#if VJO_DEBUG
     TEST_CHECK(strstr(last_log, "out=00000000 LR=0/0 L1R1=0/0") != NULL);
-    TEST_CHECK(log_calls == 2 && longest_log <= 190);
+#endif
+    TEST_CHECK(log_calls == TRACE_LOGS(2) && longest_log <= 190);
 }
 
 TEST_LIST = {

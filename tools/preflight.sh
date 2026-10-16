@@ -15,6 +15,9 @@
 #   VITA3K               the Vita3K smoke (tools/vita3k_smoke.sh); with VITA3K_FIRMWARE and
 #                        VITA3K_FONTS (Sony's PUPs) also the Overlay app's (tools/vita3k_settings_smoke.sh)
 #   BUILD                host build directory (default build/preflight)
+#   VJO_DEBUG            1 (the default): the debug build, the test builds'; 0: the normal build
+#                        (docs/release-variants.md). Every build here is made as that build, and a
+#                        check of a debug-only feature (the self-test's) says N/A for the normal one.
 # A check whose input is missing prints SKIP; GO needs every check that ran to pass and the
 # required ones (host suites, #74 replay, simulator, parity, Vita build) to have run.
 set -uo pipefail
@@ -28,13 +31,18 @@ fails=() ; skipped=() ; required_missing=()
 pass() { printf '  [PASS] %-28s %s\n' "$1" "$2"; }
 fail() { printf '  [FAIL] %-28s %s\n' "$1" "$2"; fails+=("$1"); }
 skip() { printf '  [SKIP] %-28s %s\n' "$1" "$2"; skipped+=("$1"); [ "${3:-}" = required ] && required_missing+=("$1"); }
+# not applicable: a debug-only feature's check, for the normal build (counts as neither run nor skipped)
+na() { printf '  [N/A ] %-28s %s\n' "$1" "$2"; }
+# The build variant (docs/release-variants.md): every configure below passes it.
+if [ "${VJO_DEBUG:-1}" = 0 ]; then VARIANT=normal DBG=OFF; else VARIANT=debug DBG=ON; fi
+export VJO_DEBUG=$([ "$VARIANT" = normal ] && echo 0 || echo 1)
 
-echo "preflight $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet 2>/dev/null || echo '+local changes') at $(date -u +%FT%TZ)"
+echo "preflight $(git rev-parse --short HEAD 2>/dev/null)$(git diff --quiet 2>/dev/null || echo '+local changes') at $(date -u +%FT%TZ), the $VARIANT build (VJO_DEBUG=$DBG)"
 [ -f "${VJO_VOCR_SOURCE_DIR:-}/runtime/vocr_lines_rows.c" ] || {
   echo "  VJO_VOCR_SOURCE_DIR must name the pinned vita-vn-ocr checkout (runtime/vocr_lines_rows.c)"; echo "PREFLIGHT: NO-GO"; exit 1; }
 
 # 1. host build and every host suite (the real kernel, Shell and game worker with SDK stubs)
-if cmake -S . -B "$BUILD" -G Ninja -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+if cmake -S . -B "$BUILD" -G Ninja -DVJO_DEBUG="$DBG" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
      ${VJO_VOCR_MODEL_DIR:+-DVJO_VOCR_MODEL_DIR="$VJO_VOCR_MODEL_DIR"} -DPython3_EXECUTABLE="$(command -v "$PY")" \
      ${VJO_PLAINTEXT_SOURCE:+-DVJO_PLAINTEXT_SOURCE="$VJO_PLAINTEXT_SOURCE"} \
      > "$log/configure.log" 2>&1 && cmake --build "$BUILD" -j"${JOBS:-8}" > "$log/build.log" 2>&1; then
@@ -49,7 +57,9 @@ fi
 # kernel/meminfo.c itself, built on the host with the firmware stubbed (#75's audit, B1: its first guard
 # read only user-half pointers, so on a console every route failed before reading anything)
 km=$BUILD/vjo-kernel-meminfo-tests
-if [ -x "$km" ] && "$km" > "$log/kernel-meminfo.log" 2>&1; then
+if [ "$VARIANT" = normal ]; then
+  na "kernel memory routes (B1)" "the self-test's memory sample (kernel/meminfo.c) is not in the normal build"
+elif [ -x "$km" ] && "$km" > "$log/kernel-meminfo.log" 2>&1; then
   pass "kernel memory routes (B1)" "$(grep -c '\[ OK \]' "$log/kernel-meminfo.log") cases: objects below 0x40000000 read by every route; user-half ones (0x5..., 0x8..., unreadable) refused unread, step 3; the guard at its edges"
 else
   fail "kernel memory routes (B1)" "${km} ($log/kernel-meminfo.log)"
@@ -74,10 +84,12 @@ if [ $? -eq 1 ] && grep -q "never reached: the capture failed 5 time(s)" <<<"$r7
 else
   fail "#74 replay (API 18)" "the analyser no longer reproduces #74's failure"
 fi
-# with the real writer, so the fixtures are checked to be what shell/selftest.c writes
-if VJO_SELFTEST_WRITER=$BUILD/vjo-selftest-writer "$PY" -m unittest tools.tests.test_analyse_selftest \
+# with the real writer, so the fixtures are checked to be what shell/selftest.c writes (the debug
+# build's: the normal build has no self-test, and its analyser tests run on the fixtures alone)
+writer=; [ "$VARIANT" = debug ] && writer=$BUILD/vjo-selftest-writer
+if VJO_SELFTEST_WRITER=$writer "$PY" -m unittest tools.tests.test_analyse_selftest \
      > "$log/analyser.log" 2>&1; then
-  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log")$(grep -o ' (skipped=[0-9]*)' "$log/analyser.log"): v1 (#74 fixture), v2 PASS/FAIL/INCOMPLETE, diagnostics PASS/WARN"
+  pass "self-test analyser" "$(grep -o 'Ran [0-9]* tests' "$log/analyser.log")$(grep -o ' (skipped=[0-9]*)' "$log/analyser.log"): v1 (#74 fixture), v2 PASS/FAIL/INCOMPLETE, diagnostics PASS/WARN${writer:+, the real writer}"
 else
   fail "self-test analyser" "$log/analyser.log"
 fi
@@ -178,13 +190,18 @@ fi
 # 5. the Vita build: module pages, the memory ledger, the syscall ABI, the kernel's FPU check
 if [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ]; then
   vb=$BUILD-vita
-  if cmake -S vita -B "$vb" -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
+  if cmake -S vita -B "$vb" -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG="$DBG" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
        -DPython3_EXECUTABLE="$(command -v "$PY")" > "$log/vita-configure.log" 2>&1 \
-     && cmake --build "$vb" -j"${JOBS:-8}" > "$log/vita-build.log" 2>&1; then
+     && cmake --build "$vb" -j"${JOBS:-8}" > "$log/vita-build.log" 2>&1 \
+     && "$PY" tools/check_kernel_instructions.py --objdump "$VITASDK/bin/arm-vita-eabi-objdump" \
+          "$vb/VitaJPOverlay_Kernel" >> "$log/vita-build.log" 2>&1; then
+    # (the kernel's FPU/NEON check again: the build runs it only when it relinks the kernel, so a
+    # second preflight in the same build directory would not see its line)
     pages=$(grep -E "VitaJPOverlay_(Kernel|Shell|OCR) +[0-9,]+ B of" "$log/vita-build.log" | sort -u | sed -E 's/ +/ /g; s/^ //' | tr '\n' ';')
     if grep -q "memory ledger: pass" "$log/vita-build.log" && grep -q '"result": "pass"' "$log/vita-build.log" \
-       && grep -q "no FPU/NEON instructions" "$log/vita-build.log"; then
-      pass "Vita build" "ledger pass, syscall ABI pass, kernel without FPU/NEON"
+       && grep -q "no FPU/NEON instructions" "$log/vita-build.log" \
+       && grep -q "\"variant\": \"$VARIANT\"" "$log/vita-build.log"; then
+      pass "Vita build" "ledger pass, syscall ABI pass, kernel without FPU/NEON, the $VARIANT build's modules (tools/check_variant.py)"
       echo "$pages" | tr ';' '\n' | sed '/^$/d; s/^/           /'
     else
       fail "Vita build" "ledger/ABI/FPU check did not pass ($log/vita-build.log)"

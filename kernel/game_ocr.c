@@ -339,7 +339,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         claimed = cancelled = completed = 0;
         rc = (int)request.seq;
         if (g.mevf > 0) ksceKernelSetEventFlag(g.mevf, MEV_JOB); /* a waiting vjoOcrTake claims it now */
-        klog("ocr job %u: %ux%u at %u,%u of %ux%u, capture %u, flags 0x%X, tiers 0x%X, %s / %s", request.seq,
+        klog_d("ocr job %u: %ux%u at %u,%u of %ux%u, capture %u, flags 0x%X, tiers 0x%X, %s / %s", request.seq,
              request.width, request.height, request.x, request.y, fw, fh, request.capture_seq,
              request.flags, request.tiers, request.model, request.fallback[0] ? request.fallback : "-");
     }
@@ -359,11 +359,17 @@ typedef struct {
     uint32_t frames, sum_us, max_us, slow; /* slow: gaps over VJO_PACE_SLOW_US */
 } Pace;
 static Pace pace[2]; /* 0 between jobs, 1 during one */
+#if VJO_DEBUG
 static uint32_t pace_last_us; /* the low 32 bits: gaps are differences, wrap included */
+#endif
 static volatile int pace_job;
 
 void game_ocr_frame(int64_t now_us)
 {
+#if !VJO_DEBUG
+    (void)now_us; /* the normal build measures no pacing (docs/release-variants.md) */
+}
+#else
     Pace *pc = &pace[pace_job & 1];
     uint32_t now = (uint32_t)now_us, gap = now - pace_last_us;
     if (pace_last_us) {
@@ -374,6 +380,7 @@ void game_ocr_frame(int64_t now_us)
     }
     pace_last_us = now ? now : 1u;
 }
+#endif
 
 int vjoOcrTake(VjoGameOcrRequest *out)
 {
@@ -601,7 +608,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
             publish_capture_locked();
             VJO_UNLOCK();
             ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);
-            klog("ocr job %u: first pass in (%u rows, frame %ux%u fmt %08X pitch %u), scene %u",
+            klog_d("ocr job %u: first pass in (%u rows, frame %ux%u fmt %08X pitch %u), scene %u",
                  req.seq, request.height, rows.fb_w, rows.fb_h, rows.fb_fmt, rows.fb_pitch, g.capture_scene);
             VJO_LOCK();
         }
@@ -670,7 +677,7 @@ int vjoOcrComplete(const VjoGameOcrResult *user_result)
         if (!cancelled) {
             result = incoming;
             completed = 1;
-            if (pace_job && result.n_steps < VJO_GAME_OCR_STEPS) {
+            if (VJO_DEBUG && pace_job && result.n_steps < VJO_GAME_OCR_STEPS) {
                 VjoGameOcrStep *p = &result.step[result.n_steps++];
                 p->id = VJO_GSTEP_PACE;
                 p->kind = 0;

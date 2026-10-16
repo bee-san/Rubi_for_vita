@@ -214,6 +214,7 @@ def parse_log(text):
     sessions, jobs, stages, steps = [], [], [], []
     job, game, stage_now, session = None, None, None, None
     n = 0
+    normal = 0  # boots of the normal build, whose short log has no job, step or timing line (docs/release-variants.md)
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
@@ -222,6 +223,7 @@ def parse_log(text):
             job.lines += 1
         if line.startswith("Vita JP Overlay shell started"):
             session = None
+            normal += "the normal build" in line
             continue
         m = GAME_START.match(line)
         if m:
@@ -311,7 +313,7 @@ def parse_log(text):
         if s["first_open_wait_ms"] is None and j.kind == "ocr" and j.why in ("overlay opened",
                                                                               "the screen changed during the last one"):
             s["first_open_wait_ms"] = j.done_ms
-    return {"sessions": sessions, "jobs": jobs, "stages": stages, "steps": steps}
+    return {"sessions": sessions, "jobs": jobs, "stages": stages, "steps": steps, "normal_boots": normal}
 
 
 def selftest_rows(stage_records, jobs):
@@ -344,7 +346,7 @@ def selftest_rows(stage_records, jobs):
 def analyse(text, kernel_text=None):
     p = parse_log(text)
     jobs = p["jobs"]
-    res = {"sessions": p["sessions"], "jobs": [j.as_dict() for j in jobs],
+    res = {"sessions": p["sessions"], "jobs": [j.as_dict() for j in jobs], "normal_boots": p["normal_boots"],
            "kernel_pids": list(dict.fromkeys(m.group(1) for m in (KPID.match(l.strip())
                                                                   for l in (kernel_text or "").splitlines()) if m))}
     rows = selftest_rows(p["stages"], jobs)
@@ -427,6 +429,9 @@ def render_job(j, out):
 
 def render(res, show_jobs=False):
     out = []
+    if res.get("normal_boots"):
+        out.append(f"the normal build's short log ({res['normal_boots']} boot(s)): no job, step or timing line to time; "
+                   "the -debug zip of the same release logs them (docs/release-variants.md)")
     pids = res["kernel_pids"]
     out.append(f"sessions (game starts): {len(res['sessions'])}"
                + (f"; game processes in kernel.txt: {len(pids)}" if pids else ""))

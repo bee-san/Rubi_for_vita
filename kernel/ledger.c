@@ -30,5 +30,5 @@ void kledger_log(const char *when)
          l->pool_peak[VJO_LEDGER_POOL_KERNEL], (unsigned)VJO_LIMIT_KERNEL, when);
     for (i = 0; i < VJO_KL_COUNT; i++)
         if (l->peak[i])
-            klog("ledger   %s: current=%u peak=%u", defs[i].name, l->current[i], l->peak[i]);
+            klog_d("ledger   %s: current=%u peak=%u", defs[i].name, l->current[i], l->peak[i]);
 }

@@ -5,7 +5,8 @@
 # with another VitaSDK gives other bytes; this one is CI's (docs/offline-testing.md, "CI's Vita build
 # in its container").
 #
-#   bash tools/ci_container_build.sh [--rev REV] [--out DIR] [--vocr-source DIR] [--compare FILE]
+#   bash tools/ci_container_build.sh [--rev REV] [--out DIR] [--vocr-source DIR] [--variant debug|normal]
+#                                    [--compare FILE]
 #
 #   --rev REV          the commit to build (default HEAD): its committed tree, as actions/checkout
 #                      gives it; the working tree's uncommitted changes are not built
@@ -13,6 +14,8 @@
 #   --vocr-source DIR  a clone of bee-san/vita-vn-ocr holding cmake/VocrOCR.cmake's pinned commit:
 #                      also builds the three plugins and the RCO, all of CI's `cmake --build`.
 #                      Without it only the Overlay app is built, which does not use the OCR runtime.
+#   --variant V        the build: debug (the default, CI's VitaJPOverlay artifact and the -debug zip) or
+#                      normal (VitaJPOverlay-normal and the release's main zip; docs/release-variants.md)
 #   --compare FILE     an eboot.bin, a VPK, or a zip holding JPOverlaySettings.vpk (a release, or
 #                      CI's VitaJPOverlay artifact): exit 1 unless its eboot.bin and the VPK's other
 #                      files, and a package's plugins and RCO when built, are byte-identical
@@ -35,13 +38,15 @@ REV=HEAD
 OUT=
 VOCR=
 COMPARE=
-usage() { sed -n '8,21p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '8,24p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+VARIANT=debug
 while [ $# -gt 0 ]; do
   case $1 in
     --rev) [ $# -ge 2 ] || usage; REV=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
     --vocr-source) [ $# -ge 2 ] || usage; VOCR=$2; shift 2 ;;
     --compare) [ $# -ge 2 ] || usage; COMPARE=$2; shift 2 ;;
+    --variant) [ $# -ge 2 ] && { [ "$2" = debug ] || [ "$2" = normal ]; } || usage; VARIANT=$2; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -83,7 +88,7 @@ fi
 
 # What the build gives (the comparison reads these names only, whatever else --out holds).
 FILES="eboot.bin JPOverlaySettings.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
-OUT=${OUT:-$ROOT/build/ci-container/${commit:0:12}}
+OUT=${OUT:-$ROOT/build/ci-container/${commit:0:12}$([ "$VARIANT" = normal ] && echo -normal)}
 [ ! -e "$OUT" ] || [ -d "$OUT" ] || die "--out is not a directory: $OUT"
 mkdir -p "$OUT" || die "cannot make --out: $OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -104,6 +109,7 @@ fi
 
 # The job's steps, after actions/checkout: its apt packages, tools/setup_toolchain.sh and its cmake
 # commands, in its working directory. The build log goes to stderr; stdout carries only the files.
+DBG=$([ "$VARIANT" = normal ] && echo OFF || echo ON)
 INNER='set -euo pipefail
 exec 3>&1 1>&2
 W=/__w/vita-jp-overlay/vita-jp-overlay
@@ -112,17 +118,17 @@ apt-get update && apt-get install -y --no-install-recommends g++ patch python3 o
 WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
 export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
 if [ -d .refs/vita-vn-ocr/runtime ]; then
-  cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr
+  cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG='"$DBG"' -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr
   cmake --build build/vita -j4
   files="eboot.bin JPOverlaySettings.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
 else
-  cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_WITH_VOCR=OFF
+  cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG='"$DBG"' -DVJO_WITH_VOCR=OFF
   cmake --build build/vita -j4 --target vjo_settings_assets
   files="eboot.bin JPOverlaySettings.vpk"
 fi
 tar -c -C build/vita $files >&3'
 
-echo "ci_container_build: $commit in $IMAGE (linux/amd64) with $engine$( [ -z "$vocr_commit" ] || echo ", vita-vn-ocr $vocr_commit")" >&2
+echo "ci_container_build: $commit, the $VARIANT build, in $IMAGE (linux/amd64) with $engine$( [ -z "$vocr_commit" ] || echo ", vita-vn-ocr $vocr_commit")" >&2
 # A named container, with an init as PID 1 (bash there ignores the SIGTERM a timeout sends), removed
 # however this script ends: a timeout or Ctrl-C leaves no build running.
 name=vjo-ci-build-$$-${commit:0:12}

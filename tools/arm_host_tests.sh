@@ -42,8 +42,10 @@ ARM_CC=${ARM_CC:-arm-linux-gnueabihf-gcc}
 QEMU=${QEMU:-qemu-arm-static}
 OUT=${1:-build/arm-tests}
 mkdir -p "$OUT"
+# VJO_DEBUG=0: the normal build's suites (docs/release-variants.md); the default, 1, the debug build's.
+VJO_DEBUG=${VJO_DEBUG:-1}
 FLAGS=(-O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -Wall -Wextra -Wno-unused-parameter
-       -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1)
+       -I third_party/acutest/include -I host/tests/vita_stubs -I core -I include -DVJO_HOST=1 -DVJO_DEBUG="$VJO_DEBUG")
 QEMU_ARGS=(-cpu cortex-a9)
 # qemu-arm needs the dynamic loader's directory only for dynamic binaries;
 # everything here is static.
@@ -65,7 +67,8 @@ build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
 build touch_hold host/tests/test_touch_hold.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
-build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
+# the self-test's memory routes: the debug build's only
+[ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
@@ -83,7 +86,8 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_meminfo region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr region_select)
+[ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows settings_layout shell_log apkg psp)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime

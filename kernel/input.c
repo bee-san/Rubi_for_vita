@@ -229,10 +229,13 @@ static TrigHold hold[HOLD_PORTS][TRIG_COUNT];
 static volatile int hold_busy;
 static uint32_t hold_gen;
 
-/* At most one line per condition during each overlay opening. */
-static volatile uint32_t input_trace;
+/* At most one line per condition during each overlay opening: the debug
+ * build's traces. The normal build claims none, so the hooks' trace reads and
+ * lines are compiled out (docs/release-variants.md). */
 enum { INPUT_TRACE_FIRST = 1, INPUT_TRACE_CROSS = 2, INPUT_TRACE_COPY = 4,
        INPUT_TRACE_FOREIGN = 8, INPUT_TRACE_EMPTY = 16, INPUT_TRACE_TRIGGER = 32 };
+#if VJO_DEBUG
+static volatile uint32_t input_trace;
 
 void input_trace_reset(void)
 {
@@ -244,6 +247,10 @@ static int input_trace_claim(uint32_t bit)
     if (__atomic_load_n(&input_trace, __ATOMIC_RELAXED) & bit) return 0;
     return !(__sync_fetch_and_or(&input_trace, bit) & bit);
 }
+#else
+void input_trace_reset(void) {}
+#define input_trace_claim(bit) 0
+#endif
 
 static void trig_config(TrigConfig *c)
 {
@@ -295,8 +302,10 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
     if (n <= 0 || g.game_pid <= 0 || !g.game_active)
         return n;
     if (caller != g.game_pid) {
+#if VJO_DEBUG
         if (g.input_block && hook == H_READ_POS2 && input_trace_claim(INPUT_TRACE_FOREIGN))
-            klog("input foreign hook=%d pid=%X game=%X block=%d", hook, caller, g.game_pid, g.input_block);
+            klog_d("input foreign hook=%d pid=%X game=%X block=%d", hook, caller, g.game_pid, g.input_block);
+#endif
         return n;
     }
     if (n > 64 && g.input_block)
@@ -322,6 +331,7 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
         uintptr_t u = (uintptr_t)&pad_data[i].buttons;
         if (g.input_block) {
             /* Neutral output must not depend on reading the old sample. */
+#if VJO_DEBUG
             int trace = input_trace_claim(INPUT_TRACE_FIRST);
             if ((g.raw_buttons & SCE_CTRL_CROSS) && input_trace_claim(INPUT_TRACE_CROSS))
                 trace = 1;
@@ -331,14 +341,17 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
                 read_rc = ksceKernelMemcpyUserToKernel(&d.buttons, (const void *)u, state_bytes);
                 if (read_rc >= 0) before = negative ? ~d.buttons : d.buttons;
             }
+#endif
             d.buttons = negative ? ~0u : 0;
             d.lx = d.ly = d.rx = d.ry = 0x80;
             memset((uint8_t *)&d + offsetof(SceCtrlData, up), 0, 12);
             copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d.buttons, state_bytes);
+#if VJO_DEBUG
             if (trace || (copy_rc < 0 && input_trace_claim(INPUT_TRACE_COPY)))
-                klog("input blocked hook=%d pid=%X game=%X read=%08X write=%08X buttons=%08X out=%08X LR=%u/%u L1R1=%u/%u raw=%08X",
+                klog_d("input blocked hook=%d pid=%X game=%X read=%08X write=%08X buttons=%08X out=%08X LR=%u/%u L1R1=%u/%u raw=%08X",
                      hook, caller, g.game_pid, read_rc, copy_rc, before, d.buttons,
                      d.lt, d.rt, d.l1, d.r1, g.raw_buttons);
+#endif
         } else {
             copy_rc = ksceKernelMemcpyUserToKernel(&d.buttons, (const void *)u, state_bytes);
             if (copy_rc < 0) {
@@ -364,7 +377,7 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
             d.buttons = negative ? ~pos : pos;
             copy_rc = ksceKernelMemcpyKernelToUser((void *)u, &d.buttons, state_bytes);
             if (copy_rc >= 0 && completed && input_trace_claim(INPUT_TRACE_TRIGGER))
-                klog("input trigger hook=%d pid=%X in=%08X out=%08X LR=%u/%u L1R1=%u/%u write=%08X raw=%08X",
+                klog_d("input trigger hook=%d pid=%X in=%08X out=%08X LR=%u/%u L1R1=%u/%u write=%08X raw=%08X",
                      hook, caller, before, pos, d.lt, d.rt, d.l1, d.r1, copy_rc, g.raw_buttons);
         }
         if (copy_rc < 0) {
@@ -381,6 +394,12 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
     return returned;
 }
 
+/* An empty read while the overlay blocks input: the debug build's trace. */
+#if VJO_DEBUG
+#define EMPTY_TRACE() (g.input_block && ksceKernelGetProcessId() == g.game_pid && input_trace_claim(INPUT_TRACE_EMPTY))
+#else
+#define EMPTY_TRACE() 0
+#endif
 #define CTRL_HOOK(idx, name, negative)                                       \
     static int name##_patched(int port, SceCtrlData *pad_data, int count)    \
     {                                                                        \
@@ -390,9 +409,8 @@ static int filter_ctrl(int hook, int port, SceCtrlData *pad_data, int n, int neg
         display_static_fb_sample();                                          \
         if (ret > 0)                                                         \
             ret = filter_ctrl(idx, port, pad_data, ret, negative);            \
-        else if (g.input_block && ksceKernelGetProcessId() == g.game_pid &&   \
-                 input_trace_claim(INPUT_TRACE_EMPTY))                       \
-            klog("input empty hook=%d pid=%X result=%d", idx, g.game_pid, ret); \
+        else if (EMPTY_TRACE())                                              \
+            klog_d("input empty hook=%d pid=%X result=%d", idx, g.game_pid, ret); \
         return ret;                                                          \
     }
 

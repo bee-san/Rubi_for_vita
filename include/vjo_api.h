@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#include "vjo_build.h" /* VJO_DEBUG: the debug or the normal build (docs/release-variants.md) */
+
 /* 14: 32 KiB model reads that wait for the kernel worker, Open reports the
  * file's modification time, results report resident weights.
  * 15: results carry the memory check (free USER, needed bytes, reserve) and
@@ -112,6 +114,7 @@ typedef struct {
 #define VJO_ERR_COPY         ((int32_t)0xBFFFFFF9u)
 #define VJO_ERR_CANCELLED    ((int32_t)0xBFFFFFF7u)
 #define VJO_ERR_PERM         ((int32_t)0xBFFFFFF8u) /* caller is not the registered role */
+#define VJO_ERR_UNSUPPORTED  ((int32_t)0xBFFFFFF6u) /* not in this build: the normal build's self-test calls */
 
 /* vjoSetGameActive's mode for the foreground process. */
 enum VjoGameMode {

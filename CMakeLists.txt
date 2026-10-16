@@ -6,6 +6,16 @@ option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
 set(VJO_VOCR_MODEL_DIR "" CACHE PATH "Directory with vita-vn-ocr weights for the model tests (optional)")
 set(VJO_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+# The build variant (docs/release-variants.md), as vita/CMakeLists.txt's: ON, the default, the
+# debug build (the test builds'); OFF the normal build. The host suites run for both: the
+# debug-only ones (the self-test writer, the kernel's memory routes) only in the debug build, and
+# the tests of the normal build's short log only in the normal one.
+option(VJO_DEBUG "Build the debug variant (the test builds'); OFF: the normal release build" ON)
+if(VJO_DEBUG)
+  add_compile_definitions(VJO_DEBUG=1)
+else()
+  add_compile_definitions(VJO_DEBUG=0)
+endif()
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -87,11 +97,14 @@ target_include_directories(vjo-fbgrey-tests PRIVATE third_party/acutest/include 
 target_compile_options(vjo-fbgrey-tests PRIVATE -Wall -Wextra)
 add_test(NAME fbgrey COMMAND vjo-fbgrey-tests)
 # kernel/meminfo.c's three routes with the firmware's objects at kernel-range addresses (#74 audit B1).
+# The self-test's memory sample: the debug build's only (the normal kernel has no kernel/meminfo.c).
+if(VJO_DEBUG)
 add_executable(vjo-kernel-meminfo-tests host/tests/test_kernel_meminfo.c core/ledger.c)
 target_include_directories(vjo-kernel-meminfo-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-meminfo-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-meminfo-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_meminfo COMMAND vjo-kernel-meminfo-tests)
+endif()
 add_executable(vjo-kernel-input-tests host/tests/test_kernel_input.c kernel/triggers.c)
 target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
@@ -348,12 +361,15 @@ endif()
 add_test(NAME local_dictionary COMMAND ${Python3_EXECUTABLE} -m unittest discover
   -s ${CMAKE_SOURCE_DIR}/tools/tests -v)
 # The real self-test writer (shell/selftest.c) on the host: v2 reports for the analyser's tests.
-add_executable(vjo-selftest-writer host/tests/selftest_writer.c)
-target_include_directories(vjo-selftest-writer PRIVATE host/tests/vita_stubs)
-target_compile_definitions(vjo-selftest-writer PRIVATE VJO_HOST=1)
-target_link_libraries(vjo-selftest-writer vjo_core)
+# The debug build's only: the normal build has no self-test (its analyser tests run on the fixtures).
 set(_vjo_tool_env "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
-string(APPEND _vjo_tool_env ";VJO_SELFTEST_WRITER=$<TARGET_FILE:vjo-selftest-writer>")
+if(VJO_DEBUG)
+  add_executable(vjo-selftest-writer host/tests/selftest_writer.c)
+  target_include_directories(vjo-selftest-writer PRIVATE host/tests/vita_stubs)
+  target_compile_definitions(vjo-selftest-writer PRIVATE VJO_HOST=1)
+  target_link_libraries(vjo-selftest-writer vjo_core)
+  string(APPEND _vjo_tool_env ";VJO_SELFTEST_WRITER=$<TARGET_FILE:vjo-selftest-writer>")
+endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")

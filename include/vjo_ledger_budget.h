@@ -13,6 +13,11 @@
 #ifndef VJO_LEDGER_BUDGET_H
 #define VJO_LEDGER_BUDGET_H
 
+/* The module pages differ by build (docs/release-variants.md): `#if VJO_DEBUG` picks the debug
+ * build's, the test builds' own, or the normal build's, which compiles the debug-only logging, the
+ * self-test and the traces out; tools/check_memory_ledger.py --variant reads the same branch. */
+#include "vjo_build.h"
+
 /* Every thread costs its stack plus at least 4 KiB of TLS from its process's
  * budget [SDK: Kernel-Reference, sceKernelCreateThread]. */
 #define VJO_LEDGER_TLS 4096u
@@ -65,7 +70,16 @@
  * -66,728 B, .rodata -20,424 B) and 72 B off data/bss, so the module is 100,792 text + 70,060
  * data/bss [measured: the build log's module rows and arm-vita-eabi-size, main 6020c0b and this
  * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. */
+#if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
+#else
+/* The normal build (docs/release-variants.md): the self-test (shell/selftest.c), the lines of the
+ * game worker's step log, of the recognized text and of every job and lookup, and the timings and
+ * traces compiled out: 90,768 text + 69,988 data/bss against the debug build's 100,792 + 70,060,
+ * 94,208 + 73,728 B of pages, two text pages fewer [measured: the build log's module rows, both builds
+ * of this tree on main 3805a13 (#130, #142)]. Its check is exact (--exact): this must equal its pages. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
+#endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
  * in the game's own USER_RW (91,226,112 B free measured in CLANNAD, docs/vita-memory.md), never in SceShell.
@@ -86,6 +100,12 @@
  * 2,080 B line queue and slots, both on vita-vn-ocr a540027), and one text page for #85 (the build's
  * vocr.c object 15,288 -> 17,952 B of code; the worker's text 67,452 -> 70,124 B) [measured: main
  * 8f1ec8f against the API 22 build], in the same game partition. */
+/* Both builds (docs/release-variants.md): the normal build compiles the self-test's capture probe
+ * out, 1,348 B of text, in the same pages since #124 (the PSP bubbles' ID: +260 B): 69,724 + 14,208
+ * against the debug build's 71,072 + 14,208 [measured: the build log's module rows, both builds on
+ * main 6020c0b; on 9f92bc6 the normal worker was 69,464 B, a text page fewer]. The rest of the
+ * worker's debug-only code is the step log, whose tier checks and clock step the normal Shell's
+ * short log reads. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
@@ -146,7 +166,14 @@
 /* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured; API 22's frame-pacing step
  * (kernel/game_ocr.c game_ocr_frame, VJO_GSTEP_PACE) takes 36,336 -> 36,608 B of text and
  * 77,720 -> 77,768 B of data/bss, the same pages: main 8f1ec8f against the API 22 build] */
+#if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
+#else
+/* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing, and the
+ * per-screen, per-job and input traces compiled out: 32,332 + 76,080 against 36,640 + 77,768, one
+ * text page fewer [measured: the build log's module rows, both builds]. */
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 110592u
+#endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
 /* The kernel's full-frame capture (vjoRequestCapture), which no Shell code takes any more: Google

@@ -235,6 +235,13 @@ fi
 if [ $SELFTEST = 1 ]; then
   # One empty file arms the self-test (shell/selftest.c): the next boot and
   # the first game started write ux0:data/VitaJPOverlay/selftest-report.txt.
+  # The normal build has no self-test (docs/release-variants.md): armed under it,
+  # the Shell says so once in log.txt and leaves the marker for a -debug build.
+  manifest=${PACKAGE_DIR:-.}/package-manifest.json
+  if [ -f "$manifest" ] && grep -q '"variant": "normal"' "$manifest"; then
+    echo "Note: this package is the normal build, which has no self-test. Install the -debug zip of the same"
+    echo "release (VitaJPOverlay-<version>-debug.zip) to run it; the marker is armed for that build."
+  fi
   : > "$TMP/selftest.txt"
   put "$TMP/selftest.txt" "ux0:/data/VitaJPOverlay/selftest.txt"
   echo "Self-test armed. Reboot the Vita, wait for the LiveArea, leave it for a minute, start the game to test,"

@@ -31,7 +31,26 @@ set(VJO_ROOT ${ROOT})
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-set(VJO_VERSION "0.7.12" CACHE STRING "Release archive version")
+# The release's version: the base zips' names and the Overlay app's version (beside its title). The
+# test builds are v0.8.0-test.N packages of these binaries; the final release sets it to its own
+# version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
+set(VJO_VERSION "0.8.0" CACHE STRING "Release archive version")
+# The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
+# builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
+# log. OFF is the normal build, the release's main download: errors, warnings and a short log;
+# the rest is compiled out of all three plugins and the Overlay app, format strings included.
+# Both read the same config.ini; the release ships both (target release_variants).
+option(VJO_DEBUG "Build the debug variant (the test builds'); OFF: the normal release build" ON)
+if(VJO_DEBUG)
+  add_compile_definitions(VJO_DEBUG=1)
+  set(VJO_VARIANT debug)
+  set(VJO_VARIANT_SUFFIX "-debug")
+else()
+  add_compile_definitions(VJO_DEBUG=0)
+  set(VJO_VARIANT normal)
+  set(VJO_VARIANT_SUFFIX "")
+endif()
+message(STATUS "Vita JP Overlay ${VJO_VERSION}: the ${VJO_VARIANT} build (VJO_DEBUG=${VJO_DEBUG})")
 
 
 # ---------------- kernel ----------------
@@ -39,7 +58,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/main.c
   ${ROOT}/kernel/boot.c
   ${ROOT}/kernel/ledger.c
-  ${ROOT}/kernel/meminfo.c
+  $<$<BOOL:${VJO_DEBUG}>:${ROOT}/kernel/meminfo.c> # the self-test's memory sample: debug build only
   ${ROOT}/core/boot_guard.c
   ${ROOT}/core/ledger.c
   ${ROOT}/kernel/log.c
@@ -144,7 +163,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/boot.c
   ${ROOT}/shell/guard.c
   ${ROOT}/shell/ledger.c
-  ${ROOT}/shell/selftest.c
+  $<$<BOOL:${VJO_DEBUG}>:${ROOT}/shell/selftest.c> # the on-device self-test: debug build only
   ${ROOT}/shell/main.cpp
   ${ROOT}/shell/memory.cpp
   ${ROOT}/shell/overlay.cpp
@@ -270,11 +289,16 @@ if(VJO_WITH_VOCR)
       --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
       --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
     DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self VitaJPOverlay_OCR.suprx-self)
+  # The normal build's budgets are its pages exactly (docs/release-variants.md): a budget above them fails too.
+  set(VJO_LEDGER_EXACT)
+  if(NOT VJO_DEBUG)
+    set(VJO_LEDGER_EXACT --exact)
+  endif()
   # The memory ledger (docs/memory-ledger.md): allocation sites, worst cases
   # against the cited limits, and the packaged modules' pages against the
   # declared budget. Its table is this build's record of what we hold.
   add_custom_target(vjo_memory_ledger ALL
-    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_memory_ledger.py
+    COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_memory_ledger.py --variant ${VJO_VARIANT} ${VJO_LEDGER_EXACT}
       --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
       --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx
       --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx
@@ -315,7 +339,8 @@ set(VJO_SETTINGS_LIBS
   ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
   SceAppMgr_stub SceAppUtil_stub SceRtc_stub SceRegistryMgr_stub vjo_bearssl)
 add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
-target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1)
+# Its version, beside its title (settings/main.c): this VJO_VERSION, and "debug" in the debug build.
+target_compile_definitions(VitaJPOverlay_Settings PRIVATE VJO_STANDALONE=1 VJO_VERSION_STRING="${VJO_VERSION}")
 target_include_directories(VitaJPOverlay_Settings PRIVATE ${ROOT}/third_party/bearssl/inc)
 target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffunction-sections -fdata-sections)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
@@ -405,13 +430,36 @@ if(VJO_SETTINGS_SMOKE)
     FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png)
 endif()
 
+# ---------------- the build's variant ----------------
+# The modules are the build they say (tools/check_variant.py, docs/release-variants.md): the normal
+# build's carry none of the debug build's own format strings (the self-test, the step log, the
+# recognized text, the timings and traces) and its own short-log marker; the debug build's carry
+# them all; the Overlay app names VJO_VERSION and, in the debug build, "debug".
+set(VJO_VARIANT_WORKER_ARGS)
+set(VJO_VARIANT_WORKER_DEPS)
+if(VJO_WITH_VOCR)
+  set(VJO_VARIANT_WORKER_ARGS --worker ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx)
+  set(VJO_VARIANT_WORKER_DEPS VitaJPOverlay_OCR.suprx-self)
+endif()
+add_custom_target(vjo_variant ALL
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_variant.py --variant ${VJO_VARIANT} --version ${VJO_VERSION}
+    --sources ${ROOT}
+    --kernel ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Kernel.skprx
+    --shell ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_Shell.suprx ${VJO_VARIANT_WORKER_ARGS}
+    --app ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_VARIANT_WORKER_DEPS} eboot.bin-self
+    ${ROOT}/tools/check_variant.py
+  COMMENT "Checking the modules are the ${VJO_VARIANT} build")
+
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)
 set(VJO_WORKER_RELEASE_DEPS)
 if(VJO_WITH_VOCR)
   set(VJO_WORKER_RELEASE_COPY COMMAND ${CMAKE_COMMAND} -E copy
     ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay_OCR.suprx ${CMAKE_CURRENT_BINARY_DIR}/release/ur0/tai/)
-  set(VJO_WORKER_RELEASE_DEPS VitaJPOverlay_OCR.suprx-self vjo_game_syscall_abi)
+  # The memory ledger too: a zip is made only from modules that fit their build's budgets (the
+  # release_variants target builds the other build's zip with `--target release` alone).
+  set(VJO_WORKER_RELEASE_DEPS VitaJPOverlay_OCR.suprx-self vjo_game_syscall_abi vjo_memory_ledger)
 endif()
 # config.ini sits at the zip's top level (the user edits it and copies it to
 # ux0:data/VitaJPOverlay/), so extracting an update over ur0 never overwrites
@@ -428,18 +476,75 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${STAGE}/docs/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
-  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
-  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self
-  COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}.zip")
+  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
+  DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant
+  COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
+
+# ---------------- the release's two zips: the normal build and the debug build ----------------
+# The final release ships both builds of one tree (docs/release-variants.md): the normal build as
+# VitaJPOverlay-<version>.zip, the main download, and the debug build, the test builds' own, as
+# VitaJPOverlay-<version>-debug.zip, with the same models, dictionary and config template. This
+# target makes this build's base zip (release) and the other build's, in variant-<other>/ configured
+# from this cache (toolchain, runtime, dictionary, version; the app's PNG sources not fetched
+# again); with VJO_RELEASE_MODELS (the pinned models and LMs, as tools/package_release.py --models
+# wants them) tools/package_variants.py then packages both into release-variants/ with their
+# SHA256SUMS. VJO_RELEASE_SETTINGS (KEY=VALUE;...) are both packages' --set settings and
+# VJO_RELEASE_SOURCE_REVISION their manifests' source revision.
+set(VJO_RELEASE_MODELS "" CACHE PATH "Pinned models and LMs for release_variants (package_release.py --models)")
+set(VJO_RELEASE_SETTINGS "" CACHE STRING "Both packages' settings for release_variants (KEY=VALUE;...)")
+set(VJO_RELEASE_SOURCE_REVISION "" CACHE STRING "Exact source revision for release_variants' manifests")
+if(VJO_DEBUG)
+  set(VJO_OTHER_DEBUG OFF)
+  set(VJO_OTHER_VARIANT normal)
+else()
+  set(VJO_OTHER_DEBUG ON)
+  set(VJO_OTHER_VARIANT debug)
+endif()
+set(VJO_OTHER_DIR ${CMAKE_CURRENT_BINARY_DIR}/variant-${VJO_OTHER_VARIANT})
+set(VJO_THIS_ZIP ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip)
+if(VJO_DEBUG)
+  set(VJO_NORMAL_ZIP ${VJO_OTHER_DIR}/VitaJPOverlay-${VJO_VERSION}.zip)
+  set(VJO_DEBUG_ZIP ${VJO_THIS_ZIP})
+else()
+  set(VJO_NORMAL_ZIP ${VJO_THIS_ZIP})
+  set(VJO_DEBUG_ZIP ${VJO_OTHER_DIR}/VitaJPOverlay-${VJO_VERSION}-debug.zip)
+endif()
+set(VJO_PACKAGE_VARIANTS)
+if(VJO_RELEASE_MODELS)
+  set(VJO_RELEASE_SET_ARGS)
+  foreach(setting ${VJO_RELEASE_SETTINGS})
+    list(APPEND VJO_RELEASE_SET_ARGS --set ${setting})
+  endforeach()
+  set(VJO_RELEASE_REVISION_ARGS)
+  if(VJO_RELEASE_SOURCE_REVISION)
+    set(VJO_RELEASE_REVISION_ARGS --source-revision ${VJO_RELEASE_SOURCE_REVISION})
+  endif()
+  set(VJO_PACKAGE_VARIANTS COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/package_variants.py
+    --normal ${VJO_NORMAL_ZIP} --debug ${VJO_DEBUG_ZIP} --models ${VJO_RELEASE_MODELS} --version ${VJO_VERSION}
+    -o ${CMAKE_CURRENT_BINARY_DIR}/release-variants ${VJO_RELEASE_REVISION_ARGS} ${VJO_RELEASE_SET_ARGS})
+endif()
+add_custom_target(release_variants
+  COMMAND ${CMAKE_COMMAND} -S ${CMAKE_CURRENT_SOURCE_DIR} -B ${VJO_OTHER_DIR} -G ${CMAKE_GENERATOR}
+    -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DVJO_DEBUG=${VJO_OTHER_DEBUG} -DVJO_VERSION=${VJO_VERSION} -DVJO_WITH_VOCR=${VJO_WITH_VOCR}
+    -DVJO_WITH_NCNN=${VJO_WITH_NCNN} -DVJO_VOCR_SOURCE_DIR=${VJO_VOCR_SOURCE_DIR}
+    -DVJO_PLAINTEXT_SOURCE=${VJO_PLAINTEXT_SOURCE} -DPython3_EXECUTABLE=${Python3_EXECUTABLE}
+    -DFETCHCONTENT_SOURCE_DIR_VJO_SETTINGS_PNG=${vjo_settings_png_SOURCE_DIR}
+  COMMAND ${CMAKE_COMMAND} --build ${VJO_OTHER_DIR} --target release
+  ${VJO_PACKAGE_VARIANTS}
+  COMMENT "Both builds' zips: ${VJO_NORMAL_ZIP} (normal) and ${VJO_DEBUG_ZIP} (debug)"
+  USES_TERMINAL VERBATIM)
+add_dependencies(release_variants release)
+

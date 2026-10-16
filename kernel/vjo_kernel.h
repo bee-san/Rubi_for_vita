@@ -94,6 +94,7 @@ void input_trace_reset(void);
 
 /* log.c: ring buffer, flushed to kernel.txt by the worker */
 void klog(const char *fmt, ...);
+/* klog_d: a debug-build line (include/vjo_build.h, docs/release-variants.md). */
 unsigned klog_ms(void); /* the system clock in ms: the t= of transition lines */
 /* Atomically claims a pending capture; only the winner copies. */
 static inline int capture_claim(void)

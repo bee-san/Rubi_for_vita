@@ -314,6 +314,26 @@ removal, which changes the kernel API.
 | VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); what fits the job limit with F20, the workspace and the capture block | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |
 | **limits** | weights 1,601,536; workspace 1,191,936; job 8,720,384 | the recognizer's ceiling tier, which the preflight (free `USER` minus the job's reserve: 4, 8 or 16 MiB by the largest model size it holds since API 21, `VJO_GAME_RESERVE_*`; memory left to the game, never taken) has to cover before anything is allocated, and since API 20 the 4 MB LM and the cascade's model (the job limit raised from 2,392,064 B by their blocks and workspace; a job takes either only when it fits, and #81's CLANNAD log shows 90,177,536 B free at the least); since API 22 the helpers' slots and stacks (614,400 B more at the worst; a job takes one fewer helper at a time, down to none, when the game is short, at the same reserve) | vita-vn-ocr [`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md); #81 [measured] |
 
+## The two builds
+
+The release ships two builds of one tree (docs/release-variants.md): the debug build (`VJO_DEBUG=ON`,
+the test builds') and the normal build (`OFF`), which compiles the debug-only logging, the
+self-test and the traces out. Their module pages differ, so the Shell's and the kernel's module
+budgets have an `#if VJO_DEBUG` branch each in `include/vjo_ledger_budget.h`, which
+`tools/check_memory_ledger.py --variant debug|normal` reads (the C code sees the same branch; any other
+conditional naming `VJO_DEBUG`, an `#elif` or a macro defined twice in one build's lines is refused).
+Every other budget is the same. The normal build's check is exact (`--exact`): a module with fewer
+pages than its budget fails too, so the normal budgets are always the measured pages.
+[measured: both builds of main `3805a13` plus the variants change, the build log's module rows]
+
+| module | debug | normal | |
+|---|---:|---:|---|
+| `VitaJPOverlay_Shell.suprx` | 176,128 B (100,792 + 70,060) | 167,936 B (90,768 + 69,988) | 2 SceShell pages fewer |
+| `VitaJPOverlay_Kernel.skprx` | 114,688 B (36,640 + 77,768) | 110,592 B (32,332 + 76,080) | 1 page of the kernel pool fewer |
+| `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,708 + 14,208) | the same pages (one budget for both since #124) |
+
+The normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its data/bss has 3,740 B.
+
 ## The CI check
 
 `tools/check_memory_ledger.py` runs in both CI jobs and as `ctest -R memory_ledger`:

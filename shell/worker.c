@@ -6,6 +6,10 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#if !VJO_DEBUG
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
+#endif
 
 #include "../core/boot_guard.h"
 #include "../core/app_stamp.h"
@@ -160,13 +164,19 @@ static const char *refresh_model; /* the model that read the refresh's text (job
  * run on the screen the last job read text from, with the overlay closed, and
  * it shows nothing: the shown text, its lookup and the result arenas stay, and
  * its captures do not stand in for the shown text's (vocr_note_capture). */
+#if VJO_DEBUG
 static volatile int job_selftest;
+#else
+#define job_selftest 0 /* the normal build has no self-test (shell.h) */
+#endif
 /* The last OCR job that read text in the region: its capture, and the game it
  * was read in (0: the last job read none). Network thread; read once its job
  * is done. */
 static uint32_t text_scene, text_seq, text_generation;
 static int64_t idle_since_us; /* the last job's end or the overlay's close */
+#if VJO_DEBUG
 static int64_t job_game_us;   /* the job's exchanges with the game worker (network thread) */
+#endif
 static int job_prepares;            /* ...the first word, before the overlay opens (log) */
 /* The cached result's text when the job started (NULL: no usable lookup).
  * Its arena is not touched while the job runs (the job fills the other). */
@@ -317,6 +327,7 @@ unsigned vjo_log_ms(void)
 /* Dictionary file reads since the last lookup began (platform_vita.c counts). */
 uint32_t vjo_dict_reads, vjo_dict_read_bytes;
 
+#if VJO_DEBUG
 /* Up to `chars` characters of s (the line at most) into out, for the log. */
 static void log_text(char *out, size_t cap, const char *s, size_t len, int chars)
 {
@@ -372,6 +383,17 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
             query, e ? head : "no entry", reading[0] ? " (" : "", reading, reading[0] ? ")" : "",
             source[0] ? " [" : "", source, source[0] ? "]" : "", rank);
 }
+#else
+/* The normal build logs a lookup only when it failed: no text, no timing
+ * (docs/release-variants.md). */
+static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t cursor, int rc, int64_t t0)
+{
+    (void)out;
+    (void)t0;
+    if (rc)
+        vjo_log("lookup %s at %u failed: rc=%d", why, (unsigned)cursor, rc);
+}
+#endif
 
 /* Does a result for scene `a` show the current scene `b`? */
 static int same_scene(uint32_t a, uint32_t b)
@@ -425,7 +447,7 @@ static int mem_alloc(void)
 #endif
     vjo_arena_init(&results[0], (uint8_t *)base, bytes);
     vjo_arena_init(&results[1], NULL, 0);
-    vjo_log("local dictionary workspace: %u bytes", (unsigned)bytes);
+    vjo_dlog("local dictionary workspace: %u bytes", (unsigned)bytes);
     active = -1;
     cache_ok = 0;
     return 0;
@@ -576,6 +598,7 @@ static int32_t vocr_headroom(const VjoGameOcrResult *r)
  * this console. */
 static void log_vocr_measurements(const VjoGameOcrResult *r)
 {
+#if VJO_DEBUG
     char buf[224];
     size_t n = 0;
     if (r->reserve_bytes && r->free_user < 0)
@@ -625,8 +648,18 @@ static void log_vocr_measurements(const VjoGameOcrResult *r)
             n = 0;
         }
     }
+#else
+    /* The normal build: the memory check's numbers only when it refused the job. */
+    if (r->reserve_bytes && r->free_user < 0)
+        vjo_log("game vocr memory: free USER unknown (error 0x%08X): check refused", (unsigned)r->free_user);
+    else if (r->reserve_bytes && vocr_headroom(r) < 0)
+        vjo_log("game vocr memory: free USER=%d + own weights %u, needs workspace %u + weights %u + reserve %u: "
+                "check refused", (int)r->free_user, (unsigned)r->release_bytes, (unsigned)r->need_workspace,
+                (unsigned)r->need_weights, (unsigned)r->reserve_bytes);
+#endif
 }
 
+#if VJO_DEBUG /* the debug build's job line */
 /* The game worker's memory check for the job it reported (with a smaller tier,
  * that tier's) refused it. */
 static int fallback_check_refused(const VjoGameOcrResult *r)
@@ -635,6 +668,7 @@ static int fallback_check_refused(const VjoGameOcrResult *r)
            (int64_t)r->free_user + r->release_bytes <
                (int64_t)r->need_workspace + r->need_weights + r->reserve_bytes);
 }
+#endif
 
 /* Model tiers whose file failed to open or verify in this game (missing, wrong
  * or corrupt): bit t - 1 for tier t. Later jobs of the same game leave them out
@@ -692,6 +726,29 @@ static int vocr_poll_cancelled(void *ud)
     return vocr_cancelled(ud);
 }
 
+#if !VJO_DEBUG
+/* What the normal build has logged of the game's activation in front (a start or
+ * a resume: game_generation moves on at each, invalidate_game_work): its first job
+ * that read its screen, its first job that found a line in the region (often a
+ * later one: a title screen's job finds none), and the model sizes that did not
+ * fit, as the bits of the refused tiers and the tier the job went on to; a job
+ * logs them again only when they change (vocr_run_one, log_tier_checks). */
+enum { SHORT_FIRST_JOB = 1u, SHORT_FIRST_TEXT = 2u, SHORT_TIERS = 4u };
+static uint32_t short_generation; /* the activation the bits below are for */
+static unsigned short_logged;     /* SHORT_* */
+static uint32_t short_tiers;      /* the last tier misses logged */
+
+static void short_activation(uint32_t generation)
+{
+    if (short_generation != generation) {
+        short_generation = generation;
+        short_logged = 0;
+        short_tiers = 0;
+    }
+}
+#endif
+
+#if VJO_DEBUG
 /* The game worker's step log: one log.txt line per step (`step/rc/bytes/free`). */
 static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
 {
@@ -700,6 +757,41 @@ static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
         if (vjo_gstep_format(line, sizeof(line), who, &r->step[i]) > 0)
             vjo_log("%s", line);
 }
+#else
+/* The normal build's one line on the 444 MHz boost (ocr_boost_clock), from the
+ * job's clock step: the ARM clock before, while and after it recognized, or what
+ * stopped the boost. Logged for the first job of each game and whenever it
+ * changes, so a session has a line or two (docs/release-variants.md). */
+static void log_vocr_clock(const VjoGameOcrResult *r)
+{
+    static uint32_t logged_generation;
+    static int32_t logged_rc;
+    static uint32_t logged_mhz[3];
+    for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        const VjoGameOcrStep *s = &r->step[i];
+        if (s->id != VJO_GSTEP_CLOCK)
+            continue;
+        if (logged_generation == job_generation && logged_rc == s->rc && logged_mhz[0] == s->arg &&
+            logged_mhz[1] == s->bytes && logged_mhz[2] == s->sum)
+            return;
+        logged_generation = job_generation;
+        logged_rc = s->rc;
+        logged_mhz[0] = s->arg;
+        logged_mhz[1] = s->bytes;
+        logged_mhz[2] = s->sum;
+        if (s->rc == 1 && !s->arg)
+            vjo_log("clock: unreadable, left as it is while reading");
+        else if (s->rc == 1)
+            vjo_log("clock: %u MHz, left as it is while reading (444 or more)", (unsigned)s->arg);
+        else if (s->rc < 0)
+            vjo_log("clock: 444 MHz refused 0x%08X, %u MHz while reading", (unsigned)s->rc, (unsigned)s->bytes);
+        else
+            vjo_log("clock: %u -> %u MHz while reading, %u after", (unsigned)s->arg, (unsigned)s->bytes,
+                    (unsigned)s->sum);
+        return;
+    }
+}
+#endif
 
 /* The game worker's speed word from the config (API 22): the helpers (0-2, bits
  * 0-1), the clock (bit 2: VJO_GAME_OCR_S_BOOST). */
@@ -719,6 +811,24 @@ static void log_tier_checks(const VjoGameOcrResult *r)
     unsigned n = 0;
     for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS && n < VJO_VOCR_TIERS; i++)
         if (r->step[i].id == VJO_GSTEP_CHECK && VJO_GCHECK_TIER(r->step[i].kind)) check[n++] = &r->step[i];
+#if !VJO_DEBUG
+    {   /* the normal build: once per activation, and again only when what did not fit, or the
+         * tier the job went on to, changes: the refused tiers' bits | the next tier << 8 */
+        uint32_t sig = 0;
+        for (unsigned k = 0; k < n; k++)
+            if (check[k]->rc == 1)
+                sig |= 1u << VJO_GCHECK_TIER(check[k]->kind);
+            else if (!(sig >> 8))
+                sig |= (uint32_t)VJO_GCHECK_TIER(check[k]->kind) << 8;
+        if (!(sig & 0xFFu))
+            return; /* every size it tried fitted: no line */
+        short_activation(job_generation);
+        if ((short_logged & SHORT_TIERS) && short_tiers == sig)
+            return;
+        short_logged |= SHORT_TIERS;
+        short_tiers = sig;
+    }
+#endif
     for (unsigned i = 0; i < n; i++) {
         unsigned t = VJO_GCHECK_TIER(check[i]->kind), next = i + 1u < n ? VJO_GCHECK_TIER(check[i + 1u]->kind) : 0u;
         /* refused: its last try was without the LM and the cascade, so its own reserve */
@@ -779,17 +889,22 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     int64_t t0 = now_us();
     int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
-    job_game_us += now_us() - t0;
+#if VJO_DEBUG
+    job_game_us += now_us() - t0; /* the done line's (net_job) */
+#endif
     vocr_note_capture();
+#if VJO_DEBUG
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
     static const char *const weights[] = {"none", "read", "resident"};
     static const char *const sources[] = {"none", "hook", "kernel strip", "user"};
     static const char *const memories[] = {"none", "USER", "CDRAM", "PHYCONT", "kernel"};
+#endif
     /* The tier that ran (or whose check refused the job last): the largest one less
      * the tiers the worker stepped down; its model's name is a constant, so it
      * outlives this call. */
     *ran = result->fallback < top ? top - result->fallback : VJO_VOCR_TIER_SMALL;
+#if VJO_DEBUG
     /* The result's lines (about 21: the job, its capture, memory, speed and lines,
      * the tiers that did not fit, and every game-worker step), formatted from the
      * result alone, go out with one append per file instead of one each: a file
@@ -815,9 +930,32 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     log_vocr_measurements(result);
     log_vocr_steps(flags & VJO_GAME_OCR_F_PROBE ? "probe" : "job", result);
     vjo_log_batch_end(&batch);
+#else
+    /* The normal build: a job's line (its result, the size that ran, the lines found, the
+     * time in the game) when it failed, and for the first job of each activation of the game
+     * (a start or a resume) that read its screen and its first that found a line (the first
+     * is often a title screen's, with none); then the sizes that did not fit and the clock,
+     * each once per activation and when it changes, and a refused memory check
+     * (docs/release-variants.md). A cancelled job, or one whose screen changed under it, is
+     * retried quietly as the overlay does: no line. */
+    {
+        int failed = rc != VJO_OK && rc != VJO_E_CANCELLED && rc != VJO_E_SCREEN_CHANGED;
+        unsigned want = rc != VJO_OK ? 0u : SHORT_FIRST_JOB | (result->lines ? SHORT_FIRST_TEXT : 0u);
+        short_activation(job_generation);
+        if (failed || (want & ~short_logged)) {
+            short_logged |= want;
+            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, vjo_vocr_tier_model((int)*ran), (unsigned)result->lines,
+                    (unsigned)((now_us() - t0) / 1000));
+        }
+    }
+    log_tier_checks(result);
+    log_vocr_measurements(result);
+    log_vocr_clock(result);
+#endif
     return rc;
 }
 
+#if VJO_DEBUG
 /* The recognized text, a log line per line (60 characters each at most): what
  * the recognizer read (the game worker keeps it after the normalised text) and,
  * where it differs, what is shown and looked up. */
@@ -873,14 +1011,17 @@ static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigne
     vjo_selftest_done();
     return rc;
 }
+#endif
 
 static int run_vocr(VjoOverlayData *out)
 {
     static VjoGameOcrResult result;
     unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
     sceClibMemset(&result, 0, sizeof(result));
+#if VJO_DEBUG
     if (job_selftest) /* its records are its result: nothing is shown */
         return out->err.rc = run_selftest_stages(&result, tiers, &ran);
+#endif
     out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
@@ -924,8 +1065,11 @@ static int run_vocr(VjoOverlayData *out)
         return out->err.rc;
     }
     /* The worker returns the text normalised (core/textnorm.h: one form of each
-     * mark, ー or 一 by context); the recognizer's own text goes to the log. */
+     * mark, ー or 一 by context); the recognizer's own text goes to the log
+     * (the debug build's: the normal build logs no recognized text). */
+#if VJO_DEBUG
     log_text_lines(result.text, sizeof(result.text));
+#endif
     /* The model on this text's Anki cards: the tier's that ran. A constant string. */
     const char *read_by = vjo_vocr_tier_model((int)ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
@@ -1065,17 +1209,21 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 static void net_job(void)
 {
     int idx = job_idx;
+#if VJO_DEBUG
     int64_t t0 = now_us();
     uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
     job_game_us = 0;
+#endif
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                              : run_job(&results[idx], &cache_data[idx]);
+#if VJO_DEBUG
     log_us1 = vjo_log_io(&appends1);
     vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "
             "appends", idx, job_rc, (int)((now_us() - t0) / 1000), (unsigned)results[idx].peak,
             cache_data[idx].page + 1, vjo_overlay_page_count(&cache_data[idx]),
             (unsigned)(job_game_us / 1000), (unsigned)((log_us1 - log_us0) / 1000),
             (unsigned)(appends1 - appends0));
+#endif
     __sync_synchronize(); /* results are visible before job_done */
     job_done = 1;
 }
@@ -1119,7 +1267,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
             view_publish(1, NULL, "Recognizing…", 0);
         mem_free();
     }
-    vjo_log("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
+    vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
     job_refresh = refresh;
     job_lookup = lookup;
     job_prepares = ov == OV_CLOSED;
@@ -1285,7 +1433,7 @@ static int cancel_outdated_job(const VjoState *st)
         return 0;
     job_cancelled = 1;
     vjo_net_cancel(&net_cancel);
-    vjo_log("job cancelled: the screen changed since its capture");
+    vjo_dlog("job cancelled: the screen changed since its capture");
     return 1;
 }
 
@@ -1315,8 +1463,11 @@ static void open_overlay(void)
 {
     VjoState st;
     int block_rc = vjoSetInputBlock(1);
-    vjo_log("input block on rc=%d (%08X) t=%u ms", block_rc, block_rc, vjo_log_ms());
+    vjo_dlog("input block on rc=%d (%08X) t=%u ms", block_rc, block_rc, vjo_log_ms());
     if (block_rc < 0) {
+#if !VJO_DEBUG
+        vjo_log("input block refused 0x%08X: the overlay cannot open", (unsigned)block_rc);
+#endif
         input_block_error = 1;
         ov = OV_CLOSED;
         view_publish(0, NULL, NULL, 0);
@@ -1328,10 +1479,12 @@ static void open_overlay(void)
     }
     clear_input_block_error();
     ov = OV_OPEN;
+#if VJO_DEBUG
     if (job_selftest && !job_cancelled) { /* set only while its job runs */
         job_cancelled = 1; /* the self-test yields: its stages run again later */
         vjo_log("self-test: stopped for the overlay");
     }
+#endif
     apply_config(); /* settings are re-read on every open */
     if (anki_on)
         vjo_anki_post_count(); /* the queue line's count (Anki's thread, no allocation) */
@@ -1345,7 +1498,7 @@ static void open_overlay(void)
          * exclude a result superseded before its next job has started. */
         if ((!job_running || job_selftest) && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
             job_text_generation == local_text_generation && claim_cache_for(&st)) {
-            vjo_log("open: saved local word");
+            vjo_dlog("open: saved local word");
             view_show_cache();
             return;
         }
@@ -1364,12 +1517,12 @@ static void open_overlay(void)
         return;
     }
     if (claim_cache_for(&st)) { /* a background job's, or the subtitles' */
-        vjo_log("open: background result");
+        vjo_dlog("open: background result");
         view_show_cache();
         return;
     }
     /* Why the background result can't be used (tuning). */
-    vjo_log("open: %s (stable %u, quiet %u)",
+    vjo_dlog("open: %s (stable %u, quiet %u)",
             job_running ? "background job still running"
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
@@ -1423,7 +1576,11 @@ static void close_overlay_for(int why)
     g_view.local_cursor_mode = 0;
     g_view.version++;
     vjo_view_unlock();
-    vjo_log("overlay close (%s) t=%u ms: input block off rc=%d", names[why], vjo_log_ms(), rc);
+    vjo_dlog("overlay close (%s) t=%u ms: input block off rc=%d", names[why], vjo_log_ms(), rc);
+#if !VJO_DEBUG
+    if (rc < 0)
+        vjo_log("input block off refused 0x%08X", (unsigned)rc);
+#endif
 }
 
 /* Cancel, L + R, Select + R, a saved region...: its game is still in front. */
@@ -1521,7 +1678,7 @@ static void note_screen_changed(const char *what)
     if (screen_changed_streak < 8)
         screen_changed_streak++;
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
-    vjo_log("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
+    vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);
 }
 
@@ -1607,7 +1764,7 @@ static void on_refresh_done(void)
         }
     }
     if (what)
-        vjo_log("refresh rc=%d: %s", rc, what);
+        vjo_dlog("refresh rc=%d: %s", rc, what);
     vjo_arena_release(&scratch, mark);
     if (replaced) {
         /* The new text's cards name the model that read it; the subtitle
@@ -1626,6 +1783,7 @@ static void on_refresh_done(void)
  * stopped by the overlay or a new screen, when its stages run again after a
  * later job's text; an overlay opened meanwhile gets what it waits for. */
 static void subtitles_show(const VjoState *st);
+#if VJO_DEBUG
 static void on_selftest_done(void)
 {
     VjoState st = {.size = sizeof(st)};
@@ -1638,13 +1796,16 @@ static void on_selftest_done(void)
     if (subtitles && vjoGetState(&st) >= 0)
         subtitles_show(&st); /* turned on while it ran: it brought no result to show */
 }
+#endif
 
 static void on_job_done(void)
 {
     idle_since_us = now_us();
     if (job_cursor_only) { on_cursor_done(); return; }
     if (job_refresh) { on_refresh_done(); return; }
+#if VJO_DEBUG
     if (job_selftest) { on_selftest_done(); return; }
+#endif
     int idx = job_idx, ocr_failed;
     VjoOverlayData *d = &cache_data[idx];
     __sync_synchronize(); /* pairs with the network thread's barrier */
@@ -1743,7 +1904,7 @@ static void on_job_text(void)
     job_text_ready = 0;
     if (job_refresh || job_cancelled || job_generation != game_generation)
         return; /* a refresh shows (and logs) nothing until it is done; or for an earlier screen */
-    vjo_log("subtitle text ready in %d ms", (int)((now_us() - job_started_us) / 1000));
+    vjo_dlog("subtitle text ready in %d ms", (int)((now_us() - job_started_us) / 1000));
     if (subtitles && sentence)
         vjo_strip_show(sentence, VJO_STRIP_SENTENCE, 1);
     /* The overlay waits for this job: the sentence now, the words after
@@ -1791,7 +1952,7 @@ static void set_subtitles(int on)
     VjoState st;
     subtitles = on;
     vjo_strip_configure(on, &cfg);
-    vjo_log("subtitles %s", on ? "on" : "off");
+    vjo_dlog("subtitles %s", on ? "on" : "off");
     if (!on) {
         vjo_strip_show("", VJO_STRIP_SENTENCE, 0);
         return;
@@ -1948,7 +2109,7 @@ static void classify_pending(void)
     if (ret == 0) {
         pending_pid = 0;
         if (id.mode == VJO_GAME_NONE) {
-            vjo_log("%s: system app, not a game", id.key);
+            vjo_dlog("%s: system app, not a game", id.key);
             vjoSetGameActive(pid, VJO_GAME_NONE);
         } else {
             activate_game(pid, &id);
@@ -2100,6 +2261,19 @@ static void background_open(void)
  * leaves it), so a new screen stops it as any job (cancel_outdated_job), and
  * opening the overlay does too. */
 #define SELFTEST_IDLE_US 2000000LL
+#if !VJO_DEBUG
+/* The normal build has no self-test: an armed one (tools/install_ftp.sh
+ * --self-test) is said so once, at start, and its marker stays for a debug
+ * build (docs/release-variants.md). */
+void vjo_selftest_init(const VjoConfig *c)
+{
+    SceIoStat st;
+    (void)c;
+    if (sceIoGetstat(VJO_DATA_DIR "/selftest.txt", &st) >= 0)
+        vjo_log("self-test: armed, but this is the normal build: install the -debug build to run it");
+}
+#endif
+#if VJO_DEBUG
 static void selftest_job_due(void)
 {
     VjoState st = {.size = sizeof(st)};
@@ -2130,6 +2304,7 @@ static void selftest_job_due(void)
     __sync_synchronize();
     sceKernelSetEventFlag(net_evf, NET_EV_JOB);
 }
+#endif
 
 /* Boot guard: this boot counts as complete once the control thread has run
  * for a minute (core/boot_guard.h). The kernel may answer BUSY while its
@@ -2197,7 +2372,9 @@ static void control_tick(uint32_t bits)
     }
     auto_prefetch();
     background_open();
+#if VJO_DEBUG
     selftest_job_due();
+#endif
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
@@ -2249,7 +2426,11 @@ int vjo_worker_start(void)
     vjo_selftest_init(&cfg);
     if (vjo_selftest_armed())
         apply_config(); /* the self-test's forced settings */
+#if VJO_DEBUG
     vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
+#else
+    vjo_log("Vita JP Overlay shell started (kernel API %d, the normal build: a short log)", ver);
+#endif
 
     net_thread = vjo_shell_thread_create(VJO_SL_NET_STACK, "VjoNet", net_main, VJO_STACK_SHELL_NET);
     ctl_thread = vjo_shell_thread_create(VJO_SL_CTL_STACK, "VjoControl", ctl_main, VJO_STACK_SHELL_CTL);

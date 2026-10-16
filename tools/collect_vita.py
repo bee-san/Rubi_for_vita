@@ -314,7 +314,8 @@ class Collector:
         files = manifest.get("files", {})
         self.record["package_app"] = manifest.get("app")  # the package's Overlay app (package_release.py)
         self.record["package"] = {k: masked(manifest[k]) if k in ("defaults", "install_settings") else manifest[k]
-                                  for k in ("version", "source_revision", "defaults", "install_settings") if k in manifest}
+                                  for k in ("version", "variant", "source_revision", "defaults", "install_settings")
+                                  if k in manifest}
         checks = {}
         for device_path, got in self.record["hashed"].items():
             pkg = None

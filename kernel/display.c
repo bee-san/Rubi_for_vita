@@ -107,7 +107,9 @@ static int display_hook(int head, int index, const SceDisplayFrameBuf *p, int sy
     fb.w = p->width;
     fb.h = p->height;
     fb.us = ksceKernelGetSystemTimeWide();
-    game_ocr_frame(fb.us);
+#if VJO_DEBUG
+    game_ocr_frame(fb.us); /* the job's frame pacing: the debug build's PACE step */
+#endif
     fb_publish(&fb);
     on_frame(&fb);
 out:

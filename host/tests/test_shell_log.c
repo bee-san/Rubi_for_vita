@@ -437,6 +437,7 @@ static void a_batch_is_one_open_per_file(void)
     lock_check();
 }
 
+#if VJO_DEBUG /* the debug build's own (docs/release-variants.md) */
 /* ocr-first: every file append (log.txt, status.txt) is counted with its time, for
  * a job's done line (shell/worker.c): a batch of 16 lines is one append per file. */
 static void appends_are_counted_with_their_time(void)
@@ -472,6 +473,7 @@ static void appends_are_counted_with_their_time(void)
     fail_opens = 0;
     lock_check();
 }
+#endif
 
 static void before_configure_and_without_sinks(void)
 {
@@ -791,7 +793,9 @@ static void sinks_decide_whether_vjo_log_formats(void)
 }
 
 TEST_LIST = {
+#if VJO_DEBUG
     {"appends_are_counted_with_their_time", appends_are_counted_with_their_time},
+#endif
     {"batches_write_the_same_bytes", batches_write_the_same_bytes},
     {"a_batch_is_one_open_per_file", a_batch_is_one_open_per_file},
     {"before_configure_and_without_sinks", before_configure_and_without_sinks},

@@ -197,7 +197,8 @@ RC_NAMES = {0: "ok", -100: "connect", -101: "tls", -102: "http", -103: "out of m
             -116: "ocr region", -117: "ocr unavailable", -120: "screen changed"}
 NATIVE = {0xBFFFFFFF: "no game", 0xBFFFFFFE: "no memory", 0xBFFFFFFD: "busy", 0xBFFFFFFC: "timeout",
           0xBFFFFFFB: "format", 0xBFFFFFFA: "argument", 0xBFFFFFF9: "copy", 0xBFFFFFF7: "cancelled",
-          0xBFFFFFF8: "permission", 0x80024302: "NO_FREE_PHYSICAL_PAGE (the partition is out of pages)",
+          0xBFFFFFF8: "permission", 0xBFFFFFF6: "unsupported (not in this build: the normal build's self-test calls)",
+          0x80024302: "NO_FREE_PHYSICAL_PAGE (the partition is out of pages)",
           0x80020001: "SCE_KERNEL_ERROR_ERROR (the call failed)", 0x80010002: "ENOENT", 0x80010013: "ENODEV",
           0x8001000D: "EACCES"}
 
@@ -933,7 +934,8 @@ LOG = {
     "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
     "touch_left": re.compile(r"^touch region left to SceShell t=(\d+) ms"),
     # (an earlier build's line also names the screenshot's bytes)
-    "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
+    # (the normal build's line names no word: "anki: save rc=0, 12 ms", docs/release-variants.md)
+    "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
     # export had no stop count
     "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
@@ -992,8 +994,19 @@ def masked(settings):
 
 
 # shell/worker.c vjo_worker_start: each boot's Shell names its API ("kernel API 20" is the kernel's, which the
-# Shell starts only with when it is its own)
-SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)\)")
+# Shell starts only with when it is its own); the normal build says its log is the short one
+SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)(, the normal build: a short log)?\)")
+# The normal build's short log (docs/release-variants.md; the debug build logs the job lines LOG parses instead):
+# shell/worker.c vocr_run_one's line for each game's first OCR job that read its screen and for every failed one,
+# log_vocr_clock's line on the 444 MHz boost for each game's first job and whenever it changes, shell/memory.cpp's
+# refused PAF request, and the Shell's note that a self-test was armed under it
+SHORT_JOB = re.compile(r"^ocr rc=(-?\d+) (\S+): (\d+) lines, (\d+) ms$")
+SHORT_CLOCK = (("set", re.compile(r"^clock: (\d+) -> (\d+) MHz while reading, (\d+) after$")),
+               ("left", re.compile(r"^clock: (\d+) MHz, left as it is while reading \(444 or more\)$")),
+               ("refused", re.compile(r"^clock: 444 MHz refused 0x([0-9A-Fa-f]+), (\d+) MHz while reading$")),
+               ("unreadable", re.compile(r"^clock: unreadable, left as it is while reading$")))
+SHORT_REFUSAL = re.compile(r"Paf allocation refused: ")
+SELFTEST_NORMAL = "self-test: armed, but this is the normal build"
 # shell/worker.c check_app: "overlay app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)"
 APP_LINE = re.compile(r"^overlay app (ok|MISMATCH|unknown): ")
 # ocr_backend values of removed engines, which an older Overlay app can still write (#101: test.1's app wrote
@@ -1190,7 +1203,14 @@ def _mhz(values):
 def render_clock_windows(lg):
     """The ARM clock by game window and the time per CTC frame, boost off against raised (clock_windows)."""
     rows, older, groups = lg.get("clock_windows") or [], lg.get("clock_windows_older", 0), lg.get("clock_compare") or {}
+    # the normal build (docs/release-variants.md) logs no job's line or step: its windows have no job here, and
+    # its clock lines are in render_short_log's
+    normal = (lg.get("short") or {}).get("boots", 0)
+    normal_note = (f"  ARM clock by game window: the normal build's short log ({_n(normal, 'boot')}) logs no job's line "
+                   "or steps, so its windows are not read here; its clock lines are above; the -debug zip logs the jobs")
     if not rows:
+        if normal:
+            return [normal_note]
         return ([f"  ARM clock by game window: no window of a build with the boost (API {BOOST_API} on) has an OCR job; "
                  f"{_n(older, 'window')} of older builds {'does' if older == 1 else 'do'} (they log no clock)"]
                 if older else [])
@@ -1228,6 +1248,8 @@ def render_clock_windows(lg):
     if older:
         L.append(f"    ({_n(older, 'window')} of builds before API {BOOST_API}, which have no boost and log no clock, "
                  f"{'is' if older == 1 else 'are'} not listed)")
+    if normal:
+        L.append("    (" + normal_note.strip()[len("ARM clock by game window: "):] + ")")
 
     def per(g):
         return g["us"] / g["frames"]
@@ -1338,6 +1360,7 @@ def summarise_log(text):
         m = APP_LINE.match(line)
         if m:  # the Shell's check of the installed Overlay app at a game start (shell/worker.c check_app)
             s.setdefault("app", []).append(m.group(1))
+        short_log_line(s, line)  # the normal build's own lines (summarise_short)
         m = LOG["settle"].match(line)
         if m:
             st, rc = s["settle"], int(m.group(2), 16)
@@ -1602,6 +1625,8 @@ def summarise_kernel(text, size):
         line = raw.strip()
         if line.startswith("Vita JP Overlay kernel"):
             s["started"].append(line)
+            # the normal build (docs/release-variants.md) logs no OCR job's line: its count says nothing
+            s["normal"] = "the normal build" in line
         elif line.startswith("hooks:"):
             s["hooks"].append(line)
         elif line.startswith("ocr worker registered"):
@@ -1615,6 +1640,92 @@ def summarise_kernel(text, size):
             if len(s["alloc_fail"]) < 20:
                 s["alloc_fail"].append(line)
     return s
+
+
+def short_log(s):
+    """summarise_log's record of the normal build's short log (docs/release-variants.md)."""
+    return s.setdefault("short", {"boots": 0, "shell_starts": 0, "jobs": [], "selftest_armed": 0,
+                                  "clock": {"lines": 0, "raised": 0, "left": 0, "refused": 0, "unreadable": 0,
+                                            "before": [], "during": [], "after": [], "refusals": {}}})
+
+
+def short_log_line(s, line):
+    """One log line, read for the normal build's short log: its boots, its OCR jobs (rc, model, lines, the time in
+    the game), its clock lines, a refused PAF request and the self-test note. A failed job is also a problem line."""
+    m = SHELL_STARTED.match(line)
+    if m:
+        sh = short_log(s)
+        sh["shell_starts"] += 1
+        sh["boots"] += m.group(2) is not None
+        return
+    m = SHORT_JOB.match(line)
+    if m:
+        rc = int(m.group(1))
+        short_log(s)["jobs"].append({"rc": rc, "model": m.group(2), "lines": int(m.group(3)), "ms": int(m.group(4))})
+        if rc < 0:  # (TROUBLE's words are not in it)
+            key = re.sub(r"\d+", "N", line)[:120]
+            s["trouble"][key] = s["trouble"].get(key, 0) + 1
+        return
+    if line.startswith("clock: "):
+        for kind, pat in SHORT_CLOCK:
+            m = pat.match(line)
+            if not m:
+                continue
+            ck = short_log(s)["clock"]
+            ck["lines"] += 1
+            if kind == "set":
+                before, during, after = (int(g) for g in m.groups())
+                ck["raised"] += during > before
+                ck["before"].append(before)
+                ck["during"].append(during)
+                ck["after"].append(after)
+            elif kind == "left":
+                ck["left"] += 1
+                ck["before"].append(int(m.group(1)))
+                ck["during"].append(int(m.group(1)))
+            elif kind == "refused":
+                ck["refused"] += 1
+                rc = s32(int(m.group(1), 16))
+                ck["refusals"][rc] = ck["refusals"].get(rc, 0) + 1
+                ck["during"].append(int(m.group(2)))
+            else:
+                ck["unreadable"] += 1
+            return
+    if SHORT_REFUSAL.search(line):
+        s.setdefault("shell_refusals", []).append(line[:160])
+    elif line.startswith(SELFTEST_NORMAL):
+        short_log(s)["selftest_armed"] += 1
+
+
+def render_short_log(lg):
+    """The analysis's lines on the normal build's short log, or none when the log has none of its lines."""
+    sh = lg.get("short") or {}
+    L = []
+    if sh.get("selftest_armed"):
+        L.append(f"  self-test: armed, but the normal build has none ({sh['selftest_armed']} boot(s) said so): install the "
+                 "-debug zip of the same release to run it; its marker stays armed for that build")
+    jobs = sh.get("jobs") or []
+    if jobs:
+        rcs, models = {}, {}
+        for j in jobs:
+            rcs[j["rc"]] = rcs.get(j["rc"], 0) + 1
+            models[j["model"]] = models.get(j["model"], 0) + 1
+        ok = [j for j in jobs if j["rc"] == 0]
+        L.append(f"  OCR jobs in the normal build's short log (each game's first job that read its screen, and every "
+                 f"failed one; not the others): {len(jobs)}; "
+                 + ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(rcs.items()))
+                 + "; models " + ", ".join(f"{m} x{n}" for m, n in models.items())
+                 + (f"; read: {_span([j['lines'] for j in ok])} lines in {_span([j['ms'] for j in ok])} ms in the game"
+                    if ok else ""))
+    ck = sh.get("clock") or {}
+    if ck.get("lines"):
+        refused = (f", refused in {ck['refused']} (" + ", ".join(f"{native(r)} x{n}" for r, n in sorted(ck["refusals"].items()))
+                   + ")" if ck["refused"] else "")
+        L.append(f"  ARM clock (ocr_boost_clock), the normal build's lines (each game's first job and every change): "
+                 f"{ck['lines']}; raised in {ck['raised']}, left at 444 or more in {ck['left']}{refused}"
+                 + (f", unreadable in {ck['unreadable']}" if ck["unreadable"] else "")
+                 + f"; MHz before {_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
+    return L
 
 
 def summarise_tai(text):
@@ -1778,7 +1889,10 @@ def render_collect(c):
     L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
     pkg = c["record"].get("package") or {}
     if pkg:
-        L.append(f"  package {pkg.get('version')} source {str(pkg.get('source_revision'))[:12]}; "
+        # the build (docs/release-variants.md): the normal one logs errors, warnings and a short log only
+        build = {"normal": ", the normal build (a short log; no self-test)", "debug": ", the debug build"}.get(
+            pkg.get("variant"), "")
+        L.append(f"  package {pkg.get('version')}{build} source {str(pkg.get('source_revision'))[:12]}; "
                  f"install settings {pkg.get('install_settings') or '-'}")
     pc = c["package_check"]
     if pc["checked"]:
@@ -1808,13 +1922,17 @@ def render_collect(c):
     if k:
         L.append(f"  kernel.txt: {k['bytes']:,} B{' (cap reached)' if k['capped'] else ''}; "
                  + "; ".join(k["started"][-1:] + k["hooks"][-1:])
-                 + f"; worker registrations {k['registered']}, OCR jobs submitted {k['jobs']}"
+                 + f"; worker registrations {k['registered']}, "
+                 + ("OCR jobs: not logged by the normal build" if k.get("normal") else f"OCR jobs submitted {k['jobs']}")
                  + (f"; rows failures {k['rows_fail']}" if k["rows_fail"] else ""))
         for a in k["alloc_fail"][:8]:
             L.append(f"    kernel: {a}")
     lg = c["log"]
     if lg:
-        L.append(f"  log.txt: {lg['lines']:,} lines" + (" (rotated: log.old.txt included)" if c["log_rotated"] else ""))
+        sh = lg.get("short") or {}
+        L.append(f"  log.txt: {lg['lines']:,} lines" + (" (rotated: log.old.txt included)" if c["log_rotated"] else "")
+                 + (f"; {sh['boots']} of its {sh['shell_starts']} boot(s) the normal build's (a short log: no job's "
+                    "times, steps or text; the -debug zip logs them)" if sh.get("boots") else ""))
         for b in lg["boot"][:8]:
             L.append(f"    {b}")
         if lg["games"]:
@@ -1824,6 +1942,7 @@ def render_collect(c):
         for p in lg.get("psp", [])[:8]:
             L.append(f"  psp: {p['key']} (title ID {p['title_id'] or '-'}, app {p['app'] or '-'}): "
                      f"disc {p['disc'] or '?'} \"{p['title']}\", boots {p['target']}")
+        L += render_short_log(lg)
         jobs = lg["jobs"]
         if jobs:
             rcs = {}

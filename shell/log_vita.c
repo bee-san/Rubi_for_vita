@@ -30,7 +30,9 @@ static void batch_flush_locked(void);
 /* The time spent in file appends (log.txt, status.txt) and their count, since
  * boot: a job's done line says what logging cost it (docs/first-ocr.md).
  * Written under log_mutex (status.txt's appends before configure, at boot, by
- * the one thread then), read without it: a diagnostic. */
+ * the one thread then), read without it: a diagnostic, the debug build's only
+ * (docs/release-variants.md). */
+#if VJO_DEBUG
 static uint32_t io_us, io_appends;
 
 uint32_t vjo_log_io(uint32_t *appends)
@@ -44,6 +46,11 @@ static void io_note(uint64_t t0)
     io_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     io_appends++;
 }
+#define IO_T0() sceKernelGetProcessTimeWide()
+#else
+#define IO_T0() 0u
+#define io_note(t0) ((void)(t0))
+#endif
 
 void vjo_log_configure(const VjoConfig *cfg)
 {
@@ -70,7 +77,7 @@ void vjo_log_configure(const VjoConfig *cfg)
 
 static void file_write(const char *p, int bytes)
 {
-    uint64_t t0 = sceKernelGetProcessTimeWide();
+    uint64_t t0 = IO_T0();
     SceUID fd = sceIoOpen(VJO_LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
     if (fd >= 0) {
         if (sceIoWrite(fd, p, bytes) == bytes)
@@ -159,7 +166,7 @@ static void status_append_lines(const char *p, const uint16_t *len, int n)
     SceUID fd = -1;
     const char *run = p;
     int k, bytes = 0;
-    uint64_t t0 = sceKernelGetProcessTimeWide();
+    uint64_t t0 = IO_T0();
     if (status_size < 0)
         return;
     if (status_mutex >= 0)
