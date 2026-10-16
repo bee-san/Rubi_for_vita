@@ -359,6 +359,33 @@ class Collect(unittest.TestCase):
         self.assertIn("    logged by builds of API 19: 5, 20: 1\n", analysis)
         self.assertIn("the Shell's Overlay app check: MISMATCH x1", analysis)
 
+    def test_a_normal_build_package_is_named_and_its_self_test_note(self):
+        """docs/release-variants.md: the analysis names the package's build; --self-test from the normal
+        build's package says it has no self-test, and arms the marker for a -debug build anyway."""
+        manifest = json.loads((self.package / "package-manifest.json").read_text())
+        manifest["variant"] = "normal"
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest, indent=2))
+        with FtpMock(self.device) as ftp:
+            result = self.collect(ftp)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            armed = subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--self-test",
+                                    f"127.0.0.1:{ftp.port}"], capture_output=True, text=True, timeout=60, cwd=self.root)
+        folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
+        self.assertIn("  package 0.8.0-test.1, the normal build (a short log; no self-test) source aaaaaaaaaaaa;",
+                      (folder / "analysis.txt").read_text())
+        self.assertEqual(json.loads((folder / "COLLECT.json").read_text())["package"]["variant"], "normal")
+        self.assertEqual(armed.returncode, 0, armed.stdout + armed.stderr)
+        self.assertIn("this package is the normal build, which has no self-test", armed.stdout)
+        self.assertEqual((self.device / "ux0/data/VitaJPOverlay/selftest.txt").read_bytes(), b"")
+        # the debug build's package: named, and no note
+        manifest["variant"] = "debug"
+        (self.package / "package-manifest.json").write_text(json.dumps(manifest, indent=2))
+        with FtpMock(self.device) as ftp:
+            armed = subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--self-test",
+                                    f"127.0.0.1:{ftp.port}"], capture_output=True, text=True, timeout=60, cwd=self.root)
+        self.assertEqual(armed.returncode, 0, armed.stdout + armed.stderr)
+        self.assertNotIn("normal build", armed.stdout)
+
     def test_collect_without_a_report_or_logs_still_zips_and_says_why(self):
         data = self.device / "ux0/data/VitaJPOverlay"
         for name in ("selftest-report.txt", "log.txt", "log.old.txt"):

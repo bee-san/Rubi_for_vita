@@ -1778,7 +1778,10 @@ def render_collect(c):
     L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
     pkg = c["record"].get("package") or {}
     if pkg:
-        L.append(f"  package {pkg.get('version')} source {str(pkg.get('source_revision'))[:12]}; "
+        # the build (docs/release-variants.md): the normal one logs errors, warnings and a short log only
+        build = {"normal": ", the normal build (a short log; no self-test)", "debug": ", the debug build"}.get(
+            pkg.get("variant"), "")
+        L.append(f"  package {pkg.get('version')}{build} source {str(pkg.get('source_revision'))[:12]}; "
                  f"install settings {pkg.get('install_settings') or '-'}")
     pc = c["package_check"]
     if pc["checked"]:

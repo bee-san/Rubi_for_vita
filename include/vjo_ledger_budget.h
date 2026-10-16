@@ -99,8 +99,8 @@
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
 #else
-/* The normal build: the self-test's capture probe compiled out, 1,348 B of text fewer: 69,464 text
- * + 14,208 data/bss, one text page fewer [measured: the build log's module rows, both builds]. */
+/* The normal build: the self-test's capture probe compiled out: 69,464 text + 14,208 data/bss
+ * against 70,812 + 14,208, one text page fewer [measured: the build log's module rows, both builds]. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 86016u
 #endif
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
@@ -165,9 +165,9 @@
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #else
-/* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing and the
- * per-screen, per-job and input traces compiled out, 4,308 B of text and 1,688 B of data/bss
- * fewer: 32,332 + 76,080, one text page fewer [measured: the build log's module rows, both builds]. */
+/* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing, and the
+ * per-screen, per-job and input traces compiled out: 32,332 + 76,080 against 36,640 + 77,768, one
+ * text page fewer [measured: the build log's module rows, both builds]. */
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 110592u
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
