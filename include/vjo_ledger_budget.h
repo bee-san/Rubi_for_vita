@@ -99,7 +99,7 @@
  * 73,728 B of pages [measured: the build log's module rows, the normal builds of main 3aa08a6 with
  * #132 and of this change]. #138's left stick (792 B of text; in both builds, its close-line counts
  * the debug build's) would take it 90,012 -> 90,804 B of text with API 23's screenshot (main 10c8011),
- * a page past this budget; with core/local_dict.c built for size (2,568 B off, a lookup 0.4-0.6 % more
+ * a page past this budget; with core/local_dict.c built for size (2,552 B off, a lookup 0.4-0.6 % more
  * Cortex-A9 instructions, vita/CMakeLists.txt) it is 88,132 + 69,796 on main 74f8de8 (89,892 + 69,756),
  * the same pages, 1,980 B of text room [measured: the build log's module rows, the normal builds of
  * main 10c8011 and 74f8de8 and #138]. Its check is

@@ -159,12 +159,14 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # The dictionary lookup (core/local_dict.c) is built for size since #138's left
 # stick, whose 792 B with API 23's screenshot would otherwise take the normal
 # Shell a text page past its exact budget: 27,407 -> 24,958 B of the object's
-# text and rodata, 2,568 B off the module [measured: the normal Shell's module
-# row, 90,804 -> 88,236 B]. A lookup runs 0.4-0.6 % more instructions on the
-# Cortex-A9 (lookup_first 134,948 -> 135,545, lookup_every 123,845 -> 124,590
-# a lookup; at most 1.6 us more at 444 MHz, tools/bench_stages.py a9 on both
-# builds), against a console lookup's 70-81 ms of mostly file reads
-# (docs/performance.md); the Overlay app's copy is -Os too.
+# text and rodata; on main 74f8de8 2,552 B off the normal module and 2,600 B off
+# the debug one [measured: the module rows with and without this line, 90,684 ->
+# 88,132 and 101,284 -> 98,684 B]. A lookup runs 0.44 and 0.60 % more instructions
+# on the Cortex-A9 (lookup_first 134,948 -> 135,545, lookup_every 123,845 ->
+# 124,590 a lookup, counted under qemu-arm: tools/bench_stages.py a9 on both
+# normal builds), which vita-vn-ocr's A9 cost model puts at most 2.1 us more at
+# 333 MHz (1.6 us at 444) [estimate], against a console lookup's 70-81 ms of
+# mostly file reads (docs/performance.md); the Overlay app's copy is -Os too.
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
