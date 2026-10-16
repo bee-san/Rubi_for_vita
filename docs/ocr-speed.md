@@ -41,7 +41,9 @@ log, not a CPU reading). Whether a second and a third core are free is what this
   recognized, B bytes their line slots and stacks took, R the recognition in µs; `sum` packs the helpers that did
   not start (FF), the lines from the cache (CC) and the recognized lines' **lowest and mean share of a core** (LL,
   MM: the thread's run time against the wall time of its `vocr_run`, percent; `sceKernelGetThreadInfo` runClocks).
-  A share well under 100 means game threads had that core.
+  It was meant to show that game threads had that core, but on the console it is not a measurement: in test.3's log,
+  for one model at one clock in one window, the time per frame is flat while the share runs 17-92 % (0 in 3 jobs;
+  audit-overlay-analyser-fixes-2-b B3). Why is unmeasured.
 - `gstep job clock kind=- arg=BEFORE rc=0x... bytes=DURING sum=AFTER`: the ARM clock (MHz) before, during and after
   the recognition, and the set call's result (1: already at 444 MHz or more, left alone: never lowered). With
   `ocr_boost_clock = on`, the default. A job writes it only when it recognizes a line (the worker's busy hook runs
@@ -53,17 +55,18 @@ log, not a CPU reading). Whether a second and a third core are free is what this
   With the boost off no job reads the clock, so a boost-off window's clock is given as assumed: the game's own, as
   the jobs nearest it read it (after the previous window's last job, before the next one's first), beside any clock
   plugin (PSVshell) in the collect's taiHEN configurations. The ratio is given over all jobs and like for like: not
-  the self-test's stages (textbox2 runs serially), between jobs of one kind on both sides (as many recognized lines,
-  the same helpers, and both Auto's with the overlay closed or both the overlay's own), pooled, by window and
-  against the off window's neighbours, with job counts (a job's helpers are its `par` step's arg; one with no `par`
-  step is serial only when the kernel's `pace` follows, since the worker's FREEs keep their slots in a full log).
-  The verdict line, `boost effective: yes|no|unclear (ratio X, n=N)`, reads the like-for-like ratio: yes at 1.25 to
-  1.42 (three quarters of 444 / 333's gain to a quarter over it), no at 1.08 or less, unclear between them, above
-  1.42 (more than the clock explains), with under 2 jobs a side, when the game's own clock was not one figure around
-  the raised jobs and next to the off windows, when the same ratio on CPU time (each job's lines' time × their share
-  of a core, over the jobs that logged one: game threads that held the core at one clock) gives another verdict, for
-  a yes that has no such check (under 2 jobs a side with a share), or when an off window against its neighbours is
-  on the other side of the threshold (drift between windows).
+  the self-test's stages (textbox2 runs serially), between jobs of one kind on both sides (the same game, as many
+  recognized lines, the same helpers, and both Auto's with the overlay closed or both the overlay's own), pooled, by
+  window and against the off window's neighbours, with job counts (a job's helpers are its `par` step's arg; one with
+  no `par` step is serial only when the kernel's `pace` follows, since the worker's FREEs keep their slots in a full
+  log). The verdict line, `boost effective: yes|no|unclear (ratio X, n=N)`, reads the like-for-like ratio of the
+  wall time: yes at 1.25 to 1.42 (three quarters of 444 / 333's gain to a quarter over it), no at 1.08 or less,
+  unclear between them, above 1.42 (more than the clock explains), with under 2 jobs a side, when the game's own
+  clock was not one figure around the raised jobs and next to the off windows, or when an off window against its
+  neighbours gives another verdict (drift between windows). Whether other threads took more of the core from one
+  side's lines is not checked: the share above is not a measurement, so its line time × share ratio is printed as a
+  diagnostic only, and a yes says so. With one off window its scene cannot be told from the clock: read the same
+  boxes with the boost off and on, or alternate them.
 - `gstep job pace kind=- arg=F rc=MAX bytes=SUM sum=SLOW main=SUM0 cdram=MAX0 phycont=SLOW0 us=F0`: added by the
   kernel, the **game's frame pacing**: F frames during the job (from its claim to its completion), their longest gap
   MAX (µs), their sum, SLOW gaps over 25 ms; and the same for the F0 frames since the job before. A job that costs
