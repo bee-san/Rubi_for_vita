@@ -83,8 +83,8 @@
  * normal-build log is a failed screenshot's reason only). The screenshot itself is never in SceShell.
  * #138's left stick over the overlay's text (core/stick_cursor.h, the step along the text,
  * stick_lookup_ms, the close's check) and core/local_dict.c built for size (vita/CMakeLists.txt) make
- * it 100,484 -> 98,804 text and 69,828 -> 69,860 data/bss, the same pages [measured: the build log's
- * module rows, main 10c8011 and #138]. */
+ * it 100,364 -> 98,684 text and 69,828 -> 69,860 data/bss, the same pages [measured: the build log's
+ * module rows, main 74f8de8 and #138]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -98,10 +98,11 @@
  * resolver, cancellation and UDP log): 89,220 text + 69,700 data/bss, one text page fewer, 90,112 +
  * 73,728 B of pages [measured: the build log's module rows, the normal builds of main 3aa08a6 with
  * #132 and of this change]. #138's left stick (792 B of text; in both builds, its close-line counts
- * the debug build's) would take it 90,012 -> 90,804 B of text with API 23's screenshot, a page past
- * this budget; with core/local_dict.c built for size (2,568 B off, a lookup 0.4-0.6 % more Cortex-A9
- * instructions, vita/CMakeLists.txt) it is 88,236 + 69,796, the same pages, 1,876 B of text room
- * [measured: the build log's module rows, the normal builds of main 10c8011 and #138]. Its check is
+ * the debug build's) would take it 90,012 -> 90,804 B of text with API 23's screenshot (main 10c8011),
+ * a page past this budget; with core/local_dict.c built for size (2,568 B off, a lookup 0.4-0.6 % more
+ * Cortex-A9 instructions, vita/CMakeLists.txt) it is 88,132 + 69,796 on main 74f8de8 (89,892 + 69,756),
+ * the same pages, 1,980 B of text room [measured: the build log's module rows, the normal builds of
+ * main 10c8011 and 74f8de8 and #138]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
