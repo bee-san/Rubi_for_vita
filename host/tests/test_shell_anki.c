@@ -221,7 +221,10 @@ int sceIoGetstat(const char *p, SceIoStat *st)
 {
     struct stat s;
     int rc = stat(p, &s);
-    if (!rc) st->st_mode = s.st_mode;
+    if (!rc) {
+        st->st_mode = s.st_mode;
+        st->st_size = s.st_size; /* (so a Shell that read a file it stats would show in the arena's peak too) */
+    }
     return rc;
 }
 int sceIoRename(const char *from, const char *to)

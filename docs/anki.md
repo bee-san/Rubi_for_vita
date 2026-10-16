@@ -199,8 +199,11 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   minute (the same ID) removes it first; a later save is another card, with
   another ID, so a JPEG left by a power loss or a crash between the two writes
   (or a `<id>.jpg.tmp` left by one during the JPEG's write) stays, about 56 KiB,
-  until it is deleted by hand: a `.jpg` or `.jpg.tmp` with no `.json` of the
-  same name beside it is safe to delete.
+  until it is deleted by hand: in `anki_queue/`, a `.jpg` or `.jpg.tmp` with no
+  `.json` of the same name beside it is safe to delete (not in `exported/`,
+  where an export stopped between moving a card's JPEG and its record leaves
+  the JPEG ahead of its record until the next export). An export that sweeps
+  them is #161.
 - `exported/<id>.json`: a card an export has put in a package (and
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
 - `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
@@ -298,13 +301,14 @@ seam between two bands of rows.
 5. The Shell commits the record, with `"picture": true`, once `<id>.jpg` is
    there. Any failure on the way leaves no file and saves the card without one
    (`Saved for Anki, without a screenshot (log.txt)`). The Shell waits at most
-   15 s for the whole screenshot; the game worker waits up to 30 s for a slow
-   memory card's save and 30 s more for its file's close, and a screenshot
-   given up, by either, has its file removed by the kernel's worker thread. A
-   save that ends within that minute leaves the worker free for the next job;
-   one slower still leaves it refusing jobs until the game restarts, as any
-   file the kernel holds for the game does (it never acknowledges a file it
-   has not closed), and its `.tmp` until the kernel's close runs.
+   15 s for the whole screenshot, then cancels it (sooner when the overlay
+   closes); that ends the game worker's wait for a slow memory card's save,
+   and the worker then waits up to 30 s more for the file's close. A save that
+   ends within those 30 s, at most 45 s after the request, leaves the worker
+   free for the next job, its file removed by the kernel's worker thread. One
+   slower still leaves it refusing jobs until the game restarts, as any file
+   the kernel holds for the game does (it never acknowledges a file it has not
+   closed), and its `.tmp` until the kernel's close runs.
 
 SceShell holds no pixel and no byte of the JPEG, only the job's request and
 result (5,404 B) in the Anki job's arena. Closing the overlay stops a

@@ -930,9 +930,10 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #define SHOT_HOOK_ROWS VJO_GAME_OCR_ROWS_MAX  /* rows a frame through the hook: 9 frames for 544 */
 #define SHOT_KSTRIP_ROWS VJO_JPEG_BAND        /* through the kernel strip: 16 x 960 x 4 within its 64 KiB */
 /* The save (a close, two memory card syncs and a rename) on a slow card: the Shell's exchange gives up
- * first (shell/anki.c SHOT_TIMEOUT_US) and cancels, which ends this wait; its file then goes (file_close
- * waits as long, so a save that ends within about a minute never leaves the worker blocked for the game's
- * session; a slower one does, as any file the kernel still holds: never acknowledge a leaked descriptor). */
+ * first (shell/anki.c SHOT_TIMEOUT_US, 15 s) and cancels, which ends this wait; its file then goes. file_close
+ * waits SHOT_FILE_WAIT_US for that, so a save that ends within 30 s of the cancel (at most 45 s after the
+ * Shell's request) never leaves the worker blocked for the game's session; a slower one does, as any file
+ * the kernel still holds: never acknowledge a leaked descriptor. */
 #define SHOT_SAVE_WAIT_US SHOT_FILE_WAIT_US
 /* The block: the encoder's state, one strip of colour rows and the JPEG (at most
  * VJO_GAME_OCR_SHOT_MAX), with the arena's alignment and the buffer's spare byte. */
