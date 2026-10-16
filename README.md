@@ -733,8 +733,7 @@ from that image, install `tools/requirements-assets.txt` and run
 colours and checks that the palette PNG decodes to exactly that art.
 
 The default build enables vocr. Its runtime is external to this repository and
-checksum-pinned; see [the build guide](docs/vita-vn-ocr.md#build). The OCR source
-repository currently requires access. Set up VitaSDK/Paf with
+checksum-pinned; see [the build guide](docs/vita-vn-ocr.md#build). Set up VitaSDK/Paf with
 `bash tools/setup_toolchain.sh`; standalone-app dependencies are hash-pinned.
 Python and Pillow are needed for host image tests.
 
@@ -742,10 +741,15 @@ Python and Pillow are needed for host image tests.
 cmake -S . -B build/host -G Ninja -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 cmake --build build/host
 ctest --test-dir build/host --output-on-failure
-cmake -S vita -B build/vita -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
+cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
   -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake --build build/vita --target release
 ```
+
+The Vita build is Release, as in CI; `vita/` uses Release when no build type is
+given. A `Debug` build compiles libpng without optimisation, which fails the
+Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
+build.
 
 Check out the exact `plaintext-dicts` commit recorded in
 `docs/plaintext-dictionaries.json` and point `VJO_PLAINTEXT_SOURCE` at that
