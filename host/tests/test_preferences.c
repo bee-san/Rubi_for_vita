@@ -269,6 +269,7 @@ static void test_save_switch_reload_retains_other_settings(void)
  * removed settings of older builds (AnkiConnect's anki_host, the field
  * mapping's anki_deck, anki_note_type, anki_field_*) load without a warning. */
 static int read_back(const char *path, char *text, size_t cap);
+static int lines_with(const char *text, const char *prefix);
 
 /* The app's saves of config.ini, each patching its own keys: 0 the OCR page's
  * four choices (the arguments), 1 the Anki page's (mining and screenshots on), 2
@@ -284,11 +285,14 @@ static int app_save(int which, int tier, int japanese_only, int highlight_mode, 
 /* The removed Anki settings (AnkiConnect's address and audio source, the old
  * field mapping) load without a warning, and either save of the app drops
  * their lines (core/config.h vjo_config_removed_line), the backup included:
- * anki_audio_url's URL can hold a key. anki_mining and every other line stay. */
+ * anki_audio_url's URL can hold a key. anki_mining and every other line stay,
+ * and anki_screenshot: the OCR page's and the reading settings' saves keep it as
+ * it was (off), the Anki page's writes its own (on); #163 c2. */
 static void test_settings_save_drops_removed_anki_settings(void)
 {
     static const char anki[] =
-        "; mine\nocr_backend = vocr\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
+        "; mine\nocr_backend = vocr\nanki_mining = on\nanki_screenshot = off\nanki_host = 192.168.1.23:8766\n"
+        "anki_deck = Mining #1 ; main\n"
         "anki_note_type = Lapis;v2\nanki_field_picture =\nANKI_FIELD_WORD = Word\n"
         "anki_audio_url = https://a.invalid/?term={term}&key=secret-url\nanki_audio_url https://a.invalid/?k=secret-2\n"
         "anki_host\nfont_size_ja = 22\n";
@@ -297,7 +301,7 @@ static void test_settings_save_drops_removed_anki_settings(void)
         VjoConfig cfg;
         reset(); put_file(VJO_PREFERENCES_PATH, anki, sizeof(anki)-1);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK(cfg.n_warnings == 0 && cfg.anki_mining == 1);
+        TEST_CHECK(cfg.n_warnings == 0 && cfg.anki_mining == 1 && cfg.anki_screenshot == 0);
         TEST_MSG("%d %s", cfg.n_warnings, cfg.warnings[0]);
         TEST_ASSERT(app_save(save, VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3) == 0);
         TEST_CHECK(arena.used == 0 && handles == 0);
@@ -306,6 +310,9 @@ static void test_settings_save_drops_removed_anki_settings(void)
                    !strstr(out, "anki_field_") && !strstr(out, "ANKI_FIELD_") && !strstr(out, "anki_audio_url") &&
                    !strstr(out, "secret") && !strstr(out, "ocr_backend")); /* the engine choice went too */
         TEST_CHECK(strstr(out, "; mine\n") && strstr(out, "anki_mining = on\n") && strstr(out, "font_size_ja = 22\n"));
+        TEST_CHECK_(lines_with(out, "anki_screenshot") == 1 &&
+                        strstr(out, save == 1 ? "\nanki_screenshot = on\n" : "\nanki_mining = on\nanki_screenshot = off\n"),
+                    "save %d: anki_screenshot: %s", save, out);
         TEST_MSG("save %d: %s", save, out);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH ".bak", out, sizeof(out)) > 0);
         TEST_CHECK_(!strstr(out, "secret") && !strstr(out, "anki_audio_url"), "save %d: config.ini.bak: %s", save, out);
@@ -313,6 +320,39 @@ static void test_settings_save_drops_removed_anki_settings(void)
         TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 0 && cfg.font_size_ja == 22 &&
                    (save || (cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.local_dictionary_results == 3)) &&
                    (save != 2 || (cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1)));
+        TEST_CHECK_(cfg.anki_screenshot == (save == 1), "save %d: anki_screenshot loads as %d", save,
+                    cfg.anki_screenshot);
+    }
+}
+
+/* #163 c1: the saves' slack. save_keys allocates bytes + bytes / 4 + 160 B for the patched file;
+ * the most a two-key save needs beyond bytes + bytes / 4 is for a 1-byte file without a final
+ * newline: 42 B for the Anki page's (anki_mining, anki_screenshot off), 44 B for the reading
+ * settings' (ocr_mode = on_press, ocr_boost_clock = off), with the NUL (audit-overlay-anki-screenshot-c).
+ * Each case is saved, compared byte for byte, and read back by the app and by the Shell's own loader. */
+typedef struct { const char *name, *before, *after; int warnings; } SlackCase; /* (the Shell's, of the case's own lines) */
+static void check_slack(int anki, const SlackCase *cases, int n)
+{
+    unsigned char shell_mem[24 * 1024]; VjoArena shell;
+    char out[512];
+    VjoConfig cfg;
+    for (int i = 0; i < n; i++) {
+        int rc;
+        reset(); put_file(VJO_PREFERENCES_PATH, cases[i].before, strlen(cases[i].before));
+        rc = anki ? vjo_preferences_save_anki(0, 0, &arena) : vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena);
+        TEST_CHECK_(rc == 0 && arena.used == 0 && handles == 0, "%s: %s save rc %d", cases[i].name,
+                    anki ? "the Anki page's" : "the reading", rc);
+        TEST_CHECK_(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) == (int)strlen(cases[i].after) &&
+                        !strcmp(out, cases[i].after), "%s: saved\n%s", cases[i].name, out);
+        TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+        TEST_CHECK_(anki ? !cfg.anki_mining && !cfg.anki_screenshot : cfg.ocr_mode == VJO_OCR_ON_PRESS && !cfg.ocr_boost_clock,
+                    "%s: the app loads them back", cases[i].name);
+        vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
+        vjo_config_load(&cfg, &shell); /* shell/files.c: what the overlay runs with */
+        TEST_CHECK_((anki ? !cfg.anki_mining && !cfg.anki_screenshot
+                          : cfg.ocr_mode == VJO_OCR_ON_PRESS && !cfg.ocr_boost_clock) &&
+                        cfg.n_warnings == cases[i].warnings && shell.used == 0,
+                    "%s: the Shell loads them back (%d warnings)", cases[i].name, cfg.n_warnings);
     }
 }
 
@@ -320,6 +360,14 @@ static void test_settings_save_drops_removed_anki_settings(void)
  * duplicate dropped, a missing one appended; every other byte kept. */
 static void test_anki_page_save(void)
 {
+    static const SlackCase slack[] = {
+        {"an empty config.ini", "", "anki_mining = off\nanki_screenshot = off\n", 0},
+        {"one byte, no final newline", "x", "x\nanki_mining = off\nanki_screenshot = off\n", 1},
+        {"a line without a final newline", "font_size_ja = 22", "font_size_ja = 22\nanki_mining = off\nanki_screenshot = off\n", 0},
+        {"CRLF, both keys twice",
+         "anki_mining = on\r\nfont_size_ja = 22\r\nANKI_SCREENSHOT=on\r\nanki_mining = off\r\nanki_screenshot = on\r\n",
+         "anki_mining = off\nfont_size_ja = 22\r\nanki_screenshot = off\n", 0},
+    };
     static const char before[] =
         "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = off ; old\r\nocr_backend = vocr\n"
         "LOG_FILE=on\nocr_model_dir = ux0:m;x\nanki_mining = on\nfont_size_ja = 22";
@@ -386,6 +434,8 @@ static void test_anki_page_save(void)
     write_fail = 0;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(!cfg.anki_mining);
+    /* #163 c1: the smallest files, whose save grows the most */
+    check_slack(1, slack, (int)(sizeof(slack) / sizeof(slack[0])));
 }
 
 /* The lines of text that begin with prefix. */
@@ -520,6 +570,19 @@ static void test_reading_settings_save(void)
     read_fail = 0;
     TEST_CHECK(written == 0 && handles == 0 && arena.used == 0);
     TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) == (int)sizeof(original) - 1 && !strcmp(out, original));
+    /* #163 c1: the smallest files, whose save grows the most */
+    {
+        static const SlackCase slack[] = {
+            {"an empty config.ini", "", "ocr_mode = on_press\nocr_boost_clock = off\n", 0},
+            {"one byte, no final newline", "x", "x\nocr_mode = on_press\nocr_boost_clock = off\n", 1},
+            {"a line without a final newline", "font_size_ja = 22",
+             "font_size_ja = 22\nocr_mode = on_press\nocr_boost_clock = off\n", 0},
+            {"CRLF, both keys twice",
+             "ocr_mode = auto\r\nfont_size_ja = 22\r\nOCR_BOOST_CLOCK=on\r\nocr_mode = on_press\r\nocr_boost_clock = on\r\n",
+             "ocr_mode = on_press\nfont_size_ja = 22\r\nocr_boost_clock = off\n", 0},
+        };
+        check_slack(0, slack, (int)(sizeof(slack) / sizeof(slack[0])));
+    }
 }
 static void test_save_failure_preserves_or_recovers_actual_choices(void)
 {
