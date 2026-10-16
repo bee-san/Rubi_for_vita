@@ -145,10 +145,10 @@ front, 98,304 B free, the build holding 462,848 B):
 step                                        held      headroom
 Shell module loaded into SceShell        176,128       385,024
 OCR worker pages in SceShell             176,128       385,024   (0: registered per game, not loaded there)
-VjoNet thread                            245,760       315,392
-VjoControl thread (boot complete)        266,240       294,912
-game start: result memory (local)        266,240       294,912
-Anki card saved: job thread              335,872       225,280
+VjoNet thread                            196,608       364,544
+VjoControl thread (boot complete)        217,088       344,064
+game start: result memory (local)        217,088       344,064
+Anki card saved: job thread              286,720       274,432
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
@@ -157,7 +157,8 @@ Anki card saved: job thread              335,872       225,280
 Lens's to 176,128 B, 90,112 B less again; the packaged module went from 294,912 B, main
 `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main `9824b55`; #116 and #111 kept those
 pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, to `6020c0b`, #124; still
-266,240 B declared) and then to 176,128 B [measured: the build log's module row].)
+266,240 B declared) and then to 176,128 B [measured: the build log's module row]. VjoNet's stack, 65,536 B until
+#132, is 16,384 B: 49,152 B less from the VjoNet thread's step on.)
 
 What this says, and what it does not:
 
@@ -167,8 +168,8 @@ What this says, and what it does not:
   the overlay's text arena out of `.bss`) held 389,120 B, 73,728 B below the v0.7.4 build that
   ran beside a game, and left 172,032 B at the end of boot in the same session; without
   AnkiConnect the build held 356,352 B and left 204,800 B (the model, with the module's
-  266,240 B), and without Google Lens it holds 266,240 B and leaves 294,912 B (the module's
-  176,128 B).
+  266,240 B), without Google Lens it held 266,240 B and left 294,912 B (the module's
+  176,128 B), and with VjoNet's 16 KiB stack (#132) it holds 217,088 B and leaves 344,064 B.
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily

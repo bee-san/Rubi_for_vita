@@ -22,13 +22,13 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
 
 ```
   pool                              permanent   worst case        limit     headroom
-  shell pages                         266,240      335,872    1,048,576      712,704
+  shell pages                         217,088      286,720    1,048,576      761,856
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              131,072    2,220,032    2,220,032            0
   game                                126,976    8,720,384    8,720,384            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      114,688 B of    114,688 B declared (36,640->36,864 + 77,768->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,792->102,400 + 70,060->73,728)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (101,256->102,400 + 70,076->73,728)
       VitaJPOverlay_OCR          90,112 B of     90,112 B declared (71,072->73,728 + 14,208->16,384)
 ```
 
@@ -48,9 +48,9 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Shell module pages | 176,128 | `VitaJPOverlay_Shell.suprx`: 102,400 text + 73,728 data/bss, permanent; 262,144 B packaged (188,416 + 73,728, of 266,240 B declared) from the template's removal (#101, below) until Google Lens's, 266,240 B (192,512 + 73,728) before it, 282,624 B (208,896 + 73,728) until AnkiConnect's removal, 286,720 B (212,992 + 73,728) until the Hachidori relay's and 294,912 B (217,088 + 77,824; 299,008 B declared) until the online dictionaries' (both below) (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #88's normalised text and its log make it 214,816 B of text (main `94d608e`); #92's quiet refresh makes it 214,672 B of text and 77,956 B of data/bss (2,416 and 3,964 B free); #85's two engines and #89's A/B log (the LM tier, the cascade's speed line) make it 215,216 B of text and 77,980 B of data/bss [`bcd3cf0`]; the finder refinement's step and key make it 215,256 B and 77,984 B [`fec85af`], still the same pages (1,832 and 3,936 B free); API 21's model sizes (#108) take `VjoConfig`'s two 64-byte model names from its three copies, so data/bss is 77,624 B in 77,824 B of pages and the module **294,912 B** of the 299,008 B declared, text 216,448 B with #102 [the build log's module row, main `0023e8a` and this change]; API 22 (#93) makes it 216,856 B of text and 77,648 B of data/bss, the same pages [`ba5f69a`]; without jpdb.io and jiten.moe (main `ba5f69a` and this change) it is 210,184 B of text and 71,204 B of data/bss, one text page and one data page fewer (2,808 and 2,524 B free), and the declared budget is lowered to the packaged pages, **286,720 B**; without the Hachidori relay client (main `a5d79f2` and this change) it is 206,192 B of text and 71,020 B of data/bss, one text page fewer again (2,704 and 2,708 B free), **282,624 B**; without AnkiConnect (the Shell's sender, its requests, the screenshot branch, the Kiku note and the audio URL; the Overlay app exports the cards; main `5e68ecd`, 206,664 B and 71,076 B since #116 and #111, and this change) it is 188,472 B of text and 70,104 B of data/bss, four text pages fewer (4,040 and 3,624 B free), **266,240 B**; #123's key filter makes it 189,104 B of text, the same pages (3,408 and 3,624 B free) [the build log's module row, main `c641bdf`]; #122's app check, without the config template, makes it 186,416 B of text and 70,112 B of data/bss, one text page fewer (2,000 and 3,616 B free), 262,144 B [main `ac905b1`]; #127's frequency ranks make it 187,552 B of text and 70,128 B of data/bss, the same pages (864 and 3,600 B free) [main `9f92bc6`]; #124's identification of Adrenaline's PSP games (`shell/game.c`: AppMgr's app name and one description read per launch; `core/games.c`'s shared PSP row) makes it 188,000 B of text and 70,132 B of data/bss, the same 262,144 B (416 and 3,596 B free) [the build log's module rows, main `9f92bc6` and #124]; without Google Lens (with it the Shell's capture and JPEG encoder, the worker's network pipeline, and the TLS, roots and HTTP client the link no longer keeps; main `6020c0b` and this change) it is 100,792 B of text and 70,060 B of data/bss, 21 text pages fewer (1,608 and 3,668 B free), and the declared budget is lowered to the packaged pages, **176,128 B** | packaged SELF segments [measured] |
+| Shell module pages | 176,128 | `VitaJPOverlay_Shell.suprx`: 102,400 text + 73,728 data/bss, permanent; 262,144 B packaged (188,416 + 73,728, of 266,240 B declared) from the template's removal (#101, below) until Google Lens's, 266,240 B (192,512 + 73,728) before it, 282,624 B (208,896 + 73,728) until AnkiConnect's removal, 286,720 B (212,992 + 73,728) until the Hachidori relay's and 294,912 B (217,088 + 77,824; 299,008 B declared) until the online dictionaries' (both below) (405,504 B at `e759187`: the cold files are built with `-Os`, and the overlay's 96 KiB text arena left `.bss` for the PAF heap). #90's fixed Kiku note took 3,488 B off data/bss (the Anki field mapping's 1,152 B from each of the three `VjoConfig` copies; the LAN search moved to the Overlay app); with #86's region selector and #84 (its `--gc-sections` link, and 28 B of new `VjoConfig` fields) the module is 214,488 B of text and 77,876 B of data/bss; #87's row navigation makes it 214,480 B of text and 77,908 B of data/bss, the same pages, so 2,608 B of text and 4,012 B of data/bss are free in them; #88's normalised text and its log make it 214,816 B of text (main `94d608e`); #92's quiet refresh makes it 214,672 B of text and 77,956 B of data/bss (2,416 and 3,964 B free); #85's two engines and #89's A/B log (the LM tier, the cascade's speed line) make it 215,216 B of text and 77,980 B of data/bss [`bcd3cf0`]; the finder refinement's step and key make it 215,256 B and 77,984 B [`fec85af`], still the same pages (1,832 and 3,936 B free); API 21's model sizes (#108) take `VjoConfig`'s two 64-byte model names from its three copies, so data/bss is 77,624 B in 77,824 B of pages and the module **294,912 B** of the 299,008 B declared, text 216,448 B with #102 [the build log's module row, main `0023e8a` and this change]; API 22 (#93) makes it 216,856 B of text and 77,648 B of data/bss, the same pages [`ba5f69a`]; without jpdb.io and jiten.moe (main `ba5f69a` and this change) it is 210,184 B of text and 71,204 B of data/bss, one text page and one data page fewer (2,808 and 2,524 B free), and the declared budget is lowered to the packaged pages, **286,720 B**; without the Hachidori relay client (main `a5d79f2` and this change) it is 206,192 B of text and 71,020 B of data/bss, one text page fewer again (2,704 and 2,708 B free), **282,624 B**; without AnkiConnect (the Shell's sender, its requests, the screenshot branch, the Kiku note and the audio URL; the Overlay app exports the cards; main `5e68ecd`, 206,664 B and 71,076 B since #116 and #111, and this change) it is 188,472 B of text and 70,104 B of data/bss, four text pages fewer (4,040 and 3,624 B free), **266,240 B**; #123's key filter makes it 189,104 B of text, the same pages (3,408 and 3,624 B free) [the build log's module row, main `c641bdf`]; #122's app check, without the config template, makes it 186,416 B of text and 70,112 B of data/bss, one text page fewer (2,000 and 3,616 B free), 262,144 B [main `ac905b1`]; #127's frequency ranks make it 187,552 B of text and 70,128 B of data/bss, the same pages (864 and 3,600 B free) [main `9f92bc6`]; #124's identification of Adrenaline's PSP games (`shell/game.c`: AppMgr's app name and one description read per launch; `core/games.c`'s shared PSP row) makes it 188,000 B of text and 70,132 B of data/bss, the same 262,144 B (416 and 3,596 B free) [the build log's module rows, main `9f92bc6` and #124]; without Google Lens (with it the Shell's capture and JPEG encoder, the worker's network pipeline, and the TLS, roots and HTTP client the link no longer keeps; main `6020c0b` and this change) it is 100,792 B of text and 70,060 B of data/bss, 21 text pages fewer (1,608 and 3,668 B free), and the declared budget is lowered to the packaged pages, **176,128 B**; #132's VjoNet stack paint and check make it 101,256 B of text and 70,076 B of data/bss, the same pages (1,144 and 3,652 B free) | packaged SELF segments [measured] |
 | OCR worker pages in SceShell | 0 | `VitaJPOverlay_OCR.suprx` is registered per game (one `*TITLEID` section each, the installer's `--title`), never under `*ALL`, so taiHEN does not load it into SceShell. Were it loaded there (an older install's `*ALL` line, a hand edit), its `module_start` returns `NO_RESIDENT`, which unloads it at once (it held 45,056 B there before PR #68) | `tools/patch_tai_config.py`; `game_ocr/main.c`; [SDK: Kernel-Overview, `module_start`] |
-| VjoNet stack+TLS | 69,632 | 65,536 + 4,096, permanent | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
+| VjoNet stack+TLS | 20,480 | 16,384 + 4,096, permanent (65,536 + 4,096 until #132: nothing on the thread makes a TLS connection since Google Lens's removal) | `shell/worker.c`; TLS per thread [SDK: Kernel-Reference, `sceKernelCreateThread`] |
 | VjoControl stack+TLS | 20,480 | 16,384 + 4,096, permanent | same |
 | VjoAnki stack+TLS | 69,632 | only while an Anki job runs: with `anki_mining = on`, a count of the queue on every overlay open, or a save (Enter); a refusal is logged with its rc, these bytes and SceShell's free USER (`shell/ledger.c`) | `shell/anki.c` |
 | VjoShellMem USER_RW | 0 | the host tests' result memory; the Vita build uses PAF (`VJO_PAF_ALLOC`) | `shell/worker.c` |
@@ -99,8 +99,8 @@ line, under `render`'s 312 B, so the overlay's deepest frame is unchanged [measu
 
 Writing a job's log lines together (`shell/log_vita.c` `vjo_log_batch_begin`/`end`: the result's
 lines, the recognized text's, the ledger table's) takes no allocation and no item: each batch's
-buffer is on the stack of the thread that logs it, for the burst only. On VjoNet's 64 KiB stack
-(sized for BearSSL's TLS, which `vocr_run_one` never runs) `vocr_run_one`'s frame grows from 832
+buffer is on the stack of the thread that logs it, for the burst only. On VjoNet's stack (64 KiB
+then, sized for BearSSL's TLS, which `vocr_run_one` never runs; 16 KiB since #132) `vocr_run_one`'s frame grows from 832
 to 4,992 B (its 4 KiB buffer) and `log_text_lines`' is 1,840 B (1.5 KiB); the deepest chain of the
 Shell's own code on that thread goes from 1,544 to 5,672 B. On VjoControl's 16 KiB stack
 `vjo_ledger_shell_log`'s frame grows from 32 to 1,128 B (a 1 KiB buffer), its chain from 424 to
@@ -289,6 +289,25 @@ opens any more) until PR-B. The kernel's capture syscalls (`vjoRequestCapture`, 
 and its full-frame block (`VjoCapture`, 2,088,960 B at most) stay, unused, until their own
 removal, which changes the kernel API.
 
+VjoNet's stack goes from 64 to 16 KiB (#132): 64 KiB was for BearSSL's TLS, and since Google Lens's
+removal nothing on the thread makes a TLS connection or reaches BearSSL, the HTTP client or a TCP
+socket (the UDP log's send is the one network call left, PR-B's). Its deepest chain of the
+Shell's own code is 5,624 B: `net_main` 144, a job's `vocr_run_one` 5,000 (its log batch), then
+`vjo_log` down to the file write 480 [measured: `arm-vita-eabi-gcc -fstack-usage
+-fcallgraph-info=su`, main `6020c0b` with #130; the SDK's own code and the indirect-call sites are
+not counted]. `VJO_BUDGET_SHELL_NET_STACK` goes from 69,632 to 20,480 B with its TLS, so SceShell's
+permanent pages go from 266,240 to 217,088 B and the worst case from 335,872 to 286,720 B. The
+module keeps its 176,128 B: 101,256 B of text (464 B more, the paint and the check) and 70,076 B
+of data and `.bss` [measured: the build log's module row]; it imports one function more,
+`sceKernelGetThreadInfo` (`sceKernelGetThreadId` was already imported, by `shell/log_vita.c`).
+Because nothing measures the thread on a console yet, VjoNet paints its unused stack when it starts
+(`shell/worker.c` `net_stack_paint`: from the stack's low end up to 512 B below its own frame, and
+only when the kernel reports the 16,384 B it was created with and the frame inside it, else one
+`VjoNet stack: not painted (…)` line) and at each game exit logs, when the figure grew,
+`VjoNet stack: at most N of 16384 B used` (`net_stack_check`); `--collect`'s analysis keeps the
+largest figure, WARNs when under a quarter is left, and WARNs for each boot that did not paint.
+The paint takes no allocation and no item.
+
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 
 | item | bytes | what | source |
@@ -368,10 +387,10 @@ The Shell writes its ledger to `ux0:data/VitaJPOverlay/status.txt` at boot, at e
 at each game exit (`tools/install_ftp.sh --status VITA_IP` fetches it):
 
 ```
-ledger boot pages: current=266240 peak=266240 limit=1048576
+ledger boot pages: current=217088 peak=217088 limit=1048576
 ledger boot paf: current=8192 peak=8192 limit=985088 free=2557952
 ledger   Shell pages: current=176128 peak=176128
-ledger   VjoNet stack: current=69632 peak=69632
+ledger   VjoNet stack: current=20480 peak=20480
 ledger   VjoControl stack: current=20480 peak=20480
 ledger   Paf plugin (est.): current=8192 peak=8192
 ```

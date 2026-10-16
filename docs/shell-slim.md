@@ -136,21 +136,22 @@ step.
 - **The Shell worker's network pipeline**: the double-buffered 2 × 256 KiB result arenas, the
   connection pool, the warm-up and its 50 ms timer path, the cached-sentence comparison; one 64 KiB
   arena remains, as the local pipeline always used.
-- **VjoNet's stack, 64 → 16 KiB**: 64 KiB was "BearSSL needs it for TLS"
-  (`include/vjo_ledger_budget.h`); the thread's deepest chain without TLS is 5,816 B (the job's log
+- **VjoNet's stack, 64 → 16 KiB** (PR-A2, #132): 64 KiB was "BearSSL needs it for TLS"
+  (`include/vjo_ledger_budget.h`); the thread's deepest chain without TLS is 5,624 B (the job's log
   batch) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's sources,
-  main `ea7bcc3`].
+  main `6020c0b` with #130]. The thread paints its stack and logs its high water at game exits.
 
-| | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] |
-|---|---:|---:|---:|---:|
-| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B |
-| Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) |
-| Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B |
-| PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one |
+| | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] | after PR-A2 [measured] |
+|---|---:|---:|---:|---:|---:|
+| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B | 101,256 B |
+| Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) | 176,128 B |
+| Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B | 217,088 B |
+| PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one | 225,280 B |
 
 PR-B now removes sources the link already drops, plus the sockets the UDP log and the cancel
 paths keep (SceNet, SceNetCtl): a few pages at most [estimate], against this plan's earlier
-"about 196,000 B" for both PRs together. VjoNet's 64 KiB stack is PR-A2's (#132).
+"about 196,000 B" for both PRs together. PR-A2 (#132) lowers VjoNet's stack from 64 to 16 KiB:
+SceShell's permanent pages 266,240 → 217,088 B.
 
 ### 4.3 Step 2: the kernel's full-frame capture
 

@@ -451,6 +451,16 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(a.net_stack_line(12288, 16384), "VjoNet stack: at most 12,288 of 16,384 B used (75%)")
         self.assertEqual(a.net_stack_line(12289, 16384),
                          "VjoNet stack: at most 12,289 of 16,384 B used (75%) WARN: under a quarter left")
+        # a boot that did not paint (shell/worker.c net_stack_paint) has no figure: said, as a WARN, per reason
+        lg = a.summarise_log("VjoNet stack: not painted (no thread info)\n"
+                             "VjoNet stack: not painted (the kernel reports 65536 B, not 16384)\n"
+                             "VjoNet stack: not painted (no thread info)\nVjoNet stack: at most 6144 of 16384 B used\n")
+        self.assertEqual(lg["net_stack_off"], ["no thread info", "the kernel reports 65536 B, not 16384", "no thread info"])
+        self.assertEqual(a.net_stack_lines(lg), [
+            "  VjoNet stack: at most 6,144 of 16,384 B used (37%)",
+            "  VjoNet stack: not painted at 3 boot(s) WARN: no figure from them (no thread info x2; the kernel reports "
+            "65536 B, not 16384 x1)"])
+        self.assertEqual(a.net_stack_lines(a.summarise_log("")), [])
 
     def test_the_clock_step_counts_raised_and_left_alone(self):
         # game_ocr/main.c job_busy (ocr_boost_clock = on, the default): 333 raised to 444 and put back; a clock
