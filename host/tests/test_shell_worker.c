@@ -2976,9 +2976,11 @@ static void *paint_thread(void *arg)
  * is above the reported top); 7: pStack 16,448 B below the SP, the exact size: the frame lies less
  * than 1 KiB above the reported top, so only the upper bound refuses it (audit-overlay-shell-slim-2c
  * N14); 8 and 9 take the painting frame F from mode 5's line (the same stack and call path in every
- * mode) and pin both bounds to the byte: 8, pStack = F - 544, puts F 32 B below the floor plus the
- * gap, which only the floor's term refuses; 9, pStack = F - 16,416, puts F 32 B above the reported
- * top (audit-overlay-shell-slim-2d N1) */
+ * mode) and pin both bounds to the byte, F on each bound's edge: 8, pStack = F - 576, so F is
+ * pStack + the floor + the gap, which the lower bound's <= refuses (a bound one byte short paints
+ * 0 B and publishes lo); 9, pStack = F - 16,384, so F is the reported top, which the upper bound's
+ * >= refuses (one byte long paints from below the real stack, into the guard)
+ * (audit-overlay-shell-slim-2d N1, -4 N2) */
 #define PAINT_MODES 9
 static const char *const paint_refusal[PAINT_MODES + 1] = {
     NULL, "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (the kernel reports 0 B, not 16384)",
@@ -2996,8 +2998,8 @@ static int paint_on_a_thread(int mode, int depth)
     paint_depth = depth;
     paint_deepest = UINTPTR_MAX;
     thread_info_stack = mode == 1 ? lo + PAINT_STACK : mode == 3 ? lo - PAINT_GUARD : mode == 6 ? lo - 8192
-                      : mode == 8 ? (uint8_t *)(paint_frame_seen - (PAINT_FLOOR + PAINT_GAP - 32))
-                      : mode == 9 ? (uint8_t *)(paint_frame_seen - (PAINT_STACK + 32)) : lo;
+                      : mode == 8 ? (uint8_t *)(paint_frame_seen - (PAINT_FLOOR + PAINT_GAP))
+                      : mode == 9 ? (uint8_t *)(paint_frame_seen - PAINT_STACK) : lo;
     thread_info_size = mode == 2 ? 0 : mode == 3 ? (int)(PAINT_STACK + PAINT_GUARD) : (int)PAINT_STACK;
     thread_info_rc = mode == 4 ? -1 : 0;
     thread_info_below_sp = mode == 5 ? 416 : mode == 7 ? 16448 : 0;
@@ -3029,8 +3031,8 @@ static int paint_on_a_thread(int mode, int depth)
             if (mode >= 8)
                 TEST_CHECK_((uintptr_t)lo + (uint32_t)(frame - (uint32_t)(uintptr_t)lo) == paint_frame_seen,
                             "mode %d: the frame moved", mode);
-            TEST_CHECK_(mode == 8   ? above == PAINT_FLOOR + PAINT_GAP - 32
-                        : mode == 9 ? above == (uint32_t)size + 32
+            TEST_CHECK_(mode == 8   ? above == PAINT_FLOOR + PAINT_GAP
+                        : mode == 9 ? above == (uint32_t)size
                         : mode == 5 ? above > PAINT_FLOOR + PAINT_GAP / 2 && above <= PAINT_FLOOR + PAINT_GAP
                         : mode == 7 ? above >= (uint32_t)size && above < (uint32_t)size + 1024
                                     : above >= (uint32_t)size,
@@ -3079,9 +3081,12 @@ static void test_net_stack_paint_on_a_real_thread_stays_in_its_stack(void)
 #endif
 #endif
 #ifdef VJO_PAINT_ASAN
-    /* AddressSanitizer's memset, and its shadow checks, need more than the 256 B the test leaves
-     * below its own frame when it clears the thread's stack, and the paint writes below the stack
-     * pointer on purpose: neither is a defect of the code under test (t3-worker-any-game, 2026-10-16) */
+    /* Under AddressSanitizer the test cannot hold: with clang, ASan's memset outgrows the 256 B the
+     * test leaves below its own frame when it clears the thread's stack (a SEGV in the paint thread);
+     * with gcc, the frame's address-taken local is not on the thread's stack at all (ASan's fake
+     * stack, most likely), so the paint refuses ("not painted (frame ... outside ...)"). And the paint
+     * writes below the stack pointer on purpose. Neither is a defect of the code under test
+     * (t3-worker-any-game, 2026-10-16; audit-overlay-shell-slim-4 N5). */
     TEST_SKIP("the stack paint writes below the stack pointer on purpose: not under AddressSanitizer");
     return;
 #endif

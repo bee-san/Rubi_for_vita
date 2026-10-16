@@ -17,6 +17,8 @@ NETWORK = ("SceNet", "SceHttp", "SceSsl")
 
 def section_names(data):
     """The section names of an ELF32 little-endian file."""
+    if len(data) < 52:  # the ELF32 header
+        raise ValueError(f"{len(data)} B: too short for an ELF32 header")
     if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
         raise ValueError("not a 32-bit little-endian ELF")
     shoff, = struct.unpack_from("<I", data, 0x20)

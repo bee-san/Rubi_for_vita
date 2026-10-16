@@ -1310,7 +1310,9 @@ static void net_stack_check(void)
     if (!used || used <= net_stack_logged)
         return;
     net_stack_logged = used;
-    /* "at least": a live byte that happens to hold the pattern can only make the scan read low */
+    /* "at least" once anything has used the stack below the paint (any job): a live byte that happens
+     * to hold the pattern can only make the scan read low. Until then the figure is the paint's end,
+     * which counts the 512 B gap below the painting frame as used (audit-overlay-shell-slim-4 N1). */
     vjo_log("VjoNet stack: at least %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
 }
 

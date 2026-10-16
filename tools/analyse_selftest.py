@@ -2778,7 +2778,8 @@ def summarise_collect(folder):
 
 
 def net_stack_line(used, size):
-    """shell/worker.c net_stack_check's figure: at most used of size B; a quarter or less left is a WARN."""
+    """shell/worker.c net_stack_check's figure: at least used of size B once a job has run (before, the
+    paint's end, the 512 B gap included); a quarter or less left is a WARN."""
     line = f"VjoNet stack: at least {used:,} of {size:,} B used ({used * 100 // size if size else 0}%)"
     return line + (" WARN: under a quarter left" if used * 4 > size * 3 else "")
 

@@ -82,9 +82,11 @@ class OfflineImports(unittest.TestCase):
         good = elf([".vitalink.fstubs.SceLibKernel"])
         elf64 = good[:4] + bytes([2]) + good[5:]  # ELFCLASS64
         big = good[:5] + bytes([2]) + good[6:]    # big-endian
-        for data in (elf64, big, good[:40], good[:60]):
-            with self.subTest(size=len(data), cls=data[4], end=data[5] if len(data) > 5 else None):
-                self.assertEqual(self.run_files(data).returncode, 2)
+        for data in (elf64, big, good[:4], good[:5], good[:6], good[:40], good[:60]):
+            with self.subTest(size=len(data)):
+                r = self.run_files(data)
+                self.assertEqual(r.returncode, 2, r.stderr)  # 1 is "imports a network library"
+                self.assertNotIn("Traceback", r.stderr)
 
     def test_a_file_that_is_no_elf_is_an_error(self):
         with tempfile.TemporaryDirectory() as folder:

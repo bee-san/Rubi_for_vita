@@ -357,14 +357,18 @@ Because nothing measures the thread on a console yet, VjoNet paints its unused s
 frame, so only when its frame is above pStack + 576 and below the top, and when the kernel reports
 the 16,384 B it was created with; else one `VjoNet stack: not painted (…)` line) and at each game
 exit logs, when the figure grew, `VjoNet stack: at least N of 16384 B used` (`net_stack_check`; the
-first wording said "at most", which `--collect` still reads). N is a lower bound: a live byte that
-happens to hold the pattern makes the scan read low, and use of the unpainted 64 B cannot show, so
-the largest figure is 16,320 B. `--collect`'s analysis keeps the largest figure, WARNs when under a
+first wording said "at most", which `--collect` still reads). N is a lower bound once anything has
+used the stack below the paint (any job): a live byte that happens to hold the pattern makes the scan
+read low, and use of the unpainted 64 B cannot show, so the largest figure is 16,320 B. Until then N
+is the paint's end, which counts the 512 B gap below the painting frame as used: up to 512 B above
+the truth [estimate: the frames below the painting one are SDK calls, unmeasured; on the host the
+idle thread wrote nothing below the paint's end + 473-512 B, audit-overlay-shell-slim-4 N1]. `--collect`'s analysis keeps the largest figure, WARNs when under a
 quarter is left, and WARNs for each boot that did not paint. The paint takes no allocation and no
 item. Its lowest 64 B stay as the kernel left them. The PSP's thread manager, whose API the Vita
 keeps, fills a new stack with 0xFF and writes the thread's UID in its lowest word, and has a status
-for a thread it killed for a stack overflow [pspsdk `PSP_THREAD_ATTR_NO_FILLSTACK`; PPSSPP
-`sceKernelThread.cpp` `FillStack`, whose free-size scan starts after that word]. The Vita detects
+for a thread it killed for a stack overflow [pspsdk `PSP_THREAD_ATTR_NO_FILLSTACK` and
+`PSP_THREAD_KILLED`; PPSSPP `sceKernelThread.cpp` `FillStack`, whose free-size scan starts at 0x10,
+12 B past that word]. The Vita detects
 stack overflows too: a core dump records one as its cause and each thread's "Maximum stack size
 used" [SDK: Core_Dump-Overview], and `sceKernelCheckThreadStack` gives a thread its remaining stack
 [SDK: Kernel-Reference]. How it detects them is unknown; nothing found puts a marker in a stack's
@@ -429,6 +433,8 @@ run 38899320744], and the normal build's shell pages are 204,800 B permanent and
 #138's worker loader adds one kernel text page to each build: 118,784 B (40,648 + 77,824) debug and 114,688 B
 (36,444 + 76,136) normal against main `c08db18`'s 114,688 and 110,592 B; the worker (71,372 and 70,008 B of
 text) and the Shell (99,244 and 89,196 B) keep their pages [measured: both builds, main `c08db18` and #138].
+The VjoNet line's "at least" (#157) makes the normal Shell's text 89,204 B (`.rodata` + 8 B), the same
+pages; the debug Shell keeps 99,244 B [measured: both builds, main `dcb7b31` and #157].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
