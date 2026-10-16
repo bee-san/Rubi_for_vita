@@ -61,7 +61,10 @@
  * worker's network pipeline (two 256 KiB arenas, a connection pool, the whole-sentence lookup only
  * its jobs made) and the engine choice (ocr_backend). Lens was the last of the Shell's TLS
  * connections once AnkiConnect was removed, so the link no longer keeps BearSSL's TLS, the roots
- * or the HTTP client either (only SHA-256, the queue's IDs): @@LENS_FIGURES@@ */
+ * or the HTTP client either (only SHA-256, the queue's IDs): 87,208 B off the text segment (.text
+ * -66,728 B, .rodata -20,424 B) and 72 B off data/bss, so the module is 100,792 text + 70,060
+ * data/bss [measured: the build log's module rows and arm-vita-eabi-size, main 6020c0b and this
+ * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,

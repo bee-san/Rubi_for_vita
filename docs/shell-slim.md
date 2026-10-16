@@ -120,8 +120,8 @@ screenshot gone), PR-A also deletes the Shell's capture → JPEG path: `shell/ca
 `core/jpegsw.c`, the capture lock a local OCR job held, and their tests and tool. Lens was the
 Shell's last TLS connection, so its link no longer keeps BearSSL's TLS, the roots or the HTTP
 client (`--gc-sections`; only SHA-256 stays, the queue's IDs), though their sources stay for PR-B.
-On main `9f92bc6` the Shell's text segment goes from 187,552 to 100,360 B (`.text` −66,720 B,
-`.rodata` −20,424 B) and data and `.bss` from 70,128 to 70,056 B: 262,144 → 176,128 B of module
+On main `6020c0b` the Shell's text segment goes from 188,000 to 100,792 B (`.text` −66,728 B,
+`.rodata` −20,424 B) and data and `.bss` from 70,132 to 70,060 B: 262,144 → 176,128 B of module
 pages, 21 text pages, and the declared budget from 266,240 to 176,128 B [measured: the build log's
 module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](memory-ledger.md)]. The kernel's
 capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B**: the rest of this
@@ -141,9 +141,9 @@ step.
   batch) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's sources,
   main `ea7bcc3`].
 
-| | before (#117) | after #126 | after #125 (main `9f92bc6`, with #123, #122 and #127) [measured] | after PR-A [measured] |
+| | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] |
 |---|---:|---:|---:|---:|
-| Shell code + rodata | 210,184 B | 206,192 B | 187,552 B | 100,360 B |
+| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B |
 | Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) |
 | Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B |
 | PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one |

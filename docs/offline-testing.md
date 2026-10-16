@@ -147,7 +147,7 @@ Anki card saved: job thread              335,872       225,280
 282,624 B, 4,096 B less again, AnkiConnect's to 266,240 B, 16,384 B less again, and Google
 Lens's to 176,128 B, 90,112 B less again; the packaged module went from 294,912 B, main
 `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main `9824b55`; #116 and #111 kept those
-pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, and `9f92bc6`; still
+pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, to `6020c0b`, #124; still
 266,240 B declared) and then to 176,128 B [measured: the build log's module row].)
 
 What this says, and what it does not:
