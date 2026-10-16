@@ -1,6 +1,8 @@
 # Vita build: kernel plugin (.skprx), SceShell plugin (.suprx), RCO and the
 # release zip. Configure with:
-#   cmake -S vita -B build/vita -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake
+#   cmake -S vita -B build/vita -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
+#     -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
+#     -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -12,6 +14,11 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 
 project(VitaJPOverlay C CXX ASM)
+# Release, as CI builds it, when no build type is given: libpng without optimisation (no build
+# type, or Debug) fails the Overlay app's PNG ABI check (tools/check_settings_png_abi.py).
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Release (CI's); Debug fails the PNG ABI check" FORCE)
+endif()
 # taihen's TAI_CONTINUE relies on K&R-style `()` casts, which C23 (GCC 15 default) rejects.
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_EXTENSIONS ON)
@@ -390,8 +397,8 @@ if(VJO_SETTINGS_SMOKE)
   set(VITA_PACK_VPK_FLAGS "")
   # Its list of the VPK's files (resources, its VPK command's DEPENDS) too: since #122 the Settings
   # VPK's holds the generated vjo_app.txt, made from the app's eboot.bin, so this VPK would build the
-  # Overlay app itself, here without a build type (libpng at -O0, which check_settings_png_abi.py
-  # refuses).
+  # Overlay app itself, and fail with it in a build without optimisation (#135: libpng at -O0, which
+  # check_settings_png_abi.py refuses).
   set(resources "")
   vita_create_vpk(vjo_settings_smoke.vpk VJOSMK002 vjo_settings_smoke.self
     VERSION "01.00" NAME "VJO settings smoke"

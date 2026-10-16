@@ -8,9 +8,9 @@ to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 the bee-san/vita-vn-ocr v0.2.5-vocr3.1 pre-release; H15_w8.vocr, FL10_w8.vocr and
 F20_w8.vocr from v0.2.0) instead; --backend vocr-tiers the three model sizes'
 (tools/model_tiers.json: VOCR3_FL10_w8.vocr, VOCR3_H15_w8.vocr, VOCR4_W20_w8.vocr), which
-a package ships. While that repository is private,
-the download needs an authenticated GitHub CLI (`gh auth login`) with access to
-it; --from takes a copy downloaded by other means. Every file is checked
+a package ships. Each file comes from the release's public download; only when
+that fails (a draft release) is an authenticated GitHub CLI (`gh auth login`)
+tried. --from takes a copy downloaded by other means. Every file is checked
 against its pinned size and SHA-256.
 """
 import argparse
@@ -169,8 +169,8 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
         return fetch(directory, name, assets)
     except (OSError, RuntimeError) as public_error:
         if not shutil.which('gh'):
-            raise RuntimeError(f'{url}: {public_error}. Install the GitHub CLI and run `gh auth login` '
-                               f'with access to {VOCR_REPO}, or pass --from.') from public_error
+            raise RuntimeError(f'{url}: {public_error}. Check the network and retry, pass --from with a '
+                               f'copy, or install the GitHub CLI (`gh auth login`) for a draft release.') from public_error
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', name, '-D', tmp],
                        check=True, stdin=subprocess.DEVNULL, timeout=300)

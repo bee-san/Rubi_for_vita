@@ -1,7 +1,8 @@
 # tools/vita3k_smoke: the real game worker's job path as a Vita homebrew app, for Vita3K
 # (tools/vita3k_smoke.sh builds and runs it). Not a release artifact; nothing here ships.
 #
-#   cmake -S tools/vita3k_smoke -B build/vita3k-smoke -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
+#   cmake -S tools/vita3k_smoke -B build/vita3k-smoke -DCMAKE_BUILD_TYPE=Release \
+#     -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
 #   cmake --build build/vita3k-smoke        -> vjo_smoke.vpk
 cmake_minimum_required(VERSION 3.16)
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)

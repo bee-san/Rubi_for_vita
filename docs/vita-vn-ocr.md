@@ -812,15 +812,16 @@ attribution. The weights are GPL-3.0-or-later, like this overlay.
 ## Build
 
 The runtime is not copied into this repository. Check out vita-vn-ocr at the
-pinned commit and point the build at it (the repository is private, so this
-needs access to it):
+pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
 
-# Vita plugins and release zip (VitaJPOverlay-0.7.5.zip)
-cmake -S vita -B build/vita -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
+# Vita plugins and release zip (build/vita/VitaJPOverlay-VERSION.zip), Release as in CI.
+# The zip needs the frozen dictionary's checkout (README.md, "Build and validation").
+cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_WITH_VOCR=ON \
+  -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake --build build/vita --target release
 
 # Host tools and tests; VJO_VOCR_MODEL_DIR adds the real-model checks
@@ -854,8 +855,9 @@ steps below cover a source build or adding another model.
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    ```
 
-   While vita-vn-ocr is private this uses the GitHub CLI (`gh auth login`
-   with access to it). `--from FILE` checks a copy downloaded another way.
+   The downloads need no GitHub account: vita-vn-ocr's releases are public, and the
+   GitHub CLI (`gh auth login`) is only tried when a public download fails (a draft
+   release). `--from FILE` checks a copy downloaded another way.
    `tools/package_release.py --models ocr` needs every one of these files (it
    ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
