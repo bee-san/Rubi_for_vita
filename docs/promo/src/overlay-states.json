@@ -1,0 +1,505 @@
+{
+ "source": "promo-assets src/states.json (sha256 fdfe4ed2cd335674c8f6af79f9dbde4a3950cc3b1bafbd40d2c7417e1a0f4083): the overlay as main 1ed95ca lays it out, with main's own lookups in the release dictionary (plaintext.vjdict e1bbd379)",
+ "states": {
+  "s1-m2-ov01-open": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    1,
+    5
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "また明日",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "またあした",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #3726",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\nsee you tomorrow",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov02-right-inflight": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    7
+   ],
+   "body": [
+    {
+     "text": "Looking up words…",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Anki queue: 0 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov03-issho": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\ntogether (with); at the same time; in one lump | in the same category",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov04-issho-saving": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Saving card…",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\ntogether (with); at the same time; in one lump | in the same category",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov05-issho-saved": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 1 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Saved for Anki",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Queued for Anki\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\ntogether (with); at the same time; in one lump | in the same category",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov06-miniiku": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    9,
+    14
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 1 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "見に行く",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "みにいく",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #2199",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\nto go to see | to visit",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s1-m2-ov07-miniiku-saved": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    9,
+    14
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 2 · export in the Overlay app",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Saved for Anki",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "Queued for Anki\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "見に行く",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "みにいく",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #2199",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\nto go to see | to visit",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close"
+  },
+  "s3-m1-ov03-open": {
+   "header": "「キラキラ……。\n子供の頃みたい。」",
+   "hl": [
+    1,
+    5
+   ],
+   "body": [
+    {
+     "text": "キラキラ",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " #3383",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\nglittering | sparkling | glistening | twinkling",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · stick scroll · □ region · ○ close"
+  },
+  "s3-m1-ov04-kodomonokoro": {
+   "header": "「キラキラ……。\n子供の頃みたい。」",
+   "hl": [
+    9,
+    13
+   ],
+   "body": [
+    {
+     "text": "子供の頃",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": "こどものころ",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "reading",
+     "px": 27
+    },
+    {
+     "text": " #3356",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\n(time of) one's childhood | when one was a child",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · stick scroll · □ region · ○ close"
+  },
+  "s3-m1-ov05-mitai": {
+   "header": "「キラキラ……。\n子供の頃みたい。」",
+   "hl": [
+    13,
+    16
+   ],
+   "body": [
+    {
+     "text": "みたい",
+     "rgb": "highlight",
+     "px": 27
+    },
+    {
+     "text": " #95",
+     "rgb": "rank",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "dim",
+     "px": 21
+    },
+    {
+     "text": "[JMdict Plain]\n-like | sort of | similar to | resembling",
+     "rgb": "dim",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ word · stick scroll · □ region · ○ close"
+  }
+ }
+}
