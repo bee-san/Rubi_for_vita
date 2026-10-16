@@ -224,6 +224,36 @@ class Package(unittest.TestCase):
             with self.subTest(change=change):
                 self.assertTrue(any(why in p for p in vpk.verify(edited)), vpk.verify(edited))
 
+    def test_verify_is_as_strict_as_the_app(self):
+        """--verify refuses what core/payload.c refuses: another kind, an unknown or reordered line, a setting
+        the app does not set; and a version the file name does not have (code audit note 4)."""
+        good = self.root / "VitaJPOverlay-0.8.0.vpk"
+        vpk.write_vpk(release_zip(self.root / "g.zip"), good)
+        self.assertEqual(vpk.verify(good), [])
+        text = zipfile.ZipFile(good).read("payload/manifest.txt").decode()
+        dictionary = next(l for l in text.splitlines() if "plaintext.vjdict" in l)
+        cases = [("a kind", text.replace(dictionary, dictionary.replace(" move", " copy"))),
+                 # an added valid setting at the end is what a package with it carries: only the release's
+                 # SHA256SUMS tells them apart; one where this tool never writes it is refused
+                 ("a set line out of place", text.replace("version 0.8.0\n", "version 0.8.0\nset anki_mining on\n")),
+                 ("a setting the app does not set", text + "set games on\n"),
+                 ("an unknown line", text + "colour red\n"),
+                 ("a version", text.replace("version 0.8.0\n", "version 9.9.9\n"))]
+        for what, changed in cases:
+            with self.subTest(what=what):
+                out = self.root / "VitaJPOverlay-0.8.0.vpk.bad"
+                with zipfile.ZipFile(good) as src, zipfile.ZipFile(out, "w") as z:
+                    for info in src.infolist():
+                        z.writestr(info, changed if info.filename == "payload/manifest.txt" else src.read(info))
+                named = out.with_name("VitaJPOverlay-0.8.0.vpk")
+                good.rename(self.root / "keep.vpk")
+                out.rename(named)
+                try:
+                    self.assertTrue(vpk.verify(named), what)
+                finally:
+                    named.unlink()
+                    (self.root / "keep.vpk").rename(good)
+
     def test_the_licences_are_required(self):
         """A release zip without the GPL, the dictionary's attribution or JMdict's licence makes no VPK, and a
         VPK that lacks one, or has another file under licenses/, fails --verify."""

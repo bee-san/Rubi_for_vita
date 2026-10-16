@@ -17,7 +17,12 @@ from the checkout that packages it; the app accepts the payload only when they a
 
 Checks, before anything is written and again by --verify:
   - every payload file has the zip manifest's size and SHA-256 (package_release.py wrote both), and so
-    does every licence file; the GPL, the dictionary's attribution and JMdict's licence are required;
+    does every licence file when the VPK is written; --verify checks that the GPL, the dictionary's
+    attribution and JMdict's licence are there and nothing else is under licenses/ (the release's
+    SHA256SUMS is the outside reference for the VPK's bytes as a whole);
+  - the manifest is exactly the one this tool makes of the VPK's own app and payload files: every
+    line, kind and order, with only its version (named by the file, VitaJPOverlay-<version>.vpk) and
+    its set lines (the app's keys, on or off) from the package;
   - the app's eboot.bin stays VitaShell's second entry, after sce_sys/param.sfo, so VitaShell's scan
     (archive.c archiveCheckFilesForUnsafeFself, which returns at the first unsafe SELF) stops there with
     its "extended permissions" question and reads no payload file;
@@ -349,6 +354,10 @@ def verify(path):
                 problems.append("the manifest's api/build are not the app's stamp")
         except (ValueError, KeyError) as e:
             problems.append(str(e))
+        # the manifest is exactly the one this tool makes of the VPK's own app and payload files (the kinds,
+        # the order, every line; core/payload.c refuses anything else): only its version and set lines come
+        # from the package, and they must have the shapes the app accepts
+        problems += manifest_problems(vpk, text, Path(path).name)
         for name in names:
             if name.endswith((".suprx", ".skprx")) or name == "eboot.bin":
                 try:
@@ -356,6 +365,41 @@ def verify(path):
                 except (ValueError, struct.error) as e:
                     if not name.startswith("payload/") or vpk.read(name)[:4] == b"SCE\0":
                         problems.append(f"{name}: {e}")
+    return problems
+
+
+def manifest_problems(vpk, text, file_name):
+    """The payload manifest against the one build_manifest makes of this VPK's own app and payload files."""
+    lines = text.splitlines()
+    version = next((l.split(" ", 1)[1] for l in lines if l.startswith("version ")), None)
+    sets, problems = {}, []
+    for l in lines:
+        if l.startswith("set "):
+            parts = l.split(" ")
+            if len(parts) != 3 or parts[1] not in ("anki_mining", "log_file") or parts[2] not in ("on", "off") \
+                    or parts[1] in sets:
+                problems.append(f"the manifest's line {l!r} is not a setting the app accepts")
+            sets[parts[1]] = parts[2] if len(parts) == 3 else ""
+    try:
+        app = io.BytesIO()
+        with zipfile.ZipFile(app, "w") as z:
+            z.writestr("eboot.bin", vpk.read("eboot.bin"))
+            z.writestr("vjo_app.txt", vpk.read("vjo_app.txt"))
+        entries = {}
+        for dest, _ in payload_files():
+            data = vpk.read("payload/" + zip_path(dest))
+            entries[zip_path(dest)] = (len(data), sha256(data))
+        rebuilt = build_manifest(version, app.getvalue(), entries, sets)
+    except (ValueError, KeyError) as e:
+        return problems + [f"the manifest cannot be made again from the VPK's own files: {e}"]
+    if rebuilt != text:
+        diff = [l for l in text.splitlines() if l not in rebuilt.splitlines()] + \
+               [f"(want) {l}" for l in rebuilt.splitlines() if l not in text.splitlines()]
+        problems.append("the manifest is not the one this VPK's own app and files make: " + "; ".join(diff[:4]))
+    # the release names its VPKs VitaJPOverlay-<version>.vpk and -<version>-debug.vpk (package_variants.vpk_name)
+    m = re.fullmatch(r"VitaJPOverlay-(.+?)(-debug)?\.vpk", file_name)
+    if m and version is not None and m.group(1) != version:
+        problems.append(f"the file is named for version {m.group(1)}, the manifest says {version}")
     return problems
 
 
