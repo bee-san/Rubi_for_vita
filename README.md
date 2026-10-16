@@ -746,8 +746,8 @@ cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/pa
 cmake --build build/vita --target release
 ```
 
-The Vita build is Release, as in CI; `vita/` uses Release when no build type is
-given. A `Debug` build compiles libpng without optimisation, which fails the
+The Vita build is Release, as in CI; `vita/` uses Release when no build type (or
+an empty one) is given. A `Debug` build compiles libpng without optimisation, which fails the
 Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
 build.
 

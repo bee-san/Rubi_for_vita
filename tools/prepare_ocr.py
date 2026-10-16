@@ -8,9 +8,9 @@ to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 the bee-san/vita-vn-ocr v0.2.5-vocr3.1 pre-release; H15_w8.vocr, FL10_w8.vocr and
 F20_w8.vocr from v0.2.0) instead; --backend vocr-tiers the three model sizes'
 (tools/model_tiers.json: VOCR3_FL10_w8.vocr, VOCR3_H15_w8.vocr, VOCR4_W20_w8.vocr), which
-a package ships. While that repository is private,
-the download needs an authenticated GitHub CLI (`gh auth login`) with access to
-it; --from takes a copy downloaded by other means. Every file is checked
+a package ships. Each file comes from the release's public download; only when
+that fails (a draft release) is an authenticated GitHub CLI (`gh auth login`)
+tried. --from takes a copy downloaded by other means. Every file is checked
 against its pinned size and SHA-256.
 """
 import argparse

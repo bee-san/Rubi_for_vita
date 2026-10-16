@@ -1,7 +1,8 @@
 # Vita build: kernel plugin (.skprx), SceShell plugin (.suprx), RCO and the
 # release zip. Configure with:
 #   cmake -S vita -B build/vita -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
-#     -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr
+#     -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr \
+#     -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)

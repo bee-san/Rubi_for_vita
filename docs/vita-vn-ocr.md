@@ -855,8 +855,9 @@ steps below cover a source build or adding another model.
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    ```
 
-   While vita-vn-ocr is private this uses the GitHub CLI (`gh auth login`
-   with access to it). `--from FILE` checks a copy downloaded another way.
+   The downloads need no GitHub account: vita-vn-ocr's releases are public, and the
+   GitHub CLI (`gh auth login`) is only tried when a public download fails (a draft
+   release). `--from FILE` checks a copy downloaded another way.
    `tools/package_release.py --models ocr` needs every one of these files (it
    ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
