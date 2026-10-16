@@ -11,10 +11,11 @@
 
 #define ALIGN(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
 
-/* The last rung of the OCR capture ladder (game_ocr.c vjoOcrCaptureRows,
- * VJO_GAME_OCR_SRC_KSTRIP): one strip of grey rows, at most
- * VJO_GAME_OCR_KSTRIP_MAX, held only for one call and freed before it returns.
- * Capture lock held. */
+/* The last rung of the capture ladder (game_ocr.c vjoOcrCaptureRows,
+ * VJO_GAME_OCR_SRC_KSTRIP): one strip of a job's rows (grey, or a shot's colour
+ * rows, API 23), at most VJO_GAME_OCR_KSTRIP_MAX, held for one call and freed
+ * before it returns; a copy the call abandoned keeps it until the copy ends, when
+ * the kernel worker frees it. Capture lock held. */
 static SceUID kstrip_uid = -1;
 static uint8_t *kstrip_base;
 static uint32_t kstrip_bytes;

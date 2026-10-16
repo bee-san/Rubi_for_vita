@@ -65,6 +65,21 @@ class MemoryLedgerCheck(unittest.TestCase):
         paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
         self.assertEqual(paf["worst"], 8192 + 65536 + 131072 + 20480)
 
+    def test_the_kernel_worst_case_is_its_items(self):
+        # API 24: the module's pages, the worker's stack, one kernel strip and one games.ini read, both builds;
+        # the strip's budget holds the largest strip a rows call can take (include/vjo_game_ocr.h)
+        kstrip_max = int(re.search(r"#define VJO_GAME_OCR_KSTRIP_MAX \((\d+)u \* (\d+)u\)",
+                                   (ROOT / "include/vjo_game_ocr.h").read_text()).group(1)) * 1024
+        for variant in ("debug", "normal"):
+            kernel = next(p for p in json.loads(run("--json", "--variant", variant).stdout)["pools"]
+                          if p["pool"] == "kernel")
+            self.assertEqual(set(kernel["items"]), {"VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK",
+                                                    "VJO_BUDGET_KERNEL_OCR_STRIP", "VJO_BUDGET_KERNEL_POLICY"}, variant)
+            self.assertEqual(kernel["worst"], sum(kernel["items"].values()), variant)
+            self.assertEqual(kernel["worst"] - kernel["permanent"], kernel["items"]["VJO_BUDGET_KERNEL_OCR_STRIP"] +
+                             kernel["items"]["VJO_BUDGET_KERNEL_POLICY"], variant)
+            self.assertGreaterEqual(kernel["items"]["VJO_BUDGET_KERNEL_OCR_STRIP"], kstrip_max, variant)
+
     def test_a_picture_card_fits_the_only_configuration(self):
         # a 384 KiB Anki arena (the removed screenshot card's) put the network configuration over the
         # limit by 8,688 B (a warning) while it existed; beside the one 64 KiB arena it fits: 487,424 B

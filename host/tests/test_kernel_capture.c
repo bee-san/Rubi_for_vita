@@ -123,6 +123,13 @@ static void ocr_grey_rows_every_format(void)
     job.n = 20; user_copy_failure = 1;
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_COPY);
     user_copy_failure = 0;
+    /* the frame's geometry against the job's, as the full-frame capture's copy was checked until API 24: a
+     * pitch below the frame's width, and a region past the frame's right or bottom edge, read nothing */
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 39, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_FORMAT);
+    OcrRowsJob past = job; past.x0 = 10; /* 10 + 32 > 40 */
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &past) == VJO_ERR_FORMAT);
+    past = job; past.y0 = 5; /* 5 + 28 > 32 */
+    TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &past) == VJO_ERR_FORMAT);
     unsigned char kstrip[32 * 20];
     OcrRowsJob kjob = {4, 2, 32, 28, 40, 32, 3, 20, 32, 0, kstrip, 0, 0};
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &kjob) == 20);

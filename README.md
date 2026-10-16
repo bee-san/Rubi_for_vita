@@ -436,10 +436,11 @@ rewrite them. `install-vita.sh` keeps the chosen size on an update, and the app'
 error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
-takes no kernel memory for the screen since API 19: the game reads its own
-screen ([in-game capture](docs/ingame-capture.md)). The kernel keeps no capture buffer
-since API 24, which removed the full-frame one nothing used any more: an Anki card's
-screenshot is read in the game too, in colour strips, and encoded there. A Shell UI memory error
+reads the screen in the game since API 19, into the game worker's own memory; the
+kernel takes memory for it only on the capture ladder's last rung, a strip of at most
+64 KiB for one call ([in-game capture](docs/ingame-capture.md)). An Anki card's screenshot
+is read in the game too, in colour strips, and encoded there. API 24 removed the kernel's
+full-frame capture buffer, which nothing used any more. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 

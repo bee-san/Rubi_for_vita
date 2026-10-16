@@ -1,5 +1,5 @@
 /* OCR requests, copied capture/model bytes and results. Inference stays in-game.
- * g.lock serializes this transport with capture allocation/read/free. */
+ * g.lock serializes this transport, the region, its signatures and the kernel strip. */
 #include <psp2kern/kernel/cpu.h>
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
@@ -160,8 +160,9 @@ void game_ocr_init(void)
     memset(&rows, 0, sizeof(rows));
 }
 
-/* A job is queued or claimed, or a model or rows call is in flight: what
- * vjoOcrSubmit refuses a new job on (VJO_ERR_BUSY). The host tests observe it. */
+/* A job is queued or claimed, or a model or rows call is in flight: the state
+ * vjoOcrSubmit refuses a new job on (VJO_ERR_BUSY), which it tests inline; only
+ * the host tests call this. */
 int game_ocr_capture_busy_locked(void)
 {
     sync_locked();

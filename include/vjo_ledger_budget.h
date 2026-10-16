@@ -258,7 +258,8 @@
  * 0x80024302 at every attempt (#74). */
 /* The capture ladder's last rung (kernel/buffers.c buffers_kstrip_alloc): one strip of a job's
  * rows for one vjoOcrCaptureRows call, only after the display hook could not write into the
- * game's own block; freed before the call returns. Counted in the worst case. */
+ * game's own block; freed before the call returns, or, for a copy the call abandoned, by the
+ * kernel worker once the copy ends (kernel/game_ocr.c). Counted in the worst case. */
 #define VJO_BUDGET_KERNEL_OCR_STRIP (64u * 1024u)
 /* #138: a starting game's games.ini read (kernel/loader.c policy_alloc, KERNEL_RW,
  * "VjoPolicy"): the parsed table (sizeof(VjoGames), 8,200 B) and the file's text

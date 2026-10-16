@@ -115,7 +115,7 @@ int vjoMemInfo(VjoMemInfo *m)
 {
     check_flushed_before_meminfo();
     m->ledger_current = m->ledger_peak = 131072;
-    m->ledger_limit = 2220032;
+    m->ledger_limit = 225280; /* the debug build's VJO_LIMIT_KERNEL since API 24 (synthetic figures) */
     if (diagnostics_warn) { /* #75's first guard on a console: every kernel object refused at step 3 */
         m->kernel_rc = m->caller_rc = m->cas_rc = VJO_ERR_ARG;
         m->kernel_step = m->caller_step = m->cas_step = VJO_MEMSTEP_RANGE;

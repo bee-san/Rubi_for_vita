@@ -160,7 +160,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | Component | Context | What | Pool | Size | Source |
 |---|---|---|---|---|---|
 | `VitaJPOverlay_Kernel.skprx` | `*KERNEL` | module pages (`.bss` 78,128 B at API 16, up from 53,008 B at API 13) | KD | about 0.1 MiB [measured] | [PR #60, `docs/issue-59-root-cause.md` section 4] |
-| | | capture buffer `VjoCapture`, removed in API 24: region width × height × 4 B, rounded to 4 KiB; after API 19 only the Lens JPEG took it (OCR and, since API 23, an Anki card's screenshot read the frame in the game: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302`. Since API 24 the kernel's only block for a job is the capture ladder's strip, at most 64 KiB for one call | KD, `KERNEL_RW` | 458,752 B at 917×125 until API 24 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
+| | | capture buffer `VjoCapture`, removed in API 24: region width × height × 4 B, rounded to 4 KiB; after API 19 only the Shell's JPEGs took it, Google Lens's (until #130) and the Anki screenshot's (until #125) (OCR and, since API 23, an Anki card's screenshot read the frame in the game: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302`. Since API 24 the kernel's only block for a job is the capture ladder's strip, at most 64 KiB for one call | KD, `KERNEL_RW` | 458,752 B at 917×125 until API 24 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
 | | | `VjoNet` stack 16,384 B + 4,096 B TLS (65,536 B until #132); `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 40,960 B permanent, the ledger's (90,112 B until #132 [measured]) | same; [memory-ledger.md](memory-ledger.md) |
@@ -174,7 +174,7 @@ the 36,864 B growth coincides with the build that stopped booting (#59) [measure
 `docs/issue-59-root-cause.md` section 3.1].
 
 **API 19 (#74).** OCR's capture moved into the game: the kernel's `VjoCapture` served only the
-Lens JPEG (after Google Lens's removal nothing took it, and API 24 removed it; since API 23 an Anki card's screenshot is read and encoded in the game, [anki.md](anki.md#the-screenshot)), and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
+Shell's JPEGs, Google Lens's and the Anki screenshot's (after their removal, #130 and #125, nothing took it, and API 24 removed it; since API 23 an Anki card's screenshot is read and encoded in the game, [anki.md](anki.md#the-screenshot)), and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
 CDRAM, else phycont) instead of a region-sized grey plane in its workspace. The H15 workspace is
 188,416 B at any region (712,704 B at 960×544 and 303,104 B at 917×125 before); a line taller
 than a strip takes its own block only when it occurs. The worker's module is 61,440 B

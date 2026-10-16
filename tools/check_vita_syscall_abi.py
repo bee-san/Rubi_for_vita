@@ -191,6 +191,10 @@ def audit(kernel, shell, require_hooks=False, worker=None):
         require(nid in exports, f"Kernel does not export {name}")
         if name != "vjoTextSubmit":
             require(nid in imports, f"Shell does not import {name}")
+    # removed syscalls: the kernel exports none and the Shell imports none, in every audit (the worker's below)
+    removed = {int.from_bytes(hashlib.sha256(n.encode()).digest()[:4], "big"): (n, api) for n, api in REMOVED.items()}
+    for nid, (name, api) in removed.items():
+        require(nid not in exports and nid not in imports, f"{name} was removed in API {api}")
     for nid, (segment, offset) in exports.items():
         thumb = offset & 1
         address = offset & ~1
@@ -212,10 +216,8 @@ def audit(kernel, shell, require_hooks=False, worker=None):
             require(nid in exports, f"Kernel does not export {name}")
             owner = imports if name in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel") else worker_imports
             require(nid in owner, f"Missing role-specific import {name}")
-        for name, api in REMOVED.items():
-            nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
-            require(nid not in exports and nid not in worker_imports and nid not in imports,
-                    f"{name} was removed in API {api}")
+        for nid, (name, api) in removed.items():
+            require(nid not in worker_imports, f"{name} was removed in API {api}")
         shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell")
         for name in shell_only:
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
