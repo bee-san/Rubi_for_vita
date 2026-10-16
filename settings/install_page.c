@@ -92,10 +92,12 @@ static void rescan(void)
     vjo_install_scan(&scan, &build);
     scanned = 1;
     action_count = 0;
-    /* a stopped swap: putting its file back comes first when config.txt is HENkaku's default now (h-encore
-     * rewrote it), keeping the current one when that is the overlay's or the user's own */
-    int keep_first = (scan.cfg[0].leftover && scan.cfg[0].now_kind != VJO_TAI_NOW_STOCK) ||
-                     (scan.cfg[1].leftover && scan.cfg[1].now_kind != VJO_TAI_NOW_STOCK);
+    /* a stopped swap: putting its file back comes first when config.txt is HENkaku's default now and the
+     * swap had started (h-encore rewrote it after the stop); keeping the current one when that is the
+     * overlay's or the user's own, or when the swap never started (no .vjo-old: config.txt is as it was) */
+    int keep_first = 0;
+    for (int c = 0; c < 2; c++)
+        keep_first |= scan.cfg[c].leftover && (scan.cfg[c].now_kind != VJO_TAI_NOW_STOCK || !(scan.cfg[c].swap_files & 1));
     int order[] = {keep_first ? VJO_INSTALL_ACT_KEEP : VJO_INSTALL_ACT_FINISH, keep_first ? VJO_INSTALL_ACT_FINISH : VJO_INSTALL_ACT_KEEP,
                    VJO_INSTALL_ACT_INSTALL, VJO_INSTALL_ACT_UNINSTALL};
     for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); i++)

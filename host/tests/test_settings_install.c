@@ -911,6 +911,36 @@ static void package_settings_are_applied(void)
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(strstr(slurp(VJO_PREFERENCES_PATH_TEST, NULL), "anki_mining = on\n") != NULL);
+    /* the user's later choice over the same build is theirs: card mining OFF, the log off, another
+     * dictionary list are no damage, and Check and repair leaves them as they are */
+    char *mine = strdup(slurp(VJO_PREFERENCES_PATH_TEST, NULL));
+    char *at = strstr(mine, "anki_mining = on\n");
+    TEST_ASSERT(at != NULL);
+    static char next[16384];
+    snprintf(next, sizeof(next), "%.*sanki_mining = off\n%slog_file = off\nlocal_dictionaries = mine.vjdict\n",
+             (int)(at - mine), mine, at + strlen("anki_mining = on\n"));
+    put_text(VJO_PREFERENCES_PATH_TEST, next);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED && s.config_ini == 0, "state %d config_ini %d", s.state, s.config_ini);
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int lines = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    TEST_CHECK(has_line(plan, lines, "config.ini: unchanged (your settings stay as they are)"));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(!strcmp(slurp(VJO_PREFERENCES_PATH_TEST, NULL), next));
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    /* a missing config.ini (and no .bak) over the same build is written from the template, not a repair */
+    remove(VJO_PREFERENCES_PATH_TEST);
+    remove(VJO_PREFERENCES_PATH_TEST ".bak");
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED && s.config_ini == 2, "state %d config_ini %d", s.state, s.config_ini);
+    /* another build (an update) patches it again: the package's set lines apply */
+    put_text(VJO_PREFERENCES_PATH_TEST, next);
+    install_app(1, "0.8.0-test.5", "set anki_mining on\n");
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_UPDATE && s.config_ini == 1, "state %d config_ini %d", s.state, s.config_ini);
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(strstr(slurp(VJO_PREFERENCES_PATH_TEST, NULL), "anki_mining = on\n") != NULL);
+    free(mine);
 }
 
 /* ---------------- the page ---------------- */
@@ -965,6 +995,87 @@ static void the_page_shows_the_plan_and_runs_it(void)
     TEST_CHECK(installed_files(1));
 }
 
+/* A stop while swap_config wrote config.txt.vjo-new (after its open, before or during the write; a power
+ * cut, so nothing removed the partial file): config.txt is as it was and there is no .vjo-old, so the swap
+ * never started. Only Keep is offered, first; its .vjo-new (empty, or a prefix) is never put in place.
+ * A whole .vjo-new (this app's edit of the current config.txt, byte for byte) can be put in place too. */
+static void a_stopped_write_of_vjo_new_keeps_config_txt(void)
+{
+    static char out[VJO_TAI_TEXT_MAX + 1];
+    for (int both = 0; both < 2; both++)
+        for (int cut = 0; cut < 3; cut++) { /* 0 B, a prefix, the whole edit */
+            fresh_card(both);
+            install_app(1, "0.8.0", NULL);
+            const char *target = both ? "ux0:tai/config.txt" : "ur0:tai/config.txt";
+            char *before = strdup(slurp(target, NULL));
+            VjoTaiReport rep;
+            int n = vjo_tai_edit(before, strlen(before), VJO_TAI_INSTALL, VJO_TAI_WORKER_KERNEL, NULL, 0, out, sizeof(out), &rep);
+            TEST_ASSERT(n > 200);
+            char fresh[64];
+            snprintf(fresh, sizeof(fresh), "%s.vjo-new", target);
+            size_t len = cut == 0 ? 0 : cut == 1 ? (size_t)n / 2 : (size_t)n;
+            put(fresh, out, len);
+            VjoInstallScan s = scan_now();
+            const VjoInstallConfig *g = &s.cfg[both ? 0 : 1];
+            TEST_CHECK_(s.state == VJO_INSTALL_INTERRUPTED, "both %d cut %d: state %d", both, cut, s.state);
+            TEST_CHECK_(g->leftover == 2 && g->swap_files == 2 && g->use_new == (cut == 2), "both %d cut %d", both, cut);
+            TEST_CHECK_(s.actions == (cut == 2 ? (VJO_INSTALL_ACT_KEEP | VJO_INSTALL_ACT_FINISH) : VJO_INSTALL_ACT_KEEP),
+                        "both %d cut %d: actions 0x%x", both, cut, (unsigned)s.actions);
+            TEST_CHECK_(strstr(s.reason, "stopped before it changed config.txt, which is as it was") != NULL, "%s", s.reason);
+            /* the page offers Keep first */
+            vjo_install_page_start();
+            frame(0);
+            TEST_CHECK_(shown("[Keep the current one*]"), "both %d cut %d", both, cut);
+            TEST_CHECK_(shown("[Put it back]") == (cut == 2), "both %d cut %d", both, cut);
+            if (cut == 2) {
+                char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+                int lines = vjo_install_plan(&s, VJO_INSTALL_ACT_FINISH, plan, VJO_INSTALL_LINES);
+                TEST_CHECK(has_line(plan, lines, "this app's whole edit of the current one, checked byte for byte"));
+                VjoInstallResult r;
+                TEST_CHECK(run(&s, VJO_INSTALL_ACT_FINISH, &r) == 0);
+                size_t m;
+                char *now = slurp(target, &m);
+                TEST_CHECK(now && m == (size_t)n && !memcmp(now, out, (size_t)n));
+                TEST_CHECK(!strcmp(slurp(both ? "ux0:tai/config.txt.vjo-20261016-071503.bak" : "ur0:tai/config.txt.vjo-20261016-071503.bak", NULL), before));
+                TEST_CHECK(!there(fresh));
+            } else {
+                char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+                int lines = vjo_install_plan(&s, VJO_INSTALL_ACT_KEEP, plan, VJO_INSTALL_LINES);
+                TEST_CHECK(has_line(plan, lines, "its config.txt.vjo-new is kept as config.txt.vjo-20261016-071503-new.bak"));
+                /* Put it back is refused even when asked for */
+                VjoInstallResult r;
+                VjoInstallScan copy = s;
+                TEST_CHECK(vjo_install_run(&copy, VJO_INSTALL_ACT_FINISH, NULL, &r) < 0);
+                TEST_CHECK(!strcmp(slurp(target, NULL), before) && there(fresh));
+                s = scan_now();
+                TEST_CHECK(run(&s, VJO_INSTALL_ACT_KEEP, &r) == 0);
+                TEST_CHECK_(!strcmp(slurp(target, NULL), before), "both %d cut %d: config.txt changed", both, cut);
+                size_t m;
+                char *kept = slurp(both ? "ux0:tai/config.txt.vjo-20261016-071503-new.bak" : "ur0:tai/config.txt.vjo-20261016-071503-new.bak", &m);
+                TEST_CHECK(kept && m == len && !memcmp(kept, out, len) && !there(fresh));
+                /* then Install works as on any card */
+                s = scan_now();
+                TEST_CHECK_(s.actions & VJO_INSTALL_ACT_INSTALL, "state %d", s.state);
+                TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+                TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+            }
+            free(before);
+        }
+    /* config.txt missing beside a .vjo-new that is no whole configuration this app wrote, and no .vjo-old:
+     * nothing is offered (the reason says what to do in VitaShell); it is never put in place */
+    fresh_card(0);
+    install_app(1, "0.8.0", NULL);
+    char *before = strdup(slurp("ur0:tai/config.txt", NULL));
+    TEST_ASSERT(rename("ur0:tai/config.txt", "ur0:tai/config.txt.vjo-20261016-071500.bak") == 0);
+    put_text("ur0:tai/config.txt.vjo-new", "*KERNEL\nur0:tai/VitaJPOverlay_Kernel.skprx\n*main\nur0:tai/hen");
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INTERRUPTED && s.actions == 0, "state %d actions 0x%x", s.state, (unsigned)s.actions);
+    TEST_CHECK_(strstr(s.reason, "copy its newest dated backup") != NULL, "%s", s.reason);
+    VjoInstallResult r;
+    TEST_CHECK(vjo_install_run(&s, VJO_INSTALL_ACT_FINISH, NULL, &r) < 0 && !there("ur0:tai/config.txt"));
+    free(before);
+}
+
 TEST_LIST = {
     {"fresh_install_on_both_configurations", fresh_install_on_both_configurations},
     {"update_over_a_test3_install", update_over_a_test3_install},
@@ -975,6 +1086,7 @@ TEST_LIST = {
     {"faults_leave_old_or_new_files", faults_leave_old_or_new_files},
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
     {"a_swap_healed_by_hencore_is_still_interrupted", a_swap_healed_by_hencore_is_still_interrupted},
+    {"a_stopped_write_of_vjo_new_keeps_config_txt", a_stopped_write_of_vjo_new_keeps_config_txt},
     {"one_or_two_different_configurations", one_or_two_different_configurations},
     {"uninstall_keeps_files_and_backups", uninstall_keeps_files_and_backups},
     {"the_plan_must_still_be_the_cards", the_plan_must_still_be_the_cards},

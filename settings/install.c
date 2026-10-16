@@ -272,23 +272,33 @@ static int ours_text(const char *text, int len, int worker)
            vjo_tai_edit(text, (size_t)len, VJO_TAI_INSTALL, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r) >= 0 && !r.changed;
 }
 
-/* .vjo-new is the editor's result of .vjo-old (an install's or an uninstall's): the swap's new text. */
+/* text (n bytes) is the editor's result of ref (an install's or an uninstall's), byte for byte. */
+static int is_edit_of(const char *ref, int len, const char *text, int n, int worker)
+{
+    for (int op = 0; op < 2; op++) {
+        VjoTaiReport r;
+        int m = vjo_tai_edit(ref, (size_t)len, op, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r);
+        if (m == n && !memcmp(cfg_check, text, (size_t)n)) return 1;
+    }
+    return 0;
+}
+
+/* .vjo-new is the swap's whole new text: the editor's result of what it was made of. With a .vjo-old
+ * (the swap had started: config.txt was renamed to it) that is .vjo-old; without one the swap never
+ * started, so config.txt (current, len bytes) is what it was made of, and a .vjo-new that is not exactly
+ * its edit is a stopped write's (empty, or a prefix). With neither (a .vjo-old deleted by hand), only an
+ * install's whole result is used. */
 static char leftover_old[VJO_TAI_TEXT_MAX + 2], leftover_new[VJO_TAI_TEXT_MAX + 2];
-static int new_is_result_of_old(const char *path, int worker)
+static int new_is_result_of_old(const char *path, const char *current, int len, int worker)
 {
     char a[PATH], b[PATH];
     snprintf(a, sizeof(a), "%s.vjo-old", path);
     snprintf(b, sizeof(b), "%s.vjo-new", path);
     int n = read_all(b, leftover_new, sizeof(leftover_new)), o = read_all(a, leftover_old, sizeof(leftover_old));
     if (n <= 0 || n > VJO_TAI_TEXT_MAX) return 0;
-    if (o < 0) return ours_text(leftover_new, n, worker); /* no .vjo-old: only an install's result is used */
-    if (o > VJO_TAI_TEXT_MAX) return 0;
-    for (int op = 0; op < 2; op++) {
-        VjoTaiReport r;
-        int m = vjo_tai_edit(leftover_old, (size_t)o, op, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r);
-        if (m == n && !memcmp(cfg_check, leftover_new, (size_t)n)) return 1;
-    }
-    return 0;
+    if (o >= 0) return o <= VJO_TAI_TEXT_MAX && is_edit_of(leftover_old, o, leftover_new, n, worker);
+    if (current) return len >= 0 && is_edit_of(current, len, leftover_new, n, worker);
+    return ours_text(leftover_new, n, worker);
 }
 
 static const char *tai_path(int c) { return c ? VJO_TAI_UR0 : VJO_TAI_UX0; }
@@ -357,8 +367,13 @@ static int dictionaries(const char *names, char *out, size_t cap)
 
 /* config.ini's new text for an install (into ini_new): 2 written from the package's template (there is
  * neither config.ini nor its backup, which the app's load reads when config.ini is missing), 1 patched,
- * 0 unchanged, -1 unreadable (s->reason). The lines it changes go into s->config_changes. */
-static int plan_config_ini(VjoInstallScan *s)
+ * 0 unchanged, -1 unreadable (s->reason). The lines it changes go into s->config_changes.
+ * patch_existing: a first install, or an install of another build than installed.txt's, patches an
+ * existing config.ini (the package's set lines, the paths, the dictionary list, the app's own save).
+ * Over the build installed.txt names (Check and repair, the same VPK again) an existing config.ini is
+ * the user's: a later choice (card mining OFF, log_file = off, another dictionary list) is no damage,
+ * so it is left as it is, and only a missing one is written from the template. */
+static int plan_config_ini(VjoInstallScan *s, int patch_existing)
 {
     VjoArena a;
     VjoConfig base, cfg;
@@ -367,6 +382,7 @@ static int plan_config_ini(VjoInstallScan *s)
     vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
     int rc = vjo_preferences_text(&a, &old, &bytes);
     s->config_change_count = 0;
+    if (!patch_existing && rc != 2) return 0;
     if (rc < 0) {
         snprintf(s->reason, sizeof(s->reason), "config.ini cannot be read: repair or delete it in VitaShell first.");
         return -1;
@@ -552,10 +568,17 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                         : ours_text(cfg_text[c], n, build->worker) ? VJO_TAI_NOW_OURS : VJO_TAI_NOW_OTHER;
         }
     }
-    for (int c = 0; c < 2; c++)
-        if (s->cfg[c].interrupted || s->cfg[c].leftover)
-            s->cfg[c].use_new = (s->cfg[c].interrupted == 2 || (s->cfg[c].leftover & 2)) &&
-                                new_is_result_of_old(s->cfg[c].path, build->worker);
+    for (int c = 0; c < 2; c++) {
+        VjoInstallConfig *g = &s->cfg[c];
+        if (!g->interrupted && !g->leftover) continue;
+        snprintf(path, sizeof(path), "%s.vjo-old", g->path);
+        g->swap_files = exists(path) ? 1 : 0;
+        snprintf(path, sizeof(path), "%s.vjo-new", g->path);
+        g->swap_files |= exists(path) ? 2 : 0;
+        g->use_new = (g->swap_files & 2) && new_is_result_of_old(g->path, g->exists ? cfg_text[c] : NULL, cfg_len[c],
+                                                                 build->worker);
+        g->finish_ok = g->use_new || (g->swap_files & 1);
+    }
     if (s->cfg[1].exists) vjo_tai_storage_plugin(cfg_text[1], (size_t)cfg_len[1], s->storage, sizeof(s->storage));
 
     /* the files (plugins hashed, data by size) */
@@ -590,19 +613,36 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                      !memcmp(s->installed.manifest_sha256, s->payload.manifest_sha256, 32);
 
     /* config.ini */
-    if (s->has_payload && !interrupted && !damaged && !s->unsafe_off) s->config_ini = plan_config_ini(s);
+    if (s->has_payload && !interrupted && !damaged && !s->unsafe_off) s->config_ini = plan_config_ini(s, !same_build);
 
     /* the state */
     const char *v = s->payload.version;
     if (interrupted) {
         s->state = VJO_INSTALL_INTERRUPTED;
-        s->actions = VJO_INSTALL_ACT_FINISH;
+        /* Put it back: every configuration with a stopped swap's files has a whole file to put back.
+         * Keep the current one: every one of them has a config.txt (a missing one is never kept missing). */
+        int finish = 1, keep = 1;
+        for (int k = 0; k < 2; k++)
+            if (s->cfg[k].interrupted || s->cfg[k].leftover) {
+                finish &= s->cfg[k].finish_ok;
+                keep &= s->cfg[k].exists;
+            }
+        s->actions = (finish ? VJO_INSTALL_ACT_FINISH : 0) | (keep ? VJO_INSTALL_ACT_KEEP : 0);
         snprintf(s->title, sizeof(s->title), "An install was interrupted");
         int c = s->cfg[0].interrupted || s->cfg[0].leftover ? 0 : 1;
         const VjoInstallConfig *g = &s->cfg[c];
-        if (g->interrupted)
+        if (g->interrupted && g->finish_ok)
             snprintf(s->reason, sizeof(s->reason), "%s is missing: an install or uninstall stopped between two renames. "
                      "Put it back here, then restart the Vita.", g->path);
+        else if (g->interrupted)
+            snprintf(s->reason, sizeof(s->reason), "%s is missing, and its config.txt.vjo-new is not a configuration "
+                     "this app wrote whole: in VitaShell copy its newest dated backup (config.txt.vjo-*.bak) to "
+                     "config.txt before you restart the Vita.", g->path);
+        else if (!(g->swap_files & 1))
+            snprintf(s->reason, sizeof(s->reason), "%s has a stopped install's config.txt.vjo-new beside it: the install "
+                     "stopped before it changed config.txt, which is as it was. Keep it (the .vjo-new is kept as a dated "
+                     "backup), then choose Install again.%s", g->path,
+                     g->use_new ? " Or put the new one in place: it is this app's whole edit of the current one." : "");
         else
             snprintf(s->reason, sizeof(s->reason), "%s has a stopped swap's %s beside it, and is %s now. Put it back "
                      "(the current one is kept as a dated backup), or keep the current one (the others are kept as "
@@ -610,8 +650,6 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                      : g->leftover == 2 ? "config.txt.vjo-new" : "config.txt.vjo-old",
                      g->now_kind == VJO_TAI_NOW_STOCK ? "HENkaku's default (h-encore writes it when there is none)"
                      : g->now_kind == VJO_TAI_NOW_OURS ? "the overlay's" : "another configuration");
-        for (int k = 0; k < 2; k++)
-            if (s->cfg[k].leftover) s->actions |= VJO_INSTALL_ACT_KEEP;
         if (s->unsafe_off) {
             size_t used = strlen(s->reason);
             snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
@@ -688,7 +726,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                      v, s->installed.variant);
         else
             snprintf(s->title, sizeof(s->title), "Reinstall v%s (another build of it is installed)", v);
-    } else if (!s->files_ok || need_lines || s->config_ini > 0) {
+    } else if (!s->files_ok || need_lines) { /* config.ini is the user's here (plan_config_ini) */
         s->state = VJO_INSTALL_REPAIR;
         snprintf(s->title, sizeof(s->title), "Repair the overlay (v%s)", v);
     } else {
@@ -760,14 +798,18 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
             if (!g->interrupted && !g->leftover) continue;
             if (action == VJO_INSTALL_ACT_KEEP) {
                 if (g->leftover)
-                    n = add(lines, n, max, "%s stays as it is; its config.txt.vjo-old and .vjo-new are kept as "
-                            "config.txt.vjo-%s-*.bak.", g->path, s->stamp);
+                    n = add(lines, n, max, "%s stays as it is; %s kept as config.txt.vjo-%s-%s.bak.", g->path,
+                            g->swap_files == 3 ? "its config.txt.vjo-old and .vjo-new are" : g->swap_files == 2
+                            ? "its config.txt.vjo-new is" : "its config.txt.vjo-old is", s->stamp,
+                            g->swap_files == 3 ? "old.bak and -new" : g->swap_files == 2 ? "new" : "old");
                 continue;
             }
             if (g->leftover)
                 n = add(lines, n, max, "%s: the current one is kept as config.txt.vjo-%s.bak, then %s becomes config.txt.",
-                        g->path, s->stamp, g->use_new ? "config.txt.vjo-new (the stopped install's new configuration, "
-                        "checked against the old one)" : "config.txt.vjo-old (the configuration from before the stop)");
+                        g->path, s->stamp, !g->use_new ? "config.txt.vjo-old (the configuration from before the stop)"
+                        : g->swap_files & 1 ? "config.txt.vjo-new (the stopped install's new configuration, checked "
+                        "against config.txt.vjo-old)" : "config.txt.vjo-new (this app's whole edit of the current one, "
+                        "checked byte for byte)");
             else
                 n = add(lines, n, max, g->use_new
                         ? "%s: config.txt.vjo-new, the new configuration (written and checked before the stop), becomes config.txt."
@@ -880,6 +922,7 @@ static int unchanged(const VjoInstallScan *a, const VjoInstallScan *b)
     if (memcmp(a->payload.manifest_sha256, b->payload.manifest_sha256, 32)) return 0;
     for (int c = 0; c < 2; c++)
         if (a->cfg[c].exists != b->cfg[c].exists || a->cfg[c].interrupted != b->cfg[c].interrupted ||
+            a->cfg[c].swap_files != b->cfg[c].swap_files || a->cfg[c].use_new != b->cfg[c].use_new ||
             memcmp(a->cfg[c].sha256, b->cfg[c].sha256, 32))
             return 0;
     return 1;
@@ -1288,17 +1331,28 @@ static int run_leftovers(Run *x, VjoInstallScan *s, int put_back)
         snprintf(fresh, sizeof(fresh), "%s.vjo-new", path);
         snprintf(old, sizeof(old), "%s.vjo-old", path);
         step(x, put_back ? "Putting %s back" : "Keeping %s", path);
+        if (!put_back && !g->exists) { /* never offered (the scan): a missing config.txt is never kept missing */
+            lock(0);
+            return stop(x, "%s is missing: it cannot be kept.", path);
+        }
         if (put_back) {
+            /* the scan's choice only: a .vjo-new that is no whole edit is never put back */
             const char *use = g->use_new ? fresh : old;
-            if (!exists(use)) use = exists(old) ? old : fresh;
+            if (!g->finish_ok || !exists(use)) {
+                lock(0);
+                return stop(x, "%s has no whole configuration to put back.", path);
+            }
             if (g->leftover) { /* the current one first: a dated backup, by rename */
                 if (retire(path, path, s->stamp, "", name, sizeof(name)) < 0) { lock(0); return stop(x, "%s could not be kept aside.", path); }
                 x->r->written = 1;
                 say(x->r, "The current %s is kept as %s.", path, name);
             }
             if (sceIoRename(use, path) < 0) {
+                int back = g->leftover && sceIoRename(name, path) >= 0; /* the current one, as it was */
                 lock(0);
-                return stop(x, "%s could not be put back: in VitaShell, rename config.txt.vjo-new (or .vjo-old) to config.txt.", path);
+                return stop(x, back ? "%s could not be put back: the current one is back as it was."
+                                    : "%s could not be put back: in VitaShell, rename config.txt.vjo-new (or .vjo-old) to "
+                                      "config.txt.", path);
             }
             x->r->written = 1;
             sync_path(path);
