@@ -105,7 +105,7 @@ static unsigned char title_ready[VJO_GAMES_MAX];
 static VjoTextMemo text_memo;
 static int visible[VJO_GAMES_MAX], total, count, selected, offset, filter, truncated;
 static int scroll_direction = 1, writable = 1; /* the way the list last moved: 1 down, -1 up */
-static char status[160];
+static char status[256];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
 static VjoEngineCard engine; /* the OCR card: the chosen size, its model files */
@@ -331,8 +331,13 @@ static void prepare_window(void)
         }
 }
 
-/* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row. */
-static int row_on(const VjoInstalledGame *g) { return vjo_games_enabled_as(&policy, g->id, g->kind != VJO_ROW_GAME); }
+/* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row,
+ * as the Shell's does (a title in no folder by its ID's shape: PSPEMUCFW, a disc ID). */
+static int row_on(const VjoInstalledGame *g)
+{
+    int psp = vjo_catalog_psp(g) || (g->kind == VJO_ROW_MISSING && vjo_game_is_psp(g->id));
+    return vjo_games_enabled_as(&policy, g->id, psp);
+}
 
 /* The OCR worker loads in it: registered, or the shared row (not registrable). */
 static int registered(const VjoInstalledGame *g)
@@ -402,10 +407,56 @@ static void toggle(void)
     if (!on && !status_error && needs_registration(g)) register_row(g);
 }
 
+/* The rules with this choice ("= enabled" or "= disabled"), ", " between them
+ * while they fit in cap ("and N more" after): by title (titles != 0: a game's
+ * row title, its ID when its row is a missing title's or it has none; the
+ * Shell's games only) or by ID (every rule, for log.txt). Their number. */
+static int rule_list(int enabled, int titles, char *out, size_t cap)
+{
+    int n = 0, more = 0;
+    size_t used = 0;
+    out[0] = '\0';
+    for (int i = 0; i < policy.count; i++) {
+        const VjoGameRule *r = &policy.rules[i];
+        if (r->enabled != enabled || (titles && !vjo_game_is_candidate(r->title_id))) continue;
+        const char *label = r->title_id;
+        for (int k = 0; titles && k < total; k++)
+            if (library[k].kind != VJO_ROW_MISSING && !strcmp(library[k].id, r->title_id)) label = library[k].title;
+        n++;
+        size_t need = strlen(label) + (used ? 2 : 0);
+        if (more || used + need + 16 >= cap) { more++; continue; } /* 16: room for " and N more" */
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", used ? ", " : "", label);
+    }
+    if (more) snprintf(out + used, cap - used, "%sand %d more", used ? " " : "", more);
+    return n;
+}
+
+/* Triangle, or the Default row touched. ON -> OFF disables all (#138): no game
+ * stays ON by a choice of its own (core/games.h vjo_games_disable_all); the
+ * games turned OFF one by one stay OFF. OFF -> ON turns on every game but
+ * those. The status names the games either way, and log.txt the rules. */
 static void toggle_default(void)
 {
-    policy.default_enabled = !policy.default_enabled;
+    char names[160], ids[160];
+    int disable = policy.default_enabled != 0;
+    /* disable: the ON ones it turns OFF; else those staying OFF */
+    int n = rule_list(disable, 1, names, sizeof(names)), rules = rule_list(disable, 0, ids, sizeof(ids));
+    if (disable) vjo_games_disable_all(&policy);
+    else policy.default_enabled = 1;
     save();
+    if (status_error) return; /* save() said why, and put the saved choices back */
+    if (disable)
+        vjo_log("games: Default OFF, %d own ON choice%s removed%s%s", rules, rules == 1 ? "" : "s", rules ? ": " : "", ids);
+    else
+        vjo_log("games: Default ON, %d own OFF choice%s kept%s%s", rules, rules == 1 ? "" : "s", rules ? ": " : "", ids);
+    if (disable && n)
+        snprintf(status, sizeof(status), "Saved: every game is OFF; resume your game to apply. Turned OFF too: %s.", names);
+    else if (disable)
+        snprintf(status, sizeof(status), "Saved: every game is OFF; resume your game to apply. Turn ON the ones you want.");
+    else if (n)
+        snprintf(status, sizeof(status), "Saved: every game is ON but %d; resume your game to apply. Still OFF: %s.", n, names);
+    else
+        snprintf(status, sizeof(status), "Saved: every game is ON; resume your game to apply.");
 }
 
 static void change_filter(void)
@@ -423,7 +474,7 @@ static void scan(void)
     clear_icons();
     memset(icon_failed, 0, sizeof(icon_failed));
     memset(title_ready, 0, sizeof(title_ready));
-    total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated);
+    total = vjo_catalog_scan(library, VJO_GAMES_MAX, &truncated, &policy);
     rebuild();
     if (truncated) { status_error = 0; snprintf(status, sizeof(status), "Showing the first 512 installed titles."); }
     int unregistered = 0;
@@ -710,7 +761,7 @@ static void draw(void)
         vita2d_disable_clipping();
         badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
         /* PSP games: the tag, dim while the OCR worker is not registered for it. */
-        if (g->kind != VJO_ROW_GAME)
+        if (vjo_catalog_psp(g))
             text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, registered(g) ? ACCENT : DIM, 24, "PSP");
         text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }

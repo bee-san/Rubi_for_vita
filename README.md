@@ -273,7 +273,7 @@ unreadable ([details and memory](docs/settings-readability.md#the-games-list)).
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Enter or touch a game | Toggle OCR and overlay input for that game |
-| Triangle or touch the default row | Choose all games by default or selected games only |
+| Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](docs/settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
 | Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](docs/anki.md#setup-and-use) pages |
@@ -331,7 +331,12 @@ cursor, the entry, its length, the dictionary, file reads and time
 [Touch selection details and validation](docs/touch-lookup.md).
 
 Disable games such as Uncharted when you need their normal L+R controls.
-Disabled games have no overlay capture or input filtering. An unreadable or
+Disabled games have no overlay capture or input filtering. A game with its own
+ON or OFF in `games.ini` is listed even when the app cannot find its folder
+(a game card it cannot read, or a deleted game). It is listed under its
+update's title or its ID, with `(not found: a game card, or not installed)`,
+so its choice can still be changed. Each Start (and the app's start) writes
+what each folder held to `log.txt` ([why](docs/settings-readability.md#games-missing-from-the-list-and-default-off-138)). An unreadable or
 corrupt policy fails closed and reports the problem rather than enabling every
 game. A game turned ON gets OCR at its next start: the kernel plugin loads the
 OCR worker into it as it starts ([Install](#install)).

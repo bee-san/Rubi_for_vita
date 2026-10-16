@@ -41,4 +41,18 @@ int vjo_games_set(VjoGames *games, const char *id, int enabled);
 /* Strict parsing: callers must not use partially parsed data on error. */
 int vjo_games_parse(VjoGames *games, const char *text, size_t len);
 int vjo_games_format(const VjoGames *games, char *out, size_t cap);
+
+/* ---- the Overlay app's only (core/games_app.c, linked into the app and the
+ * host tests, never into a plugin: a plugin linked without --gc-sections, as
+ * the kernel's is, would take every function of the file it links) ---- */
+/* Why vjo_game_is_candidate rejects id ("not a title ID", "a system app",
+ * ...), or NULL when it does not: the app's catalog logs it for each folder
+ * it skips (settings/catalog.c). */
+const char *vjo_game_reject_reason(const char *id);
+/* "Disable all" (the app's Default ON -> OFF, #138): the default OFF and every
+ * "= enabled" rule removed, so no game stays ON by a choice of its own; the
+ * "= disabled" rules stay, as the games to keep OFF when the default is next
+ * ON. The rules keep their order. The number of rules removed, -1 for a
+ * count out of range (games unchanged). */
+int vjo_games_disable_all(VjoGames *games);
 #endif

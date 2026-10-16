@@ -126,8 +126,10 @@ field() { echo "$r" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 # straight to stderr ("Unhandled SIGSEGV at rip 0x..."), then handed to Vita3K's handler, which
 # logs "[signal_handler]: Unhandled access to 0x..." and raises SIGTRAP: its logger can lose that
 # line. Dynarmic's line is quoted only for a run a signal ended (a fault Vita3K handled prints it
-# too). The only |C| line of a passing run is "[translate_path]: Unknown device with path
-# gro0:app used" (settings/catalog.c lists gro0:app), so no |C| line is quoted as such.
+# too). The only |C| line of a passing run was "[translate_path]: Unknown device with path
+# gro0:app used" (settings/catalog.c lists gro0:app); since #138 the app also reads gro0: when
+# gro0:app does not open, which may add one for gro0: (not run in Vita3K yet). So no |C| line
+# is quoted as such.
 crash=
 if [ "$rc" -eq 124 ]; then
   crash="a hang: timeout ended it after ${TIMEOUT:-900}s"

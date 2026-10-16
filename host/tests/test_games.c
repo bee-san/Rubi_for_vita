@@ -5,6 +5,7 @@
 #include <psp2/io/fcntl.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -251,10 +252,96 @@ static void test_psp_shared_row(void)
                !vjo_games_enabled_as(&g, "VJOSET001", 1));
 }
 
+/* The Overlay app's catalog logs why it skips a folder (core/games_app.c): a
+ * reason exactly when vjo_game_is_candidate refuses the ID, never otherwise,
+ * over IDs of every shape the candidate rule looks at. */
+static void test_reject_reasons(void)
+{
+    static const struct { const char *id, *why; } named[] = {
+        {"PCSG00415", NULL}, {"NPXS10028", NULL}, {"PSPEMUCFW", NULL}, {"VITASHELX", NULL}, {"NPX", NULL},
+        {"VITASHELL", "VitaShell"}, {"VITASHELL1", "VitaShell"}, {"NPXS10001", "a system app"},
+        {"NPXS", "a system app"}, {"VJOSET001", "this app"}, {"main", "SceShell's name"},
+        {"mainmenu", "SceShell's name"}, {"", "not a title ID"}, {"Not An ID", "not a title ID"},
+        {"PCSG004151234", "not a title ID"}, {"ab/cd", "not a title ID"}, {"\xE3\x81\x82", "not a title ID"}};
+    for (unsigned i = 0; i < sizeof(named) / sizeof(named[0]); i++) {
+        const char *why = vjo_game_reject_reason(named[i].id);
+        TEST_CHECK_(named[i].why ? why && !strcmp(why, named[i].why) : !why, "%s: %s", named[i].id, why ? why : "(none)");
+    }
+    TEST_CHECK(!strcmp(vjo_game_reject_reason(NULL), "not a title ID"));
+    /* every prefix the rule tests, with each tail */
+    static const char *const heads[] = {"NPXS", "NPX", "main", "mai", "VITASHELL", "VITASHEL", "VJOSET001", "VJOSET00",
+                                        "PCSG", "a", "_", "-", "Z9", ""};
+    static const char *const tails[] = {"", "1", "10028", "0001", "X", "_x", "-", " ", "12345678901", "."};
+    int checked = 0;
+    for (unsigned h = 0; h < sizeof(heads) / sizeof(heads[0]); h++)
+        for (unsigned t = 0; t < sizeof(tails) / sizeof(tails[0]); t++) {
+            char id[40];
+            snprintf(id, sizeof(id), "%s%s", heads[h], tails[t]);
+            TEST_CHECK_(!vjo_game_reject_reason(id) == !!vjo_game_is_candidate(id), "%s", id);
+            checked++;
+        }
+    TEST_MSG("%d IDs", checked);
+}
+
+/* "Disable all" (core/games_app.c): the default OFF, every "= enabled" rule
+ * gone in order, the "= disabled" ones kept; the Shell (vjo_games_enabled_as)
+ * then sees every game OFF, PSP games and the timeout fallback included, from
+ * the formatted file as from the policy. */
+static void test_disable_all(void)
+{
+    VjoGames g, back;
+    char text[VJO_GAMES_TEXT_MAX + 1];
+    vjo_games_defaults(&g);
+    static const struct { const char *id; int on; } rules[] = {
+        {"PCSG00940", 1}, {"PCSB00792", 1}, {"PCSF00001", 0}, {"PSPEMUCFW", 1}, {"PCSG00415", 1},
+        {"PCSG00402", 0}, {"NPXS10028", 1}, {"ULJS00378", 1}};
+    for (unsigned i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) TEST_ASSERT(vjo_games_set(&g, rules[i].id, rules[i].on) == 0);
+    TEST_CHECK(vjo_games_enabled(&g, "PCSG00415")); /* #138: an explicit enabled rule beat the default */
+    TEST_CHECK(vjo_games_disable_all(&g) == 6);
+    TEST_CHECK(g.default_enabled == 0 && g.count == 2 && !strcmp(g.rules[0].title_id, "PCSF00001") &&
+               !strcmp(g.rules[1].title_id, "PCSG00402") && !g.rules[0].enabled && !g.rules[1].enabled);
+    for (int i = g.count; i < VJO_GAMES_MAX; i++)
+        TEST_CHECK_(!g.rules[i].title_id[0] && !g.rules[i].enabled, "rule %d left behind", i);
+    int n = vjo_games_format(&g, text, sizeof(text));
+    TEST_CHECK(n > 0 && !strcmp(text, "# JP Overlay per-game settings\ndefault = disabled\nPCSF00001 = disabled\n"
+                                      "PCSG00402 = disabled\n"));
+    TEST_ASSERT(vjo_games_parse(&back, text, (size_t)n) == 0);
+    static const char *const ids[] = {"PCSG00940", "PCSB00792", "PCSF00001", "PSPEMUCFW", "PCSG00415", "PCSG00402",
+                                      "NPXS10028", "ULJS00378", "PSPEMU005", "PCSA00029"};
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+        for (int psp = 0; psp < 2; psp++)
+            TEST_CHECK_(!vjo_games_enabled_as(&g, ids[i], psp) && !vjo_games_enabled_as(&back, ids[i], psp), "%s psp %d", ids[i], psp);
+    TEST_CHECK(!vjo_games_enabled(&back, "GAME"));
+    /* again: nothing more to remove */
+    TEST_CHECK(vjo_games_disable_all(&g) == 0 && g.count == 2);
+    /* the default back ON: every game but the two turned OFF */
+    g.default_enabled = 1;
+    TEST_CHECK(vjo_games_enabled(&g, "PCSG00415") && vjo_games_enabled_as(&g, "ULJS00378", 1) &&
+               !vjo_games_enabled(&g, "PCSF00001") && !vjo_games_enabled(&g, "PCSG00402"));
+    /* a full table of enabled rules empties; an empty one only turns the default OFF */
+    vjo_games_defaults(&g);
+    for (int i = 0; i < VJO_GAMES_MAX; i++) {
+        char id[VJO_TITLE_ID_SIZE];
+        snprintf(id, sizeof(id), "PCSX%05d", i);
+        TEST_ASSERT(vjo_games_set(&g, id, 1) == 0);
+    }
+    TEST_CHECK(vjo_games_disable_all(&g) == VJO_GAMES_MAX && g.count == 0 && !g.default_enabled);
+    vjo_games_defaults(&g);
+    TEST_CHECK(vjo_games_disable_all(&g) == 0 && g.count == 0 && !g.default_enabled);
+    /* a count out of range: refused, nothing changed */
+    vjo_games_defaults(&g);
+    g.count = VJO_GAMES_MAX + 1;
+    TEST_CHECK(vjo_games_disable_all(&g) == -1 && g.default_enabled == 1 && g.count == VJO_GAMES_MAX + 1);
+    g.count = -1;
+    TEST_CHECK(vjo_games_disable_all(&g) == -1 && g.default_enabled == 1);
+}
+
 TEST_LIST = {
     {"per-title blacklist and selected-only policies", test_policy},
     {"PSP titles: NPXS10028, PSPEMU* bubbles, disc IDs", test_psp_titles},
     {"PSP games without a rule follow the shared PSP row", test_psp_shared_row},
+    {"the app's reasons for skipping a folder match the candidate rule", test_reject_reasons},
+    {"disable all: no game stays ON by a choice of its own", test_disable_all},
     {"SFO strings with a stale length (older ABM bubbles)", test_sfo_stale_length},
     {"saved choices survive fresh loads", test_save_restart},
     {"partial writes and interrupted rename retain disabled games", test_failed_save_and_backup},

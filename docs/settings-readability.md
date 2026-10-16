@@ -208,6 +208,104 @@ With 512 games the after column is the same; before, an idle frame measured
   a scripted controller over 120 synthetic games, as a crash check only
   ([offline testing](offline-testing.md#5-vita3k-precisely)).
 
+## Games missing from the list, and Default OFF (#138)
+
+In test.3's run (#138) CLANNAD (`PCSG00415`) was not on the Games page, while
+AIR was, and turning the Default OFF left CLANNAD on. `games.ini` held
+`default = enabled` and `PCSG00415 = enabled`. The second finding follows from
+the rules (`core/games.c`, unchanged): a title's own rule comes before the
+default, so `PCSG00415 = enabled` kept it ON whatever the default said, and
+with CLANNAD missing from the list that rule could not be seen or changed.
+
+Why CLANNAD was missing is not known. The test.3 app (main `9cfa920`) logged
+nothing about its scan, and the cause cannot be checked off the console. The
+existing `PCSG00415 = enabled` rule shows that an earlier app listed and
+toggled CLANNAD; that app was an ordinary application, which ran with the game
+closed (#109). The app scanned once in this run, at its start, with CLANNAD
+suspended behind it (`log.txt` line 11345; a scan is made only at start and on
+Start). These causes fit the collect, and none is confirmed:
+
+- **A game card the system app cannot read.** The catalog lists `ux0:app`,
+  `ur0:app` and `gro0:app`, the game card's (henkaku wiki, SceIofilemgr's mount
+  table). The test.3 app opened beside CLANNAD, which was running. If CLANNAD is
+  a card, the app may not be allowed to list `gro0:app` as a system application,
+  or not while the card's game is suspended. Whether it is a card was not
+  recorded.
+- **Safe mode.** Without HENkaku's *Enable Unsafe Homebrew*, an unsafe app such as
+  this one runs sandboxed. VitaShell then offers `ux0:` alone (VitaShell 81af709
+  `file.c:958`), and
+  it detects this case with `sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)`
+  returning `0x80010030` (`init.c:353-355`). It is unlikely here: the FTP server
+  of this collect served `ur0:` (`ur0:tai/config.txt`), which VitaShell's does
+  only outside safe mode (`main.c:197-201`), if it was VitaShell's, as the
+  installer's steps say; and the setting is HENkaku's, for every unsafe SELF,
+  the app's included (`vita/CMakeLists.txt`: `UNSAFE`) [inference: henkaku
+  784e483 `plugin/kernel.c:60-73`].
+- **Listed under its ID.** A game whose `param.sfo` gives no title is listed as its
+  ID, here `PCSG00415` under P, not CLANNAD under C. Nothing in the collect
+  shows whether this happened.
+
+The list holds 512 rows, and the tester has far fewer games, so the list being
+full is not the cause. The candidate rule could not have dropped CLANNAD
+either: it accepts `PCSG00415`.
+
+What the app does now:
+
+- **Each scan is logged** (`log.txt`, `log_file = on`): one line per root with
+  its entries, how many were listed, already listed or skipped, those left out
+  when the list is full, a listing that stopped (its error), the games listed
+  by their ID because no title was read, and each skipped name with the reason
+  (`not a folder`, `not a title ID`, `a system app`, `VitaShell`, `this app`,
+  `SceShell's name`). A root that cannot be opened gets its error and whether
+  the device is there at all:
+
+  ```text
+  overlay app: games: ux0:app: 23 entries: 21 listed, 0 already listed, 2 skipped; skipped: VITASHELL (VitaShell), VJOSET001 (this app)
+  overlay app: games: gro0:app: not opened: 0x80010013 (ENODEV); gro0: is there
+  overlay app: games: 23 rows (the list holds 512): 21 from the folders, the shared PSP row, 1 only in games.ini; safe mode no (ux0: devctl 0x80010016); only in games.ini: PCSG00415 = enabled
+  ```
+
+  These lines are the format from the host tests; no console has logged them
+  yet. A line holds at most 300 bytes, and names past that are counted
+  (`and N more`). A scan's lines go out in one append after it, as the Shell's
+  do for a job (#100), since an append cost the console 12-46 ms in #81's
+  timestamps (`settings/applog.c`).
+- **A title with a choice of its own is listed even when no folder has it**
+  (`VJO_ROW_MISSING`). This covers a card the app cannot read and a deleted
+  game. Its row shows its update's title and icon when `ux0:patch/ID` has an
+  update, which VitaShell reads as a plain file (`refresh.c:92-95`), or else its ID,
+  followed by `(not found: a game card, or not installed)`. It can be turned ON
+  or OFF like any row, and the Shell reads the same rule. A rule the Shell never
+  applies (`NPXS…`, this app) gets no row.
+- **Default ON -> OFF turns every game OFF** (Triangle, or the Default row touched;
+  `vjo_games_disable_all` in `core/games_app.c`). Every `= enabled` rule is
+  removed, including those of games not on the list and the shared PSP row's,
+  so the Shell sees every game OFF. The `= disabled` rules stay. The status
+  names the games it turned OFF too (`Saved: every game is OFF; resume your game
+  to apply. Turned OFF too: …`). Default OFF -> ON turns on every game except
+  those turned OFF one by one, and names them (`Saved: every game is ON but 2; …
+  Still OFF: …`). A game turned ON after that is ON on its own, as before. Each
+  change is logged with the rules it removed or kept (`overlay app: games: Default
+  OFF, 4 own ON choices removed: PCSG00415, …`).
+
+`core/games.c`, which the plugins link, is unchanged: the two new helpers are in
+`core/games_app.c`, linked into the app and the host tests only, so the
+kernel's link (no `--gc-sections`) does not take them in. `games.ini`'s format
+and the order of its rules are unchanged.
+
+Tests (`settings_games`, `games`): a game only on the card, listed with its
+title and icon; a title on both cards listed once; a refused `gro0:app` with
+the titles only in `games.ini` listed, toggled, saved and kept after a restart;
+the skip reasons and the line's limit; a listing that stops, after which no
+bubble description is removed; a full list and safe mode in the log; one append
+per scan; the batch keeping another thread's line apart; disable-all over
+explicit entries, through the Shell's own rule (`vjo_games_enabled_as` on the
+saved file, PSP games and the timeout fallback included), with OFF -> ON
+keeping the games turned OFF; a failed save changing nothing; and the reasons
+matching `vjo_game_is_candidate` on every ID shape it tests. None of this has
+run on a console. The cause of #138's missing row is for the next console run's
+`log.txt` to show.
+
 ## Font measurement
 
 The public `vita2d_pvf_text_width` API measures wrapping, centering and ellipsis.

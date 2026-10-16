@@ -84,14 +84,15 @@ int sceIoWrite(int fd, const void *p, size_t len) { return native((int)write(fd,
 SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
 int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
-{ struct stat st; int rc = stat(p, &st); if (!rc) out->st_mode = st.st_mode; return native(rc); }
+{ struct stat st; int rc = stat(p, &st); if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; } return native(rc); }
+SceUID sceKernelGetThreadId(void) { return 0x40010003; } /* settings/applog.c's batch owner */
 int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
 int sceIoRemove(const char *p) { return native(unlink(p)); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 
 /* No installed games: the Games page is not what these tests drive. */
-int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
-{ (void)out; (void)capacity; *truncated = 0; return 0; }
+int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const VjoGames *rules)
+{ (void)out; (void)capacity; (void)rules; *truncated = 0; return 0; }
 /* No PSP game to register either (settings/psp.c, test_settings_games.c). */
 #include "../../settings/psp.h"
 int vjo_psp_register(VjoInstalledGame *g, char *msg, size_t cap) { (void)g; snprintf(msg, cap, "-"); return -1; }
