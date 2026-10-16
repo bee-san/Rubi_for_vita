@@ -323,7 +323,10 @@ static int analyse(Edit *x, VjoTaiReport *r)
         int o = line_ours(x->t, &l);
         if (o == O_KERNEL && x->kernel_keep < 0 && canonical(x->t, &l, VJO_TAI_KERNEL) && sim_loads(&k))
             x->kernel_keep = (long)l.start;
-        if (o == O_SHELL && x->shell_keep < 0 && canonical(x->t, &l, VJO_TAI_SHELL) && sim_loads(&m))
+        /* the Shell line is kept only in a section named main, as the kernel line is: *ALL also matches
+         * main, but a Shell line there is another section's, so it is commented out like any misplaced one */
+        if (o == O_SHELL && x->shell_keep < 0 && canonical(x->t, &l, VJO_TAI_SHELL) && sim_loads(&m) && have_section &&
+            name_is(x->t, &section, "main"))
             x->shell_keep = (long)l.start;
         /* lines mode: a game registered before (a canonical worker line in its section) is kept */
         if (o == O_WORKER && x->mode == VJO_TAI_WORKER_LINES && x->op == VJO_TAI_INSTALL && have_section &&

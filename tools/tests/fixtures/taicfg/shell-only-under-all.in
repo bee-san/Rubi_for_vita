@@ -1,0 +1,6 @@
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+*main
+ur0:tai/henkaku.suprx
+*ALL
+ur0:tai/VitaJPOverlay_Shell.suprx

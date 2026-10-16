@@ -108,6 +108,11 @@ def fixtures():
     f["mainline-comments"] = ("*KERNEL\n# Mainline OCR: " + K + "\n# keep ur0:tai/VitaJPOverlay_Kernel.skprx in mind\n"
                               "*main\n# Mainline OCR: " + T + "\nur0:tai/henkaku.suprx\n")
     f["only-ours"] = "*KERNEL\n" + K + "\n*main\n" + S + "\n"
+    # our Shell line under *ALL (it loads into SceShell too): commented out, and the one under *main kept;
+    # with none under *main, one goes right after the first *main header
+    f["shell-under-all"] = ("*KERNEL\n" + K + "\n*ALL\n" + S + "\nur0:tai/every.suprx\n*main\n" + S +
+                            "\nur0:tai/henkaku.suprx\n")
+    f["shell-only-under-all"] = "*KERNEL\n" + K + "\n*main\nur0:tai/henkaku.suprx\n*ALL\n" + S + "\n"
     f["no-kernel-main"] = "# just a comment\n*NPXS10015\nur0:tai/henkaku.suprx\n"
     f["japanese"] = STOCK_UX0 + "# 日本語のコメント：CLANNAD\n"
     # 4 KiB: an input of exactly 4,096 B; one whose install result is exactly 4,096 B before the pad;

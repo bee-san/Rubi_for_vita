@@ -334,7 +334,9 @@ class _Edit:
             o = _line_ours(t, line)
             if o == O_KERNEL and self.kernel_keep < 0 and _content(t, line) == KERNEL.encode() and k.loads():
                 self.kernel_keep = line.start
-            if o == O_SHELL and self.shell_keep < 0 and _content(t, line) == SHELL.encode() and m.loads():
+            # kept only in a section named main (core/taicfg.c): *ALL matches main too, but is another section
+            if (o == O_SHELL and self.shell_keep < 0 and _content(t, line) == SHELL.encode() and m.loads() and
+                    section is not None and _name(t, section) == b"main"):
                 self.shell_keep = line.start
             if (o == O_WORKER and self.mode == WORKER_LINES and self.op == INSTALL and section is not None and
                     _content(t, line) == OCR.encode() and is_game(_name(t, section))):
@@ -619,10 +621,15 @@ def edit(raw, op=INSTALL, mode=WORKER_KERNEL, titles=()):
 
 def add_kernel_plugins(raw, plugins):
     """Another kernel plugin (install_ftp.sh --add-kernel-plugin) under the first *KERNEL header, once:
-    the result, which loads the same for every other title."""
+    the result, which loads the same for every other title, keeps KERNEL's other plugins in their order,
+    and gets the editor's 4 KiB pad."""
     t = raw
+    added = []
     for plugin in plugins:
         path = plugin.encode()
+        if len(path) >= LINE_MAX:
+            raise Refused(E_LONG_LINE, 0, "The other kernel plugin's path is 256 bytes or longer: taiHEN would stop "
+                          "reading the file there.")
         k = _Sim(b"KERNEL")
         present, header = False, None
         for line in lines_of(t):
@@ -637,9 +644,12 @@ def add_kernel_plugins(raw, plugins):
         nl, at = _line_end(t), header.next
         lead = nl if header.next == header.start + header.raw else b""
         t = t[:at] + lead + path + nl + t[at:]
-    before = [p for p in taihen_parse(raw, b"KERNEL")]
-    after = [p for p in taihen_parse(t, b"KERNEL")]
-    if sorted(before + [p.encode() for p in plugins if p.encode() not in before]) != sorted(after):
+        added.append(path)
+    if t != raw and len(t) % 4096 == 0:  # taiHEN's buffer needs room for the C string's end (the editor's pad)
+        t += _line_end(t)
+    before, after = list(taihen_parse(raw, b"KERNEL")), list(taihen_parse(t, b"KERNEL"))
+    if ([p for p in after if p not in added] != before or sorted(p for p in after if p in added) != sorted(added)
+            or taihen_parse(raw, b"main") != taihen_parse(t, b"main")):
         raise Refused(E_CHECK, 0, "Adding the other kernel plugins would change what taiHEN loads.")
     return t
 

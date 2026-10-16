@@ -159,6 +159,17 @@ class Rules(unittest.TestCase):
         self.assertEqual(patch(extra, extra_kernel=["ur0:tai/NoPowerLimits.skprx"]), extra)
         self.assertNotIn(KERNEL.encode(), patch(extra, uninstall=True))
         self.assertIn(b"NoPowerLimits", patch(extra, uninstall=True))  # another plugin stays
+        # --add-kernel-plugin: a path of 256 bytes or more is refused; a result of 4,096 B gets the pad
+        with self.assertRaises(Refused):
+            patch(STOCK, extra_kernel=["ur0:tai/" + "p" * 242 + ".skprx"])  # 256 bytes
+        self.assertIn(b"p" * 241, patch(STOCK, extra_kernel=["ur0:tai/" + "p" * 241 + ".skprx"]))  # 255
+        raw = STOCK
+        while 4096 - len(edit(raw)[0]) > 200:
+            raw += b"# filler\n"
+        name = "ur0:tai/" + "q" * (4096 - len(edit(raw)[0]) - len("ur0:tai/.skprx\n")) + ".skprx"
+        padded = patch(raw, extra_kernel=[name])
+        self.assertEqual(len(padded), 4097)
+        self.assertTrue(padded.endswith(b"\n\n"))
 
     def test_notes(self):
         added = edit(b"*NPXS10015\nur0:tai/henkaku.suprx\n")[0]
