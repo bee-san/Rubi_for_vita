@@ -827,6 +827,7 @@ static void reset(void)
     short_logged = 0; short_tiers = 0;
 #endif
     cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
+    strip_waiting = 0;
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
@@ -4363,6 +4364,56 @@ static void test_subtitles_on_during_a_closed_overlays_lookup_or_refresh(void)
     TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"),
                 "after 8 s: strip '%s' (kind %d, busy %d), job_running %d; the region shows 犬猫", g_view.strip_text,
                 g_view.strip_kind, g_view.strip_busy, job_running);
+    subtitles = 0;
+    mem_free();
+    /* Reopened during that refresh, on yet another screen: the opening's own
+     * recognition (on_refresh_done) brings the strip its sentence too, so the
+     * strip waits for nothing more. */
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    fake_recognized_text = "犬猫";
+    next_scene(9);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    close_overlay();
+    control_tick(VJO_EV_SUBTITLE); /* Select + R */
+    TEST_CHECK(strip_waiting && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"));
+    next_scene(10);
+    control_tick(VJO_EV_TRIGGER); /* L + R */
+    TEST_ASSERT(ov == OV_OPEN_OLD_JOB && job_running && job_refresh);
+    finish_by_tick(); /* the refresh ends: the opening's job starts */
+    TEST_ASSERT(job_running && !job_refresh && !job_cursor_only);
+    TEST_CHECK(!strip_waiting && g_view.strip_busy);
+    finish_by_tick();
+    check_shown("犬猫", "dog", 0);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"));
+    close_overlay();
+    subtitles = 0;
+    mem_free();
+    /* Subtitles already on when the overlay opened: the strip waits for
+     * nothing, so a lookup the close dropped leaves its sentence and starts no
+     * job of the strip's; Auto reads the new screen once it settles. */
+    cursor_setup();
+    subtitles = 1;
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_ASSERT(job_running && job_cursor_only);
+    next_scene(8);
+    state.stable = 0; /* the next line types out */
+    fake_recognized_text = "犬";
+    unsigned inferences = vocr_allocs;
+    close_overlay(); /* Cancel */
+    finish_by_tick();
+    TEST_CHECK_(!job_running && vocr_allocs == inferences && !g_view.strip_busy && !strcmp(g_view.strip_text, "猫犬鳥"),
+                "after the dropped lookup: job_running %d, jobs %u, strip '%s' (busy %d)", job_running,
+                vocr_allocs - inferences, g_view.strip_text, g_view.strip_busy);
+    test_now += SUBTITLE_GAP_US;
+    state.stable = 1; control_tick(VJO_EV_REGION_STABLE); /* it settles */
+    TEST_ASSERT(job_running && !job_cursor_only);
+    finish_by_tick();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬"));
     subtitles = 0;
     mem_free();
 }

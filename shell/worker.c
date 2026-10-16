@@ -123,6 +123,12 @@ static uint32_t job_generation;
 enum { OV_CLOSED, OV_OPEN, OV_OPEN_OLD_JOB };
 static int ov = OV_CLOSED;
 static int subtitles; /* written by set_subtitles only */
+/* The strip says "Recognizing…" for the lookup or refresh in progress, which
+ * brings it nothing (subtitles turned on after the close that dropped it): its
+ * end gives the strip the screen's sentence, or a job of its own (#95 item 3a;
+ * strip_after_wait). Set by subtitles_show only while such a job runs, so that
+ * job's end always clears it. */
+static int strip_waiting;
 static int input_block_error;
 static int stable_pending;
 /* The open overlay keeps the text it shows (#81 request 4): a lookup, a page
@@ -1838,6 +1844,20 @@ static void strip_show_result(const VjoOverlayData *d)
     vjo_arena_release(&scratch, mark);
 }
 
+/* The lookup or refresh that just ended was what the subtitle strip waited for
+ * (strip_waiting): it brought the strip nothing, so the strip gets the screen's
+ * sentence now, or a job of its own (subtitles_show), as after the self-test's
+ * job. An OCR job started at that end brings its own result (on_job_done). */
+static void strip_after_wait(void)
+{
+    VjoState st = {.size = sizeof(st)};
+    if (!strip_waiting)
+        return;
+    strip_waiting = 0;
+    if (subtitles && (!job_running || job_cursor_only) && vjoGetState(&st) >= 0)
+        subtitles_show(&st);
+}
+
 /* The overlay was opened while the job ran: is the result for the screen
  * shown now, with its lookup? Else a new job. Returns 1 if one started. A
  * lookup (on_cursor_done) has a result for an earlier screen's text when it
@@ -1867,7 +1887,6 @@ static int restart_old_job(int has_lookup)
  * request 4). */
 static void on_cursor_done(void)
 {
-    VjoState st = {.size = sizeof(st)};
     job_running = job_done = job_text_ready = 0;
     int current = job_generation == game_generation &&
                 local_text_valid && job_text_generation == local_text_generation &&
@@ -1899,12 +1918,10 @@ static void on_cursor_done(void)
         if (newer || (current && cursor_waiting)) start_cursor_job();
         else cursor_waiting = 0;
     }
-    /* A dropped lookup brings the subtitle strip nothing, though Select + R
-     * after the close made it wait for the job in progress (subtitles_show):
-     * the strip gets the screen's sentence now, or a job of its own (#95
-     * item 3a), as after the self-test's job. */
-    if (subtitles && !valid && vjoGetState(&st) >= 0)
-        subtitles_show(&st);
+    /* Select + R after the close that dropped this lookup: the strip waited
+     * for it (#95 item 3a: before, "Recognizing…" with no job until the next
+     * settled screen). */
+    strip_after_wait();
 }
 
 /* VJO_E_SCREEN_CHANGED: the screen changed under every read of a job (the
@@ -1935,11 +1952,11 @@ static void note_screen_changed(const char *what)
  * looked up as on opening. A cancelled refresh (a lookup went first) is asked
  * again; one whose screen changed under it follows note_screen_changed's pace;
  * a failed one backs off the next refresh (refresh_backoff), quietly, and never
- * Auto's job after the close (#95 item 1). One the close dropped gives the
- * subtitle strip the screen's sentence (#95 item 3a, as on_cursor_done). */
+ * Auto's job after the close (#95 item 1). One the subtitle strip waited for
+ * (Select + R after the close that dropped it) gives the strip the screen's
+ * sentence (#95 item 3a, strip_after_wait). */
 static void on_refresh_done(void)
 {
-    VjoState st = {.size = sizeof(st)};
     const char *what = "kept";
     int rc, cancelled = job_cancelled, replaced = 0;
     size_t mark = vjo_arena_mark(&scratch);
@@ -1954,6 +1971,7 @@ static void on_refresh_done(void)
          * that opening waits for a recognition of its own. */
         ov = OV_OPEN;
         start_job("result was for an earlier screen", 1);
+        strip_after_wait(); /* that job's result is the strip's too */
         return;
     }
     /* A game, region or pipeline change cancels a refresh (and retires the text). */
@@ -2024,10 +2042,9 @@ static void on_refresh_done(void)
     }
     if (replaced || (cursor_waiting && ov != OV_CLOSED))
         start_cursor_job(); /* the new text's first word, or a lookup that waited */
-    /* Dropped by the close: it brings the strip nothing, though Select + R
-     * meanwhile made it wait for the job in progress (subtitles_show). */
-    if (subtitles && ov == OV_CLOSED && vjoGetState(&st) >= 0)
-        subtitles_show(&st);
+    /* Select + R after the close that dropped this refresh: the strip waited
+     * for it (#95 item 3a). */
+    strip_after_wait();
 }
 
 /* The self-test's job ended (selftest_job_due): it showed nothing. Done, or
@@ -2189,8 +2206,8 @@ static void on_job_text(void)
  * refresh's, whose text the strip then shows, on_refresh_done), never a job of
  * the strip's that would retire it (audit-overlay-first-ocr-b RB1); else
  * "Recognizing…" and a job (a running one brings its result: on_job_done; a
- * lookup, a refresh or the self-test's job brings none, so their ends call
- * this again: #95 item 3a). */
+ * lookup or a refresh brings none, so its end calls this again,
+ * strip_after_wait: #95 item 3a; the self-test's job's end does too). */
 static void subtitles_show(const VjoState *st)
 {
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
@@ -2210,6 +2227,9 @@ static void subtitles_show(const VjoState *st)
         return;
     }
     vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+    /* A lookup or a refresh in progress brings the strip nothing: its end
+     * does (strip_after_wait). Another job brings its result (on_job_done). */
+    strip_waiting = job_running && (job_cursor_only || job_refresh);
     start_job("subtitles on", want_lookup()); /* if one runs, its result comes */
 }
 
