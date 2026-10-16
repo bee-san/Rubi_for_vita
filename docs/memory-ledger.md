@@ -28,7 +28,7 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   game                                131,072    8,720,384    8,720,384            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (37,964->40,960 + 77,584->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (99,276->102,400 + 69,860->73,728)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (99,196->102,400 + 69,860->73,728)
       VitaJPOverlay_OCR          94,208 B of     94,208 B declared (77,004->77,824 + 14,160->16,384)
 ```
 
