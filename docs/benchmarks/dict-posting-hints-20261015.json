@@ -16,12 +16,12 @@
      "with_entry": 50,
      "opened_files": 50,
      "host_us": {
-      "mean": 33.828,
-      "p50": 29.01,
-      "p95": 61.781,
-      "max": 74.06
+      "mean": 33.417,
+      "p50": 28.63,
+      "p95": 61.59,
+      "max": 72.94
      },
-     "host_lookups_per_s": 29561.6,
+     "host_lookups_per_s": 29925.0,
      "console_ms": {
       "mean": 45.1,
       "p50": 40.5,
@@ -144,10 +144,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 33.8,
-       "p50": 29.0,
-       "p95": 61.8,
-       "max": 74.1
+       "mean": 33.4,
+       "p50": 28.6,
+       "p95": 61.6,
+       "max": 72.9
       },
       "console_ms": {
        "mean": 45.1,
@@ -168,12 +168,12 @@
      "with_entry": 50,
      "opened_files": 50,
      "host_us": {
-      "mean": 37.087,
-      "p50": 32.69,
-      "p95": 64.07,
-      "max": 73.451
+      "mean": 38.914,
+      "p50": 34.6,
+      "p95": 65.62,
+      "max": 78.911
      },
-     "host_lookups_per_s": 26963.3,
+     "host_lookups_per_s": 25697.5,
      "console_ms": {
       "mean": 53.3,
       "p50": 51.7,
@@ -296,10 +296,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 37.1,
-       "p50": 32.7,
-       "p95": 64.1,
-       "max": 73.5
+       "mean": 38.9,
+       "p50": 34.6,
+       "p95": 65.6,
+       "max": 78.9
       },
       "console_ms": {
        "mean": 53.3,
@@ -323,12 +323,12 @@
      "with_entry": 625,
      "opened_files": 629,
      "host_us": {
-      "mean": 33.87,
-      "p50": 31.3,
-      "p95": 51.24,
-      "max": 84.04
+      "mean": 34.113,
+      "p50": 31.6,
+      "p95": 51.22,
+      "max": 84.961
      },
-     "host_lookups_per_s": 29524.8,
+     "host_lookups_per_s": 29314.4,
      "console_ms": {
       "mean": 42.4,
       "p50": 40.5,
@@ -451,10 +451,10 @@
        "max": 23
       },
       "host_us": {
-       "mean": 426.1,
-       "p50": 458.4,
-       "p95": 675.9,
-       "max": 750.8
+       "mean": 429.1,
+       "p50": 464.1,
+       "p95": 675.7,
+       "max": 763.2
       },
       "console_ms": {
        "mean": 533.9,
@@ -475,12 +475,12 @@
      "with_entry": 625,
      "opened_files": 629,
      "host_us": {
-      "mean": 39.761,
-      "p50": 37.58,
-      "p95": 60.4,
-      "max": 86.81
+      "mean": 40.098,
+      "p50": 38.03,
+      "p95": 60.37,
+      "max": 88.03
      },
-     "host_lookups_per_s": 25150.6,
+     "host_lookups_per_s": 24938.7,
      "console_ms": {
       "mean": 54.1,
       "p50": 48.0,
@@ -603,10 +603,10 @@
        "max": 23
       },
       "host_us": {
-       "mean": 500.2,
-       "p50": 519.8,
-       "p95": 840.1,
-       "max": 899.4
+       "mean": 504.4,
+       "p50": 521.6,
+       "p95": 862.2,
+       "max": 894.0
       },
       "console_ms": {
        "mean": 680.2,
@@ -630,12 +630,12 @@
      "with_entry": 1309,
      "opened_files": 1321,
      "host_us": {
-      "mean": 34.07,
-      "p50": 31.5,
-      "p95": 52.38,
-      "max": 84.42
+      "mean": 33.755,
+      "p50": 31.26,
+      "p95": 51.2,
+      "max": 84.601
      },
-     "host_lookups_per_s": 29351.4,
+     "host_lookups_per_s": 29625.0,
      "console_ms": {
       "mean": 42.7,
       "p50": 40.5,
@@ -758,10 +758,10 @@
        "max": 43
       },
       "host_us": {
-       "mean": 900.1,
-       "p50": 933.3,
-       "p95": 1373.2,
-       "max": 1379.9
+       "mean": 891.8,
+       "p50": 920.8,
+       "p95": 1358.3,
+       "max": 1370.8
       },
       "console_ms": {
        "mean": 1127.1,
@@ -782,12 +782,12 @@
      "with_entry": 1309,
      "opened_files": 1321,
      "host_us": {
-      "mean": 40.628,
-      "p50": 38.35,
-      "p95": 61.55,
-      "max": 114.68
+      "mean": 40.619,
+      "p50": 38.341,
+      "p95": 61.72,
+      "max": 110.97
      },
-     "host_lookups_per_s": 24613.4,
+     "host_lookups_per_s": 24619.2,
      "console_ms": {
       "mean": 56.9,
       "p50": 51.7,
@@ -910,10 +910,10 @@
        "max": 43
       },
       "host_us": {
-       "mean": 1073.4,
-       "p50": 1084.1,
-       "p95": 1661.1,
-       "max": 1684.8
+       "mean": 1073.1,
+       "p50": 1086.8,
+       "p95": 1656.8,
+       "max": 1689.6
       },
       "console_ms": {
        "mean": 1502.1,
@@ -939,12 +939,12 @@
      "with_entry": 499,
      "opened_files": 500,
      "host_us": {
-      "mean": 33.496,
-      "p50": 28.59,
-      "p95": 57.12,
-      "max": 91.7
+      "mean": 33.254,
+      "p50": 28.39,
+      "p95": 55.95,
+      "max": 92.111
      },
-     "host_lookups_per_s": 29854.7,
+     "host_lookups_per_s": 30071.5,
      "console_ms": {
       "mean": 42.7,
       "p50": 40.5,
@@ -1067,10 +1067,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 33.5,
-       "p50": 28.6,
-       "p95": 57.1,
-       "max": 91.7
+       "mean": 33.3,
+       "p50": 28.4,
+       "p95": 56.0,
+       "max": 92.1
       },
       "console_ms": {
        "mean": 42.7,
@@ -1091,12 +1091,12 @@
      "with_entry": 499,
      "opened_files": 500,
      "host_us": {
-      "mean": 39.122,
-      "p50": 34.93,
-      "p95": 65.41,
-      "max": 97.81
+      "mean": 39.873,
+      "p50": 35.57,
+      "p95": 65.62,
+      "max": 98.68
      },
-     "host_lookups_per_s": 25560.8,
+     "host_lookups_per_s": 25079.4,
      "console_ms": {
       "mean": 51.2,
       "p50": 48.0,
@@ -1219,10 +1219,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 39.1,
-       "p50": 34.9,
-       "p95": 65.4,
-       "max": 97.8
+       "mean": 39.9,
+       "p50": 35.6,
+       "p95": 65.6,
+       "max": 98.7
       },
       "console_ms": {
        "mean": 51.2,
@@ -1246,12 +1246,12 @@
      "with_entry": 4984,
      "opened_files": 5005,
      "host_us": {
-      "mean": 36.287,
-      "p50": 32.43,
-      "p95": 59.54,
-      "max": 113.91
+      "mean": 35.871,
+      "p50": 32.1,
+      "p95": 58.96,
+      "max": 113.61
      },
-     "host_lookups_per_s": 27558.0,
+     "host_lookups_per_s": 27877.6,
      "console_ms": {
       "mean": 41.8,
       "p50": 40.5,
@@ -1374,10 +1374,10 @@
        "max": 180
       },
       "host_us": {
-       "mean": 363.2,
-       "p50": 234.8,
-       "p95": 997.5,
-       "max": 7422.3
+       "mean": 359.1,
+       "p50": 231.6,
+       "p95": 973.5,
+       "max": 7440.7
       },
       "console_ms": {
        "mean": 418.9,
@@ -1398,12 +1398,12 @@
      "with_entry": 4984,
      "opened_files": 5005,
      "host_us": {
-      "mean": 42.789,
-      "p50": 39.43,
-      "p95": 68.74,
-      "max": 119.06
+      "mean": 41.569,
+      "p50": 38.34,
+      "p95": 66.361,
+      "max": 112.24
      },
-     "host_lookups_per_s": 23370.6,
+     "host_lookups_per_s": 24056.7,
      "console_ms": {
       "mean": 53.2,
       "p50": 48.0,
@@ -1526,10 +1526,10 @@
        "max": 180
       },
       "host_us": {
-       "mean": 428.3,
-       "p50": 278.7,
-       "p95": 1153.9,
-       "max": 8813.8
+       "mean": 416.1,
+       "p50": 271.2,
+       "p95": 1123.1,
+       "max": 8382.0
       },
       "console_ms": {
        "mean": 532.2,
@@ -1553,12 +1553,12 @@
      "with_entry": 10792,
      "opened_files": 10905,
      "host_us": {
-      "mean": 36.691,
-      "p50": 33.01,
-      "p95": 59.67,
-      "max": 117.93
+      "mean": 36.074,
+      "p50": 32.39,
+      "p95": 59.49,
+      "max": 117.77
      },
-     "host_lookups_per_s": 27254.3,
+     "host_lookups_per_s": 27721.0,
      "console_ms": {
       "mean": 42.1,
       "p50": 40.5,
@@ -1681,10 +1681,10 @@
        "max": 388
       },
       "host_us": {
-       "mean": 800.2,
-       "p50": 532.8,
-       "p95": 2019.7,
-       "max": 16238.7
+       "mean": 786.8,
+       "p50": 517.3,
+       "p95": 2021.5,
+       "max": 16093.9
       },
       "console_ms": {
        "mean": 917.9,
@@ -1705,12 +1705,12 @@
      "with_entry": 10792,
      "opened_files": 10905,
      "host_us": {
-      "mean": 43.191,
-      "p50": 39.85,
-      "p95": 69.18,
-      "max": 124.54
+      "mean": 42.436,
+      "p50": 39.19,
+      "p95": 67.45,
+      "max": 124.261
      },
-     "host_lookups_per_s": 23152.8,
+     "host_lookups_per_s": 23565.1,
      "console_ms": {
       "mean": 55.7,
       "p50": 51.7,
@@ -1833,10 +1833,10 @@
        "max": 388
       },
       "host_us": {
-       "mean": 942.0,
-       "p50": 646.7,
-       "p95": 2472.3,
-       "max": 19003.4
+       "mean": 925.5,
+       "p50": 634.6,
+       "p95": 2392.4,
+       "max": 18412.1
       },
       "console_ms": {
        "mean": 1214.5,
@@ -1862,12 +1862,12 @@
      "with_entry": 500,
      "opened_files": 500,
      "host_us": {
-      "mean": 36.027,
-      "p50": 30.65,
-      "p95": 62.65,
-      "max": 80.94
+      "mean": 35.62,
+      "p50": 30.35,
+      "p95": 62.121,
+      "max": 77.36
      },
-     "host_lookups_per_s": 27756.9,
+     "host_lookups_per_s": 28074.0,
      "console_ms": {
       "mean": 42.4,
       "p50": 40.5,
@@ -1990,10 +1990,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 36.0,
-       "p50": 30.6,
-       "p95": 62.6,
-       "max": 80.9
+       "mean": 35.6,
+       "p50": 30.4,
+       "p95": 62.1,
+       "max": 77.4
       },
       "console_ms": {
        "mean": 42.4,
@@ -2014,12 +2014,12 @@
      "with_entry": 500,
      "opened_files": 500,
      "host_us": {
-      "mean": 39.951,
-      "p50": 35.81,
-      "p95": 66.5,
-      "max": 97.95
+      "mean": 40.21,
+      "p50": 36.43,
+      "p95": 66.98,
+      "max": 97.39
      },
-     "host_lookups_per_s": 25030.8,
+     "host_lookups_per_s": 24869.6,
      "console_ms": {
       "mean": 50.6,
       "p50": 48.0,
@@ -2142,10 +2142,10 @@
        "max": 1
       },
       "host_us": {
-       "mean": 40.0,
-       "p50": 35.8,
-       "p95": 66.5,
-       "max": 98.0
+       "mean": 40.2,
+       "p50": 36.4,
+       "p95": 67.0,
+       "max": 97.4
       },
       "console_ms": {
        "mean": 50.6,
@@ -2169,12 +2169,12 @@
      "with_entry": 5402,
      "opened_files": 5423,
      "host_us": {
-      "mean": 36.716,
-      "p50": 33.22,
-      "p95": 60.52,
-      "max": 107.57
+      "mean": 37.008,
+      "p50": 33.35,
+      "p95": 61.24,
+      "max": 111.81
      },
-     "host_lookups_per_s": 27236.4,
+     "host_lookups_per_s": 27021.3,
      "console_ms": {
       "mean": 41.8,
       "p50": 40.5,
@@ -2297,10 +2297,10 @@
        "max": 62
       },
       "host_us": {
-       "mean": 398.2,
-       "p50": 341.4,
-       "p95": 910.1,
-       "max": 2699.4
+       "mean": 401.4,
+       "p50": 346.9,
+       "p95": 924.8,
+       "max": 2715.7
       },
       "console_ms": {
        "mean": 453.4,
@@ -2321,12 +2321,12 @@
      "with_entry": 5402,
      "opened_files": 5423,
      "host_us": {
-      "mean": 43.278,
-      "p50": 40.03,
-      "p95": 68.6,
-      "max": 116.16
+      "mean": 43.291,
+      "p50": 40.08,
+      "p95": 68.54,
+      "max": 119.94
      },
-     "host_lookups_per_s": 23106.2,
+     "host_lookups_per_s": 23099.7,
      "console_ms": {
       "mean": 53.2,
       "p50": 48.0,
@@ -2449,10 +2449,10 @@
        "max": 62
       },
       "host_us": {
-       "mean": 469.4,
-       "p50": 407.7,
-       "p95": 1048.6,
-       "max": 3091.6
+       "mean": 469.5,
+       "p50": 404.4,
+       "p95": 1061.5,
+       "max": 3088.2
       },
       "console_ms": {
        "mean": 577.0,
@@ -2476,12 +2476,12 @@
      "with_entry": 12058,
      "opened_files": 12188,
      "host_us": {
-      "mean": 38.547,
-      "p50": 35.03,
-      "p95": 62.9,
-      "max": 115.06
+      "mean": 36.627,
+      "p50": 33.25,
+      "p95": 59.58,
+      "max": 109.561
      },
-     "host_lookups_per_s": 25942.7,
+     "host_lookups_per_s": 27302.5,
      "console_ms": {
       "mean": 42.1,
       "p50": 40.5,
@@ -2604,10 +2604,10 @@
        "max": 120
       },
       "host_us": {
-       "mean": 939.6,
-       "p50": 807.2,
-       "p95": 2154.4,
-       "max": 5216.7
+       "mean": 892.8,
+       "p50": 764.7,
+       "p95": 2051.6,
+       "max": 5042.2
       },
       "console_ms": {
        "mean": 1027.4,
@@ -2628,12 +2628,12 @@
      "with_entry": 12058,
      "opened_files": 12188,
      "host_us": {
-      "mean": 44.975,
-      "p50": 41.56,
-      "p95": 72.01,
-      "max": 120.73
+      "mean": 43.294,
+      "p50": 40.05,
+      "p95": 69.3,
+      "max": 116.59
      },
-     "host_lookups_per_s": 22234.6,
+     "host_lookups_per_s": 23097.7,
      "console_ms": {
       "mean": 55.5,
       "p50": 51.7,
@@ -2756,10 +2756,10 @@
        "max": 120
       },
       "host_us": {
-       "mean": 1096.3,
-       "p50": 945.6,
-       "p95": 2522.2,
-       "max": 6038.0
+       "mean": 1055.3,
+       "p50": 916.4,
+       "p95": 2407.3,
+       "max": 5801.5
       },
       "console_ms": {
        "mean": 1353.0,
@@ -2797,14 +2797,14 @@
    "selection_sha256": "6e7e52ce9c3acbe0457002b45076366698737a0d1caceccffb889f50fa79a84e"
   }
  ],
- "before": {
-  "build": "this change's core/local_dict.c on #127 (format 3, usual_spellings); the file has no hints, so it reads as before",
-  "dictionary": "plaintext.vjdict (format 3, plaintext-dicts 6f841ce) with the key filter, sha256 e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b, 143,425,536 B"
- },
  "after": {
   "build": "this change's core/local_dict.c (vjo-dict-bench)",
   "dictionary": "the same file with the posting hints and the key filter (tools/prepare_plaintext.py), sha256 e3ac485e76c39e64ea16633c2e9b735f8bc5b59a88c096617c40873247cf6e19, 143,425,536 B"
  },
  "host": "gcc 11.5 RelWithDebInfo, x86-64, warm OS file cache; 21 rounds, median of 20 timed per lookup; lines normalised as the game worker returns them",
- "reserved": "vita-vn-ocr a540027 eval/manifests/reserved.json 'test' VNs left out of both pools"
+ "reserved": "vita-vn-ocr a540027 eval/manifests/reserved.json 'test' VNs left out of both pools",
+ "before": {
+  "build": "main 9f92bc6's vjo-dict-bench (#127's format 3 reader with #123's key filter)",
+  "dictionary": "plaintext.vjdict (format 3, plaintext-dicts 6f841ce) with the key filter, sha256 e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b, 143,425,536 B"
+ }
 }

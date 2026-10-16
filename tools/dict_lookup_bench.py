@@ -136,8 +136,8 @@ def summarize(queries, rounds):
         "console_ms": stats((q["console_ms"] for q in queries), 1),
         "arena_peak_max": max((q["arena_peak"] for q in queries), default=0),
     }
-    for key in COUNTS:
-        out[key] = stats((q[key] for q in queries), 2)
+    for key in COUNTS:  # a counter an older vjo-dict-bench does not print counts as 0
+        out[key] = stats((q.get(key, 0) for q in queries), 2)
     out["reads_by"] = {k: round(statistics.mean(q["reads_by"][k] for q in queries), 3) for k in KINDS}
     out["bytes_by"] = {k: round(statistics.mean(q["bytes_by"][k] for q in queries), 1) for k in KINDS}
     out["per_screen"] = {

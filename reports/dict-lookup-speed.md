@@ -364,7 +364,7 @@ Raw numbers: [`docs/benchmarks/dict-posting-hints-20261015.json`](../docs/benchm
 - **Heads.** Payload-head reads fall from 2.6-4.1 to 0.2-1.1 per lookup, as 3.5-10.5 postings per
   lookup are ranked from their hints. The worst lookup's reads fall from 23-38 to 20-22, and bytes
   per lookup from 27-34 KiB to 18-21 KiB.
-- **Host CPU.** 29-35 µs at p50 instead of 33-42 µs.
+- **Host CPU.** 28-33 µs at p50 instead of 35-40 µs.
 - **Memory and code.** No RAM is added. The Workspace stays 45,872 B (ARMv7) and 45,968 B (host):
   the hint is passed from the posting read to the ranking, not stored, and the file's hint flag
   sits in a `Dictionary`'s padding. The Shell's text grows inside its pages (Vita build; the PR
