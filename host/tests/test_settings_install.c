@@ -57,6 +57,9 @@ static struct {
     int calls;
 } fault;
 static int unsafe_off, umount_rc, app_readonly, locked, lock_calls;
+/* The app's log.txt lines (settings/applog.c, #149): not this suite's to check. */
+void vjo_log_enable(int on) { (void)on; }
+void vjo_log(const char *fmt, ...) { (void)fmt; }
 static long long free_space[2] = {1LL << 34, 1LL << 34}; /* ux0, ur0 */
 
 static int matches(const char *p) { return fault.pattern && p && strstr(p, fault.pattern); }
