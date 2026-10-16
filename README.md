@@ -112,14 +112,21 @@ Repeat `--title` for more games. Games registered by an earlier install are
 kept, so later updates need no `--title`; with none given and none registered
 yet, as after an install that used `*ALL`, the installer changes nothing and
 says so. A game added later needs `--title` and a reboot. The Overlay app
-shows each game's title ID. For Adrenaline's PSP games add both
-`--title NPXS10028`, the PSP emulator's ID that the overlay uses for them, and
-`--title PSPEMUCFW`, the title ID of the process Adrenaline's own kernel module
-patches; which one taiHEN matches is not checked on a console yet, and a section
-that matches no process loads nothing. A PSP game started from its own bubble
-(Adrenaline Bubble Manager) may run under that bubble's ID instead; with
-`log_file = on` (the installer's default), `log.txt` names each enabled game as
-it starts (`game … started`), and that ID is the one to add. The 0.7.12 archive's own `install-vita.sh` predates `--title`
+shows each game's title ID.
+
+PSP games run in Sony's PSP emulator. That process most likely has the title ID
+of the app that started it, as Adrenaline's and AdrBubbleBooter's own plugins key
+on it (from their sources; not yet seen on a console): `PSPEMUCFW` for Adrenaline
+itself, and the bubble's own ID for a game started from its own LiveArea bubble
+([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
+bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
+`PSPEMU005` or `ULJS00378`. Register the worker for each one: `--title PSPEMUCFW`,
+`--title ULJS00378` (the [Overlay app](#per-game-settings) does this itself when you
+turn a bubble ON). `NPXS10028`, the emulator's own ID, likely matches no process
+(from Adrenaline's and taiHEN's sources; not checked on a console), so it is not
+needed. With `log_file = on` (the installer's default), `log.txt` has a `psp:`
+line for each PSP game as it starts, naming its IDs, its disc ID and the file it
+boots. The 0.7.12 archive's own `install-vita.sh` predates `--title`
 and registers the worker under `*ALL`; use the installer from `main` or a
 later release.
 
@@ -161,7 +168,7 @@ and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` befor
 copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
 `ur0:tai/VitaJPOverlay_OCR.suprx` under a section for each game, such as
-`*PCSG00415` (for Adrenaline `*NPXS10028` and `*PSPEMUCFW`), never under `*ALL`, in the active
+`*PCSG00415` (for Adrenaline `*PSPEMUCFW`, and a bubble's own ID), never under `*ALL`, in the active
 taiHEN config (`ux0:tai/config.txt` if it exists, else `ur0:tai/config.txt`).
 Disable old `VitaJPOverlay_Text.suprx` entries, an `*ALL` worker line and
 duplicate worker registrations, then reboot. Keep unrelated plugins and
@@ -311,9 +318,31 @@ cursor, the entry, its length, the dictionary, file reads and time
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. An unreadable or
 corrupt policy fails closed and reports the problem rather than enabling every
-game. Adrenaline uses one shared policy for its PSP titles. Local OCR also needs
-the game to be registered for the OCR worker at install time (`--title`, see
-[Install](#install)); the settings app does not change the taiHEN configuration.
+game. Local OCR also needs the game to be registered for the OCR worker
+(`--title`, see [Install](#install)).
+
+PSP games have a `PSP` tag. Each Adrenaline bubble is listed under its game's
+title, which the app reads from the `PARAM.SFO` of the ISO, CSO, ZSO or EBOOT.PBP
+it boots. Its icon is the bubble's, which Adrenaline Bubble Manager made from
+the game's. A bubble without its own choice follows the shared row
+**Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and so do
+games started from inside Adrenaline (`PSPEMUCFW`, if it has no choice of its
+own); with none there, the default applies. Turning a bubble or Adrenaline ON
+also registers the OCR worker for it. The app appends a `*<its ID>` section with
+the worker to `ur0:tai/config.txt`, and to `ux0:tai/config.txt` if there is one,
+after keeping a copy as `config.txt.vjo-app-bak`. It never touches anything else
+in the file, never uses `*ALL`, and refuses a configuration that taiHEN would stop
+reading before its end. Restart the Vita afterwards. A PSP game that is ON but
+not registered has a dim tag, and Enter registers it. Each bubble keeps its own
+OCR region, and so does Adrenaline (`PSPEMUCFW`). A region drawn for PSP games before this release,
+under `NPXS10028`, is used only when the Shell cannot tell which app started the
+emulator, so draw it again once. The app writes what
+it found for each bubble to `ux0:data/VitaJPOverlay/psp/<ID>.txt`, the only file
+the Shell reads for it, and logs it to `log.txt`. Reading the bubbles makes the
+app's start and Start slower by a few small file reads per bubble; how much with
+many bubbles is not measured on a console yet. A folder in `ux0:app` that is not
+named like a title ID (nine capital letters and digits) is never registered,
+whatever it holds.
 
 ## Settings and dictionaries
 
@@ -531,7 +560,11 @@ other system titles, should a hand-edited configuration load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace.
-Adrenaline's PSP titles share its Vita process.
+Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
+started from its own bubble runs in a PSP emulator process of its own, under the
+bubble's ID (inferred from AdrBubbleBooter's source). Its `*<bubble ID>` section
+also loads the worker into the bubble's own small starter app when that runs,
+where it stays idle until the app exits.
 
 The kernel transports bounded jobs and text. Game workers cannot
 submit jobs or control input. A job is tied to its game, capture sequence and

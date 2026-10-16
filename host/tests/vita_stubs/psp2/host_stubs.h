@@ -69,5 +69,10 @@ static inline int sceKernelDeleteThread(SceUID uid) { return 0; }
 static inline int sceKernelDeleteMutex(SceUID uid) { return 0; }
 #endif
 static inline int sceKernelDeleteEventFlag(SceUID uid) { return 0; }
+#ifdef VJO_TEST_APPMGR_STUBS
+int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap);
+int sceAppMgrGetNameById(SceUID pid, char *name);
+#else
 static inline int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
+#endif
 #endif

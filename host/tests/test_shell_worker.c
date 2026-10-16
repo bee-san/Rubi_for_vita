@@ -45,7 +45,8 @@ int vjoSetTriggers(int a, int b) { return 0; }
  * stamp read (the Overlay app check). */
 static char start_order[64];
 static void start_step(char c) { size_t n = strlen(start_order); if (n + 1 < sizeof(start_order)) start_order[n] = c, start_order[n + 1] = 0; }
-int vjoSetGameActive(int pid, int mode) { if (mode != VJO_GAME_NONE) start_step('A'); return 0; }
+static int active_mode = -1; /* the last vjoSetGameActive's */
+int vjoSetGameActive(int pid, int mode) { active_mode = mode; if (mode != VJO_GAME_NONE) start_step('A'); return 0; }
 int vjoSetInputBlock(int on) { if (on && fail_input_block) return -123; input_blocked = on; return 0; }
 int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
@@ -258,10 +259,12 @@ int vjo_anki_configure(const VjoConfig *c) { anki_configured++; return c->anki_m
 void vjo_anki_reap(void) { anki_reaps++; }
 void vjo_anki_post_count(void) { anki_counts++; }
 static char anki_game[128], anki_tid[16], anki_model[64];
-void vjo_anki_set_game(const char *tid, const char *name)
+static int anki_psp;
+void vjo_anki_set_game(const char *tid, const char *name, int psp)
 {
     snprintf(anki_game, sizeof(anki_game), "%s", name);
     snprintf(anki_tid, sizeof(anki_tid), "%s", tid);
+    anki_psp = psp;
 }
 void vjo_anki_set_ocr_model(const char *model) { snprintf(anki_model, sizeof(anki_model), "%s", model); }
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size) { snprintf(name, size, "Title of %s", tid); }
@@ -285,9 +288,23 @@ int vjo_capture_jpeg(VjoArena *a, uint32_t f, int q, VjoBuf *b, VjoState *s)
     if (jpeg_encoder_oom) { s->capture_result = 0; return VJO_E_OOM; }
     return VJO_E_SOURCE;
 }
-int vjo_title_id(SceUID pid, char *out, int cap) { return -1; }
-int vjo_title_game_mode(const char *id) { return VJO_GAME; }
-int vjo_game_enabled(const char *id, VjoArena *a) { return game_enabled; }
+/* shell/game.c (its own suite, shell_game): not readable unless a test says. */
+static int identify_rc = -1, enabled_psp = -1;
+static VjoGameId identified;
+int vjo_game_identify(SceUID pid, VjoGameId *out)
+{ /* as shell/game.c: all zero when the title is not readable */
+    if (!identify_rc) *out = identified; else memset(out, 0, sizeof(*out));
+    return identify_rc;
+}
+int vjo_game_enabled(const char *id, int psp, VjoArena *a) { enabled_psp = psp; return game_enabled; }
+static void activate(SceUID pid, const char *tid, int mode)
+{
+    VjoGameId id;
+    memset(&id, 0, sizeof(id));
+    snprintf(id.key, sizeof(id.key), "%s", tid);
+    id.mode = mode;
+    activate_game(pid, &id);
+}
 
 int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 #ifdef VJO_WITH_VOCR
@@ -788,7 +805,7 @@ static void test_game_start_rejects_previous_generation(void)
     on_game_start(); /* a foreground switch need not include GAME_EXIT */
     TEST_CHECK(job_cancelled && cancels == 1 && !cache_ok);
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && pending_pid == 101);
-    activate_game(state.game_pid, "PCSG00202", VJO_GAME);
+    activate(state.game_pid, "PCSG00202", VJO_GAME);
     open_overlay(); /* the kernel has not sampled a new scene ID yet */
     TEST_CHECK(ov == OV_OPEN_OLD_JOB && !g_view.list && !cache_ok);
 
@@ -845,7 +862,7 @@ static void test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_she
     control_tick(VJO_EV_GAME_START);
     TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked && pending_pid == PS_GAME_PID);
     pending_pid = 0;
-    activate_game(PS_GAME_PID, "PCSG00415", VJO_GAME); /* classify_pending's verdict */
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME); /* classify_pending's verdict */
     control_tick(0);
     TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked && game_active());
 
@@ -893,7 +910,7 @@ static void test_close_just_before_ps_leaves_touch_to_shell(void)
     state.game_pid = 0;
     control_tick(VJO_EV_GAME_EXIT);
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && g_view.touch_handback == VJO_TOUCH_LEAVE);
-    activate_game(PS_GAME_PID, "PCSG00415", VJO_GAME);
+    activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
     open_over_the_game();
     control_tick(VJO_EV_TRIGGER); /* L + R closes it in game */
     TEST_CHECK(ov == OV_CLOSED && g_view.touch_handback == VJO_TOUCH_RELEASE);
@@ -1788,9 +1805,70 @@ static void test_disabled_game_retires_work(void)
     TEST_ASSERT(job_running && input_blocked);
     game_enabled = 0;
     on_game_start();
-    activate_game(123, "PCSA00029", VJO_GAME);
+    activate(123, "PCSA00029", VJO_GAME);
     TEST_CHECK(!game_active() && !input_blocked && job_cancelled && !g_view.open);
     job_running = 0;
+    mem_free();
+}
+
+/* A PSP game's launch as shell/game.c identifies it (its own suite checks
+ * how): its key (a bubble's own ID) names the game, the kernel gets its mode
+ * (the emulator's static framebuffer), the PSP fallback policy is asked, and
+ * Anki records the game's disc ID, its name and the psp platform. */
+static void test_psp_launch_uses_its_identity(void)
+{
+    static const struct { const char *key, *disc, *name, *tid; } games[] = {
+        {"ULJS00378", "ULJS00378", "Synthetic PSP Game", "ULJS00378"},
+        {"PSPEMU005", "ULJS00385", "Other Synthetic Game", "ULJS00385"},
+        {"PSPEMU006", "", "", "PSPEMU006"}};
+    for (unsigned i = 0; i < sizeof(games) / sizeof(games[0]); i++) {
+        reset();
+        memset(&identified, 0, sizeof(identified));
+        snprintf(identified.key, sizeof(identified.key), "%s", games[i].key);
+        snprintf(identified.disc, sizeof(identified.disc), "%s", games[i].disc);
+        snprintf(identified.name, sizeof(identified.name), "%s", games[i].name);
+        identified.mode = VJO_GAME_STATIC_FB;
+        identified.psp = 1;
+        identify_rc = 0;
+        active_mode = enabled_psp = -1;
+        state.game_pid = 77;
+        on_game_start();
+        classify_pending();
+        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && enabled_psp == 1, "%s", games[i].key);
+        TEST_CHECK_(!strcmp(title_id, games[i].key) && !strcmp(anki_tid, games[i].tid) && anki_psp == 1, "%s", games[i].key);
+        /* No description: the name comes from the title's app parameters, as for a Vita game. */
+        TEST_CHECK_(!strcmp(anki_game, games[i].name[0] ? games[i].name : "Title of PSPEMU006"), "%s", anki_game);
+        on_game_exit();
+        TEST_CHECK(!game_active() && !anki_tid[0] && !anki_psp);
+    }
+    /* Turned OFF: input passes through and no game is active. */
+    reset();
+    game_enabled = 0;
+    identify_rc = 0;
+    state.game_pid = 78;
+    on_game_start();
+    classify_pending();
+    TEST_CHECK(!game_active() && active_mode == VJO_GAME_NONE && enabled_psp == 1);
+    game_enabled = 1;
+    /* A Vita game keeps its own mode and no PSP fallback; a title not readable
+     * for 3 s is a game named GAME, as before. */
+    reset();
+    memset(&identified, 0, sizeof(identified));
+    memcpy(identified.key, "PCSG00415", 10);
+    identified.mode = VJO_GAME;
+    state.game_pid = 79;
+    on_game_start();
+    classify_pending();
+    TEST_CHECK(active_mode == VJO_GAME && enabled_psp == 0 && !strcmp(title_id, "PCSG00415") && !anki_psp);
+    identify_rc = -1;
+    reset();
+    state.game_pid = 80;
+    on_game_start();
+    classify_pending();
+    TEST_CHECK(pending_pid == 80);
+    test_now += 3100000;
+    classify_pending();
+    TEST_CHECK(pending_pid == 0 && active_mode == VJO_GAME && !strcmp(title_id, "GAME") && enabled_psp == 0);
     mem_free();
 }
 
@@ -3814,7 +3892,7 @@ static void test_config_warnings_are_logged_once_per_change(void)
         open_overlay(); /* re-reads config.ini */
         TEST_CHECK(g_view.n_warnings == 2 && !strcmp(g_view.warnings[1], "unknown setting 'meiki_layout'"));
         close_overlay();
-        activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+        activate(state.game_pid, "PCSG00415", VJO_GAME);
         set_subtitles(1);
         set_subtitles(0);
     }
@@ -3866,7 +3944,7 @@ static int notice_is(const char *shown, const char *text) { return shown && !str
 static void next_game(void)
 {
     on_game_exit();
-    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    activate(state.game_pid, "PCSG00415", VJO_GAME);
 }
 
 /* The installed Overlay app is checked against the plugins' record at each
@@ -3877,7 +3955,7 @@ static void test_overlay_app_mismatch_is_logged_and_said_once(void)
     reset();
     /* #101: the app from before the stamps (its eboot, no vjo_app.txt) beside newer plugins */
     app_files(NOENT, "", 1, 37, STAMP_21);
-    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    activate(state.game_pid, "PCSG00415", VJO_GAME);
     TEST_CHECK(app_logs == 1);
     TEST_CHECK_(strstr(last_app_log, "overlay app MISMATCH: installed '' (0x80010002, app 1), plugins' '"
                        STAMP_21 "' (0x00000025)") != NULL, "%s", last_app_log);
@@ -3959,14 +4037,14 @@ static void test_overlay_app_check_runs_after_the_game_is_active(void)
     reset();
     app_files(37, STAMP_21, 1, 37, STAMP_21);
     start_order[0] = 0;
-    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    activate(state.game_pid, "PCSG00415", VJO_GAME);
     TEST_CHECK_(!strcmp(start_order, "CASS"), "order %s", start_order);
     TEST_CHECK(logged("game PCSG00415 started") && app_logs == 1);
     /* a disabled game: no config load before it is refused, and no stamp read */
     start_order[0] = 0;
     game_enabled = 0;
     on_game_exit();
-    activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+    activate(state.game_pid, "PCSG00415", VJO_GAME);
     TEST_CHECK_(!strchr(start_order, 'S') && !strchr(start_order, 'A'), "order %s", start_order);
     mem_free();
 }
@@ -3994,7 +4072,7 @@ static void test_overlay_app_unknown_is_never_said(void)
         app_files(cases[i].irc, cases[i].installed, cases[i].eboot, cases[i].prc, cases[i].record);
         TEST_CHECK_(vjo_app_state(cases[i].irc, cases[i].installed, cases[i].eboot, cases[i].prc, cases[i].record) ==
                     cases[i].state, "case %u", i);
-        activate_game(state.game_pid, "PCSG00415", VJO_GAME);
+        activate(state.game_pid, "PCSG00415", VJO_GAME);
         TEST_CHECK_(app_logs == 1 && strstr(last_app_log, cases[i].state == VJO_APP_OK ? "overlay app ok: " :
                                             cases[i].state == VJO_APP_MISMATCH ? "overlay app MISMATCH: " :
                                             "overlay app unknown: "), "case %u: %s", i, last_app_log);
@@ -4039,6 +4117,7 @@ TEST_LIST = {
     {"removed_relay_opens_as_local", test_removed_relay_opens_as_local},
     {"input_block_refusal_keeps_overlay_closed", test_input_block_denied},
     {"disabled_game_retires_previous_job", test_disabled_game_retires_work},
+    {"psp_launch_uses_its_identity", test_psp_launch_uses_its_identity},
     {"failed_join_keeps_allocations_for_retry", test_failed_join_keeps_allocations},
     {"anki_mining_enables_cross_and_keeps_the_pipeline", test_anki_mining_enables_cross_in_view},
     {"anki_stop_failure_keeps_worker_memory_for_retry", test_anki_stop_failure_keeps_worker},

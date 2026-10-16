@@ -95,6 +95,9 @@ int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 /* No installed games: the Games page is not what these tests drive. */
 int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated)
 { (void)out; (void)capacity; *truncated = 0; return 0; }
+/* No PSP game to register either (settings/psp.c, test_settings_games.c). */
+#include "../../settings/psp.h"
+int vjo_psp_register(VjoInstalledGame *g, char *msg, size_t cap) { (void)g; snprintf(msg, cap, "-"); return -1; }
 
 /* ---- the scripted controller, touch screen and display ---- */
 typedef struct { unsigned buttons; int touch, x, y; } Input; /* x, y in screen pixels */

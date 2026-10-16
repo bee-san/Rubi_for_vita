@@ -1625,14 +1625,19 @@ static void the_refine_step_carries_its_counts(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
-/* module_start records the game's title: in psp mode a PSP game's jobs refine
- * (Adrenaline's NPXS10028, a PSPEMU* bubble), CLANNAD's do not. */
+/* module_start records whether the game is a PSP game: in psp mode its jobs
+ * refine. The PSP emulator's process (its ScePspemu module, whatever its
+ * title: an Adrenaline bubble named ABCD12345), Adrenaline's NPXS10028, a
+ * PSPEMU* bubble or one named after its disc ID; CLANNAD's do not. */
 static void module_start_sets_the_psp_title(void)
 {
-    static const struct { const char *title; int psp; } games[] = {{"NPXS10028", 1}, {"PSPEMU001", 1}, {"PCSG00415", 0}};
+    static const struct { const char *title; int pspemu, psp; } games[] = {
+        {"NPXS10028", 0, 1}, {"PSPEMU001", 0, 1}, {"ULJS00378", 0, 1}, {"ABCD12345", 1, 1}, {"ABCD12345", 0, 0},
+        {"PCSG00415", 0, 0}};
     for (unsigned i = 0; i < sizeof(games) / sizeof(games[0]); i++) {
         VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
         psp_title = !games[i].psp; /* only module_start can make it right */
+        vjo_test_pspemu = games[i].pspemu;
         strcpy(own_title, games[i].title);
         TEST_CHECK_(!module_start(0, NULL) && thread_creates == 1 && psp_title == games[i].psp, "%s", games[i].title);
         line();
@@ -1642,7 +1647,7 @@ static void module_start_sets_the_psp_title(void)
         TEST_CHECK_((refine_step(&out) != NULL) == games[i].psp, "%s", games[i].title);
         TEST_CHECK(!module_stop(0, NULL));
     }
-    psp_title = 0;
+    psp_title = vjo_test_pspemu = 0;
 }
 
 /* The self-test's fallback stage: the memory check refuses the model on

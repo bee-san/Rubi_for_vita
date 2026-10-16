@@ -499,7 +499,7 @@ static void reset(void)
     TEST_ASSERT(vjo_anki_start() == 0);
     fixture();
     TEST_ASSERT(vjo_anki_configure(&cfg) == 1);
-    vjo_anki_set_game("PCSG00415", "CLANNAD");
+    vjo_anki_set_game("PCSG00415", "CLANNAD", 0);
     vjo_anki_set_ocr_model("VOCR3_H15_w8.vocr");
 }
 
@@ -665,23 +665,27 @@ static void test_a_card_exported_before_says_so(void)
     finish();
 }
 
-/* A PSP game's card says so: Adrenaline's NPXS10028 and its PSPEMU* bubbles (its own
- * PSPEMUCFW, an Adrenaline Bubble Manager bubble), core/games.c's one rule. */
+/* A PSP game's card says so, whatever its ID: the Shell says it is one
+ * (shell/game.c: Adrenaline's NPXS10028, a bubble by its files, a disc ID),
+ * and the card records the game's disc ID when the Overlay app found it. */
 static void test_a_psp_games_card_says_psp(void)
 {
-    static const char *const ids[] = {"NPXS10028", "PSPEMUCFW", "PSPEMU001"};
-    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
-        char id[VJO_QUEUE_ID_SIZE];
+    static const struct { const char *id; int psp; } games[] = {
+        {"NPXS10028", 1}, {"PSPEMUCFW", 1}, {"ULJS00378", 1}, {"ABCD12345", 1}, {"PCSG00415", 0}};
+    for (unsigned i = 0; i < sizeof(games) / sizeof(games[0]); i++) {
+        char id[VJO_QUEUE_ID_SIZE], want[64];
         size_t len;
         const char *json;
         reset();
-        vjo_anki_set_game(ids[i], "planetarian");
+        vjo_anki_set_game(games[i].id, "planetarian", games[i].psp);
         enter(0);
         TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
         only_id(id);
         json = queue_file(id, "json", &len);
         TEST_ASSERT(json != NULL);
-        TEST_CHECK_(strstr(json, "\"platform\":\"psp\"") != NULL, "%s: %s", ids[i], json);
+        snprintf(want, sizeof(want), "\"title_id\":\"%s\",\"platform\":\"%s\"", games[i].id,
+                 games[i].psp ? "psp" : "vita");
+        TEST_CHECK_(strstr(json, want) != NULL, "%s: %s", games[i].id, json);
         finish();
     }
 }
@@ -1322,7 +1326,7 @@ static int restart_step(int argc, char **argv)
         return 2;
     fixture();
     vjo_anki_configure(&cfg);
-    vjo_anki_set_game("PCSG00415", "CLANNAD");
+    vjo_anki_set_game("PCSG00415", "CLANNAD", 0);
     if (strcmp(what, "save") && strcmp(what, "save-other"))
         return 2;
     vjo_anki_post_add(5, !strcmp(what, "save-other"));

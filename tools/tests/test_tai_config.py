@@ -167,5 +167,32 @@ class TaiConfigTests(unittest.TestCase):
             self.assertEqual(worker_sections((folder / "out").read_bytes()), ["NPXS10028", "PCSG00415"])
 
 
+class OverlayAppSections(unittest.TestCase):
+    """The Overlay app appends a commented *TITLEID section for an Adrenaline
+    bubble (core/taicfg.c); the installer keeps it as a registered game."""
+
+    def test_an_app_section_is_registered_and_kept(self):
+        base = "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n*PCSG00415\n" + OCR + "\n"
+        raw = (base + "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
+               "*ULJS00378\n" + OCR + "\n").encode()
+        self.assertEqual(registered(raw.decode().splitlines()), ["PCSG00415", "ULJS00378"])
+        result = patch(raw)
+        self.assertEqual(worker_sections(result), ["PCSG00415", "ULJS00378"])
+        self.assertEqual(patch(result), result)
+        self.assertEqual(worker_sections(patch(raw, titles=["pspemu005"])), ["PCSG00415", "ULJS00378", "PSPEMU005"])
+
+    def test_uninstall_removes_the_app_sections(self):
+        base = "*KERNEL\n" + KERNEL + "\n*main\n" + SHELL + "\n"
+        note = "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)\n"
+        raw = (base + note + "*ULJS00378\n" + OCR + "\n" + note + "*PSPEMU005\n" + OCR + "\nux0:tai/other.suprx\n"
+               + note + "*PSPEMU006\n" + OCR + "\n\n").encode()
+        result = patch(raw, uninstall=True).decode()
+        self.assertNotIn("VitaJPOverlay: the OCR worker", result)
+        self.assertNotIn("*ULJS00378", result)
+        self.assertNotIn("*PSPEMU006", result)
+        self.assertIn("*PSPEMU005\nux0:tai/other.suprx\n", result)  # another plugin keeps its section
+        self.assertEqual(worker_sections(result.encode()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

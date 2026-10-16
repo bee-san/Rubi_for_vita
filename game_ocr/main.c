@@ -38,6 +38,9 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#ifndef VJO_HOST
+#include <taihen.h>
+#endif
 
 #define GAME_RESERVE VJO_GAME_RESERVE
 #define JOIN_US 2000000u
@@ -227,8 +230,9 @@ static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
 static int worker_started, claim_outstanding, blocked, io_error, stat_error;
-/* A PSP game (vjo_game_is_psp: NPXS10028, or a PSPEMU* bubble): the refinement's
- * "psp" mode applies (set by module_start from the title). */
+/* A PSP game: the refinement's "psp" mode applies (set by module_start: the
+ * PSP emulator's main module is in this process, or the title is a PSP one,
+ * vjo_game_is_psp). */
 static int psp_title;
 
 /* VJO_GAME_OCR_OPEN_*: which of the request's two pinned files this job opens;
@@ -1551,6 +1555,21 @@ static int safe_boot(void)
     return vjoBootInfo(&info) == 0 && info.size == sizeof(info) && info.mode == VJO_BOOT_SAFE;
 }
 
+/* This process is Sony's PSP emulator, whatever its title ID (an Adrenaline
+ * bubble's is its own): its main module ScePspemu is loaded, as
+ * AdrBubbleBooter's adrbubblebooter.suprx checks (src/vita/adrbubblebooter/
+ * main.c:57-60). taiHEN loads plugins after a process's modules. */
+#ifdef VJO_HOST
+#define pspemu_process vjo_test_pspemu_process /* host/tests/game_stubs/psp2/kernel/modulemgr.h */
+#else
+static int pspemu_process(void)
+{
+    tai_module_info_t info;
+    info.size = sizeof(info);
+    return IMPORT_READY(taiGetModuleInfo) && taiGetModuleInfo("ScePspemu", &info) >= 0;
+}
+#endif
+
 int _start(SceSize args, void *argp) __attribute__((weak, alias("module_start")));
 int module_start(SceSize args, void *argp)
 {
@@ -1570,7 +1589,7 @@ int module_start(SceSize args, void *argp)
      * treated the same way: nothing is started, nothing stays. Candidate
      * games keep an idle worker until the Shell confirms their games.ini policy. */
     if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
-    psp_title = vjo_game_is_psp(title);
+    psp_title = pspemu_process() || vjo_game_is_psp(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */

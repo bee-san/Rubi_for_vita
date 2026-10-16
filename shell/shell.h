@@ -8,6 +8,7 @@
 
 #include "../core/client.h"
 #include "../core/config.h"
+#include "../core/games.h"
 #include "../core/ledger.h"
 #include "../core/styled.h"
 #include "../include/vjo_api.h"
@@ -172,14 +173,24 @@ void vjo_capture_hold(void);
 void vjo_capture_release(void);
 
 /* game.c */
-/* The process's title ID; 0, or < 0 when not readable (yet). */
-int vjo_title_id(SceUID pid, char *tid, int size);
+/* The foreground process as the overlay keys it (vjo_game_identify). */
+typedef struct {
+    char key[VJO_TITLE_ID_SIZE];  /* games.ini's, region.ini's and title_id's ID: a bubble's own for its game */
+    char disc[VJO_TITLE_ID_SIZE]; /* a PSP game's disc ID, "" when unknown */
+    char name[128];               /* a PSP game's title from the Overlay app's description, "" when none */
+    int mode;                     /* vjoSetGameActive's (enum VjoGameMode): STATIC_FB for the emulator's process only */
+    int psp;                      /* a PSP game (the emulator's process, or described): the PSP policy fallback,
+                                     Anki's platform and name */
+} VjoGameId;
+/* 0 with *g filled, or < 0 (*g all zero) while the process's title ID is not readable (yet).
+ * Reads at most one description (VJO_PSP_INFO_MAX bytes, settings/psp.c writes
+ * it) once per call and lists nothing; logs a PSP launch's IDs. */
+int vjo_game_identify(SceUID pid, VjoGameId *g);
 /* The game's name for Anki's MiscInfo ("" if unknown). */
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size);
-/* vjoSetGameActive's mode (enum VjoGameMode) for a title ID. */
-int vjo_title_game_mode(const char *tid);
-/* Reloaded on game start/resume before capture or input filtering activates. */
-int vjo_game_enabled(const char *tid, VjoArena *scratch);
+/* Reloaded on game start/resume before capture or input filtering activates;
+ * a PSP game with no rule of its own follows the shared PSP row. */
+int vjo_game_enabled(const char *tid, int psp, VjoArena *scratch);
 
 /* anki.c: Anki card mining with an offline file queue, one job at a time */
 /* The mailbox lock only: no thread and no memory until a job is posted. */
@@ -190,8 +201,9 @@ int vjo_anki_stop(void);
 /* Settings for the next job (control thread, after each config load).
  * Returns 1 when enter saves cards (anki_mining is on). */
 int vjo_anki_configure(const VjoConfig *cfg);
-/* The running game's title ID and name for its cards ("" = none; control thread). */
-void vjo_anki_set_game(const char *tid, const char *name);
+/* The running game's title ID and name for its cards ("" = none; control
+ * thread), and whether it is a PSP game (the card's platform). */
+void vjo_anki_set_game(const char *tid, const char *name, int psp);
 /* The OCR model of the last recognition, recorded on its cards (network thread). */
 void vjo_anki_set_ocr_model(const char *model);
 /* Saves entry `entry` of list list_seq to the queue (overlay, enter

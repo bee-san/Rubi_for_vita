@@ -47,6 +47,7 @@ static SceUID box_lock = -1;
 static VjoConfig next_cfg;   /* the control thread's settings, for the next job */
 static char game_name[128];  /* the running game's, for MiscInfo */
 static char game_tid[12];    /* its title ID */
+static int game_psp;         /* a PSP game (the card's platform) */
 static char ocr_model[32];   /* the model of the last recognition ("" for Lens) */
 static int started;          /* vjo_anki_start succeeded; vjo_anki_stop clears it */
 static int job;              /* the running job (JOB_*) */
@@ -201,10 +202,10 @@ static void card_facts(VjoAnkiNote *n, char *misc, size_t cap)
     n->game = keep_str(game_name);
     n->title_id = keep_str(game_tid);
     n->ocr_model = acfg->ocr_backend == VJO_OCR_LENS ? NULL : keep_str(ocr_model);
+    n->platform = !n->title_id ? NULL : game_psp ? "psp" : "vita";
     sceKernelUnlockMutex(box_lock, 1);
     vjo_anki_misc_info(misc, cap, n->game, clock ? &d : NULL); /* no date rather than a wrong one */
     n->misc = misc;
-    n->platform = !n->title_id ? NULL : vjo_game_is_psp(n->title_id) ? "psp" : "vita";
     n->ocr_engine = acfg->ocr_backend == VJO_OCR_LENS ? "lens" : "vocr";
     /* To the minute, as MiscInfo: the same card saved again within it is the same record (its ID). */
     n->unix_time = (int64_t)(unix_ms() / 60000u) * 60;
@@ -455,12 +456,13 @@ static int post_job(int what, unsigned seq, int entry, int *busy)
     return r;
 }
 
-void vjo_anki_set_game(const char *tid, const char *name)
+void vjo_anki_set_game(const char *tid, const char *name, int psp)
 {
     if (box_lock < 0)
         return;
     sceKernelLockMutex(box_lock, 1, NULL);
     sceClibSnprintf(game_tid, sizeof(game_tid), "%s", tid);
+    game_psp = psp;
     sceClibSnprintf(game_name, sizeof(game_name), "%s", name);
     ocr_model[0] = '\0'; /* until this game's first recognition */
     vjo_utf8_trim_partial(game_name);

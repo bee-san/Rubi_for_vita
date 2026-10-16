@@ -1,19 +1,21 @@
 /* Which game the foreground process is: its title ID, and whether that is
  * a game at all. */
 #include <psp2/appmgr.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 
 #include "shell.h"
 #include "../core/games.h"
+#include "../core/pspbubble.h"
 #include "../vita/games_storage.h"
 
-int vjo_game_enabled(const char *tid, VjoArena *scratch)
+int vjo_game_enabled(const char *tid, int psp, VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch);
     VjoGames *games = vjo_arena_alloc(scratch, sizeof(*games));
     int rc = games ? vjo_games_file_load(games, scratch) : -1;
-    int enabled = rc >= 0 && vjo_games_enabled(games, tid);
+    int enabled = rc >= 0 && vjo_games_enabled_as(games, tid, psp);
     if (rc < 0) vjo_log("games.ini unreadable: OCR disabled until settings are repaired");
     else if (rc > 0) vjo_log("games.ini recovered from backup");
     vjo_arena_release(scratch, mark);
@@ -22,11 +24,9 @@ int vjo_game_enabled(const char *tid, VjoArena *scratch)
 
 #include "../core/utf.h"
 
-#define PSP_EMULATOR "NPXS10028" /* where Adrenaline's games run */
-
 int sceKernelGetProcessTitleId(SceUID pid, char *titleid, SceSize len); /* SceProcessmgr, not in headers */
 
-int vjo_title_id(SceUID pid, char *tid, int size)
+static int title_id(SceUID pid, char *tid, int size)
 {
     int ret;
     sceClibMemset(tid, 0, size);
@@ -38,6 +38,51 @@ int vjo_title_id(SceUID pid, char *tid, int size)
     if (ret >= 0 && tid[0])
         return 0;
     return ret < 0 ? ret : -1;
+}
+
+/* The foreground process as the overlay keys it: its title ID (the
+ * process's, else AppMgr parameter 12) or, when that is the PSP emulator's
+ * NPXS10028, AppMgr's name for its app: an Adrenaline bubble's own ID or
+ * Adrenaline's PSPEMUCFW (AdrBubbleBooter-oss src/vita/adrbubblebooter/
+ * main.c:62 reads it the same way). A PSP game is the emulator's process (the
+ * Shell saw NPXS10028 for every Adrenaline launch on a console) or a game the
+ * Overlay app described (a bubble it found by its files: settings/psp.c); its
+ * policy, platform and name are a PSP game's. ID shapes (PSPEMU*, disc IDs)
+ * are not used here: under its own title ID a bubble's ID is its booter's, an
+ * ordinary app that exits. One description of at most VJO_PSP_INFO_MAX bytes
+ * is read; nothing is listed. */
+int vjo_game_identify(SceUID pid, VjoGameId *g)
+{
+    char tid[32], app[32], text[VJO_PSP_INFO_MAX + 1], *title, *path;
+    sceClibMemset(g, 0, sizeof(*g));
+    int rc = title_id(pid, tid, sizeof(tid));
+    if (rc < 0) return rc; /* not readable yet: *g is all zero */
+    if (sceAppMgrGetNameById(pid, app) < 0) app[0] = '\0';
+    app[sizeof(app) - 1] = '\0';
+    int emulator = !sceClibStrcmp(tid, VJO_PSP_EMULATOR);
+    const char *key = emulator && vjo_game_is_candidate(app) ? app : tid;
+    int game = vjo_game_is_candidate(key), n = 0; /* a longer ID is no game's */
+    sceClibMemcpy(g->key, key, sceClibStrnlen(key, sizeof(g->key) - 1));
+    if (game) {
+        sceClibSnprintf(text, sizeof(text), VJO_PSP_INFO_DIR "/%s.txt", g->key);
+        SceUID fd = sceIoOpen(text, SCE_O_RDONLY, 0);
+        n = fd >= 0 ? sceIoRead(fd, text, sizeof(text) - 1) : 0;
+        if (fd >= 0) sceIoClose(fd);
+    }
+    text[n > 0 ? n : 0] = '\0';
+    g->psp = game && (emulator || n > 0);
+    /* The static framebuffer's sampling only for the emulator's own process, as
+     * before: in another app it may read a freed framebuffer (kernel/display.c),
+     * and a bubble's own ID is also its booter's, an ordinary app. */
+    g->mode = !game ? VJO_GAME_NONE : emulator ? VJO_GAME_STATIC_FB : VJO_GAME;
+    if (!g->psp) return 0;
+    vjo_psp_info_lines(text, &title, &path);
+    if (vjo_game_id_valid(text)) sceClibMemcpy(g->disc, text, sizeof(g->disc));
+    sceClibSnprintf(g->name, sizeof(g->name), "%s", title);
+    vjo_utf8_trim_partial(g->name);
+    /* The title last: a line longer than the log's 254 B loses its end, not the path's. */
+    vjo_log("psp: %s %s -> %s; disc %s; boots %s; \"%s\"", tid, app, g->key, g->disc, n > 0 ? path : "?", g->name);
+    return 0;
 }
 
 /* The game's name for MiscInfo: its title (app parameter 9, else 10);
@@ -53,7 +98,7 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
     r9 = sceAppMgrAppParamGetString(pid, 9, p9, sizeof(p9) - 1);
     r10 = sceAppMgrAppParamGetString(pid, 10, p10, sizeof(p10) - 1);
     vjo_log("title %s: param 9 = \"%s\" (0x%08X), param 10 = \"%s\" (0x%08X)", tid, p9, r9, p10, r10);
-    if (!sceClibStrcmp(tid, PSP_EMULATOR))
+    if (!sceClibStrcmp(tid, VJO_PSP_EMULATOR))
         sceClibSnprintf(name, size, "PSP");
     else if (r9 >= 0 && p9[0])
         sceClibSnprintf(name, size, "%s", p9);
@@ -62,17 +107,4 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
     else
         name[0] = '\0';
     vjo_utf8_trim_partial(name);
-}
-
-/* vjoSetGameActive's mode for a title: system apps, SceShell and VitaShell
- * (Select starts its FTP server) are not games. The PSP emulator, where
- * Adrenaline's games run, is one with a static framebuffer; all its games
- * share its title ID, so one region. */
-int vjo_title_game_mode(const char *tid)
-{
-    if (!sceClibStrcmp(tid, PSP_EMULATOR))
-        return VJO_GAME_STATIC_FB;
-    if (!vjo_game_is_candidate(tid))
-        return VJO_GAME_NONE;
-    return VJO_GAME;
 }

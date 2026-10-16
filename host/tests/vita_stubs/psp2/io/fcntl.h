@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 typedef off_t SceOff;
-typedef struct { mode_t st_mode; } SceIoStat;
+typedef struct { mode_t st_mode; SceOff st_size; } SceIoStat;
 typedef struct { SceIoStat d_stat; char d_name[256]; } SceIoDirent;
 #define SCE_O_RDONLY O_RDONLY
 #define SCE_O_WRONLY O_WRONLY

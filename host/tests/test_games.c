@@ -181,20 +181,81 @@ static void test_sfo_bounds(void)
     TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) < 0);
 }
 
-/* One PSP rule for the refinement's psp mode and Anki's platform: Adrenaline's
- * NPXS10028 and its PSPEMU* bubbles (its own PSPEMUCFW, Adrenaline Bubble Manager's). */
+/* Adrenaline Bubble Manager before 01fd277 wrote a bubble's title over its
+ * template without the length (left at 1): the string ends at its NUL inside
+ * the entry's capacity, never beyond it. */
+static void test_sfo_stale_length(void)
+{
+    unsigned char sfo[96] = {0};
+    char out[80];
+    put32(sfo, 0x46535000); put32(sfo + 8, 36); put32(sfo + 12, 48); put32(sfo + 16, 1);
+    sfo[22] = 4; sfo[23] = 2;
+    put32(sfo + 24, 1); put32(sfo + 28, 32); /* length 1, capacity 32 */
+    memcpy(sfo + 36, "TITLE", 6); memcpy(sfo + 48, "うたわれるもの", 21);
+    TEST_ASSERT(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) == 0);
+    TEST_CHECK(!strcmp(out, "うたわれるもの"));
+    put32(sfo + 24, 0); /* no length at all */
+    TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) == 0 && !strcmp(out, "うたわれるもの"));
+    memset(sfo + 48, 'A', 32); /* no NUL in the capacity: refused, though one follows */
+    TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) < 0);
+    put32(sfo + 24, 33); /* a length beyond the capacity */
+    TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) < 0);
+    put32(sfo + 24, 1); put32(sfo + 28, 0); /* no capacity */
+    TEST_CHECK(vjo_sfo_string(sfo, sizeof(sfo), "TITLE", out, sizeof(out)) < 0);
+}
+
+/* PSP games by ID alone: Adrenaline's NPXS10028, its PSPEMU* bubbles (its own
+ * PSPEMUCFW, Adrenaline Bubble Manager's) and bubbles named after their PSP
+ * disc or PSN ID; never a Vita game, system app or homebrew ID. */
 static void test_psp_titles(void)
 {
-    static const struct { const char *id; int psp; } ids[] = {
-        {"NPXS10028", 1}, {"PSPEMUCFW", 1}, {"PSPEMU001", 1}, {"PSPEMU", 1}, {"PCSG00415", 0}, {"PSPEM", 0},
-        {"XPSPEMU01", 0}, {"pspemu001", 0}, {"NPXS10028X", 0}, {"NPXS10027", 0}, {"NPXS10015", 0}, {"", 0}};
-    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+    static const struct { const char *id; int psp, disc; } ids[] = {
+        {"NPXS10028", 1, 0}, {"PSPEMUCFW", 1, 0}, {"PSPEMU001", 1, 0}, {"PSPEMU", 1, 0}, {"PCSG00415", 0, 0},
+        {"PSPEM", 0, 0}, {"XPSPEMU01", 0, 0}, {"pspemu001", 0, 0}, {"NPXS10028X", 0, 0}, {"NPXS10027", 0, 0},
+        {"NPXS10015", 0, 0}, {"", 0, 0},
+        /* UMD and PSN IDs */
+        {"ULJS00378", 1, 1}, {"ULJM05800", 1, 1}, {"UCJS10001", 1, 1}, {"ULUS10041", 1, 1}, {"UCES00001", 1, 1},
+        {"NPJH50443", 1, 1}, {"NPUG80114", 1, 1}, {"NPEZ00001", 1, 1}, {"NPHH00001", 1, 1},
+        /* Vita games, homebrew and near misses */
+        {"VCJS10001", 0, 0}, {"VLJM35001", 0, 0}, {"PCSB00792", 0, 0}, {"NPXS10003", 0, 0}, {"NPNA00094", 0, 0},
+        {"NPJX00001", 0, 0}, {"NPOA00002", 0, 0}, {"NPUZ12345", 1, 1}, {"NPXG00001", 0, 0}, {"NPXH00001", 0, 0}, {"SVMP00001", 0, 0}, {"SLPS01234", 0, 0}, {"UXJS00378", 0, 0}, {"ULJS0037", 0, 0},
+        {"ULJS003780", 0, 0}, {"ULJS0037A", 0, 0}, {"uljs00378", 0, 0}, {"ULjS00378", 0, 0}, {"VITASHELL", 0, 0}};
+    for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
         TEST_CHECK_(vjo_game_is_psp(ids[i].id) == ids[i].psp, "%s", ids[i].id);
+        TEST_CHECK_(vjo_psp_disc_id(ids[i].id) == ids[i].disc, "%s", ids[i].id);
+    }
+}
+
+/* A PSP game with no rule of its own follows the shared PSP row (NPXS10028),
+ * then the default; its own rule wins; a Vita game never looks there. */
+static void test_psp_shared_row(void)
+{
+    VjoGames g;
+    vjo_games_defaults(&g);
+    TEST_CHECK(vjo_games_enabled_as(&g, "ULJS00378", 1) && vjo_games_enabled_as(&g, "PCSG00415", 0));
+    TEST_ASSERT(vjo_games_set(&g, "NPXS10028", 0) == 0);
+    TEST_CHECK(!vjo_games_enabled_as(&g, "ULJS00378", 1) && !vjo_games_enabled_as(&g, "PSPEMUCFW", 1));
+    TEST_CHECK(!vjo_games_enabled_as(&g, "NPXS10028", 1) && !vjo_games_enabled_as(&g, "NPXS10028", 0));
+    TEST_CHECK(vjo_games_enabled_as(&g, "PCSG00415", 0) && vjo_games_enabled_as(&g, "ABCD12345", 0));
+    TEST_ASSERT(vjo_games_set(&g, "ULJS00378", 1) == 0);
+    TEST_CHECK(vjo_games_enabled_as(&g, "ULJS00378", 1) && !vjo_games_enabled_as(&g, "ULJS00385", 1));
+    /* Without the shared row's rule: the default, both ways. */
+    vjo_games_defaults(&g);
+    g.default_enabled = 0;
+    TEST_ASSERT(vjo_games_set(&g, "PSPEMU005", 1) == 0);
+    TEST_CHECK(vjo_games_enabled_as(&g, "PSPEMU005", 1) && !vjo_games_enabled_as(&g, "PSPEMU006", 1));
+    TEST_ASSERT(vjo_games_set(&g, "NPXS10028", 1) == 0);
+    TEST_CHECK(vjo_games_enabled_as(&g, "PSPEMU006", 1) && !vjo_games_enabled_as(&g, "PCSG00415", 0));
+    /* Not a game: never, whatever the flag. */
+    TEST_CHECK(!vjo_games_enabled_as(&g, "NPXS10015", 1) && !vjo_games_enabled_as(&g, "main", 1) &&
+               !vjo_games_enabled_as(&g, "VJOSET001", 1));
 }
 
 TEST_LIST = {
     {"per-title blacklist and selected-only policies", test_policy},
-    {"PSP titles: NPXS10028 and PSPEMU* bubbles", test_psp_titles},
+    {"PSP titles: NPXS10028, PSPEMU* bubbles, disc IDs", test_psp_titles},
+    {"PSP games without a rule follow the shared PSP row", test_psp_shared_row},
+    {"SFO strings with a stale length (older ABM bubbles)", test_sfo_stale_length},
     {"saved choices survive fresh loads", test_save_restart},
     {"partial writes and interrupted rename retain disabled games", test_failed_save_and_backup},
     {"corrupt or unreadable settings disable OCR", test_corruption_disables_input_reservation},

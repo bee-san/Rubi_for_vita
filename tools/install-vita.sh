@@ -2,7 +2,7 @@
 # Installs this release over VitaShell's FTP. Name each game that should have
 # OCR with --title (repeatable): the OCR worker is registered for those games
 # and the games registered before, never under *ALL. For Adrenaline's PSP
-# games add NPXS10028 and PSPEMUCFW (README 'Install'). --check-app only checks,
+# games add PSPEMUCFW and each bubble's own ID (README 'Install'). --check-app only checks,
 # read-only, that the Vita's Overlay app is this package's (the install ends with
 # the same check).
 set -euo pipefail

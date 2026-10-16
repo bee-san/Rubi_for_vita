@@ -715,9 +715,10 @@ That puts its text at about twice PSP's pixel size, like native Vita text, where
 show no gain, and there the box-fit gain measured at 480×272 is gone. #83 recommends deciding by the
 text size the overlay captures and checking it in the test build's A/B logs before the refinement
 becomes a default. So `psp` is the next test build's trial, not a measured gain at the overlay's
-scale, and that build's logs decide whether it stays. The worker decides by its own title (`core/games.c`
-`vjo_game_is_psp`, the rule Anki's platform field uses too): Adrenaline's PSP games run as
-`NPXS10028`, or from a `PSPEMU*` bubble. `on` refines in every game, `off` in none.
+scale, and that build's logs decide whether it stays. The worker decides by its own process: the PSP
+emulator's main module `ScePspemu` is loaded (any Adrenaline bubble, whatever its ID, as AdrBubbleBooter's
+`adrbubblebooter.suprx` checks), or its title is a PSP one (`core/games.c` `vjo_game_is_psp`:
+`NPXS10028`, a `PSPEMU*` ID, a PSP disc ID). `on` refines in every game, `off` in none.
 
 **Logs, and the A/B.** `gstep job refine` per job: kind the mode, arg the lines the boxes became, rc
 0 or the first refusal (that box kept as found), bytes the boxes refined << 16 | those not split for
