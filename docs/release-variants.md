@@ -205,7 +205,8 @@ plugins and RCO are main's bytes, sha256).
   88 → 2,208 B), under the debug build's unchanged 5,632 B, in its 16 KiB stack (#132) [measured:
   `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources;
   a lower bound, without the SDK's own frames]. No new allocation. The normal Shell's text grows
-  91,016 → 91,256 B and its data/bss 69,988 → 70,020 B: the same 167,936 B of pages.
+  91,016 → 91,304 B and its data/bss 69,988 → 70,024 B: the same 167,936 B of pages, 2,904 B of
+  text left in its last page [measured: the Vita builds of main `7fc40df` and this branch].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses and the clock)
