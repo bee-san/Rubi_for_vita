@@ -88,6 +88,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the version beside the title | `settings/main.c` | `Overlay v<version>` in the normal build, `Overlay v<version> debug` in the debug one |
 | the Anki export's lines (its storage errors, each export) | `settings/anki_export.c`, `anki_page.c` | **keep** |
 | the Adrenaline bubbles found and the taiHEN sections the app adds (#124) | `settings/` | **keep** (a few lines per start; a config.txt the app changed must be traceable) |
+| each scan of the Games list (one line per root, one for the rows) and each Default change (#138) | `settings/catalog.c`, `settings/main.c` | **keep** (four lines a scan in one append, at start and on Start; they are what tells a missing game's cause) |
 
 ### Tools, package and the rest
 
