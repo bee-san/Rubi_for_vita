@@ -143,7 +143,9 @@ timed.
 | a job on the press without text | 2 | - | - |
 | a job on the press, the overlay closed before its text (after 0.43 s) | 1 | not timed | not timed |
 
-The two presses without text were in PCSG00940, which had no OCR worker registered (`rc=-117`).
+The two presses without text were in PCSG00940, which had no OCR worker registered (`rc=-117`): in
+test.3's build the worker ran only in games with a taiHEN line; since #148 the kernel loads it into
+every game that is ON ([worker-loading.md](worker-loading.md)).
 
 In the seven timed presses that started a job, waiting for the rows to hold still took 0.6-1.0 s
 (median 0.8 s; one reached the 1 s cap), with 17-29 row changes a pass: rows of the box were still
