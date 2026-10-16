@@ -1981,6 +1981,11 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertIn("left out: 2 jobs of a window whose game the log does not name (it began before the log's first "
                       "line)", self.text(lg))
         self.assertEqual(lg["boost_verdicts"][0]["verdict"], "unclear")
+        # two such windows (the log's first, and a boot's jobs before its first game start) are not one game either
+        lg = a.summarise_log(BOOT22 + auto_job(per_frame(2200), RAISED) * 2 + BOOT22 + auto_job(per_frame(2925)) * 2)
+        self.assertEqual([(r["title"], r["state"]) for r in lg["clock_windows"]], [(None, "on"), (None, "off")])
+        lk = lg["clock_like"][self.H15]
+        self.assertEqual((lk["pooled"], lk["left_out"]["game_unknown"]), (None, 4))
 
     def test_a_windows_position_across_the_rotated_log(self):
         # a window that starts on log.old.txt's last line is log.old.txt's (collect: log.old.txt first, then
