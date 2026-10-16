@@ -425,6 +425,34 @@ class PackageVariants(unittest.TestCase):
         self.assertEqual(a["config.ini"], b["config.ini"])
         self.assertIn(b"anki_mining = on", a["config.ini"])
 
+    def test_a_test_build_of_the_apps_version(self):
+        """A test build's packages (v0.8.0-test.N) are the tree's v0.8.0 build: the release version is the
+        package's (file names, the manifests' version, the payload's version line), the app's own version stays
+        (app_version); a test build of another version, or a malformed suffix, is still refused."""
+        out = self.root / "out-test"
+        self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
+                      "--version", "0.8.0-test.4", "-o", out, "--set", "anki_mining=on")
+        import package_vpk
+        for name, build in (("VitaJPOverlay-0.8.0-test.4.vpk", "normal"),
+                            ("VitaJPOverlay-0.8.0-test.4-debug.vpk", "debug")):
+            self.assertEqual(package_vpk.verify(out / name), [], name)
+            text = zipfile.ZipFile(out / name).read("payload/manifest.txt").decode()
+            self.assertIn("\nversion 0.8.0-test.4\napp_version 0.8.0\n", text)
+            self.assertIn(f"\nvariant {build}\n", text)
+        for name in ("VitaJPOverlay-0.8.0-test.4.zip", "VitaJPOverlay-0.8.0-test.4-debug.zip"):
+            m = json.loads(zipfile.ZipFile(out / name).read("package-manifest.json"))
+            self.assertEqual((m["version"], m["app_version"]), ("0.8.0-test.4", "0.8.0"), name)
+        self.assertEqual([line.split("  ")[1] for line in (out / "SHA256SUMS").read_text().splitlines()],
+                         ["VitaJPOverlay-0.8.0-test.4.vpk", "VitaJPOverlay-0.8.0-test.4-debug.vpk",
+                          "VitaJPOverlay-0.8.0-test.4.zip", "VitaJPOverlay-0.8.0-test.4-debug.zip"])
+        for version in ("0.8.1-test.1", "0.7.12-test.4", "0.8.0-test", "0.8.0-test.0", "0.8.0-test.4x", "0.8.0-rc.1",
+                        "0.8.0.1", "x0.8.0-test.4"):
+            with self.subTest(version=version), self.assertRaises(SystemExit) as caught:
+                self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
+                              "--version", version, "-o", self.root / "out-bad")
+            self.assertIn(f"the Overlay app is v0.8.0, the release v{version}", str(caught.exception))
+            self.assertFalse((self.root / "out-bad").exists())
+
     def test_bases_that_are_not_the_builds_they_are_given_as_are_refused(self):
         out = self.root / "out"
         for normal, debug, why in ((self.base("debug"), self.base("normal"), "the debug build, given as the normal one"),
