@@ -11,10 +11,12 @@ literals of 12 bytes or more its sources compile only into the debug build (`#if
 vjo_dlog() and klog_d() calls, shell/selftest.c, kernel/meminfo.c) and kept code does not use too: none
 may be in the normal build as a string of its own, which catches a file or target built without
 VJO_DEBUG=0, and a debug module must carry at least one of them, which catches one built with
-VJO_DEBUG=0 (the worker has no fixed marker: this is its only check).
+VJO_DEBUG=0 (the worker has no fixed marker: this is its only check). A --sources that is not the tree's
+root (no shell/, kernel/, game_ocr/, settings/ in it), or a part whose sources give none of these literals,
+is a failure: the check would otherwise pass every module vacuously.
 Exits non-zero with every failure listed. tools/package_release.py's base_variant() names a base zip's
-build with classify(), tools/package_variants.py --sources runs check() on the bases, and
-vita/CMakeLists.txt runs this after every build of the four modules.
+build with classify(), tools/package_variants.py --sources runs check() on the bases, tools/e2e_package.py
+on a package's modules, and vita/CMakeLists.txt runs this after every build of the four modules.
 """
 import argparse
 import functools

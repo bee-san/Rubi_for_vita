@@ -204,17 +204,25 @@ The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test packag
 debug`, the build its binaries are.
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
-a checkout of their commit, each module is checked as the Vita build checks it, the worker included),
-an Overlay app of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
+a checkout of their commit, each module is checked as the Vita build checks it, the worker included; a
+`--sources` that is not a checkout, with no `shell/`, `kernel/`, `game_ocr/` and `settings/`, is refused
+before anything is read, as it would check nothing), an Overlay app of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
 there, and writes `SHA256SUMS`. Then run the package check on each zip, as CI does on every pull
-request that changes more than Markdown:
+request that changes more than Markdown, from a checkout of the zips' own commit:
 
 ```sh
 python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0.zip
 python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0-debug.zip
 ```
+
+Before its scenarios it checks the package itself: the manifest's `variant` against all four modules
+(the markers as `package_release.py` reads a base, and each module, the worker too, as the Vita build
+checks it with the checkout's sources: a normal package with the debug build's worker fails), its
+`app_version` against the app (a manifest without one fails), the models and the LMs' attribution
+against the checkout's pins, and that `ux0/data/VitaJPOverlay/ocr/` holds nothing else (the installer
+uploads every `.vocr` and `.vlm` there).
 
 Publish both zips and `SHA256SUMS` in one release, the normal zip first: it is the main download.

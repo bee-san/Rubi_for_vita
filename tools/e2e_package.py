@@ -29,9 +29,11 @@ Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: i
 Scenario C, an older choice migrated: vocr_model = VOCR4_W20_w8.vocr becomes vocr_tier = large,
 dictionary = jpdb becomes local, and the registered game is kept without --title.
 Before them, the package itself: its manifest names the build its modules are (tools/check_variant.py's
-markers, read as tools/package_release.py reads a base) and the Overlay app's version, and its models and
-LMs are this tree's pinned files (tools/prepare_ocr.py): run the e2e from a checkout of the package's
-own commit.
+markers, read as tools/package_release.py reads a base, and all four modules, the worker too, checked as
+the Vita build checks them, against this tree's sources) and the Overlay app's version (a manifest without
+app_version fails: tools/package_release.py records it with the variant), its models and LMs are this
+tree's pinned files (tools/prepare_ocr.py), and ocr/ holds nothing else (the installer uploads every .vocr
+and .vlm there): run the e2e from a checkout of the package's own commit.
 
 CI runs it on both builds' packages (.github/workflows/release.yml, the `package` job). Prints a
 PASS or FAIL line per check and a JSON summary; exits 1 on any failure. After a pass the copies

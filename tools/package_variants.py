@@ -139,7 +139,8 @@ def main():
     parser.add_argument("--set", dest="settings", action="append", type=release.parse_setting, default=[],
                         metavar="KEY=VALUE", help="A config.ini setting of both packages (package_release.py --set)")
     parser.add_argument("--sources", type=Path, help="A checkout of the bases' own commit: their modules are checked "
-                        "as its Vita build checks them (tools/check_variant.py --sources), the worker included")
+                        "as its Vita build checks them (tools/check_variant.py --sources), the worker included; a path "
+                        "that is not one (no shell/, kernel/, game_ocr/, settings/) is refused")
     args = parser.parse_args()
     if args.sources is not None:
         import check_variant as variants
