@@ -11,8 +11,10 @@
  *   at once and drops a due one. The overlay's frame (shell/overlay.cpp
  *   input_overlay: the d-pad, then the stick's step, then its lookup) is replayed
  *   here over a cursor on a text;
- * - vjo_text_read_step (core/text_rows.c), the stick's step along the text: in
- *   reading order across lines, the matched word skipped, never round the ends.
+ * - the stick's step along the text (core/text_rows.c vjo_text_row_key with
+ *   `stick`, the arrows' Left/Right): in reading order across lines, the
+ *   matched word skipped, never round the ends. host/tests/test_cursor_nav.c
+ *   compares the stick's four directions with the d-pad's on layouts.
  *
  * The texts are synthetic. */
 #include <stdio.h>
@@ -284,21 +286,19 @@ static void ov_post(Overlay *o)
 /* One frame as shell/overlay.cpp input_overlay runs it, with its helpers: the
  * stick's state first; an arrow pressed (dpad -1/1: Left/Right, here without
  * the row's wrap) takes the frame (vjo_stick_cursor_step) and posts at once,
- * dropping the stick's due word (post_cursor_now); else the stick's step,
- * without a post; render(0) after a move (vjo_stick_cursor_shown); then the
- * stick's lookup if the cursor rests, posted. Up/down: a single row, nowhere
- * to go. */
+ * dropping the stick's due word (post_cursor_now); else the stick's step, an
+ * arrow's (its left/right a direction), without a post; render(0) after a
+ * move (vjo_stick_cursor_shown); then the stick's lookup if the cursor rests,
+ * posted. Up/down: a single row, nowhere to go. */
 static void ov_frame(Overlay *o, uint8_t lx, uint8_t ly, int dpad, uint64_t dt)
 {
     o->k.now += dt;
-    int vertical = 0, to = o->cursor;
-    int stick = vjo_stick_cursor_step(vjo_stick_cursor(&o->k.s, lx, ly, o->k.now), dpad, &vertical);
-    if (dpad)
-        to = o->cursor + dpad;
-    else if (stick && !vertical)
-        to = o->cursor + stick;
+    int direction = dpad, vertical = 0, to = o->cursor;
+    int stick = vjo_stick_cursor_step(vjo_stick_cursor(&o->k.s, lx, ly, o->k.now), &direction, &vertical);
+    if (direction)
+        to = o->cursor + direction;
     if (to < 0 || to >= o->n)
-        to = o->cursor; /* vjo_text_read_step: never round the ends */
+        to = o->cursor; /* the text's ends: the stick never goes round them */
     if (stick)
         vjo_stick_cursor_moved(&o->k.s, to != o->cursor, o->k.now);
     if (to != o->cursor) {
@@ -576,21 +576,23 @@ static void blocked_then_moving_again_is_no_rest(void)
 }
 
 /* The frame's decision (vjo_stick_cursor_step): an arrow pressed takes it, the
- * stick's step dropped; else the stick's up/down are a row step and its
- * left/right a step along the text. */
+ * stick's step dropped; else the stick's four directions are the arrows': its
+ * up/down a row step (vertical) and its left/right a Left/Right (direction). */
 static void an_arrow_takes_the_frame(void)
 {
     static const int sticks[] = {0, 1, -1, 2, -2};
     for (unsigned i = 0; i < sizeof(sticks) / sizeof(sticks[0]); i++) {
         int st = sticks[i];
         for (int arrow = -1; arrow <= 1; arrow++) {
-            int vertical = 0;
-            TEST_CHECK(vjo_stick_cursor_step(st, arrow, &vertical) == (arrow ? 0 : st));
+            int direction = arrow, vertical = 0;
+            TEST_CHECK(vjo_stick_cursor_step(st, &direction, &vertical) == (arrow ? 0 : st));
             TEST_CHECK(vertical == (!arrow && (st == 2 || st == -2) ? st / 2 : 0));
+            TEST_CHECK(direction == (arrow ? arrow : st == 1 || st == -1 ? st : 0));
             if (!arrow)
                 continue;
+            direction = 0;
             vertical = arrow; /* Up/Down pressed */
-            TEST_CHECK(vjo_stick_cursor_step(st, 0, &vertical) == 0 && vertical == arrow);
+            TEST_CHECK(vjo_stick_cursor_step(st, &direction, &vertical) == 0 && vertical == arrow && !direction);
         }
     }
 }
@@ -668,7 +670,22 @@ static void a_refused_post_is_not_kept_at_the_close(void)
     TEST_CHECK(p.cursor == 1 && p.worker == 0 && !vjo_stick_cursor_kept(&p.k.s, 1, 0));
 }
 
-/* ---- vjo_text_read_step: the stick's step along the text ---- */
+/* ---- the stick's step along the text ---- */
+
+/* The stick's left/right as the overlay takes it (owner, 2026-10-16, item 3):
+ * an arrow's for vjo_text_row_key with `stick` set, which never goes round
+ * the text's ends; here on a fresh path (no Right to retrace: Left one
+ * character back) and without a layout, which a stick's Left/Right never
+ * asks for. Nothing goes into the arrows' counts. */
+static size_t read_step(const char *s, size_t len, size_t cursor, size_t matched_end, int direction, int jp)
+{
+    VjoRowNav nav;
+    size_t out = cursor;
+    memset(&nav, 0, sizeof(nav));
+    vjo_text_row_key(&nav, s, len, NULL, cursor, matched_end, direction, 0, jp, 1, &out);
+    TEST_CHECK(!nav.row_moves && !nav.wraps && !nav.no_layout);
+    return out;
+}
 
 /* The selectable characters' first bytes in reading order. */
 static int selectable(const char *s, int japanese_only, size_t *at, int cap)
@@ -695,23 +712,23 @@ static void read_steps_in_reading_order(void)
         /* Right visits each selectable character once, in order, across the lines, and stays at the last */
         size_t c = at[0];
         for (int i = 1; i < n; i++) {
-            c = vjo_text_read_step(s, len, c, 0, 1, jp);
+            c = read_step(s, len, c, 0, 1, jp);
             TEST_CHECK_(c == at[i], "japanese_only %d: step %d at %zu, want %zu", jp, i, c, at[i]);
         }
-        TEST_CHECK(vjo_text_read_step(s, len, c, 0, 1, jp) == c); /* never round to the first */
+        TEST_CHECK(read_step(s, len, c, 0, 1, jp) == c); /* never round to the first */
         for (int i = n - 2; i >= 0; i--) {
-            c = vjo_text_read_step(s, len, c, 0, -1, jp);
+            c = read_step(s, len, c, 0, -1, jp);
             TEST_CHECK(c == at[i]);
         }
-        TEST_CHECK(vjo_text_read_step(s, len, c, 0, -1, jp) == c); /* nor round to the last */
+        TEST_CHECK(read_step(s, len, c, 0, -1, jp) == c); /* nor round to the last */
     }
     /* Japanese-only skips the Latin word, the punctuation and the spaces */
-    TEST_CHECK(vjo_text_read_step(s, len, 9, 0, 1, 1) == 19);  /* き -> の (after "。\nRPG") */
-    TEST_CHECK(vjo_text_read_step(s, len, 9, 0, 1, 0) == 12);  /* off: き -> 。 */
-    TEST_CHECK(vjo_text_read_step(s, len, 12, 0, 1, 0) == 16); /* 。 -> R: never the line break */
-    TEST_CHECK(vjo_text_read_step(s, len, 22, 0, 1, 0) == 26); /* 話 -> で: never the space */
-    TEST_CHECK(vjo_text_read_step(s, len, 35, 0, 1, 1) == 40); /* ね -> 𠮷: over CR LF */
-    TEST_CHECK(vjo_text_read_step(s, len, 40, 0, -1, 1) == 35);
+    TEST_CHECK(read_step(s, len, 9, 0, 1, 1) == 19);  /* き -> の (after "。\nRPG") */
+    TEST_CHECK(read_step(s, len, 9, 0, 1, 0) == 12);  /* off: き -> 。 */
+    TEST_CHECK(read_step(s, len, 12, 0, 1, 0) == 16); /* 。 -> R: never the line break */
+    TEST_CHECK(read_step(s, len, 22, 0, 1, 0) == 26); /* 話 -> で: never the space */
+    TEST_CHECK(read_step(s, len, 35, 0, 1, 1) == 40); /* ね -> 𠮷: over CR LF */
+    TEST_CHECK(read_step(s, len, 40, 0, -1, 1) == 35);
 }
 
 /* Whole word: the matched word is skipped on the step from its start (as the
@@ -722,20 +739,20 @@ static void read_steps_skip_the_matched_word(void)
     const char *s = "今日は天気がいい。散歩";
     size_t len = strlen(s);
     TEST_CHECK(len == 33);
-    TEST_CHECK(vjo_text_read_step(s, len, 0, 6, 1, 1) == 6);     /* 今日 -> は */
-    TEST_CHECK(vjo_text_read_step(s, len, 9, 15, 1, 1) == 15);   /* 天気 -> が */
-    TEST_CHECK(vjo_text_read_step(s, len, 15, 24, 1, 1) == 27);  /* がいい -> 散 (the 。 skipped) */
-    TEST_CHECK(vjo_text_read_step(s, len, 15, 24, 1, 0) == 24);  /* off: -> 。 */
-    TEST_CHECK(vjo_text_read_step(s, len, 0, 4, 1, 1) == 3);     /* not a character boundary: one character */
-    TEST_CHECK(vjo_text_read_step(s, len, 0, 0, 1, 1) == 3);     /* no match: one character */
-    TEST_CHECK(vjo_text_read_step(s, len, 30, len, 1, 1) == 30); /* the match reaches the end: stays */
-    TEST_CHECK(vjo_text_read_step(s, len, 27, len, 1, 1) == 27);
-    TEST_CHECK(vjo_text_read_step(s, len, 9, 15, -1, 1) == 6);   /* Left: one character back */
-    TEST_CHECK(vjo_text_read_step(s, len, 0, 0, -1, 1) == 0);
-    TEST_CHECK(vjo_text_read_step(s, len, 3, 0, 0, 1) == 3);     /* no direction */
-    TEST_CHECK(vjo_text_read_step("", 0, 0, 0, 1, 1) == 0);
-    TEST_CHECK(vjo_text_read_step("ABC", 3, 3, 0, 1, 1) == 3);   /* no Japanese: the cursor is len */
-    TEST_CHECK(vjo_text_read_step("ABC", 3, 3, 0, -1, 1) == 3);
+    TEST_CHECK(read_step(s, len, 0, 6, 1, 1) == 6);     /* 今日 -> は */
+    TEST_CHECK(read_step(s, len, 9, 15, 1, 1) == 15);   /* 天気 -> が */
+    TEST_CHECK(read_step(s, len, 15, 24, 1, 1) == 27);  /* がいい -> 散 (the 。 skipped) */
+    TEST_CHECK(read_step(s, len, 15, 24, 1, 0) == 24);  /* off: -> 。 */
+    TEST_CHECK(read_step(s, len, 0, 4, 1, 1) == 3);     /* not a character boundary: one character */
+    TEST_CHECK(read_step(s, len, 0, 0, 1, 1) == 3);     /* no match: one character */
+    TEST_CHECK(read_step(s, len, 30, len, 1, 1) == 30); /* the match reaches the end: stays */
+    TEST_CHECK(read_step(s, len, 27, len, 1, 1) == 27);
+    TEST_CHECK(read_step(s, len, 9, 15, -1, 1) == 6);   /* Left: one character back */
+    TEST_CHECK(read_step(s, len, 0, 0, -1, 1) == 0);
+    TEST_CHECK(read_step(s, len, 3, 0, 0, 1) == 3);     /* no direction */
+    TEST_CHECK(read_step("", 0, 0, 0, 1, 1) == 0);
+    TEST_CHECK(read_step("ABC", 3, 3, 0, 1, 1) == 3);   /* no Japanese: the cursor is len */
+    TEST_CHECK(read_step("ABC", 3, 3, 0, -1, 1) == 3);
 }
 
 /* Every step from every character of generated texts against the rule restated:
@@ -756,8 +773,8 @@ static void read_steps_against_the_rule(void)
             int n = selectable(s, jp, at, 128);
             for (int i = 0; i < n; i++) {
                 size_t right = i + 1 < n ? at[i + 1] : at[i], left = i ? at[i - 1] : at[i];
-                TEST_CHECK(vjo_text_read_step(s, len, at[i], 0, 1, jp) == right);
-                TEST_CHECK(vjo_text_read_step(s, len, at[i], 0, -1, jp) == left);
+                TEST_CHECK(read_step(s, len, at[i], 0, 1, jp) == right);
+                TEST_CHECK(read_step(s, len, at[i], 0, -1, jp) == left);
             }
         }
     }
@@ -772,14 +789,19 @@ static void held_through_a_text(void)
     size_t len = strlen(s), at[64];
     int n = selectable(s, 1, at, 64), visited = 1, lookups = 0;
     Stick k = stick();
+    VjoRowNav nav; /* the overlay's s_nav: one path for the d-pad and the stick */
     size_t c = at[0], last = c;
+    memset(&nav, 0, sizeof(nav));
     k.s.rest_us = REST;
     uint64_t moved = 0, looked = 0;
     for (int f = 0; f < 600; f++) { /* 10 s at 60 Hz */
         k.now += HZ60;
-        int dir = vjo_stick_cursor(&k.s, RIGHT, MID, k.now);
+        int direction = 0, vertical = 0;
+        int dir = vjo_stick_cursor_step(vjo_stick_cursor(&k.s, RIGHT, MID, k.now), &direction, &vertical);
         if (dir) {
-            size_t to = vjo_text_read_step(s, len, c, 0, dir, 1);
+            size_t to = c;
+            TEST_CHECK(direction == dir && !vertical);
+            vjo_text_row_key(&nav, s, len, NULL, c, 0, direction, vertical, 1, 1, &to);
             vjo_stick_cursor_moved(&k.s, to != c, k.now);
             if (to != c) {
                 TEST_CHECK(visited < n && to == at[visited]);

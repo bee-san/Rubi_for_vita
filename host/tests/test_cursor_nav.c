@@ -106,27 +106,17 @@ static Nav nav_open(const char *s, float width, const Span *words, int n_words, 
 
 /* One frame of shell/overlay.cpp input_overlay over the header: the d-pad's
  * arrow pressed in it (dx Left/Right, dy Up/Down: -1, 0 or 1) and the left
- * stick at (lx, ly), dt after the last frame. */
+ * stick at (lx, ly), dt after the last frame. The stick's step, when no arrow
+ * takes the frame, is an arrow's for vjo_text_row_key (`stick` set). */
 static void nav_frame(Nav *n, int dx, int dy, uint8_t lx, uint8_t ly, uint64_t dt)
 {
     int direction = dx, vertical = dy, stick;
     size_t to = n->cursor;
     n->now += dt;
-    stick = vjo_stick_cursor_step(vjo_stick_cursor(&n->st, lx, ly, n->now), direction, &vertical);
-    if (direction || vertical) {
-        int row_moves = n->nav.row_moves, wraps = n->nav.wraps, no_layout = n->nav.no_layout;
+    stick = vjo_stick_cursor_step(vjo_stick_cursor(&n->st, lx, ly, n->now), &direction, &vertical);
+    if (direction || vertical)
         vjo_text_row_key(&n->nav, n->s, n->len, n->laid ? &n->rows : NULL, n->cursor, match_end(n), direction,
-                         vertical, n->jp, &to);
-        if (stick) { /* the close line's counts are the arrows' */
-            n->nav.row_moves = row_moves;
-            n->nav.wraps = wraps;
-            n->nav.no_layout = no_layout;
-        }
-    } else if (stick) {
-        to = vjo_text_read_step(n->s, n->len, n->cursor, match_end(n), stick, n->jp);
-        n->nav.words.count = 0;
-        n->nav.goal.at = 0;
-    }
+                         vertical, n->jp, stick != 0, &to);
     if (stick)
         vjo_stick_cursor_moved(&n->st, to != n->cursor, n->now);
     if (to != n->cursor) {

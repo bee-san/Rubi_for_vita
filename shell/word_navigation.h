@@ -8,15 +8,16 @@ extern "C" {
 
 /* Store positions, not definitions or dictionary pointers. Right skips the
  * matched source span; Left retraces up to 16 recent forward selections.
- * Without a match/history, keep the existing character navigation. With the
- * header's rows both stay on the cursor's displayed row and wrap at its ends
- * (vjo_word_step, core/text_rows.h). */
+ * Without a match/history, keep the existing character navigation. Both go
+ * in reading order across the header's rows and stop at the text's ends; with
+ * `wrap` (the d-pad's, the default) a text on one displayed row goes round
+ * its ends (vjo_word_step, core/text_rows.h). */
 inline size_t vjo_word_cursor_step(VjoWordNavigation &history, const char *text,
                                   size_t len, size_t cursor, size_t matched_end,
                                   int direction, int japanese_only,
-                                  const VjoTextRows *rows = NULL, int *row_result = NULL)
+                                  const VjoTextRows *rows = NULL, int *row_result = NULL, int wrap = 1)
 {
-    return vjo_word_step(&history, text, len, cursor, matched_end, direction, japanese_only, rows, row_result);
+    return vjo_word_step(&history, text, len, cursor, matched_end, direction, japanese_only, rows, wrap, row_result);
 }
 
 /* L or R alone: pressed with no other player button held, released before

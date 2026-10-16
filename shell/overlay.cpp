@@ -29,10 +29,10 @@
  * with the left stick and the d-pad (#81): a cursor, enter for each
  * corner (core/region_select.c holds the state; this file draws it).
  *
- * Over the recognized text the left stick moves the cursor, faster while held
- * and capped, and its word is looked up only once the cursor rests there
- * (#138, core/stick_cursor.h); the d-pad and taps look up at once. The right
- * stick scrolls a long definition. */
+ * Over the recognized text the left stick moves the cursor in the arrows' four
+ * directions, faster while held and capped, and its word is looked up only
+ * once the cursor rests there (#138, core/stick_cursor.h); the d-pad and taps
+ * look up at once. The right stick scrolls a long definition. */
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
@@ -875,44 +875,31 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         int direction = pressed & SCE_CTRL_LEFT ? -1 : pressed & SCE_CTRL_RIGHT ? 1 : 0;
         int vertical = pressed & SCE_CTRL_UP ? -1 : pressed & SCE_CTRL_DOWN ? 1 : 0;
         /* The left stick's step this frame (core/stick_cursor.h), when no arrow
-         * is pressed: up/down a row as Up/Down go; left/right along the text
-         * below. Its word is looked up only once the cursor rests. */
+         * is pressed: its four directions are the arrows' (a diagonal its
+         * dominant axis's). Its word is looked up only once the cursor rests. */
         uint64_t now = (uint64_t)sceKernelGetProcessTimeWide();
-        int stick = vjo_stick_cursor_step(vjo_stick_cursor(&s_stick, in->lx, in->ly, now), direction, &vertical);
+        int stick = vjo_stick_cursor_step(vjo_stick_cursor(&s_stick, in->lx, in->ly, now), &direction, &vertical);
         /* L or R tapped alone (never the L + R chord): seen every frame. */
         int tap = vjo_shoulder_tap(s_tap, in->buttons & 0xFFFFu, pressed, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER);
         if (direction || vertical) {
-            /* The header's displayed rows (core/text_rows.h): Left/Right stay
-             * on the cursor's row and wrap at its ends, Up/Down change rows,
+            /* The header's displayed rows (core/text_rows.h): Left/Right in
+             * reading order across rows, stopping at the text's ends (a
+             * one-row text wraps for the arrows), Up/Down change rows,
              * soft-wrapped ones included. */
             VjoTextRows rows;
             size_t to;
 #if VJO_DEBUG
             int64_t t0 = sceKernelGetProcessTimeWide();
-            /* the close line's row counts and slowest key are the arrows' (the stick's moves are its own) */
-            int row_moves = s_nav.row_moves, wraps = s_nav.wraps, no_layout = s_nav.no_layout;
 #endif
             vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
                              s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
-                             s_japanese_only_selection, &to);
+                             s_japanese_only_selection, stick != 0, &to);
 #if VJO_DEBUG
             t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
-            if (stick) {
-                s_nav.row_moves = row_moves;
-                s_nav.wraps = wraps;
-                s_nav.no_layout = no_layout;
-            } else if (t0 > s_key_max_us)
+            if (!stick && t0 > s_key_max_us) /* the slowest key is the arrows' (the stick's moves are its own) */
                 s_key_max_us = t0;
 #endif
             cursor = (uint32_t)to;
-        } else if (stick) {
-            /* in reading order, across rows, never round the text's ends; the
-             * shown word skipped as Right skips it, else one character */
-            cursor = (uint32_t)vjo_text_read_step(s_cursor_text, s_cursor_text_len, cursor,
-                                                  s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, stick,
-                                                  s_japanese_only_selection);
-            s_nav.words.count = 0; /* a new path, as a tap starts one: Left retraces nothing, Up/Down's */
-            s_nav.goal.at = 0;     /* column is taken afresh (as Left/Right take it) */
         }
         if (stick)
             vjo_stick_cursor_moved(&s_stick, cursor != s_cursor_byte, now);

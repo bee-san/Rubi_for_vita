@@ -10,12 +10,16 @@
  * never sooner than VJO_STICK_CURSOR_FAST_US after the last: at most 20 steps
  * a second (the cap; held, 13 steps in the first second, then 20 a second).
  * How far it is pushed beyond the threshold does not change the speed, as in
- * the lists. Left/right step along the text, up/down a displayed row
- * (shell/overlay.cpp: vjo_text_read_step, which never goes round the text's
- * ends, and vjo_text_row_key; a held stick stops at the first and last
- * character, as the lists stop at their ends). The axis pushed farther counts,
- * and the one held keeps counting until it is let back inside the threshold,
- * so a stick rolled round from one axis to the other changes once.
+ * the lists. Its four directions are the d-pad's four arrows (the owner,
+ * 2026-10-16, item 3): shell/overlay.cpp hands each step to vjo_text_row_key
+ * (core/text_rows.h) as the arrow's, so left/right step as Left/Right do (the
+ * shown word skipped, Right's history shared, across rows, stopping at the
+ * text's ends) and up/down go a displayed row keeping the arrows' column. The
+ * one difference: a one-row text's ends, which the d-pad goes round, stop the
+ * stick, as a held stick stops at the lists' ends. The
+ * axis pushed farther counts (a diagonal is its dominant axis's arrow), and the
+ * one held keeps counting until it is let back inside the threshold, so a
+ * stick rolled round from one axis to the other changes once.
  *
  * By the clock (sceKernelGetProcessTimeWide's microseconds), as the lists
  * since #129: the same steps by the same time at any frame rate. A frame's
@@ -142,17 +146,20 @@ static inline int vjo_stick_cursor_lookup(VjoStickCursor *s, uint64_t now_us)
 }
 
 /* The overlay's frame over the text (shell/overlay.cpp input_overlay): stick is
- * vjo_stick_cursor's step, direction and *vertical the arrow pressed (-1/1, 0
- * none). An arrow takes the frame: the stick's step due in it is dropped (0).
- * Else the stick's up/down are a row step, as Up/Down go (*vertical), and its
- * left/right a step along the text. Returns the stick's step that is taken
- * (nonzero: no lookup now). */
-static inline int vjo_stick_cursor_step(int stick, int direction, int *vertical)
+ * vjo_stick_cursor's step, *direction and *vertical the arrow pressed (-1/1,
+ * 0 none). An arrow takes the frame: the stick's step due in it is dropped (0).
+ * Else the stick's four directions are the arrows': its left/right a
+ * *direction, its up/down a *vertical, for vjo_text_row_key (its `stick`
+ * set: no wrap round a one-row text, the arrows' counts untouched). Returns
+ * the stick's step that is taken (nonzero: no lookup now). */
+static inline int vjo_stick_cursor_step(int stick, int *direction, int *vertical)
 {
-    if (direction || *vertical)
+    if (*direction || *vertical)
         return 0;
     if (stick == 2 || stick == -2)
         *vertical = stick / 2;
+    else
+        *direction = stick;
     return stick;
 }
 

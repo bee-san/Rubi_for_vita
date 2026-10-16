@@ -8,9 +8,10 @@ Each page highlights its own match, and Right skips the one shown. In Whole
 word mode, Right skips the current matched source span and Left retraces up to
 16 recent forward selections. Without a match or previous selection, movement
 falls back to one Unicode character. Character mode always steps one character.
-Both stay on the header's displayed row and wrap at its ends, and Up/Down
-change rows ([rows and arrow keys](#rows-and-arrow-keys)). The left stick moves
-the cursor faster and looks its word up only once it rests
+Both go in reading order across the header's displayed rows and stop at the
+text's ends (a text on one row goes round them), and Up/Down change rows
+([rows and arrow keys](#rows-and-arrow-keys)). The left stick moves the cursor
+in the same four directions, faster, and looks its word up only once it rests
 ([the left stick](#the-left-stick-138)).
 Whole word uses the matched source span, including an inflected ending, rather
 than the dictionary's normalized spelling. While a lookup runs or has no result,
@@ -183,19 +184,30 @@ game is what deactivates the region then), is for the console run.
 ## Rows and arrow keys
 
 The arrows move by the header as it is drawn, not by the text's line breaks
-([#81](https://github.com/bee-san/vita-jp-overlay/issues/81), requests 1 and 2).
-A recognized line longer than the 920 px box wraps onto a second displayed row;
-each row is its own row for the arrows.
+([#81](https://github.com/bee-san/vita-jp-overlay/issues/81), requests 1 and 2;
+the owner's rule of 2026-10-16 for Left/Right). A recognized line longer than
+the 920 px box wraps onto a second displayed row; each row is its own row for
+the arrows.
 
-- **Left/Right** stay on the cursor's row. Right from the row's last word
-  (Whole word) or character (Character) goes to the row's first, Left from
-  its first to the row's last character. In Whole word mode Right still skips
-  the matched source span, a word that continues onto the next row included:
-  Right then wraps to the first word of the cursor's row. Left retraces the
-  last 16 Rights, a wrap among them, and otherwise steps one character back:
-  a word's start is known only from its lookup, which runs after the cursor
-  lands, so Left from a row's first word goes to the row's last character and
-  that character's lookup shows the word starting there.
+- **Left/Right** go in reading order through the whole text, across its rows,
+  soft-wrapped and hard-broken alike. Right from a row's last word (Whole word)
+  or character (Character) goes to the next row's first; Left from a row's
+  first goes to the row above's last character. In Whole word mode Right skips
+  the matched source span wherever it ends: a word that continues onto the next
+  row (or, looked up whole, past a line break) is passed and Right lands on the
+  first selectable character after its tail there. Left retraces the last 16
+  Rights, back across the rows they crossed, and otherwise steps one character
+  back: a word's start is known only from its lookup, which runs after the
+  cursor lands, so Left from a row's first word without a Right to retrace goes
+  to the row above's last character, whose lookup shows the word starting there.
+- **The text's ends stop the cursor**: Right at its last selectable character
+  (or last word) and Left at its first do nothing, so Left at the start of a
+  text of several rows no longer goes to its far end (test.3's item G). One case
+  keeps #81's wrap, deliberately: a text whose selectable characters are all on
+  one displayed row (a short line) goes round its ends, Right from the last to
+  the first and Left from the first to the last, as before; Left retraces such a
+  wrap like any other Right. The left stick stops there too
+  ([the left stick](#the-left-stick-138)).
 - **Up/Down** go to the nearest row above or below that has a selectable
   character, a soft-wrapped part of a long line included, and there to the
   character whose cell is nearest the same horizontal position (inside it, or
@@ -207,8 +219,9 @@ each row is its own row for the arrows.
 - **Japanese-only** applies to all four arrows, as to taps: with it ON the
   cursor lands only on kana and Han; OFF, on any visible character. The arrows
   never land on spaces (U+0020, U+3000), line breaks or control characters,
-  and pass over a row of only those (or, with Japanese-only, of only Latin
-  text and punctuation).
+  and pass over a row of only those (an empty line, or with Japanese-only one
+  of only Latin text and punctuation), which also never counts as a row of the
+  text's own for the wrap.
 - Dictionary paging, which used Up/Down, is an **L or R tap**: a shoulder
   pressed and released with no other button, so the L + R chord that closes the
   overlay and Select + L/R never page.
@@ -218,18 +231,22 @@ x of each character from paf (`GetCharInfo`), with a row's last cell bounded by
 the Japanese point size (27 px at the default `font_size_ja = 18`, 34 cells
 across the 920 px box). Undocumented `LineInfo.frame` fields and paf's
 `GetNextUpHit`/`GetNextDownHit` are not used (pressing ▼ with ScrollView
-`DoSnap` and `GetNextDownHit` crashed the console). A key press walks the
-header's text (at most 4,095 bytes) from its start to the row after the
-cursor's. It asks paf for the cursor's character, the selectable characters
-and, where a cell's end is needed, the character after one (at most 2N + 2
-queries for N characters), allocates nothing and takes no lock. Before the
-header is laid out, or if paf reports no position for a character, Left/Right
-step through the text as one row and Up/Down do nothing;
-the cursor stays on a selectable character either way. The overlay's close line in
-`log.txt` counts the row changes, wraps and presses without a layout, and times
-the slowest key's walk (the `GetCharInfo` queries included; not measured on a
-console yet); `--collect`'s analysis sums them (`tools/analyse_selftest.py`). The
-format, with illustrative numbers:
+`DoSnap` and `GetNextDownHit` crashed the console). Left/Right walk the header's
+text (at most 4,095 bytes) from its start to the character they move to and ask
+paf nothing; only a press at the text's end, which could go round, asks for the
+rows of its first and last selectable characters (two queries). Up/Down walk it
+to the row after the cursor's and ask for the cursor's character, the
+selectable characters and, where a cell's end is needed, the character after
+one (at most 2N + 2 queries for N characters). Neither allocates or takes a
+lock. Before the header is laid out, or if paf reports no position, the line
+breaks stand for the rows at the text's ends (a text with a line break between
+its first and last selectable characters stops there, one without goes round),
+and Up/Down do nothing; the cursor stays on a selectable character either way.
+The overlay's close line in `log.txt` counts the row changes, wraps and presses
+that needed a layout without one, and times the slowest key's walk (the
+`GetCharInfo` queries included; not measured on a console yet), all the arrows'
+(the stick's moves are counted apart); `--collect`'s analysis sums them
+(`tools/analyse_selftest.py`). The format, with illustrative numbers:
 
 ```
 overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms, 4 row moves, 2 wraps, 0 without layout, slowest key 412 us
@@ -239,19 +256,27 @@ overlay closed: 1158 frames, 19 word moves, stick 71, slowest frame 2 ms, 4 row 
 (`host/tests/layout_double.h`, a renderer double with 10 full-width cells per
 row): soft-wrapped and hard-broken rows, the column kept across a short row,
 mixed full-width and narrow advances (Latin cells are half as wide), kinsoku
-punctuation hanging past the edge, CR and UTF-16 surrogate pairs, unavailable
-layouts and invalid positions, whole words crossing a row's end, and Left's
-retrace of a wrap. It then compares every arrow from every character of 120
-generated texts (four box widths, Japanese-only ON and OFF) with the rules
-restated over the laid-out cells, and checks that Right from any selectable
-character visits each one of its row once and returns. The word lookup test
-(`real_lines_navigate_displayed_rows`) does the same on the 50 real VOCR lines,
-laid out at the default 27 px font size as recognized, as one joined line
-(soft wraps) and in a narrow box: Whole word Right with the bundled dictionary's
-real match ends stays on its row and wraps to the row's first word, and Left
-undoes it. The shoulder-tap rule is in `host/tests/test_word_navigation.cpp`.
-These are host checks of the portable code against a layout double; the paf
-layout itself, the key feel and the shoulder taps are for the console run.
+punctuation hanging past the edge, CR and UTF-16 surrogate pairs, a line break
+before the first or after the last selectable character, unavailable layouts
+and invalid positions, whole words crossing a row's end or a line break, and
+Left's retrace. It then compares every arrow from every character of 120
+generated texts (four box widths, Japanese-only ON and OFF, with and without
+the wrap) with the rules restated over the laid-out cells (`ref_read_step`,
+`ref_vertical`), counts the positions each press asks for, and checks that Right
+from the text's first selectable character visits each one once in reading
+order and stops at the last (or goes round, on one row), and Left the same way
+back. `host/tests/test_cursor_nav.c` drives the overlay's frame over texts of
+two and three lines, a line of one word, an empty line, a line without
+Japanese, a soft-wrapped line, a word run on after a line break and one row,
+with the d-pad and the left stick in each direction. The word lookup test
+(`real_lines_navigate_displayed_rows`) walks the 50 real VOCR lines, laid out at
+the default 27 px font size as recognized, as one joined line (soft wraps) and
+in a narrow box: Whole word Right with the bundled dictionary's real match ends
+goes through each text across its rows and stops at its last word (on one row,
+round to its first), and Left undoes it. The shoulder-tap rule is in
+`host/tests/test_word_navigation.cpp`. These are host checks of the portable
+code against a layout double; the paf layout itself, the key feel and the
+shoulder taps are for the console run.
 
 ## The left stick (#138)
 
@@ -275,15 +300,21 @@ way:
   frame never makes it jump, at 60 Hz, 30 Hz or anything between. The clock is
   SceShell's process time; only its low 32 bits are kept, whose differences are
   right across their wrap every 71.6 minutes.
-- **Steps.** Left and right step through the text in reading order, across the
-  displayed rows and line breaks (`vjo_text_read_step`, `core/text_rows.c`):
-  Right from a word whose lookup is shown skips that word, as the d-pad's Right
-  does; every other step is one character, because no lookup tells where the
-  next word ends. Japanese-only applies as to the arrows. The stick stops at the
-  text's first and last character instead of wrapping, as the app's lists stop
-  at their ends. Up and down go a displayed row, as Up/Down do. The axis pushed
-  farther counts, and the one held keeps counting while it stays past half way,
-  so a stick rolled round changes direction once.
+- **The four directions are the d-pad's** (the owner, 2026-10-16): each step
+  of the stick is handed to the arrows' own code as that arrow's press
+  (`vjo_text_row_key`, `core/text_rows.c`, with its `stick` flag). Left and
+  right go in reading order across the displayed rows and line breaks as
+  Left/Right do: Right from a word whose lookup is shown skips that word; every
+  other step is one character, because no lookup tells where the next word ends
+  while the stick moves; Left retraces the Rights, the d-pad's and the stick's
+  alike (one history), and otherwise steps one character back. Up and down go a
+  displayed row, keeping the d-pad's column across a short row. Japanese-only
+  applies as to the arrows. A diagonal counts as the axis pushed farther (a tie
+  as left/right), and the one held keeps counting while it stays past half way,
+  so a stick rolled round changes direction once. The one difference: the stick
+  stops at the text's first and last character even on a text on one row, which
+  the d-pad goes round, as the app's lists stop at their ends while their
+  Up/Down wrap, so a held stick never circles a short line.
 - **The deferred lookup.** While the stick moves the cursor, the body says
   "Looking up words…" and the header highlights the character. The word at the
   cursor is looked up once, when the cursor has rested there for
@@ -323,8 +354,9 @@ overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row
 ```
 
 `word moves`, `row moves`, `wraps`, `without layout` and `slowest key` stay the
-arrows', taps' and dictionary pages' (the stick's up/down take the arrows' row
-walk, and are counted among its own `stick moves`); `--collect`'s analysis adds
+arrows', taps' and dictionary pages' (the stick's steps take the arrows' code
+with its `stick` flag, which leaves those counts alone, and are counted among
+its own `stick moves`); `--collect`'s analysis adds
 the stick's sums (`tools/analyse_selftest.py`,
 `left stick (N of them): M cursor moves, K deferred lookups (after 200 ms at
 rest)`).
@@ -342,8 +374,14 @@ us at exactly 30 Hz, not 1,001 us sooner), none while held, a stick held into
 an end and rolled back moving again without a lookup at any rest, the owner's
 150-250 ms range and 0, flicks, the text's end held, the d-pad's lookup at once
 and its frame, back on the shown word, new text, and the close after a refused
-post; and every `vjo_text_read_step` from every character of 200 generated
-texts against the rule restated. `host/tests/test_shell_worker.c` runs the
+post; and the stick's step along the text (the arrows' Left/Right without the
+wrap) from every character of 200 generated texts against the rule restated.
+`host/tests/test_cursor_nav.c` (13 cases, on the ARM lane too) compares the
+stick's four directions with the d-pad's from every selectable character of
+nine multi-line and one-row layouts, in both highlight modes (1,520 moves: the
+same character, the d-pad's looked up at once, the stick's once it rests), and
+drives diagonals, the stick held across lines and rows to the text's ends, and
+the history the two share. `host/tests/test_shell_worker.c` runs the
 close with the real worker: the audit's B1 sequence (a flick, Cancel 183 ms
 later, the rest ending while the close waits: the reopened overlay shows the
 worker's word, and the stick goes on from there), the close before and after the

@@ -2125,6 +2125,7 @@ static void test_no_japanese_selection_skips_dictionary_memory_and_io(void)
  * target compiles; they are restated here around the real helpers and worker. */
 typedef struct {
     VjoStickCursor st;
+    VjoRowNav nav;               /* s_nav: the arrows' path, which the stick's steps take too */
     uint32_t cursor, generation; /* s_cursor_byte, s_text_generation */
     int local;                   /* s_local_cursor_mode */
     uint64_t now;
@@ -2144,17 +2145,19 @@ static int stick_render(StickOverlay *o)
     return matches;
 }
 
-/* a frame with the stick at (lx, 128): its step (one character here: 猫犬鳥 has 3-byte letters) */
+/* a frame with the stick at (lx, 128): its step, a Left/Right's (one character
+ * here: 猫犬鳥 has 3-byte letters; the stick's Left/Right ask no layout) */
 static void stick_frame(StickOverlay *o, uint8_t lx)
 {
-    int vertical = 0;
+    int direction = 0, vertical = 0;
     o->now += 16667u;
-    int step = vjo_stick_cursor_step(vjo_stick_cursor(&o->st, lx, 128, o->now), 0, &vertical);
+    int step = vjo_stick_cursor_step(vjo_stick_cursor(&o->st, lx, 128, o->now), &direction, &vertical);
     if (step) {
-        uint32_t to = (uint32_t)vjo_text_read_step(local_text, strlen(local_text), o->cursor, 0, step, 1);
+        size_t to = o->cursor;
+        vjo_text_row_key(&o->nav, local_text, strlen(local_text), NULL, o->cursor, 0, direction, vertical, 1, 1, &to);
         vjo_stick_cursor_moved(&o->st, to != o->cursor, o->now);
         if (to != o->cursor) {
-            o->cursor = to;
+            o->cursor = (uint32_t)to;
             stick_render(o);
         }
     }

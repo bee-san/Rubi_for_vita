@@ -1,10 +1,15 @@
-/* The overlay's arrow keys over the header's displayed rows (#81 requests 1
- * and 2), on layout fixtures from host/tests/layout_double.h: rows of 10
- * full-width cells (24 px in a 240 px box), soft wraps, hard line breaks,
- * mixed full-width/narrow advances, kinsoku hanging punctuation, CR, UTF-16
- * surrogate pairs, unavailable layouts. A differential check then compares
- * every key from every character of generated texts with the rules restated
- * over the laid-out cells (ref_step/ref_vertical). */
+/* The overlay's arrow keys over the header's displayed rows, on layout
+ * fixtures from host/tests/layout_double.h: rows of 10 full-width cells (24 px
+ * in a 240 px box), soft wraps, hard line breaks, mixed full-width/narrow
+ * advances, kinsoku hanging punctuation, CR, UTF-16 surrogate pairs,
+ * unavailable layouts. Up/Down go to the row above or below (#81 request 1);
+ * Left/Right go in reading order across rows and stop at the text's ends,
+ * except on a text whose selectable characters are all on one row, which the
+ * d-pad goes round (the owner, 2026-10-16, item 1; it replaces #81 request 2's
+ * wrap at each row's ends). A differential check then compares every key from
+ * every character of generated texts with the rules restated over the laid-out
+ * cells (ref_read_step/ref_vertical). host/tests/test_cursor_nav.c drives the
+ * same code as the overlay's frame, with the d-pad and the left stick. */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,16 +39,22 @@ static size_t up_down(const char *s, size_t cursor, int dy, int jp)
     return out;
 }
 
-/* Left/Right in Character mode: returns the cursor, *rc the row result. */
-static size_t step(const char *s, size_t cursor, int dx, int jp, int *rc)
+/* Left/Right in Character mode, as the d-pad (wrap) or the stick (no wrap)
+ * steps: returns the cursor, *rc the row result. */
+static size_t step_as(const char *s, size_t cursor, int dx, int jp, int wrap, int *rc)
 {
     VjoTextRows r = layout_rows(&lay);
     size_t out = cursor;
-    *rc = vjo_text_row_step(s, strlen(s), &r, cursor, cursor + 1, dx, jp, &out);
+    *rc = vjo_text_row_step(s, strlen(s), &r, cursor, cursor + 1, dx, jp, wrap, &out);
     return out;
 }
 
-static void wrapped_line_rows_and_wrap_at_row_ends(void)
+static size_t step(const char *s, size_t cursor, int dx, int jp, int *rc)
+{
+    return step_as(s, cursor, dx, jp, 1, rc);
+}
+
+static void wrapped_line_rows_and_their_ends(void)
 {
     /* 14 kana: a soft wrap after the 10th (byte 3k is kana k). */
     const char *s = "あいうえおかきくけこさしすせ";
@@ -56,12 +67,17 @@ static void wrapped_line_rows_and_wrap_at_row_ends(void)
     TEST_CHECK(up_down(s, 39, -1, 1) == 9); /* せ's own column 3: え */
     TEST_CHECK(up_down(s, 0, -1, 1) == 0);  /* no row above */
     TEST_CHECK(up_down(s, 39, 1, 1) == 39); /* none below */
-    TEST_CHECK(step(s, 27, 1, 1, &rc) == 0 && rc == VJO_ROW_WRAPPED);  /* Right from the row's last */
+    unsigned calls = lay.calls;
+    TEST_CHECK(step(s, 27, 1, 1, &rc) == 30 && rc == VJO_ROW_MOVED);  /* Right from the row's last: the next row's first */
     TEST_CHECK(step(s, 0, 1, 1, &rc) == 3 && rc == VJO_ROW_MOVED);
-    TEST_CHECK(step(s, 0, -1, 1, &rc) == 27 && rc == VJO_ROW_WRAPPED); /* Left from its first */
-    TEST_CHECK(step(s, 30, -1, 1, &rc) == 39 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(step(s, 39, 1, 1, &rc) == 30 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(s, 30, -1, 1, &rc) == 27 && rc == VJO_ROW_MOVED); /* Left from a row's first: the row above's last */
     TEST_CHECK(step(s, 33, -1, 0, &rc) == 30 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(lay.calls == calls); /* in reading order: no position asked */
+    /* the text's first and last: on two rows, nowhere to go (test.3's item G) */
+    TEST_CHECK(step(s, 0, -1, 1, &rc) == 0 && rc == VJO_ROW_STAY);
+    TEST_CHECK(step(s, 39, 1, 1, &rc) == 39 && rc == VJO_ROW_STAY);
+    TEST_CHECK(lay.calls == calls + 4); /* each end: the first's and the last's rows */
+    TEST_CHECK(step_as(s, 39, 1, 1, 0, &rc) == 39 && rc == VJO_ROW_STAY && lay.calls == calls + 4);
     TEST_CHECK(lay.bad_queries == 0);
 }
 
@@ -113,10 +129,13 @@ static void mixed_widths_use_measured_cells(void)
     /* Japanese-only: the Latin cells cannot hold the cursor. */
     TEST_CHECK(up_down(s, 23, -1, 1) == 10); /* -> 猫, the nearest Japanese cell */
     TEST_CHECK(up_down(s, 10, 1, 1) == 29);  /* 猫's centre 132 -> お */
-    TEST_CHECK(step(s, 13, 1, 1, &rc) == 10 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(step(s, 10, -1, 1, &rc) == 13 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(s, 13, 1, 1, &rc) == 17 && rc == VJO_ROW_MOVED);  /* 犬 -> あ, over the line break */
+    TEST_CHECK(step(s, 17, -1, 1, &rc) == 13 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(s, 10, -1, 1, &rc) == 10 && rc == VJO_ROW_STAY);  /* 猫, the first Japanese letter */
+    TEST_CHECK(step(s, 29, 1, 1, &rc) == 29 && rc == VJO_ROW_STAY);   /* お, the last */
     TEST_CHECK(step(s, 9, 1, 0, &rc) == 10 && rc == VJO_ROW_MOVED);
-    TEST_CHECK(step(s, 13, 1, 0, &rc) == 0 && rc == VJO_ROW_WRAPPED); /* the line break is skipped */
+    TEST_CHECK(step(s, 13, 1, 0, &rc) == 17 && rc == VJO_ROW_MOVED);  /* the line break is skipped */
+    TEST_CHECK(step(s, 0, -1, 0, &rc) == 0 && rc == VJO_ROW_STAY);
 }
 
 static void punctuation_and_hanging_kinsoku(void)
@@ -126,27 +145,34 @@ static void punctuation_and_hanging_kinsoku(void)
     int rc;
     TEST_ASSERT(layout_text(&lay, s, W, JA, NARROW) == 2);
     TEST_CHECK(lay.line[10] == 0 && lay.x[10] == 240.0f);
-    TEST_CHECK(step(s, 27, 1, 1, &rc) == 0 && rc == VJO_ROW_WRAPPED);   /* Japanese-only skips 。 */
-    TEST_CHECK(step(s, 0, -1, 1, &rc) == 27 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(step(s, 27, 1, 0, &rc) == 30 && rc == VJO_ROW_MOVED);    /* off: 。 is a character */
-    TEST_CHECK(step(s, 30, 1, 0, &rc) == 0 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(step(s, 0, -1, 0, &rc) == 30 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(s, 27, 1, 1, &rc) == 33 && rc == VJO_ROW_MOVED);   /* Japanese-only skips 。 */
+    TEST_CHECK(step(s, 33, -1, 1, &rc) == 27 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(s, 0, -1, 1, &rc) == 0 && rc == VJO_ROW_STAY);
+    TEST_CHECK(step(s, 27, 1, 0, &rc) == 30 && rc == VJO_ROW_MOVED);   /* off: 。 is a character */
+    TEST_CHECK(step(s, 30, 1, 0, &rc) == 33 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(s, 33, -1, 0, &rc) == 30 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(s, 36, 1, 0, &rc) == 36 && rc == VJO_ROW_STAY);
     TEST_CHECK(up_down(s, 30, 1, 0) == 36);                             /* 。 (240..264) -> し */
     const char *t = "あいうえおかきくけ、さしす"; /* 、 fits as row 0's 10th cell */
     TEST_ASSERT(layout_text(&lay, t, W, JA, NARROW) == 2);
-    TEST_CHECK(step(t, 24, 1, 1, &rc) == 0 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(t, 24, 1, 1, &rc) == 30 && rc == VJO_ROW_MOVED);
     TEST_CHECK(step(t, 24, 1, 0, &rc) == 27 && rc == VJO_ROW_MOVED);
     /* Spaces (also U+3000) and line breaks never hold the cursor. */
     const char *u = "A B\xe3\x80\x80猫\n犬";
     TEST_ASSERT(layout_text(&lay, u, W, JA, NARROW) == 2);
     TEST_CHECK(step(u, 0, 1, 0, &rc) == 2 && step(u, 2, 1, 0, &rc) == 6);
-    TEST_CHECK(step(u, 6, 1, 0, &rc) == 0 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(u, 6, 1, 0, &rc) == 10 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(u, 10, -1, 0, &rc) == 6 && step(u, 6, -1, 0, &rc) == 2);
+    TEST_CHECK(step(u, 10, 1, 0, &rc) == 10 && rc == VJO_ROW_STAY);
     TEST_CHECK(step(u, 1, 1, 0, &rc) == 2); /* from a blank: the next character */
-    /* DEL and C1 controls are not visible characters either. */
+    TEST_CHECK(step(u, 1, -1, 0, &rc) == 0);
+    /* DEL and C1 controls are not visible characters either; one row: round it. */
     const char *v = "A\x7f" "B\xc2\x85" "C";
     TEST_ASSERT(layout_text(&lay, v, W, JA, NARROW) == 1);
     TEST_CHECK(step(v, 0, 1, 0, &rc) == 2 && step(v, 2, 1, 0, &rc) == 5);
     TEST_CHECK(step(v, 5, 1, 0, &rc) == 0 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step(v, 0, -1, 0, &rc) == 5 && rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(step_as(v, 5, 1, 0, 0, &rc) == 5 && rc == VJO_ROW_STAY); /* the stick: no wrap */
     /* Japanese-only never selects an overlong encoding of a Japanese letter
      * (U+3042 in four bytes), as vjo_utf8_japanese_cursor_step does not. */
     const char *o = "猫\xf0\x83\x81\x82" "犬";
@@ -166,94 +192,168 @@ static void cr_newline_and_surrogate_pairs(void)
     TEST_CHECK(up_down(s, 0, 1, 1) == 5);
     TEST_CHECK(up_down(s, 12, -1, 1) == 0);
     TEST_CHECK(step(s, 5, 1, 1, &rc) == 9 && rc == VJO_ROW_MOVED);
-    TEST_CHECK(step(s, 5, -1, 1, &rc) == 12 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(step(s, 0, 1, 1, &rc) == 0 && rc == VJO_ROW_STAY); /* 猫 is alone on its row */
-    TEST_CHECK(step(s, 3, 1, 0, &rc) == 0 && rc == VJO_ROW_WRAPPED); /* a cursor on CR: its row's */
+    TEST_CHECK(step(s, 5, -1, 1, &rc) == 0 && rc == VJO_ROW_MOVED);  /* over CR LF */
+    TEST_CHECK(step(s, 0, 1, 1, &rc) == 5 && rc == VJO_ROW_MOVED);   /* 猫, alone on its row */
+    TEST_CHECK(step(s, 3, 1, 0, &rc) == 5 && rc == VJO_ROW_MOVED);   /* a cursor on CR: the next character */
+    TEST_CHECK(step(s, 3, -1, 0, &rc) == 0 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(step(s, 12, 1, 1, &rc) == 12 && rc == VJO_ROW_STAY);  /* 家, the text's last */
+    TEST_CHECK(step(s, 0, -1, 1, &rc) == 0 && rc == VJO_ROW_STAY);
     TEST_CHECK(lay.bad_queries == 0);
 }
 
+/* A line break before the first selectable character or after the last one
+ * does not make a second row of them: such a text still goes round, with the
+ * layout and without it (an empty first or last line). */
+static void a_line_break_at_an_end_is_not_a_row(void)
+{
+    static const char *const texts[] = {"\n猫犬鳥", "猫犬鳥\n", "\n\n猫犬鳥\n", "A\n猫犬鳥"};
+    for (unsigned i = 0; i < sizeof(texts) / sizeof(texts[0]); i++) {
+        const char *s = texts[i];
+        size_t len = strlen(s), cat = strstr(s, "猫") - s, bird = strstr(s, "鳥") - s, out = len;
+        layout_text(&lay, s, W, JA, NARROW);
+        VjoTextRows r = layout_rows(&lay);
+        TEST_CHECK_(vjo_text_row_step(s, len, &r, bird, bird + 1, 1, 1, 1, &out) == VJO_ROW_WRAPPED && out == cat,
+                    "text %u: Right from 鳥: %zu", i, out);
+        TEST_CHECK(vjo_text_row_step(s, len, &r, cat, cat + 1, -1, 1, 1, &out) == VJO_ROW_WRAPPED && out == bird);
+        out = len;
+        TEST_CHECK_(vjo_text_row_step(s, len, NULL, bird, bird + 1, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE &&
+                    out == cat, "text %u without a layout: %zu", i, out);
+        TEST_CHECK(vjo_text_row_step(s, len, NULL, cat, cat + 1, -1, 1, 1, &out) == VJO_ROW_UNAVAILABLE &&
+                   out == bird);
+    }
+    /* off, "A\n猫犬鳥" has A on its own row: no wrap, either way */
+    const char *s = texts[3];
+    size_t len = strlen(s), out = 99;
+    layout_text(&lay, s, W, JA, NARROW);
+    VjoTextRows r = layout_rows(&lay);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 8, 9, 1, 0, 1, &out) == VJO_ROW_STAY && out == 99);
+    TEST_CHECK(vjo_text_row_step(s, len, NULL, 8, 9, 1, 0, 1, &out) == VJO_ROW_UNAVAILABLE && out == 99);
+    TEST_CHECK(vjo_text_row_step(s, len, NULL, 0, 1, -1, 0, 1, &out) == VJO_ROW_UNAVAILABLE && out == 99);
+    /* one letter (or a cursor on the only one Right could go round to): nowhere to go, nothing asked */
+    const char *one = "猫。";
+    layout_text(&lay, one, W, JA, NARROW);
+    r = layout_rows(&lay);
+    unsigned calls = lay.calls;
+    TEST_CHECK(vjo_text_row_step(one, 6, &r, 0, 1, 1, 1, 1, &out) == VJO_ROW_STAY && out == 99);
+    TEST_CHECK(vjo_text_row_step(one, 6, &r, 0, 1, -1, 1, 1, &out) == VJO_ROW_STAY && out == 99);
+    TEST_CHECK(vjo_text_row_step(one, 6, &r, 3, 4, -1, 1, 1, &out) == VJO_ROW_MOVED && out == 0); /* from 。 */
+    TEST_CHECK(lay.calls == calls);
+}
+
+/* x is NaN for 猫, the text's first character. */
 static int nan_position(void *ctx, uint32_t unit, float *x, uint32_t *line)
 {
     int rc = layout_position(ctx, unit, x, line);
-    if (unit == 4)
+    if (unit == 0)
         *x = NAN;
     return rc;
 }
 
 static void unavailable_layout_changes_nothing(void)
 {
-    const char *s = "猫\r\n𠮷野家";
+    const char *s = "猫\r\n𠮷野家"; /* units: 猫 0, LF 1, 𠮷 2-3, 野 4, 家 5 */
     VjoRowGoal goal = {0, 0};
     size_t out = 99, len = strlen(s);
     TEST_ASSERT(layout_text(&lay, s, W, JA, NARROW) == 2);
     VjoTextRows r = layout_rows(&lay);
     lay.fail_unit = 4; /* 野, a selectable cell */
     TEST_CHECK(vjo_text_row_vertical(s, len, &r, 0, 1, 1, &goal, &out) == VJO_ROW_UNAVAILABLE);
-    TEST_CHECK(vjo_text_row_step(s, len, &r, 5, 6, 1, 1, &out) == VJO_ROW_UNAVAILABLE);
     TEST_CHECK(out == 99 && goal.at == 0);
+    /* Left/Right in reading order ask no position; at the text's ends only its
+     * first's and last's (猫 and 家 here), and without them the line breaks decide */
+    unsigned calls = lay.calls;
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 5, 6, 1, 1, 1, &out) == VJO_ROW_MOVED && out == 9 && lay.calls == calls);
+    out = 99;
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 1, &out) == VJO_ROW_STAY && out == 99);
+    TEST_CHECK(lay.calls == calls + 2);
+    lay.fail_unit = 5; /* 家, the text's last */
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 99);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 0, 1, -1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 99);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 0, &out) == VJO_ROW_STAY && out == 99); /* the stick */
     lay.fail_unit = 1; /* the line break: it only ends 猫's cell early */
     TEST_CHECK(vjo_text_row_vertical(s, len, &r, 0, 1, 1, &goal, &out) == VJO_ROW_MOVED && out == 5);
     lay.fail_unit = -1;
     r.lines = 1; /* a position on a line the layout does not have */
     TEST_CHECK(vjo_text_row_vertical(s, len, &r, 0, 1, 1, &goal, &out) == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 5);
     r = layout_rows(&lay);
     r.position = nan_position;
-    TEST_CHECK(vjo_text_row_step(s, len, &r, 5, 6, 1, 1, &out) == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 5);
     r = layout_rows(&lay);
     r.terminal_width = 0;
-    TEST_CHECK(vjo_text_row_step(s, len, &r, 5, 6, 1, 1, &out) == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 12, 13, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 5);
     TEST_CHECK(vjo_text_row_vertical(s, len, NULL, 0, 1, 1, &goal, &out) == VJO_ROW_UNAVAILABLE);
     r = layout_rows(&lay);
     TEST_CHECK(vjo_text_row_vertical(s, len, &r, len, 1, 1, &goal, &out) == VJO_ROW_STAY);
-    TEST_CHECK(vjo_text_row_step("", 0, &r, 0, 1, 1, 1, &out) == VJO_ROW_STAY);
-    TEST_CHECK(vjo_text_row_step(s, len, &r, 0, 1, 0, 1, &out) == VJO_ROW_STAY);
+    TEST_CHECK(vjo_text_row_step("", 0, &r, 0, 1, 1, 1, 1, &out) == VJO_ROW_STAY);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, 0, 1, 0, 1, 1, &out) == VJO_ROW_STAY);
+    TEST_CHECK(vjo_text_row_step(s, len, &r, len, len + 1, 1, 1, 1, &out) == VJO_ROW_STAY);
+    TEST_CHECK(vjo_text_row_step(NULL, len, &r, 0, 1, 1, 1, 1, &out) == VJO_ROW_STAY);
     TEST_CHECK(out == 5);
-    /* Without a layout the whole text is one row: the arrows still move. */
+    /* Without a layout the line breaks stand for the rows: the arrows still
+     * move, stop at the ends of a text with one, and go round one without. */
     VjoWordNavigation h = {{0}, 0};
     int rc;
-    TEST_CHECK(vjo_word_step(&h, s, len, 12, 0, 1, 1, NULL, &rc) == 0 && rc == VJO_ROW_UNAVAILABLE);
-    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, 1, 1, NULL, &rc) == 5 && rc == VJO_ROW_UNAVAILABLE);
-    lay.fail_unit = 4;
-    r = layout_rows(&lay);
+    TEST_CHECK(vjo_word_step(&h, s, len, 12, 0, 1, 1, NULL, 1, &rc) == 12 && rc == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, 1, 1, NULL, 1, &rc) == 5 && rc == VJO_ROW_MOVED && h.count == 1);
     h.count = 0;
-    TEST_CHECK(vjo_word_step(&h, s, len, 5, 0, 1, 1, &r, &rc) == 9 && rc == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, -1, 1, NULL, 1, &rc) == 0 && rc == VJO_ROW_UNAVAILABLE);
+    const char *t = "猫犬鳥";
+    TEST_CHECK(vjo_word_step(&h, t, 9, 6, 0, 1, 1, NULL, 1, &rc) == 0 && rc == VJO_ROW_UNAVAILABLE && h.count == 1);
+    TEST_CHECK(vjo_word_step(&h, t, 9, 0, 0, -1, 1, NULL, 1, &rc) == 6 && rc == VJO_ROW_MOVED && h.count == 0);
+    TEST_CHECK(vjo_word_step(&h, t, 9, 0, 0, -1, 1, NULL, 1, &rc) == 6 && rc == VJO_ROW_UNAVAILABLE);
+    TEST_CHECK(vjo_word_step(&h, t, 9, 6, 0, 1, 1, NULL, 0, &rc) == 6 && rc == VJO_ROW_STAY); /* the stick */
 }
 
-static void whole_words_stay_on_their_row(void)
+static void whole_words_cross_rows(void)
 {
     /* Row 0: 猫 が 好 き で す 。 犬 も 好 | row 1: き で す 。 (好き crosses). */
     const char *s = "猫が好きです。犬も好きです。";
     size_t len = strlen(s), cursor = 0;
-    static const size_t ends[][2] = {{0, 3}, {3, 6}, {6, 12}, {12, 18}, {21, 24}, {24, 27}, {27, 33}};
+    static const size_t ends[][2] = {{0, 3}, {3, 6}, {6, 12}, {12, 18}, {21, 24}, {24, 27}, {27, 33}, {33, 39}};
+    const size_t n = sizeof(ends) / sizeof(ends[0]);
     VjoWordNavigation h = {{0}, 0};
     int rc;
     TEST_ASSERT(layout_text(&lay, s, W, JA, NARROW) == 2);
     TEST_CHECK(lay.line[9] == 0 && lay.line[10] == 1);
     VjoTextRows r = layout_rows(&lay);
-    for (size_t i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {
+    for (size_t i = 0; i < n; i++) {
         TEST_ASSERT(cursor == ends[i][0]);
-        cursor = vjo_word_step(&h, s, len, cursor, ends[i][1], 1, 1, &r, &rc);
-        TEST_CHECK(rc == (i + 1 < sizeof(ends) / sizeof(ends[0]) ? VJO_ROW_MOVED : VJO_ROW_WRAPPED));
+        cursor = vjo_word_step(&h, s, len, cursor, ends[i][1], 1, 1, &r, 1, &rc);
+        TEST_CHECK(rc == (i + 1 < n ? VJO_ROW_MOVED : VJO_ROW_STAY));
     }
-    TEST_CHECK(cursor == 0 && h.count == 7); /* 好き ends on row 1: back to the row's first word */
-    for (size_t i = sizeof(ends) / sizeof(ends[0]); i-- > 0;) {
-        cursor = vjo_word_step(&h, s, len, cursor, 0, -1, 1, &r, &rc);
-        TEST_CHECK(cursor == ends[i][0] && rc == VJO_ROW_MOVED); /* Left retraces, the wrap first */
+    /* 好き ends on row 1: Right went on after its tail there (で), then stopped at the text's last word */
+    TEST_CHECK(cursor == 33 && h.count == 7);
+    for (size_t i = n - 1; i-- > 0;) {
+        cursor = vjo_word_step(&h, s, len, cursor, 0, -1, 1, &r, 1, &rc);
+        TEST_CHECK(cursor == ends[i][0] && rc == VJO_ROW_MOVED); /* Left retraces, across the rows */
     }
     TEST_CHECK(h.count == 0);
-    cursor = vjo_word_step(&h, s, len, 0, 0, -1, 1, &r, &rc);
-    TEST_CHECK(cursor == 27 && rc == VJO_ROW_WRAPPED); /* no history: the row's last character */
-    TEST_CHECK(vjo_word_step(&h, s, len, 27, 0, -1, 1, &r, &rc) == 24 && h.count == 0);
-    /* Row 1: で's match runs to the end, 。 is not Japanese: wrap. */
-    TEST_CHECK(vjo_word_step(&h, s, len, 30, 33, 1, 1, &r, &rc) == 33);
-    TEST_CHECK(vjo_word_step(&h, s, len, 33, 39, 1, 1, &r, &rc) == 30 && rc == VJO_ROW_WRAPPED);
-    TEST_CHECK(vjo_word_step(&h, s, len, 33, len, 1, 0, &r, &rc) == 30 && rc == VJO_ROW_WRAPPED);
+    cursor = vjo_word_step(&h, s, len, 0, 0, -1, 1, &r, 1, &rc);
+    TEST_CHECK(cursor == 0 && rc == VJO_ROW_STAY); /* no history, the text's first: nowhere */
+    TEST_CHECK(vjo_word_step(&h, s, len, 30, 0, -1, 1, &r, 1, &rc) == 27 && rc == VJO_ROW_MOVED); /* row 1's first */
+    TEST_CHECK(vjo_word_step(&h, s, len, 27, 0, -1, 1, &r, 1, &rc) == 24 && h.count == 0);
+    /* Row 1: で's match runs to the end, 。 is not Japanese: the end, nowhere to go. */
+    TEST_CHECK(vjo_word_step(&h, s, len, 30, 33, 1, 1, &r, 1, &rc) == 33);
+    TEST_CHECK(vjo_word_step(&h, s, len, 33, 39, 1, 1, &r, 1, &rc) == 33 && rc == VJO_ROW_STAY);
+    TEST_CHECK(vjo_word_step(&h, s, len, 33, len, 1, 0, &r, 1, &rc) == 33 && rc == VJO_ROW_STAY);
+    TEST_CHECK(vjo_word_step(&h, s, len, 27, len, 1, 0, &r, 1, &rc) == 27 && rc == VJO_ROW_STAY);
     /* A pending or failed lookup, or a match end inside a character: one character. */
     h.count = 0;
-    TEST_CHECK(vjo_word_step(&h, s, len, 6, 0, 1, 1, &r, &rc) == 9);
-    TEST_CHECK(vjo_word_step(&h, s, len, 6, 10, 1, 1, &r, &rc) == 9);
-    TEST_CHECK(vjo_word_step(&h, s, len, 6, len + 1, 1, 1, &r, &rc) == 9);
+    TEST_CHECK(vjo_word_step(&h, s, len, 6, 0, 1, 1, &r, 1, &rc) == 9);
+    TEST_CHECK(vjo_word_step(&h, s, len, 6, 10, 1, 1, &r, 1, &rc) == 9);
+    TEST_CHECK(vjo_word_step(&h, s, len, 6, len + 1, 1, 1, &r, 1, &rc) == 9);
     TEST_CHECK(h.count == 3);
+    /* A match whose end lies on a later row, after a line break (a word looked
+     * up whole across it): Right lands after its tail there, never on that
+     * row's first character or round to the text's start. */
+    const char *t = "わたしをたべ\nるかな"; /* た 12, べ 15, LF 18, る 19, か 22 */
+    TEST_ASSERT(layout_text(&lay, t, W, JA, NARROW) == 2);
+    r = layout_rows(&lay);
+    h.count = 0;
+    TEST_CHECK(vjo_word_step(&h, t, strlen(t), 12, 22, 1, 1, &r, 1, &rc) == 22 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_step(&h, t, strlen(t), 22, 0, -1, 1, &r, 1, &rc) == 12 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_step(&h, t, strlen(t), 12, 25, 1, 1, &r, 0, &rc) == 25); /* the stick's the same */
 }
 
 /* Left always moves: a history entry at the cursor itself (none of the
@@ -266,11 +366,13 @@ static void left_never_retraces_onto_the_cursor(void)
     int rc;
     TEST_ASSERT(layout_text(&lay, s, W, JA, NARROW) == 1);
     VjoTextRows r = layout_rows(&lay);
-    TEST_CHECK(vjo_word_step(&h, s, len, 6, 0, -1, 1, &r, &rc) == 3 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_step(&h, s, len, 6, 0, -1, 1, &r, 1, &rc) == 3 && rc == VJO_ROW_MOVED);
     TEST_CHECK(h.count == 0); /* the step back forgot 0 too */
-    TEST_CHECK(vjo_word_step(&h, s, len, 3, 0, -1, 1, &r, &rc) == 0 && h.count == 0);
+    TEST_CHECK(vjo_word_step(&h, s, len, 3, 0, -1, 1, &r, 1, &rc) == 0 && h.count == 0);
     h = (VjoWordNavigation){{99}, 1}; /* past the text */
-    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, -1, 1, &r, &rc) == 12 && rc == VJO_ROW_WRAPPED && h.count == 0);
+    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, -1, 1, &r, 1, &rc) == 12 && rc == VJO_ROW_WRAPPED && h.count == 0);
+    h = (VjoWordNavigation){{99}, 1};
+    TEST_CHECK(vjo_word_step(&h, s, len, 0, 0, -1, 1, &r, 0, &rc) == 0 && rc == VJO_ROW_STAY && h.count == 1);
 }
 
 static void row_keys_forget_the_row_they_leave(void)
@@ -281,29 +383,49 @@ static void row_keys_forget_the_row_they_leave(void)
     memset(&nav, 0, sizeof(nav));
     TEST_ASSERT(layout_text(&lay, s, W, JA, NARROW) == 2);
     VjoTextRows r = layout_rows(&lay);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 0, 3, 1, 0, 1, &out) == VJO_ROW_MOVED && out == 3);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 3, 6, 1, 0, 1, &out) == VJO_ROW_MOVED && out == 6);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 0, 3, 1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 3);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 3, 6, 1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 6);
     TEST_CHECK(nav.words.count == 2);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 6, 12, 0, 1, 1, &out) == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 6, 12, 0, 1, 1, 0, &out) == VJO_ROW_MOVED);
     TEST_CHECK(out == 36 && nav.words.count == 0 && nav.row_moves == 1); /* 好 (48..72) -> す (48..72) */
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, -1, 0, 1, &out) == VJO_ROW_MOVED && out == 33);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 33, 0, -1, 0, 1, &out) == VJO_ROW_MOVED && out == 30);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 30, 0, -1, 0, 1, &out) == VJO_ROW_WRAPPED && out == 36);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, 0, 1, 1, &out) == VJO_ROW_STAY && out == 36);
-    TEST_CHECK(vjo_text_row_key(&nav, s, len, NULL, 36, 0, 0, -1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 36);
-    TEST_CHECK(nav.row_moves == 1 && nav.wraps == 1 && nav.no_layout == 1);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, -1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 33);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 33, 0, -1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 30);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 30, 0, -1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 27);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 27, 0, 0, 1, 1, 0, &out) == VJO_ROW_MOVED && out == 36);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, 0, 1, 1, 0, &out) == VJO_ROW_STAY && out == 36);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, NULL, 36, 0, 0, -1, 1, 0, &out) == VJO_ROW_UNAVAILABLE && out == 36);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, 1, 0, 1, 0, &out) == VJO_ROW_STAY && out == 36);
+    TEST_CHECK(nav.row_moves == 2 && nav.wraps == 0 && nav.no_layout == 1);
+    /* The stick's steps (`stick`) take the same path and are not counted. */
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 36, 0, 0, -1, 1, 1, &out) == VJO_ROW_MOVED && out == 6);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, NULL, 6, 0, 0, 1, 1, 1, &out) == VJO_ROW_UNAVAILABLE && out == 6);
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 6, 12, 1, 0, 1, 1, &out) == VJO_ROW_MOVED && out == 12);
+    TEST_CHECK(nav.words.count == 1); /* the stick's Right is in the history too */
+    TEST_CHECK(vjo_text_row_key(&nav, s, len, &r, 12, 0, -1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 6);
+    TEST_CHECK(nav.row_moves == 2 && nav.wraps == 0 && nav.no_layout == 1);
+    /* One row: the arrows go round its ends (counted), the stick does not. */
+    const char *o = "猫が好きです。";
+    memset(&nav, 0, sizeof(nav));
+    TEST_ASSERT(layout_text(&lay, o, W, JA, NARROW) == 1);
+    r = layout_rows(&lay);
+    TEST_CHECK(vjo_text_row_key(&nav, o, strlen(o), &r, 15, 0, 1, 0, 1, 1, &out) == VJO_ROW_STAY && out == 15);
+    TEST_CHECK(vjo_text_row_key(&nav, o, strlen(o), &r, 15, 0, 1, 0, 1, 0, &out) == VJO_ROW_WRAPPED && out == 0);
+    TEST_CHECK(vjo_text_row_key(&nav, o, strlen(o), &r, 0, 0, -1, 0, 1, 1, &out) == VJO_ROW_MOVED && out == 15);
+    TEST_CHECK(nav.wraps == 1 && nav.words.count == 0); /* the stick's Left retraced the arrows' wrap */
+    TEST_CHECK(vjo_text_row_key(&nav, o, strlen(o), NULL, 15, 0, 1, 0, 1, 0, &out) == VJO_ROW_UNAVAILABLE && out == 0);
+    TEST_CHECK(nav.wraps == 1 && nav.no_layout == 1);
     /* Left/Right take Up/Down's column afresh, even back on the same cell:
-     * け (column 8) Down to し keeps 204; Right wraps to さ, Left retraces to
+     * け (column 8) Down to し keeps 204; Right goes on to た, Left retraces to
      * し; Down then goes by し's own centre (36) to ち, not ね. */
     const char *t = "あいうえおかきくけこ\nさし\nたちつてとなにぬねの";
     size_t tlen = strlen(t);
     memset(&nav, 0, sizeof(nav));
     TEST_ASSERT(layout_text(&lay, t, W, JA, NARROW) == 3);
     r = layout_rows(&lay);
-    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 24, 0, 0, 1, 1, &out) == VJO_ROW_MOVED && out == 34);
-    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 34, 0, 1, 0, 1, &out) == VJO_ROW_WRAPPED && out == 31);
-    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 31, 0, -1, 0, 1, &out) == VJO_ROW_MOVED && out == 34);
-    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 34, 0, 0, 1, 1, &out) == VJO_ROW_MOVED && out == 41);
+    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 24, 0, 0, 1, 1, 0, &out) == VJO_ROW_MOVED && out == 34);
+    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 34, 0, 1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 38);
+    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 38, 0, -1, 0, 1, 0, &out) == VJO_ROW_MOVED && out == 34);
+    TEST_CHECK(vjo_text_row_key(&nav, t, tlen, &r, 34, 0, 0, 1, 1, 0, &out) == VJO_ROW_MOVED && out == 41);
 }
 
 /* ---- every key from every character of generated texts ---- */
@@ -321,9 +443,9 @@ static void generated_texts_follow_the_rules(void)
                                          "\r", "𠮷", "ｶ", "\xe3\x80\x80", "「", "x", "語"};
     static char text[4096];
     static const float widths[] = {240.0f, 120.0f, 920.0f, 30.0f};
-    unsigned checks = 0, moves = 0, wraps = 0, rows_total = 0;
+    unsigned checks = 0, moves = 0, wraps = 0, rows_total = 0, one_row = 0;
     for (int t = 0; t < 120; t++) {
-        size_t n = 0, pieces_n = 2 + lcg() % 90;
+        size_t n = 0, pieces_n = 2 + lcg() % (t % 3 ? 90 : 12); /* a third of them short, often on one row */
         for (size_t p = 0; p < pieces_n; p++) {
             const char *piece = pieces[lcg() % (sizeof(pieces) / sizeof(pieces[0]))];
             size_t k = strlen(piece);
@@ -335,21 +457,42 @@ static void generated_texts_follow_the_rules(void)
         float width = widths[t % 4];
         rows_total += layout_text(&lay, text, width, JA, NARROW);
         VjoTextRows r = layout_rows(&lay);
+        size_t ends[2][2] = {{n, n}, {n, n}}; /* per jp: the text's first and last selectable characters */
+        for (unsigned k = 0; k < lay.n; k++)
+            for (int jp = 0; jp <= 1; jp++)
+                if (layout_selectable(&lay, k, jp)) {
+                    if (ends[jp][0] == n)
+                        ends[jp][0] = lay.begin[k];
+                    ends[jp][1] = lay.begin[k];
+                }
         for (unsigned k = 0; k < lay.n; k++) {
             size_t c = lay.begin[k];
             for (int jp = 0; jp <= 1; jp++) {
                 for (int d = -1; d <= 1; d += 2) {
                     int wrapped, rc;
-                    size_t want = ref_step(&lay, c, c + 1, d, jp, &wrapped), out = c;
-                    rc = vjo_text_row_step(text, n, &r, c, c + 1, d, jp, &out);
-                    TEST_CHECK_(out == want && rc == (want == c ? VJO_ROW_STAY : wrapped ? VJO_ROW_WRAPPED : VJO_ROW_MOVED),
-                                "text %d byte %zu jp %d dx %d: %zu rc %d, expected %zu wrapped %d", t, c, jp, d, out, rc,
-                                want, wrapped);
+                    for (int wrap = 0; wrap <= 1; wrap++) {
+                        unsigned calls = lay.calls;
+                        size_t want = ref_read_step(&lay, c, c + 1, d, jp, wrap, &wrapped), out = c;
+                        rc = vjo_text_row_step(text, n, &r, c, c + 1, d, jp, wrap, &out);
+                        TEST_CHECK_(out == want && rc == (want == c ? VJO_ROW_STAY : wrapped ? VJO_ROW_WRAPPED : VJO_ROW_MOVED),
+                                    "text %d byte %zu jp %d dx %d wrap %d: %zu rc %d, expected %zu wrapped %d", t, c, jp,
+                                    d, wrap, out, rc, want, wrapped);
+                        /* positions asked: none for a move in reading order; at an end, the first's and
+                         * the last's rows, only when it could go round to another character */
+                        size_t round = ends[jp][d > 0 ? 0 : 1];
+                        unsigned asked = want != c && !wrapped ? 0u : wrap && round < n && round != c ? 2u : 0u;
+                        TEST_CHECK_(lay.calls - calls == asked, "text %d byte %zu dx %d wrap %d: %u queries, expected %u",
+                                    t, c, d, wrap, lay.calls - calls, asked);
+                        /* and without a layout the same, but where the rows decide: by the line breaks */
+                        out = c;
+                        rc = vjo_text_row_step(text, n, NULL, c, c + 1, d, jp, wrap, &out);
+                        TEST_CHECK_(want == c || wrapped ? 1 : out == want && rc == VJO_ROW_MOVED,
+                                    "text %d byte %zu dx %d without a layout: %zu", t, c, d, out);
+                    }
                     /* a whole word: Right from the end of the next selectable character */
                     size_t from = k + 2 < lay.n ? lay.begin[k + 2] : n;
-                    want = ref_step(&lay, c, from, 1, jp, &wrapped);
-                    out = c;
-                    rc = vjo_text_row_step(text, n, &r, c, from, 1, jp, &out);
+                    size_t want = ref_read_step(&lay, c, from, 1, jp, 1, &wrapped), out = c;
+                    rc = vjo_text_row_step(text, n, &r, c, from, 1, jp, 1, &out);
                     TEST_CHECK_(out == want, "text %d byte %zu from %zu: %zu, expected %zu", t, c, from, out, want);
                     VjoRowGoal goal = {0, 0};
                     want = ref_vertical(&lay, c, d, jp, -1.0f);
@@ -362,46 +505,59 @@ static void generated_texts_follow_the_rules(void)
                     out = c;
                     vjo_text_row_vertical(text, n, &r, c, d, jp, &goal, &out);
                     TEST_CHECK_(out == want, "text %d byte %zu column: %zu, expected %zu", t, c, out, want);
-                    checks += 4;
+                    checks += 6;
                 }
-                /* Right from a selectable character comes back to it after
-                 * visiting each selectable character of its row once. */
-                if (layout_selectable(&lay, k, jp)) {
-                    unsigned row_cells = 0, steps = 0;
-                    for (unsigned j = 0; j < lay.n; j++)
-                        row_cells += lay.line[j] == lay.line[k] && layout_selectable(&lay, j, jp);
-                    size_t at = c;
-                    int rc;
-                    do {
-                        size_t next = c;
-                        rc = vjo_text_row_step(text, n, &r, at, at + 1, 1, jp, &next);
-                        TEST_ASSERT(rc >= 0);
-                        if (rc == VJO_ROW_STAY) break;
-                        TEST_CHECK(lay.line[layout_at(&lay, next)] == lay.line[k]);
-                        moves++;
-                        wraps += rc == VJO_ROW_WRAPPED;
-                        at = next;
-                    } while (++steps <= row_cells && at != c);
-                    TEST_CHECK_(at == c && (rc == VJO_ROW_STAY ? row_cells == 1 : steps == row_cells),
-                                "text %d byte %zu: back after %u of %u", t, c, steps, row_cells);
+            }
+        }
+        /* From the text's first selectable character, Right visits each one
+         * once in reading order, across every row, and then stays at the last
+         * (or goes round to the first, on one row); Left the same way back. */
+        for (int jp = 0; jp <= 1; jp++) {
+            unsigned sel[LAYOUT_MAX], ns = 0;
+            for (unsigned k = 0; k < lay.n; k++)
+                if (layout_selectable(&lay, k, jp))
+                    sel[ns++] = k;
+            if (!ns)
+                continue;
+            int one = lay.line[sel[0]] == lay.line[sel[ns - 1]];
+            one_row += one && jp;
+            for (int d = -1; d <= 1; d += 2) {
+                size_t at = lay.begin[d > 0 ? sel[0] : sel[ns - 1]], next;
+                int rc = VJO_ROW_STAY;
+                for (unsigned i = 1; i < ns; i++) {
+                    next = at;
+                    rc = vjo_text_row_step(text, n, &r, at, at + 1, d, jp, 1, &next);
+                    TEST_CHECK_(rc == VJO_ROW_MOVED && next == lay.begin[d > 0 ? sel[i] : sel[ns - 1 - i]],
+                                "text %d jp %d dx %d: step %u at %zu", t, jp, d, i, next);
+                    at = next;
+                    moves++;
                 }
+                next = at;
+                rc = vjo_text_row_step(text, n, &r, at, at + 1, d, jp, 1, &next);
+                TEST_CHECK_(one && ns > 1 ? rc == VJO_ROW_WRAPPED && next == lay.begin[d > 0 ? sel[0] : sel[ns - 1]]
+                                          : rc == VJO_ROW_STAY && next == at,
+                            "text %d jp %d dx %d: past the end (%s): rc %d at %zu", t, jp, d, one ? "one row" : "rows",
+                            rc, next);
+                wraps += rc == VJO_ROW_WRAPPED;
             }
         }
         TEST_CHECK(lay.bad_queries == 0);
     }
-    printf("\n  %u key checks on 120 generated texts (%u rows), %u Right steps around rows, %u wraps\n",
-           checks, rows_total, moves, wraps);
+    TEST_CHECK(one_row > 10 && wraps > 20); /* the one-row texts' wrap is exercised */
+    printf("\n  %u key checks on 120 generated texts (%u rows; %u texts with their Japanese on one row), "
+           "%u Right and Left steps through them, %u wraps\n", checks, rows_total, one_row, moves, wraps);
 }
 
 TEST_LIST = {
-    {"wrapped_line_rows_and_wrap_at_row_ends", wrapped_line_rows_and_wrap_at_row_ends},
+    {"wrapped_line_rows_and_their_ends", wrapped_line_rows_and_their_ends},
     {"a_cell_never_ends_on_the_next_row", a_cell_never_ends_on_the_next_row},
     {"column_kept_across_a_short_row", column_kept_across_a_short_row},
     {"mixed_widths_use_measured_cells", mixed_widths_use_measured_cells},
     {"punctuation_and_hanging_kinsoku", punctuation_and_hanging_kinsoku},
     {"cr_newline_and_surrogate_pairs", cr_newline_and_surrogate_pairs},
+    {"a_line_break_at_an_end_is_not_a_row", a_line_break_at_an_end_is_not_a_row},
     {"unavailable_layout_changes_nothing", unavailable_layout_changes_nothing},
-    {"whole_words_stay_on_their_row", whole_words_stay_on_their_row},
+    {"whole_words_cross_rows", whole_words_cross_rows},
     {"left_never_retraces_onto_the_cursor", left_never_retraces_onto_the_cursor},
     {"row_keys_forget_the_row_they_leave", row_keys_forget_the_row_they_leave},
     {"generated_texts_follow_the_rules", generated_texts_follow_the_rules},

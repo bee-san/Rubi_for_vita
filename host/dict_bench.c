@@ -294,12 +294,12 @@ int main(int argc, char **argv)
             q->stats = vjo_local_stats;
             if (mode == 0) break;
             if (mode == 1) {
-                next = vjo_word_step(&nav, s, len, cursor, q->end, 1, cfg.japanese_only_selection, NULL, &row);
+                next = vjo_word_step(&nav, s, len, cursor, q->end, 1, cfg.japanese_only_selection, NULL, 1, &row);
             } else {
                 next = vjo_utf8_cursor_step(s, len, cursor, 1);
                 next = next > cursor ? vjo_utf8_japanese_cursor_step(s, len, next, 0) : len;
             }
-            if (next <= cursor) break; /* the last word: Right wraps to the first */
+            if (next <= cursor) break; /* the last word: Right stops there (one line: wraps to the first) */
             cursor = next;
         }
     }

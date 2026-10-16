@@ -198,10 +198,10 @@ app when it starts.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| Left / Right | Move along the displayed row: skip matched words in Whole word mode, one character in Character mode; Right from the row's last wraps to its first, Left from its first to its last |
+| Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode; Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
-| Left stick | Move the cursor as the d-pad does, faster while held: left/right through the text in reading order (the shown word skipped, then a character a step), stopping at its first and last character; up/down a row. The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](docs/touch-lookup.md#the-left-stick-138)) |
+| Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right as Left/Right (the shown word skipped, then a character a step; Left retraces), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](docs/touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
@@ -316,10 +316,14 @@ keeps the character highlighted. In Whole word mode, Right advances past the
 matched source span and Left retraces up to 16 recent forward selections. With
 no match or previous selection, movement falls back to one character.
 Character mode always moves one character; Japanese-only applies to both modes.
-The arrows follow the header as it is drawn: Left/Right stay on the cursor's
-displayed row and wrap at its ends (Right from its last word or character goes
-to its first; Left from its first goes to its last character, and retraces a
-wrap like any other Right), and Up/Down go to the nearest row above or below
+The arrows follow the header as it is drawn: Left/Right go through the text in
+reading order, across its displayed rows (Right from a row's last word or
+character goes to the next row's first; Left from a row's first goes to the
+row above's last character, or back to the word a Right came from), and stop at
+the text's first and last selectable character. A text on one row is the one
+that goes round its ends, as #81 asked: Right from its last goes to its first,
+Left from its first to its last, and Left retraces such a wrap like any other
+Right. Up/Down go to the nearest row above or below
 with a selectable character, a soft-wrapped part of a long line included, to
 the character nearest the same horizontal position, which repeated Up/Down
 keep across a shorter row. The rows and positions are the header's own
@@ -328,12 +332,13 @@ laid-out lines and character starts, as for taps
 The left stick crosses a long line faster (#138). Each arrow press looks its
 word up at once: 35-112 ms a step in the test.3 console run (median 56 ms, its
 31 cursor lookups in `log.txt`), and in Whole word mode Right skips a word only
-once that word's lookup is shown. Held, the stick steps through the text in
-reading order, across rows: one step at once, the next after a sixth of a
-second as in the Overlay app's lists, then each sooner, up to 20 steps a second
-(the cap, chosen so the cursor does not overshoot: an estimate, untested on a
-console); it stops at the text's first and
-last character instead of wrapping. Nothing is looked up while it moves: the
+once that word's lookup is shown. The stick moves in the arrows' four
+directions, by the arrows' own rules: held, it steps through the text in
+reading order across rows (or a row up or down), one step at once, the next
+after a sixth of a second as in the Overlay app's lists, then each sooner, up
+to 20 steps a second (the cap, chosen so the cursor does not overshoot: an
+estimate, untested on a console); it stops at the text's first and
+last character, a one-row text's too, instead of going round. Nothing is looked up while it moves: the
 word at the cursor is looked up once the cursor has rested there for
 `stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000), or has been held
 against the text's end that long; back on the word shown before that, nothing

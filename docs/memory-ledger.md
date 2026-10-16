@@ -506,6 +506,15 @@ API 24 (the kernel's full-frame capture removed): the normal kernel 35,900 → 3
 75,984 → 75,896 B of data/bss in its 114,688 B, the normal Shell 90,012 → 89,924 B of text in its
 163,840 B (188 B of room in its text pages), and the normal ledger's kernel worst case 221,184 B
 [measured: the build log's module rows and ledger, both builds of main `836259e` (#150) and API 24].
+The cursor across rows and the stick's four directions (the owner, 2026-10-16) take the overlay's two
+cursor paths down to one: the stick's steps go through the arrows' `vjo_text_row_key`, and
+`vjo_text_read_step` and the no-layout row double (`flat_position`) are gone. `core/text_rows.c`'s functions
+in the normal Shell go from 1,390 to 1,220 B (`vjo_text_row_step` 304 → 294, `vjo_word_step` 252 → 206,
+`vjo_text_row_key` 120 → 146, `vjo_text_row_vertical` 420 → 520 with `cell` inlined into it, `cell` 164 and
+the 58 + 18 B gone), `frame()` 2,812 → 2,816 B: the normal Shell 88,132 → 87,940 B of text and the debug one
+98,684 → 98,444 B, data unchanged (69,796 and 69,860 B), the same pages (2,172 and 3,956 B of text room)
+[measured: both builds' module rows and `arm-vita-eabi-nm -S`, main `c354cfb` and this change]. No
+allocation, no new static; the kernel and the worker are byte-identical to main's in both builds.
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

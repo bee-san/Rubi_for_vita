@@ -71,54 +71,57 @@ static int cell(const char *s, size_t len, const VjoTextRows *r, size_t at, floa
 }
 
 int vjo_text_row_step(const char *s, size_t len, const VjoTextRows *r, size_t cursor,
-                      size_t from, int direction, int japanese_only, size_t *out)
+                      size_t from, int direction, int japanese_only, int wrap, size_t *out)
 {
     Walk w = {s, len, 0, 0, 0, 0, 0};
-    size_t first = len, last = len, before = len, before_row = len, next = len, to;
-    uint32_t row, line, next_line = 0;
-    float x, end;
-    int rc = VJO_ROW_MOVED;
+    size_t first = len, last = len, to = len;
+    uint32_t first_unit = 0, last_unit = 0, first_line, last_line;
+    int broken = 0, split = 0, rc = VJO_ROW_MOVED;
+    float x;
     if (!s || cursor >= len || !direction)
         return VJO_ROW_STAY;
-    if (!rows_ok(s, r) || !cell(s, len, r, cursor, &x, &end, &row))
-        return VJO_ROW_UNAVAILABLE;
-    /* Only selectable characters are queried; the scan ends after the row
-     * once the first candidate at `from` is known. */
+    /* In reading order, without the layout; the walk ends once the move is
+     * known, and goes on to the text's end only for an end of it. */
     while (walk(&w)) {
+        if (w.cp == '\n') {
+            broken = first < len; /* a line break after the first selectable character */
+            continue;
+        }
         if (!vjo_text_selectable(w.cp, w.i - w.begin, japanese_only))
             continue;
-        if (!query(r, w.unit, &x, &line))
-            return VJO_ROW_UNAVAILABLE;
-        if (line == row) {
-            if (first == len)
-                first = w.begin;
-            last = w.begin;
-        }
-        if (w.begin < cursor) {
-            before = w.begin;
-            if (line == row)
-                before_row = w.begin;
-        } else if (w.begin >= from && next == len) {
-            next = w.begin;
-            next_line = line;
-        }
-        if (line > row && next < len)
+        if ((direction > 0 && w.begin >= from) || (direction < 0 && w.begin >= cursor && to < len)) {
+            if (direction > 0)
+                to = w.begin;
             break;
+        }
+        if (direction < 0 && w.begin < cursor)
+            to = w.begin;
+        if (first == len) {
+            first = w.begin;
+            first_unit = w.unit;
+        }
+        split |= broken; /* a line break between the first and this one */
+        last = w.begin;
+        last_unit = w.unit;
     }
-    if (direction > 0) {
-        to = next;
-        if ((next == len || next_line != row) && first < len) {
-            to = first;
+    if (to == len) {
+        /* Past the text's end that way: round it only on one displayed row
+         * (the first's and the last's lines; lines never decrease), else
+         * nowhere. Without the layout, a line break between them is a row. */
+        if (!wrap || first == len || (direction > 0 ? first : last) == cursor)
+            return VJO_ROW_STAY;
+        if (rows_ok(s, r) && query(r, first_unit, &x, &first_line) && query(r, last_unit, &x, &last_line)) {
+            if (first_line != last_line)
+                return VJO_ROW_STAY;
             rc = VJO_ROW_WRAPPED;
+        } else {
+            rc = VJO_ROW_UNAVAILABLE;
+            if (split)
+                return rc;
         }
-    } else {
-        to = before_row;
-        if (before_row == len) {
-            to = last < len ? last : before;
-            rc = last < len ? VJO_ROW_WRAPPED : VJO_ROW_MOVED;
-        }
+        to = direction > 0 ? first : last;
     }
-    if (to >= len || to == cursor)
+    if (to == cursor)
         return VJO_ROW_STAY;
     *out = to;
     return rc;
@@ -163,20 +166,10 @@ int vjo_text_row_vertical(const char *s, size_t len, const VjoTextRows *r, size_
     return VJO_ROW_MOVED;
 }
 
-/* No layout: the whole text as one row (the arrows still move). */
-static int flat_position(void *ctx, uint32_t unit, float *x, uint32_t *line)
-{
-    (void)ctx;
-    *x = (float)unit;
-    *line = 0;
-    return 0;
-}
-
 size_t vjo_word_step(VjoWordNavigation *h, const char *s, size_t len, size_t cursor,
                      size_t matched_end, int direction, int japanese_only, const VjoTextRows *r,
-                     int *row_result)
+                     int wrap, int *row_result)
 {
-    static const VjoTextRows flat = {flat_position, NULL, 1, 1.0f};
     size_t next = cursor, from = cursor + 1;
     int rc = VJO_ROW_STAY;
     if (s && cursor < len && direction) {
@@ -189,9 +182,7 @@ size_t vjo_word_step(VjoWordNavigation *h, const char *s, size_t len, size_t cur
             if (direction > 0 && matched_end > cursor && matched_end <= len &&
                 (matched_end == len || vjo_utf8_cursor_step(s, len, matched_end, 0) == matched_end))
                 from = matched_end;
-            rc = r ? vjo_text_row_step(s, len, r, cursor, from, direction, japanese_only, &next) : VJO_ROW_UNAVAILABLE;
-            if (rc < 0)
-                vjo_text_row_step(s, len, &flat, cursor, from, direction, japanese_only, &next);
+            rc = vjo_text_row_step(s, len, r, cursor, from, direction, japanese_only, wrap, &next);
             if (next != cursor && direction < 0)
                 h->count = 0;
             else if (next != cursor) {
@@ -207,32 +198,21 @@ size_t vjo_word_step(VjoWordNavigation *h, const char *s, size_t len, size_t cur
     return next;
 }
 
-size_t vjo_text_read_step(const char *s, size_t len, size_t cursor, size_t matched_end, int direction,
-                          int japanese_only)
-{
-    /* vjo_word_step without rows steps through the text as one row; only its
-     * wrap round the ends is refused (and its history is a throwaway one). */
-    VjoWordNavigation once;
-    size_t to;
-    once.count = 0;
-    to = vjo_word_step(&once, s, len, cursor, matched_end, direction, japanese_only, NULL, NULL);
-    return (direction > 0 ? to > cursor : to < cursor) ? to : cursor;
-}
-
 int vjo_text_row_key(VjoRowNav *nav, const char *s, size_t len, const VjoTextRows *r, size_t cursor,
-                     size_t matched_end, int dx, int dy, int japanese_only, size_t *out)
+                     size_t matched_end, int dx, int dy, int japanese_only, int stick, size_t *out)
 {
     int rc;
     *out = cursor;
     if (dx) {
         nav->goal.at = 0; /* Up/Down take their column afresh */
-        *out = vjo_word_step(&nav->words, s, len, cursor, matched_end, dx, japanese_only, r, &rc);
+        *out = vjo_word_step(&nav->words, s, len, cursor, matched_end, dx, japanese_only, r, !stick, &rc);
     }
-    else if ((rc = vjo_text_row_vertical(s, len, r, cursor, dy, japanese_only, &nav->goal, out)) > 0) {
+    else if ((rc = vjo_text_row_vertical(s, len, r, cursor, dy, japanese_only, &nav->goal, out)) > 0)
         nav->words.count = 0;
-        nav->row_moves++;
+    if (!stick) { /* the close log's counts are the arrows' */
+        nav->row_moves += !dx && rc > 0;
+        nav->wraps += rc == VJO_ROW_WRAPPED;
+        nav->no_layout += rc < 0;
     }
-    nav->wraps += rc == VJO_ROW_WRAPPED;
-    nav->no_layout += rc < 0;
     return rc;
 }
