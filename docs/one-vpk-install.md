@@ -68,8 +68,8 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 10,614,250 |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 143,425,536 |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
-| `payload/licenses/` (the dictionary's attribution, the JMdict licence) | stays in the app | small |
 | `payload/manifest.txt` | read by the app | small |
+| `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,062 |
 
 The dictionary is 93% of the 154,220,148 B the payload installs; the app itself is 0.5 MB.
 
@@ -174,7 +174,7 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 |---|---|---|
 | interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) | Install, offering to put it back or to keep the current one |
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
-| no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall and Check, and says `install-vita.sh` installs this build |
+| no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
 | update | `installed.txt` (below) or the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is another build's, or a plugin file is not the payload's (size and SHA-256) | Install |
 | repair | this build, but a data file is missing or has the wrong size, or a configuration does not load both plugins | Install |
@@ -682,6 +682,6 @@ compiled-values bullet, the taiHEN fork, the permissions after an L start, the b
 lines mode's done text, libftpvita's rename).
 - Notes taken: an empty file treated as missing (N1), the 4 KiB input (N2), `config.ini` details (N3),
   stale copies renamed (N4), the storage plugin in "Which file" (N5), sizes (N6), wording (N7),
-  `install-vita.sh` parity (N8), "interrupted" first (N9), the no-payload app's Uninstall and Check
-  (N10), any byte but NUL accepted (N11), the boot guard reset (N12), closing the app before a VPK
+  `install-vita.sh` parity (N8), "interrupted" first (N9), the no-payload app's Uninstall (N10; no
+  Check, as it has no manifest), any byte but NUL accepted (N11), the boot guard reset (N12), closing the app before a VPK
   install (N13), the CPU3 note (N14), the console run as rule 7's checkpoint (N15).

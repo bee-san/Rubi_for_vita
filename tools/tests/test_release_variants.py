@@ -378,6 +378,8 @@ class PackageVariants(unittest.TestCase):
             z.writestr("ux0/data/VitaJPOverlay/dictionaries/" + release.FILENAME, self.dictionary)
             z.writestr("README.md", readme)
             z.writestr("tools/install_ftp.sh", b"#!/bin/sh\n")
+            for name in ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html"):
+                z.writestr(name, name.encode() + b" fixture\n")  # the VPK carries them (package_vpk.py)
         return path
 
     def run_main(self, *argv):
@@ -401,6 +403,7 @@ class PackageVariants(unittest.TestCase):
         import package_vpk
         for path, build in ((vpk, "normal"), (debug_vpk, "debug")):
             self.assertEqual(package_vpk.verify(path), [], path.name)
+            self.assertEqual(zipfile.ZipFile(path).read("licenses/LICENSE"), b"LICENSE fixture\n")
             text = zipfile.ZipFile(path).read("payload/manifest.txt").decode()
             self.assertIn(f"\nvariant {build}\n", text)
             self.assertIn("\nworker kernel\n", text)

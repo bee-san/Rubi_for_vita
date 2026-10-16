@@ -128,6 +128,14 @@ class Collect(unittest.TestCase):
             "vjoboot1 seq=3 mode=0 stage=4 inert=0 fault=0 failures=0 api=19 prev=0/0/0/0\n")
         (self.device / "ur0/tai/config.txt").write_bytes(TAI)
         (self.device / "ur0/tai/config.txt.vjo-bak").write_bytes(b"*KERNEL\r\n")
+        # the one-VPK install (settings/install.c): its record, a dated backup, an interrupted swap's leftover
+        payload = b"vjopayload 1\nversion 0.8.0-test.1\n"
+        (self.package / "payload-manifest.txt").write_bytes(payload)
+        (data / "installed.txt").write_text("vjoinst1 version=0.8.0-test.1 variant=debug api=22 build=0123456789abcdef "
+                                            f"manifest={hashlib.sha256(payload).hexdigest()}\n")
+        (self.device / "ur0/tai/config.txt.vjo-20261016-120000.bak").write_bytes(b"*KERNEL\r\n")
+        (self.device / "ux0/tai/config.txt.vjo-new").write_bytes(b"*KERNEL\r\n")
+        (self.device / "ux0/tai/config.txt.vjo-bak.other").write_bytes(b"not fetched\n")
         (self.device / "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp").write_bytes(b"\0" * 4096)
         # installed files, and the package's manifest of them (one differs)
         files = {}
@@ -221,9 +229,12 @@ class Collect(unittest.TestCase):
                     "anki_queue/fedcba9876543210fedcba9876543210.json.tmp"):
             self.assertIn(d + rel, names)
         for rel in ("ur0/data/VitaJPOverlay/boot.txt", "ur0/tai/config.txt", "ur0/tai/config.txt.vjo-bak",
+                    "ur0/tai/config.txt.vjo-20261016-120000.bak", "ux0/tai/config.txt.vjo-new",
+                    "ux0/data/VitaJPOverlay/installed.txt",
                     "ux0/data/psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp", "COLLECT.json", "analysis.txt",
                     "analysis.json", "timeline.txt"):
             self.assertIn(folder.name + "/" + rel, names)
+        self.assertNotIn(folder.name + "/ux0/tai/config.txt.vjo-bak.other", names)
         self.assertIn("sessions (game starts):", (folder / "timeline.txt").read_text())
         self.assertTrue(any(n.startswith(folder.name + "/listings/") for n in names))
         self.assertIn(d + "anki_queue/a  b#c%20d?.json", names)
@@ -266,7 +277,13 @@ class Collect(unittest.TestCase):
                      "games: PCSG00415 x1 (ocr_mode auto, Local dictionaries)",
                      "Shell jobs (OCR + dictionary): 1 (rc ok (rc 0) x1)",
                      "SceShell refused memory 2 time(s)",
-                     "ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], OCR worker under ['PCSG00415']",
+                     "ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], OCR worker under ['PCSG00415'] "
+                     "(an older install's line: the kernel loads the worker since #138; the Overlay app's Install removes it)",
+                     # the one-VPK install: its record against the package, the backups and a leftover
+                     "one-VPK install (installed.txt): v0.8.0-test.1, the debug build, API 22, app build 0123456789abcdef; "
+                     "this package's payload",
+                     "taiHEN backups: ur0:tai/config.txt.vjo-20261016-120000.bak; an interrupted swap's leftovers: "
+                     "ux0:tai/config.txt.vjo-new (the Overlay app's Install page finishes the swap or puts it back)",
                      "boot.txt: vjoboot1 seq=3 mode=0 stage=4",
                      "worker registrations 1, OCR jobs submitted 1",
                      "    worker loader: loaded into PCSG00415",  # #138: the kernel's own load
@@ -850,6 +867,38 @@ class Collect(unittest.TestCase):
                       "ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr, ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm; "
                       "not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                       (folder / "analysis.txt").read_text())
+
+
+class InstallRecord(unittest.TestCase):
+    """The analysis of the one-VPK install's record (analyse_selftest.summarise_install): absent, another
+    package's, not a record, and the taiHEN line of a configuration with no worker line (#138)."""
+
+    def test_each_record(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import analyse_selftest as a
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.assertEqual(a.render_install(a.summarise_install(folder, {})),
+                             ["  one-VPK install: no installed.txt (not installed by the Overlay app's Install page)"])
+            (folder / "ux0/data/VitaJPOverlay").mkdir(parents=True)
+            record = folder / "ux0/data/VitaJPOverlay/installed.txt"
+            record.write_text("vjoinst1 version=0.8.1 variant=normal api=22 build=fedcba9876543210 manifest=" + "a" * 64 + "\n")
+            lines = a.render_install(a.summarise_install(folder, {"package_payload_manifest": "b" * 64}))
+            self.assertEqual(lines, ["  one-VPK install (installed.txt): v0.8.1, the normal build, API 22, app build "
+                                     "fedcba9876543210; NOT this package's payload (another build's VPK was installed)"])
+            self.assertIn("not compared", a.render_install(a.summarise_install(folder, {}))[0])
+            record.write_text("vjoinst0 garbage\n")
+            self.assertIn("installed.txt is not a record ('vjoinst0 garbage')",
+                          a.render_install(a.summarise_install(folder, {}))[0])
+            (folder / "ur0/tai").mkdir(parents=True)
+            (folder / "ur0/tai/config.txt").write_text("*KERNEL\nur0:tai/VitaJPOverlay_Kernel.skprx\n*main\n"
+                                                       "ur0:tai/VitaJPOverlay_Shell.suprx\n")
+            (folder / "ur0/tai/config.txt.vjo-20261016-120000-2.bak").write_text("*KERNEL\n")
+            summary = a.summarise_collect(folder)
+            text = a.render_collect(summary)
+            self.assertIn("ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], no OCR worker line "
+                          "(the kernel loads it); 0 commented line(s)", text)
+            self.assertIn("taiHEN backups: ur0:tai/config.txt.vjo-20261016-120000-2.bak", text)
 
 
 if __name__ == "__main__":

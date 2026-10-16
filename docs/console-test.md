@@ -88,8 +88,9 @@ Start FTP in VitaShell again, then in `vjo`:
 bash tools/install_ftp.sh --collect VITA_IP
 ```
 It reads everything the overlay wrote (logs, the self-test report, status/kernel/boot records,
-`config.ini` with its API keys and audio source URL redacted, both taiHEN configurations, the Anki queue, crash dumps, the
-installed files' hashes) into one folder and zip under `build/device/collect/`, writes nothing on the
+`config.ini` with its API keys and audio source URL redacted, both taiHEN configurations and their backups, the
+Overlay app's install record `installed.txt`, the Anki queue, crash dumps, the installed files' hashes) into one
+folder and zip under `build/device/collect/`, writes nothing on the
 Vita, and prints the analysis. Leave the Overlay app open in the background if it is: test.3's collect
 could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138)).
 The collect now also reads its two files by their full paths, and the analysis's `Overlay app:` line

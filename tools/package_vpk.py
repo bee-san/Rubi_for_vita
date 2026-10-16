@@ -7,13 +7,17 @@
 
 The VPK is the zip's JPOverlaySettings.vpk (the Overlay app, entry for entry, its order kept) followed by
 payload/: the files the app installs (include/vjo_payload.h, the same bytes as the zip's ur0/ and ux0/)
-and payload/manifest.txt (core/payload.h's format). The manifest's app_version, variant, api and build
+and payload/manifest.txt (core/payload.h's format), then licenses/: the zip's licence and attribution
+files at their zip paths (LICENSE, third_party/, docs/plaintext-attribution.txt, docs/JMdict-LICENSE.html),
+which stay in the app's folder (ux0:app/VJOSET001/licenses/; the models' LM-ATTRIBUTION.md is a payload
+file, installed beside them). The manifest's app_version, variant, api and build
 come from the app itself (its eboot.bin's start line, check_variant.py; its stamp, core/app_stamp.h),
 and its worker mode from the eboot's vjoworker= mark (settings/install_page.c VJO_WORKER_MARK), never
 from the checkout that packages it; the app accepts the payload only when they are its own.
 
 Checks, before anything is written and again by --verify:
-  - every payload file has the zip manifest's size and SHA-256 (package_release.py wrote both);
+  - every payload file has the zip manifest's size and SHA-256 (package_release.py wrote both), and so
+    does every licence file; the GPL, the dictionary's attribution and JMdict's licence are required;
   - the app's eboot.bin stays VitaShell's second entry, after sce_sys/param.sfo, so VitaShell's scan
     (archive.c archiveCheckFilesForUnsafeFself, which returns at the first unsafe SELF) stops there with
     its "extended permissions" question and reads no payload file;
@@ -37,6 +41,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APP_VPK = "JPOverlaySettings.vpk"
 MANIFEST = "payload/manifest.txt"
+LICENSES = "licenses/"
+# The zip's licence and attribution files the VPK carries (licenses/<zip path>); the first three must be there.
+REQUIRED_LICENSES = ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html")
+
+
+def licence_name(name):
+    """Whether a release zip's file is a licence or attribution file the VPK carries under licenses/."""
+    return name in REQUIRED_LICENSES or name == "third_party/README.md" or (
+        name.startswith("third_party/licenses/") and not name.endswith("/"))
 MOUNT_NIDS = {0x3C522C35: "_vshIoMount", 0x35BC26AC: "vshIoUmount"}  # VitaShell 81af709 elf.c:126-134
 UNSAFE_LIBRARIES = ("ScePromoterUtil", "SceShellSvc")                # elf.c:135-137
 WORKER_MARK = re.compile(rb"vjoworker=(kernel|lines)")
@@ -200,6 +213,24 @@ def build_manifest(version, app_vpk, entries, install_settings=None):
     return text
 
 
+def licence_files(release):
+    """{zip name: bytes} of a package_release.py zip's licence and attribution files, each checked against
+    the zip manifest; ValueError when one of REQUIRED_LICENSES is missing or a file is not its bytes."""
+    with zipfile.ZipFile(release) as z:
+        manifest = json.loads(z.read("package-manifest.json"))
+        out = {}
+        for name in sorted(n for n in z.namelist() if licence_name(n)):
+            data = z.read(name)
+            want = manifest["files"].get(name)
+            if not want or want["bytes"] != len(data) or want["sha256"] != sha256(data):
+                raise ValueError(f"{name}: not the zip manifest's bytes")
+            out[name] = data
+    missing = [n for n in REQUIRED_LICENSES if n not in out]
+    if missing:
+        raise ValueError(f"the release zip has no {', '.join(missing)}: the VPK must carry its licences")
+    return out
+
+
 def payload_manifest(release):
     """(the payload manifest's text, {zip name: bytes} of the payload, the app's VPK bytes) for a
     package_release.py zip; its own payload-manifest.txt, when it has one, must be the same text."""
@@ -239,6 +270,7 @@ def installed_record(text):
 
 def write_vpk(release, output):
     text, files, app = payload_manifest(release)
+    licences = licence_files(release)
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_name(output.name + ".tmp")
     with zipfile.ZipFile(io.BytesIO(app)) as original, zipfile.ZipFile(tmp, "w") as vpk:
@@ -255,6 +287,11 @@ def write_vpk(release, output):
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o100644 << 16
         vpk.writestr(info, text)
+        for name, data in licences.items():  # after the payload: the app reads none of them
+            info = zipfile.ZipInfo(LICENSES + name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            vpk.writestr(info, data)
     problems = verify(tmp)
     if problems:
         tmp.unlink()
@@ -277,6 +314,11 @@ def verify(path):
             problems.append("an entry neither stored nor deflated")
         if MANIFEST not in names:
             return problems + ["no payload/manifest.txt: an app without a payload"]
+        missing = [LICENSES + n for n in REQUIRED_LICENSES if LICENSES + n not in names]
+        if missing:
+            problems.append(f"no {', '.join(missing)}: the VPK must carry its licences")
+        problems += [f"{n}: not a licence or attribution file" for n in names
+                     if n.startswith(LICENSES) and not licence_name(n[len(LICENSES):])]
         text = vpk.read(MANIFEST).decode("ascii")
         listed = {}
         for line in text.splitlines()[1:]:

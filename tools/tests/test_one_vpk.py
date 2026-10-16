@@ -73,7 +73,13 @@ def app_vpk(eboot):
     return out.getvalue(), stamp
 
 
-def release_zip(path, eboot=None, kernel_imports=(), shell_imports=(), variant="normal", settings=None, corrupt=None):
+LICENCES = {"LICENSE": b"GPL-3.0 fixture\n", "third_party/README.md": b"third-party index\n",
+            "third_party/licenses/BearSSL-MIT.txt": b"MIT fixture\n", "docs/plaintext-attribution.txt": b"CC BY-SA 4.0\n",
+            "docs/JMdict-LICENSE.html": b"<html>JMdict</html>\n"}
+
+
+def release_zip(path, eboot=None, kernel_imports=(), shell_imports=(), variant="normal", settings=None, corrupt=None,
+                licences=LICENCES):
     """A package_release.py-shaped zip: the app, the payload's files and a manifest of their hashes."""
     app, stamp = app_vpk(eboot or app_eboot(debug=variant == "debug"))
     files = {}
@@ -94,10 +100,11 @@ def release_zip(path, eboot=None, kernel_imports=(), shell_imports=(), variant="
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("JPOverlaySettings.vpk", app)
         z.writestr("ux0/data/VitaJPOverlay/vjo_app.txt", stamp)
-        for name, data in files.items():
+        for name, data in list(files.items()) + list(licences.items()):
             written = b"damaged" if name == corrupt else data
             z.writestr(name, written)
             manifest["files"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        z.writestr("docs/console-test.md", b"not a licence\n")  # a file the VPK does not carry
         z.writestr("package-manifest.json", json.dumps(manifest))
     return path
 
@@ -148,6 +155,10 @@ class Package(unittest.TestCase):
             self.assertEqual(names[:2], ["sce_sys/param.sfo", "eboot.bin"])
             self.assertEqual(z.read("payload/manifest.txt").decode(), text)
             self.assertTrue(all(i.compress_type == zipfile.ZIP_DEFLATED for i in z.infolist() if i.filename.startswith("payload/")))
+            # the licences, at their zip paths under licenses/, after the payload: the app reads none of them
+            self.assertEqual({n[len("licenses/"):]: z.read(n) for n in names if n.startswith("licenses/")}, LICENCES)
+            self.assertGreater(min(names.index("licenses/" + n) for n in LICENCES), names.index("payload/manifest.txt"))
+            self.assertNotIn("licenses/docs/console-test.md", names)
         lines = text.splitlines()
         self.assertEqual(lines[:7], ["vjopayload 1", "version 0.8.0", "app_version 0.8.0", "variant normal", "api 22",
                                      "worker kernel", "build " + lines[6].split()[1]])
@@ -212,6 +223,30 @@ class Package(unittest.TestCase):
                     z.writestr("payload/ux0/data/VitaJPOverlay/games.ini", b"default = enabled\n")
             with self.subTest(change=change):
                 self.assertTrue(any(why in p for p in vpk.verify(edited)), vpk.verify(edited))
+
+    def test_the_licences_are_required(self):
+        """A release zip without the GPL, the dictionary's attribution or JMdict's licence makes no VPK, and a
+        VPK that lacks one, or has another file under licenses/, fails --verify."""
+        for missing in ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html"):
+            with self.subTest(missing=missing):
+                release = release_zip(self.root / "l.zip", licences={k: v for k, v in LICENCES.items() if k != missing})
+                with self.assertRaisesRegex(ValueError, "must carry its licences"):
+                    vpk.write_vpk(release, self.root / "l.vpk")
+                self.assertFalse((self.root / "l.vpk").exists())
+        with self.assertRaisesRegex(ValueError, "not the zip manifest's bytes"):
+            vpk.write_vpk(release_zip(self.root / "m.zip", corrupt="docs/JMdict-LICENSE.html"), self.root / "m.vpk")
+        good = self.root / "good.vpk"
+        vpk.write_vpk(release_zip(self.root / "g.zip"), good)
+        for drop, extra in (("licenses/LICENSE", None), (None, "licenses/payload.bin")):
+            out = self.root / "bad.vpk"
+            with zipfile.ZipFile(good) as src, zipfile.ZipFile(out, "w") as z:
+                for info in src.infolist():
+                    if info.filename != drop:
+                        z.writestr(info, src.read(info))
+                if extra:
+                    z.writestr(extra, b"x")
+            problems = vpk.verify(out)
+            self.assertTrue(any(("must carry its licences" if drop else "not a licence") in p for p in problems), problems)
 
     def test_package_release_records_the_payload_manifest(self):
         """package_release.py writes the payload manifest into the zip (install-vita.sh's installed.txt),

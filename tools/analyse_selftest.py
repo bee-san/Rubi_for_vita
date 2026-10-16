@@ -1223,6 +1223,52 @@ def render_app(a):
     return "  Overlay app: not checked (no version stamp to compare: the plugins or this collect predate them)"
 
 
+# the one-VPK install's record (core/payload.c vjo_installed_format) and the names settings/install.c gives
+# a taiHEN configuration's backups and an interrupted swap's leftovers (collect_vita.py keeps them)
+INSTALLED_LINE = re.compile(r"^vjoinst1 version=(\S+) variant=(\S+) api=(\d+) build=([0-9a-f]{16}) manifest=([0-9a-f]{64})$")
+TAI_BACKUP = re.compile(r"^config\.txt\.vjo-\d{8}-\d{6}(-\d+)?\.bak$")
+TAI_LEFTOVER = re.compile(r"^config\.txt\.vjo-(new|old)$")
+
+
+def summarise_install(folder, record):
+    """The Overlay app's install (docs/one-vpk-install.md): installed.txt against the package's payload
+    manifest (its SHA-256, collect_vita.py), and the dated backups and leftovers beside each config.txt."""
+    out = {"record": None, "fields": None, "this_package": None, "backups": [], "leftovers": []}
+    text = _read(Path(folder), "ux0/data/VitaJPOverlay/installed.txt")
+    if text is not None:
+        out["record"] = (text.splitlines() or [""])[0].strip()
+        m = INSTALLED_LINE.match(out["record"])
+        if m:
+            out["fields"] = dict(zip(("version", "variant", "api", "build", "manifest"), m.groups()))
+            want = record.get("package_payload_manifest")
+            out["this_package"] = None if not want else m.group(5) == want
+    for dev in ("ur0", "ux0"):
+        d = Path(folder) / dev / "tai"
+        names = sorted(p.name for p in d.iterdir()) if d.is_dir() else []
+        out["backups"] += [f"{dev}:tai/{n}" for n in names if TAI_BACKUP.match(n)]
+        out["leftovers"] += [f"{dev}:tai/{n}" for n in names if TAI_LEFTOVER.match(n)]
+    return out
+
+
+def render_install(i):
+    f, L = i["fields"], []
+    if i["record"] is None:
+        L.append("  one-VPK install: no installed.txt (not installed by the Overlay app's Install page)")
+    elif f is None:
+        L.append(f"  one-VPK install: installed.txt is not a record ({i['record'][:80]!r})")
+    else:
+        which = {True: "this package's payload",
+                 False: "NOT this package's payload (another build's VPK was installed)",
+                 None: "not compared (this package has no payload-manifest.txt)"}[i["this_package"]]
+        L.append(f"  one-VPK install (installed.txt): v{f['version']}, the {f['variant']} build, API {f['api']}, "
+                 f"app build {f['build']}; {which}")
+    if i["backups"] or i["leftovers"]:
+        L.append("  taiHEN backups: " + (", ".join(i["backups"]) or "none")
+                 + (f"; an interrupted swap's leftovers: {', '.join(i['leftovers'])} (the Overlay app's Install page "
+                    "finishes the swap or puts it back)" if i["leftovers"] else ""))
+    return L
+
+
 def _read(folder, rel):
     p = folder / rel
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
@@ -2735,6 +2781,7 @@ def summarise_collect(folder):
             e["where"], e["next_where"] = where(e["line"]), where(e["next_line"])
     # the installed Overlay app; the Shell's check in the log answers for it when the collect could not read it
     out["app"] = summarise_app(folder, record, out["log"], k)
+    out["install"] = summarise_install(folder, record)
     out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
@@ -2873,6 +2920,8 @@ def render_collect(c):
         L.append(f"  collect error: {e}")
     if c.get("app"):
         L.append(render_app(c["app"]))
+    if c.get("install"):
+        L += render_install(c["install"])
     cfg = c["config"]
     L.append("  config.ini: " + ", ".join(f"{k}={v}" for k, v in cfg.items() if v is not None)
              + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
@@ -2881,9 +2930,12 @@ def render_collect(c):
     if log_host_line(cfg.get("log_host")):
         L.append(log_host_line(cfg.get("log_host")))
     for name, t in c["tai"].items():
+        # since #138 the kernel loads the worker: a line for it is an older install's (harmless; Install removes it)
+        worker = (f"OCR worker under {t['worker']} (an older install's line: the kernel loads the worker since #138; "
+                  "the Overlay app's Install removes it)" if t["worker"] else "no OCR worker line (the kernel loads it)")
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
-                 f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]
-                                                                    else "") + f"; {t['commented']} commented line(s)")
+                 + worker + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"] else "")
+                 + f"; {t['commented']} commented line(s)")
     L.append(f"  boot.txt: {c['boot_record'] or '(none)'}")
     if c.get("status_prev_head"):
         L.append("  previous boot (status.prev.txt): " + "; ".join(c["status_prev_head"][:3]))
