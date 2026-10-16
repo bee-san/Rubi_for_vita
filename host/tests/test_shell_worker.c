@@ -2898,7 +2898,7 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
 {
     reset();
     net_stack_check();
-    TEST_CHECK(!logged("VjoNet stack: at most")); /* nothing painted, nothing claimed */
+    TEST_CHECK(!logged("VjoNet stack: at least")); /* nothing painted, nothing claimed */
     /* painted below a frame at 12,000 B: nothing used below it yet */
     memset(fake_stack, 0, sizeof(fake_stack));
     stack_paint(fake_stack, 12000, fake_stack + sizeof(fake_stack));
@@ -2911,12 +2911,12 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
     TEST_CHECK(stack_high_water() == sizeof(fake_stack) - 6000);
     log_count = 0;
     on_game_exit();
-    TEST_CHECK(logged("VjoNet stack: at most 10384 of 16384 B used") != NULL);
+    TEST_CHECK(logged("VjoNet stack: at least 10384 of 16384 B used") != NULL);
     on_game_exit();
-    TEST_CHECK(times_logged_prefix("VjoNet stack: at most") == 1); /* no growth, no line */
+    TEST_CHECK(times_logged_prefix("VjoNet stack: at least") == 1); /* no growth, no line */
     fake_stack[100] = 0; /* deeper, to 100 B from the bottom: logged again */
     net_stack_check();
-    TEST_CHECK(logged("VjoNet stack: at most 16284 of 16384 B used") && times_logged_prefix("VjoNet stack: at most") == 2);
+    TEST_CHECK(logged("VjoNet stack: at least 16284 of 16384 B used") && times_logged_prefix("VjoNet stack: at least") == 2);
     fake_stack[0] = 0; /* the whole stack */
     TEST_CHECK(stack_high_water() == sizeof(fake_stack));
     /* the budget the ledger counts is the stack this measures */
@@ -2945,6 +2945,7 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
 static uint8_t paint_region[PAINT_GUARD + PAINT_STACK + PAINT_GUARD] __attribute__((aligned(4096)));
 static uint8_t paint_snap[PAINT_STACK];
 static uintptr_t paint_local_after, paint_deepest;
+static uintptr_t paint_frame_seen; /* the painting frame, from mode 5's refusal line */
 static int paint_depth;
 static __attribute__((noinline)) void paint_deep(int n)
 {
@@ -2973,13 +2974,17 @@ static void *paint_thread(void *arg)
  * more than half the gap above it but within STACK_PAINT_GAP, so only the full gap term of the lower
  * bound refuses it; 6: pStack 8 KiB low, the exact size (only the upper bound refuses it: the frame
  * is above the reported top); 7: pStack 16,448 B below the SP, the exact size: the frame lies less
- * than 1 KiB above the reported top, so only the upper bound, exactly, refuses it
- * (audit-overlay-shell-slim-2c N14) */
-#define PAINT_MODES 7
+ * than 1 KiB above the reported top, so only the upper bound refuses it (audit-overlay-shell-slim-2c
+ * N14); 8 and 9 take the painting frame F from mode 5's line (the same stack and call path in every
+ * mode) and pin both bounds to the byte: 8, pStack = F - 544, puts F 32 B below the floor plus the
+ * gap, which only the floor's term refuses; 9, pStack = F - 16,416, puts F 32 B above the reported
+ * top (audit-overlay-shell-slim-2d N1) */
+#define PAINT_MODES 9
 static const char *const paint_refusal[PAINT_MODES + 1] = {
     NULL, "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (the kernel reports 0 B, not 16384)",
     "VjoNet stack: not painted (the kernel reports 24576 B, not 16384)", "VjoNet stack: not painted (no thread info)",
-    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x"};
+    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x",
+    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x"};
 static int paint_on_a_thread(int mode, int depth)
 {
     uint8_t *lo = paint_region + PAINT_GUARD;
@@ -2990,7 +2995,9 @@ static int paint_on_a_thread(int mode, int depth)
     memset(lo, 0, PAINT_STACK);
     paint_depth = depth;
     paint_deepest = UINTPTR_MAX;
-    thread_info_stack = mode == 1 ? lo + PAINT_STACK : mode == 3 ? lo - PAINT_GUARD : mode == 6 ? lo - 8192 : lo;
+    thread_info_stack = mode == 1 ? lo + PAINT_STACK : mode == 3 ? lo - PAINT_GUARD : mode == 6 ? lo - 8192
+                      : mode == 8 ? (uint8_t *)(paint_frame_seen - (PAINT_FLOOR + PAINT_GAP - 32))
+                      : mode == 9 ? (uint8_t *)(paint_frame_seen - (PAINT_STACK + 32)) : lo;
     thread_info_size = mode == 2 ? 0 : mode == 3 ? (int)(PAINT_STACK + PAINT_GUARD) : (int)PAINT_STACK;
     thread_info_rc = mode == 4 ? -1 : 0;
     thread_info_below_sp = mode == 5 ? 416 : mode == 7 ? 16448 : 0;
@@ -3017,7 +3024,14 @@ static int paint_on_a_thread(int mode, int depth)
             int size = 0;
             TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (frame 0x%X outside 0x%X + %d)", &frame, &low, &size) == 3);
             uint32_t above = (uint32_t)(frame - low);
-            TEST_CHECK_(mode == 5   ? above > PAINT_FLOOR + PAINT_GAP / 2 && above <= PAINT_FLOOR + PAINT_GAP
+            if (mode == 5) /* the frame's full address: the 32-bit line's offset from lo */
+                paint_frame_seen = (uintptr_t)lo + (uint32_t)(frame - (uint32_t)(uintptr_t)lo);
+            if (mode >= 8)
+                TEST_CHECK_((uintptr_t)lo + (uint32_t)(frame - (uint32_t)(uintptr_t)lo) == paint_frame_seen,
+                            "mode %d: the frame moved", mode);
+            TEST_CHECK_(mode == 8   ? above == PAINT_FLOOR + PAINT_GAP - 32
+                        : mode == 9 ? above == (uint32_t)size + 32
+                        : mode == 5 ? above > PAINT_FLOOR + PAINT_GAP / 2 && above <= PAINT_FLOOR + PAINT_GAP
                         : mode == 7 ? above >= (uint32_t)size && above < (uint32_t)size + 1024
                                     : above >= (uint32_t)size,
                         "mode %d: the frame is %u B above the reported pStack (size %d)", mode, (unsigned)above, size);
@@ -3046,11 +3060,31 @@ static int paint_on_a_thread(int mode, int depth)
                     depth, (unsigned)hw, truth);
     } else {
         TEST_CHECK(hw == (uint32_t)(net_stack_top - net_stack_painted)); /* nothing used below the paint */
+        /* the line a game exit logs from this paint: the stack's size, not the painted span (2d N4: MK4) */
+        net_stack_logged = 0;
+        net_stack_check();
+        char want[96];
+        snprintf(want, sizeof(want), "VjoNet stack: at least %u of 16384 B used", (unsigned)hw);
+        TEST_CHECK_(logged(want) != NULL, "%s", want);
     }
     return guards;
 }
 static void test_net_stack_paint_on_a_real_thread_stays_in_its_stack(void)
 {
+#if defined(__SANITIZE_ADDRESS__)
+#define VJO_PAINT_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define VJO_PAINT_ASAN 1
+#endif
+#endif
+#ifdef VJO_PAINT_ASAN
+    /* AddressSanitizer's memset, and its shadow checks, need more than the 256 B the test leaves
+     * below its own frame when it clears the thread's stack, and the paint writes below the stack
+     * pointer on purpose: neither is a defect of the code under test (t3-worker-any-game, 2026-10-16) */
+    TEST_SKIP("the stack paint writes below the stack pointer on purpose: not under AddressSanitizer");
+    return;
+#endif
     TEST_CHECK(paint_on_a_thread(0, 0));
     TEST_CHECK(paint_on_a_thread(0, 12)); /* 13 frames of 512 B and more: about 7 KiB deeper */
     for (int mode = 1; mode <= PAINT_MODES; mode++)

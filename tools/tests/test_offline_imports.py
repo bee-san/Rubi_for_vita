@@ -56,6 +56,36 @@ class OfflineImports(unittest.TestCase):
         self.assertEqual(c.imported_libraries(elf([".vitalink.fstubs.SceSysmem", ".text"])), ["SceSysmem"])
         self.assertEqual(c.section_names(elf([".a"])), ["", ".a", ".shstrtab"])
 
+    def run_files(self, *contents):
+        with tempfile.TemporaryDirectory() as folder:
+            paths = []
+            for i, data in enumerate(contents):
+                path = Path(folder) / f"module{i}"
+                path.write_bytes(data)
+                paths.append(str(path))
+            return subprocess.run([sys.executable, str(ROOT / "tools/check_offline_imports.py"), *paths],
+                                  capture_output=True, text=True, timeout=30)
+
+    def test_a_clean_module_after_a_network_one_still_fails(self):
+        # the Vita build checks four modules in one call: a later clean one must not reset the verdict
+        bad, good = elf([".vitalink.fstubs.SceNet"]), elf([".vitalink.fstubs.SceLibKernel"])
+        self.assertEqual(self.run_files(bad, good).returncode, 1)
+        self.assertEqual(self.run_files(good, bad).returncode, 1)
+        self.assertEqual(self.run_files(good, good).returncode, 0)
+
+    def test_no_module_is_a_usage_error(self):
+        r = subprocess.run([sys.executable, str(ROOT / "tools/check_offline_imports.py")], capture_output=True,
+                           text=True, timeout=30)
+        self.assertEqual(r.returncode, 2)
+
+    def test_another_elf_class_or_a_cut_header_is_an_error(self):
+        good = elf([".vitalink.fstubs.SceLibKernel"])
+        elf64 = good[:4] + bytes([2]) + good[5:]  # ELFCLASS64
+        big = good[:5] + bytes([2]) + good[6:]    # big-endian
+        for data in (elf64, big, good[:40], good[:60]):
+            with self.subTest(size=len(data), cls=data[4], end=data[5] if len(data) > 5 else None):
+                self.assertEqual(self.run_files(data).returncode, 2)
+
     def test_a_file_that_is_no_elf_is_an_error(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "x"

@@ -443,21 +443,22 @@ class AnalyseV2(unittest.TestCase):
 
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest
-        lg = a.summarise_log("VjoNet stack: at most 5920 of 16384 B used\nVjoNet stack: at most 13000 of 16384 B used\n"
-                             "VjoNet stack: at most 9000 of 16384 B used\n")
+        # (the figure is a lower bound, "at least"; the first wording, "at most", is still read)
+        lg = a.summarise_log("VjoNet stack: at least 5920 of 16384 B used\nVjoNet stack: at most 13000 of 16384 B used\n"
+                             "VjoNet stack: at least 9000 of 16384 B used\n")
         self.assertEqual(lg["net_stack"], (13000, 16384))
         self.assertIsNone(a.summarise_log("job 0 done rc=0 in 1 ms, arena peak 1\n")["net_stack"])
-        self.assertEqual(a.net_stack_line(6144, 16384), "VjoNet stack: at most 6,144 of 16,384 B used (37%)")
-        self.assertEqual(a.net_stack_line(12288, 16384), "VjoNet stack: at most 12,288 of 16,384 B used (75%)")
+        self.assertEqual(a.net_stack_line(6144, 16384), "VjoNet stack: at least 6,144 of 16,384 B used (37%)")
+        self.assertEqual(a.net_stack_line(12288, 16384), "VjoNet stack: at least 12,288 of 16,384 B used (75%)")
         self.assertEqual(a.net_stack_line(12289, 16384),
-                         "VjoNet stack: at most 12,289 of 16,384 B used (75%) WARN: under a quarter left")
+                         "VjoNet stack: at least 12,289 of 16,384 B used (75%) WARN: under a quarter left")
         # a boot that did not paint (shell/worker.c net_stack_paint) has no figure: said, as a WARN, per reason
         lg = a.summarise_log("VjoNet stack: not painted (no thread info)\n"
                              "VjoNet stack: not painted (the kernel reports 65536 B, not 16384)\n"
-                             "VjoNet stack: not painted (no thread info)\nVjoNet stack: at most 6144 of 16384 B used\n")
+                             "VjoNet stack: not painted (no thread info)\nVjoNet stack: at least 6144 of 16384 B used\n")
         self.assertEqual(lg["net_stack_off"], ["no thread info", "the kernel reports 65536 B, not 16384", "no thread info"])
         self.assertEqual(a.net_stack_lines(lg), [
-            "  VjoNet stack: at most 6,144 of 16,384 B used (37%)",
+            "  VjoNet stack: at least 6,144 of 16,384 B used (37%)",
             "  VjoNet stack: not painted at 3 boot(s) WARN: no figure from them (no thread info x2; the kernel reports "
             "65536 B, not 16384 x1)"])
         self.assertEqual(a.net_stack_lines(a.summarise_log("")), [])
@@ -617,11 +618,12 @@ class SharedTierTable(unittest.TestCase):
                     (data / "config.ini").write_text(f"log_file = on\nlog_host = {value}\n")
                     r = subprocess.run([sys.executable, str(SCRIPT), "--collect", d], capture_output=True, text=True,
                                        timeout=60)
-                    text = r.stdout + r.stderr
-                    for out in Path(d).glob("analysis.*"):
-                        text += out.read_text(errors="replace")
-                    self.assertNotIn("192.168", text)
+                    self.assertNotIn("192.168", r.stdout + r.stderr)
                     self.assertIn(f"log_host ({shown}): the UDP log was removed", r.stdout)
+                    j = subprocess.run([sys.executable, str(SCRIPT), "--collect", d, "--json"], capture_output=True,
+                                       text=True, timeout=60)
+                    self.assertNotIn("192.168", j.stdout + j.stderr)
+                    self.assertEqual(json.loads(j.stdout)["config"]["log_host"], "set" if value else "")
 
     def test_any_ocr_backend_line_is_one_to_delete(self):
         # VOCR is the only engine since Google Lens's removal: the plugins warn for a removed engine's

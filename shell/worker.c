@@ -1240,11 +1240,13 @@ static void net_job(void)
 #define STACK_PAINT 0xA5u
 #define STACK_PAINT_GAP 512u /* left unpainted below the painting frame */
 /* The stack's lowest bytes stay as the kernel left them: the PSP's thread manager, whose API the Vita
- * keeps, fills a new stack and writes the thread's UID in its lowest word, and checks it for an
- * overflow; how the Vita's does is unknown (audit-overlay-shell-slim-2c B2). */
+ * keeps, fills a new stack and writes the thread's UID in its lowest word, and the Vita's kernel
+ * detects stack overflows (a core-dump cause; sceKernelCheckThreadStack). How it detects them is
+ * unknown, so nothing here writes where a marker could be (audit-overlay-shell-slim-2c B2, -2d N2). */
 #define STACK_PAINT_FLOOR 64u
 static uint8_t *net_stack_lo;                    /* published last: the paint is done */
-static uint8_t *net_stack_painted, *net_stack_top; /* [lo, painted): the pattern; top: lo + the size */
+static uint8_t *net_stack_painted, *net_stack_top; /* [lo, painted): the pattern; top: the stack's top,
+                                                    * pStack + its size (lo is pStack + the floor) */
 static uint32_t net_stack_logged;                /* the high-water mark last logged */
 
 /* Paints n bytes from lo (the thread's own stack, below its frame), then publishes
@@ -1308,7 +1310,8 @@ static void net_stack_check(void)
     if (!used || used <= net_stack_logged)
         return;
     net_stack_logged = used;
-    vjo_log("VjoNet stack: at most %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
+    /* "at least": a live byte that happens to hold the pattern can only make the scan read low */
+    vjo_log("VjoNet stack: at least %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
 }
 
 static int net_main(SceSize args, void *argp)

@@ -49,7 +49,7 @@ def main(argv):
     for path in argv:
         try:
             libs = imported_libraries(open(path, "rb").read())
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, struct.error) as e:  # struct.error: a header cut short
             print(f"offline imports: {path}: {e}", file=sys.stderr)
             return 2
         network = [lib for lib in libs if lib.startswith(NETWORK)]

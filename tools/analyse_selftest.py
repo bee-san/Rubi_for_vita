@@ -960,7 +960,8 @@ LOG = {
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
     # shell/worker.c net_stack_check: VjoNet's painted stack, at a game exit when the figure grew
-    "net_stack": re.compile(r"^VjoNet stack: at most (\d+) of (\d+) B used"),
+    # (the figure is a lower bound: "at least"; "at most", the first wording, is read too)
+    "net_stack": re.compile(r"^VjoNet stack: at (?:least|most) (\d+) of (\d+) B used"),
     # shell/worker.c net_stack_paint: no paint this boot (no thread info, another size, the frame outside it)
     "net_stack_off": re.compile(r"^VjoNet stack: not painted \((.+)\)"),
     # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
@@ -2778,7 +2779,7 @@ def summarise_collect(folder):
 
 def net_stack_line(used, size):
     """shell/worker.c net_stack_check's figure: at most used of size B; a quarter or less left is a WARN."""
-    line = f"VjoNet stack: at most {used:,} of {size:,} B used ({used * 100 // size if size else 0}%)"
+    line = f"VjoNet stack: at least {used:,} of {size:,} B used ({used * 100 // size if size else 0}%)"
     return line + (" WARN: under a quarter left" if used * 4 > size * 3 else "")
 
 

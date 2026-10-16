@@ -162,7 +162,8 @@ rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 �
 | Shell `sce*` imports (function stubs by `nm`) | | | | | 72 | 55 (no SceNet, SceNetCtl) |
 
 PR-B removed sources the link already dropped, plus the sockets the UDP log and the cancel
-paths kept (SceNet, SceNetCtl): 2,220 B of text and 304 B of data, no page [measured], against
+paths kept (SceNet, SceNetCtl): 2,220 B of text and 304 B of data in the debug build, no page, and
+2,244 B and 304 B in the normal one, one text page (167,936 → 163,840 B) [measured], against
 this plan's "a few pages at most" estimate and its earlier "about 196,000 B" for both PRs together.
 PR-A2 (#132) lowered VjoNet's stack from 64 to 16 KiB (SceShell's permanent pages 266,240 →
 217,088 B), and PR-B VjoAnki's (the worst case 286,720 → 237,568 B).
