@@ -163,7 +163,7 @@
  * of this build, on main 3aa08a6 with #132 and the network's removal; 5,624 B with the UDP send;
  * the SDK's own code and the indirect-call sites are not counted]. The normal build's is 4,768 B:
  * net_main 2,144 (the 2 KiB log buffer that holds a job's lines until its result is taken, shell/worker.c
- * net_main), then a lookup down to the dictionary's page cache [measured the same way, on main 836259e
+ * net_main), then a lookup down to the dictionary's page cache [measured the same way, on main 74f8de8
  * with t3-log-path]. The thread paints its
  * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
  * so a console run measures it. */

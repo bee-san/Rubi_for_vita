@@ -181,13 +181,13 @@ lines since the boot's start; the bootstrap lines before that (about 1 KiB, `sta
 counted (in test.3 both points fall in job 12).
 
 **The normal build** writes none of a job's lines between the end of its recognition and the control
-thread taking its result. The network thread keeps a log batch open (`shell/worker.c` `net_main`, its
-2 KiB buffer on the thread's stack), which holds every line it logs (the job's line, a size that did
-not fit, the clock, a refused memory check, an unusable model, a refused Paf allocation, a failed
-lookup). Its wait for the next job is timed only while the batch holds a line: when 0.5 s pass
+thread taking its result. The network thread opens a log batch at each job's wake (`shell/worker.c`
+`net_main`, its 2 KiB buffer on the thread's stack), which holds every line it logs (the job's line, a
+size that did not fit, the clock, a refused memory check, an unusable model, a refused Paf allocation,
+a failed lookup). Its wait for the next job is timed only while the batch holds a line: when 0.5 s pass
 (`LOG_IDLE_US`) with no job and the control thread has taken the result, it writes them, one append per
-file, and opens the batch again. Jobs started meanwhile keep the held lines across their exchanges and
-add their own; they go out together after the last one's result. The files get the same lines in the
+file. Jobs started meanwhile keep the held lines across their exchanges and add their own; they go out
+together after the last one's result. The files get the same lines in the
 same order as line by line (`host/tests/test_shell_log.c`); the debug build is unchanged (its three
 plugins and RCO are main's bytes, sha256).
 - A steady-state successful job logs nothing, so there is nothing to write and the wait stays untimed.
@@ -204,9 +204,10 @@ plugins and RCO are main's bytes, sha256).
 - The write takes the network thread one append per file (est. 24-92 ms at #81's 12-46 ms an append;
   test.3's jobs averaged 19 ms an append, the median of their means), 0.5 s after a result at the
   earliest; a job posted during it waits for its end.
-- Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left.
-  The PR adds 80 B of text and 72 B of data/bss: 90,012 → 90,092 B and 69,756 → 69,828 B, the same
-  163,840 B of pages, 20 B of text room left [measured: the Vita builds of main `10c8011` and this
+- Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left,
+  and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B. This one adds
+  80 B of text and 72 B of data/bss: on main `74f8de8`, 89,892 → 89,972 B and 69,756 → 69,828 B, the same
+  163,840 B of pages, 140 B of text room left [measured: the Vita builds of main `74f8de8` and this
   branch]. No new allocation or thread. The VjoNet thread's deepest chain in the normal build goes from
   2,712 to 4,768 B (`net_main`'s frame 88 → 2,144 B), under the debug build's unchanged 5,504 B, in its
   16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's
@@ -220,7 +221,7 @@ network thread's wait timing out at random) [measured: host suites]:
 | build | jobs (lookups) | lines | appends | the network thread's | in a job's result path | lines in one append, at most |
 |---|---:|---:|---:|---:|---:|---:|
 | debug | 376 (98) | 3,593 | 2,061 | 1,236 | 1,236 | 11 |
-| normal | 376 (98) | 147 | 101 | 63 | **0** | 5 |
+| normal | 376 (98) | 147 | 98 | 63 | **0** | 5 |
 
 `normal_build_writes_a_jobs_lines_after_its_result` walks each case: an activation's first job (held
 through its exchange, its lookup and a timeout before the result was taken; written by the next
