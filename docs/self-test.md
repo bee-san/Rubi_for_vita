@@ -285,8 +285,9 @@ and that today's app or installer deletes the line), where taiHEN loads
 each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the ARM clock by game window (each
-window's clock before, during and after, and the time per CTC frame with `ocr_boost_clock` off against
-raised; [ocr-speed.md](ocr-speed.md#what-the-log-shows-api-22)), the dictionary jobs, the overlay's
+window's clock before, during and after, a boost-off window's as assumed, and the time per CTC frame
+with `ocr_boost_clock` off against raised, over all jobs and like for like, by window, with a one-line
+`boost effective:` verdict; [ocr-speed.md](ocr-speed.md#what-the-log-shows-api-22)), the dictionary jobs, the overlay's
 slowest frame, Anki saves and each export's result (a failed export, or one that left cards queued for a
 problem, is also among the problem lines; a successful one is not), the config warnings counted once
 each, the Shell's own checks of the

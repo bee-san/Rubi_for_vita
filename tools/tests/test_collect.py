@@ -332,10 +332,12 @@ class Collect(unittest.TestCase):
         self.assertNotIn("Error 404", problems)  # recognized game text is never a problem line
         # the ARM clock by game window: its row names where the window starts (log.old.txt is read first)
         flat = " ".join(analysis.split())
-        self.assertIn("1 log.txt:6 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,666 us (4 lines)",
-                      flat)
-        self.assertIn("boost off against on: no window with the boost off in this log", flat)
+        self.assertIn("1 log.txt:6 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,666 us (1 job, "
+                      "4 lines)", flat)
+        self.assertIn("boost effective: unclear (ratio -, n=0): no window with the boost off in this log", flat)
         summary = json.loads((folder / "analysis.json").read_text())
+        self.assertEqual([(v["verdict"], v["ratio"], v["n"]) for v in summary["log"]["boost_verdicts"]],
+                         [("unclear", None, 0)])
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
         self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])
         self.assertIsNone(summary["tiers"]["recommendation"])
