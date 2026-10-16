@@ -2905,11 +2905,15 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
  * guard areas, as the kernel reports it (pStack its bottom, stackSize its size):
  * [pStack, painted) is the pattern, the 64 B just above it and both guards are
  * untouched, the painting frame is above the STACK_PAINT_GAP bytes, the thread
- * runs on, and a deeper use written later is read back. (Only the gap's bottom is
- * checked: its top holds what the paint's own calls left there before it, return
- * addresses and saved registers, and under PIE such an address can hold the
- * pattern byte; audit-overlay-shell-slim-2b B2.) Misreports paint nothing and log
- * their own line, once (audit-overlay-shell-slim-2 B1, -2b B1). */
+ * runs on, and a deeper use written later is read back. The thread first clears
+ * its stack below its own frame: what ran there before the start routine (glibc
+ * 2.39 and later name the thread's stack with snprintf in start_thread) is left
+ * behind, and where the 64 B window falls in it depends on the compiler
+ * (audit-overlay-shell-slim-2c B1). Only the gap's bottom is checked: its top
+ * holds what the paint's own calls write there, return addresses and saved
+ * registers, and under PIE such an address can hold the pattern byte
+ * (audit-overlay-shell-slim-2b B2). Misreports paint nothing and log their own
+ * line, once (audit-overlay-shell-slim-2 B1, -2b B1). */
 #define PAINT_STACK 16384u
 #define PAINT_GUARD 8192u /* 4 KiB low is not enough: glibc puts the TCB at the top of a setstack stack */
 #define PAINT_GAP 512u /* STACK_PAINT_GAP as documented: not taken from the code it checks */
@@ -2928,7 +2932,10 @@ static __attribute__((noinline)) void paint_deep(int n)
 static void *paint_thread(void *arg)
 {
     volatile int local_after = 1;
+    uint8_t *lo = paint_region + PAINT_GUARD;
     (void)arg;
+    /* the background below this frame; the 256 B just under it stay for memset's own */
+    memset(lo, 0, (size_t)((uint8_t *)(current_sp() - 256) - lo));
     net_stack_paint();
     memcpy(paint_snap, paint_region + PAINT_GUARD, PAINT_STACK); /* right after the paint */
     paint_local_after = (uintptr_t)&local_after;
