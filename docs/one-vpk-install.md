@@ -1,0 +1,412 @@
+# One VPK is the whole install
+
+The owner (PR #134, 2026-10-16 06:59Z): "i would hope the easiest install would be to go to GitHub
+releases, download the latest vpk, and install it and it's done. Let's queue an agent to make this
+our release process".
+
+This is the design. It was reviewed before any code was written; the review's findings and what
+changed are at the end.
+
+## The user's three steps
+
+1. Download `VitaJPOverlay-<version>.vpk` from the latest GitHub release.
+2. Copy it to the Vita (VitaShell: Select starts FTP, or its USB mode) and install it in VitaShell
+   (press Enter on the file).
+3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists what it will do;
+   choose **Install**, then restart the Vita.
+
+Nothing is downloaded on the Vita: the VPK holds the plugins, the models and the dictionary. Then a
+game is played as today (L + R). An update is the same three steps with the new VPK: the app sees
+that its overlay is not the installed one and its Install page offers **Update**.
+
+Requirements stay those of today's install: a PS Vita on 3.60-3.74 with HENkaku/Ensō or h-encore,
+and VitaShell. `install-vita.sh` (the release zip) stays as the advanced and developer path.
+
+## What a release ships
+
+| asset | build | for |
+|---|---|---|
+| `VitaJPOverlay-<version>.vpk` | normal | everyone: the main download |
+| `VitaJPOverlay-<version>-debug.vpk` | debug (the test builds') | console tests, a full log |
+| `VitaJPOverlay-<version>.zip`, `VitaJPOverlay-<version>-debug.zip` | normal, debug | `install-vita.sh`, a manual install, the tools |
+| `SHA256SUMS` | | all four, the normal VPK first |
+
+The two builds are #141's (`docs/release-variants.md`): same models, dictionary and config template;
+the debug build has the full log and the self-test. Both VPKs are the same app (title ID
+`VJOSET001`), so either installs over the other; each carries its own build's plugins.
+
+The zips keep today's layout and their own `JPOverlaySettings.vpk`, which carries no overlay files
+(below: "an app without a payload"), so a zip is not 50 MB larger.
+
+## Inside the VPK
+
+The Overlay app as today (`eboot.bin`, `sce_sys/`, the #122 stamp `vjo_app.txt`), plus `payload/`,
+which mirrors the zip's device folders:
+
+| in the VPK | installed to | bytes [measured: #141's packages, e5e2a26] |
+|---|---|---:|
+| `payload/ur0/tai/VitaJPOverlay_Kernel.skprx` | `ur0:tai/` | 31,316 (debug 34,556) |
+| `payload/ur0/tai/VitaJPOverlay_Shell.suprx` | `ur0:tai/` | 75,904 (debug 83,908) |
+| `payload/ur0/tai/VitaJPOverlay_OCR.suprx` | `ur0:tai/` | 63,552 (debug 64,764) |
+| `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
+| `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 10,614,250 |
+| `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 143,425,536 |
+| `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,554 |
+| `payload/licenses/` (the dictionary's attribution, the JMdict licence) | stays in the app | small |
+| `payload/manifest.txt` | read by the app | small |
+
+`payload/manifest.txt` is written by `tools/package_release.py`, one line per item:
+
+```
+vjopayload 1
+version 0.8.0
+variant normal
+api 22
+file ur0:tai/VitaJPOverlay_Kernel.skprx 31316 <sha256> copy
+...
+file ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict 143425536 <sha256> move
+template ux0:data/VitaJPOverlay/config.ini 3554 <sha256>
+set anki_mining on
+```
+
+`set` lines are the package's own settings (`package_release.py --set`, which a test build uses for
+`anki_mining = on`; the final release has none). The app accepts a destination only under
+`ur0:tai/VitaJPOverlay_`, `ur0:data/VitaJPOverlay/` or `ux0:data/VitaJPOverlay/`, of the characters
+`[A-Za-z0-9_./-]` and with no `..`, so a damaged or edited manifest cannot name `config.txt`,
+`henkaku.suprx` or anything else. The manifest is bounded (64 items, 255-byte lines).
+
+Size: the VPK is about the release zip's size, 53.0 MB (the zips of #141's head measured 53,005,464 B
+normal), since the zip's added bytes are the same files; installed, the payload is about 155 MB
+[estimate: the sum of the table, plus the app's own 1-4 MB].
+
+## What VitaShell does with it
+
+From VitaShell's source (TheOfficialFloW/VitaShell 81af709, `package_installer.c` `install_thread`):
+
+- It checks every SELF in the archive (`archive.c:416-500`, `archiveCheckFilesForUnsafeFself`): an
+  import of SceVshBridge's `_vshIoMount`/`vshIoUmount` (NIDs `0x3C522C35`, `0x35BC26AC`, `elf.c:126-134`)
+  shows the "can potentially brick your device" warning; any other unsafe SELF (an authid other than
+  `0x2F00000000000002`, or ScePromoterUtil/SceShellSvc imports) the "requests extended permissions"
+  one. Today's VPK already shows the latter (its eboot is an unsafe homebrew SELF). Our plugins import
+  neither mount call (`shell/boot.c` uses `_vshKernelSearchModuleByName` only): the VPK shows the same
+  warning as today. The packaging checks this on the built VPK (it reimplements that scan).
+- `checkMemoryCardFreeSpace(PACKAGE_DIR, size)` (`utils.c:91-120`) compares the archive's unpacked
+  size with ux0's free space plus 40 MiB; then it extracts everything into `ux0:data/pkg`, writes
+  `sce_sys/package/head.bin`, and calls `scePromoterUtilityPromotePkgWithRif`, which has SceShell
+  move the files into `ux0:app/VJOSET001` and add the bubble (henkaku wiki, ScePromoterUtil and
+  Packages). So the unpacked size is needed once, beside the `.vpk` itself: about 155 MB plus the
+  53 MB VPK [estimate], and the VPK can be deleted afterwards.
+- Nothing in it limits an app's size or its number of files; a zip holds up to 4 GiB and 65,535
+  entries, far above ours.
+- The scan reads (inflates) every entry once before extracting, so the install reads the archive
+  twice. How long that takes on a console is unmeasured.
+
+## The dictionary is moved, not copied
+
+The dictionary is 92% of the payload. Copying it out of the app folder would need another 137 MiB
+and a write of 137 MiB. Instead the app moves it (`sceIoRename` within ux0: the same device, no data
+written). The app says so on its Install page: "the dictionary (137 MB) is moved out of the app, not
+copied".
+
+- After the move the app folder no longer has it. A **Repair** of a missing or damaged dictionary
+  therefore needs the VPK installed again in VitaShell first; the app says that when it is the case.
+- An update brings the dictionary again (VitaShell installs the whole VPK). When the installed
+  dictionary already has the payload's SHA-256 (the dictionary is frozen, so usually it does), the
+  app deletes the copy in the app folder and frees 137 MiB. Otherwise it replaces it: the old file to
+  `plaintext.vjdict.vjo-old`, the new one moved in and hashed, then the old one deleted (renamed back
+  when the hash fails).
+- When the rename fails (a different device, a read-only folder), the app copies it instead, if
+  ux0 has room, and says so.
+- Plugins, the RCO and the models (about 11 MB) are copied: the app keeps them for a Repair without
+  the VPK.
+
+The Vita's `sceIoRename` does not replace an existing file: it returns `SCE_ERROR_ERRNO_EEXIST`
+(VitaShell `file.c:518-547` removes the destination and renames again). Every replacement here goes
+through `.vjo-old`, so a file is never missing between two renames for longer than one call.
+
+## The app: an Install page
+
+A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads its
+`payload/manifest.txt` and works out a state (nothing is written):
+
+| state | when | start page |
+|---|---|---|
+| not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
+| update | the overlay is installed, but a plugin file is not the payload's (size and SHA-256), or the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is not this app's stamp | Install |
+| repair | this app's overlay, but a data file is missing or has the wrong size | Install |
+| installed | every plugin file is the payload's, every data file has its size, both configurations load the plugins, and the record is this app's stamp | Games |
+| cannot | a configuration the editor refuses (below) | Install, with the reason |
+| no payload | the zip's `JPOverlaySettings.vpk` (or a source build): the app carries no overlay | Games; Install says that `install-vita.sh` installs this build |
+
+At start only the four small files (the three plugins and the RCO, about 180 KB) are hashed; the
+models and the dictionary are checked by size. Install and Repair hash everything.
+
+The page shows what the action will do before anything happens, with the exact lines:
+
+```
+Install the overlay (v0.8.0)
+1. Copy 3 plugins to ur0:tai and the OCR models (10.6 MB) to ux0:data/VitaJPOverlay;
+   move the dictionary (137 MB) there from this app.
+2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak (kept).
+3. Add to both: *KERNEL  ur0:tai/VitaJPOverlay_Kernel.skprx
+                *main    ur0:tai/VitaJPOverlay_Shell.suprx
+                the OCR worker in 12 games (CLANNAD, planetarian, ...): *PCSG00415 ...
+4. Read everything back to check it.
+Then restart the Vita yourself. If it does not start: hold L while you turn it on, then in
+VitaShell copy config.txt.vjo-20261016-071503.bak over config.txt in ur0:tai (and ux0:tai).
+Enter: install   Cancel: not now
+```
+
+Enter starts it; a progress bar shows the step and the bytes; at the end the page says what was done
+and "Restart the Vita now", with the recovery text again. **The app never restarts the Vita** (no
+power call), and it never repeats anything after a failure: it stops and says what is left as it was.
+
+The page's actions, each with its own plan and confirmation: the main one is **Install**, **Update**
+or **Repair** by the state (one procedure: files that already have the payload's SHA-256 are not
+written again), or **Check and repair** when everything is installed (it hashes every file);
+**Add the OCR worker to N games** when games are ON but not registered (below); and **Uninstall**.
+
+## What Install (and Update, Repair) does, in order
+
+Nothing is written until every check of step 0 passes.
+
+0. **Checks.** The manifest parses; every payload file is there with its size (the dictionary in the
+   app or already installed); ur0 and ux0 have room for the copies and their temporary files (the
+   largest file twice, plus 512 KiB, as `settings/psp.c` keeps); each configuration reads, and the
+   editor accepts it and simulates the result (below).
+1. **Backups.** Each configuration that exists is copied to `config.txt.vjo-YYYYMMDD-HHMMSS.bak` in
+   its own folder (local time), written, synced and read back. The name is never reused (`-2`, `-3`
+   when it exists) and the app never deletes one. They are what the recovery text names.
+2. **Files.** Each copied file goes to `<destination>.vjo-new`, is synced, read back and hashed
+   against the manifest, then the old file (if any) is renamed to `.vjo-old`, the new one into place,
+   and `.vjo-old` removed. The dictionary is moved and hashed (above). At most 256 KiB is read,
+   written or hashed per frame, so the page keeps drawing.
+3. **config.ini.** When there is none, the payload's template is written (the PC installer's first
+   install writes the same template). Otherwise it is kept and patched as the app's own saves patch
+   it (`vjo_config_patch_keys`: a removed feature's line is dropped or replaced, an API key goes),
+   plus: the package's `set` lines; `local_dictionary_dir`, `ocr_model_dir` and `text_source` set to
+   the paths the overlay installs to (`install-vita.sh` sets them too); and `plaintext.vjdict` first in
+   `local_dictionaries` when it is not listed (0.7.12's `jmdict.vjdict` is replaced by it; other
+   dictionaries keep their order). Every other setting is the user's: unlike `install-vita.sh`, the
+   app does not reset `ocr_mode` or `log_file`. The plan lists each changed line.
+4. **config.txt.** For each configuration: the editor's new text is written to `config.txt.vjo-new`
+   and read back; `config.txt` is renamed to `config.txt.vjo-old`, `config.txt.vjo-new` to
+   `config.txt`, read back and compared byte for byte, and `config.txt.vjo-old` removed. If the last
+   read-back differs, the backup is written back and the step reports what is on the card.
+5. **The record.** `ux0:data/VitaJPOverlay/vjo_app.txt` gets the app's own stamp
+   (`app0:vjo_app.txt`): the Shell's check (#122, `shell/worker.c check_app`) then finds the installed
+   app and the plugins' record equal.
+6. **The boot record.** `ur0:data/VitaJPOverlay/boot.txt` is emptied, as `install_ftp.sh`
+   `reset_boot_record` does: a new build starts with a clean boot-guard record
+   (`docs/boot-safety.md`).
+
+Files go first so that a configuration never names a missing file; the configurations come after
+the files so that a failure before step 4 leaves the old overlay loading as it was; each file and
+each configuration is either the old or the new one at any moment. A power cut or a crash in the
+middle leaves the next start in "update" or "repair", whose Install finishes the job; `.vjo-new` and
+`.vjo-old` files left behind are removed by the next run.
+
+A game suspended behind the app (the app is a system application) keeps the plugins it loaded until
+the restart: the files on the card are replaced, not the loaded modules, as with `install-vita.sh`
+over FTP. The dictionary and the models are opened per lookup and per job (`core/local_dict.c` closes
+its files at the end of each lookup), and neither runs while the game is suspended.
+
+## The config.txt editor
+
+`core/taicfg.c` gets the editor; `tools/patch_tai_config.py` gets the same rules, so the app and
+`install-vita.sh` write the same bytes. Both are tested on one set of fixtures with expected
+outputs (`tools/tests/fixtures/taicfg/`).
+
+**How taiHEN reads the file** (taiHEN 309b380 `plugin.c`, `taihen.c`, `hen.c`; its parser
+DaveeFTW/taihen-parser 6d817fd `lexer.c`, `parser.c`):
+
+- `ux0:tai/config.txt` is opened first and `ur0:tai/config.txt` only when that fails
+  (`plugin.c:73-80`); the whole file is read into a block of its size rounded up to 4 KiB and parsed
+  as a C string (`plugin.c:96`).
+- A line ends at CR or LF; leading and trailing white space is ignored; an empty line or one starting
+  with `#` is a comment; `*NAME` opens a section and `*!NAME` one that stops the reading for that
+  title at the next section header; `ALL` matches every title but `KERNEL`; any other line is a
+  plugin path; parsing stops at the first line of 256 bytes or more (`lexer.c:131-135`).
+- `taihen_config_validate` returns non-zero for a valid file and zero for an invalid one, but
+  `plugin.c:129` treats non-zero as the failure, and `check_utf8` rejects any valid character, so in
+  effect taiHEN loads every file that has a section or a path line and **refuses one with nothing but
+  comments and blank lines** (it then loads no plugin at all).
+- Holding L when taiHEN starts skips the configuration and every plugin (`taihen.c:346-356`); holding
+  it when an app starts skips that app's plugins (`hen.c:368-372`).
+
+**Which file.** taiHEN reads `ux0:tai/config.txt` when it exists at the time it starts, else
+`ur0:tai/config.txt`. HENkaku's own installer writes both (henkaku 784e483
+`bootstrap/bootstrap.c:441-448`). With Ensō and an SD2Vita, ux0 becomes the SD card only after a
+kernel plugin listed in ur0's file has run, so taiHEN reads ur0's. The app cannot ask taiHEN which file
+it read, so, as `install-vita.sh` and the app's PSP registration (#124) do, it edits every
+configuration that exists, and the plan says which one taiHEN reads first. When neither exists it
+refuses ("taiHEN's config.txt was not found: is HENkaku installed?"); it never creates one.
+
+**Where the plugins go.** Always `ur0:tai/`, whichever configuration is read: the lines name
+`ur0:tai/` paths, ur0 is mounted before any plugin loads (so an SD2Vita setup loads them too), and
+every earlier install put them there, so an update replaces the same files.
+
+**Install** (with the list of games, below):
+
+- the kernel plugin right after the first `*KERNEL` header and the Shell plugin right after the first
+  `*main` header, as today; a missing section is added at the end;
+- the worker right after the first header of each game's section, or in a new section at the end;
+- commented out with today's prefix `# Mainline OCR: `: the removed Text plugin's lines; worker lines
+  outside a game's section (`*ALL`, `*main`, system apps) and a second one in a section; kernel lines
+  outside `*KERNEL` and a second one; Shell lines outside `*main` and a second one (new: two copies of
+  a kernel plugin would install its hooks twice);
+- the overlay's four paths are recognized in any letter case and with `ur0:/tai/` (the memory card's
+  file system ignores case, so taiHEN would load each spelling; `core/taicfg.c` already does this for
+  the worker);
+- a section the editor adds is one note line, its header and the plugin, with no blank line:
+  `# VitaJPOverlay (added by its installer)`, `*PCSG00415`, `ur0:tai/VitaJPOverlay_OCR.suprx`.
+  (Today `install-vita.sh` adds a blank line instead of the note; the note is what lets Uninstall
+  remove the section.) The Games page's registration (#124's `vjo_tai_worker_block`, which appends)
+  writes the same three lines; its older note stays recognized;
+- each line keeps its own line end; added lines use the file's (CRLF when it has one, else LF, or CR
+  when it uses only CR). (`install-vita.sh` rewrote every line end to one style; now neither does.)
+- a result whose length is a multiple of 4,096 bytes gets one more line end (taiHEN's buffer has no
+  room for the C string's end then; `core/taicfg.c` already does this for an appended section);
+- a UTF-8 byte-order mark stays where it is. taiHEN reads it as part of the first line, so a first
+  line `\xEF\xBB\xBF*KERNEL` is no section to taiHEN, and none to the editor either; when a mark hides
+  a section header the plan says so (the plugins under it do not load today).
+
+Installing twice gives the same bytes as installing once.
+
+**Uninstall** removes every line of the four plugins that is not commented out (in any spelling),
+every note line and the section header after it when nothing else is left in that section, and the
+older note of #124 (`# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay
+app)`) the same way. Lines it commented out stay commented (they were an old `*ALL` worker or the
+removed Text plugin). So uninstalling after an install gives back the original file, except a line
+end added at the end of a file that had none, the 4 KiB pad, and the commented lines.
+
+**One game** (the Games page): register or unregister one title, nothing else.
+
+**Refused** (nothing is written; the message says what to do): a file over 64 KiB, a NUL byte, text
+that is not UTF-8, a line of 256 bytes or more, no section or path line at all (taiHEN loads nothing
+from it: restore a backup or HENkaku's default first), and any result the check below rejects.
+
+**The check.** The editor simulates `taihen_config_parse` on the old and the new text for `KERNEL`,
+`main`, every game it registers or unregisters, and every section name in the file. The new text must
+load the kernel plugin once for `KERNEL`, the Shell once for `main`, the worker once for each game and
+never for `main` (none of them after Uninstall), and every other plugin for exactly the titles and in
+the order it loaded before. A `*!` section that would stop taiHEN before an added line (a `*!ALL`
+before the end, say) fails it: refused, naming the line.
+
+Size: each game section is 87 bytes with CRLF line ends, so 512 games (the app's catalog limit) is
+about 44.5 KB, within the 64 KiB the app reads; taiHEN's buffer for it is kernel memory for as long
+as the console is on (48 KiB then) [estimate from the line lengths].
+
+## Which games get the worker
+
+The worker is registered per game, never under `*ALL` (AGENTS.md rule 2: "Register one `*TITLEID`
+section per enabled game"). Today `install-vita.sh` registers the `--title` games and keeps those
+registered before; the app registers an Adrenaline bubble when it is turned ON (#124).
+
+With one VPK there is no `--title`. Install registers:
+
+- every game registered before (in either configuration): an update never drops one;
+- every installed Vita game that is ON in the Games page and is a retail title: its `param.sfo` has a
+  `CONTENT_ID` with the title's own ID (`JP0741-PCSG00415_00-...`), as every PSN or cartridge game has
+  and homebrew built with vita-mksfoex has not;
+- every Adrenaline bubble and Adrenaline itself that is ON (as #124).
+
+So after Install, L + R works in the user's games with no further step. Homebrew apps (ports,
+emulators, tools) are not registered: many take nearly all of their memory (the expert: "homebrews
+often do"). On the Games page a homebrew row shows the dim tag that PSP rows show today, and Enter
+registers it.
+
+What a registered game pays: the worker's module, 90,112 B of pages [measured: the ledger,
+`VJO_BUDGET_WORKER_MODULE_PAGES`], and its 32 KiB stack (`VJO_STACK_GAME`), in the game's own USER_RW
+(CLANNAD had 90 MB free [measured, #81]); it loads no weights and allocates no OCR memory until the
+Shell confirms the game is ON (README, "Memory and troubleshooting"). A game that allocates all of its
+memory unconditionally could fail to start with those pages taken; few games do (the expert, 2026-10-11).
+
+The remedy is the Games page: **turning a registered game OFF also removes its worker** (one-game
+edit, then "restart the Vita"), and turning it ON registers it again. The Default row (Triangle)
+changes no configuration. Uninstall removes every game's worker.
+
+A retail game installed later is ON by default but not registered: the Games page shows it with the
+dim tag and its status line says so at start (as for PSP rows today), and Enter registers it. The
+Install page then also offers **Add the OCR worker to N games** (the same one-game edit for each),
+so reopening the app after installing games is enough.
+
+## Versions (#122)
+
+- After Install the record is the app's stamp, so the Shell's check passes.
+- Installing a new VPK gives a new app beside the old plugins: at start the app finds the record
+  is another stamp, opens on Install with **Update the overlay to v0.8.1**, and lists the plan.
+  Installing an older VPK is the same, with "this app's overlay is older than the installed one".
+- The Shell's in-game notice becomes one neutral line, since the Shell cannot tell which side is
+  newer when both have one API: `Overlay app and plugins are different builds: open the Overlay app.`
+  The app says which way it is and what to do. The Shell's "worker unavailable" message points at the
+  app too: `... Turn this game ON in the Overlay app, then restart.` Both strings are shorter than the
+  ones they replace, so SceShell's pages do not grow (AGENTS.md rule 1); no other Shell, kernel or
+  worker code changes, and the API stays 22.
+- An app without a payload (the zip's) keeps today's banner texts, which name `install-vita.sh`.
+
+## Uninstall
+
+Uninstall shows its plan (the lines it removes from each configuration and the dated backup it
+makes), then removes the lines, reads each configuration back and says "Restart the Vita: the overlay
+no longer loads". It keeps every backup, the plugin files, the models, the dictionary and the user's
+data (`config.ini`, `games.ini`, regions, the Anki queue and exports), as `install_ftp.sh --uninstall`
+does, and says where they are for whoever wants the space back. The app itself is deleted from
+LiveArea as any app.
+
+## Recovery
+
+The app's pages and the README say the same:
+
+- A boot that does not complete makes the next one a safe boot (no hooks, no overlay; `status.txt`
+  says why), as today (`docs/boot-safety.md`).
+- If the Vita does not start: hold L while turning it on (taiHEN then loads no plugin), open VitaShell,
+  and in `ur0:tai` (and `ux0:tai`) copy `config.txt.vjo-<date>.bak` over `config.txt`, or comment out
+  the three `VitaJPOverlay` lines. Then restart normally.
+- Never more than one attempt: the app does nothing by itself after a restart.
+
+## The release process
+
+- `tools/package_release.py --vpk OUT.vpk` writes the VPK next to the zip: the base zip's
+  `JPOverlaySettings.vpk` with `payload/` (the files the zip installs, from the same bytes) and
+  `payload/manifest.txt`. It checks that its eboot and stamp are the base's, that the payload's hashes
+  are the zip manifest's, and VitaShell's scan (no mount import); and reports the VPK's size.
+- `tools/package_variants.py` writes both VPKs and both zips and `SHA256SUMS`, normal first.
+- CI keeps building the base zips (the full VPKs need the models, which are added at packaging, as
+  for the zips today). `docs/release-variants.md`'s recipe publishes all five assets in one release,
+  the normal VPK first.
+- A test build ships both VPKs too; its issue's step 1 becomes "install the VPK in VitaShell, open
+  Overlay, Install, restart".
+- README's Install section becomes the three steps; `install-vita.sh` moves under "Advanced:
+  install from a computer".
+
+## Tests
+
+- The editor: the fixtures (HENkaku's stock `ur0` and `ux0` files from `bootstrap.c`; Adrenaline's
+  kernel plugin and `*PSPEMUCFW`; repeated sections; CRLF; CR; a BOM before a comment and before
+  `*KERNEL`; old lines: the Text plugin, an `*ALL` worker, a commented-out line, a duplicate and a
+  case-variant kernel line, the #124 note; `*!` sections that do and do not block; the 4 KiB pad;
+  refusals: NUL, not UTF-8, a 256-byte line, comments only, over 64 KiB), each through install,
+  install again, uninstall and the one-game edit, in C (ctest) and Python (pytest) against the same
+  expected files; the simulation against hand-worked cases of `taihen_config_parse`.
+- The install engine: the app's real code on a temporary memory card (real files, as the Games page
+  tests), with `sceIoRename` refusing an existing destination as the Vita does: a fresh install (ur0
+  only, both), update, repair, uninstall, the dictionary present/absent/different, failures injected
+  at every open, write, sync, rename and read-back (the card is then as the plan says: old or new,
+  never half), a stop after every step followed by a fresh start, and the plan's text.
+- Packaging: the VPK's contents, manifest, hashes, eboot and stamp; VitaShell's scan; both variants.
+- Preflight: a new row for these suites.
+
+Vita3K is not evidence for any of it (it has no taiHEN). The test build's console run is.
+
+## Unmeasured until a console run
+
+- VitaShell's install time for the 53 MB VPK and the app's Install time (about 155 MB read and
+  hashed, at most 256 KiB a frame); the work runs on CPU3 (the app is a system application), whose
+  cost is unmeasured (AGENTS.md rule 8).
+- That `sceIoRename` moves a file out of `ux0:app/VJOSET001` while the app runs (unsafe homebrew have
+  the access; VitaShell moves files this way).
+- What the promoter does with the files of a previous version on an update (replaced or kept: both
+  are handled).
+- That the app's writes to `ur0:tai` work while a game is suspended (the #124 registration does the
+  same; not yet run on a console either).
