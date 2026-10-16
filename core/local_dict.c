@@ -455,9 +455,9 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
  * any borrowed one, FREQ_BORROWED), plus 4095 - (e * 128 + m) for rank
  * 2^e * (1 + m / 128 + ...), e <= 23. Exact below rank 256; above it, ranks
  * within 1/128 of an octave of each other tie, and the longer article
- * decides. 13 bits fit an index's spare posting field, but the flags above
- * it depend on the query and the payload's spelling and reading, so storing
- * the key there alone saves no head read. */
+ * decides. Format 3's posting hints store it in bits 3-15 of a posting's
+ * last u16, beside the query-independent flags rank_posting needs from the
+ * head (HINT_SPELLING, HINT_NORMALIZED, HINT_READING). */
 static uint32_t freq_key(uint32_t word)
 {
     uint32_t rank = word & FREQ_RANK_MASK, e = 0, m;

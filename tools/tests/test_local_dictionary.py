@@ -557,18 +557,23 @@ class LocalDictionaryTest(unittest.TestCase):
         if not bench:
             self.skipTest("VJO_BENCH is set by CTest")
         rows = self.spread()
-        _, stats = self.build(rows, "filtered.vjdict")
-        self.assertGreaterEqual(stats["filter_blocks"], 5)
-        convert.convert([self.archive(rows)], self.directory / "plain.vjdict", key_filter=False)
+        ranks = FrequencyTest.frequency(self, [freq("猫", 1536, "ねこ")])
         def run(name):
             proc = subprocess.run([bench, str(self.directory), name, self.FILTER_TEXT, "1"],
                                   capture_output=True, text=True, check=True)
             return json.loads(proc.stdout)
-        plain, filtered = run("plain.vjdict"), run("filtered.vjdict")
-        self.assertEqual(plain["digest"], filtered["digest"])
-        # Each position of the sentence uses its own block (vjo_local_lookup's filter_restart):
-        # with the first position's block kept, most candidates would bypass the filter.
-        self.assertLess(filtered["read_calls"], plain["read_calls"] // 2)
+        for version in (2, 3):  # format 3 (ranks, posting hints) uses its filter the same way
+            with self.subTest(format=version):
+                extra = {"frequency": ranks} if version == 3 else {}
+                stats = convert.convert([self.archive(rows)], self.directory / "filtered.vjdict", **extra)
+                self.assertEqual(stats["format_version"], version)
+                self.assertGreaterEqual(stats["filter_blocks"], 5)
+                convert.convert([self.archive(rows)], self.directory / "plain.vjdict", key_filter=False, **extra)
+                plain, filtered = run("plain.vjdict"), run("filtered.vjdict")
+                self.assertEqual(plain["digest"], filtered["digest"])
+                # Each position of the sentence uses its own block (vjo_local_lookup's filter_restart):
+                # with the first position's block kept, most candidates would bypass the filter.
+                self.assertLess(filtered["read_calls"], plain["read_calls"] // 2)
 
     def test_key_filter_with_more_than_960_blocks_is_refused(self):
         """The directory must end inside page 0: 256 + 4 x 960 = 4096 bytes."""
@@ -672,6 +677,35 @@ class FrequencyTest(unittest.TestCase):
         self.assertGreater(sum(q["hinted"] for q in with_both), 0)
         self.assertEqual(sum(q["filtered"] + q["hinted"] for q in without), 0)
         self.assertLess(sum(q["reads"] for q in with_both), sum(q["reads"] for q in without))
+
+    def test_posting_hint_sees_only_the_readers_head_window(self):
+        """S, N and R count only inside rank_posting's head window, the first min(length - 4, 160) bytes
+        after the frequency word. convert() never writes a spelling that long (32 characters at most),
+        so the window's edge is checked on posting_hint itself."""
+        self.assertEqual(convert.HEAD_BYTES, 160)  # core/local_dict.c HEAD_BYTES
+        S, N, R = convert.HINT_SPELLING, convert.HINT_NORMALIZED, convert.HINT_READING
+        word = struct.pack("<I", 412)
+        def hint(key, rest, length=None):
+            payload = word + rest
+            value = convert.posting_hint(key, payload, len(payload) if length is None else length)
+            self.assertEqual(value >> convert.HINT_FREQ_SHIFT, convert.freq_key(412))
+            return value & 7
+        a = "あ".encode()
+        for spelling, flags in ((a * 52 + b"ab", S | N | R),  # 158 bytes: the NUL at 158, the reading at 159
+                                (a * 53, S | N),  # 159: the NUL ends the window, the reading is outside it
+                                (a * 53 + b"a", 0),  # 160: no NUL in the window, so no flag
+                                (a * 60, 0)):  # the window ends inside a character
+            with self.subTest(bytes=len(spelling)):
+                self.assertEqual(hint(spelling, spelling + b"\0" + a + b"\0x\0"), flags)
+        # A short payload's own length bounds the window.
+        self.assertEqual(hint(b"ab", b"ab\0c\0\0"), S | N | R)
+        self.assertEqual(hint(b"ab", b"ab\0c\0\0", 4 + 4), S | N | R)  # the reading's byte ends the window
+        self.assertEqual(hint(b"ab", b"ab\0c\0\0", 4 + 3), S | N)  # the reading's byte is past the length
+        self.assertEqual(hint(b"ab", b"ab\0\0x\0"), S | N)  # an empty reading
+        self.assertEqual(hint(b"ab", b"abc\0", 4 + 3), 0)  # the NUL is past the length
+        self.assertEqual(hint("ねこ".encode(), "ネコ".encode() + b"\0\0x\0"), N)
+        self.assertEqual(hint("ヷ".encode(), "ヷ".encode() + b"\0\0x\0"), S | N)  # U+30F7 is not folded
+        self.assertEqual(hint(b"ID", "ＩＤ".encode() + b"\0\0x\0"), N)
 
     def test_posting_hints_change_no_lookup_and_need_no_head(self):
         """Version 3 postings carry hints (S, N, R, freq_key): the converter writes them, add_index_hints adds

@@ -323,6 +323,24 @@ Whole word):
 
   Below 4 buckets, the few index pages mostly stay in the page cache.
 
+### 6.2 What else was considered, by gain per KB of memory
+
+| change | RAM (SceShell) | disk | reads saved per lookup | status |
+|---|---:|---:|---:|---|
+| key filter (6.1) | 0 (existing page cache) | +904 KiB | 4.7-7.5 (measured) | this work |
+| posting rank hints (6.3): spelling = key, normalized spelling = key, has a reading and the 13-bit frequency key, in the v3 postings' u16 | 0 | 0 | 2.2-3.8 (measured: heads 2.6-4.1 → 0.2-1.1) | this work |
+| keep the file open across one overlay session's lookups | 0 (a descriptor; overlay-shell-slim: fine) | 0 | 1 header read and the open/seek/close: the fixed part, est. about 11 ms for a cursor lookup | needs a console test: on the host nothing can measure `sceIoOpen` |
+| bigger page cache kept across one text's lookups | 16-128 KiB resident in SceShell | 0 | 0-2.8% (audit-overlay-perf-1: 4 pages 0.0%, 8 pages 1.5%, 32 pages 2.8%) | rejected: AGENTS.md rule 1, and too small |
+| block index / sorted prefix table instead of the hash | 0 | about 0 | ≤ 0.1 after the filter (index reads are at the floor) | not worth a format change |
+| batching candidates by sorted key | 0 | 0 | ≤ 0.1 after the filter (the absent ones are no longer searched) | not needed |
+| a resident filter (904 KiB) in the Shell | 904 KiB | 0 | 0.9 (the filter read) | rejected: AGENTS.md rule 1 (overlay-shell-slim) |
+| hoshidicts' layout (one 1 MiB bit array, k = 7) | 0 | +1 MiB | negative: 14-17 filter pages a lookup at p50 | rejected (§1) |
+
+After the filter, a lookup reads: header 1, filter 0.9, index 1.1, key group 1.0, payload heads
+2.6-4.1, payload 1. The heads were the next target: the posting hints (§6.3) take them to 0.2-1.1
+(0.2-0.5 in Whole word mode). Keeping the file open would then remove the header read and the
+fixed open cost.
+
 ### 6.3 Posting hints: rank a key's entries without their payloads (format 3)
 
 Ranking a key's postings read a 160-byte head of each payload: spelling, reading, and in format 3
@@ -341,7 +359,7 @@ head in two cases:
   since only the head says whether it is spelled as the text is.
 
 The bundled file gets the hints in `tools/prepare_plaintext.py`, deterministically, before the key
-filter: 840,994 postings, 17 s on the host. `--frequency` writes them when converting. The file's
+filter: 840,994 postings, 14-17 s on the host. `--frequency` writes them when converting. The file's
 size is unchanged.
 
 Bundled dictionary (format 3, with the key filter), the same lookups, every shown entry and
@@ -375,20 +393,3 @@ Raw numbers: [`docs/benchmarks/dict-posting-hints-20261015.json`](../docs/benchm
   - the key group, about 1;
   - payload heads, 0.2-0.5;
   - the shown payload, 1.
-
-### 6.2 What else was considered, by gain per KB of memory
-
-| change | RAM (SceShell) | disk | reads saved per lookup | status |
-|---|---:|---:|---:|---|
-| key filter (6.1) | 0 (existing page cache) | +904 KiB | 4.7-7.5 (measured) | this work |
-| posting rank hints (6.3): spelling = key, normalized spelling = key, has a reading and the 13-bit frequency key, in the v3 postings' u16 | 0 | 0 | 2.2-3.8 (measured: heads 2.6-4.1 → 0.2-1.1) | this work |
-| keep the file open across one overlay session's lookups | 0 (a descriptor; overlay-shell-slim: fine) | 0 | 1 header read and the open/seek/close: the fixed part, est. about 11 ms for a cursor lookup | needs a console test: on the host nothing can measure `sceIoOpen` |
-| bigger page cache kept across one text's lookups | 16-128 KiB resident in SceShell | 0 | 0-2.8% (audit-overlay-perf-1: 4 pages 0.0%, 8 pages 1.5%, 32 pages 2.8%) | rejected: AGENTS.md rule 1, and too small |
-| block index / sorted prefix table instead of the hash | 0 | about 0 | ≤ 0.1 after the filter (index reads are at the floor) | not worth a format change |
-| batching candidates by sorted key | 0 | 0 | ≤ 0.1 after the filter (the absent ones are no longer searched) | not needed |
-| a resident filter (904 KiB) in the Shell | 904 KiB | 0 | 0.9 (the filter read) | rejected: AGENTS.md rule 1 (overlay-shell-slim) |
-| hoshidicts' layout (one 1 MiB bit array, k = 7) | 0 | +1 MiB | negative: 14-17 filter pages a lookup at p50 | rejected (§1) |
-
-After the filter, a lookup reads: header 1, filter 0.9, index 1.1, key group 1.0, payload heads
-2.6-4.0, payload 1. The heads are the next target. Keeping the file open would then remove the
-header read and the fixed open cost.

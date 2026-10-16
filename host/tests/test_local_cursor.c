@@ -1281,7 +1281,8 @@ static void key_filter_descriptor_is_validated(void)
 }
 
 /* Posting hints rank every posting exactly as its payload's head does (#127's
- * tie-break cases, katakana text, a preferred reading), with fewer reads; without
+ * tie-break cases, katakana text, hiragana text with a more frequent katakana
+ * spelling, a preferred reading, a usual spelling), with fewer reads; without
  * the descriptor the u16 is ignored (0xa5a5 in the fixture). */
 static void posting_hints_rank_as_the_head_does(void)
 {
@@ -1308,11 +1309,15 @@ static void posting_hints_rank_as_the_head_does(void)
         {"ねこ", "ねこ", "", "hiragana spelling", 0, 50},
         {"ねこ", "ネコ", "", "katakana spelling", 0, 90000},
         {"ねこ", "猫", "ねこ", "kanji spelling", 0, 10},
+        /* hiragana text: its own spelling wins over a more frequent katakana one,
+         * which only normalizes to the key (HINT_SPELLING, not HINT_NORMALIZED) */
+        {"いぬ", "イヌ", "", "katakana spelling, more frequent", 0, 40},
+        {"いぬ", "いぬ", "", "hiragana spelling", 0, 9000},
         /* a usual spelling (usual_spellings: やめる 止める) beats a more frequent one */
         {"やめる", "辞める", "やめる", "to quit", 1, 500},
         {"やめる", "止める", "やめる", "to stop", 1, 2000}};
     const char *texts[] = {"かいとう", "から", "私", "人", "せい", "もと", "先", "かった", "かう", "ネコ", "ねこ", "猫",
-                           "やめる"};
+                           "いぬ", "イヌ", "やめる"};
     for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
         char plain[256], hinted[256];
         int plain_reads, hinted_reads;
@@ -1326,6 +1331,10 @@ static void posting_hints_rank_as_the_head_does(void)
         hinted_reads = shown("main.vjdict", texts[t], 0, hinted, sizeof(hinted));
         TEST_CHECK_(!strcmp(plain, hinted), "%s vs %s", plain, hinted);
         TEST_CHECK_(hinted_reads <= plain_reads, "%d reads, %d without hints", hinted_reads, plain_reads);
+        if (!strcmp(texts[t], "いぬ")) /* written as the text is, before the more frequent イヌ */
+            TEST_CHECK_(!strncmp(hinted, "いぬ|", strlen("いぬ|")), "%s", hinted);
+        if (!strcmp(texts[t], "イヌ"))
+            TEST_CHECK_(!strncmp(hinted, "イヌ|", strlen("イヌ|")), "%s", hinted);
         /* a wrong magic: the u16 is ignored, as #127's reader does */
         memcpy(fixtures[1].bytes + 160, "XXXX", 4);
         shown("main.vjdict", texts[t], 0, hinted, sizeof(hinted));

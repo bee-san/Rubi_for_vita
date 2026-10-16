@@ -32,9 +32,12 @@ Rebuild the frozen artifact with `python3 tools/build.py` in the private repo.
 Its `sources.json` verifies all three original ZIPs before processing. Prepare
 an existing artifact with `tools/prepare_plaintext.py`; the Vita reads only the
 resulting `.vjdict`. This combined file counts as one dictionary for paging.
-Preparing checks the frozen file's SHA-256, adds the [key filter](#key-filter)
-and checks the result against its own pin (`key_filter` in
-`plaintext-dictionaries.json`). That file's top-level `bytes` and `sha256`
+Preparing checks the frozen file's SHA-256, adds the posting hints (only when
+`key_filter` has `hinted_postings`: the frozen file predates them) and the
+[key filter](#key-filter), and checks the result against its own pin
+(`key_filter` in `plaintext-dictionaries.json`). A frozen file that
+`--frequency` already gave its hints must be pinned without `hinted_postings`:
+adding hints to it again is refused. That file's top-level `bytes` and `sha256`
 describe the frozen file in the private repository, and `key_filter` the file
 the release ships. A package manifest's `dictionary` block copies both: the
 shipped file's checksum is also under `files`. That step is deterministic: it indexes what the
@@ -341,7 +344,7 @@ the reading (`猫 (ねこ) #1536`, or `unranked`); `frequency_badge = off` in
 `config.ini` hides it. An Anki card records it (`rank`, `source` "Jiten";
 [the record](anki.md)). The lookup log line ends with it.
 
-Format 3 is format 2 with two additions, so it needs nothing in memory:
+Format 3 is format 2 with these additions, so it needs nothing in memory:
 
 - page 0 bytes 64..127: the frequency list's name, NUL-padded (read with
   the 64-byte header, in the same read);
@@ -350,24 +353,19 @@ Format 3 is format 2 with two additions, so it needs nothing in memory:
   (Jiten's `N㋕`), bits 25-31 for the converter's report. The ranking's head
   read and the shown entry's payload read include it: no extra read, 4 bytes
   more in each.
-- optional **posting hints**, announced by magic `VJPH` and u32 version=1 at
-  page-0 byte 160. Every posting's last u16 then ranks it without reading its
-  payload's head:
-  - bit 0: the spelling is the key;
-  - bit 1: the spelling normalizes to the key;
-  - bit 2: the entry has a reading;
-  - bits 3-15: the 13-bit frequency key of its frequency word (below).
-
-  Spelling and reading count only within the first 160 bytes after the
-  frequency word, as the ranking's head read sees them. The head is still read
-  for a key with a preferred reading or a usual spelling, and for katakana or full-width text
-  whose entry's spelling only normalizes to the key. `--frequency` writes the
-  hints; `tools/prepare_plaintext.py` adds them to the bundled file
-  (`convert_dictionary.add_index_hints`, deterministic). Without the magic
-  (files from earlier converters) the u16 is ignored, and a reader that
-  predates the hints ignores it too. On the bundled file the hints take a
-  lookup's payload-head reads from 2.6-4.0 to 0.2-1.2, with every shown entry
-  identical (`tools/dict_lookup_bench.py`, `reports/dict-lookup-speed.md`).
+- optional **posting hints**: every posting's last u16 holds what the ranking
+  reads from its payload's head (the spelling is the key, it normalizes to the
+  key, the entry has a reading, and the frequency key below), so a key's
+  postings are ranked without reading their heads. The head is still read for a
+  key with a preferred reading or a usual spelling, and for katakana or
+  full-width text whose entry's spelling only normalizes to the key.
+  `--frequency` writes them; `tools/prepare_plaintext.py` adds them to the
+  bundled file (`convert_dictionary.add_index_hints`, deterministic). Files
+  without them, and readers that predate them, rank as before. On the bundled
+  file the hints take a lookup's payload-head reads from 2.6-4.1 to 0.2-1.1,
+  with every shown entry identical (`tools/dict_lookup_bench.py`,
+  `reports/dict-lookup-speed.md`). The exact bits are in
+  [version 3's format](#binary-format-version-3-with-frequency-ranks).
 
 Ranking uses it as a tie-break only, after the flags above (a preferred
 reading, the text as written, katakana as hiragana, a reading): first a
@@ -505,22 +503,48 @@ dictionary size.
 
 ### Binary format, version 3 (with frequency ranks)
 
-Version 3 is version 2 with two additions; `--frequency` writes it, and the
+Version 3 is version 2 with these additions; `--frequency` writes it, and the
 bundled dictionary is one.
 
 - The header has magic `VJDICT3\0` and version=3, the rest as in version 2.
   Bytes 64..127 of page 0 hold the frequency list's name: 1-63 bytes of UTF-8
   text without control characters, then NUL padding to byte 127. The runtime
-  reads it with the 64-byte header, in the same read. Bytes 128..4095 are not
-  read; they are left for an index's own data.
+  reads it with the 64-byte header, in the same read, as it reads the rest of
+  page 0: bytes 128..159 and 256..4095 are the optional [key filter](#key-filter)'s,
+  160..167 the optional posting hints' (below). Bytes 168..255 are not read;
+  192..255 may hold a dictionary title.
 - Every payload starts with a u32 frequency word, then the three strings as in
   version 2. Bits 0-23 are the rank (1 = the most frequent; 0 = the list does
   not rank the entry). Bit 24 marks a borrowed rank: a kanji spelling ranked
   with its word's rank written in kana. Bits 25-27 record how the rank matched,
   for the converter's report; bits 28-31 are zero. A payload is at least 8
   bytes.
-- A posting's last u16 is not read (version 2 requires it to be zero), so an
-  index may use it.
+- **Posting hints** (optional). Page-0 bytes 160..167 hold magic `VJPH` and a
+  u32 version=1; a reader refuses any other version. Without the magic, a
+  posting's last u16 is not read (version 2 requires it to be zero; version 3
+  allows any value). With it, the u16 of a posting of key K holds:
+  - bit 0, S: the entry's spelling is K, byte for byte;
+  - bit 1, N: the spelling normalized is K. Normalizing maps each code point
+    U+30A1..U+30F6 to itself minus 0x60 (katakana ァ..ヶ as hiragana) and
+    U+FF01..U+FF5E to itself minus 0xFEE0 (full-width ASCII as ASCII), and
+    keeps every other code point (ヷ..ヺ, ー and half-width katakana included);
+    keys are normalized the same way;
+  - bit 2, R: the entry has a reading;
+  - bits 3-15: `freq_key` of the payload's frequency word. With
+    `rank = word & 0xFFFFFF`, it is 0 for rank 0; otherwise, with e the index
+    of rank's highest set bit (0..23) and m the 7 bits after it, truncated
+    (`(rank >> (e - 7)) & 127` for e >= 7, else `(rank << (7 - e)) & 127`), it is
+    `(bit 24 set ? 0 : 4096) + 4095 - (128 * e + m)`. A reader compares it with
+    the scores of the same key's postings that it ranks through their heads,
+    so the bits must be exactly this value, not just in the same order.
+
+  S, N and R describe only the reader's head window: the first
+  w = min(payload length - 4, 160) bytes after the frequency word. If those w
+  bytes hold no NUL, S, N and R are 0. Otherwise, with the spelling's NUL at
+  index i of the window, S and N compare bytes 0..i-1, and R is 1 exactly when
+  i + 1 < w and byte i + 1 is not NUL. `posting_hint` in
+  `tools/convert_dictionary.py` is the reference writer, and `rank_posting` in
+  `core/local_dict.c` the reader.
 
 ### Binary format, version 2 (default)
 
@@ -548,8 +572,8 @@ by comparing the full key. All offsets are absolute.
 Payloads are three UTF-8 NUL-terminated strings: spelling, reading, definition.
 Spelling and reading indexes share payloads. Rule bits are v1=1, v5=2, vs=4,
 vk=8, vz=16, adj-i=32, iru=64. Opening a dictionary reads only its first page
-(the header and the key filter's descriptor); pages, offsets, bounds and
-payloads are validated as they are accessed.
+(the header, the key filter's descriptor and version 3's posting hints'); pages,
+offsets, bounds and payloads are validated as they are accessed.
 
 #### Key filter
 
