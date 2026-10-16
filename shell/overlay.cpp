@@ -41,6 +41,7 @@
 #include "header_highlight.h"
 #include "touch_hold.h"
 #include "word_navigation.h"
+#include "wrap_fix.h"
 extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
@@ -179,6 +180,31 @@ static int s_square_clear_armed;
 static uint8_t *s_ui_mem;
 static VjoArena s_ui;
 
+/* paf breaks Japanese anywhere; a break it put inside a word is moved to the
+ * last place the line may break (wrap_fix.h, core/linebreak.h), a break a
+ * frame once the text is laid out. The shown texts stay in s_ui until the
+ * next render, the header's across the renders that keep it (s_hdr_mark).
+ * The header's breaks are kept as the recognized text's units they come
+ * before: the cursor, taps, arrows and the highlight count the text's own
+ * units (header_char_position, header_highlight). */
+static VjoStyled s_hdr_st, s_body_st;
+static VjoWrap s_hdr_wrap, s_body_wrap;
+static size_t s_hdr_mark;
+static uint32_t s_hdr_brk[VJO_WRAP_BREAKS];
+static int s_hdr_nbrk;
+
+/* The step of a paf text's re-wrap, for the overlay's texts and the strip's. */
+uint32_t vjo_wrap_paf(VjoWrap *w, ui::Text *t, const uint16_t *u, uint32_t n, uint32_t room)
+{
+    return vjo_wrap_step<graph::TextLayoutCharInfo>(w, t, u, n, room);
+}
+
+/* A header unit of the recognized text as shown, the breaks put in. */
+static __attribute__((noinline)) uint32_t header_shown(uint32_t unit)
+{
+    return vjo_wrap_shown(s_hdr_brk, s_hdr_nbrk, unit);
+}
+
 /* The left stick over the text: its state, its due lookup, stick_lookup_ms and the
  * close line's counts (core/stick_cursor.h). */
 static VjoStickCursor s_stick;
@@ -249,6 +275,11 @@ static bool header_highlight(void)
             len = s_rng_len[0];
         } else if (s_cursor_byte < s_cursor_text_len)
             vjo_utf8_cursor_range(s_cursor_text, s_cursor_text_len, s_cursor_byte, &start, &len);
+        if (len) { /* the text's units as shown, with the breaks put in */
+            uint32_t end = header_shown(start + len - 1) + 1;
+            start = header_shown(start);
+            len = end - start;
+        }
     } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
         start = s_rng_start[s_selected];
         len = s_rng_len[s_selected];
@@ -372,16 +403,25 @@ static void render(int new_content)
     s_anki_enabled = g_view.anki_enabled;
     if (s_selected >= s_n_entries)
         s_selected = s_n_entries ? s_n_entries - 1 : 0;
-    vjo_arena_reset(&s_ui);
+    if (rebuild_header)
+        vjo_arena_reset(&s_ui);
+    else
+        vjo_arena_release(&s_ui, s_hdr_mark); /* the header's shown text stays */
 
     if (rebuild_header) {
+        s_hdr_nbrk = 0;
+        s_hdr_wrap.frames = 0;
         if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, 1) == 0) {
             if (s_local_cursor_mode)
                 vjo_styled_puts(&hdr, s_cursor_text, VJO_RGB_TEXT, ja);
             else
                 vjo_styled_header(&hdr, l, ja);
             have_hdr = 1;
+            s_hdr_st = hdr;
+            if (s_local_cursor_mode) /* the cursor's text, whose units are mapped */
+                vjo_wrap_arm(&s_hdr_wrap);
         }
+        s_hdr_mark = vjo_arena_mark(&s_ui);
         if (!s_local_cursor_mode)
             for (int i = 0; i < s_n_entries && i < MAX_RANGES; i++)
                 if (!vjo_entry_header_range(l, i, &s_rng_start[i], &s_rng_len[i]))
@@ -483,9 +523,38 @@ static void render(int new_content)
         s_hl_dirty = false;
     }
     update_header_highlight();
-    if (have_body)
+    if (have_body) {
         text_set(s_body.text, &body);
+        s_body_st = body;
+        vjo_wrap_arm(&s_body_wrap);
+    } else
+        s_body_wrap.frames = 0;
     pane_reset(&s_body);
+}
+
+/* A shown text's step of its re-wrap (wrap_fix.h): a break put in where paf
+ * broke inside a word, and the text set again. 1 when one was. */
+static int wrap_step(VjoWrap *w, ui::Text *t, VjoStyled *st)
+{
+    uint32_t b = vjo_wrap_paf(w, t, st->text, st->len, st->cap - st->len);
+    if (!b || !vjo_styled_insert(st, b, '\n'))
+        return 0;
+    vjo_wrap_put(w, b);
+    text_set(t, st);
+    return 1;
+}
+
+static void wrap_frame(void)
+{
+    uint32_t b = wrap_step(&s_hdr_wrap, s_header.text, &s_hdr_st) ? s_hdr_wrap.last : 0;
+    if (b) {
+        vjo_wrap_add(s_hdr_brk, &s_hdr_nbrk, b);
+        s_hl_len = 0; /* the text was set again: no highlight drawn */
+        s_hl_dirty = false;
+        update_header_highlight();
+    }
+    if (wrap_step(&s_body_wrap, s_body.text, &s_body_st))
+        pane_scroll_to(&s_body, s_body.scroll);
 }
 
 static void layout_apply(float header_h)
@@ -764,6 +833,7 @@ static void close_page(int handback)
     s_region_cursor = NULL;
     s_n_entries = 0;
     s_header_has_text = 0;
+    s_hdr_wrap.frames = s_body_wrap.frames = s_hdr_nbrk = 0; /* their texts go with the arena */
     vjo_arena_init(&s_ui, NULL, 0);
     vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
     s_ui_mem = NULL;
@@ -804,7 +874,7 @@ static int entry_vertical(int up)
 static int header_char_position(void *ctx, uint32_t unit, float *x, uint32_t *line)
 {
     graph::TextLayoutCharInfo info;
-    int rc = ((ui::Text *)ctx)->GetCharInfo(unit, info);
+    int rc = ((ui::Text *)ctx)->GetCharInfo(header_shown(unit), info);
     if (rc >= 0) { *x = info.x; *line = info.line; }
     return rc;
 }
@@ -1110,6 +1180,7 @@ static void frame_body(unsigned version, unsigned anki_version)
     }
     if (s_follow_frames > 0 && (header_follow() || --s_follow_frames == 0))
         s_follow_frames = 0;
+    wrap_frame();
     header_fit();
     pane_place(&s_header);
     pane_place(&s_body);

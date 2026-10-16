@@ -63,6 +63,23 @@ void vjo_styled_puts(VjoStyled *s, const char *utf8, uint32_t rgb, int px)
     vjo_styled_add(s, utf8, strlen(utf8), rgb, px);
 }
 
+int vjo_styled_insert(VjoStyled *s, uint32_t at, uint16_t unit)
+{
+    if (!at || at > s->len || s->len >= s->cap)
+        return 0;
+    memmove(s->text + at + 1, s->text + at, (s->len - at + 1) * sizeof(uint16_t)); /* with the NUL */
+    s->text[at] = unit;
+    s->len++;
+    for (int i = 0; i < s->n_spans; i++) {
+        VjoSpan *sp = &s->spans[i];
+        if (sp->start >= at)
+            sp->start++;
+        else if (sp->start + sp->len >= at)
+            sp->len++;
+    }
+    return 1;
+}
+
 uint32_t vjo_utf16_index(const char *utf8, size_t off)
 {
     size_t len = strlen(utf8), i = 0;

@@ -1,7 +1,10 @@
 /* The Overlay app's text layouts and icon helpers, on their own:
  * - settings/text_layout.c lays rows out exactly as main.c's wrapped_text
  *   drew them before it (the reference below is that code, verbatim but for
- *   drawing into a list), over generated text and several measure rules;
+ *   drawing into a list and, since 2026-10-16, ending a row where a line may
+ *   break, core/linebreak.h), over generated text and several measure rules;
+ *   Latin text without such marks breaks as before, Japanese never inside a
+ *   word;
  * - its memo returns the same layouts and keeps a bounded number;
  * - settings/icons.c's PNG check lets only files whose every chunk lies
  *   inside the buffer through (libvita2d's buffer reader has no length), at
@@ -144,6 +147,58 @@ static void layout_matches_wrapped_text(void)
     TEST_CHECK_(mismatches == 0, "%ld of %ld layouts differ from wrapped_text's rows", mismatches, cases);
     TEST_CHECK(rows > cases && ellipses > cases / 20); /* the cases wrap and cut, not only fit */
     TEST_MSG("%ld layouts, %ld rows, %ld cut with \"...\"", cases, rows, ellipses);
+}
+
+/* Latin text (letters, digits, ASCII marks and spaces) gets main's rows:
+ * the old rule, at the last space that fits. */
+static void latin_text_breaks_as_before(void)
+{
+    static const char *pieces[] = {"a", "Wo", "AV", "To", "Synthetic", "title", "edition", "-", ":", "1/2",
+                                   "...", " ", " ", "  ", "\r", "\n", "Supercalifragilisticexpialidocious"};
+    char s[1024];
+    long cases = 0, bad = 0;
+    measure_rule = stub_width;
+    for (int i = 0; i < 3000; i++) {
+        size_t at = 0, n = 1 + next() % 60;
+        for (size_t k = 0; k < n; k++) at = put(s, at, sizeof(s), pieces[next() % (sizeof(pieces) / sizeof(pieces[0]))]);
+        s[at] = 0;
+        for (int w = 40; w <= 900; w += 215) {
+            int rows;
+            ref_breaks = 0;
+            bad += !same_as_reference(s, w, 24, 1 + (int)(next() % VJO_TEXT_ROWS), &rows);
+            cases++;
+        }
+    }
+    ref_breaks = 1;
+    TEST_CHECK_(bad == 0, "%ld of %ld Latin layouts differ from main's rows", bad, cases);
+}
+
+/* A Japanese title's first row ends where a phrase starts, never inside a
+ * word (the owner's 2026-10-16 item 4); a word wider than the row still breaks. */
+static void japanese_rows_end_between_words(void)
+{
+    static const struct { const char *title, *row0, *row1; int width; } cases[] = {
+        /* 11 glyphs fit: テスト用のとても長 would cut 長い; the row ends before it */
+        {"テスト用のとても長い日本語のタイトル", "テスト用のとても", "長い日本語のタイトル", 11 * 18},
+        /* before 場合, rather than inside it; and after 、 when that is the last place */
+        {"二行に、収まらない場合は省略", "二行に、収まらない", "場合は省略", 10 * 18},
+        {"二行に、収まらない", "二行に、", "収まらない", 8 * 18},
+        /* never before 。 or 」 (they stay with the word before) */
+        {"「そうだね」と言った", "「そうだね」", "と言った", 6 * 18},
+        /* a katakana word wider than the row: cut at its last glyph that fits */
+        {"エンサイクロペディアブリタニカ", "エンサイクロペディ", "アブリタニカ", 9 * 18}};
+    measure_rule = stub_width;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoTextLayout l;
+        char row[512];
+        vjo_text_layout(cases[i].title, cases[i].width, 18, 2, stub_width, &l);
+        TEST_CASE(cases[i].title);
+        TEST_ASSERT(l.rows == 2);
+        vjo_text_layout_row(cases[i].title, &l, 0, row);
+        TEST_CHECK_(!strcmp(row, cases[i].row0), "row 0: %s", row);
+        vjo_text_layout_row(cases[i].title, &l, 1, row);
+        TEST_CHECK_(!strcmp(row, cases[i].row1), "row 1: %s", row);
+    }
 }
 
 /* Titles as the Games page draws them: 620 px, 26 px text, two rows. */
@@ -668,6 +723,8 @@ static void icon_cache_lru(void)
 
 TEST_LIST = {
     {"layout_matches_wrapped_text", layout_matches_wrapped_text},
+    {"latin_text_breaks_as_before", latin_text_breaks_as_before},
+    {"japanese_rows_end_between_words", japanese_rows_end_between_words},
     {"layout_game_titles", layout_game_titles},
     {"title_letters", title_letters},
     {"title_order", title_order},

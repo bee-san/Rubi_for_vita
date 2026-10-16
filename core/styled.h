@@ -51,6 +51,10 @@ int vjo_styled_init(VjoStyled *s, VjoArena *a, uint32_t cap_units, int cap_spans
 /* Appends UTF-8 text (n bytes) as one span. */
 void vjo_styled_add(VjoStyled *s, const char *utf8, size_t n, uint32_t rgb, int px);
 void vjo_styled_puts(VjoStyled *s, const char *utf8, uint32_t rgb, int px);
+/* Puts one UTF-16 unit before unit `at` (0 < at <= len), in the span of the
+ * character before it (a break the overlay puts in: shell/wrap_fix.h).
+ * 0 when the text has no room. */
+int vjo_styled_insert(VjoStyled *s, uint32_t at, uint16_t unit);
 
 /* UTF-16 index of byte offset `off` in UTF-8 text. */
 uint32_t vjo_utf16_index(const char *utf8, size_t off);

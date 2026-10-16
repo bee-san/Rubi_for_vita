@@ -3,14 +3,15 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "port.h"
 #include "utf.h"
 
 /* A sentence's end or a closing bracket: 。．｡ . ! ? ！？ ) ] } ）］｝〟, and the
  * U+3008..301B pairs 〉》」』】〕〗〙〛 (odd); the opening ones ( [ { （［｛〝
  * and 〈《「『【〔〖〘〚 (even). 〒 and 〓 (3012, 3013) are no brackets. */
-static const uint16_t ends[] = {0x3002, 0xFF0E, 0xFF61, '.', '!', '?', 0xFF01, 0xFF1F,
+static const uint16_t ends[] VJO_DATA_TABLE(ends) = {0x3002, 0xFF0E, 0xFF61, '.', '!', '?', 0xFF01, 0xFF1F,
                                 ')', ']', '}', 0xFF09, 0xFF3D, 0xFF5D, 0x301F};
-static const uint16_t starts[] = {'(', '[', '{', 0xFF08, 0xFF3B, 0xFF5B, 0x301D};
+static const uint16_t starts[] VJO_DATA_TABLE(starts) = {'(', '[', '{', 0xFF08, 0xFF3B, 0xFF5B, 0x301D};
 
 static int mark(uint32_t c, const uint16_t *t, int n, uint32_t odd)
 {

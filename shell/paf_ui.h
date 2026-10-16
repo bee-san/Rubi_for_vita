@@ -73,6 +73,11 @@ static inline void font_px(int *ja, int *en)
     vjo_view_unlock();
 }
 
+/* overlay.cpp: this frame's step of a paf text's re-wrap (wrap_fix.h): the
+ * unit to put a '\n' before, else 0. */
+struct VjoWrap;
+uint32_t vjo_wrap_paf(VjoWrap *w, paf::ui::Text *t, const uint16_t *u, uint32_t n, uint32_t room);
+
 /* strip.cpp: the subtitles strip. One frame: the page is open while want
  * (closed otherwise) and rendered on a new strip_version. */
 void vjo_strip_frame(paf::Plugin *plugin, int want, unsigned version);

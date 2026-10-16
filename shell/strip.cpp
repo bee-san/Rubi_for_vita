@@ -3,8 +3,10 @@
  * vjo_page_strip). It takes no input. It grows with its text; text that
  * would pass the screen's bottom is cut with "…". A status or an error
  * shows in the strip too, and the system's busy spinner in its corner while a new
- * sentence is being recognized. */
+ * sentence is being recognized. A line paf broke inside a word is broken
+ * earlier instead (wrap_fix.h), before any cut. */
 #include "paf_ui.h"
+#include "wrap_fix.h"
 
 using namespace paf;
 
@@ -20,7 +22,8 @@ static ui::BusyIndicator *s_strip_busy;
 static unsigned s_strip_seen;
 static float s_strip_h;   /* text height the strip is sized for, 0 = none yet */
 static uint32_t s_strip_cut_lines; /* lines kept by the last cut, 0 = not cut */
-static uint16_t s_strip_u[VJO_STRIP_MAX + 1]; /* UTF-16 shown, kept for cutting */
+static uint16_t s_strip_u[VJO_STRIP_MAX + 1 + VJO_WRAP_BREAKS]; /* UTF-16 shown, kept for cutting and breaks */
+static VjoWrap s_strip_wrap;
 static uint32_t s_strip_len, s_strip_rgb;
 static int s_strip_px;
 static uint8_t s_mem_buf[(VJO_STRIP_MAX + 16) * sizeof(uint16_t) + 256]; /* the styled text */
@@ -67,6 +70,7 @@ static void strip_render(void)
         sceClibMemcpy(s_strip_u, st.text, st.len * sizeof(uint16_t));
         s_strip_len = st.len;
         s_strip_cut_lines = 0;
+        vjo_wrap_arm(&s_strip_wrap);
         if (s_strip_text)
             strip_apply(s_strip_len);
     }
@@ -103,8 +107,19 @@ static uint32_t strip_line_start(uint32_t line)
  * that fits; if the "…" wraps to one more line, a line earlier. */
 static void strip_fit(void)
 {
-    uint32_t lines = 0;
-    float h = text_height(s_strip_text), sh, avail = SCREEN_H - 2.0f * STRIP_PAD;
+    uint32_t lines = 0, b;
+    float h, sh, avail = SCREEN_H - 2.0f * STRIP_PAD;
+    if (!s_strip_cut_lines &&
+        (b = vjo_wrap_paf(&s_strip_wrap, s_strip_text, s_strip_u, s_strip_len,
+                          VJO_STRIP_MAX + VJO_WRAP_BREAKS - s_strip_len))) {
+        sceClibMemmove(s_strip_u + b + 1, s_strip_u + b, (s_strip_len - b) * sizeof(uint16_t));
+        s_strip_u[b] = '\n';
+        s_strip_len++;
+        vjo_wrap_put(&s_strip_wrap, b);
+        strip_apply(s_strip_len);
+        return;
+    }
+    h = text_height(s_strip_text);
     if (!s_strip_text || h <= 0.0f || h == s_strip_h)
         return;
     if (h > avail && s_strip_text->GetLineCount(lines) >= 0 && lines > 1) {

@@ -42,7 +42,7 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
@@ -252,6 +252,20 @@ target_link_libraries(vjo-text-hit-tests vjo_host)
 target_compile_options(vjo-text-hit-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_hit COMMAND vjo-text-hit-tests)
 # The arrow keys over the header's displayed rows (#81), on layout fixtures.
+# The overlay's paf texts re-wrapped where paf broke inside a word (shell/wrap_fix.h), on a model layout.
+add_executable(vjo-wrap-fix-tests host/tests/test_wrap_fix.cpp)
+target_include_directories(vjo-wrap-fix-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-wrap-fix-tests vjo_host)
+target_compile_features(vjo-wrap-fix-tests PRIVATE cxx_std_11)
+target_compile_options(vjo-wrap-fix-tests PRIVATE -Wall -Wextra)
+add_test(NAME wrap_fix COMMAND vjo-wrap-fix-tests)
+# Where the overlay's own wrapping may break a line (core/linebreak.h, owner 2026-10-16 item 4):
+# never inside a word, Japanese line-breaking rules.
+add_executable(vjo-linebreak-tests host/tests/test_linebreak.c)
+target_include_directories(vjo-linebreak-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-linebreak-tests vjo_host)
+target_compile_options(vjo-linebreak-tests PRIVATE -Wall -Wextra)
+add_test(NAME linebreak COMMAND vjo-linebreak-tests)
 # The recognized text's lines as one running text (core/textjoin.h, owner 2026-10-16 item 4): which
 # breaks join for the lookup and the Anki sentence, and the in-place join.
 add_executable(vjo-text-join-tests host/tests/test_textjoin.c)
@@ -545,7 +559,7 @@ target_compile_definitions(vjo-settings-vocr6-tests PRIVATE VJO_VOCR_MODEL_INFO_
 # The Overlay app's text layouts (settings/text_layout.c, against main.c's old
 # wrapped_text), its icon file check and cache (settings/icons.c) and the
 # titles' letters and order (settings/letter.c).
-add_executable(vjo-settings-layout-tests host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c
+add_executable(vjo-settings-layout-tests host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c
   settings/letter.c)
 target_include_directories(vjo-settings-layout-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-settings-layout-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
