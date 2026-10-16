@@ -2302,8 +2302,8 @@ def render_short_log(lg):
             models[j["model"]] = models.get(j["model"], 0) + 1
         ok = [j for j in jobs if j["rc"] == 0]
         L.append(f"  OCR jobs in the normal build's short log (per activation of a game, a start or a resume: its first "
-                 f"job that read its screen and its first that found a line; and every failed one, not a cancelled one or one whose "
-                 f"screen changed; not the others): "
+                 f"job that read its screen and its first that found a line; and every failed one, not a cancelled one "
+                 f"or one whose screen changed; not the others): "
                  f"{len(jobs)}; "
                  + ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(rcs.items()))
                  + "; models " + ", ".join(f"{m} x{n}" for m, n in models.items())
