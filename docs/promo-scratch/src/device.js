@@ -100,14 +100,31 @@ export function buildDevice({ screenTexture, envIntensity = 1 }) {
   glassGeo.translate(0, 0, FRONT + 0.02);
   root.add(new THREE.Mesh(glassGeo, glassMat));
 
-  const screenMat = new THREE.MeshPhysicalMaterial({
-    color: 0x000000, emissive: 0xffffff, emissiveMap: screenTexture, emissiveIntensity: 1,
-    roughness: 0.08, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.05, envMapIntensity: envIntensity * 0.12, toneMapped: false,
-  });
+  // The screen shows its image as it is (no lighting, no tone mapping), so the UI stays legible; the
+  // glass's sheen is a separate faint layer whose band moves with the viewing angle.
+  const screenMat = new THREE.MeshBasicMaterial({ map: screenTexture, toneMapped: false });
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(SCREEN.w, SCREEN.h), screenMat);
   screen.position.z = SCREEN.z;
   root.add(screen);
   parts.screen = screen;
+  const sheenTex = canvasTex(1024, 64, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, w, 0);
+    gr.addColorStop(0.0, 'rgba(255,255,255,0)'); gr.addColorStop(0.36, 'rgba(255,255,255,0)');
+    gr.addColorStop(0.45, 'rgba(255,255,255,0.55)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+    gr.addColorStop(0.53, 'rgba(255,255,255,0.4)'); gr.addColorStop(0.6, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+  sheenTex.wrapS = THREE.ClampToEdgeWrapping; sheenTex.repeat.set(0.5, 1);
+  const sheenGeo = new THREE.PlaneGeometry(SCREEN.w + 6, SCREEN.h + 6);
+  { const uv = sheenGeo.attributes.uv; const pos = sheenGeo.attributes.position; // a diagonal band: u runs along x + 0.45 y
+    for (let i = 0; i < uv.count; i++) uv.setX(i, (pos.getX(i) + 0.45 * pos.getY(i)) / (SCREEN.w + 40) + 0.5); uv.needsUpdate = true; }
+  const sheen = new THREE.Mesh(sheenGeo, new THREE.MeshBasicMaterial({ map: sheenTex, transparent: true, opacity: 0.075, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  sheen.position.z = SCREEN.z + 0.06; sheen.renderOrder = 4; root.add(sheen);
+  const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+  function updateSheen(camera) { // the camera's direction in the device's frame shifts the band
+    root.updateMatrixWorld(); _v.copy(camera.position); root.worldToLocal(_v); _v.normalize();
+    sheenTex.offset.set(0.25 - _v.x * 0.9 + _v.y * 0.35, 0);
+  }
 
   // front camera
   const cam = new THREE.Mesh(new THREE.CircleGeometry(1.2, 32), new THREE.MeshPhysicalMaterial({ color: 0x0b1020, roughness: 0.1, metalness: 0.6, clearcoat: 1 }));
@@ -157,7 +174,7 @@ export function buildDevice({ screenTexture, envIntensity = 1 }) {
       d.position.z = h + 0.005; grp.add(d);
     }
     root.add(grp); parts[name] = { obj: grp, axis: 'z', travel: -0.75, base: grp.position.clone() };
-    glow(name, x, y, FRONT + h + 0.3, r * 3.6);
+    glow(name, x, y, FRONT + h + 0.3, r * 4.6);
   }
 
   // ---- face buttons (PR #134's layout, 0.1 mm -> mm)
@@ -301,13 +318,13 @@ export function buildDevice({ screenTexture, envIntensity = 1 }) {
     o.traverse((m) => {
       if (!m.isMesh || !m.material.color || m.material === screenMat) return;
       if (!m.userData.base) m.userData.base = m.material.color.clone();
-      m.material.color.copy(m.userData.base).lerp(tint, 0.55 * amt);
+      m.material.color.copy(m.userData.base).lerp(tint, 0.72 * amt);
     });
     for (const gname of [name, name + '-front']) {
       const gl = glows[gname]; if (!gl) continue;
-      const k = age >= 0 && age < 0.45 ? age / 0.45 : 1;
-      gl.material.opacity = age >= 0 && age < 0.45 ? (1 - k) * 0.9 : 0;
-      const sc = 0.75 + k * 0.9; gl.scale.set(sc, sc, sc);
+      const k = age >= 0 && age < 0.5 ? age / 0.5 : 1;
+      gl.material.opacity = age >= 0 && age < 0.5 ? Math.pow(1 - k, 0.7) : 0;
+      const sc = 0.85 + k * 1.35; gl.scale.set(sc, sc, sc);
     }
   }
   function setStick(name, x, y) {
@@ -316,7 +333,7 @@ export function buildDevice({ screenTexture, envIntensity = 1 }) {
   }
   function resetPresses() { for (const n of Object.keys(parts)) { if (parts[n].axis === 'tilt') setStick(n, 0, 0); else if (parts[n].base) setPress(n, 0); } }
 
-  return { root, parts, setPress, setStick, resetPresses, screenMat, FRONT };
+  return { root, parts, setPress, setStick, resetPresses, updateSheen, screenMat, FRONT };
 }
 
 // Where a button is, in device coordinates (for touch ripples, camera targets, card launches).

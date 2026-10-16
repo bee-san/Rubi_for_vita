@@ -3,11 +3,11 @@
 # timestamped list of the captions and the mock-up shots, for the critic.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-n=$1; dest="$2/draft-$n"
+n=$1; dest="$2/draft-$n"; O=${O:-out}
 [ -e "$dest" ] && { echo "$dest exists: drafts are never overwritten" >&2; exit 1; }
 mkdir -p "$dest/stills"
-cp out/media/promo-scratch-16x9.mp4 out/media/promo-scratch-9x16.mp4 out/media/promo-scratch.gif "$dest/"
-cp out/stills/*.jpg "$dest/stills/"
+cp "$O/media/promo-scratch-16x9.mp4" "$O/media/promo-scratch-9x16.mp4" "$O/media/promo-scratch.gif" "$dest/"
+cp "$O"/stills/*.jpg "$dest/stills/"
 node --input-type=module -e "
 import { CAPTIONS, MOCKUPS, STEPS } from './src/script.js';
 const f = (t) => t.toFixed(2).padStart(5, ' ');

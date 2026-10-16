@@ -55,7 +55,7 @@ done
 # GIF (16:9, the lookup and the mining: L + R to the second card), and stills of every line
 if [ -d out/16x9 ]; then
   "$FFMPEG" -hide_banner -nostats -y -ss 4.9 -t 7.4 -framerate $FPS -i out/16x9/f%05d.png \
-    -vf "fps=10,scale=600:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+    -vf "fps=10,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
     out/media/promo-scratch.gif 2> out/gif.log
   for ts in 1.9 6.4 11.6 15.8 19.6 25.3 31.6 38.3 42.8; do
     f=$(printf 'f%05d.png' "$(awk -v t="$ts" 'BEGIN{printf "%d", t*30}')")

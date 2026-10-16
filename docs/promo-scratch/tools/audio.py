@@ -36,7 +36,14 @@ def write(path, x):
 def main():
     events = json.loads(Path(sys.argv[1]).read_text())
     bed = read(A / "music" / "bed-44s.wav")
-    mix = bed * 0.82
+    # the bed's breakdown (23.5-31 s, the install) sits 5-6 LU under the rest: lift it so it
+    # stays a breath, not a drop-out (5 dB); smooth ramps keep the lift on L + R at 31 s
+    t = np.arange(len(bed)) / SR
+    ramp = lambda a, b: np.clip((t - a) / (b - a), 0, 1)
+    env = ramp(23.6, 24.3) * (1 - ramp(30.55, 30.95))
+    env = env * env * (3 - 2 * env)
+    gain = 1 + (10 ** (5.0 / 20) - 1) * env
+    mix = bed * 0.82 * gain[:, None]
     cache = {}
     for e in events:
         name = e["name"]

@@ -21,7 +21,7 @@ for cut in 16x9 9x16; do
     "$O/media/promo-scratch-$cut.mp4" 2> "$O/encode-$cut.log"
 done
 "$FFMPEG" -hide_banner -nostats -y -ss 4.9 -t 7.4 -framerate $FPS -i "$O/16x9/f%05d.png" \
-  -vf "fps=10,scale=600:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+  -vf "fps=10,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
   "$O/media/promo-scratch.gif" 2> "$O/gif.log"
 for ts in 1.9 6.4 11.6 15.8 19.6 25.3 31.6 38.3 42.8; do
   f=$(printf 'f%05d.png' "$(awk -v t="$ts" -v r=$FPS 'BEGIN{printf "%d", t*r}')")

@@ -59,6 +59,14 @@ for f in "${optional[@]}"; do [ -f "$SRC/$f" ] && copy "$f" || echo "optional in
 mkdir -p "$OUT/repo"
 for f in icon0.png bg.png startup.png; do cp -p "$REPO/settings/assets/$f" "$OUT/repo/$f"; done
 
+# VitaShell 2.02's Default theme (GPL-3.0, TheOfficialFloW/VitaShell tag v2.02): the file browser's icons
+mkdir -p "$OUT/vitashell"
+VS=${VITASHELL_SRC:-/local/home/skerraut/herd-synth3/clones/promo-video-scratch/vitashell-2.02}
+for f in folder_icon.png archive_icon.png battery.png ftp.png; do
+  if [ -f "$VS/$f" ]; then cp -p "$VS/$f" "$OUT/vitashell/$f"
+  else curl -fsSL "https://raw.githubusercontent.com/TheOfficialFloW/VitaShell/v2.02/resources/default/$f" -o "$OUT/vitashell/$f"; fi
+done
+
 if [ "${1-}" = "--lock" ]; then
   (cd "$OUT" && find . -type f | LC_ALL=C sort | xargs sha256sum) > assets.lock
   echo "assets.lock: $(wc -l < assets.lock) files"

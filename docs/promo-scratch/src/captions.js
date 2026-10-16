@@ -59,36 +59,57 @@ export function drawCaption(g, cap, t, cut) {
   g.restore();
 }
 
-// Small step chips (the install steps): a vertical list that builds up.
+// A tick, drawn (fonts differ in whether they have one)
+function tick(g, x, y, r, color) {
+  g.save(); g.strokeStyle = color; g.lineWidth = r * 0.34; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(x - r * 0.48, y + r * 0.02); g.lineTo(x - r * 0.12, y + r * 0.38); g.lineTo(x + r * 0.52, y - r * 0.36); g.stroke(); g.restore();
+}
+function stepChip(g, s, i, t, x, yc, size, a) {
+  const done = s.done != null && t >= s.done;
+  g.globalAlpha = a;
+  g.font = `800 ${size}px ${FONT}`;
+  const tw = g.measureText(s.text).width, h = size * 1.5;
+  g.fillStyle = 'rgba(8,14,24,0.8)'; g.beginPath(); g.roundRect(x, yc - h / 2, tw + size * 2.4, h, h / 2); g.fill();
+  const cx = x + h / 2 + size * 0.1, r = size * 0.56;
+  const pop = done ? 1 + 0.25 * Math.sin(Math.PI * clamp((t - s.done) / 0.25)) : 1;
+  g.fillStyle = done ? '#5bdccf' : 'rgba(255,255,255,0.2)'; g.beginPath(); g.arc(cx, yc, r * pop, 0, Math.PI * 2); g.fill();
+  if (done) tick(g, cx, yc, r * pop, '#06201d');
+  else { g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `800 ${Math.round(size * 0.72)}px ${FONT}`; g.fillText(String(i + 1), cx, yc + size * 0.04); }
+  g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `800 ${size}px ${FONT}`; g.fillStyle = '#fff';
+  g.fillText(s.text, x + h + size * 0.35, yc + size * 0.04);
+  return tw + size * 2.4;
+}
+
+// The install steps. 16:9: the current step, large, just above the caption, sliding up as it changes.
+// 9:16: the list under the console, each step ticked off when it is done.
 export function drawSteps(g, steps, t, cut, { t0, t1 }) {
   if (t < t0 || t > t1 + 0.4) return;
   const portrait = cut === '9x16';
-  const W = g.__W ?? g.canvas.width;
-  const size = portrait ? 40 : 34;
-  const x0 = portrait ? 90 : 80, y0 = portrait ? 1080 : 210, gap = portrait ? 74 : 64;
+  const W = g.__W ?? g.canvas.width, H = g.__H ?? g.canvas.height;
   const outK = clamp((t - t1) / 0.4);
-  g.save(); g.font = `700 ${size}px ${FONT}`; g.textBaseline = 'middle';
-  steps.forEach((s, i) => {
-    const k = clamp((t - s.t) / 0.3);
-    if (k <= 0) return;
-    const done = s.done != null && t >= s.done;
-    const a = easeOut(k) * (1 - outK);
-    const y = y0 + i * gap, x = x0 - (1 - easeOut(k)) * 40;
-    g.globalAlpha = a;
-    const tw = g.measureText(s.text).width;
-    g.fillStyle = 'rgba(8,14,24,0.72)';
-    g.beginPath(); g.roundRect(x, y - gap * 0.42, tw + size * 2.6, gap * 0.84, gap * 0.42); g.fill();
-    g.fillStyle = done ? '#5bdccf' : 'rgba(255,255,255,0.18)';
-    g.beginPath(); g.arc(x + size * 0.95, y, size * 0.62, 0, Math.PI * 2); g.fill();
-    g.fillStyle = done ? '#06201d' : '#fff'; g.textAlign = 'center';
-    g.fillText(done ? '✓' : String(i + 1), x + size * 0.95, y + 1);
-    g.textAlign = 'left'; g.fillStyle = '#fff';
-    g.fillText(s.text, x + size * 1.95, y + 1);
-  });
-  if (steps.note) {
-    const k = clamp((t - steps.note.t) / 0.3) * (1 - outK);
-    g.globalAlpha = k * 0.9; g.font = `500 ${portrait ? 28 : 24}px ${FONT}`; g.fillStyle = '#c9d6e6';
-    g.fillText(steps.note.text, x0 + 6, y0 + steps.length * gap + (portrait ? 10 : 4));
+  g.save();
+  if (!portrait) {
+    let cur = -1; steps.forEach((s, i) => { if (t >= s.t) cur = i; });
+    if (cur < 0) { g.restore(); return; }
+    const size = 58, yc = H - 70 - 99 - 30 - size * 0.75;
+    const draw = (i, a, dy) => {
+      g.font = `800 ${size}px ${FONT}`;
+      const w = g.measureText(steps[i].text).width + size * 2.4;
+      stepChip(g, steps[i], i, t, (W - w) / 2, yc + dy, size, a);
+    };
+    const k = easeOut(clamp((t - steps[cur].t) / 0.28));
+    if (cur > 0 && k < 1) draw(cur - 1, (1 - k) * (1 - outK), -k * size * 1.2);
+    draw(cur, k * (1 - outK), (1 - k) * size * 1.1);
+  } else {
+    const x0 = 60, y0 = 1070, gap = 86;
+    steps.forEach((s, i) => {
+      const k = clamp((t - s.t) / 0.3);
+      if (k <= 0) return;
+      let size = 46; g.font = `800 ${size}px ${FONT}`;
+      const maxW = W - 2 * x0 - size * 2.4; const tw = g.measureText(s.text).width;
+      if (tw > maxW) size = Math.floor(size * maxW / tw);
+      stepChip(g, s, i, t, x0 - (1 - easeOut(k)) * 40, y0 + i * gap, size, easeOut(k) * (1 - outK));
+    });
   }
   g.restore();
 }
@@ -107,14 +128,15 @@ export function drawEnd(g, t, cut, t0) {
   g.globalAlpha = k(0.15); g.fillStyle = '#7ff0e3'; g.font = `700 ${portrait ? 50 : 44}px ${FONT}`;
   g.fillText('Free · Offline · Open source', W / 2, yT + (portrait ? 84 : 72) + (1 - k(0.15)) * 24);
   g.globalAlpha = k(0.3); g.fillStyle = '#e8eef7'; g.font = `600 ${portrait ? 40 : 36}px ${FONT}`;
-  g.fillText('github.com/bee-san/vita-jp-overlay', W / 2, portrait ? 1420 : H - 120);
+  g.fillText('github.com/bee-san/vita-jp-overlay', W / 2, portrait ? 1376 : H - 128);
   g.globalAlpha = k(0.45) * 0.8; g.fillStyle = '#c3cfdd'; g.font = `500 ${portrait ? 24 : 22}px ${FONT}`;
   g.shadowBlur = 6;
   const fine = 'Dictionary: JMdict (EDRDG, CC BY-SA 4.0) · Frequency ranks: Jiten (CC BY-SA 4.0) · Cards: Lapis note type (GPL-3.0) · The game shown is an original mock-up';
+  const sony = 'Not affiliated with or endorsed by Sony Interactive Entertainment.';
   if (portrait) {
     const half = fine.split(' · ');
-    g.fillText(half.slice(0, 2).join(' · '), W / 2, 1470); g.fillText(half.slice(2).join(' · '), W / 2, 1506);
-  } else g.fillText(fine, W / 2, H - 70);
+    g.fillText(half.slice(0, 2).join(' · '), W / 2, 1436); g.fillText(half.slice(2).join(' · '), W / 2, 1470); g.fillText(sony, W / 2, 1504);
+  } else { g.fillText(fine, W / 2, H - 78); g.fillText(sony, W / 2, H - 46); }
   g.restore();
 }
 
@@ -127,11 +149,16 @@ export function drawCallout(g, c, t) {
   const a = k * (1 - o);
   if (a <= 0) return;
   g.save(); g.textAlign = 'center'; g.globalAlpha = a;
-  const y = 1250 + (1 - k) * 30;
-  g.fillStyle = 'rgba(8,12,22,0.55)'; g.beginPath(); g.roundRect(90, y - 120, W - 180, 290, 36); g.fill();
+  const y = 1296 + (1 - k) * 30;
+  g.fillStyle = 'rgba(8,12,22,0.55)'; const bh = c.note && t >= c.note.t ? 350 : 290; g.beginPath(); g.roundRect(90, y - 120, W - 180, bh, 36); g.fill();
   g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 12;
   g.fillStyle = '#ffd24a'; g.font = `800 96px ${FONT}`; g.fillText(c.word, W / 2, y);
   if (c.reading) { g.fillStyle = '#9fd0ff'; g.font = `600 44px ${FONT}`; g.fillText(c.reading, W / 2, y + 64); }
   g.fillStyle = '#e6edf6'; g.font = `600 46px ${FONT}`; g.fillText(c.mean, W / 2, y + (c.reading ? 132 : 92));
+  if (c.note && t >= c.note.t) { // what the overlay says after ×
+    const nk = easeOut(clamp((t - c.note.t) / 0.2));
+    g.globalAlpha = a * nk; g.fillStyle = '#7cd992'; g.font = `800 ${Math.round(48 * (0.85 + 0.15 * nk))}px ${FONT}`;
+    g.fillText(c.note.text, W / 2, y + (c.reading ? 200 : 160));
+  }
   g.restore();
 }

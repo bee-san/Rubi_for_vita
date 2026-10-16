@@ -26,11 +26,12 @@ const IMAGES = [
   'app/install-MOCKUP-one-vpk/png/MOCKUP-01-install-plan.png', 'app/install-MOCKUP-one-vpk/png/MOCKUP-02-installing-plugins-and-models.png',
   'app/install-MOCKUP-one-vpk/png/MOCKUP-03-installing-checking-the-dictionary-56MB.png', 'app/install-MOCKUP-one-vpk/png/MOCKUP-04-installing-checking-the-dictionary-121MB.png',
   'app/install-MOCKUP-one-vpk/png/MOCKUP-05-installing-config-txt-lines.png', 'app/install-MOCKUP-one-vpk/png/MOCKUP-06-installed-restart-the-vita-now.png',
+  'app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-10-read-text-at-top-automatically.png', 'app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-11-read-text-at-top-only-when-I-press-LR.png',
   'app/icons/PROMO0005-hoshizora-diary.png', 'app/icons/PROMO0006-paper-lantern.png', 'app/icons/PROMO0008-sakura-no-kioku.png', 'app/icons/VJOSET001-overlay.png',
 ];
 const JSONS = ['vn/s1/s1-m1-text.json', 'vn/s1/s1-m2-text.json', 'vn/s2/s2-m1-text.json', 'vn/s3/s3-m1-text.json', 'vn/s3/s3-m2-text.json'];
-const LOCAL = { 'repo/icon0.png': 0, 'repo/bg.png': 0, 'repo/startup.png': 0 };
-const OPTIONAL = ['app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-10-read-text-at-top-automatically.png'];
+const LOCAL = { 'repo/icon0.png': 0, 'repo/bg.png': 0, 'repo/startup.png': 0, 'vitashell/folder_icon.png': 0, 'vitashell/archive_icon.png': 0, 'vitashell/battery.png': 0, 'vitashell/ftp.png': 0 };
+const OPTIONAL = [];
 
 async function loadImage(src) { const im = new Image(); im.src = src; await im.decode(); return im; }
 
@@ -138,6 +139,52 @@ window.__setup = async (cut, opts = {}) => {
   return { duration: S.tl.duration, gl: renderer.getContext().getParameter(renderer.getContext().VERSION) };
 };
 
+// A press whose button is outside the frame (a close-up of the screen) shows a badge at the nearest
+// edge: the video's own sign of the press.
+const _bv = new THREE.Vector3();
+function glyph(g, b, r) {
+  g.strokeStyle = '#1b2333'; g.fillStyle = '#1b2333'; g.lineWidth = r * 0.16; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath();
+  if (b === 'cross') { const k = r * 0.38; g.moveTo(-k, -k); g.lineTo(k, k); g.moveTo(k, -k); g.lineTo(-k, k); g.stroke(); }
+  else if (b === 'circle') { g.arc(0, 0, r * 0.42, 0, Math.PI * 2); g.stroke(); }
+  else if (b === 'triangle') { g.moveTo(0, -r * 0.45); g.lineTo(r * 0.45, r * 0.33); g.lineTo(-r * 0.45, r * 0.33); g.closePath(); g.stroke(); }
+  else if (b === 'square') { g.rect(-r * 0.36, -r * 0.36, r * 0.72, r * 0.72); g.stroke(); }
+  else if (b.startsWith('dpad')) {
+    const a = r * 0.2, L = r * 0.62;
+    g.fillStyle = 'rgba(27,35,51,0.22)'; g.fillRect(-a, -L, 2 * a, 2 * L); g.fillRect(-L, -a, 2 * L, 2 * a);
+    const dir = { 'dpad-up': [0, -1], 'dpad-down': [0, 1], 'dpad-left': [-1, 0], 'dpad-right': [1, 0] }[b];
+    g.save(); g.rotate(Math.atan2(dir[1], dir[0])); g.fillStyle = '#1b2333';
+    g.beginPath(); g.moveTo(L, 0); g.lineTo(a * 0.6, -a * 1.35); g.lineTo(a * 0.6, a * 1.35); g.closePath(); g.fill(); g.restore();
+  } else if (b === 'power') { g.arc(0, r * 0.04, r * 0.36, -Math.PI * 0.32, Math.PI * 1.32); g.stroke(); g.beginPath(); g.moveTo(0, -r * 0.46); g.lineTo(0, -r * 0.06); g.stroke(); }
+  else { const txt = { ps: 'PS', l: 'L', r: 'R', start: 'START', select: 'SELECT' }[b] || b; g.font = `800 ${Math.round(r * (txt.length > 2 ? 0.34 : 0.62))}px "Noto Sans JP", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 0, r * 0.04); }
+}
+function pressBadges(g, presses) {
+  const W = S.W, H = S.H, P = S.cut === '9x16';
+  const R = P ? 52 : 56, m = R + 30, y0 = P ? 520 : 120, y1 = P ? 1380 : 800;
+  for (const pr of presses) for (const b of pr.btns) {
+    const part = S.device.parts[b]; if (!part) continue;
+    if (b === 'l' || b === 'r') { _bv.set(b === 'l' ? -66 : 66, 44, -2); S.device.root.localToWorld(_bv); } else part.obj.getWorldPosition(_bv);
+    _bv.project(S.camera);
+    const x = (_bv.x + 1) / 2 * W, y = (1 - _bv.y) / 2 * H;
+    if (_bv.z < 1 && x > 30 && x < W - 30 && y > 30 && y < H - 30) continue; // the button is in view
+    // the badge sits at the frame's edge, level with the console's corner below the screen (not on it)
+    const left = b.startsWith('dpad') || b === 'ps' || b === 'l' || b === 'power';
+    if (b === 'l' || b === 'r') _bv.set(left ? -66 : 66, 44, -2); else _bv.set(left ? -60 : 60, -39, 9.3);
+    S.device.root.localToWorld(_bv); _bv.project(S.camera);
+    const ax = (_bv.x + 1) / 2 * W, ay = (1 - _bv.y) / 2 * H;
+    const cx = clamp(ax, m, W - m), cy = clamp(ay, y0, y1), age = pr.age;
+    const sc = age < 0.08 ? 0.6 + 0.4 * (age / 0.08) : 1, a = 1 - clamp((age - 0.32) / 0.18);
+    if (a <= 0) continue;
+    g.save(); g.translate(cx, cy); g.globalAlpha = a;
+    g.strokeStyle = 'rgba(99,230,218,' + (1 - clamp(age / 0.5)) + ')'; g.lineWidth = 7;
+    g.beginPath(); g.arc(0, 0, R * (1.05 + age * 1.6), 0, Math.PI * 2); g.stroke();
+    g.scale(sc, sc); g.shadowColor = 'rgba(0,0,0,0.45)'; g.shadowBlur = 18; g.shadowOffsetY = 4;
+    g.fillStyle = 'rgba(248,250,252,0.95)'; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0; g.shadowOffsetY = 0;
+    glyph(g, b, R);
+    g.restore();
+  }
+}
+
 const tmpObj = new THREE.Object3D();
 function updateAtmosphere(t, pal) {
   // background gradient
@@ -174,6 +221,7 @@ window.__frame = async (t, { format = 'png' } = {}) => {
   for (const p of Object.values(S.panels)) if (p.dirty) { p.front.t.needsUpdate = true; if (p.back) p.back.t.needsUpdate = true; p.dirty = false; }
   S.renderer.render(S.scene, S.camera);
   const g = S.og; g.globalAlpha = 1; g.drawImage(S.renderer.domElement, 0, 0, S.W, S.H);
+  if (st.presses) pressBadges(g, st.presses);
   for (const cap of st.captions) drawCaption(g, cap, t, S.cut);
   if (st.callout) drawCallout(g, st.callout, t);
   if (st.steps) drawSteps(g, st.steps, t, S.cut, st.steps.window);
