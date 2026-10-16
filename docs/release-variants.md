@@ -215,9 +215,9 @@ the debug build is unchanged (its three plugins and RCO are main's bytes, sha256
   88 → 2,208 B), under the debug build's unchanged 5,616 B, in its 16 KiB stack (#132) [measured:
   `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources
   with each object's flags from the Vita build; a lower bound, without the SDK's own frames]. No new
-  allocation. The normal Shell's text grows 89,196 → 89,660 B and its data/bss 69,700 → 69,748 B: the
-  same 163,840 B of pages, 916 → 452 B of text left in its last page (90,112 B of text pages) [measured:
-  the Vita builds of main `8065ea4` and this branch].
+  allocation. The normal Shell's text grows 89,204 → 89,668 B and its data/bss 69,700 → 69,748 B: the
+  same 163,840 B of pages, 908 → 444 B of text left in its last page (90,112 B of text pages) [measured:
+  the Vita builds of main `c6e0a4d` and this branch].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses and the clock)
