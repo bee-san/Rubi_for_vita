@@ -90,6 +90,13 @@ JMdict snapshot. The 0.7.12 archive also still carries the Meiki recognizer and
 engine and the VOCR2 model, which have since been removed. Python 3.9+, bash,
 and curl are needed for the computer-side installer.
 
+From the next release on, each release has two zips of the same build: the
+normal one, `VitaJPOverlay-<version>.zip`, the one to install, and
+`VitaJPOverlay-<version>-debug.zip`, the test builds' own, with every log line,
+the self-test and the timings. Install the debug zip only when asked for a full
+log; both install the same way, and the settings carry over either way
+([release-variants](docs/release-variants.md)).
+
 Close games, open VitaShell, press Select to start FTP, and run from the
 extracted folder, naming each game that should have OCR (here CLANNAD):
 
@@ -751,6 +758,14 @@ an empty one) is given. A `Debug` build compiles libpng without optimisation, wh
 Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
 build.
 
+`-DVJO_DEBUG=OFF` builds the normal build, the release's main download, without
+the debug build's log lines, self-test, timings and traces (three SceShell pages
+fewer); `ON`, the default, is the debug build, which the test builds are. The
+`release_variants` target builds the other one too and, with
+`-DVJO_RELEASE_MODELS=/path/to/models`, packages both as
+`VitaJPOverlay-<version>.zip` and `-debug.zip` with their `SHA256SUMS`; CI builds
+and tests both on every pull request ([release-variants](docs/release-variants.md)).
+
 Check out the exact `plaintext-dicts` commit recorded in
 `docs/plaintext-dictionaries.json` and point `VJO_PLAINTEXT_SOURCE` at that
 checkout. CI uses a read-only deploy key and the same exact commit; a pull
@@ -770,7 +785,8 @@ docker or podman, and compares the result with a release
 
 The cross-build produces a base ZIP containing the frozen dictionary and
 attribution. `tools/package_release.py BASE.zip -o RELEASE.zip --models
-/path/to/models` adds the checksum-pinned OCR models and per-file manifest.
+/path/to/models` adds the checksum-pinned OCR models and per-file manifest
+(`tools/package_variants.py` does it for both builds' bases at once).
 Packaging reads the dictionary already in the base ZIP, requires its exact
 checksum, and never substitutes a newer JMdict-only snapshot. Publication
 still happens explicitly after validation.

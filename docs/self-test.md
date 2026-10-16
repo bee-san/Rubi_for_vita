@@ -9,6 +9,11 @@ smallest model size (the fallback stage, API 21), the configured size, the full 
 second recognition, each stage with its own record whether it passed or not
 ([ingame-capture.md](ingame-capture.md)).
 
+The self-test is the debug build's (`VitaJPOverlay-<version>-debug.zip`, and every test build): the
+normal build, the release's main download, has none (docs/release-variants.md). Armed under the
+normal build, the Shell says so once in `log.txt` and leaves the marker for a debug build;
+`install_ftp.sh --self-test` from the normal package says so too.
+
 ## Running it
 
 1. Arm it (VitaShell FTP running): `bash tools/install_ftp.sh --self-test VITA_IP`. This uploads
