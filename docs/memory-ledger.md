@@ -306,9 +306,11 @@ the RCO are byte-identical, the game worker has the same pages]. In the normal b
 (docs/release-variants.md) the same removal takes 2,244 B of text (91,464 to 89,220 B: `.text` 56,528
 to 55,168 B, `.rodata` 30,440 to 30,152 B) and 304 B of data and `.bss` (70,004 to 69,700 B), and one
 text page with them: its module goes from 167,936 to 163,840 B, and its budget, which the check reads
-exactly, with it [measured: the normal builds of the same two trees; by object the same rows as
-below but `shell/boot.c`'s pool 12,247 to 11,996 B and `shell/worker.c` 11,224 to 11,116 B, fill 51 to
-46 B, no gaps, SCE data 2,520 to 2,196 B]. By object, as above (linker maps of the two builds, the ELFs byte-identical):
+exactly, with it [measured: the normal builds of the same two trees; by object the same Δs as
+below but `shell/worker.c`'s, −108 B (11,224 to 11,116 B), with the normal build's own sizes where
+they differ: `shell/boot.c`'s pool 12,247 to 11,996 B, `shell/log_vita.c` 1,320 to 1,200 B,
+`core/local_dict.c` 19,889 to 19,881 B and `shell/anki.c` 2,844 to 2,840 B; fill 51 to 46 B, no gaps,
+SCE data 2,520 to 2,196 B]. By object, as above (linker maps of the two builds, the ELFs byte-identical):
 
 | objects | main | this change | Δ |
 |---|---:|---:|---:|
@@ -352,17 +354,25 @@ of data and `.bss` [measured: the build log's module row]; it imports one functi
 `sceKernelGetThreadInfo` (`sceKernelGetThreadId` was already imported, by `shell/log_vita.c`).
 Because nothing measures the thread on a console yet, VjoNet paints its unused stack when it starts
 (`shell/worker.c` `net_stack_paint`: from 64 B above the stack's low end up to 512 B below its own
-frame, and only when the kernel reports the 16,384 B it was created with and the frame inside it,
-else one `VjoNet stack: not painted (…)` line) and at each game exit logs, when the figure grew,
-`VjoNet stack: at most N of 16384 B used` (`net_stack_check`); `--collect`'s analysis keeps the
-largest figure, WARNs when under a quarter is left, and WARNs for each boot that did not paint.
-The paint takes no allocation and no item. Its lowest 64 B stay as the kernel left them: the PSP's
-thread manager, whose API the Vita keeps, fills a new stack with 0xFF, writes the thread's UID in
-its lowest word and reads it to detect an overflow [pspsdk `PSP_THREAD_ATTR_NO_FILLSTACK`; PPSSPP
-`sceKernelThread.cpp` `FillStack`, `sceKernelGetThreadStackFreeSize`], and the Vita's kernel kills a
-thread for a stack overflow (VitaSDK `psp2common/kernel/threadmgr.h`'s thread status) and records
-each thread's "Maximum stack size used" in a core dump [SDK: Core_Dump-Overview]. How the Vita
-checks is unknown. Should a first boot of this build still end in a stack overflow or SceShell
+frame, so only when its frame is above pStack + 576 and below the top, and when the kernel reports
+the 16,384 B it was created with; else one `VjoNet stack: not painted (…)` line) and at each game
+exit logs, when the figure grew, `VjoNet stack: at least N of 16384 B used` (`net_stack_check`; the
+first wording said "at most", which `--collect` still reads). N is a lower bound once anything has
+used the stack below the paint (any job): a live byte that happens to hold the pattern makes the scan
+read low, and use of the unpainted 64 B cannot show, so the largest figure is 16,320 B. Until then N
+is the paint's end, which counts the 512 B gap below the painting frame as used: up to 512 B above
+the truth [estimate: the frames below the painting one are SDK calls, unmeasured; on the host the
+idle thread wrote nothing below the paint's end + 473-512 B, audit-overlay-shell-slim-4 N1]. `--collect`'s analysis keeps the largest figure, WARNs when under a
+quarter is left, and WARNs for each boot that did not paint. The paint takes no allocation and no
+item. Its lowest 64 B stay as the kernel left them. The PSP's thread manager, whose API the Vita
+keeps, fills a new stack with 0xFF and writes the thread's UID in its lowest word, and has a status
+for a thread it killed for a stack overflow [pspsdk `PSP_THREAD_ATTR_NO_FILLSTACK` and
+`PSP_THREAD_KILLED`; PPSSPP `sceKernelThread.cpp` `FillStack`, whose free-size scan starts at 0x10,
+12 B past that word]. The Vita detects
+stack overflows too: a core dump records one as its cause and each thread's "Maximum stack size
+used" [SDK: Core_Dump-Overview], and `sceKernelCheckThreadStack` gives a thread its remaining stack
+[SDK: Kernel-Reference]. How it detects them is unknown; nothing found puts a marker in a stack's
+low bytes, and 64 B is 16 times the PSP's UID word. Should a first boot of this build still end in a stack overflow or SceShell
 crash naming VjoNet, the paint itself is the first suspect, not the 16 KiB; and a core dump's
 VjoNet figures read the painted area as used. The boot guard makes the boot after it safe.
 
@@ -418,10 +428,13 @@ before: VjoNet's stack is the same in both builds) [measured: the build log's mo
 ledger, both builds of main `3aa08a6` and of #132]. With the network stack gone (#145, main
 `c08db18`) the normal Shell is 163,840 B (89,220 + 69,700) against the debug Shell's 176,128 B
 (99,268 + 69,772), three SceShell pages fewer [measured: CI's module rows of both builds, Release
-run 38899320744].
+run 38899320744], and the normal build's shell pages are 204,800 B permanent and 225,280 B at worst
+[measured: its ledger].
 #138's worker loader adds one kernel text page to each build: 118,784 B (40,648 + 77,824) debug and 114,688 B
 (36,444 + 76,136) normal against main `c08db18`'s 114,688 and 110,592 B; the worker (71,372 and 70,008 B of
 text) and the Shell (99,244 and 89,196 B) keep their pages [measured: both builds, main `c08db18` and #138].
+The VjoNet line's "at least" (#157) makes the normal Shell's text 89,204 B (`.rodata` + 8 B), the same
+pages; the debug Shell keeps 99,244 B [measured: both builds, main `dcb7b31` and #157].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

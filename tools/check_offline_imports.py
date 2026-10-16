@@ -17,6 +17,8 @@ NETWORK = ("SceNet", "SceHttp", "SceSsl")
 
 def section_names(data):
     """The section names of an ELF32 little-endian file."""
+    if len(data) < 52:  # the ELF32 header
+        raise ValueError(f"{len(data)} B: too short for an ELF32 header")
     if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
         raise ValueError("not a 32-bit little-endian ELF")
     shoff, = struct.unpack_from("<I", data, 0x20)
@@ -49,7 +51,7 @@ def main(argv):
     for path in argv:
         try:
             libs = imported_libraries(open(path, "rb").read())
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, struct.error) as e:  # struct.error: a header cut short
             print(f"offline imports: {path}: {e}", file=sys.stderr)
             return 2
         network = [lib for lib in libs if lib.startswith(NETWORK)]

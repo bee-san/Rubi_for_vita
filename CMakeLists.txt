@@ -262,6 +262,7 @@ target_include_directories(vjo-platform-vita-tests PRIVATE third_party/acutest/i
 target_link_libraries(vjo-platform-vita-tests vjo_core)
 target_compile_options(vjo-platform-vita-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME platform_vita COMMAND vjo-platform-vita-tests)
+set_tests_properties(platform_vita PROPERTIES TIMEOUT 60) # a read loop that never ends fails, not hangs
 
 add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)

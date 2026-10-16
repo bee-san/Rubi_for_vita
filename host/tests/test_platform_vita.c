@@ -17,7 +17,7 @@
 uint32_t vjo_dict_reads, vjo_dict_read_bytes; /* shell/worker.c's: the lookup log's counts */
 
 static uint64_t clock_now;
-static int fail_open, fail_seek, open_fds, max_read;
+static int fail_open, fail_seek, fail_seek_set, open_fds, max_read, reads, eof_reads;
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_now; }
 int sceIoOpen(const char *path, int flags, unsigned mode)
 {
@@ -30,12 +30,17 @@ int sceIoOpen(const char *path, int flags, unsigned mode)
 int sceIoClose(int fd) { open_fds--; return close(fd); }
 int sceIoRead(int fd, void *data, size_t len)
 {
+    reads++;
     if (max_read && len > (size_t)max_read) len = (size_t)max_read; /* the SDK may return less */
-    return (int)read(fd, data, len);
+    int got = (int)read(fd, data, len);
+    /* at the end of the file: 0 once, then an error, so a reader that loops on 0 stops (and is seen) */
+    if (got == 0 && eof_reads++) return (int)0x80010005; /* EIO */
+    return got;
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence)
 {
     if (fail_seek && whence == SCE_SEEK_END) return (SceOff)(int)0x80010016; /* EINVAL */
+    if (fail_seek_set && whence == SCE_SEEK_SET) return (SceOff)(int)0x80010016;
     return lseek(fd, off, whence);
 }
 
@@ -47,7 +52,7 @@ static const char contents[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 static void reset(void)
 {
     clock_now = 0;
-    fail_open = fail_seek = open_fds = max_read = 0;
+    fail_open = fail_seek = fail_seek_set = open_fds = max_read = reads = eof_reads = 0;
     vjo_dict_reads = vjo_dict_read_bytes = 0;
     snprintf(path, sizeof(path), "/tmp/vjo-platform-vita-%d.bin", (int)getpid());
     FILE *f = fopen(path, "wb");
@@ -84,8 +89,15 @@ static void test_a_file_reads_exactly_what_it_holds(void)
     TEST_CHECK(vjo_dict_reads == 1 && vjo_dict_read_bytes == 17);
     TEST_CHECK(f.read(f.ctx, 0, buf, 3) == 0 && !memcmp(buf, "012", 3));
     TEST_CHECK(vjo_dict_reads == 2 && vjo_dict_read_bytes == 20);
-    /* past the end: a short read is an error, not a partial success */
+    /* past the end: a short read is an error, not a partial success, and the end is not read again */
+    reads = 0;
     TEST_CHECK(f.read(f.ctx, sizeof(contents) - 4, buf, 8) == -1);
+    TEST_CHECK_(reads == 2, "%d sceIoRead calls for a read that meets the end", reads); /* 3 bytes, then 0 */
+    /* a seek that fails reads nothing at a wrong offset */
+    fail_seek_set = 1;
+    reads = 0;
+    TEST_CHECK(f.read(f.ctx, 0, buf, 3) == -1 && reads == 0);
+    fail_seek_set = 0;
     TEST_CHECK(f.read(f.ctx, (uint64_t)INT64_MAX + 1, buf, 1) == -1); /* an offset SceOff cannot hold */
     f.close(f.ctx);
     TEST_CHECK(open_fds == 0);

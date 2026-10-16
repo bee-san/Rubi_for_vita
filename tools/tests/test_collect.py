@@ -61,8 +61,8 @@ game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too): 917x125 at 22,400 
 game vocr memory: free USER=5000000, needs workspace 245760 + weights 659456 + reserve 4194304: check refused, headroom -99520
 gstep job alloc kind=user arg=workspace rc=0x80024302 bytes=188416 sum=0x00000000 main=5000000 cdram=0 phycont=0 us=40
 overlay closed: 120 frames, 3 word moves, stick 0, slowest frame 33 ms
-VjoNet stack: at most 5920 of 16384 B used
-VjoNet stack: at most 6144 of 16384 B used
+VjoNet stack: at least 5920 of 16384 B used
+VjoNet stack: at least 6144 of 16384 B used
 anki: Picture field off in this build: no screenshot, no kernel capture buffer
 anki: save 猫 rc=0, 0-byte screenshot, 45 ms
 anki: save 犬 rc=0, 12 ms
@@ -308,7 +308,7 @@ class Collect(unittest.TestCase):
                      # a successful export is reported as one (audit-test-build-3 N1), and is no problem line below
                      "Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package written and checked), "
                      "0 failed; 3 card(s) in the packages",
-                     "  VjoNet stack: at most 6,144 of 16,384 B used (37%)\n",
+                     "  VjoNet stack: at least 6,144 of 16,384 B used (37%)\n",
                      "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); 1 exported card(s), "
                      "1 .apkg package(s) in anki/",
                      "crash dumps: psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (4,096 B)",
