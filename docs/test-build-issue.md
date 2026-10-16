@@ -30,8 +30,9 @@ Its first console run: rule 7 of AGENTS.md applies (the Install page's plan show
   install it in VitaShell: Yes to "Do you want to install this package?" and to the extended-permissions
   notice. Note the time it takes.
 - [ ] Open **Overlay**: it opens on its **Install** page. A plan longer than its box has a bar at its
-  right: R shows the next box of it, L the one before, Up/Down a line; its last lines must be the restart
-  and the two recovery lines, and the hints row at the bottom must end in `○: exit` (`×: exit` on a
+  right: R shows the next box of it, L the one before, Up/Down a line; it must end with the restart and the
+  two recovery lines, then, when a folder has a backup from before the overlay, a "(… is the configuration
+  from before the overlay.)" line for each. The hints row at the bottom must end in `○: exit` (`×: exit` on a
   Japanese console), not `...`. Photograph each box of the plan (it lists the files, the backups' names and
   every `config.txt` change), then choose **Install**. Note the time it takes and what the done screen
   says.
