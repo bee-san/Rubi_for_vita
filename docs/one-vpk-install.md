@@ -161,8 +161,9 @@ anything is written.
   one deleted (renamed back when the hash fails).
 - Plugins, the RCO and the models (10.8 MB) are copied: the app keeps them for a Repair without the
   VPK.
-- An 0.7.12 install's `dictionaries/jmdict.vjdict` is no longer used; the done text names it and its
-  size, for whoever wants the room back (the app deletes nothing of the user's).
+- An 0.7.12 install's `dictionaries/jmdict.vjdict` is no longer used (`local_dictionaries` names
+  `plaintext.vjdict` in its place); the app deletes nothing of the user's, so it stays until deleted in
+  VitaShell (README "Settings and dictionaries").
 
 The Vita's `sceIoRename` does not replace an existing file: it returns `SCE_ERROR_ERRNO_EEXIST`
 (VitaShell `file.c:518-551` deletes the destination and renames again). Every replacement here goes
@@ -175,12 +176,12 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 
 | state | when | start page |
 |---|---|---|
-| interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) | Install, offering to put it back or to keep the current one |
+| interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) or never left (a stop while `.vjo-new` was written) | Install, offering to put a whole file back and to keep the current one (step 5) |
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
 | no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
 | update | `installed.txt` (below) or the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is another build's, or a plugin file is not the payload's (size and SHA-256) | Install |
-| repair | this build, but a data file is missing or has the wrong size, or a configuration does not load both plugins | Install |
+| repair | this build, but a data file is missing or has the wrong size, or a configuration does not load both plugins (config.ini is not part of it: over this build it is the user's, below) | Install |
 | installed | every plugin file is the payload's, every data file has its size, every configuration loads both plugins, and both records are this build's | Games |
 
 At start only the four small files (the three plugins and the RCO, about 180 KB) are hashed; the
@@ -233,7 +234,7 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
 
 0. **Checks, before the OK.** The manifest is the app's own (R4); every payload file is there with its
    size (the dictionary in the app, or already installed with its hash); ur0 and ux0 have room for the
-   copies and their temporary files (the largest file twice, plus 512 KiB, as `settings/psp.c` keeps);
+   copies and their temporary files (every file it will write, plus 512 KiB);
    every configuration that exists reads, and the editor accepts it, makes its new text and checks it
    (below); the new `config.ini` text is made and parsed with `vjo_config_parse`, and a setting it would
    turn off or warn about is left as it was, with a note in the plan (R6). Every new text is known
@@ -273,7 +274,8 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
    old one, the new text is written to `config.txt.vjo-new`, synced and read back; then `config.txt` is
    renamed to `config.txt.vjo-old` and `config.txt.vjo-new` to `config.txt` in two consecutive calls,
    synced, read back and compared byte for byte, and `config.txt.vjo-old` removed. If the last
-   read-back differs, the backup is written back and the step reports what is on the card.
+   read-back differs, the file read is renamed to `config.txt.vjo-bad`, `config.txt.vjo-old` is renamed
+   back, and the step reports what is on the card.
 
    The Vita's rename cannot replace a file, so between those two calls the file is missing. While both
    configurations exist that moment stays bootable (taiHEN reads the other one), which is why ux0's is
@@ -281,7 +283,13 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
    power cut exactly then leaves taiHEN no configuration, and HENkaku does not start (below); holding L
    at power-on recovers it. The next start of the app finds the stopped swap's files and offers, with the
    user's OK, to put one back: `.vjo-new` when it is the editor's result of `.vjo-old` (an install's or an
-   uninstall's; complete: written, synced and read back before the first rename), else `.vjo-old`. With
+   uninstall's; complete: written, synced and read back before the first rename), else `.vjo-old`.
+   A `.vjo-new` beside an intact `config.txt` and no `.vjo-old` is a stop before the swap began (during
+   `.vjo-new`'s own write: empty or a prefix after a power cut): `config.txt` is as it was, so
+   **Keep the current one** is offered first, and **Put it back** only when `.vjo-new` is the editor's
+   result of the current `config.txt` byte for byte; a file that is neither is never put in place
+   (code audit R2). A missing `config.txt` with no whole file to put back offers nothing: the reason
+   names the newest dated backup to copy in VitaShell. With
    h-encore the configuration may have come back as the stock text meanwhile (both files missing make it
    write both): the page says what `config.txt` is now (HENkaku's default, the overlay's, or another),
    and **Put it back** renames the current one to a dated backup first, **Keep the current one** keeps
@@ -349,7 +357,8 @@ DaveeFTW/taihen-parser 6d817fd `lexer.c`, `parser.c`):
   refuses one with nothing but comments and blank lines: it then loads no plugin, but starts
   (`plugin_load_config` returns 1, which `taihen.c:350` does not treat as a failure). A 0-byte file
   asks `ksceKernelAllocMemBlock` for 0 bytes (`plugin.c:95-96`); whether that succeeds is not
-  documented, so an empty file is treated as missing.
+  documented, and taiHEN opens an empty ux0 file without falling back to ur0's, so the editor refuses
+  an empty file ("cannot": restore a backup or HENkaku's default) rather than treat it as missing.
 - When neither file can be opened, `plugin_load_config` returns the open's error and taiHEN's
   `module_start` fails (`taihen.c:349-353`): no HENkaku, so no VitaShell, until the Vita is started
   with L held, which skips the configuration altogether (`taihen.c:346-357`). TheOfficialFloW's taiHEN
@@ -387,7 +396,8 @@ ours, whatever they mention, except the editor's note lines.
   the end), and one canonical Shell line in a `*main` section likewise;
 - every other kernel or Shell line of ours (a second copy, another spelling or device, one in another
   section such as `*ALL`) is commented out with today's prefix `# Mainline OCR: `, so the user sees
-  what it was;
+  what it was; the Shell line is kept only in a section named exactly `main`, as the kernel line only
+  in `KERNEL` (`*ALL` also matches `main`, but a Shell line there loads it into every app);
 - worker lines: by the worker mode (below). In `kernel` mode every worker line and every removed Text
   plugin line is removed: a comment and an absent line are the same to taiHEN (`lexer.c:146-151`), so
   removing rather than commenting changes nothing it loads. The section header an older installer
@@ -406,7 +416,9 @@ ours, whatever they mention, except the editor's note lines.
 - a result whose length is a multiple of 4,096 bytes gets one more line end, after a removal too
   (taiHEN's buffer then has no room for the C string's end; `core/taicfg.c` already pads an appended
   section). An input of such a length is accepted: its dated backup is its exact bytes, and the
-  recovery text never asks for a backup to be copied back;
+  recovery text asks for a backup to be copied back only when `config.txt` is missing and there is no
+  whole file to put back (a 4,096-byte backup copied back is then one taiHEN reads past; a configuration
+  the editor writes always has its pad);
 - a UTF-8 byte-order mark stays where it is. taiHEN reads it as part of the first line, so a first
   line `\xEF\xBB\xBF*KERNEL` is a path to taiHEN, before any section, and to the editor too; when a mark
   hides a section header the plan says so (the plugins under it do not load today).
@@ -434,7 +446,8 @@ none (what `*ALL` gives any other game). The new text must load the kernel plugi
 the worker for no title in `kernel` mode (once for each registered game, and never for `main`, in
 `lines` mode), and every other plugin for exactly the titles and in the order it loaded before (none of
 ours after Uninstall). A `*!` section that would stop taiHEN before an added line (a `*!ALL` before the
-end of a file that has no `*main`, say) fails it: refused, naming the line.
+end of a file that has no `*main`, say) fails it: refused, with the reason (the halt's own line is not
+named).
 
 **The Python patcher works on bytes** with taiHEN's rules: it cuts lines at `\r` and `\n` only, trims
 only `b" \t\n\v\f\r"`, measures the 256-byte limit on the raw line before trimming, and refuses NUL.
@@ -477,9 +490,10 @@ no user loses working lines:
   code fails to build without it (`#error`), which enforces the merge order;
 - at run time by the manifests' `worker kernel` or `worker lines` (the VPK's `payload/manifest.txt`
   and the zip's `package-manifest.json`). They come from the built base zip, never from the checkout
-  that packages it: the Vita build writes `vjo_build.txt` (`vjobuild1 worker=kernel`) into the base zip
-  from the header it compiled the kernel with, `package_release.py` copies it into both manifests (a
-  base without it is `lines`), and `install-vita.sh` passes it to the patcher. The app accepts a
+  that packages it: the Overlay app's eboot carries a `vjoworker=kernel` (or `lines`) mark compiled
+  from the header (`settings/install_page.c`), which the Vita build checks against the header
+  (`tools/package_vpk.py --check-build`), `package_release.py` reads from the base zip's app into both
+  manifests (an app without it is `lines`), and `install-vita.sh` passes to the patcher. The app accepts a
   payload only when its `worker` and `variant` are its own compiled values (`VJO_KERNEL_LOADS_WORKER`,
   `VJO_DEBUG`), as for `api` and `version` (R4): a mismatched package could otherwise remove working
   worker lines.
@@ -508,6 +522,13 @@ also need it back for PSP rows. The fixtures run both modes.
 
 ## config.ini on install and update
 
+On a first install, and on an install of another build than `installed.txt` names (an update, a
+downgrade, the other variant), an existing `config.ini` is patched as below. Over the build
+`installed.txt` names (**Check and repair**, the same VPK again) it is the user's: a later choice
+(card mining OFF on the Anki page, `log_file = off`, another dictionary list) is no damage, so it is
+left as it is and does not make the state "repair" (code audit R3); only a missing one is written from
+the template.
+
 When there is none (neither `config.ini` nor its `config.ini.bak`: the app reads the backup when the
 file is missing, `settings/preferences.c:34-44`, which a stop between `publish`'s two renames leaves,
 `:80-82`), the payload's template is written (the PC installer's first install writes the same
@@ -527,7 +548,9 @@ as the app's own saves patch it
 
 Every other setting is the user's and is kept: `vocr_tier`, `ocr_mode`, `ocr_boost_clock` (the OCR &
 lookup page's choices, overlay-ocr-mode-setting), `log_file`, `anki_mining` (unless the package sets
-it), the user's comments and order. The plan lists each changed line. The result is parsed with
+it), the user's comments and order. The plan lists each changed line of `config.ini`, and each
+`config.txt` it changes with the exact lines it adds and removes (8 per file on the page, every one in
+`log.txt`), as AGENTS.md rule 7 asks. The result is parsed with
 `vjo_config_parse` before the OK (step 0).
 
 ## Uninstall

@@ -14,9 +14,10 @@
 # games registered by an earlier install are kept, an *ALL worker line is commented out, and with no
 # --title and no game registered yet nothing is changed.
 #
-#   tools/install_ftp.sh --title PCSG00415 192.168.1.50[:1337]
+#   tools/install_ftp.sh 192.168.1.50[:1337]
 #   tools/install_ftp.sh --title PCSG00415 --title PSPEMUCFW --title ULJS00378 192.168.1.50
-#     (PSPEMUCFW: Adrenaline; ULJS00378: an Adrenaline Bubble Manager bubble's ID, README 'Install')
+#     (a "lines" package only; a "kernel" one ignores --title with a note. PSPEMUCFW: Adrenaline;
+#      ULJS00378: an Adrenaline Bubble Manager bubble's ID, README 'Install')
 #   tools/install_ftp.sh --set ocr_mode=on_press --set local_dictionary_results=3 192.168.1.50
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;

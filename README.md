@@ -111,7 +111,8 @@ per-game and `*ALL` lines older installs left, keeps your `config.ini` settings 
 template only when there is none), and reads everything back. Every other plugin of yours loads as
 before: the edit is checked with taiHEN's own parser. It never restarts the Vita and never retries by
 itself; a stop part way leaves every file the old or the new one, and the next start of the app
-finishes the job.
+shows what is on the card and offers to finish or to keep what is there (never a half-written
+configuration). Over the same build, Check and repair leaves your `config.ini` as it is.
 
 **Updating** is the same three steps with the new VPK: the app sees that the installed overlay is
 another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
