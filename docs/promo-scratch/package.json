@@ -1,0 +1,14 @@
+{
+  "name": "vita-jp-overlay-promo-scratch",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The Vita JP Overlay promo, made from scratch: a three.js PS Vita rendered frame by frame in headless Chrome, encoded with FFmpeg.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@puppeteer/browsers": "3.2.5",
+    "puppeteer-core": "25.14.0",
+    "three": "0.186.1"
+  }
+}
