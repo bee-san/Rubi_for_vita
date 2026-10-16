@@ -207,15 +207,16 @@ game's start, after `vjoSetGameActive`, the control thread reads two one-line st
 and the notice is a pointer to a constant string in the view model. `check_app` is inlined into
 `activate_game`, whose frame grows from 160 to 240 B; its deepest new path, through `vjo_log`, is about
 680 B, under the existing `apply_config` path (`apply_config` alone 1,400 B) [measured:
-`arm-vita-eabi-gcc -Os -fstack-usage` with the Vita build's flags, main `e53d9fb` and this change]. The
+`arm-vita-eabi-gcc -Os -fstack-usage` with the Vita build's flags, main `e53d9fb` and this change; #123
+changed neither `shell/worker.c` nor `core/config.c`]. The
 config warnings are compared with the previous load's in the two `VjoConfig` copies `apply_config`
 already has. SceShell no longer writes a default `config.ini` when there is none (the installer, the
 package and the Overlay app do), so the commented template (3,556 B with its NUL,
 `.rodata.vjo_config_default_text.str1.1` of `core/config.c` under the Vita flags; `docs/config.example.ini`
 is the same 3,555 B), its 8 B accessor and 60 B of `vjo_config_load` (180 to 120 B) leave the Shell, which
-pays for the check: the build log's module row goes from 188,472 to 185,768 B of text and from 70,104 to
+pays for the check: the build log's module row goes from 189,104 to 186,416 B of text and from 70,104 to
 70,112 B of data and `.bss`, and the module from 266,240 to 262,144 B, one page fewer [measured: the Vita
-builds of main `e53d9fb` and of this change; the template string is in main's Shell ELF and not in this
+builds of main `c641bdf` and of this change; the template string is in main's Shell ELF and not in this
 change's]. `VJO_BUDGET_SHELL_MODULE_PAGES` stays 266,240 B, the ceiling, which concurrent changes to the
 Shell share. The check's file I/O is not measured on a console: two open/read/close and one getstat on
 `ux0:` at each enabled game start, and one log append when the answer changes, about 30-90 ms on

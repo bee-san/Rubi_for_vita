@@ -798,8 +798,10 @@ static size_t read_fixture(const char *name, char *out, size_t cap)
  * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
  * vocr2). Today's Shell and app read it as the local engine with one warning
  * and no unknown setting (its vocr_model gives the Normal size), and the app's
- * next save writes vocr and vocr_tier, drops the two model lines and the empty
- * jpdb/jiten key lines (#117), and keeps every other byte. */
+ * next save writes vocr and vocr_tier, drops the two model lines, rewrites the
+ * lines of removed features as core/config.c vjo_config_removed_line says (the
+ * online dictionaries' keys since #117, the relay's since #126, AnkiConnect's
+ * since #125), and keeps every other line. */
 static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
 {
     static char fixture[8192], expect[8192], out[8192];
@@ -822,7 +824,7 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     TEST_CHECK(cfg.ocr_backend == VJO_OCR_VOCR && cfg.n_warnings == 1);
     /* the app's next save: vocr in place of vocr2, the two model lines gone and vocr_tier added (API 21),
      * the lines of removed features dropped or replaced as core/config.c vjo_config_removed_line says (since
-     * #117 the online dictionaries' empty key lines); every other byte kept */
+     * #117 the online dictionaries' empty key lines); every other line kept */
     TEST_ASSERT(vjo_preferences_save(cfg.ocr_backend, cfg.vocr_tier, cfg.japanese_only_selection, cfg.highlight_mode,
                                      cfg.local_dictionary_results, &arena) == 0);
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
