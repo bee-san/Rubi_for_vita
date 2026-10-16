@@ -11,6 +11,7 @@ promo-assets); the app shots are Vita3K captures of this repository's Overlay ap
 | `assets/vn/bg-s3.jpg` | `vn/s3/bg@2x.png` | `a517433c1f074d0e…` | `f94d818c5d6ba76c…` | JPEG q90 4:4:4 |
 | `assets/vn/shot-s1-m2.jpg` | `anki/with-screenshot-MOCKUP-feat-anki-screenshot/MOCKUP-screenshot-s1-m2-q70.jpg` | `8088ef7224a9c853…` | `8088ef7224a9c853…` | copy |
 | `assets/anki/card-1-back-mockup.png` | `anki/with-screenshot-MOCKUP-feat-anki-screenshot/png/card-1-back-desktop-light-MOCKUP.png` | `c1608938cd5c02d1…` | `c1608938cd5c02d1…` | copy |
+| `assets/anki/card-1-front-mockup.png` | `anki/with-screenshot-MOCKUP-feat-anki-screenshot/png/card-1-front-desktop-light-MOCKUP.png` | `39a5c568c60439a6…` | `39a5c568c60439a6…` | copy |
 | `assets/audio/bed-44s.m4a` | `audio/music/bed-44s.m4a` | `38627a21adb56e08…` | `38627a21adb56e08…` | copy |
 | `assets/audio/sfx-click.wav` | `audio/sfx/click.wav` | `2f246507f900bfb9…` | `2f246507f900bfb9…` | copy |
 | `assets/audio/sfx-lr.wav` | `audio/sfx/lr.wav` | `7f4e65b7caea7adc…` | `7f4e65b7caea7adc…` | copy |
@@ -34,8 +35,8 @@ promo-assets); the app shots are Vita3K captures of this repository's Overlay ap
 | `assets/shots/app-03-games-scroll-2.png` | `app/main-1ed95ca/png/03-games-scroll-2.png` | `3f53252927d98ff4…` | `3f53252927d98ff4…` | copy (colours checked against settings/main.c) |
 | `assets/shots/app-04-games-neon-drift-selected.png` | `app/main-1ed95ca/png/04-games-neon-drift-selected.png` | `1650c6708f82ddc7…` | `1650c6708f82ddc7…` | copy (colours checked against settings/main.c) |
 | `assets/shots/app-05-games-neon-drift-OFF-saved.png` | `app/main-1ed95ca/png/05-games-neon-drift-OFF-saved.png` | `e16afea231af7e12…` | `e16afea231af7e12…` | copy (colours checked against settings/main.c) |
-| `assets/shots/pr146-read-auto.png` | `app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-03-read-text-selected-automatically.png` | `9090b8b2b35d909f…` | `9090b8b2b35d909f…` | copy (colours checked against settings/main.c) |
-| `assets/shots/pr146-read-on-press.png` | `app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-04-read-text-only-when-I-press-LR-saved.png` | `38377fecf33c6006…` | `38377fecf33c6006…` | copy (colours checked against settings/main.c) |
+| `assets/shots/pr146-read-auto.png` | `app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-10-read-text-at-top-automatically.png` | `79d1ecc649917115…` | `79d1ecc649917115…` | copy (colours checked against settings/main.c) |
+| `assets/shots/pr146-read-on-press.png` | `app/pr146-ocr-mode-21488a7-NOT-MERGED/png/PR146-11-read-text-at-top-only-when-I-press-LR.png` | `a78b97f5b499abc2…` | `a78b97f5b499abc2…` | copy (colours checked against settings/main.c) |
 | `assets/shots/install-MOCKUP-01.png` | `app/install-MOCKUP-one-vpk/png/MOCKUP-01-install-plan.png` | `8fe8b71e6932ec55…` | `8fe8b71e6932ec55…` | copy (colours checked against settings/main.c) |
 | `assets/shots/install-MOCKUP-02.png` | `app/install-MOCKUP-one-vpk/png/MOCKUP-02-installing-plugins-and-models.png` | `49d0cb230d60b7d4…` | `49d0cb230d60b7d4…` | copy (colours checked against settings/main.c) |
 | `assets/shots/install-MOCKUP-03.png` | `app/install-MOCKUP-one-vpk/png/MOCKUP-03-installing-checking-the-dictionary-56MB.png` | `ac0c53c5547bfae1…` | `ac0c53c5547bfae1…` | copy (colours checked against settings/main.c) |

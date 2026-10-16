@@ -210,7 +210,7 @@
                 <!-- S4: the card in Anki (Lapis), with its screenshot: a MOCK-UP until overlay-anki-screenshot merges -->
                 <div id="anki">
                   <div class="aw-bar"><i></i><i></i><i></i><span>Anki</span></div>
-                  <div class="aw-body"><img id="anki-card" src="assets/anki/card-1-back-mockup.png" alt="" /></div>
+                  <div class="aw-body"><img id="anki-front" src="assets/anki/card-1-front-mockup.png" alt="" /><img id="anki-card" src="assets/anki/card-1-back-mockup.png" alt="" /></div>
                   <div id="pic-ring"></div>
                 </div>
 
@@ -225,9 +225,9 @@
                       <div class="gh-notes">Install: download <b>{{VPK}}</b>, install it in VitaShell, then open Overlay and choose Install.</div>
                       <div class="gh-assets-title">Assets <span>5</span></div>
                       <div class="gh-asset" id="gh-vpk"><i class="pk"></i><span class="gh-name">{{VPK}}</span><span class="gh-size">{{VPK_SIZE}}</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}-debug.vpk</span><span class="gh-size">53 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}.zip</span><span class="gh-size">53 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}-debug.zip</span><span class="gh-size">53 MB</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}-debug.vpk</span><span class="gh-size">{{VPK_SIZE}}</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}.zip</span><span class="gh-size">{{VPK_SIZE}}</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-{{VERSION}}-debug.zip</span><span class="gh-size">{{VPK_SIZE}}</span></div>
                       <div class="gh-asset"><i class="pk"></i><span class="gh-name">SHA256SUMS</span><span class="gh-size">1 KB</span></div>
                     </div>
                     <div class="dl-chip" id="dl-chip"><i class="pk"></i><span>{{VPK}}</span><div class="dl-bar"><div id="dl-fill"></div></div></div>
@@ -246,7 +246,6 @@
       <div id="captions">
 {{CAPTIONS}}
       </div>
-      <div class="chip" id="chip-done">✓ Done</div>
 
 
       <!-- ============================================================ end card -->
@@ -260,7 +259,9 @@
       <div id="fade" data-layout-ignore></div>
 
       <!-- ============================================================ sound -->
-      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="{{DURATION}}" data-track-index="10" data-volume="1"></audio>
+      <!-- the bed's breakdown (23.5-31 s, the install) is lifted about 4 dB so the music does not seem to stop -->
+      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="{{DURATION}}" data-track-index="10" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":30.7,"v":1.6},{"t":31.05,"v":1}]}]}'></audio>
 {{SFX}}
     </div>
     <script>

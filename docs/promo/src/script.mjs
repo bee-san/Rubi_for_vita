@@ -49,19 +49,19 @@ export const C = {
   right3: 21.95,
   // S6: the install: the release, VitaShell, the app's Install page, a restart.
   laptopIn: 23.55,
-  clickVpk: 24.75,
-  fileFly: 25.3,
-  shellIn: 25.95,
-  vsX1: 26.3,
-  vsX2: 26.65,
-  vsX3: 27.15,
-  vsDone: 27.65,
-  ps1: 27.85,
-  tapBubbleApp: 28.25,
-  tapStartApp: 28.6,
-  installX: 29.0,
-  installDone: 29.6,
-  restart: 30.45,
+  clickVpk: 24.4,
+  fileFly: 24.9,
+  shellIn: 25.55,
+  vsX1: 25.9,
+  vsX2: 26.25,
+  vsX3: 26.75,
+  vsDone: 27.25,
+  ps1: 27.45,
+  tapBubbleApp: 27.85,
+  tapStartApp: 28.2,
+  installX: 28.6,
+  installDone: 29.3,
+  restart: 29.95,
   // S7: the game, L + R, Right, Right.
   boot: 31.1,
   tapBubbleGame: 31.65,
@@ -92,7 +92,7 @@ export const CAPTIONS = {
   cap2: { h: "Look up words from the games you play, <em>entirely offline</em>", in: 4.55, out: 9.8 },
   cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.3 },
   cap4: { h: "With <em>screenshots</em>", in: 14.6, out: 18.75 },
-  cap5: { h: "It only reads text <em>when it changes</em>", p: "Or only when you press L&nbsp;+&nbsp;R", pIn: 21.6, in: 19.1, out: 23.3 },
+  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 21.6, in: 19.1, out: 23.3 },
   cap6: { h: "<em>Easy install</em>", in: 23.6, out: 31.0 },
   cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 31.15, out: 36.6 },
   cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 36.7, out: 41.35 },
@@ -100,9 +100,9 @@ export const CAPTIONS = {
 
 // Scene 6's steps, shown under its caption (the one-VPK install, overlay-one-vpk-install's design).
 export const STEPS = [
-  "Download the <b>.vpk</b>",
-  "Install it in <b>VitaShell</b>",
-  "<b>Overlay</b>: Install, restart",
+  "Download the <em>.vpk</em>",
+  "Install it in <em>VitaShell</em>",
+  "Open <em>Overlay</em>: Install, restart",
 ];
 
 // The mock visual novel 夕凪ステップ (original; promo-assets' vn/). Every line is read exactly by
@@ -132,8 +132,9 @@ export const GAMES = {
 export const RELEASE = {
   version: "0.8.0",
   vpk: "VitaJPOverlay-0.8.0.vpk",
-  vpkSize: "53 MB",
-  // VitaShell's getSizeString() for 53,005,464 B (1024-based, two decimals); an estimate too
+  // GitHub's release page and VitaShell show sizes 1024-based: 53,005,464 B is 50.6 MB on the one and
+  // 50.55 MB (getSizeString(), two decimals) on the other; both estimates
+  vpkSize: "50.6 MB",
   vpkSizeShell: "50.55 MB",
 };
 

@@ -41,31 +41,31 @@
           ? {
               macro0: { x: 0, y: 236, s: 1.18, rx: 7, ry: -12, rz: -2 },
               macro: { x: 0, y: 236, s: 1.3, rx: 5, ry: -8, rz: -1 },
-              hero: { x: 0, y: 10, s: 0.56, rx: 10, ry: -16, rz: -1 },
-              heroB: { x: 0, y: 20, s: 0.6, rx: 8, ry: -10, rz: 0 },
+              hero: { x: 0, y: 20, s: 0.84, rx: 10, ry: -16, rz: -1 },
+              heroB: { x: 0, y: 30, s: 0.88, rx: 8, ry: -10, rz: 0 },
               shoulders: { x: 0, y: -330, s: 0.82, rx: 34, ry: 0, rz: 0 },
               screen: { x: 0, y: 22, s: 0.96, rx: 2, ry: -3, rz: 0 },
               screenB: { x: 20, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
               offZoom: { x: 120, y: 170, s: 1.15, rx: 2, ry: -3, rz: 0 },
-              mine: { x: 0, y: 260, s: 0.56, rx: 8, ry: 8, rz: 0 },
-              mineB: { x: 0, y: 290, s: 0.58, rx: 6, ry: 4, rz: 0 },
-              readAppB: { x: 10, y: 30, s: 1.02, rx: 3, ry: 5, rz: 0 },
-              installDevB: { x: 10, y: 30, s: 0.96, rx: 4, ry: -3, rz: 0 },
+              mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
+              mineB: { x: 0, y: 340, s: 0.86, rx: 6, ry: 4, rz: 0 },
+              readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
+              installDevB: { x: 10, y: 30, s: 0.98, rx: 4, ry: -3, rz: 0 },
               deck: { x: 0, y: 800, s: 0.9, rx: 0, ry: 0, rz: 0 },
               anki: { x: 0, y: 1840, s: 0.64, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 320, y: 1560, s: 1.3, rx: 2, ry: -4, rz: 0 },
               ankiAll: { x: 0, y: 1860, s: 0.62, rx: -2, ry: 4, rz: 0 },
-              read: { x: 0, y: 10, s: 0.6, rx: 6, ry: 12, rz: 0.5 },
-              readB: { x: 0, y: 40, s: 0.66, rx: 5, ry: 6, rz: 0 },
-              readApp: { x: 0, y: 22, s: 0.98, rx: 2, ry: 3, rz: 0 },
+              read: { x: 0, y: 20, s: 0.84, rx: 6, ry: 12, rz: 0.5 },
+              readB: { x: 0, y: 40, s: 0.88, rx: 5, ry: 6, rz: 0 },
+              readApp: { x: 0, y: -70, s: 1.0, rx: 2, ry: 3, rz: 0 },
               installWide: { x: 0, y: -700, s: 0.36, rx: 4, ry: 0, rz: 0 },
               laptop: { x: 0, y: -1340, s: 0.6, rx: 2, ry: 6, rz: 0 },
               installDev: { x: 0, y: 22, s: 0.9, rx: 5, ry: -6, rz: 0 },
-              home: { x: 0, y: 22, s: 0.92, rx: 6, ry: 8, rz: 0 },
+              home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
-              app8: { x: 0, y: 22, s: 0.92, rx: 5, ry: -8, rz: 0 },
+              app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
           : {
@@ -80,7 +80,7 @@
               offZoom: { x: 120, y: 170, s: 1.7, rx: 2, ry: -3, rz: 0 },
               mine: { x: 380, y: -10, s: 0.74, rx: 8, ry: 12, rz: 0 },
               mineB: { x: 430, y: 0, s: 0.77, rx: 6, ry: 8, rz: 0 },
-              readAppB: { x: 30, y: -22, s: 1.26, rx: 3, ry: 5, rz: 0 },
+              readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
               installDevB: { x: 20, y: 10, s: 0.98, rx: 4, ry: -3, rz: 0 },
               deck: { x: 1330, y: 20, s: 1.0, rx: 0, ry: 0, rz: 0 },
               anki: { x: 2950, y: 40, s: 0.78, rx: 0, ry: 0, rz: 0 },
@@ -88,7 +88,7 @@
               ankiAll: { x: 2950, y: 60, s: 0.8, rx: -2, ry: 4, rz: 0 },
               read: { x: 0, y: 0, s: 0.86, rx: 6, ry: 10, rz: 0.5 },
               readB: { x: -20, y: 10, s: 0.92, rx: 5, ry: 6, rz: 0 },
-              readApp: { x: 0, y: -30, s: 1.22, rx: 2, ry: 3, rz: 0 },
+              readApp: { x: 0, y: -70, s: 1.62, rx: 2, ry: 3, rz: 0 },
               installWide: { x: -1250, y: 10, s: 0.42, rx: 4, ry: 0, rz: 0 },
               laptop: { x: -2600, y: 10, s: 0.84, rx: 2, ry: 7, rz: 0 },
               installDev: { x: 0, y: 0, s: 0.92, rx: 6, ry: -6, rz: 0 },
@@ -210,7 +210,7 @@
         // ------------------------------------------------------------ layout per frame shape
         const place = (sel, x, y) => gsap.set(sel, { left: x, top: y });
         if (P) {
-          place("#deck", -165, 560);
+          place("#deck", -165, 360);
           place("#anki", -800, 1320);
           place("#laptop", -860, -1880);
           gsap.set("#pic-ring", { left: 928, top: 109 });
@@ -302,7 +302,7 @@
         fingerOut("f-r", C.lr1 + 0.3);
         off("#vn-next", C.ovOpen1);
         on("#scr-ov", C.ovOpen1, 0.12);
-        tl.fromTo("#scr-ov", { y: 26 }, { y: 0, duration: 0.16, ease: "power2.out", immediateRender: false }, C.ovOpen1);
+        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen1);
         on("#ov-a1", C.ovOpen1);
         camTo(C.ovOpen1 + 0.1, "screen", 0.9, "power3.inOut");
         // Right: the next word (in flight: Looking up words…), then 一緒に
@@ -330,11 +330,11 @@
         swap("#ov-a4", "#ov-a5", C.saved1, 0.02);
         // the card flies out of the screen into the queue
         function flyCard(sel, t0, land, deckCard, n) {
-          const dest = P ? { x: 0, y: 760 } : { x: 1325, y: -40 };
+          const dest = P ? { x: 0, y: 560 } : { x: 1325, y: -40 };
           tl.fromTo(sel, { x: 0, y: 22, z: 0, scale: 0.35, rotationY: 0, rotation: 0, opacity: 0 },
             { z: 260, scale: 0.9, opacity: 1, duration: 0.3, ease: "back.out(1.6)", immediateRender: false }, t0);
           tl.fromTo(sel, { x: 0, y: 22, z: 260, scale: 0.9, rotation: 0 },
-            { x: dest.x, y: dest.y, z: 0, scale: 1, rotation: n === 1 ? -4 : 3, duration: land - t0 - 0.3, ease: "power2.inOut", immediateRender: false }, t0 + 0.3);
+            { x: dest.x, y: dest.y, z: 0, scale: P ? 0.75 : 1, rotation: n === 1 ? -4 : 3, duration: land - t0 - 0.3, ease: "power2.inOut", immediateRender: false }, t0 + 0.3);
           tl.fromTo("#deck", { scale: 1 }, { scale: 1.05, duration: 0.1, yoyo: true, repeat: 1, ease: "power1.inOut", immediateRender: false }, land);
           off("#dq-" + (n - 1), land, 0.08);
           tl.fromTo("#dq-" + n, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.25, ease: "back.out(2)", immediateRender: false }, land);
@@ -357,12 +357,17 @@
         caption("cap4", T.s4 + 0.1, 18.75);
         whip(C.whipA, "anki", 0.6);
         grow("#anki", C.cardOpen - 0.05, 0.86, 0.35);
-        tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.5, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
-        camTo(C.cardOpen + 0.35, "ankiPic", 1.3, "power2.inOut");
-        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, 15.9);
-        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.25, duration: 0.5, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, 16.2);
-        camTo(16.75, "ankiAll", 1.75, "power2.inOut");
-        off("#pic-ring", 18.2, 0.2);
+        tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.45, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
+        // the card's front (the word), flipped to its back: the game's screen is on it
+        const flip = C.cardOpen + 0.55;
+        tl.fromTo("#anki", { rotationY: 0 }, { rotationY: 90, duration: 0.22, ease: "power2.in", immediateRender: false }, flip);
+        swap("#anki-front", "#anki-card", flip + 0.22, 0.01);
+        tl.fromTo("#anki", { rotationY: -90 }, { rotationY: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, flip + 0.23);
+        camTo(flip + 0.35, "ankiPic", 1.1, "power2.inOut");
+        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.6);
+        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.45, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.9);
+        camTo(flip + 1.5, "ankiAll", 1.9, "power2.inOut");
+        off("#pic-ring", 18.3, 0.2);
         fade("#deck, #fly1, #fly2", 15.0, 1, 0, 0.3);
         glow(14.6, "cream", 0.5);
 
@@ -388,8 +393,9 @@
         tl.fromTo("#scr-app", { opacity: 0, x: 120 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, C.appIn);
         on("#app-read-a", C.appIn);
         tl.fromTo("#scr-vn", { x: 0 }, { x: -120, duration: 0.3, ease: "power3.out", immediateRender: false }, C.appIn);
-        camTo(C.appIn, "readApp", 0.7, "power3.inOut");
-        camTo(C.appIn + 0.7, "readAppB", 1.3, "sine.inOut");
+        // the page is scrolled to Read text (the model choice is not in the video): in on that card
+        camTo(C.appIn, "readApp", 0.6, "power3.inOut");
+        camTo(C.appIn + 0.6, "readAppB", 1.3, "sine.inOut");
         poke("t-l", C.right3, B.DR, 32, 0.3, 0.25);
         press(C.right3, "dpad-right");
         swap("#app-read-a", "#app-read-b", C.right3 + 0.05, 0.03);
@@ -397,16 +403,22 @@
 
         // ============================================================ S6: easy install (a MOCK-UP of the one-VPK install)
         caption("cap6", T.s6 + 0.1, 31.0);
-        const step = (n, t, lit) => fade("#step" + n, t, lit ? 0.45 : 1, lit ? 1 : 0.45, 0.2);
-        camTo(23.15, "installWide", 0.9, "power3.inOut");
+        // the steps, one at a time under "Easy install", each as its action starts
+        function stepIn(id, t) {
+          tl.fromTo(id, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, t);
+        }
+        function stepOut(id, t) {
+          tl.fromTo(id, { opacity: 1, y: 0 }, { opacity: 0, y: -24, duration: 0.2, ease: "power2.in", immediateRender: false }, t);
+        }
+        camTo(23.15, "installWide", 0.7, "power3.inOut");
         swap("#scr-app", "#scr-shell", 23.2, 0.2);
         on("#vs-list-e", 23.2);
         off("#scr-vn", 23.45);
         tl.fromTo("#laptop", { x: -400, opacity: 0 }, { x: 0, opacity: 1, duration: 0.7, ease: "power3.out", immediateRender: false }, C.laptopIn);
-        step(1, 23.9, true);
-        camTo(24.05, "laptop", 0.6, "power2.inOut");
+        stepIn("#step1", 23.85);
+        camTo(23.85, "laptop", 0.5, "power2.inOut");
         // the mouse goes to the VPK and clicks it; it downloads
-        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.5, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.55);
+        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.45, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.5);
         tl.fromTo("#mouse", { scale: 1 }, { scale: 0.85, duration: 0.06, yoyo: true, repeat: 1, immediateRender: false }, C.clickVpk - 0.02);
         tl.fromTo("#gh-vpk", { backgroundColor: "rgba(56,139,253,0)" }, { backgroundColor: "rgba(56,139,253,0.22)", duration: 0.12, immediateRender: false }, C.clickVpk);
         tl.fromTo("#dl-chip", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out", immediateRender: false }, C.clickVpk + 0.05);
@@ -418,8 +430,8 @@
           { x: 0, y: -10, scale: 2.2, opacity: 1, rotation: 0, duration: 0.65, ease: "power2.inOut", immediateRender: false }, C.fileFly);
         tl.fromTo("#fly-file", { yPercent: 0 }, { yPercent: -110, duration: 0.33, yoyo: true, repeat: 1, ease: "sine.out", immediateRender: false }, C.fileFly);
         fade("#fly-file", C.shellIn + 0.1, 1, 0, 0.2);
-        step(1, C.shellIn, false);
-        step(2, C.shellIn, true);
+        stepOut("#step1", C.shellIn - 0.1);
+        stepIn("#step2", C.shellIn + 0.1);
         fade("#laptop", C.shellIn + 0.1, 1, 0, 0.3);
         // VitaShell: the VPK is there; × on it, Yes, the extended-permissions notice, Yes, Installing...
         swap("#vs-list-e", "#vs-list-0", C.shellIn, 0.02);
@@ -463,8 +475,8 @@
         grow("#scr-home", C.ps1 + 0.06, 1.08, 0.2);
         off("#scr-shell", C.ps1 + 0.25);
         tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.ps1 + 0.15);
-        step(2, C.ps1 + 0.1, false);
-        step(3, C.ps1 + 0.1, true);
+        stepOut("#step2", C.ps1 - 0.1);
+        stepIn("#step3", C.ps1 + 0.1);
         camTo(C.ps1, "home", 0.5, "power2.inOut");
         // open Overlay: its LiveArea, Start; it opens on its Install page
         tapSeq([[C.tapBubbleApp, 639, 350], [C.tapStartApp, 480, 293]], 0.25);
@@ -487,8 +499,8 @@
         camTo(C.tapStartApp + 0.8, "installDevB", 30.9 - C.tapStartApp - 0.8, "sine.inOut");
         // the user restarts the Vita (the app never does): the screen goes dark; done
         swap("#scr-app", "#scr-black", C.restart, 0.2);
-        tl.fromTo("#chip-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.1);
-        tl.fromTo("#chip-done", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 31.0);
+        stepOut("#step3", C.restart);
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.1);
 
         // ============================================================ S7: in your game, L + R
         caption("cap7", 31.15, 36.6);
@@ -528,7 +540,7 @@
         // right after the install card mining is off: no queue line, no × queue in the hint
         off("#vn-next", C.ovOpen2);
         on("#scr-ov", C.ovOpen2, 0.12);
-        tl.fromTo("#scr-ov", { y: 26 }, { y: 0, duration: 0.16, ease: "power2.out", immediateRender: false }, C.ovOpen2);
+        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
         on("#ov-b1", C.ovOpen2);
         camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
         poke("t-l", C.right4, B.DR, 32, 0.3, 0.18);
