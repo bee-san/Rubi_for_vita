@@ -205,13 +205,15 @@ config template is the repository's (`anki_mining = off`), unless the owner deci
 builds add `--set anki_mining=on`.
 
 The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
-(`VitaJPOverlay-0.8.0-test.N.zip`, `package_release.py --version 0.8.0-test.N`) shows `Overlay v0.8.0
-debug`, the build its binaries are.
+(`VitaJPOverlay-0.8.0-test.N.zip`, `package_variants.py` or `package_release.py --version 0.8.0-test.N`)
+shows `Overlay v0.8.0 debug`, the build its binaries are; its manifests record `version 0.8.0-test.N`
+beside `app_version 0.8.0`.
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
 a checkout of their commit, each module is checked as the Vita build checks it, the worker included; a
 `--sources` that is not a checkout, with no `shell/`, `kernel/`, `game_ocr/` and `settings/`, is refused
-before anything is read, as it would check nothing), an Overlay app of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
+before anything is read, as it would check nothing), an Overlay app of another version than `--version`
+or than the `V` of a test build's `V-test.N` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
@@ -245,5 +247,6 @@ gh release create v0.8.0 -R bee-san/vita-jp-overlay --title "Vita JP Overlay 0.8
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
 and install it in VitaShell; open Overlay, choose Install, restart), the requirements (Enable Unsafe
 Homebrew; about 220 MB free on ux0, the VPK counted), and the recovery (README "Memory and
-troubleshooting"). A test build packages its debug zip the same way (`package_release.py`, then
-`package_vpk.py`) and ships its VPK first.
+troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
+--set anki_mining=on` on the two artifacts of the `main` commit it is cut from, and ships its debug VPK
+first.

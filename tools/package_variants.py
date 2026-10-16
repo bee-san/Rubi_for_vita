@@ -10,14 +10,16 @@ OUT_DIR/VitaJPOverlay-V-debug.vpk, OUT_DIR/VitaJPOverlay-V.zip and OUT_DIR/VitaJ
 packages of one tree with the same pinned models, frozen dictionary, config template and --set
 settings, so a config.ini from either works in the other. Before it writes anything it checks the
 bases: each is the build it is given as (tools/check_variant.py, from the modules themselves), the
-Overlay app of each names version V, and the two differ only in the build's own files (the plugins,
-the Overlay app's VPK and its stamp). After, it verifies both packages (package_release.py --verify on
-each, unpacked) and that they differ in exactly those files and the manifests' variant.
+Overlay app of each names version V (for a test build, V-test.N, the V of its tree), and the two differ
+only in the build's own files (the plugins, the Overlay app's VPK and its stamp). After, it verifies both
+packages (package_release.py --verify on each, unpacked) and that they differ in exactly those files and
+the manifests' variant.
 """
 import argparse
 import hashlib
 import io
 import json
+import re
 import sys
 import tempfile
 import zipfile
@@ -32,6 +34,14 @@ BUILD_FILES = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shel
                "ux0/data/VitaJPOverlay/vjo_app.txt",  # the app's stamp: its eboot's hash (core/app_stamp.h)
                "payload-manifest.txt"}  # the one-VPK payload's: the build's plugins and app (tools/package_vpk.py)
 MANIFEST = "package-manifest.json"
+
+
+def release_of(app, version):
+    """Whether `version` is a release of the Overlay app's own version `app`: that version, or a test build of it,
+    `<app>-test.N` (a test package's binaries are the tree's VJO_VERSION build: docs/release-variants.md, and the
+    payload manifest's `version 0.8.0-test.4` beside `app_version 0.8.0`, docs/one-vpk-install.md)."""
+    test_build = re.escape(app or "") + r"-test\.[1-9][0-9]{0,3}"
+    return app is not None and (version == app or re.fullmatch(test_build, version) is not None)
 
 
 def zip_name(version, variant):
@@ -82,9 +92,10 @@ def check_bases(normal, debug, version, sources=None):
         if got != want:
             problems.append(f"{path.name}: the {got} build, given as the {want} one")
         problems += [f"{path.name}: {p}" for p in checked]
-        if app != version:
-            problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version} "
-                            "(set VJO_VERSION in vita/CMakeLists.txt and build again)")
+        if not release_of(app, version):
+            problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version}: give v{app} or a "
+                            f"test build of it, v{app}-test.N (or set VJO_VERSION in vita/CMakeLists.txt and "
+                            "build again)")
     if problems:
         return problems  # a base that is not a zip, or not a build: nothing more to compare
     a, b = contents(normal), contents(debug)
