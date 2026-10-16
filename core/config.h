@@ -95,6 +95,11 @@ typedef struct {
     /* Anki (API 23): a card saved with anki_mining keeps a JPEG of the game's screen
      * (on by default; the game worker takes it, docs/anki.md). Last, as above. */
     int anki_screenshot;      /* 0/1 */
+    /* The left stick's lookup (#138, core/stick_cursor.h): a word the stick
+     * moved the cursor to is looked up once the cursor has rested this long
+     * (0: as soon as the stick stops); the d-pad and taps look up at once.
+     * Last, as above. */
+    int stick_lookup_ms;      /* 0..1000 */
 } VjoConfig;
 
 void vjo_config_defaults(VjoConfig *c);

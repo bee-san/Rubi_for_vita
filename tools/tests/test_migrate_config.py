@@ -146,6 +146,20 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_settle_press_ms = %s\n" % value, text)
             self.assertEqual(text.count("ocr_settle_press_ms ="), 1)
 
+    def test_the_sticks_rest_is_added_and_kept(self):
+        # stick_lookup_ms (#138, docs/touch-lookup.md): a config from before it gains the default, a value is kept,
+        # also a --set one.
+        text, report = self.migrate("highlight_mode = character\n")
+        self.assertIn("\nstick_lookup_ms = 200\n", text)
+        self.assertIn("\nhighlight_mode = character\n", text)
+        self.assertIn("config.ini: stick_lookup_ms = 200", report)
+        for value in ("0", "150", "250"):
+            text, _ = self.migrate("stick_lookup_ms = %s\n" % value)
+            self.assertIn("\nstick_lookup_ms = %s\n" % value, text)
+            self.assertEqual(text.count("stick_lookup_ms ="), 1)
+        text, _ = self.migrate("stick_lookup_ms = 150\n", "stick_lookup_ms=250")
+        self.assertIn("\nstick_lookup_ms = 250\n", text)
+
     def test_an_explicit_engine_is_not_set(self):
         # an older installer's --set ocr_backend=...: no longer a setting, said once, not written
         for value in ("vocr", "lens"):

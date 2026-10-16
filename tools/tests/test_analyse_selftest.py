@@ -1065,6 +1065,39 @@ class OverlayCloseLines(unittest.TestCase):
         self.assertNotIn("closes", lg)
         self.assertEqual(a.overlay_summary(lg), "  overlay opened 1x, slowest frame 2 ms")
 
+    # #138: the left stick's cursor moves and the lookups made once the cursor rested (stick_lookup_ms)
+    STICK = ("overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row moves, 1 wraps, "
+             "0 without layout, slowest key 128 us, 37 stick moves, 3 deferred lookups after 200 ms\n")
+    STICK_150 = ("overlay closed: 600 frames, 0 word moves, stick 127, slowest frame 2 ms, 0 row moves, 0 wraps, "
+                 "0 without layout, slowest key 0 us, 12 stick moves, 1 deferred lookups after 150 ms\n")
+
+    def test_the_left_sticks_moves_and_deferred_lookups_are_counted(self):
+        lg = a.summarise_log(self.OLD + self.NEW + self.STICK + self.STICK_150 + self.STICK)
+        self.assertEqual(lg["left_stick"], {"closes": 3, "moves": 86, "deferred_lookups": 7, "rest_ms": [150, 200]})
+        self.assertEqual(lg["arrows"]["closes"], 4)  # the arrows' fields are read as before
+        self.assertEqual(a.overlay_summary(lg),
+                         "  overlay opened 5x, slowest frame 36 ms; arrows (4 of them): 12 row changes, 4 row wraps, "
+                         "1 before the header's layout, slowest key 412 us; left stick (3 of them): 86 cursor moves, "
+                         "7 deferred lookups (after 150-200 ms at rest)")
+        one = a.summarise_log(self.STICK)
+        self.assertTrue(a.overlay_summary(one).endswith("37 cursor moves, 3 deferred lookups (after 200 ms at rest)"))
+        json.dumps(lg)  # --json
+
+    def test_a_build_before_138_has_no_stick_counts(self):
+        lg = a.summarise_log(self.NEW + self.OLD)
+        self.assertNotIn("left_stick", lg)
+        self.assertNotIn("left stick", a.overlay_summary(lg))
+
+    def test_the_line_is_the_overlays(self):
+        """The fields as shell/overlay.cpp close_page formats them, in its order."""
+        src = (ROOT / "shell/overlay.cpp").read_text(encoding="utf-8")
+        self.assertIn('"%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms"', src)
+        line = ("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+                "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms\n") % (
+                    5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 200)
+        self.assertEqual(a.summarise_log(line)["left_stick"],
+                         {"closes": 1, "moves": 8, "deferred_lookups": 9, "rest_ms": [200]})
+
 
 def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0):
     """settings/anki_page.c worker_main's line, as the Overlay app writes it into log.txt."""

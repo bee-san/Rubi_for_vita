@@ -83,4 +83,13 @@ typedef struct {
 } VjoRowNav;
 int vjo_text_row_key(VjoRowNav *nav, const char *text, size_t len, const VjoTextRows *rows, size_t cursor,
                      size_t matched_end, int dx, int dy, int japanese_only, size_t *out);
+
+/* The left stick along the text (#138, core/stick_cursor.h): direction > 0
+ * the first selectable character at or after matched_end (the matched word
+ * skipped, as vjo_word_step skips it) or after the cursor, direction < 0 the
+ * last one before the cursor; in reading order, across the displayed rows,
+ * and never round the text's ends: at its first or last selectable character
+ * the cursor stays (returned as it is). No history: it is the d-pad's. */
+size_t vjo_text_read_step(const char *text, size_t len, size_t cursor, size_t matched_end, int direction,
+                          int japanese_only);
 #endif

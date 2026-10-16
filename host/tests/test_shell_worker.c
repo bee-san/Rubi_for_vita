@@ -104,6 +104,8 @@ int sceKernelFreeMemBlock(SceUID uid) { if (uid == 9) { vocr_frees++; vocr_live 
 #include "../../shell/worker.c"
 #include "../../shell/ledger.c" /* the ledger worker.c counts in */
 #include "../../shell/strip_view.c" /* the strip view model worker.c publishes through */
+#include "../../core/stick_cursor.h" /* the overlay's left stick (#138): its close against this worker */
+#include "../../core/text_rows.h"
 
 /* audit-overlay-shell-slim-1 A5: the overlay's thread posts a cursor move at the
  * n-th cmd_lock acquisition from now (vjo_post_cursor runs on Paf's thread). */
@@ -2115,6 +2117,158 @@ static void test_no_japanese_selection_skips_dictionary_memory_and_io(void)
     close_overlay(); open_overlay();
     TEST_CHECK(!job_running && g_view.list && !g_view.list->n_entries);
     TEST_CHECK(!cursor_opens && !has_result_memory() && vocr_allocs == 1);
+    close_overlay(); mem_free();
+}
+
+/* The overlay's left stick (#138, core/stick_cursor.h) against this worker. The
+ * overlay's own lines (shell/overlay.cpp: input_overlay's deferred post, close_page's
+ * vjo_stick_cursor_kept, render's new_text and cursor_matches) are paf code no host
+ * target compiles; they are restated here around the real helpers and worker. */
+typedef struct {
+    VjoStickCursor st;
+    uint32_t cursor, generation; /* s_cursor_byte, s_text_generation */
+    int local;                   /* s_local_cursor_mode */
+    uint64_t now;
+} StickOverlay;
+
+/* render: the worker's cursor taken for new text; whether the overlay shows its word */
+static int stick_render(StickOverlay *o)
+{
+    if (!o->local || o->generation != g_view.text_generation) {
+        o->local = 1;
+        o->generation = g_view.text_generation;
+        o->cursor = g_view.cursor_byte;
+        vjo_stick_cursor_new_text(&o->st);
+    }
+    int matches = g_view.cursor_byte == o->cursor;
+    vjo_stick_cursor_shown(&o->st, matches);
+    return matches;
+}
+
+/* a frame with the stick at (lx, 128): its step (one character here: 猫犬鳥 has 3-byte letters) */
+static void stick_frame(StickOverlay *o, uint8_t lx)
+{
+    int vertical = 0;
+    o->now += 16667u;
+    int step = vjo_stick_cursor_step(vjo_stick_cursor(&o->st, lx, 128, o->now), 0, &vertical);
+    if (step) {
+        uint32_t to = (uint32_t)vjo_text_read_step(local_text, strlen(local_text), o->cursor, 0, step, 1);
+        vjo_stick_cursor_moved(&o->st, to != o->cursor, o->now);
+        if (to != o->cursor) {
+            o->cursor = to;
+            stick_render(o);
+        }
+    }
+    if (vjo_stick_cursor_lookup(&o->st, o->now))
+        vjo_post_cursor(o->cursor, o->generation);
+}
+
+/* close_page, then L + R on the same screen: what the reopened overlay shows */
+static int stick_close_and_reopen(StickOverlay *o)
+{
+    if (ov != OV_CLOSED) { vjo_post_command(VJO_CMD_CLOSED, NULL); on_command(); }
+    TEST_CHECK(ov == OV_CLOSED);
+    if (!vjo_stick_cursor_kept(&o->st, o->cursor, g_view.cursor_byte))
+        o->local = 0;
+    open_overlay();
+    return stick_render(o);
+}
+
+static StickOverlay stick_overlay_on_cat(void)
+{
+    cursor_saved_text(); open_overlay(); finish_current_job();
+    check_current_definition("cat", 0);
+    StickOverlay o;
+    memset(&o, 0, sizeof(o));
+    o.st.rest_us = (uint32_t)g_view.stick_lookup_ms * 1000u; /* render's copy */
+    o.now = 5000000u;
+    TEST_CHECK(stick_render(&o) && o.cursor == 0);
+    stick_frame(&o, 128); /* the first frame at rest: new text latched the stick */
+    return o;
+}
+
+/* #156's audit B1: a flick from 猫 to 犬, Cancel 183 ms later; the control thread
+ * wakes (every 50 ms) after the rest has ended, so the deferred lookup is posted
+ * while VJO_CMD_CLOSED is pending and refused, with nothing due any more. The
+ * close does not keep the overlay's cursor (it is not the worker's): the
+ * reopened overlay shows the worker's word, 猫, not "Looking up words…" with no
+ * lookup coming. */
+static void test_stick_lookup_refused_by_a_pending_close(void)
+{
+    StickOverlay o = stick_overlay_on_cat();
+    uint32_t generation = local_text_generation;
+    stick_frame(&o, 255);
+    TEST_CHECK(o.cursor == 3 && o.st.due && !pending_cmd);
+    for (int f = 0; f < 10; f++)
+        stick_frame(&o, 128);
+    TEST_CHECK(o.st.due && pending_cmd == VJO_CMD_NONE);
+    vjo_post_command(VJO_CMD_CLOSED, NULL); /* Cancel */
+    stick_frame(&o, 128);
+    stick_frame(&o, 128); /* the rest ends: posted and refused */
+    TEST_CHECK(!o.st.due && o.st.lookups == 1);
+    TEST_CHECK(pending_cmd == VJO_CMD_CLOSED && local_cursor_byte == 0 && g_view.cursor_byte == 0);
+    on_command(); /* the control thread wakes: closed */
+    TEST_CHECK(!vjo_stick_cursor_kept(&o.st, o.cursor, g_view.cursor_byte));
+    int shows = stick_close_and_reopen(&o);
+    TEST_CHECK_(shows && o.cursor == 0, "reopened: the overlay's cursor %u, the worker's %u", o.cursor, g_view.cursor_byte);
+    TEST_CHECK(!job_running && !cursor_waiting && local_text_generation == generation);
+    check_current_definition("cat", 0);
+    /* and the stick goes on from there: 犬 looked up once it rests */
+    stick_frame(&o, 128); /* the latch: let go */
+    stick_frame(&o, 255);
+    TEST_CHECK(o.cursor == 3 && o.st.due);
+    for (int f = 0; f < 13; f++)
+        stick_frame(&o, 128);
+    TEST_CHECK(pending_cmd == VJO_CMD_CURSOR && g_view.cursor_byte == 3);
+    on_command(); finish_current_job();
+    check_current_definition("dog", 3);
+    close_overlay(); mem_free();
+}
+
+/* The other closes: Cancel before the rest ends (the word still due), and the
+ * deferred lookup accepted with Cancel in the same frame (its command
+ * overwritten by VJO_CMD_CLOSED): the reopened overlay shows or looks up the
+ * cursor's word either way. */
+static void test_stick_close_before_and_after_the_rest(void)
+{
+    StickOverlay o = stick_overlay_on_cat();
+    stick_frame(&o, 255);
+    stick_frame(&o, 128);
+    TEST_CHECK(o.cursor == 3 && o.st.due);
+    TEST_CHECK(stick_close_and_reopen(&o) && o.cursor == 0); /* due at the close: the worker's 猫 */
+    check_current_definition("cat", 0);
+    /* accepted, then Cancel in the same frame */
+    stick_frame(&o, 128);
+    stick_frame(&o, 255);
+    for (int f = 0; f < 12 && o.st.due; f++)
+        stick_frame(&o, 128);
+    TEST_CHECK(!o.st.due && pending_cmd == VJO_CMD_CURSOR && g_view.cursor_byte == 3);
+    TEST_CHECK(vjo_stick_cursor_kept(&o.st, o.cursor, g_view.cursor_byte));
+    vjo_post_command(VJO_CMD_CLOSED, NULL);
+    on_command();
+    TEST_CHECK(stick_close_and_reopen(&o) && o.cursor == 3); /* kept: the worker's too, its lookup on its way */
+    TEST_CHECK(job_running && job_cursor_only && job_cursor_byte == 3);
+    finish_current_job();
+    TEST_CHECK(stick_render(&o));
+    check_current_definition("dog", 3);
+    close_overlay(); mem_free();
+}
+
+/* config.ini's stick_lookup_ms reaches the overlay through the view (#156's audit W1/W2). */
+static void test_stick_lookup_ms_reaches_the_view(void)
+{
+    cursor_setup();
+    TEST_CHECK(loaded.stick_lookup_ms == 200);
+    open_overlay(); finish_current_job();
+    TEST_CHECK(g_view.stick_lookup_ms == 200);
+    close_overlay();
+    loaded.stick_lookup_ms = 0;
+    open_overlay();
+    TEST_CHECK(g_view.stick_lookup_ms == 0);
+    close_overlay();
+    loaded.stick_lookup_ms = 1000;
+    open_overlay();
+    TEST_CHECK(g_view.stick_lookup_ms == 1000 && g_view.frequency_badge == 1 && g_view.font_size_en == 14);
     close_overlay(); mem_free();
 }
 
@@ -4645,6 +4799,9 @@ TEST_LIST = {
     {"vocr_refused_fallback_is_labelled", test_vocr_refused_fallback_is_labelled},
     {"game_vocr_OOM_never_falls_back_to_Shell", test_vocr_allocation_fallback_and_failure},
 #endif
+    {"stick_lookup_refused_by_a_pending_close", test_stick_lookup_refused_by_a_pending_close},
+    {"stick_close_before_and_after_the_rest", test_stick_close_before_and_after_the_rest},
+    {"stick_lookup_ms_reaches_the_view", test_stick_lookup_ms_reaches_the_view},
     {"local_dictionary_opens_without_key", test_local_open},
     {"ordered_dictionary_config_invalidates_cache", test_config_cache},
     {"scene_cache_is_immediate", test_cached_scene},

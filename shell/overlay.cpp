@@ -27,7 +27,12 @@
  * (touch_hold.h, #104): deactivated over the game, untouched once the game
  * has left the foreground to SceShell's LiveArea. The selector is also drawn
  * with the left stick and the d-pad (#81): a cursor, enter for each
- * corner (core/region_select.c holds the state; this file draws it). */
+ * corner (core/region_select.c holds the state; this file draws it).
+ *
+ * Over the recognized text the left stick moves the cursor, faster while held
+ * and capped, and its word is looked up only once the cursor rests there
+ * (#138, core/stick_cursor.h); the d-pad and taps look up at once. The right
+ * stick scrolls a long definition. */
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
@@ -43,6 +48,7 @@ extern "C" {
 }
 
 #include "../core/region_select.h"
+#include "../core/stick_cursor.h"
 #include "../vita/buttons_vita.h"
 /* The region selector and the enter/cancel buttons take the pad's own button bits. */
 static_assert(VJO_RSEL_UP == SCE_CTRL_UP && VJO_RSEL_RIGHT == SCE_CTRL_RIGHT && VJO_RSEL_DOWN == SCE_CTRL_DOWN &&
@@ -136,7 +142,7 @@ static int s_ja_px;    /* the header's point size: a row's last cell */
  * (docs/release-variants.md); the normal build keeps none */
 #if VJO_DEBUG
 static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
-static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre */
+static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre (either stick) */
 #define COUNT_MOVE() s_moves++
 #else
 #define COUNT_MOVE() ((void)0)
@@ -172,6 +178,10 @@ static int s_square_clear_armed;
 #define UI_MEM_BYTES VJO_BUDGET_PAF_UI
 static uint8_t *s_ui_mem;
 static VjoArena s_ui;
+
+/* The left stick over the text: its state, its due lookup, stick_lookup_ms and the
+ * close line's counts (core/stick_cursor.h). */
+static VjoStickCursor s_stick;
 
 static void set_rich(ui::RichText *w, const char *s)
 {
@@ -301,6 +311,7 @@ static void render(int new_content)
     vjo_view_lock();
     l = g_view.list;
     s_highlight_mode = g_view.highlight_mode;
+    s_stick.rest_us = (uint32_t)g_view.stick_lookup_ms * 1000u;
     if (s_highlight_mode != VJO_HIGHLIGHT_WORD)
         s_nav.words.count = 0;
     s_match_end = 0;
@@ -326,6 +337,7 @@ static void render(int new_content)
         if (new_text || copy_text) {
             s_nav.words.count = 0;
             s_nav.goal.at = 0;
+            vjo_stick_cursor_new_text(&s_stick); /* a due word was in the text this replaces */
             s_text_generation = g_view.text_generation;
             s_cursor_byte = (uint32_t)(g_view.japanese_only_selection
                 ? vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, g_view.cursor_byte, 0)
@@ -333,6 +345,7 @@ static void render(int new_content)
         }
         s_japanese_only_selection = g_view.japanese_only_selection;
         cursor_matches = g_view.cursor_byte == s_cursor_byte;
+        vjo_stick_cursor_shown(&s_stick, cursor_matches); /* back on the shown word: nothing to look up */
         s_dict_page = g_view.dict_page;
         s_dict_pages = cursor_matches ? g_view.dict_pages : 0;
     } else {
@@ -436,20 +449,20 @@ static void render(int new_content)
     vjo_view_unlock();
 
     /* Dictionary paging is taught by the body's "L/R Dictionary 2 of 3" line,
-     * shown only while paging is available; the hint keeps its width (the
-     * longest, Character mode with Japanese-only, is shorter than before
-     * the row navigation). */
+     * shown only while paging is available. The longest hint, Character mode
+     * with Japanese-only and Anki, is 82 characters with the sticks' parts (#138;
+     * 72 before): whether it fits the 920 px line is for the console run. */
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
-            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ word"
-               : s_japanese_only_selection ? "Tap / ◀▶▲▼ Japanese letter" : "Tap / ◀▶▲▼ character")
+            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ / stick word"
+               : s_japanese_only_selection ? "Tap / ◀▶▲▼ / stick Japanese letter" : "Tap / ◀▶▲▼ / stick character")
             : "◀ ▶ ▲ ▼ word";
         char anki[32] = "";
         if (s_anki_enabled)
             sceClibSnprintf(anki, sizeof(anki), "%s queue · ", s_btn.enter_glyph);
         sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">%s · %sstick scroll · □ region · %s close</font>", nav, anki,
+                        "<font color=\"#8a94a6\">%s · %sR stick scroll · □ region · %s close</font>", nav, anki,
                         s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
@@ -597,6 +610,7 @@ static void enter_region_mode(void)
 static void leave_region_mode(void)
 {
     s_mode = MODE_OVERLAY;
+    vjo_stick_cursor_latch(&s_stick); /* a stick still drawing the box does not move the cursor */
     if (s_region_layer)
         s_region_layer->Hide();
     if (s_panel)
@@ -666,9 +680,9 @@ static void open_page(void)
         }
     }
     {
-        char hint[128]; /* 93 B with a 3-byte glyph */
+        char hint[128]; /* 95 B with a 3-byte glyph */
         sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · stick scroll · □ region · %s close</font>",
+                        "<font color=\"#8a94a6\">◀ ▶ ▲ ▼ word · R stick scroll · □ region · %s close</font>",
                         s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
@@ -681,8 +695,13 @@ static void open_page(void)
     s_header_has_text = 0;
 #if VJO_DEBUG
     s_frames = s_moves = 0;
+    s_stick.moves = s_stick.lookups = 0;
 #endif
     s_nav.row_moves = s_nav.wraps = s_nav.no_layout = 0;
+    /* A stick already pushed when opening moves nothing until let go; its other
+     * state is taken afresh then. A word it left due at the close is dropped by
+     * the next render (close_page: the text is taken afresh). */
+    vjo_stick_cursor_latch(&s_stick);
     s_tap = 0;
 #if VJO_DEBUG
     s_frame_max_us = s_key_max_us = 0;
@@ -718,9 +737,19 @@ static void close_page(int handback)
     s_panel = s_region_layer = s_region_rect = NULL;
 #if VJO_DEBUG
     vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
-            "%d without layout, slowest key %d us", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000),
-            s_nav.row_moves, s_nav.wraps, s_nav.no_layout, (int)s_key_max_us);
+            "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms", s_frames,
+            s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves, s_nav.wraps, s_nav.no_layout,
+            (int)s_key_max_us, s_stick.moves, s_stick.lookups, s_stick.rest_us / 1000u);
 #endif
+    /* The next open keeps this cursor only when it is the worker's and no word
+     * of the stick's is due (core/stick_cursor.h vjo_stick_cursor_kept); else it
+     * takes the worker's, as for new text: the one whose word the worker shows,
+     * or looks up. A post the worker refused (Cancel's command still pending, or
+     * the overlay closing) leaves them apart without anything due. */
+    vjo_view_lock();
+    if (!vjo_stick_cursor_kept(&s_stick, s_cursor_byte, g_view.cursor_byte))
+        s_local_cursor_mode = 0;
+    vjo_view_unlock();
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
     s_header.text = s_body.text = NULL;
     s_separator = s_band_mid = NULL;
@@ -787,6 +816,13 @@ static int header_rows(VjoTextRows *rows)
     return 1;
 }
 
+/* The d-pad's and a tap's lookup, at once: it drops one the stick left due. */
+static void post_cursor_now(void)
+{
+    s_stick.due = 0;
+    vjo_post_cursor(s_cursor_byte, s_text_generation);
+}
+
 static void input_header_touch(void)
 {
     const inputdevice::touchscreen::Data *pd = NULL;
@@ -817,7 +853,7 @@ static void input_header_touch(void)
     s_nav.words.count = 0; /* a tap starts a new navigation path */
     COUNT_MOVE();
     vjo_dlog("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
-    vjo_post_cursor(s_cursor_byte, s_text_generation);
+    post_cursor_now();
     render(0);
 }
 
@@ -831,6 +867,11 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         uint32_t cursor = s_cursor_byte;
         int direction = pressed & SCE_CTRL_LEFT ? -1 : pressed & SCE_CTRL_RIGHT ? 1 : 0;
         int vertical = pressed & SCE_CTRL_UP ? -1 : pressed & SCE_CTRL_DOWN ? 1 : 0;
+        /* The left stick's step this frame (core/stick_cursor.h), when no arrow
+         * is pressed: up/down a row as Up/Down go; left/right along the text
+         * below. Its word is looked up only once the cursor rests. */
+        uint64_t now = (uint64_t)sceKernelGetProcessTimeWide();
+        int stick = vjo_stick_cursor_step(vjo_stick_cursor(&s_stick, in->lx, in->ly, now), direction, &vertical);
         /* L or R tapped alone (never the L + R chord): seen every frame. */
         int tap = vjo_shoulder_tap(s_tap, in->buttons & 0xFFFFu, pressed, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER);
         if (direction || vertical) {
@@ -841,23 +882,41 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
             size_t to;
 #if VJO_DEBUG
             int64_t t0 = sceKernelGetProcessTimeWide();
+            /* the close line's row counts and slowest key are the arrows' (the stick's moves are its own) */
+            int row_moves = s_nav.row_moves, wraps = s_nav.wraps, no_layout = s_nav.no_layout;
 #endif
             vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
                              s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
                              s_japanese_only_selection, &to);
 #if VJO_DEBUG
             t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
-            if (t0 > s_key_max_us)
+            if (stick) {
+                s_nav.row_moves = row_moves;
+                s_nav.wraps = wraps;
+                s_nav.no_layout = no_layout;
+            } else if (t0 > s_key_max_us)
                 s_key_max_us = t0;
 #endif
             cursor = (uint32_t)to;
+        } else if (stick) {
+            /* in reading order, across rows, never round the text's ends; the
+             * shown word skipped as Right skips it, else one character */
+            cursor = (uint32_t)vjo_text_read_step(s_cursor_text, s_cursor_text_len, cursor,
+                                                  s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, stick,
+                                                  s_japanese_only_selection);
+            s_nav.words.count = 0; /* a new path, as a tap starts one: Left retraces nothing, Up/Down's */
+            s_nav.goal.at = 0;     /* column is taken afresh (as Left/Right take it) */
         }
+        if (stick)
+            vjo_stick_cursor_moved(&s_stick, cursor != s_cursor_byte, now);
         if (cursor != s_cursor_byte) {
             s_cursor_byte = cursor;
-            COUNT_MOVE();
             /* The command detaches the previous definition immediately;
              * only its asynchronous lookup touches dictionary storage. */
-            vjo_post_cursor(cursor, s_text_generation);
+            if (!stick) {
+                COUNT_MOVE();
+                post_cursor_now();
+            }
             render(0);
         } else {
             /* A tapped shoulder: another dictionary's entry at this cursor.
@@ -869,7 +928,12 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
                 render(0);
             }
         }
+        if (vjo_stick_cursor_lookup(&s_stick, now))
+            vjo_post_cursor(s_cursor_byte, s_text_generation);
     } else {
+        /* No text to move through (recognizing, an error): a stick held until
+         * it comes moves nothing then, as a page change latches the app's lists. */
+        vjo_stick_cursor_latch(&s_stick);
         if ((pressed & SCE_CTRL_RIGHT) && s_selected + 1 < n)
             next = s_selected + 1;
         if ((pressed & SCE_CTRL_LEFT) && s_selected > 0)
@@ -884,13 +948,15 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
             render(0);
         }
     }
-    /* either stick scrolls a long definition */
-    dy = (int)in->ly - 128;
-    if (dy > -STICK_DEADZONE && dy < STICK_DEADZONE)
-        dy = (int)in->ry - 128;
+    /* the right stick scrolls a long definition (the left one moves the cursor) */
+    dy = (int)in->ry - 128;
 #if VJO_DEBUG
-    if ((dy < 0 ? -dy : dy) > s_stick_max)
-        s_stick_max = dy < 0 ? -dy : dy;
+    {
+        const uint8_t axes[3] = {in->lx, in->ly, in->ry};
+        for (int i = 0; i < 3; i++)
+            if (vjo_stick_away(axes[i]) > s_stick_max)
+                s_stick_max = vjo_stick_away(axes[i]);
+    }
 #endif
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
@@ -1058,7 +1124,7 @@ static void frame_body(unsigned version, unsigned anki_version)
         VjoInput in;
         uint32_t held, pressed;
         sceClibMemset(&in, 0, sizeof(in));
-        in.ly = in.ry = 128;
+        in.lx = in.ly = in.rx = in.ry = 128; /* a failed read leaves both sticks at rest */
         vjoPollInput(&in);
         held = in.buttons;
         pressed = held & ~s_prev_buttons;

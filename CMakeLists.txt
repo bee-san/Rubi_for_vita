@@ -192,6 +192,13 @@ add_executable(vjo-stick-scroll-tests host/tests/test_stick_scroll.c)
 target_include_directories(vjo-stick-scroll-tests PRIVATE third_party/acutest/include core)
 target_compile_options(vjo-stick-scroll-tests PRIVATE -Wall -Wextra)
 add_test(NAME stick_scroll COMMAND vjo-stick-scroll-tests)
+# The overlay's left stick over the recognized text (#138, core/stick_cursor.h): its speed and cap by
+# the clock, the lookup deferred until the cursor rests, the d-pad's at once, the step along the text.
+add_executable(vjo-stick-cursor-tests host/tests/test_stick_cursor.c)
+target_include_directories(vjo-stick-cursor-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-stick-cursor-tests vjo_host)
+target_compile_options(vjo-stick-cursor-tests PRIVATE -Wall -Wextra)
+add_test(NAME stick_cursor COMMAND vjo-stick-cursor-tests)
 # The Overlay app's system-application values and its thread wrapper (settings/sysapp.c);
 # tools/check_settings_self.py checks the Vita build's eboot.bin and ELF for them.
 add_executable(vjo-settings-sysapp-tests host/tests/test_settings_sysapp.c)

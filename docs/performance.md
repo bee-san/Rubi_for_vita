@@ -175,6 +175,14 @@ rows of the full frame (A8B8G8R8 rows are a plain copy, the firmware's `memcpy` 
 own, hence the libc share; nine strips a screenshot, one per game frame, in the game's display call),
 and `core/jpegsw.c` in the game worker on the whole frame at quality 70, its strips' wait not
 included ([anki.md](anki.md#time-and-memory)).
+*lookup_first* and *lookup_every* since #138: `core/local_dict.c` is built `-Os` (the normal Shell's
+pages, [memory-ledger.md](memory-ledger.md)). On main `10c8011`'s normal build against the same with
+it `-Os`, the lookups run 134,948 → 135,545 and 123,845 → 124,590 instructions (+0.44 % and +0.60 %),
+with the same output checksums [measured: `tools/bench_stages.py a9 --only lookup_first,lookup_every` on
+both builds, the instructions counted under qemu-arm]; the cost model puts that at 0.15-0.50 ms and
+0.14-0.40 ms at 444 MHz, at most 1.6 µs more, and at most 2.1 µs more at 333 MHz, the clock a lookup
+usually runs at (the boost is a recognition's) [estimate]. The rows above are the earlier
+baseline's, at `-O2`.
 *Strip*: the 896x156 region reads in three strips of 64, 64 and 28 rows (the full frame in ten:
 nine of 59 and one of 13), so a full 64-row strip costs about 23% more than these per-strip means
 (the work is the same for every row). *job_h15*: the job on main's defaults (`stage_job` mode 14:

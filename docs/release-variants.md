@@ -43,6 +43,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | job start / cancel / open / refresh / dropped-screen / subtitle traces; the workspace line; `%s: system app, not a game` | `worker.c` | **drop** |
 | input block on/off, the overlay's close with its `t=` | `worker.c` | **drop**; a refused block (the overlay cannot open) is logged |
 | the overlay's close counters (frames, moves, stick, slowest frame and key) | `overlay.cpp` | **drop** (the counters too) |
+| the left stick's cursor and its deferred lookup (`stick_lookup_ms`, #138) | `overlay.cpp`, `core/stick_cursor.h` | **keep**: a control; its counts on the close line (`stick moves`, `deferred lookups`) are the debug build's, as the line is |
 | the front touch region's on/off and hand-back trace | `overlay.cpp` | **drop**; a refusal is logged |
 | the region selector's corner and box lines; a header tap's cursor (`header touch cursor=`) | `overlay.cpp` | **drop**; the saved region (`region set for …`) is kept |
 | every Paf allocation | `memory.cpp` | **reduced**: refusals only (the reserve guard's line is kept) |
