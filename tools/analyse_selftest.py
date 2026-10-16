@@ -954,9 +954,10 @@ LOG = {
     # (the normal build's line names no word: "anki: save rc=0, 12 ms", docs/release-variants.md)
     "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
-    # export had no stop count
+    # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed
     "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
-                              r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?)?"),
+                              r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
+                              r"(?:, (\d+) swept)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
@@ -1335,6 +1336,8 @@ def export_summary(a):
             ([f"{a['export_left']} over a package's cap"] if a.get("export_left") else [])
     if later:
         t += "; still queued for the next export, not a problem: " + ", ".join(later)
+    if a.get("export_swept"):  # #161: a stop between a card's JPEG and its record left them
+        t += f"; removed from the queue: {_n(a['export_swept'], 'screenshot')} no card named"
     lines = [t]
     for p in a.get("export_problems", []):
         if p["rc"]:
@@ -2227,7 +2230,7 @@ def summarise_log(text):
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
                   "shots": 0, "shot_fail": {}, "shot_bytes": [], "shot_ms": [], "shot_encode_ms": [],
                   "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
-                  "export_stopped": 0, "export_left": 0, "export_problems": []}, "trouble": {},
+                  "export_stopped": 0, "export_left": 0, "export_swept": 0, "export_problems": []}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
@@ -2547,6 +2550,7 @@ def summarise_log(text):
                 an["exported"] += int(m.group(3))
                 an["export_left"] += int(m.group(8) or 0)
                 an["export_stopped"] += int(m.group(9) or 0)
+                an["export_swept"] += int(m.group(10) or 0)
                 if result in ("fail", "partial") and len(an["export_problems"]) < 10:
                     an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
                                                   "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),

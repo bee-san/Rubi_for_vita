@@ -1,11 +1,17 @@
 #ifndef VJO_TEST_IO_H
 #define VJO_TEST_IO_H
 #include <psp2/host_stubs.h>
+#include <psp2/rtc.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+/* glibc's <sys/stat.h> maps these names to struct timespec members (host code reads st_mtim). */
+#undef st_atime
+#undef st_mtime
+#undef st_ctime
 typedef off_t SceOff;
-typedef struct { mode_t st_mode; SceOff st_size; } SceIoStat;
+/* The SDK's times too (psp2common/kernel/iofilemgr.h): a suite that reads them fills them. */
+typedef struct { mode_t st_mode; SceOff st_size; SceDateTime st_ctime, st_atime, st_mtime; } SceIoStat;
 typedef struct { SceIoStat d_stat; char d_name[256]; } SceIoDirent;
 #define SCE_O_RDONLY O_RDONLY
 #define SCE_O_WRONLY O_WRONLY

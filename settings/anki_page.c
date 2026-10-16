@@ -82,9 +82,9 @@ static int worker_main(SceSize args, void *argp)
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
     vjo_export_run(&arena, what, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
-            "%d stopped, %u bytes, arena peak %u",
+            "%d stopped, %d swept, %u bytes, arena peak %u",
             what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
-            (unsigned)r.bytes, (unsigned)arena.peak);
+            r.swept, (unsigned)r.bytes, (unsigned)arena.peak);
     sceKernelLockMutex(lock, 1, NULL);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))

@@ -448,6 +448,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
         TEST_ASSERT((f = fopen(path, "wb")) != NULL);
         TEST_ASSERT(fwrite(shot_jpeg, 1, sizeof(shot_jpeg), f) == sizeof(shot_jpeg));
         TEST_ASSERT(fclose(f) == 0);
+        crash_at("jpeg_tmp"); /* written, not yet named: a stop during the kernel's save (#161) */
         TEST_CHECK_(stat(final, &st) < 0, "a screenshot asked for over an existing %s", final);
         if (stat(final, &st) == 0) {
             unlink(path); /* the kernel removes its .tmp, and the shot fails (VJO_E_LOCAL_IO) */
