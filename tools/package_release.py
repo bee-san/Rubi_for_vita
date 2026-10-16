@@ -11,8 +11,9 @@ import tempfile
 import zipfile
 
 from prepare_ocr import (VOCR_ASSETS, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN,
-                         VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS,
-                         VOCR5_TAG, model_tiers)
+                         VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
+                         VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
+                         model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -277,6 +278,17 @@ def write_package(base, output, models, assets, conversion, version, source_revi
     if attribution.stat().st_size != size or digest(attribution) != sha:
         raise ValueError("The LMs' " + VOCR_LM_ATTRIBUTION + " checksum failed: not release " + VOCR_LM_TAG + "'s")
     assets[DATA + "ocr/LM-" + VOCR_LM_ATTRIBUTION] = attribution
+    # The model sizes' release names the licences of what they were trained on (CC BY 4.0 data among
+    # them) and their terms: that attribution ships with them too, as ocr/MODEL-ATTRIBUTION.md.
+    attribution = models / VOCR_MODEL_ATTRIBUTION
+    if not attribution.is_file():
+        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " is missing (release " + VOCR_MODEL_ATTRIBUTION_TAG
+                         + "'s ATTRIBUTION.md: tools/prepare_ocr.py --backend vocr-tiers)")
+    _, size, sha = VOCR_MODEL_ATTRIBUTION_PIN[VOCR_MODEL_ATTRIBUTION]
+    if attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
+                         + VOCR_MODEL_ATTRIBUTION_TAG + "'s ATTRIBUTION.md")
+    assets[DATA + "ocr/" + VOCR_MODEL_ATTRIBUTION] = attribution
     # The defaults are the package's config template's (the same file as both config.ini copies).
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),

@@ -134,9 +134,12 @@ class FrozenPlaintext(unittest.TestCase):
             (models / name).write_bytes(payload)
         (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
+        (models / "MODEL-ATTRIBUTION.md").write_text("CC BY 4.0 fixture")
+        model_att = {"MODEL-ATTRIBUTION.md": ("fixture", 17, hashlib.sha256(b"CC BY 4.0 fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
+             mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(release, "VOCR5_ASSETS", vocr5), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \

@@ -22,8 +22,8 @@ with curl as the installer does:
                            config.txt.vjo-new / .vjo-old (settings/install.c)
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
-installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs
-and their LM-ATTRIBUTION.md are hashed (downloaded to a temporary file and deleted again, never
+installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs,
+their LM-ATTRIBUTION.md and the model sizes' MODEL-ATTRIBUTION.md are hashed (downloaded to a temporary file and deleted again, never
 kept) and compared with package-manifest.json when given. Every file keeps its device path
 under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
 COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, and in
@@ -68,11 +68,11 @@ NOT_THERE = (9, 19, 78)
 # ftplib's, while the Shell read the stamp in it at the game starts of the same boot.
 APP_READS = (("cwd", ()), ("nocwd", ("--ftp-method", "nocwd")))
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
-# The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89) and
-# their attribution, LM-ATTRIBUTION.md (package_release.py).
+# The ocr folder holds what the package ships there: the weights (*.vocr), the LMs (*.vlm, #89), their
+# attribution, LM-ATTRIBUTION.md, and the model sizes' attribution, MODEL-ATTRIBUTION.md (package_release.py).
 DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "keep", None),
         (f"{DATA}/anki", None, None), (DATA, None, None),
-        (f"{DATA}/ocr", "hash", re.compile(r"\.(vocr|vlm)$|^LM-ATTRIBUTION\.md$")),
+        (f"{DATA}/ocr", "hash", re.compile(r"\.(vocr|vlm)$|^(LM|MODEL)-ATTRIBUTION\.md$")),
         (f"{DATA}/dictionaries", None, None), ("ux0:/data", "keep", re.compile(r"\.psp2dmp$", re.I)),
         ("ur0:/tai", "hash", re.compile(r"^VitaJPOverlay_.*\.(skprx|suprx)$")),
         ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^JPOverlaySettings\.vpk$"))]

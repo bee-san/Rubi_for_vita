@@ -266,7 +266,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   installers' `.vjo-bak` copies, their dated backups (`config.txt.vjo-YYYYMMDD-HHMMSS.bak`) and an
   interrupted swap's `config.txt.vjo-new` / `.vjo-old`; every `ux0:data/*.psp2dmp` crash dump;
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
-  models, the beam + LM decoder's LMs (`*.vlm`) and their `LM-ATTRIBUTION.md` (downloaded to a
+  models, the beam + LM decoder's LMs (`*.vlm`), their `LM-ATTRIBUTION.md` and the model sizes'
+  `MODEL-ATTRIBUTION.md` (downloaded to a
   temporary file and deleted, never kept), compared with the package's `package-manifest.json`; the
   dictionary is compared by size.
 

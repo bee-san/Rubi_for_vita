@@ -42,6 +42,10 @@ class PackageModels(unittest.TestCase):
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
                                              hashlib.sha256(self.attribution).hexdigest())}
         self.enterContext(mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att))
+        self.model_attribution = b"the model sizes' attribution fixture"
+        model_att = {prepare.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/M", len(self.model_attribution),
+                                                      hashlib.sha256(self.model_attribution).hexdigest())}
+        self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att))
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
@@ -71,6 +75,7 @@ class PackageModels(unittest.TestCase):
         for name in prepare.VOCR5_ASSETS:  # the model sizes'
             (self.models / name).write_bytes(self.vocr5)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
+        (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -151,6 +156,10 @@ class PackageModels(unittest.TestCase):
                 if name not in sizes:
                     self.assertNotIn(release.DATA + "ocr/" + name, manifest["files"])
             self.assertIn(release.DATA + "ocr/LM-" + prepare.VOCR_LM_ATTRIBUTION, manifest["files"])
+            # the model sizes' attribution (v0.3.0's ATTRIBUTION.md) ships beside them, its own bytes
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION), self.model_attribution)
+            self.assertEqual(manifest["files"][release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION]["sha256"],
+                             hashlib.sha256(self.model_attribution).hexdigest())
             models = manifest["models"]
             roles = ("Small model size", "Normal model size (default)", "Large model size")
             expected = {}
@@ -212,6 +221,19 @@ class PackageModels(unittest.TestCase):
             table.write_text(json.dumps(changed))
             with self.assertRaises(ValueError):
                 release.shipped_models()
+
+    def test_the_model_sizes_attribution_is_required_and_pinned(self):
+        """v0.3.0's ATTRIBUTION.md (the licences of what VOCR5 was trained on, CC BY 4.0 data among them, and
+        the weights' terms) ships as ocr/MODEL-ATTRIBUTION.md: a package without it, or with another file
+        under its name (the LMs' ATTRIBUTION.md, say), is refused."""
+        self.write_models()
+        (self.models / prepare.VOCR_MODEL_ATTRIBUTION).unlink()
+        with self.assertRaisesRegex(ValueError, "MODEL-ATTRIBUTION.md is missing"):
+            self.package_fixture(write_models=False)
+        (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.attribution)  # the LMs' text
+        with self.assertRaisesRegex(ValueError, "MODEL-ATTRIBUTION.md checksum failed"):
+            self.package_fixture(write_models=False)
+        self.assertFalse((self.root / "package.zip").exists())
 
     def test_two_sizes_with_one_model_ship_it_once(self):
         """vita-vn-ocr eval/vocr5_protocol.json amendment 3: Normal is the better of VOCR5-N and

@@ -823,7 +823,16 @@ VOCR5-S keeps FL10's topology and arena with a 4,987-class head, VOCR5-N H15's w
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
 
 VOCR5's scores are in vita-vn-ocr's `docs/vocr5.md` (its locked report). No console has run
-a VOCR5 model yet. Before VOCR5 the sizes were VOCR3-FL10, VOCR3-H15 and VOCR4-W20:
+a VOCR5 model yet.
+
+**Their attribution and terms.** v0.3.0 ships an `ATTRIBUTION.md` (in its `SHA256SUMS`), which
+the package ships beside the weights as `ocr/MODEL-ATTRIBUTION.md` (`tools/prepare_ocr.py`
+pins it; the one-VPK install copies it with the models). It names what the recognizers were
+trained on. Pretraining used line crops of the Japanese subset of NVIDIA's
+OCR-Synthetic-Multilingual-v1 (CC BY 4.0, modified; not redistributed). The vocabularies are
+ordered by Jiten's frequency lists (CC BY-SA 4.0). The synthetic dialogue boxes include fonts and
+text pools that are free for non-commercial use only, so the file says to **use these weights for
+non-commercial purposes only**. VOCR3's and VOCR4's releases had no such file. Before VOCR5 the sizes were VOCR3-FL10, VOCR3-H15 and VOCR4-W20:
 vita-vn-ocr's VOCR3 report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
 vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0 H15, and 2.13%
 for VOCR3-FL10 against 3.82% for v0.2.0 FL10; none of the three VOCR3 models passed that
@@ -899,21 +908,21 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr --output ocr          # VOCR3_H15_w8.vocr
-   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_FL10_w8.vocr --output ocr
-   python3 tools/prepare_ocr.py --backend vocr --model H15_w8.vocr --output ocr   # v0.2.0
-   python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # the cascade's
+   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models and MODEL-ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
    ```
 
    The downloads need no GitHub account: vita-vn-ocr's releases are public, and the
    GitHub CLI (`gh auth login`) is only tried when a public download fails (a draft
    release). `--from FILE` checks a copy downloaded another way.
-   `tools/package_release.py --models ocr` needs every one of these files (it
-   ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
-3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
-   vocr-tiers --output ocr` fetches the three sizes' models), or let the FTP installer do
-   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set vocr_tier=normal VITA_IP`.
+   `tools/package_release.py --models ocr` needs the first two lines' files: it ships
+   the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
+   sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
+   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`).
+3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
+   FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini

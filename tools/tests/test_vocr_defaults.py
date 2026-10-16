@@ -237,6 +237,49 @@ class VocrDefaults(unittest.TestCase):
         self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/ATTRIBUTION.md"))
         self.assertEqual((size, sha), (2538, "1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c"))
 
+    def test_the_model_sizes_attribution_comes_pinned_with_them(self):
+        """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
+        sizes' models and keeps it as MODEL-ATTRIBUTION.md: the LMs' release names its attribution
+        ATTRIBUTION.md too, and both land in one models directory. A --from directory may hold it under
+        either name, the release's only when that copy is this one."""
+        import hashlib  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "src", Path(tmp) / "out"
+            src.mkdir()
+            pins = {}
+            for tier, (name, *_rest) in TIER_PINS.items():
+                blob = ("fixture " + name).encode()
+                pins[name] = ("https://fixture.invalid/" + name, len(blob), hashlib.sha256(blob).hexdigest())
+                (src / name).write_bytes(blob)
+            att, lm_att = b"VOCR5 attribution fixture", b"the LMs' attribution"
+            att_pin = {prepare_ocr.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/ATTRIBUTION.md", len(att),
+                                                            hashlib.sha256(att).hexdigest())}
+            (src / "ATTRIBUTION.md").write_bytes(att)  # the release's name, this copy
+            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
+                 mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                paths = prepare_ocr.fetch_tiers(out, src)
+                self.assertEqual(sorted(p.name for p in paths), sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md"]))
+                self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
+                self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
+                # the LMs' ATTRIBUTION.md under the release's name is not this file: refused
+                (out / "MODEL-ATTRIBUTION.md").unlink()
+                (src / "ATTRIBUTION.md").write_bytes(lm_att)
+                with self.assertRaises(RuntimeError):
+                    prepare_ocr.fetch_tiers(out, src)
+                # its own name beside the LMs' file: taken
+                (src / "MODEL-ATTRIBUTION.md").write_bytes(att)
+                self.assertIn("MODEL-ATTRIBUTION.md", [p.name for p in prepare_ocr.fetch_tiers(out, src)])
+        # the real pin is v0.3.0's ATTRIBUTION.md (its SHA256SUMS)
+        url, size, sha = prepare_ocr.VOCR_MODEL_ATTRIBUTION_PIN[prepare_ocr.VOCR_MODEL_ATTRIBUTION]
+        self.assertTrue(url.endswith("/releases/download/v0.3.0/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (3158, "db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194"))
+        self.assertEqual(prepare_ocr.VOCR_MODEL_ATTRIBUTION_TAG, TIER_PINS["normal"][4])
+        self.assertIn('X(VJO_PAYLOAD_OCR "MODEL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)',
+                      (ROOT / "include/vjo_payload.h").read_text())  # the one-VPK install copies it too
+
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))

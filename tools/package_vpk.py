@@ -9,8 +9,8 @@ The VPK is the zip's JPOverlaySettings.vpk (the Overlay app, entry for entry, it
 payload/: the files the app installs (include/vjo_payload.h, the same bytes as the zip's ur0/ and ux0/)
 and payload/manifest.txt (core/payload.h's format), then licenses/: the zip's licence and attribution
 files at their zip paths (LICENSE, third_party/, docs/plaintext-attribution.txt, docs/JMdict-LICENSE.html),
-which stay in the app's folder (ux0:app/VJOSET001/licenses/; the models' LM-ATTRIBUTION.md is a payload
-file, installed beside them). The manifest's app_version, variant, api and build
+which stay in the app's folder (ux0:app/VJOSET001/licenses/; the LMs' LM-ATTRIBUTION.md and the model
+sizes' MODEL-ATTRIBUTION.md are payload files, installed beside them). The manifest's app_version, variant, api and build
 come from the app itself (its eboot.bin's start line, check_variant.py; its stamp, core/app_stamp.h),
 and its worker mode from the eboot's vjoworker= mark (settings/install_page.c VJO_WORKER_MARK), never
 from the checkout that packages it; the app accepts the payload only when they are its own.

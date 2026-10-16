@@ -960,4 +960,8 @@ CC BY-SA 4.0; its grammar summaries: written from Bee's Ultimate Grammar Diction
 sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0)
 ([attribution](docs/plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
-`ocr/LM-ATTRIBUTION.md`, which ships beside them.
+`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
+(bee-san/vita-vn-ocr v0.3.0) were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
+(CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
+the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
+beside them ([details](docs/vita-vn-ocr.md#models)).

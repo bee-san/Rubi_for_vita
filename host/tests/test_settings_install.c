@@ -801,7 +801,7 @@ static void cannot_states(void)
     /* the dictionary gone from both places */
     fresh_card(1);
     char src[256];
-    vjo_payload_source(8, src, sizeof(src));
+    vjo_payload_source(VJO_PAYLOAD_KERNEL_INDEX - 1, src, sizeof(src)); /* the dictionary, the last data file */
     unlink(src);
     s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_CANNOT && strstr(s.reason, "The dictionary is missing"), "%s", s.reason);

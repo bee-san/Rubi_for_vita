@@ -9,7 +9,8 @@ model size's, from the bee-san/vita-vn-ocr v0.3.0 release; VOCR3_H15_w8.vocr and
 VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
 v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8.vocr,
-VOCR5_N_w8.vocr, VOCR5_L_w8.vocr), which a package ships. Each file comes from the
+VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
+kept as MODEL-ATTRIBUTION.md, which a package ships. Each file comes from the
 release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
@@ -109,6 +110,16 @@ VOCR5_ASSETS = {
         '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
+# VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
+# their terms (non-commercial use only). The package ships it beside the weights as
+# ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release
+# names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION).
+VOCR_MODEL_ATTRIBUTION = 'MODEL-ATTRIBUTION.md'
+VOCR_MODEL_ATTRIBUTION_TAG = VOCR5_TAG
+VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 3158,
+    'db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194')}
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
@@ -166,10 +177,13 @@ def fetch(directory, name, assets=ASSETS):
     return store(path, data)
 
 
-def fetch_release_asset(directory, name, assets, tag, source=None):
+def fetch_release_asset(directory, name, assets, tag, source=None, asset=None):
     """A release asset: a local copy (--from), else the public download, else
-    `gh release download` (private repository or draft release)."""
+    `gh release download` (private repository or draft release). It is kept as `name`;
+    `asset` is its name in the release when that differs (MODEL-ATTRIBUTION.md is v0.3.0's
+    ATTRIBUTION.md), and a --from directory may hold it under either name."""
     url, size, sha = assets[name]
+    asset = asset or name
     path = directory / name
     def valid(data):
         return len(data) == size and hashlib.sha256(data).hexdigest() == sha
@@ -177,9 +191,16 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
         return path
     if source:
         source = Path(source)
-        data = (source / name if source.is_dir() else source).read_bytes()
+        if not source.is_dir():
+            data = source.read_bytes()
+        else:
+            # its own name first; the release's name only when that copy is this one (the LMs'
+            # ATTRIBUTION.md has the same name as the models')
+            copies = [source / n for n in dict.fromkeys((name, asset)) if (source / n).is_file()]
+            data = next((d for d in (c.read_bytes() for c in copies) if valid(d)),
+                        copies[0].read_bytes() if copies else b'')
         if not valid(data):
-            raise RuntimeError(f'{source} is not the {tag} {name} (size or SHA-256 differs)')
+            raise RuntimeError(f'{source} is not the {tag} {asset} (size or SHA-256 differs)')
         return store(path, data)
     try:
         return fetch(directory, name, assets)
@@ -188,9 +209,9 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
             raise RuntimeError(f'{url}: {public_error}. Check the network and retry, pass --from with a '
                                f'copy, or install the GitHub CLI (`gh auth login`) for a draft release.') from public_error
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', name, '-D', tmp],
+        subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', asset, '-D', tmp],
                        check=True, stdin=subprocess.DEVNULL, timeout=300)
-        data = (Path(tmp) / name).read_bytes()
+        data = (Path(tmp) / asset).read_bytes()
     if not valid(data):
         raise RuntimeError('Incorrect or incomplete download: ' + name)
     return store(path, data)
@@ -202,10 +223,13 @@ def fetch_vocr(directory, name, source=None):
 
 
 def fetch_tiers(directory, source=None):
-    """The three model sizes' recognizers (tools/model_tiers.json), each pinned: what a package ships.
-    A model two sizes share is fetched once."""
+    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
+    attribution (MODEL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
-    return [fetch_vocr(directory, name, source) for name in names]
+    paths = [fetch_vocr(directory, name, source) for name in names]
+    paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
+                                     VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
+    return paths
 
 
 def fetch_lms(directory, source=None):
@@ -294,7 +318,8 @@ def main():
     if args.backend == 'vocr-tiers':
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
-        print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/')
+        print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
+              VOCR_MODEL_ATTRIBUTION, 'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL
