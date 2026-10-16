@@ -1407,5 +1407,171 @@ class WorkerLoaderLines(unittest.TestCase):
         self.assertEqual(a.loader_text(a.summarise_kernel(none, len(none))),
                          "worker loader: loaded into no game; not loaded (OFF in games.ini): PCSF00001")
 
+
+class OverlayAppSummary(unittest.TestCase):
+    """summarise_app and render_app (#138): the collect's own reading of the installed Overlay app decides when it
+    read a file; when it read neither, what it found of the folder decides "not installed", and otherwise the Shell's
+    check at a game start of the log's last boot answers for it. test.3's collect said "not installed" for an app the
+    Shell had read at the same boot's game starts."""
+    STAMP = "vjoapp1 api=22 build=c3e781ad58a5ebe3"
+    OLDER = "vjoapp1 api=21 build=0123456789abcdef"
+    READ = {"state": "read", "method": "cwd", "rc": [0]}
+    BY_PATH = {"state": "read", "method": "nocwd", "rc": [9, 0]}
+    ABSENT = {"state": "absent", "method": None, "rc": [9, 78]}
+    TIMEOUT = {"state": "error", "method": "cwd", "rc": [28], "error": "curl: (28) Operation timed out"}
+    OK = f"overlay app ok: installed '{STAMP}' (0x00000026, app 1), plugins' '{STAMP}' (0x00000026)\n"
+    PRE = f"overlay app MISMATCH: installed '' (0x80010002, app 1), plugins' '{STAMP}' (0x00000026)\n"
+    NONE = f"overlay app unknown: installed '' (0x80010002, app 0), plugins' '{STAMP}' (0x00000026)\n"
+    UNREADABLE = f"overlay app unknown: installed '' (0x80010013, app 1), plugins' '{STAMP}' (0x00000026)\n"
+    # a check before the plugins' record was replaced (an install without a reboot since): another record
+    STALE = f"overlay app ok: installed '{OLDER}' (0x00000026, app 1), plugins' '{OLDER}' (0x00000026)\n"
+
+    def app(self, stamp=ABSENT, eboot=ABSENT, **found):
+        return {"reads": {"vjo_app.txt": stamp, "eboot.bin": eboot}, "eboot": None, **found}
+
+    def summary(self, app, log="", installed=None, old_lines=0, **record):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "ux0/data/VitaJPOverlay").mkdir(parents=True)
+            (folder / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(self.STAMP + "\n")
+            if installed is not None:
+                (folder / "ux0/app/VJOSET001").mkdir(parents=True)
+                (folder / "ux0/app/VJOSET001/vjo_app.txt").write_text(installed + "\n")
+            s = a.summarise_app(folder, {"app": app, **record}, a.summarise_log(log) if log else None, old_lines)
+        return s, a.render_app(s)
+
+    def test_what_the_collect_read_decides(self):
+        s, line = self.summary(self.app(stamp=self.READ), installed=self.STAMP)
+        self.assertEqual((s["state"], s["source"]), ("ok", "collect"))
+        self.assertEqual(line, f"  Overlay app: the plugins' ({self.STAMP})")
+        # read by its full path: said, with the first way's exit
+        s, line = self.summary(self.app(stamp=self.BY_PATH), BOOT22 + START + self.PRE, installed=self.STAMP)
+        self.assertEqual((s["state"], s["source"], s["by_path"]), ("ok", "collect", {"vjo_app.txt": [9, 0]}))
+        self.assertTrue(line.endswith("; read by its full path, no CWD, after the way through its folder was answered "
+                                      "'not there': vjo_app.txt (curl exit 9)"), line)
+        # an older stamp read now outweighs any check of the Shell's, and says how it was read
+        s, line = self.summary(self.app(stamp=self.BY_PATH), BOOT22 + START + self.OK, installed=self.OLDER)
+        self.assertEqual((s["state"], s["source"]), ("MISMATCH", "collect"))
+        self.assertTrue(line.startswith(f"  Overlay app: NOT the plugins' (installed: {self.OLDER}; the plugins came "
+                                        f"with {self.STAMP}): "), line)
+        self.assertTrue(line.endswith("in VitaShell; read by its full path, no CWD, after the way through its folder was "
+                                      "answered 'not there': vjo_app.txt (curl exit 9)"), line)
+        # an eboot.bin without a stamp (#101): an app from before the stamps
+        pre = self.app(eboot=self.READ)
+        pre["eboot"] = {"bytes": 4, "sha256": "ab" * 32}
+        s, line = self.summary(pre)
+        self.assertEqual(s["state"], "MISMATCH")
+        self.assertIn("installed: an app from before the version stamps, eboot.bin abababababababab;", line)
+
+    def test_not_installed_is_said_only_when_a_folder_or_the_shell_shows_it(self):
+        for app, why in ((self.app(folder="ok", eboot_listed=False), "ux0:app/VJOSET001 has no eboot.bin"),
+                         (self.app(folder="missing", apps="ok", in_apps=False), "ux0:app has no VJOSET001"),
+                         ({"listed": True, "eboot": None}, "no ux0:app/VJOSET001/eboot.bin")):  # an older collect
+            with self.subTest(why=why):
+                s, line = self.summary(app)
+                self.assertEqual(s["state"], "not installed")
+                self.assertEqual(line, f"  Overlay app: not installed ({why})")
+        # a check of this boot that found it: both facts are said
+        s, line = self.summary(self.app(folder="missing", apps="ok", in_apps=False), BOOT22 + START + self.OK)
+        self.assertEqual(s["state"], "not installed")
+        self.assertIn(f"; the Shell's check at a game start of this boot found one ({self.STAMP}, log.txt:3): deleted "
+                      "since, or the listing left it out", line)
+        # the Shell found neither file, against the same record, and nothing in the collect shows the folder
+        s, line = self.summary({"listed": False, "eboot": None}, BOOT22 + START + self.NONE)
+        self.assertEqual((s["state"], s["source"]), ("not installed", "shell"))
+        self.assertEqual(line, "  Overlay app: not installed: the Shell's check at a game start of this boot found "
+                               "neither its vjo_app.txt nor its eboot.bin (log.txt:3); this collect could not read it "
+                               "over FTP: its folder could not be entered, and this older collect_vita.py read the app "
+                               "only through it (#138)")
+        # an older collect's listing that showed eboot.bin it could not hash: not "not installed"
+        s, line = self.summary({"listed": True, "eboot": None},
+                               listings={"ux0:/app/VJOSET001": [{"name": "eboot.bin", "bytes": 9, "dir": False}]})
+        self.assertEqual(s["state"], "not read")
+        self.assertIn("(its folder lists eboot.bin, but it could not be hashed)", line)
+
+    def test_an_app_the_collect_could_not_read_is_the_shells_answer(self):
+        present = self.app(folder="missing", apps="ok", in_apps=True)
+        for app, why, found in (
+                (present, "ux0:app lists VJOSET001, but its folder could not be entered and neither its "
+                          "vjo_app.txt nor its eboot.bin could be read by its full path", "present"),
+                (self.app(folder="ok", eboot_listed=True),
+                 "its folder lists eboot.bin, but neither it nor vjo_app.txt could be read", "present"),
+                (self.app(folder="missing", apps="error", apps_error="EOFError: "),
+                 "its folder could not be entered, neither file could be read by its full path, and ux0:app "
+                 "could not be listed", None),
+                # test.3's collect (#138): an older collect_vita.py that could not enter the folder
+                ({"listed": False, "eboot": None},
+                 "its folder could not be entered, and this older collect_vita.py read the app only through it", None)):
+            with self.subTest(why=why):
+                s, line = self.summary(app, "API 20 boot\n" + BOOT22 + START + self.OK)
+                self.assertEqual((s["state"], s["source"], s["shell"]["where"]), ("ok", "shell", "log.txt:4"))
+                self.assertEqual(line, f"  Overlay app: the plugins' ({self.STAMP}), by the Shell's check at a game start "
+                                       f"of this boot (log.txt:4); this collect could not read it over FTP: {why} (#138)")
+                # no answer: never "not installed", and the line says what the Shell's last check was
+                start = f"  Overlay app: not checked: this collect could not read it over FTP ({why}), and "
+                for log, shell in (
+                        ("", "the Shell logged no check of it in this boot"),
+                        (BOOT22 + START + self.OK + BOOT22, "the Shell logged no check of it in this boot"),
+                        (BOOT22 + START + self.STALE, f"the Shell's last check in this boot (log.txt:3) compared it with "
+                                                      f"another record ({self.OLDER})"),
+                        (BOOT22 + START + self.UNREADABLE, "the Shell's last check in this boot (log.txt:3) does not "
+                                                           "decide it either (its vjo_app.txt: unreadable, 0x80010013; "
+                                                           "its eboot.bin: there)")):
+                    s, line = self.summary(app, log)
+                    self.assertEqual((s["state"], s["source"]), ("not read", "collect"), log)
+                    self.assertTrue(line.startswith(start + shell + "; if the Overlay app is open beside VitaShell, "
+                                                    "close it from its LiveArea page"), line)
+                # the Shell found neither file: "not installed", unless the collect saw the folder
+                s, line = self.summary(app, BOOT22 + START + self.NONE)
+                if found == "present":
+                    self.assertEqual(s["state"], "not read")
+                    self.assertIn("does not decide it either (its vjo_app.txt: not there, 0x80010002; its eboot.bin: "
+                                  "not there)", line)
+                else:
+                    self.assertEqual((s["state"], s["source"]), ("not installed", "shell"))
+        # the Shell found an app without a stamp (#101): its mismatch, in its words
+        s, line = self.summary(present, BOOT22 + START + self.PRE)
+        self.assertEqual((s["state"], s["source"]), ("MISMATCH", "shell"))
+        self.assertTrue(line.startswith("  Overlay app: NOT the plugins' (installed: an app from before the version "
+                                        f"stamps; the plugins came with {self.STAMP}), by the Shell's check"), line)
+        # the boot's last line is its answer (the Shell logs only a change): ok after a mismatch in one boot is ok
+        s, _ = self.summary(present, BOOT22 + START + self.PRE + START + self.OK)
+        self.assertEqual((s["state"], s["shell"]["line"]), ("ok", 5))
+        # a check in log.old.txt is named there (its lines come first)
+        s, line = self.summary(present, BOOT22 + START + self.OK + "log.txt's first line\n", old_lines=3)
+        self.assertEqual(s["shell"]["where"], "log.old.txt:3")
+        self.assertIn("by the Shell's check at a game start of this boot (log.old.txt:3)", line)
+
+    def test_a_failed_read_is_no_absence(self):
+        app = self.app(eboot=self.TIMEOUT)
+        s, line = self.summary(app)
+        self.assertEqual(s["state"], "not read")
+        self.assertIn("(reading it failed: eboot.bin, curl exit 28 (curl: (28) Operation timed out))", line)
+        s, _ = self.summary(app, BOOT22 + START + self.OK)
+        self.assertEqual((s["state"], s["source"]), ("ok", "shell"))
+        # a stamp that failed to read beside a hashed eboot.bin is no app from before the stamps
+        app = self.app(stamp=self.TIMEOUT, eboot=self.READ)
+        app["eboot"] = {"bytes": 4, "sha256": "ab" * 32}
+        s, line = self.summary(app)
+        self.assertEqual(s["state"], "not read")
+        self.assertIn("(reading it failed: vjo_app.txt, curl exit 28 (curl: (28) Operation timed out))", line)
+        self.assertNotIn("before the version stamps", line)
+        s, _ = self.summary(app, BOOT22 + START + self.OK)
+        self.assertEqual((s["state"], s["source"]), ("ok", "shell"))
+
+    def test_the_line_the_shell_writes_is_read_whole(self):
+        worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        fmt = "overlay app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)"
+        self.assertIn(f'vjo_log("{fmt}",', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
+        m = a.APP_CHECK.match(fmt % ("ok", self.STAMP, 0x26, 1, self.STAMP, 0x26))
+        self.assertEqual(m.groups(), ("ok", self.STAMP, "0x00000026", "1", self.STAMP, "0x00000026"))
+        m = a.APP_CHECK.match(fmt % ("MISMATCH", "", 0x80010002, 1, self.STAMP, 0x26))
+        self.assertEqual(m.group(2, 3), ("", "0x80010002"))
+        # it checks at each enabled game's start, after the game is active, and logs only a change
+        body = worker[worker.index("static void check_app(void)"):]
+        self.assertIn("if (s == app_state)\n        return;", body[:body.index("vjo_log(")])
+        self.assertIn("check_app(); /* after the game is active", worker)
+
+
 if __name__ == "__main__":
     unittest.main()

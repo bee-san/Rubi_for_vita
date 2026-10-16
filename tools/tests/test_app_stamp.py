@@ -159,7 +159,9 @@ class AppStamp(unittest.TestCase):
         for path in (m["VJO_APP_STAMP_INSTALLED"], m["VJO_APP_EBOOT_INSTALLED"], m["VJO_APP_STAMP_PACKAGE"]):
             self.assertIn(path.replace(":", ":/", 1), ftp)
         import collect_vita
-        self.assertIn(m["VJO_APP_STAMP_INSTALLED"].replace(":", ":/", 1), collect_vita.FILES)
+        # the installed app's two files, which collect_vita.py reads as --check-app does (read_app, #138)
+        self.assertEqual(m["VJO_APP_STAMP_INSTALLED"].replace(":", ":/", 1), collect_vita.APP_STAMP)
+        self.assertEqual(m["VJO_APP_EBOOT_INSTALLED"].replace(":", ":/", 1), collect_vita.APP_EBOOT)
         self.assertIn(m["VJO_APP_STAMP_PACKAGE"].replace(":", ":/", 1), collect_vita.FILES)
         import package_release
         self.assertEqual("ux0/data/VitaJPOverlay/vjo_app.txt", package_release.APP_RECORD)

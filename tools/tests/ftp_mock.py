@@ -84,13 +84,18 @@ class _Handler(socketserver.StreamRequestHandler):
         server = self.server
         self.reply("220 FTPVita Server ready.")
         while True:
-            raw = self.rfile.readline()
+            try:
+                raw = self.rfile.readline()
+            except ConnectionResetError:  # a client that only checked the port (install_ftp.sh's reachability probe)
+                return
             if not raw:
                 return
             line = raw.decode("utf-8", "replace").rstrip("\r\n")
             cmd, _, arg = line.partition(" ")
             cmd = cmd.upper()
             server.log.append(line)
+            if server.drop and cmd in server.drop and server.drop[cmd](arg):
+                return  # the connection closes with no reply: a transfer error, not a refusal
             if server.fail and cmd in server.fail and server.fail[cmd](arg):
                 self.reply("550 injected failure")
                 continue
@@ -214,9 +219,10 @@ class _Server(socketserver.ThreadingTCPServer):
 
 class FtpMock:
     """A VitaShell-like FTP server over ROOT/ux0, ROOT/ur0 on 127.0.0.1 (port 0: any free port).
-    fail: {COMMAND: predicate(arg)} makes matching commands answer 550 (an unreadable file)."""
+    fail: {COMMAND: predicate(arg)} makes matching commands answer 550 (an unreadable file); drop: the same, but the
+    server closes the connection without a reply (a broken transfer)."""
 
-    def __init__(self, root, devices=("ux0", "ur0"), fail=None):
+    def __init__(self, root, devices=("ux0", "ur0"), fail=None, drop=None):
         self.server = _Server(("127.0.0.1", 0), _Handler)
         self.server.root = Path(root)
         self.server.devices = devices
@@ -224,6 +230,7 @@ class FtpMock:
         self.server.retrieved = []
         self.server.stored = []
         self.server.fail = fail or {}
+        self.server.drop = drop or {}
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 

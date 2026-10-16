@@ -1,0 +1,43 @@
+{
+  "collected_at": "2026-10-16T07:17:43Z",
+  "host": "192.168.1.50:1337",
+  "tool": "tools/collect_vita.py",
+  "files": {
+    "ux0:/data/VitaJPOverlay/vjo_app.txt": {
+      "local": "ux0/data/VitaJPOverlay/vjo_app.txt",
+      "bytes": 38,
+      "sha256": "a3e59b2f3f654029e96a50f51d5b557d0660fd3d73ca0b3d281d8e280e0ef800"
+    }
+  },
+  "missing": [
+    "ux0:/data/VitaJPOverlay/log.old.txt",
+    "ux0:/data/VitaJPOverlay/selftest.txt",
+    "ux0:/app/VJOSET001/vjo_app.txt",
+    "ux0:/tai/config.txt",
+    "ux0:/tai/config.txt.vjo-bak",
+    "ux0:/app/VJOSET001/"
+  ],
+  "errors": [],
+  "listings": {},
+  "hashed": {},
+  "redacted_keys": [],
+  "app": {
+    "listed": false,
+    "eboot": null
+  },
+  "package_app": {
+    "stamp": "vjoapp1 api=22 build=c3e781ad58a5ebe3",
+    "title_id": "VJOSET001",
+    "eboot_bytes": 334838,
+    "eboot_sha256": "c3e781ad58a5ebe345218cba607b94b1e6c668f9bf0ad6887d280a6ffc8da899"
+  },
+  "package": {
+    "version": "0.8.0-test.3",
+    "source_revision": "9cfa920b1aaf6ceb90095a333e4042c241e73b4c",
+    "install_settings": {
+      "anki_mining": "on",
+      "highlight_mode": "word"
+    }
+  },
+  "package_check": {}
+}
