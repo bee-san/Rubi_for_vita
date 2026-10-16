@@ -141,6 +141,11 @@ def main():
     parser.add_argument("--sources", type=Path, help="A checkout of the bases' own commit: their modules are checked "
                         "as its Vita build checks them (tools/check_variant.py --sources), the worker included")
     args = parser.parse_args()
+    if args.sources is not None:
+        import check_variant as variants
+        problem = variants.sources_problem(args.sources)
+        if problem:  # its modules would be checked against nothing (audit-overlay-release-variants-e note 5)
+            sys.exit(f"package_variants: {problem}: give a checkout of the bases' own commit (CI: --sources .)")
     problems = check_bases(args.normal, args.debug, args.version, args.sources)
     if problems:
         sys.exit("package_variants: the bases are not this release's two builds:\n  " + "\n  ".join(problems))

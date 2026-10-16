@@ -7,6 +7,7 @@ import io
 import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -268,6 +269,38 @@ class DerivedStrings(unittest.TestCase):
             self.assertEqual(variant.check("debug", {"worker": worker}), [])  # without sources: the fixed markers only
             self.assertEqual(variant.check("normal", {"worker": worker}, sources=root), [])
 
+    def test_sources_that_are_not_a_checkout_fail_every_module(self):
+        """audit-overlay-release-variants-e note 5: sources without the parts' code give no debug-only strings, so each
+        module would pass vacuously: check() fails every part instead, and the CLI names the reason first."""
+        blobs = {"kernel": module("kernel", "normal"), "shell": module("shell", "normal"), "worker": b"\0worker\0",
+                 "app": app("normal")}
+        self.assertIsNone(variant.sources_problem(ROOT))
+        self.assertEqual(variant.check("normal", blobs, sources=ROOT), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "empty").mkdir()
+            (tmp / "a-file").write_text("x")
+            for root, why in ((tmp / "empty", "not a checkout of the tree"), (tmp / "missing", "not a directory"),
+                              (tmp / "a-file", "not a directory"), (ROOT / "tools", "not a checkout of the tree")):
+                with self.subTest(root=root.name):
+                    self.assertIn(why, variant.sources_problem(root))
+                    for build in ("normal", "debug"):
+                        problems = variant.check(build, blobs, sources=root)
+                        empty = [p for p in problems if "no debug-only strings in its sources" in p]
+                        self.assertEqual(sorted(p.split(":")[0] for p in empty), ["app", "kernel", "shell", "worker"],
+                                         problems)
+            args = []
+            for part, blob in blobs.items():
+                (tmp / part).write_bytes(fake_self(blob))
+                args += ["--" + part, str(tmp / part)]
+            r = subprocess.run([sys.executable, str(ROOT / "tools/check_variant.py"), "--variant", "normal",
+                                "--sources", str(tmp / "empty"), *args], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("not a checkout of the tree", json.loads(r.stdout)["problems"][0])
+            r = subprocess.run([sys.executable, str(ROOT / "tools/check_variant.py"), "--variant", "normal",
+                                "--sources", str(ROOT), *args], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
 
 class ConfigIsTheSame(unittest.TestCase):
     def test_both_builds_read_and_write_config_ini_with_the_same_code(self):
@@ -315,10 +348,12 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))
         self.enterContext(mock.patch.object(release, "validate", return_value=None))
 
-    def base(self, build, version="0.8.0", readme=b"README\n"):
-        """A base zip of one build: its plugins (SELFs with that build's markers), the RCO, the VPK
-        (its eboot a SELF naming the version), the frozen dictionary, the docs."""
-        path = self.root / f"base-{build}-{version}-{hashlib.sha256(readme).hexdigest()[:6]}.zip"
+    def base(self, build, version="0.8.0", readme=b"README\n", worker=None):
+        """A base zip of one build: its plugins (SELFs with that build's markers; worker: the worker's build, if
+        another, whose debug build alone has the fixture sources' debug-only literal), the RCO, the VPK (its eboot a
+        SELF naming the version), the frozen dictionary, the docs."""
+        worker = worker or build
+        path = self.root / f"base-{build}-{version}-{hashlib.sha256(readme).hexdigest()[:6]}-{worker}.zip"
         eboot = fake_self(app(build, version))
         stamp = f"vjoapp1 api=22 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
         vpk = io.BytesIO()
@@ -329,7 +364,8 @@ class PackageVariants(unittest.TestCase):
         with zipfile.ZipFile(path, "w") as z:
             z.writestr("ur0/tai/VitaJPOverlay_Kernel.skprx", fake_self(module("kernel", build)))
             z.writestr("ur0/tai/VitaJPOverlay_Shell.suprx", fake_self(module("shell", build)))
-            z.writestr("ur0/tai/VitaJPOverlay_OCR.suprx", fake_self(b"\0worker " + build.encode() + b"\0"))
+            z.writestr("ur0/tai/VitaJPOverlay_OCR.suprx",
+                       fake_self(b"\0worker\0" + (b"VjoGameVocrProbe\0" if worker == "debug" else b"")))
             z.writestr("ur0/data/VitaJPOverlay/vitajpoverlay.rco", b"RCOF fixture")
             z.writestr("JPOverlaySettings.vpk", vpk.getvalue())
             z.writestr(release.APP_RECORD, stamp)
@@ -382,23 +418,65 @@ class PackageVariants(unittest.TestCase):
             self.assertIn(why, str(caught.exception))
             self.assertFalse((out / "SHA256SUMS").exists())
 
+    def sources(self):
+        """A checkout of the fixture bases' tree: one literal per part that only the debug build compiles, each in
+        that part's debug modules of base() and in none of its normal ones."""
+        root = self.root / "src"
+        for rel, literal in (("shell/selftest.c", "selftest v2 api="), ("kernel/main.c", "region settled: scene %u"),
+                             ("game_ocr/main.c", "VjoGameVocrProbe"), ("settings/main.c", "frames: %d in %u us")):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(f'#if VJO_DEBUG\nvjo_log("{literal}");\n#endif\n')
+        return root
+
     def test_with_sources_a_base_with_the_other_builds_worker_is_refused(self):
         """audit-overlay-release-variants-d note 9: the fixed markers cannot see the worker; --sources (a
         checkout of the bases' commit) checks the four modules as the Vita build does."""
-        sources = self.root / "src"
-        (sources / "game_ocr").mkdir(parents=True)
-        (sources / "game_ocr" / "main.c").write_text('#if VJO_DEBUG\nprobe("VjoGameVocrProbe");\n#endif\n')
-        debug = self.base("debug")  # its worker, b"\0worker debug\0", has no debug-only literal: the normal one's
-        with self.assertRaises(SystemExit) as caught:
-            self.run_main("--normal", self.base("normal"), "--debug", debug, "--models", self.models, "--version",
-                          "0.8.0", "-o", self.root / "out-s", "--sources", sources)
-        self.assertIn(f"{debug.name}: worker: the debug build carries none of its sources' 1 debug-only strings",
-                      str(caught.exception))
-        self.assertFalse((self.root / "out-s").exists())
-        # without --sources the fixed markers decide, as before
-        self.run_main("--normal", self.base("normal"), "--debug", debug, "--models", self.models, "--version",
-                      "0.8.0", "-o", self.root / "out-n")
-        self.assertTrue((self.root / "out-n" / "SHA256SUMS").is_file())
+        sources = self.sources()
+        self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
+                      "--version", "0.8.0", "-o", self.root / "out-r", "--sources", sources)
+        self.assertTrue((self.root / "out-r" / "SHA256SUMS").is_file())  # the real pair passes
+        for normal, debug, why in (
+                (self.base("normal"), self.base("debug", worker="normal"),
+                 "worker: the debug build carries none of its sources' 1 debug-only strings"),
+                (self.base("normal", worker="debug"), self.base("debug"),
+                 "worker: the normal build carries 1 of its sources' 1 debug-only strings")):
+            with self.subTest(why=why):
+                mixed = debug if "debug build" in why else normal
+                with self.assertRaises(SystemExit) as caught:
+                    self.run_main("--normal", normal, "--debug", debug, "--models", self.models, "--version",
+                                  "0.8.0", "-o", self.root / "out-s", "--sources", sources)
+                self.assertIn(f"{mixed.name}: {why}", str(caught.exception))
+                self.assertFalse((self.root / "out-s").exists())
+                # without --sources the fixed markers decide, as before
+                out = self.root / f"out-n-{mixed.stem}"
+                self.run_main("--normal", normal, "--debug", debug, "--models", self.models, "--version", "0.8.0",
+                              "-o", out)
+                self.assertTrue((out / "SHA256SUMS").is_file())
+
+    def test_sources_that_are_not_a_checkout_are_refused(self):
+        """audit-overlay-release-variants-e note 5: --sources gives the debug-only strings; a path with none of the
+        parts' sources (an empty directory, no such path, a file, tools/ of an extracted package) would check
+        nothing, so it is refused before anything is written, and so is a checkout with no such strings."""
+        self.sources()  # the fixture tree, for the last case's directories
+        bare = self.root / "bare"  # the four directories, but no debug-only literal in them
+        for d in ("shell", "kernel", "game_ocr", "settings"):
+            (bare / d).mkdir(parents=True)
+            (bare / d / "a.c").write_text('vjo_log("kept in both builds, a long one");\n')
+        (self.root / "empty").mkdir()
+        (self.root / "tools").mkdir()
+        (self.root / "a-file").write_text("x")
+        for path, why in ((self.root / "empty", "not a checkout of the tree (no shell/, kernel/, game_ocr/, settings/"),
+                          (self.root / "missing", "not a directory"), (self.root / "a-file", "not a directory"),
+                          (self.root / "tools", "not a checkout of the tree"),
+                          (bare, "no debug-only strings in its sources")):
+            with self.subTest(sources=path.name):
+                out = self.root / f"out-{path.name}"
+                with self.assertRaises(SystemExit) as caught:
+                    self.run_main("--normal", self.base("normal", worker="debug"), "--debug", self.base("debug"),
+                                  "--models", self.models, "--version", "0.8.0", "-o", out, "--sources", path)
+                self.assertIn(why, str(caught.exception))
+                self.assertIn(str(path), str(caught.exception))
+                self.assertFalse(out.exists())
 
     def test_package_release_records_and_checks_the_build(self):
         output = self.root / "one.zip"
