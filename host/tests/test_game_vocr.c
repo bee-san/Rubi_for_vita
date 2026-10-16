@@ -570,6 +570,7 @@ static void busy_rows_calls(void)
     TEST_CHECK(rows_calls == 1 && blocked && hook_owns_capture && capture_live && !memory_live);
 }
 
+#if VJO_DEBUG /* the self-test's probe: the debug build's (docs/release-variants.md) */
 /* The probe tries every rung once and recognizes nothing. */
 static void probe_tries_every_rung(void)
 {
@@ -664,6 +665,17 @@ static void probe_user_read_stays_in_the_frame_block(void)
     munmap(map, 0x10000);
     frame_at = NULL;
 }
+#else
+/* The normal build has no probe (the self-test's): a probe request is refused as a
+ * request it cannot run, before anything is allocated or read (docs/release-variants.md). */
+static void normal_build_refuses_a_probe(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    r.flags = VJO_GAME_OCR_F_PROBE;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE);
+    TEST_CHECK(!memory_live && !capture_live && !model && !out.lines && !out.strip_rows && allocations == 0);
+}
+#endif
 /* The request's flags become the job's policy (include/vjo_game_ocr.h): the
  * wait in 10 ms steps, its limit in 50 ms steps, settle_first, the blank-line
  * check; a request without them is API 19's job (a zero policy but for the
@@ -2150,8 +2162,12 @@ TEST_LIST = {
     {"capture memory ladder USER CDRAM PHYCONT each logged", capture_memory_ladder_is_logged},
     {"the kernel strip after a failed hook write; timeouts are not retried", hook_failure_falls_back_to_the_kernel_strip},
     {"BUSY rows calls: asked again before arming, the block kept after", busy_rows_calls},
+#if VJO_DEBUG
     {"the self-test probe tries every rung", probe_tries_every_rung},
     {"the probe's user-mode frame read stays inside the frame's block", probe_user_read_stays_in_the_frame_block},
+#else
+    {"the normal build refuses a probe", normal_build_refuses_a_probe},
+#endif
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"the request's flags become the job's policy", request_flags_become_the_policy},

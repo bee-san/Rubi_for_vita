@@ -114,10 +114,15 @@ int vjo_worker_stop(void);
 /* The system clock in ms (kernel.txt's): the t= of the foreground and touch transitions (#104). */
 unsigned vjo_log_ms(void);
 
-/* selftest.c: the on-device self-test (docs/self-test.md). */
+/* selftest.c: the on-device self-test (docs/self-test.md). Debug build only: the
+ * normal build has stubs (below) that never arm it, so the worker's self-test
+ * paths are dead code there, and vjo_selftest_init only says, once, that an armed
+ * test needs the debug build (worker.c). */
 #include "../include/vjo_game_ocr.h"
-int vjo_selftest_armed(void);                 /* the marker was found and the stages are not all done */
 void vjo_selftest_init(const VjoConfig *cfg); /* control thread, once the config is loaded */
+#define VJO_SELFTEST_WAITS 30
+#if VJO_DEBUG
+int vjo_selftest_armed(void);                 /* the marker was found and the stages are not all done */
 void vjo_selftest_step(const char *step);     /* "ok" (boot guard), "exit" */
 /* The first game: its title, policy, mode and the user's saved region (w == 0: none). */
 void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region);
@@ -135,12 +140,23 @@ void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallbac
  * line) or changed under every read; the wait is recorded, and the job ends
  * with this stage's result. Only the first stage waits, at most
  * VJO_SELFTEST_WAITS screens; after that the stages run on whatever is shown. */
-#define VJO_SELFTEST_WAITS 30
 int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r);
 void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint32_t ms, const char *model);
 void vjo_selftest_done(void); /* every stage has its record: the test is complete, the marker removed */
 /* One step of a game worker's log as text (log.txt and the report). */
 int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *s);
+#else
+/* The normal build: never armed, no stage, nothing recorded. */
+static inline int vjo_selftest_armed(void) { return 0; }
+static inline void vjo_selftest_step(const char *step) { (void)step; }
+static inline void vjo_selftest_game(const char *title, int enabled, int mode, const VjoRect *region)
+{ (void)title; (void)enabled; (void)mode; (void)region; }
+static inline unsigned vjo_selftest_stages(void) { return 0u; }
+static inline uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured) { (void)i; return configured; }
+static inline void vjo_selftest_done(void) {}
+#endif
+
+/* vjo_dlog: a debug-build line (include/vjo_build.h, docs/release-variants.md). */
 
 /* guard.c: boot-safety guard (core/boot_guard.h). */
 /* 1 when the kernel decided this boot is a safe one: the note is written to
@@ -280,8 +296,11 @@ typedef struct {
 } VjoLogBatch;
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap);
 void vjo_log_batch_end(VjoLogBatch *b);
-/* The microseconds spent in log file appends since boot (every thread's), and their count. */
+/* The microseconds spent in log file appends since boot (every thread's), and
+ * their count: the debug build's job lines (the normal build keeps no timing). */
+#if VJO_DEBUG
 uint32_t vjo_log_io(uint32_t *appends);
+#endif
 
 /* files.c */
 char *vjo_file_read(VjoArena *a, const char *path, size_t *len);

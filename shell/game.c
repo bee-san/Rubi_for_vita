@@ -97,7 +97,7 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
     sceClibMemset(p10, 0, sizeof(p10));
     r9 = sceAppMgrAppParamGetString(pid, 9, p9, sizeof(p9) - 1);
     r10 = sceAppMgrAppParamGetString(pid, 10, p10, sizeof(p10) - 1);
-    vjo_log("title %s: param 9 = \"%s\" (0x%08X), param 10 = \"%s\" (0x%08X)", tid, p9, r9, p10, r10);
+    vjo_dlog("title %s: param 9 = \"%s\" (0x%08X), param 10 = \"%s\" (0x%08X)", tid, p9, r9, p10, r10);
     if (!sceClibStrcmp(tid, VJO_PSP_EMULATOR))
         sceClibSnprintf(name, size, "PSP");
     else if (r9 >= 0 && p9[0])

@@ -563,7 +563,12 @@ static void touch_write(int action)
     rc = inputdevice::touchscreen::ActivateDefaultRegion(inputdevice::touchscreen::PORT_FRONT,
                                                          action == VJO_TOUCH_ACTIVATE);
     vjo_touch_written(&s_touch, action, rc);
+#if VJO_DEBUG
     vjo_log("touch region %s: 0x%X t=%u ms", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc, vjo_log_ms());
+#else
+    if (rc < 0) /* the normal build logs a refusal only */
+        vjo_log("touch region %s refused 0x%X", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc);
+#endif
 }
 
 static void enter_region_mode(void)
@@ -694,14 +699,14 @@ static void close_page(int handback)
     rc = vjoGetState(&st);
     write = vjo_touch_release(&s_touch, handback, rc, st.game_pid);
     if (write == VJO_TOUCH_LEFT)
-        vjo_log("touch region left to SceShell t=%u ms", vjo_log_ms()); /* the game left the foreground */
+        vjo_dlog("touch region left to SceShell t=%u ms", vjo_log_ms()); /* the game left the foreground */
     else
         touch_write(write);
     param.fade = false;
     s_plugin->PageClose("vjo_page_overlay", param);
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
-    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+    vjo_dlog("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
             "%d without layout, slowest key %d us", s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000),
             s_nav.row_moves, s_nav.wraps, s_nav.no_layout, (int)s_key_max_us);
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
@@ -799,7 +804,7 @@ static void input_header_touch(void)
     s_cursor_byte = (uint32_t)byte;
     s_nav.words.count = 0; /* a tap starts a new navigation path */
     s_moves++;
-    vjo_log("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
+    vjo_dlog("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
     vjo_post_cursor(s_cursor_byte, s_text_generation);
     render(0);
 }
@@ -822,13 +827,17 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * soft-wrapped ones included. */
             VjoTextRows rows;
             size_t to;
+#if VJO_DEBUG
             int64_t t0 = sceKernelGetProcessTimeWide();
+#endif
             vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
                              s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
                              s_japanese_only_selection, &to);
+#if VJO_DEBUG
             t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
             if (t0 > s_key_max_us)
                 s_key_max_us = t0;
+#endif
             cursor = (uint32_t)to;
         }
         if (cursor != s_cursor_byte) {
@@ -923,22 +932,22 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
     vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     if (ev == VJO_RSEL_SAVE) {
         VjoRect r = vjo_rsel_rect(x, y, w, h);
-        vjo_log("region box %d,%d %dx%d", x, y, w, h);
+        vjo_dlog("region box %d,%d %dx%d", x, y, w, h);
         leave_region_mode();
         vjo_post_command(VJO_CMD_SET_REGION, &r);
         return;
     }
     if (ev == VJO_RSEL_CANCEL) {
-        vjo_log("region unchanged");
+        vjo_dlog("region unchanged");
         leave_region_mode();
         return;
     }
     if (ev == VJO_RSEL_CORNER) /* by enter, or by a new touch */
-        vjo_log("region corner %d,%d%s", x, y, pressed & s_btn.enter ? "" : " (touch)");
+        vjo_dlog("region corner %d,%d%s", x, y, pressed & s_btn.enter ? "" : " (touch)");
     else if (ev == VJO_RSEL_BACK)
-        vjo_log("region corner undone");
+        vjo_dlog("region corner undone");
     else if (ev == VJO_RSEL_SMALL) {
-        vjo_log("region box %dx%d too small", w, h);
+        vjo_dlog("region box %dx%d too small", w, h);
         s_refused[0] = w;
         s_refused[1] = h;
     }
@@ -991,6 +1000,7 @@ static void frame(void *arg)
     }
     if (!s_page)
         return;
+#if VJO_DEBUG
     {
         int64_t t0 = sceKernelGetProcessTimeWide();
         frame_body(version, anki_version);
@@ -999,6 +1009,9 @@ static void frame(void *arg)
             s_frame_max_us = t0;
         s_frames++;
     }
+#else
+    frame_body(version, anki_version); /* the normal build times no frame (the debug build's close line) */
+#endif
 }
 
 /* One frame with the overlay page open. */

@@ -54,8 +54,13 @@ extern "C" void *vjo_shell_heap_alloc_for(int item, size_t bytes)
         return nullptr;
     }
     void *p = sce_paf_memalign(16, bytes);
+#if VJO_DEBUG
     vjo_log("%s Paf allocation: free=%u requested=%u reserve=%u success=%d",
             what, (unsigned)available, (unsigned)bytes, (unsigned)RESERVE, p != nullptr);
+#else
+    if (!p) /* the normal build logs a refusal only */
+        vjo_log("%s Paf allocation refused: free=%u requested=%u", what, (unsigned)available, (unsigned)bytes);
+#endif
     if (p) vjo_ledger_add(&g_shell_ledger, item, (uint32_t)bytes);
     return p;
 }

@@ -124,6 +124,6 @@ void vjo_ledger_shell_log(const char *when)
             (unsigned)VJO_LIMIT_SHELL_PAF, (unsigned)vjo_shell_heap_free_size());
     for (i = 0; i < VJO_SL_COUNT; i++)
         if (l->peak[i])
-            vjo_log("ledger   %s: current=%u peak=%u", defs[i].name, (unsigned)l->current[i], (unsigned)l->peak[i]);
+            vjo_dlog("ledger   %s: current=%u peak=%u", defs[i].name, (unsigned)l->current[i], (unsigned)l->peak[i]);
     vjo_log_batch_end(&batch);
 }

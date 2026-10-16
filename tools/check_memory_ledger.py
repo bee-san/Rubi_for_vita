@@ -145,14 +145,40 @@ def scan_sources(root):
     return sites, problems
 
 
-def parse_budget(path):
-    """Evaluates the #define lines of the budget header (integer arithmetic)."""
+def parse_budget(path, variant="debug"):
+    """Evaluates the #define lines of the budget header (integer arithmetic) for one build: the
+    debug build's (VJO_DEBUG 1, the default) or the normal one's (docs/release-variants.md). Only
+    `#if VJO_DEBUG`, `#if !VJO_DEBUG`, `#else` and `#endif` choose between lines; any other
+    conditional (the include guard) keeps its lines."""
+    if variant not in ("debug", "normal"):
+        raise CheckError(f"unknown build variant {variant!r}")
     values = {}
     define = re.compile(r"^\s*#define\s+([A-Z_][A-Z0-9_]*)\s+(.*?)\s*(?:/\*.*)?$")
+    cond = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b\s*(.*?)\s*(?:/\*.*)?$")
     text = path.read_text(encoding="utf-8")
     # join backslash continuations
     text = re.sub(r"\\\n", " ", text)
+    on, stack = True, []  # stack: (whether the enclosing lines are read, the VJO_DEBUG test or None)
     for line in text.splitlines():
+        c = cond.match(line)
+        if c:
+            kind, arg = c.groups()
+            if kind in ("if", "ifdef", "ifndef"):
+                take = {"VJO_DEBUG": variant == "debug", "!VJO_DEBUG": variant == "normal"}.get(arg.replace(" ", "")) \
+                    if kind == "if" else None
+                stack.append((on, take))
+                on = on and take is not False
+            elif kind == "else":
+                parent, take = stack[-1]
+                if take is not None:  # the other build's lines; any other conditional reads both branches
+                    on = parent and not take
+            elif kind == "elif":
+                raise CheckError(f"{path.name}: #elif is not supported: {line.strip()}")
+            elif stack:
+                on = stack.pop()[0]
+            continue
+        if not on:
+            continue
         m = define.match(line)
         if not m or m.group(1).endswith("_H"):
             continue
@@ -250,10 +276,12 @@ def main():
     parser.add_argument("--shell", type=Path)
     parser.add_argument("--worker", type=Path)
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument("--variant", choices=("debug", "normal"), default="debug",
+                        help="the build whose budgets apply (VJO_DEBUG; docs/release-variants.md)")
     args = parser.parse_args()
     problems = []
     try:
-        values = parse_budget(args.root / "include/vjo_ledger_budget.h")
+        values = parse_budget(args.root / "include/vjo_ledger_budget.h", args.variant)
         sites, scan_problems = scan_sources(args.root)
         budget_rows, budget_problems, warnings = check_budget(values)
         module_rows, module_problems = check_modules(values, {"kernel": args.kernel, "shell": args.shell, "worker": args.worker})

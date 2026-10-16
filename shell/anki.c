@@ -126,7 +126,7 @@ static int refresh_count(void)
 {
     int n = vjo_queue_count();
     set_queue(n);
-    vjo_log("anki: queue %d card(s)", n);
+    vjo_dlog("anki: queue %d card(s)", n);
     return n;
 }
 
@@ -148,7 +148,7 @@ static void mem_put(void)
 {
     if (mem) {
         last_peak = arena.peak;
-        vjo_log("anki: arena peak %u of %u", (unsigned)arena.peak, (unsigned)mem_size);
+        vjo_dlog("anki: arena peak %u of %u", (unsigned)arena.peak, (unsigned)mem_size);
         vjo_shell_heap_free(VJO_SL_PAF_ANKI, mem, mem_size);
     }
     mem = NULL;

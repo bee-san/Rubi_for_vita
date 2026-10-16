@@ -1267,6 +1267,14 @@ static int log_lines(char lines[][256], int cap)
     return n;
 }
 
+/* The app's version in its start line (settings/main.c VJO_APP_VERSION): the host
+ * build has no VJO_VERSION_STRING ("dev"); the debug build adds "debug". */
+#if VJO_DEBUG
+#define APP_VERSION_WORDS "vdev debug"
+#else
+#define APP_VERSION_WORDS "vdev"
+#endif
+
 /* At start, one line of the budget the system gives the app and its heap
  * (settings/sysapp.c's 8 MiB): sceAppMgrGetBudgetInfo with the SDK's 0x88-byte
  * structure. Refused (an ordinary app), the line says so. log_file = off: none. */
@@ -1280,18 +1288,20 @@ static void the_start_line_names_the_budget_and_the_heap(void)
     TEST_CHECK_(session->budget_size == 0x88 && session->budget_calls == 1, "info->size %d, %d calls",
                 session->budget_size, session->budget_calls);
     TEST_CHECK(log_lines(lines, 8) == 1);
-    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: budget mode 2: main memory 28311552 of 52428800 B free, "
-                                  "phycont 0 of 0 B, CDRAM 0 of 0 B; heap 8388608 B"), "%s", lines[0]);
+    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: " APP_VERSION_WORDS "; budget mode 2: main memory 28311552 "
+                                  "of 52428800 B free, phycont 0 of 0 B, CDRAM 0 of 0 B; heap 8388608 B"), "%s", lines[0]);
     card(5, NULL);
     budget_rc = (int)0x80800001;
     at = 0;
     hold(0, 70);
     TEST_CHECK(run(at) == at);
-    TEST_CHECK(log_lines(lines, 8) == 2);
-    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: no system-application budget (sceAppMgrGetBudgetInfo "
-                                  "0x80800001); heap 8388608 B"), "%s", lines[0]);
+    TEST_CHECK(log_lines(lines, 8) == (VJO_DEBUG ? 2 : 1)); /* the frame interval: the debug build's only */
+    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: " APP_VERSION_WORDS "; no system-application budget "
+                                  "(sceAppMgrGetBudgetInfo 0x80800001); heap 8388608 B"), "%s", lines[0]);
+#if VJO_DEBUG
     TEST_CHECK_(!strcmp(lines[1], "overlay app: frames: 60 in 1000020 us, 16667 us a frame (shortest 16667, "
                                   "longest 16667)"), "%s", lines[1]);
+#endif
     card(5, NULL);
     put_file("ux0:data/VitaJPOverlay/config.ini", "log_file = off\n", 15);
     at = 0;
@@ -1300,6 +1310,7 @@ static void the_start_line_names_the_budget_and_the_heap(void)
     TEST_CHECK_(log_lines(lines, 8) == -1, "log_file = off: no log.txt");
 }
 
+#if VJO_DEBUG /* the debug build's own (docs/release-variants.md) */
 /* The frame interval goes to log.txt once, over the first 60 frames, with the
  * main memory then free: 16,667 us at 60 Hz, 33,333 us at 30 Hz. */
 static void the_frame_interval_is_logged_once(void)
@@ -1320,6 +1331,7 @@ static void the_frame_interval_is_logged_once(void)
         TEST_CHECK_(session->budget_calls == 2, "%d budget queries", session->budget_calls);
     }
 }
+#endif
 
 /* The list keys act on the Games page only: on the OCR & lookup and Anki pages
  * Up/Down/L/R leave the list where it was. */
@@ -2479,7 +2491,9 @@ TEST_LIST = {
     {"stick_scrolls_like_vitashell", stick_scrolls_like_vitashell},
     {"stick_scrolls_at_the_same_speed_at_30_hz", stick_scrolls_at_the_same_speed_at_30_hz},
     {"the_start_line_names_the_budget_and_the_heap", the_start_line_names_the_budget_and_the_heap},
+#if VJO_DEBUG
     {"the_frame_interval_is_logged_once", the_frame_interval_is_logged_once},
+#endif
     {"stick_stops_at_the_first_and_last_card", stick_stops_at_the_first_and_last_card},
     {"a_page_change_latches_the_stick", a_page_change_latches_the_stick},
     {"a_touched_tab_latches_the_stick", a_touched_tab_latches_the_stick},

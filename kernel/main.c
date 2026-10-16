@@ -59,10 +59,10 @@ static void change_detection(void)
     }
     VJO_UNLOCK();
     if (ev == SCENE_QUIET) {
-        klog("region quiet: scene %u", id);
+        klog_d("region quiet: scene %u", id);
         ksceKernelSetEventFlag(g.evf, VJO_EV_REGION_QUIET);
     } else if (ev == SCENE_SETTLED) {
-        klog("region settled: scene %u (%d animated cells masked)", id, animated);
+        klog_d("region settled: scene %u (%d animated cells masked)", id, animated);
         ksceKernelSetEventFlag(g.evf, VJO_EV_REGION_STABLE);
     }
 }
@@ -383,8 +383,8 @@ int vjoSetInputBlock(int on)
     if (!on && g.input_block) /* e.g. the ○ that closed the overlay */
         __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons);
     __atomic_store_n(&g.input_block, on ? 1 : 0, __ATOMIC_RELEASE);
-    klog("input block=%d pid=%X game=%X raw=%08X t=%u ms", g.input_block,
-         ksceKernelGetProcessId(), g.game_pid, g.raw_buttons, klog_ms());
+    klog_d("input block=%d pid=%X game=%X raw=%08X t=%u ms", g.input_block,
+           ksceKernelGetProcessId(), g.game_pid, g.raw_buttons, klog_ms());
     return 0;
 }
 
@@ -458,7 +458,15 @@ int vjoBootInfo(VjoBootInfo *out)
 
 /* The self-test's memory sample: exact partition figures the user API cannot
  * give (kernel/meminfo.c). The Shell, or the registered game worker: the
- * caller's partition is SceShell's or the game's. */
+ * caller's partition is SceShell's or the game's. The normal build has no
+ * self-test: the export stays (one NID table for both builds) and refuses. */
+#if !VJO_DEBUG
+int vjoMemInfo(VjoMemInfo *out)
+{
+    (void)out;
+    return VJO_ERR_UNSUPPORTED;
+}
+#else
 int vjoMemInfo(VjoMemInfo *out)
 {
     uint32_t state;
@@ -486,6 +494,7 @@ int vjoMemInfo(VjoMemInfo *out)
     EXIT_SYSCALL(state);
     return 0;
 }
+#endif
 
 /* The Shell plugin reports a stage it reached (VJO_BOOT_STAGE_SHELL..OK), or
  * 0 when it unloads itself on purpose. Accepted from a process that has the
@@ -590,7 +599,12 @@ int module_start(SceSize argc, const void *args)
         delete_sync_objects();
         return SCE_KERNEL_START_FAILED;
     }
+#if VJO_DEBUG
     klog("Vita JP Overlay kernel %d started (%s mode)", VJO_API_VERSION, vjo_boot_mode_name(boot_mode()));
+#else
+    klog("Vita JP Overlay kernel %d started (%s mode, the normal build: a short log)", VJO_API_VERSION,
+         vjo_boot_mode_name(boot_mode()));
+#endif
     kledger_log("start");
     return SCE_KERNEL_START_SUCCESS;
 }

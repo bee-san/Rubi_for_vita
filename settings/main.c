@@ -162,6 +162,17 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
     centered_text(x, y + height / 2 + 9, width, active ? BG : WHITE, 26, label);
 }
 
+/* The app's version, beside its title: the release's (vita/CMakeLists.txt
+ * VJO_VERSION) and, in the debug build, "debug" (docs/release-variants.md). */
+#ifndef VJO_VERSION_STRING
+#define VJO_VERSION_STRING "dev"
+#endif
+#if VJO_DEBUG
+#define VJO_APP_VERSION "v" VJO_VERSION_STRING " debug"
+#else
+#define VJO_APP_VERSION "v" VJO_VERSION_STRING
+#endif
+
 /* The page tabs: Games, OCR & lookup, Anki. */
 #define PAGES 3
 #define TAB_X(i) (24 + (i) * 304)
@@ -177,12 +188,15 @@ static char app_banner[192];
 static void header(void)
 {
     static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki"};
+    static int version_x; /* after the title, measured once */
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     if (app_banner[0]) {
         vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
         wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
     } else {
         wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
+        if (!version_x) version_x = 24 + text_width(32, "Overlay") + 14;
+        text(version_x, 34, DIM, 22, VJO_APP_VERSION);
         text(744, 34, DIM, 24, "Select: page");
     }
     for (int i = 0; i < PAGES; i++) {
@@ -744,10 +758,10 @@ static void log_start(void)
     char words[160];
     int rc;
     if (budget_words(words, sizeof(words), &rc))
-        vjo_log("start: %s; heap %d B", words, _newlib_heap_size_user);
+        vjo_log("start: " VJO_APP_VERSION "; %s; heap %d B", words, _newlib_heap_size_user);
     else
-        vjo_log("start: no system-application budget (sceAppMgrGetBudgetInfo 0x%08X); heap %d B", (unsigned)rc,
-                _newlib_heap_size_user);
+        vjo_log("start: " VJO_APP_VERSION "; no system-application budget (sceAppMgrGetBudgetInfo 0x%08X); heap %d B",
+                (unsigned)rc, _newlib_heap_size_user);
 }
 
 /* The frame interval, once, over the first FRAME_LOG frames, and the main
@@ -756,6 +770,7 @@ static void log_start(void)
  * for another; an inference from libvita2d's source), which a console run's
  * log shows. The stick goes by the clock either way (core/stick_scroll.h). */
 #define FRAME_LOG 60
+#if VJO_DEBUG /* the normal build times no frame (docs/release-variants.md) */
 static void log_frame_rate(uint64_t now)
 {
     static uint64_t first, last;
@@ -778,6 +793,7 @@ static void log_frame_rate(uint64_t now)
     vjo_log("frames: %d in %u us, %u us a frame (shortest %u, longest %u)%s%s", FRAME_LOG, total, total / FRAME_LOG,
             shortest, longest, words[0] ? "; " : "", words);
 }
+#endif
 
 int main(void)
 {
@@ -820,7 +836,9 @@ int main(void)
             pad.ly = VJO_STICK_CENTER; /* a failed read: no buttons and the stick at rest, not pushed up */
         uint32_t pressed = pad.buttons & ~previous;
         uint64_t now = sceKernelGetProcessTimeWide();
+#if VJO_DEBUG
         log_frame_rate(now);
+#endif
         /* The left stick moves the selection as Up/Down would (core/stick_scroll.h),
          * stopping at a list's first and last row, by the clock: held, as many
          * rows a second at 30 Hz as at 60. Counted every frame; a page change

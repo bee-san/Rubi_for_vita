@@ -784,7 +784,10 @@ static int cleanup(void)
     return rc;
 }
 
-/* ---- the self-test's probe (VJO_GAME_OCR_F_PROBE): every rung, one strip each ---- */
+/* ---- the self-test's probe (VJO_GAME_OCR_F_PROBE): every rung, one strip each ----
+ * The debug build's only: the normal build has no self-test, and refuses a
+ * probe request as it does any request it cannot run (docs/release-variants.md). */
+#if VJO_DEBUG
 static uint32_t grey_sum(const unsigned char *p, unsigned w, unsigned n, size_t stride)
 {
     uint32_t h = VJO_FNV_INIT;
@@ -892,6 +895,7 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     out->strip_rows = rows;
     return any ? rc : VJO_E_SOURCE;
 }
+#endif
 
 /* ---- ocr-speed: helper threads for parallel lines (core/vocr_ocr.h VjoVocrPool) ----
  * A line handed to a helper runs on a thread of its own, created for that line
@@ -1094,7 +1098,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     out->fb_width = r->fb_width; out->fb_height = r->fb_height;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
+#if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
+#else
+    if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
+#endif
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;

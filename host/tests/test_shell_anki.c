@@ -601,9 +601,15 @@ static void test_enter_saves_offline(void)
                              "\"ocr_engine\":\"vocr\",\"ocr_model\":\"VOCR3_H15_w8.vocr\",\"time\":1791158400,"
                              "\"ocr_confidence\":null}\n"));
     TEST_MSG("%s", json);
-    /* every step logged: the record's bytes, the queue */
-    TEST_CHECK(logged(" saved, ") && logged(" B record\n") && logged("anki: save 猫 rc=0, ") &&
-               logged("anki: queue 1 card(s)\n") && logged("anki: arena peak "));
+    /* every step logged: the record's bytes, the queue (the debug build's lines); the save
+     * itself in both builds (docs/release-variants.md) */
+    TEST_CHECK(logged("anki: save 猫 rc=0, "));
+#if VJO_DEBUG
+    TEST_CHECK(logged(" saved, ") && logged(" B record\n") && logged("anki: queue 1 card(s)\n") &&
+               logged("anki: arena peak "));
+#else
+    TEST_CHECK(!logged(" B record\n") && !logged("anki: queue ") && !logged("anki: arena peak "));
+#endif
     TEST_MSG("%s", all_logs);
     /* enter again: the mark says so, without memory or I/O */
     vjo_anki_post_add(5, 2);

@@ -559,6 +559,7 @@ static void stop_drains_its_waiters(void)
     }
 }
 
+#if VJO_DEBUG /* the frame pacing: the debug build's (docs/release-variants.md) */
 /* API 22 (ocr-speed): the game's frame pacing per job, as one step the kernel adds
  * to the job's result: the frames during the job (from its claim to its
  * completion) and those since the job before, their longest gap, their sum, the
@@ -670,6 +671,22 @@ static void pacing_windows_follow_the_claim(void)
     TEST_CHECK(read_rc_at_unlock == 0 && read_steps_at_unlock == 1);
     TEST_MSG("read at the unlock: rc %u, %u step(s)", read_rc_at_unlock, read_steps_at_unlock);
 }
+#else
+/* The normal build measures no frame pacing (docs/release-variants.md): a job's
+ * result gets no step from the kernel, whatever the game's frames did. */
+static void normal_build_adds_no_pacing_step(void)
+{
+    setup();
+    uint32_t seq = submit();
+    int64_t t = 1000000;
+    for (unsigned i = 0; i < 10; i++) game_ocr_frame(t += 16667);
+    take(seq);
+    game_ocr_frame(t += 50001);
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0);
+    TEST_CHECK(message.n_steps == 0);
+}
+#endif
 
 static void registration_and_permissions(void)
 {
@@ -1491,9 +1508,13 @@ TEST_LIST = {
     {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
     {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
+#if VJO_DEBUG
     {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
     {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",
      pacing_windows_follow_the_claim},
+#else
+    {"the normal build adds no pacing step", normal_build_adds_no_pacing_step},
+#endif
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},
     {"queued and claimed capture pins", capture_pins_queued_and_claimed},

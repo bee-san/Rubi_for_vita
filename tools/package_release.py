@@ -56,6 +56,38 @@ def app_info(original):
             "eboot_sha256": hashlib.sha256(eboot).hexdigest()}
 
 
+VARIANTS = ("debug", "normal")  # docs/release-variants.md: the debug build (the test builds') and the normal one
+
+
+def base_variant(original):
+    """(variant, app version) of a base zip's modules (tools/check_variant.py): "debug" or "normal",
+    from the Shell's and the kernel's strings and the Overlay app's start line; ("debug", None) for a
+    base from before the two builds, which are all the debug build; (None, None) when its plugins are
+    not Vita SELFs (the tests' placeholders). Raises when the modules disagree."""
+    from check_variant import app_version, classify, segments  # packaging only: --verify needs neither
+    blobs = {}
+    with tempfile.TemporaryDirectory(prefix="vjo-variant-") as tmp:
+        try:
+            for part, name in (("kernel", "ur0/tai/VitaJPOverlay_Kernel.skprx"),
+                               ("shell", "ur0/tai/VitaJPOverlay_Shell.suprx")):
+                path = Path(tmp) / part
+                path.write_bytes(original.read(name))
+                blobs[part] = segments(path)
+        except ValueError:
+            return None, None
+        try:
+            with zipfile.ZipFile(io.BytesIO(original.read("JPOverlaySettings.vpk"))) as vpk:
+                path = Path(tmp) / "eboot.bin"
+                path.write_bytes(vpk.read("eboot.bin"))
+                blobs["app"] = segments(path)
+        except (KeyError, zipfile.BadZipFile, ValueError):
+            pass  # a test base's placeholder VPK: the plugins decide
+    variant, seen, why = classify(blobs)
+    if variant is None:
+        raise ValueError("The base zip's modules are not one build: " + json.dumps({"seen": seen, "why": why}))
+    return variant, app_version(blobs["app"])[0] if "app" in blobs else None
+
+
 def tier_release(name):
     """(asset table, release tag) of a model size's recognizer, by the tables this module sees."""
     for assets, tag in ((VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG)):
@@ -172,12 +204,12 @@ def verify(root):
 
 
 def package(base, output, models, dictionary=None, license_file=None, version="0.7.12", source_revision=None,
-            settings=None):
+            settings=None, variant=None):
     source = Path(__file__).resolve().parents[1]
     license_file = license_file or source / "docs/JMdict-LICENSE.html"
     if dictionary is not None:
         return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision,
-                                       settings)
+                                       settings, variant)
     # The cross-build already contains the exact frozen dictionary. Packaging
     # needs no private-repository access and cannot substitute a fresh snapshot.
     with tempfile.TemporaryDirectory(prefix="vjo-release-") as tmp:
@@ -185,10 +217,11 @@ def package(base, output, models, dictionary=None, license_file=None, version="0
         with zipfile.ZipFile(base) as archive, archive.open(DATA + "dictionaries/" + FILENAME) as src, dictionary.open("wb") as dst:
             shutil.copyfileobj(src, dst)
         return package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision,
-                                       settings)
+                                       settings, variant)
 
 
-def package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision, settings=None):
+def package_with_dictionary(base, output, models, dictionary, license_file, version, source_revision, settings=None,
+                            variant=None):
     source = Path(__file__).resolve().parents[1]
     if source_revision is not None and not re.fullmatch(r"[0-9a-f]{40}", source_revision):
         raise ValueError("Expected an exact 40-character source revision")
@@ -208,10 +241,10 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
                   "config.ini": template,
                   DATA + "config.ini": template,
                   "install-vita.sh": source / "tools/install-vita.sh"}
-        return write_package(base, output, models, assets, conversion, version, source_revision, settings)
+        return write_package(base, output, models, assets, conversion, version, source_revision, settings, variant)
 
 
-def write_package(base, output, models, assets, conversion, version, source_revision, settings):
+def write_package(base, output, models, assets, conversion, version, source_revision, settings, variant=None):
     shipped = {}
     tiers = model_tiers()
     tier_of = {tier["model"]: tier["id"] for tier in tiers["tiers"]}
@@ -259,6 +292,14 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         app = app_info(original)
         if app:
             manifest["app"] = app  # install_ftp.sh --check-app and --collect compare the Vita's app with it
+        # The build (docs/release-variants.md): what the modules are, never what a name says.
+        found, app_version = base_variant(original)
+        if variant is not None and found is not None and found != variant:
+            raise ValueError(f"The base zip is the {found} build, not the {variant} one")
+        if found or variant:
+            manifest["variant"] = found or variant
+        if app_version is not None:
+            manifest["app_version"] = app_version
         for info in original.infolist():
             if info.is_dir() or info.filename in assets or info.filename == "package-manifest.json":
                 continue
@@ -286,6 +327,9 @@ def main():
     parser.add_argument("--verify", type=Path)
     parser.add_argument("--version", default="0.7.12")
     parser.add_argument("--source-revision", help="Exact tested overlay commit for the package manifest")
+    parser.add_argument("--variant", choices=VARIANTS,
+                        help="The base zip's build, checked against its modules (default: what they are); "
+                             "the manifest records it (docs/release-variants.md)")
     parser.add_argument("--set", dest="settings", action="append", type=parse_setting, default=[], metavar="KEY=VALUE",
                         help="A config.ini setting of this package (repeatable): written into its config template "
                              "and applied by install-vita.sh, e.g. --set anki_mining=on for a test build")
@@ -294,7 +338,7 @@ def main():
         verify(args.verify)
     elif all((args.base, args.output, args.models)):
         package(args.base, args.output, args.models, args.dictionary, args.license_file, args.version, args.source_revision,
-                dict(args.settings))
+                dict(args.settings), args.variant)
     else:
         parser.error("Provide --verify DIRECTORY, or base, --output and --models (dictionary is already in the base)")
 

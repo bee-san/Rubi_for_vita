@@ -191,6 +191,13 @@ static const char *logged(const char *needle)
         if (strstr(log_lines[i % 32], needle)) return log_lines[i % 32];
     return NULL;
 }
+/* A debug-build line (docs/release-variants.md): the debug build logs it, the
+ * normal build never does (vjo_dlog). */
+#if VJO_DEBUG
+#define DLOGGED(needle) (logged(needle) != NULL)
+#else
+#define DLOGGED(needle) (logged(needle) == NULL)
+#endif
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
 /* The Overlay app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
@@ -213,9 +220,10 @@ int vjo_file_exists(const char *path)
 static int anki_configured, anki_reaps, anki_stop_rc, anki_counts;
 /* The self-test's interface (shell/selftest.c writes the report): the stages
  * one job runs, recorded here. */
+static uint32_t selftest_flags_seen[8], selftest_speed_seen[8]; /* every job's request (vjoOcrSubmit) */
+#if VJO_DEBUG /* the normal build has no self-test: shell.h's stubs, worker.c's own vjo_selftest_init */
 static int selftest_armed, selftest_games, selftest_steps, selftest_done;
 static unsigned selftest_begins, selftest_ends, selftest_stage_count;
-static uint32_t selftest_flags_seen[8], selftest_speed_seen[8];
 static int selftest_rcs[8];
 static VjoRect selftest_region;
 /* shell/selftest.c's order: the last stage's result is the job's */
@@ -251,6 +259,18 @@ void vjo_selftest_stage_end(unsigned i, int rc, const VjoGameOcrResult *r, uint3
 void vjo_selftest_done(void) { selftest_done = 1; }
 int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *st)
 { return snprintf(buf, cap, "gstep %s %u rc=0x%08X", who, (unsigned)st->id, (unsigned)st->rc); }
+#else
+static int selftest_waits;
+/* The normal build's vjo_selftest_init reads whether the marker is there (sceIoGetstat). */
+static int selftest_marker, selftest_marker_reads;
+int sceIoGetstat(const char *path, SceIoStat *st)
+{
+    selftest_marker_reads++;
+    TEST_CHECK(!strcmp(path, "ux0:data/VitaJPOverlay/selftest.txt"));
+    if (st) memset(st, 0, sizeof(*st));
+    return selftest_marker ? 0 : (int)0x80010002;
+}
+#endif
 static int guard_marks[8], guard_mark_rc;
 int vjo_guard_mark(int stage) { if (stage >= 0 && stage < 8) guard_marks[stage]++; return guard_mark_rc; }
 int vjo_anki_start(void) { return 0; }
@@ -309,6 +329,9 @@ static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED 
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
+/* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
+static int fake_clock_on, fake_clock_rc;
+static uint32_t fake_clock_mhz[3];
 /* API 21: tiers whose memory check the fake worker refuses (bit t - 1), in a
  * request by tiers: it logs a CHECK step per tier tried, largest first, as the
  * worker does, and runs the first one it does not refuse (all refused: OOM). */
@@ -466,6 +489,13 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
                 s->us = 1000u * k + 17u;
             }
         }
+        if (fake_clock_on) {
+            VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
+            memset(s, 0, sizeof(*s));
+            s->id = VJO_GSTEP_CLOCK;
+            s->arg = (uint16_t)fake_clock_mhz[0]; s->rc = fake_clock_rc;
+            s->bytes = fake_clock_mhz[1]; s->sum = fake_clock_mhz[2];
+        }
         if (fake_cascade_frames) {
             VjoGameOcrStep *s = &fake_game_result.step[fake_game_result.n_steps++];
             memset(s, 0, sizeof(*s));
@@ -521,6 +551,7 @@ static void reset(void)
     fake_lines = 2;
     fake_line_flags = 0;
     fake_steps = 0;
+    fake_clock_on = fake_clock_rc = 0;
     fake_cascade_frames = fake_cascade_us = 0;
     fake_free_user = 5000000;
     fake_need_weights = 659456;
@@ -536,7 +567,9 @@ static void reset(void)
 #endif
     selftest_waits = 0;
     job_refresh = 0;
+#if VJO_DEBUG
     job_selftest = 0;
+#endif
 #ifdef VJO_WITH_VOCR
     fake_exchange_us = 0;
 #endif
@@ -834,7 +867,7 @@ static void test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_she
     control_tick(VJO_EV_GAME_EXIT | VJO_EV_TRIGGER); /* L + R a moment before PS: one wakeup */
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open && !game_active());
     TEST_CHECK(g_view.touch_handback == VJO_TOUCH_LEAVE);
-    TEST_CHECK(logged("overlay close (game left) t=13000 ms: input block off rc=0") != NULL);
+    TEST_CHECK(DLOGGED("overlay close (game left) t=13000 ms: input block off rc=0"));
     control_tick(VJO_EV_TRIGGER); /* over the LiveArea */
     TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked);
 
@@ -848,12 +881,12 @@ static void test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_she
     TEST_CHECK(ov == OV_CLOSED && !g_view.open && !input_blocked && game_active());
 
     open_over_the_game();
-    TEST_CHECK(logged("input block on rc=0 (00000000) t=15000 ms") != NULL);
+    TEST_CHECK(DLOGGED("input block on rc=0 (00000000) t=15000 ms"));
     vjo_post_command(VJO_CMD_CLOSED, NULL); /* Cancel */
     control_tick(0);
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open);
     TEST_CHECK(g_view.touch_handback == VJO_TOUCH_RELEASE);
-    TEST_CHECK(logged("overlay close (in game) t=15000 ms: input block off rc=0") != NULL);
+    TEST_CHECK(DLOGGED("overlay close (in game) t=15000 ms: input block off rc=0"));
     mem_free();
 }
 
@@ -868,7 +901,7 @@ static void test_foreground_switch_gives_the_touch_region_back(void)
     control_tick(VJO_EV_GAME_START);
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && !g_view.open);
     TEST_CHECK(g_view.touch_handback == VJO_TOUCH_RELEASE);
-    TEST_CHECK(logged("overlay close (foreground changed) t=13000 ms") != NULL);
+    TEST_CHECK(DLOGGED("overlay close (foreground changed) t=13000 ms"));
 
     reset();
     open_over_the_game();
@@ -972,6 +1005,7 @@ static void test_vocr_capture_follows_the_retry(void)
 #endif
 
 #ifdef VJO_WITH_VOCR
+#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* The recognizer's text is logged as it read it, a line per line; the sentence
  * shown, saved and looked up is normalised (one form of each mark, ー or 一 by
  * context), and what changed is logged. */
@@ -990,6 +1024,7 @@ static void test_vocr_text_is_logged_raw_and_shown_normalised(void)
     TEST_CHECK(logged("game vocr text 0: 猫") != NULL && !logged("shown:")); /* unchanged: one line */
     mem_free();
 }
+#endif
 #endif
 
 /* Every job is the game worker's: on the console, no image or connection leaves it. */
@@ -1246,7 +1281,14 @@ static void test_vocr_refused_fallback_is_labelled(void)
     reset();
     fail_vocr_user = 1; fake_memory_fallback = 1; fake_free_user = 4300000;
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
+#if VJO_DEBUG
     TEST_CHECK(logged("game vocr rc=-103 VOCR3_FL10_w8.vocr (fallback, refused too):") != NULL);
+#else
+    /* the normal build's job line, and its refused memory check */
+    TEST_CHECK(logged("ocr rc=-103 VOCR3_FL10_w8.vocr: 0 lines, ") != NULL);
+    TEST_CHECK(logged("game vocr memory: free USER=4300000 + own weights 0, needs workspace ") != NULL &&
+               logged("check refused") != NULL);
+#endif
     TEST_CHECK(cache_data[0].err.detail && !strcmp(cache_data[0].err.detail, OOM_GAME_REGION));
     mem_free();
     /* every tier refused by the ladder: one line per tier, the last says nothing smaller fits */
@@ -1275,7 +1317,11 @@ static void test_vocr_memory_fallback_is_logged(void)
     memcpy(job_title, "PCSG00415", 10);
     TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫") && vocr_allocs == 1);
     TEST_CHECK(fake_game_request.tiers == 7u && !strcmp(fake_game_request.model, "VOCR4_W20_w8.vocr"));
+#if VJO_DEBUG
     const char *line = logged("game vocr rc=0 VOCR3_FL10_w8.vocr (fallback):");
+#else
+    const char *line = logged("ocr rc=0 VOCR3_FL10_w8.vocr: "); /* the normal build's job line: the size that ran */
+#endif
     TEST_CHECK(line != NULL);
     /* need: the check's bytes and the tier's reserve; free: free USER and the own blocks released first */
     line = logged("tier large");
@@ -1317,6 +1363,7 @@ static void test_vocr_allocation_fallback_and_failure(void)
     mem_free();
 }
 
+#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 static void test_vocr_logs_memory_check_and_frames(void)
 {
     reset();
@@ -1409,7 +1456,9 @@ static void test_vocr_logs_memory_check_and_frames(void)
     fake_line_flags = 0;
     mem_free();
 }
+#endif
 
+#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* The job policy in the request (API 20): the stable-text wait from its keys,
  * the blank-line check only with ocr_skip_blank_lines = on (off by default). */
 /* A job's log on main's defaults (15 steps with the cascade, two lines, the
@@ -1439,6 +1488,7 @@ static void test_vocr_job_log_is_appended_in_batches(void)
     fake_steps = 0; fake_cascade_frames = fake_cascade_us = 0;
     mem_free();
 }
+#endif
 
 static void test_vocr_request_carries_the_job_policy(void)
 {
@@ -2112,12 +2162,16 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     TEST_ASSERT(job_running && job_lookup && ov == OV_CLOSED);
     finish_current_job();
     TEST_CHECK(cache_ok && real_opens == 1);
+#if VJO_DEBUG /* the lookup lines: the debug build's (the normal build logs a failed lookup only) */
     const char *first = lookup_line("first word at 0: ");
     TEST_ASSERT_(first != NULL, "no first-word lookup log line");
     TEST_CHECK(!strncmp(first, "lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, ", 59));
     TEST_CHECK(strstr(first, " ms; \"伊佐那社\" -> 伊佐 (いさ) [Daijirin4 Plain]") != NULL && strstr(first, ", rc=0, ") != NULL);
     unsigned logged_reads = 0;
     TEST_CHECK(sscanf(first + 59, "%u reads", &logged_reads) == 1 && logged_reads > 0);
+#else
+    TEST_CHECK(!lookup_line("first word at 0: "));
+#endif
     /* Opening shows the prepared word at once: no job, no file opened. */
     open_overlay();
     TEST_CHECK(!job_running && real_opens == 1);
@@ -2129,11 +2183,14 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     vjo_post_cursor((uint32_t)strlen("伊佐"), generation); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
     TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 2);
+#if VJO_DEBUG
     TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1"));
     /* Daijirin4 lists its one 那 article under な and だ; Jiten ranks 那 only
      * read だ (#38948), so the frequency tie-break shows だ. 伊佐那社 is いさな:
      * neither reading is this line's, and both entries carry the same article. */
     TEST_CHECK(lookup_line("\"那社\" -> 那 (だ) [Daijirin4 Plain] #38948"));
+#endif
+    TEST_CHECK(!strcmp(g_view.list->entries[0].vocab->spelling, "那"));
     /* A tap on 会 looks up the inflected word: 会ってなかった -> 会う. */
     uint32_t at = (uint32_t)(strstr(local_text, "会って") - local_text);
     vjo_post_cursor(at, generation); on_command(); finish_current_job();
@@ -2143,6 +2200,7 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
                e->hl_end == (int)(at + strlen("会ってなかった")));
     /* the bundled dictionary's frequency: 会う's Jiten rank, its list named */
     TEST_CHECK(e->vocab->rank == 134 && g_view.list->source && !strcmp(g_view.list->source, "Jiten"));
+#if VJO_DEBUG
     const char *tap = lookup_line("会ってなかった");
     TEST_ASSERT(tap != NULL);
     TEST_CHECK(strstr(tap, ": 7 chars, dictionary 1/1, page 1/1, ") &&
@@ -2150,8 +2208,12 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     /* a name Jiten does not rank is logged so */
     TEST_CHECK(strstr(first, "-> 伊佐 (いさ) [Daijirin4 Plain] unranked") != NULL);
     printf("\n  %s\n  %s\n  %s\n", first, lookup_line("cursor at 6: "), tap);
+#else
+    TEST_CHECK(!lookup_line("会ってなかった")); /* the normal build logs no lookup's text */
+#endif
     close_overlay(); mem_free();
 }
+#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* vjo_log keeps 254 bytes of a line. The lookup line's numbers come first and
  * its texts are bounded in whole characters, so even with every field at its
  * largest (4-byte characters, eight dictionaries, a 4-digit cursor, the
@@ -2184,6 +2246,7 @@ static void test_lookup_log_line_fits_with_worst_case_fields(void)
     TEST_CHECK(strstr(line, " [Daijirin4 Plain Plain12] #16777215") != NULL);
     printf("\n  worst case: %zu of 254 bytes\n", strlen(line));
 }
+#endif
 static void test_character_coalesces_and_drops_inflight_definition(void)
 {
     cursor_saved_text(); open_overlay(); finish_current_job();
@@ -2843,6 +2906,7 @@ static void test_ledger_counts_result_memory_against_the_budget(void)
     TEST_CHECK(!open_batch); /* the ledger table's batch is closed: no pointer into this stack frame */
 }
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The self-test, while armed, runs OCR automatically whatever config.ini says,
  * and keeps the user's region (#74: the API 18 test forced the full screen and,
  * never finishing after a failure, kept forcing it). Its full-screen stage asks
@@ -2869,8 +2933,10 @@ static void test_selftest_keeps_the_user_region_and_auto_ocr(void)
     loaded.ocr_mode = VJO_OCR_AUTO;
     apply_config();
 }
+#endif
 
 #ifdef VJO_WITH_VOCR
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The self-test's job (job_selftest) runs every stage in turn, each with its
  * record, a failed stage included, and then ends the test. It shows nothing:
  * neither its text nor a lookup reaches the overlay's text or result. */
@@ -2920,7 +2986,9 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* #81's self-test began 2 s after the game started, on its opening notice: the
  * three region stages found no line (the full screen five, above the region).
  * The stages now wait for text in the region: a first stage with no line, or
@@ -2963,6 +3031,7 @@ static void test_selftest_waits_for_text_in_the_region(void)
     selftest_armed = 0; selftest_stage_count = 0; job_selftest = 0;
     mem_free();
 }
+#endif
 
 /* Nothing about a changed screen reaches the user (#81 request 4). */
 static void check_quiet(void)
@@ -2995,7 +3064,7 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
         finish_current_job();
         snprintf(line, sizeof(line), "job dropped: the screen changed under it (%d in a row), "
                  "next try in %u ms", i + 1, (unsigned)waits[i]);
-        TEST_CHECK_(logged(line) != NULL, "%s", line);
+        TEST_CHECK_(DLOGGED(line), "%s", line);
         TEST_CHECK(!job_running && stable_pending);
         check_quiet();
         if (waits[i]) {
@@ -3136,7 +3205,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     TEST_CHECK(g_view.open && g_view.list == shown && g_view.list_seq == seq && g_view.list->n_entries == 1);
     TEST_CHECK(local_text_valid && has_result_memory() && !g_view.status[0]);
     finish_current_job();
-    TEST_CHECK(logged("refresh rc=0: same text") && local_text_scene == 8 && cache_scene == 8);
+    TEST_CHECK(DLOGGED("refresh rc=0: same text") && local_text_scene == 8 && cache_scene == 8);
     check_shown("猫犬鳥", "cat", 0);
     TEST_CHECK(g_view.list_seq == seq && local_text_generation == generation && vocr_allocs == inferences + 1);
     control_tick(VJO_EV_REGION_STABLE);
@@ -3154,7 +3223,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh);
     finish_current_job();
-    TEST_CHECK(logged("refresh rc=0: new text") != NULL);
+    TEST_CHECK(DLOGGED("refresh rc=0: new text"));
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
     TEST_CHECK(!strcmp(local_text, "犬猫") && local_text_generation != generation && local_text_scene == 9);
     TEST_CHECK(g_view.list == &local_header && !g_view.list->n_entries && g_view.text_generation == local_text_generation);
@@ -3173,7 +3242,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     vjo_post_cursor(3, generation); control_tick(0);
     TEST_CHECK(job_cancelled && cursor_waiting);
     finish_current_job(); /* the refresh, cancelled: the lookup follows */
-    TEST_CHECK(logged("refresh rc=-118: dropped") != NULL);
+    TEST_CHECK(DLOGGED("refresh rc=-118: dropped"));
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
     finish_current_job();
     check_shown("犬猫", "cat", 3);
@@ -3224,14 +3293,14 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh);
     finish_current_job();
-    TEST_CHECK(logged("refresh rc=0: kept") != NULL);
+    TEST_CHECK(DLOGGED("refresh rc=0: kept"));
     check_shown("犬猫", "cat", 3);
     fake_screen_changes = 1;
     next_scene(12);
     test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh);
     finish_current_job();
-    TEST_CHECK(logged("refresh dropped: the screen changed under it (1 in a row), next try in 0 ms"));
+    TEST_CHECK(DLOGGED("refresh dropped: the screen changed under it (1 in a row), next try in 0 ms"));
     check_shown("犬猫", "cat", 3);
     TEST_CHECK(refresh_pending && !job_running);
     fake_recognized_text = "鳥";
@@ -3406,13 +3475,13 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     TEST_ASSERT(job_running && job_refresh);
     log_count = 0;
     finish_by_tick();
-    TEST_CHECK(!job_running && logged("refresh rc=0: same text") && !logged("subtitle text ready"));
+    TEST_CHECK(!job_running && DLOGGED("refresh rc=0: same text") && !logged("subtitle text ready"));
     fail_vocr_user = 1; fake_free_user = 1000; /* the game has no memory for OCR now */
     next_scene(9);
     test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
     TEST_ASSERT(job_running && job_refresh);
     finish_by_tick();
-    TEST_CHECK(logged("refresh rc=-103: kept") && ocr_backoff.us == BACKOFF_MIN_US);
+    TEST_CHECK(DLOGGED("refresh rc=-103: kept") && ocr_backoff.us == BACKOFF_MIN_US);
     check_shown("猫犬鳥", "cat", 0);
     TEST_CHECK(!g_view.status_is_error && !g_view.status[0]);
     next_scene(10);
@@ -3432,6 +3501,7 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     close_overlay(); mem_free();
 }
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* Subtitles turned on while the self-test's job runs show "Recognizing…" and
  * wait for a job's result, which that job never brings: once it ends, the strip
  * shows the screen's cached sentence, or a job reads a screen the cache is not
@@ -3468,7 +3538,9 @@ static void test_subtitles_on_during_the_selftest_job(void)
     selftest_armed = selftest_done = 0; selftest_stage_count = 0;
     mem_free();
 }
+#endif
 
+#if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* A job's done line (net_job): the time in exchanges with the game worker, each
  * job's own, and the log's appends meanwhile, in the format tools/analyse_timeline.py
  * reads (docs/first-ocr.md). */
@@ -3498,7 +3570,9 @@ static void test_the_done_line_has_the_exchange_and_log_times(void)
         mem_free();
     }
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The self-test's stages publish captures of their own, so the kernel's
  * region_seq moves on: a shown text that matched the screen only through its
  * capture (an icon masked after it, a new scene id without an event) is tagged
@@ -3538,7 +3612,9 @@ static void test_selftest_keeps_the_shown_texts_screen(void)
     mem_free();
   }
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The overlay opened during the self-test's job keeps its text when the job ends,
  * whatever the screen did meanwhile (#81 request 4): with subtitles on, the strip
  * shows that text and starts no job of its own (one would retire the text and show
@@ -3584,7 +3660,9 @@ static void test_selftest_end_keeps_the_open_overlays_text(void)
         mem_free();
     }
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* Subtitles turned on during the self-test's job wait in "Recognizing…"; an overlay
  * opened next on a text without its lookup (Character mode) waits for the job too.
  * When the job ends, the lookup runs and the strip shows the overlay's text at once,
@@ -3618,7 +3696,9 @@ static void test_selftest_end_shows_the_open_overlays_text_in_the_strip(void)
     selftest_armed = selftest_done = 0; selftest_stage_count = 0;
     mem_free();
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The self-test's job keeps the capture of the text it runs on: the stages'
  * own captures (published by the kernel as any job's) never stand in for it,
  * so a new screen still stops the job, whichever capture a stage published or
@@ -3641,7 +3721,9 @@ static void test_selftest_job_keeps_the_texts_capture(void)
     vocr_note_capture();
     TEST_CHECK(job_capture_scene == 12 && job_capture_seq == 13 && job_captured);
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* The open overlay's refresh runs while the self-test is armed: the stages run
  * in the self-test's own job only (job_selftest), never in a job the overlay
  * waits for or in a refresh, and never while the overlay is open. */
@@ -3667,7 +3749,9 @@ static void test_refresh_while_the_selftest_is_armed(void)
     selftest_armed = selftest_done = 0; selftest_stage_count = 0;
     close_overlay(); mem_free();
 }
+#endif
 
+#if VJO_DEBUG /* a self-test test: the debug build's */
 /* test.2's first scans ran beside the self-test's stages and took 9-15 s
  * (docs/first-ocr.md). The user's jobs never run them now: the first settled
  * screen gets a plain job, and once a job read text the stages run in a
@@ -3794,6 +3878,90 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
     TEST_CHECK(!job_running && !selftest_begins);
     selftest_armed = selftest_done = 0; selftest_stage_count = 0;
     mem_free();
+}
+#endif
+#endif
+
+
+#if !VJO_DEBUG
+/* ---- the normal build's short log (docs/release-variants.md) ---- */
+
+/* One line per OCR job: its result, the model that ran, the lines and the time; never
+ * the recognized text, the capture, a passed memory check, the step log or the timings. */
+static void test_normal_build_logs_one_line_per_job(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫が鳴いた";
+    fake_steps = 1;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(cache_data[0].sentence, "猫が鳴いた"));
+    const char *line = logged("ocr rc=0 ");
+    TEST_CHECK(line && !strncmp(line, "ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, ", 37));
+    TEST_MSG("%s", line ? line : "(none)");
+    TEST_CHECK(log_count == 1); /* that line only */
+    for (unsigned i = 0; i < log_count && i < 32; i++)
+        TEST_CHECK_(!strstr(log_lines[i], "猫") && !strstr(log_lines[i], "game vocr") && !strstr(log_lines[i], "gstep"),
+                    "%s", log_lines[i]);
+    mem_free();
+}
+
+/* The 444 MHz boost's one line: the first job of a game and whenever it changes, never per job. */
+static void test_normal_build_logs_the_clock_once_and_on_change(void)
+{
+    reset();
+    cfg.ocr_backend = VJO_OCR_VOCR;
+    fake_recognized_text = "猫";
+    fake_clock_on = 1; fake_clock_rc = 0;
+    fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 444; fake_clock_mhz[2] = 333;
+    game_generation = job_generation = 41;
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 333 -> 444 MHz while reading, 333 after") != NULL);
+    mem_free();
+    log_count = 0;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("clock:") && logged("ocr rc=0 ") != NULL); /* the same: nothing */
+    mem_free();
+    fake_clock_rc = 1; fake_clock_mhz[0] = fake_clock_mhz[1] = fake_clock_mhz[2] = 500; /* PSVshell's 500 */
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 500 MHz, left as it is while reading (444 or more)") != NULL);
+    mem_free();
+    log_count = 0;
+    fake_clock_rc = (int32_t)0x80010016; fake_clock_mhz[0] = 333; fake_clock_mhz[1] = 333; fake_clock_mhz[2] = 333;
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 444 MHz refused 0x80010016, 333 MHz while reading") != NULL);
+    mem_free();
+    log_count = 0;
+    job_generation = 42; /* the next game: its first job says it again */
+    TEST_CHECK(run_vocr_job() == VJO_OK && logged("clock: 444 MHz refused") != NULL);
+    mem_free();
+    log_count = 0;
+    fake_clock_on = 0; /* ocr_boost_clock = off: no step, no line */
+    job_generation = 43;
+    TEST_CHECK(run_vocr_job() == VJO_OK && !logged("clock:"));
+    mem_free();
+}
+
+/* A lookup's line only when it failed, without its text. */
+static void test_normal_build_logs_a_failed_lookup_only(void)
+{
+    VjoOverlayData out;
+    memset(&out, 0, sizeof(out));
+    out.sentence = "猫が鳴いた";
+    log_count = 0;
+    log_lookup("cursor", &out, 3, VJO_OK, 0);
+    TEST_CHECK(log_count == 0);
+    log_lookup("cursor", &out, 3, VJO_E_OOM, 0);
+    TEST_CHECK(log_count == 1 && logged("lookup cursor at 3 failed: rc=") != NULL && !logged("猫"));
+}
+
+/* No self-test: never armed, no stage, no job of its own; an armed marker is said so once. */
+static void test_normal_build_has_no_selftest(void)
+{
+    reset();
+    selftest_marker = 1; selftest_marker_reads = 0;
+    vjo_selftest_init(&cfg);
+    TEST_CHECK(selftest_marker_reads == 1 &&
+               logged("self-test: armed, but this is the normal build: install the -debug build to run it") != NULL);
+    TEST_CHECK(!vjo_selftest_armed() && !vjo_selftest_stages());
+    log_count = 0; selftest_marker = 0;
+    vjo_selftest_init(&cfg);
+    TEST_CHECK(log_count == 0); /* not armed: nothing */
 }
 #endif
 
@@ -4011,10 +4179,22 @@ TEST_LIST = {
     {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
     {"overlay_app_check_runs_after_the_game_is_active", test_overlay_app_check_runs_after_the_game_is_active},
+#if !VJO_DEBUG
+    {"normal_build_logs_one_line_per_job", test_normal_build_logs_one_line_per_job},
+    {"normal_build_logs_the_clock_once_and_on_change", test_normal_build_logs_the_clock_once_and_on_change},
+    {"normal_build_logs_a_failed_lookup_only", test_normal_build_logs_a_failed_lookup_only},
+    {"normal_build_has_no_selftest", test_normal_build_has_no_selftest},
+#endif
+#if VJO_DEBUG
     {"selftest_keeps_the_user_region_and_auto_ocr", test_selftest_keeps_the_user_region_and_auto_ocr},
+#endif
 #ifdef VJO_WITH_VOCR
+#if VJO_DEBUG
     {"selftest_stages_run_in_one_job_each_recorded_then_finish", test_selftest_stages_run_in_one_job_and_finish},
+#endif
+#if VJO_DEBUG
     {"selftest_waits_for_text_in_the_region_a_bounded_number_of_screens", test_selftest_waits_for_text_in_the_region},
+#endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
@@ -4022,14 +4202,30 @@ TEST_LIST = {
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
+#if VJO_DEBUG
     {"refresh_while_the_selftest_is_armed", test_refresh_while_the_selftest_is_armed},
+#endif
+#if VJO_DEBUG
     {"selftest_job_keeps_the_texts_capture", test_selftest_job_keeps_the_texts_capture},
+#endif
+#if VJO_DEBUG
     {"subtitles_on_during_the_selftest_job", test_subtitles_on_during_the_selftest_job},
+#endif
+#if VJO_DEBUG
     {"selftest_keeps_the_shown_texts_screen", test_selftest_keeps_the_shown_texts_screen},
+#endif
+#if VJO_DEBUG
     {"selftest_end_keeps_the_open_overlays_text", test_selftest_end_keeps_the_open_overlays_text},
+#endif
+#if VJO_DEBUG
     {"selftest_end_shows_the_open_overlays_text_in_the_strip", test_selftest_end_shows_the_open_overlays_text_in_the_strip},
+#endif
+#if VJO_DEBUG
     {"the_done_line_has_the_exchange_and_log_times", test_the_done_line_has_the_exchange_and_log_times},
+#endif
+#if VJO_DEBUG
     {"selftest_runs_after_the_first_text_in_its_own_job", test_selftest_runs_after_the_first_text_in_its_own_job},
+#endif
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
@@ -4053,7 +4249,9 @@ TEST_LIST = {
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
     {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
     {"word_lookup_with_the_bundled_dictionary_first_word_right_and_tap", test_word_lookup_with_the_bundled_dictionary},
+#if VJO_DEBUG
     {"lookup_log_line_fits_with_worst_case_fields", test_lookup_log_line_fits_with_worst_case_fields},
+#endif
     {"character_moves_coalesce_and_reject_old_inflight_definition", test_character_coalesces_and_drops_inflight_definition},
     {"character_close_reopen_restarts_lookup_and_retirement_rejects_old_results", test_character_close_reopen_and_retirement},
     {"character_scene_change_keeps_the_shown_text_and_region_change_retires_it", test_character_scene_change_keeps_the_shown_text},
@@ -4071,7 +4269,9 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
+#if VJO_DEBUG
     {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
+#endif
 #endif
     {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},
     {"engine_cache_tracks_backend_local_models_and_storage", test_engine_cache_tracks_backend_models_and_storage},
@@ -4080,8 +4280,12 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
+#if VJO_DEBUG
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
+#endif
+#if VJO_DEBUG
     {"vocr_job_log_is_appended_in_batches", test_vocr_job_log_is_appended_in_batches},
+#endif
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
