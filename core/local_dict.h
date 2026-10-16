@@ -11,7 +11,10 @@
 #define VJO_LOCAL_MAX_MATCHES 8
 #define VJO_LOCAL_RESULT_BUDGET (64u * 1024u)
 #define VJO_LOCAL_SCRATCH_BUDGET (48u * 1024u)
-/* One maximum-size payload plus its vocabulary, token and alignment. */
+/* One maximum-size payload plus its vocabulary, token, meaning pointer, the
+ * frequency list's name and the dictionary's title (64 bytes each at most)
+ * and alignment: 232 of the 256 bytes on a 64-bit host, 208 on the Vita
+ * (host test largest_entry_and_input_fit_64k). */
 #define VJO_LOCAL_SELECTED_BUDGET (VJO_LOCAL_MAX_ENTRY + 256u)
 
 #ifdef VJO_LOCAL_STATS
@@ -42,6 +45,15 @@ extern VjoLocalStats vjo_local_stats;
 enum { VJO_PROBE_ABSENT, VJO_PROBE_CACHED, VJO_PROBE_FILTERED, VJO_PROBE_HASH, VJO_PROBE_FOUND };
 extern void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, int outcome);
 #endif
+
+/* A dictionary's own name, in page 0 of a version 2 or 3 file at bytes
+ * 192..255 (bee-san/plaintext-dicts writes "Bee's Ultimate Dictionary"): the
+ * entries' dictionary on Anki cards and in the log, and the Overlay app's
+ * Dictionaries shown card. vjo_local_title copies it from page0 (its first n
+ * bytes) into out: 1 when there is one, 0 (out "") when the bytes are no
+ * version 2/3 header, the field is empty or it is malformed. */
+#define VJO_LOCAL_TITLE_SIZE 64
+int vjo_local_title(const uint8_t *page0, size_t n, char out[VJO_LOCAL_TITLE_SIZE]);
 
 /* Validate comma-separated, relative .vjdict filenames (no directory traversal). */
 int vjo_local_names_valid(const char *names);

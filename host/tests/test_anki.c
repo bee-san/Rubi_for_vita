@@ -322,6 +322,25 @@ static void test_anki_note_from_entry(void)
                        "<ul style=\"text-align: left;\"><li>BCCWJ: 1500</li></ul>"));
     /* the copies are the card's own: the result memory may go */
     TEST_CHECK(n.spelling != v[1].spelling && n.meanings[0] != v[1].meanings[0]);
+    /* the dictionary's name: none here (no title, no "[name]" line) */
+    TEST_CHECK(!n.dictionary);
+    /* its file's title (Bee's Ultimate Dictionary names itself in page 0), copied */
+    v[1].dictionary = "Bee's Ultimate Dictionary";
+    TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, cat, &n) == 0);
+    TEST_CHECK(n.dictionary && !strcmp(n.dictionary, "Bee's Ultimate Dictionary") && n.dictionary != v[1].dictionary);
+    /* else the name a definition's first line gives (the converter's "[title]") */
+    {
+        static const char *const labelled[] = {"[JMdict Plain]\ncat"};
+        v[1].dictionary = NULL;
+        v[1].meanings = (const char **)labelled;
+        v[1].n_meanings = 1;
+        TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, cat, &n) == 0);
+        TEST_CHECK(n.dictionary && !strcmp(n.dictionary, "JMdict Plain"));
+        /* the title wins over a label line */
+        v[1].dictionary = "Titled";
+        TEST_ASSERT(vjo_anki_note_from_entry(&A, &l, cat, &n) == 0);
+        TEST_CHECK(n.dictionary && !strcmp(n.dictionary, "Titled"));
+    }
     TEST_CHECK(vjo_anki_note_from_entry(&A, &l, l.n_entries, &n) == -1);
 }
 

@@ -60,8 +60,16 @@ class FrozenPlaintext(unittest.TestCase):
         self.assertIn("synthetic frozen verb", lookup.stdout)
         self.assertIn("食べる (たべる) #412", lookup.stdout)  # the frozen rank, shown as the badge
         self.assertEqual(json.loads((stage / "docs/plaintext-dictionaries.json").read_text()), self.pin)
-        self.assertIn("Daijirin4", (stage / "docs/plaintext-attribution.txt").read_text())
-        self.assertIn("CC BY-SA 4.0", (stage / "docs/plaintext-attribution.txt").read_text().split("Jiten")[-1])
+        attribution = (stage / "docs/plaintext-attribution.txt").read_text()
+        self.assertEqual(attribution, (ROOT / "docs/plaintext-attribution.txt").read_text())
+        # every source of Bee's Ultimate Dictionary is credited with its licence
+        for part in ("Bee's Ultimate Dictionary", "Daijirin4", "Sankoku8", "JMdict"):
+            self.assertIn(part, attribution)
+        for paragraph, licence in (("Frequency ranks: the Jiten", "CC BY-SA 4.0"),
+                                   ("Kanji lines: English kanji meanings", "CC BY-SA 4.0"),
+                                   ("Yokubi, The Common Grammar Guide", "CC BY 4.0"),
+                                   ("NINJAL 日本語文型データベース", "CC BY 4.0")):
+            self.assertIn(licence, attribution.split(paragraph, 1)[1].split("\n\n", 1)[0].split("\n- ", 1)[0], paragraph)
         self.assertTrue((stage / "docs/JMdict-LICENSE.html").is_file())
 
     def test_a_dictionary_without_frequency_ranks_is_refused(self):
@@ -258,19 +266,37 @@ class KeyFilteredRelease(unittest.TestCase):
 
 
 class CommittedSnapshot(unittest.TestCase):
-    def test_real_frozen_archive_and_all_three_sources(self):
+    def test_real_frozen_archive_is_bees_ultimate_dictionary(self):
         source = Path(os.environ.get("VJO_PLAINTEXT_SOURCE", ROOT / ".refs/plaintext-dicts"))
         if not source.is_dir():
             self.skipTest("Private frozen checkout not available; CI checks it out")
         pin = prepare.load_manifest()
         with tempfile.TemporaryDirectory() as tmp:
             dictionary = prepare.prepare(Path(tmp) / prepare.FILENAME, source)
+            with dictionary.open("rb") as stream:
+                page0 = stream.read(4096)
+            # page 0: format 3, the frequency list's name and the dictionary's title
+            self.assertEqual(page0[:8], b"VJDICT3\0")
+            self.assertEqual(page0[64:128].rstrip(b"\0"), b"Jiten")
+            self.assertEqual(page0[192:256].rstrip(b"\0").decode(), "Bee's Ultimate Dictionary")
             cli = os.environ.get("VJO_CLI", ROOT / "build/host/vjo-cli")
-            for text, title in (("猫", "Daijirin4 Plain"), ("食べました", "Daijirin4 Plain"),
-                                ("愛し合う", "Sankoku8 Plain"), ("あうんの呼吸", "JMdict Plain")):
+            # a word, a word with three kanji, an inflection, and a particle whose
+            # grammar summary replaced its definition (no kanji line)
+            for text, entry, lines in (("猫", "猫 (ねこ) #", ["猫="]), ("日本語", "日本語 (にほんご) #", ["日=", "本=", "語="]),
+                                       ("食べました", "食べる (たべる) #", ["食="]), ("は", "は #2\nTopic particle", [])):
                 result = subprocess.run([str(cli), "--dict", "local", "--local-dir", tmp,
                                          "--local-dicts", prepare.FILENAME, "--text", text, "--nav"],
                                         capture_output=True, text=True, check=True)
-                self.assertIn("[" + title + "]", result.stdout)
-            self.assertEqual(pin["priority"], ["Daijirin4", "Sankoku8", "JMdict"])
-            self.assertTrue(all(n > 0 for n in pin["conversion"]["source_entries"]))
+                self.assertIn(entry, result.stdout)
+                shown = result.stdout.split(entry, 1)[1].split("\n\n", 1)[0].split("\n")
+                self.assertEqual([line[:2] for line in shown if line[1:2] == "="], lines, text)
+                # no source label (the converter's "[<title>]" line) anywhere
+                for label in ("[Daijirin4", "[Sankoku8", "[JMdict", "Plain]"):
+                    self.assertNotIn(label, result.stdout)
+        self.assertEqual(pin["title"], "Bee's Ultimate Dictionary")
+        self.assertEqual(pin["priority"], ["Daijirin4", "Sankoku8", "JMdict"])
+        self.assertTrue(all(n > 0 for n in pin["conversion"]["source_entries"]))
+        self.assertIs(pin["conversion"]["source_labels"], False)
+        self.assertEqual(pin["conversion"]["format_version"], 3)
+        for part in ("kanji", "grammar"):
+            self.assertIn(part, pin)

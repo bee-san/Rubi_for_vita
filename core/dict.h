@@ -17,6 +17,9 @@ typedef struct {
     int n_pos;
     int pitch[VJO_MAX_PITCH]; /* downstep mora, 0 = heiban */
     int n_pitch;
+    /* Its dictionary's own name: a local file's title (page 0, "Bee's Ultimate
+     * Dictionary"), NULL if the file has none (local_dict.c). */
+    const char *dictionary;
 } VjoVocab;
 
 typedef struct {

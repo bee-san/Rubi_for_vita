@@ -87,8 +87,8 @@ void operator delete(void *p, unsigned int)
 #define HEADER_H_INITIAL 128.0f
 #define BODY_H_INITIAL 320.0f
 #define HEADER_UNITS 4096 /* UTF-16 units */
-#define BODY_UNITS 4096
-#define MAX_SPANS 96
+#define BODY_UNITS VJO_BODY_UNITS
+#define MAX_SPANS VJO_BODY_SPANS
 #define STICK_DEADZONE 40
 #define STICK_SCROLL_PX 0.12f /* per frame per unit of stick deflection */
 #define LAYOUT_RETRY_FRAMES 6 /* layout may land a frame or two after SetString */
@@ -431,7 +431,14 @@ static void render(int new_content)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
             if (mark == VJO_ANKI_MARK_QUEUED)
                 vjo_styled_puts(&body, "Queued for Anki\n", VJO_RGB_DIM, en);
+            /* The config warnings below keep their room, at their longest: a
+             * long entry is clipped in its definition instead (vjo_styled_entry;
+             * the fullest body with an entry of the bundle takes at most 66 of
+             * the 96 spans, host test every_bundled_entry_fits_the_popup). */
+            uint32_t room = (uint32_t)g_view.n_warnings * (1 + 12 + sizeof(g_view.warnings[0]));
+            body.cap -= room;
             vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED, g_view.frequency_badge);
+            body.cap += room;
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode
                 ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len

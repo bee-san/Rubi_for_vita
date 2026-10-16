@@ -17,6 +17,13 @@
 #define FREQ_PREFIX 4u
 #define FREQ_RANK_MASK 0xffffffu
 #define FREQ_BORROWED (1u << 24)
+/* Version 2 and 3: page 0 bytes 192..255 may hold the dictionary's own name
+ * (bee-san/plaintext-dicts: "Bee's Ultimate Dictionary"), 1-63 bytes of text
+ * and NUL padding, or all zero without one; files that predate it are zero
+ * there. The header's read takes it too: 256 bytes, still one read. */
+#define TITLE_OFFSET 192u
+#define TITLE_SIZE 64u
+#define HEADER_READ (TITLE_OFFSET + TITLE_SIZE)
 #define MAX_CANDIDATES 128
 #define MAX_SCAN_CHARS 32
 #define MAX_HOMONYMS 64
@@ -75,6 +82,7 @@ typedef struct {
     uint64_t data;
     uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
     char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
+    char title[TITLE_SIZE];            /* v2/v3: the dictionary's own name; "" without one */
     uint8_t hints;                     /* v3 with posting hints: most postings ranked without their head */
     /* The key filter (filter_blocks 0: none): where its blocks start, and the one
      * block this lookup's candidates use (NO_BLOCK: none yet), covering prefixes
@@ -233,13 +241,30 @@ static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *nam
     return VJO_OK;
 }
 
-/* Validates the header h of an opened file: its 64 bytes and v3's frequency
- * list name after them (h holds at least HEADER_SIZE + FREQ_TITLE_SIZE bytes
- * when the file has them). */
-static int parse_header(Dictionary *d, const uint8_t *h)
+/* A page-0 text field (the frequency list's name, the dictionary's title):
+ * up to 63 bytes of text (no control characters) and NUL padding. Copies it
+ * to out; returns its length, or -1 when the field is malformed. */
+typedef char Page0TextFields[(FREQ_TITLE_SIZE == TITLE_SIZE && TITLE_SIZE == VJO_LOCAL_TITLE_SIZE) ? 1 : -1];
+static int page0_text(const uint8_t *t, char out[TITLE_SIZE])
+{
+    const uint8_t *end = memchr(t, 0, TITLE_SIZE);
+    size_t len = end ? (size_t)(end - t) : TITLE_SIZE;
+    if (len >= TITLE_SIZE) return -1;
+    for (size_t i = 0; i < TITLE_SIZE; i++)
+        if (i < len ? t[i] < 0x20 || t[i] == 0x7f : t[i] != 0) return -1;
+    memcpy(out, t, len);
+    out[len] = 0;
+    return (int)len;
+}
+
+/* Validates the header h (n bytes) of an opened file: its 64 bytes and, from
+ * version 2, page 0 up to byte 256: v3's frequency list name (64..127) and the
+ * dictionary's title (192..255). */
+static int parse_header(Dictionary *d, const uint8_t *h, size_t n)
 {
     d->prefix = 0;
     d->freq_title[0] = 0;
+    d->title[0] = 0;
     d->version = u32(h + 8);
     d->count = u32(h + 16);
     d->data = u64(h + 32);
@@ -257,32 +282,43 @@ static int parse_header(Dictionary *d, const uint8_t *h)
             pages < buckets || pages > UINT32_MAX || d->data != PAGE_SIZE + pages * PAGE_SIZE)
             return VJO_E_LOCAL_FORMAT;
         d->buckets = (uint32_t)buckets;
+        /* A version 2+ file's data starts at 8 KiB or later: page 0 is whole. */
+        if (n < HEADER_READ) return VJO_E_LOCAL_FORMAT;
         if (d->version == 3) {
             /* 1-63 bytes of text, then NUL padding: shown as an Anki card's
              * frequency source. */
-            const uint8_t *t = h + HEADER_SIZE, *end = memchr(t, 0, FREQ_TITLE_SIZE);
-            size_t len = end ? (size_t)(end - t) : FREQ_TITLE_SIZE;
-            if (!len || len >= FREQ_TITLE_SIZE) return VJO_E_LOCAL_FORMAT;
-            for (size_t i = 0; i < FREQ_TITLE_SIZE; i++)
-                if (i < len ? t[i] < 0x20 || t[i] == 0x7f : t[i] != 0) return VJO_E_LOCAL_FORMAT;
-            memcpy(d->freq_title, t, len + 1);
+            if (page0_text(h + HEADER_SIZE, d->freq_title) <= 0) return VJO_E_LOCAL_FORMAT;
             d->prefix = FREQ_PREFIX;
         }
+        /* The dictionary's name, if it has one: shown as an Anki card's
+         * dictionary and in the log, never in the popup. */
+        if (page0_text(h + TITLE_OFFSET, d->title) < 0) return VJO_E_LOCAL_FORMAT;
     } else return VJO_E_LOCAL_FORMAT;
     return VJO_OK;
 }
 
-/* Reads and validates only the header (a page change: no cache), with v3's
- * frequency list name in the same read. */
+int vjo_local_title(const uint8_t *page0, size_t n, char out[VJO_LOCAL_TITLE_SIZE])
+{
+    out[0] = 0;
+    if (n < HEADER_READ || (memcmp(page0, "VJDICT2\0", 8) && memcmp(page0, "VJDICT3\0", 8)) ||
+        u32(page0 + 8) != (uint32_t)(page0[6] - '0') || page0_text(page0 + TITLE_OFFSET, out) < 0) {
+        out[0] = 0;
+        return 0;
+    }
+    return out[0] != 0;
+}
+
+/* Reads and validates only the header (a page change: no cache), with page 0
+ * up to byte 256 in the same read: v3's frequency list name and the title. */
 static int check_header(Dictionary *d)
 {
-    uint8_t h[HEADER_SIZE + FREQ_TITLE_SIZE];
+    uint8_t h[HEADER_READ];
     size_t n = d->file.size < sizeof(h) ? HEADER_SIZE : sizeof(h);
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     READ_KIND(VJO_READ_HEADER);
     STAT_READ(n);
     if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, n)) return VJO_E_LOCAL_IO;
-    return parse_header(d, h);
+    return parse_header(d, h, n);
 }
 
 /* A key's filter prefix: its first two code points, 16 bits each (beyond the
@@ -332,7 +368,7 @@ static int open_header(Workspace *w, Dictionary *d)
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     if (!d->file.read || !d->file.close) return VJO_E_LOCAL_IO;
     READ_KIND(VJO_READ_HEADER);
-    if ((rc = cached_page(w, d, 0, &page0)) || (rc = parse_header(d, page0->bytes))) return rc;
+    if ((rc = cached_page(w, d, 0, &page0)) || (rc = parse_header(d, page0->bytes, page0->len))) return rc;
     if (d->version == 3 && !memcmp(page0->bytes + HINTS_DESCRIPTOR, "VJPH", 4)) {
         if (u32(page0->bytes + HINTS_DESCRIPTOR + 4) != 1) return VJO_E_LOCAL_FORMAT;
         d->hints = 1;
@@ -847,7 +883,9 @@ static int boundary(uint32_t cp)
 
 /* Reads one payload, three NUL-terminated strings (spelling, reading and
  * plain-text definition), into out; in v3 after the frequency word, which
- * gives the rank. The definition is displayed verbatim. */
+ * gives the rank. The definition is displayed verbatim. The file's title, its
+ * dictionary's name, is copied after it (v is zeroed by the caller: NULL when
+ * the file has none; the popup never shows it, Anki cards and the log name it). */
 static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t len, VjoVocab *v)
 {
     char *payload = vjo_arena_alloc(out, len), *reading, *meaning;
@@ -876,6 +914,8 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
     v->meanings = vjo_arena_alloc(out, sizeof(char *));
     if (!v->meanings) return VJO_E_TOO_LARGE;
     v->meanings[0] = meaning; v->n_meanings = 1;
+    if (d->title[0] && !(v->dictionary = vjo_arena_strndup(out, d->title, strlen(d->title))))
+        return VJO_E_TOO_LARGE;
     return VJO_OK;
 }
 

@@ -230,27 +230,28 @@ static int fits(const VjoAnkiNote *note)
     return ok;
 }
 
-/* An entry read at mark, kept compact there: its strings are copied above
- * the read's memory, then moved down over it. */
+/* An entry read at mark, kept compact there: its strings (and its file's
+ * title, the dictionary's name) are copied above the read's memory, then
+ * moved down over it. */
 static int keep_entry(const VjoVocab *v, size_t mark, VjoAnkiGloss *g)
 {
     size_t n = (size_t)v->n_meanings, total = n * sizeof(char *), at = (mark + 7) & ~(size_t)7, len;
-    const char *src[2] = {v->spelling, v->reading};
+    const char *src[3] = {v->spelling, v->reading, v->dictionary ? v->dictionary : ""};
     char *top, *p, **m;
-    for (size_t k = 0; k < n + 2; k++)
-        total += strlen(k < 2 ? src[k] : v->meanings[k - 2]) + 1;
+    for (size_t k = 0; k < n + 3; k++)
+        total += strlen(k < 3 ? src[k] : v->meanings[k - 3]) + 1;
     if (!(top = (char *)vjo_arena_alloc(&arena, total)))
         return -1;
     m = (char **)top;
     p = top + n * sizeof(char *);
-    for (size_t k = 0; k < n + 2; k++) { /* the strings, each one's offset in m[] (spelling, reading first) */
-        const char *t = k < 2 ? src[k] : v->meanings[k - 2];
+    for (size_t k = 0; k < n + 3; k++) { /* the strings, each one's offset in m[] (spelling, reading, title first) */
+        const char *t = k < 3 ? src[k] : v->meanings[k - 3];
         len = strlen(t) + 1;
         sceClibMemcpy(p, t, len);
-        if (k < 2)
+        if (k < 3)
             src[k] = (const char *)(uintptr_t)(p - top);
         else
-            m[k - 2] = (char *)(uintptr_t)(p - top);
+            m[k - 3] = (char *)(uintptr_t)(p - top);
         p += len;
     }
     sceClibMemmove(arena.base + at, top, total);
@@ -261,6 +262,7 @@ static int keep_entry(const VjoVocab *v, size_t mark, VjoAnkiGloss *g)
         m[k] = top + (uintptr_t)m[k];
     g->spelling = top + (uintptr_t)src[0];
     g->reading = top + (uintptr_t)src[1];
+    g->dictionary = top[(uintptr_t)src[2]] ? top + (uintptr_t)src[2] : NULL;
     g->meanings = (const char **)m;
     g->n_meanings = (int)n;
     return 0;
@@ -287,9 +289,12 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
             vjo_arena_release(&arena, mark);
             continue;
         }
-        /* (r is gone: keep_entry moved its entry over the read) */
-        vjo_anki_meaning_source(g[n->n_more].meanings[0], name, sizeof(name));
-        g[n->n_more++].dictionary = keep_str(name);
+        /* (r is gone: keep_entry moved its entry, and its file's title, over the read) */
+        if (!g[n->n_more].dictionary) {
+            vjo_anki_meaning_source(g[n->n_more].meanings[0], name, sizeof(name));
+            g[n->n_more].dictionary = keep_str(name);
+        }
+        n->n_more++;
         if (!fits(n)) {
             vjo_log("anki: %d other dictionaries' entries kept: the next would make the card too large", --n->n_more);
             vjo_arena_release(&arena, mark);
@@ -367,7 +372,7 @@ static void do_save(unsigned seq, int entry)
     VjoAnkiNote note;
     VjoLocalPages *pages = NULL;
     VjoQueueShot shot = {take_shot, 0};
-    char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)], name[96];
+    char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
     int shown, mark_value = 0, ok = 0, rc, page = 0;
     int64_t t0 = now_us();
 
@@ -406,9 +411,6 @@ static void do_save(unsigned seq, int entry)
     }
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1, 0);
     card_facts(&note, misc, sizeof(misc));
-    /* The shown entry's dictionary: a local definition names it (none: no name). */
-    vjo_anki_meaning_source(note.n_meanings ? note.meanings[0] : "", name, sizeof(name));
-    note.dictionary = *name ? keep_str(name) : NULL;
     read_more(&note, pages, page);
     /* The screenshot (anki_screenshot, on by default) of the game in front: the
      * game worker's, never SceShell's (take_shot). */

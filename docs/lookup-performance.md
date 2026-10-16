@@ -183,6 +183,29 @@ lookups and every shown entry identical:
 Results for every mode and set:
 [dict-posting-hints-20261015.json](benchmarks/dict-posting-hints-20261015.json).
 
+### Bee's Ultimate Dictionary
+
+The bundled file became Bee's Ultimate Dictionary (bee-san/plaintext-dicts `ultimate-v1`): the
+same entries' definitions without their source label, a line per kanji after each, grammar
+summaries and 1,332 grammar entries of their own. Entries are shown from it, not the same ones,
+so a golden comparison does not apply; on the committed lines the costs, main `dcb7b31` with its
+bundle against this change with the new one (both with the key filter and the posting hints,
+21 rounds):
+
+| mode | lookups | reads | bytes | console ms p50 / p95 (est.) | per screen p50 / p95 (est.) |
+|---|---:|---:|---:|---:|---:|
+| first word | 50 | 6.22 → 6.24 | 21,798 → 21,826 | 40.5 → 40.5 / 66.7 → 66.7 | |
+| Right through the text | 629 → 619 | 5.51 → 5.53 | 19,288 → 19,051 | 40.5 → 40.5 / 59.2 → 59.2 | 553 → 553 / 859 → 845 ms |
+| every letter | 1,321 | 5.57 → 5.53 | 19,554 → 19,116 | 40.5 → 40.5 / 59.2 → 55.5 | 1128 → 1125 / 1778 → 1759 ms |
+
+The shown payloads are shorter on average (Right through the text: 800 → 490 B read for the
+shown entry): the labels are gone, and frequent particles show a grammar summary shorter than the
+article it replaces (が 410 → 266 B, を 429 → 220 B, て 320 → 275 B), more than the kanji lines add.
+The worst lookup reads more bytes (86,209 → 86,751 B: a longer entry), and the host
+lookup's p50 is within the noise of separate runs (33.3 µs on main, 28.9 µs on this file, run later). The 64 KiB result arena's peak goes from 54,416 to
+54,928 B (each dictionary slot keeps the file's 64-byte title). The golden file
+(`tools/dict_lookup_golden.tsv`) is recorded on the new file.
+
 ## Dictionary pages
 
 `tools/benchmark_dictionary_pages.py` measures the selected-character lookup

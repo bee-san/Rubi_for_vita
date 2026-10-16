@@ -96,6 +96,40 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
     return *len > 0;
 }
 
+#define CLIP_MARK "…" /* where a definition too long for the body is cut */
+
+/* The entry's last meaning: its definition, a blank line, then its kanji lines
+ * as written, each kanji at ja_px (see styled.h). */
+static void entry_text(VjoStyled *s, const char *text, int ja_px, int en_px)
+{
+    size_t len = strlen(text), k = vjo_kanji_block(text), d = k, gap;
+    if (k < len)
+        while (d && text[d - 1] == '\n') /* the definition ends before the newline(s) its kanji lines follow */
+            d--;
+    gap = d && k < len ? 2 : 0; /* "\n\n": a blank line between a definition and its kanji lines */
+    /* the kanji lines, the blank line and the mark */
+    uint32_t cap = s->cap, after = vjo_utf16_index(text + k, len - k) + (uint32_t)gap + 1;
+    int truncated = s->truncated;
+    vjo_styled_puts(s, "\n", VJO_RGB_DIM, en_px);
+    /* The definition in the room the kanji lines and the mark leave:
+     * vjo_styled_add stops at a whole character. */
+    s->cap = cap > after ? cap - after : 0;
+    vjo_styled_add(s, text, d, VJO_RGB_DIM, en_px);
+    s->cap = cap;
+    if (s->truncated != truncated) { /* clipped: marked, not truncated */
+        s->truncated = truncated;
+        vjo_styled_puts(s, CLIP_MARK, VJO_RGB_DIM, en_px);
+    }
+    vjo_styled_add(s, "\n\n", gap, VJO_RGB_DIM, en_px); /* the blank line before the lines */
+    while (k < len) {
+        const char *eq = strchr(text + k, '='), *end = strchr(eq, '\n'); /* vjo_kanji_block: right after the kanji */
+        size_t next = end ? (size_t)(end - text) + 1 : len;
+        vjo_styled_add(s, text + k, (size_t)(eq - (text + k)), VJO_RGB_TEXT, ja_px);
+        vjo_styled_add(s, eq, next - (size_t)(eq - text), VJO_RGB_DIM, en_px); /* "=meaning, meaning" and its newline */
+        k = next;
+    }
+}
+
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
                       int show_rank)
 {
@@ -115,6 +149,10 @@ void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_
     if (in_anki)
         vjo_styled_puts(s, " " VJO_ANKI_MARK, VJO_RGB_OK, en_px);
     for (int i = 0; i < v->n_meanings; i++) {
+        if (i == v->n_meanings - 1) {
+            entry_text(s, v->meanings[i], ja_px, en_px);
+            break;
+        }
         vjo_styled_puts(s, "\n", VJO_RGB_DIM, en_px);
         vjo_styled_puts(s, v->meanings[i], VJO_RGB_DIM, en_px);
     }

@@ -1,12 +1,13 @@
 /* End-to-end word lookup: real VOCR output (host/fixtures/word_lookup) -> the
  * overlay's sentence -> longest match in the bundled plaintext.vjdict
- * (Daijirin4 -> Sankoku8 -> JMdict) -> the highlighted span -> the popup
+ * (Bee's Ultimate Dictionary) -> the highlighted span -> the popup
  * entry, with the Shell's own word navigation (Right/Left) and touch hit
  * test. The production code runs unchanged; only file reads are counted.
  *
  * VJO_PLAINTEXT_DIR names the directory holding plaintext.vjdict (CMake
  * prepares it from the pinned archive, tools/prepare_plaintext.py). Without
  * it the test is skipped (exit 77) unless VJO_REQUIRE_PLAINTEXT is set. */
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <vector>
 #include "acutest.h"
 extern "C" {
+#include "app_stamp.h"
 #include "client.h"
 #include "local_dict.h"
 #include "platform_posix.h"
@@ -158,6 +160,113 @@ void check_header_range(const VjoOverlayData *d, size_t start, size_t end)
     while (i < start) { uint32_t cp = vjo_utf8_next(d->sentence, len, &i); if (cp != '\r') units += vjo_utf16_units(cp); }
     while (i < end) { uint32_t cp = vjo_utf8_next(d->sentence, len, &i); if (cp != '\r') span += vjo_utf16_units(cp); }
     TEST_CHECK_(hs == units && hl == span, "header range %u+%u, expected %u+%u", hs, hl, units, span);
+}
+
+/* The bundled dictionary's name, page 0 bytes 192..255 (bee-san/plaintext-dicts). */
+const char kTitle[] = "Bee's Ultimate Dictionary";
+
+/* A converter source label: a first line "[name]" before the definition. */
+bool label_line(const char *text)
+{
+    const char *nl = strchr(text, '\n');
+    return text[0] == '[' && nl && nl[-1] == ']';
+}
+
+/* The spelling's distinct kanji in order (kanji_lines.py gives 々〆ヵヶ no line). */
+std::vector<std::string> distinct_kanji(const char *s)
+{
+    std::vector<std::string> out;
+    size_t len = strlen(s), i = 0;
+    while (i < len) {
+        size_t at = i;
+        uint32_t cp = vjo_utf8_next(s, len, &i);
+        std::string c(s + at, i - at);
+        if (vjo_is_kanji(cp) && cp != 0x3005 && cp != 0x3006 && cp != 0x30F5 && cp != 0x30F6 &&
+            std::find(out.begin(), out.end(), c) == out.end())
+            out.push_back(c);
+    }
+    return out;
+}
+
+/* An entry text's kanji lines (vjo_kanji_block), as (kanji, meanings). */
+std::vector<std::pair<std::string, std::string>> kanji_lines(const char *text)
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    size_t len = strlen(text), at = vjo_kanji_block(text);
+    while (at < len) {
+        const char *nl = strchr(text + at, '\n');
+        std::string line(text + at, nl ? (size_t)(nl - (text + at)) : len - at);
+        size_t eq = line.find('=');
+        out.push_back({line.substr(0, eq), line.substr(eq + 1)});
+        at += line.size() + 1;
+    }
+    return out;
+}
+
+std::vector<std::string> block_kanji(const VjoVocab *v)
+{
+    std::vector<std::string> out;
+    for (auto &l : kanji_lines(v->meanings[0])) out.push_back(l.first);
+    return out;
+}
+
+/* UTF-8 as the styled text's UTF-16 units. */
+std::u16string u16(const std::string &s)
+{
+    std::u16string out;
+    size_t i = 0;
+    while (i < s.size()) {
+        uint32_t cp = vjo_utf8_next(s.c_str(), s.size(), &i);
+        if (cp >= 0x10000) { cp -= 0x10000; out += (char16_t)(0xD800 | (cp >> 10)); out += (char16_t)(0xDC00 | (cp & 0x3FF)); }
+        else if (cp != '\r') out += (char16_t)cp;
+    }
+    return out;
+}
+
+std::u16string styled_text(const VjoStyled &st) { return std::u16string((const char16_t *)st.text, st.len); }
+
+/* The units of an entry's head line and text, as shown whole: a body shorter
+ * than this + 1 (the newline between them) was clipped. */
+uint32_t units_of_entry(const VjoVocab *v)
+{
+    std::string head = v->spelling;
+    char badge[VJO_RANK_BADGE_MAX];
+    if (strcmp(v->spelling, v->reading)) head += std::string(" (") + v->reading + ")";
+    head += vjo_rank_badge(badge, v->rank, "Jiten");
+    /* vjo_styled_entry adds a blank line between a definition and its kanji lines */
+    const char *t = v->meanings[0];
+    size_t k = vjo_kanji_block(t);
+    return (uint32_t)(u16(head).size() + u16(t).size() + (k && k < strlen(t)));
+}
+
+/* The body as overlay.cpp builds it with every line before the entry at its
+ * longest (the dictionary page, the Overlay app's notice, a status, the Anki
+ * queue and status, the queued line) and four config warnings of the longest
+ * kind after it, kept by the reserve: what an entry can count on. */
+void worst_case_body(VjoStyled *st, VjoArena *a, const VjoEntryList *l, int ja, int en)
+{
+    std::string status(255, 's'), queue(79, 'q'), anki(127, 'a'), warning(95, 'w');
+    const char *notice = strlen(VJO_APP_NOTICE_NEWER) > strlen(VJO_APP_NOTICE) ? VJO_APP_NOTICE_NEWER : VJO_APP_NOTICE;
+    TEST_ASSERT(vjo_styled_init(st, a, VJO_BODY_UNITS, VJO_BODY_SPANS) == 0);
+    vjo_styled_dict_page(st, 7, 8, en);
+    vjo_styled_puts(st, "\n", VJO_RGB_ERROR, en);
+    vjo_styled_puts(st, notice, VJO_RGB_ERROR, en);
+    vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
+    vjo_styled_puts(st, status.c_str(), VJO_RGB_DIM, en);
+    vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
+    vjo_styled_puts(st, queue.c_str(), VJO_RGB_DIM, en);
+    vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
+    vjo_styled_puts(st, anki.c_str(), VJO_RGB_DIM, en);
+    vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
+    vjo_styled_puts(st, "Queued for Anki\n", VJO_RGB_DIM, en);
+    st->cap -= 4 * (1 + 12 + 96); /* overlay.cpp: each warning's room, at its longest */
+    vjo_styled_entry(st, l, 0, ja, en, 1, 1);
+    st->cap += 4 * (1 + 12 + 96);
+    for (int i = 0; i < 4; i++) {
+        vjo_styled_puts(st, "\n", VJO_RGB_ERROR, en);
+        vjo_styled_puts(st, "config.ini: ", VJO_RGB_ERROR, en);
+        vjo_styled_puts(st, warning.c_str(), VJO_RGB_ERROR, en);
+    }
 }
 
 } // namespace
@@ -364,8 +473,12 @@ static void expected_entries_at_real_lines(void)
         TEST_CHECK_(x.spelling == e->vocab->spelling, "entry %s, expected %s", e->vocab->spelling, x.spelling.c_str());
         const char *reading = strcmp(e->vocab->reading, e->vocab->spelling) ? e->vocab->reading : "-";
         TEST_CHECK_(x.reading == reading, "reading %s, expected %s", reading, x.reading.c_str());
-        /* The popup text: "spelling (reading) rank\n[source]\ndefinition". */
-        TEST_CHECK(strstr(e->text, "\n[") != NULL);
+        /* The popup text: "spelling (reading) rank\ndefinition\n\n漢=meaning..." with
+         * no source label: the dictionary's name is its file's title. */
+        TEST_CHECK_(!label_line(e->vocab->meanings[0]), "a label line: %s", e->vocab->meanings[0]);
+        TEST_CHECK(e->vocab->dictionary && !strcmp(e->vocab->dictionary, kTitle));
+        TEST_CHECK_(block_kanji(e->vocab) == distinct_kanji(e->vocab->spelling), "kanji lines of %s",
+                    e->vocab->spelling);
         check_header_range(&d, (size_t)e->hl_start, (size_t)e->hl_end);
     }
 }
@@ -508,10 +621,13 @@ static void usual_spellings_win_in_the_bundle(void)
 {
     VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
     int pairs = 0;
+    /* Bee's Ultimate Dictionary has grammar entries spelled as some whole kana
+     * forms: they are the text as written, so they win at that span (せいで,
+     * によらず); なくして shows 無くして, whose grammar summary comes first. */
     static const char *const forms[][3] = {
         {"やめて", "やめて", "止める"}, {"やめろ", "やめろ", "止める"}, {"やめなさい", "やめなさい", "止める"},
-        {"おじさんが", "おじさん", "小父さん"}, {"せいで", "せい", "所為"}, {"なくなった", "なくなった", "無くなる"},
-        {"なくして", "なくして", "無くして"}, {"によらず", "によらず", "に依らず"}};
+        {"おじさんが", "おじさん", "小父さん"}, {"せいで", "せいで", "せいで"}, {"なくなった", "なくなった", "無くなる"},
+        {"なくして", "なくして", "無くして"}, {"によらず", "によらず", "によらず"}};
     setup(&cfg, &p, &pp);
     for (const char *key = vjo_local_usual_table(); *key; key += strlen(key) + 1) {
         const char *value = key + strlen(key) + 1;
@@ -543,6 +659,200 @@ static void usual_spellings_win_in_the_bundle(void)
     }
 }
 
+/* Bee's Ultimate Dictionary's own content at a cursor, as the popup gets it:
+ * a word with one kanji line (木), one with three in spelling order (日本語),
+ * and grammar points whose summary replaced the definition and that have no
+ * kanji (the particle は, ～てしまう after a verb's て-form, its でしまう alias
+ * key, the contraction ちゃう), every one without a source label and named by
+ * the file's title. The popup body shows each kanji line's kanji at the
+ * headword's size. */
+static void ultimate_dictionary_fixture_entries(void)
+{
+    struct Case {
+        const char *text, *at, *span, *spelling, *reading, *contains;
+        std::vector<std::pair<std::string, std::string>> lines;
+    };
+    const std::vector<Case> cases = {
+        {"木を切る", "木", "木", "木", "き", "a tree", {{"木", "tree, wood"}}},
+        {"日本語を話す", "日本語", "日本語", "日本語", "にほんご", "Japanese",
+         {{"日", "day, counter for days, Japan, sun"}, {"本", "real, true, origin, book"}, {"語", "word, language"}}},
+        {"猫は可愛い", "は", "は", "は", "-", "Topic particle", {}},
+        {"傘を忘れてしまった", "てしまった", "てしまった", "てしまう", "-", "end up", {}},
+        {"全部飲んでしまった", "でしまった", "でしまった", "てしまう", "-", "end up", {}},
+        {"もう寝ちゃう", "ちゃう", "ちゃう", "ちゃう", "-", "Contracted てしまう", {}},
+    };
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    setup(&cfg, &p, &pp);
+    for (auto &c : cases) {
+        VjoArena a; VjoOverlayData d;
+        TEST_CASE(c.text);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, c.text, &d) == VJO_OK);
+        const char *at = strstr(d.sentence, c.at);
+        TEST_ASSERT(at != NULL);
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, (size_t)(at - d.sentence), &d) == VJO_OK);
+        TEST_ASSERT_(d.list.n_entries == 1, "no entry at %s", c.at);
+        const VjoEntry *e = &d.list.entries[0];
+        const VjoVocab *v = e->vocab;
+        std::string span(d.sentence + e->hl_start, (size_t)(e->hl_end - e->hl_start));
+        const char *reading = strcmp(v->reading, v->spelling) ? v->reading : "-";
+        TEST_CHECK_(span == c.span, "span %s, expected %s", span.c_str(), c.span);
+        TEST_CHECK_(!strcmp(v->spelling, c.spelling) && !strcmp(reading, c.reading), "entry %s (%s)", v->spelling,
+                    reading);
+        TEST_CHECK_(strstr(v->meanings[0], c.contains) != NULL, "%s: %s", c.contains, v->meanings[0]);
+        TEST_CHECK(v->n_meanings == 1 && !label_line(v->meanings[0]) && !strstr(v->meanings[0], "Plain]"));
+        TEST_CHECK(v->dictionary && !strcmp(v->dictionary, kTitle));
+        TEST_CHECK(d.list.source && !strcmp(d.list.source, "Jiten"));
+        TEST_CHECK_(kanji_lines(v->meanings[0]) == c.lines, "kanji lines of %s: %s", v->spelling,
+                    v->meanings[0]);
+        /* The popup: a blank line after the definition, then each kanji line
+         * as written, its kanji at ja px and the rest at en px, in text order,
+         * two spans a line. */
+        VjoStyled st;
+        TEST_ASSERT(vjo_styled_init(&st, &a, VJO_BODY_UNITS, VJO_BODY_SPANS) == 0);
+        vjo_styled_entry(&st, &d.list, 0, 27, 21, 0, 1);
+        std::u16string shown = styled_text(st), want = c.lines.empty() ? u"" : u"\n";
+        for (auto &l : c.lines) want += u16("\n" + l.first + "=" + l.second);
+        TEST_CHECK(!st.truncated && shown.size() >= want.size() &&
+                   shown.compare(shown.size() - want.size(), want.size(), want) == 0);
+        int kanji_spans = 0;
+        for (int i = 0; i < st.n_spans; i++)
+            if (st.spans[i].px == 27 && st.spans[i].rgb == VJO_RGB_TEXT) {
+                std::u16string k(shown, st.spans[i].start, st.spans[i].len);
+                TEST_CHECK(kanji_spans < (int)c.lines.size() && k == u16(c.lines[kanji_spans].first));
+                kanji_spans++;
+            }
+        TEST_CHECK(kanji_spans == (int)c.lines.size());
+        TEST_CHECK(opens == closes);
+    }
+}
+
+/* Every entry of the bundled dictionary, as the popup body shows it when
+ * everything else in the body is at its longest: nothing is truncated, the
+ * room for the config warnings after it is kept, every kanji line is shown
+ * whole and, when a definition has more than one line, so is its first (an
+ * appended grammar summary, which the bundle puts first). Over-long ones are
+ * clipped at the end of their definition and marked; the rest show their text
+ * as written. Reads the file's index itself (format 3,
+ * docs/local-dictionaries.md), every payload once. */
+static void every_bundled_entry_fits_the_popup(void)
+{
+    std::string path = std::string(dict_dir) + "/plaintext.vjdict";
+    FILE *f = fopen(path.c_str(), "rb");
+    TEST_ASSERT(f != NULL);
+    std::vector<uint8_t> file;
+    {
+        uint8_t buf[1 << 16];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) file.insert(file.end(), buf, buf + n);
+        fclose(f);
+    }
+    auto u32 = [&](size_t o) { return (uint32_t)file[o] | (uint32_t)file[o + 1] << 8 | (uint32_t)file[o + 2] << 16 |
+                                      (uint32_t)file[o + 3] << 24; };
+    auto u64 = [&](size_t o) { return (uint64_t)u32(o) | (uint64_t)u32(o + 4) << 32; };
+    TEST_ASSERT(file.size() > 8192 && !memcmp(file.data(), "VJDICT3\0", 8));
+    TEST_CHECK(!memcmp(file.data() + 192, kTitle, sizeof(kTitle)));
+    uint64_t pages = u64(56);
+    std::vector<std::pair<uint64_t, uint32_t>> payloads;
+    for (uint64_t page = 1; page <= pages; page++) {
+        size_t o = (size_t)(page * 4096);
+        TEST_ASSERT(!memcmp(file.data() + o, "VJHP", 4));
+        for (uint32_t k = 0, count = u32(o + 4); k < count; k++) {
+            size_t slot = o + 16 + k * 24, group = (size_t)u64(slot + 8);
+            uint32_t n = u32(slot + 16), key_len = (uint32_t)(file[slot + 20] | file[slot + 21] << 8);
+            for (uint32_t j = 0; j < n; j++) {
+                size_t post = group + key_len + j * 16;
+                payloads.push_back({u64(post), u32(post + 8)});
+            }
+        }
+    }
+    std::sort(payloads.begin(), payloads.end());
+    payloads.erase(std::unique(payloads.begin(), payloads.end()), payloads.end());
+    static uint8_t mem[64 * 1024];
+    unsigned long entries = 0, with_lines = 0, lines_shown = 0, clipped = 0, firsts_kept = 0, failures = 0;
+    unsigned long typical_clipped = 0, misordered = 0;
+    int most_spans = 0;
+    for (auto &pl : payloads) {
+        const char *payload = (const char *)file.data() + pl.first + 4; /* after the frequency word */
+        const char *spelling = payload, *reading = spelling + strlen(spelling) + 1, *text = reading + strlen(reading) + 1;
+        VjoVocab v = VjoVocab();
+        VjoEntry e = VjoEntry();
+        VjoEntryList l = VjoEntryList();
+        VjoArena a;
+        VjoStyled st;
+        v.spelling = spelling; v.reading = *reading ? reading : spelling; v.rank = (int)(u32((size_t)pl.first) & 0xffffff);
+        v.meanings = &text; v.n_meanings = 1; v.dictionary = kTitle;
+        e.vocab = &v; e.pos16 = e.hl_start = e.hl_end = -1;
+        l.header = ""; l.entries = &e; l.n_entries = 1; l.source = "Jiten";
+        /* with nothing else in the body: is it shown as written? */
+        vjo_arena_init(&a, mem, sizeof(mem));
+        TEST_ASSERT(vjo_styled_init(&st, &a, VJO_BODY_UNITS, VJO_BODY_SPANS) == 0);
+        vjo_styled_entry(&st, &l, 0, 27, 21, 0, 1);
+        typical_clipped += st.len < 1 + units_of_entry(&v);
+        vjo_arena_init(&a, mem, sizeof(mem));
+        worst_case_body(&st, &a, &l, 27, 21);
+        entries++;
+        auto lines = kanji_lines(text);
+        /* the block is exactly the spelling's kanji lines (the bundle's own shape) */
+        {
+            std::vector<std::string> kanji = distinct_kanji(spelling), got;
+            for (auto &k : lines) got.push_back(k.first);
+            size_t at = 0;
+            for (auto &k : got) {
+                while (at < kanji.size() && kanji[at] != k) at++;
+                if (at == kanji.size()) break;
+                at++;
+            }
+            if (at == kanji.size() && !got.empty() && got.back() != kanji.back()) at = 0;
+            bool ordered = true;
+            for (size_t i = 0, j = 0; i < got.size(); i++) {
+                while (j < kanji.size() && kanji[j] != got[i]) j++;
+                ordered = ordered && j < kanji.size();
+                j++;
+            }
+            if (!ordered && misordered++ < 4)
+                TEST_CHECK_(ordered, "%s: kanji lines not the spelling's, in order", spelling);
+        }
+        /* the definition, without the newline its kanji lines follow; then a blank line */
+        size_t block = vjo_kanji_block(text), dlen = block;
+        if (block < strlen(text))
+            while (dlen && text[dlen - 1] == '\n') dlen--;
+        std::string definition(text, dlen);
+        std::u16string shown = styled_text(st), all = dlen && !lines.empty() ? u"\n" : u"", first;
+        for (auto &k : lines) all += u16("\n" + k.first + "=" + k.second);
+        if (definition.find('\n') != std::string::npos) first = u16("\n" + definition.substr(0, definition.find('\n') + 1));
+        std::u16string whole = (dlen ? u16("\n" + definition) : std::u16string()) + all;
+        /* the entry ends before the four warnings (4 x 108 units) */
+        size_t end = shown.size() >= 4 * (1 + 12 + 95) ? shown.size() - 4 * (1 + 12 + 95) : 0;
+        auto ends_with = [&](const std::u16string &x) {
+            return end >= x.size() && shown.compare(end - x.size(), x.size(), x) == 0;
+        };
+        bool ok = !st.truncated && st.n_spans <= VJO_BODY_SPANS && ends_with(all), cut = !ends_with(whole);
+        /* a clip never splits a character: no replacement character the text has not */
+        ok = ok && (shown.find(u'\uFFFD') == std::u16string::npos || strstr(text, "\xEF\xBF\xBD"));
+        if (cut) {
+            /* clipped: marked, the kanji lines and a first line before a later one kept */
+            ok = ok && shown.find(u'\u2026') != std::u16string::npos &&
+                 (first.empty() || shown.find(first) != std::u16string::npos);
+            clipped++;
+            firsts_kept += !first.empty();
+        }
+        with_lines += !lines.empty();
+        lines_shown += lines.size();
+        if (st.n_spans > most_spans) most_spans = st.n_spans;
+        if (!ok && failures++ < 8)
+            TEST_CHECK_(ok, "%s (%s): %u units, %d spans, truncated %d", spelling, reading, st.len, st.n_spans,
+                        st.truncated);
+    }
+    TEST_CHECK_(failures == 0, "%lu entries do not fit", failures);
+    TEST_CHECK_(misordered == 0, "%lu entries' kanji lines are not their spelling's", misordered);
+    TEST_CHECK(entries > 480000 && with_lines > 360000);
+    printf("\n  %lu entries (%lu with kanji lines, %lu lines); clipped in their definition: %lu alone in the body, "
+           "%lu with the longest status and warnings (%lu of them keeping a first line of several whole); at most %d "
+           "spans of %d\n", entries, with_lines, lines_shown, typical_clipped, clipped, firsts_kept, most_spans,
+           VJO_BODY_SPANS);
+}
+
 TEST_LIST = {
     {"preferred_readings_exist_in_the_bundle", preferred_readings_exist_in_the_bundle},
     {"usual_spellings_win_in_the_bundle", usual_spellings_win_in_the_bundle},
@@ -551,6 +861,8 @@ TEST_LIST = {
     {"expected_entries_at_real_lines", expected_entries_at_real_lines},
     {"touch_and_left_right_follow_the_words", touch_and_left_right_follow_the_words},
     {"real_lines_navigate_displayed_rows", real_lines_navigate_displayed_rows},
+    {"ultimate_dictionary_fixture_entries", ultimate_dictionary_fixture_entries},
+    {"every_bundled_entry_fits_the_popup", every_bundled_entry_fits_the_popup},
     {NULL, NULL}};
 
 /* acutest's main, behind the dictionary check (skip without the bundle). */

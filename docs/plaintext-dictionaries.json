@@ -1,4 +1,5 @@
 {
+  "title": "Bee's Ultimate Dictionary",
   "snapshot": "2026-10-13",
   "frequency_snapshot": "2026-10-15",
   "updates": false,
@@ -8,17 +9,17 @@
     "JMdict"
   ],
   "archive": "processed/plaintext.vjdict.zip",
-  "archive_bytes": 43916291,
-  "archive_sha256": "46ee1f0b52d64a4afd39085bc311708ad045551e408334d1f9b461afa8297068",
+  "archive_bytes": 50065373,
+  "archive_sha256": "0171a81d7c929260e97afb85b305df251af13dbbff8bfed9810bcff888406997",
   "filename": "plaintext.vjdict",
-  "bytes": 142497729,
-  "sha256": "db6457a8656d758b477dcf2fc91ffe54ec8d8db7018550a266351e89a35899e3",
+  "bytes": 156372960,
+  "sha256": "01bc98a6f8f0e5e27f1c7bd13fb8b906ce745f03c09dfcf32bd68e1a9d28f69a",
   "max_definition_bytes": 7000,
   "conversion": {
     "format_version": 3,
-    "entries": 485410,
-    "index_records": 840994,
-    "truncated_definitions": 12,
+    "entries": 486529,
+    "index_records": 842726,
+    "truncated_definitions": 11,
     "reading_only_entries": 2,
     "skipped_empty_headwords": 1,
     "skipped_long_headwords": 15,
@@ -27,17 +28,77 @@
       "Sankoku8 Plain",
       "JMdict Plain"
     ],
+    "title": "Bee's Ultimate Dictionary",
+    "source_labels": false,
     "deduplication": "first dictionary per spelling and normalized reading",
     "deduplicated_rows": 227445,
     "source_entries": [
-      301927,
-      12561,
-      170922
+      301720,
+      12557,
+      170920
     ],
-    "bytes": 142497729,
-    "unique_keys": 661469,
+    "grammar": {
+      "points": 2748,
+      "with_summary": 2741,
+      "matched_points": 1187,
+      "replaced_entries": 979,
+      "appended_entries": 267,
+      "collapsed_rows": 213,
+      "added_entries": 1332,
+      "alias_entries": 41,
+      "attached_entries": 22,
+      "alias_keys_added": 278,
+      "added_points": 1332,
+      "skipped_points_without_summary": 7,
+      "skipped_points_by_review": 222,
+      "append_points_by_review": 87,
+      "attached_points": 22,
+      "summaries_by_source": {
+        "aiueo": 116,
+        "bunpou": 33,
+        "bunpro": 614,
+        "dojg": 211,
+        "donna_toki": 81,
+        "edewakaru": 218,
+        "hjgp": 91,
+        "hjgp_en": 406,
+        "imabi": 207,
+        "nihongo_net": 26,
+        "nihongo_no_sensei": 192,
+        "ninjal_bunkei": 305,
+        "yokubi": 19
+      }
+    },
+    "bytes": 156372960,
+    "unique_keys": 663128,
     "hash_buckets": 8192,
-    "index_pages": 8192
+    "index_pages": 8192,
+    "tidy": {
+      "empty_parentheses": 1000,
+      "mixed_width_parentheses": 24,
+      "doubled_enumerators": 3,
+      "repeated_semicolons": 24,
+      "final_semicolons": 133
+    },
+    "kanji_lines": {
+      "title": "Bee's Ultimate Kanji Dictionary",
+      "characters": 12634,
+      "characters_with_line": 10385,
+      "usage_credit": true,
+      "meanings_shown": {
+        "1": 3929,
+        "2": 5831,
+        "3": 362,
+        "4": 263
+      },
+      "entries_with_lines": 369838,
+      "lines": 927665,
+      "headword_kanji_without_line": {
+        "characters": 274,
+        "entries": 602,
+        "most_common": "屛﨟蠊鱝鯥苆樝拋棰睺葼蝤蝲鰧楤薷鏁鮸鵼埿擌柃癋箶篊簶緂腁莔蕺袘酛釻驎鱰𤭯內卐搩楉"
+      }
+    }
   },
   "sources": [
     {
@@ -124,60 +185,147 @@
       "kana_form_rows": 267845,
       "other_mode_rows": 0,
       "unusable_rows": 0,
-      "entries_ranked": 260335,
+      "entries_ranked": 260373,
       "by_match": {
-        "reading": 186451,
+        "reading": 186446,
         "reading_normalized": 1302,
-        "spelling": 56286,
-        "spelling_normalized": 864,
+        "spelling": 56322,
+        "spelling_normalized": 871,
         "spelling_readings": 13825,
         "spelling_readings_normalized": 1607,
-        "unranked": 225075
+        "unranked": 226156
       },
       "borrowed_ranks": 2,
       "by_dictionary": [
         {
           "dictionary": "Daijirin4 Plain",
-          "entries": 301927,
-          "ranked": 141611,
-          "ranked_percent": 46.9
+          "entries": 301720,
+          "ranked": 141405,
+          "ranked_percent": 46.87
         },
         {
           "dictionary": "Sankoku8 Plain",
-          "entries": 12561,
-          "ranked": 7466,
-          "ranked_percent": 59.44
+          "entries": 12557,
+          "ranked": 7463,
+          "ranked_percent": 59.43
         },
         {
           "dictionary": "JMdict Plain",
-          "entries": 170922,
-          "ranked": 111258,
+          "entries": 170920,
+          "ranked": 111256,
           "ranked_percent": 65.09
+        },
+        {
+          "dictionary": "Grammar summaries",
+          "entries": 1332,
+          "ranked": 249,
+          "ranked_percent": 18.69
         }
       ],
-      "entries_unranked": 225075,
-      "entries_ranked_percent": 53.63,
-      "list_rows_with_ranked_entry": 421917,
-      "list_rows_with_ranked_entry_percent": 72.35,
+      "entries_unranked": 226156,
+      "entries_ranked_percent": 53.52,
+      "list_rows_with_ranked_entry": 421957,
+      "list_rows_with_ranked_entry_percent": 72.36,
       "list_rows_with_ranked_entry_percent_by_rank": {
-        "rank<=1000": 99.94,
-        "rank<=10000": 99.92,
-        "rank<=100000": 96.57
+        "rank<=1000": 100.0,
+        "rank<=10000": 99.93,
+        "rank<=100000": 96.58
       },
       "unranked_value": 0
     }
   },
+  "kanji": {
+    "file": "sources/bees-ultimate-kanji-dictionary.zip",
+    "bytes": 14332924,
+    "sha256": "4d3d3c949c3061adfb543967604b674a78e0b95703c3f68b5acd64dbd01ad667",
+    "dictionary": "Bee's Ultimate Kanji Dictionary",
+    "repository": "https://github.com/bee-san/bees-ultimate-kanji-dictionary",
+    "release": "v2026.09.08",
+    "release_published": "2026-09-08T15:40:26Z",
+    "code_revision": "9550f88c8f1b8f24a1d276232f4e8ebff9445154",
+    "content_hash": "02803a1b5938b2624ebda1a74a389e22d58e88492815c120f0140ecbda29e2ff",
+    "url": "https://github.com/bee-san/bees-ultimate-kanji-dictionary/releases/download/v2026.09.08/bees-ultimate-kanji-dictionary.zip",
+    "retrieved": "2026-10-15T17:25:00Z",
+    "note": "The release asset unchanged (GitHub's asset digest is the same sha256). 12,634 term rows: 3,904 Jiten and 8,729 KANJIDIC2-fallback cards (its MANIFEST.json, records.total 12,633) and 髙, a variant row without a card. The build reads only each card's English meaning line; the stroke-order SVGs and pie charts in the ZIP are not used.",
+    "index": {
+      "title": "Bee's Ultimate Kanji Dictionary",
+      "format": 3,
+      "revision": "2026.09.08",
+      "author": "bee-san",
+      "url": "https://github.com/bee-san/bees-ultimate-kanji-dictionary",
+      "description": "Kanji dictionary from Jiten data with KANJIDIC2 fallback coverage.",
+      "sourceLanguage": "ja",
+      "targetLanguage": "en"
+    },
+    "licence": {
+      "data": "CC BY-SA 4.0 (Jiten, KANJIDIC2 / EDRDG): https://creativecommons.org/licenses/by-sa/4.0/, https://www.edrdg.org/edrdg/licence.html",
+      "kanjivg": "CC BY-SA 3.0 (stroke-order SVGs in the ZIP, not used by the build): https://creativecommons.org/licenses/by-sa/3.0/",
+      "statement": "Dictionary data derived from Jiten (https://jiten.moe), including its Global frequency-list CSV, and directly from KANJIDIC2, using JMdict/KANJIDIC data from the Electronic Dictionary Research and Development Group (EDRDG). Data and rank-weight adaptations are redistributed under CC BY-SA 4.0; see https://creativecommons.org/licenses/by-sa/4.0/ and https://www.edrdg.org/edrdg/licence.html."
+    },
+    "evidence": "sources/JMdict-plain.zip",
+    "attribution": "Kanji lines: English kanji meanings from Bee's Ultimate Kanji Dictionary (release v2026.09.08, https://github.com/bee-san/bees-ultimate-kanji-dictionary) by bee-san, data from Jiten (https://jiten.moe) and KANJIDIC2 (EDRDG), licensed under CC BY-SA 4.0. Unmodified source in sources/bees-ultimate-kanji-dictionary.zip; the build selects 2-4 meanings per kanji (tools/kanji_lines.py)."
+  },
+  "grammar": {
+    "file": "sources/grammar-summaries.jsonl",
+    "bytes": 1907474,
+    "sha256": "8df8fd7b9fab528a203dbe76eb9d763bdda8be47112943cac51e23a80b024328",
+    "points": 2748,
+    "summaries": 2741,
+    "made_by": "tools/freeze_grammar.py from the grammar agents' outputs and tools/grammar_review.json (2026-10-15T23:42Z; review revised 2026-10-16 after audits B, B2, B3 and B4 and the running-text taps)",
+    "inputs": {
+      "grammar-points.jsonl": "a61073d17b52a6bca5609bdde6d324acbc7ca0a836d8747cf5f77d2382a2e2c1",
+      "grammar-out-1.jsonl": "25afc6e33c198a7ce00cd708c7b9ed9ae47760a3d6811a1449de45d185cdbb01",
+      "grammar-out-2.jsonl": "a32706063fdc59f7fc2a8fd1031f160c73a9457de1448bc3befbcef08a5c97a0",
+      "grammar-out-3.jsonl": "539ebdeedd9c6f7299b83efcd8795a7fc2ac6b0bc849d81780c7dfe3be5d43e1",
+      "grammar-out-4.jsonl": "53ee8e98de94ad31a20ed67144185dcbfa14369fd68a9b5408d0c51858d7c81b",
+      "tools/grammar_review.json": "b85bf7d83e890c16c761443a65be3e87eadc4578afb3b410024baa2574e004e5"
+    },
+    "inputs_location": "the fleet's shared/artifacts/ultimate-dict/ (not committed: the grammar sources' text is copyrighted bulk); grammar-sources.md there describes them",
+    "dictionary": "Bee's Ultimate Grammar Dictionary",
+    "repository": "https://github.com/bee-san/bees-ultimate-grammar-dictionary",
+    "code_revision": "8ddb968",
+    "snapshot_revision": "2026.10.07.3",
+    "release_assets": {
+      "bees-ultimate-grammar-dictionary.zip": "2a86ec7a4218dde8979f712dc97b33d8354ff37a933ebc117d141c9ce78583bf",
+      "bees-ultimate-grammar-dictionary-en.zip": "aa8c9f42569bb3fa058eb5c1c4664710d7419fcf8264ca4613bad1dfdeefcbef"
+    },
+    "sources": {
+      "aiueo": "AIUEO JLPT Grammar (the owner's Anki export; no licence recorded)",
+      "bunpou": "文法 (the owner's Anki deck; not redistributable)",
+      "bunpro": "Bunpro Grammar Reference (proprietary; owner confirmed use)",
+      "dojg": "DoJG 日本語文法辞典(全集) (A Dictionary of Japanese Grammar series, The Japan Times; via aiko-tanaka/Grammar-Dictionaries)",
+      "donna_toki": "どんなときどう使う 日本語表現文型辞典 (print work, via an unlicensed public mirror)",
+      "edewakaru": "絵でわかる日本語 (producer site, livedoor platform terms)",
+      "hjgp": "日本語文型辞典 (A Handbook of Japanese Grammar Patterns; via HuangAntimony/Nihongo-Bunkei-Jiten)",
+      "hjgp_en": "日本語文型辞典 英語版 (the same handbook's English edition)",
+      "imabi": "IMABI, imabi.net (the IMABI authors approved full-content use)",
+      "nihongo_net": "日本語NET JLPT文法解説まとめ (All Rights Reserved)",
+      "nihongo_no_sensei": "毎日のんびり日本語教師",
+      "ninjal_bunkei": "NINJAL 日本語文型データベース (CC BY 4.0, DOI 10.15084/0002000610)",
+      "yokubi": "Yokubi, The Common Grammar Guide, https://yoku.bi (CC BY 4.0)"
+    },
+    "translations": "English for Japanese/Chinese source text: the grammar dictionary's own GPT-6 Luna translations (its English edition)",
+    "licence": {
+      "summaries": "New English summaries written for this dictionary by Claude Opus 5.5 agents (2026-10-15) from one source sense each; the sidecar processed/grammar-attribution.jsonl names the sense",
+      "cc_by_4_0": "Yokubi and NINJAL 日本語文型データベース: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/ (summarized)",
+      "other": "The other sources are used on the owner's say-so (the owner accepted shipping the private dictionaries, 2026-10-15 16:39Z)"
+    },
+    "attribution": "Grammar summaries: written from Bee's Ultimate Grammar Dictionary (https://github.com/bee-san/bees-ultimate-grammar-dictionary, snapshot 2026.10.07.3) and its 13 sources; ATTRIBUTION.md lists them and their licences, processed/grammar-attribution.jsonl the source sense of each summary.",
+    "sidecar": "processed/grammar-attribution.jsonl",
+    "sidecar_bytes": 918889,
+    "sidecar_sha256": "28cc94f081dfbd3174e4b9617e3e3fa44ea81509dcee8aa77a116563c710ec56"
+  },
   "repository": "bee-san/plaintext-dicts",
-  "revision": "6f841cee43425053064c46d09fc627aa5d512e76",
+  "revision": "e9b6e767626bbf38da451fa3d6fa14292b63586b",
   "key_filter": {
     "note": "the released file: the frozen file with the posting hints and the key filter added by tools/prepare_plaintext.py (convert_dictionary.add_index_hints, add_key_filter; deterministic; docs/local-dictionaries.md)",
-    "bytes": 143425536,
-    "sha256": "e3ac485e76c39e64ea16633c2e9b735f8bc5b59a88c096617c40873247cf6e19",
+    "bytes": 157298688,
+    "sha256": "1c563c86a29801267c37fdf1def42650b02c69657f4144f09bd26d61b80d79b5",
     "filter_blocks": 226,
     "filter_bytes": 925696,
-    "filter_keys": 661469,
-    "filter_max_block_keys": 3706,
+    "filter_keys": 663128,
+    "filter_max_block_keys": 3707,
     "filter_bits_per_key": 10,
-    "hinted_postings": 840994
+    "hinted_postings": 842726
   }
 }

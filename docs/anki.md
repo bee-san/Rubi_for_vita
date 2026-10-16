@@ -120,12 +120,14 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 
 The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
 `SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
-the tag `vita-jp-overlay`. The bundled dictionary (Daijirin4 → Sankoku8 →
-JMdict in one file) gives every entry its Jiten global frequency rank
+the tag `vita-jp-overlay`. The bundled dictionary, Bee's Ultimate Dictionary,
+gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
 fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
-its `FreqSort` is 9999999. It has no pitch accents, so those fields stay empty,
-and each entry's own dictionary (one of the three) names its glossary item.
+its `FreqSort` is 9999999. It has no pitch accents, so those fields stay empty.
+Its entries name no source; the file's own title names their glossary item,
+`<li data-dictionary="Bee's Ultimate Dictionary">`, and the definition keeps its
+kanji lines (`日=day, counter for days, Japan, sun`), each on its own line.
 Another local dictionary has ranks when it is converted with `--frequency`;
 none imports pitch accents ([local dictionaries](local-dictionaries.md)).
 jpdb.io and jiten.moe, the online dictionaries that also gave pitch accents and
@@ -228,7 +230,7 @@ card can be made into a note later, by any version that reads the record:
 | --- | --- |
 | `version` | 4 |
 | `spelling`, `reading`, `furigana` | The word's dictionary form, its reading, and the dictionary's ruby of it (`来[く]る`; `null` when the dictionary has none, as every one now: only the removed online dictionaries gave one) |
-| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name (from its definition's first line, `[JMdict Plain]`, or `null` without one; older records may name a dictionary that has been removed since) |
+| `meanings`, `dictionary` | The shown entry's definitions as the dictionary gave them, and that dictionary's name: its file's title (`Bee's Ultimate Dictionary`, page 0 of the file), else its definition's first line (`[JMdict Plain]`, as the converter writes one), or `null` with neither; older records may name a dictionary that has been removed since |
 | `more` | The other dictionaries' entries for the word (Dictionaries shown above 1): each `{"dictionary", "spelling", "reading", "meanings"}`, at most 7, in the order of `local_dictionaries`, kept while the record stays within 32 KiB |
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (1 = most frequent, 0 = none) and its source (the frequency list's name, `Jiten` for the bundled dictionary; `null` when there is none), pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |

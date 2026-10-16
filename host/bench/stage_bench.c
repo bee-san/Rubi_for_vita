@@ -784,9 +784,9 @@ static int stage_log(const BenchIn *in, unsigned iters, BenchOut *out)
         LOGF("game vocr text %u: %s", 0u, "\"朝ごはん、もう冷\"");
         LOGF("result arenas Paf allocation: free=%u requested=%u reserve=%u success=%d", 2600000u, 65536u, 1572864u, 1);
         LOGF("local dictionary workspace: %u bytes, %d %u-byte results, %u-byte connection pool", 65536u, 1, 65536u, 0u);
-        LOGF("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s",
+        LOGF("lookup %s at %u: %d chars, dictionary %s, page %d/%d, %u reads %u B, rc=%d, %u ms; \"%s\" -> %s%s%s%s%s%s%s%s",
              "first word", 0u, 2, "1/1", 1, 1, 15u, 61440u, 0, 73u, "朝ごはん、もう冷", "朝御飯", " (", "あさごはん", ")",
-             " [", "Daijirin4 Plain", "]");
+             " [", "Bee's Ultimate Dictionary", "]", " #59004");
         LOGF("subtitle text ready in %d ms", 1300);
         LOGF("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d", 0, 0, 1350, 53552u, 1, 1);
 #undef LOGF

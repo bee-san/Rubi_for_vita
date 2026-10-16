@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Unpack the frozen Daijirin4 -> Sankoku8 -> JMdict dictionary for releases.
+"""Unpack the frozen bundled dictionary, Bee's Ultimate Dictionary, for releases.
 
-Every entry carries its Jiten global frequency rank (format 3, 0 = unranked).
+Bee's Ultimate Dictionary (bee-san/plaintext-dicts) is Daijirin4 -> Sankoku8 ->
+JMdict definitions, grammar summaries and a line per kanji in one format 3 file,
+named in its page 0; every entry carries its Jiten global frequency rank
+(0 = unranked).
 Use --source /path/to/plaintext-dicts for offline builds. Otherwise use the
 CI checkout in .refs/plaintext-dicts, or authenticated gh for the pinned commit.
 No conversion, latest-branch fetch, or dictionary update happens during builds:

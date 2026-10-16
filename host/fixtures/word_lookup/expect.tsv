@@ -1,5 +1,5 @@
 # What a lookup at a character of a real recognized line shows with the bundled
-# plaintext.vjdict (Daijirin4 -> Sankoku8 -> JMdict, docs/plaintext-dictionaries.json).
+# plaintext.vjdict (Bee's Ultimate Dictionary, docs/plaintext-dictionaries.json).
 # id and model name a line of vocr_lines.tsv. The cursor is the first occurrence of
 # `at` in the overlay's sentence; the highlight must be exactly `span`, the popup
 # entry `spelling` (reading `reading`; "-" = none shown: it is the spelling).

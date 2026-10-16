@@ -82,9 +82,9 @@ for the measured results and remaining hardware checks.
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 220 MB free on the memory card (ux0) before
-you copy the VPK to it: 54 MB for the VPK, 155 MB for VitaShell to unpack it and 11 MB for the models
-Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 54 MB back.
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 240 MB free on the memory card (ux0) before
+you copy the VPK to it: 60 MB for the VPK, 169 MB for VitaShell to unpack it and 11 MB for the models
+Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 60 MB back.
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
    [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
@@ -103,7 +103,7 @@ before installing a VPK over it. These steps are not yet verified on a console: 
 run checks them.
 
 **What Install does.** It copies the three plugins to `ur0:tai` and the models to
-`ux0:data/VitaJPOverlay/ocr`, moves the dictionary (143 MB) out of the app rather than copying it,
+`ux0:data/VitaJPOverlay/ocr`, moves the dictionary (157 MB) out of the app rather than copying it,
 backs up every taiHEN configuration it changes as `config.txt.vjo-<date-time>.bak` (kept), adds the
 kernel plugin under `*KERNEL` and the Shell plugin under `*main` in `ux0:tai/config.txt` and
 `ur0:tai/config.txt` (whichever exist; taiHEN reads ux0's first), removes the OCR worker's
@@ -493,32 +493,56 @@ console run).
 The complete settings template is
 [docs/config.example.ini](docs/config.example.ini).
 
-The next release bundles one frozen disk-backed `plaintext.vjdict`, combining
-**Daijirin4 → Sankoku8 → JMdict** in that priority order, with the **Jiten
-global frequency rank** of every entry. The original archives
-and processed file are committed in the private
+The next release bundles one frozen disk-backed `plaintext.vjdict`, **Bee's
+Ultimate Dictionary**: word definitions from **Daijirin4 → Sankoku8 → JMdict** in
+that priority order, an English summary of each grammar point (は, に, ので,
+～てしまう …), a line for each kanji with its most common meanings, and the
+**Jiten global frequency rank** of every entry. It is built once in the private
 [plaintext-dicts repository](https://github.com/bee-san/plaintext-dicts)
-(commit `6f841ce`, its #1).
+(the release `ultimate-v1`, commit `e9b6e76`) and not updated.
 The public release includes the processed dictionary and its attribution.
-The 2026-10-13 snapshot and the 2026-10-15 frequency list are pinned by exact
-commit and SHA-256; builds perform no dictionary updates and need no
-conversion or current upstream snapshot.
+The snapshots it is built from are pinned by exact commit and SHA-256; builds
+perform no dictionary updates and need no conversion or current upstream
+snapshot.
+
+An entry shows its definition (or a grammar point's summary), a blank line, then
+one line per kanji of its spelling, the kanji at the headword's size:
+
+```
+日本語 (にほんご) #4372
+The language used by the Japanese people since ancient times …
+
+日=day, counter for days, Japan, sun
+本=real, true, origin, book
+語=word, language
+```
+
+No entry names a source: there are no `[Daijirin4 Plain]`-style labels. The
+dictionary names itself in its file, and that name, `Bee's Ultimate Dictionary`,
+is what Anki cards and `log.txt` record and what the Overlay app's
+**Dictionaries shown** card shows. A function word's summary replaces its
+definition (は is "Topic particle, pronounced "wa" …"); a content word with a
+grammatical use (上, こと, 無くなる) keeps its definition, with the summary on the
+line before it. An entry longer than the popup holds is cut at the end of its
+definition and marked `…`, and keeps its kanji lines and that summary line;
+the right stick scrolls a long one ([popup](docs/local-dictionaries.md#the-popup)).
 
 Deduplication keeps a spelling and normalized reading pair from the first
 source that contains it, preserving that source's separate senses, distinct
-readings and inflection rules. The result has 485,410 entries (301,927
-Daijirin4, 12,561 Sankoku8, 170,922 JMdict) and occupies about 137 MiB on disk,
+readings and inflection rules. The result has 486,529 entries (301,720
+Daijirin4, 12,557 Sankoku8, 170,920 JMdict and 1,332 grammar points no word entry
+had), 369,838 of them with kanji lines, and occupies about 150 MiB on disk,
 904 KiB of it a key filter that answers most inflection guesses that are not
 words without an index read ([key filter](docs/local-dictionaries.md#key-filter)).
-It stays on disk and is never loaded whole into RAM. Twelve definitions carry
-a truncation notice at the existing 7,000-byte limit; 16 empty or overlong
-source rows cannot be indexed. Exact provenance and counts are in
+It stays on disk and is never loaded whole into RAM. Eleven definitions are
+cut at the existing 7,000-byte limit; 16 empty or overlong source rows cannot
+be indexed. Exact provenance and counts are in
 [docs/plaintext-dictionaries.json](docs/plaintext-dictionaries.json), with
 [attribution](docs/plaintext-attribution.txt) and the
 [JMdict license](docs/JMdict-LICENSE.html).
 
 Every entry carries its rank in the [Jiten](https://jiten.moe) global
-frequency list (CC BY-SA 4.0), or is explicitly unranked: 53.63% of the
+frequency list (CC BY-SA 4.0), or is explicitly unranked: 53.52% of the
 entries are ranked, and a tap on 99.24% of the word occurrences in Jiten's
 2,162 visual-novel scripts shows a ranked entry. The popup shows the rank after the
 reading (`猫 (ねこ) #1536`; `frequency_badge = off` hides it), Anki cards record
@@ -918,6 +942,9 @@ Pinned sources and attribution are in `third_party/`.
 
 Code: GPL-3.0 ([LICENSE](LICENSE)). JMdict: CC BY-SA 4.0. The bundled dictionary's frequency
 ranks: the Jiten global frequency list by Jiten (https://jiten.moe), CC BY-SA 4.0, attached to
-its entries ([attribution](docs/plaintext-attribution.txt)). The beam + LM decoder's character
+its entries; its kanji lines: Bee's Ultimate Kanji Dictionary (Jiten and KANJIDIC2 / EDRDG data),
+CC BY-SA 4.0; its grammar summaries: written from Bee's Ultimate Grammar Dictionary, whose
+sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0)
+([attribution](docs/plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
 `ocr/LM-ATTRIBUTION.md`, which ships beside them.

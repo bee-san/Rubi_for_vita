@@ -2391,7 +2391,10 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     const char *first = lookup_line("first word at 0: ");
     TEST_ASSERT_(first != NULL, "no first-word lookup log line");
     TEST_CHECK(!strncmp(first, "lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, ", 59));
-    TEST_CHECK(strstr(first, " ms; \"伊佐那社\" -> 伊佐 (いさ) [Daijirin4 Plain]") != NULL && strstr(first, ", rc=0, ") != NULL);
+    /* The entry's dictionary is the file's title (page 0): Bee's Ultimate
+     * Dictionary's definitions carry no source name of their own. */
+    TEST_CHECK(strstr(first, " ms; \"伊佐那社\" -> 伊佐 (いさ) [Bee's Ultimate Dictionary]") != NULL &&
+               strstr(first, ", rc=0, ") != NULL);
     unsigned logged_reads = 0;
     TEST_CHECK(sscanf(first + 59, "%u reads", &logged_reads) == 1 && logged_reads > 0);
 #else
@@ -2410,10 +2413,11 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 2);
 #if VJO_DEBUG
     TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1"));
-    /* Daijirin4 lists its one 那 article under な and だ; Jiten ranks 那 only
-     * read だ (#38948), so the frequency tie-break shows だ. 伊佐那社 is いさな:
-     * neither reading is this line's, and both entries carry the same article. */
-    TEST_CHECK(lookup_line("\"那社\" -> 那 (だ) [Daijirin4 Plain] #38948"));
+    /* The bundle lists its one 那 article (Daijirin4's) under な and だ; Jiten
+     * ranks 那 only read だ (#38948), so the frequency tie-break shows だ.
+     * 伊佐那社 is いさな: neither reading is this line's, and both entries carry
+     * the same article. */
+    TEST_CHECK(lookup_line("\"那社\" -> 那 (だ) [Bee's Ultimate Dictionary] #38948"));
 #endif
     TEST_CHECK(!strcmp(g_view.list->entries[0].vocab->spelling, "那"));
     /* A tap on 会 looks up the inflected word: 会ってなかった -> 会う. */
@@ -2429,9 +2433,11 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     const char *tap = lookup_line("会ってなかった");
     TEST_ASSERT(tap != NULL);
     TEST_CHECK(strstr(tap, ": 7 chars, dictionary 1/1, page 1/1, ") &&
-               strstr(tap, "-> 会う (あう) [Daijirin4 Plain] #134"));
+               strstr(tap, "-> 会う (あう) [Bee's Ultimate Dictionary] #134"));
+    TEST_CHECK(e->vocab->dictionary && !strcmp(e->vocab->dictionary, "Bee's Ultimate Dictionary") &&
+               !strstr(e->vocab->meanings[0], "Plain]"));
     /* a name Jiten does not rank is logged so */
-    TEST_CHECK(strstr(first, "-> 伊佐 (いさ) [Daijirin4 Plain] unranked") != NULL);
+    TEST_CHECK(strstr(first, "-> 伊佐 (いさ) [Bee's Ultimate Dictionary] unranked") != NULL);
     printf("\n  %s\n  %s\n  %s\n", first, lookup_line("cursor at 6: "), tap);
 #else
     TEST_CHECK(!lookup_line("会ってなかった")); /* the normal build logs no lookup's text */
@@ -2442,14 +2448,19 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
 /* vjo_log keeps 254 bytes of a line. The lookup line's numbers come first and
  * its texts are bounded in whole characters, so even with every field at its
  * largest (4-byte characters, eight dictionaries, a 4-digit cursor, the
- * largest rank) nothing is cut: the line ends with the frequency badge. */
+ * largest rank, a dictionary name of 31 bytes or more) nothing is cut: the
+ * line ends with the frequency badge. The name is the file's title (63 bytes
+ * at most, 31 logged) or, without one, a definition's "[name]" line. */
 static void test_lookup_log_line_fits_with_worst_case_fields(void)
 {
     static char text[VJO_LOCAL_MAX_TEXT];
     static char name[40 * 4 + 1];
-    const char *meaning = "[Daijirin4 Plain Plain12]\ndefinition";
+    static const char title[] = "A_dictionary_title_of_the_longest_kind:_a_page-0_field_holds_63";
+    static const char label[] = "[A legacy label of 31 bytes, max]\ndefinition";
+    const char *meaning = "definition";
     VjoVocab v; VjoEntry e; VjoLocalPages pages; VjoOverlayData out;
     reset();
+    TEST_ASSERT(sizeof(title) == 64); /* the longest a page-0 field holds */
     memset(text, 'a', 3900); text[3900] = 0;
     for (int i = 0; i < 40; i++) strcat(text, "\xF0\xA0\xAE\xB7");
     name[0] = 0;
@@ -2457,6 +2468,7 @@ static void test_lookup_log_line_fits_with_worst_case_fields(void)
     memset(&v, 0, sizeof(v)); memset(&e, 0, sizeof(e)); memset(&pages, 0, sizeof(pages)); memset(&out, 0, sizeof(out));
     v.spelling = name; v.reading = name + 4; v.meanings = &meaning; v.n_meanings = 1;
     v.rank = 16777215; /* the format's largest */
+    v.dictionary = title;
     e.vocab = &v; e.hl_start = 3900; e.hl_end = 3900 + 32 * 4;
     pages.count = 8; pages.page[7].dict = 7;
     out.sentence = text; out.list.entries = &e; out.list.n_entries = 1; out.pages = &pages; out.page = 7;
@@ -2468,8 +2480,17 @@ static void test_lookup_log_line_fits_with_worst_case_fields(void)
     TEST_ASSERT(line != NULL);
     TEST_CHECK_(strlen(line) <= 254 && strlen(line) > 10 && !strcmp(line + strlen(line) - 10, " #16777215"),
                 "%zu bytes: %s", strlen(line), line);
-    TEST_CHECK(strstr(line, " [Daijirin4 Plain Plain12] #16777215") != NULL);
+    TEST_CHECK(strstr(line, " [A_dictionary_title_of_the_longe] #16777215") != NULL);
     printf("\n  worst case: %zu of 254 bytes\n", strlen(line));
+    /* a file without a title: its definition's label line, as long */
+    v.dictionary = NULL;
+    meaning = label;
+    log_count = 0; /* only the next line */
+    log_lookup("first word", &out, 3900, -115, (int64_t)test_now - 99999000);
+    line = lookup_line("first word at 3900: 32 chars, dictionary 8/8, page 8/8, 99999 reads 9999999 B, rc=-115, 99999 ms; ");
+    TEST_ASSERT(line != NULL);
+    TEST_CHECK_(strlen(line) <= 254 && strstr(line, " [A legacy label of 31 bytes, max] #16777215") != NULL,
+                "%zu bytes: %s", strlen(line), line);
 }
 #endif
 static void test_character_coalesces_and_drops_inflight_definition(void)

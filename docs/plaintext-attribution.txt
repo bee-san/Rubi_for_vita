@@ -1,22 +1,27 @@
-Frozen plaintext dictionary bundle, 2026-10-13 (frequency ranks 2026-10-15)
+Bee's Ultimate Dictionary (plaintext.vjdict), built once and frozen
+(bee-san/plaintext-dicts, release ultimate-v1; exact snapshots, hashes and
+counts: plaintext-dictionaries.json). No automatic dictionary updates are
+performed.
 
-Priority: Daijirin4 -> Sankoku8 -> JMdict.
-Deduplication selects the first source for each spelling and normalized reading,
-preserving all of that source's senses and original inflection rules.
-Source definitions were supplied as plaintext English conversions.
-The release conversion adds source labels and caps definitions at 7,000 UTF-8
-bytes; clipped definitions carry an explicit notice.
+Each entry's text is its definition, or a grammar point's English summary,
+then one line per kanji of its spelling ("木=tree, wood"). Definitions come
+from Daijirin4 -> Sankoku8 -> JMdict, in that priority: deduplication selects
+the first source for each spelling and normalized reading, preserving all of
+that source's senses and original inflection rules. Source definitions were
+supplied as plaintext English conversions. The entries name no source:
+attribution is here and in the metadata only. Definitions are capped at
+7,000 UTF-8 bytes; clipped ones end in "…". Every source keeps its own
+ownership and licence; the plugin software license does not relicense
+dictionary content.
 
 Daijirin4 Plain: © Sanseido Co., LTD. 2019; gpt-6-luna
 
-Sankoku8 Plain: © Sanseido Co., LTD. 2021
- gpt-5.6-luna
+Sankoku8 Plain: © Sanseido Co., LTD. 2021; gpt-5.6-luna
 
 JMdict Plain: This publication has included material from the JMdict (EDICT, etc.) dictionary files in accordance with the licence provisions of the Electronic Dictionaries Research Group. See http://www.edrdg.org/
 JMdict copyright: James William Breen and the Electronic Dictionaries Research Group.
 JMdict licence: CC BY-SA 4.0, https://www.edrdg.org/edrdg/licence.html
-See JMdict-LICENSE.html. Dictionary data retains its original ownership;
-the plugin software license does not relicense dictionary content.
+See JMdict-LICENSE.html.
 
 Frequency ranks: the Jiten global frequency list (revision "Jiten 26-10-09",
 retrieved 2026-10-15) by Jiten, https://jiten.moe
@@ -26,5 +31,52 @@ Change made: each dictionary entry carries the rank of its word in that list
 (0, shown as "unranked", when the list has none). These attached ranks, an
 adaptation of the list, are shared under CC BY-SA 4.0.
 
-Exact snapshots, hashes and conversion counts: plaintext-dictionaries.json.
-No automatic dictionary updates are performed.
+Kanji lines: English kanji meanings from Bee's Ultimate Kanji Dictionary by
+bee-san, release v2026.09.08
+(https://github.com/bee-san/bees-ultimate-kanji-dictionary). Its data notice:
+"Dictionary data derived from Jiten (https://jiten.moe), including its Global
+frequency-list CSV, and directly from KANJIDIC2, using JMdict/KANJIDIC data
+from the Electronic Dictionary Research and Development Group (EDRDG). Data
+and rank-weight adaptations are redistributed under CC BY-SA 4.0; see
+https://creativecommons.org/licenses/by-sa/4.0/ and
+https://www.edrdg.org/edrdg/licence.html."
+KANJIDIC2 copyright: James William Breen and the Electronic Dictionaries
+Research Group, CC BY-SA 4.0.
+Change made: each kanji keeps 2-4 of its English meanings, ordered by how
+often the JMdict words written with it use them (weighted by their Jiten
+ranks). These kanji lines, an adaptation, are shared under CC BY-SA 4.0.
+
+Grammar summaries: each grammar point's English summary was written for this
+dictionary (by Claude Opus 5.5 agents, 2026-10-15) from one sense in Bee's
+Ultimate Grammar Dictionary by bee-san
+(https://github.com/bee-san/bees-ultimate-grammar-dictionary, main 8ddb968,
+snapshot 2026.10.07.3). The summaries are new, short paraphrases; the private
+repository records the source and sense of each one
+(processed/grammar-attribution.jsonl). The grammar dictionary's English for
+its Japanese and Chinese sources is its own GPT-6 Luna translation. Its 13
+sources, as the grammar dictionary credits them:
+
+- Yokubi, The Common Grammar Guide (https://yoku.bi; source repository
+  Morgawr/yokubi, by Morgawr): CC BY 4.0,
+  https://creativecommons.org/licenses/by/4.0/ (summarized)
+- NINJAL 日本語文型データベース (eds. パルデシ・プラシャント, 砂川有里子;
+  国立国語研究所; DOI 10.15084/0002000610): CC BY 4.0,
+  https://creativecommons.org/licenses/by/4.0/ (summarized)
+- Bunpro Grammar Reference: proprietary; used with the owner's confirmation
+- IMABI (imabi.net): the IMABI authors approved full-content use
+- DoJG 日本語文法辞典(全集) (A Dictionary of Japanese Grammar series, The Japan
+  Times): commercial work
+- どんなときどう使う 日本語表現文型辞典: commercial work
+- 日本語文型辞典 (A Handbook of Japanese Grammar Patterns) and its English
+  edition: commercial work
+- 絵でわかる日本語: producer site, no reuse grant
+- 日本語NET JLPT文法解説まとめ: All Rights Reserved
+- 毎日のんびり日本語教師: no grant
+- AIUEO JLPT Grammar: the owner's Anki export
+- 文法: the owner's Anki deck
+
+Only Yokubi and NINJAL carry a public licence. The other sources are used on
+the owner's say-so: this is the owner's private dictionary, and the owner
+accepted shipping it in the overlay (2026-10-15). Headword readings partly come
+from the grammar dictionary's catalogue (JMdict, CC BY-SA 4.0; SudachiDict;
+Jiten).

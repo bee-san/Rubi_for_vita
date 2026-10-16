@@ -27,6 +27,11 @@ typedef struct {
     int px;
 } VjoSpan;
 
+/* The overlay's body text (shell/overlay.cpp, its UI arena): UTF-16 units and
+ * spans. The host tests render every bundled entry within them. */
+#define VJO_BODY_UNITS 4096
+#define VJO_BODY_SPANS 96
+
 typedef struct {
     uint16_t *text;      /* UTF-16, NUL-terminated */
     uint32_t len, cap;
@@ -59,7 +64,17 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
 /* Body: the selected entry — headword and reading at ja_px, then, with
  * show_rank (config frequency_badge), the frequency badge (vjo_rank_badge:
  * " #1234", " unranked" or nothing) and the meanings at en_px; a green
- * VJO_ANKI_MARK after the badge when in_anki. */
+ * VJO_ANKI_MARK after the badge when in_anki. The text is shown as the
+ * dictionary wrote it, without a dictionary or source name of its own. Bee's
+ * Ultimate Dictionary's kanji lines (vjo_kanji_block) end it, one a line,
+ * "漢=meaning, meaning", each kanji at ja_px in VJO_RGB_TEXT (two spans a line;
+ * past the spans left, as written, unstyled), after a blank line when a
+ * definition comes before them (the newlines that end the definition are
+ * shown as that one blank line). An entry longer than the room
+ * left (s's cap; overlay.cpp lowers it by what follows the entry) is clipped
+ * at the end of its definition, at a whole character, and marked "…": the
+ * kanji lines stay whole. (A grammar summary comes first in the bundle's
+ * entries, so it is kept.) */
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
                       int show_rank);
 

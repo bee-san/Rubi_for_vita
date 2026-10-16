@@ -14,17 +14,31 @@ instructions below add your own dictionaries.
 
 ## Frozen release bundle
 
-Upcoming releases include `plaintext.vjdict`: Daijirin4 Plain, Sankoku8 Plain,
-then JMdict Plain, from the frozen 2026-10-13 downloads. Sources and the processed
-archive live in the private `bee-san/plaintext-dicts` repository; public releases
-include the processed dictionary. The release build checks an exact source commit
-and archive/output SHA-256 against `plaintext-dictionaries.json`.
+Upcoming releases include `plaintext.vjdict`, **Bee's Ultimate Dictionary**:
+word definitions from Daijirin4 Plain, Sankoku8 Plain, then JMdict Plain (the
+frozen 2026-10-13 downloads), an English summary for each grammar point, a line
+for each kanji of a word with its most common meanings, and every entry's Jiten
+global frequency rank. It is built once, from frozen snapshots, in the private
+`bee-san/plaintext-dicts` repository (the release `ultimate-v1`, commit `e9b6e76`)
+and not updated;
+public releases include the processed dictionary. The release build checks an
+exact source commit and archive/output SHA-256 against
+`plaintext-dictionaries.json`.
 
 The bundle removes lower-priority rows sharing a spelling and normalized reading
 pair. It keeps all senses from the winning source and distinct spellings/readings;
-an empty reading uses its spelling. Definitions retain their source title and
-inflection rules. There are 485,410 entries; 227,445 lower-priority rows were
-removed. Twelve definitions are clipped at 7,000 UTF-8 bytes, one empty row and
+an empty reading uses its spelling, and the inflection rules stay. No entry
+names its source: the definitions carry no `[Daijirin4 Plain]`-style first line
+and the attribution is in `plaintext-attribution.txt` and the metadata. The
+file names itself instead, `Bee's Ultimate Dictionary` in page 0
+([format](#binary-format-version-3-with-frequency-ranks)), and that is the
+dictionary's name on Anki cards, in `log.txt` and on the Overlay app's
+Dictionaries shown card. A grammar point's summary replaces a function word's
+definition (は, に, ので, てしまう) and comes before a content word's on a line of
+its own (上, こと, 無くなる); a point no word entry had is an entry of its own, and
+its other spellings are lookup keys of it (でしまう finds てしまう). There are
+486,529 entries, 1,332 of them grammar points no word entry had. Eleven
+definitions are clipped at 7,000 UTF-8 bytes and end in `…`; one empty row and
 15 overlong rows are skipped. These are fixed format bounds, not runtime RAM
 increases. No dictionary update or conversion occurs during release builds.
 
@@ -154,6 +168,46 @@ The report's `frequency` part counts the ranked entries and how they matched.
 Format 3 needs this build or later; earlier plugins refuse it with a format
 error, and this build still reads formats 1 and 2 (without ranks).
 
+## The popup
+
+The popup shows the selected entry: the headword and reading at the Japanese
+font size, the frequency badge, then the entry's text at the English size,
+exactly as the dictionary wrote it. Bee's Ultimate Dictionary ends an entry's
+text with its kanji lines, `日=day, counter for days, Japan, sun`, one per
+distinct kanji of the spelling, in spelling order (none for a word written in
+kana), separated from the definition by one newline. The popup puts a blank line
+before them and shows them as written, each on its own line, with the kanji at the
+headword's size in the text colour:
+
+```
+日本語 (にほんご) #4372
+The language used by the Japanese people since ancient times …
+
+日=day, counter for days, Japan, sun
+本=real, true, origin, book
+語=word, language
+```
+
+The kanji lines are the text's last lines that each start with a kanji, then
+`=` and its meanings (`vjo_kanji_block`, core/entries.c; whole code points: the
+bundle has lines for CJK compatibility ideographs and for characters beyond the
+BMP). No other line of the bundle's texts has that shape, and any other
+dictionary's text is shown as before.
+
+The body holds 4,096 UTF-16 units and 96 styled spans; a kanji line takes two.
+An entry longer than the room left (after the dictionary page, status and Anki
+lines before it, and with room kept for the config warnings after it, at their
+longest) is clipped at the end of its definition, at a whole character, and marked `…`: the
+kanji lines stay whole, and so does a grammar summary, which the bundle puts first. A long entry
+scrolls with the right stick.
+`every_bundled_entry_fits_the_popup` (host/tests/test_word_lookup.cpp) renders
+every entry of the bundle with the body's longest lines before it (the dictionary page, the
+Overlay app's notice, a status, the Anki lines) and four warnings after it: none is truncated or
+loses a kanji line; 46 are clipped with nothing else in the body, 103 in that worst case, and that
+fullest body takes at most 66 of the 96 spans. The layout itself (line wrapping at the
+default font sizes, the scroll) is laid out by the console's text widget and
+has not been checked on a console.
+
 ## Several dictionaries
 
 Up to eight `.vjdict` files can be enabled in priority order:
@@ -171,7 +225,8 @@ You can also combine several ZIPs into one file, in priority order:
 python3 tools/convert_dictionary.py Jitendex.zip Grammar.zip Names.zip -o main.vjdict
 ```
 
-Each definition includes its source dictionary title. The converter preserves
+Each definition this converter writes starts with its source dictionary's title
+(`[JMdict Plain]`), which names it on Anki cards and in `log.txt`. It preserves
 separate senses/entries and indexes both spelling and reading without duplicating
 the definition payload. Reading-only terms use their reading as the displayed
 headword and are counted in the conversion report. Earlier dictionaries and
@@ -430,6 +485,17 @@ matched to Jiten's list, are in
 [plaintext-dictionaries.json](plaintext-dictionaries.json) (`frequency`) and
 bee-san/plaintext-dicts' README.
 
+The same measurement for Bee's Ultimate Dictionary against the ranked file before it (main's
+bundle, plaintext-dicts `6f841ce`): the shown entry changes for 0.81% of the tokens, 0.80% of them to a grammar
+point's entry that is the text as written (できる, かもしれない, いつも, つもり), and the shown
+reading is Jiten's for 97.19% (97.17% before; 98.44% and 98.42% where the whole word matched). Of
+the changes, 0.05% move to Jiten's reading and 0.03% away from it: alias keys whose summary names
+that form (わけじゃない shows わけではない) and a few spellings whose two readings rank alike, where
+the longer article decides and the labels' removal changed the lengths (時折 shows ときより).
+Evaluation outputs and the changed taps: the fleet's
+`shared/artifacts/ultimate-dict-overlay/eval/vn-ultimate-v1.json` and `taps-ultimate-v1/` (not committed;
+Jiten's decks are CC BY-SA 4.0).
+
 A selected-entry allocation or file error is reported explicitly. Lookup does
 not grow the worker arena or silently display a partial definition. The older
 whole-sentence host API remains available for benchmark compatibility; its
@@ -511,8 +577,8 @@ bundled dictionary is one.
   text without control characters, then NUL padding to byte 127. The runtime
   reads it with the 64-byte header, in the same read, as it reads the rest of
   page 0: bytes 128..159 and 256..4095 are the optional [key filter](#key-filter)'s,
-  160..167 the optional posting hints' (below). Bytes 168..255 are not read;
-  192..255 may hold a dictionary title.
+  160..167 the optional posting hints' (below), and 192..255 the dictionary's
+  title, as in version 2. Bytes 168..191 are not read.
 - Every payload starts with a u32 frequency word, then the three strings as in
   version 2. Bits 0-23 are the rank (1 = the most frequent; 0 = the list does
   not rank the entry). Bit 24 marks a borrowed rank: a kanji spelling ranked
@@ -568,6 +634,15 @@ UTF-8 key followed by 16-byte postings: u64 payload offset, u32 payload length,
 u16 rule bits and u16 reserved=0. Postings retain dictionary priority,
 descending term score and original row order. Hash collisions are resolved
 by comparing the full key. All offsets are absolute.
+
+Bytes 192..255 of page 0 may hold the dictionary's own name, its title: 1-63
+bytes of UTF-8 text without control characters, then NUL padding, or all zero
+for none (bee-san/plaintext-dicts writes `Bee's Ultimate Dictionary`; the
+converter here writes none). The runtime reads it with the header, in the same
+read (page 0 through the page cache when a lookup opens the file, 256 bytes
+when a dictionary page is read), and names the file's entries by it on Anki
+cards and in `log.txt`; a malformed title refuses the file. Readers that
+predate it never read those bytes.
 
 Payloads are three UTF-8 NUL-terminated strings: spelling, reading, definition.
 Spelling and reading indexes share payloads. Rule bits are v1=1, v5=2, vs=4,

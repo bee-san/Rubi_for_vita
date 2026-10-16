@@ -44,4 +44,14 @@ const char *vjo_rank_badge(char *buf, int rank, const char *source);
 /* Body text: entries joined by a blank line. */
 char *vjo_entries_body(VjoArena *a, const VjoEntryList *l);
 
+/* Bee's Ultimate Dictionary ends an entry's text with one line per distinct
+ * kanji of its spelling, "漢=meaning, meaning" (bee-san/plaintext-dicts
+ * tools/kanji_lines.py; no other line of its texts has that shape). The byte
+ * offset in text where that block of trailing lines starts: each is one CJK
+ * ideograph (U+3400-9FFF, the compatibility ideographs U+F900-FAFF or
+ * U+20000-3FFFF, a whole code point), then '=' and at least one more byte.
+ * strlen(text) when the text ends otherwise (any other dictionary, a kana
+ * word). */
+size_t vjo_kanji_block(const char *text);
+
 #endif

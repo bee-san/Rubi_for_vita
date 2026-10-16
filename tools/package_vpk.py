@@ -283,7 +283,7 @@ def write_vpk(release, output):
             vpk.writestr(info, original.read(info))  # the app as built: names, order, compression
         for name, data in files.items():
             info = zipfile.ZipInfo("payload/" + name, (1980, 1, 1, 0, 0, 0))
-            # deflated, as in the release zip: the dictionary's 143 MB is about 43 MB so, which is what
+            # deflated, as in the release zip: the dictionary's 157 MB is about 50 MB so, which is what
             # the user downloads and copies to the Vita (VitaShell inflates it as it extracts)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
