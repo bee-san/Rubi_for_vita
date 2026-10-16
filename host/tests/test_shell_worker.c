@@ -4208,6 +4208,249 @@ static void test_refresh_logs_quietly_and_a_failing_one_backs_off(void)
     close_overlay(); mem_free();
 }
 
+/* Wakeups of the control thread, one a second, with each job run to its end as
+ * the network thread would (finish_by_tick). */
+static void run_for_seconds(int seconds)
+{
+    for (int i = 0; i < seconds; i++) {
+        test_now += 1000000;
+        if (job_running) finish_by_tick();
+        else control_tick(0);
+    }
+}
+
+/* #159 item 1 (#146's audit): reopening the overlay while a lookup of its saved
+ * text still runs (the close cancelled it; a lookup takes 20-110 ms), on a
+ * screen that text was not read from, waits for a recognition of its own, as an
+ * opening during any job does (restart_old_job): once the lookup ends, a job
+ * reads the screen. Back on the text's screen by then, the word at the cursor is
+ * looked up instead. Before, the lookup's end started nothing and the overlay
+ * said "Recognizing…" until it was closed (the audit's repro: 8 s of ticks). */
+static void test_reopen_during_a_cancelled_lookup_gets_its_own_recognition(void)
+{
+    for (int back = 0; back < 2; back++) {
+        cursor_saved_text(); /* Auto read 猫犬鳥 on scene 2 (Character mode: no word looked up yet) */
+        open_overlay(); /* the saved text: its word's lookup */
+        TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+        close_overlay(); /* Cancel: the lookup is cancelled, and still runs */
+        TEST_CHECK(job_cancelled && ov == OV_CLOSED);
+        next_scene(8); /* the game moved on */
+        fake_recognized_text = "犬";
+        open_overlay(); /* L + R */
+        TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting && !strcmp(g_view.status, "Recognizing…"));
+        if (back) state.scene = state.region_scene = state.capture_scene = 2; /* the text's screen again */
+        log_count = 0;
+        finish_by_tick(); /* the lookup ends */
+        run_for_seconds(8);
+        TEST_CHECK_(ov == OV_OPEN && !job_running && !view_waiting && strcmp(g_view.status, "Recognizing…"),
+                    "after 8 s: ov %d (OV_OPEN_OLD_JOB %d), job_running %d, view_waiting %d, status '%s'", ov,
+                    OV_OPEN_OLD_JOB, job_running, view_waiting, g_view.status);
+        if (back) {
+            check_shown("猫犬鳥", "cat", 0); /* the saved text's word: a lookup, no OCR */
+            TEST_CHECK(vocr_allocs == 1);
+        } else {
+            check_shown("犬", "dog", 0); /* the new screen's text and its first word */
+            TEST_CHECK(vocr_allocs == 2 && DLOGGED("job start (result was for an earlier screen)"));
+        }
+        close_overlay(); mem_free();
+    }
+}
+
+/* #95 item 3a (#92's audit): Select + R right after Cancel, while the closed
+ * overlay's lookup or refresh still runs. The strip says "Recognizing…" and
+ * waits for the job in progress (subtitles_show), which brings it nothing: a
+ * lookup has no sentence for the strip, and a refresh is dropped with the
+ * overlay. Once it ends, the strip gets the screen's sentence, the cached one or
+ * one a job of its own reads. Before, it said "Recognizing…" with no job until
+ * the next settled screen. */
+static void test_subtitles_on_during_a_closed_overlays_lookup_or_refresh(void)
+{
+    for (int moved = 0; moved < 2; moved++) {
+        cursor_saved_text();
+        open_overlay();
+        TEST_ASSERT(job_running && job_cursor_only);
+        if (moved) { /* the game moved on while the overlay was open; nothing has settled yet */
+            next_scene(8);
+            fake_recognized_text = "犬";
+        }
+        unsigned inferences = vocr_allocs;
+        close_overlay(); /* Cancel */
+        control_tick(VJO_EV_SUBTITLE); /* Select + R */
+        TEST_CHECK(subtitles && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"));
+        TEST_ASSERT(job_running && job_cursor_only); /* the lookup is still the job in progress */
+        finish_by_tick();
+        run_for_seconds(8);
+        const char *want = moved ? "犬" : "猫犬鳥";
+        TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, want),
+                    "after 8 s: strip '%s' (kind %d, busy %d), job_running %d; the region shows %s", g_view.strip_text,
+                    g_view.strip_kind, g_view.strip_busy, job_running, want);
+        TEST_CHECK(vocr_allocs == inferences + (unsigned)moved); /* a job only for a screen not read yet */
+        subtitles = 0;
+        mem_free();
+    }
+    /* A refresh dropped by Cancel while the screen changes again (Auto has no
+     * settled screen to read): the strip's own job reads it. */
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    fake_recognized_text = "犬猫";
+    next_scene(9);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    close_overlay();
+    state.stable = 0; /* the next line types out */
+    control_tick(VJO_EV_SUBTITLE);
+    TEST_CHECK(subtitles && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"));
+    TEST_ASSERT(job_running && job_refresh);
+    finish_by_tick(); /* the refresh, dropped */
+    run_for_seconds(8);
+    TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"),
+                "after 8 s: strip '%s' (kind %d, busy %d), job_running %d; the region shows 犬猫", g_view.strip_text,
+                g_view.strip_kind, g_view.strip_busy, job_running);
+    subtitles = 0;
+    mem_free();
+}
+
+/* #95 item 3b (#92's audit): a move made during a lookup that a close then
+ * cancelled is never looked up; the next open decides (open_overlay). Reopened
+ * on a new screen, a job the game refuses (its memory) shows its error: the move
+ * was the previous text's, which that job retired, so it supersedes no lookup of
+ * the job's. Before, the job's end took it for a move made during the job,
+ * whose lookup then found no text: no error, "Recognizing…" with no job. */
+static void test_a_refused_job_after_a_cancelled_lookup_and_a_move_shows_its_error(void)
+{
+    cursor_saved_text();
+    open_overlay();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    vjo_post_cursor(3, local_text_generation); on_command(); /* Right: it waits for the lookup */
+    TEST_CHECK(cursor_waiting && pending_cmd == VJO_CMD_NONE);
+    close_overlay(); /* Cancel: the lookup is cancelled, the move's never starts */
+    finish_by_tick();
+    TEST_CHECK(!job_running && !cursor_waiting && local_cursor_seq != job_cursor_seq && local_cursor_byte == 3);
+    next_scene(8);
+    fail_vocr_user = 1; fake_free_user = 1000; /* the game has no memory for OCR now */
+    open_overlay();
+    TEST_ASSERT(job_running && !job_cursor_only && view_waiting);
+    finish_by_tick();
+    run_for_seconds(8);
+    TEST_CHECK_(!job_running && !view_waiting && g_view.status_is_error && strstr(g_view.status, "not enough memory"),
+                "after 8 s: job_running %d, view_waiting %d, status '%s' (error %d)", job_running, view_waiting,
+                g_view.status, g_view.status_is_error);
+    TEST_CHECK(g_view.open && !g_view.local_cursor_mode && !local_text_valid);
+    /* The memory comes back: the next open reads the screen and its first word. */
+    fail_vocr_user = 0;
+    close_overlay(); open_overlay();
+    TEST_ASSERT(job_running && !job_cursor_only);
+    finish_by_tick();
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay(); mem_free();
+}
+
+/* #95 item 1 (#92's audit): refreshes that fail (here the game's memory, until
+ * the backoff's 60 s cap) still back off, but no longer delay Auto after Cancel:
+ * the settled screen is read at once, as before #92, when no job ran while the
+ * overlay was open. Before, Auto waited for the refreshes' backoff, up to 59 s,
+ * and the subtitle strip kept the old sentence that long. */
+static void test_failing_refreshes_do_not_delay_auto_after_close(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    fail_vocr_user = 1; fake_free_user = 1000;
+    for (int i = 0; i < 6; i++) { /* backing off 2, 4, 8, 16, 32, then 60 s */
+        next_scene(20 + i);
+        test_now += BACKOFF_MAX_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_ASSERT(job_running && job_refresh);
+        finish_by_tick();
+        check_shown("猫犬鳥", "cat", 0);
+    }
+    next_scene(30);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending); /* the refreshes back off: 60 s since the last */
+    fail_vocr_user = 0; /* the game's memory came back */
+    fake_recognized_text = "犬猫";
+    close_overlay(); /* Cancel, 2 s after the last refresh failed */
+    control_tick(0);
+    TEST_ASSERT_(job_running && !job_refresh && !job_cursor_only, "Auto after Cancel: job_running %d", job_running);
+    finish_by_tick();
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "犬猫") && cache_ok && !g_view.open);
+    open_overlay(); /* the screen's text and word at once */
+    TEST_CHECK(!job_running);
+    check_shown("犬猫", "dog", 0);
+    close_overlay(); mem_free();
+}
+
+/* #95 item 2b (#92's audit): a refresh takes its capture for the text it shows,
+ * the scene and the region capture's seq, whether it replaces the text or reads
+ * the same one. When the region's scene number moves on with no new capture (an
+ * icon masked since), the text still shows the screen: no refresh reads it
+ * again, and reopening shows the saved word. next_scene moves both, so a refresh
+ * that kept the old text's seq was caught by no test. */
+static void test_a_refresh_takes_its_captures_seq(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    fake_recognized_text = "犬猫";
+    for (int same = 0; same < 2; same++) { /* a new text, then the same text again */
+        next_scene(9 + 2 * same);
+        test_now += 2 * REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_ASSERT(job_running && job_refresh);
+        uint32_t seq = state.region_seq;
+        finish_by_tick();
+        if (!same) { /* the new text's first word */
+            TEST_ASSERT(job_running && job_cursor_only);
+            finish_by_tick();
+        }
+        check_shown("犬猫", "dog", 0);
+        TEST_CHECK(local_text_scene == (uint32_t)(9 + 2 * same) && local_text_capture_seq == seq);
+        TEST_CHECK(cache_ok && active == 0 && cache_seq == seq);
+        state.scene = state.region_scene = 10 + 2 * same; /* the scene number moves on, the capture does not */
+        test_now += 2 * REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+        TEST_CHECK_(!job_running && !refresh_pending, "a refresh of the screen the text was read from (job %d)",
+                    job_running);
+        if (job_running) finish_by_tick();
+        if (!same) {
+            close_overlay();
+            log_count = 0;
+            open_overlay();
+            TEST_CHECK(!job_running && DLOGGED("open: saved local word"));
+            check_shown("犬猫", "dog", 0);
+        }
+    }
+    close_overlay(); mem_free();
+}
+
+/* Found with item 2b's test: reopening on the screen a refresh read the same
+ * text from shows the saved word at once, as reopening unchanged dialogue does
+ * (README). The refresh keeps the text, its lookup and the cache
+ * (on_refresh_done), and leaves the lookup's text generation, which open_overlay
+ * compares, as it is. Before, a refresh cleared it, so the reopen said "Looking
+ * up words…" and read the dictionary again for the word it had. */
+static void test_reopen_after_a_same_text_refresh_shows_the_saved_word(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    next_scene(8);
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_by_tick();
+    TEST_CHECK(DLOGGED("refresh rc=0: same text"));
+    check_shown("猫犬鳥", "cat", 0);
+    unsigned reads = cursor_reads, opens = cursor_opens;
+    close_overlay();
+    log_count = 0;
+    open_overlay();
+    TEST_CHECK_(!job_running && cursor_reads == reads && cursor_opens == opens,
+                "reopen: job_running %d (a lookup: %d), dictionary reads %u -> %u", job_running, job_cursor_only, reads,
+                cursor_reads);
+    TEST_CHECK(DLOGGED("open: saved local word"));
+    if (job_running) finish_by_tick();
+    check_shown("猫犬鳥", "cat", 0);
+    close_overlay(); mem_free();
+}
+
 #if VJO_DEBUG /* a self-test test: the debug build's */
 /* Subtitles turned on while the self-test's job runs show "Recognizing…" and
  * wait for a job's result, which that job never brings: once it ends, the strip
@@ -5780,6 +6023,15 @@ TEST_LIST = {
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},
     {"refresh_names_its_model_on_the_cards_only_when_it_replaces", test_refresh_names_its_model_on_the_cards_only_when_it_replaces},
     {"refresh_logs_quietly_and_a_failing_one_backs_off", test_refresh_logs_quietly_and_a_failing_one_backs_off},
+    {"reopen_during_a_cancelled_lookup_gets_its_own_recognition (#159 1)",
+     test_reopen_during_a_cancelled_lookup_gets_its_own_recognition},
+    {"subtitles_on_during_a_closed_overlays_lookup_or_refresh (#95 3a)",
+     test_subtitles_on_during_a_closed_overlays_lookup_or_refresh},
+    {"a_refused_job_after_a_cancelled_lookup_and_a_move_shows_its_error (#95 3b)",
+     test_a_refused_job_after_a_cancelled_lookup_and_a_move_shows_its_error},
+    {"failing_refreshes_do_not_delay_auto_after_close (#95 1)", test_failing_refreshes_do_not_delay_auto_after_close},
+    {"a_refresh_takes_its_captures_seq (#95 2b)", test_a_refresh_takes_its_captures_seq},
+    {"reopen_after_a_same_text_refresh_shows_the_saved_word", test_reopen_after_a_same_text_refresh_shows_the_saved_word},
 #if VJO_DEBUG
     {"refresh_while_the_selftest_is_armed", test_refresh_while_the_selftest_is_armed},
 #endif
