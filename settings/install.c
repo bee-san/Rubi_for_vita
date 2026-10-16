@@ -615,6 +615,47 @@ static char *ini_change(VjoInstallScan *s)
         if (line_) snprintf(line_, sizeof((s)->config_changes[0]), __VA_ARGS__);          \
     } while (0)
 
+/* The setting a config.ini line sets, safe to show on the page and in log.txt: its name, never its value.
+ * The name is the line's leading run of letters, digits and '_' (no setting's name has another character).
+ * An API key's line is named by the key alone, whatever follows it: core/config.c removed_secret drops a
+ * line that starts with one of these names, so the rest of such a line may be the key itself. 0 for a
+ * line that names nothing (blank, a comment). */
+static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
+{
+    static const char *const secrets[] = {"jpdb_api_key", "jiten_api_key", "api_key"}; /* removed_secret's */
+    size_t b = 0, e;
+    while (b < n && (line[b] == ' ' || line[b] == '\t')) b++;
+    for (size_t i = 0; i < sizeof(secrets) / sizeof(secrets[0]); i++) {
+        size_t len = strlen(secrets[i]);
+        if (n - b >= len && !strncasecmp(line + b, secrets[i], len)) {
+            snprintf(out, cap, "%s", secrets[i]);
+            return len;
+        }
+    }
+    for (e = b; e < n; e++) {
+        char c = line[e];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_')) break;
+    }
+    if (e == b || e - b >= cap) return 0;
+    memcpy(out, line + b, e - b);
+    out[e - b] = '\0';
+    return e - b;
+}
+
+/* Whether text (len bytes, LF lines) has a line equal to the n bytes at line (a CR before its LF ignored). */
+static int ini_has_line(const char *text, size_t len, const char *line, size_t n)
+{
+    for (size_t q = 0; q < len;) {
+        size_t qe = q;
+        while (qe < len && text[qe] != '\n') qe++;
+        size_t ql = qe - q;
+        if (ql && text[qe - 1] == '\r') ql--;
+        if (ql == n && !memcmp(text + q, line, n)) return 1;
+        q = qe + 1;
+    }
+    return 0;
+}
+
 /* config.ini's new text for an install (into ini_new): 2 written from the package's template (there is
  * neither config.ini nor its backup, which the app's load reads when config.ini is missing), 1 patched,
  * 3 written from its backup, 0 unchanged, -1 unreadable (s->reason). The lines it changes go into
@@ -685,7 +726,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
      * app's own save above drops) */
     {
         static const char *const gone[] = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms", "hachidori_host"};
-        int w = 0, dropped = 0;
+        int w = 0;
         for (int pos = 0; pos < ini_new_len;) {
             int e = pos;
             while (e < ini_new_len && ini_new[e] != '\n') e++;
@@ -700,13 +741,12 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
                 while (v < e && (ini_new[v] == ' ' || ini_new[v] == '\t')) v++;
                 drop = v < e && ini_new[v] == '=';
             }
-            if (drop) dropped++;
-            else { memmove(ini_new + w, ini_new + pos, (size_t)(e - pos)); w += e - pos; }
+            if (!drop) { memmove(ini_new + w, ini_new + pos, (size_t)(e - pos)); w += e - pos; }
             pos = e;
         }
         ini_new_len = w;
         ini_new[w] = '\0';
-        if (dropped) INI_CHANGE(s, "%d removed setting%s dropped (no longer read)", dropped, dropped == 1 ? "" : "s");
+        /* each line dropped here is named below, with every other line that only goes */
     }
     const char *keys[6], *values[6];
     int k = 0;
@@ -746,18 +786,37 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     for (int pos = 0; pos < ini_new_len;) {
         int e = pos;
         while (e < ini_new_len && ini_new[e] != '\n') e++;
-        int len = e - pos, found = 0;
-        for (size_t q = 0; q + (size_t)len <= bytes && !found;) {
-            size_t qe = q;
-            while (qe < bytes && old[qe] != '\n') qe++;
-            size_t ql = qe - q;
-            if (ql && old[qe - 1] == '\r') ql--;
-            found = ql == (size_t)len && !memcmp(old + q, ini_new + pos, (size_t)len);
-            q = qe + 1;
-        }
-        if (!found && len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#')
+        int len = e - pos;
+        if (len && ini_new[e - 1] == '\r') len--; /* a CRLF line the patch kept: one line, as in the old text */
+        if (len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#' && !ini_has_line(old, bytes, ini_new + pos, (size_t)len))
             INI_CHANGE(s, "%.*s", len > 110 ? 110 : len, ini_new + pos);
         pos = e + 1;
+    }
+    /* the lines that only go (a removed setting, an API key, a second copy of a setting): each named by its
+     * setting, never its value (test.4's dry run: the plan listed nothing while ocr_backend and log_host went).
+     * A setting the new text sets on a line of its own is changed, and that line is listed above. */
+    for (size_t q = 0; q < bytes;) {
+        size_t qe = q;
+        while (qe < bytes && old[qe] != '\n') qe++;
+        size_t ql = qe - q;
+        if (ql && old[qe - 1] == '\r') ql--;
+        char name[48], other[48];
+        if (ini_line_name(old + q, ql, name, sizeof(name)) && !ini_has_line(ini_new, (size_t)ini_new_len, old + q, ql)) {
+            int kept = 0, changed = 0;
+            for (int pos = 0; pos < ini_new_len;) {
+                int e = pos;
+                while (e < ini_new_len && ini_new[e] != '\n') e++;
+                int len = e - pos;
+                if (len && ini_new[e - 1] == '\r') len--;
+                if (ini_line_name(ini_new + pos, (size_t)len, other, sizeof(other)) && !strcasecmp(name, other)) {
+                    kept = 1;
+                    changed |= !ini_has_line(old, bytes, ini_new + pos, (size_t)len);
+                }
+                pos = e + 1;
+            }
+            if (!changed) INI_CHANGE(s, kept ? "%s: a repeated line goes" : "%s: a removed setting, goes", name);
+        }
+        q = qe + 1;
     }
     return 1;
 }
@@ -1258,6 +1317,10 @@ static int install_plan(const VjoInstallScan *s, char lines[][VJO_INSTALL_LINE],
     else if (s->config_ini == 3)
         n = add(lines, n, steps, "%d. config.ini is missing beside its backup config.ini.bak (a save that stopped): it is "
                 "written again from the backup, your settings as they were.", k++);
+    else if (!s->config_change_count && !s->config_change_more)
+        /* a text that differs in line ends or comments only: written, but no setting changes (never an empty list) */
+        n = add(lines, n, steps, "%d. config.ini: written again with every setting as it was; the old file is kept as "
+                "config.ini.bak.", k++);
     else {
         int shown = s->config_change_count < icap ? s->config_change_count : icap;
         int more = s->config_change_count - shown + s->config_change_more;
