@@ -84,7 +84,7 @@ The dictionary is 94% of the 168,114,408 B the payload installs (the debug packa
 vjopayload 1
 version 0.8.0
 variant normal
-api 23
+api 24
 worker kernel
 file ur0:tai/VitaJPOverlay_Kernel.skprx 31316 <sha256> copy
 ...
@@ -192,7 +192,7 @@ models and the dictionary are checked by size. Install and **Check and repair** 
 **installed.txt (R7).** The #122 stamp (`vjoapp1 api=N build=<eboot hash>`) has no version or build
 variant, so while the API stays 22 it cannot tell an older VPK from a newer one, or debug from normal.
 Install writes `ux0:data/VitaJPOverlay/installed.txt`, one line,
-`vjoinst1 version=0.8.0 variant=normal api=23 build=<eboot hash> manifest=<sha256 of manifest.txt>`,
+`vjoinst1 version=0.8.0 variant=normal api=24 build=<eboot hash> manifest=<sha256 of manifest.txt>`,
 by temp file and rename, and reads it back; `install-vita.sh` writes the same line from the zip's
 `package-manifest.json`. The state table then says "update to 0.8.1", "this app is older (0.8.0) than
 the installed overlay (0.8.1): Install goes back to 0.8.0", or "the same version, the debug build".

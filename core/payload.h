@@ -9,7 +9,7 @@
  *     version 0.8.0              the package's (a test build's: 0.8.0-test.4)
  *     app_version 0.8.0          the Overlay app's own (vita/CMakeLists.txt VJO_VERSION)
  *     variant normal             normal | debug (docs/release-variants.md)
- *     api 23                     VJO_API_VERSION
+ *     api 24                     VJO_API_VERSION
  *     worker kernel              kernel | lines (where the game OCR worker comes from)
  *     build 0123456789abcdef     the Overlay app's eboot.bin stamp (core/app_stamp.h)
  *     file DEST BYTES SHA256 copy|move
@@ -18,7 +18,7 @@
  *
  * installed.txt, one line:
  *
- *     vjoinst1 version=0.8.0 variant=normal api=23 build=0123456789abcdef manifest=<sha256 of manifest.txt> */
+ *     vjoinst1 version=0.8.0 variant=normal api=24 build=0123456789abcdef manifest=<sha256 of manifest.txt> */
 #ifndef VJO_PAYLOAD_PARSE_H
 #define VJO_PAYLOAD_PARSE_H
 #include <stddef.h>
