@@ -956,6 +956,12 @@ LOG = {
     "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
+    # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
+    # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
+    # (the normal build's line is the reason alone: "anki: screenshot rc=-103", only for a failed one)
+    "anki_shot": re.compile(r"^anki: screenshot rc=(-?\d+)(?: (\d+)x(\d+) q(\d+) try (\d+): (\d+) B; block (\d+) B "
+                            r"mem (\d+), free USER (-?\d+); (\d+) strips src (\d+) (\d+) ms, encode (\d+) ms, "
+                            r"write (\d+) ms; (\d+) ms)?"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
@@ -1220,6 +1226,21 @@ def render_app(a):
 def _read(folder, rel):
     p = folder / rel
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
+
+
+def shot_summary(a):
+    """API 23: the cards' screenshots (summarise_log's "anki"), the game worker's: how many were taken and why the
+    others were not, their JPEGs' sizes and times (shell/anki.c take_shot's line). Nothing when the log has none."""
+    if not a["shots"] and not a["shot_fail"]:
+        return []
+    # rc -1: the worker said it was saved, but the queue found no <id>.jpg (shell/anki_queue.c)
+    fails = ", ".join(f"{'no JPEG after it (rc -1)' if r == -1 else rc_text(r)} x{n}"
+                      for r, n in sorted(a["shot_fail"].items()))
+    kb = sorted(b / 1024 for b in a["shot_bytes"])
+    return [f"  Anki screenshots: {a['shots']} taken"
+            + (f", {sum(a['shot_fail'].values())} not ({fails})" if a["shot_fail"] else "")
+            + (f"; {kb[0]:.1f}-{kb[-1]:.1f} KB (median {kb[len(kb) // 2]:.1f}), encode {_span(a['shot_encode_ms'])} ms, "
+               f"the whole {_span(a['shot_ms'])} ms" if kb else "")]
 
 
 def _span(values):
@@ -2116,6 +2137,7 @@ def summarise_log(text):
     s = {"lines": 0, "boot": [], "shell_starts": 0, "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
+                  "shots": 0, "shot_fail": {}, "shot_bytes": [], "shot_ms": [], "shot_encode_ms": [],
                   "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
                   "export_stopped": 0, "export_left": 0, "export_problems": []}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
@@ -2345,6 +2367,7 @@ def summarise_log(text):
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
                     "psp", "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
+                    "anki_shot",
                     "gstep", "net_stack", "net_stack_off"):
             m = LOG[key].match(line)
             if not m:
@@ -2412,6 +2435,15 @@ def summarise_log(text):
                 s["anki"]["save_fail"] += int(m.group(2)) < 0
             elif key == "anki_queue":
                 s["anki"]["queue"] = int(m.group(1))
+            elif key == "anki_shot":
+                an, rc = s["anki"], int(m.group(1))
+                if rc:
+                    an["shot_fail"][rc] = an["shot_fail"].get(rc, 0) + 1
+                elif m.group(6):  # (a taken one's line is the debug build's, with its figures)
+                    an["shots"] += 1
+                    an["shot_bytes"].append(int(m.group(6)))
+                    an["shot_encode_ms"].append(int(m.group(13)))
+                    an["shot_ms"].append(int(m.group(15)))
             elif key == "anki_sent":
                 s["anki"]["sent"] += int(m.group(1))
             elif key == "anki_export":
@@ -3008,6 +3040,7 @@ def render_collect(c):
         L.append(f"  Anki: {a['saves']} save(s) ({a['save_fail']} failed), queue {a['queue'] if a['queue'] is not None else '-'}"
                  + (f", {a['sent']} sent (AnkiConnect, an earlier build)" if a["sent"] else "")
                  + (", Picture off in this build" if a["picture_off"] else ""))
+        L += shot_summary(a)
         L += export_summary(a)
         L += net_stack_lines(lg)
         if lg["config_warnings"]:

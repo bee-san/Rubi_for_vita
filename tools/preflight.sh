@@ -103,9 +103,10 @@ else
   fail "diagnostics never decide" "a diagnostic changed the verdict (exit $rc)"
 fi
 
-# 2b. the offline Anki queue as shipped (anki_mining = on in the test build): text-only cards, so
-# × never asks the kernel for its 2,088,960 B capture (#74's refusal); the job's arena and stack are
-# the ledger's, and the Shell budget model replays them against the console's measured SceShell
+# 2b. the offline Anki queue as shipped (anki_mining = on in the test build): a card's screenshot is the
+# game worker's (API 23), so × never asks the kernel for its 2,088,960 B capture (#74's refusal); the
+# job's arena and stack are the ledger's, and the Shell budget model replays them against the console's
+# measured SceShell
 ab=$BUILD/vjo-shell-anki-tests
 ae=$BUILD/vjo-apkg-tests
 # VJO_BUDGET_SHELL_ANKI_STACK: the Anki job's thread stack and its TLS, from the budget header
@@ -123,7 +124,7 @@ print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/
   arena=$(grep -E '^#define VJO_BUDGET_PAF_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
   if [ -n "$am_head" ] && [ "$am_head" -gt 0 ] && [ "$arena" = 131072 ] \
      && "$PY" tools/check_memory_ledger.py > "$log/ledger-src.log" 2>&1 && ! grep -q WARNING "$log/ledger-src.log"; then
-    pass "Anki offline queue (Shell)" "text-only cards, no network, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + ${anki_stack} B stack and TLS (VJO_BUDGET_SHELL_ANKI_STACK); SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); saves and exports stopped at every storage boundary $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
+    pass "Anki offline queue (Shell)" "screenshots in the game worker, no network, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + ${anki_stack} B stack and TLS (VJO_BUDGET_SHELL_ANKI_STACK); SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); saves (with screenshots too) and exports stopped at every storage boundary $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
   else
     fail "Anki offline queue (Shell)" "budget/model check (arena ${arena:-?}, headroom ${am_head:-?}; $log/ledger-src.log)"
   fi
@@ -299,7 +300,16 @@ cat <<'EOF'
     and a save a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
     beside a game were measured once at 98,304 B with an older, larger build; the model's
     headroom at that step is an estimate, and a refused thread or arena is survived (host
-    tests), the card is then not saved and the overlay says so. Cards carry no screenshot.
+    tests), the card is then not saved and the overlay says so.
+  - An Anki card's screenshot (API 23, anki_screenshot = on by default) runs in the game: a
+    450,560 B block beside the game's 4 MiB reserve, 9 frames of colour strips through the
+    display hook (or the kernel strip), the JPEG encoded at the lowest priority (60.0 M A9
+    instructions, 69-149 ms at 444 MHz, an estimate), then the kernel worker's file writes and
+    two memory card syncs. None of it has run on a console: the hook's colour copy into the
+    game's block, the encode's time beside a running game, the syncs' time and whether
+    ux0:data/VitaJPOverlay/anki_queue accepts the kernel's writes are unmeasured; a failure saves
+    the card without one and log.txt's "anki: screenshot rc=" line and its gstep lines say why.
+  - taiHEN binding of the new exports vjoOcrShotWrite and vjoOcrShotSave: packaged metadata only.
   - The Overlay app's .apkg export (its 2 MiB arena, sceIoPwrite/sceIoPread on ux0:, the
     memory card's speed for a large queue) has run on the host only; its packages were imported
     by Anki 26.09.3 on a computer (tools/requirements-anki.txt), not yet by AnkiDroid or

@@ -25,6 +25,6 @@ int parity_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w
                      const ParityRowsJob *j)
 {
     OcrRowsJob job = {j->x0, j->y0, j->w, j->h, j->fb_w, j->fb_h, j->y, j->n, j->stride, j->dst_user,
-                      j->dst_kernel, j->sig};
+                      j->dst_kernel, j->sig, j->rgba};
     return capture_grey_rows(base, pitch, fmt, fb_w, fb_h, &job);
 }

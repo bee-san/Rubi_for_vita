@@ -143,7 +143,7 @@ every title without a row of its own.
 
 ## Memory
 
-- **Game partition.** Unchanged per process: the worker's module pages (90,112 B) and its idle
+- **Game partition.** Unchanged per process: the worker's module pages (94,208 B since API 23's Anki screenshot) and its idle
   thread (32,768 B stack + 4,096 B TLS) until a job, then the jobs' blocks as before
   ([memory-ledger.md](memory-ledger.md)). What changes is where: every title ON in `games.ini`,
   not only those with a line. With `default = enabled`, the installer's default, that is every

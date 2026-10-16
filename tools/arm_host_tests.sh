@@ -83,10 +83,11 @@ build psp host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c 
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 
-# The Overlay app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets.
+# The Overlay app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
+# picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
 BS=third_party/bearssl/src
 APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/anki_queue.c core/json.c
-      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
+      core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 

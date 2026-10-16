@@ -114,6 +114,39 @@ class SaveRestartTests(Storage):
                     json.loads((self.queue / f"{card}.json").read_text("utf-8"))
 
 
+class ScreenshotSaveRestartTests(Storage):
+    """API 23, enter with screenshots on: the game's JPEG first, then the record that names it. A
+    stop anywhere leaves the card whole (record and JPEG) or not there (a JPEG alone is never a
+    card), and the next save of it replaces a JPEG left alone."""
+
+    def pictures(self):
+        names = {p.name for p in self.queue.iterdir() if p.is_file()}
+        cards = {i: json.loads((self.queue / f"{i}.json").read_text("utf-8")) for i in self.records(self.queue)}
+        for card, record in cards.items():
+            self.assertEqual(f"{card}.jpg" in names, record["picture"], card)  # a picture card has its JPEG
+        return cards, sorted(n[:32] for n in names if n.endswith(".jpg"))
+
+    def test_every_stop_point(self):
+        for point in ("jpeg_saved", "json_partial", "json_flushed", "json_renamed", "json_committed"):
+            with self.subTest(checkpoint=point):
+                self.use(Path(self.temp.name) / ("shot-" + point))
+                self.run_step(SHELL, "save")  # a text-only card saved before
+                original = self.snapshot(self.queue)
+                self.run_step(SHELL, "save-shot-other", crash=point)
+                for name, data in original.items():
+                    self.assertEqual((self.queue / name).read_bytes(), data)
+                cards, jpgs = self.pictures()
+                # the record is the card: before its rename there is none (its JPEG may be left alone)
+                self.assertEqual(len(cards), 2 if point in ("json_renamed", "json_committed") else 1)
+                self.assertEqual(len(jpgs), 1)
+                again = self.run_step(SHELL, "save-shot-other")
+                self.assertEqual(again["count"], 2)
+                self.assertIn(again["status"], ("Saved for Anki", "Already queued"))
+                cards, jpgs = self.pictures()
+                self.assertEqual(jpgs, [c for c, r in cards.items() if r["picture"]])  # no JPEG left alone
+                self.assertEqual(len(jpgs), 1)
+
+
 class ExportRestartTests(Storage):
     """The Overlay app's export: a stop anywhere loses no card and leaves no broken package."""
 

@@ -74,9 +74,11 @@ ITEMS = {
     # VJO_BUDGET_KERNEL_OCR_STRIP is never held with the capture (kernel/buffers.c): not in the sum
     "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE",
                "VJO_BUDGET_KERNEL_OCR_STRIP", "VJO_BUDGET_KERNEL_POLICY"),
+    # VJO_BUDGET_GAME_SHOT (API 23, a screenshot) is a job of the one slot: never beside an OCR
+    # job's workspace, capture, line or helpers, so not in the sum (include/vjo_ledger_budget.h)
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
              "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE",
-             "VJO_BUDGET_GAME_HELPERS"),
+             "VJO_BUDGET_GAME_HELPERS", "VJO_BUDGET_GAME_SHOT"),
 }
 # Packaged module -> the macro its pages must not exceed.
 MODULE_BUDGETS = {

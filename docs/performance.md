@@ -166,7 +166,15 @@ none, so the wait reads exactly the passes it would at that rate (and the cascad
 | `log` | line | 0.3 µs | 2,792 | 3-6 µs | 4-8 µs | 100% | yes |
 | `anki` | card | 3.6 µs | 58,578 | 0.07-0.13 ms | 0.09-0.18 ms | 35% | yes |
 | `furigana` | word | 0.1 µs | 1,715 | 2-4 µs | 3-5 µs | 51% | yes |
+| `capture_shot_abgr` | strip (64 rows) | 6.7 µs | 131,401 | 0.28-2.45 ms | 0.38-3.02 ms | 98% | yes |
+| `jpeg_shot` | shot | 4.24 ms | 60,049,285 | 69.39-148.73 ms | 92.52-197.98 ms | 1% | yes |
 
+*capture_shot_abgr* and *jpeg_shot* (API 23, an Anki card's screenshot; their rows are measured on
+this change, the others are the baseline above): the display hook's copy of one strip of 64 colour
+rows of the full frame (A8B8G8R8 rows are a plain copy, the firmware's `memcpy` stands in for its
+own, hence the libc share; nine strips a screenshot, one per game frame, in the game's display call),
+and `core/jpegsw.c` in the game worker on the whole frame at quality 70, its strips' wait not
+included ([anki.md](anki.md#time-and-memory)).
 *Strip*: the 896x156 region reads in three strips of 64, 64 and 28 rows (the full frame in ten:
 nine of 59 and one of 13), so a full 64-row strip costs about 23% more than these per-strip means
 (the work is the same for every row). *job_h15*: the job on main's defaults (`stage_job` mode 14:
@@ -193,6 +201,8 @@ ran): `tools/bench_model.py` takes it against the bundle's own `recognize_h15` r
 | `job_h15_greedy` | 186,704 B workspace + 63,000 B capture block; 10 strips and 604 row reads |
 | `lookup_first` / `_every` | 1 open, 14.3 / 14.0 reads, 49.6 / 48.8 KiB per lookup; arena peak 53,552 B of the Shell's 64 KiB |
 | `config`, `log`, `anki` | 4,283 B of config.ini into a 2,388 B `VjoConfig`; 111 B per log line; 997 B per card record |
+| `capture_shot_abgr` | reads 245,760 B of the game's frame and writes 245,760 B of colour rows into the worker's block per strip; 2 x 3,840 B of kernel scratch (static) |
+| `jpeg_shot` | the 960x544 sample frame (2,088,960 B of colour rows, band by band) into a 28,154 B JPEG at quality 70; 36,520 B of the arena (the encoder's state and the JPEG; the game worker's block also holds a 64-row strip of colour rows) |
 
 Over the 372 dev regions (`bench_stages.py dev`), API 19's job reads 7.3 strips (median 8, p90
 12, max 18), 2.4 lines (median 2, p90 4) and 86 CTC frames (median 78, p90 158); every region row

@@ -92,6 +92,9 @@ typedef struct {
      * for the rows to hold still (0: ocr_settle_max_ms as for any job); the
      * smaller of the two applies (docs/first-ocr.md). */
     int ocr_settle_press_ms;  /* 0 or 100..10000 */
+    /* Anki (API 23): a card saved with anki_mining keeps a JPEG of the game's screen
+     * (on by default; the game worker takes it, docs/anki.md). Last, as above. */
+    int anki_screenshot;      /* 0/1 */
 } VjoConfig;
 
 void vjo_config_defaults(VjoConfig *c);

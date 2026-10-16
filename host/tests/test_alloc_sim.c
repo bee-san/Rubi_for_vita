@@ -176,6 +176,8 @@ int test_kernel_cancel(uint32_t seq);
 int test_kernel_model_open(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info);
 int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst);
 int test_kernel_model_close(uint32_t seq);
+int test_kernel_shot_write(uint32_t seq, uint32_t off, uint32_t bytes, const void *src);
+int test_kernel_shot_save(uint32_t seq, uint32_t bytes);
 static int retail_return(int rc) { return rc < 0 ? (int32_t)((uint32_t)rc & ~0x40000000u) : rc; }
 int vjoBootInfo(VjoBootInfo *out) { out->mode = VJO_BOOT_NORMAL; return 0; }
 int vjoOcrRegister(void) { return retail_return(test_kernel_register()); }
@@ -192,6 +194,10 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t bytes, void *dst)
 { return retail_return(test_kernel_model_read(seq, off, bytes, dst)); }
 int vjoOcrModelClose(uint32_t seq) { return retail_return(test_kernel_model_close(seq)); }
+/* API 23: a shot's file (no shot runs here: OCR jobs only) */
+int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
+{ return retail_return(test_kernel_shot_write(seq, off, bytes, src)); }
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { return retail_return(test_kernel_shot_save(seq, bytes)); }
 int vjoMemInfo(VjoMemInfo *out) { (void)out; return VJO_ERR_PERM; }
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
@@ -240,6 +246,11 @@ SceOff ksceIoLseek(SceUID fd, SceOff off, int whence) { (void)fd; fseek(file, (l
 int ksceIoPread(SceUID fd, void *out, SceSize n, SceOff off)
 { (void)fd; fseek(file, (long)off, SEEK_SET); return (int)fread(out, 1, n, file); }
 int ksceIoClose(SceUID fd) { (void)fd; int rc = fclose(file); file = NULL; return rc; }
+/* A shot's file calls: no shot job runs in the simulator, so none is ever made. */
+int ksceIoPwrite(SceUID fd, const void *p, SceSize n, SceOff off) { (void)fd; (void)p; (void)n; (void)off; TEST_CHECK(0); return -1; }
+int ksceIoRemove(const char *path) { (void)path; TEST_CHECK(0); return -1; }
+int ksceIoRename(const char *a, const char *b) { (void)a; (void)b; TEST_CHECK(0); return -1; }
+int ksceIoSync(const char *dev, unsigned int unk) { (void)dev; (void)unk; TEST_CHECK(0); return -1; }
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_us++; }
 int sceKernelDelayThread(unsigned us)

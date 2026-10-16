@@ -271,12 +271,12 @@ static void test_save_switch_reload_retains_other_settings(void)
 static int read_back(const char *path, char *text, size_t cap);
 
 /* The app's saves of config.ini, each patching its own keys: 0 the OCR page's
- * four choices (the arguments), 1 the Anki page's (mining on), 2 the reading
- * settings (Read text: only on a press; Speed boost while reading: on). */
+ * four choices (the arguments), 1 the Anki page's (mining and screenshots on), 2
+ * the reading settings (Read text: only on a press; Speed boost while reading: on). */
 #define APP_SAVES 3
 static int app_save(int which, int tier, int japanese_only, int highlight_mode, int results)
 {
-    return which == 1 ? vjo_preferences_save_anki(1, &arena)
+    return which == 1 ? vjo_preferences_save_anki(1, 1, &arena)
          : which == 2 ? vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 1, &arena)
                       : vjo_preferences_save(tier, japanese_only, highlight_mode, results, &arena);
 }
@@ -348,15 +348,20 @@ static void test_anki_page_save(void)
     TEST_CHECK(vjo_config_patch_keys("a\0b", 3, keys, values, 2, out, sizeof(out)) == -1);
     /* through the file: what the overlay then loads */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
-    TEST_ASSERT(vjo_preferences_save_anki(1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, 1, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     /* (the fixture's one warning is its unknown_future_setting) */
     TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 1 && cfg.font_size_ja == 22 &&
                cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
     TEST_MSG("mining %d warnings %d: %s", cfg.anki_mining, cfg.n_warnings, cfg.warnings[0]);
-    TEST_ASSERT(vjo_preferences_save_anki(0, &arena) == 0);
+    TEST_CHECK(cfg.anki_screenshot == 1); /* API 23: on, the default the save wrote */
+    /* the cards' screenshots off: their own line, read back as such */
+    TEST_ASSERT(vjo_preferences_save_anki(1, 0, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.anki_mining == 0 && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
+    TEST_CHECK(cfg.anki_mining == 1 && cfg.anki_screenshot == 0 && cfg.n_warnings == 1);
+    TEST_ASSERT(vjo_preferences_save_anki(0, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.anki_mining == 0 && cfg.anki_screenshot == 1 && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
     {
         char text[sizeof(original) + 160];
         int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
@@ -369,14 +374,15 @@ static void test_anki_page_save(void)
         TEST_ASSERT(engine != NULL);
         size_t head = (size_t)(engine - original), line = strlen("ocr_backend = lens\n");
         size_t tail = sizeof(original) - 1 - head - line;
+        /* (API 23: and the cards' screenshots, on unless the page turned them off) */
         TEST_CHECK(!strncmp(text, original, head) && !strncmp(text + head, engine + line, tail) &&
-                   !strcmp(text + head + tail, "anki_mining = off\n"));
+                   !strcmp(text + head + tail, "anki_mining = off\nanki_screenshot = on\n"));
         TEST_MSG("%s", text);
     }
     /* a failed write leaves the old file */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     write_fail = 1;
-    TEST_CHECK(vjo_preferences_save_anki(1, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save_anki(1, 1, &arena) < 0);
     write_fail = 0;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(!cfg.anki_mining);
@@ -442,16 +448,16 @@ static void test_reading_settings_save(void)
     /* the OCR page's other choices and the Anki page's keep them, and they keep those */
     TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena) == 0);
     TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
-    TEST_ASSERT(vjo_preferences_save_anki(1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, 0, &arena) == 0); /* (API 23: the cards' screenshots off) */
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 0 && cfg.vocr_tier == VJO_VOCR_TIER_LARGE &&
                !cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER &&
-               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1);
+               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1 && cfg.anki_screenshot == 0);
     TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_AUTO, 1, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_AUTO && cfg.ocr_boost_clock == 1 && cfg.vocr_tier == VJO_VOCR_TIER_LARGE &&
                !cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER &&
-               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1);
+               cfg.local_dictionary_results == 3 && cfg.anki_mining == 1 && cfg.anki_screenshot == 0);
     TEST_ASSERT(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) > 0);
     TEST_CHECK(lines_with(out, "ocr_mode =") == 1 && strstr(out, "\nocr_mode = auto\n") && /* each key once */
                lines_with(out, "ocr_boost_clock =") == 1 && strstr(out, "\nocr_boost_clock = on\n"));

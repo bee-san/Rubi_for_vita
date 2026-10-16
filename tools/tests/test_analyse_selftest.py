@@ -1125,6 +1125,26 @@ class AnkiExportLines(unittest.TestCase):
             "to export, 0 failed; 4 card(s) in the packages; still queued for the next export, not a problem: 3 a "
             "stop left, 3 over a package's cap"])
 
+    def test_the_cards_screenshots_are_counted(self):
+        # API 23, shell/anki.c take_shot: one line per card saved with screenshots on
+        def shot(rc, b, enc, whole):
+            return (f"anki: screenshot rc={rc} 960x544 q70 try 1: {b} B; block 450560 B mem 1, free USER 90177536; "
+                    f"9 strips src 1 150 ms, encode {enc} ms, write 40 ms; {whole} ms\n")
+        lg = a.summarise_log(shot(0, 57000, 120, 330) + shot(0, 41000, 100, 300) + shot(-103, 0, 0, 2)
+                             + "anki: queue 2 card(s)\n")
+        an = lg["anki"]
+        self.assertEqual((an["shots"], an["shot_fail"], an["shot_bytes"]), (2, {-103: 1}, [57000, 41000]))
+        self.assertEqual(a.shot_summary(an), ["  Anki screenshots: 2 taken, 1 not (out of memory (rc -103) x1); "
+                                              "40.0-55.7 KB (median 55.7), encode 100-120 ms, the whole 300-330 ms"])
+        self.assertEqual(a.shot_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]), [])
+        # the normal build: a failed one's reason only, after the save's line (shell/anki.c do_save)
+        lg = a.summarise_log("anki: save rc=0, 90 ms\nanki: screenshot rc=-103\n"
+                             "anki: save rc=0, 80 ms\nanki: screenshot rc=-1\nanki: save rc=0, 70 ms\n")
+        an = lg["anki"]
+        self.assertEqual((an["saves"], an["shots"], an["shot_fail"]), (3, 0, {-103: 1, -1: 1}))
+        self.assertEqual(a.shot_summary(an), ["  Anki screenshots: 0 taken, 2 not (out of memory (rc -103) x1, "
+                                              "no JPEG after it (rc -1) x1)"])
+
     def test_no_export_and_an_older_line_without_its_stop_count(self):
         self.assertEqual(a.export_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]),
                          ["  Anki exports (the Overlay app): none in the log"])
@@ -1132,6 +1152,19 @@ class AnkiExportLines(unittest.TestCase):
                "40960 bytes, arena peak 1000\n")
         lg = a.summarise_log(old)
         self.assertEqual((lg["anki"]["export_ok"], lg["trouble"]), (1, {}))
+
+    def test_the_shell_writes_the_screenshot_lines_the_analyser_reads(self):
+        # API 23, shell/anki.c: the debug build's line with its figures (take_shot), the normal build's reason only
+        # (do_save); a format that drifts from LOG["anki_shot"] would count a taken screenshot as neither
+        src = (ROOT / "shell/anki.c").read_text(encoding="utf-8")
+        fmt = re.search(r'vjo_log\("(anki: screenshot rc=%d %ux%u [^"]*)"\s*"([^"]*)"', src)
+        self.assertIsNotNone(fmt, "shell/anki.c's screenshot line moved: update LOG['anki_shot']")
+        line = (fmt.group(1) + fmt.group(2)) % (0, 960, 544, 70, 1, 57000, 450560, 1, 90177536, 9, 1, 150, 120, 40, 330)
+        m = a.LOG["anki_shot"].match(line)
+        self.assertEqual((m.group(1), m.group(6), m.group(13), m.group(15)), ("0", "57000", "120", "330"))
+        self.assertIn('vjo_log("anki: screenshot rc=%d", shot.rc);', src)
+        m = a.LOG["anki_shot"].match("anki: screenshot rc=%d" % -103)
+        self.assertEqual((m.group(1), m.group(6)), ("-103", None))
 
     def test_the_app_writes_the_lines_the_analyser_reads(self):
         page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")

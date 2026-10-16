@@ -274,7 +274,7 @@ static void ocr_grey_rows_every_format(void)
     for (int f = 0; f < 3; f++) {
         uint32_t fmt = f == 0 ? VJO_FB_A8B8G8R8 : f == 1 ? VJO_FB_A2B10G10R10 : VJO_FB_A1B5G5R5;
         uintptr_t base = f == 2 ? (uintptr_t)fb16 : (uintptr_t)fb32;
-        OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0};
+        OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0, 0};
         memset(grey_out, 0xEE, sizeof(grey_out));
         TEST_CHECK(capture_grey_rows(base, 40, fmt, 40, 32, &job) == 20);
         for (unsigned r = 0; r < 20; r++)
@@ -291,7 +291,7 @@ static void ocr_grey_rows_every_format(void)
             TEST_CHECK((abgr & 0xFFFFFF) == 0xF8F8F8);
         }
     }
-    OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0};
+    OcrRowsJob job = {4, 2, 32, 28, 40, 32, 3, 20, 64, (uintptr_t)grey_out, NULL, 0, 0};
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, 0x12345678u, 40, 32, &job) == VJO_ERR_FORMAT);
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 48, 32, &job) == VJO_ERR_FORMAT);
     TEST_CHECK(capture_grey_rows(0, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_COPY);
@@ -301,7 +301,7 @@ static void ocr_grey_rows_every_format(void)
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == VJO_ERR_COPY);
     user_copy_failure = 0;
     unsigned char kstrip[32 * 20];
-    OcrRowsJob kjob = {4, 2, 32, 28, 40, 32, 3, 20, 32, 0, kstrip, 0};
+    OcrRowsJob kjob = {4, 2, 32, 28, 40, 32, 3, 20, 32, 0, kstrip, 0, 0};
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &kjob) == 20);
     memset(grey_out, 0, sizeof(grey_out));
     TEST_CHECK(capture_grey_rows((uintptr_t)fb32, 40, VJO_FB_A8B8G8R8, 40, 32, &job) == 20);
@@ -342,7 +342,7 @@ static void sig_first_pass(uint32_t fmt, uint32_t x0, uint32_t y0, uint32_t w, u
     capture_sig_begin(w, h);
     for (uint32_t y = 0; y < h; y += strip) {
         uint32_t n = h - y < strip ? h - y : strip;
-        OcrRowsJob job = {x0, y0, w, h, SIG_FW, SIG_FH, y, n, w, (uintptr_t)sig_grey, NULL, 1};
+        OcrRowsJob job = {x0, y0, w, h, SIG_FW, SIG_FH, y, n, w, (uintptr_t)sig_grey, NULL, 1, 0};
         TEST_ASSERT(capture_grey_rows((uintptr_t)base, SIG_FW, fmt, SIG_FW, SIG_FH, &job) == (int)n);
         for (uint32_t r = 0; r < n; r++) {
             vjo_fb_to_abgr(sig_abgr_row, (const uint8_t *)base + ((size_t)(y0 + y + r) * SIG_FW + x0) * bpp, w, fmt);

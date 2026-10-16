@@ -75,7 +75,12 @@
  * 3aa08a6, #141]. The network stack's last users (shell/platform_vita.c's sockets, resolver and
  * cancellation, the UDP log, log_host) went next: 99,268 text + 69,772 data/bss, the same pages, and no
  * SceNet or SceNetCtl import [measured: the build log's module rows, main 3aa08a6 with #132 and this
- * change]. */
+ * change].
+ * API 23's Anki screenshot (anki.c's request to the game worker, the queue's second ID, the game
+ * worker's job slot in worker.c) makes it 99,244 -> 100,484 text and 69,772 -> 69,828 data/bss, the same
+ * pages [measured: the build log's module rows, main c6e0a4d and this change]; the normal build
+ * 89,204 -> 90,012 text and 69,700 -> 69,756 data/bss, the same pages, 100 B of text room left (its
+ * normal-build log is a failed screenshot's reason only). The screenshot itself is never in SceShell. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -118,8 +123,15 @@
  * against the debug build's 71,072 + 14,208 [measured: the build log's module rows, both builds on
  * main 6020c0b; on 9f92bc6 the normal worker was 69,464 B, a text page fewer]. The rest of the
  * worker's debug-only code is the step log, whose tier checks and clock step the normal Shell's
- * short log reads. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
+ * short log reads.
+ * Raised from 90,112 B by one text page for API 23, the Anki screenshot, in both builds: its JPEG
+ * encoder (core/jpegsw.c, 4,038 B at -O2, and core/arena.c, 518 B), the shot job and its capture
+ * (game_ocr/main.c run_shot) take the debug build's text 71,372 -> 77,004 B and its data/bss
+ * 14,208 -> 14,160 B (the request's model directory 256 -> 128 B), the normal build's 70,008 -> 75,688 B
+ * and 14,208 -> 14,160 B [measured: the build log's module rows, main dcb7b31 and this change, both
+ * builds], in the game's partition, never SceShell's: the screenshot is encoded where OCR runs
+ * (AGENTS.md rule 1). */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Overlay app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
@@ -175,11 +187,13 @@
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u
-/* An Anki job (anki.c ANKI_TEXT_MEM): saving a text-only card to the queue. The Shell takes no
- * screenshot: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
- * and a 393,216 B arena here) was removed with AnkiConnect. A save with 8 dictionaries' entries
- * peaks at 102,680 B [measured, host, test_shell_anki.c, main e53d9fb]. anki.c checks its arena against this at
- * compile time. */
+/* An Anki job (anki.c ANKI_TEXT_MEM): saving a card to the queue. The Shell takes no screenshot
+ * itself: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
+ * and a 393,216 B arena here) was removed with AnkiConnect, and since API 23 the game worker
+ * makes the card's JPEG in the game's memory (VJO_BUDGET_GAME_SHOT); here only its request and
+ * result, 5,404 B in this arena while the shot runs, after the record's dry runs are released.
+ * A save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B
+ * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
@@ -203,7 +217,14 @@
  * 150 B and 8 B, and five more SceSysclibForDriver stubs [measured: the build's objects]. The debug
  * build: 36,640 -> 40,648 B of text and 77,768 -> 77,824 B of data/bss, the data/bss pages full
  * (one more byte takes a page) [measured: the build log's module rows, main 3aa08a6 and #138; the same on
- * main c08db18]. */
+ * main c08db18].
+ * API 23's Anki screenshot (the shot's colour rows and its JPEG's file broker, kernel/game_ocr.c and
+ * kernel/capture.c) is paid for within the same pages by the rest of the kernel's cold code built
+ * for size (vita/CMakeLists.txt: the syscalls and the worker's loop, the boot guard, the kernel
+ * strip, the log) and the request's model directory 256 -> 128 B: 40,648 -> 40,040 B of text and
+ * 77,824 -> 77,672 B of data/bss, the data/bss pages no longer full; the normal build 36,444 -> 35,900
+ * and 76,136 -> 75,984 B, the same pages too [measured: the build log's module rows, main dcb7b31 and
+ * this change, both builds]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else
@@ -305,6 +326,16 @@
 #define VJO_GAME_RESERVE_NORMAL (8u * 1024u * 1024u)
 #define VJO_GAME_RESERVE_LARGE (16u * 1024u * 1024u)
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
+/* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
+ * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
+ * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX
+ * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
+ * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
+ * line or helpers (1,814,528 B of the job's worst case besides the resident weights, LM
+ * and cascade model, which a shot keeps: 6,905,856 + 450,560 B under the job's
+ * 8,720,384 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * keeps VJO_GAME_RESERVE free beside it. */
+#define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
                             VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \

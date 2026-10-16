@@ -50,6 +50,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
     c->ocr_settle_press_ms = 1000; /* a job the open overlay waits for (docs/first-ocr.md) */
     c->log_file = 1; /* log.txt is on unless log_file = off */
+    c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
 }
 
 const char *vjo_config_default_text(void)
@@ -136,7 +137,9 @@ const char *vjo_config_default_text(void)
            "; on: enter (× or ○, as the Vita's settings assign it) in the overlay saves the\n"
            "; shown word as a card in a queue on the memory card; the Overlay app exports the\n"
            "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
-           "anki_mining = off\n";
+           "anki_mining = off\n"
+           "; on: each card keeps a JPEG of the game's screen (about 60 KB) in its Picture\n"
+           "anki_screenshot = on\n";
 }
 
 static void warn(VjoConfig *c, const char *fmt, const char *a, const char *b)
@@ -548,11 +551,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 0;
         else
             warn(c, "%s: invalid value '%s'", key, val);
-    } else if (vjo_ieq(key, "anki_mining")) {
+    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot")) {
+        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining : &c->anki_screenshot;
         if (vjo_ieq(val, "on"))
-            c->anki_mining = 1;
+            *dst = 1;
         else if (vjo_ieq(val, "off"))
-            c->anki_mining = 0;
+            *dst = 0;
         else
             warn(c, "%s: invalid value '%s'", key, val);
     } else {

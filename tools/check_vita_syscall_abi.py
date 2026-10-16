@@ -24,7 +24,9 @@ HOOKS = {
 }
 GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCaptureRows",
                   "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel",
-                  "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose")
+                  "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose",
+                  # API 23: the Anki screenshot's JPEG, written through the kernel's worker
+                  "vjoOcrShotWrite", "vjoOcrShotSave")
 # API 19 removed the RGBA reader: no module may still import it.
 REMOVED = ("vjoOcrReadRaw",)
 GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
@@ -217,6 +219,9 @@ def audit(kernel, shell, require_hooks=False, worker=None):
         for name in shell_only:
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
             require(nid not in worker_imports, f"Worker imports Shell-only syscall {name}")
+        # API 23: the JPEG's bytes go from the game worker to the kernel, never through SceShell
+        for name in ("vjoOcrShotWrite", "vjoOcrShotSave"):
+            require(GAME[name] not in imports, f"Shell imports the game worker's {name}")
         for nid, (segment, offset) in worker_imports.items():
             require(nid in exports, f"Worker imports missing syscall 0x{nid:08x}")
             require(worker.segments[segment][2] & 1 and offset % 4 == 0, "Bad worker import location")

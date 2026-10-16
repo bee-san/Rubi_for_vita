@@ -26,7 +26,7 @@ static int api19_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, siz
 {
     const Api19Capture *c = ud;
     ParityRowsJob job = {c->x, c->y, c->w, c->h, c->f->fb_w, c->f->fb_h, y, n, (uint32_t)stride,
-                         (uintptr_t)dst, NULL, 0};
+                         (uintptr_t)dst, NULL, 0, 0};
     (void)flags;
     return parity_grey_rows((uintptr_t)c->f->pixels, c->f->pitch, c->f->fmt, c->f->fb_w, c->f->fb_h, &job);
 }

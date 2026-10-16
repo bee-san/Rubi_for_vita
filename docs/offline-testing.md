@@ -25,15 +25,19 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 56 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 55 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 55 and 54,
+failed joins, cancelled jobs and crashes between steps are injected there. 58 ctest suites with
+the release models (`VJO_VOCR_MODEL_DIR`), 57 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 57 and 56,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
-test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder, and the HTTP
+test went with the relay client, Google Lens's JPEG encoder and its first `test_jpegsw.py` with Lens, and the HTTP
 transport test, `vjo-http-transport-tests`, with the network stack, whose `platform_vita` suite now
-tests what is left of the Shell's platform: its files and its clock). The Overlay app's `.apkg` packages are imported there by Anki itself:
+tests what is left of the Shell's platform: its files and its clock; API 23's Anki screenshot brought a smaller encoder back into the game worker,
+with `jpeg_encoder`, every JPEG of it decoded by Pillow, and `game_shot`, a screenshot through the actual
+worker and kernel transport into real files). The Overlay app's `.apkg` packages are imported there by Anki
+itself, and a card's screenshot is checked as Anki shows it (the `<img>` of its rendered answer, the file in
+its media):
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.

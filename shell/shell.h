@@ -111,6 +111,12 @@ int vjo_post_page(int page, uint32_t text_generation);
 /* worker.c */
 int vjo_worker_start(void);
 int vjo_worker_stop(void);
+/* The game worker's one job slot for another thread's exchange (anki.c's
+ * screenshot, API 23): the network thread's OCR jobs wait meanwhile, and a quiet
+ * refresh in progress yields. Waits at most wait_us, while stop(NULL) says no:
+ * 0 once it holds the slot (vjo_game_job_end gives it back), -1 otherwise. */
+int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us);
+void vjo_game_job_end(void);
 /* The system clock in ms (kernel.txt's): the t= of the foreground and touch transitions (#104). */
 unsigned vjo_log_ms(void);
 

@@ -160,21 +160,21 @@ SceShell is a user-mode system application spawned with the system-application b
 | Component | Context | What | Pool | Size | Source |
 |---|---|---|---|---|---|
 | `VitaJPOverlay_Kernel.skprx` | `*KERNEL` | module pages (`.bss` 78,128 B at API 16, up from 53,008 B at API 13) | KD | about 0.1 MiB [measured] | [PR #60, `docs/issue-59-root-cause.md` section 4] |
-| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens JPEG, removed since, so nothing takes it (OCR and Anki take none: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
+| | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens JPEG, removed since, so nothing takes it (OCR and, since API 23, an Anki card's screenshot read the frame in the game: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
 | | | `VjoNet` stack 16,384 B + 4,096 B TLS (65,536 B until #132); `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 40,960 B permanent, the ledger's (90,112 B until #132 [measured]) | same; [memory-ledger.md](memory-ledger.md) |
 | | | result arena 64 KiB (the local dictionary's; the network's 2 × 256 KiB and connection pool went with Google Lens), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
 | | | Anki thread stack 16 KiB + TLS (64 KiB until the network went), only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | loaded by the kernel into each game ON in `games.ini` since #138 (`*TITLEID`, one section per game, before; `*ALL` up to the installer's `--title`) | module pages in each enabled game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`], nor outside the enabled ones since #138 [source: `kernel/loader.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
-| | in an enabled game | worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10, VOCR3-FL10: Small), 1,159,168 B (H15, VOCR3-H15: Normal) or 1,560,576 B (VOCR4-W20: Large, API 21); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
+| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 659,456 B (FL10, VOCR3-FL10: Small), 1,159,168 B (H15, VOCR3-H15: Normal) or 1,560,576 B (VOCR4-W20: Large, API 21); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
 `docs/issue-59-root-cause.md` section 3.1].
 
 **API 19 (#74).** OCR's capture moved into the game: the kernel's `VjoCapture` served only the
-Lens JPEG (since Google Lens's removal nothing takes it; Anki takes no screenshot), and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
+Lens JPEG (since Google Lens's removal nothing takes it; since API 23 an Anki card's screenshot is read and encoded in the game, [anki.md](anki.md#the-screenshot)), and the game worker holds a capture block of at most 64 KiB (`USER_RW`, else
 CDRAM, else phycont) instead of a region-sized grey plane in its workspace. The H15 workspace is
 188,416 B at any region (712,704 B at 960×544 and 303,104 B at 917×125 before); a line taller
 than a strip takes its own block only when it occurs. The worker's module is 61,440 B
@@ -221,7 +221,7 @@ worker's pages go only where they did with the lines, and into games without one
 line still names keeps one copy (the worker checks for an older copy of itself). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
 Overlay app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
-With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 90,112 B of
+With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 94,208 B of
 pages and 36,864 B of stack and TLS, from the game's own budget); one that cannot start with them is
 turned OFF or started with L held.
 

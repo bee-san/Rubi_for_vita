@@ -88,8 +88,18 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # worker loader (#138: one games.ini read per game start, kernel/loader.c) is
 # one too. (core/games.c, the Shell's own policy code it calls, keeps each
 # target's flags: source properties apply to every target of this directory.)
+# The rest of the kernel's cold code is built for size too (API 23), which pays for the Anki
+# screenshot's file broker and colour rows (kernel/game_ocr.c, kernel/capture.c) within the
+# module's pages: the syscalls and the worker thread's loop (kernel/main.c: a few calls every
+# 16 ms tick or 50 ms Shell poll, none per pixel), the boot-safety guard (kernel/boot.c,
+# core/boot_guard.c: at boot and when a stage is marked), the kernel strip and the log
+# (kernel/buffers.c, kernel/log.c, kernel/capture_request.c). The per-pixel and per-frame code
+# (kernel/capture.c, kernel/display.c, kernel/scene.c) and the pad and touch hooks
+# (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
-  ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c PROPERTIES COMPILE_OPTIONS "-Os")
+  ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/boot.c
+  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c ${ROOT}/kernel/capture_request.c
+  PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
 target_link_libraries(VitaJPOverlay_Kernel
@@ -269,7 +279,10 @@ add_custom_target(vjo_syscall_abi ALL
 # ---------------- game-process vocr worker ----------------
 if(VJO_WITH_VOCR)
   add_executable(VitaJPOverlay_OCR
-    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c)
+    ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
+    # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
+    # and the arena it encodes into
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
