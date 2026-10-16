@@ -143,6 +143,7 @@ typedef struct {
     const VjoInstallUi *ui;
     VjoInstallResult *r;
     uint64_t last_tick;
+    int action;                /* VJO_INSTALL_ACT_*: what finishes the job after a stop */
     int backed_up;             /* dated backups written (new files: nothing else changed by them) */
     char step[120];
 } Run;
@@ -273,13 +274,18 @@ static int ours_text(const char *text, int len, int worker)
            vjo_tai_edit(text, (size_t)len, VJO_TAI_INSTALL, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r) >= 0 && !r.changed;
 }
 
-/* text (n bytes) is the editor's result of ref (an install's or an uninstall's), byte for byte. */
-static int is_edit_of(const char *ref, int len, const char *text, int n, int worker)
+/* text (n bytes) is the editor's result of ref (an install's or an uninstall's), byte for byte, and that
+ * result changes ref: the run (VJO_INSTALL_ACT_INSTALL or _UNINSTALL), or 0. A run writes a configuration
+ * only when its edit changes it, so a .vjo-new equal to ref is no run's whole file: it is a stopped write
+ * of a longer one (an install's that appends its sections, cut at ref's length; audit-overlay-one-vpk-
+ * followups), never an uninstall's that changed nothing. */
+static int edit_of(const char *ref, int len, const char *text, int n, int worker)
 {
     for (int op = 0; op < 2; op++) {
         VjoTaiReport r;
         int m = vjo_tai_edit(ref, (size_t)len, op, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r);
-        if (m == n && !memcmp(cfg_check, text, (size_t)n)) return 1;
+        if (m == n && r.changed && !memcmp(cfg_check, text, (size_t)n))
+            return op == VJO_TAI_INSTALL ? VJO_INSTALL_ACT_INSTALL : VJO_INSTALL_ACT_UNINSTALL;
     }
     return 0;
 }
@@ -288,7 +294,7 @@ static int is_edit_of(const char *ref, int len, const char *text, int n, int wor
  * (the swap had started: config.txt was renamed to it) that is .vjo-old; without one the swap never
  * started, so config.txt (current, len bytes) is what it was made of, and a .vjo-new that is not exactly
  * its edit is a stopped write's (empty, or a prefix). With neither (a .vjo-old deleted by hand), only an
- * install's whole result is used. */
+ * install's whole result is used. The run that wrote it (VJO_INSTALL_ACT_*), or 0. */
 static char leftover_old[VJO_TAI_TEXT_MAX + 2], leftover_new[VJO_TAI_TEXT_MAX + 2];
 static int new_is_result_of_old(const char *path, const char *current, int len, int worker)
 {
@@ -297,9 +303,30 @@ static int new_is_result_of_old(const char *path, const char *current, int len, 
     snprintf(b, sizeof(b), "%s.vjo-new", path);
     int n = read_all(b, leftover_new, sizeof(leftover_new)), o = read_all(a, leftover_old, sizeof(leftover_old));
     if (n <= 0 || n > VJO_TAI_TEXT_MAX) return 0;
-    if (o >= 0) return o <= VJO_TAI_TEXT_MAX && is_edit_of(leftover_old, o, leftover_new, n, worker);
-    if (current) return len >= 0 && is_edit_of(current, len, leftover_new, n, worker);
-    return ours_text(leftover_new, n, worker);
+    if (o >= 0) return o <= VJO_TAI_TEXT_MAX ? edit_of(leftover_old, o, leftover_new, n, worker) : 0;
+    if (current) return len >= 0 ? edit_of(current, len, leftover_new, n, worker) : 0;
+    return ours_text(leftover_new, n, worker) ? VJO_INSTALL_ACT_INSTALL : 0;
+}
+
+/* A .vjo-new beside config.txt (current, len bytes) and no .vjo-old: the swap never started, so a run was
+ * writing it from config.txt. Each run writes only an edit that changes the file, whole or, stopped, a
+ * prefix of it: the run (VJO_INSTALL_ACT_*) is the one whose edit changes config.txt and starts with the
+ * .vjo-new's bytes, when only one does; 0 when both could have (an empty file, a start both share). */
+static int stopped_write_run(const char *path, const char *current, int len, int worker)
+{
+    char b[PATH];
+    snprintf(b, sizeof(b), "%s.vjo-new", path);
+    int n = read_all(b, leftover_new, sizeof(leftover_new)), run = 0, runs = 0;
+    if (n < 0 || n > VJO_TAI_TEXT_MAX) return 0;
+    for (int op = 0; op < 2; op++) {
+        VjoTaiReport r;
+        int m = vjo_tai_edit(current, (size_t)len, op, worker, NULL, 0, cfg_check, sizeof(cfg_check), &r);
+        if (m >= 0 && r.changed && n <= m && !memcmp(cfg_check, leftover_new, (size_t)n)) {
+            run = op == VJO_TAI_INSTALL ? VJO_INSTALL_ACT_INSTALL : VJO_INSTALL_ACT_UNINSTALL;
+            runs++;
+        }
+    }
+    return runs == 1 ? run : 0;
 }
 
 static const char *tai_path(int c) { return c ? VJO_TAI_UR0 : VJO_TAI_UX0; }
@@ -322,12 +349,13 @@ static int next_line(const char *t, int len, int *pos, const char **start, int *
     return 1;
 }
 
-/* The edit's lines in file order, each given to emit with its sign: a line of old that new does not have at
- * the same place is "-", one of new that old does not have "+". The editor only inserts, removes and comments
- * out lines, keeping every other line in order, so a greedy walk is exact: an old line found further on in new
- * means lines were added before it, else it was removed. */
-static void walk_diff(const char *old, int old_len, const char *neu, int new_len,
-                      void (*emit)(void *ctx, char sign, const char *s, int n), void *ctx)
+/* The greedy walk: a line of old that new does not have at the same place is "-", one of new that old does
+ * not have "+"; an old line found further on in new means lines were added before it, else it was removed.
+ * Always the edit (applying its lines to old gives new), but not always the shortest: when a line the editor
+ * removes or comments out has a copy further on, the user's lines in between show as added, then removed
+ * (code audit note 1). vjo_install_diff's fallback past its bounds. */
+static void walk_greedy(const char *old, int old_len, const char *neu, int new_len,
+                        void (*emit)(void *ctx, char sign, const char *s, int n), void *ctx)
 {
     int a = 0, b = 0;
     const char *ls, *ns;
@@ -356,6 +384,143 @@ static void walk_diff(const char *old, int old_len, const char *neu, int new_len
     }
 }
 
+/* The exact diff's room: the changed stretch (the lines between the texts' common first and last ones) of
+ * each text, and its band (the fewest changed lines, + 1): every shortest diff keeps within it. */
+#define DIFF_LINES 1024
+#define DIFF_BAND 256
+static struct {
+    uint16_t at[2][DIFF_LINES], len[2][DIFF_LINES]; /* each line's start in its text and its length */
+    unsigned char user[DIFF_LINES];                  /* an old line that is not the overlay's own */
+    int16_t v[2 * DIFF_BAND + 1];                    /* Myers' furthest x per diagonal */
+    uint32_t row[2][DIFF_BAND];                       /* the best (lines kept << 16 | user lines kept) of a row */
+    unsigned char del[DIFF_LINES * DIFF_BAND / 8];    /* at a mismatch: removing the old line is as good */
+} dw;
+
+/* The lines of t[from, to) into dw (side 0 old, 1 new): their count, or -1 when they do not fit. */
+static int diff_table(int side, const char *t, int from, int to)
+{
+    int pos = from, n = 0, len;
+    const char *s;
+    while (next_line(t, to, &pos, &s, &len)) {
+        if (n >= DIFF_LINES || len > 0xFFFF) return -1;
+        dw.at[side][n] = (uint16_t)(s - t);
+        dw.len[side][n++] = (uint16_t)len;
+    }
+    return n;
+}
+
+static int diff_same(const char *old, const char *neu, int i, int j)
+{
+    return dw.len[0][i] == dw.len[1][j] && !memcmp(old + dw.at[0][i], neu + dw.at[1][j], dw.len[0][i]);
+}
+
+/* A line that names the overlay (its plugins, their commented-out copies, its installers' notes): the
+ * editor's own lines, which a tie between two shortest diffs gives up first. */
+static int names_overlay(const char *s, int n)
+{
+    for (int i = 0; i + 13 <= n; i++)
+        if (!strncasecmp(s + i, "vitajpoverlay", 13)) return 1;
+    return 0;
+}
+
+/* p starts a line of t (len bytes), or is its end. */
+static int line_boundary(const char *t, int len, int p)
+{
+    return p == 0 || p == len || t[p - 1] == '\n' || (t[p - 1] == '\r' && t[p] != '\n');
+}
+
+/* The fewest changed lines between the tables' n old and m new lines (Myers' greedy O(ND) pass, which
+ * keeps only the furthest point of each diagonal k = x - y), or -1 when it is over max (< DIFF_BAND). */
+static int diff_distance(const char *old, const char *neu, int n, int m, int max)
+{
+    int16_t *v = dw.v + DIFF_BAND;
+    v[1] = 0;
+    for (int d = 0; d <= max; d++)
+        for (int k = -d; k <= d; k += 2) {
+            int x = k == -d || (k != d && v[k - 1] < v[k + 1]) ? v[k + 1] : v[k - 1] + 1, y = x - k;
+            while (x < n && y < m && diff_same(old, neu, x, y)) { x++; y++; }
+            v[k] = (int16_t)x;
+            if (x >= n && y >= m) return d;
+        }
+    return -1;
+}
+
+void vjo_install_diff(const char *old, int old_len, const char *neu, int new_len,
+                      void (*emit)(void *ctx, char sign, const char *s, int n), void *ctx)
+{
+    /* the common first lines, and the common last ones (the longest equal tail of bytes that starts a line in
+     * both): the edit is between them */
+    int a = 0, b = 0;
+    for (;;) {
+        int pa = a, pb = b, ln, nn;
+        const char *ls, *ns;
+        if (!next_line(old, old_len, &pa, &ls, &ln) || !next_line(neu, new_len, &pb, &ns, &nn) || ln != nn ||
+            memcmp(ls, ns, (size_t)ln))
+            break;
+        a = pa;
+        b = pb;
+    }
+    int ea = old_len, eb = new_len;
+    while (ea > a && eb > b && old[ea - 1] == neu[eb - 1]) { ea--; eb--; }
+    while (!line_boundary(old, old_len, ea) || !line_boundary(neu, new_len, eb)) { ea++; eb++; }
+    int n = old_len <= 0x10000 && new_len <= 0x10000 ? diff_table(0, old, a, ea) : -1;
+    int m = n >= 0 ? diff_table(1, neu, b, eb) : -1;
+    int D = m >= 0 ? diff_distance(old, neu, n, m, DIFF_BAND - 1) : -1;
+    if (D < 0) {
+        walk_greedy(old + a, ea - a, neu + b, eb - b, emit, ctx);
+        return;
+    }
+    int I = (D + m - n) / 2, R = (D - (m - n)) / 2, W = D + 1; /* additions and removals of every shortest diff */
+    /* The fewest changed lines is the longest common subsequence of the lines. Among the shortest diffs the
+     * one kept is the one that keeps the most lines not the overlay's own (a user's line is never shown as
+     * removed and added back when the editor's own line can be), then removes before it adds. A shortest diff
+     * removes R lines and adds I, so it keeps to the diagonals j - i in [-R, I]: row i of the table holds
+     * j = i - R .. i + I, as t = j - i + R. Filled from the end:
+     * best(i, j) = best(i + 1, j + 1) + the line when old's line i is new's line j (keeping an equal pair is
+     * always as good), else the better of removing old's line i or adding new's line j. */
+    for (int i = 0; i < n; i++) dw.user[i] = !names_overlay(old + dw.at[0][i], dw.len[0][i]);
+    uint32_t *cur = dw.row[0], *next = dw.row[1];
+    for (int i = n; i >= 0; i--) {
+        int lo = i - R > 0 ? i - R : 0, hi = i + I < m ? i + I : m;
+        for (int j = hi; j >= lo; j--) {
+            int t = j - i + R;
+            uint32_t v;
+            if (i == n || j == m) {
+                v = 0;
+            } else if (diff_same(old, neu, i, j)) {
+                v = next[t] + 0x10000u + dw.user[i];
+            } else {
+                /* (i + 1, j) is on diagonal t - 1 of the next row, (i, j + 1) on t + 1 of this one */
+                uint32_t d = t > 0 ? next[t - 1] : 0, r = t + 1 < W ? cur[t + 1] : 0;
+                int del = t > 0 && (t + 1 >= W || d >= r);
+                size_t bit = (size_t)i * (size_t)W + (size_t)t;
+                if (del) dw.del[bit >> 3] |= (unsigned char)(1u << (bit & 7));
+                else dw.del[bit >> 3] &= (unsigned char)~(1u << (bit & 7));
+                v = del ? d : r;
+            }
+            cur[t] = v;
+        }
+        uint32_t *swap = cur;
+        cur = next;
+        next = swap;
+    }
+    for (int i = 0, j = 0; i < n || j < m;) {
+        if (i < n && j < m && diff_same(old, neu, i, j)) {
+            i++;
+            j++;
+            continue;
+        }
+        size_t bit = (size_t)i * (size_t)W + (size_t)(j - i + R);
+        if (j == m || (i < n && (dw.del[bit >> 3] >> (bit & 7) & 1))) {
+            emit(ctx, '-', old + dw.at[0][i], dw.len[0][i]);
+            i++;
+        } else {
+            emit(ctx, '+', neu + dw.at[1][j], dw.len[1][j]);
+            j++;
+        }
+    }
+}
+
 typedef struct { VjoInstallConfig *g; int which; } DiffKeep;
 static void keep_line(void *ctx, char sign, const char *s, int n)
 {
@@ -372,7 +537,7 @@ static void diff_lines(VjoInstallConfig *g, int which, const char *old, int old_
 {
     DiffKeep k = {g, which};
     g->diff_count[which] = g->diff_more[which] = 0;
-    walk_diff(old, old_len, neu, new_len, keep_line, &k);
+    vjo_install_diff(old, old_len, neu, new_len, keep_line, &k);
 }
 
 static void sha_text(const char *text, size_t len, uint8_t out[32])
@@ -437,14 +602,30 @@ static int dictionaries(const char *names, char *out, size_t cap)
     return used < cap ? 1 : -1;
 }
 
+/* The next line of the plan's config.ini list (NULL past VJO_INSTALL_INI_CHANGES: it is counted). */
+static char *ini_change(VjoInstallScan *s)
+{
+    if (s->config_change_count < VJO_INSTALL_INI_CHANGES) return s->config_changes[s->config_change_count++];
+    s->config_change_more++;
+    return NULL;
+}
+#define INI_CHANGE(s, ...)                                                                \
+    do {                                                                                  \
+        char *line_ = ini_change(s);                                                      \
+        if (line_) snprintf(line_, sizeof((s)->config_changes[0]), __VA_ARGS__);          \
+    } while (0)
+
 /* config.ini's new text for an install (into ini_new): 2 written from the package's template (there is
  * neither config.ini nor its backup, which the app's load reads when config.ini is missing), 1 patched,
- * 0 unchanged, -1 unreadable (s->reason). The lines it changes go into s->config_changes.
+ * 3 written from its backup, 0 unchanged, -1 unreadable (s->reason). The lines it changes go into
+ * s->config_changes.
  * patch_existing: a first install, or an install of another build than installed.txt's, patches an
  * existing config.ini (the package's set lines, the paths, the dictionary list, the app's own save).
  * Over the build installed.txt names (Check and repair, the same VPK again) an existing config.ini is
  * the user's: a later choice (card mining OFF, log_file = off, another dictionary list) is no damage,
- * so it is left as it is, and only a missing one is written from the template. */
+ * so it is left as it is; a missing one is written from its backup config.ini.bak (3: a save that
+ * stopped between its two renames left only the backup, which the app reads and the plugins do not,
+ * code audit note 6), else from the template. */
 static int plan_config_ini(VjoInstallScan *s, int patch_existing)
 {
     VjoArena a;
@@ -453,7 +634,19 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     size_t bytes = 0;
     vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
     int rc = vjo_preferences_text(&a, &old, &bytes);
-    s->config_change_count = 0;
+    s->config_change_count = s->config_change_more = 0;
+    if (!patch_existing && rc == 1) {
+        /* as the app's next save writes it: the backup's settings, a removed feature's lines and the API keys
+         * gone (vjo_preferences_publish_text keeps no key in either file) */
+        vjo_config_defaults(&base);
+        vjo_config_parse(&base, old, bytes);
+        int n = vjo_config_patch_preferences(old, bytes, base.vocr_tier, base.japanese_only_selection, base.highlight_mode,
+                                             base.local_dictionary_results, ini_new, sizeof(ini_new));
+        if (n < 0) return 0; /* too large for the app's save as well: the app's load still reads the backup */
+        ini_new_len = n;
+        INI_CHANGE(s, "written again from config.ini.bak");
+        return 3;
+    }
     if (!patch_existing && rc != 2) return 0;
     if (rc < 0) {
         snprintf(s->reason, sizeof(s->reason), "config.ini cannot be read: repair or delete it in VitaShell first.");
@@ -473,7 +666,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         }
         memcpy(ini_new, template_text, (size_t)t + 1);
         ini_new_len = t;
-        snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]), "written from the package's template");
+        INI_CHANGE(s, "written from the package's template");
         return 2;
     }
     /* the app's own save first (the four owned lines; an older build's vocr_model becomes its size; a
@@ -513,9 +706,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         }
         ini_new_len = w;
         ini_new[w] = '\0';
-        if (dropped && s->config_change_count < VJO_INSTALL_INI_CHANGES)
-            snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]),
-                     "%d removed setting%s dropped (no longer read)", dropped, dropped == 1 ? "" : "s");
+        if (dropped) INI_CHANGE(s, "%d removed setting%s dropped (no longer read)", dropped, dropped == 1 ? "" : "s");
     }
     const char *keys[6], *values[6];
     int k = 0;
@@ -524,9 +715,8 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     keys[k] = "text_source"; values[k++] = "ocr";
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
     if (d > 0) { keys[k] = "local_dictionaries"; values[k++] = value; }
-    else if (d < 0 && s->config_change_count < VJO_INSTALL_INI_CHANGES)
-        snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]),
-                 "local_dictionaries has 8 names: add plaintext.vjdict to it yourself");
+    else if (d < 0)
+        INI_CHANGE(s, "local_dictionaries has 8 names: add plaintext.vjdict to it yourself");
     int log_set = 0;
     for (int i = 0; i < s->payload.sets && k < 6; i++) {
         keys[k] = s->payload.set[i].key; values[k++] = s->payload.set[i].value;
@@ -545,9 +735,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         vjo_config_defaults(&cfg);
         vjo_config_parse(&cfg, ini_step, (size_t)m);
         if (cfg.n_warnings > warnings) {
-            if (s->config_change_count < VJO_INSTALL_INI_CHANGES)
-                snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]), "%s left as it is (the new value would be refused)",
-                         keys[i]);
+            INI_CHANGE(s, "%s left as it is (the new value would be refused)", keys[i]);
             continue;
         }
         memcpy(ini_new, ini_step, (size_t)m + 1);
@@ -555,7 +743,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     }
     if ((size_t)ini_new_len == bytes && !memcmp(ini_new, old, bytes)) return 0;
     /* the changed lines: those of the new text that the old one does not have (no API key: they only go) */
-    for (int pos = 0; pos < ini_new_len && s->config_change_count < VJO_INSTALL_INI_CHANGES;) {
+    for (int pos = 0; pos < ini_new_len;) {
         int e = pos;
         while (e < ini_new_len && ini_new[e] != '\n') e++;
         int len = e - pos, found = 0;
@@ -568,11 +756,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
             q = qe + 1;
         }
         if (!found && len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#')
-        {
-            int keep = len > 110 ? 110 : len;
-            memcpy(s->config_changes[s->config_change_count], ini_new + pos, (size_t)keep);
-            s->config_changes[s->config_change_count++][keep] = '\0';
-        }
+            INI_CHANGE(s, "%.*s", len > 110 ? 110 : len, ini_new + pos);
         pos = e + 1;
     }
     return 1;
@@ -679,8 +863,11 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         g->swap_files = exists(path) ? 1 : 0;
         snprintf(path, sizeof(path), "%s.vjo-new", g->path);
         g->swap_files |= exists(path) ? 2 : 0;
-        g->use_new = (g->swap_files & 2) && new_is_result_of_old(g->path, g->exists ? cfg_text[c] : NULL, cfg_len[c],
-                                                                 build->worker);
+        int run = (g->swap_files & 2) ? new_is_result_of_old(g->path, g->exists ? cfg_text[c] : NULL, cfg_len[c],
+                                                              build->worker) : 0;
+        g->use_new = run != 0;
+        g->stopped_run = run ? run : (g->swap_files == 2 && g->exists)
+                       ? stopped_write_run(g->path, cfg_text[c], cfg_len[c], build->worker) : 0;
         g->finish_ok = g->use_new || (g->swap_files & 1);
     }
     if (s->cfg[1].exists) vjo_tai_storage_plugin(cfg_text[1], (size_t)cfg_len[1], s->storage, sizeof(s->storage));
@@ -742,12 +929,17 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
             snprintf(s->reason, sizeof(s->reason), "%s is missing, and its config.txt.vjo-new is not a configuration "
                      "this app wrote whole: in VitaShell copy its newest dated backup (config.txt.vjo-*.bak) to "
                      "config.txt before you restart the Vita.", g->path);
-        else if (!(g->swap_files & 1))
-            snprintf(s->reason, sizeof(s->reason), "%s has a stopped install's config.txt.vjo-new beside it: the install "
-                     "stopped before it changed config.txt, which is as it was. Keep it (the .vjo-new is kept as a dated "
-                     "backup), then choose Install again.%s", g->path,
+        else if (!(g->swap_files & 1)) {
+            /* the run that was writing it, when the file tells (code audit note 4: an uninstall's too) */
+            const char *whose = g->stopped_run == VJO_INSTALL_ACT_INSTALL ? "install's"
+                              : g->stopped_run == VJO_INSTALL_ACT_UNINSTALL ? "uninstall's" : "install's or uninstall's";
+            const char *again = g->stopped_run == VJO_INSTALL_ACT_INSTALL ? "Install"
+                              : g->stopped_run == VJO_INSTALL_ACT_UNINSTALL ? "Uninstall" : "Install or Uninstall";
+            snprintf(s->reason, sizeof(s->reason), "%s has a stopped %s config.txt.vjo-new beside it: it stopped "
+                     "before it changed config.txt, which is as it was. Keep it (the .vjo-new is kept as a dated "
+                     "backup), then choose %s again.%s", g->path, whose, again,
                      g->use_new ? " Or put the new one in place: it is this app's whole edit of the current one." : "");
-        else
+        } else
             snprintf(s->reason, sizeof(s->reason), "%s has a stopped swap's %s beside it, and is %s now. Put it back "
                      "(the current one is kept as a dated backup), or keep the current one (the others are kept as "
                      "dated backups).", g->path, g->leftover == 3 ? "config.txt.vjo-old and .vjo-new"
@@ -821,7 +1013,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
     if (!loaded && !kernel_lines) {
         s->state = VJO_INSTALL_NOT_INSTALLED;
         snprintf(s->title, sizeof(s->title), "Install the overlay (v%s%s)", v, strcmp(s->payload.variant, "debug") ? "" : ", debug build");
-    } else if (!s->record_ok || !s->plugins_ok || (s->has_installed && !same_build) || !s->has_installed) {
+    } else if (!s->has_installed || !same_build) {
         s->state = VJO_INSTALL_UPDATE;
         int cmp = s->has_installed ? vjo_version_compare(v, s->installed.version) : 1;
         if (!s->has_installed)
@@ -835,7 +1027,10 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
                      v, s->installed.variant);
         else
             snprintf(s->title, sizeof(s->title), "Reinstall v%s (another build of it is installed)", v);
-    } else if (!s->files_ok || need_lines) { /* config.ini is the user's here (plan_config_ini) */
+    } else if (!s->record_ok || !s->plugins_ok || !s->files_ok || need_lines) {
+        /* this build (installed.txt), with a plugin that is not its own, the plugins' record of another app
+         * build, a data file missing or a line (code audit note 4: no longer "another build");
+         * config.ini is the user's here (plan_config_ini) */
         s->state = VJO_INSTALL_REPAIR;
         snprintf(s->title, sizeof(s->title), "Repair the overlay (v%s)", v);
     } else {
@@ -856,14 +1051,17 @@ static void backup_name(const char *path, const char *stamp, char *out, size_t c
 
 /* ---------------- the plans ---------------- */
 
+/* A plan's line, written when it fits (n < max); the count goes on either way, so that a plan knows how
+ * many lines it has. */
 static int add(char lines[][VJO_INSTALL_LINE], int n, int max, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
 static int add(char lines[][VJO_INSTALL_LINE], int n, int max, const char *fmt, ...)
 {
     va_list ap;
-    if (n >= max) return n;
-    va_start(ap, fmt);
-    vsnprintf(lines[n], VJO_INSTALL_LINE, fmt, ap);
-    va_end(ap);
+    if (n < max) {
+        va_start(ap, fmt);
+        vsnprintf(lines[n], VJO_INSTALL_LINE, fmt, ap);
+        va_end(ap);
+    }
     return n + 1;
 }
 
@@ -875,17 +1073,18 @@ static void log_line(void *ctx, char sign, const char *s, int n)
 }
 static void log_diff(const char *path, const char *old, int old_len, const char *neu, int new_len)
 {
-    walk_diff(old, old_len, neu, new_len, log_line, (void *)path);
+    vjo_install_diff(old, old_len, neu, new_len, log_line, (void *)path);
 }
 
 /* The configuration's exact changed lines, one plan line each, as they stand in the file ("+" added,
- * "-" removed; a commented-out line shows as its old text removed and the commented one added). */
-static int add_diff(char lines[][VJO_INSTALL_LINE], int n, int max, const VjoInstallConfig *g, int which)
+ * "-" removed; a commented-out line shows as its old text removed and the commented one added): the
+ * first cap of them, the rest counted. */
+static int add_diff(char lines[][VJO_INSTALL_LINE], int n, int max, const VjoInstallConfig *g, int which, int cap)
 {
-    for (int i = 0; i < g->diff_count[which]; i++) n = add(lines, n, max, "   %s", g->diff[which][i]);
-    if (g->diff_more[which])
-        n = add(lines, n, max, "   and %d more line%s (log.txt has every one).", g->diff_more[which],
-                g->diff_more[which] == 1 ? "" : "s");
+    int shown = g->diff_count[which] < cap ? g->diff_count[which] : cap;
+    int more = g->diff_count[which] - shown + g->diff_more[which];
+    for (int i = 0; i < shown; i++) n = add(lines, n, max, "   %s", g->diff[which][i]);
+    if (more) n = add(lines, n, max, "   and %d more line%s (log.txt has every one).", more, more == 1 ? "" : "s");
     return n;
 }
 
@@ -918,10 +1117,11 @@ static const char *reads_note(const VjoInstallScan *s, int c)
 
 static double mb(uint64_t bytes) { return (double)bytes / 1000000.0; }
 
+static int install_plan(const VjoInstallScan *s, char lines[][VJO_INSTALL_LINE], int max, int dcap, int icap, int *need);
+
 int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTALL_LINE], int max)
 {
     int n = 0;
-    char words[200];
     if (action == VJO_INSTALL_ACT_FINISH || action == VJO_INSTALL_ACT_KEEP) {
         for (int c = 0; c < 2; c++) {
             const VjoInstallConfig *g = &s->cfg[c];
@@ -937,9 +1137,10 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
             if (g->leftover)
                 n = add(lines, n, max, "%s: the current one is kept as config.txt.vjo-%s.bak, then %s becomes config.txt.",
                         g->path, s->stamp, !g->use_new ? "config.txt.vjo-old (the configuration from before the stop)"
-                        : g->swap_files & 1 ? "config.txt.vjo-new (the stopped install's new configuration, checked "
-                        "against config.txt.vjo-old)" : "config.txt.vjo-new (this app's whole edit of the current one, "
-                        "checked byte for byte)");
+                        : g->swap_files & 1 ? g->stopped_run == VJO_INSTALL_ACT_UNINSTALL
+                        ? "config.txt.vjo-new (the stopped uninstall's new configuration, checked against config.txt.vjo-old)"
+                        : "config.txt.vjo-new (the stopped install's new configuration, checked against config.txt.vjo-old)"
+                        : "config.txt.vjo-new (this app's whole edit of the current one, checked byte for byte)");
             else
                 n = add(lines, n, max, g->use_new
                         ? "%s: config.txt.vjo-new, the new configuration (written and checked before the stop), becomes config.txt."
@@ -947,7 +1148,8 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
         }
         n = add(lines, n, max, "Nothing is deleted: every other copy stays as a dated backup.");
         n = add(lines, n, max, "Then restart the Vita yourself.");
-        return add(lines, n, max, VJO_INSTALL_RECOVERY_BOOT);
+        n = add(lines, n, max, VJO_INSTALL_RECOVERY_BOOT);
+        return n < max ? n : max;
     }
     if (action == VJO_INSTALL_ACT_UNINSTALL) {
         int k = 1;
@@ -957,14 +1159,38 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
                 backup_name(s->cfg[c].path, s->stamp, name, sizeof(name));
                 n = add(lines, n, max, "%d. Back up %s as %s (kept), then remove the overlay's lines from it. Exactly:", k++,
                         s->cfg[c].path, strrchr(name, '/') + 1);
-                n = add_diff(lines, n, max, &s->cfg[c], 1);
+                n = add_diff(lines, n, max, &s->cfg[c], 1, VJO_INSTALL_DIFF);
             }
         n = add(lines, n, max, "%d. Keep the plugin files, the models, the dictionary, your settings and your cards: delete "
                 "ur0:tai/VitaJPOverlay_*, ux0:data/VitaJPOverlay and ur0:data/VitaJPOverlay in VitaShell for the room.", k++);
         n = add(lines, n, max, "Then restart the Vita: the overlay no longer loads. This app stays until you delete it.");
-        return n;
+        return n < max ? n : max;
     }
-    /* install, update, repair, check */
+    /* install, update, repair, check: the whole plan when it fits; else fewer of config.ini's changed lines,
+     * then of config.txt's exact lines (never fewer than two of each), the rest counted (code audit note 2) */
+    int dcap = 0, icap = s->config_change_count, need;
+    for (int c = 0; c < 2; c++)
+        if (s->cfg[c].diff_count[0] > dcap) dcap = s->cfg[c].diff_count[0];
+    n = install_plan(s, lines, max, dcap, icap, &need);
+    while (need > max && (dcap > 2 || icap > 2)) {
+        if (icap > 2) icap--;
+        else dcap--;
+        n = install_plan(s, lines, max, dcap, icap, &need);
+    }
+    return n;
+}
+
+/* An install's (update's, repair's, check's) plan with at most dcap exact lines per configuration and icap
+ * config.ini lines: the lines written (at most max), and in *need how many it has. Its closing lines (the
+ * restart, the recovery, the backups from before the overlay) always fit: the steps get what they leave. */
+static int install_plan(const VjoInstallScan *s, char lines[][VJO_INSTALL_LINE], int max, int dcap, int icap, int *need)
+{
+    char words[200];
+    int n = 0, backups = 0;
+    for (int c = 0; c < 2; c++) backups += s->cfg[c].install_changes;
+    int update_note = s->state == VJO_INSTALL_UPDATE && backups, tail = 3 + update_note;
+    for (int c = 0; c < 2; c++) tail += s->before_overlay[c][0] != 0;
+    int steps = max > tail ? max - tail : 0;
     uint64_t models = 0;
     int plugins_to_write = 0, models_to_write = 0;
     for (int i = 0; i < VJO_PAYLOAD_COUNT; i++) {
@@ -976,29 +1202,30 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     }
     int k = 1;
     if (s->state == VJO_INSTALL_INSTALLED)
-        n = add(lines, n, max, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
+        n = add(lines, n, steps, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
     else if (s->state == VJO_INSTALL_NOT_INSTALLED || (plugins_to_write && models_to_write))
-        n = add(lines, n, max, "%d. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models "
+        n = add(lines, n, steps, "%d. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models "
                 "(%.1f MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.", k++, mb(models));
     else if (plugins_to_write)
-        n = add(lines, n, max, "%d. Replace %d of the plugins and their RCO in ur0:tai and ur0:data/VitaJPOverlay (the models "
+        n = add(lines, n, steps, "%d. Replace %d of the plugins and their RCO in ur0:tai and ur0:data/VitaJPOverlay (the models "
                 "already match the package's sizes; every file is checked by SHA-256 first).", k++, plugins_to_write);
     else if (models_to_write)
-        n = add(lines, n, max, "%d. Copy %d OCR model file%s to ux0:data/VitaJPOverlay/ocr (the plugins already match).", k++,
+        n = add(lines, n, steps, "%d. Copy %d OCR model file%s to ux0:data/VitaJPOverlay/ocr (the plugins already match).", k++,
                 models_to_write, models_to_write == 1 ? "" : "s");
     else
-        n = add(lines, n, max, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
+        n = add(lines, n, steps, "%d. Check every file against the package (SHA-256): one that differs is written again.", k++);
+    if (s->state == VJO_INSTALL_REPAIR && !s->record_ok)
+        n = add(lines, n, steps, "   " VJO_APP_STAMP_PACKAGE " (the plugins' record of their app) is written again: it is "
+                "missing or names another build of this app.");
     if (s->dict_index >= 0) {
         uint64_t d = s->payload.file[s->dict_index].bytes;
         if (s->dict_in_app && !s->file_ok[s->dict_index])
-            n = add(lines, n, max, "   Move the dictionary (%.0f MB) to ux0:data/VitaJPOverlay/dictionaries from this app: "
+            n = add(lines, n, steps, "   Move the dictionary (%.0f MB) to ux0:data/VitaJPOverlay/dictionaries from this app: "
                     "moved, not copied, so this app no longer has it afterwards.", mb(d));
         else if (s->dict_in_app)
-            n = add(lines, n, max, "   The dictionary is already installed: once it is checked, this app's copy is deleted "
+            n = add(lines, n, steps, "   The dictionary is already installed: once it is checked, this app's copy is deleted "
                     "(%.0f MB freed).", mb(d));
     }
-    int backups = 0;
-    for (int c = 0; c < 2; c++) backups += s->cfg[c].install_changes;
     if (backups) {
         char names[2][PATH];
         for (int c = 0; c < 2; c++) {
@@ -1006,35 +1233,43 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
             if (s->cfg[c].install_changes) backup_name(s->cfg[c].path, s->stamp, names[c], sizeof(names[c]));
         }
         if (backups > 1 && !strcmp(strrchr(names[0], '/'), strrchr(names[1], '/')))
-            n = add(lines, n, max, "%d. Back up %s and %s as %s in each folder (kept).", k++, VJO_TAI_UX0, VJO_TAI_UR0,
+            n = add(lines, n, steps, "%d. Back up %s and %s as %s in each folder (kept).", k++, VJO_TAI_UX0, VJO_TAI_UR0,
                     strrchr(names[0], '/') + 1);
         else
             for (int c = 0; c < 2; c++)
                 if (names[c][0])
-                    n = add(lines, n, max, "%d. Back up %s as %s (kept).", k++, s->cfg[c].path, strrchr(names[c], '/') + 1);
+                    n = add(lines, n, steps, "%d. Back up %s as %s (kept).", k++, s->cfg[c].path, strrchr(names[c], '/') + 1);
     }
     for (int c = 0; c < 2; c++) {
         const VjoInstallConfig *g = &s->cfg[c];
         if (!g->exists) continue;
         if (g->install_changes) {
             edit_words(&g->install, 1, words, sizeof(words));
-            n = add(lines, n, max, "%d. %s%s: %s. Exactly:", k++, g->path, reads_note(s, c), words);
-            n = add_diff(lines, n, max, g, 0);
+            n = add(lines, n, steps, "%d. %s%s: %s. Exactly:", k++, g->path, reads_note(s, c), words);
+            n = add_diff(lines, n, steps, g, 0, dcap);
         } else {
-            n = add(lines, n, max, "%d. %s%s: unchanged (it already loads the overlay).", k++, g->path, reads_note(s, c));
+            n = add(lines, n, steps, "%d. %s%s: unchanged (it already loads the overlay).", k++, g->path, reads_note(s, c));
         }
     }
     if (s->config_ini == 0)
-        n = add(lines, n, max, "%d. config.ini: unchanged (your settings stay as they are).", k++);
+        n = add(lines, n, steps, "%d. config.ini: unchanged (your settings stay as they are).", k++);
     else if (s->config_ini == 2)
-        n = add(lines, n, max, "%d. config.ini: %s.", k++, s->config_change_count ? s->config_changes[0] : "written");
+        n = add(lines, n, steps, "%d. config.ini: %s.", k++, s->config_change_count ? s->config_changes[0] : "written");
+    else if (s->config_ini == 3)
+        n = add(lines, n, steps, "%d. config.ini is missing beside its backup config.ini.bak (a save that stopped): it is "
+                "written again from the backup, your settings as they were.", k++);
     else {
-        n = add(lines, n, max, "%d. config.ini: these lines change; every other setting stays, and the old file is kept "
+        int shown = s->config_change_count < icap ? s->config_change_count : icap;
+        int more = s->config_change_count - shown + s->config_change_more;
+        n = add(lines, n, steps, "%d. config.ini: these lines change; every other setting stays, and the old file is kept "
                 "as config.ini.bak:", k++);
-        for (int i = 0; i < s->config_change_count; i++) n = add(lines, n, max, "   %s", s->config_changes[i]);
+        for (int i = 0; i < shown; i++) n = add(lines, n, steps, "   %s", s->config_changes[i]);
+        if (more) n = add(lines, n, steps, "   and %d more line%s.", more, more == 1 ? "" : "s");
     }
-    n = add(lines, n, max, "%d. Read everything back to check it.", k++);
-    if (s->state == VJO_INSTALL_UPDATE && backups)
+    n = add(lines, n, steps, "%d. Read everything back to check it.", k++);
+    *need = n + tail;
+    n = n < steps ? n : steps;
+    if (update_note)
         n = add(lines, n, max, "A dated backup is the configuration from before this install: it does not undo the update "
                 "(the plugin files are replaced). To go back, install the older VPK and choose Install.");
     n = add(lines, n, max, "Then restart the Vita yourself: this app never restarts it.");
@@ -1043,7 +1278,7 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     for (int c = 0; c < 2; c++)
         if (s->before_overlay[c][0])
             n = add(lines, n, max, "(%s is the configuration from before the overlay.)", s->before_overlay[c]);
-    return n;
+    return n < max ? n : max;
 }
 
 /* ---------------- the runs ---------------- */
@@ -1109,9 +1344,24 @@ static int stop(Run *x, const char *fmt, const char *arg)
     x->r->rc = -1;
     say(x->r, "Stopped: %s", text);
     vjo_log("install: stopped: %s", text);
-    say(x->r, x->r->written ? "Every file on the card is the old one or the new one; Install again finishes the job."
-              : x->backed_up ? "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."
-                             : "Nothing on the card was changed.");
+    /* what finishes the job: the same action again; the Install page's next plan when a stopped swap's file
+     * is left beside a configuration (it offers to put it back or keep the current one first, and an Install
+     * or Uninstall stops beside one) or after Put it back and Keep */
+    int left = 0;
+    for (int c = 0; c < 2; c++) {
+        char path[PATH];
+        snprintf(path, sizeof(path), "%s.vjo-new", tai_path(c));
+        left |= exists(path);
+        snprintf(path, sizeof(path), "%s.vjo-old", tai_path(c));
+        left |= exists(path);
+    }
+    say(x->r, !x->r->written ? x->backed_up ? "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."
+                                            : "Nothing on the card was changed."
+              : left || (x->action != VJO_INSTALL_ACT_INSTALL && x->action != VJO_INSTALL_ACT_UNINSTALL)
+              ? "Every file on the card is the old one or the new one; the Install page shows what is left to do."
+              : x->action == VJO_INSTALL_ACT_UNINSTALL ? "Every file on the card is the old one or the new one; Uninstall "
+                                                         "again finishes the job."
+              : "Every file on the card is the old one or the new one; Install again finishes the job.");
     return -1;
 }
 
@@ -1356,7 +1606,8 @@ static int run_install(Run *x, VjoInstallScan *s)
             return stop(x, "config.ini could not be written (it is as it was, or its backup config.ini.bak holds it).", NULL);
         }
         r->written = 1;
-        vjo_log("install: config.ini %s (%d B)", s->config_ini == 2 ? "written from the template" : "updated", ini_new_len);
+        vjo_log("install: config.ini %s (%d B)", s->config_ini == 2 ? "written from the template"
+                : s->config_ini == 3 ? "written again from config.ini.bak" : "updated", ini_new_len);
     }
     /* 5: the configurations, ux0's first: while both exist, every moment is bootable */
     for (int c = 0; c < 2; c++)
@@ -1492,8 +1743,9 @@ static int run_leftovers(Run *x, VjoInstallScan *s, int put_back)
             }
             x->r->written = 1;
             sync_path(path);
-            say(x->r, "%s is back (%s).", path, use == fresh ? "the stopped install's new configuration"
-                                                             : "the configuration from before the stop");
+            say(x->r, "%s is back (%s).", path, use != fresh ? "the configuration from before the stop"
+                    : g->stopped_run == VJO_INSTALL_ACT_UNINSTALL ? "the stopped uninstall's new configuration"
+                    : "the stopped install's new configuration");
             vjo_log("install: %s put back from %s", path, use);
         }
         /* every leftover still there becomes a dated backup */
@@ -1523,6 +1775,7 @@ int vjo_install_run(VjoInstallScan *s, int action, const VjoInstallUi *ui, VjoIn
     memset(&x, 0, sizeof(x));
     x.ui = ui;
     x.r = r;
+    x.action = action;
     x.last_tick = sceKernelGetProcessTimeWide();
     /* step 0 again: the card must still be what the plan said */
     step(&x, "Checking the card", NULL);

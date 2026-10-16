@@ -234,14 +234,20 @@ class Package(unittest.TestCase):
         self.assertEqual(vpk.verify(good), [])
         text = zipfile.ZipFile(good).read("payload/manifest.txt").decode()
         dictionary = next(l for l in text.splitlines() if "plaintext.vjdict" in l)
-        cases = [("a kind", text.replace(dictionary, dictionary.replace(" move", " copy"))),
+        # each change is the one named: count=1, as "version 0.8.0\n" is also the end of "app_version 0.8.0\n"
+        # (code audit note 3, N22: the version case changed both lines, so app_version's check refused it and
+        # the file-name check was never reached)
+        self.assertEqual(text.count("version 0.8.0\n"), 2)
+        cases = [("a kind", text.replace(dictionary, dictionary.replace(" move", " copy")), "is not the one"),
                  # an added valid setting at the end is what a package with it carries: only the release's
                  # SHA256SUMS tells them apart; one where this tool never writes it is refused
-                 ("a set line out of place", text.replace("version 0.8.0\n", "version 0.8.0\nset anki_mining on\n")),
-                 ("a setting the app does not set", text + "set games on\n"),
-                 ("an unknown line", text + "colour red\n"),
-                 ("a version", text.replace("version 0.8.0\n", "version 9.9.9\n"))]
-        for what, changed in cases:
+                 ("a set line out of place", text.replace("version 0.8.0\n", "version 0.8.0\nset anki_mining on\n", 1),
+                  "is not the one"),
+                 ("a setting the app does not set", text + "set games on\n", "not a setting the app accepts"),
+                 ("an unknown line", text + "colour red\n", "is not the one"),
+                 ("a version", text.replace("version 0.8.0\n", "version 9.9.9\n", 1),
+                  "the file is named for version 0.8.0, the manifest says 9.9.9")]
+        for what, changed, why in cases:
             with self.subTest(what=what):
                 out = self.root / "VitaJPOverlay-0.8.0.vpk.bad"
                 with zipfile.ZipFile(good) as src, zipfile.ZipFile(out, "w") as z:
@@ -251,7 +257,10 @@ class Package(unittest.TestCase):
                 good.rename(self.root / "keep.vpk")
                 out.rename(named)
                 try:
-                    self.assertTrue(vpk.verify(named), what)
+                    problems = vpk.verify(named)
+                    self.assertTrue(any(why in p for p in problems), (what, problems))
+                    if what == "a version":  # only the version line differs: app_version is the app's
+                        self.assertEqual(len(problems), 1, problems)
                 finally:
                     named.unlink()
                     (self.root / "keep.vpk").rename(good)

@@ -182,8 +182,8 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
 | no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
-| update | `installed.txt` (below) or the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is another build's, or a plugin file is not the payload's (size and SHA-256) | Install |
-| repair | this build, but a data file is missing or has the wrong size, or a configuration does not load both plugins (config.ini is not part of it: over this build it is the user's, below) | Install |
+| update | `installed.txt` (below) names another build, or there is none | Install |
+| repair | this build (`installed.txt`), but a plugin file is not the payload's (size and SHA-256), the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is missing or another app build's, a data file is missing or has the wrong size, or a configuration does not load both plugins (config.ini is not part of it: over this build it is the user's, below) | Install |
 | installed | every plugin file is the payload's, every data file has its size, every configuration loads both plugins, and both records are this build's | Games |
 
 At start only the four small files (the three plugins and the RCO, about 180 KB) are hashed; the
@@ -221,6 +221,15 @@ If a game does not start: turn it OFF on the Games page, or hold L while you sta
 [Update]  [Uninstall]
 ×: Update   Left/Right: action   Up/Down: scroll   ○: exit
 ```
+
+**Reading it.** The plan box holds about ten lines. A plan or a result longer than its box scrolls a
+line at a time with Up/Down (or the left stick) and a box at a time with L/R (as L/R page the Games
+list), a bar at its right shows where the view is (by entries: only the entries in view are laid out),
+and only then do the hints say `Up/Down: scroll`. A plan has at most 40 lines: one longer
+than that lists fewer of `config.ini`'s changed lines, then fewer of each `config.txt`'s exact lines
+(never fewer than two of either), and counts the rest (`and 6 more lines (log.txt has every one).`); its
+closing lines, the restart, the recovery and the backups from before the overlay, are always shown
+(code audit note 2). The exact lines are a minimal diff (below, "The exact lines").
 
 Enter starts it; a progress bar shows the step and the bytes; at the end the page says what was done
 and "Restart the Vita now", with the recovery text again. **The app never restarts the Vita** (no
@@ -289,9 +298,14 @@ guard, below); in the interrupted state **Put it back** and **Keep the current o
    A `.vjo-new` beside an intact `config.txt` and no `.vjo-old` is a stop before the swap began (during
    `.vjo-new`'s own write: empty or a prefix after a power cut): `config.txt` is as it was, so
    **Keep the current one** is offered first, and **Put it back** only when `.vjo-new` is the editor's
-   result of the current `config.txt` byte for byte; a file that is neither is never put in place
-   (code audit R2). A missing `config.txt` with no whole file to put back offers nothing: the reason
-   names the newest dated backup to copy in VitaShell. With
+   result of the current `config.txt` byte for byte, a result that changes it (a copy of `config.txt` is
+   no run's whole file: an install that appends its sections, stopped at `config.txt`'s length, leaves
+   one; the follow-ups' audit); a file that is neither is never put in place
+   (code audit R2). The reason names the run that was writing it, an install's or an uninstall's (the one
+   whose edit of the current `config.txt` starts with the file's bytes; "an install's or uninstall's" when
+   both could have, as for an empty file), and what to choose again after Keep. A missing `config.txt`
+   with no whole file to put back offers nothing: the reason names the newest dated backup to copy in
+   VitaShell. With
    h-encore the configuration may have come back as the stock text meanwhile (both files missing make it
    write both): the page says what `config.txt` is now (HENkaku's default, the overlay's, or another),
    and **Put it back** renames the current one to a dated backup first, **Keep the current one** keeps
@@ -314,7 +328,10 @@ Files go first so that a configuration never names a missing file; the configura
 the files so that a failure before step 5 leaves the old overlay loading as it was. Each file is the
 old or the new one at any moment, and each configuration too except between the swap's two renames. A
 power cut or a crash leaves the next start in "update", "repair" or "interrupted", whose action
-finishes the job. The leftover rule: a configuration's `config.txt.vjo-new` and `.vjo-old` are never
+finishes the job. A run that stops says what does: the same action again (`Install again finishes the
+job.`, or `Uninstall again` after an uninstall), or, when a stopped swap's file is left beside a
+configuration and after Put it back or Keep, the Install page's next plan (`the Install page shows what is
+left to do`), which offers to put it back or keep the current one first. The leftover rule: a configuration's `config.txt.vjo-new` and `.vjo-old` are never
 removed (they make the state "interrupted", above). A payload file's `.vjo-new` or `.vjo-old` with the
 payload's SHA-256 is used first (a stopped swap's new file, or the old one put aside when the payload's
 is the same, as with the frozen dictionary); one without it is an interrupted copy of the overlay's own
@@ -528,8 +545,12 @@ On a first install, and on an install of another build than `installed.txt` name
 downgrade, the other variant), an existing `config.ini` is patched as below. Over the build
 `installed.txt` names (**Check and repair**, the same VPK again) it is the user's: a later choice
 (card mining OFF on the Anki page, `log_file = off`, another dictionary list) is no damage, so it is
-left as it is and does not make the state "repair" (code audit R3); only a missing one is written from
-the template.
+left as it is and does not make the state "repair" (code audit R3). A missing one is written again: from
+`config.ini.bak` when only the backup is there (a save that stopped between `publish`'s two renames: the
+app reads the backup, the plugins run on their defaults until the app's next save, code audit note 6),
+as the app's own save would write it (its settings as they were, a removed feature's lines and the API
+keys gone; the plan says `config.ini is missing beside its backup config.ini.bak (a save that stopped):
+it is written again from the backup, your settings as they were.`), else from the template.
 
 When there is none (neither `config.ini` nor its `config.ini.bak`: the app reads the backup when the
 file is missing, `settings/preferences.c:34-44`, which a stop between `publish`'s two renames leaves,
@@ -556,10 +577,23 @@ the app sets `log_file` only for the debug build and puts `plaintext.vjdict` int
 
 Every other setting is the user's and is kept: `vocr_tier`, `ocr_mode`, `ocr_boost_clock` (the OCR &
 lookup page's choices, overlay-ocr-mode-setting), `log_file`, `anki_mining` (unless the package sets
-it), the user's comments and order. The plan lists each changed line of `config.ini`, and each
-`config.txt` it changes with the exact lines it adds and removes (8 per file on the page, every one in
-`log.txt`), as AGENTS.md rule 7 asks. The result is parsed with
-`vjo_config_parse` before the OK (step 0).
+it), the user's comments and order. The plan lists each changed line of `config.ini` (12 at most, fewer in
+a long plan, the rest counted), and each `config.txt` it changes with the exact lines it adds and removes
+(8 per file on the page, fewer in a long plan, every one in `log.txt`), as AGENTS.md rule 7 asks. The
+result is parsed with `vjo_config_parse` before the OK (step 0).
+
+**The exact lines** (`vjo_install_diff`, `settings/install.c`) are a minimal line diff of the
+configuration and the editor's result, the same lines on the page and in `log.txt`: CR, LF and CRLF each
+end one line. The common first and last lines are skipped; Myers' O(ND) pass gives the fewest changed
+lines D, and a table over the diagonals that D allows picks, of the shortest diffs, the one that keeps
+the most lines that do not name the overlay, then shows a removal before an addition. So a line the
+editor comments out is its old text removed and its commented text added, and a user's line is never
+shown as removed and added back where another shortest diff keeps it (code audit note 1: when a line of
+ours had a copy further on, the earlier greedy walk showed the user's lines in between as added, then
+removed). A changed stretch of more than 1,024 lines, or 256 changes or more, gets the greedy walk, still
+a correct edit; the editor's own results never come near (it changes a few lines; the 64 KiB input
+limit is the editor's). Its tables are 45,060 B of the app's static memory (the host build's `dw`;
+the system app's, outside the plugins' ledger, within `check_settings_self`'s budget).
 
 ## Uninstall
 
@@ -667,6 +701,25 @@ The app's pages and the README say the same, in this order:
 
 Vita3K is not evidence for any of it (it has no taiHEN). The test build's console run is.
 
+## After the code audit (audit-overlay-one-vpk-install-b's notes)
+
+The code audit (MERGE_OK on #158) left six suggestions, all taken here:
+
+1. The exact lines are a minimal diff, above.
+2. A plan longer than its 40 lines keeps its restart and recovery lines; L/R page the box and a bar shows
+   where the view is (above, "Reading it").
+3. The test gaps: a failed put-back puts the current `config.txt` back (N5), CRLF is one line end (N17),
+   `--verify`'s check of the version against the file name (N22), no VPK of a lines-mode build (N23), the
+   reason a sentence a line on the page (N24).
+4. A stopped uninstall's `.vjo-new` is named an uninstall's, and its next step is Uninstall; this build
+   with a damaged plugin or another record is **Repair**, not "another build of it is installed".
+5. `docs/console-test.md`'s notice and backup lines and `tools/install_ftp.sh`'s header are current; N1
+   above says what is done with an empty file.
+6. Over this build a `config.ini` missing beside its `config.ini.bak` is written again from the backup.
+
+Host tests only (`host/tests/test_settings_install.c`); the page's paging is a console check of
+test.4.
+
 ## Unmeasured until a console run
 
 - VitaShell's install time for the 60 MB VPK, and the app's Install time: about 169 MB read and
@@ -714,7 +767,8 @@ removed, the "interrupted" state also beside a `config.txt` h-encore wrote back;
 copies as `.vjo-stale-<date>`). Its notes N1-N17 are folded in where they change the design (the
 compiled-values bullet, the taiHEN fork, the permissions after an L start, the boot record's 60 s,
 lines mode's done text, libftpvita's rename).
-- Notes taken: an empty file treated as missing (N1), the 4 KiB input (N2), `config.ini` details (N3),
+- Notes taken: an empty file named for what it is (N1: it is refused as "cannot", restore a backup or
+  HENkaku's default, rather than treated as missing, above), the 4 KiB input (N2), `config.ini` details (N3),
   stale copies renamed (N4), the storage plugin in "Which file" (N5), sizes (N6), wording (N7),
   `install-vita.sh` parity (N8), "interrupted" first (N9), the no-payload app's Uninstall (N10; no
   Check, as it has no manifest), any byte but NUL accepted (N11), the boot guard reset (N12), closing the app before a VPK

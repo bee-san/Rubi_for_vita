@@ -55,11 +55,11 @@ def module(part, build):
     return b"\0code\0" + b"\0".join(markers) + b"\0rodata\0"
 
 
-def app(build, version="0.8.0"):
+def app(build, version="0.8.0", worker="kernel"):
     start = b"start: v" + version.encode() + (b" debug" if build == "debug" else b"") + b"; %s; heap %d B"
     frames = variant.DEBUG_MARKERS["app"] if build == "debug" else ()
     # the worker mode the one-VPK install reads from the app (settings/install_page.c VJO_WORKER_MARK)
-    return b"\0" + start + b"\0" + b"\0".join(frames) + b"\0vjoworker=kernel\0"
+    return b"\0" + start + b"\0" + b"\0".join(frames) + b"\0vjoworker=" + worker.encode() + b"\0"
 
 
 class CheckVariant(unittest.TestCase):
@@ -354,13 +354,13 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))
         self.enterContext(mock.patch.object(release, "validate", return_value=None))
 
-    def base(self, build, version="0.8.0", readme=b"README\n", worker=None):
+    def base(self, build, version="0.8.0", readme=b"README\n", worker=None, worker_mode="kernel"):
         """A base zip of one build: its plugins (SELFs with that build's markers; worker: the worker's build, if
         another, whose debug build alone has the fixture sources' debug-only literal), the RCO, the VPK (its eboot a
-        SELF naming the version), the frozen dictionary, the docs."""
+        SELF naming the version and the worker mode its app was built for), the frozen dictionary, the docs."""
         worker = worker or build
-        path = self.root / f"base-{build}-{version}-{hashlib.sha256(readme).hexdigest()[:6]}-{worker}.zip"
-        eboot = fake_self(MODULE_INFO + app(build, version))
+        path = self.root / f"base-{build}-{version}-{hashlib.sha256(readme).hexdigest()[:6]}-{worker}-{worker_mode}.zip"
+        eboot = fake_self(MODULE_INFO + app(build, version, worker_mode))
         stamp = f"vjoapp1 api=22 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
         vpk = io.BytesIO()
         with zipfile.ZipFile(vpk, "w") as z:  # vita-pack-vpk's order: param.sfo, then eboot.bin
@@ -466,6 +466,17 @@ class PackageVariants(unittest.TestCase):
         for p in problems:
             self.assertIn("the Overlay app names no version (a base from before the two builds)", p)
             self.assertNotIn("vNone", p)
+
+    def test_a_build_whose_worker_needs_lines_gets_no_vpk(self):
+        """Code audit note 3 (N23): a build whose kernel does not load the worker (lines mode: install-vita.sh
+        --title per game) is refused before any VPK is written; its zips, the advanced path, are made."""
+        out = self.root / "out"
+        with self.assertRaises(SystemExit) as caught:
+            self.run_main("--normal", self.base("normal", worker_mode="lines"), "--debug",
+                          self.base("debug", worker_mode="lines"), "--models", self.models, "--version", "0.8.0", "-o", out)
+        self.assertIn("the build's worker mode is lines, not kernel", str(caught.exception))
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["VitaJPOverlay-0.8.0-debug.zip", "VitaJPOverlay-0.8.0.zip"])
+        self.assertFalse(list(out.glob("*.vpk")) or list(out.glob("*.vpk.tmp")) or (out / "SHA256SUMS").exists())
 
     def test_bases_that_are_not_the_builds_they_are_given_as_are_refused(self):
         out = self.root / "out"

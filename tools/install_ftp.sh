@@ -1,7 +1,8 @@
 #!/bin/bash
 # Installs Vita JP Overlay over VitaShell's FTP server (VitaShell: SELECT button
-# set to FTP in its settings, then SELECT). Backs up the taiHEN configs first (locally and as config.txt.vjo-bak on
-# the Vita) and adds plugin entries once. config.ini is created on the
+# set to FTP in its settings, then SELECT). Backs up both taiHEN configs locally
+# first, and on the Vita each one it changes (as config.txt.vjo-bak and a dated
+# config.txt.vjo-<date-time>.bak, kept), and adds plugin entries once. config.ini is created on the
 # first install; later installs keep its values and bring it up to the current
 # set of settings. Local copies (backups, logs, dumps) go to build/device/.
 # Needs bash, curl and python3.
