@@ -114,19 +114,31 @@ Measured in test.3 (v0.8.0-test.3, `9cfa920`, CLANNAD `PCSG00415`; #138's collec
 change's `tools/analyse_selftest.py --collect`). Every press of that run was in Automatically; Only when
 I press was not run. Times are the Shell's own, from its log lines: a job's text comes with its
 `subtitle text ready in N ms` line and its first word with its `done` line, both counted from the job's
-start (the Shell shows a word within its 50 ms poll after the `done` line; not added). A press that
-waited for a running job has no exact time, as the log has no time for a job's start: the analysis gives
-that job's whole time and the poll, and for an OCR-only job (Highlight = Character, the subtitles) the
-lookup of the word after it and its poll, an upper bound on when the Shell has the word (the overlay
-draws it at its next frame). A running job that failed or read no line, the self-test's job and a
-refresh are never a press's wait, and a press closed before its text or word came, or whose overlay
-could not open, is not timed.
+start and taken before that line's own log appends. Two gaps are not in them:
 
-| What L + R found (19 presses) | Presses | Text after the press | Word after the press |
+- **Before:** a press's job starts after the press's own handling (`shell/worker.c` `open_overlay`):
+  its input block, `open:` and `job start` log lines, 3 to 6 file appends at 12.1-46.0 ms each
+  ([performance.md](performance.md), #81's self-test timestamps), and `config.ini`'s re-read, est.
+  0.04-0.3 s.
+- **After:** `net_job` logs a job's `done` line, one append to `log.txt` and one to `status.txt`
+  while that is under 64 KiB, before it tells the control thread, which notices within its 50 ms
+  poll (`POLL_TIMEOUT_US`) and then shows the word.
+
+A press that waited for a running job has no exact time, as the log has no time for a job's start. The
+analysis gives that job's whole time plus 142 ms, the done line's two appends at their most measured
+46 ms and the poll. For an OCR-only job (Highlight = Character, the subtitles), it also adds the lookup
+of the word after it and 142 ms more. The job began before the press, so this is an upper bound (est.,
+as the appends' times are) on when the Shell has the word; the overlay draws it at its next frame. A
+job whose `done` line comes before the press's `open:` line ended during the press's own handling and is
+not counted. A running job that failed or read no line, the self-test's job and a refresh are never a
+press's wait. A press closed before its text or word came, or whose overlay could not open, is not
+timed.
+
+| What L + R found (19 presses) | Presses | Text | Word |
 |---|---:|---|---|
 | the saved word (at once) | 1 | a frame (not timed) | a frame (not timed) |
-| a background job still running | 7 | - | at most 0.7-3.2 s, median at most 2.7 s |
-| nothing for this screen: a job on the press | 7 | 1.0-1.7 s, median 1.3 s | 1.1-1.7 s, median 1.4 s |
+| a background job still running | 7 | - | at most 0.8-3.3 s after the press, median at most 2.8 s (est.) |
+| nothing for this screen: a job on the press | 7 | 1.0-1.7 s after the job's start, median 1.3 s | 1.1-1.7 s after the job's start, median 1.4 s |
 | a running job whose result was for an earlier screen, then a job | 1 | at least 1.4 s | at least 1.4 s |
 | a job on the press without text | 2 | - | - |
 | a job on the press, the overlay closed before its text (after 0.43 s) | 1 | not timed | not timed |
@@ -151,8 +163,8 @@ background result. The log does not say what changed, or why there was no result
 
 | | Automatically | Only when I press |
 |---|---|---|
-| Press after the background word is ready, same screen | at once (1 of test.3's 19 presses) | first press: a job, est. at most 1.1-1.7 s (Automatically's press jobs, on screens still settling; a still screen's job waits less); reopening: at once |
-| Press while the text is still settling | the rest of the background job, at most 0.7-3.2 s (7 of 19) | a job: 1.1-1.7 s to the word (measured on Automatically's press jobs, the same path) |
+| Press after the background word is ready, same screen | at once (1 of test.3's 19 presses) | first press: a job, est. at most 1.1-1.7 s from its start and the press's handling before it (Automatically's press jobs, on screens still settling; a still screen's job waits less); reopening: at once |
+| Press while the text is still settling | the rest of the background job, at most 0.8-3.3 s (est.; 7 of 19) | a job: 1.1-1.7 s to the word from its start, after the press's handling (est. 0.04-0.3 s; measured on Automatically's press jobs, the same path) |
 | First press of a game process | as above: jobs that found no line read the weights before | est. 0.3-0.8 s more: the job reads the model (125-295 ms in test.3), the LM (184 ms) and, for a doubtful line, the next size's model (185-331 ms) itself |
 | Work while you read | a job for every settled screen, at the lowest priority on the game's cores | none (subtitles off) |
 

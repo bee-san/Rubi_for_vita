@@ -1838,6 +1838,16 @@ PRESS_REASONS = ("overlay opened", "result was for an earlier screen", "the runn
 # shell/worker.c POLL_TIMEOUT_US: the control thread wakes for a press at once, but notices a job's end within this
 # (no event for it), and only then shows the result or starts the lookup after it
 POLL_MS = 50
+# shell/worker.c net_job takes a job's time, then logs its done line, then tells the control thread (job_done): the
+# line's appends come first, one to log.txt and one to status.txt while that is under 64 KiB (shell/log_vita.c
+# STATUS_CAP), 12.1-46.0 ms each on the console (docs/performance.md, #81's self-test timestamps). So from a done line's
+# time to the control thread's seeing the end: at most DONE_APPENDS x APPEND_MS and the poll (est.: the most measured).
+DONE_APPENDS, APPEND_MS = 2, 46
+DONE_GAP_MS = DONE_APPENDS * APPEND_MS + POLL_MS
+# A press's own handling before its job's clock starts (open_overlay, start_job_kind's job_started_us): its input
+# block, `open:` and `job start` lines, 3 appends (status.txt full) to 6, at 12.1-46.0 ms each, and config.ini's
+# re-read (apply_config): est. 0.04-0.3 s
+PRESS_HANDLING = "est. 0.04-0.3 s"
 
 
 def presses_and_rereads(text):
@@ -1850,13 +1860,18 @@ def presses_and_rereads(text):
       text kept, its word looked up by a cursor lookup (no `open:` line): the text at once;
     - a job still running (`open: background job still running`). When its result is for the screen shown and it
       looked the word up, the word comes with its end: at most the job's whole time after the press, which came during
-      it (the log has no time for a job's start), and the control thread's poll (POLL_MS). An OCR-only job (Highlight
-      = Character, a dictionary backoff, the subtitles) is followed by a cursor lookup of the word (restart_old_job),
-      whose time and poll are added. A job that failed or
+      it (the log has no time for a job's start), and DONE_GAP_MS, its done line's appends and the control thread's poll
+      (est.: the appends' most measured time). An OCR-only job (Highlight = Character, a dictionary backoff, the
+      subtitles) is followed by a cursor lookup of the word (restart_old_job), whose time and DONE_GAP_MS are added. It
+      is an upper bound on when the Shell has the word (the overlay draws it at its next frame) when the job's done
+      line comes after the press's `open:` line; one before it ended during the press's own handling and is not counted; A job that failed or
       read no line gives the press no text. When its result was for an earlier screen, or a retry follows, a job of the
       press's own starts (PRESS_REASONS). The self-test's job (open_overlay stops it) and a refresh are never a press's;
     - nothing to show (`open: no background result`, `open: screen changed since the background result`): a job
-      starts on the press, its text `subtitle text ready` ms after the press, its word with its `done` line.
+      starts on the press, its text `subtitle text ready` ms after its start, its word with its `done` line. The job
+      starts after the press's own handling: the input block, `open:` and `job start` lines (3-6 appends) and
+      config.ini's re-read, est. 0.04-0.3 s from the press (PRESS_HANDLING); and each time is taken before its own line's
+      appends (and, for the word, the poll): measured from the job's start, not the press.
     A later job of the press's own brings its text when an earlier one did not: the jobs before it are counted, the
     gaps between them not (a lower bound). A press closed before its text or word came, or whose overlay could not
     open, is counted apart. Jobs run one at a time on the Shell's network thread, from their `job start` to their `done`
@@ -1882,15 +1897,15 @@ def presses_and_rereads(text):
             continue
         m = PRESS_OPEN.match(line)
         if m:
-            press = ({"line": n, "found": None, "running": job, "jobs": [], "cursor": None, "close_line": None,
-                      "not_opened": False} if int(m.group(1)) >= 0 else None)
+            press = ({"line": n, "found": None, "found_line": None, "running": job, "jobs": [], "cursor": None,
+                      "close_line": None, "not_opened": False} if int(m.group(1)) >= 0 else None)
             if press:
                 win["presses"].append(press)
             continue
         if press is not None:
             m = PRESS_FOUND.match(line)
             if m and press["found"] is None:
-                press["found"] = m.group(1)
+                press["found"], press["found_line"] = m.group(1), n
                 continue
             if PRESS_NOT_OPENED.match(line):
                 press["not_opened"] = True
@@ -2005,6 +2020,8 @@ def press_kind(p):
         return ("unclear",)  # closed before its job began, the log does not show the job, or no press's job
     if r["done_ms"] is None:
         return ("closed_before",) if p["close_line"] is not None else ("unclear",)
+    if p["found_line"] is not None and r["done_line"] < p["found_line"]:
+        return ("unclear",)  # it ended during the press's own handling: the bound below does not hold
     if r["rc"] != 0 or not r["raw"]:  # it failed or read no line: on_job_done shows that, nothing follows for the press
         return ("closed_before",) if closed_before(r["done_line"]) else ("read_without_text",)
     if r["kind"] == ", OCR only":  # the word: a cursor lookup after it (restart_old_job -> start_cursor_job)
@@ -2012,8 +2029,8 @@ def press_kind(p):
         if c is None or c["rc"] != 0:
             return ("closed_before",) if closed_before(c["done_line"] if c else None) else ("unclear",)
         return (("closed_before",) if closed_before(c["done_line"])
-                else ("waited", r["done_ms"] + POLL_MS + c["done_ms"] + POLL_MS, 1))
-    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + POLL_MS, 0)
+                else ("waited", r["done_ms"] + DONE_GAP_MS + c["done_ms"] + DONE_GAP_MS, 1))
+    return ("closed_before",) if closed_before(r["done_line"]) else ("waited", r["done_ms"] + DONE_GAP_MS, 0)
 
 
 def _secs(values):
@@ -2043,12 +2060,15 @@ def render_presses(lg):
             ocr_only = (f"; for {_n(m['waited_ocr_only'], 'OCR-only job')}, with the lookup of the word after it"
                         if m["waited_ocr_only"] else "")
             L.append(f"    {len(m['waited'])} waited for a job still running: the word at most {_secs(m['waited'])} after "
-                     f"the press (that job's whole time, the press came during it and the log has no time for a job's "
-                     f"start, and the Shell's {POLL_MS} ms poll for its end{ocr_only})")
+                     f"the press (est.: that job's whole time, begun before the press, as the log has no time for a job's "
+                     f"start; then its done line's {DONE_APPENDS} appends at up to {APPEND_MS} ms each and the Shell's "
+                     f"{POLL_MS} ms poll{ocr_only})")
         if m["read_text"]:
             settle = (f"; of it, waiting for the text to hold still {_secs(m['read_settle'])}" if m["read_settle"] else "")
-            L.append(f"    {len(m['read_text'])} recognized on the press: the text {_secs(m['read_text'])} after it, the "
-                     f"word {_secs(m['read_word'])}{settle}")
+            L.append(f"    {len(m['read_text'])} recognized on the press: the text {_secs(m['read_text'])} after its job's "
+                     f"start, the word {_secs(m['read_word'])}{settle} (the job starts after the press's own handling, "
+                     f"its log lines and config.ini's re-read, {PRESS_HANDLING}; each time is taken before its own log "
+                     "line's appends)")
         if m["then_text"]:
             L.append(f"    {len(m['then_text'])} recognized by a later job (after the one running at the press, whose "
                      "result was for an earlier screen or had no lookup, or a retry): the text at least "
@@ -2062,8 +2082,9 @@ def render_presses(lg):
         if m["not_opened"]:
             L.append(f"    {m['not_opened']} whose overlay could not open (no Paf memory for its text; not timed)")
         if m["unclear"]:
-            L.append(f"    {m['unclear']} not counted (a job the log does not show or end, the self-test's job or a "
-                     "refresh running at the press, or an OCR-only job with no lookup after it)")
+            L.append(f"    {m['unclear']} not counted (a job the log does not show or end, one that ended during the "
+                     "press's own handling, the self-test's job or a refresh running at the press, or an OCR-only job "
+                     "with no lookup after it)")
     early = pr["early"]
     if not pr["text_jobs"]:
         L.append("  read before finished: no job's text is in this log, so nothing to compare")
