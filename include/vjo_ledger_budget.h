@@ -71,7 +71,8 @@
  * data/bss [measured: the build log's module rows and arm-vita-eabi-size, main 6020c0b and this
  * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. #140's
  * posting hints make it 101,024 text, the same pages, and #132's VjoNet stack paint and check
- * 101,488 + 70,076 [measured: the build log's module rows, main 32bfc6a and #132]. */
+ * 101,488 + 70,076 [measured: the build log's module rows, main 32bfc6a and #132; the same on
+ * 3aa08a6, #141]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -79,7 +80,9 @@
  * game worker's step log, of the recognized text and of every job and lookup, and the timings and
  * traces compiled out: 90,768 text + 69,988 data/bss against the debug build's 100,792 + 70,060,
  * 94,208 + 73,728 B of pages, two text pages fewer [measured: the build log's module rows, both builds
- * of this tree on main 3805a13 (#130, #142)]. Its check is exact (--exact): this must equal its pages. */
+ * of this tree on main 3805a13 (#130, #142)]. #140's posting hints make it 91,016 + 69,988, and #132's
+ * VjoNet stack paint and check 91,464 + 70,004, the same pages [measured: the build log's module
+ * rows, main 3aa08a6 and #132]. Its check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B

@@ -360,6 +360,11 @@ pages than its budget fails too, so the normal budgets are always the measured p
 | `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,708 + 14,208) | the same pages (one budget for both since #124) |
 
 The normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its data/bss has 3,740 B.
+On main `3aa08a6` it is 91,016 B of text (#140), and #132's VjoNet stack paint and check make it
+91,464 B of text and 70,004 B of data/bss, the same pages (2,744 and 3,724 B of room); the normal
+build's shell pages are then 208,896 B permanent and 278,528 B at worst (258,048 and 327,680 B
+before: VjoNet's stack is the same in both builds) [measured: the build log's module rows and
+ledger, both builds of main `3aa08a6` and of #132].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
