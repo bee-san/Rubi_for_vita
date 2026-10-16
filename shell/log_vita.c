@@ -3,7 +3,9 @@
  * Every line is its own open/append/close, so a crash loses no written line,
  * except within a batch (vjo_log_batch_begin): the lines one thread logs in one
  * burst, from data it already holds, are written with one open/write/close per
- * file, byte for byte what line-by-line writes give, in the same order. */
+ * file, byte for byte what line-by-line writes give, in the same order. The
+ * normal build's network thread keeps its batch open across its jobs, until its
+ * results are taken (shell/worker.c net_main): a crash loses at most that batch. */
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/clib.h>
@@ -52,7 +54,16 @@ void vjo_log_configure(const VjoConfig *cfg)
     if (log_mutex < 0)
         log_mutex = sceKernelCreateMutex("VjoLog", 0, 0, NULL);
     sceKernelLockMutex(log_mutex, 1, NULL);
+#if VJO_DEBUG
     batch_flush_locked(); /* lines logged before the change go out as they were */
+#else
+    /* Lines logged before a change of log_file go out as they were. With it kept, an open batch keeps
+     * its lines: they go to the same files later. The normal build's network thread holds a job's lines
+     * until the control thread has taken its result (shell/worker.c net_main), and the overlay's open
+     * re-reads config.ini before it shows a result: it writes none of them. */
+    if (file_on != cfg->log_file)
+        batch_flush_locked();
+#endif
     file_on = cfg->log_file;
     file_size = -1;
     sceKernelUnlockMutex(log_mutex, 1);

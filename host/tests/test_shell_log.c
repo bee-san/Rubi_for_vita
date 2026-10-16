@@ -662,6 +662,43 @@ static void long_held_batch_with_configures(void)
     }
 }
 
+/* t3-log-path (audit-t3-log-path-d's N1): a configure (another thread's: the overlay's open re-reads
+ * config.ini) that keeps log_file leaves an open batch's lines held in the normal build, whose network
+ * thread holds a job's lines until its result is taken (shell/worker.c net_main); the debug build's, as
+ * main's, writes them. One that changes log_file writes them first in both, to the files of the setting
+ * they were logged under. */
+static void configure_keeps_a_held_batch(void)
+{
+    VjoConfig cfg;
+    VjoLogBatch b;
+    char buf[1024], line[256];
+    fresh_logger(0); /* log_file on */
+    TEST_ASSERT(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+    vjo_log_raw(line, make_line(line, 0, 40));
+    vjo_log_raw(line, make_line(line, 1, 40));
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.log_file = 1;
+    thread = 3; vjo_log_configure(&cfg); thread = 1; /* log_file kept */
+    lock_check();
+#if VJO_DEBUG
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 80); /* written */
+    TEST_CHECK(batch == &b && b.n == 0);
+#else
+    TEST_CHECK(!lookup(VJO_LOG_PATH, 0) || lookup(VJO_LOG_PATH, 0)->size == 0); /* held */
+    TEST_CHECK(batch == &b && b.n == 2);
+#endif
+    vjo_log_raw(line, make_line(line, 2, 40));
+    cfg.log_file = 0;
+    thread = 3; vjo_log_configure(&cfg); thread = 1; /* changed: what is held goes out first, to log.txt */
+    lock_check();
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 120 && batch == &b && b.n == 0);
+    vjo_log_raw(line, make_line(line, 3, 40)); /* log.txt off: status.txt only */
+    vjo_log_batch_end(&b);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 120 && lookup(VJO_STATUS_PATH, 0)->size == 160);
+    TEST_CHECK(!batch);
+    lock_check();
+}
+
 /* Another thread's line during a batch is written at once, after the batch's lines so far;
  * the batch goes on. */
 static void another_thread_is_not_held(void)
@@ -820,6 +857,7 @@ TEST_LIST = {
     {"lines_at_the_caps", lines_at_the_caps},
     {"configure_inside_a_batch", configure_inside_a_batch},
     {"long_held_batch_with_configures", long_held_batch_with_configures},
+    {"configure_keeps_a_held_batch", configure_keeps_a_held_batch},
     {"another_thread_is_not_held", another_thread_is_not_held},
     {"a_batch_stays_inside_its_memory", a_batch_stays_inside_its_memory},
     {"a_failed_run_at_the_cap", a_failed_run_at_the_cap},
