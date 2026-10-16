@@ -20,7 +20,13 @@ game is played as today (L + R). An update is the same three steps with the new 
 that its overlay is not the installed one and its Install page offers **Update**.
 
 Requirements stay those of today's install: a PS Vita on 3.60-3.74 with HENkaku/Ensō or h-encore,
-and VitaShell. `install-vita.sh` (the release zip) stays as the advanced and developer path.
+and VitaShell, plus one setting the PC installer did not need: **Settings > HENkaku Settings >
+Enable Unsafe Homebrew** on. HENkaku's default is off (henkaku 784e483 `plugin/kernel.c:156`), and
+only then does an unsafe SELF such as the app's `eboot.bin` get extended permissions
+(`plugin/kernel.c:60-73`); without them the app runs sandboxed and cannot write `ur0:tai`. The app
+detects it as VitaShell does (`sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)` returns `0x80010030`,
+VitaShell `init.c:353-355`) and says how to turn it on. `install-vita.sh` (the release zip) stays as
+the advanced and developer path.
 
 ## What a release ships
 
@@ -108,6 +114,16 @@ and a write of 137 MiB. Instead the app moves it (`sceIoRename` within ux0: the 
 written). The app says so on its Install page: "the dictionary (137 MB) is moved out of the app, not
 copied".
 
+The app folder cannot be written while it is mounted as the app's `app0:`: VitaShell unmounts its
+own (`sceAppMgrUmount("app0:")`, "Allow writing to ux0:app/VITASHELL", VitaShell `init.c:349-351`).
+So the install, once its checks pass and before its first move or delete in the app folder, unmounts
+`app0:` the same way, and from then on reads the payload and the app's stamp through
+`ux0:app/VJOSET001/` only (`settings/app_check.c` already falls back to that path for the stamp).
+Nothing else of the app reads `app0:` while it runs. Whether a system application may unmount its
+`app0:` is unmeasured; if the unmount or the rename fails, the app copies the dictionary instead when
+ux0 has room for it, and says that the app folder then keeps its copy too (274 MiB in all, until the
+app is deleted or a later install can move it); without room it stops before anything is written.
+
 - After the move the app folder no longer has it. A **Repair** of a missing or damaged dictionary
   therefore needs the VPK installed again in VitaShell first; the app says that when it is the case.
 - An update brings the dictionary again (VitaShell installs the whole VPK). When the installed
@@ -115,8 +131,6 @@ copied".
   app deletes the copy in the app folder and frees 137 MiB. Otherwise it replaces it: the old file to
   `plaintext.vjdict.vjo-old`, the new one moved in and hashed, then the old one deleted (renamed back
   when the hash fails).
-- When the rename fails (a different device, a read-only folder), the app copies it instead, if
-  ux0 has room, and says so.
 - Plugins, the RCO and the models (about 11 MB) are copied: the app keeps them for a Repair without
   the VPK.
 
@@ -135,7 +149,8 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 | update | the overlay is installed, but a plugin file is not the payload's (size and SHA-256), or the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is not this app's stamp | Install |
 | repair | this app's overlay, but a data file is missing or has the wrong size | Install |
 | installed | every plugin file is the payload's, every data file has its size, both configurations load the plugins, and the record is this app's stamp | Games |
-| cannot | a configuration the editor refuses (below) | Install, with the reason |
+| cannot | Unsafe Homebrew is off (above), or a configuration the editor refuses (below) | Install, with the reason and what to do |
+| interrupted | a `config.txt` is missing beside its `config.txt.vjo-new` or `config.txt.vjo-old` (a stop between the swap's two renames, step 4) | Install, offering to finish the swap |
 | no payload | the zip's `JPOverlaySettings.vpk` (or a source build): the app carries no overlay | Games; Install says that `install-vita.sh` installs this build |
 
 At start only the four small files (the three plugins and the RCO, about 180 KB) are hashed; the
@@ -199,7 +214,11 @@ Nothing is written until every check of step 0 passes.
 
    The Vita's rename cannot replace a file, so between those two calls the file is missing. A power
    cut exactly then, with no other configuration, would leave taiHEN unable to start (above); holding
-   L at power-on recovers it, and the recovery text says to copy the backup to `config.txt`. Writing
+   L at power-on recovers it, and the recovery text says to copy the backup to `config.txt`. The next
+   start of the app finds the configuration missing beside its `.vjo-new` (complete: it was written,
+   synced and read back before the first rename) or `.vjo-old`, and offers to finish the swap
+   (`.vjo-new` to `config.txt`, else `.vjo-old` back), with the user's OK; it deletes neither while
+   `config.txt` is missing. Writing
    the file in place instead has no such moment, but a cut during the write leaves a prefix of it,
    which can end at a multiple of 4 KiB (a full card or a cluster write), the one length taiHEN reads
    past its buffer (`plugin.c:96`). The rename's window is two metadata calls on a thread that does
@@ -220,9 +239,11 @@ Files go first so that a configuration never names a missing file; the configura
 the files so that a failure before step 4 leaves the old overlay loading as it was (the new kernel
 plugin with an old configuration's worker lines is the one-release fallback of the kernel-loaded
 worker, below); each file and
-each configuration is either the old or the new one at any moment. A power cut or a crash in the
-middle leaves the next start in "update" or "repair", whose Install finishes the job; `.vjo-new` and
-`.vjo-old` files left behind are removed by the next run.
+each file is either the old or the new one at any moment, and each configuration too except
+between the swap's two renames (step 4). A power cut or a crash in the middle leaves the next start
+in "update", "repair" or "interrupted", whose action finishes the job. A `.vjo-new` or `.vjo-old`
+left beside a file that exists is removed by the next install; one beside a missing file is used
+first, never removed.
 
 A game suspended behind the app (the app is a system application) keeps the plugins it loaded until
 the restart: the files on the card are replaced, not the loaded modules, as with `install-vita.sh`
@@ -378,6 +399,8 @@ The app's pages and the README say the same:
 
 - A boot that does not complete makes the next one a safe boot (no hooks, no overlay; `status.txt`
   says why), as today (`docs/boot-safety.md`).
+- If HENkaku does not start (no VitaShell: a `config.txt` missing), hold L while turning the Vita on:
+  taiHEN then starts without reading any configuration (`taihen.c:348`).
 - If the Vita does not start: hold L while turning it on (taiHEN then loads no plugin), open VitaShell,
   and in `ur0:tai` (and `ux0:tai`) copy `config.txt.vjo-<date>.bak` over `config.txt`, or put `#` before
   the two `VitaJPOverlay` lines. Then restart normally. (The worker needs no line: without the kernel
