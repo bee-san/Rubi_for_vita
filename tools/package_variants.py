@@ -55,6 +55,8 @@ def check_bases(normal, debug, version):
         if app != version:
             problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version} "
                             "(set VJO_VERSION in vita/CMakeLists.txt and build again)")
+    if problems:
+        return problems  # a base that is not a zip, or not a build: nothing more to compare
     a, b = contents(normal), contents(debug)
     if set(a) != set(b):
         problems.append(f"the bases' files differ: only normal {sorted(set(a) - set(b))}, "

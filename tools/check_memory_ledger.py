@@ -261,7 +261,8 @@ def check_modules(values, modules, exact=False):
         elif exact and pages < values[macro]:
             problems.append(f"{name}: {pages:,} B of pages, budget {macro} is {values[macro]:,} B: this build's budget must "
                             f"be its pages exactly; lower it to {pages}u (include/vjo_ledger_budget.h, its "
-                            "`#if VJO_DEBUG` branch for this build)")
+                            "`#if VJO_DEBUG` branch for this build; a budget both builds share is split into the two "
+                            "branches first, the debug build's keeping its value)")
     return rows, problems
 
 

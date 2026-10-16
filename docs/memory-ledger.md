@@ -334,6 +334,11 @@ pages than its budget fails too, so the normal budgets are always the measured p
 
 The normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its data/bss has 3,740 B.
 
+The worker's budget is one value for both builds (their pages are the same since #124). A change
+that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
+then fail. Split it into the two `#if VJO_DEBUG` branches first, as the Shell's and the kernel's are,
+the debug branch raised and the normal one at its own pages (the ledger's message says so).
+
 ## The CI check
 
 `tools/check_memory_ledger.py` runs in both CI jobs and as `ctest -R memory_ledger`:
