@@ -390,6 +390,9 @@
         font-size: 21px;
         color: #8a94a6;
       }
+      #ov-hint-b {
+        opacity: 0;
+      }
       .ov-hint {
         position: absolute;
         left: 20px;
@@ -596,60 +599,146 @@
       }
 
       /* ------------------------------------------------------------ VitaShell */
+      /* VitaShell 2.02, Default theme (resources/default/colors.txt, ABGR): black background,
+         the violet title, the grey path, cyan folders, white files, the focused row green;
+         layout from main.h (margins 20 and 18, rows of 23 px from y 87) */
       #scr-shell {
-        background: linear-gradient(180deg, #24324a, #172234);
-        font-size: 22px;
-        color: #e9eef8;
+        background: #000;
+        font-size: 19px;
+        color: #fff;
       }
-      .vs-bar {
+      .vs-title {
         position: absolute;
-        left: 0;
-        top: 0;
-        width: 960px;
-        height: 40px;
-        background: rgba(0, 0, 0, 0.35);
+        left: 20px;
+        top: 18px;
+        line-height: 23px;
+        color: rgb(127, 0, 255);
+      }
+      .vs-status {
+        position: absolute;
+        right: 20px;
+        top: 18px;
+        line-height: 23px;
         display: flex;
+        gap: 14px;
         align-items: center;
-        gap: 24px;
-        padding: 0 20px;
-        font-size: 20px;
+        color: #fff;
       }
-      .vs-bar span {
-        color: #9fd0ff;
+      .vs-batt {
+        position: relative;
+        width: 30px;
+        height: 14px;
+        border: 2px solid #fff;
+        border-radius: 3px;
       }
-      .vs-bar em {
-        margin-left: auto;
-        font-style: normal;
-        color: #c8d2e2;
+      .vs-batt b {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        bottom: 2px;
+        width: 18px;
+        background: rgb(0, 255, 0);
+      }
+      .vs-path {
+        position: absolute;
+        left: 20px;
+        top: 41px;
+        line-height: 23px;
+        color: rgb(191, 191, 191);
+      }
+      #vs-path-data,
+      #vs-data {
+        opacity: 0;
       }
       .vs-list {
         position: absolute;
         left: 0;
-        top: 56px;
+        top: 87px;
         width: 960px;
+        height: 391px;
       }
       .vs-row {
-        height: 40px;
-        line-height: 40px;
-        padding-left: 64px;
-        position: relative;
+        position: absolute;
+        left: 0;
+        width: 960px;
+        height: 23px;
+        line-height: 23px;
       }
       .vs-row i {
         position: absolute;
-        left: 26px;
-        top: 11px;
-        width: 22px;
-        height: 18px;
-        border-radius: 3px;
+        left: 20px;
+        top: 5px;
+        width: 18px;
+        height: 14px;
+        border-radius: 2px;
       }
       .vs-row i.fold {
-        background: #f0c35a;
+        background: rgb(240, 196, 70);
       }
-      .vs-row i.pkg {
-        background: #7fd1c7;
+      .vs-row i.file {
+        background: #e8e8e8;
+        width: 14px;
+        left: 22px;
       }
-      .vs-sel {
-        background: rgba(127, 209, 199, 0.22);
+      .vs-name {
+        position: absolute;
+        left: 46px;
+      }
+      .vs-info {
+        position: absolute;
+        right: 280px;
+      }
+      .vs-date {
+        position: absolute;
+        right: 20px;
+      }
+      #vs-settings {
+        position: absolute;
+        inset: 0;
+      }
+      .vss-panel {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.878);
+      }
+      #vss-focus {
+        position: absolute;
+        left: 20px;
+        top: 113px;
+        width: 920px;
+        height: 23px;
+        background: rgba(0, 127, 255, 0.435);
+      }
+      .vss-title,
+      .vss-center {
+        position: absolute;
+        left: 0;
+        width: 960px;
+        line-height: 23px;
+        text-align: center;
+      }
+      .vss-title {
+        color: #fff;
+      }
+      .vss-center {
+        color: rgb(127, 127, 127);
+      }
+      .vss-item {
+        position: absolute;
+        right: 490px;
+        line-height: 23px;
+        color: rgb(127, 127, 127);
+      }
+      .vss-opt {
+        position: absolute;
+        left: 490px;
+        line-height: 23px;
+        color: rgb(0, 255, 0);
+      }
+      #vss-ftp {
+        position: absolute;
+        left: 0;
+        opacity: 0;
       }
       .vs-dialog {
         position: absolute;
@@ -657,9 +746,9 @@
         top: 170px;
         width: 520px;
         padding: 26px 30px 22px;
-        border-radius: 12px;
-        background: #2f3e58;
-        border: 2px solid #7fd1c7;
+        border-radius: 10px;
+        background: rgba(40, 40, 46, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.35);
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
         text-align: center;
         opacity: 0;
@@ -706,7 +795,7 @@
       .vs-bar-in {
         width: 100%;
         height: 100%;
-        background: #7fd1c7;
+        background: rgb(127, 255, 0);
         transform-origin: 0 50%;
         transform: scaleX(0);
       }
@@ -1103,6 +1192,9 @@
         display: block;
         opacity: 0;
       }
+      .tm-body .l.cmd {
+        opacity: 1;
+      }
       .tm-body .p {
         color: #7fd1c7;
       }
@@ -1121,7 +1213,7 @@
       .steps {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
       }
       .step {
         display: flex;
@@ -1329,7 +1421,7 @@
         </div>
         <div class="cap" id="cap6">
           <h1><em><span class="w">Easy</span> <span class="w">install</span></em></h1>
-          <p>plus a one-time setup: one script from your computer, the app in VitaShell, then a reboot</p>
+          <p>plus a one-time setup: a script on your computer over VitaShell's FTP, the app in VitaShell, a reboot</p>
         </div>
         <div class="cap" id="cap7">
           <h1><span class="w">Now</span> <span class="w">it's</span> <span class="w">installed:</span> <span class="w">go</span> <span class="w">to</span> <span class="w">your</span> <span class="w">game</span> <span class="w">and</span> <span class="w">press</span> <em><span class="w">L&nbsp;+&nbsp;R</span></em> <span class="w">to</span> <span class="w">look</span> <span class="w">up</span> <span class="w">words.</span></h1>
@@ -1395,12 +1487,13 @@
         <!-- S6: the computer side of the install -->
         <div class="terminal" id="terminal">
           <div class="tm-bar"><i></i><i></i><i></i><span>VitaJPOverlay (release folder)</span></div>
-          <div class="tm-body"><div id="tm-inner"><span class="l cmd"><span class="p">$ </span><span class="c">b</span><span class="c">a</span><span class="c">s</span><span class="c">h</span><span class="c"> </span><span class="c">i</span><span class="c">n</span><span class="c">s</span><span class="c">t</span><span class="c">a</span><span class="c">l</span><span class="c">l</span><span class="c">-</span><span class="c">v</span><span class="c">i</span><span class="c">t</span><span class="c">a</span><span class="c">.</span><span class="c">s</span><span class="c">h</span><span class="c"> </span><span class="c">-</span><span class="c">-</span><span class="c">t</span><span class="c">i</span><span class="c">t</span><span class="c">l</span><span class="c">e</span><span class="c"> </span><span class="c">H</span><span class="c">S</span><span class="c">D</span><span class="c">Y</span><span class="c">0</span><span class="c">0</span><span class="c">0</span><span class="c">0</span><span class="c">1</span><span class="c"> </span><span class="c">1</span><span class="c">9</span><span class="c">2</span><span class="c">.</span><span class="c">1</span><span class="c">6</span><span class="c">8</span><span class="c">.</span><span class="c">1</span><span class="c">.</span><span class="c">4</span><span class="c">2</span></span><span class="l out ok">Verified 62 package files</span><span class="l out ok">Verified 62 package files</span><span class="l out dim">backup: build/device/backup/20261015-142112-Xk3t9Q</span><span class="l out ">--- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):</span><span class="l out dim">5a6</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Kernel.skprx</span><span class="l out dim">7a9</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Shell.suprx</span><span class="l out dim">15a18,20</span><span class="l out hi">&gt; </span><span class="l out hi">&gt; *HSDY00001</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_OCR.suprx</span><span class="l out ">verified ur0:/tai/config.txt.vjo-bak</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_Kernel.skprx</span><span class="l out ">verified ur0:/data/VitaJPOverlay/boot.txt</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_Shell.suprx</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_OCR.suprx</span><span class="l out ">verified ur0:/data/VitaJPOverlay/vitajpoverlay.rco</span><span class="l out ">verified ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict</span><span class="l out ">verified ux0:/data/JPOverlaySettings.vpk</span><span class="l out hi">In VitaShell install ux0:data/JPOverlaySettings.vpk to add or update the</span><span class="l out hi">Overlay settings app.</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr</span><span class="l out dim">…</span><span class="l out ">verified ux0:/data/VitaJPOverlay/config.ini</span><span class="l out ok">config.ini created</span><span class="l out ">verified ur0:/tai/config.txt</span><span class="l out ok">Installed. Reboot the Vita, then leave it on for a minute. A boot that does</span><span class="l out ok">not complete makes the next one a safe boot (no hooks, no overlay; see</span><span class="l out ok">ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while</span><span class="l out ok">powering on and run: tools/install_ftp.sh --uninstall 192.168.1.42</span></div></div>
+          <div class="tm-body"><div id="tm-inner"><span class="l cmd"><span class="p">$ </span><span class="c">b</span><span class="c">a</span><span class="c">s</span><span class="c">h</span><span class="c"> </span><span class="c">i</span><span class="c">n</span><span class="c">s</span><span class="c">t</span><span class="c">a</span><span class="c">l</span><span class="c">l</span><span class="c">-</span><span class="c">v</span><span class="c">i</span><span class="c">t</span><span class="c">a</span><span class="c">.</span><span class="c">s</span><span class="c">h</span><span class="c"> </span><span class="c">-</span><span class="c">-</span><span class="c">t</span><span class="c">i</span><span class="c">t</span><span class="c">l</span><span class="c">e</span><span class="c"> </span><span class="c">H</span><span class="c">S</span><span class="c">D</span><span class="c">Y</span><span class="c">0</span><span class="c">0</span><span class="c">0</span><span class="c">0</span><span class="c">1</span><span class="c"> </span><span class="c">1</span><span class="c">9</span><span class="c">2</span><span class="c">.</span><span class="c">1</span><span class="c">6</span><span class="c">8</span><span class="c">.</span><span class="c">1</span><span class="c">.</span><span class="c">4</span><span class="c">2</span></span><span class="l out ok">Verified 65 package files</span><span class="l out ok">Verified 65 package files</span><span class="l out dim">backup: build/device/backup/20261015-142112-5HNtB1</span><span class="l out ">--- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):</span><span class="l out dim">5a6</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Kernel.skprx</span><span class="l out dim">7a9</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Shell.suprx</span><span class="l out dim">15a18,20</span><span class="l out hi">&gt; </span><span class="l out hi">&gt; *HSDY00001</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_OCR.suprx</span><span class="l out ">verified ur0:/tai/config.txt.vjo-bak</span><span class="l out ">--- ux0:/tai/config.txt changes (OCR worker registered for HSDY00001):</span><span class="l out dim">4a5</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Kernel.skprx</span><span class="l out dim">6a8</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_Shell.suprx</span><span class="l out dim">14a17,19</span><span class="l out hi">&gt; </span><span class="l out hi">&gt; *HSDY00001</span><span class="l out hi">&gt; ur0:tai/VitaJPOverlay_OCR.suprx</span><span class="l out ">verified ux0:/tai/config.txt.vjo-bak</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_Kernel.skprx</span><span class="l out ">verified ur0:/data/VitaJPOverlay/boot.txt</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_Shell.suprx</span><span class="l out ">verified ur0:/tai/VitaJPOverlay_OCR.suprx</span><span class="l out ">verified ur0:/data/VitaJPOverlay/vitajpoverlay.rco</span><span class="l out ">verified ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict</span><span class="l out ">verified ux0:/data/JPOverlaySettings.vpk</span><span class="l out ">verified ux0:/data/VitaJPOverlay/vjo_app.txt</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_1000k.vlm</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_1000k.vlm</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_2000k.vlm</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_2000k.vlm</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm</span><span class="l out ">verified ux0:/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md</span><span class="l out ">uploaded ux0:data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md</span><span class="l out dim">config.ini: anki_mining = off</span><span class="l out dim">config.ini: dictionary = local</span><span class="l out dim">config.ini: font_size_en = 14</span><span class="l out dim">config.ini: font_size_ja = 18</span><span class="l out dim">config.ini: highlight_mode = word</span><span class="l out dim">config.ini: japanese_only_selection = on</span><span class="l out dim">config.ini: local_dictionaries = plaintext.vjdict</span><span class="l out dim">config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries</span><span class="l out dim">config.ini: local_dictionary_results = 1</span><span class="l out dim">config.ini: log_file = on</span><span class="l out dim">config.ini: log_host = empty</span><span class="l out dim">config.ini: non_japanese_filter = lines</span><span class="l out dim">config.ini: ocr_backend = vocr</span><span class="l out dim">config.ini: ocr_boost_clock = on</span><span class="l out dim">config.ini: ocr_cascade_ms = 2000</span><span class="l out dim">config.ini: ocr_lm = 1000k</span><span class="l out dim">config.ini: ocr_mode = auto</span><span class="l out dim">config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr</span><span class="l out dim">config.ini: ocr_refine_lines = psp</span><span class="l out dim">config.ini: ocr_settle_max_ms = 2000</span><span class="l out dim">config.ini: ocr_settle_ms = 150</span><span class="l out dim">config.ini: ocr_settle_press_ms = 1000</span><span class="l out dim">config.ini: ocr_skip_blank_lines = off</span><span class="l out dim">config.ini: ocr_threads = 3</span><span class="l out dim">config.ini: subtitle_button = select+r</span><span class="l out dim">config.ini: text_source = ocr</span><span class="l out dim">config.ini: toggle_button = l+r</span><span class="l out dim">config.ini: vocr_tier = normal</span><span class="l out ">verified ux0:/data/VitaJPOverlay/config.ini</span><span class="l out ok">config.ini created</span><span class="l out ">verified ur0:/tai/config.txt</span><span class="l out ">verified ux0:/tai/config.txt</span><span class="l out ok">Installed. Reboot the Vita, then leave it on for a minute. A boot that does not </span><span class="l out ok">complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/Vita</span><span class="l out ok">JPOverlay/status.txt). If it fails to boot at all, hold L while powering on and </span><span class="l out ok">run: tools/install_ftp.sh --uninstall 192.168.1.42</span><span class="l out ">&#8203;</span><span class="l out hi">+----------------------------------------------------------------------------+</span><span class="l out hi">| ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)             |</span><span class="l out ">|                                                                            |</span><span class="l out ">| No Overlay app is installed on the Vita (ux0:app/VJOSET001).               |</span><span class="l out ">|                                                                            |</span><span class="l out ">| Do it now, before you reboot: in VitaShell, press OK on the FTP dialog to  |</span><span class="l out ">| keep FTP running, open ux0:data/, select JPOverlaySettings.vpk, press the  |</span><span class="l out ">| confirm button (x on most consoles, o on Japanese ones) and confirm the    |</span><span class="l out ">| install.                                                                   |</span><span class="l out ">|                                                                            |</span><span class="l out ">| Then check it from here, with VitaShell's FTP still running: bash          |</span><span class="l out ">| install-vita.sh --check-app 192.168.1.42, then reboot.                     |</span><span class="l out ">|                                                                            |</span><span class="l out ">| An older app shows engines and pages that are gone and saves settings the  |</span><span class="l out ">| plugins no longer use (test.2's run had test.1's app writing ocr_backend = |</span><span class="l out ">| vocr2, #101).                                                              |</span><span class="l out hi">+----------------------------------------------------------------------------+</span></div></div>
         </div>
         <div class="steps" id="steps">
-          <div class="step" id="step1"><b>1</b>Run <code>install-vita.sh</code> on your computer</div>
-          <div class="step" id="step2"><b>2</b>Install the Overlay app in VitaShell</div>
-          <div class="step" id="step3"><b>3</b>Reboot</div>
+          <div class="step" id="step1"><b>1</b>VitaShell: set SELECT button to FTP (once)</div>
+          <div class="step" id="step2"><b>2</b>Run <code>install-vita.sh</code> on your computer</div>
+          <div class="step" id="step3"><b>3</b>Install the Overlay app in VitaShell</div>
+          <div class="step" id="step4"><b>4</b>Reboot</div>
         </div>
       </div>
 
@@ -1734,8 +1827,15 @@
                 <div class="en">[JMdict Plain]</div>
                 <div class="en">together (with); at the same time; in one lump | in the same category</div>
               </div>
+              <!-- right after a first install: card mining is off (docs/config.example.ini) -->
+              <div class="ov-body" id="ovb-fresh">
+                <div class="ja"><span class="hw">キラキラ</span><span class="rank"> 99999</span></div>
+                <div class="en">[JMdict Plain]</div>
+                <div class="en">glittering | sparkling | glistening | twinkling</div>
+              </div>
               <div class="ov-band" style="top: 500px; height: 44px"></div>
-              <div class="ov-hint">Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close</div>
+              <div class="ov-hint" id="ov-hint-a">Tap / ◀▶▲▼ word · × queue · stick scroll · □ region · ○ close</div>
+              <div class="ov-hint" id="ov-hint-b">Tap / ◀▶▲▼ word · stick scroll · □ region · ○ close</div>
             </div>
 
             <!-- the console's home screen (a simplified, original rendition) -->
@@ -1772,22 +1872,25 @@
             </div>
 
             <!-- the Overlay app (settings/main.c), drawn by tools/build.mjs -->
-            <svg id="app-games-a" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="174" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="174" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="252" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="174" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-ember.svg" x="38" y="182" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="262" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-neon.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-garden.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Pocket Garden</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">PCKG00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Choices save automatically. Turn OFF games that need L+R.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">1/6</text></svg>
-<svg id="app-games-b" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-ember.svg" x="38" y="182" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="262" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="262" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="262" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="340" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="262" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-neon.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-garden.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Pocket Garden</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">PCKG00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Choices save automatically. Turn OFF games that need L+R.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">2/6</text></svg>
-<svg id="app-games-c" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-ember.svg" x="38" y="182" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="262" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="262" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="262" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="340" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="262" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-neon.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(35,56,70)"/><text x="852" y="297" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">OFF</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-garden.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Pocket Garden</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">PCKG00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Saved. Resume or restart your game to apply.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">2/6</text></svg>
+            <svg id="app-games-a" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="174" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="174" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="252" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="174" width="4" height="80" fill="rgb(91,220,207)"/><rect x="38" y="182" width="64" height="64" fill="rgb(35,56,70)"/><text x="70" y="221" fill="rgb(91,220,207)" font-size="26" text-anchor="middle" xml:space="preserve">JP</text><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Adrenaline / PSP games (shared setting)</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NPXS10028</text><rect x="24" y="262" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-ember.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-neon.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Choices save automatically. Turn OFF games that need L+R.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">1/6</text></svg>
+<svg id="app-games-a2" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(21,31,44)"/><rect x="38" y="182" width="64" height="64" fill="rgb(35,56,70)"/><text x="70" y="221" fill="rgb(91,220,207)" font-size="26" text-anchor="middle" xml:space="preserve">JP</text><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Adrenaline / PSP games (shared setting)</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NPXS10028</text><rect x="24" y="262" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="262" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="262" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="340" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="262" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-ember.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-neon.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Choices save automatically. Turn OFF games that need L+R.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">2/6</text></svg>
+<svg id="app-games-b" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(21,31,44)"/><rect x="38" y="182" width="64" height="64" fill="rgb(35,56,70)"/><text x="70" y="221" fill="rgb(91,220,207)" font-size="26" text-anchor="middle" xml:space="preserve">JP</text><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Adrenaline / PSP games (shared setting)</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NPXS10028</text><rect x="24" y="262" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-ember.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="350" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="350" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="428" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="350" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-neon.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="385" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Choices save automatically. Turn OFF games that need L+R.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">3/6</text></svg>
+<svg id="app-games-c" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="172" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="780" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="536" height="54" fill="rgb(21,31,44)"/><text x="42" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Default:</text><rect x="174" y="120" width="108" height="38" fill="rgb(91,220,207)"/><text x="228" y="148" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="394" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Triangle</text><rect x="572" y="112" width="364" height="54" fill="rgb(21,31,44)"/><text x="590" y="147" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">All games</text><text x="824" y="147" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Square</text><rect x="24" y="174" width="912" height="80" fill="rgb(21,31,44)"/><rect x="38" y="182" width="64" height="64" fill="rgb(35,56,70)"/><text x="70" y="221" fill="rgb(91,220,207)" font-size="26" text-anchor="middle" xml:space="preserve">JP</text><text x="120" y="204" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Adrenaline / PSP games (shared setting)</text><g class="game-badge" data-row="0"><rect x="788" y="181" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="209" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="244" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NPXS10028</text><rect x="24" y="262" width="912" height="80" fill="rgb(21,31,44)"/><image href="assets/vn/icon-ember.svg" x="38" y="270" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="292" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Ember Quest</text><g class="game-badge" data-row="1"><rect x="788" y="269" width="128" height="38" fill="rgb(91,220,207)"/><text x="852" y="297" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text></g><text x="920" y="332" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">EMBR00001</text><rect x="24" y="350" width="912" height="80" fill="rgb(35,56,70)"/><rect x="24" y="350" width="4" height="80" fill="rgb(91,220,207)"/><rect x="24" y="350" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="428" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="350" width="4" height="80" fill="rgb(91,220,207)"/><image href="assets/vn/icon-neon.svg" x="38" y="358" width="64" height="64" preserveAspectRatio="xMidYMid slice"/><text x="120" y="380" fill="rgb(238,244,255)" font-size="26" xml:space="preserve">Neon Drift</text><g class="game-badge" data-row="2"><rect x="788" y="357" width="128" height="38" fill="rgb(35,56,70)"/><text x="852" y="385" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">OFF</text></g><text x="920" y="420" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">NEON00001</text><rect x="24" y="440" width="912" height="64" fill="rgb(21,31,44)"/><text x="40" y="467" fill="rgb(238,244,255)" font-size="24" xml:space="preserve">Saved. Resume or restart your game to apply.</text><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">×: toggle   L/R: page   Left/Right: letter   ○: exit</text><text x="936" y="535" fill="rgb(193,207,222)" font-size="24" text-anchor="end" xml:space="preserve">3/6</text></svg>
             <svg id="app-anki-a" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="172" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="780" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="912" height="68" fill="rgb(21,31,44)"/><text x="42" y="142" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Card mining</text><rect x="812" y="118" width="108" height="34" fill="rgb(91,220,207)"/><text x="866" y="144" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="42" y="172" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">× in the overlay saves the word to a queue on the memory card.</text><rect x="24" y="188" width="912" height="100" fill="rgb(35,56,70)"/><rect x="24" y="188" width="4" height="100" fill="rgb(91,220,207)"/><rect x="24" y="188" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="286" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="188" width="4" height="100" fill="rgb(91,220,207)"/><text x="42" y="218" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export cards (3 queued)</text><rect x="760" y="194" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="220" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export</text><foreignObject x="42" y="228.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">A new .apkg of Lapis cards in ux0:data/VitaJPOverlay/anki/. The queue is cleared once the file is written and checked.</div></foreignObject><rect x="24" y="296" width="912" height="100" fill="rgb(21,31,44)"/><text x="42" y="326" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export all cards</text><text x="500" y="326" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">3 cards in all</text><rect x="760" y="302" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="328" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export all</text><foreignObject x="42" y="336.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Every card again, the exported ones too (a new device, a lost file): Anki adds only the notes it does not have.</div></foreignObject><rect x="24" y="408" width="912" height="92" fill="rgb(21,31,44)"/><foreignObject x="40" y="410.54" width="880" height="84"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(238,244,255);font-size:24px;line-height:28px;max-height:84px">Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.</div></foreignObject><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Up/Down: choose   ×: select   Select: page   ○: exit</text></svg>
-<svg id="app-anki-b" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="172" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="780" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="912" height="68" fill="rgb(21,31,44)"/><text x="42" y="142" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Card mining</text><rect x="812" y="118" width="108" height="34" fill="rgb(91,220,207)"/><text x="866" y="144" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="42" y="172" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">× in the overlay saves the word to a queue on the memory card.</text><rect x="24" y="188" width="912" height="100" fill="rgb(35,56,70)"/><rect x="24" y="188" width="4" height="100" fill="rgb(91,220,207)"/><rect x="24" y="188" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="286" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="188" width="4" height="100" fill="rgb(91,220,207)"/><text x="42" y="218" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export cards (3 queued)</text><rect x="760" y="194" width="160" height="34" fill="rgb(91,220,207)"/><text x="840" y="220" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">Exporting…</text><foreignObject x="42" y="228.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Writing the cards… 2 of 3</div></foreignObject><rect x="24" y="296" width="912" height="100" fill="rgb(21,31,44)"/><text x="42" y="326" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export all cards</text><text x="500" y="326" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">3 cards in all</text><rect x="760" y="302" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="328" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export all</text><foreignObject x="42" y="336.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Every card again, the exported ones too (a new device, a lost file): Anki adds only the notes it does not have.</div></foreignObject><rect x="24" y="408" width="912" height="92" fill="rgb(21,31,44)"/><foreignObject x="40" y="410.54" width="880" height="84"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(238,244,255);font-size:24px;line-height:28px;max-height:84px">Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.</div></foreignObject><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">○: stop   Select: page</text></svg>
+<svg id="app-anki-b" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="172" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="780" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="912" height="68" fill="rgb(21,31,44)"/><text x="42" y="142" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Card mining</text><rect x="812" y="118" width="108" height="34" fill="rgb(91,220,207)"/><text x="866" y="144" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="42" y="172" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">× in the overlay saves the word to a queue on the memory card.</text><rect x="24" y="188" width="912" height="100" fill="rgb(35,56,70)"/><rect x="24" y="188" width="4" height="100" fill="rgb(91,220,207)"/><rect x="24" y="188" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="286" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="188" width="4" height="100" fill="rgb(91,220,207)"/><text x="42" y="218" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export cards (3 queued)</text><rect x="760" y="194" width="160" height="34" fill="rgb(91,220,207)"/><text x="840" y="220" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">Exporting…</text><foreignObject x="42" y="228.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Writing the cards… 3 of 3</div></foreignObject><rect x="24" y="296" width="912" height="100" fill="rgb(21,31,44)"/><text x="42" y="326" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export all cards</text><text x="500" y="326" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">3 cards in all</text><rect x="760" y="302" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="328" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export all</text><foreignObject x="42" y="336.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Every card again, the exported ones too (a new device, a lost file): Anki adds only the notes it does not have.</div></foreignObject><rect x="24" y="408" width="912" height="92" fill="rgb(21,31,44)"/><foreignObject x="40" y="410.54" width="880" height="84"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(238,244,255);font-size:24px;line-height:28px;max-height:84px">Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.</div></foreignObject><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">○: stop   Select: page</text></svg>
 <svg id="app-anki-c" class="scr app-page " viewBox="0 0 960 544" width="960" height="544" xmlns="http://www.w3.org/2000/svg"><rect width="960" height="544" fill="rgb(9,15,23)"/><rect x="0" y="0" width="960" height="4" fill="rgb(91,220,207)"/><text x="24" y="35" fill="rgb(238,244,255)" font-size="32" xml:space="preserve">Overlay</text><text x="744" y="34" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Select: page</text><rect x="24" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="172" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">Games</text><rect x="328" y="52" width="296" height="48" fill="rgb(21,31,44)"/><text x="476" y="85" fill="rgb(238,244,255)" font-size="28" text-anchor="middle" xml:space="preserve">OCR &amp; lookup</text><rect x="632" y="52" width="296" height="48" fill="rgb(91,220,207)"/><text x="780" y="85" fill="rgb(9,15,23)" font-size="28" text-anchor="middle" xml:space="preserve">Anki</text><rect x="24" y="112" width="912" height="68" fill="rgb(21,31,44)"/><text x="42" y="142" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Card mining</text><rect x="812" y="118" width="108" height="34" fill="rgb(91,220,207)"/><text x="866" y="144" fill="rgb(9,15,23)" font-size="26" text-anchor="middle" xml:space="preserve">ON</text><text x="42" y="172" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">× in the overlay saves the word to a queue on the memory card.</text><rect x="24" y="188" width="912" height="100" fill="rgb(35,56,70)"/><rect x="24" y="188" width="4" height="100" fill="rgb(91,220,207)"/><rect x="24" y="188" width="912" height="2" fill="rgb(91,220,207)"/><rect x="24" y="286" width="912" height="2" fill="rgb(91,220,207)"/><rect x="932" y="188" width="4" height="100" fill="rgb(91,220,207)"/><text x="42" y="218" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export cards (0 queued)</text><rect x="760" y="194" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="220" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export</text><foreignObject x="42" y="228.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">A new .apkg of Lapis cards in ux0:data/VitaJPOverlay/anki/. The queue is cleared once the file is written and checked.</div></foreignObject><rect x="24" y="296" width="912" height="100" fill="rgb(21,31,44)"/><text x="42" y="326" fill="rgb(238,244,255)" font-size="28" xml:space="preserve">Export all cards</text><text x="500" y="326" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">3 cards in all</text><rect x="760" y="302" width="160" height="34" fill="rgb(35,56,70)"/><text x="840" y="328" fill="rgb(238,244,255)" font-size="26" text-anchor="middle" xml:space="preserve">Export all</text><foreignObject x="42" y="336.41" width="870" height="48"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(193,207,222);font-size:22px;line-height:24px;max-height:48px">Every card again, the exported ones too (a new device, a lost file): Anki adds only the notes it does not have.</div></foreignObject><rect x="24" y="408" width="912" height="92" fill="rgb(21,31,44)"/><foreignObject x="40" y="410.54" width="880" height="84"><div xmlns="http://www.w3.org/1999/xhtml" class="wrap" style="color:rgb(238,244,255);font-size:24px;line-height:28px;max-height:84px">Exported 3 cards (85 KB) to 2026-10-15_142530-3cards.apkg. Copy it from ux0:data/VitaJPOverlay/anki/ by VitaShell's FTP or USB (or the SD2Vita card, when it is ux0:) and open it in Anki.</div></foreignObject><text x="24" y="535" fill="rgb(193,207,222)" font-size="24" xml:space="preserve">Up/Down: choose   ×: select   Select: page   ○: exit</text></svg>
 
-            <!-- VitaShell (a simplified rendition) -->
+            <!-- VitaShell 2.02 with its Default theme (TheOfficialFloW/VitaShell: main.h's layout,
+                 resources/default/colors.txt, resources/english_us.txt). The dialogs are the
+                 system's message dialogs, drawn simply. -->
             <div id="scr-shell" class="scr">
-              <div class="vs-bar"><b>VitaShell</b><span>ux0:data/</span><em>14:30</em></div>
-              <div class="vs-list">
-                <div class="vs-row"><i class="fold"></i>..</div>
-                <div class="vs-row"><i class="fold"></i>VitaJPOverlay/</div>
-                <div class="vs-row vs-sel"><i class="pkg"></i>JPOverlaySettings.vpk</div>
-              </div>
-              <!-- VitaShell's own strings (TheOfficialFloW/VitaShell, resources/english_us.txt) -->
+              <div class="vs-title">VitaShell 2.02</div>
+              <div class="vs-status"><span>2026/10/15 14:21</span><i class="vs-batt"><b></b></i></div>
+              <div class="vs-path" id="vs-path-root">ux0:</div>
+              <div class="vs-path" id="vs-path-data">ux0:data/</div>
+              <div class="vs-list" id="vs-root"><div class="vs-row" style="top:0px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>..</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:23px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>app/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:46px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>appmeta/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:69px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>cache/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:92px;color:rgb(0,255,0)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>data/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:07</span></div><div class="vs-row" style="top:115px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>license/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:138px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>picture/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:161px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>tai/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:06</span></div><div class="vs-row" style="top:184px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>user/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:05</span></div><div class="vs-row" style="top:207px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>VitaShell/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:07</span></div></div>
+              <div class="vs-list" id="vs-data"><div class="vs-row" style="top:0px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>..</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/14 22:07</span></div><div class="vs-row" style="top:23px;color:rgb(0,255,255)"><i class="fold"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>VitaJPOverlay/</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>Folder</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/15 14:21</span></div><div class="vs-row" style="top:46px;color:rgb(0,255,0)"><i class="file"></i><span class="vs-name" data-layout-allow-overlap data-layout-allow-occlusion>JPOverlaySettings.vpk</span><span class="vs-info" data-layout-allow-overlap data-layout-allow-occlusion>473.45 KB</span><span class="vs-date" data-layout-allow-overlap data-layout-allow-occlusion>2026/10/15 14:21</span></div></div>
+              <div id="vs-settings"><div class="vss-panel"></div><div id="vss-focus"></div><div class="vss-title" style="top:87px">Main settings</div><div class="vss-item" style="top:110px">Theme</div><div class="vss-opt" style="top:110px">Default</div><div class="vss-item" style="top:133px">USB device</div><div class="vss-opt" style="top:133px">Memory Card</div><div class="vss-item" style="top:156px">SELECT button</div><div class="vss-opt" style="top:156px"><span id="vss-usb">USB</span><span id="vss-ftp">FTP</span></div><div class="vss-item" style="top:179px">Disable auto-update</div><div class="vss-opt" style="top:179px">Off</div><div class="vss-item" style="top:202px">Disable warning messages</div><div class="vss-opt" style="top:202px">Off</div><div class="vss-center" style="top:225px">Restart VitaShell</div><div class="vss-title" style="top:271px">Power</div><div class="vss-center" style="top:294px">Reboot</div><div class="vss-center" style="top:317px">Power off</div><div class="vss-center" style="top:340px">Standby</div></div>
               <div class="vs-dialog" id="vs-ftp">
                 <p>FTP server is now running at</p>
                 <p><b>ftp://192.168.1.42:1337</b></p>
@@ -1851,23 +1954,29 @@
       <audio id="sfx-9" src="assets/audio/sfx-pop.wav" data-start="18.10" data-duration="0.16" data-track-index="11" data-volume="0.4"></audio>
       <audio id="sfx-10" src="assets/audio/sfx-whoosh.wav" data-start="24.00" data-duration="0.45" data-track-index="12" data-volume="0.35"></audio>
       <audio id="sfx-11" src="assets/audio/sfx-click.wav" data-start="24.30" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
-      <audio id="sfx-12" src="assets/audio/sfx-click.wav" data-start="25.00" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
-      <audio id="sfx-13" src="assets/audio/sfx-click.wav" data-start="27.40" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
-      <audio id="sfx-14" src="assets/audio/sfx-click.wav" data-start="27.85" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
-      <audio id="sfx-15" src="assets/audio/sfx-click.wav" data-start="28.40" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
-      <audio id="sfx-16" src="assets/audio/sfx-chime.wav" data-start="29.00" data-duration="0.6" data-track-index="12" data-volume="0.4"></audio>
-      <audio id="sfx-17" src="assets/audio/sfx-click.wav" data-start="31.05" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
-      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="33.75" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
-      <audio id="sfx-19" src="assets/audio/sfx-home.wav" data-start="34.25" data-duration="0.38" data-track-index="12" data-volume="0.45"></audio>
-      <audio id="sfx-20" src="assets/audio/sfx-whoosh.wav" data-start="34.90" data-duration="0.45" data-track-index="13" data-volume="0.35"></audio>
-      <audio id="sfx-21" src="assets/audio/sfx-tap.wav" data-start="35.65" data-duration="0.07" data-track-index="11" data-volume="0.45"></audio>
-      <audio id="sfx-22" src="assets/audio/sfx-tap.wav" data-start="36.35" data-duration="0.07" data-track-index="12" data-volume="0.45"></audio>
-      <audio id="sfx-23" src="assets/audio/sfx-click.wav" data-start="37.05" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
-      <audio id="sfx-24" src="assets/audio/sfx-click.wav" data-start="37.55" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
-      <audio id="sfx-25" src="assets/audio/sfx-home.wav" data-start="38.45" data-duration="0.38" data-track-index="12" data-volume="0.45"></audio>
-      <audio id="sfx-26" src="assets/audio/sfx-whoosh.wav" data-start="39.00" data-duration="0.45" data-track-index="13" data-volume="0.35"></audio>
-      <audio id="sfx-27" src="assets/audio/sfx-tap.wav" data-start="39.70" data-duration="0.07" data-track-index="11" data-volume="0.45"></audio>
-      <audio id="sfx-28" src="assets/audio/sfx-whoosh.wav" data-start="40.45" data-duration="0.45" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="sfx-12" src="assets/audio/sfx-click.wav" data-start="24.70" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-13" src="assets/audio/sfx-click.wav" data-start="24.90" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfx-14" src="assets/audio/sfx-click.wav" data-start="25.15" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-15" src="assets/audio/sfx-click.wav" data-start="25.45" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-16" src="assets/audio/sfx-click.wav" data-start="25.80" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfx-17" src="assets/audio/sfx-click.wav" data-start="28.05" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="28.35" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-19" src="assets/audio/sfx-click.wav" data-start="28.70" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfx-20" src="assets/audio/sfx-click.wav" data-start="29.05" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-21" src="assets/audio/sfx-chime.wav" data-start="29.50" data-duration="0.6" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-22" src="assets/audio/sfx-click.wav" data-start="31.55" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfx-23" src="assets/audio/sfx-click.wav" data-start="33.75" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-24" src="assets/audio/sfx-home.wav" data-start="34.25" data-duration="0.38" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-25" src="assets/audio/sfx-whoosh.wav" data-start="34.90" data-duration="0.45" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="sfx-26" src="assets/audio/sfx-tap.wav" data-start="35.65" data-duration="0.07" data-track-index="13" data-volume="0.45"></audio>
+      <audio id="sfx-27" src="assets/audio/sfx-tap.wav" data-start="36.35" data-duration="0.07" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-28" src="assets/audio/sfx-click.wav" data-start="36.95" data-duration="0.045" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfx-29" src="assets/audio/sfx-click.wav" data-start="37.30" data-duration="0.045" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-30" src="assets/audio/sfx-click.wav" data-start="37.75" data-duration="0.045" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-31" src="assets/audio/sfx-home.wav" data-start="38.55" data-duration="0.38" data-track-index="12" data-volume="0.45"></audio>
+      <audio id="sfx-32" src="assets/audio/sfx-whoosh.wav" data-start="39.05" data-duration="0.45" data-track-index="13" data-volume="0.35"></audio>
+      <audio id="sfx-33" src="assets/audio/sfx-tap.wav" data-start="39.75" data-duration="0.07" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-34" src="assets/audio/sfx-whoosh.wav" data-start="40.45" data-duration="0.45" data-track-index="12" data-volume="0.35"></audio>
     </div>
     <script>
       // The promo's one paused GSAP timeline (HyperFrames seeks it frame by frame).
@@ -1881,7 +1990,7 @@
 
         // Scene starts in seconds (src/script.mjs; tools/build.mjs fills it in and
         // places the sound effects from the same table). The music is 120 BPM.
-        const T = {"s1":0,"s2":4,"s3":9,"s4":13.5,"s4b":16.5,"s5":20,"s6":24,"s7":29.5,"s8":33.5,"end":40.6,"total":44};
+        const T = {"s1":0,"s2":4,"s3":9,"s4":13.5,"s4b":16.5,"s5":20,"s6":24,"s7":30,"s8":33.5,"end":40.6,"total":44};
 
         // ------------------------------------------------------------ helpers
         // Opacity from -> to, starting at t; never rendered before t.
@@ -1911,15 +2020,16 @@
         // A button press on the device: it sinks a little and glows.
         function press(t, id, sink = 0.9) {
           const el = "#" + id;
+          // all done within 0.2 s, so presses of one button 0.2 s apart never overlap
           if (id === "btn-l" || id === "btn-r") {
-            tl.fromTo(el, { y: 0 }, { y: 9, duration: 0.07, ease: "power1.out", immediateRender: false }, t);
-            tl.fromTo(el, { y: 9 }, { y: 0, duration: 0.16, ease: "power1.out", immediateRender: false }, t + 0.16);
+            tl.fromTo(el, { y: 0 }, { y: 9, duration: 0.06, ease: "power1.out", immediateRender: false }, t);
+            tl.fromTo(el, { y: 9 }, { y: 0, duration: 0.08, ease: "power1.out", immediateRender: false }, t + 0.1);
           } else {
-            tl.fromTo(el, { scale: 1 }, { scale: sink, transformOrigin: "50% 50%", duration: 0.07, ease: "power1.out", immediateRender: false }, t);
-            tl.fromTo(el, { scale: sink }, { scale: 1, transformOrigin: "50% 50%", duration: 0.16, ease: "power1.out", immediateRender: false }, t + 0.16);
+            tl.fromTo(el, { scale: 1 }, { scale: sink, transformOrigin: "50% 50%", duration: 0.06, ease: "power1.out", immediateRender: false }, t);
+            tl.fromTo(el, { scale: sink }, { scale: 1, transformOrigin: "50% 50%", duration: 0.08, ease: "power1.out", immediateRender: false }, t + 0.1);
           }
-          fade(el + " .glow", t, 0, 0.9, 0.06);
-          fade(el + " .glow", t + 0.2, 0.9, 0, 0.24);
+          fade(el + " .glow", t, 0, 0.9, 0.05);
+          fade(el + " .glow", t + 0.08, 0.9, 0, 0.11);
         }
         // A fingertip taps the screen at (x, y) (screen pixels) at time t.
         function tap(t, x, y, fromX = x + 70, fromY = y + 90) {
@@ -1992,7 +2102,7 @@
           place("#export", 190, 1260);
           place("#settle", 280, 1360);
           place("#terminal", 70, 1110, 1.0);
-          place("#steps", 120, 1625);
+          place("#steps", 120, 1580);
         } else {
           place("#queue-chip", 1440, 560);
           place("#fly-card", 715, 560);
@@ -2002,6 +2112,7 @@
           place("#terminal", 40, 300, 1.0);
           place("#steps", 60, 828);
         }
+        gsap.set("#vs-settings", { y: 544 }); /* VitaShell's settings slide up from below */
         cam = CAM.enter;
         gsap.set("#stage", { x: cam.x, y: cam.y, scale: cam.s });
         gsap.set("#device", { rotationX: 24, transformPerspective: 2400, opacity: 0 });
@@ -2096,41 +2207,60 @@
         fade("#region-note", T.s6 - 0.3, 1, 0, 0.25);
 
         // ============================================================ S6: install
-        caption("cap6", T.s6 + 0.1, T.s7 - 0.35);
-        camTo(T.s6, CAM.install, 0.8);
-        swap("#scr-vn", "#scr-shell", T.s6 + 0.05);
-        // VitaShell: Select starts the FTP server; × (OK) keeps it in the background
-        press(T.s6 + 0.3, "btn-select");
-        fade("#vs-ftp", T.s6 + 0.38, 0, 1, 0.12);
-        press(T.s6 + 1.0, "btn-cross");
-        fade("#vs-ftp", T.s6 + 1.08, 1, 0, 0.1);
-        // the computer: install-vita.sh over FTP (its output scrolls as a terminal's does)
-        card("#terminal", T.s6 + 0.4, T.s7 - 0.3, P ? 0 : -60, P ? 40 : 0);
-        card("#steps", T.s6 + 0.5, T.s7 - 0.3, P ? 0 : -40, P ? 30 : 0);
-        light("#step1", T.s6 + 0.6, true);
-        type("#tm-inner .cmd", T.s6 + 0.62, 0.011);
+        // VitaShell: START opens its settings; Down twice to SELECT button; Right sets it to
+        // FTP (a Vita's default is USB); START closes them; SELECT starts the FTP server.
+        // The computer runs install-vita.sh (its real output); OK keeps FTP running; in
+        // ux0:data/ × on the VPK, Yes, Yes to the permissions notice, Installing...; reboot.
+        const s6 = T.s6;
+        caption("cap6", s6 + 0.1, T.s7 - 0.35);
+        camTo(s6, CAM.install, 0.8);
+        swap("#scr-vn", "#scr-shell", s6 + 0.05);
+        card("#terminal", s6 + 0.4, T.s7 - 0.3, P ? 0 : -60, P ? 40 : 0);
+        card("#steps", s6 + 0.5, T.s7 - 0.3, P ? 0 : -40, P ? 30 : 0);
+        light("#step1", s6 + 0.55, true);
+        press(s6 + 0.3, "btn-start");
+        tl.fromTo("#vs-settings", { y: 544 }, { y: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s6 + 0.36);
+        press(s6 + 0.7, "dpad-down");
+        tl.fromTo("#vss-focus", { y: 0 }, { y: 23, duration: 0.01, immediateRender: false }, s6 + 0.76);
+        press(s6 + 0.9, "dpad-down");
+        tl.fromTo("#vss-focus", { y: 23 }, { y: 46, duration: 0.01, immediateRender: false }, s6 + 0.96);
+        press(s6 + 1.15, "dpad-right");
+        fade("#vss-usb", s6 + 1.21, 1, 0, 0.01);
+        fade("#vss-ftp", s6 + 1.21, 0, 1, 0.01);
+        press(s6 + 1.45, "btn-start");
+        tl.fromTo("#vs-settings", { y: 0 }, { y: 544, duration: 0.22, ease: "power2.in", immediateRender: false }, s6 + 1.51);
+        press(s6 + 1.8, "btn-select");
+        fade("#vs-ftp", s6 + 1.87, 0, 1, 0.1);
+        light("#step1", s6 + 1.9, false);
+        light("#step2", s6 + 1.9, true);
+        // the computer: the command types, then its output scrolls as a terminal's does
+        type("#tm-inner .cmd", s6 + 1.95, 0.011);
         {
           const lines = document.querySelectorAll("#tm-inner .l");
-          const LH = 22, VISIBLE = 17, t0 = T.s6 + 1.3, per = 0.058;
+          const LH = 22, VISIBLE = 17, t0 = s6 + 2.55, per = 1.45 / (lines.length - 1);
           tl.fromTo("#tm-inner .out", { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: per, immediateRender: false }, t0);
           for (let i = VISIBLE; i < lines.length; i++)
             tl.fromTo("#tm-inner", { y: -(i - VISIBLE) * LH }, { y: -(i - VISIBLE + 1) * LH, duration: 0.01, immediateRender: false }, t0 + (i - 1) * per);
         }
-        light("#step1", T.s6 + 3.3, false);
-        light("#step2", T.s6 + 3.3, true);
-        // VitaShell: × on JPOverlaySettings.vpk, Yes, Yes to the permissions notice, Installing...
-        press(T.s6 + 3.4, "btn-cross");
-        fade("#vs-ask", T.s6 + 3.48, 0, 1, 0.1);
-        press(T.s6 + 3.85, "btn-cross");
-        swap("#vs-ask", "#vs-warn", T.s6 + 3.93, 0.08);
-        press(T.s6 + 4.4, "btn-cross");
-        swap("#vs-warn", "#vs-prog", T.s6 + 4.48, 0.08);
-        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power1.inOut", immediateRender: false }, T.s6 + 4.52);
-        fade("#vs-prog", T.s6 + 5.0, 1, 0, 0.08);
-        light("#step2", T.s6 + 5.05, false);
-        light("#step3", T.s6 + 5.05, true);
-        swap("#scr-shell", "#scr-boot", T.s6 + 5.1, 0.1);
-        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, T.s6 + 5.1);
+        // OK on the FTP dialog keeps FTP running (the installer's box says to); then ux0:data/
+        press(s6 + 4.05, "btn-cross");
+        fade("#vs-ftp", s6 + 4.12, 1, 0, 0.08);
+        light("#step2", s6 + 4.1, false);
+        light("#step3", s6 + 4.1, true);
+        swap("#vs-root", "#vs-data", s6 + 4.2, 0.08);
+        swap("#vs-path-root", "#vs-path-data", s6 + 4.2, 0.08);
+        press(s6 + 4.35, "btn-cross");
+        fade("#vs-ask", s6 + 4.42, 0, 1, 0.1);
+        press(s6 + 4.7, "btn-cross");
+        swap("#vs-ask", "#vs-warn", s6 + 4.77, 0.08);
+        press(s6 + 5.05, "btn-cross");
+        swap("#vs-warn", "#vs-prog", s6 + 5.12, 0.08);
+        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power1.inOut", immediateRender: false }, s6 + 5.15);
+        fade("#vs-prog", s6 + 5.5, 1, 0, 0.08);
+        light("#step3", s6 + 5.55, false);
+        light("#step4", s6 + 5.55, true);
+        swap("#scr-shell", "#scr-boot", s6 + 5.6, 0.1);
+        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, s6 + 5.6);
 
         // ============================================================ S7: L + R in the game
         caption("cap7", T.s7 + 0.1, T.s8 - 0.35);
@@ -2146,10 +2276,13 @@
         });
         press(T.s7 + 1.55, "btn-l");
         press(T.s7 + 1.55, "btn-r");
+        // right after a first install card mining is off: no queue line, no × queue
         tl.set("#hl-kira", { color: "#ffd24a" }, T.s7);
         tl.set("#hl-issho", { color: "#ffffff" }, T.s7);
         tl.set("#ovb-queued", { opacity: 0 }, T.s7);
-        tl.set("#ovb-kira", { opacity: 1 }, T.s7);
+        tl.set("#ovb-fresh", { opacity: 1 }, T.s7);
+        tl.set("#ov-hint-a", { opacity: 0 }, T.s7);
+        tl.set("#ov-hint-b", { opacity: 1 }, T.s7);
         fade("#scr-overlay", T.s7 + 1.7, 0, 1, 0.12);
         camTo(T.s7 + 1.7, CAM.zoom, 0.8);
 
@@ -2176,18 +2309,20 @@
         tap(s8 + 2.85, 480, 293);
         open("#app-games-a", s8 + 2.98, 0.94);
         fade("#scr-la-app", s8 + 3.2, 1, 0, 0.05);
-        press(s8 + 3.55, "dpad-down");
-        swap("#app-games-a", "#app-games-b", s8 + 3.62, 0.04);
-        press(s8 + 4.05, "btn-cross");
-        swap("#app-games-b", "#app-games-c", s8 + 4.12, 0.04);
-        press(s8 + 4.95, "btn-ps");
-        tl.fromTo("#scr-la-app", { opacity: 0, scale: 1.06, x: 0 }, { opacity: 1, scale: 1, x: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s8 + 5.02);
-        fade("#app-games-c", s8 + 5.2, 1, 0, 0.05);
-        tl.set("#scr-la-game", { x: 0 }, s8 + 5.45);
-        swap("#scr-la-app", "#scr-la-game", s8 + 5.5, 0.22);
-        tap(s8 + 6.2, 260, 385);
-        tl.set("#vn-text-1", { opacity: 1 }, s8 + 6.2);
-        swap("#scr-la-game", "#scr-vn", s8 + 6.32, 0.2);
+        press(s8 + 3.45, "dpad-down");
+        swap("#app-games-a", "#app-games-a2", s8 + 3.52, 0.04);
+        press(s8 + 3.8, "dpad-down");
+        swap("#app-games-a2", "#app-games-b", s8 + 3.87, 0.04);
+        press(s8 + 4.25, "btn-cross");
+        swap("#app-games-b", "#app-games-c", s8 + 4.32, 0.04);
+        press(s8 + 5.05, "btn-ps");
+        tl.fromTo("#scr-la-app", { opacity: 0, scale: 1.06, x: 0 }, { opacity: 1, scale: 1, x: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s8 + 5.12);
+        fade("#app-games-c", s8 + 5.3, 1, 0, 0.05);
+        tl.set("#scr-la-game", { x: 0 }, s8 + 5.5);
+        swap("#scr-la-app", "#scr-la-game", s8 + 5.55, 0.22);
+        tap(s8 + 6.25, 260, 385);
+        tl.set("#vn-text-1", { opacity: 1 }, s8 + 6.25);
+        swap("#scr-la-game", "#scr-vn", s8 + 6.37, 0.2);
 
         // ============================================================ end card
         tl.fromTo("#stage", { opacity: 1 }, { opacity: 0, duration: 0.35, ease: "power2.in", immediateRender: false }, T.end - 0.15);

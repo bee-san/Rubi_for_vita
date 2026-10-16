@@ -1,0 +1,99 @@
+$ bash install-vita.sh --title HSDY00001 192.168.1.42
+Verified 65 package files
+Verified 65 package files
+backup: build/device/backup/20261015-142112-5HNtB1
+--- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):
+5a6
+> ur0:tai/VitaJPOverlay_Kernel.skprx
+7a9
+> ur0:tai/VitaJPOverlay_Shell.suprx
+15a18,20
+> 
+> *HSDY00001
+> ur0:tai/VitaJPOverlay_OCR.suprx
+verified ur0:/tai/config.txt.vjo-bak
+--- ux0:/tai/config.txt changes (OCR worker registered for HSDY00001):
+4a5
+> ur0:tai/VitaJPOverlay_Kernel.skprx
+6a8
+> ur0:tai/VitaJPOverlay_Shell.suprx
+14a17,19
+> 
+> *HSDY00001
+> ur0:tai/VitaJPOverlay_OCR.suprx
+verified ux0:/tai/config.txt.vjo-bak
+verified ur0:/tai/VitaJPOverlay_Kernel.skprx
+verified ur0:/data/VitaJPOverlay/boot.txt
+verified ur0:/tai/VitaJPOverlay_Shell.suprx
+verified ur0:/tai/VitaJPOverlay_OCR.suprx
+verified ur0:/data/VitaJPOverlay/vitajpoverlay.rco
+verified ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict
+verified ux0:/data/JPOverlaySettings.vpk
+verified ux0:/data/VitaJPOverlay/vjo_app.txt
+verified ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr
+uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr
+verified ux0:/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr
+uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr
+verified ux0:/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr
+uploaded ux0:data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr
+verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_1000k.vlm
+uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_1000k.vlm
+verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_2000k.vlm
+uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_2000k.vlm
+verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm
+uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm
+verified ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm
+uploaded ux0:data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm
+verified ux0:/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md
+uploaded ux0:data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md
+config.ini: anki_mining = off
+config.ini: dictionary = local
+config.ini: font_size_en = 14
+config.ini: font_size_ja = 18
+config.ini: highlight_mode = word
+config.ini: japanese_only_selection = on
+config.ini: local_dictionaries = plaintext.vjdict
+config.ini: local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
+config.ini: local_dictionary_results = 1
+config.ini: log_file = on
+config.ini: log_host = empty
+config.ini: non_japanese_filter = lines
+config.ini: ocr_backend = vocr
+config.ini: ocr_boost_clock = on
+config.ini: ocr_cascade_ms = 2000
+config.ini: ocr_lm = 1000k
+config.ini: ocr_mode = auto
+config.ini: ocr_model_dir = ux0:data/VitaJPOverlay/ocr
+config.ini: ocr_refine_lines = psp
+config.ini: ocr_settle_max_ms = 2000
+config.ini: ocr_settle_ms = 150
+config.ini: ocr_settle_press_ms = 1000
+config.ini: ocr_skip_blank_lines = off
+config.ini: ocr_threads = 3
+config.ini: subtitle_button = select+r
+config.ini: text_source = ocr
+config.ini: toggle_button = l+r
+config.ini: vocr_tier = normal
+verified ux0:/data/VitaJPOverlay/config.ini
+config.ini created
+verified ur0:/tai/config.txt
+verified ux0:/tai/config.txt
+Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on and run: tools/install_ftp.sh --uninstall 192.168.1.42
+
++----------------------------------------------------------------------------+
+| ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)             |
+|                                                                            |
+| No Overlay app is installed on the Vita (ux0:app/VJOSET001).               |
+|                                                                            |
+| Do it now, before you reboot: in VitaShell, press OK on the FTP dialog to  |
+| keep FTP running, open ux0:data/, select JPOverlaySettings.vpk, press the  |
+| confirm button (x on most consoles, o on Japanese ones) and confirm the    |
+| install.                                                                   |
+|                                                                            |
+| Then check it from here, with VitaShell's FTP still running: bash          |
+| install-vita.sh --check-app 192.168.1.42, then reboot.                     |
+|                                                                            |
+| An older app shows engines and pages that are gone and saves settings the  |
+| plugins no longer use (test.2's run had test.1's app writing ocr_backend = |
+| vocr2, #101).                                                              |
++----------------------------------------------------------------------------+

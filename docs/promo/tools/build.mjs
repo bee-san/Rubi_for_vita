@@ -126,9 +126,15 @@ function gamesPage(id, { games, selected, offset = 0, defaultOn = true, filter =
     const y = 174 + r * 88;
     const g = games[index];
     focusCard(p, y, 80, index === selected);
-    p.raw(
-      `<image href="${g.icon}" x="38" y="${y + 8}" width="64" height="64" preserveAspectRatio="xMidYMid slice"/>`,
-    );
+    if (g.icon)
+      p.raw(
+        `<image href="${g.icon}" x="38" y="${y + 8}" width="64" height="64" preserveAspectRatio="xMidYMid slice"/>`,
+      );
+    else {
+      // no icon: settings/main.c draw()'s placeholder
+      p.rect(38, y + 8, 64, 64, C.SELECTED);
+      p.centered(38, y + 47, 64, C.ACCENT, 26, "JP");
+    }
     p.text(120, y + 30, C.WHITE, 26, g.title);
     const extra = rowExtra[index] || "";
     p.raw(`<g class="game-badge" data-row="${index}"${extra}>`);
@@ -143,34 +149,34 @@ function gamesPage(id, { games, selected, offset = 0, defaultOn = true, filter =
   return p.svg(id);
 }
 
-// The installed titles the Games page lists (fictional games; the catalog's
-// order: letters A-Z, then other characters, settings/letter.c).
+// The Games page's list, as settings/catalog.c builds it from the titles on the film's home
+// screen: VitaShell (VITASHELL) and the Overlay app (VJOSET001) are not candidates
+// (core/games.c vjo_game_is_candidate); the "Adrenaline / PSP games (shared setting)" row
+// (NPXS10028, no icon: the JP placeholder) is always added; sorted by letter, then title
+// (settings/letter.c: # and A-Z, kana, then other characters, so 星空ダイアリー is last).
 const GAMES = [
+  { title: "Adrenaline / PSP games (shared setting)", id: "NPXS10028", on: true, icon: null },
   { title: "Ember Quest", id: "EMBR00001", on: true, icon: "assets/vn/icon-ember.svg" },
   { title: "Neon Drift", id: "NEON00001", on: true, icon: "assets/vn/icon-neon.svg" },
   { title: "Pocket Garden", id: "PCKG00001", on: true, icon: "assets/vn/icon-garden.svg" },
   { title: "Sky Courier", id: "SKYC00001", on: true, icon: "assets/vn/icon-courier.svg" },
-  { title: "VitaShell", id: "VITASHELL", on: true, icon: "assets/vn/icon-files.svg" },
   { title: "星空ダイアリー", id: "HSDY00001", on: true, icon: "assets/vn/icon-hoshizora.svg" },
 ];
 
 function appPages() {
-  const before = gamesPage("app-games-a", {
-    games: GAMES,
-    selected: 0,
-    status: "Choices save automatically. Turn OFF games that need L+R.",
-  });
-  const moved = gamesPage("app-games-b", {
-    games: GAMES,
-    selected: 1,
-    status: "Choices save automatically. Turn OFF games that need L+R.",
-  });
-  const off = gamesPage("app-games-c", {
-    games: GAMES.map((g, i) => (i === 1 ? { ...g, on: false } : g)),
-    selected: 1,
-    status: "Saved. Resume or restart your game to apply.",
-  });
-  return [before, moved, off].join("\n");
+  const status = "Choices save automatically. Turn OFF games that need L+R.";
+  // The app opens on the first game; Down twice selects Neon Drift; × turns it OFF.
+  const pages = [
+    gamesPage("app-games-a", { games: GAMES, selected: 0, status }),
+    gamesPage("app-games-a2", { games: GAMES, selected: 1, status }),
+    gamesPage("app-games-b", { games: GAMES, selected: 2, offset: 0, status }),
+    gamesPage("app-games-c", {
+      games: GAMES.map((g, i) => (i === 2 ? { ...g, on: false } : g)),
+      selected: 2,
+      status: "Saved. Resume or restart your game to apply.",
+    }),
+  ];
+  return pages.join("\n");
 }
 
 // The Anki page (settings/anki_page.c, #125): card mining, Export cards,
@@ -246,9 +252,112 @@ const words = (html) =>
     .join("");
 
 function terminal() {
-  const cmd = `<span class="l cmd"><span class="p">$ </span>${chars(S.TERMINAL.command)}</span>`;
-  const out = S.TERMINAL.lines.map(([cls, text]) => `<span class="l out ${cls}">${esc(text)}</span>`).join("");
+  const [first, ...rest] = terminalLines();
+  if (!first.startsWith("$ ")) throw new Error("the transcript starts with its command");
+  const cmd = `<span class="l cmd"><span class="p">$ </span>${chars(first.slice(2))}</span>`;
+  const kind = (t) =>
+    /^(Verified|config\.ini created|Installed\.)/.test(t) ? "ok"
+      : /^(> |\+-|\| ONE MORE STEP)/.test(t) ? "hi"
+      : /^(backup:|\d+a\d|config\.ini: )/.test(t) ? "dim" : "";
+  // a wrapped line's continuation keeps its line's colour
+  let last = "";
+  const out = rest
+    .map((t, i) => {
+      const k = i > 0 && rest[i - 1].length === 80 ? last : kind(t);
+      last = k;
+      return `<span class="l out ${k}">${esc(t) || "&#8203;"}</span>`;
+    })
+    .join("");
   return cmd + out;
+}
+
+// VitaShell 2.02, Default theme (resources/default/colors.txt is ABGR): its browser rows
+// (main.h: START_Y 87, FONT_Y_SPACE 23, FILE_X 46, INFORMATION_X 680; browser.c: folders with
+// a trailing slash and "Folder", files with getSizeString(), the date and time at the right),
+// and its settings menu (settings.c: "Main settings" and "Power", items right of the centre,
+// options left of it).
+const VS = { folder: "rgb(0,255,255)", file: "rgb(255,255,255)", focus: "rgb(0,255,0)" };
+const LAYER = "data-layout-allow-overlap data-layout-allow-occlusion";
+function vsRows(rows, focus) {
+  return rows
+    .map(([name, info, date], i) => {
+      const folder = info === "Folder";
+      const color = i === focus ? VS.focus : folder || name === ".." ? VS.folder : VS.file;
+      const icon = folder || name === ".." ? "fold" : "file";
+      return (
+        // the settings panel and the dialogs cover these rows on purpose
+        `<div class="vs-row" style="top:${i * 23}px;color:${color}"><i class="${icon}"></i>` +
+        `<span class="vs-name" ${LAYER}>${esc(name)}</span><span class="vs-info" ${LAYER}>${esc(info)}</span>` +
+        `<span class="vs-date" ${LAYER}>${esc(date)}</span></div>`
+      );
+    })
+    .join("");
+}
+const VS_ROOT = vsRows(
+  [
+    ["..", "Folder", "2026/10/14 22:05"],
+    ["app/", "Folder", "2026/10/14 22:05"],
+    ["appmeta/", "Folder", "2026/10/14 22:05"],
+    ["cache/", "Folder", "2026/10/14 22:05"],
+    ["data/", "Folder", "2026/10/14 22:07"],
+    ["license/", "Folder", "2026/10/14 22:05"],
+    ["picture/", "Folder", "2026/10/14 22:05"],
+    ["tai/", "Folder", "2026/10/14 22:06"],
+    ["user/", "Folder", "2026/10/14 22:05"],
+    ["VitaShell/", "Folder", "2026/10/14 22:07"],
+  ],
+  4,
+);
+const VS_DATA = vsRows(
+  [
+    ["..", "Folder", "2026/10/14 22:07"],
+    ["VitaJPOverlay/", "Folder", "2026/10/15 14:21"],
+    ["JPOverlaySettings.vpk", "473.45 KB", "2026/10/15 14:21"],
+  ],
+  2,
+);
+function vsSettings() {
+  const rows = [];
+  let y = 87;
+  const title = (t) => {
+    rows.push(`<div class="vss-title" style="top:${y}px">${esc(t)}</div>`);
+    y += 23;
+  };
+  const item = (name, value, id) => {
+    rows.push(`<div class="vss-item" style="top:${y}px">${esc(name)}</div>`);
+    if (value !== null) rows.push(`<div class="vss-opt" style="top:${y}px"${id ? ` id="${id}"` : ""}>${value}</div>`);
+    y += 23;
+  };
+  const center = (name) => {
+    rows.push(`<div class="vss-center" style="top:${y}px">${esc(name)}</div>`);
+    y += 23;
+  };
+  title("Main settings");
+  item("Theme", "Default");
+  item("USB device", "Memory Card");
+  item("SELECT button", '<span id="vss-usb">USB</span><span id="vss-ftp">FTP</span>');
+  item("Disable auto-update", "Off");
+  item("Disable warning messages", "Off");
+  center("Restart VitaShell");
+  y += 23;
+  title("Power");
+  center("Reboot");
+  center("Power off");
+  center("Standby");
+  // the focus bar: Theme, then USB device, then SELECT button (two Downs)
+  return `<div class="vss-panel"></div><div id="vss-focus"></div>` + rows.join("");
+}
+
+// The installer's real output (src/install-transcript.txt, tools/capture_install.sh), as an
+// 80-column terminal shows it: long lines break at column 80, mid-word.
+function terminalLines() {
+  const lines = read("src/install-transcript.txt").replace(/\n$/, "").split("\n");
+  const out = [];
+  for (const line of lines) {
+    if (!line.length) out.push("");
+    for (let i = 0; i < line.length; i += 80) out.push(line.slice(i, i + 80));
+  }
+  return out;
 }
 
 // Sound effect lengths in seconds (assets/audio/sfx-*.wav, tools/make_audio.py).
@@ -297,6 +406,10 @@ function build(layout) {
     OV_QUEUE_LINE_2: `<div class="en">${esc(S.OVERLAY.queueBefore)}</div>`,
     OV_QUEUE_LINE_3: `<div class="en">${esc(S.OVERLAY.queueAfter)}</div>`,
     OV_HINT: esc(S.OVERLAY.hint),
+    OV_HINT_FRESH: esc(S.OVERLAY.hintFresh),
+    VS_ROOT: VS_ROOT,
+    VS_DATA: VS_DATA,
+    VS_SETTINGS: vsSettings(),
     ENDCARD_FINE: esc(S.ENDCARD_FINE),
     SFX: sfx(),
   };

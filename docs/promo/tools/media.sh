@@ -15,7 +15,7 @@ ffmpeg -hide_banner -loglevel error -y -ss 4.2 -t 4.6 -i media/promo-1920x1080.m
 # one still per scene, from the landscape film
 i=0
 # scenes 1, 2, 3, 4, 4b, 5, 6, 7, 8 (the app, then back in the game) and the end card
-for t in 2.8 7.4 11.8 15.4 19.4 22.4 28.1 31.9 37.9 39.9 43.2; do
+for t in 2.8 7.4 11.8 15.4 19.4 22.4 28.3 31.9 37.9 39.9 43.2; do
   i=$((i + 1))
   ffmpeg -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"

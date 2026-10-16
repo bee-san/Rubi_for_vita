@@ -348,6 +348,9 @@
         font-size: 21px;
         color: #8a94a6;
       }
+      #ov-hint-b {
+        opacity: 0;
+      }
       .ov-hint {
         position: absolute;
         left: 20px;
@@ -554,60 +557,146 @@
       }
 
       /* ------------------------------------------------------------ VitaShell */
+      /* VitaShell 2.02, Default theme (resources/default/colors.txt, ABGR): black background,
+         the violet title, the grey path, cyan folders, white files, the focused row green;
+         layout from main.h (margins 20 and 18, rows of 23 px from y 87) */
       #scr-shell {
-        background: linear-gradient(180deg, #24324a, #172234);
-        font-size: 22px;
-        color: #e9eef8;
+        background: #000;
+        font-size: 19px;
+        color: #fff;
       }
-      .vs-bar {
+      .vs-title {
         position: absolute;
-        left: 0;
-        top: 0;
-        width: 960px;
-        height: 40px;
-        background: rgba(0, 0, 0, 0.35);
+        left: 20px;
+        top: 18px;
+        line-height: 23px;
+        color: rgb(127, 0, 255);
+      }
+      .vs-status {
+        position: absolute;
+        right: 20px;
+        top: 18px;
+        line-height: 23px;
         display: flex;
+        gap: 14px;
         align-items: center;
-        gap: 24px;
-        padding: 0 20px;
-        font-size: 20px;
+        color: #fff;
       }
-      .vs-bar span {
-        color: #9fd0ff;
+      .vs-batt {
+        position: relative;
+        width: 30px;
+        height: 14px;
+        border: 2px solid #fff;
+        border-radius: 3px;
       }
-      .vs-bar em {
-        margin-left: auto;
-        font-style: normal;
-        color: #c8d2e2;
+      .vs-batt b {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        bottom: 2px;
+        width: 18px;
+        background: rgb(0, 255, 0);
+      }
+      .vs-path {
+        position: absolute;
+        left: 20px;
+        top: 41px;
+        line-height: 23px;
+        color: rgb(191, 191, 191);
+      }
+      #vs-path-data,
+      #vs-data {
+        opacity: 0;
       }
       .vs-list {
         position: absolute;
         left: 0;
-        top: 56px;
+        top: 87px;
         width: 960px;
+        height: 391px;
       }
       .vs-row {
-        height: 40px;
-        line-height: 40px;
-        padding-left: 64px;
-        position: relative;
+        position: absolute;
+        left: 0;
+        width: 960px;
+        height: 23px;
+        line-height: 23px;
       }
       .vs-row i {
         position: absolute;
-        left: 26px;
-        top: 11px;
-        width: 22px;
-        height: 18px;
-        border-radius: 3px;
+        left: 20px;
+        top: 5px;
+        width: 18px;
+        height: 14px;
+        border-radius: 2px;
       }
       .vs-row i.fold {
-        background: #f0c35a;
+        background: rgb(240, 196, 70);
       }
-      .vs-row i.pkg {
-        background: #7fd1c7;
+      .vs-row i.file {
+        background: #e8e8e8;
+        width: 14px;
+        left: 22px;
       }
-      .vs-sel {
-        background: rgba(127, 209, 199, 0.22);
+      .vs-name {
+        position: absolute;
+        left: 46px;
+      }
+      .vs-info {
+        position: absolute;
+        right: 280px;
+      }
+      .vs-date {
+        position: absolute;
+        right: 20px;
+      }
+      #vs-settings {
+        position: absolute;
+        inset: 0;
+      }
+      .vss-panel {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.878);
+      }
+      #vss-focus {
+        position: absolute;
+        left: 20px;
+        top: 113px;
+        width: 920px;
+        height: 23px;
+        background: rgba(0, 127, 255, 0.435);
+      }
+      .vss-title,
+      .vss-center {
+        position: absolute;
+        left: 0;
+        width: 960px;
+        line-height: 23px;
+        text-align: center;
+      }
+      .vss-title {
+        color: #fff;
+      }
+      .vss-center {
+        color: rgb(127, 127, 127);
+      }
+      .vss-item {
+        position: absolute;
+        right: 490px;
+        line-height: 23px;
+        color: rgb(127, 127, 127);
+      }
+      .vss-opt {
+        position: absolute;
+        left: 490px;
+        line-height: 23px;
+        color: rgb(0, 255, 0);
+      }
+      #vss-ftp {
+        position: absolute;
+        left: 0;
+        opacity: 0;
       }
       .vs-dialog {
         position: absolute;
@@ -615,9 +704,9 @@
         top: 170px;
         width: 520px;
         padding: 26px 30px 22px;
-        border-radius: 12px;
-        background: #2f3e58;
-        border: 2px solid #7fd1c7;
+        border-radius: 10px;
+        background: rgba(40, 40, 46, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.35);
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
         text-align: center;
         opacity: 0;
@@ -664,7 +753,7 @@
       .vs-bar-in {
         width: 100%;
         height: 100%;
-        background: #7fd1c7;
+        background: rgb(127, 255, 0);
         transform-origin: 0 50%;
         transform: scaleX(0);
       }
@@ -1061,6 +1150,9 @@
         display: block;
         opacity: 0;
       }
+      .tm-body .l.cmd {
+        opacity: 1;
+      }
       .tm-body .p {
         color: #7fd1c7;
       }
@@ -1079,7 +1171,7 @@
       .steps {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
       }
       .step {
         display: flex;

@@ -13,7 +13,7 @@ export const T = {
   s4b: 16.5,
   s5: 20,
   s6: 24,
-  s7: 29.5,
+  s7: 30,
   s8: 33.5,
   end: 40.6,
   total: 44,
@@ -42,6 +42,8 @@ export const OVERLAY = {
   queueBefore: "Anki queue: 2 · export in the Overlay app",
   queueAfter: "Anki queue: 3 · export in the Overlay app",
   hint: `Tap / ◀▶▲▼ word · ${ENTER} queue · stick scroll · □ region · ○ close`,
+  // right after a first install card mining is off (docs/config.example.ini): no queue
+  hintFresh: "Tap / ◀▶▲▼ word · stick scroll · □ region · ○ close",
 };
 
 // The Overlay app's export (settings/anki_page.c, settings/anki_export.c, #125, merged as e53d9fb).
@@ -51,7 +53,8 @@ export const OVERLAY = {
 export const APKG = {
   dir: "ux0:data/VitaJPOverlay/anki/",
   name: "2026-10-15_142530-3cards.apkg",
-  progress: "Writing the cards… 2 of 3",
+  // settings/anki_export.c progress(): "notes" counts only every 8th card and the last
+  progress: "Writing the cards… 3 of 3",
   result:
     "Exported 3 cards (85 KB) to 2026-10-15_142530-3cards.apkg. Copy it from ux0:data/VitaJPOverlay/anki/ " +
     "by VitaShell's FTP or USB (or the SD2Vita card, when it is ux0:) and open it in Anki.",
@@ -60,48 +63,8 @@ export const APKG = {
     "or with an SD2Vita as ux0: its card in a reader, then open it in Anki.",
 };
 
-// install-vita.sh's output for one game, in order (tools/install-vita.sh,
-// tools/install_ftp.sh, tools/package_release.py --verify, which both scripts
-// run, and the diff tools/patch_tai_config.py makes of a stock HENkaku
-// config.txt). Long lines wrap at the terminal's 80 columns; "…" stands for
-// the other models and language models.
-export const TERMINAL = {
-  command: "bash install-vita.sh --title HSDY00001 192.168.1.42",
-  lines: [
-    ["ok", "Verified 62 package files"],
-    ["ok", "Verified 62 package files"],
-    ["dim", "backup: build/device/backup/20261015-142112-Xk3t9Q"],
-    ["", "--- ur0:/tai/config.txt changes (OCR worker registered for HSDY00001):"],
-    ["dim", "5a6"],
-    ["hi", "> ur0:tai/VitaJPOverlay_Kernel.skprx"],
-    ["dim", "7a9"],
-    ["hi", "> ur0:tai/VitaJPOverlay_Shell.suprx"],
-    ["dim", "15a18,20"],
-    ["hi", "> "],
-    ["hi", "> *HSDY00001"],
-    ["hi", "> ur0:tai/VitaJPOverlay_OCR.suprx"],
-    ["", "verified ur0:/tai/config.txt.vjo-bak"],
-    ["", "verified ur0:/tai/VitaJPOverlay_Kernel.skprx"],
-    ["", "verified ur0:/data/VitaJPOverlay/boot.txt"],
-    ["", "verified ur0:/tai/VitaJPOverlay_Shell.suprx"],
-    ["", "verified ur0:/tai/VitaJPOverlay_OCR.suprx"],
-    ["", "verified ur0:/data/VitaJPOverlay/vitajpoverlay.rco"],
-    ["", "verified ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict"],
-    ["", "verified ux0:/data/JPOverlaySettings.vpk"],
-    ["hi", "In VitaShell install ux0:data/JPOverlaySettings.vpk to add or update the"],
-    ["hi", "Overlay settings app."],
-    ["", "verified ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"],
-    ["", "uploaded ux0:data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"],
-    ["dim", "…"],
-    ["", "verified ux0:/data/VitaJPOverlay/config.ini"],
-    ["ok", "config.ini created"],
-    ["", "verified ur0:/tai/config.txt"],
-    ["ok", "Installed. Reboot the Vita, then leave it on for a minute. A boot that does"],
-    ["ok", "not complete makes the next one a safe boot (no hooks, no overlay; see"],
-    ["ok", "ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while"],
-    ["ok", "powering on and run: tools/install_ftp.sh --uninstall 192.168.1.42"],
-  ],
-};
+// Scene 6's terminal shows src/install-transcript.txt: the real output of main's
+// install-vita.sh during a first install (tools/capture_install.sh).
 
 export const ENDCARD_FINE =
   "Not affiliated with or endorsed by Sony Interactive Entertainment. The game shown is an original mock-up made for this video. " +
@@ -122,21 +85,27 @@ export const SFX = [
   ["pop", t.s4b + 1.6, 0.4],
   ["whoosh", t.s6, 0.35],
   ["click", t.s6 + 0.3, 0.4],
-  ["click", t.s6 + 1.0, 0.4],
-  ["click", t.s6 + 3.4, 0.4],
-  ["click", t.s6 + 3.85, 0.4],
-  ["click", t.s6 + 4.4, 0.4],
-  ["chime", t.s6 + 5.0, 0.4],
+  ["click", t.s6 + 0.7, 0.4],
+  ["click", t.s6 + 0.9, 0.4],
+  ["click", t.s6 + 1.15, 0.4],
+  ["click", t.s6 + 1.45, 0.4],
+  ["click", t.s6 + 1.8, 0.4],
+  ["click", t.s6 + 4.05, 0.4],
+  ["click", t.s6 + 4.35, 0.4],
+  ["click", t.s6 + 4.7, 0.4],
+  ["click", t.s6 + 5.05, 0.4],
+  ["chime", t.s6 + 5.5, 0.4],
   ["click", t.s7 + 1.55, 0.4],
   ["click", t.s8 + 0.25, 0.4],
   ["home", t.s8 + 0.75, 0.45],
   ["whoosh", t.s8 + 1.4, 0.35],
   ["tap", t.s8 + 2.15, 0.45],
   ["tap", t.s8 + 2.85, 0.45],
-  ["click", t.s8 + 3.55, 0.4],
-  ["click", t.s8 + 4.05, 0.4],
-  ["home", t.s8 + 4.95, 0.45],
-  ["whoosh", t.s8 + 5.5, 0.35],
-  ["tap", t.s8 + 6.2, 0.45],
+  ["click", t.s8 + 3.45, 0.4],
+  ["click", t.s8 + 3.8, 0.4],
+  ["click", t.s8 + 4.25, 0.4],
+  ["home", t.s8 + 5.05, 0.45],
+  ["whoosh", t.s8 + 5.55, 0.35],
+  ["tap", t.s8 + 6.25, 0.45],
   ["whoosh", t.end - 0.15, 0.35],
 ];

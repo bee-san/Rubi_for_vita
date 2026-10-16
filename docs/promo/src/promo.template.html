@@ -90,7 +90,7 @@
         </div>
         <div class="cap" id="cap6">
           <h1><em>Easy install</em></h1>
-          <p>plus a one-time setup: one script from your computer, the app in VitaShell, then a reboot</p>
+          <p>plus a one-time setup: a script on your computer over VitaShell's FTP, the app in VitaShell, a reboot</p>
         </div>
         <div class="cap" id="cap7">
           <h1>Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.</h1>
@@ -149,9 +149,10 @@
           <div class="tm-body"><div id="tm-inner">{{TERMINAL}}</div></div>
         </div>
         <div class="steps" id="steps">
-          <div class="step" id="step1"><b>1</b>Run <code>install-vita.sh</code> on your computer</div>
-          <div class="step" id="step2"><b>2</b>Install the Overlay app in VitaShell</div>
-          <div class="step" id="step3"><b>3</b>Reboot</div>
+          <div class="step" id="step1"><b>1</b>VitaShell: set SELECT button to FTP (once)</div>
+          <div class="step" id="step2"><b>2</b>Run <code>install-vita.sh</code> on your computer</div>
+          <div class="step" id="step3"><b>3</b>Install the Overlay app in VitaShell</div>
+          <div class="step" id="step4"><b>4</b>Reboot</div>
         </div>
       </div>
 
@@ -211,8 +212,15 @@
                 <div class="en">[JMdict Plain]</div>
                 <div class="en">together (with); at the same time; in one lump | in the same category</div>
               </div>
+              <!-- right after a first install: card mining is off (docs/config.example.ini) -->
+              <div class="ov-body" id="ovb-fresh">
+                <div class="ja"><span class="hw">キラキラ</span><span class="rank"> 99999</span></div>
+                <div class="en">[JMdict Plain]</div>
+                <div class="en">glittering | sparkling | glistening | twinkling</div>
+              </div>
               <div class="ov-band" style="top: 500px; height: 44px"></div>
-              <div class="ov-hint">{{OV_HINT}}</div>
+              <div class="ov-hint" id="ov-hint-a">{{OV_HINT}}</div>
+              <div class="ov-hint" id="ov-hint-b">{{OV_HINT_FRESH}}</div>
             </div>
 
             <!-- the console's home screen (a simplified, original rendition) -->
@@ -252,15 +260,17 @@
             {{APP_PAGES}}
             {{ANKI_PAGES}}
 
-            <!-- VitaShell (a simplified rendition) -->
+            <!-- VitaShell 2.02 with its Default theme (TheOfficialFloW/VitaShell: main.h's layout,
+                 resources/default/colors.txt, resources/english_us.txt). The dialogs are the
+                 system's message dialogs, drawn simply. -->
             <div id="scr-shell" class="scr">
-              <div class="vs-bar"><b>VitaShell</b><span>ux0:data/</span><em>14:30</em></div>
-              <div class="vs-list">
-                <div class="vs-row"><i class="fold"></i>..</div>
-                <div class="vs-row"><i class="fold"></i>VitaJPOverlay/</div>
-                <div class="vs-row vs-sel"><i class="pkg"></i>JPOverlaySettings.vpk</div>
-              </div>
-              <!-- VitaShell's own strings (TheOfficialFloW/VitaShell, resources/english_us.txt) -->
+              <div class="vs-title">VitaShell 2.02</div>
+              <div class="vs-status"><span>2026/10/15 14:21</span><i class="vs-batt"><b></b></i></div>
+              <div class="vs-path" id="vs-path-root">ux0:</div>
+              <div class="vs-path" id="vs-path-data">ux0:data/</div>
+              <div class="vs-list" id="vs-root">{{VS_ROOT}}</div>
+              <div class="vs-list" id="vs-data">{{VS_DATA}}</div>
+              <div id="vs-settings">{{VS_SETTINGS}}</div>
               <div class="vs-dialog" id="vs-ftp">
                 <p>FTP server is now running at</p>
                 <p><b>ftp://192.168.1.42:1337</b></p>

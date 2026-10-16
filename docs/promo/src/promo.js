@@ -39,15 +39,16 @@
         // A button press on the device: it sinks a little and glows.
         function press(t, id, sink = 0.9) {
           const el = "#" + id;
+          // all done within 0.2 s, so presses of one button 0.2 s apart never overlap
           if (id === "btn-l" || id === "btn-r") {
-            tl.fromTo(el, { y: 0 }, { y: 9, duration: 0.07, ease: "power1.out", immediateRender: false }, t);
-            tl.fromTo(el, { y: 9 }, { y: 0, duration: 0.16, ease: "power1.out", immediateRender: false }, t + 0.16);
+            tl.fromTo(el, { y: 0 }, { y: 9, duration: 0.06, ease: "power1.out", immediateRender: false }, t);
+            tl.fromTo(el, { y: 9 }, { y: 0, duration: 0.08, ease: "power1.out", immediateRender: false }, t + 0.1);
           } else {
-            tl.fromTo(el, { scale: 1 }, { scale: sink, transformOrigin: "50% 50%", duration: 0.07, ease: "power1.out", immediateRender: false }, t);
-            tl.fromTo(el, { scale: sink }, { scale: 1, transformOrigin: "50% 50%", duration: 0.16, ease: "power1.out", immediateRender: false }, t + 0.16);
+            tl.fromTo(el, { scale: 1 }, { scale: sink, transformOrigin: "50% 50%", duration: 0.06, ease: "power1.out", immediateRender: false }, t);
+            tl.fromTo(el, { scale: sink }, { scale: 1, transformOrigin: "50% 50%", duration: 0.08, ease: "power1.out", immediateRender: false }, t + 0.1);
           }
-          fade(el + " .glow", t, 0, 0.9, 0.06);
-          fade(el + " .glow", t + 0.2, 0.9, 0, 0.24);
+          fade(el + " .glow", t, 0, 0.9, 0.05);
+          fade(el + " .glow", t + 0.08, 0.9, 0, 0.11);
         }
         // A fingertip taps the screen at (x, y) (screen pixels) at time t.
         function tap(t, x, y, fromX = x + 70, fromY = y + 90) {
@@ -120,7 +121,7 @@
           place("#export", 190, 1260);
           place("#settle", 280, 1360);
           place("#terminal", 70, 1110, 1.0);
-          place("#steps", 120, 1625);
+          place("#steps", 120, 1580);
         } else {
           place("#queue-chip", 1440, 560);
           place("#fly-card", 715, 560);
@@ -130,6 +131,7 @@
           place("#terminal", 40, 300, 1.0);
           place("#steps", 60, 828);
         }
+        gsap.set("#vs-settings", { y: 544 }); /* VitaShell's settings slide up from below */
         cam = CAM.enter;
         gsap.set("#stage", { x: cam.x, y: cam.y, scale: cam.s });
         gsap.set("#device", { rotationX: 24, transformPerspective: 2400, opacity: 0 });
@@ -224,41 +226,60 @@
         fade("#region-note", T.s6 - 0.3, 1, 0, 0.25);
 
         // ============================================================ S6: install
-        caption("cap6", T.s6 + 0.1, T.s7 - 0.35);
-        camTo(T.s6, CAM.install, 0.8);
-        swap("#scr-vn", "#scr-shell", T.s6 + 0.05);
-        // VitaShell: Select starts the FTP server; × (OK) keeps it in the background
-        press(T.s6 + 0.3, "btn-select");
-        fade("#vs-ftp", T.s6 + 0.38, 0, 1, 0.12);
-        press(T.s6 + 1.0, "btn-cross");
-        fade("#vs-ftp", T.s6 + 1.08, 1, 0, 0.1);
-        // the computer: install-vita.sh over FTP (its output scrolls as a terminal's does)
-        card("#terminal", T.s6 + 0.4, T.s7 - 0.3, P ? 0 : -60, P ? 40 : 0);
-        card("#steps", T.s6 + 0.5, T.s7 - 0.3, P ? 0 : -40, P ? 30 : 0);
-        light("#step1", T.s6 + 0.6, true);
-        type("#tm-inner .cmd", T.s6 + 0.62, 0.011);
+        // VitaShell: START opens its settings; Down twice to SELECT button; Right sets it to
+        // FTP (a Vita's default is USB); START closes them; SELECT starts the FTP server.
+        // The computer runs install-vita.sh (its real output); OK keeps FTP running; in
+        // ux0:data/ × on the VPK, Yes, Yes to the permissions notice, Installing...; reboot.
+        const s6 = T.s6;
+        caption("cap6", s6 + 0.1, T.s7 - 0.35);
+        camTo(s6, CAM.install, 0.8);
+        swap("#scr-vn", "#scr-shell", s6 + 0.05);
+        card("#terminal", s6 + 0.4, T.s7 - 0.3, P ? 0 : -60, P ? 40 : 0);
+        card("#steps", s6 + 0.5, T.s7 - 0.3, P ? 0 : -40, P ? 30 : 0);
+        light("#step1", s6 + 0.55, true);
+        press(s6 + 0.3, "btn-start");
+        tl.fromTo("#vs-settings", { y: 544 }, { y: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s6 + 0.36);
+        press(s6 + 0.7, "dpad-down");
+        tl.fromTo("#vss-focus", { y: 0 }, { y: 23, duration: 0.01, immediateRender: false }, s6 + 0.76);
+        press(s6 + 0.9, "dpad-down");
+        tl.fromTo("#vss-focus", { y: 23 }, { y: 46, duration: 0.01, immediateRender: false }, s6 + 0.96);
+        press(s6 + 1.15, "dpad-right");
+        fade("#vss-usb", s6 + 1.21, 1, 0, 0.01);
+        fade("#vss-ftp", s6 + 1.21, 0, 1, 0.01);
+        press(s6 + 1.45, "btn-start");
+        tl.fromTo("#vs-settings", { y: 0 }, { y: 544, duration: 0.22, ease: "power2.in", immediateRender: false }, s6 + 1.51);
+        press(s6 + 1.8, "btn-select");
+        fade("#vs-ftp", s6 + 1.87, 0, 1, 0.1);
+        light("#step1", s6 + 1.9, false);
+        light("#step2", s6 + 1.9, true);
+        // the computer: the command types, then its output scrolls as a terminal's does
+        type("#tm-inner .cmd", s6 + 1.95, 0.011);
         {
           const lines = document.querySelectorAll("#tm-inner .l");
-          const LH = 22, VISIBLE = 17, t0 = T.s6 + 1.3, per = 0.058;
+          const LH = 22, VISIBLE = 17, t0 = s6 + 2.55, per = 1.45 / (lines.length - 1);
           tl.fromTo("#tm-inner .out", { opacity: 0 }, { opacity: 1, duration: 0.01, stagger: per, immediateRender: false }, t0);
           for (let i = VISIBLE; i < lines.length; i++)
             tl.fromTo("#tm-inner", { y: -(i - VISIBLE) * LH }, { y: -(i - VISIBLE + 1) * LH, duration: 0.01, immediateRender: false }, t0 + (i - 1) * per);
         }
-        light("#step1", T.s6 + 3.3, false);
-        light("#step2", T.s6 + 3.3, true);
-        // VitaShell: × on JPOverlaySettings.vpk, Yes, Yes to the permissions notice, Installing...
-        press(T.s6 + 3.4, "btn-cross");
-        fade("#vs-ask", T.s6 + 3.48, 0, 1, 0.1);
-        press(T.s6 + 3.85, "btn-cross");
-        swap("#vs-ask", "#vs-warn", T.s6 + 3.93, 0.08);
-        press(T.s6 + 4.4, "btn-cross");
-        swap("#vs-warn", "#vs-prog", T.s6 + 4.48, 0.08);
-        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power1.inOut", immediateRender: false }, T.s6 + 4.52);
-        fade("#vs-prog", T.s6 + 5.0, 1, 0, 0.08);
-        light("#step2", T.s6 + 5.05, false);
-        light("#step3", T.s6 + 5.05, true);
-        swap("#scr-shell", "#scr-boot", T.s6 + 5.1, 0.1);
-        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, T.s6 + 5.1);
+        // OK on the FTP dialog keeps FTP running (the installer's box says to); then ux0:data/
+        press(s6 + 4.05, "btn-cross");
+        fade("#vs-ftp", s6 + 4.12, 1, 0, 0.08);
+        light("#step2", s6 + 4.1, false);
+        light("#step3", s6 + 4.1, true);
+        swap("#vs-root", "#vs-data", s6 + 4.2, 0.08);
+        swap("#vs-path-root", "#vs-path-data", s6 + 4.2, 0.08);
+        press(s6 + 4.35, "btn-cross");
+        fade("#vs-ask", s6 + 4.42, 0, 1, 0.1);
+        press(s6 + 4.7, "btn-cross");
+        swap("#vs-ask", "#vs-warn", s6 + 4.77, 0.08);
+        press(s6 + 5.05, "btn-cross");
+        swap("#vs-warn", "#vs-prog", s6 + 5.12, 0.08);
+        tl.fromTo("#vs-bar-in", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power1.inOut", immediateRender: false }, s6 + 5.15);
+        fade("#vs-prog", s6 + 5.5, 1, 0, 0.08);
+        light("#step3", s6 + 5.55, false);
+        light("#step4", s6 + 5.55, true);
+        swap("#scr-shell", "#scr-boot", s6 + 5.6, 0.1);
+        tl.fromTo(".boot-dot", { rotation: 0 }, { rotation: 360, duration: 0.8, ease: "none", immediateRender: false }, s6 + 5.6);
 
         // ============================================================ S7: L + R in the game
         caption("cap7", T.s7 + 0.1, T.s8 - 0.35);
@@ -274,10 +295,13 @@
         });
         press(T.s7 + 1.55, "btn-l");
         press(T.s7 + 1.55, "btn-r");
+        // right after a first install card mining is off: no queue line, no × queue
         tl.set("#hl-kira", { color: "#ffd24a" }, T.s7);
         tl.set("#hl-issho", { color: "#ffffff" }, T.s7);
         tl.set("#ovb-queued", { opacity: 0 }, T.s7);
-        tl.set("#ovb-kira", { opacity: 1 }, T.s7);
+        tl.set("#ovb-fresh", { opacity: 1 }, T.s7);
+        tl.set("#ov-hint-a", { opacity: 0 }, T.s7);
+        tl.set("#ov-hint-b", { opacity: 1 }, T.s7);
         fade("#scr-overlay", T.s7 + 1.7, 0, 1, 0.12);
         camTo(T.s7 + 1.7, CAM.zoom, 0.8);
 
@@ -304,18 +328,20 @@
         tap(s8 + 2.85, 480, 293);
         open("#app-games-a", s8 + 2.98, 0.94);
         fade("#scr-la-app", s8 + 3.2, 1, 0, 0.05);
-        press(s8 + 3.55, "dpad-down");
-        swap("#app-games-a", "#app-games-b", s8 + 3.62, 0.04);
-        press(s8 + 4.05, "btn-cross");
-        swap("#app-games-b", "#app-games-c", s8 + 4.12, 0.04);
-        press(s8 + 4.95, "btn-ps");
-        tl.fromTo("#scr-la-app", { opacity: 0, scale: 1.06, x: 0 }, { opacity: 1, scale: 1, x: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s8 + 5.02);
-        fade("#app-games-c", s8 + 5.2, 1, 0, 0.05);
-        tl.set("#scr-la-game", { x: 0 }, s8 + 5.45);
-        swap("#scr-la-app", "#scr-la-game", s8 + 5.5, 0.22);
-        tap(s8 + 6.2, 260, 385);
-        tl.set("#vn-text-1", { opacity: 1 }, s8 + 6.2);
-        swap("#scr-la-game", "#scr-vn", s8 + 6.32, 0.2);
+        press(s8 + 3.45, "dpad-down");
+        swap("#app-games-a", "#app-games-a2", s8 + 3.52, 0.04);
+        press(s8 + 3.8, "dpad-down");
+        swap("#app-games-a2", "#app-games-b", s8 + 3.87, 0.04);
+        press(s8 + 4.25, "btn-cross");
+        swap("#app-games-b", "#app-games-c", s8 + 4.32, 0.04);
+        press(s8 + 5.05, "btn-ps");
+        tl.fromTo("#scr-la-app", { opacity: 0, scale: 1.06, x: 0 }, { opacity: 1, scale: 1, x: 0, duration: 0.25, ease: "power2.out", immediateRender: false }, s8 + 5.12);
+        fade("#app-games-c", s8 + 5.3, 1, 0, 0.05);
+        tl.set("#scr-la-game", { x: 0 }, s8 + 5.5);
+        swap("#scr-la-app", "#scr-la-game", s8 + 5.55, 0.22);
+        tap(s8 + 6.25, 260, 385);
+        tl.set("#vn-text-1", { opacity: 1 }, s8 + 6.25);
+        swap("#scr-la-game", "#scr-vn", s8 + 6.37, 0.2);
 
         // ============================================================ end card
         tl.fromTo("#stage", { opacity: 1 }, { opacity: 0, duration: 0.35, ease: "power2.in", immediateRender: false }, T.end - 0.15);

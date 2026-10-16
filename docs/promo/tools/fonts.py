@@ -72,7 +72,8 @@ def fetch(path, sha):
 
 def used_text():
     text = set(chr(c) for c in range(0x20, 0x7F))
-    for name in ("src/promo.template.html", "src/promo.js", "src/script.mjs", "tools/build.mjs"):
+    for name in ("src/promo.template.html", "src/promo.js", "src/script.mjs", "src/install-transcript.txt",
+                 "tools/build.mjs"):
         text |= set((ROOT / name).read_text(encoding="utf-8"))
     return "".join(sorted(c for c in text if c.isprintable() or c == "\u3000"))
 
