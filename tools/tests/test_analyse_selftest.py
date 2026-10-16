@@ -1011,5 +1011,307 @@ class OverlayCloseLines(unittest.TestCase):
         self.assertEqual(a.overlay_summary(lg), "  overlay opened 1x, slowest frame 2 ms")
 
 
+def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0):
+    """settings/anki_page.c worker_main's line, as the Overlay app writes it into log.txt."""
+    return (f"overlay app: anki: export ({what}) rc={rc}: {cards} cards, {moved} moved, {kept} kept, {unreadable} "
+            f"unreadable, {too_large} too large, {left} left, {stopped} stopped, {cards * 20480} bytes, arena peak 98304\n")
+
+
+class AnkiExportLines(unittest.TestCase):
+    """The Overlay app's .apkg export in log.txt (settings/anki_page.c logs each export's result and counts,
+    settings/anki_export.c its steps). A successful export is reported as one and is not a problem line
+    (audit-test-build-3 N1: TROUBLE's "unreadable" and "too large" matched its zero counts); a failed export, or one
+    that left cards queued for a problem, is one, as the app itself shows it (its result_error)."""
+
+    VERIFIED = ("overlay app: anki export: ux0:data/VitaJPOverlay/anki/2026-10-16_120501-2cards.apkg: 2 cards, "
+                "0 screenshots, 40960 bytes, verified\n")
+    NOT_VERIFIED = ("overlay app: anki export: ux0:data/VitaJPOverlay/anki/2026-10-16_120601.apkg.tmp did not verify "
+                    "(-114): removed, nothing cleared\n")
+
+    def test_a_successful_export_is_a_success_and_not_a_problem(self):
+        lg = a.summarise_log(self.VERIFIED + export_line())
+        self.assertEqual(lg["trouble"], {})
+        an = lg["anki"]
+        self.assertEqual((an["exports"], an["export_ok"], an["export_fail"], an["exported"]), (1, 1, 0, 2))
+        self.assertEqual(a.export_summary(an), ["  Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package "
+                                                "written and checked), 0 failed; 2 card(s) in the packages"])
+
+    def test_a_failed_export_and_its_reason_are_problems(self):
+        lg = a.summarise_log(self.NOT_VERIFIED + export_line("all", rc=-114, cards=0, moved=0))
+        self.assertEqual(sorted(lg["trouble"]), [key[:120] for key in (  # a problem line is kept to 120 characters
+            "overlay app: anki export: uxN:data/VitaJPOverlay/anki/N-N-N_N.apkg.tmp did not verify (-N): removed, "
+            "nothing cleared",
+            "overlay app: anki: export (all) rc=-N: N cards, N moved, N kept, N unreadable, N too large, N left, N "
+            "stopped, N bytes, arena peak N")])
+        self.assertEqual(a.export_summary(lg["anki"]), [
+            "  Anki exports (the Overlay app): 1 export(s): 0 succeeded (a package written and checked), 1 FAILED "
+            "(no package); 0 card(s) in the packages",
+            "    all: local format (rc -114): no package, the queue unchanged"])
+
+    def test_cards_a_problem_left_queued_are_a_problem(self):
+        lg = a.summarise_log(export_line(cards=5, moved=3, kept=1, unreadable=2))
+        self.assertEqual(len(lg["trouble"]), 1)
+        self.assertEqual(a.export_summary(lg["anki"]), [
+            "  Anki exports (the Overlay app): 1 export(s): 0 succeeded (a package written and checked), 1 wrote its "
+            "package and left cards queued by a problem, 0 failed; 5 card(s) in the packages",
+            "    queued: 5 card(s) in its package; still queued by a problem: 1 kept (in the package; a move failed), "
+            "2 unreadable, 0 too large"])
+        lg = a.summarise_log(export_line(cards=1, moved=1, too_large=1))
+        self.assertEqual((lg["anki"]["export_partial"], len(lg["trouble"])), (1, 1))
+        lg = a.summarise_log(export_line(cards=2, moved=1, kept=1))  # a move failed: the card stays queued
+        self.assertEqual((lg["anki"]["export_partial"], len(lg["trouble"])), (1, 1))
+
+    def test_cards_a_stop_or_the_cap_left_queued_are_not_a_problem(self):
+        # stopped: the user stopped the queue's clearing; left: over a package's cap. Both are in the next export.
+        lg = a.summarise_log(export_line(cards=4, moved=1, left=3, stopped=3) + export_line(cards=0, moved=0))
+        self.assertEqual(lg["trouble"], {})
+        self.assertEqual(a.export_summary(lg["anki"]), [
+            "  Anki exports (the Overlay app): 2 export(s): 1 succeeded (a package written and checked), 1 had no card "
+            "to export, 0 failed; 4 card(s) in the packages; still queued for the next export, not a problem: 3 a "
+            "stop left, 3 over a package's cap"])
+
+    def test_no_export_and_an_older_line_without_its_stop_count(self):
+        self.assertEqual(a.export_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]),
+                         ["  Anki exports (the Overlay app): none in the log"])
+        old = ("overlay app: anki: export (queued) rc=0: 3 cards, 3 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
+               "40960 bytes, arena peak 1000\n")
+        lg = a.summarise_log(old)
+        self.assertEqual((lg["anki"]["export_ok"], lg["trouble"]), (1, {}))
+
+    def test_the_app_writes_the_lines_the_analyser_reads(self):
+        page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")
+        fmt = re.search(r'vjo_log\("(anki: export \(%s\) rc=%d: [^"]*)"\s*"([^"]*)"', page)
+        self.assertIsNotNone(fmt, "settings/anki_page.c's export line moved: update LOG['anki_export']")
+        line = "overlay app: " + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 1000, 2000)
+        m = a.LOG["anki_export"].match(line)
+        self.assertEqual([m.group(g) for g in range(1, 10)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7"])
+        # the app's own idea of an error, which export_result follows
+        self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large;", page)
+        export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
+        for words in ('"anki export: %s did not verify (%d): removed, nothing cleared"',
+                      '"anki export: %s: 99 packages are named for this second already"',
+                      '"anki export: %s: its screenshot %s.jpg is missing or not a JPEG"',
+                      '"anki export: %s: %d cards, %d screenshots, %u bytes, verified"'):
+            self.assertIn(words, export)
+        self.assertTrue(a.EXPORT_TROUBLE.search(
+            "overlay app: anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))
+        self.assertIsNone(a.EXPORT_TROUBLE.search("overlay app: " + self.VERIFIED.strip()))
+
+
+def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True):
+    """One game job's batch as shell/worker.c logs it (the job line, its lines' crops, frames and times, then the
+    game worker's steps). lines: [(frames, ms)], a line from the line cache as (frames, 0): core/vocr_ocr.c logs
+    its frames and 0.0 ms. clock: (before, rc, during, after). late: the steps the worker adds after the clock's
+    place (game_ocr/main.c: FIND, then RECOGNIZE, once the run that logs the clock has returned); "find": a step log
+    that filled between the two; False: one that filled before both."""
+    frames = sum(f for f, t in lines if t)
+    out = [f"game vocr rc=0 {model}: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines={len(lines)} USER "
+           f"workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=180 ms "
+           f"frames={frames} io=0x00000000 stat=0x00000000 cleanup=0",
+           "game vocr lines:" + "".join(f" 742x39 {f}f {t:.1f}ms c900" for f, t in lines),
+           "gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=0 phycont=0 us=17"]
+    if clock:
+        before, rc, during, after = clock
+        out.append(f"gstep job clock kind=- arg={before} rc=0x{rc & 0xFFFFFFFF:08X} bytes={during} sum=0x{after:08X} "
+                   "main=0 cdram=0 phycont=0 us=300000")
+    if late:
+        out.append(f"gstep job find kind=- arg={len(lines)} rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 "
+                   "phycont=0 us=92000")
+    if late is True:
+        out.append(f"gstep job recognize kind=- arg={len(lines)} rc=0x00000000 bytes={frames} sum=0x00000000 main=0 "
+                   "cdram=0 phycont=0 us=180000")
+    return "\n".join(out) + "\n"
+
+
+BOOT22 = "Vita JP Overlay shell started (kernel API 22)\n"
+START = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+RAISED = (333, 0, 444, 333)
+
+
+class ClockWindows(unittest.TestCase):
+    """ocr_boost_clock in log.txt, per game window (audit-test-build-3-b D6; test.3's step 6). A job logs the clock
+    (`gstep job clock`) only when it recognizes a line: game_ocr/main.c job_busy is the busy hook core/vocr_ocr.c
+    calls at the first line it runs, after the line cache's lookup, so a job whose every line came from the cache
+    logs none, boost on or off. A window, from a `game TITLE started` line (a start or a resume; shell/worker.c
+    activate_game reads config.ini again just before it) to the next, is read from its jobs that recognized a line,
+    and the time per CTC frame is each recognized line's own."""
+
+    def test_a_job_from_the_cache_does_not_make_a_window_boost_off(self):
+        log = (BOOT22 + START + game_job([(80, 176.0)], RAISED) + game_job([(80, 0.0)])  # 1: on, then the cache
+               + START + game_job([(80, 0.0), (76, 0.0)])                                # 2: a resume, the cache only
+               + START + game_job([(80, 232.8)]) + game_job([(76, 220.4)]) + game_job([(64, 0.0)])  # 3: restarted, off
+               + START + game_job([(64, 140.8)], RAISED))                                # 4: on again
+        lg = a.summarise_log(log)
+        rows = lg["clock_windows"]
+        self.assertEqual([(r["window"], r["state"], r["jobs"], r["recognizing"], r["clock_lines"]) for r in rows],
+                         [(1, "on", 2, 1, 1), (2, "none", 1, 0, 0), (3, "off", 3, 2, 0), (4, "on", 1, 1, 1)])
+        self.assertEqual([r["line"] for r in rows], [2, 14, 20, 36])
+        self.assertEqual((rows[0]["before"], rows[0]["during"], rows[0]["after"], rows[0]["raised"]),
+                         ([333], [444], [333], 1))
+        # per CTC frame, each recognized line's own (frame-weighted); a cached line's 0.0 ms is left out
+        self.assertEqual(rows[2]["per_frame"], {"VOCR3_H15_w8.vocr": {"lines": 2, "frames": 156, "us": 453200}})
+        self.assertEqual(lg["clock_windows_older"], 0)
+        cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
+        self.assertEqual(cmp_["off"], {"lines": 2, "frames": 156, "us": 453200, "windows": [3]})
+        self.assertEqual(cmp_["raised"], {"lines": 2, "frames": 144, "us": 316800, "windows": [1, 4],
+                                          "before": 333, "during": 444})
+        text = flat("\n".join(a.render_clock_windows(lg)))
+        for want in ("ARM clock by game window (a window runs from a 'game TITLE started' line, a start or a resume, "
+                     "where config.ini is read again, to the next; a job logs the clock only when it recognizes a "
+                     "line, so one whose every line came from the cache logs none, boost on or off):",
+                     "window from title jobs recognizing clock MHz before / during / after; us per CTC frame",
+                     "1 line 2 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
+                     "2 line 14 PCSG00415 1 0 0 no job recognized a line: no clock either way",
+                     "3 line 20 PCSG00415 3 2 0 BOOST OFF (the game's own clock, not logged): no clock line in its 2 "
+                     "recognizing jobs; VOCR3_H15_w8.vocr 2,905 us (2 lines)",
+                     "4 line 36 PCSG00415 1 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
+                     "boost off against on, us per CTC frame (each recognized line's time / its frames, "
+                     "frame-weighted; lines from the cache left out; a core's share: the recognizing threads' run "
+                     "time / wall time, the jobs' means, under 100 when game threads had the core):",
+                     "VOCR3_H15_w8.vocr: off (the game's own clock, not logged) 2,905 us (2 lines; window 3), "
+                     "raised 333 -> 444 MHz 2,200 us (2 lines; windows 1, 4): off / raised = 1.32 (a time that scales "
+                     "with the clock: 444 / 333 = 1.33; no gain: 1.00)"):
+            self.assertIn(want, text)
+
+    def test_a_window_with_and_without_the_clock_is_mixed_and_left_out_of_the_comparison(self):
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + game_job([(80, 232.8)]))
+        r = lg["clock_windows"][0]
+        self.assertEqual((r["state"], r["clock_lines"], r["without_clock"]), ("mixed", 1, 1))
+        self.assertIn("MIXED: 333 / 444 / 333 in 1 job; 1 recognizing job logged none",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        self.assertEqual(lg["clock_compare"]["VOCR3_H15_w8.vocr"]["raised"]["lines"], 1)
+        self.assertNotIn("off", lg["clock_compare"]["VOCR3_H15_w8.vocr"])
+
+    def test_a_step_log_that_filled_before_the_clocks_place_is_no_evidence(self):
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 232.8)], late=False))
+        self.assertEqual(lg["clock_windows"][0]["state"], "unknown")
+        self.assertIn("not known: the step log of its 1 recognizing job filled before the clock's place",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        self.assertEqual(lg["clock_compare"], {})
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + game_job([(80, 232.8)], late=False))
+        self.assertEqual((lg["clock_windows"][0]["state"], lg["clock_windows"][0]["unsure"]), ("on", 1))
+        # FIND comes after the clock's place too: a log that filled before RECOGNIZE still had room for the clock
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 232.8)], late="find"))
+        self.assertEqual(lg["clock_windows"][0]["state"], "off")
+
+    def test_a_reboot_ends_a_window(self):
+        # config.ini is read again at boot: jobs logged after a boot and before its first game start (a log that
+        # rotated there, say) are not the previous boot's window
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED) + BOOT22 + game_job([(80, 232.8)]))
+        self.assertEqual([(r["window"], r["title"], r["state"]) for r in lg["clock_windows"]],
+                         [(1, "PCSG00415", "on"), (2, None, "off")])
+        self.assertIn("2 line 10 ? 1 1 0 BOOST OFF (the game's own clock, not logged): no clock line in its 1 "
+                      "recognizing job", flat("\n".join(a.render_clock_windows(lg))))
+
+    def test_a_clock_already_at_444_or_more_is_left_and_compared_apart(self):
+        # PSVshell's 500 (or the game's own 444): rc 1, never lowered; a set call refused (rc < 0) leaves it too
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 160.0)], (500, 1, 500, 500))
+                             + game_job([(80, 176.0)], RAISED) + game_job([(80, 232.0)], (333, -2147352567, 333, 333)))
+        r = lg["clock_windows"][0]
+        self.assertEqual((r["state"], r["raised"], r["left"], r["not_raised"]), ("on", 1, 1, 1))
+        text = flat("\n".join(a.render_clock_windows(lg)))
+        self.assertIn("333-500 / 333-500 / 333-500 (raised in 1, left at 444 or more in 1, not raised in 1)", text)
+        cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
+        self.assertEqual((cmp_["left"]["before"], cmp_["left"]["lines"], cmp_["raised"]["lines"]), (500, 1, 1))
+        self.assertIn("boost off against on: no window with the boost off in this log (step 6's optional boxes), so "
+                      "nothing to compare", text)
+
+    def test_off_against_a_clock_left_at_500_or_read_by_another_model(self):
+        # PSVshell's 500 MHz for the game: the boost never raises it, so the off window compares with the left jobs
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 160.0)], (500, 1, 500, 500))
+                             + START + game_job([(80, 232.8)]))
+        self.assertEqual([r["state"] for r in lg["clock_windows"]], ["on", "off"])
+        self.assertIn("VOCR3_H15_w8.vocr: off (the game's own clock, not logged) 2,910 us (1 line; window 2); left at "
+                      "500 MHz (444 or more already) 2,000 us (1 line; window 1)",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        # the boost off read with Small's model, on with Normal's: per frame they are not comparable
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 176.0)], RAISED)
+                             + START + game_job([(80, 120.0)], model="VOCR3_FL10_w8.vocr"))
+        self.assertIn("boost off against on: no model was read both with the boost off and on, so nothing to compare",
+                      flat("\n".join(a.render_clock_windows(lg))))
+
+    PAR = "gstep job par kind=- arg=2 rc=0x00000001 bytes=533504 sum=0x0000{lo:02X}{mean:02X} main=0 cdram=0 phycont=0 us=1\n"
+
+    def test_a_rotated_logs_window_is_read_by_its_api_22_steps(self):
+        # log.old.txt's first window has no "shell started" line before it: its build is read from its steps
+        start = START + game_job([(80, 232.8)]) + self.PAR.format(lo=90, mean=95)
+        lg = a.summarise_log(start + START + game_job([(80, 176.0)], RAISED) + self.PAR.format(lo=97, mean=99))
+        self.assertEqual([(r["window"], r["state"], r["api"]) for r in lg["clock_windows"]], [(1, "off", None), (2, "on", None)])
+        g = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
+        self.assertEqual((g["off"]["share"], g["raised"]["share"]), ((95, 95), (99, 99)))
+        self.assertIn("off (the game's own clock, not logged) 2,910 us (1 line; window 1; a core's share 95%), raised "
+                      "333 -> 444 MHz 2,200 us (1 line; window 2; a core's share 99%): off / raised = 1.32",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        # without such a step (an older build's jobs), a window the log does not name is not listed
+        lg = a.summarise_log(START + game_job([(80, 400.0)]))
+        self.assertEqual((lg["clock_windows"], lg["clock_windows_older"]), ([], 1))
+
+    def test_windows_of_builds_before_the_boost_are_not_listed(self):
+        old = "Vita JP Overlay shell started (kernel API 21)\n" + START + game_job([(80, 400.0)])
+        lg = a.summarise_log(old)
+        self.assertEqual((lg["clock_windows"], lg["clock_windows_older"]), ([], 1))
+        self.assertEqual(a.render_clock_windows(lg), [
+            "  ARM clock by game window: no window of a build with the boost (API 22 on) has an OCR job; 1 window "
+            "of older builds does (they log no clock)"])
+        # a later boot of an API 22 build is listed; the older windows are counted
+        lg = a.summarise_log(old + BOOT22 + START + game_job([(80, 176.0)], RAISED))
+        self.assertEqual(([r["window"] for r in lg["clock_windows"]], lg["clock_windows_older"]), ([2], 1))
+        self.assertIn("(1 window of builds before API 22, which have no boost and log no clock, is not listed)",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        self.assertEqual(a.render_clock_windows(a.summarise_log("anki: queue 1 card(s)\n")), [])
+
+    def test_no_clock_line_anywhere_is_said_to_be_off_or_unavailable(self):
+        lg = a.summarise_log(BOOT22 + START + game_job([(80, 232.8)]))
+        text = flat("\n".join(a.render_clock_windows(lg)))
+        self.assertIn("no clock line in its 1 recognizing job: the boost off, or the game could not call ScePower "
+                      "(no job in this log logged the clock)", text)
+        self.assertIn("boost off against on: no job raised the clock, so nothing to compare", text)
+
+    def test_the_busy_hook_runs_only_for_a_line_to_recognize(self):
+        # the premise: the clock's step is written by job_busy, which core/vocr_ocr.c calls after the cache lookup,
+        # for the first line it has to run, and which returns at once without ocr_boost_clock
+        core = (ROOT / "core/vocr_ocr.c").read_text(encoding="utf-8")
+        hit, slot = core.index("cur.kind = LN_HIT;"), core.index("cur.kind = LN_SLOT;")
+        busy = core.index("pol->busy(pol->busy_ud, 1);")
+        self.assertLess(hit, slot)
+        self.assertLess(slot, busy)
+        self.assertEqual(core.count("pol->busy(pol->busy_ud, 1);"), 1)
+        worker = (ROOT / "game_ocr/main.c").read_text(encoding="utf-8")
+        body = worker[worker.index("static void job_busy(void *ud, int on)"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn("if (!boost_job ||", body)
+        self.assertIn("step_add(VJO_GSTEP_CLOCK,", body)
+        # a window's config: activate_game reads config.ini again, then logs "game TITLE started"
+        shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        body = shell[re.search(r"\nstatic void activate_game\(", shell).start():]
+        body = body[:body.index("\n}\n")]
+        self.assertLess(body.index("apply_config();"), body.index('vjo_log("game %s started: '))
+
+    def test_the_test3_style_fixture_reads_its_boost_off_window_plainly(self):
+        # tools/tests/fixtures/log-test3-style.txt: synthetic (no console, no game), test.3's checklist in order:
+        # boxes with the boost on and one from the cache, two cards and the Overlay app's export, the game resumed,
+        # step 6's restart with ocr_boost_clock = off and 3 boxes, a restart with it on
+        lg = a.summarise_log((FIXTURES / "log-test3-style.txt").read_text(encoding="utf-8"))
+        self.assertEqual([(r["window"], r["state"], r["jobs"], r["recognizing"], r["clock_lines"])
+                          for r in lg["clock_windows"]],
+                         [(1, "on", 3, 2, 2), (2, "on", 2, 1, 1), (3, "off", 4, 3, 0), (4, "on", 1, 1, 1)])
+        cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
+        self.assertEqual((cmp_["off"]["lines"], cmp_["off"]["windows"], cmp_["raised"]["lines"],
+                          cmp_["raised"]["windows"]), (9, [3], 11, [1, 2, 4]))
+        # the lines' logged times: 1,922,100 us over 660 frames off, 1,797,500 us over 816 raised
+        self.assertEqual((cmp_["off"]["us"], cmp_["off"]["frames"]), (1922100, 660))
+        self.assertEqual((cmp_["raised"]["us"], cmp_["raised"]["frames"]), (1797500, 816))
+        self.assertIn("off / raised = 1.32 (a time that scales with the clock: 444 / 333 = 1.33; no gain: 1.00)",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        self.assertEqual((lg["trouble"], lg["anki"]["export_ok"]), ({}, 1))
+        # the per-line span leaves the cache's lines (0.0 ms) out: 20 recognized of the 30 logged
+        self.assertEqual((len(lg["line_ms"]), min(lg["line_ms"]), max(lg["line_ms"])), (20, 140, 233))
+
+
+def flat(text):
+    """Text with each run of white space one space (the tables' column widths are not what is tested)."""
+    return " ".join(text.split())
+
+
 if __name__ == "__main__":
     unittest.main()

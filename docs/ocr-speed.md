@@ -44,7 +44,12 @@ log, not a CPU reading). Whether a second and a third core are free is what this
   A share well under 100 means game threads had that core.
 - `gstep job clock kind=- arg=BEFORE rc=0x... bytes=DURING sum=AFTER`: the ARM clock (MHz) before, during and after
   the recognition, and the set call's result (1: already at 444 MHz or more, left alone: never lowered). With
-  `ocr_boost_clock = on`, the default.
+  `ocr_boost_clock = on`, the default. A job writes it only when it recognizes a line (the worker's busy hook runs
+  at the first line not from the line cache), so a job whose every line came from the cache has none, boost on or
+  off. `analyse_selftest.py --collect` therefore reads the boost per game window, from each `game TITLE started`
+  line (a start or a resume; the Shell reads `config.ini` again just before it) to the next, from the window's jobs
+  that recognized a line: it lists each window's clock before, during and after (or that its jobs logged none: the
+  boost off), and compares each recognized line's time per CTC frame with the boost off and raised, by model.
 - `gstep job pace kind=- arg=F rc=MAX bytes=SUM sum=SLOW main=SUM0 cdram=MAX0 phycont=SLOW0 us=F0`: added by the
   kernel, the **game's frame pacing**: F frames during the job (from its claim to its completion), their longest gap
   MAX (µs), their sum, SLOW gaps over 25 ms; and the same for the F0 frames since the job before. A job that costs
