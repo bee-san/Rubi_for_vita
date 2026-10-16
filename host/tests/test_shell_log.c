@@ -643,7 +643,7 @@ static void configure_keeps_a_held_batch(void)
         vjo_log_raw(line, make_line(line, 2, lens[2]));
         vjo_log_batch_end(&b);
         snap(&got);
-        check_same(&ref, &got, 0);
+        check_same(&ref, &got);
 #if !VJO_DEBUG
         TEST_CHECK(status_path_opens == 1); /* the three lines in one append of status.txt */
 #endif
