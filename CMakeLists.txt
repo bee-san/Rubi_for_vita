@@ -37,7 +37,7 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
+  core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
   core/pspbubble.c core/psptarget.c core/taicfg.c)
 add_library(vjo_core STATIC ${CORE_SRC})
@@ -459,13 +459,15 @@ foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    vita/games_storage.c
+    settings/applog.c vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_link_libraries(${_vjo_target} vjo_host)
+  # Their own sceKernelGetThreadId (settings/applog.c's batch owner), not host_stubs.h's inline 0.
+  target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_THREAD_INFO_STUBS=1)
   add_test(NAME settings_${_vjo_variant} COMMAND ${_vjo_target})
 endforeach()
 set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
@@ -500,7 +502,7 @@ foreach(_vjo_games IN ITEMS tests bench)
   endif()
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    vita/games_storage.c
+    settings/applog.c vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
@@ -511,6 +513,8 @@ foreach(_vjo_games IN ITEMS tests bench)
     target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_ZLIB=1)
     target_link_libraries(${_vjo_target} ZLIB::ZLIB)
   endif()
+  # As the app suites above: the harness's own sceKernelGetThreadId.
+  target_compile_definitions(${_vjo_target} PRIVATE VJO_TEST_THREAD_INFO_STUBS=1)
 endforeach()
 target_compile_definitions(vjo-settings-bench PRIVATE VJO_SETTINGS_BENCH=1)
 # A main.c from elsewhere finds its headers in settings/.

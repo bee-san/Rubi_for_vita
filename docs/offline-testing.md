@@ -277,7 +277,9 @@ run, and the failure says what ended Vita3K: the signal (its exit status less 12
 Unhandled access to 0x…" is quoted when its logger got it out; in some crashed runs the SIGTRAP
 cut it off. The only critical line of a passing run is "[translate_path]: Unknown device with
 path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`), which the failure used to
-quote as the crash.
+quote as the crash. When `gro0:app` does not open, the app looks at `gro0:` itself (#138); in
+Vita3K that is an error line, not a critical one: "[stat_file]: Cannot find device for path:
+gro0:" (the preflight's run of `6be519f`).
 
 Vita3K does not fault on an access to unmapped guest memory either. It logs "Invalid write …",
 "Invalid read …" or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0

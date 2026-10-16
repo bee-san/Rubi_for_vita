@@ -16,8 +16,6 @@
 /* As in main.c: no vita2d_fini in the system application. */
 #pragma GCC poison vita2d_fini
 
-#define LOG_PATH "ux0:data/VitaJPOverlay/log.txt"
-#define LOG_CAP (1024 * 1024) /* the Shell rotates log.txt; the app only appends below this */
 #define WORKER_STACK (64 * 1024)
 
 #define MINING_Y 112
@@ -40,33 +38,8 @@ static int all, running, finished, cancelled;
 static char progress[160], result[480];
 static int result_error;
 static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
-static int log_on;
 
-/* ---------------- log.txt (settings/anki_export.c logs its storage errors) ---------------- */
-
-void vjo_log_enable(int on) { log_on = on; }
-
-void vjo_log(const char *fmt, ...)
-{
-    char line[300];
-    va_list ap;
-    SceIoStat st;
-    int n = snprintf(line, sizeof(line), "overlay app: ");
-    SceUID fd;
-    if (!log_on || n < 0)
-        return;
-    va_start(ap, fmt);
-    vsnprintf(line + n, sizeof(line) - (size_t)n - 1, fmt, ap);
-    va_end(ap);
-    n = (int)strlen(line);
-    line[n++] = '\n';
-    if (sceIoGetstat(LOG_PATH, &st) >= 0 && st.st_size + n > LOG_CAP)
-        return;
-    if ((fd = sceIoOpen(LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666)) >= 0) {
-        sceIoWrite(fd, line, (SceSize)n);
-        sceIoClose(fd);
-    }
-}
+/* log.txt: settings/applog.c (settings/anki_export.c logs its storage errors there too). */
 
 /* ---------------- the worker ---------------- */
 
@@ -191,12 +164,12 @@ static void save(int mining, VjoArena *scratch)
 
 void vjo_anki_page_show(VjoArena *scratch)
 {
-    /* (log_on is the worker's too: it changes only while no export runs) */
+    /* (the log switch is the worker's too: it changes only while no export runs) */
     if (!running)
-        log_on = 0;
+        vjo_log_enable(0);
     writable = vjo_preferences_load(&cfg, scratch) >= 0;
     if (!running) {
-        log_on = cfg.log_file;
+        vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);
     }
 }

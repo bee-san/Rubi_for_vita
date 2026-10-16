@@ -10,7 +10,7 @@
 #include "../core/anki_queue.h"
 #include "../core/errors.h"
 
-void vjo_log(const char *fmt, ...); /* the app's log.txt lines (anki_page.c) */
+void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
 
 #define MISSING ((int)0x80010002u) /* ENOENT */
 #define JPEG_MAGIC "\xFF\xD8\xFF"

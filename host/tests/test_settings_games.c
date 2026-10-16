@@ -57,6 +57,7 @@
 #include <unistd.h>
 #include "../../core/games.h"
 #include "../../settings/catalog.h"
+#include "../../settings/anki_page.h" /* the app's log (settings/applog.c) */
 #include "../../core/pspbubble.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
@@ -69,6 +70,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define GAME_H 80
 #define GAME_PITCH 88
 #define HINT_Y 535
+#define DEFAULT_BADGE_Y (112 + 8 + 38 / 2 + 9) /* badge(174, DEFAULT_Y + 8, 108, 38): its label's baseline */
 #define STATUS_Y 467
 #define SELECTED RGBA8(35, 56, 70, 255)
 #define ACCENT RGBA8(91, 220, 207, 255)
@@ -79,6 +81,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 typedef struct {
     char title[ROWS][2][128], id[ROWS][16], icon[ROWS][16]; /* icon: the texture's game, "JP", or "" */
     unsigned tag[ROWS];                                      /* a PSP card's tag: its color, 0 for none */
+    char badge[ROWS][4], default_badge[4];                   /* each card's ON/OFF/--, the Default row's */
     char hints[128], counter[24], status[2][128];
     int counter_x;                                           /* where the counter starts */
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
@@ -98,6 +101,7 @@ typedef struct {
     long startup_ns;
     unsigned short attempts[MAX_FRAMES]; /* icon0.png opens tried, by game number (VJOTnnnnn) */
     int description_writes;              /* opens for writing in ux0:data/VitaJPOverlay/psp (settings/psp.c) */
+    int log_appends;                     /* appends to log.txt (settings/applog.c) */
     Frame shown[MAX_FRAMES];
 } Session;
 static Session *session;
@@ -114,10 +118,24 @@ static long tai_append_fails_after = -1;
 static long long card_free = 1LL << 30;
 static int chstat_fails, tai_rewrite_fails; /* tai_rewrite_fails: config.txt cannot be written whole again */
 static int tai_append_fd[1024], app_dir_fails;
+/* A root sceIoDopen refuses with dir_fails_rc (a game card's gro0:app, #138),
+ * a listing whose sceIoDread fails with EIO after this many entries (-1: never),
+ * and safe mode: VitaShell's check (sceIoDevctl("ux0:", 0x3001, NULL, ...))
+ * answers 0x80010030. card() clears them. */
+static const char *dir_fails;
+static int dir_fails_rc, dread_fails_after = -1, safe_mode;
+static const char *dread_fails;
 static int is_icon(const char *p)
 {
     size_t n = strlen(p);
     return n >= 9 && !strcmp(p + n - 9, "icon0.png");
+}
+/* Appends to log.txt (opens with O_APPEND): in this process, and in a run's. */
+static int log_appends;
+static int is_log(const char *p, int flags)
+{
+    size_t n = strlen(p);
+    return (flags & O_APPEND) && n >= 7 && !strcmp(p + n - 7, "log.txt");
 }
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
@@ -129,6 +147,7 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
         tai_append_fd[fd] = (flags & O_APPEND) && strstr(p, "tai/config.txt") && !strstr(p, ".vjo");
     }
     if ((flags & (O_WRONLY | O_RDWR)) && strstr(p, "VitaJPOverlay/psp/")) session->description_writes++;
+    if (is_log(p, flags)) { log_appends++; if (session) session->log_appends++; }
     if (is_icon(p)) {
         cur.icon_opens++;
         if (sscanf(p, "ux0:app/VJOT%5d", &game) == 1 && game >= 0 && game < MAX_FRAMES) session->attempts[game]++;
@@ -154,7 +173,24 @@ int sceIoWrite(int fd, const void *p, size_t len)
 SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
 int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
-{ struct stat st; int rc = stat(p, &st); if (!rc) out->st_mode = st.st_mode; return native(rc); }
+{
+    struct stat st;
+    size_t n = strlen(p);
+    int rc;
+    if (n && p[n - 1] == ':') { /* a device: there when the card has a folder of it (gro0:app for a game card) */
+        char sub[64];
+        snprintf(sub, sizeof(sub), "%sapp", p);
+        rc = stat(sub, &st);
+        if (rc) { snprintf(sub, sizeof(sub), "%sdata", p); rc = stat(sub, &st); }
+        if (rc) return (int)0x80010013u; /* ENODEV: modelled, not a console's answer */
+    } else rc = stat(p, &st);
+    if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; }
+    return native(rc);
+}
+/* The threads the app's log sees (settings/applog.c): the main thread's, or a
+ * test's other one (the Anki worker's). */
+static SceUID thread_id = 0x40010003;
+SceUID sceKernelGetThreadId(void) { return thread_id; }
 int sceIoRename(const char *a, const char *b) { return native(rename(a, b)); }
 int sceIoChstat(const char *p, SceIoStat *st, int bits)
 {
@@ -165,14 +201,17 @@ int sceIoRemove(const char *p) { return native(unlink(p)); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return 0; }
 static DIR *dirs[8];
 static char dir_path[8][64];
+static int dir_reads[8]; /* entries each listing has given */
 int sceIoDopen(const char *p)
 {
     if (app_dir_fails && !strcmp(p, "ux0:app")) return (int)0x80010013u;
+    if (dir_fails && !strcmp(p, dir_fails)) return dir_fails_rc;
     if (!strcmp(p, "ux0:app")) cur.scans++;
     for (int i = 0; i < 8; i++)
         if (!dirs[i]) {
             if (!(dirs[i] = opendir(p))) return native(-1);
             snprintf(dir_path[i], sizeof(dir_path[i]), "%s", p);
+            dir_reads[i] = 0;
             return 100 + i;
         }
     return (int)0x80010018u;
@@ -182,6 +221,8 @@ int sceIoDread(int d, SceIoDirent *e)
     DIR *dir = d >= 100 && d < 108 ? dirs[d - 100] : NULL;
     struct dirent *de;
     if (!dir) return (int)0x80010009u;
+    if (dread_fails && !strcmp(dir_path[d - 100], dread_fails) && dir_reads[d - 100] == dread_fails_after)
+        return (int)0x80010005u; /* EIO */
     while ((de = readdir(dir)) && de->d_name[0] == '.') {}
     if (!de) return 0;
     char path[400];
@@ -190,6 +231,7 @@ int sceIoDread(int d, SceIoDirent *e)
     snprintf(path, sizeof(path), "%s/%s", dir_path[d - 100], de->d_name);
     if (!stat(path, &st)) e->d_stat.st_mode = st.st_mode;
     snprintf(e->d_name, sizeof(e->d_name), "%s", de->d_name);
+    dir_reads[d - 100]++;
     return 1;
 }
 int sceIoDclose(int d)
@@ -235,6 +277,7 @@ int sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo *info)
 int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *out, int outlen)
 {
     (void)in; (void)inlen;
+    if (safe_mode && !strcmp(dev, "ux0:") && !out) return (int)0x80010030u; /* EUNSUP: VitaShell's safe mode */
     if (strcmp(dev, "ur0:") && strcmp(dev, "ux0:")) return (int)0x80010013u;
     if (cmd != 0x3001 || !out || outlen < (int)sizeof(SceIoDevInfo) || card_free < 0) return (int)0x80010016u;
     SceIoDevInfo *info = out;
@@ -464,7 +507,9 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         else if (y == top + 70 && x > 700 && !strcmp(text, "PSP")) cur.tag[r] = color;
         else if (y == top + 70 && x > 700) copy(cur.id[r], sizeof(cur.id[r]), text);
         else if (y == top + 47 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
+        else if (y == top + 35 && x > 788) copy(cur.badge[r], sizeof(cur.badge[r]), text); /* badge(788, top + 7, 128, 38) */
     }
+    if (y == DEFAULT_BADGE_Y && x > 174 && x < 282) copy(cur.default_badge, sizeof(cur.default_badge), text);
     if (y == HINT_Y) {
         if (x == 24) copy(cur.hints, sizeof(cur.hints), text);
         else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
@@ -575,17 +620,19 @@ static void put_sfo(const char *path, const char *title)
     memcpy(sfo + 44, title, n);
     put_file(path, sfo, 44 + cap);
 }
-/* One game on the card: its param.sfo and, as g->icon says, its icon0.png. */
-static void install(const Game *g, int seed)
+/* One game in root (ux0:app, gro0:app for a game card, ux0:patch for an
+ * update): its param.sfo and, as g->icon says, its icon0.png. */
+static void install_in(const char *root, const Game *g, int seed)
 {
     static uint8_t png[400 * 1024];
     char path[160];
     size_t size = 0;
-    snprintf(path, sizeof(path), "ux0:app/%s", g->id); mkdir(path, 0777);
-    snprintf(path, sizeof(path), "ux0:app/%s/sce_sys", g->id); mkdir(path, 0777);
-    snprintf(path, sizeof(path), "ux0:app/%s/sce_sys/param.sfo", g->id);
+    mkdir(root, 0777);
+    snprintf(path, sizeof(path), "%s/%s", root, g->id); mkdir(path, 0777);
+    snprintf(path, sizeof(path), "%s/%s/sce_sys", root, g->id); mkdir(path, 0777);
+    snprintf(path, sizeof(path), "%s/%s/sce_sys/param.sfo", root, g->id);
     put_sfo(path, g->title);
-    snprintf(path, sizeof(path), "ux0:app/%s/sce_sys/icon0.png", g->id);
+    snprintf(path, sizeof(path), "%s/%s/sce_sys/icon0.png", root, g->id);
     switch (g->icon) {
     case ICON_NONE: return;
     case ICON_NOT_PNG: put_file(path, "GIF89a not a PNG", 16); return;
@@ -598,6 +645,7 @@ static void install(const Game *g, int seed)
     if (g->icon == ICON_DAMAGED) png[size / 2] ^= 0x10; /* inside IDAT: its CRC fails */
     put_file(path, png, size);
 }
+static void install(const Game *g, int seed) { install_in("ux0:app", g, seed); }
 /* n games (the catalog adds Adrenaline's shared entry), their icons as kind(i) says. */
 static void card(int n, int (*kind)(int))
 {
@@ -615,6 +663,9 @@ static void card(int n, int (*kind)(int))
     frame_hook = NULL;
     frame_us = 16667u;
     budget_rc = 0;
+    dir_fails = dread_fails = NULL;
+    dread_fails_after = -1;
+    safe_mode = 0;
     for (int i = 0; i < n; i++) {
         Game *g = &games[i];
         snprintf(g->id, sizeof(g->id), "VJOT%05d", i);
@@ -1253,15 +1304,17 @@ static void stick_scrolls_at_the_same_speed_at_30_hz(void)
                 sel30[39]);
 }
 
-/* log.txt's lines (the Anki page stub writes main.c's vjo_log as the page does). */
+/* log.txt's lines (the Anki page stub writes main.c's vjo_log as the page does)
+ * but the catalog's, which every scan writes (its own tests below). */
 static int log_lines(char lines[][256], int cap)
 {
     FILE *f = fopen("ux0:data/VitaJPOverlay/log.txt", "r");
+    char line[1024];
     int n = 0;
     if (!f) return -1;
-    while (n < cap && fgets(lines[n], 256, f)) {
-        lines[n][strcspn(lines[n], "\n")] = '\0';
-        n++;
+    while (n < cap && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = '\0';
+        if (strncmp(line, "overlay app: games: ", 20)) snprintf(lines[n++], 256, "%.255s", line);
     }
     fclose(f);
     return n;
@@ -2477,6 +2530,647 @@ static void stale_descriptions_are_removed(void)
     TEST_CHECK(app_logged("games: ux0:data/VitaJPOverlay/psp/GONE00001.txt removed: no bubble has that ID now") != NULL);
 }
 
+/* ---- the catalog's log, a game card, and titles in no folder (#138) ---- */
+
+/* The log line, without "overlay app: " and its line break, that starts with
+ * prefix (the first such), or NULL. */
+static const char *logged_line(const char *prefix)
+{
+    static char line[1024];
+    FILE *f = fopen(APP_LOG, "r");
+    const char *found = NULL;
+    size_t n = strlen(prefix);
+    while (f && !found && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = '\0';
+        if (!strncmp(line, "overlay app: ", 13) && !strncmp(line + 13, prefix, n)) found = line + 13;
+    }
+    if (f) fclose(f);
+    return found;
+}
+/* How many log lines start with "overlay app: " and prefix. */
+static int logged_lines(const char *prefix)
+{
+    char line[1024];
+    FILE *f = fopen(APP_LOG, "r");
+    int n = 0;
+    while (f && fgets(line, sizeof(line), f))
+        n += !strncmp(line, "overlay app: ", 13) && !strncmp(line + 13, prefix, strlen(prefix));
+    if (f) fclose(f);
+    return n;
+}
+#define CHECK_LINE(prefix, want)                                                                    \
+    do {                                                                                            \
+        const char *got_ = logged_line(prefix);                                                     \
+        TEST_CHECK_(got_ && !strcmp(got_, want), "%s\n  got:  %s\n  want: %s", prefix, got_ ? got_ : "(none)", want); \
+    } while (0)
+
+/* A game only on the game card (gro0:app; CLANNAD may be one, #138) is listed
+ * with the card's title and icon; one on both cards once, from ux0:app; a file
+ * on the card is skipped. Each root's line says what it read, the rows' line
+ * what was listed, and safe mode is off (VitaShell's check answers EINVAL). */
+static void a_cartridge_only_title_is_listed(void)
+{
+    card(6, NULL);
+    Game cart = {"PCSG00415", "Synthetic Card Game", ICON_OK};
+    install_in("gro0:app", &cart, 415);
+    install_in("gro0:app", &games[1], 1); /* on the memory card too */
+    put_file("gro0:app/readme.txt", "x", 1);
+    add_game(cart.id, cart.title);
+    games[game_count - 1].icon = ICON_OK;
+    spec_list();
+    at = 0;
+    hold(0, 20);
+    goto_row("PCSG00415");
+    hold(0, 12);
+    int frames = run(at), last = frames - 1;
+    check_rules();
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    int r = card_of(last, "PCSG00415");
+    TEST_ASSERT(r >= 0);
+    const Frame *f = &session->shown[last];
+    TEST_CHECK_(!strcmp(f->title[r][0], "Synthetic Card Game") && !strcmp(f->icon[r], "PCSG00415") &&
+                !strcmp(f->badge[r], "ON") && !f->tag[r], "'%s' icon '%s' badge '%s' tag 0x%08X", f->title[r][0],
+                f->icon[r], f->badge[r], f->tag[r]);
+    /* once: one card in any frame */
+    for (int k = 0; k < frames; k++) {
+        int seen = 0;
+        for (int q = 0; q < ROWS; q++) seen += !strcmp(session->shown[k].id[q], games[1].id);
+        TEST_CHECK_(seen <= 1, "frame %d: %s on %d cards", k, games[1].id, seen);
+    }
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 6 entries: 6 listed, 0 already listed, 0 skipped");
+    CHECK_LINE("games: ur0:app", "games: ur0:app: not opened: 0x80010002 (ENOENT); ur0: 0x80010013 (ENODEV)");
+    CHECK_LINE("games: gro0:app", "games: gro0:app: 3 entries: 1 listed, 1 already listed, 1 skipped; skipped: "
+                                  "readme.txt (not a folder)");
+    CHECK_LINE("games: 8 rows", "games: 8 rows (the list holds 512): 7 from the folders, the shared PSP row, 0 only in "
+                                "games.ini; safe mode no (ux0: devctl 0x80010016)");
+    /* a scan writes four lines: each root's and the rows' */
+    TEST_CHECK_(logged_lines("games: ") == 4, "%d lines", logged_lines("games: "));
+}
+
+/* gro0:app refused (as a game card might be to the app in #138's run): its
+ * line names the error, and the titles with a choice of their own in
+ * games.ini that no folder had are listed, with what they are: an update's
+ * title and icon when ux0:patch has one, else the ID. Toggled, the choice is
+ * saved and its row stays; a rule that is not a game's (NPXS10001) gets none. */
+static void titles_with_a_choice_but_in_no_folder_are_listed(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSB00792 = disabled\n"
+                              "NPXS10001 = enabled\nVJOT00002 = disabled\n";
+    card(5, NULL);
+    dir_fails = "gro0:app";
+    dir_fails_rc = (int)0x80010013u;
+    Game cart = {"PCSG00415", "Synthetic Card Game", ICON_OK};
+    install_in("gro0:app", &cart, 415); /* on the card, which the app cannot list */
+    Game update = {"PCSB00792", "Synthetic Patched Game", ICON_OK};
+    install_in("ux0:patch", &update, 792);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    add_game("PCSG00415", "PCSG00415" VJO_CATALOG_MISSING_NOTE);
+    add_game("PCSB00792", "Synthetic Patched Game" VJO_CATALOG_MISSING_NOTE);
+    games[game_count - 1].icon = ICON_OK; /* the update's */
+    spec_list();
+    at = 0;
+    hold(0, 20);
+    goto_row("PCSG00415");
+    tap(ENTER, 10);
+    int toggled = at - 1;
+    int frames = run(at);
+    check_rules();
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    for (int k = 0; k < frames; k++)
+        for (int q = 0; q < ROWS; q++) TEST_CHECK_(strcmp(session->shown[k].id[q], "NPXS10001"), "frame %d", k);
+    int r = card_of(toggled, "PCSG00415");
+    TEST_ASSERT(r >= 0);
+    TEST_CHECK_(!strcmp(session->shown[toggled].badge[r], "OFF") && !session->shown[toggled].tag[r] &&
+                !strcmp(session->shown[toggled].icon[r], "JP"), "badge '%s'", session->shown[toggled].badge[r]);
+    TEST_CHECK(!strncmp(session->shown[toggled].status[0], "Saved.", 6));
+    const char *ini2 = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK(ini2 && strstr(ini2, "\nPCSG00415 = disabled\n") && strstr(ini2, "\nPCSB00792 = disabled\n"));
+    CHECK_LINE("games: gro0:app", "games: gro0:app: not opened: 0x80010013 (ENODEV); gro0: is there");
+    CHECK_LINE("games: 8 rows", "games: 8 rows (the list holds 512): 5 from the folders, the shared PSP row, 2 only in "
+                                "games.ini; safe mode no (ux0: devctl 0x80010016); only in games.ini: "
+                                "PCSG00415 = enabled, PCSB00792 = disabled");
+    /* The next start: still listed, OFF, by its saved choice. */
+    unlink(APP_LOG);
+    at = 0;
+    hold(0, 20);
+    goto_row("PCSG00415");
+    frames = run(at);
+    r = card_of(frames - 1, "PCSG00415");
+    TEST_CHECK_(r >= 0 && !strcmp(session->shown[frames - 1].badge[r], "OFF"), "after a restart: card %d", r);
+    TEST_CHECK(logged_line("games: 8 rows") && strstr(logged_line("games: 8 rows"), "PCSG00415 = disabled"));
+}
+
+/* What a root holds that is no game's is skipped, and its line says why:
+ * VitaShell, the system's and the Overlay app's own, names that are not title
+ * IDs, taiHEN's name for SceShell, files. Names past 24 bytes are cut; past the
+ * line's room the rest are counted, and the line fits one vjo_log line. A game
+ * whose param.sfo gives no title is listed by its ID, and the line names it. */
+static void skipped_folders_are_logged_with_why(void)
+{
+    static const char *const odd[] = {"VITASHELL", "NPXS10001", "VJOSET001", "Not An ID", "mainmenu",
+                                      "A_FOLDER_NAME_LONGER_THAN_24_BYTES"};
+    char p[96];
+    card(3, NULL);
+    for (unsigned i = 0; i < sizeof(odd) / sizeof(odd[0]); i++) {
+        snprintf(p, sizeof(p), "ux0:app/%s", odd[i]);
+        mkdir(p, 0777);
+    }
+    put_file("ux0:app/notes.txt", "x", 1);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    int frames = run(at);
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    const char *line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    static const char *const why[] = {"VITASHELL (VitaShell)", "NPXS10001 (a system app)", "VJOSET001 (this app)",
+                                      "Not An ID (not a title ID)", "mainmenu (SceShell's name)",
+                                      "A_FOLDER_NAME_LONGER_THA... (not a title ID)", "notes.txt (not a folder)"};
+    static const char head[] = "games: ux0:app: 10 entries: 3 listed, 0 already listed, 7 skipped; skipped: ";
+    TEST_CHECK_(!strncmp(line, head, sizeof(head) - 1) && !strstr(line, "more"), "%s", line);
+    for (unsigned i = 0; i < sizeof(why) / sizeof(why[0]); i++) TEST_CHECK_(strstr(line, why[i]) != NULL, "%s: %s", why[i], line);
+    /* 40 system folders: as many named as fit, the rest counted */
+    card(3, NULL);
+    for (int i = 0; i < 40; i++) {
+        snprintf(p, sizeof(p), "ux0:app/NPXS%05d", 10100 + i);
+        mkdir(p, 0777);
+    }
+    at = 0;
+    hold(0, 5);
+    run(at);
+    line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    int named = 0;
+    for (const char *s = strstr(line, "(a system app)"); s; s = strstr(s + 1, "(a system app)")) named++;
+    char tail[48];
+    snprintf(tail, sizeof(tail), " and %d more", 40 - named);
+    TEST_CHECK_(named >= 3 && named < 40 && strlen(line) >= strlen(tail) && !strcmp(line + strlen(line) - strlen(tail), tail) &&
+                strlen(line) + 13 < 300, "%d named, %zu B: %s", named, strlen(line), line);
+    /* no TITLE in its param.sfo: listed by its ID, and named */
+    card(3, NULL);
+    put_file("ux0:app/VJOT00002/sce_sys/param.sfo", "not an SFO", 10);
+    snprintf(games[2].title, sizeof(games[2].title), "%s", games[2].id);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    frames = run(at);
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 3 entries: 3 listed, 0 already listed, 0 skipped, 1 listed under its "
+                                 "ID (no title read); under its ID: VJOT00002");
+    /* 40 games without a title and 5 skipped folders: every count, the skipped names
+     * and reasons first, whole; the IDs after them as many as fit; no label cut */
+    card(40, NULL);
+    for (int i = 0; i < 40; i++) {
+        snprintf(p, sizeof(p), "ux0:app/VJOT%05d/sce_sys/param.sfo", i);
+        put_file(p, "not an SFO", 10);
+    }
+    static const char *const five[] = {"NPXS10001", "NPXS10002", "VITASHELL", "VJOSET001", "mainmenu"};
+    for (unsigned i = 0; i < 5; i++) {
+        snprintf(p, sizeof(p), "ux0:app/%s", five[i]);
+        mkdir(p, 0777);
+    }
+    for (int i = 0; i < 40; i++) snprintf(games[i].title, sizeof(games[i].title), "%s", games[i].id);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    static const char head2[] = "games: ux0:app: 45 entries: 40 listed, 0 already listed, 5 skipped, 40 listed under its "
+                                "ID (no title read); skipped: ";
+    TEST_CHECK_(!strncmp(line, head2, sizeof(head2) - 1), "%s", line);
+    static const char *const why5[] = {"NPXS10001 (a system app)", "NPXS10002 (a system app)", "VITASHELL (VitaShell)",
+                                       "VJOSET001 (this app)", "mainmenu (SceShell's name)"};
+    for (unsigned i = 0; i < 5; i++) TEST_CHECK_(strstr(line, why5[i]) != NULL, "%s: %s", why5[i], line);
+    const char *ids = strstr(line, "; under its ID: ");
+    size_t n = strlen(line);
+    TEST_CHECK_(n + 14 <= 300 && (!ids || ids > strstr(line, "; skipped: ")), "%zu B: %s", n, line);
+    TEST_CHECK_(ids && n > 5 && !strcmp(line + n - 5, " more"), "%s", line); /* not all 40 IDs fit */
+    /* 30 long skipped names fill the line before the IDs (the audit's A11): the skipped
+     * section is counted where it runs out, the IDs' section is dropped whole, nothing is cut */
+    card(40, NULL);
+    for (int i = 0; i < 40; i++) {
+        snprintf(p, sizeof(p), "ux0:app/VJOT%05d/sce_sys/param.sfo", i);
+        put_file(p, "not an SFO", 10);
+    }
+    for (int i = 0; i < 30; i++) {
+        snprintf(p, sizeof(p), "ux0:app/A_FOLDER_NAME_LONGER_THAN_24_BYTES_%02d", i);
+        mkdir(p, 0777);
+    }
+    for (int i = 0; i < 40; i++) snprintf(games[i].title, sizeof(games[i].title), "%s", games[i].id);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    static const char head3[] = "games: ux0:app: 70 entries: 40 listed, 0 already listed, 30 skipped, 40 listed under its "
+                                "ID (no title read); skipped: A_FOLDER_NAME_LONGER_THA... (not a title ID)";
+    TEST_CHECK_(!strncmp(line, head3, sizeof(head3) - 1), "%s", line);
+    n = strlen(line);
+    /* the skipped section ends with its own count; no IDs' label; within one log line */
+    TEST_CHECK_(n + 14 <= 300 && n > 5 && !strcmp(line + n - 5, " more") && !strstr(line, "under its ID:"), "%zu B: %s", n, line);
+    /* every item is whole: a name and its reason, then ", " or " and N more" */
+    int items = 0, broken = 0;
+    for (const char *q = strstr(line, "; skipped: ") + 11; *q; ) {
+        const char *close = strstr(q, " (not a title ID)");
+        if (!close || strncmp(q, "A_FOLDER_NAME_LONGER_THA...", 27)) { broken++; break; }
+        items++;
+        q = close + 17;
+        if (!strncmp(q, ", ", 2)) q += 2;
+        else { if (strncmp(q, " and ", 5)) broken++; break; }
+    }
+    TEST_CHECK_(items >= 3 && !broken, "%d items, broken %d: %s", items, broken, line);
+    /* a name past 24 bytes is cut at a whole character: never inside one */
+    card(1, NULL);
+    mkdir("ux0:app/A\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B\xE3\x81\x8D\xE3\x81\x8F\xE3\x81\x91", 0777);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 2 entries: 1 listed, 0 already listed, 1 skipped; skipped: "
+                                 "A\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B\xE3\x81\x8D... (not a title ID)");
+}
+
+/* A listing that fails part way (EIO) says so, and ux0:app's, incomplete,
+ * decides no stale bubble description: they go only after a whole listing. */
+static void a_listing_that_stops_is_logged_and_prunes_nothing(void)
+{
+    bubble_card();
+    mkdir("ux0:data/VitaJPOverlay/psp", 0777);
+    put_file("ux0:data/VitaJPOverlay/psp/GONE00001.txt", "ULJS00001\nGone\nux0:pspemu/ISO/GONE.ISO\n", 38);
+    dread_fails = "ux0:app";
+    dread_fails_after = 2;
+    at = 0;
+    hold(0, 5);
+    run(at);
+    const char *line = logged_line("games: ux0:app");
+    TEST_CHECK_(line && !strncmp(line, "games: ux0:app: 2 entries: ", strlen("games: ux0:app: 2 entries: ")) &&
+                strstr(line, "; the listing stopped at 0x80010005 (EIO)"), "%s", line ? line : "(none)");
+    TEST_CHECK(slurp("ux0:data/VitaJPOverlay/psp/GONE00001.txt", NULL) != NULL);
+    dread_fails = NULL;
+    at = 0;
+    hold(0, 5);
+    run(at);
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/psp/GONE00001.txt", NULL));
+}
+
+/* More titles than the list holds: each root's line and the rows' line say how
+ * many were left out; VitaShell's safe-mode check, when it says so, is logged. */
+static void the_rows_line_counts_what_was_left_out_and_safe_mode(void)
+{
+    card(520, NULL);
+    safe_mode = 1;
+    at = 0;
+    hold(0, 5);
+    run(at);
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 520 entries: 512 listed, 0 already listed, 0 skipped, 8 left out: "
+                                 "the list holds 512");
+    CHECK_LINE("games: 512 rows", "games: 512 rows (the list holds 512): 512 from the folders, 0 only in games.ini, 8 left "
+                                  "out; safe mode yes (ux0: devctl 0x80010030)");
+}
+
+/* A scan's lines go out in one append (settings/applog.c), after the start
+ * line's: an append cost the console 12-46 ms in #81's timestamps. */
+static void a_scan_logs_in_one_append(void)
+{
+    char lines[8][256];
+    card(5, NULL);
+    at = 0;
+    hold(0, 5);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK_(session->log_appends == 2, "%d appends", session->log_appends);
+    TEST_CHECK(log_lines(lines, 8) == 1 && logged_lines("games: ") == 4);
+    /* Start scans again: one more append */
+    card(5, NULL);
+    at = 0;
+    hold(0, 5);
+    tap(SCE_CTRL_START, 5);
+    TEST_CHECK(run(at) == at);
+    TEST_CHECK_(session->log_appends == 3 && logged_lines("games: ") == 8, "%d appends, %d lines", session->log_appends,
+                logged_lines("games: "));
+}
+
+/* The batch, directly: its lines in order in one append at its end; another
+ * thread's line (the Anki worker's, during an export) goes out at once, never
+ * into the batch; a batch fuller than its buffer goes out in pieces, in order,
+ * losing nothing; with log_file off nothing is written. */
+static void the_log_batch_keeps_order_and_threads_apart(void)
+{
+    char want[8192], got[8192];
+    size_t used = 0;
+    card(1, NULL);
+    unlink(APP_LOG);
+    vjo_log_enable(1);
+    log_appends = 0;
+    vjo_app_log_batch_begin();
+    vjo_log("first");
+    thread_id = 0x40010099; /* the worker */
+    vjo_log("worker");
+    vjo_app_log_batch_end();    /* not its batch: nothing */
+    thread_id = 0x40010003;
+    vjo_log("second");
+    TEST_CHECK_(log_appends == 1, "%d appends before the end", log_appends);
+    vjo_app_log_batch_end();
+    TEST_CHECK_(log_appends == 2, "%d appends", log_appends);
+    const char *text = slurp(APP_LOG, NULL);
+    TEST_CHECK_(text && !strcmp(text, "overlay app: worker\noverlay app: first\noverlay app: second\n"), "%s", text ? text : "");
+    /* 30 lines of 200 B: more than the batch holds */
+    unlink(APP_LOG);
+    log_appends = 0;
+    vjo_app_log_batch_begin();
+    for (int i = 0; i < 30; i++) {
+        char body[190];
+        memset(body, 'a' + i % 26, sizeof(body) - 1);
+        body[sizeof(body) - 1] = '\0';
+        vjo_log("%02d %s", i, body);
+        used += (size_t)snprintf(want + used, sizeof(want) - used, "overlay app: %02d %s\n", i, body);
+    }
+    vjo_app_log_batch_end();
+    size_t n;
+    text = slurp(APP_LOG, &n);
+    snprintf(got, sizeof(got), "%s", text ? text : "");
+    TEST_CHECK_(n == used && !strcmp(got, want), "%zu B, want %zu", n, used);
+    TEST_CHECK_(log_appends >= 3 && log_appends <= 4, "%d appends for %zu B", log_appends, used);
+    /* off: nothing, batch or not */
+    unlink(APP_LOG);
+    vjo_log_enable(0);
+    vjo_app_log_batch_begin();
+    vjo_log("hidden");
+    vjo_app_log_batch_end();
+    vjo_log("hidden too");
+    TEST_CHECK(!slurp(APP_LOG, NULL));
+}
+
+static int shell_sees(const char *path, const char *id, int psp);
+/* A PSP game's ID in no folder (PSPEMUCFW, a disc ID) follows the shared PSP
+ * row once its own rule is gone, as the Shell and the kernel's loader read it
+ * (psp = 1): after disable all and Default ON with NPXS10028 OFF, both rows
+ * show OFF, and both carry the PSP tag (the audit's A5, with the tag). */
+static void missing_psp_rows_follow_the_shared_row(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\nPSPEMUCFW = enabled\n"
+                              "ULJS00378 = enabled\n";
+    card(3, NULL);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    add_game("PSPEMUCFW", "PSPEMUCFW" VJO_CATALOG_MISSING_NOTE);
+    add_game("ULJS00378", "ULJS00378" VJO_CATALOG_MISSING_NOTE);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    int before = at - 1;
+    tap(SCE_CTRL_TRIANGLE, 10);                      /* disable all */
+    script[at++] = (Input){0, 1, 100, 112 + 20, 0}; /* the Default row: OFF -> ON */
+    hold(0, 10);
+    goto_row("PSPEMUCFW");
+    int at_cfw = at - 1;
+    int idx_cfw = list_index("PSPEMUCFW"), idx_disc = list_index("ULJS00378");
+    for (int i = idx_cfw; i < idx_disc; i++) tap(DOWN, 3);
+    hold(0, 4);
+    int at_disc = at - 1;
+    int frames = run(at);
+    check_rules();
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    const char *now = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK_(now && !strcmp(now, "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\n"), "%s",
+                now ? now : "");
+    TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "PSPEMUCFW", 1) &&
+               !shell_sees("ux0:data/VitaJPOverlay/games.ini", "ULJS00378", 1));
+    int r = card_of(at_cfw, "PSPEMUCFW"), d = card_of(at_disc, "ULJS00378");
+    TEST_CHECK_(r >= 0 && !strcmp(session->shown[at_cfw].badge[r], "OFF"), "PSPEMUCFW card %d", r);
+    TEST_CHECK_(d >= 0 && !strcmp(session->shown[at_disc].badge[d], "OFF"), "ULJS00378 card %d", d);
+    /* the tag: a PSP game's row, before and after (accent: no registration to offer) */
+    TEST_CHECK_(r >= 0 && session->shown[at_cfw].tag[r] == ACCENT, "PSPEMUCFW tag 0x%08X", r >= 0 ? session->shown[at_cfw].tag[r] : 0);
+    TEST_CHECK_(d >= 0 && session->shown[at_disc].tag[d] == ACCENT, "ULJS00378 tag 0x%08X", d >= 0 ? session->shown[at_disc].tag[d] : 0);
+    int b = card_of(before, "PSPEMUCFW");
+    TEST_CHECK_(b < 0 || session->shown[before].tag[b] == ACCENT, "before: tag 0x%08X", session->shown[before].tag[b]);
+}
+
+/* log.txt's 1 MiB cap (settings/applog.c): a scan's batch writes each of its
+ * lines that still fits, in order, as the writer did line by line; the file
+ * never passes the cap and ends at a whole line. Checked against the lines an
+ * uncapped run writes, from several distances to the cap. */
+static void the_log_cap_keeps_whole_lines_as_before(void)
+{
+    static char fill[1024 * 1024];
+    char lines[16][1024];
+    size_t len[16];
+    int count = 0;
+    card(5, NULL);
+    at = 0;
+    hold(0, 5);
+    run(at);
+    FILE *f = fopen(APP_LOG, "r");
+    TEST_ASSERT(f != NULL);
+    while (count < 16 && fgets(lines[count], sizeof(lines[0]), f)) { len[count] = strlen(lines[count]); count++; }
+    fclose(f);
+    TEST_ASSERT(count >= 5); /* the start line and the scan's four */
+    static const size_t room[] = {0, 1, 60, 150, 250, 400, 600, 6000};
+    for (unsigned k = 0; k < sizeof(room) / sizeof(room[0]); k++) {
+        size_t pre = 1024 * 1024 - room[k];
+        card(5, NULL);
+        memset(fill, 'x', pre);
+        for (size_t i = 99; i < pre; i += 100) fill[i] = '\n';
+        fill[pre - 1] = '\n';
+        put_file(APP_LOG, fill, pre);
+        at = 0;
+        hold(0, 5);
+        run(at);
+        /* expected: each line kept when it fits at its turn */
+        char want[16 * 1024];
+        size_t want_n = 0, size = pre;
+        for (int i = 0; i < count; i++)
+            if (size + len[i] <= 1024 * 1024) { memcpy(want + want_n, lines[i], len[i]); want_n += len[i]; size += len[i]; }
+        /* the file: its size, and what follows the prefill (slurp holds 16 KiB) */
+        struct stat st;
+        char tail[16 * 1024];
+        TEST_ASSERT(stat(APP_LOG, &st) == 0);
+        size_t n = (size_t)st.st_size, got = 0;
+        FILE *g = fopen(APP_LOG, "rb");
+        TEST_ASSERT(g != NULL && fseek(g, (long)pre - 1, SEEK_SET) == 0);
+        got = fread(tail, 1, sizeof(tail), g);
+        fclose(g);
+        TEST_CHECK_(n <= 1024 * 1024 && n == pre + want_n && got == want_n + 1 && tail[0] == '\n' &&
+                    !memcmp(tail + 1, want, want_n), "room %zu: %zu B, want %zu", room[k], n, pre + want_n);
+    }
+    /* Batches written directly (the audit's A6 cases): lines of exact sizes, "overlay app: "
+     * and the line break included. */
+    static const struct { size_t room, len[4]; int n; const char *keep; } cases[] = {
+        {100, {280}, 1, ""},                 /* one line longer than the room: nothing */
+        {120, {200, 50, 250, 40}, 4, "0101"}, /* the 50 and the 40 still fit after a longer one */
+        {77, {77}, 1, "1"},                  /* exactly the room: the file ends at the cap */
+        {120, {200, 120}, 2, "01"},          /* after a dropped line, one of exactly the room is kept */
+    };
+    vjo_log_enable(1);
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        size_t pre = 1024 * 1024 - cases[c].room, want_n = 0;
+        char body[4][400], want[2048];
+        card(1, NULL);
+        memset(fill, 'x', pre);
+        for (size_t i = 99; i < pre; i += 100) fill[i] = '\n';
+        fill[pre - 1] = '\n';
+        put_file(APP_LOG, fill, pre);
+        vjo_app_log_batch_begin();
+        for (int i = 0; i < cases[c].n; i++) {
+            memset(body[i], 'a' + i, cases[c].len[i] - 14);
+            body[i][cases[c].len[i] - 14] = '\0';
+            vjo_log("%s", body[i]);
+            if (cases[c].keep[i] == '1')
+                want_n += (size_t)snprintf(want + want_n, sizeof(want) - want_n, "overlay app: %s\n", body[i]);
+        }
+        vjo_app_log_batch_end();
+        struct stat st;
+        char tail[2048];
+        TEST_ASSERT(stat(APP_LOG, &st) == 0);
+        FILE *g = fopen(APP_LOG, "rb");
+        TEST_ASSERT(g != NULL && fseek(g, (long)pre, SEEK_SET) == 0);
+        size_t got = fread(tail, 1, sizeof(tail), g);
+        fclose(g);
+        TEST_CHECK_((size_t)st.st_size == pre + want_n && got == want_n && !memcmp(tail, want, want_n),
+                    "case %u: %lld B, want %zu", c, (long long)st.st_size, pre + want_n);
+    }
+    /* a file already past the cap: nothing more, in a batch or alone */
+    card(1, NULL);
+    memset(fill, 'x', sizeof(fill));
+    fill[sizeof(fill) - 1] = '\n';
+    put_file(APP_LOG, fill, sizeof(fill));
+    FILE *g = fopen(APP_LOG, "ab");
+    TEST_ASSERT(g != NULL && fputs("past the cap\n", g) >= 0 && fclose(g) == 0);
+    vjo_app_log_batch_begin();
+    vjo_log("in a batch");
+    vjo_app_log_batch_end();
+    vjo_log("alone");
+    struct stat st;
+    TEST_ASSERT(stat(APP_LOG, &st) == 0);
+    TEST_CHECK_((size_t)st.st_size == sizeof(fill) + 13, "%lld B", (long long)st.st_size);
+}
+
+/* ---- Default: disable all (#138) ---- */
+
+/* games.ini as the Shell reads it: path's rules for id (a PSP game: psp). */
+static int shell_sees(const char *path, const char *id, int psp)
+{
+    size_t n;
+    const char *text = slurp(path, &n);
+    VjoGames g;
+    TEST_ASSERT(text && vjo_games_parse(&g, text, n) == 0);
+    return vjo_games_enabled_as(&g, id, psp);
+}
+/* games.ini copied at given frames, while the app runs (the child's frame hook). */
+static int snap_frame[2];
+static void snap_games_ini(int f)
+{
+    for (int i = 0; i < 2; i++) {
+        if (f != snap_frame[i]) continue;
+        size_t n;
+        const char *text = slurp("ux0:data/VitaJPOverlay/games.ini", &n);
+        char name[48];
+        snprintf(name, sizeof(name), "games.snap%d", i);
+        if (text) put_file(name, text, n);
+    }
+}
+
+/* Default ON -> OFF (Triangle) turns every game OFF, the ones ON by a choice
+ * of their own too: a listed game, a title in no folder, the shared PSP row,
+ * Adrenaline; the games turned OFF one by one stay OFF. The Shell sees every
+ * game OFF. A title in no folder keeps its row until the next scan and can be
+ * turned ON alone. OFF -> ON (the Default row touched) turns on every game but
+ * those turned OFF, and the status names them. */
+static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nVJOT00001 = enabled\nVJOT00002 = disabled\n"
+                              "PCSG00415 = enabled\nNPXS10028 = enabled\nPSPEMUCFW = enabled\n";
+    static const char *const vita[] = {"VJOT00000", "VJOT00001", "VJOT00002", "VJOT00003", "VJOT00004", "VJOT00005",
+                                       "PCSG00415", "PCSB00792"};
+    static const char *const psp[] = {"NPXS10028", "PSPEMUCFW", "PSPEMU005", "ULJS00378"};
+    char both[300];
+    card(6, NULL);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    add_game("PCSG00415", "PCSG00415" VJO_CATALOG_MISSING_NOTE);
+    add_game("PSPEMUCFW", "PSPEMUCFW" VJO_CATALOG_MISSING_NOTE); /* Adrenaline, not installed */
+    spec_list();
+    at = 0;
+    hold(0, 20);
+    int before = at - 1;
+    tap(SCE_CTRL_TRIANGLE, 10);
+    int off = at - 1;
+    snap_frame[0] = at;
+    goto_row("PCSG00415");
+    tap(ENTER, 10);
+    int picked = at - 1;
+    snap_frame[1] = at;
+    script[at++] = (Input){0, 1, 100, 112 + 20, 0}; /* the Default row: OFF -> ON */
+    hold(0, 10);
+    frame_hook = snap_games_ini;
+    int frames = run(at), last = frames - 1;
+    frame_hook = NULL;
+    check_rules();
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    /* before: VJOT00001 ON, VJOT00002 OFF, the Default ON */
+    TEST_CHECK(!strcmp(session->shown[before].default_badge, "ON"));
+    TEST_CHECK(!strcmp(session->shown[off].default_badge, "OFF") && !strcmp(session->shown[last].default_badge, "ON"));
+    /* every card of the first page OFF after Triangle */
+    for (int q = 0; q < ROWS; q++)
+        TEST_CHECK_(!session->shown[off].id[q][0] || !strcmp(session->shown[off].badge[q], "OFF"), "%s: %s",
+                    session->shown[off].id[q], session->shown[off].badge[q]);
+    snprintf(both, sizeof(both), "%s %s", session->shown[off].status[0], session->shown[off].status[1]);
+    TEST_CHECK_(strstr(both, "Saved: every game is OFF; resume your game to apply. Turned OFF too: ") != NULL, "%s", both);
+    TEST_CHECK_(strstr(both, games[1].title) != NULL || strstr(both, "...") != NULL, "%s", both);
+    /* the file: no "= enabled" rule, the "= disabled" one kept, the default OFF */
+    const char *snap = slurp("games.snap0", NULL);
+    TEST_CHECK_(snap && !strcmp(snap, "# JP Overlay per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"), "%s",
+                snap ? snap : "(none)");
+    for (unsigned i = 0; i < sizeof(vita) / sizeof(vita[0]); i++)
+        TEST_CHECK_(!shell_sees("games.snap0", vita[i], 0), "%s ON", vita[i]);
+    for (unsigned i = 0; i < sizeof(psp) / sizeof(psp[0]); i++)
+        TEST_CHECK_(!shell_sees("games.snap0", psp[i], 1), "%s ON", psp[i]);
+    TEST_CHECK(!shell_sees("games.snap0", "GAME", 0)); /* the Shell's fallback without a title ID */
+    /* the title in no folder: still listed, turned ON alone */
+    int r = card_of(picked, "PCSG00415");
+    TEST_CHECK_(r >= 0 && !strcmp(session->shown[picked].badge[r], "ON"), "card %d", r);
+    snap = slurp("games.snap1", NULL);
+    TEST_CHECK_(snap && !strcmp(snap, "# JP Overlay per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"
+                                      "PCSG00415 = enabled\n"), "%s", snap ? snap : "(none)");
+    TEST_CHECK(shell_sees("games.snap1", "PCSG00415", 0) && !shell_sees("games.snap1", "VJOT00001", 0));
+    /* Default ON again: every game ON but VJOT00002, which the status names */
+    const char *now = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK_(now && !strcmp(now, "# JP Overlay per-game settings\ndefault = enabled\nVJOT00002 = disabled\n"
+                                    "PCSG00415 = enabled\n"), "%s", now ? now : "(none)");
+    for (unsigned i = 0; i < sizeof(vita) / sizeof(vita[0]); i++)
+        TEST_CHECK_(shell_sees("ux0:data/VitaJPOverlay/games.ini", vita[i], 0) == !!strcmp(vita[i], "VJOT00002"), "%s", vita[i]);
+    for (unsigned i = 0; i < sizeof(psp) / sizeof(psp[0]); i++)
+        TEST_CHECK_(shell_sees("ux0:data/VitaJPOverlay/games.ini", psp[i], 1), "%s OFF", psp[i]);
+    snprintf(both, sizeof(both), "%s %s", session->shown[last].status[0], session->shown[last].status[1]);
+    char want[320];
+    snprintf(want, sizeof(want), "Saved: every game is ON but 1; resume your game to apply. Still OFF: %s.", games[2].title);
+    TEST_CHECK_(!strcmp(both, want), "%s\n  want: %s", both, want);
+    TEST_MSG("off: %s | on: %s", session->shown[off].status[0], both);
+    /* log.txt: each change and the rules it removed or kept */
+    CHECK_LINE("games: Default OFF", "games: Default OFF, 4 own ON choices removed: VJOT00001, PCSG00415, NPXS10028, PSPEMUCFW");
+    CHECK_LINE("games: Default ON", "games: Default ON, 1 own OFF choice kept: VJOT00002");
+}
+
+/* A Default change whose save fails changes nothing: the choices on screen and
+ * in games.ini stay, and the status says so (save()'s message). */
+static void a_failed_disable_all_changes_nothing(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nVJOT00001 = enabled\n";
+    card(4, NULL);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    mkdir("ux0:data/VitaJPOverlay/games.ini.tmp", 0777); /* the save's temporary file cannot be written */
+    spec_list();
+    at = 0;
+    hold(0, 20);
+    tap(SCE_CTRL_TRIANGLE, 10);
+    int frames = run(at), last = frames - 1;
+    rmdir("ux0:data/VitaJPOverlay/games.ini.tmp");
+    TEST_CHECK(!strcmp(session->shown[last].default_badge, "ON"));
+    int r = card_of(last, "VJOT00001");
+    TEST_CHECK(r >= 0 && !strcmp(session->shown[last].badge[r], "ON"));
+    TEST_CHECK_(!strncmp(session->shown[last].status[0], "Save not confirmed.", 19), "%s", session->shown[last].status[0]);
+    TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/games.ini", NULL), ini));
+}
+
 TEST_LIST = {
     {"idle_window_fills_then_costs_nothing", idle_window_fills_then_costs_nothing},
     {"scrolling_loads_one_icon_a_frame_and_never_reloads_the_window",
@@ -2520,6 +3214,17 @@ TEST_LIST = {
     {"reserved_names_are_never_registered", reserved_names_are_never_registered},
     {"registered_in_one_configuration_only", registered_in_one_configuration_only},
     {"stale_descriptions_are_removed", stale_descriptions_are_removed},
+    {"a_cartridge_only_title_is_listed", a_cartridge_only_title_is_listed},
+    {"titles_with_a_choice_but_in_no_folder_are_listed", titles_with_a_choice_but_in_no_folder_are_listed},
+    {"skipped_folders_are_logged_with_why", skipped_folders_are_logged_with_why},
+    {"a_listing_that_stops_is_logged_and_prunes_nothing", a_listing_that_stops_is_logged_and_prunes_nothing},
+    {"the_rows_line_counts_what_was_left_out_and_safe_mode", the_rows_line_counts_what_was_left_out_and_safe_mode},
+    {"disable_all_turns_off_the_games_on_by_their_own_choice", disable_all_turns_off_the_games_on_by_their_own_choice},
+    {"a_failed_disable_all_changes_nothing", a_failed_disable_all_changes_nothing},
+    {"a_scan_logs_in_one_append", a_scan_logs_in_one_append},
+    {"the_log_batch_keeps_order_and_threads_apart", the_log_batch_keeps_order_and_threads_apart},
+    {"missing_psp_rows_follow_the_shared_row", missing_psp_rows_follow_the_shared_row},
+    {"the_log_cap_keeps_whole_lines_as_before", the_log_cap_keeps_whole_lines_as_before},
     {NULL, NULL}
 };
 
