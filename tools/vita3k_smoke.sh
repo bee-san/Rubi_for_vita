@@ -18,7 +18,7 @@
 # Prints one line, "vita3k smoke: PASS|FAIL|SKIPPED <why>"; exit 0 for PASS or SKIPPED, 1 for FAIL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-out=${1:-$root/build/vita3k-smoke/run}
+out=${1:-$root/build/vita3k-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)/run}
 skip() { echo "vita3k smoke: SKIPPED $*"; exit 0; }
 fail() { echo "vita3k smoke: FAIL $*"; exit 1; }
 [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ] || skip "(no VitaSDK: set VITASDK)"
@@ -28,7 +28,8 @@ V=${VITA3K:-}
 [ -n "$V" ] && [ -x "$V/app/usr/bin/Vita3K" ] || skip "(no Vita3K build: set VITA3K)"
 command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
 
-build=$root/build/vita3k-smoke
+# one directory per build (VJO_DEBUG=0: the normal one), so both can be checked at once in one tree
+build=$root/build/vita3k-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)
 # VJO_DEBUG=0: the normal build's game worker (docs/release-variants.md)
 cmake -S "$root/tools/vita3k_smoke" -B "$build" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
   -DVJO_DEBUG="$([ "${VJO_DEBUG:-1}" = 0 ] && echo OFF || echo ON)" > "$build.config.log" 2>&1 \

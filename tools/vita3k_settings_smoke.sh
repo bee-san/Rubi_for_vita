@@ -25,7 +25,7 @@
 # Prints one line, "vita3k settings smoke: PASS|FAIL|SKIPPED <why>"; exit 0 for PASS or SKIPPED.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-out=${1:-$root/build/vita3k-settings-smoke/run}
+out=${1:-$root/build/vita3k-settings-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)/run}
 skip() { echo "vita3k settings smoke: SKIPPED $*"; exit 0; }
 fail() { echo "vita3k settings smoke: FAIL $*"; exit 1; }
 [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ] || skip "(no VitaSDK: set VITASDK)"
@@ -36,7 +36,8 @@ V=${VITA3K:-}
 command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
 PY=${PYTHON:-python3}
 
-build=$root/build/vita3k-settings-smoke
+# one directory per build (VJO_DEBUG=0: the normal one), so both can be checked at once in one tree
+build=$root/build/vita3k-settings-smoke$([ "${VJO_DEBUG:-1}" = 0 ] && echo -normal)
 mkdir -p "$root/build"
 make_app() { # make_app PAD
   cmake -S "$root/vita" -B "$build" -DVJO_SETTINGS_SMOKE=ON -DVJO_SETTINGS_SMOKE_PAD="$1" \

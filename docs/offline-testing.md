@@ -32,6 +32,12 @@ the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.
 
+Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
+build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
+(`VJO_DEBUG=0` for `tools/arm_host_tests.sh`). The debug build's zip is the `VitaJPOverlay`
+artifact as before; the normal build's is `VitaJPOverlay-normal`. `tools/preflight.sh` checks
+either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in its own directory.
+
 ### CI's Vita build in its container
 
 The `vita` job builds in the `vitasdk/vitasdk:2026.08` container. The plugins link only libgcc
@@ -45,6 +51,9 @@ builds a commit the way the job does, so its eboot can be compared with a releas
 bash tools/ci_container_build.sh --rev 4ac02ac --compare VitaJPOverlay-0.8.0-test.2.zip
 bash tools/ci_container_build.sh --vocr-source /path/to/vita-vn-ocr --compare VitaJPOverlay-0.8.0-test.2.zip
 ```
+
+`--variant normal` builds the normal build (`VJO_DEBUG=OFF`), to compare with the release's main
+zip or CI's `VitaJPOverlay-normal` artifact; the default is the debug build.
 
 - **The image, by digest.** `vitasdk/vitasdk@sha256:fd82d88ff456d118eef16533ebf9a3a6ae0e292684fb8a3a35f15f0707b4692d`,
   the tag's multi-platform index as CI pulled it for v0.8.0-test.2 (Release run 38689391878, job
