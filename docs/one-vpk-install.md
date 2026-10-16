@@ -29,9 +29,12 @@ that its overlay is not the installed one, and its Install page offers **Update*
   (`plugin/kernel.c:60-73`); without them the app runs sandboxed and cannot write `ur0:tai`. The app
   detects it as VitaShell does (`sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)` returns `0x80010030`,
   VitaShell 81af709 `init.c:353-355`) and says how to turn it on.
-- About 210 MB free on ux0 for VitaShell's step: the 53 MB VPK plus its 154.7 MB unpacked [estimate
-  from the measured sizes below]. VitaShell's own check lets an install start with up to 40 MiB less
-  (below), so the README asks for the room itself. After the install, and once the VPK is deleted,
+- About 220 MB free on ux0, the VPK counted: VitaShell's step needs the 54.0 MB VPK plus its 154.9 MB
+  unpacked, and the app's Install 11.1 MB more while the VPK is still on the card (the models it
+  copies and its 0.5 MiB margin, `settings/install.c`'s room check, which otherwise stops before
+  writing and says the `.vpk` can go) [estimate from the measured sizes: this PR's debug packages].
+  VitaShell's own check lets an install start with up to 40 MiB less (below), so the README asks for
+  the room itself. After the install, and once the VPK is deleted,
   the overlay takes about 165.5 MB: 154.2 MB of data, the 0.5 MB app and the 10.8 MB of plugins and
   models the app keeps for Repair [estimate].
 
@@ -124,7 +127,7 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
 - `checkMemoryCardFreeSpace` (`utils.c:91-125`) refuses only when the unpacked size is at least ux0's
   free space plus 40 MiB, so it lets an install start with up to 40 MiB less room than it needs; the
   extraction then fails on a full card and VitaShell deletes `ux0:data/pkg`
-  (`package_installer.c:538-539`). Hence the README's 210 MB.
+  (`package_installer.c:538-539`). Hence the README's 220 MB.
 - It extracts everything into `ux0:data/pkg`, writes `sce_sys/package/head.bin`, and calls
   `scePromoterUtilityPromotePkgWithRif`, which has SceShell move the files into `ux0:app/VJOSET001`
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.

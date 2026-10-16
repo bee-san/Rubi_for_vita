@@ -82,7 +82,9 @@ for the measured results and remaining hardware checks.
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 210 MB free on the memory card (ux0).
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 220 MB free on the memory card (ux0) before
+you copy the VPK to it: 54 MB for the VPK, 155 MB for VitaShell to unpack it and 11 MB for the models
+Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 54 MB back.
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
    [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).

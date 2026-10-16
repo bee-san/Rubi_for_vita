@@ -589,6 +589,7 @@ static void a_move_that_cannot_happen_copies(void)
     s = scan_now();
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0 && !r.written);
     TEST_CHECK(has_line(r.lines, r.count, "Stopped: ux0 has 0.1 MB free and the install needs"));
+    TEST_CHECK(has_line(r.lines, r.count, "the .vpk this app was installed from can go), then choose Install again."));
     TEST_CHECK(has_line(r.lines, r.count, "Nothing on the card was changed."));
     TEST_CHECK(!strcmp(slurp("ux0:tai/config.txt", NULL), stock) && count_files("ux0:tai", "config.txt.vjo-") == 0);
     TEST_CHECK(!there(VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict"));

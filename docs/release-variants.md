@@ -243,6 +243,6 @@ gh release create v0.8.0 -R bee-san/vita-jp-overlay --title "Vita JP Overlay 0.8
 
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
 and install it in VitaShell; open Overlay, choose Install, restart), the requirements (Enable Unsafe
-Homebrew; about 210 MB free on ux0 for VitaShell's step), and the recovery (README "Memory and
+Homebrew; about 220 MB free on ux0, the VPK counted), and the recovery (README "Memory and
 troubleshooting"). A test build packages its debug zip the same way (`package_release.py`, then
 `package_vpk.py`) and ships its VPK first.
