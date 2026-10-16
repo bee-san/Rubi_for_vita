@@ -221,7 +221,7 @@ worker's pages go only where they did with the lines, and into games without one
 line still names keeps one copy (the worker checks for an older copy of itself). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
 Overlay app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
-With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 90,112 B of
+With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 94,208 B of
 pages and 36,864 B of stack and TLS, from the game's own budget); one that cannot start with them is
 turned OFF or started with L held.
 

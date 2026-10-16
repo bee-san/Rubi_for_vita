@@ -134,7 +134,7 @@ int vjo_queue_save(VjoArena *a, const VjoAnkiNote *note, VjoQueueShot *shot)
     char *json;
     int want = shot && shot->take, pic = 0, rc;
     if (shot)
-        shot->rc = shot->taken = 0;
+        shot->rc = 0;
     /* Its records without and with a screenshot: either one, queued or
      * exported, is this card, whatever the setting is now. */
     for (int k = 0; k <= 1; k++) {
@@ -155,12 +155,12 @@ int vjo_queue_save(VjoArena *a, const VjoAnkiNote *note, VjoQueueShot *shot)
          * the record that names it, and removed when anything fails after. */
         path_for(jpg, QUEUE_DIR, id[1], "jpg");
         sceIoRemove(jpg);
-        shot->rc = shot->take(shot->ud, id[1]);
+        shot->rc = shot->take(id[1]);
         if (!shot->rc && sceIoGetstat(jpg, &st) >= 0)
             pic = 1;
         else {
-            if (!shot->rc) { /* both builds: the status line sends the user to log.txt */
-                vjo_log("anki queue: %s.jpg missing after its screenshot; saved without it", id[1]);
+            if (!shot->rc) { /* (the normal build's anki.c logs this rc) */
+                vjo_dlog("anki queue: %s.jpg missing", id[1]);
                 shot->rc = VJO_QUEUE_FAILED;
             }
             sceIoRemove(jpg); /* none left behind */
@@ -177,8 +177,6 @@ int vjo_queue_save(VjoArena *a, const VjoAnkiNote *note, VjoQueueShot *shot)
             sceIoRemove(jpg);
         return VJO_QUEUE_FAILED;
     }
-    if (shot)
-        shot->taken = pic;
     vjo_dlog("anki queue: %s saved, %u B record%s", id[pic], (unsigned)len, pic ? " + .jpg" : "");
     return VJO_QUEUE_SAVED;
 }

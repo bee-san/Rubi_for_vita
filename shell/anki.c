@@ -318,31 +318,36 @@ static int shot_stopped(void *ud)
     return stopping() || !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE);
 }
 
-static int take_shot(void *ud, const char id[VJO_QUEUE_ID_SIZE])
+static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
 {
     size_t mark = vjo_arena_mark(&arena);
-    VjoGameOcrRequest *req = (VjoGameOcrRequest *)vjo_arena_zalloc(&arena, sizeof(*req));
-    VjoGameOcrResult *res = (VjoGameOcrResult *)vjo_arena_zalloc(&arena, sizeof(*res));
+    struct { /* 5,404 B */
+        VjoGameOcrRequest req;
+        VjoGameOcrResult res;
+    } *job = vjo_arena_zalloc(&arena, sizeof(*job));
+#if VJO_DEBUG
     int64_t t0 = now_us();
+#endif
     int rc = VJO_E_OOM;
-    (void)ud;
-    if (req && res) {
-        req->size = sizeof(*req);
-        req->flags = VJO_GAME_OCR_F_SHOT;
-        sceClibMemcpy(req->shot, id, VJO_QUEUE_ID_SIZE);
+    if (job) {
+        job->req.size = sizeof(job->req);
+        job->req.flags = VJO_GAME_OCR_F_SHOT;
+        sceClibMemcpy(job->req.shot, id, VJO_QUEUE_ID_SIZE);
         rc = VJO_E_OCR_UNAVAILABLE; /* the slot stayed busy */
         if (!vjo_game_job_begin(shot_stopped, SHOT_WAIT_US)) {
-            rc = vjo_game_ocr_exchange(&vjo_game_client, req, res, shot_stopped, NULL, SHOT_TIMEOUT_US);
+            rc = vjo_game_ocr_exchange(&vjo_game_client, &job->req, &job->res, shot_stopped, NULL, SHOT_TIMEOUT_US);
             vjo_game_job_end();
         }
-        /* every screenshot in the debug build; the normal build logs a failed one (docs/release-variants.md) */
-        if (VJO_DEBUG || rc)
-            vjo_log("anki: screenshot rc=%d %ux%u q%u try %u: %u B; block %u B mem %u, free USER %d; %u strips src %u "
-                    "%u ms, encode %u ms, write %u ms; %d ms", rc, res->width, res->height, res->shot_quality,
-                    res->shot_tries, res->shot_bytes, res->shot_block, res->shot_memory, (int)res->free_user,
-                    res->captures, res->source, res->capture_us / 1000, res->shot_encode_us / 1000,
-                    res->shot_write_us / 1000, (int)((now_us() - t0) / 1000));
-#if VJO_DEBUG /* the game worker's steps (shell/selftest.c vjo_gstep_format, the debug build's) */
+#if VJO_DEBUG
+        /* Every screenshot, with its figures (the normal build: do_save logs a failed one's reason only,
+         * docs/release-variants.md, for the Shell's pages there), and a failed one's steps. */
+        const VjoGameOcrResult *res = &job->res;
+        vjo_log("anki: screenshot rc=%d %ux%u q%u try %u: %u B; block %u B mem %u, free USER %d; %u strips src %u "
+                "%u ms, encode %u ms, write %u ms; %d ms", rc, res->width, res->height, res->shot_quality,
+                res->shot_tries, res->shot_bytes, res->shot_block, res->shot_memory, (int)res->free_user,
+                res->captures, res->source, res->capture_us / 1000, res->shot_encode_us / 1000,
+                res->shot_write_us / 1000, (int)((now_us() - t0) / 1000));
+        /* the game worker's steps (shell/selftest.c vjo_gstep_format, the debug build's) */
         for (uint32_t i = 0; rc && i < res->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
             char line[224];
             if (vjo_gstep_format(line, sizeof(line), "shot", &res->step[i]) > 0)
@@ -361,7 +366,7 @@ static void do_save(unsigned seq, int entry)
 {
     VjoAnkiNote note;
     VjoLocalPages *pages = NULL;
-    VjoQueueShot shot = {take_shot, NULL, 0, 0};
+    VjoQueueShot shot = {take_shot, 0};
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)], name[96];
     int shown, mark_value = 0, ok = 0, rc, page = 0;
     int64_t t0 = now_us();
@@ -412,6 +417,8 @@ static void do_save(unsigned seq, int entry)
     vjo_log("anki: save %s rc=%d, %d ms", note.spelling, rc, (int)((now_us() - t0) / 1000));
 #else
     vjo_log("anki: save rc=%d, %d ms", rc, (int)((now_us() - t0) / 1000)); /* the normal build logs no looked-up word */
+    if (shot.rc) /* why the card has no screenshot: the status line sends the user to log.txt (take_shot's, debug) */
+        vjo_log("anki: screenshot rc=%d", shot.rc);
 #endif
     if (rc == VJO_QUEUE_TOO_LARGE) {
         sceClibSnprintf(msg, sizeof(msg), "Card not saved: over %u KiB of text", VJO_QUEUE_TEXT_MAX >> 10);

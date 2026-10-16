@@ -77,9 +77,10 @@
  * SceNet or SceNetCtl import [measured: the build log's module rows, main 3aa08a6 with #132 and this
  * change].
  * API 23's Anki screenshot (anki.c's request to the game worker, the queue's second ID, the game
- * worker's job slot in worker.c) makes it MEASURE_DEBUG, the same pages [measured: the build log's
- * module rows, main c08db18 and this change]; the normal build MEASURE_NORMAL. The screenshot itself
- * is never in SceShell. */
+ * worker's job slot in worker.c) makes it 99,244 -> 100,484 text and 69,772 -> 69,828 data/bss, the same
+ * pages [measured: the build log's module rows, main dcb7b31 and this change]; the normal build
+ * 89,196 -> 90,012 text and 69,700 -> 69,756 data/bss, the same pages, 100 B of text room left (its
+ * normal-build log is a failed screenshot's reason only). The screenshot itself is never in SceShell. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -125,9 +126,9 @@
  * short log reads.
  * Raised from 90,112 B by one text page for API 23, the Anki screenshot, in both builds: its JPEG
  * encoder (core/jpegsw.c, 4,038 B at -O2, and core/arena.c, 518 B), the shot job and its capture
- * (game_ocr/main.c run_shot) take the debug build's text 71,072 -> 76,688 B and its data/bss
- * 14,208 -> 14,160 B (the request's model directory 256 -> 128 B), the normal build's 69,708 -> 75,420 B
- * and 14,208 -> 14,160 B [measured: the build log's module rows, main 3aa08a6 and this change, both
+ * (game_ocr/main.c run_shot) take the debug build's text 71,372 -> 77,004 B and its data/bss
+ * 14,208 -> 14,160 B (the request's model directory 256 -> 128 B), the normal build's 70,008 -> 75,688 B
+ * and 14,208 -> 14,160 B [measured: the build log's module rows, main dcb7b31 and this change, both
  * builds], in the game's partition, never SceShell's: the screenshot is encoded where OCR runs
  * (AGENTS.md rule 1). */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
@@ -191,8 +192,8 @@
  * and a 393,216 B arena here) was removed with AnkiConnect, and since API 23 the game worker
  * makes the card's JPEG in the game's memory (VJO_BUDGET_GAME_SHOT); here only its request and
  * result, 5,404 B in this arena while the shot runs, after the record's dry runs are released.
- * A save with 8 dictionaries' entries peaks at 102,688 B, with a screenshot or without [measured,
- * host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
+ * A save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B
+ * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
@@ -220,8 +221,10 @@
  * API 23's Anki screenshot (the shot's colour rows and its JPEG's file broker, kernel/game_ocr.c and
  * kernel/capture.c) is paid for within the same pages by the rest of the kernel's cold code built
  * for size (vita/CMakeLists.txt: the syscalls and the worker's loop, the boot guard, the kernel
- * strip, the log) and the request's model directory 256 -> 128 B: KERNEL_HDR_FIGURES [measured: the
- * build log's module rows, main dcb7b31 and this change, both builds]. */
+ * strip, the log) and the request's model directory 256 -> 128 B: 40,648 -> 40,040 B of text and
+ * 77,824 -> 77,672 B of data/bss, the data/bss pages no longer full; the normal build 36,444 -> 35,900
+ * and 76,136 -> 75,984 B, the same pages too [measured: the build log's module rows, main dcb7b31 and
+ * this change, both builds]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else

@@ -958,9 +958,10 @@ LOG = {
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
-    "anki_shot": re.compile(r"^anki: screenshot rc=(-?\d+) (\d+)x(\d+) q(\d+) try (\d+): (\d+) B; block (\d+) B "
+    # (the normal build's line is the reason alone: "anki: screenshot rc=-103", only for a failed one)
+    "anki_shot": re.compile(r"^anki: screenshot rc=(-?\d+)(?: (\d+)x(\d+) q(\d+) try (\d+): (\d+) B; block (\d+) B "
                             r"mem (\d+), free USER (-?\d+); (\d+) strips src (\d+) (\d+) ms, encode (\d+) ms, "
-                            r"write (\d+) ms; (\d+) ms"),
+                            r"write (\d+) ms; (\d+) ms)?"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
@@ -1232,7 +1233,9 @@ def shot_summary(a):
     others were not, their JPEGs' sizes and times (shell/anki.c take_shot's line). Nothing when the log has none."""
     if not a["shots"] and not a["shot_fail"]:
         return []
-    fails = ", ".join(f"{rc_text(r)} x{n}" for r, n in sorted(a["shot_fail"].items()))
+    # rc -1: the worker said it was saved, but the queue found no <id>.jpg (shell/anki_queue.c)
+    fails = ", ".join(f"{'no JPEG after it (rc -1)' if r == -1 else rc_text(r)} x{n}"
+                      for r, n in sorted(a["shot_fail"].items()))
     kb = sorted(b / 1024 for b in a["shot_bytes"])
     return [f"  Anki screenshots: {a['shots']} taken"
             + (f", {sum(a['shot_fail'].values())} not ({fails})" if a["shot_fail"] else "")
@@ -2436,7 +2439,7 @@ def summarise_log(text):
                 an, rc = s["anki"], int(m.group(1))
                 if rc:
                     an["shot_fail"][rc] = an["shot_fail"].get(rc, 0) + 1
-                else:
+                elif m.group(6):  # (a taken one's line is the debug build's, with its figures)
                     an["shots"] += 1
                     an["shot_bytes"].append(int(m.group(6)))
                     an["shot_encode_ms"].append(int(m.group(13)))

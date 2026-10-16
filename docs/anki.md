@@ -406,16 +406,16 @@ In SceShell (the overlay, `shell/anki.c`):
   kept. Measured on the host with 8 dictionaries
   (`what_enter_saves_whatever_the_dictionaries`): entries of 2,700 B of kana all
   kept (a 22,673 B record); 7,000 B, 3 of 7; text that JSON escaping grows keeps
-  fewer. The arena's peak was 102,688 B of the 128 KiB (7,000 B entries of kana; 102,680 B before
-  `anki_screenshot` added a field to the settings' copy at the arena's start).
+  fewer. The arena's peak was 102,624 B of the 128 KiB (7,000 B entries of kana; 102,616 B on main
+  `dcb7b31`, before `anki_screenshot` added a field to the settings' copy at the arena's start).
 - The note is copied out of the shown lookup under the view lock before
   anything is written; the result memory is never read during file I/O. If
   memory is refused or a write fails, only the Anki status line changes: the
   recognized text, its lookup and the overlay stay usable, the queued cards
   stay, and Enter can be pressed again.
 - A card's screenshot adds only its job's request and result to the arena,
-  5,404 B: a one-word card's save peaks at 6,928 B with it, and the 8-dictionary
-  worst case is unchanged (102,688 B) [measured, host]. Its pixels and its JPEG
+  5,404 B: a one-word card's save peaks at 6,860 B with it, and the 8-dictionary
+  worst case is the same with it or without (102,624 B) [measured, host]. Its pixels and its JPEG
   are the game's ([above](#the-screenshot)).
 - SceShell sends nothing and opens no socket for Anki.
 

@@ -21,14 +21,14 @@ enum {
     VJO_QUEUE_TOO_LARGE = -2 /* over VJO_QUEUE_TEXT_MAX of text */
 };
 
-/* The card's screenshot (API 23): take(ud, id) has <id>.jpg written in the queue
+/* The card's screenshot (API 23): take(id) has <id>.jpg written in the queue
  * (anki.c: the game worker's shot) and returns 0, or why not (VJO_E_*); rc is
- * what it returned (0 also when none was asked), taken whether the card was
- * saved with it. */
+ * then what it returned, or VJO_QUEUE_FAILED when it returned 0 but left no
+ * file (0 also when none was asked): the card was saved with it when rc is 0
+ * and the save returned VJO_QUEUE_SAVED. */
 typedef struct {
-    int (*take)(void *ud, const char id[VJO_QUEUE_ID_SIZE]);
-    void *ud;
-    int rc, taken;
+    int (*take)(const char id[VJO_QUEUE_ID_SIZE]);
+    int rc;
 } VjoQueueShot;
 
 /* The number of queued cards, or -1 on an I/O error. */

@@ -593,7 +593,7 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 90,112 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 94,208 B of module pages and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Overlay app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

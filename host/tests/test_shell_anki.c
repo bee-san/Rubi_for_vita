@@ -1464,9 +1464,16 @@ static void test_a_failed_screenshot_saves_the_card_without_one(void)
         TEST_CHECK_((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":false"), "%s", why[k]);
         TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki, without a screenshot (log.txt)"), "%s: %s", why[k],
                     g_view.anki_status);
-        /* why, in both builds: the screenshot's failure, or its file not there */
-        TEST_CHECK_((k == 3 ? logged(".jpg missing after its screenshot") : logged("anki: screenshot rc=")) &&
+        /* why, in both builds: the screenshot's failure, or its file not there (the debug build's take_shot
+         * line and the queue's; the normal build's one line, after the save's: the reason's rc, -1 for no file) */
+#if VJO_DEBUG
+        TEST_CHECK_((k == 3 ? logged(".jpg missing\n") : logged("anki: screenshot rc=")) &&
                     slot_begins == slot_ends, "%s", why[k]);
+#else
+        TEST_CHECK_(logged(k == 3 ? "anki: save rc=0, " : "anki: screenshot rc=") &&
+                    logged(k == 3 ? "anki: screenshot rc=-1\n" : "anki: save rc=0, ") &&
+                    !logged(".jpg missing") && !logged(" free USER ") && slot_begins == slot_ends, "%s", why[k]);
+#endif
         /* the game worker's steps: the debug build's (shell/selftest.c formats them), when it had any */
 #if VJO_DEBUG
         TEST_CHECK_(k != 2 || logged("gstep shot "), "%s: the worker's steps", why[k]);
