@@ -4533,7 +4533,8 @@ static void test_selftest_runs_after_the_first_text_in_its_own_job(void)
 /* ---- the normal build's short log (docs/release-variants.md) ---- */
 
 /* A job's line for the first job of each activation of the game (a start or a resume) that read
- * its screen, for its first job that found a line, and for every failed one: its result, the size
+ * its screen, for its first job that found a line, and for every failed one (a cancelled job, or one
+ * whose screen changed under it, is retried quietly: no line): its result, the size
  * that ran, the lines and the time; never the recognized text, the capture, a passed memory check,
  * the step log or the timings of every job. */
 static void test_normal_build_logs_the_first_jobs_and_failures(void)

@@ -828,8 +828,12 @@ static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
 #else
 /* The normal build's one line on the 444 MHz boost (ocr_boost_clock), from the
  * job's clock step: the ARM clock before, while and after it recognized, or what
- * stopped the boost. Logged for the first job of each game and whenever it
- * changes, so a session has a line or two (docs/release-variants.md). */
+ * stopped the boost. The game worker writes that step only for a job that began
+ * recognizing a line not in its line cache, when that recognition ends, done or
+ * failed (core/vocr_ocr.c's busy callback, game_ocr/main.c), and none with
+ * ocr_boost_clock = off. Logged for the first such job of each activation of the
+ * game (a start or a resume) and whenever it changes, so a session has a line or
+ * two (docs/release-variants.md). */
 static void log_vocr_clock(const VjoGameOcrResult *r)
 {
     static uint32_t logged_generation;
