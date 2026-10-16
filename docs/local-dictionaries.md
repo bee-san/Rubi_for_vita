@@ -400,8 +400,16 @@ entry still comes before an inflection's (なくして shows 無くして "witho
 無くす). Rank ties within 1/128 of an octave and readings both spellings share
 stay on the article's length. Of the kana-written forms whose entry changed
 (5,147,077 tokens), Jiten's kana-form ranks (`N㋕`) write the new entry's word
-in kana more often for 38.23%, less often for 4.03% (mostly names now shown in
-katakana: あやめ アヤメ, つぐみ ツグミ) and as often for 57.74%. Coverage of the dictionary itself, and how an entry's rank is
+in kana more often for 38.23%, less often for 4.03% and as often for 57.74%.
+The 40 largest changes of that 4.03% (`tools/frequency_eval.py --frequency`'s
+`kana_text.most_frequent_worse`: 141,795 tokens, 68% of it, each under 10,000
+tokens) show a word spelled wholly in katakana in 13 forms, 38% of their tokens
+(54,574): plants and animals, some of them also given names (あやめ アヤメ,
+つぐみ ツグミ, くるみ クルミ), and words often written so (いたずら イタズラ,
+こたつ コタツ). Read one by one, the other 27 are the same word with a katakana
+stem (ハマる, ダルい), a word the ㋕ ranks misjudge (ねる 寝る, かえる 帰る, おこる
+怒る), another word of an ambiguous reading (しゅう 週, れい 礼), or a real loss
+(ふた 二, にい ２位, こがね 小金, りゅう 流). Coverage of the dictionary itself, and how an entry's rank is
 matched to Jiten's list, are in
 [plaintext-dictionaries.json](plaintext-dictionaries.json) (`frequency`) and
 bee-san/plaintext-dicts' README.
