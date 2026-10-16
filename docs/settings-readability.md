@@ -234,21 +234,28 @@ nothing about its scans. It started once in this boot (`log.txt` 11345) and was
 in front six times (`VJOSET001` at 11344, 11677, 11877, 12002, 12110 and
 12132), with CLANNAD suspended behind it, and AIR at the end. A Start press in
 any of those visits rescans and leaves no line. The `PCSG00415 = enabled` rule
-shows that an earlier app listed and toggled CLANNAD; that app was an ordinary
-application, which ran with the game closed (#109).
+shows that an earlier app listed and toggled CLANNAD; when is not recorded. If
+that app predated #109, it was an ordinary application, which ran with the game
+closed [inference].
 
-**CLANNAD is on the memory card, in `ux0:app`** (found by the PR's audit).
-Two of the ten SceShell crash dumps in the zip, from earlier sessions on this
-console, hold its path. In the decompressed dumps:
+**CLANNAD is on the memory card, in `ux0:app`** (found by the PR's audit). The
+zip has ten crash dumps: eight of SceShell (`shell.self`) and two of the Overlay
+app itself (`eboot.bin`, naming `ux0:app/VJOSET001/eboot.bin`). They are from
+earlier sessions: this boot is the first since the install (`boot.txt`
+`seq=1`, no failed boot), with one kernel start and one Shell registration in
+`kernel.txt`. Two of the SceShell dumps hold CLANNAD's path; in the
+decompressed dumps:
 
-- `psp2core-1791732858-…` (2026-10-11 15:34 UTC) has `ux0:/app/PCSG00415/eboot.bin`
-  at 0x7400b0 and `ux0:app/PCSG00415/eboot.bin` at 0x7415e8;
-- `psp2core-1791868846-…` (2026-10-13 05:20 UTC) has `ux0:app/PCSG00415` beside
-  its LiveArea's address, at 0x71e898.
+- `psp2core-1791732858-…` (Oct 11 15:34 by the Vita's clock) has
+  `ux0:/app/PCSG00415/eboot.bin` at 0x7400b0 and `ux0:app/PCSG00415/eboot.bin`
+  at 0x7415e8;
+- `psp2core-1791868846-…` (Oct 13 05:20 by the Vita's clock) has
+  `ux0:app/PCSG00415` beside its LiveArea's address, at 0x71e898.
 
 None of the ten names `gro0:` or `grw0:`. The dumps are not of this boot, so
 this is strong evidence, not proof, that CLANNAD was in `ux0:app` in this one
-too. The causes that fit, none confirmed:
+too. (The Vita's clock is about 3 days behind, and the dumps' names follow it.)
+The causes that fit, none confirmed:
 
 - **`ux0:app`'s listing missed CLANNAD's folder, or stopped.** The app is a
   system application, listing `ux0:app` while CLANNAD runs suspended from it.
@@ -276,10 +283,13 @@ too. The causes that fit, none confirmed:
   `plugin/kernel.c:60-73`].
 
 The candidate rule could not have dropped CLANNAD: it accepts `PCSG00415`. A
-full list is very unlikely [inference]: about 20 titles' IDs appear in
-`log.txt`, `games.ini` and the dumps, against 512 rows, and a full list says
-`Showing the first 512 installed titles.` (`settings/main.c:480`), which was not
-reported. The collect has no listing of `ux0:app`.
+full list is very unlikely [inference]: `log.txt` names 20 distinct title IDs,
+and the dumps name six `ux0:app` folders by path (CLANNAD's, the Overlay app's,
+VitaShell's, Adrenaline's and two homebrews'), against 512 rows; a full list
+says `Showing the first 512 installed titles.` (`settings/main.c:480`), which
+was not reported. The SceShell dumps also hold a catalogue of 1,138 homebrew
+title IDs (`"titleid"` entries, a VitaDB-style list): a list of downloads, not
+of what is installed. The collect has no listing of `ux0:app`.
 
 What the app does now:
 
@@ -304,7 +314,9 @@ What the app does now:
   character, with `...`). A scan's lines go out in one append after it, as the
   Shell's do for a job (#100), since an append cost the console 12-46 ms in
   #81's timestamps (`settings/applog.c`). Near `log.txt`'s 1 MiB cap each line
-  that still fits is written, as before.
+  that still fits is written, as before. The cost: an app that crashes during a
+  scan loses that scan's lines, which would have named the root it was reading
+  (its earlier lines, the start line included, are already written).
 - **A title with a choice of its own is listed even when no folder has it**
   (`VJO_ROW_MISSING`): a folder the scan did not list or could not read (as
   CLANNAD's), a game card it cannot read, a deleted game. Its row shows its

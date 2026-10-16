@@ -2746,6 +2746,41 @@ static void skipped_folders_are_logged_with_why(void)
     size_t n = strlen(line);
     TEST_CHECK_(n + 14 <= 300 && (!ids || ids > strstr(line, "; skipped: ")), "%zu B: %s", n, line);
     TEST_CHECK_(ids && n > 5 && !strcmp(line + n - 5, " more"), "%s", line); /* not all 40 IDs fit */
+    /* 30 long skipped names fill the line before the IDs (the audit's A11): the skipped
+     * section is counted where it runs out, the IDs' section is dropped whole, nothing is cut */
+    card(40, NULL);
+    for (int i = 0; i < 40; i++) {
+        snprintf(p, sizeof(p), "ux0:app/VJOT%05d/sce_sys/param.sfo", i);
+        put_file(p, "not an SFO", 10);
+    }
+    for (int i = 0; i < 30; i++) {
+        snprintf(p, sizeof(p), "ux0:app/A_FOLDER_NAME_LONGER_THAN_24_BYTES_%02d", i);
+        mkdir(p, 0777);
+    }
+    for (int i = 0; i < 40; i++) snprintf(games[i].title, sizeof(games[i].title), "%s", games[i].id);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    static const char head3[] = "games: ux0:app: 70 entries: 40 listed, 0 already listed, 30 skipped, 40 listed under its "
+                                "ID (no title read); skipped: A_FOLDER_NAME_LONGER_THA... (not a title ID)";
+    TEST_CHECK_(!strncmp(line, head3, sizeof(head3) - 1), "%s", line);
+    n = strlen(line);
+    /* the skipped section ends with its own count; no IDs' label; within one log line */
+    TEST_CHECK_(n + 14 <= 300 && n > 5 && !strcmp(line + n - 5, " more") && !strstr(line, "under its ID:"), "%zu B: %s", n, line);
+    /* every item is whole: a name and its reason, then ", " or " and N more" */
+    int items = 0, broken = 0;
+    for (const char *q = strstr(line, "; skipped: ") + 11; *q; ) {
+        const char *close = strstr(q, " (not a title ID)");
+        if (!close || strncmp(q, "A_FOLDER_NAME_LONGER_THA...", 27)) { broken++; break; }
+        items++;
+        q = close + 17;
+        if (!strncmp(q, ", ", 2)) q += 2;
+        else { if (strncmp(q, " and ", 5)) broken++; break; }
+    }
+    TEST_CHECK_(items >= 3 && !broken, "%d items, broken %d: %s", items, broken, line);
     /* a name past 24 bytes is cut at a whole character: never inside one */
     card(1, NULL);
     mkdir("ux0:app/A\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B\xE3\x81\x8D\xE3\x81\x8F\xE3\x81\x91", 0777);
@@ -2958,6 +2993,56 @@ static void the_log_cap_keeps_whole_lines_as_before(void)
         TEST_CHECK_(n <= 1024 * 1024 && n == pre + want_n && got == want_n + 1 && tail[0] == '\n' &&
                     !memcmp(tail + 1, want, want_n), "room %zu: %zu B, want %zu", room[k], n, pre + want_n);
     }
+    /* Batches written directly (the audit's A6 cases): lines of exact sizes, "overlay app: "
+     * and the line break included. */
+    static const struct { size_t room, len[4]; int n; const char *keep; } cases[] = {
+        {100, {280}, 1, ""},                 /* one line longer than the room: nothing */
+        {120, {200, 50, 250, 40}, 4, "0101"}, /* the 50 and the 40 still fit after a longer one */
+        {77, {77}, 1, "1"},                  /* exactly the room: the file ends at the cap */
+        {120, {200, 120}, 2, "01"},          /* after a dropped line, one of exactly the room is kept */
+    };
+    vjo_log_enable(1);
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        size_t pre = 1024 * 1024 - cases[c].room, want_n = 0;
+        char body[4][400], want[2048];
+        card(1, NULL);
+        memset(fill, 'x', pre);
+        for (size_t i = 99; i < pre; i += 100) fill[i] = '\n';
+        fill[pre - 1] = '\n';
+        put_file(APP_LOG, fill, pre);
+        vjo_app_log_batch_begin();
+        for (int i = 0; i < cases[c].n; i++) {
+            memset(body[i], 'a' + i, cases[c].len[i] - 14);
+            body[i][cases[c].len[i] - 14] = '\0';
+            vjo_log("%s", body[i]);
+            if (cases[c].keep[i] == '1')
+                want_n += (size_t)snprintf(want + want_n, sizeof(want) - want_n, "overlay app: %s\n", body[i]);
+        }
+        vjo_app_log_batch_end();
+        struct stat st;
+        char tail[2048];
+        TEST_ASSERT(stat(APP_LOG, &st) == 0);
+        FILE *g = fopen(APP_LOG, "rb");
+        TEST_ASSERT(g != NULL && fseek(g, (long)pre, SEEK_SET) == 0);
+        size_t got = fread(tail, 1, sizeof(tail), g);
+        fclose(g);
+        TEST_CHECK_((size_t)st.st_size == pre + want_n && got == want_n && !memcmp(tail, want, want_n),
+                    "case %u: %lld B, want %zu", c, (long long)st.st_size, pre + want_n);
+    }
+    /* a file already past the cap: nothing more, in a batch or alone */
+    card(1, NULL);
+    memset(fill, 'x', sizeof(fill));
+    fill[sizeof(fill) - 1] = '\n';
+    put_file(APP_LOG, fill, sizeof(fill));
+    FILE *g = fopen(APP_LOG, "ab");
+    TEST_ASSERT(g != NULL && fputs("past the cap\n", g) >= 0 && fclose(g) == 0);
+    vjo_app_log_batch_begin();
+    vjo_log("in a batch");
+    vjo_app_log_batch_end();
+    vjo_log("alone");
+    struct stat st;
+    TEST_ASSERT(stat(APP_LOG, &st) == 0);
+    TEST_CHECK_((size_t)st.st_size == sizeof(fill) + 13, "%lld B", (long long)st.st_size);
 }
 
 /* ---- Default: disable all (#138) ---- */
