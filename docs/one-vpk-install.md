@@ -168,7 +168,9 @@ Install the overlay (v0.8.0)
    and remove the OCR worker's lines an older install left: *PCSG00415, *ALL (3 lines).
 4. Read everything back to check it.
 Then restart the Vita yourself. If it does not start: hold L while you turn it on, then in
-VitaShell copy config.txt.vjo-20261016-071503.bak over config.txt in ur0:tai (and ux0:tai).
+VitaShell put # before the two VitaJPOverlay lines of config.txt in ur0:tai (and ux0:tai).
+(config.txt.vjo-20261016-071503.bak is the configuration from before the overlay.)
+If one game does not start: turn it OFF on the Games page.
 Enter: install   Cancel: not now
 ```
 
@@ -189,9 +191,15 @@ Nothing is written until every check of step 0 passes.
    app or already installed); ur0 and ux0 have room for the copies and their temporary files (the
    largest file twice, plus 512 KiB, as `settings/psp.c` keeps); each configuration reads, and the
    editor accepts it and simulates the result (below).
-1. **Backups.** Each configuration that exists is copied to `config.txt.vjo-YYYYMMDD-HHMMSS.bak` in
-   its own folder (local time), written, synced and read back. The name is never reused (`-2`, `-3`
-   when it exists) and the app never deletes one. They are what the recovery text names.
+1. **Backups.** Each configuration that the install changes is copied to
+   `config.txt.vjo-YYYYMMDD-HHMMSS.bak` in its own folder (local time), written, synced and read back.
+   The name is never reused (`-2`, `-3` when it exists) and the app never deletes one. A configuration
+   whose new text is its old text is neither backed up nor written (step 4), so an ordinary update has
+   no swap at all. Our lines name the same paths in every version and step 2 replaces the files at
+   those paths, so a backup taken before an update loads the new plugins too (taiHEN loads whatever is
+   at the path); only a backup without our kernel line is the configuration from before the overlay.
+   The plan names the newest such backup in the folder, if there is one; the recovery text's first
+   instruction is to comment out our two lines, which works after any install.
 2. **Files.** Each copied file goes to `<destination>.vjo-new`, is synced, read back and hashed
    against the manifest, then the old file (if any) is renamed to `.vjo-old`, the new one into place,
    and `.vjo-old` removed. The dictionary is moved and hashed (above). At most 256 KiB is read,
@@ -206,7 +214,8 @@ Nothing is written until every check of step 0 passes.
    `ocr_mode`, `ocr_boost_clock` (the OCR & lookup page's choices, overlay-ocr-mode-setting),
    `log_file`, the Anki page's `anki_mining` (unless the package sets it). The plan lists each changed
    line.
-4. **config.txt.** For each configuration: the editor's new text is written to `config.txt.vjo-new`,
+4. **config.txt.** For each configuration whose new text differs from its old text: the editor's new
+   text is written to `config.txt.vjo-new`,
    synced and read back; `config.txt` is renamed to `config.txt.vjo-old` and `config.txt.vjo-new` to
    `config.txt` in two consecutive calls, synced, read back and compared byte for byte, and
    `config.txt.vjo-old` removed. If the last read-back differs, the backup is written back and the
@@ -355,10 +364,14 @@ t3-worker-any-game's PR (kernel, Shell, worker; it merges before this one): the 
 title is ON, never SceShell or a system app but Adrenaline's; for one release it also tolerates a
 worker line left in a configuration (the worker refuses a second copy of itself in a process).
 
-So this installer, and `install-vita.sh` with it:
+So this installer, and `install-vita.sh` with it, in **worker kernel** mode:
 
 - installs the worker file in `ur0:tai/` as before, although no line names it;
-- writes no worker line, and removes the ones older installs left (above);
+- writes no worker line, and removes the ones older installs left (above): a comment and an absent
+  line are the same to taiHEN (`lexer.c:146-151`), and a header is deleted only when it is not `*!`
+  (the halt is set by `*!` alone and acted on at the next header, `parser.c:237-264`), no path or
+  comment line is left under it, and it is a title's section that held our worker or carries our note
+  (an empty `*ALL`, `*KERNEL` or `*main` that is not marked stays);
 - needs no game list: `install-vita.sh --title` is accepted and ignored with a note, and the patcher's
   refusal of an install with no game (`NO_TITLES`) goes;
 - the Overlay app's Games page no longer edits config.txt: turning a PSP bubble or Adrenaline ON
@@ -366,9 +379,21 @@ So this installer, and `install-vita.sh` with it:
   about it go). Turning any game ON or OFF takes effect at its next start, as the Shell's input
   already does.
 
-If t3-worker-any-game's PR did not land, this PR would not merge as written: the per-game lines would
-still be needed (today's rules: the worker after the first header of each registered game's section,
-never `*ALL`).
+The mode is gated twice, so that the loader can be reverted or fixed without an editor change and no
+user loses working lines:
+
+- at build time by `VJO_KERNEL_LOADS_WORKER` in `include/vjo_api.h`, which t3-worker-any-game's PR
+  defines: this PR's code fails to build without it (`#error`), which enforces the merge order;
+- at run time by the payload manifest's `worker kernel` or `worker lines` line, which
+  `package_release.py` writes from that define (the zip's manifest gets the same key, which
+  `install-vita.sh` passes to the patcher).
+
+In **worker lines** mode (the define 0) both installers keep today's per-title rules: every game
+registered before keeps its worker line, the worker goes right after the first header of each named
+game's section (`install-vita.sh --title`) or of each PSP row turned ON (#124's Games page), never
+under `*ALL`, and misplaced worker lines are commented out. The in-app Install then adds no game of
+its own (a first install in that mode needs `install-vita.sh --title`, as today). The fixtures run
+both modes.
 
 ## Versions (#122)
 
@@ -402,9 +427,14 @@ The app's pages and the README say the same:
 - If HENkaku does not start (no VitaShell: a `config.txt` missing), hold L while turning the Vita on:
   taiHEN then starts without reading any configuration (`taihen.c:348`).
 - If the Vita does not start: hold L while turning it on (taiHEN then loads no plugin), open VitaShell,
-  and in `ur0:tai` (and `ux0:tai`) copy `config.txt.vjo-<date>.bak` over `config.txt`, or put `#` before
-  the two `VitaJPOverlay` lines. Then restart normally. (The worker needs no line: without the kernel
-  plugin nothing loads it.)
+  and in `ur0:tai` (and `ux0:tai`) put `#` before the two `VitaJPOverlay` lines of `config.txt`. Then
+  restart normally. (The worker needs no line: without the kernel plugin nothing loads it.) This
+  works after any install; copying a `config.txt.vjo-<date>.bak` back recovers only when it is one the
+  plan named as from before the overlay, since every version's lines name the same files.
+- If one game does not start or misbehaves: turn it OFF on the Overlay app's Games page; the kernel
+  then does not load the worker into it. taiHEN's hold-L at a game's start (`hen.c:368-373`) skips
+  only taiHEN's own plugins, not a worker the kernel loads (unless t3-worker-any-game's loader honours
+  it too, which the README will then say).
 - Never more than one attempt: the app does nothing by itself after a restart.
 
 ## The release process
