@@ -1,0 +1,281 @@
+bootstrap: shell API 22 entered
+bootstrap: kernel resident, installing Paf callback
+bootstrap: waiting for Paf
+bootstrap: Paf callback entered
+bootstrap: Paf plugin loaded
+Vita JP Overlay shell started (kernel API 22)
+bootstrap: worker started
+boot guard: ok after a stable minute
+NPXS10079: system app, not a game
+game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+region: this game's
+overlay app ok: installed 'vjoapp1 api=22 build=c3e781ad58a5ebe3' (0x00000000, app 1), plugins' 'vjoapp1 api=22 build=c3e781ad58a5ebe3' (0x00000000)
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=read resident=1159168, find=92 ms load=231 ms recognize=181 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=88080384, needs workspace 1040384 + weights 1159168 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 181100 us, 823 us per frame
+game vocr lines: 742x39 80f 176.8ms c901 730x39 76f 166.4ms c911 701x39 64f 142.7ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=86978560 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job alloc kind=user arg=weights rc=0x400104CD bytes=1159168 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=213000
+gstep job alloc kind=user arg=lm rc=0x400104CF bytes=1003520 sum=0x00000000 main=84815872 cdram=12582912 phycont=27262976 us=448000
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=1113000
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=87040000 cdram=12582912 phycont=27262976 us=231400
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=181100
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=2147483651 sum=0x0000A028 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=181100
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=1114500
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=1114570
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 1 done rc=0 in 760 ms, arena peak 4096, dictionary page 1/1, game 640 ms, log 31 ms in 2 appends
+input block on rc=0 (0)
+overlay closed: 412 frames, 2 word moves, stick 0, slowest frame 18 ms, 0 row moves, 0 wraps, 0 without layout, slowest key 380 us
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=180 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 180300 us, 819 us per frame
+game vocr lines: 742x39 80f 176.0ms c901 730x39 76f 165.6ms c911 701x39 64f 141.4ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=180300
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=180300
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 2 done rc=0 in 470 ms, arena peak 4096, dictionary page 1/1, game 350 ms, log 31 ms in 2 appends
+input block on rc=0 (0)
+overlay closed: 412 frames, 2 word moves, stick 0, slowest frame 18 ms, 0 row moves, 0 wraps, 0 without layout, slowest key 380 us
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=1 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr lines: 742x39 80f 0.0ms c901 730x39 76f 0.0ms c911 701x39 64f 0.0ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1700
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741824 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000000 bytes=533504 sum=0x00030000 main=0 cdram=0 phycont=0 us=1
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=308975
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=309045
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 3 done rc=0 in 160 ms, arena peak 4096, dictionary page 1/1, game 40 ms, log 31 ms in 2 appends
+anki: save 渚 rc=0, 41 ms
+anki: queue 1 card(s)
+anki: save 坂 rc=0, 38 ms
+anki: queue 2 card(s)
+VJOSET001: system app, not a game
+overlay app: anki export: ux0:data/VitaJPOverlay/anki/2026-10-16_120501-2cards.apkg: 2 cards, 0 screenshots, 40960 bytes, verified
+overlay app: anki: export (queued) rc=0: 2 cards, 2 moved, 0 kept, 0 unreadable, 0 too large, 0 left, 0 stopped, 40960 bytes, arena peak 98304
+game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+region: this game's
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=1 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr lines: 742x39 80f 0.0ms c901 730x39 76f 0.0ms c911 701x39 64f 0.0ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1700
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741824 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000000 bytes=533504 sum=0x00030000 main=0 cdram=0 phycont=0 us=1
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=308975
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=309045
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 4 done rc=0 in 150 ms, arena peak 4096, dictionary page 1/1, game 30 ms, log 31 ms in 2 appends
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=180 ms frames=156 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 156 frames in 180300 us, 1155 us per frame
+game vocr lines: 742x39 80f 176.0ms c901 730x39 76f 168.7ms c911 701x39 64f 0.0ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=486075
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=156 sum=0x00000000 main=0 cdram=0 phycont=0 us=180300
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741826 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000001 bytes=533504 sum=0x00016163 main=0 cdram=0 phycont=0 us=180300
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=487575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=487645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 5 done rc=0 in 450 ms, arena peak 4096, dictionary page 1/1, game 330 ms, log 31 ms in 2 appends
+overlay close (game left) t=2290115 ms: input block off rc=0
+VITASHELL: system app, not a game
+game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+region: this game's
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=read resident=1159168, find=92 ms load=231 ms recognize=237 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=88080384, needs workspace 1040384 + weights 1159168 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 237900 us, 1081 us per frame
+game vocr lines: 742x39 80f 233.6ms c901 730x39 76f 220.4ms c911 701x39 64f 187.5ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=86978560 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job alloc kind=user arg=weights rc=0x400104CD bytes=1159168 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=213000
+gstep job alloc kind=user arg=lm rc=0x400104CF bytes=1003520 sum=0x00000000 main=84815872 cdram=12582912 phycont=27262976 us=448000
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=87040000 cdram=12582912 phycont=27262976 us=231400
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=237900
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=2147483651 sum=0x0000A028 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=237900
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=1171300
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=1171370
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 6 done rc=0 in 960 ms, arena peak 4096, dictionary page 1/1, game 840 ms, log 31 ms in 2 appends
+input block on rc=0 (0)
+overlay closed: 96 frames, 0 word moves, stick 0, slowest frame 17 ms, 0 row moves, 0 wraps, 0 without layout, slowest key 0 us
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=237 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 237100 us, 1077 us per frame
+game vocr lines: 742x39 80f 232.8ms c901 730x39 76f 219.6ms c911 701x39 64f 188.1ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=237100
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=237100
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=544375
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=544445
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 7 done rc=0 in 590 ms, arena peak 4096, dictionary page 1/1, game 470 ms, log 31 ms in 2 appends
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=236 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 236300 us, 1074 us per frame
+game vocr lines: 742x39 80f 232.0ms c901 730x39 76f 221.9ms c911 701x39 64f 186.2ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=236300
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741827 sum=0x00000000 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=236300
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=543575
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=543645
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 8 done rc=0 in 590 ms, arena peak 4096, dictionary page 1/1, game 470 ms, log 31 ms in 2 appends
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=resident resident=1159168, find=92 ms load=1 ms recognize=1 ms frames=0 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=86921216, needs workspace 1040384 + weights 0 + reserve 8388608: check passed, headroom 77492224
+game vocr lines: 742x39 80f 0.0ms c901 730x39 76f 0.0ms c911 701x39 64f 0.0ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=85880832 cdram=12582912 phycont=27262976 us=1100
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1700
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=1073741824 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000000 bytes=533504 sum=0x00030000 main=0 cdram=0 phycont=0 us=1
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=86859776 cdram=12582912 phycont=27262976 us=308975
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=86921216 cdram=12582912 phycont=27262976 us=309045
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 9 done rc=0 in 160 ms, arena peak 4096, dictionary page 1/1, game 40 ms, log 31 ms in 2 appends
+VITASHELL: system app, not a game
+game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto
+region: this game's
+job start (auto: screen settled)
+game vocr rc=0 VOCR3_H15_w8.vocr: 883x112 at 46,416 of 960x544 fmt 0x00000000, lines=3 USER workspace=1040384 weights=read resident=1159168, find=92 ms load=231 ms recognize=179 ms frames=220 io=0x00000000 stat=0x00000000 cleanup=0
+game vocr capture: hook into USER, 61440 B block, 64-row strips, 9 strips in 41 ms, 0 rows changed, sum 0x5A3C11F0
+game vocr memory: free USER=88080384, needs workspace 1040384 + weights 1159168 + reserve 8388608: check passed, headroom 77492224
+game vocr speed: 220 frames in 179500 us, 815 us per frame
+game vocr lines: 742x39 80f 175.2ms c901 730x39 76f 167.9ms c911 701x39 64f 140.8ms c921
+gstep job mem kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=17
+gstep job check kind=10 arg=0 rc=0x00000000 bytes=2199552 sum=0x00000000 main=0 cdram=0 phycont=0 us=81
+gstep job alloc kind=user arg=capture rc=0x400104C9 bytes=61440 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=382
+gstep job alloc kind=user arg=workspace rc=0x400104CB bytes=1040384 sum=0x00000000 main=86978560 cdram=12582912 phycont=27262976 us=992
+gstep job pass kind=hook arg=2 rc=0x00000000 bytes=98896 sum=0x00000000 main=0 cdram=0 phycont=0 us=44254
+gstep job sig kind=hook arg=0 rc=0x00000000 bytes=1024 sum=0x03C00220 main=0 cdram=0 phycont=0 us=52175
+gstep job alloc kind=user arg=weights rc=0x400104CD bytes=1159168 sum=0x00000000 main=85819392 cdram=12582912 phycont=27262976 us=213000
+gstep job alloc kind=user arg=lm rc=0x400104CF bytes=1003520 sum=0x00000000 main=84815872 cdram=12582912 phycont=27262976 us=448000
+gstep job clock kind=- arg=333 rc=0x00000000 bytes=444 sum=0x0000014D main=0 cdram=0 phycont=0 us=1111400
+gstep job find kind=- arg=3 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=92000
+gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=160000
+gstep job load kind=- arg=0 rc=0x00000000 bytes=1159168 sum=0x00000000 main=87040000 cdram=12582912 phycont=27262976 us=231400
+gstep job recognize kind=- arg=3 rc=0x00000000 bytes=220 sum=0x00000000 main=0 cdram=0 phycont=0 us=179500
+gstep job lm kind=2 arg=0 rc=0x00000000 bytes=2147483651 sum=0x0000A028 main=0 cdram=0 phycont=0 us=1500
+gstep job cascade kind=0 arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=1
+gstep job norm kind=- arg=0 rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 us=14
+gstep job par kind=- arg=2 rc=0x00000002 bytes=533504 sum=0x00006163 main=0 cdram=0 phycont=0 us=179500
+gstep job free kind=- arg=workspace rc=0x00000000 bytes=1040384 sum=0x00000000 main=88018944 cdram=12582912 phycont=27262976 us=1112900
+gstep job free kind=- arg=capture rc=0x00000000 bytes=61440 sum=0x00000000 main=88080384 cdram=12582912 phycont=27262976 us=1112970
+gstep job pace kind=- arg=12 rc=0x00004E20 bytes=200400 sum=0x00000000 main=1970600 cdram=17000 phycont=0 us=118
+job 10 done rc=0 in 750 ms, arena peak 4096, dictionary page 1/1, game 630 ms, log 31 ms in 2 appends

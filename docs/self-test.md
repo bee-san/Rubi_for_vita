@@ -268,8 +268,12 @@ any more since VOCR is the only engine: a removed engine's value, which an older
 and that today's app or installer deletes the line), where taiHEN loads
 each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
-per-frame times, free USER and headroom, failed worker steps), the dictionary jobs, the overlay's
-slowest frame, Anki saves and exports, the config warnings counted once each, the Shell's own checks of the
+per-frame times, free USER and headroom, failed worker steps), the ARM clock by game window (each
+window's clock before, during and after, and the time per CTC frame with `ocr_boost_clock` off against
+raised; [ocr-speed.md](ocr-speed.md#what-the-log-shows-api-22)), the dictionary jobs, the overlay's
+slowest frame, Anki saves and each export's result (a failed export, or one that left cards queued for a
+problem, is also among the problem lines; a successful one is not), the config warnings counted once
+each, the Shell's own checks of the
 Overlay app at game starts, the lines that report a problem, the Anki queue, crash dumps, the
 model tier from each free-memory sample, the full self-test analysis when a report is there, and what
 it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.

@@ -240,7 +240,8 @@ class Collect(unittest.TestCase):
                      "blank lines skipped: 7 (300x30, 300x30, 300x30, 300x30, 300x30; edges 16-20 per 10,000)",
                      "text normalised: 1 of 1 job(s) changed: 2 full-width form(s), 0 tilde(s), 0 dash(es), "
                      "1 ellipsis(es), 2 一->ー, 1 ー->一; 41-41 us",
-                     "per CTC frame 2,484-2,484 us (the cascade's model 3,055-3,055 us)",
+                     "per CTC frame 2,484-2,484 us (the cascade's model 3,055-3,055 us); with helpers, per CTC frame is "
+                     "a job's recognition time / its frames, and its lines overlap in that time",
                      "beam + LM: 1 job(s) (1000k x1), 3 line(s) decoded, 1 changed by the LM; 1 line(s) under 0.70 confidence "
                      "(median 0.91); LM read 1x (1,500-1,500 ms), decoding 2-2 ms a job",
                      "cascade: 1 job(s), 1 doubtful line(s) read again with the larger model (1 changed, 1 read as empty; its confidence "
@@ -257,7 +258,10 @@ class Collect(unittest.TestCase):
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",
-                     "Anki: 2 save(s) (0 failed), queue 1, 1 export(s) (0 failed) of 3 card(s), Picture off in this build",
+                     "Anki: 2 save(s) (0 failed), queue 1, Picture off in this build",
+                     # a successful export is reported as one (audit-test-build-3 N1), and is no problem line below
+                     "Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package written and checked), "
+                     "0 failed; 3 card(s) in the packages",
                      "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); 1 exported card(s), "
                      "1 .apkg package(s) in anki/",
                      "crash dumps: psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (4,096 B)",
@@ -275,9 +279,15 @@ class Collect(unittest.TestCase):
         problems = analysis.split("lines reporting a problem", 1)[1].split("anki_queue on the card")[0]
         self.assertNotIn("key MISSING", problems)
         self.assertNotIn("anki: sent N, N duplicates, N unreadable", problems)  # a clean summary is not a problem
+        self.assertNotIn("overlay app: anki: export", problems)  # nor a successful export (audit-test-build-3 N1)
         self.assertIn("thread VjoAnki refused", problems)
         self.assertIn("anki: count not started", problems)
         self.assertNotIn("Error 404", problems)  # recognized game text is never a problem line
+        # the ARM clock by game window: its row names where the window starts (log.old.txt is read first)
+        flat = " ".join(analysis.split())
+        self.assertIn("1 log.txt:6 PCSG00415 2 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,666 us (4 lines)",
+                      flat)
+        self.assertIn("boost off against on: no window with the boost off in this log", flat)
         summary = json.loads((folder / "analysis.json").read_text())
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
         self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])

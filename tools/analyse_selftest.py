@@ -40,7 +40,8 @@ the game's measured free memory allows.
 --collect DIR reads a folder written by `install_ftp.sh --collect` (tools/collect_vita.py):
 the installed files against the package, config.ini (API keys already redacted),
 both taiHEN configurations, boot.txt, kernel.txt, log.txt and log.old.txt (every
-OCR job, its memory and times, the dictionary, the overlay, Anki), the Anki queue,
+OCR job, its memory and times, the ARM clock by game window, the dictionary, the overlay, Anki and each .apkg
+export's result), the Anki queue,
 crash dumps, the self-test analysis when a report is there, the tier from the lowest
 free game memory seen, and what this tool cannot decide, with where the data is.
 
@@ -933,7 +934,10 @@ LOG = {
     "touch_left": re.compile(r"^touch region left to SceShell t=(\d+) ms"),
     # (an earlier build's line also names the screenshot's bytes)
     "anki_save": re.compile(r"^anki: save (.+) rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
-    "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"),
+    # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
+    # export had no stop count
+    "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
+                              r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
@@ -964,6 +968,15 @@ TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|S
                      r"damaged|mismatch|out of memory|not enough memory|not a directory", re.I)
 # shell/memory.cpp: a PAF request the reserve guard or Paf refused; shell/ledger.c: a refused thread
 SHELL_REFUSAL = re.compile(r"Paf reserve guard|Paf allocation: .*success=0|^thread \S+ refused|^anki: \w+ not started")
+# settings/anki_export.c: the export's failures that TROUBLE's words miss (its result line after them has the rc)
+EXPORT_TROUBLE = re.compile(r"^overlay app: anki export: .*(?:did not verify|packages are named for this second|"
+                            r"is missing or not a JPEG)")
+# A game window (clock_windows): from a "game TITLE started" line, a start or a resume, to the next. shell/worker.c
+# activate_game reads config.ini again just before it logs the line, so ocr_boost_clock, which VitaShell changes
+# while the game is closed or suspended, is one setting for a whole window.
+WINDOW_START = re.compile(r"^game (\S+) started: ")
+BOOST_API = 22  # ocr_boost_clock and its clock step came with API 22 (docs/ocr-speed.md); an older build logs none
+BOOST_MHZ = 444  # game_ocr/main.c BOOST_MHZ: a clock at it or above is left as it is (rc 1)
 
 
 # The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
@@ -1041,12 +1054,216 @@ def _span(values):
     return f"{min(values):,}-{max(values):,}" if values else "-"
 
 
+def _n(count, word, plural=None):
+    """'1 line', '2 lines'."""
+    return f"{count} {word if count == 1 else plural or word + 's'}"
+
+
+# ---- the Overlay app's .apkg exports (settings/anki_page.c, settings/anki_export.c)
+
+def export_result(m):
+    """One export's result line (LOG["anki_export"]) in the app's own terms, its result_error (rc, kept, unreadable,
+    too large): "fail" (rc != 0: no package, the queue unchanged), "partial" (a package, and cards a problem left
+    queued: a move failed, unreadable, too large), "empty" (no card to export) or "ok" (a package written, read back
+    and checked). Cards a stop or a package's cap left queued (stopped, left) go into the next export: no problem."""
+    if int(m.group(2)):
+        return "fail"
+    if any(int(m.group(g) or 0) for g in (5, 6, 7)):
+        return "partial"
+    return "ok" if int(m.group(3)) else "empty"
+
+
+def export_summary(a):
+    """The exports in the log (summarise_log's "anki"), in plain words: each one's result, a problem's own line."""
+    n = a.get("exports", 0)
+    if not n:
+        return ["  Anki exports (the Overlay app): none in the log"]
+    parts = [f"{a['export_ok']} succeeded (a package written and checked)"]
+    if a.get("export_partial"):
+        parts.append(f"{a['export_partial']} wrote its package and left cards queued by a problem")
+    if a.get("export_empty"):
+        parts.append(f"{a['export_empty']} had no card to export")
+    parts.append(f"{a['export_fail']} FAILED (no package)" if a["export_fail"] else "0 failed")
+    t = f"  Anki exports (the Overlay app): {n} export(s): " + ", ".join(parts) + f"; {a['exported']} card(s) in the packages"
+    later = ([f"{a['export_stopped']} a stop left"] if a.get("export_stopped") else []) + \
+            ([f"{a['export_left']} over a package's cap"] if a.get("export_left") else [])
+    if later:
+        t += "; still queued for the next export, not a problem: " + ", ".join(later)
+    lines = [t]
+    for p in a.get("export_problems", []):
+        if p["rc"]:
+            lines.append(f"    {p['what']}: {rc_text(p['rc'])}: no package, the queue unchanged")
+        else:
+            lines.append(f"    {p['what']}: {p['cards']} card(s) in its package; still queued by a problem: {p['kept']} "
+                         f"kept (in the package; a move failed), {p['unreadable']} unreadable, {p['too_large']} too large")
+    return lines
+
+
+# ---- the ARM clock by game window (ocr_boost_clock, API 22; audit-test-build-3-b D6, test.3's step 6)
+
+def clock_windows(windows):
+    """Each game window of a build with the boost, what its jobs logged of the ARM clock, and the time per CTC frame
+    with the boost off against raised, by model.
+
+    A job logs the clock (`gstep job clock`) only when it recognizes a line: game_ocr/main.c job_busy is the busy
+    hook core/vocr_ocr.c calls at the first line it runs, after the line cache's lookup, and it returns at once with
+    ocr_boost_clock off. So a job whose every line came from the cache logs no clock, boost on or off, and a missing
+    clock line alone says nothing. A window's boost is read from its jobs that recognized a line (frames > 0) and
+    had room for the clock's step (their step log goes on past its place: find, recognize): every one logged the
+    clock (on), none did (off), or some did (mixed: left out of the comparison). Per CTC frame: each recognized line's
+    own time over its frames, frame-weighted (a cached line logs its frames and 0.0 ms); a helper's line is its
+    recognizer run, so it is one thread's whatever ocr_threads is.
+
+    Returns the windows' rows, how many windows of older builds had jobs, and per model the "off", "raised", "left"
+    (at 444 MHz or more already) and "not_raised" (the set call refused, or the clock not moved) groups."""
+    rows, older, groups = [], 0, {}
+
+    def add(model, kind, lines, window, clock=None):
+        g = groups.setdefault(model, {}).setdefault(kind, {"lines": 0, "frames": 0, "us": 0, "windows": []})
+        for frames, us in lines:
+            g["lines"] += 1
+            g["frames"] += frames
+            g["us"] += us
+        if window not in g["windows"]:
+            g["windows"].append(window)
+        if clock is not None:
+            g.setdefault("pairs", []).append(clock)
+
+    for number, w in enumerate(windows, 1):
+        jobs = w["jobs"]
+        if not jobs:
+            continue
+        clocked = [j for j in jobs if j["clock"]]
+        if not clocked and (w["api"] is None or w["api"] < BOOST_API):
+            older += 1  # a build before the boost, or one the log does not name: no clock to read
+            continue
+        rec = [j for j in jobs if j["frames"] > 0]
+        bare = [j for j in rec if not j["clock"]]
+        evidence = [j for j in bare if j["late"]]  # had room for the clock's step and logged none
+        state = ("mixed" if evidence else "on") if clocked else "off" if evidence else "unknown" if rec else "none"
+        row = {"window": number, "title": w["title"], "line": w["line"], "api": w["api"], "state": state,
+               "jobs": len(jobs), "recognizing": len(rec), "clock_lines": len(clocked), "without_clock": len(evidence),
+               "unsure": len(bare) - len(evidence), "before": [], "during": [], "after": [], "raised": 0, "left": 0,
+               "not_raised": 0, "per_frame": {}}
+        for j in jobs:
+            lines = [(f, us) for f, us in j["lines"] if f and us]  # recognized lines only
+            if lines:
+                pf = row["per_frame"].setdefault(j["model"], {"lines": 0, "frames": 0, "us": 0})
+                pf["lines"] += len(lines)
+                pf["frames"] += sum(f for f, _ in lines)
+                pf["us"] += sum(us for _, us in lines)
+            c = j["clock"]
+            if c:
+                row["before"].append(c["before"])
+                row["during"].append(c["during"])
+                row["after"].append(c["after"])
+                kind = ("raised" if c["rc"] == 0 and c["during"] > c["before"] > 0 else
+                        "left" if c["rc"] == 1 and c["before"] >= BOOST_MHZ else "not_raised")
+                row[kind] += 1
+                if lines:
+                    add(j["model"], kind, lines, number, (c["before"], c["during"]))
+            elif state == "off" and lines:
+                add(j["model"], "off", lines, number)
+        rows.append(row)
+    for model in groups.values():
+        for g in model.values():
+            pairs = g.pop("pairs", None)
+            if pairs:  # the clock of most of the group's jobs: before, and during for those raised
+                g["before"], during = max(sorted(set(pairs)), key=pairs.count)
+                if during != g["before"]:
+                    g["during"] = during
+    return rows, older, groups
+
+
+def _mhz(values):
+    return str(values[0]) if len(set(values)) == 1 else f"{min(values)}-{max(values)}"
+
+
+def render_clock_windows(lg):
+    """The ARM clock by game window and the time per CTC frame, boost off against raised (clock_windows)."""
+    rows, older, groups = lg.get("clock_windows") or [], lg.get("clock_windows_older", 0), lg.get("clock_compare") or {}
+    if not rows:
+        return ([f"  ARM clock by game window: no window of a build with the boost (API {BOOST_API} on) has an OCR job; "
+                 f"{_n(older, 'window')} of older builds {'does' if older == 1 else 'do'} (they log no clock)"]
+                if older else [])
+    seen = any(r["clock_lines"] for r in rows)
+    L = ["  ARM clock by game window (a window runs from a 'game TITLE started' line, a start or a resume, where "
+         "config.ini is read again, to the next; a job logs the clock only when it recognizes a line, so one whose "
+         "every line came from the cache logs none, boost on or off):",
+         f"    {'window':<6}  {'from':<16} {'title':<10} {'jobs':>4} {'recognizing':>11} {'clock':>5}  "
+         "MHz before / during / after; us per CTC frame"]
+    for r in rows:
+        clock = f"{_mhz(r['before'])} / {_mhz(r['during'])} / {_mhz(r['after'])}" if r["clock_lines"] else ""
+        if r["state"] == "on":
+            how = [f"raised in {r['raised']}"] + ([f"left at {BOOST_MHZ} or more in {r['left']}"] if r["left"] else []) \
+                + ([f"not raised in {r['not_raised']}"] if r["not_raised"] else []) \
+                + ([f"{_n(r['unsure'], 'recognizing job')} with no room left for the clock's step"] if r["unsure"] else [])
+            text = f"{clock} ({', '.join(how)})"
+        elif r["state"] == "mixed":
+            text = (f"MIXED: {clock} in {_n(r['clock_lines'], 'job')}; {_n(r['without_clock'], 'recognizing job')} "
+                    "logged none")
+        elif r["state"] == "off":
+            text = (f"BOOST OFF: not logged (none of its {_n(r['recognizing'], 'recognizing job')} logged the clock)"
+                    if seen else
+                    f"no clock line in its {_n(r['recognizing'], 'recognizing job')}: the boost off, or the game could "
+                    "not call ScePower (no job in this log logged the clock)")
+        elif r["state"] == "unknown":
+            text = (f"not known: the step log of its {_n(r['recognizing'], 'recognizing job')} filled before the "
+                    "clock's place")
+        else:
+            text = "no job recognized a line: no clock either way"
+        speed = "; ".join(f"{m} {round(p['us'] / p['frames']):,} us ({_n(p['lines'], 'line')})"
+                          for m, p in r["per_frame"].items())
+        where = r.get("where") or f"line {r['line']}"
+        L.append(f"    {r['window']:<6}  {where:<16} {r['title'] or '?'!s:<10} {r['jobs']:>4} {r['recognizing']:>11} "
+                 f"{r['clock_lines']:>5}  {text}" + (f"; {speed}" if speed else ""))
+    if older:
+        L.append(f"    ({_n(older, 'window')} of builds before API {BOOST_API}, which have no boost and log no clock, "
+                 f"{'is' if older == 1 else 'are'} not listed)")
+
+    def per(g):
+        return g["us"] / g["frames"]
+
+    def us(g):
+        return f"{round(per(g)):,} us ({_n(g['lines'], 'line')}; {'window' if len(g['windows']) == 1 else 'windows'} " \
+               f"{', '.join(map(str, g['windows']))})"
+    compared = []
+    for m, g in groups.items():
+        off = g.get("off")
+        if not off or not ("raised" in g or "left" in g):
+            continue
+        t = f"    {m}: off (the game's own clock, not logged) {us(off)}"
+        if "raised" in g:
+            on = g["raised"]
+            t += (f", raised {on['before']} -> {on['during']} MHz {us(on)}: off / raised = {per(off) / per(on):.2f} (a "
+                  f"time that scales with the clock: {on['during']} / {on['before']} = {on['during'] / on['before']:.2f}; "
+                  "no gain: 1.00)")
+        if "left" in g:
+            t += f"; left at {g['left']['before']} MHz ({BOOST_MHZ} or more already) {us(g['left'])}"
+        compared.append(t)
+    read_off = any("off" in g for g in groups.values())
+    read_on = any("raised" in g or "left" in g for g in groups.values())
+    if compared:
+        L.append("  boost off against on, us per CTC frame (each recognized line's time / its frames, frame-weighted; "
+                 "lines from the cache left out):")
+        L += compared
+    elif read_off and read_on:
+        L.append("  boost off against on: no model was read both with the boost off and on, so nothing to compare")
+    elif read_on:
+        L.append("  boost off against on: no window with the boost off in this log (step 6's optional boxes), so "
+                 "nothing to compare")
+    elif read_off:
+        L.append("  boost off against on: no job raised the clock, so nothing to compare")
+    return L
+
+
 def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
     s = {"lines": 0, "boot": [], "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
-                  "exported": 0, "export_fail": 0}, "trouble": {},
+                  "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
+                  "export_stopped": 0, "export_left": 0, "export_problems": []}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
@@ -1064,7 +1281,10 @@ def summarise_log(text):
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     api = None  # the API of the Shell build that logged the lines that follow (its "shell started" line)
     boot_run = 0  # config warnings in a row just seen: a boot logs its own before its "shell started" line
-    for raw in text.splitlines():
+    # clock_windows: the game windows, the one the lines are in, and its game job whose batch is being read (the
+    # Shell logs a job's line, its lines' times and its steps in one batch, shell/worker.c)
+    windows, win, job = [], None, None
+    for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line:
             continue
@@ -1084,6 +1304,15 @@ def summarise_log(text):
                     del by[api]
                 by[new_api] = by.get(new_api, 0) + boot_run
             api = new_api
+            win = job = None  # a new boot: its first game start opens the next window
+        m = WINDOW_START.match(line)
+        if m:
+            win, job = {"title": m.group(1), "line": n, "api": api, "jobs": []}, None
+            windows.append(win)
+        if job is not None and line.startswith("gstep job "):
+            # FIND and RECOGNIZE come after the clock's place in the step log (game_ocr/main.c adds them once the
+            # recognition is over): a job with either had room for the clock's step
+            job["late"] |= line.split(None, 3)[2] in ("find", "recognize")
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
             by = s.setdefault("config_warnings_by_api", {})
@@ -1196,6 +1425,9 @@ def summarise_log(text):
             ck["before"].append(int(m.group(1)))
             ck["during"].append(int(m.group(3)))
             ck["after"].append(int(m.group(4), 16))
+            if job is not None:
+                job["clock"] = {"before": int(m.group(1)), "rc": s32(int(m.group(2), 16)), "during": int(m.group(3)),
+                                "after": int(m.group(4), 16)}
             continue
         m = LOG["pace"].match(line)
         if m:
@@ -1215,6 +1447,11 @@ def summarise_log(text):
                               "lines": int(m.group(8)), "weights": m.group(10), "find": int(m.group(12)),
                               "load": int(m.group(13)), "recognize": int(m.group(14)), "frames": int(m.group(15)),
                               "io": int(m.group(16), 16), "cleanup": int(m.group(18))})
+            if win is None:  # jobs before the log's first game start (the oldest part of a rotated log)
+                win = {"title": None, "line": n, "api": api, "jobs": []}
+                windows.append(win)
+            job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False}
+            win["jobs"].append(job)
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
                     "psp", "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
@@ -1282,17 +1519,28 @@ def summarise_log(text):
             elif key == "anki_sent":
                 s["anki"]["sent"] += int(m.group(1))
             elif key == "anki_export":
-                s["anki"]["exports"] += 1
-                s["anki"]["export_fail"] += int(m.group(2)) != 0
-                s["anki"]["exported"] += int(m.group(3))
+                an, result = s["anki"], export_result(m)
+                an["exports"] += 1
+                an["export_" + result] += 1
+                an["exported"] += int(m.group(3))
+                an["export_left"] += int(m.group(8) or 0)
+                an["export_stopped"] += int(m.group(9) or 0)
+                if result in ("fail", "partial") and len(an["export_problems"]) < 10:
+                    an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
+                                                  "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),
+                                                  "too_large": int(m.group(7) or 0)})
             elif key == "gstep" and s32(int(m.group(5), 16)) < 0:
                 k = f"{m.group(2)} {m.group(3)}/{m.group(4)} {native(int(m.group(5), 16))}"
                 s["gstep_fail"][k] = s["gstep_fail"].get(k, 0) + 1
             break
         if line.startswith("game vocr lines"):
-            s["line_ms"] += [int(m.group(4)) for m in LOG["line"].finditer(line)]
+            # a line from the line cache logs its frames and 0.0 ms: it ran no recognition, so it is no line time
+            s["line_ms"] += [int(m.group(4)) for m in LOG["line"].finditer(line) if m.group(4) != "0" or m.group(5) != "0"]
             for m in LOG["conf"].finditer(line):
                 s["cascade" if m.group(3) else "lm"]["conf"].append(int(m.group(1)))
+            if job is not None:  # (frames, us) a line; one from the cache logs its frames and 0.0 ms
+                job["lines"] += [(int(m.group(3)), int(m.group(4)) * 1000 + int(m.group(5)) * 100)
+                                 for m in LOG["line"].finditer(line)]
         if line.startswith("anki: Picture field off"):
             s["anki"]["picture_off"] += 1
         if SHELL_REFUSAL.search(line):
@@ -1300,10 +1548,15 @@ def summarise_log(text):
         sent = LOG["anki_sent"].match(line)
         if sent and not int(sent.group(3)) and not int(sent.group(4)):
             continue  # "0 unreadable, 0 too large": a summary, not a problem
-        if TROUBLE.search(line) and not line.startswith(("gstep", "game vocr text ")):  # game text may say anything
+        export = LOG["anki_export"].match(line)
+        if export and export_result(export) in ("ok", "empty"):
+            continue  # a package written and checked, or no card to export: a success (audit-test-build-3 N1)
+        if (export or TROUBLE.search(line) or EXPORT_TROUBLE.search(line)) and \
+                not line.startswith(("gstep", "game vocr text ")):  # game text may say anything
             key = re.sub(r"\d+", "N", line)[:120]
             s["trouble"][key] = s["trouble"].get(key, 0) + 1
     s["disabled"] = sorted(s["disabled"])
+    s["clock_windows"], s["clock_windows_older"], s["clock_compare"] = clock_windows(windows)
     return s
 
 
@@ -1411,8 +1664,13 @@ def summarise_collect(folder):
     out["boot_record"] = None if boot is None else boot.strip() or \
         "(empty: the installer reset it and no boot has been recorded since)"
     # logs
-    logs = "".join(t for t in (_read(folder, data + "log.old.txt"), _read(folder, data + "log.txt")) if t)
+    old, new = _read(folder, data + "log.old.txt") or "", _read(folder, data + "log.txt") or ""
+    logs = old + ("\n" if old and not old.endswith("\n") else "") + new  # line n: log.old.txt's, then log.txt's
     out["log"] = summarise_log(logs) if logs else None
+    if out["log"]:
+        k = len(old.splitlines())
+        for w in out["log"]["clock_windows"]:
+            w["where"] = f"log.old.txt:{w['line']}" if w["line"] <= k else f"log.txt:{w['line'] - k}"
     out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
@@ -1565,7 +1823,10 @@ def render_collect(c):
                          f"recognize {_span([j['recognize'] for j in ok])}; per line {_span(lg['line_ms'])}; "
                          f"per CTC frame {_span(lg['speed_us'])} us"
                          + (f" (the cascade's model {_span(lg['cascade_speed_us'])} us)"
-                            if lg.get("cascade_speed_us") else ""))
+                            if lg.get("cascade_speed_us") else "")
+                         # API 22's helpers: one thread's time per frame is each line's, in the clock windows below
+                         + ("; with helpers, per CTC frame is a job's recognition time / its frames, and its lines "
+                            "overlap in that time" if any((lg.get("par") or {}).get("helpers") or []) else ""))
             if lg["captures"]:
                 L.append("  capture: " + ", ".join(f"{k} x{n}" for k, n in lg["captures"].items()))
         misses = lg.get("tier_misses") or []
@@ -1639,6 +1900,7 @@ def render_collect(c):
             kept = f", left at 444 or more in {ck['kept']}" if ck.get("kept") else ""
             L.append(f"  ARM clock (ocr_boost_clock): {ck['jobs']} job(s), raised in {ck['raised']}{kept}; MHz before "
                      f"{_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
+        L += render_clock_windows(lg)
         pc = lg.get("pace") or {}
         if pc.get("jobs"):
             L.append(f"  game frames during OCR jobs: {pc['frames']} in {pc['jobs']} job(s), longest gap "
@@ -1662,8 +1924,8 @@ def render_collect(c):
         a = lg["anki"]
         L.append(f"  Anki: {a['saves']} save(s) ({a['save_fail']} failed), queue {a['queue'] if a['queue'] is not None else '-'}"
                  + (f", {a['sent']} sent (AnkiConnect, an earlier build)" if a["sent"] else "")
-                 + f", {a['exports']} export(s) ({a['export_fail']} failed) of {a['exported']} card(s)"
                  + (", Picture off in this build" if a["picture_off"] else ""))
+        L += export_summary(a)
         if lg["config_warnings"]:
             seen = {}
             for w in lg["config_warnings"]:
