@@ -331,13 +331,14 @@ static void prepare_window(void)
         }
 }
 
-/* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row,
- * as the Shell's does (a title in no folder by its ID's shape: PSPEMUCFW, a disc ID). */
-static int row_on(const VjoInstalledGame *g)
-{
-    int psp = vjo_catalog_psp(g) || (g->kind == VJO_ROW_MISSING && vjo_game_is_psp(g->id));
-    return vjo_games_enabled_as(&policy, g->id, psp);
-}
+/* A PSP game's row: a bubble, Adrenaline, the shared row, or a title in no
+ * folder whose ID is a PSP game's (PSPEMUCFW, a disc ID: core/games.h
+ * vjo_game_is_psp), as the Shell and the kernel's loader key them. */
+static int psp_row(const VjoInstalledGame *g)
+{ return vjo_catalog_psp(g) || (g->kind == VJO_ROW_MISSING && vjo_game_is_psp(g->id)); }
+
+/* A row's ON/OFF: a PSP game with no rule of its own follows the shared PSP row. */
+static int row_on(const VjoInstalledGame *g) { return vjo_games_enabled_as(&policy, g->id, psp_row(g)); }
 
 /* The OCR worker loads in it: registered, or the shared row (not registrable). */
 static int registered(const VjoInstalledGame *g)
@@ -761,7 +762,7 @@ static void draw(void)
         vita2d_disable_clipping();
         badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
         /* PSP games: the tag, dim while the OCR worker is not registered for it. */
-        if (vjo_catalog_psp(g))
+        if (psp_row(g))
             text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, registered(g) ? ACCENT : DIM, 24, "PSP");
         text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
     }

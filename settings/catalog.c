@@ -3,6 +3,7 @@
 #include "letter.h"
 #include "psp.h"
 #include "../core/sfo.h"
+#include "../core/utf.h"
 #include <psp2/io/devctl.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -48,7 +49,7 @@ static int read_title(const char *path, char *out, size_t cap)
 
 /* ---- log.txt: one line per root and one for the rows, each one vjo_log line ---- */
 
-/* A line built in pieces, cut at what one vjo_log line holds (settings/anki_page.c:
+/* A line built in pieces, cut at what one vjo_log line holds (settings/applog.c:
  * 300 bytes with "overlay app: " and the line break). */
 typedef struct { char text[286]; size_t used; } Line;
 static void add(Line *l, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -96,6 +97,16 @@ static void name(Names *n, const char *fmt, ...)
 }
 /* The names, ", " between them: all when they fit in the line, else as many
  * as fit with room kept for " and N more", which counts the rest. */
+static void add_names(Line *l, const Names *n);
+/* "; label" and the names, only when the label and " and 999 more" fit after
+ * it: a full line drops a section whole (its count is in the line's head),
+ * never cuts a label or a name. */
+static void add_section(Line *l, const char *label, const Names *n)
+{
+    if (!n->count || l->used + strlen(label) + 16 > sizeof(l->text) - 1) return;
+    add(l, "%s", label);
+    add_names(l, n);
+}
 static void add_names(Line *l, const Names *n)
 {
     size_t cap = sizeof(l->text) - 1, stored = (size_t)(n->count - n->lost);
@@ -113,6 +124,18 @@ static void add_names(Line *l, const Names *n)
     }
     more += n->lost;
     if (more) add(l, "%sand %d more", first ? "" : " ", more);
+}
+
+/* A folder's name for the log: at most 24 bytes, cut at a whole UTF-8
+ * character, "..." when cut. */
+static const char *short_name(const char *name, char out[32])
+{
+    if (strlen(name) <= 24) return name;
+    memcpy(out, name, 24);
+    out[24] = '\0';
+    vjo_utf8_trim_partial(out);
+    strcat(out, "...");
+    return out;
 }
 
 /* A title with a choice of its own that no folder had: its row says so. Its
@@ -168,7 +191,8 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
             entries++;
             const char *why = !SCE_S_ISDIR(e.d_stat.st_mode) ? "not a folder" : vjo_game_reject_reason(e.d_name);
             if (why) {
-                name(&skipped, "%.24s%s (%s)", e.d_name, strlen(e.d_name) > 24 ? "..." : "", why);
+                char cut[32];
+                name(&skipped, "%s (%s)", short_name(e.d_name, cut), why);
                 continue;
             }
             int found = 0;
@@ -196,21 +220,18 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
         ux0_listed |= r == 0 && end == 0;
         from_folders += listed;
         left_out += dropped;
-        /* The counts first, the names last: a line too long loses names only. */
+        /* Every count first, then the names, the skipped ones (with their
+         * reasons) before those listed under their IDs: a line too long loses
+         * names only, the later section first. */
         add(&line, "%d entries: %d listed, %d already listed, %d skipped", entries, listed, duplicates, skipped.count);
+        if (untitled.count) add(&line, ", %d listed under its ID (no title read)", untitled.count);
         if (dropped) add(&line, ", %d left out: the list holds %d", dropped, capacity);
         if (end < 0) {
             add(&line, "; the listing stopped at ");
             add_rc(&line, end);
         }
-        if (untitled.count) {
-            add(&line, "; %d by its ID (no title read): ", untitled.count);
-            add_names(&line, &untitled);
-        }
-        if (skipped.count) {
-            add(&line, "; skipped: ");
-            add_names(&line, &skipped);
-        }
+        add_section(&line, "; skipped: ", &skipped);
+        add_section(&line, "; under its ID: ", &untitled);
         vjo_log("%s", line.text);
     }
     /* Adrenaline can be installed under a homebrew ID but runs NPXS10028: the
@@ -254,10 +275,7 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
         from_folders, shared ? ", the shared PSP row" : "", missing_titles);
     if (left_out) add(&line, ", %d left out", left_out);
     add(&line, "; safe mode %s (ux0: devctl 0x%08X)", devctl == (int)0x80010030 ? "yes" : "no", (unsigned)devctl);
-    if (missing_titles) {
-        add(&line, "; only in games.ini: ");
-        add_names(&line, &missing);
-    }
+    add_section(&line, "; only in games.ini: ", &missing);
     vjo_log("%s", line.text);
     vjo_app_log_batch_end();
     return count;

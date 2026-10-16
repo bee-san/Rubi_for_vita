@@ -211,53 +211,85 @@ With 512 games the after column is the same; before, an idle frame measured
 ## Games missing from the list, and Default OFF (#138)
 
 In test.3's run (#138) CLANNAD (`PCSG00415`) was not on the Games page, while
-AIR was, and turning the Default OFF left CLANNAD on. `games.ini` held
-`default = enabled` and `PCSG00415 = enabled`. The second finding follows from
-the rules (`core/games.c`, unchanged): a title's own rule comes before the
-default, so `PCSG00415 = enabled` kept it ON whatever the default said, and
-with CLANNAD missing from the list that rule could not be seen or changed.
+AIR was, and the tester found that turning the Default OFF left CLANNAD on.
+`games.ini` held `default = enabled` and `PCSG00415 = enabled`. A title's own
+rule comes before the default (`core/games.c`, unchanged), so no Default could
+turn CLANNAD OFF while that rule stood, and with CLANNAD missing from the list
+the rule could not be seen or changed.
+
+That explains the finding, but this boot did not show it: it saved no Default
+change. The collect's listing (`listings/ux0_data_VitaJPOverlay.txt`, the
+Vita's clock) has `games.ini` at 191 B from Oct 13 07:14 and `games.ini.bak`
+at 192 B from Oct 12 20:06. A save renames the previous `games.ini` to `.bak`
+(`vita/games_storage.c:76-81`), and the rename keeps its time: `config.ini.bak`
+(07:08) and `config.ini` (07:10) are this boot's two Model-size saves the same
+way (`settings/preferences.c:80-82`). So this boot saved `games.ini` once, at
+07:14, and the file got 1 B shorter: `PCSG00940 = disabled` became `enabled`,
+AIR turned ON between its OFF start (`log.txt` line 12121) and its ON one
+(12145). The tester's Default OFF was in another boot, or was not saved
+[inference].
 
 Why CLANNAD was missing is not known. The test.3 app (main `9cfa920`) logged
-nothing about its scan, and the cause cannot be checked off the console. The
-existing `PCSG00415 = enabled` rule shows that an earlier app listed and
-toggled CLANNAD; that app was an ordinary application, which ran with the game
-closed (#109). The app scanned once in this run, at its start, with CLANNAD
-suspended behind it (`log.txt` line 11345; a scan is made only at start and on
-Start). These causes fit the collect, and none is confirmed:
+nothing about its scans. It started once in this boot (`log.txt` 11345) and was
+in front six times (`VJOSET001` at 11344, 11677, 11877, 12002, 12110 and
+12132), with CLANNAD suspended behind it, and AIR at the end. A Start press in
+any of those visits rescans and leaves no line. The `PCSG00415 = enabled` rule
+shows that an earlier app listed and toggled CLANNAD; that app was an ordinary
+application, which ran with the game closed (#109).
 
-- **A game card the system app cannot read.** The catalog lists `ux0:app`,
-  `ur0:app` and `gro0:app`, the game card's (henkaku wiki, SceIofilemgr's mount
-  table). The test.3 app opened beside CLANNAD, which was running. If CLANNAD is
-  a card, the app may not be allowed to list `gro0:app` as a system application,
-  or not while the card's game is suspended. Whether it is a card was not
-  recorded.
-- **Safe mode.** Without HENkaku's *Enable Unsafe Homebrew*, an unsafe app such as
-  this one runs sandboxed. VitaShell then offers `ux0:` alone (VitaShell 81af709
-  `file.c:958`), and
-  it detects this case with `sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)`
-  returning `0x80010030` (`init.c:353-355`). It is unlikely here: the FTP server
-  of this collect served `ur0:` (`ur0:tai/config.txt`), which VitaShell's does
-  only outside safe mode (`main.c:197-201`), if it was VitaShell's, as the
-  installer's steps say; and the setting is HENkaku's, for every unsafe SELF,
-  the app's included (`vita/CMakeLists.txt`: `UNSAFE`) [inference: henkaku
-  784e483 `plugin/kernel.c:60-73`].
-- **Listed under its ID.** A game whose `param.sfo` gives no title is listed as its
-  ID, here `PCSG00415` under P, not CLANNAD under C. Nothing in the collect
-  shows whether this happened.
+**CLANNAD is on the memory card, in `ux0:app`** (found by the PR's audit).
+Two of the ten SceShell crash dumps in the zip, from earlier sessions on this
+console, hold its path. In the decompressed dumps:
 
-The list holds 512 rows, and the tester has far fewer games, so the list being
-full is not the cause. The candidate rule could not have dropped CLANNAD
-either: it accepts `PCSG00415`.
+- `psp2core-1791732858-…` (2026-10-11 15:34 UTC) has `ux0:/app/PCSG00415/eboot.bin`
+  at 0x7400b0 and `ux0:app/PCSG00415/eboot.bin` at 0x7415e8;
+- `psp2core-1791868846-…` (2026-10-13 05:20 UTC) has `ux0:app/PCSG00415` beside
+  its LiveArea's address, at 0x71e898.
+
+None of the ten names `gro0:` or `grw0:`. The dumps are not of this boot, so
+this is strong evidence, not proof, that CLANNAD was in `ux0:app` in this one
+too. The causes that fit, none confirmed:
+
+- **`ux0:app`'s listing missed CLANNAD's folder, or stopped.** The app is a
+  system application, listing `ux0:app` while CLANNAD runs suspended from it.
+  9cfa920's loop ended at the first failed `sceIoDread` without a word, and it
+  skipped an entry that did not read as a folder silently. Whether a running
+  game's folder lists differently is not known.
+- **Listed under its ID.** When the app reads no title from `param.sfo`, it
+  lists the game as `PCSG00415`, under P, not CLANNAD under C. Nothing in the
+  collect shows whether this happened.
+- **The list's filter.** Square shows all, enabled or disabled games, and the
+  card beside the Default row names the choice (`settings/main.c:733-744`). Set
+  to Disabled, it hides every game that is ON: CLANNAD here, but not AIR,
+  which was OFF until 07:14. The filter starts as All games at each start of
+  the app, and no log records it.
+- **A game card, or safe mode: unlikely.** CLANNAD's folder is on the memory
+  card (above). Without HENkaku's *Enable Unsafe Homebrew*, an unsafe app such
+  as this one runs sandboxed: VitaShell then offers `ux0:` alone (VitaShell
+  81af709 `file.c:958`), and it detects this case with
+  `sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)` returning `0x80010030`
+  (`init.c:353-355`). The collect's FTP server served `ur0:`
+  (`ur0:tai/config.txt`), which VitaShell's does only outside safe mode
+  (`main.c:197-201`), if it was VitaShell's, as the installer's steps say; and
+  the setting is HENkaku's, for every unsafe SELF, the app's included
+  (`vita/CMakeLists.txt`: `UNSAFE`) [inference: henkaku 784e483
+  `plugin/kernel.c:60-73`].
+
+The candidate rule could not have dropped CLANNAD: it accepts `PCSG00415`. A
+full list is very unlikely [inference]: about 20 titles' IDs appear in
+`log.txt`, `games.ini` and the dumps, against 512 rows, and a full list says
+`Showing the first 512 installed titles.` (`settings/main.c:480`), which was not
+reported. The collect has no listing of `ux0:app`.
 
 What the app does now:
 
 - **Each scan is logged** (`log.txt`, `log_file = on`): one line per root with
-  its entries, how many were listed, already listed or skipped, those left out
-  when the list is full, a listing that stopped (its error), the games listed
-  by their ID because no title was read, and each skipped name with the reason
-  (`not a folder`, `not a title ID`, `a system app`, `VitaShell`, `this app`,
-  `SceShell's name`). A root that cannot be opened gets its error and whether
-  the device is there at all:
+  its entries, how many were listed, already listed or skipped, those listed
+  under their ID because no title was read, those left out when the list is
+  full, a listing that stopped (its error), then each skipped name with the
+  reason (`not a folder`, `not a title ID`, `a system app`, `VitaShell`, `this
+  app`, `SceShell's name`), then the IDs listed without a title. A root that
+  cannot be opened gets its error and whether the device is there at all:
 
   ```text
   overlay app: games: ux0:app: 23 entries: 21 listed, 0 already listed, 2 skipped; skipped: VITASHELL (VitaShell), VJOSET001 (this app)
@@ -266,16 +298,21 @@ What the app does now:
   ```
 
   These lines are the format from the host tests; no console has logged them
-  yet. A line holds at most 300 bytes, and names past that are counted
-  (`and N more`). A scan's lines go out in one append after it, as the Shell's
-  do for a job (#100), since an append cost the console 12-46 ms in #81's
-  timestamps (`settings/applog.c`).
+  yet. A line holds at most 300 bytes: every count comes first, and names past
+  that are counted (`and N more`), the IDs before the skipped names go, never a
+  name or a label cut (a folder's name is cut at 24 bytes, at a whole
+  character, with `...`). A scan's lines go out in one append after it, as the
+  Shell's do for a job (#100), since an append cost the console 12-46 ms in
+  #81's timestamps (`settings/applog.c`). Near `log.txt`'s 1 MiB cap each line
+  that still fits is written, as before.
 - **A title with a choice of its own is listed even when no folder has it**
-  (`VJO_ROW_MISSING`). This covers a card the app cannot read and a deleted
-  game. Its row shows its update's title and icon when `ux0:patch/ID` has an
-  update, which VitaShell reads as a plain file (`refresh.c:92-95`), or else its ID,
-  followed by `(not found: a game card, or not installed)`. It can be turned ON
-  or OFF like any row, and the Shell reads the same rule. A rule the Shell never
+  (`VJO_ROW_MISSING`): a folder the scan did not list or could not read (as
+  CLANNAD's), a game card it cannot read, a deleted game. Its row shows its
+  update's title and icon when `ux0:patch/ID` has an update, which VitaShell
+  reads as a plain file (`refresh.c:92-95`), or else its ID, followed by
+  `(folder not found)`. It can be turned ON or OFF like any row, and the Shell
+  reads the same rule; a PSP game's ID (`PSPEMUCFW`, a disc ID) has the PSP tag
+  and follows the shared PSP row as in the Shell. A rule the Shell never
   applies (`NPXS…`, this app) gets no row.
 - **Default ON -> OFF turns every game OFF** (Triangle, or the Default row touched;
   `vjo_games_disable_all` in `core/games_app.c`). Every `= enabled` rule is
@@ -296,9 +333,12 @@ and the order of its rules are unchanged.
 Tests (`settings_games`, `games`): a game only on the card, listed with its
 title and icon; a title on both cards listed once; a refused `gro0:app` with
 the titles only in `games.ini` listed, toggled, saved and kept after a restart;
-the skip reasons and the line's limit; a listing that stops, after which no
-bubble description is removed; a full list and safe mode in the log; one append
-per scan; the batch keeping another thread's line apart; disable-all over
+the skip reasons, the line's limit (the skipped names kept before the IDs) and
+a name cut at a whole character; a listing that stops, after which no bubble
+description is removed; a full list and safe mode in the log; one append per
+scan; the batch keeping another thread's line apart; the 1 MiB cap, line by
+line as before; a PSP game's ID in no folder following the shared PSP row, with
+its tag; disable-all over
 explicit entries, through the Shell's own rule (`vjo_games_enabled_as` on the
 saved file, PSP games and the timeout fallback included), with OFF -> ON
 keeping the games turned OFF; a failed save changing nothing; and the reasons

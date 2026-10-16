@@ -7,8 +7,8 @@ enum {
     VJO_ROW_BUBBLE,         /* an Adrenaline bubble (AdrBubbleBooter, made by Adrenaline Bubble Manager) */
     VJO_ROW_ADRENALINE,     /* Adrenaline itself, PSPEMUCFW */
     VJO_ROW_PSP_SHARED,     /* NPXS10028: PSP games without a row of their own */
-    VJO_ROW_MISSING         /* a choice of its own in games.ini, in no folder the scan listed: a game
-                             * card it could not read, or a game since deleted (#138) */
+    VJO_ROW_MISSING         /* a choice of its own in games.ini, in no folder the scan listed: a
+                             * folder it could not list or read, or a game since deleted (#138) */
 };
 typedef struct {
     char id[VJO_TITLE_ID_SIZE];
@@ -27,8 +27,10 @@ int vjo_catalog_scan(VjoInstalledGame *out, int capacity, int *truncated, const 
 /* The NPXS10028 row's title: its rule applies to every PSP game (a bubble,
  * Adrenaline) that has no rule of its own (core/games.h vjo_games_enabled_as). */
 #define VJO_CATALOG_PSP_TITLE "Adrenaline / PSP games without a setting of their own"
-/* A missing title's row: its name (its update's TITLE, else its ID) and this. */
-#define VJO_CATALOG_MISSING_NOTE " (not found: a game card, or not installed)"
+/* A missing title's row: its name (its update's TITLE, else its ID) and this.
+ * Why the scan did not find it is in log.txt (#138: CLANNAD's folder, likely
+ * in ux0:app, was not listed). */
+#define VJO_CATALOG_MISSING_NOTE " (folder not found)"
 /* A PSP row: a bubble, Adrenaline or the shared row (its PSP tag; a PSP game
  * without a rule of its own follows the shared row's). */
 static inline int vjo_catalog_psp(const VjoInstalledGame *g)

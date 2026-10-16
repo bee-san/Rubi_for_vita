@@ -2715,8 +2715,46 @@ static void skipped_folders_are_logged_with_why(void)
     hold(0, 5);
     frames = run(at);
     TEST_CHECK(check_cards(frames, NULL) == 0);
-    CHECK_LINE("games: ux0:app", "games: ux0:app: 3 entries: 3 listed, 0 already listed, 0 skipped; 1 by its ID (no "
-                                 "title read): VJOT00002");
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 3 entries: 3 listed, 0 already listed, 0 skipped, 1 listed under its "
+                                 "ID (no title read); under its ID: VJOT00002");
+    /* 40 games without a title and 5 skipped folders: every count, the skipped names
+     * and reasons first, whole; the IDs after them as many as fit; no label cut */
+    card(40, NULL);
+    for (int i = 0; i < 40; i++) {
+        snprintf(p, sizeof(p), "ux0:app/VJOT%05d/sce_sys/param.sfo", i);
+        put_file(p, "not an SFO", 10);
+    }
+    static const char *const five[] = {"NPXS10001", "NPXS10002", "VITASHELL", "VJOSET001", "mainmenu"};
+    for (unsigned i = 0; i < 5; i++) {
+        snprintf(p, sizeof(p), "ux0:app/%s", five[i]);
+        mkdir(p, 0777);
+    }
+    for (int i = 0; i < 40; i++) snprintf(games[i].title, sizeof(games[i].title), "%s", games[i].id);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    line = logged_line("games: ux0:app");
+    TEST_ASSERT(line != NULL);
+    static const char head2[] = "games: ux0:app: 45 entries: 40 listed, 0 already listed, 5 skipped, 40 listed under its "
+                                "ID (no title read); skipped: ";
+    TEST_CHECK_(!strncmp(line, head2, sizeof(head2) - 1), "%s", line);
+    static const char *const why5[] = {"NPXS10001 (a system app)", "NPXS10002 (a system app)", "VITASHELL (VitaShell)",
+                                       "VJOSET001 (this app)", "mainmenu (SceShell's name)"};
+    for (unsigned i = 0; i < 5; i++) TEST_CHECK_(strstr(line, why5[i]) != NULL, "%s: %s", why5[i], line);
+    const char *ids = strstr(line, "; under its ID: ");
+    size_t n = strlen(line);
+    TEST_CHECK_(n + 14 <= 300 && (!ids || ids > strstr(line, "; skipped: ")), "%zu B: %s", n, line);
+    TEST_CHECK_(ids && n > 5 && !strcmp(line + n - 5, " more"), "%s", line); /* not all 40 IDs fit */
+    /* a name past 24 bytes is cut at a whole character: never inside one */
+    card(1, NULL);
+    mkdir("ux0:app/A\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B\xE3\x81\x8D\xE3\x81\x8F\xE3\x81\x91", 0777);
+    spec_list();
+    at = 0;
+    hold(0, 5);
+    run(at);
+    CHECK_LINE("games: ux0:app", "games: ux0:app: 2 entries: 1 listed, 0 already listed, 1 skipped; skipped: "
+                                 "A\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A\xE3\x81\x8B\xE3\x81\x8D... (not a title ID)");
 }
 
 /* A listing that fails part way (EIO) says so, and ux0:app's, incomplete,
@@ -2827,6 +2865,99 @@ static void the_log_batch_keeps_order_and_threads_apart(void)
     vjo_app_log_batch_end();
     vjo_log("hidden too");
     TEST_CHECK(!slurp(APP_LOG, NULL));
+}
+
+static int shell_sees(const char *path, const char *id, int psp);
+/* A PSP game's ID in no folder (PSPEMUCFW, a disc ID) follows the shared PSP
+ * row once its own rule is gone, as the Shell and the kernel's loader read it
+ * (psp = 1): after disable all and Default ON with NPXS10028 OFF, both rows
+ * show OFF, and both carry the PSP tag (the audit's A5, with the tag). */
+static void missing_psp_rows_follow_the_shared_row(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\nPSPEMUCFW = enabled\n"
+                              "ULJS00378 = enabled\n";
+    card(3, NULL);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    add_game("PSPEMUCFW", "PSPEMUCFW" VJO_CATALOG_MISSING_NOTE);
+    add_game("ULJS00378", "ULJS00378" VJO_CATALOG_MISSING_NOTE);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    int before = at - 1;
+    tap(SCE_CTRL_TRIANGLE, 10);                      /* disable all */
+    script[at++] = (Input){0, 1, 100, 112 + 20, 0}; /* the Default row: OFF -> ON */
+    hold(0, 10);
+    goto_row("PSPEMUCFW");
+    int at_cfw = at - 1;
+    int idx_cfw = list_index("PSPEMUCFW"), idx_disc = list_index("ULJS00378");
+    for (int i = idx_cfw; i < idx_disc; i++) tap(DOWN, 3);
+    hold(0, 4);
+    int at_disc = at - 1;
+    int frames = run(at);
+    check_rules();
+    TEST_CHECK(check_cards(frames, NULL) == 0);
+    const char *now = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
+    TEST_CHECK_(now && !strcmp(now, "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\n"), "%s",
+                now ? now : "");
+    TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "PSPEMUCFW", 1) &&
+               !shell_sees("ux0:data/VitaJPOverlay/games.ini", "ULJS00378", 1));
+    int r = card_of(at_cfw, "PSPEMUCFW"), d = card_of(at_disc, "ULJS00378");
+    TEST_CHECK_(r >= 0 && !strcmp(session->shown[at_cfw].badge[r], "OFF"), "PSPEMUCFW card %d", r);
+    TEST_CHECK_(d >= 0 && !strcmp(session->shown[at_disc].badge[d], "OFF"), "ULJS00378 card %d", d);
+    /* the tag: a PSP game's row, before and after (accent: no registration to offer) */
+    TEST_CHECK_(r >= 0 && session->shown[at_cfw].tag[r] == ACCENT, "PSPEMUCFW tag 0x%08X", r >= 0 ? session->shown[at_cfw].tag[r] : 0);
+    TEST_CHECK_(d >= 0 && session->shown[at_disc].tag[d] == ACCENT, "ULJS00378 tag 0x%08X", d >= 0 ? session->shown[at_disc].tag[d] : 0);
+    int b = card_of(before, "PSPEMUCFW");
+    TEST_CHECK_(b < 0 || session->shown[before].tag[b] == ACCENT, "before: tag 0x%08X", session->shown[before].tag[b]);
+}
+
+/* log.txt's 1 MiB cap (settings/applog.c): a scan's batch writes each of its
+ * lines that still fits, in order, as the writer did line by line; the file
+ * never passes the cap and ends at a whole line. Checked against the lines an
+ * uncapped run writes, from several distances to the cap. */
+static void the_log_cap_keeps_whole_lines_as_before(void)
+{
+    static char fill[1024 * 1024];
+    char lines[16][1024];
+    size_t len[16];
+    int count = 0;
+    card(5, NULL);
+    at = 0;
+    hold(0, 5);
+    run(at);
+    FILE *f = fopen(APP_LOG, "r");
+    TEST_ASSERT(f != NULL);
+    while (count < 16 && fgets(lines[count], sizeof(lines[0]), f)) { len[count] = strlen(lines[count]); count++; }
+    fclose(f);
+    TEST_ASSERT(count >= 5); /* the start line and the scan's four */
+    static const size_t room[] = {0, 1, 60, 150, 250, 400, 600, 6000};
+    for (unsigned k = 0; k < sizeof(room) / sizeof(room[0]); k++) {
+        size_t pre = 1024 * 1024 - room[k];
+        card(5, NULL);
+        memset(fill, 'x', pre);
+        for (size_t i = 99; i < pre; i += 100) fill[i] = '\n';
+        fill[pre - 1] = '\n';
+        put_file(APP_LOG, fill, pre);
+        at = 0;
+        hold(0, 5);
+        run(at);
+        /* expected: each line kept when it fits at its turn */
+        char want[16 * 1024];
+        size_t want_n = 0, size = pre;
+        for (int i = 0; i < count; i++)
+            if (size + len[i] <= 1024 * 1024) { memcpy(want + want_n, lines[i], len[i]); want_n += len[i]; size += len[i]; }
+        /* the file: its size, and what follows the prefill (slurp holds 16 KiB) */
+        struct stat st;
+        char tail[16 * 1024];
+        TEST_ASSERT(stat(APP_LOG, &st) == 0);
+        size_t n = (size_t)st.st_size, got = 0;
+        FILE *g = fopen(APP_LOG, "rb");
+        TEST_ASSERT(g != NULL && fseek(g, (long)pre - 1, SEEK_SET) == 0);
+        got = fread(tail, 1, sizeof(tail), g);
+        fclose(g);
+        TEST_CHECK_(n <= 1024 * 1024 && n == pre + want_n && got == want_n + 1 && tail[0] == '\n' &&
+                    !memcmp(tail + 1, want, want_n), "room %zu: %zu B, want %zu", room[k], n, pre + want_n);
+    }
 }
 
 /* ---- Default: disable all (#138) ---- */
@@ -3007,6 +3138,8 @@ TEST_LIST = {
     {"a_failed_disable_all_changes_nothing", a_failed_disable_all_changes_nothing},
     {"a_scan_logs_in_one_append", a_scan_logs_in_one_append},
     {"the_log_batch_keeps_order_and_threads_apart", the_log_batch_keeps_order_and_threads_apart},
+    {"missing_psp_rows_follow_the_shared_row", missing_psp_rows_follow_the_shared_row},
+    {"the_log_cap_keeps_whole_lines_as_before", the_log_cap_keeps_whole_lines_as_before},
     {NULL, NULL}
 };
 

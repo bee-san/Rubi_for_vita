@@ -30,12 +30,33 @@ static SceUID batch_thread;
 
 void vjo_log_enable(int on) { log_on = on; }
 
-static void append(const char *text, size_t n)
+/* text's whole lines (n bytes, each ending in a line break) to log.txt in one
+ * append: each line that still fits below the cap, in order, as the writer
+ * did line by line before batches (a line that does not fit is dropped, a
+ * shorter one after it may still fit). The kept lines are moved together in
+ * text itself. */
+static void append(char *text, size_t n)
 {
     SceIoStat st;
     SceUID fd;
-    if (!n || (sceIoGetstat(LOG_PATH, &st) >= 0 && st.st_size + (SceOff)n > LOG_CAP))
-        return;
+    if (!n) return;
+    memset(&st, 0, sizeof(st));
+    if (sceIoGetstat(LOG_PATH, &st) >= 0 && st.st_size + (SceOff)n > LOG_CAP) {
+        SceOff size = st.st_size;
+        size_t kept = 0;
+        for (size_t at = 0; at < n;) {
+            const char *end = memchr(text + at, '\n', n - at);
+            size_t len = (end ? (size_t)(end - (text + at)) + 1 : n - at);
+            if (size + (SceOff)len <= LOG_CAP) {
+                memmove(text + kept, text + at, len);
+                kept += len;
+                size += (SceOff)len;
+            }
+            at += len;
+        }
+        n = kept;
+        if (!n) return;
+    }
     if ((fd = sceIoOpen(LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666)) >= 0) {
         sceIoWrite(fd, text, (SceSize)n);
         sceIoClose(fd);

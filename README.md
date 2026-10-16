@@ -332,10 +332,10 @@ cursor, the entry, its length, the dictionary, file reads and time
 
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. A game with its own
-ON or OFF in `games.ini` is listed even when the app cannot find its folder
-(a game card it cannot read, or a deleted game). It is listed under its
-update's title or its ID, with `(not found: a game card, or not installed)`,
-so its choice can still be changed. Each Start (and the app's start) writes
+ON or OFF in `games.ini` is listed even when the app does not find its folder
+(as with CLANNAD in #138, a game card it cannot read, or a deleted game). It is
+listed under its update's title or its ID, with `(folder not found)`, so its
+choice can still be changed. Each Start (and the app's start) writes
 what each folder held to `log.txt` ([why](docs/settings-readability.md#games-missing-from-the-list-and-default-off-138)). An unreadable or
 corrupt policy fails closed and reports the problem rather than enabling every
 game. A game turned ON gets OCR at its next start: the kernel plugin loads the
