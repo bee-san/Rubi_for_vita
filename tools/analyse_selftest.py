@@ -1794,9 +1794,13 @@ def summarise_collect(folder):
                                              "japanese_only_selection", "highlight_mode")}
     # an older build's settings: the engine choice (VOCR is the only engine) and the model choice
     # (API 20 and before)
-    for k in ("ocr_backend", "vocr_model", "vocr_fallback_model", "log_host"):
+    for k in ("ocr_backend", "vocr_model", "vocr_fallback_model"):
         if k in cfg:
             out["config"][k] = cfg[k]
+    # the removed UDP log's computer: whether one is set, never the address (a machine on the user's
+    # network), in the text and in analysis.json alike
+    if "log_host" in cfg:
+        out["config"]["log_host"] = "set" if cfg["log_host"] else ""
     out["app"] = summarise_app(folder, record)
     out["tai"] = {}
     for dev in ("ur0", "ux0"):

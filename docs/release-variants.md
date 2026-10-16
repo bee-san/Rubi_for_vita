@@ -54,8 +54,8 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
 | config warnings, the Overlay app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
 | `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log |
-| the UDP log (`log_host`) | `log_vita.c` | keep for now: overlay-shell-slim's PR-B removes it from both builds |
-| the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | untouched: Google Lens and its capture went from both builds with #130; overlay-shell-slim's PR-B removes the rest of the network from both |
+| the UDP log (`log_host`) | `log_vita.c` | gone from both builds with the network stack (#145); `log_host` is a removed setting, a set one gives one config warning in both |
+| the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | gone from both builds: Google Lens and its capture with #130, the sockets, resolver and TLS with #145 |
 
 ### Kernel plugin (`VitaJPOverlay_Kernel.skprx`)
 
@@ -96,7 +96,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | `install_ftp.sh --collect` (every log and record in one zip, with its analysis) | **keep**: the way to send a short log when something breaks. The analysis names the build (`package 0.8.0, the normal build (a short log; no self-test)`, and the log's boots of it) and reads the normal build's own lines: its OCR jobs (each rc, model, lines and time), its clock lines, a refused PAF request, the self-test note; a failed job is a problem line; its kernel.txt logs no job, which the analysis says instead of counting 0. `analyse_timeline.py` says the short log has nothing to time |
 | `install_ftp.sh --self-test` | keep; from the normal package it says the self-test needs the `-debug` zip, and arms the marker for that build |
 | `analyse_selftest.py`, `analyse_timeline.py` | keep (they read either build's files; the timeline is the debug build's lines) |
-| debug config keys | none but `log_host` (above). Every other key is the same in both builds |
+| debug config keys | none: every key is the same in both builds (`log_host`, the UDP log's, is a removed setting in both since #145) |
 | asserts | none at run time in the plugins or the app; the compile-time checks (`static_assert`, the negative-array typedefs) cost nothing in either |
 | test and mutation hooks (`VJO_HOST`, `VJO_GAME_CASCADE_CONF`, `VJO_GAME_OCR_NO_MODULE_ENTRY`, `VJO_SETTINGS_SMOKE`, `VJO_LOCAL_STATS`, `VJO_VOCR_MODEL_INFO_TEST`) | in neither release build: host tests and the Vita3K smokes only |
 | symbols | in neither zip: the SELFs carry no symbol table (exports by NID); the ELFs stay in the build directory |
@@ -117,7 +117,9 @@ to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 
 The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
 28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: three
-pages on main `ac905b1`, two since #127 and #124, two again after #130. Its budget is checked exactly
+pages on main `ac905b1`, two since #127 and #124, two again after #130, and three after the network
+stack's removal (#145: 176,128 against 163,840 B [measured: both builds of main `3aa08a6` with #132
+and #145]). Its budget is checked exactly
 (`--exact`: a normal budget above its pages fails the build too), so whoever changes either build's
 pages re-measures it; the check names the value to set. The game worker's saving (1,364 B of text) no
 longer frees a page since #124, so both builds share its budget. The Overlay app's text differs by

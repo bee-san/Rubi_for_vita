@@ -606,6 +606,23 @@ class SharedTierTable(unittest.TestCase):
         line = a.log_host_line("192.168.1.5")
         self.assertTrue(line.startswith("    log_host (set): ") and "192.168" not in line)
 
+    def test_collect_never_shows_a_log_host_address(self):
+        # audit-overlay-shell-slim-3b B1: the config line and analysis.json say set or empty, not the address
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d) / "ux0/data/VitaJPOverlay"
+            data.mkdir(parents=True)
+            (Path(d) / "COLLECT.json").write_text("{}")
+            for value, shown in (("192.168.1.5", "set"), ("", "empty")):
+                with self.subTest(value=value):
+                    (data / "config.ini").write_text(f"log_file = on\nlog_host = {value}\n")
+                    r = subprocess.run([sys.executable, str(SCRIPT), "--collect", d], capture_output=True, text=True,
+                                       timeout=60)
+                    text = r.stdout + r.stderr
+                    for out in Path(d).glob("analysis.*"):
+                        text += out.read_text(errors="replace")
+                    self.assertNotIn("192.168", text)
+                    self.assertIn(f"log_host ({shown}): the UDP log was removed", r.stdout)
+
     def test_any_ocr_backend_line_is_one_to_delete(self):
         # VOCR is the only engine since Google Lens's removal: the plugins warn for a removed engine's
         # value (core/config.c removed_engine) and ignore vocr; the app's next save and the installer
