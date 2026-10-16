@@ -22,6 +22,7 @@ extern "C" {
 #include "platform_posix.h"
 #include "styled.h"
 #include "text_hit.h"
+#include "textjoin.h"
 #include "utf.h"
 }
 #include "../../shell/word_navigation.h"
@@ -873,6 +874,64 @@ static void every_bundled_entry_fits_the_popup(void)
            VJO_BODY_SPANS);
 }
 
+/* A real text box's lines, '\n' between them (the fixtures escape it). */
+static std::string unescape(const std::string &s)
+{
+    std::string t;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == 'n') { t += '\n'; i++; }
+        else t += s[i];
+    }
+    return t;
+}
+
+/* Words a game's own wrapping split over two lines, in real text boxes
+ * (host/fixtures/cross_lines, owner 2026-10-16 item 4): the lookup at the
+ * word's first character shows the whole word, its highlight running across
+ * the break, and the card's Sentence has the lines joined there. */
+static void split_words_are_looked_up_whole(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    int n = 0;
+    setup(&cfg, &p, &pp);
+    for (auto &r : read_tsv("../cross_lines/split_words.tsv")) {
+        VjoArena a; VjoOverlayData d;
+        TEST_ASSERT(r.size() == 5);
+        std::string text = unescape(r[2]);
+        size_t cursor = 0, cp = 0, len = text.size();
+        TEST_CASE_("%s %s", r[0].c_str(), r[4].c_str());
+        while (cursor < len && cp < (size_t)atoi(r[3].c_str())) { vjo_utf8_next(text.c_str(), len, &cursor); cp++; }
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, text.c_str(), &d) == VJO_OK);
+        TEST_ASSERT(!strcmp(d.sentence, text.c_str())); /* every line Japanese, nothing trimmed */
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK && d.list.n_entries == 1);
+        const VjoEntry *e = &d.list.entries[0];
+        std::string span(d.sentence + e->hl_start, (size_t)(e->hl_end - e->hl_start));
+        TEST_CHECK_(span.find('\n') != std::string::npos, "the span %s ends before the break", span.c_str());
+        TEST_CHECK_(r[4] == e->vocab->spelling, "entry %s, expected %s", e->vocab->spelling, r[4].c_str());
+        check_header_range(&d, (size_t)e->hl_start, (size_t)e->hl_end);
+        n++;
+    }
+    TEST_CHECK(n == 56);
+}
+
+/* Breaks after a speaker's name or at a sentence's end stay breaks. */
+static void kept_breaks_stay_breaks(void)
+{
+    int n = 0;
+    for (auto &r : read_tsv("../cross_lines/kept_breaks.tsv")) {
+        TEST_ASSERT(r.size() == 5);
+        std::string text = unescape(r[2]);
+        size_t at = std::string::npos;
+        for (int k = 0; k <= atoi(r[3].c_str()); k++) at = text.find('\n', at + 1);
+        TEST_CASE_("%s %s", r[0].c_str(), r[4].c_str());
+        TEST_ASSERT(at != std::string::npos);
+        TEST_CHECK(!vjo_text_joins(text.c_str(), text.size(), at));
+        n++;
+    }
+    TEST_CHECK(n == 32);
+}
+
 TEST_LIST = {
     {"preferred_readings_exist_in_the_bundle", preferred_readings_exist_in_the_bundle},
     {"usual_spellings_win_in_the_bundle", usual_spellings_win_in_the_bundle},
@@ -883,6 +942,8 @@ TEST_LIST = {
     {"real_lines_navigate_displayed_rows", real_lines_navigate_displayed_rows},
     {"ultimate_dictionary_fixture_entries", ultimate_dictionary_fixture_entries},
     {"every_bundled_entry_fits_the_popup", every_bundled_entry_fits_the_popup},
+    {"split_words_are_looked_up_whole", split_words_are_looked_up_whole},
+    {"kept_breaks_stay_breaks", kept_breaks_stay_breaks},
     {NULL, NULL}};
 
 /* acutest's main, behind the dictionary check (skip without the bundle). */

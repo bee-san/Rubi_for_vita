@@ -21,12 +21,13 @@ static int mark(uint32_t c, const uint16_t *t, int n, uint32_t odd)
     return c >= 0x3008 && c <= 0x301B && (c & 1) == odd && (c >> 1) != (0x3012 >> 1);
 }
 
-/* The text's lines in one pass: the longest one's characters, and for the
- * line ending at the '\n' at byte nl, its characters and last character, and
- * the next line's first. Spaces at a line's ends are not counted. */
+/* The text's lines in one pass: the longest one's width, and for the line
+ * ending at the '\n' at byte nl, its width and last character, and the next
+ * line's first. A width is in half-width cells: ASCII and half-width forms
+ * one, any other character two; spaces at a line's ends are not counted. */
 static int joins(const char *s, size_t len, size_t nl)
 {
-    size_t i = 0, chars = 0, gap = 0, max = 0, before = 0;
+    size_t i = 0, chars = 0, gap = 0, max = 0, before = 0, cells;
     uint32_t last = 0, prev_last = 0, next_first = 0;
     int line = 0; /* 0: up to the break, 1: the line after it, 2: later */
     for (;;) {
@@ -45,17 +46,18 @@ static int joins(const char *s, size_t len, size_t nl)
             chars = gap = 0;
             continue;
         }
+        cells = c < 0x80 || (c >= 0xFF61 && c <= 0xFF9F) ? 1 : 2;
         if (c == ' ' || c == '\t' || c == '\r' || c == 0x3000) {
-            gap += chars != 0; /* counted only once a character follows */
+            gap += chars ? cells : 0; /* counted only once a character follows */
             continue;
         }
         if (line == 1 && !next_first)
             next_first = c;
-        chars += gap + 1;
+        chars += gap + cells;
         gap = 0;
         last = c;
     }
-    return before >= VJO_JOIN_MIN_CHARS && before + VJO_JOIN_SLACK >= max && next_first &&
+    return before >= 2 * VJO_JOIN_MIN_CHARS && before + 2 * VJO_JOIN_SLACK >= max && next_first &&
            !mark(prev_last, ends, sizeof(ends) / sizeof(ends[0]), 1) &&
            !mark(next_first, starts, sizeof(starts) / sizeof(starts[0]), 0);
 }

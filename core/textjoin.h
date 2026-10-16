@@ -7,14 +7,15 @@
  * (core/anki.c). The overlay still shows the lines as recognized.
  *
  * A game wraps a line only once it is full, so a break joins when the line
- * before it is as long as the text's longest line, within VJO_JOIN_SLACK
+ * before it is as wide as the text's widest line, within VJO_JOIN_SLACK
  * characters (a mark pushed to the next row or hanging past the box), and at
- * least VJO_JOIN_MIN_CHARS long, it does not end with a sentence's end or a
+ * least VJO_JOIN_MIN_CHARS wide, it does not end with a sentence's end or a
  * closing bracket (。．！？!?」』）】〕〉》］ and the like), and the line
  * after it does not start with an opening one (「『（【〔〈《［ and the like).
  * Every other break stays a break: after a speaker's name (a short line, or
  * one in brackets), at a sentence's end, or where the game broke a short line
- * by hand. Characters are code points, spaces at a line's ends not counted. */
+ * by hand. Widths are in full-width characters, a half-width one (ASCII, the
+ * half-width forms) counting half; spaces at a line's ends are not counted. */
 #ifndef VJO_TEXTJOIN_H
 #define VJO_TEXTJOIN_H
 #include <stddef.h>

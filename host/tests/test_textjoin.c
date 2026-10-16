@@ -91,6 +91,19 @@ static void spaces_ends_and_empty_lines(void)
     TEST_CHECK(!vjo_text_joins("abc", 3, 3) && !vjo_text_joins("abc", 3, 1) && !vjo_text_joins("", 0, 0));
 }
 
+/* A half-width character is half as wide: a line with ASCII in it is as full
+ * as the others with fewer characters, and 15 ASCII letters are no full line. */
+static void half_width_characters_count_half(void)
+{
+    /* 18 full-width characters each, the first one's six ASCII among them as three */
+    const char *t = "ABC-12日の午前に届いた古い手紙の写し\nそれを読み返して、ひとり考え込む人が\nいた。";
+    TEST_CHECK(vjo_text_joins(t, strlen(t), (size_t)(strstr(t, "人が\n") - t) + 6));
+    TEST_CHECK(!joins_at("abcdefghijklmno\npqrstuvwxyz", "\n"));    /* 7.5 full-width characters */
+    TEST_CHECK(joins_at("abcdefghijklmnop\nqrstuvwxyz", "\n"));     /* 8 */
+    TEST_CHECK(joins_at("ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀ\nﾁﾂﾃﾄ", "\n"));       /* half-width katakana: 8 */
+    TEST_CHECK(!joins_at("ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿ\nﾁﾂﾃﾄ", "\n"));
+}
+
 static void join_removes_the_breaks_and_moves_offsets(void)
 {
     char t[256] = "健太\n「それでも俺は、最後まであきらめずに走り続けなが\nらも、ずっと前を見ていたんだ」";
@@ -122,6 +135,7 @@ TEST_LIST = {
     {"short_lines_keep_their_break", short_lines_keep_their_break},
     {"sentence_ends_and_brackets_keep_their_break", sentence_ends_and_brackets_keep_their_break},
     {"spaces_ends_and_empty_lines", spaces_ends_and_empty_lines},
+    {"half_width_characters_count_half", half_width_characters_count_half},
     {"join_removes_the_breaks_and_moves_offsets", join_removes_the_breaks_and_moves_offsets},
     {NULL, NULL},
 };
