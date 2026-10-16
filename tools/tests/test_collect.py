@@ -509,7 +509,7 @@ class Collect(unittest.TestCase):
                         record["errors"])
         self.assertTrue(any(e.startswith("ux0:/app/VJOSET001/eboot.bin: not hashed, curl exit ") for e in record["errors"]),
                         record["errors"])
-        line = next(l for l in analysis.splitlines() if l.startswith("  Overlay app:"))
+        line = next(row for row in analysis.splitlines() if row.startswith("  Overlay app:"))
         self.assertTrue(line.startswith("  Overlay app: not checked: this collect could not read it over FTP (reading it "
                                         "failed: vjo_app.txt, curl exit "), line)
         self.assertIn("), and the Shell logged no check of it in this boot", line)
