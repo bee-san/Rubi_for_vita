@@ -280,7 +280,7 @@ static void test_settings_save_drops_removed_anki_settings(void)
         "; mine\nocr_backend = vocr\nanki_mining = on\nanki_host = 192.168.1.23:8766\nanki_deck = Mining #1 ; main\n"
         "anki_note_type = Lapis;v2\nanki_field_picture =\nANKI_FIELD_WORD = Word\n"
         "anki_audio_url = https://a.invalid/?term={term}&key=secret-url\nanki_audio_url https://a.invalid/?k=secret-2\n"
-        "font_size_ja = 22\n";
+        "anki_host\nfont_size_ja = 22\n";
     for (int save = 0; save < 2; save++) {
         char out[sizeof(anki) + 256];
         VjoConfig cfg;

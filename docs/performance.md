@@ -311,8 +311,10 @@ data pages; a Shell change that adds a page breaks AGENTS.md rule 1. Without the
 dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `ba5f69a`, with API 21's model
 sizes and API 22), with 2,808 B left in its code pages (210,184 of 212,992) and 2,524 B in its data
 pages, and without the Hachidori relay client 282,624 B, with 2,704 B left in its code pages
-(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 4,040 B left in its code pages (188,472 of 192,512) and 3,624 B in its data pages. The kernel module has
-1,248 B (code) and 112 B (data) left, the game worker 452 B and 2,356 B.
+(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 3,408 B left in its code pages (189,104 of 192,512, with #123's key filter) and 3,624 B in its data pages [main `c641bdf`]. The kernel module has
+224 B (code) and 56 B (data) left (36,640 of 36,864 and 77,768 of 77,824), the game worker 2,916 B
+and 2,176 B (70,812 of 73,728 and 14,208 of 16,384) [measured: the build log's module rows, main
+`e53d9fb`].
 
 ## Reproduce
 

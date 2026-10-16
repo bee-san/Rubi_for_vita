@@ -47,7 +47,8 @@
  * 18,192 B of text and 972 B of data/bss, so the module is 188,472 text + 70,104 data/bss [measured:
  * the build log's module rows, main 5e68ecd (#116, #111: 206,664 + 71,076, the same 282,624 B of
  * pages) and this change], four text pages fewer: 192,512 + 73,728 B of pages. (On main c4a6ade,
- * before #111's 424 B of text, it was 188,056 B of text, five pages fewer.) */
+ * before #111's 424 B of text, it was 188,056 B of text, five pages fewer.) #123's key filter makes it
+ * 189,104 text, the same pages [measured: the build log's module row, main c641bdf]. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 266240u
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
@@ -111,7 +112,7 @@
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a text-only card to the queue. The Shell takes no
  * screenshot: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,
  * and a 393,216 B arena here) was removed with AnkiConnect. A save with 8 dictionaries' entries
- * peaks at 103,880 B [measured, host, test_shell_anki.c]. anki.c checks its arena against this at
+ * peaks at 102,680 B [measured, host, test_shell_anki.c, main e53d9fb]. anki.c checks its arena against this at
  * compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */

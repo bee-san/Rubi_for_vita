@@ -202,7 +202,8 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
     if (removed_secret(line + b, n - b))
         return VJO_LINE_DROP;
     e = b;
-    while (e < n && line[e] != '=' && !is_space(line[e])) e++;
+    /* the first word ends at '=', a space or the line's end (a name alone on its line too) */
+    while (e < n && line[e] != '=' && line[e] != '\n' && !is_space(line[e])) e++;
     /* a removed Anki setting goes too (anki_audio_url's URL can hold a key) */
     if (removed_anki_name(line + b, e - b))
         return VJO_LINE_DROP;

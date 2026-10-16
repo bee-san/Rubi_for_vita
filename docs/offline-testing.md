@@ -105,11 +105,11 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | text_rows | 11 | the overlay arrows' row walk (`core/text_rows.c`, #81): float cell edges and 32-bit offsets on the Vita's FPU |
 | settings_layout | 12 | the Overlay app's text layouts, icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
 | shell_log | 13 | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
-| apkg | 17 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure; the four packages it writes (`--write`) are byte-identical to the host build's |
+| apkg | 19 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure; the four packages it writes (`--write`) are byte-identical to the host build's |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 173 cases pass,
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 175 cases pass,
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
@@ -155,7 +155,8 @@ What this says, and what it does not:
   in #42; an Anki save would have found no pages for its thread. The fix (worker `NO_RESIDENT`,
   the overlay's text arena out of `.bss`) held 389,120 B, 73,728 B below the v0.7.4 build that
   ran beside a game, and left 172,032 B at the end of boot in the same session; without
-  AnkiConnect the build holds 372,736 B and leaves 188,416 B.
+  AnkiConnect the build holds 356,352 B and leaves 204,800 B (the model, with the module's
+  266,240 B).
 - `e759187`, the build that failed in #59, would show 20,480 B of headroom in the same
   scenario, positive. The model cannot prove that a build fits: SceShell's own use differs
   between sessions (a second sample, ownership unverified, had 28,672 B free), the daily
