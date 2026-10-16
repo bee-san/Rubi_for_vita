@@ -1513,8 +1513,9 @@ def boost_verdicts(rows, groups, like):
     own clock not one figure around the raised jobs and next to the off windows (the off side's is assumed from it;
     audit-overlay-analyser-fixes-2 N2), or the raised jobs' clock not one figure; the same ratio on CPU time (each
     line's share of a core, when every job compared logged it) giving another verdict (B2: game threads that took
-    the core at one clock and not the other); or an off window against its neighbours giving another verdict (N1:
-    the windows drifted). With no model to compare, one "unclear" saying why."""
+    the core at one clock and not the other); or an off window against its neighbours on the other side of the
+    threshold the pooled ratio decides by (N1: under yes_at for a yes, over no_at for a no; the windows drifted).
+    With no model to compare, one "unclear" saying why."""
     out = []
     for m, g in groups.items():
         if "off" not in g or not ("raised" in g or "left" in g):
@@ -1557,12 +1558,16 @@ def boost_verdicts(rows, groups, like):
                         f"{_class(p['cpu_ratio'], v)}: the shares differ between the sides, so part of the wall time is "
                         "game threads holding the core, not the clock")
             continue
+        # an off window against its neighbours on the other side of the decision's threshold: yes needs each at
+        # yes_at or more (one above the band only adds its own load), no each at no_at or less
+        bound = {"yes": ("under", v["yes_at"]), "no": ("over", v["no_at"])}.get(wall)
         drift = [(w["window"], w["near"]["ratio"]) for w in like[m]["windows"]
-                 if w["side"] == "off" and w.get("near") and _class(w["near"]["ratio"], v) != wall]
+                 if bound and w["side"] == "off" and w.get("near") and
+                 (round(w["near"]["ratio"], 2) < bound[1] if wall == "yes" else round(w["near"]["ratio"], 2) > bound[1])]
         if drift:
-            v["why"] = ("an off window against its neighbours gives another verdict ("
+            v["why"] = ("an off window against its neighbours is " + bound[0] + f" {bound[1]:.2f} ("
                         + ", ".join(f"window {w}: {r:.2f}" for w, r in drift)
-                        + "): the windows drifted (another scene, the game's load)")
+                        + f") where the pooled ratio is {wall}: the windows drifted (another scene, the game's load)")
             continue
         v["verdict"] = wall
         if wall == "unclear":

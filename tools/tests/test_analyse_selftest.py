@@ -1665,6 +1665,14 @@ class BoostLikeForLike(unittest.TestCase):
             "jobs": 2, "us": 1, "frames": 1, "before": 222, "during": 444}}},
             {self.H15: {"pooled": None}})[0]
         self.assertEqual((v["yes_at"], v["no_at"], v["over_at"], v["gain"]), (1.75, 1.25, 2.25, (222, 444)))
+        # rounded as the ratio is printed: 266 -> 444 gives 1.5019, stated and applied as 1.50, so a printed 1.50 is yes
+        self.assertEqual(a._thresholds((266, 444))["yes_at"], 1.5)
+        self.assertEqual(a._class(1.4996, a._thresholds((266, 444))), "yes")
+        # the thresholds follow the commonest clock pair of the raised jobs, not the first job's
+        lg = a.summarise_log(BOOT22 + START + auto_job([(100, 150.0)], (222, 0, 444, 222))
+                             + auto_job([(100, 200.0)], RAISED) * 3 + START + auto_job([(100, 270.0)]) * 2)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["gain"], v["yes_at"]), ((333, 444), 1.25))
 
     def test_a_clock_the_boost_could_not_raise_gives_no_ratio(self):
         # a clock plugin holding 333 MHz (the set call returns 0, the clock stays) or a refused set call (rc < 0)
@@ -1827,8 +1835,27 @@ class BoostLikeForLike(unittest.TestCase):
         self.assertEqual((w3["window"], w3["neighbours"], round(w3["near"]["ratio"], 2)), (3, [2, 4], 1.24))
         (v,) = lg["boost_verdicts"]
         self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("unclear", 1.34))
-        self.assertIn("an off window against its neighbours gives another verdict (window 3: 1.24): the windows drifted "
-                      "(another scene, the game's load)", self.text(lg))
+        self.assertIn("an off window against its neighbours is under 1.25 (window 3: 1.24) where the pooled ratio is "
+                      "yes: the windows drifted (another scene, the game's load)", self.text(lg))
+        # the audit's m3 (invented): two off windows, the second 10 % slower: 1.33 and 1.47 against their
+        # neighbours, both at 1.25 or more: one above the band adds its own load only, and the pooled 1.39 is yes
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2925)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(3234)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        self.assertEqual([round(w["near"]["ratio"], 2) for w in lg["clock_like"][self.H15]["windows"] if w["side"] == "off"],
+                         [1.33, 1.47])
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("yes", 1.4))
+        # a pooled no (1.02) with one off window over 1.08 against its neighbours (1.10): unclear
+        log = (BOOT22 + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2150)) * 4
+               + START + auto_job(per_frame(2200), RAISED) * 2 + START + auto_job(per_frame(2420)) * 2
+               + START + auto_job(per_frame(2200), RAISED) * 2)
+        lg = a.summarise_log(log)
+        (v,) = lg["boost_verdicts"]
+        self.assertEqual((v["verdict"], round(v["ratio"], 2)), ("unclear", 1.02))
+        self.assertIn("an off window against its neighbours is over 1.08 (window 4: 1.10) where the pooled ratio is no",
+                      self.text(lg))
 
     def test_the_clock_next_to_the_off_window_is_in_the_own_clock_check(self):
         # audit-overlay-analyser-fixes-2 N2 (its m13, invented): window 2's last job, of a kind the off side lacks,
