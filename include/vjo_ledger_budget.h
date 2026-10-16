@@ -69,9 +69,9 @@
  * or the HTTP client either (only SHA-256, the queue's IDs): 87,208 B off the text segment (.text
  * -66,728 B, .rodata -20,424 B) and 72 B off data/bss, so the module is 100,792 text + 70,060
  * data/bss [measured: the build log's module rows and arm-vita-eabi-size, main 6020c0b and this
- * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. #132's
- * VjoNet stack paint and check make it 101,256 text + 70,076 data/bss, the same pages [measured: the
- * build log's module row, main 6020c0b with #130 and #132]. */
+ * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. #140's
+ * posting hints make it 101,024 text, the same pages, and #132's VjoNet stack paint and check
+ * 101,488 + 70,076 [measured: the build log's module rows, main 32bfc6a and #132]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -121,7 +121,7 @@
  * any more (the UDP log's send is the one network call left, PR-B's), and its deepest chain of the
  * Shell's own code is 5,624 B: net_main 144, a job's vocr_run_one 5,000 (its log batch), then
  * vjo_log down to the file write 480 [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su
- * of this build, on main 6020c0b with #130; the SDK's own code and the indirect-call sites are not
+ * of this build, on main 32bfc6a; the SDK's own code and the indirect-call sites are not
  * counted]. The thread paints its
  * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
  * so a console run measures it. */

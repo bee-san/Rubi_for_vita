@@ -139,11 +139,11 @@ step.
 - **VjoNet's stack, 64 → 16 KiB** (PR-A2, #132): 64 KiB was "BearSSL needs it for TLS"
   (`include/vjo_ledger_budget.h`); the thread's deepest chain without TLS is 5,624 B (the job's log
   batch) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's sources,
-  main `6020c0b` with #130]. The thread paints its stack and logs its high water at game exits.
+  main `32bfc6a` with #132]. The thread paints its stack and logs its high water at game exits.
 
 | | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] | after PR-A2 [measured] |
 |---|---:|---:|---:|---:|---:|
-| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B | 101,256 B |
+| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B | 101,488 B (main `32bfc6a`: 101,024 B with #140) |
 | Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) | 176,128 B |
 | Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B | 217,088 B |
 | PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one | 225,280 B |
