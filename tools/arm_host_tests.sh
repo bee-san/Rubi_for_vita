@@ -80,6 +80,8 @@ build region_select host/tests/test_region_select.c core/region_select.c core/re
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
+# The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
+build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/utf.c
 # The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
 # taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
@@ -101,7 +103,7 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows stick_cursor settings_layout shell_log apkg psp taicfg)
+TESTS+=(touch_hold text_rows stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

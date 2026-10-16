@@ -180,6 +180,40 @@ static inline size_t ref_step(const Layout *l, size_t cursor, size_t from, int d
     return l->begin[to];
 }
 
+/* Left/Right in reading order across the rows (the owner's 2026-10-16 rule,
+ * test.3's item G): direction > 0 the first selectable character at or after
+ * `from`, direction < 0 the last one before the cursor, whatever row it is on.
+ * Past the text's end that way the cursor stays, unless `wrap` is set and every
+ * selectable character is on one row: then that row's first (Right) or last
+ * (Left), *wrapped set. Returns the new cursor, or `cursor` to stay. */
+static inline size_t ref_read_step(const Layout *l, size_t cursor, size_t from, int direction, int japanese_only,
+                                   int wrap, int *wrapped)
+{
+    int first = -1, last = -1, before = -1, next = -1, to;
+    *wrapped = 0;
+    for (unsigned k = 0; k < l->n; k++) {
+        if (!layout_selectable(l, k, japanese_only))
+            continue;
+        if (first < 0)
+            first = (int)k;
+        last = (int)k;
+        if (l->begin[k] < cursor)
+            before = (int)k;
+        else if (l->begin[k] >= from && next < 0)
+            next = (int)k;
+    }
+    to = direction > 0 ? next : before;
+    if (to < 0 && wrap && first >= 0 && l->line[first] == l->line[last]) {
+        to = direction > 0 ? first : last;
+        *wrapped = 1;
+    }
+    if (to < 0 || l->begin[to] == cursor) {
+        *wrapped = 0;
+        return cursor;
+    }
+    return l->begin[to];
+}
+
 /* Up/Down (vjo_text_row_vertical's rule); goal < 0: the cursor cell's
  * centre. Returns the new cursor or `cursor` to stay. */
 static inline size_t ref_vertical(const Layout *l, size_t cursor, int direction, int japanese_only, float goal)
