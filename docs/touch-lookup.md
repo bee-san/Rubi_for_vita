@@ -9,7 +9,9 @@ word mode, Right skips the current matched source span and Left retraces up to
 16 recent forward selections. Without a match or previous selection, movement
 falls back to one Unicode character. Character mode always steps one character.
 Both stay on the header's displayed row and wrap at its ends, and Up/Down
-change rows ([rows and arrow keys](#rows-and-arrow-keys)).
+change rows ([rows and arrow keys](#rows-and-arrow-keys)). The left stick moves
+the cursor faster and looks its word up only once it rests
+([the left stick](#the-left-stick-138)).
 Whole word uses the matched source span, including an inflected ending, rather
 than the dictionary's normalized spelling. While a lookup runs or has no result,
 it highlights the selected character instead. Changing the preference preserves
@@ -250,6 +252,109 @@ real match ends stays on its row and wraps to the row's first word, and Left
 undoes it. The shoulder-tap rule is in `host/tests/test_word_navigation.cpp`.
 These are host checks of the portable code against a layout double; the paf
 layout itself, the key feel and the shoulder taps are for the console run.
+
+## The left stick (#138)
+
+Each arrow press looks its word up at once, and in Whole word mode Right skips
+a word only once that word's lookup is shown: in the test.3 console run the 31
+cursor lookups took 35-112 ms each (median 56 ms; the `lookup cursor` and
+`job 0 done` lines from `log.txt` line 10630 on, in
+`vjo-collect-20261016-071743Z.zip`), and the tester found crossing a long line
+slow. The left stick now moves the cursor without looking anything up on the
+way:
+
+- **Speed, by the clock** (`core/stick_cursor.h`), as the Overlay app's lists
+  since #107, #113 and #129 (`core/stick_scroll.h`): pushed more than half way
+  (64 of its 128 counts), the stick moves the cursor one step at once; held, the
+  next step comes after the lists' 166.7 ms, then after 125 ms, each later one
+  12.5 ms sooner than the one before, down to one every 50 ms. That is 13 steps
+  in the first second, then 20 a second, **the cap**: an estimate of what a
+  reader can stop on, not measured on a console. How far the stick is pushed
+  beyond half way does not change the speed, as in the lists. A frame's time
+  counts at most 50 ms, so a frame moves the cursor at most once and a stalled
+  frame never makes it jump, at 60 Hz, 30 Hz or anything between. The clock is
+  SceShell's process time; only its low 32 bits are kept, whose differences are
+  right across their wrap every 71.6 minutes.
+- **Steps.** Left and right step through the text in reading order, across the
+  displayed rows and line breaks (`vjo_text_read_step`, `core/text_rows.c`):
+  Right from a word whose lookup is shown skips that word, as the d-pad's Right
+  does; every other step is one character, because no lookup tells where the
+  next word ends. Japanese-only applies as to the arrows. The stick stops at the
+  text's first and last character instead of wrapping, as the app's lists stop
+  at their ends. Up and down go a displayed row, as Up/Down do. The axis pushed
+  farther counts, and the one held keeps counting while it stays past half way,
+  so a stick rolled round changes direction once.
+- **The deferred lookup.** While the stick moves the cursor, the body says
+  "Looking up words…" and the header highlights the character. The word at the
+  cursor is looked up once, when the cursor has rested there for
+  `stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000; 0 looks up as soon
+  as the stick stops driving the cursor), counted from its last move with the
+  steps' 1 ms slack for the microsecond clock (six frames at exactly 30 Hz read
+  199,998 us: 200 ms): with the stick let go, or held against the text's end or
+  a row it cannot leave. A held stick is never a rest, the 166.7 ms before its
+  first repeat included. Flicks closer together than the rest give one lookup,
+  after the last. Back on the word shown before the rest, nothing is looked up
+  again: the word stays, its dictionary page included.
+- **The d-pad and taps** keep one step (a tap, its character) and a lookup at
+  once, and drop a lookup the stick left due. An arrow pressed takes its frame:
+  the stick's step due in it is dropped.
+- **The right stick** scrolls a long definition. Before #138 either stick did.
+- A stick already pushed when the overlay opens, when the region selector
+  closes, while there is no text yet (recognizing, an error) or when new text
+  replaces the shown one (a quiet refresh) moves nothing until it is let back
+  inside half way.
+- **The close.** The next open keeps the overlay's cursor only when it is the
+  worker's (the word the worker shows, or looks up) and nothing is due; else it
+  takes the worker's cursor, as for new text (`vjo_stick_cursor_kept`, under
+  the view lock). A word still due at the close is such a case, and so is a
+  lookup the worker refused: Cancel posts its close for the control thread,
+  which wakes every 50 ms, and `vjo_post_cursor` posts nothing meanwhile, nor
+  while the overlay is closing; a rest that ended in those frames, or an arrow
+  pressed in them, left the two apart, and the reopened overlay said "Looking
+  up words…" with no lookup coming (#156's audit, B1).
+
+The overlay's close line in `log.txt` counts the stick's cursor moves and its
+deferred lookups and names the rest time in force (`stick %d` is now the
+largest deflection either stick reached, 0-128):
+
+```
+overlay closed: 3733 frames, 2 word moves, stick 127, slowest frame 11 ms, 4 row moves, 1 wraps, 0 without layout, slowest key 128 us, 37 stick moves, 3 deferred lookups after 200 ms
+```
+
+`word moves`, `row moves`, `wraps`, `without layout` and `slowest key` stay the
+arrows', taps' and dictionary pages' (the stick's up/down take the arrows' row
+walk, and are counted among its own `stick moves`); `--collect`'s analysis adds
+the stick's sums (`tools/analyse_selftest.py`,
+`left stick (N of them): M cursor moves, K deferred lookups (after 200 ms at
+rest)`).
+
+`host/tests/test_stick_cursor.c` (26 cases, on the ARM lane too) drives the stick
+by the clock at 20 to 60 Hz and on irregular 1-60 ms frames: the push, the pause,
+the acceleration step by step (each step on the first frame due, with the app's
+1 ms slack), never more than 21 steps in any second and 20 a second held (the
+cap), one step at most for a 2 s frame, a clock going back, the clock's 32-bit
+wrap (the same step times from just before it, a rest across it), the axes and
+the latch. Then the overlay's frame over a cursor, with the overlay's helpers
+(`vjo_stick_cursor_step`, `_shown`, `_new_text`, `_kept`) and a worker's cursor
+that can refuse a post: one lookup per rest, 200 ms after the last move (199,998
+us at exactly 30 Hz, not 1,001 us sooner), none while held, a stick held into
+an end and rolled back moving again without a lookup at any rest, the owner's
+150-250 ms range and 0, flicks, the text's end held, the d-pad's lookup at once
+and its frame, back on the shown word, new text, and the close after a refused
+post; and every `vjo_text_read_step` from every character of 200 generated
+texts against the rule restated. `host/tests/test_shell_worker.c` runs the
+close with the real worker: the audit's B1 sequence (a flick, Cancel 183 ms
+later, the rest ending while the close waits: the reopened overlay shows the
+worker's word, and the stick goes on from there), the close before and after the
+rest, and `stick_lookup_ms` reaching the view. 44 mutants of `core/stick_cursor.h`
+and the step, and 4 of the close and the view's copy against the worker, each
+fail a test. `input_overlay` and `close_page` themselves are paf code no host
+target builds: the tests replay their calls around the real helpers.
+
+In test.3 the overlay drew at 59.5-59.9 Hz (the two sessions with arrow moves:
+6,882 frames in 115.0 s and 3,733 in 62.8 s between the page's touch-region
+on and off lines), so the cap is a step every third frame there. The stick's
+feel, and whether 20 steps a second overshoots, are the console run's.
 
 ## Word lookup on recognized text
 

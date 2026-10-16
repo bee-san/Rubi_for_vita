@@ -689,6 +689,7 @@ static const char nondefault_config[] =
     "local_dictionary_results = 3\n"
     "japanese_only_selection = off\n"
     "highlight_mode = character\n"
+    "stick_lookup_ms = 350\n"
     "font_size_ja = 30\n"
     "font_size_en = 18\n"
     "ocr_mode = on_press\n"

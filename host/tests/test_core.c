@@ -15,6 +15,7 @@
 #include "render.h"
 #include "replay.h"
 #include "scene.h"
+#include "stick_cursor.h"
 #include "textfilter.h"
 #include "triggers.h"
 #include "utf.h"
@@ -751,6 +752,22 @@ static void test_config(void)
         TEST_MSG("ocr_settle_press_ms = %s: %d, %d warning(s)", press[i].val, c.ocr_settle_press_ms, c.n_warnings);
         if (press[i].warns) TEST_CHECK(strstr(c.warnings[0], "ocr_settle_press_ms") != NULL);
     }
+    /* The left stick's lookup (#138, core/stick_cursor.h): once the cursor has rested
+     * 200 ms by default; 0 (as soon as the stick stops) to 1,000 ms; else the default, warned. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.stick_lookup_ms == 200 && c.stick_lookup_ms == VJO_STICK_CURSOR_REST_MS);
+    static const struct { const char *val; int want, warns; } rest[] = {
+        {"0", 0, 0}, {"150", 150, 0}, {"250", 250, 0}, {"1000", 1000, 0}, {"1001", 200, 1}, {"-5", 200, 1},
+        {"soon", 200, 1}, {"", 200, 1}, {"20 ms", 200, 1}};
+    for (unsigned i = 0; i < sizeof(rest) / sizeof(rest[0]); i++) {
+        char line[64];
+        vjo_config_defaults(&c);
+        snprintf(line, sizeof(line), "Stick_Lookup_Ms = %s\n", rest[i].val);
+        vjo_config_parse(&c, line, strlen(line));
+        TEST_CHECK(c.stick_lookup_ms == rest[i].want && c.n_warnings == rest[i].warns);
+        TEST_MSG("stick_lookup_ms = %s: %d, %d warning(s)", rest[i].val, c.stick_lookup_ms, c.n_warnings);
+        if (rest[i].warns) TEST_CHECK(strstr(c.warnings[0], "Stick_Lookup_Ms") != NULL); /* named as written */
+    }
     /* The beam + LM decoder's largest LM (1000k by default, tiers 1-4, off) and the
      * confidence cascade's time ceiling (2 s by default, 0 = off, at most 3,750 ms). */
     vjo_config_defaults(&c);
@@ -806,6 +823,7 @@ static void test_config(void)
         TEST_CHECK(d.ocr_refine_lines == 2 && strstr(t, "\nocr_refine_lines = psp\n"));
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
+        TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
     }
 
     /* the same button for both: the toggle keeps it */

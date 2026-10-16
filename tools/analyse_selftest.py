@@ -943,7 +943,9 @@ LOG = {
     "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
     # builds with row navigation (#81) add the arrow keys' row changes, wraps and presses before a layout
     "overlay": re.compile(r"^overlay closed: (\d+) frames, (\d+) word moves, stick (\d+), slowest frame (\d+) ms"
-                          r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout(?:, slowest key (\d+) us)?)?"),
+                          r"(?:, (\d+) row moves, (\d+) wraps, (\d+) without layout(?:, slowest key (\d+) us"
+                          # #138: the left stick's cursor moves, and the lookups made once it rested
+                          r"(?:, (\d+) stick moves, (\d+) deferred lookups after (\d+) ms)?)?)?"),
     # #104 (shell/worker.c close_overlay_for, shell/overlay.cpp close_page): why each close happened, and the
     # touch region given back over the game or left to SceShell's LiveArea
     "close_why": re.compile(r"^overlay close \((in game|game left|foreground changed)\) t=(\d+) ms: input block off rc=(-?\d+)"),
@@ -2473,6 +2475,12 @@ def summarise_log(text):
                         ar[k] += int(m.group(g))
                     if m.group(8) is not None:
                         ar["slowest_key_us"] = max(ar["slowest_key_us"] or 0, int(m.group(8)))
+                if m.group(9) is not None:
+                    st = s.setdefault("left_stick", {"closes": 0, "moves": 0, "deferred_lookups": 0, "rest_ms": []})
+                    st["closes"] += 1
+                    st["moves"] += int(m.group(9))
+                    st["deferred_lookups"] += int(m.group(10))
+                    st["rest_ms"] = sorted(set(st["rest_ms"]) | {int(m.group(11))})
             elif key == "close_why":
                 c = s.setdefault("closes", {"in game": 0, "game left": 0, "foreground changed": 0, "touch_left": 0,
                                             "block_fail": 0})
@@ -2544,13 +2552,19 @@ def summarise_log(text):
 
 def overlay_summary(lg):
     """The overlay's close lines: openings, the slowest frame and, from builds with row navigation (#81),
-    the arrow keys over the header's displayed rows."""
+    the arrow keys over the header's displayed rows; from builds with the left stick's cursor (#138), its
+    moves and the lookups made once the cursor rested (stick_lookup_ms)."""
     t = f"  overlay opened {len(lg['overlay'])}x, slowest frame {max(lg['overlay'])} ms"
     ar = lg.get("arrows")
     if ar:
         t += (f"; arrows ({ar['closes']} of them): {ar['row_moves']} row changes, {ar['wraps']} row wraps, "
               f"{ar['without_layout']} before the header's layout"
               + (f", slowest key {ar['slowest_key_us']:,} us" if ar["slowest_key_us"] is not None else ""))
+    st = lg.get("left_stick")
+    if st:
+        lo, hi = st["rest_ms"][0], st["rest_ms"][-1]  # stick_lookup_ms, sorted: one value, or the range seen
+        t += (f"; left stick ({st['closes']} of them): {st['moves']} cursor moves, {st['deferred_lookups']} "
+              f"deferred lookups (after {lo if lo == hi else f'{lo}-{hi}'} ms at rest)")
     c = lg.get("closes")
     if c:  # #104: a close with the game gone must leave SceShell's touch region alone
         t += (f"; closed {c['in game']}x in game, {c['game left']}x as the game left (PS or exit; touch region "

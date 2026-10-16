@@ -199,6 +199,8 @@ app when it starts.
 | Left / Right | Move along the displayed row: skip matched words in Whole word mode, one character in Character mode; Right from the row's last wraps to its first, Left from its first to its last |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
+| Left stick | Move the cursor as the d-pad does, faster while held: left/right through the text in reading order (the shown word skipped, then a character a step), stopping at its first and last character; up/down a row. The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](docs/touch-lookup.md#the-left-stick-138)) |
+| Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
@@ -321,6 +323,23 @@ the character nearest the same horizontal position, which repeated Up/Down
 keep across a shorter row. The rows and positions are the header's own
 laid-out lines and character starts, as for taps
 ([row navigation](docs/touch-lookup.md#rows-and-arrow-keys)).
+The left stick crosses a long line faster (#138). Each arrow press looks its
+word up at once: 35-112 ms a step in the test.3 console run (median 56 ms, its
+31 cursor lookups in `log.txt`), and in Whole word mode Right skips a word only
+once that word's lookup is shown. Held, the stick steps through the text in
+reading order, across rows: one step at once, the next after a sixth of a
+second as in the Overlay app's lists, then each sooner, up to 20 steps a second
+(the cap, chosen so the cursor does not overshoot: an estimate, untested on a
+console); it stops at the text's first and
+last character instead of wrapping. Nothing is looked up while it moves: the
+word at the cursor is looked up once the cursor has rested there for
+`stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000), or has been held
+against the text's end that long; back on the word shown before that, nothing
+is looked up again. The d-pad and taps still look up at once.
+The right stick scrolls a long definition (before, either stick did). Host
+tests cover the timing, the cap and the deferred lookup
+([left stick](docs/touch-lookup.md#the-left-stick-138)); how it feels on a
+console is not tested yet.
 Tap a character in the recognized sentence at the top of the open overlay to
 look up the word starting there; Japanese-only selection also applies to taps.
 Kana text shows the kana word (から, する) and inflected text its dictionary

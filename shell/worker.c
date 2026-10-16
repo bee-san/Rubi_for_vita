@@ -498,6 +498,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.japanese_only_selection = cfg.japanese_only_selection;
     g_view.highlight_mode = cfg.highlight_mode;
     g_view.frequency_badge = cfg.frequency_badge;
+    g_view.stick_lookup_ms = cfg.stick_lookup_ms;
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;

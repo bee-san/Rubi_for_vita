@@ -49,6 +49,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_helpers = 2; /* ocr_threads = 3 */
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
     c->ocr_settle_press_ms = 1000; /* a job the open overlay waits for (docs/first-ocr.md) */
+    c->stick_lookup_ms = 200; /* core/stick_cursor.h VJO_STICK_CURSOR_REST_MS */
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
 }
@@ -78,6 +79,11 @@ const char *vjo_config_default_text(void)
            "; Highlight the dictionary match or only the cursor character: word | character.\n"
            "; Word skips the matched source span; character steps one character.\n"
            "highlight_mode = word\n"
+           "\n"
+           "; The left stick moves the cursor through the text, faster while held; the word\n"
+           "; there is looked up once the cursor has rested this long (ms, 0 = as soon as it\n"
+           "; stops). The d-pad and taps look up at once.\n"
+           "stick_lookup_ms = 200\n"
            "\n"
            "; Show each word's frequency rank after its reading: on | off. #1 is the most\n"
            "; frequent word; unranked: not in the frequency list its dictionary carries.\n"
@@ -505,6 +511,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         }
     } else if (vjo_ieq(key, "ocr_cascade_ms")) {
         set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
+    } else if (vjo_ieq(key, "stick_lookup_ms")) {
+        set_ms(c, key, val, &c->stick_lookup_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_lm")) {
         static const char *const tiers[] = {"off", "500k", "1000k", "2000k", "4000k", NULL};
         set_choice(c, key, val, &c->ocr_lm, tiers);

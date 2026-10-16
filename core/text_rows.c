@@ -207,6 +207,18 @@ size_t vjo_word_step(VjoWordNavigation *h, const char *s, size_t len, size_t cur
     return next;
 }
 
+size_t vjo_text_read_step(const char *s, size_t len, size_t cursor, size_t matched_end, int direction,
+                          int japanese_only)
+{
+    /* vjo_word_step without rows steps through the text as one row; only its
+     * wrap round the ends is refused (and its history is a throwaway one). */
+    VjoWordNavigation once;
+    size_t to;
+    once.count = 0;
+    to = vjo_word_step(&once, s, len, cursor, matched_end, direction, japanese_only, NULL, NULL);
+    return (direction > 0 ? to > cursor : to < cursor) ? to : cursor;
+}
+
 int vjo_text_row_key(VjoRowNav *nav, const char *s, size_t len, const VjoTextRows *r, size_t cursor,
                      size_t matched_end, int dx, int dy, int japanese_only, size_t *out)
 {
