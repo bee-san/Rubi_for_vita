@@ -192,7 +192,11 @@ if [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ]; then
   vb=$BUILD-vita
   if cmake -S vita -B "$vb" -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG="$DBG" -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" \
        -DPython3_EXECUTABLE="$(command -v "$PY")" > "$log/vita-configure.log" 2>&1 \
-     && cmake --build "$vb" -j"${JOBS:-8}" > "$log/vita-build.log" 2>&1; then
+     && cmake --build "$vb" -j"${JOBS:-8}" > "$log/vita-build.log" 2>&1 \
+     && "$PY" tools/check_kernel_instructions.py --objdump "$VITASDK/bin/arm-vita-eabi-objdump" \
+          "$vb/VitaJPOverlay_Kernel" >> "$log/vita-build.log" 2>&1; then
+    # (the kernel's FPU/NEON check again: the build runs it only when it relinks the kernel, so a
+    # second preflight in the same build directory would not see its line)
     pages=$(grep -E "VitaJPOverlay_(Kernel|Shell|OCR) +[0-9,]+ B of" "$log/vita-build.log" | sort -u | sed -E 's/ +/ /g; s/^ //' | tr '\n' ';')
     if grep -q "memory ledger: pass" "$log/vita-build.log" && grep -q '"result": "pass"' "$log/vita-build.log" \
        && grep -q "no FPU/NEON instructions" "$log/vita-build.log" \
