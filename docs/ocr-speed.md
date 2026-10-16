@@ -60,9 +60,10 @@ log, not a CPU reading). Whether a second and a third core are free is what this
   The verdict line, `boost effective: yes|no|unclear (ratio X, n=N)`, reads the like-for-like ratio: yes at 1.25 to
   1.42 (three quarters of 444 / 333's gain to a quarter over it), no at 1.08 or less, unclear between them, above
   1.42 (more than the clock explains), with under 2 jobs a side, when the game's own clock was not one figure around
-  the raised jobs and next to the off windows, or when the same ratio on CPU time (each job's lines' time × their
-  share of a core: game threads that held the core at one clock) or against the off window's neighbours (drift
-  between windows) gives another verdict.
+  the raised jobs and next to the off windows, when the same ratio on CPU time (each job's lines' time × their share
+  of a core, over the jobs that logged one: game threads that held the core at one clock) gives another verdict, for
+  a yes that has no such check (under 2 jobs a side with a share), or when an off window against its neighbours is
+  on the other side of the threshold (drift between windows).
 - `gstep job pace kind=- arg=F rc=MAX bytes=SUM sum=SLOW main=SUM0 cdram=MAX0 phycont=SLOW0 us=F0`: added by the
   kernel, the **game's frame pacing**: F frames during the job (from its claim to its completion), their longest gap
   MAX (µs), their sum, SLOW gaps over 25 ms; and the same for the F0 frames since the job before. A job that costs
