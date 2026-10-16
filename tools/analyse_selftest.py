@@ -2017,10 +2017,15 @@ def presses_and_rereads(text):
                 press["cursor"] = cursor  # the first done line after the running job's: its word's lookup
             last_end = cursor
             continue
-        if job is None:
+        if JOB_CANCELLED.match(line):
+            # cancel_outdated_job's line, for the one job running (a cursor lookup is never cancelled): the parser's
+            # job, or, when its done line came first (net_job appends that line before it sets job_done, and the
+            # control thread can cancel meanwhile: audit R2), the job that ended last
+            target = job if job is not None else last_end if last_end is not None and "cancelled" in last_end else None
+            if target is not None:
+                target["cancelled"] = True
             continue
-        if JOB_CANCELLED.match(line):  # the control thread's line, while this job runs (one job at a time)
-            job["cancelled"] = True
+        if job is None:
             continue
         m = JOB_TEXT.match(line)
         if m:
@@ -2099,7 +2104,8 @@ def press_kind(p):
         rc -103). A stale job shows nothing, its text included (on_job_done; audit N1): one cancelled while it ran
         (cancel_outdated_job's line), or one whose lookup failed after on_job_text had passed over its text (cancelled
         or another game's: no `subtitle text ready` line). run_vocr's -103 comes before the text is posted, so it has
-        no such line."""
+        no such line. A job that config.ini's re-read cancels (apply_config, its OCR settings changed) logs no line
+        and is taken as not cancelled (audit R4)."""
         return (j["rc"] not in (0, None) and bool(j["raw"]) and not j["cancelled"]
                 and (j["text_ms"] is not None or j["rc"] == -103))
 
@@ -2109,7 +2115,9 @@ def press_kind(p):
     if found is None or found in ("saved local word", "background result"):
         return ("at_once",)  # (no "open:" line: the shown text kept, only its word looked up)
     if jobs:  # the press's own jobs (PRESS_REASONS), all begun after the press: its text is the first that read one
-        text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None), None)
+        # (a cancelled one posted its text, if at all, only until its retry's "Recognizing…": audit R1)
+        text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None
+                         and not j["cancelled"]), None)
         if text_job is None:
             # a job that read text and then failed its word's lookup, and showed that text (showed_text)
             failed = next((j for j in jobs if showed_text(j)), None)
