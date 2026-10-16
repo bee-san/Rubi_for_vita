@@ -144,17 +144,23 @@ cmake --build build/vita --target release         # VitaJPOverlay-<version>.zip,
 
 Every Vita build checks it is the build it says (`tools/check_variant.py`: the normal modules carry
 none of the debug build's own strings, the debug modules all of them, the app's version; with
-`--sources`, which the build passes, the normal modules also carry none of the literals their sources
-compile only into the debug build: `#if VJO_DEBUG` branches, `vjo_dlog()`/`klog_d()` calls,
-`shell/selftest.c`, `kernel/meminfo.c`). That catches a module built with the wrong `VJO_DEBUG`. It
-cannot catch a source change that moves a debug line into the normal build (the sources and the module
-then agree): that is the inventory's to review. Nor does it see a literal joined from macros (one of
-the Shell's 71 today), or a leaked string that follows non-string data with no separating byte (about
-1 of 676 literals, measured by audit-overlay-release-variants-b). The build also
+`--sources`, which the build passes, the normal modules also carry none of the literals of 12 bytes or
+more that their sources compile only into the debug build and kept code does not use too
+(`#if VJO_DEBUG` branches, `vjo_dlog()`/`klog_d()` calls, `shell/selftest.c`, `kernel/meminfo.c`:
+71 of the Shell's, 11 of the kernel's, 1 of the worker's and 1 of the app's at main `3aa08a6`), and
+each debug module at least one of them, the worker's only check). That catches a module built with the
+wrong `VJO_DEBUG`. It cannot catch a source change that moves a debug line into the normal build (the
+sources and the module then agree): that is the inventory's to review. Nor does it see a literal
+joined from macros (one of the Shell's 71), or a leaked string that follows non-string data with no
+separating byte (about 1 of 847 literals, measured by audit-overlay-release-variants-c). The build also
 checks its pages against its own budget (`include/vjo_ledger_budget.h`'s `#if VJO_DEBUG` branches,
 `tools/check_memory_ledger.py --variant`). The host suites, the ARM lane, the Vita3K smokes and
 `tools/preflight.sh` take the same switch (`-DVJO_DEBUG=OFF`, or `VJO_DEBUG=0` in the environment);
-CI runs the host and vita jobs once for each build.
+CI runs the host and vita jobs once for each build. Its `package` job then makes the release's two
+zips of the vita jobs' artifacts, as below, and runs `tools/e2e_package.py` on each: the package's
+own `install-vita.sh` and `tools/install_ftp.sh` against a simulated Vita (its partitions as
+directories behind an FTP mock), over a v0.8.0-test.2 install, a fresh one and an older config
+(`--check-app`, `--self-test`, `--collect` and its analysis, `--uninstall`).
 
 ## The release's two zips
 
@@ -193,5 +199,12 @@ of another version than `--version` (set `VJO_VERSION` in `vita/CMakeLists.txt` 
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
-there, and writes `SHA256SUMS`. Publish both zips and `SHA256SUMS` in one release, the normal zip
-first: it is the main download.
+there, and writes `SHA256SUMS`. Then run the package check on each zip, as CI does on every pull
+request:
+
+```sh
+python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0.zip
+python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0-debug.zip
+```
+
+Publish both zips and `SHA256SUMS` in one release, the normal zip first: it is the main download.

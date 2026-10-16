@@ -152,12 +152,12 @@ def parse_budget(path, variant="debug"):
     `#if VJO_DEBUG`, `#if !VJO_DEBUG`, `#else` and `#endif` choose between lines; any other
     conditional (the include guard) keeps its lines. Refused, so that this reading and the C
     compiler's can never differ: another conditional that names VJO_DEBUG (`#if VJO_DEBUG == 0`,
-    `#ifdef VJO_DEBUG`, `#if (VJO_DEBUG)`), an #elif, and a macro defined twice in the lines read."""
+    `#ifdef VJO_DEBUG`, `#if (VJO_DEBUG)`), an #elif (#elifdef, #elifndef), and a macro defined twice in the lines read."""
     if variant not in ("debug", "normal"):
         raise CheckError(f"unknown build variant {variant!r}")
     values = {}
     define = re.compile(r"^\s*#define\s+([A-Z_][A-Z0-9_]*)\s+(.*?)\s*(?:/\*.*)?$")
-    cond = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b\s*(.*?)\s*(?:/\*.*)?$")
+    cond = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|elifdef|elifndef|else|endif)\b\s*(.*?)\s*(?:/\*.*)?$")
     text = path.read_text(encoding="utf-8")
     # join backslash continuations
     text = re.sub(r"\\\n", " ", text)
@@ -178,8 +178,8 @@ def parse_budget(path, variant="debug"):
                 parent, take = stack[-1]
                 if take is not None:  # the other build's lines; any other conditional reads both branches
                     on = parent and not take
-            elif kind == "elif":
-                raise CheckError(f"{path.name}: #elif is not supported: {line.strip()}")
+            elif kind in ("elif", "elifdef", "elifndef"):
+                raise CheckError(f"{path.name}: #{kind} is not supported: {line.strip()}")
             elif stack:
                 on = stack.pop()[0]
             continue

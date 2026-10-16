@@ -114,7 +114,7 @@ KEPT_SOURCES = ("shell", "kernel", "game_ocr", "settings", "core", "include", "v
 SUFFIXES = (".c", ".cpp", ".h", ".inc")  # .inc: tables a .c file includes (core/deinflect.inc, lapis_notetype.inc)
 DERIVED_MIN = 12  # shorter literals ("%s", "none") are too likely to be other strings too
 DLOG_CALL = re.compile(r"\b(?:vjo_dlog|klog_d)\s*\(\s*$")
-CONDITIONAL = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+CONDITIONAL = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|elifdef|elifndef|else|endif)\b(.*)$")  # C23's #elifdef too
 ESCAPES = {"n": b"\n", "t": b"\t", "r": b"\r", "0": b"\0", "\\": b"\\", '"': b'"', "'": b"'", "a": b"\a",
            "b": b"\b", "f": b"\f", "v": b"\v", "?": b"?"}
 
@@ -122,8 +122,9 @@ ESCAPES = {"n": b"\n", "t": b"\t", "r": b"\r", "0": b"\0", "\\": b"\\", '"': b'"
 def _debug_lines(text):
     """Per line of C source (index 0 = line 1): whether it is in a branch only the debug build compiles: an
     `#if VJO_DEBUG` branch; the `#elif` and `#else` branches of an `#if !VJO_DEBUG` (reached only with VJO_DEBUG).
-    The `#elif` and `#else` branches of an `#if VJO_DEBUG` may be the normal build's, so they are not. Other
-    conditionals keep their parent's state."""
+    The `#elif` and `#else` branches of an `#if VJO_DEBUG` may be the normal build's, so they are not. `#elifdef`
+    and `#elifndef` (C23; the Vita's GCC takes them) are an `#elif`. Other conditionals keep their parent's
+    state, an `#elif` that names VJO_DEBUG after one of them too (a weaker check there, never a false failure)."""
     out, on, stack = [], False, []
     for line in text.split("\n"):
         m = CONDITIONAL.match(line)
@@ -133,7 +134,7 @@ def _debug_lines(text):
                 take = {"VJO_DEBUG": True, "!VJO_DEBUG": False}.get(arg) if kind == "if" else None
                 stack.append((on, take))
                 on = on or take is True
-            elif kind == "elif" and stack:
+            elif kind in ("elif", "elifdef", "elifndef") and stack:
                 parent, take = stack[-1]
                 if take is True:  # after #if VJO_DEBUG: this and any later branch may be built without it
                     on = parent
@@ -234,8 +235,8 @@ def _literals(text):
 @functools.lru_cache(maxsize=4)
 def _scan(root):
     """(rel, literal, debug_only) of every literal in the scanned sources: debug_only for one in an
-    `#if VJO_DEBUG` branch (or the #else of an #if !VJO_DEBUG), a vjo_dlog()/klog_d()'s first argument, or a
-    file only the debug build builds."""
+    `#if VJO_DEBUG` branch (or the #elif and #else of an #if !VJO_DEBUG: _debug_lines), a vjo_dlog()/klog_d()'s
+    first argument, or a file only the debug build builds."""
     root = Path(root)
     only = {f for files in DEBUG_ONLY_FILES.values() for f in files}
     out = []
@@ -279,7 +280,8 @@ def leaked(blob, strings):
 
 def check(variant, blobs, version=None, sources=None):
     """Every failure of blobs ({part: bytes}) as the given variant; with sources (the tree's root), the normal
-    build is also checked against every debug-only literal of its sources (debug_only_strings)."""
+    build is also checked against every debug-only literal of its sources (debug_only_strings), and a debug
+    module must carry at least one of them (the worker has no fixed marker: this is its check)."""
     problems = []
     for part, blob in blobs.items():
         if variant == "normal" and sources is not None:
@@ -289,6 +291,12 @@ def check(variant, blobs, version=None, sources=None):
                 problems.append(f"{part}: the normal build carries {len(left)} of its sources' {len(gone)} debug-only "
                                 f"strings (built without VJO_DEBUG=0?): " + "; ".join(repr(s.decode('utf-8', 'replace'))
                                                                                     for s in left[:6]))
+        if variant == "debug" and sources is not None:
+            want = debug_only_strings(sources, part)
+            # at least one, not all: a debug-only literal the compiler drops (unused code) is no sign of the build
+            if want and not any(s in blob for s in want):
+                problems.append(f"{part}: the debug build carries none of its sources' {len(want)} debug-only strings "
+                                "(built with VJO_DEBUG=0?)")
         if part == "worker":
             continue  # no fixed markers of its own (its probe's strings are derived above)
         markers = DEBUG_MARKERS.get(part, ())
