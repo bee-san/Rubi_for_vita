@@ -167,7 +167,7 @@ anything is written.
   VPK.
 - An 0.7.12 install's `dictionaries/jmdict.vjdict` is no longer used (`local_dictionaries` names
   `plaintext.vjdict` in its place); the app deletes nothing of the user's, so it stays until deleted in
-  VitaShell (README "Settings and dictionaries").
+  VitaShell (the guide's [Settings and dictionaries](guide.md#settings-and-dictionaries)).
 
 The Vita's `sceIoRename` does not replace an existing file: it returns `SCE_ERROR_ERRNO_EEXIST`
 (VitaShell `file.c:518-551` deletes the destination and renames again). Every replacement here goes
@@ -489,7 +489,7 @@ t3-worker-any-game's PR (kernel, Shell, worker; it merges before this one): the 
 title is ON, never SceShell or a system app but Adrenaline's, skips it while L is held at the app's
 start, and for one release tolerates a worker line left in a configuration (the worker refuses a second
 copy of itself in a process). AGENTS.md rule 2, `docs/boot-safety.md`, the README's Install and Memory
-sections and `docs/vita-memory.md` §4.3 change to that rule in t3-worker-any-game's PR.
+sections (now [the guide's](guide.md#memory-and-troubleshooting)) and `docs/vita-memory.md` §4.3 change to that rule in t3-worker-any-game's PR.
 
 So this installer, and `install-vita.sh` with it, in **`kernel` mode**:
 
@@ -686,7 +686,7 @@ The app's pages and the README say the same, in this order:
       and #124, a commented-out line of ours, `# Mainline OCR:` lines of an earlier run, a comment that
       merely names our files, a duplicate, a `ux0:tai/` and a case-variant kernel line;
   11. a worker section with a user comment left under it; a hand-made `*TITLEID` holding only our worker
-      (the README's manual install); a `*!TITLEID` left empty, which stays;
+      (the guide's manual install); a `*!TITLEID` left empty, which stays;
   12. an input of exactly 4,096 B, a removal that leaves exactly 4,096 B, the CRLF pad;
   13. Japanese UTF-8 comments; Latin-1 and Shift-JIS comments;
   14. refusals: NUL, a 256-byte line, empty, comments only, over 64 KiB, a `*!ALL` that hides an added

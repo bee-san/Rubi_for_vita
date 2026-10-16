@@ -5,7 +5,8 @@ computer or dictionary network request; the local dictionaries are the only
 ones. The online dictionaries jpdb.io and jiten.moe and the Hachidori relay on
 a computer have been removed; Jitendex and every other Yomitan dictionary are
 converted and looked up locally as below, and a saved `dictionary = jpdb`,
-`jiten` or `hachidori` loads as `local` (README, Settings and dictionaries).
+`jiten` or `hachidori` loads as `local` (the guide's
+[Settings and dictionaries](guide.md#settings-and-dictionaries)).
 The release defaults to [on-console vita-vn-ocr](vita-vn-ocr.md) and ships plain
 JMdict already converted and enabled. Recognition and lookup are offline.
 Optional [Anki mining](anki.md) is off unless `anki_mining = on`; its cards

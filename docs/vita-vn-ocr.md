@@ -906,7 +906,7 @@ The complete v0.7.5 ZIP already includes both int8 models and the local
 configuration; use its `install-vita.sh` as described in the README. The
 steps below cover a source build or adding another model.
 
-1. Install the vocr build's plugins as in the [README](../README.md#install).
+1. Install the vocr build's plugins as in the [guide](guide.md#install).
 2. Download and check the weights on a computer:
 
    ```sh

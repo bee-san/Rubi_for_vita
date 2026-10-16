@@ -27,7 +27,7 @@ and download again.
 ## 2. Install
 The one-VPK install: copy `Rubi-TAG-debug.vpk` to the Vita, install it in VitaShell, open
 **Rubi**, choose **Install** on its Install page and restart the Vita (test-build-issue.md section 2 has
-the checklist; README "Install" the steps). The steps below are the advanced path, from a PC.
+the checklist; the README's [Install](../README.md#install) the steps). The steps below are the advanced path, from a PC.
 
 On the Vita, close any game, open VitaShell and press **Select** to start FTP (Select starts FTP once
 **SELECT button** is set to **FTP** in VitaShell's settings, Start; a Vita's default is USB). Then, in `vjo`:
