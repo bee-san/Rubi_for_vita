@@ -833,12 +833,12 @@
       }
       .deck-label {
         position: absolute;
-        left: -40px;
-        right: -40px;
-        top: 440px;
+        left: -260px;
+        right: -260px;
+        top: 430px;
         text-align: center;
-        font-weight: 700;
-        font-size: 50px;
+        font-weight: 800;
+        font-size: 92px;
         color: #f4f7ff;
         text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
         white-space: nowrap;
@@ -846,14 +846,14 @@
       .deck-label b {
         position: relative;
         display: inline-block;
-        width: 36px;
+        width: 64px;
         color: var(--accent);
       }
       .deck-label b span {
         position: absolute;
         left: 0;
         right: 0;
-        top: -30px;
+        top: -56px;
         opacity: 0;
       }
       #dq-0 {
@@ -926,20 +926,31 @@
       .aw-bar span {
         margin-left: 10px;
       }
+      .aw-body {
+        position: relative;
+        width: 1600px;
+        height: 1000px;
+      }
       .aw-body img {
+        position: absolute;
+        left: 0;
+        top: 0;
         display: block;
         width: 1600px;
         height: 1000px;
       }
+      #anki-card {
+        opacity: 0;
+      }
       #pic-ring {
         position: absolute;
-        left: 928px;
-        top: 109px;
-        width: 378px;
-        height: 220px;
-        border-radius: 12px;
-        border: 7px solid var(--accent);
-        box-shadow: 0 0 30px rgba(255, 210, 74, 0.7);
+        left: 921px;
+        top: 102px;
+        width: 392px;
+        height: 234px;
+        border-radius: 14px;
+        border: 14px solid var(--accent);
+        box-shadow: 0 0 50px rgba(255, 210, 74, 0.85), inset 0 0 20px rgba(255, 210, 74, 0.5);
         opacity: 0;
       }
 
@@ -1207,81 +1218,61 @@
         white-space: pre;
       }
       .cap .sub {
-        margin-top: 12px;
-        font-weight: 600;
-        font-size: 50px;
-        line-height: 1.15;
-        color: #e1e8f6;
+        margin-top: 10px;
+        font-weight: 800;
+        font-size: 68px;
+        line-height: 1.1;
+        color: #f6f8ff;
         text-shadow: 0 3px 16px rgba(0, 0, 0, 0.6);
         opacity: 0;
       }
       .steps {
-        display: flex;
-        justify-content: center;
-        gap: 22px;
-        margin-top: 18px;
+        position: relative;
+        height: 96px;
+        margin-top: 14px;
       }
       .step {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 10px 26px 10px 12px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 2px solid rgba(255, 255, 255, 0.14);
-        font-weight: 600;
-        font-size: 36px;
-        color: #c9d4e6;
-        opacity: 0.45;
+        justify-content: center;
+        gap: 22px;
+        font-weight: 700;
+        font-size: 66px;
+        line-height: 1.1;
+        color: #f6f8ff;
+        text-shadow: 0 4px 22px rgba(0, 0, 0, 0.6);
         white-space: nowrap;
+        opacity: 0;
       }
       .step b {
-        width: 50px;
-        height: 50px;
+        flex: none;
+        width: 82px;
+        height: 82px;
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.14);
+        background: var(--teal);
         text-align: center;
-        line-height: 50px;
-        font-size: 30px;
-        color: #fff;
+        line-height: 82px;
+        font-size: 50px;
+        color: #0b1220;
+        text-shadow: none;
       }
-      .step span b {
-        width: auto;
-        height: auto;
-        background: none;
-        line-height: inherit;
-        font-size: inherit;
-        color: #fff;
+      .step em {
+        font-style: normal;
+        color: var(--accent);
       }
-      .chip {
-        position: absolute;
-        z-index: 6;
-        padding: 12px 30px;
-        border-radius: 999px;
-        background: rgba(91, 220, 207, 0.16);
-        border: 2px solid rgba(91, 220, 207, 0.55);
-        font-weight: 700;
-        font-size: 36px;
-        color: #dffaf6;
-        opacity: 0;
-        white-space: nowrap;
+      #step-done b {
+        background: #7cd992;
       }
-      #chip-app {
-        left: 50%;
-        top: 1000px;
-        transform: translateX(-50%);
+      /* portrait: captions below the platforms' top 220 px, the action under them; the card queue's
+         label above the bottom 400 px */
+      .layout-portrait .deck-label {
+        top: 350px;
+        font-size: 76px;
       }
-      #chip-done {
-        left: 50%;
-        top: 222px;
-        transform: translateX(-50%);
-        background: rgba(124, 217, 146, 0.2);
-        border-color: rgba(124, 217, 146, 0.7);
-        color: #e9ffef;
-        font-size: 44px;
-      }
-
-      /* portrait: captions below the platforms' top 220 px, the action under them */
       .layout-portrait .cap {
         width: 980px;
         margin-left: -490px;
@@ -1291,21 +1282,16 @@
         font-size: 76px;
       }
       .layout-portrait .cap .sub {
-        font-size: 48px;
+        font-size: 62px;
       }
       .layout-portrait .steps {
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
+        height: 150px;
       }
       .layout-portrait .step {
-        font-size: 34px;
-      }
-      .layout-portrait #chip-app {
-        top: 1480px;
-      }
-      .layout-portrait #chip-done {
-        top: 640px;
+        flex-wrap: wrap;
+        white-space: normal;
+        font-size: 60px;
+        gap: 10px 18px;
       }
 
       /* ------------------------------------------------------------ end card */
@@ -1873,7 +1859,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
                 <!-- S4: the card in Anki (Lapis), with its screenshot: a MOCK-UP until overlay-anki-screenshot merges -->
                 <div id="anki">
                   <div class="aw-bar"><i></i><i></i><i></i><span>Anki</span></div>
-                  <div class="aw-body"><img id="anki-card" src="assets/anki/card-1-back-mockup.png" alt="" /></div>
+                  <div class="aw-body"><img id="anki-front" src="assets/anki/card-1-front-mockup.png" alt="" /><img id="anki-card" src="assets/anki/card-1-back-mockup.png" alt="" /></div>
                   <div id="pic-ring"></div>
                 </div>
 
@@ -1887,10 +1873,10 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
                       <div class="gh-rel-head"><b>v0.8.0</b><span class="gh-latest">Latest</span></div>
                       <div class="gh-notes">Install: download <b>VitaJPOverlay-0.8.0.vpk</b>, install it in VitaShell, then open Overlay and choose Install.</div>
                       <div class="gh-assets-title">Assets <span>5</span></div>
-                      <div class="gh-asset" id="gh-vpk"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0.vpk</span><span class="gh-size">53 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0-debug.vpk</span><span class="gh-size">53 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0.zip</span><span class="gh-size">53 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0-debug.zip</span><span class="gh-size">53 MB</span></div>
+                      <div class="gh-asset" id="gh-vpk"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0.vpk</span><span class="gh-size">50.6 MB</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0-debug.vpk</span><span class="gh-size">50.6 MB</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0.zip</span><span class="gh-size">50.6 MB</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">VitaJPOverlay-0.8.0-debug.zip</span><span class="gh-size">50.6 MB</span></div>
                       <div class="gh-asset"><i class="pk"></i><span class="gh-name">SHA256SUMS</span><span class="gh-size">1 KB</span></div>
                     </div>
                     <div class="dl-chip" id="dl-chip"><i class="pk"></i><span>VitaJPOverlay-0.8.0.vpk</span><div class="dl-bar"><div id="dl-fill"></div></div></div>
@@ -1911,12 +1897,11 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
 <div class="cap" id="cap2"><h1><span class="w">Look</span> <span class="w">up</span> <span class="w">words</span> <span class="w">from</span> <span class="w">the</span> <span class="w">games</span> <span class="w">you</span> <span class="w">play,</span> <em><span class="w">entirely</span> <span class="w">offline</span></em></h1></div>
 <div class="cap" id="cap3"><h1><span class="w">Create</span> <span class="w">flashcards</span> <span class="w">of</span> <em><span class="w">words</span> <span class="w">you</span> <span class="w">don't</span> <span class="w">know</span></em></h1></div>
 <div class="cap" id="cap4"><h1><span class="w">With</span> <em><span class="w">screenshots</span></em></h1></div>
-<div class="cap" id="cap5"><h1><span class="w">It</span> <span class="w">only</span> <span class="w">reads</span> <span class="w">text</span> <em><span class="w">when</span> <span class="w">it</span> <span class="w">changes</span></em></h1><p class="sub" id="cap5-p">Or only when you press L&nbsp;+&nbsp;R</p></div>
-<div class="cap" id="cap6"><h1><em><span class="w">Easy</span> <span class="w">install</span></em></h1><div class="steps"><div class="step" id="step1"><b>1</b><span>Download the <b>.vpk</b></span></div><div class="step" id="step2"><b>2</b><span>Install it in <b>VitaShell</b></span></div><div class="step" id="step3"><b>3</b><span><b>Overlay</b>: Install, restart</span></div></div></div>
+<div class="cap" id="cap5"><h1><span class="w">It</span> <span class="w">only</span> <span class="w">reads</span> <span class="w">text</span> <em><span class="w">when</span> <span class="w">it</span> <span class="w">changes</span></em></h1><p class="sub" id="cap5-p">or only when you press L&nbsp;+&nbsp;R</p></div>
+<div class="cap" id="cap6"><h1><em><span class="w">Easy</span> <span class="w">install</span></em></h1><div class="steps"><div class="step" id="step1"><b>1</b><span>Download the <em>.vpk</em></span></div><div class="step" id="step2"><b>2</b><span>Install it in <em>VitaShell</em></span></div><div class="step" id="step3"><b>3</b><span>Open <em>Overlay</em>: Install, restart</span></div><div class="step" id="step-done"><b>✓</b><span>Done</span></div></div></div>
 <div class="cap" id="cap7"><h1><span class="w">Now</span> <span class="w">it's</span> <span class="w">installed:</span> <span class="w">go</span> <span class="w">to</span> <span class="w">your</span> <span class="w">game</span> <span class="w">and</span> <span class="w">press</span> <em><span class="w">L&nbsp;+&nbsp;R</span></em> <span class="w">to</span> <span class="w">look</span> <span class="w">up</span> <span class="w">words.</span></h1></div>
 <div class="cap" id="cap8"><h1><span class="w">Turn</span> <span class="w">it</span> <span class="w">off</span> <span class="w">for</span> <span class="w">specific</span> <span class="w">games,</span> <em><span class="w">so</span> <span class="w">it</span> <span class="w">doesn't</span> <span class="w">get</span> <span class="w">in</span> <span class="w">the</span> <span class="w">way</span></em></h1></div>
       </div>
-      <div class="chip" id="chip-done">✓ Done</div>
 
 
       <!-- ============================================================ end card -->
@@ -1930,7 +1915,9 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
       <div id="fade" data-layout-ignore></div>
 
       <!-- ============================================================ sound -->
-      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="44" data-track-index="10" data-volume="1"></audio>
+      <!-- the bed's breakdown (23.5-31 s, the install) is lifted about 4 dB so the music does not seem to stop -->
+      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="44" data-track-index="10" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":30.7,"v":1.6},{"t":31.05,"v":1}]}]}'></audio>
       <audio id="sfx-0" src="assets/audio/sfx-click.wav" data-start="3.500" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
       <audio id="sfx-1" src="assets/audio/sfx-lr.wav" data-start="5.000" data-duration="0.151" data-track-index="12" data-volume="0.6"></audio>
       <audio id="sfx-2" src="assets/audio/sfx-dpad.wav" data-start="6.600" data-duration="0.075" data-track-index="13" data-volume="0.45"></audio>
@@ -1949,17 +1936,17 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
       <audio id="sfx-15" src="assets/audio/sfx-swish.wav" data-start="21.100" data-duration="0.675" data-track-index="14" data-volume="0.35"></audio>
       <audio id="sfx-16" src="assets/audio/sfx-dpad.wav" data-start="21.950" data-duration="0.075" data-track-index="15" data-volume="0.45"></audio>
       <audio id="sfx-17" src="assets/audio/sfx-whoosh-in.wav" data-start="23.400" data-duration="0.445" data-track-index="16" data-volume="0.35"></audio>
-      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="24.750" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
-      <audio id="sfx-19" src="assets/audio/sfx-whoosh-in.wav" data-start="25.300" data-duration="0.445" data-track-index="12" data-volume="0.3"></audio>
-      <audio id="sfx-20" src="assets/audio/sfx-click.wav" data-start="26.300" data-duration="0.115" data-track-index="13" data-volume="0.5"></audio>
-      <audio id="sfx-21" src="assets/audio/sfx-click.wav" data-start="26.650" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-22" src="assets/audio/sfx-click.wav" data-start="27.150" data-duration="0.115" data-track-index="15" data-volume="0.5"></audio>
-      <audio id="sfx-23" src="assets/audio/sfx-chime.wav" data-start="27.650" data-duration="1.625" data-track-index="16" data-volume="0.3"></audio>
-      <audio id="sfx-24" src="assets/audio/sfx-click.wav" data-start="27.850" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
-      <audio id="sfx-25" src="assets/audio/sfx-click.wav" data-start="28.250" data-duration="0.115" data-track-index="12" data-volume="0.55"></audio>
-      <audio id="sfx-26" src="assets/audio/sfx-click.wav" data-start="28.600" data-duration="0.115" data-track-index="13" data-volume="0.55"></audio>
-      <audio id="sfx-27" src="assets/audio/sfx-click.wav" data-start="29.000" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-28" src="assets/audio/sfx-chime.wav" data-start="29.600" data-duration="1.625" data-track-index="15" data-volume="0.35"></audio>
+      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="24.400" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-19" src="assets/audio/sfx-whoosh-in.wav" data-start="24.900" data-duration="0.445" data-track-index="12" data-volume="0.3"></audio>
+      <audio id="sfx-20" src="assets/audio/sfx-click.wav" data-start="25.900" data-duration="0.115" data-track-index="13" data-volume="0.5"></audio>
+      <audio id="sfx-21" src="assets/audio/sfx-click.wav" data-start="26.250" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
+      <audio id="sfx-22" src="assets/audio/sfx-click.wav" data-start="26.750" data-duration="0.115" data-track-index="15" data-volume="0.5"></audio>
+      <audio id="sfx-23" src="assets/audio/sfx-chime.wav" data-start="27.250" data-duration="1.625" data-track-index="16" data-volume="0.3"></audio>
+      <audio id="sfx-24" src="assets/audio/sfx-click.wav" data-start="27.450" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-25" src="assets/audio/sfx-click.wav" data-start="27.850" data-duration="0.115" data-track-index="12" data-volume="0.55"></audio>
+      <audio id="sfx-26" src="assets/audio/sfx-click.wav" data-start="28.200" data-duration="0.115" data-track-index="13" data-volume="0.55"></audio>
+      <audio id="sfx-27" src="assets/audio/sfx-click.wav" data-start="28.600" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
+      <audio id="sfx-28" src="assets/audio/sfx-chime.wav" data-start="29.300" data-duration="1.625" data-track-index="15" data-volume="0.35"></audio>
       <audio id="sfx-29" src="assets/audio/sfx-click.wav" data-start="31.650" data-duration="0.115" data-track-index="16" data-volume="0.55"></audio>
       <audio id="sfx-30" src="assets/audio/sfx-click.wav" data-start="32.050" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
       <audio id="sfx-31" src="assets/audio/sfx-lr.wav" data-start="33.800" data-duration="0.151" data-track-index="12" data-volume="0.6"></audio>
@@ -2024,7 +2011,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         const P = root.dataset.layout === "portrait";
         const tl = gsap.timeline({ paused: true });
         const T = {"s1":0,"s2":4.5,"s3":10,"s4":14.5,"s5":19,"s6":23.5,"s7":31,"s8":37,"end":41.5,"total":44}; // scene starts (src/script.mjs)
-        const C = {"typeA":0.35,"pressX1":3.5,"typeB":3.62,"lr1":5,"ovOpen1":5.1,"right1":6.6,"mine1":10.75,"saved1":11.25,"land1":12,"right2":12.25,"mine2":12.9,"saved2":13.35,"land2":14.05,"whipA":14.45,"cardOpen":14.95,"whipB":18.55,"pressO1":19.4,"pressX2":19.85,"typeC":20.35,"appIn":21.15,"right3":21.95,"laptopIn":23.55,"clickVpk":24.75,"fileFly":25.3,"shellIn":25.95,"vsX1":26.3,"vsX2":26.65,"vsX3":27.15,"vsDone":27.65,"ps1":27.85,"tapBubbleApp":28.25,"tapStartApp":28.6,"installX":29,"installDone":29.6,"restart":30.45,"boot":31.1,"tapBubbleGame":31.65,"tapStartGame":32.05,"typeD":32.4,"lr2":33.8,"ovOpen2":33.9,"right4":35.1,"right5":35.9,"pressO2":36.75,"ps2":37.15,"flick":37.6,"tapBubbleApp2":38.15,"tapStartApp2":38.55,"down1":39,"down2":39.35,"toggle":39.8}; // the cue sheet: every press, tap and change
+        const C = {"typeA":0.35,"pressX1":3.5,"typeB":3.62,"lr1":5,"ovOpen1":5.1,"right1":6.6,"mine1":10.75,"saved1":11.25,"land1":12,"right2":12.25,"mine2":12.9,"saved2":13.35,"land2":14.05,"whipA":14.45,"cardOpen":14.95,"whipB":18.55,"pressO1":19.4,"pressX2":19.85,"typeC":20.35,"appIn":21.15,"right3":21.95,"laptopIn":23.55,"clickVpk":24.4,"fileFly":24.9,"shellIn":25.55,"vsX1":25.9,"vsX2":26.25,"vsX3":26.75,"vsDone":27.25,"ps1":27.45,"tapBubbleApp":27.85,"tapStartApp":28.2,"installX":28.6,"installDone":29.3,"restart":29.95,"boot":31.1,"tapBubbleGame":31.65,"tapStartGame":32.05,"typeD":32.4,"lr2":33.8,"ovOpen2":33.9,"right4":35.1,"right5":35.9,"pressO2":36.75,"ps2":37.15,"flick":37.6,"tapBubbleApp2":38.15,"tapStartApp2":38.55,"down1":39,"down2":39.35,"toggle":39.8}; // the cue sheet: every press, tap and change
 
         // ------------------------------------------------------------ helpers
         function fade(sel, t, from, to, dur = 0.2, ease = "power1.out") {
@@ -2059,31 +2046,31 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
           ? {
               macro0: { x: 0, y: 236, s: 1.18, rx: 7, ry: -12, rz: -2 },
               macro: { x: 0, y: 236, s: 1.3, rx: 5, ry: -8, rz: -1 },
-              hero: { x: 0, y: 10, s: 0.56, rx: 10, ry: -16, rz: -1 },
-              heroB: { x: 0, y: 20, s: 0.6, rx: 8, ry: -10, rz: 0 },
+              hero: { x: 0, y: 20, s: 0.84, rx: 10, ry: -16, rz: -1 },
+              heroB: { x: 0, y: 30, s: 0.88, rx: 8, ry: -10, rz: 0 },
               shoulders: { x: 0, y: -330, s: 0.82, rx: 34, ry: 0, rz: 0 },
               screen: { x: 0, y: 22, s: 0.96, rx: 2, ry: -3, rz: 0 },
               screenB: { x: 20, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
               offZoom: { x: 120, y: 170, s: 1.15, rx: 2, ry: -3, rz: 0 },
-              mine: { x: 0, y: 260, s: 0.56, rx: 8, ry: 8, rz: 0 },
-              mineB: { x: 0, y: 290, s: 0.58, rx: 6, ry: 4, rz: 0 },
-              readAppB: { x: 10, y: 30, s: 1.02, rx: 3, ry: 5, rz: 0 },
-              installDevB: { x: 10, y: 30, s: 0.96, rx: 4, ry: -3, rz: 0 },
+              mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
+              mineB: { x: 0, y: 340, s: 0.86, rx: 6, ry: 4, rz: 0 },
+              readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
+              installDevB: { x: 10, y: 30, s: 0.98, rx: 4, ry: -3, rz: 0 },
               deck: { x: 0, y: 800, s: 0.9, rx: 0, ry: 0, rz: 0 },
               anki: { x: 0, y: 1840, s: 0.64, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 320, y: 1560, s: 1.3, rx: 2, ry: -4, rz: 0 },
               ankiAll: { x: 0, y: 1860, s: 0.62, rx: -2, ry: 4, rz: 0 },
-              read: { x: 0, y: 10, s: 0.6, rx: 6, ry: 12, rz: 0.5 },
-              readB: { x: 0, y: 40, s: 0.66, rx: 5, ry: 6, rz: 0 },
-              readApp: { x: 0, y: 22, s: 0.98, rx: 2, ry: 3, rz: 0 },
+              read: { x: 0, y: 20, s: 0.84, rx: 6, ry: 12, rz: 0.5 },
+              readB: { x: 0, y: 40, s: 0.88, rx: 5, ry: 6, rz: 0 },
+              readApp: { x: 0, y: -70, s: 1.0, rx: 2, ry: 3, rz: 0 },
               installWide: { x: 0, y: -700, s: 0.36, rx: 4, ry: 0, rz: 0 },
               laptop: { x: 0, y: -1340, s: 0.6, rx: 2, ry: 6, rz: 0 },
               installDev: { x: 0, y: 22, s: 0.9, rx: 5, ry: -6, rz: 0 },
-              home: { x: 0, y: 22, s: 0.92, rx: 6, ry: 8, rz: 0 },
+              home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
-              app8: { x: 0, y: 22, s: 0.92, rx: 5, ry: -8, rz: 0 },
+              app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
           : {
@@ -2098,7 +2085,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
               offZoom: { x: 120, y: 170, s: 1.7, rx: 2, ry: -3, rz: 0 },
               mine: { x: 380, y: -10, s: 0.74, rx: 8, ry: 12, rz: 0 },
               mineB: { x: 430, y: 0, s: 0.77, rx: 6, ry: 8, rz: 0 },
-              readAppB: { x: 30, y: -22, s: 1.26, rx: 3, ry: 5, rz: 0 },
+              readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
               installDevB: { x: 20, y: 10, s: 0.98, rx: 4, ry: -3, rz: 0 },
               deck: { x: 1330, y: 20, s: 1.0, rx: 0, ry: 0, rz: 0 },
               anki: { x: 2950, y: 40, s: 0.78, rx: 0, ry: 0, rz: 0 },
@@ -2106,7 +2093,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
               ankiAll: { x: 2950, y: 60, s: 0.8, rx: -2, ry: 4, rz: 0 },
               read: { x: 0, y: 0, s: 0.86, rx: 6, ry: 10, rz: 0.5 },
               readB: { x: -20, y: 10, s: 0.92, rx: 5, ry: 6, rz: 0 },
-              readApp: { x: 0, y: -30, s: 1.22, rx: 2, ry: 3, rz: 0 },
+              readApp: { x: 0, y: -70, s: 1.62, rx: 2, ry: 3, rz: 0 },
               installWide: { x: -1250, y: 10, s: 0.42, rx: 4, ry: 0, rz: 0 },
               laptop: { x: -2600, y: 10, s: 0.84, rx: 2, ry: 7, rz: 0 },
               installDev: { x: 0, y: 0, s: 0.92, rx: 6, ry: -6, rz: 0 },
@@ -2228,7 +2215,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         // ------------------------------------------------------------ layout per frame shape
         const place = (sel, x, y) => gsap.set(sel, { left: x, top: y });
         if (P) {
-          place("#deck", -165, 560);
+          place("#deck", -165, 360);
           place("#anki", -800, 1320);
           place("#laptop", -860, -1880);
           gsap.set("#pic-ring", { left: 928, top: 109 });
@@ -2320,7 +2307,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         fingerOut("f-r", C.lr1 + 0.3);
         off("#vn-next", C.ovOpen1);
         on("#scr-ov", C.ovOpen1, 0.12);
-        tl.fromTo("#scr-ov", { y: 26 }, { y: 0, duration: 0.16, ease: "power2.out", immediateRender: false }, C.ovOpen1);
+        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen1);
         on("#ov-a1", C.ovOpen1);
         camTo(C.ovOpen1 + 0.1, "screen", 0.9, "power3.inOut");
         // Right: the next word (in flight: Looking up words…), then 一緒に
@@ -2348,11 +2335,11 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         swap("#ov-a4", "#ov-a5", C.saved1, 0.02);
         // the card flies out of the screen into the queue
         function flyCard(sel, t0, land, deckCard, n) {
-          const dest = P ? { x: 0, y: 760 } : { x: 1325, y: -40 };
+          const dest = P ? { x: 0, y: 560 } : { x: 1325, y: -40 };
           tl.fromTo(sel, { x: 0, y: 22, z: 0, scale: 0.35, rotationY: 0, rotation: 0, opacity: 0 },
             { z: 260, scale: 0.9, opacity: 1, duration: 0.3, ease: "back.out(1.6)", immediateRender: false }, t0);
           tl.fromTo(sel, { x: 0, y: 22, z: 260, scale: 0.9, rotation: 0 },
-            { x: dest.x, y: dest.y, z: 0, scale: 1, rotation: n === 1 ? -4 : 3, duration: land - t0 - 0.3, ease: "power2.inOut", immediateRender: false }, t0 + 0.3);
+            { x: dest.x, y: dest.y, z: 0, scale: P ? 0.75 : 1, rotation: n === 1 ? -4 : 3, duration: land - t0 - 0.3, ease: "power2.inOut", immediateRender: false }, t0 + 0.3);
           tl.fromTo("#deck", { scale: 1 }, { scale: 1.05, duration: 0.1, yoyo: true, repeat: 1, ease: "power1.inOut", immediateRender: false }, land);
           off("#dq-" + (n - 1), land, 0.08);
           tl.fromTo("#dq-" + n, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.25, ease: "back.out(2)", immediateRender: false }, land);
@@ -2375,12 +2362,17 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         caption("cap4", T.s4 + 0.1, 18.75);
         whip(C.whipA, "anki", 0.6);
         grow("#anki", C.cardOpen - 0.05, 0.86, 0.35);
-        tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.5, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
-        camTo(C.cardOpen + 0.35, "ankiPic", 1.3, "power2.inOut");
-        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, 15.9);
-        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.25, duration: 0.5, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, 16.2);
-        camTo(16.75, "ankiAll", 1.75, "power2.inOut");
-        off("#pic-ring", 18.2, 0.2);
+        tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.45, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
+        // the card's front (the word), flipped to its back: the game's screen is on it
+        const flip = C.cardOpen + 0.55;
+        tl.fromTo("#anki", { rotationY: 0 }, { rotationY: 90, duration: 0.22, ease: "power2.in", immediateRender: false }, flip);
+        swap("#anki-front", "#anki-card", flip + 0.22, 0.01);
+        tl.fromTo("#anki", { rotationY: -90 }, { rotationY: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, flip + 0.23);
+        camTo(flip + 0.35, "ankiPic", 1.1, "power2.inOut");
+        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.6);
+        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.45, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.9);
+        camTo(flip + 1.5, "ankiAll", 1.9, "power2.inOut");
+        off("#pic-ring", 18.3, 0.2);
         fade("#deck, #fly1, #fly2", 15.0, 1, 0, 0.3);
         glow(14.6, "cream", 0.5);
 
@@ -2406,8 +2398,9 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         tl.fromTo("#scr-app", { opacity: 0, x: 120 }, { opacity: 1, x: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, C.appIn);
         on("#app-read-a", C.appIn);
         tl.fromTo("#scr-vn", { x: 0 }, { x: -120, duration: 0.3, ease: "power3.out", immediateRender: false }, C.appIn);
-        camTo(C.appIn, "readApp", 0.7, "power3.inOut");
-        camTo(C.appIn + 0.7, "readAppB", 1.3, "sine.inOut");
+        // the page is scrolled to Read text (the model choice is not in the video): in on that card
+        camTo(C.appIn, "readApp", 0.6, "power3.inOut");
+        camTo(C.appIn + 0.6, "readAppB", 1.3, "sine.inOut");
         poke("t-l", C.right3, B.DR, 32, 0.3, 0.25);
         press(C.right3, "dpad-right");
         swap("#app-read-a", "#app-read-b", C.right3 + 0.05, 0.03);
@@ -2415,16 +2408,22 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
 
         // ============================================================ S6: easy install (a MOCK-UP of the one-VPK install)
         caption("cap6", T.s6 + 0.1, 31.0);
-        const step = (n, t, lit) => fade("#step" + n, t, lit ? 0.45 : 1, lit ? 1 : 0.45, 0.2);
-        camTo(23.15, "installWide", 0.9, "power3.inOut");
+        // the steps, one at a time under "Easy install", each as its action starts
+        function stepIn(id, t) {
+          tl.fromTo(id, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, t);
+        }
+        function stepOut(id, t) {
+          tl.fromTo(id, { opacity: 1, y: 0 }, { opacity: 0, y: -24, duration: 0.2, ease: "power2.in", immediateRender: false }, t);
+        }
+        camTo(23.15, "installWide", 0.7, "power3.inOut");
         swap("#scr-app", "#scr-shell", 23.2, 0.2);
         on("#vs-list-e", 23.2);
         off("#scr-vn", 23.45);
         tl.fromTo("#laptop", { x: -400, opacity: 0 }, { x: 0, opacity: 1, duration: 0.7, ease: "power3.out", immediateRender: false }, C.laptopIn);
-        step(1, 23.9, true);
-        camTo(24.05, "laptop", 0.6, "power2.inOut");
+        stepIn("#step1", 23.85);
+        camTo(23.85, "laptop", 0.5, "power2.inOut");
         // the mouse goes to the VPK and clicks it; it downloads
-        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.5, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.55);
+        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.45, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.5);
         tl.fromTo("#mouse", { scale: 1 }, { scale: 0.85, duration: 0.06, yoyo: true, repeat: 1, immediateRender: false }, C.clickVpk - 0.02);
         tl.fromTo("#gh-vpk", { backgroundColor: "rgba(56,139,253,0)" }, { backgroundColor: "rgba(56,139,253,0.22)", duration: 0.12, immediateRender: false }, C.clickVpk);
         tl.fromTo("#dl-chip", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out", immediateRender: false }, C.clickVpk + 0.05);
@@ -2436,8 +2435,8 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
           { x: 0, y: -10, scale: 2.2, opacity: 1, rotation: 0, duration: 0.65, ease: "power2.inOut", immediateRender: false }, C.fileFly);
         tl.fromTo("#fly-file", { yPercent: 0 }, { yPercent: -110, duration: 0.33, yoyo: true, repeat: 1, ease: "sine.out", immediateRender: false }, C.fileFly);
         fade("#fly-file", C.shellIn + 0.1, 1, 0, 0.2);
-        step(1, C.shellIn, false);
-        step(2, C.shellIn, true);
+        stepOut("#step1", C.shellIn - 0.1);
+        stepIn("#step2", C.shellIn + 0.1);
         fade("#laptop", C.shellIn + 0.1, 1, 0, 0.3);
         // VitaShell: the VPK is there; × on it, Yes, the extended-permissions notice, Yes, Installing...
         swap("#vs-list-e", "#vs-list-0", C.shellIn, 0.02);
@@ -2481,8 +2480,8 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         grow("#scr-home", C.ps1 + 0.06, 1.08, 0.2);
         off("#scr-shell", C.ps1 + 0.25);
         tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.ps1 + 0.15);
-        step(2, C.ps1 + 0.1, false);
-        step(3, C.ps1 + 0.1, true);
+        stepOut("#step2", C.ps1 - 0.1);
+        stepIn("#step3", C.ps1 + 0.1);
         camTo(C.ps1, "home", 0.5, "power2.inOut");
         // open Overlay: its LiveArea, Start; it opens on its Install page
         tapSeq([[C.tapBubbleApp, 639, 350], [C.tapStartApp, 480, 293]], 0.25);
@@ -2505,8 +2504,8 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         camTo(C.tapStartApp + 0.8, "installDevB", 30.9 - C.tapStartApp - 0.8, "sine.inOut");
         // the user restarts the Vita (the app never does): the screen goes dark; done
         swap("#scr-app", "#scr-black", C.restart, 0.2);
-        tl.fromTo("#chip-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.1);
-        tl.fromTo("#chip-done", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 31.0);
+        stepOut("#step3", C.restart);
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.1);
 
         // ============================================================ S7: in your game, L + R
         caption("cap7", 31.15, 36.6);
@@ -2546,7 +2545,7 @@ glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint"
         // right after the install card mining is off: no queue line, no × queue in the hint
         off("#vn-next", C.ovOpen2);
         on("#scr-ov", C.ovOpen2, 0.12);
-        tl.fromTo("#scr-ov", { y: 26 }, { y: 0, duration: 0.16, ease: "power2.out", immediateRender: false }, C.ovOpen2);
+        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
         on("#ov-b1", C.ovOpen2);
         camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
         poke("t-l", C.right4, B.DR, 32, 0.3, 0.18);

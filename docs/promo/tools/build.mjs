@@ -123,9 +123,11 @@ function captions() {
   return Object.entries(S.CAPTIONS)
     .map(([id, c]) => {
       const p = c.p ? `<p class="sub" id="${id}-p">${c.p}</p>` : "";
+      // scene 6's steps: one at a time, as large as a caption line, under "Easy install"
       const steps =
         id === "cap6"
-          ? `<div class="steps">${S.STEPS.map((s, i) => `<div class="step" id="step${i + 1}"><b>${i + 1}</b><span>${s}</span></div>`).join("")}</div>`
+          ? `<div class="steps">${S.STEPS.map((s, i) => `<div class="step" id="step${i + 1}"><b>${i + 1}</b><span>${s}</span></div>`).join("")}` +
+            `<div class="step" id="step-done"><b>✓</b><span>Done</span></div></div>`
           : "";
       return `<div class="cap" id="${id}"><h1>${words(c.h)}</h1>${p}${steps}</div>`;
     })

@@ -71,6 +71,7 @@ def main():
     anki = ROOT / "assets" / "anki"
     anki.mkdir(parents=True, exist_ok=True)
     copy(shot / "png" / "card-1-back-desktop-light-MOCKUP.png", anki / "card-1-back-mockup.png")
+    copy(shot / "png" / "card-1-front-desktop-light-MOCKUP.png", anki / "card-1-front-mockup.png")
     # the music and the sound effects (CC0, promo-assets: audio/MANIFEST-fragment.md)
     audio = ROOT / "assets" / "audio"
     audio.mkdir(parents=True, exist_ok=True)
@@ -86,8 +87,10 @@ def main():
         app_shot(cap / f"{n}.png", shots / f"app-{n}.png")
     # PR #146 (feat/ocr-mode-setting 21488a7, not merged yet): its Read text row, in Vita3K
     pr = SRC / "app" / "pr146-ocr-mode-21488a7-NOT-MERGED" / "png"
-    app_shot(pr / "PR146-03-read-text-selected-automatically.png", shots / "pr146-read-auto.png")
-    app_shot(pr / "PR146-04-read-text-only-when-I-press-LR-saved.png", shots / "pr146-read-on-press.png")
+    # the page scrolled so that Read text is its first card (the owner dropped the model choice
+    # from the video: Model size is not in view)
+    app_shot(pr / "PR146-10-read-text-at-top-automatically.png", shots / "pr146-read-auto.png")
+    app_shot(pr / "PR146-11-read-text-at-top-only-when-I-press-LR.png", shots / "pr146-read-on-press.png")
     # the one-VPK install's Install page (overlay-one-vpk-install's design, not built yet), drawn by
     # the app's own drawing code in Vita3K: a MOCK-UP (promo-assets' README-MOCKUP.md)
     mk = SRC / "app" / "install-MOCKUP-one-vpk" / "png"
