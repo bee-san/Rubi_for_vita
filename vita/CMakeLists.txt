@@ -388,6 +388,11 @@ if(VJO_SETTINGS_SMOKE)
   # vita_create_vpk (a macro) appends to these: start again, not from the Settings VPK's.
   set(VITA_MKSFOEX_FLAGS "")
   set(VITA_PACK_VPK_FLAGS "")
+  # Its list of the VPK's files (resources, its VPK command's DEPENDS) too: since #122 the Settings
+  # VPK's holds the generated vjo_app.txt, made from the app's eboot.bin, so this VPK would build the
+  # Overlay app itself, here without a build type (libpng at -O0, which check_settings_png_abi.py
+  # refuses).
+  set(resources "")
   vita_create_vpk(vjo_settings_smoke.vpk VJOSMK002 vjo_settings_smoke.self
     VERSION "01.00" NAME "VJO settings smoke"
     FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png)
