@@ -62,8 +62,9 @@ int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info)
 {
     if (thid != 30 || info->size != sizeof(*info) || thread_info_rc < 0) return thread_info_rc < 0 ? thread_info_rc : -1;
     /* thread_info_at_sp: pStack read as "the thread's stack pointer" (VitaSDK's name for the field),
-     * here 32 B below the SP at this call, as a kernel entry would be */
-    info->stack = thread_info_at_sp ? (void *)(current_sp() - 32) : thread_info_stack ? thread_info_stack : fake_stack;
+     * here 256 B below the SP at this call: the caller's frame is then above the stack's unpainted
+     * floor but within the 512 B gap above it, which only the gap term of the bound refuses */
+    info->stack = thread_info_at_sp ? (void *)(current_sp() - 256) : thread_info_stack ? thread_info_stack : fake_stack;
     info->stackSize = thread_info_size;
     return 0;
 }
@@ -2903,7 +2904,9 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
 
 /* The paint on a real thread whose 16 KiB stack is a known buffer between two
  * guard areas, as the kernel reports it (pStack its bottom, stackSize its size):
- * [pStack, painted) is the pattern, the 64 B just above it and both guards are
+ * the stack's lowest 64 B stay as they were (the PSP's thread manager keeps the
+ * thread's UID there, audit-overlay-shell-slim-2c B2), [pStack + 64, painted) is
+ * the pattern, the 64 B just above it and both guards are
  * untouched, the painting frame is above the STACK_PAINT_GAP bytes, the thread
  * runs on, and a deeper use written later is read back. The thread first clears
  * its stack below its own frame: what ran there before the start routine (glibc
@@ -2917,6 +2920,7 @@ static void test_net_stack_high_water_is_logged_once_per_growth(void)
 #define PAINT_STACK 16384u
 #define PAINT_GUARD 8192u /* 4 KiB low is not enough: glibc puts the TCB at the top of a setstack stack */
 #define PAINT_GAP 512u /* STACK_PAINT_GAP as documented: not taken from the code it checks */
+#define PAINT_FLOOR 64u /* STACK_PAINT_FLOOR as documented: the stack's lowest bytes are never painted */
 static uint8_t paint_region[PAINT_GUARD + PAINT_STACK + PAINT_GUARD] __attribute__((aligned(4096)));
 static uint8_t paint_snap[PAINT_STACK];
 static uintptr_t paint_local_after, paint_deepest;
@@ -2943,9 +2947,9 @@ static void *paint_thread(void *arg)
     return NULL;
 }
 /* mode 0: as documented; 1: pStack = the top; 2: size 0; 3: pStack in the guard below, with a
- * size that keeps the frame inside (only the size check refuses it); 4: no info; 5: pStack = the
- * stack pointer at the call, the exact size (only the lower bound's gap term refuses it: the
- * frame is less than STACK_PAINT_GAP above it); 6: pStack 8 KiB low, the exact size (only the
+ * size that keeps the frame inside (only the size check refuses it); 4: no info; 5: pStack 256 B
+ * below the stack pointer at the call, the exact size (only the lower bound's gap term refuses it:
+ * the frame is above the stack's unpainted floor, within STACK_PAINT_GAP of it); 6: pStack 8 KiB low, the exact size (only the
  * upper bound refuses it: the frame is above the reported top) */
 #define PAINT_MODES 6
 static const char *const paint_refusal[PAINT_MODES + 1] = {
@@ -2989,15 +2993,17 @@ static int paint_on_a_thread(int mode, int depth)
             int size = 0;
             TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (frame 0x%X outside 0x%X + %d)", &frame, &low, &size) == 3);
             uint32_t above = (uint32_t)(frame - low);
-            TEST_CHECK_(mode == 5 ? above > 0 && above <= PAINT_GAP : above >= (uint32_t)size,
+            TEST_CHECK_(mode == 5 ? above > PAINT_FLOOR && above <= PAINT_FLOOR + PAINT_GAP : above >= (uint32_t)size,
                         "mode %d: the frame is %u B above the reported pStack (size %d)", mode, (unsigned)above, size);
         }
         TEST_CHECK(!stack_high_water());
         return guards;
     }
-    TEST_ASSERT_(net_stack_lo == lo, "not painted: %s", log_count ? log_lines[(log_count - 1) % 32] : "(no line)");
-    size_t painted = (size_t)(net_stack_painted - lo), wrong = 0, gap = 0;
-    for (size_t i = 0; i < painted; i++) wrong += paint_snap[i] != STACK_PAINT;
+    TEST_ASSERT_(net_stack_lo == lo + PAINT_FLOOR, "not painted: %s", log_count ? log_lines[(log_count - 1) % 32] : "(no line)");
+    size_t painted = (size_t)(net_stack_painted - lo), wrong = 0, gap = 0, floor_written = 0;
+    for (size_t i = 0; i < PAINT_FLOOR; i++) floor_written += paint_snap[i] != 0; /* as the test left it */
+    for (size_t i = PAINT_FLOOR; i < painted; i++) wrong += paint_snap[i] != STACK_PAINT;
+    TEST_CHECK_(!floor_written, "%zu of the stack's lowest %u B painted", floor_written, PAINT_FLOOR);
 
     for (size_t i = painted; i < painted + 64 && i < PAINT_STACK; i++) gap += paint_snap[i] != 0; /* as the test left it */
     uintptr_t gap_end = (uintptr_t)net_stack_painted + PAINT_GAP; /* the painting frame is above it */

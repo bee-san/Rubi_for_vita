@@ -301,12 +301,20 @@ module keeps its 176,128 B: 101,256 B of text (464 B more, the paint and the che
 of data and `.bss` [measured: the build log's module row]; it imports one function more,
 `sceKernelGetThreadInfo` (`sceKernelGetThreadId` was already imported, by `shell/log_vita.c`).
 Because nothing measures the thread on a console yet, VjoNet paints its unused stack when it starts
-(`shell/worker.c` `net_stack_paint`: from the stack's low end up to 512 B below its own frame, and
-only when the kernel reports the 16,384 B it was created with and the frame inside it, else one
-`VjoNet stack: not painted (…)` line) and at each game exit logs, when the figure grew,
+(`shell/worker.c` `net_stack_paint`: from 64 B above the stack's low end up to 512 B below its own
+frame, and only when the kernel reports the 16,384 B it was created with and the frame inside it,
+else one `VjoNet stack: not painted (…)` line) and at each game exit logs, when the figure grew,
 `VjoNet stack: at most N of 16384 B used` (`net_stack_check`); `--collect`'s analysis keeps the
 largest figure, WARNs when under a quarter is left, and WARNs for each boot that did not paint.
-The paint takes no allocation and no item.
+The paint takes no allocation and no item. Its lowest 64 B stay as the kernel left them: the PSP's
+thread manager, whose API the Vita keeps, fills a new stack with 0xFF, writes the thread's UID in
+its lowest word and reads it to detect an overflow [pspsdk `PSP_THREAD_ATTR_NO_FILLSTACK`; PPSSPP
+`sceKernelThread.cpp` `FillStack`, `sceKernelGetThreadStackFreeSize`], and the Vita's kernel kills a
+thread for a stack overflow (VitaSDK `psp2common/kernel/threadmgr.h`'s thread status) and records
+each thread's "Maximum stack size used" in a core dump [SDK: Core_Dump-Overview]. How the Vita
+checks is unknown. Should a first boot of this build still end in a stack overflow or SceShell
+crash naming VjoNet, the paint itself is the first suspect, not the 16 KiB; and a core dump's
+VjoNet figures read the painted area as used. The boot guard makes the boot after it safe.
 
 ### Pool "kernel": `ScePhyMemPartKD` (36 MiB, shared by every driver)
 

@@ -1236,6 +1236,10 @@ static void net_job(void)
  * sceKernelCreateThread.] Logged at each game exit when it grew. */
 #define STACK_PAINT 0xA5u
 #define STACK_PAINT_GAP 512u /* left unpainted below the painting frame */
+/* The stack's lowest bytes stay as the kernel left them: the PSP's thread manager, whose API the Vita
+ * keeps, fills a new stack and writes the thread's UID in its lowest word, and checks it for an
+ * overflow; how the Vita's does is unknown (audit-overlay-shell-slim-2c B2). */
+#define STACK_PAINT_FLOOR 64u
 static uint8_t *net_stack_lo;                    /* published last: the paint is done */
 static uint8_t *net_stack_painted, *net_stack_top; /* [lo, painted): the pattern; top: lo + the size */
 static uint32_t net_stack_logged;                /* the high-water mark last logged */
@@ -1285,12 +1289,13 @@ static __attribute__((noinline)) void net_stack_paint(void)
     }
     /* As addresses: painted only when this frame is inside the reported stack, with room below it. */
     uintptr_t lo = (uintptr_t)info.stack, top = lo + (uintptr_t)info.stackSize, frame = (uintptr_t)&here;
-    if (frame <= lo + STACK_PAINT_GAP || frame >= top) {
+    uintptr_t low = lo + STACK_PAINT_FLOOR; /* the paint's first byte */
+    if (frame <= low + STACK_PAINT_GAP || frame >= top) {
         vjo_log("VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)", (unsigned)frame, (unsigned)lo,
                 info.stackSize);
         return;
     }
-    stack_paint((uint8_t *)lo, (size_t)(frame - STACK_PAINT_GAP - lo), (uint8_t *)top);
+    stack_paint((uint8_t *)low, (size_t)(frame - STACK_PAINT_GAP - low), (uint8_t *)top);
 }
 
 /* At a game exit: the most VjoNet has used, when that grew since the last line. */
