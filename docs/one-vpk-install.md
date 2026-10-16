@@ -11,7 +11,8 @@ fleet's reports) asked for changes R1-R7; they are folded in, and the last secti
 ## The user's steps
 
 1. Download `VitaJPOverlay-<version>.vpk` from the latest GitHub release.
-2. Copy it to the Vita (VitaShell: Select starts FTP, or its USB mode), then install it in VitaShell
+2. Copy it to the Vita with VitaShell's USB or FTP connection (Select starts the one chosen under
+   **SELECT button** in VitaShell's settings, Start; a Vita's default is USB), then install it in VitaShell
    (Enter on the file; answer Yes to VitaShell's "This package requests extended permissions").
 3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists exactly what it will
    do; choose **Install**, then restart the Vita.

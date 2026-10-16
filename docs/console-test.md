@@ -29,7 +29,8 @@ The one-VPK install: copy `VitaJPOverlay-TAG-debug.vpk` to the Vita, install it 
 **Overlay**, choose **Install** on its Install page and restart the Vita (test-build-issue.md section 2 has
 the checklist; README "Install" the steps). The steps below are the advanced path, from a PC.
 
-On the Vita, close any game, open VitaShell and press **Select** to start FTP. Then, in `vjo`:
+On the Vita, close any game, open VitaShell and press **Select** to start FTP (Select starts FTP once
+**SELECT button** is set to **FTP** in VitaShell's settings, Start; a Vita's default is USB). Then, in `vjo`:
 ```sh
 bash install-vita.sh VITA_IP:1337
 ```

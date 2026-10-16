@@ -88,7 +88,8 @@ Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 60
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
    [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
-2. Copy it to the Vita (in VitaShell, Select starts FTP; or use its USB mode) and install it in
+2. Copy it to the Vita with VitaShell's USB or FTP connection (Select in VitaShell starts the one
+   chosen under **SELECT button** in its settings, Start; a Vita's default is USB) and install it in
    VitaShell: press Enter on the file, then Yes to "Do you want to install this package?" and to its
    notice that the package requests extended permissions.
 3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists exactly what it will
@@ -157,7 +158,8 @@ boots.
 
 Each release also has `VitaJPOverlay-<version>.zip` (and `-debug.zip`) for the computer-side
 installer, the developers' path. It needs Python 3.9+, bash and curl. Close games, open VitaShell,
-press Select to start FTP, and run from the extracted folder:
+set **SELECT button** to **FTP** in its settings (Start; once: a Vita's default is USB, #136), press
+Select to start FTP, and run from the extracted folder:
 
 ```sh
 bash install-vita.sh VITA_IP:1337
