@@ -1,0 +1,24 @@
+{
+  "name": "vita-jp-overlay-promo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HyperFrames source of the Vita JP Overlay promo video (v2: continuous motion)",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prep": "python3 tools/prep_assets.py",
+    "build": "node tools/build.mjs",
+    "fonts": "python3 tools/fonts.py",
+    "check": "node tools/build.mjs --check && python3 tools/fonts.py --check && HYPERFRAMES_NO_TELEMETRY=1 hyperframes check .",
+    "render": "node tools/build.mjs && HYPERFRAMES_NO_TELEMETRY=1 hyperframes render . -o renders/promo-1920x1080.mp4 --crf 20 -w 3",
+    "render:vertical": "node tools/build.mjs --layout portrait && HYPERFRAMES_NO_TELEMETRY=1 hyperframes render . -o renders/promo-1080x1920.mp4 --crf 20 -w 3; s=$?; node tools/build.mjs && exit $s",
+    "media": "bash tools/media.sh",
+    "motion": "python3 tools/motion.py media/promo-1920x1080.mp4"
+  },
+  "dependencies": {
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.162"
+  }
+}

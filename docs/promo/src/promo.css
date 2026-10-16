@@ -1,0 +1,1340 @@
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #070b18;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: "Promo Sans", sans-serif;
+        color: #eef4ff;
+        --accent: #ffd24a; /* the overlay's highlight (core/styled.h) */
+        --teal: #5bdccf; /* the Overlay app's accent (settings/main.c) */
+        --cx: 960px; /* where the camera looks: the frame's action centre */
+        --cy: 616px;
+      }
+      #root.layout-portrait {
+        --cx: 540px;
+        --cy: 1090px;
+      }
+
+      /* ------------------------------------------------------------ backdrop */
+      #bg {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(120% 90% at 50% 45%, #182654 0%, #0d1533 48%, #060a17 100%);
+        overflow: hidden;
+      }
+      .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(80px);
+        opacity: 0.5;
+      }
+      #orb-a {
+        width: 900px;
+        height: 900px;
+        left: -280px;
+        top: 300px;
+        background: radial-gradient(circle, rgba(91, 220, 207, 0.55), rgba(91, 220, 207, 0) 70%);
+      }
+      #orb-b {
+        width: 1000px;
+        height: 1000px;
+        right: -320px;
+        top: -380px;
+        background: radial-gradient(circle, rgba(244, 160, 167, 0.5), rgba(244, 160, 167, 0) 70%);
+      }
+      #orb-c {
+        width: 820px;
+        height: 820px;
+        left: 38%;
+        bottom: -540px;
+        background: radial-gradient(circle, rgba(140, 120, 255, 0.5), rgba(140, 120, 255, 0) 70%);
+      }
+      /* the screen's light on the backdrop: its colour follows the scene on the console */
+      #glow {
+        position: absolute;
+        left: 50%;
+        top: 57%;
+        width: 1500px;
+        height: 1000px;
+        margin: -500px 0 0 -750px;
+        filter: blur(30px);
+      }
+      .glow-l {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+      }
+      #bg-dots {
+        position: absolute;
+        left: -200px;
+        top: -200px;
+        right: -200px;
+        bottom: -200px;
+        background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1.6px, transparent 1.7px);
+        background-size: 36px 36px;
+        mask-image: radial-gradient(circle at 50% 55%, rgba(0, 0, 0, 0.9), transparent 70%);
+        -webkit-mask-image: radial-gradient(circle at 50% 55%, rgba(0, 0, 0, 0.9), transparent 70%);
+      }
+
+      /* ------------------------------------------------------------ the camera and the world */
+      #viewport {
+        position: absolute;
+        inset: 0;
+        perspective: 2400px;
+        perspective-origin: var(--cx) var(--cy);
+        z-index: 3;
+      }
+      #cam {
+        position: absolute;
+        left: var(--cx);
+        top: var(--cy);
+        width: 0;
+        height: 0;
+        transform-style: preserve-3d;
+      }
+      #cam-zoom,
+      #cam-rot,
+      #cam-pan {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        transform-style: preserve-3d;
+      }
+      #device {
+        position: absolute;
+        left: -910px;
+        top: -440px;
+        width: 1820px;
+        height: 880px;
+        transform-style: preserve-3d;
+      }
+      #device-shadow {
+        position: absolute;
+        left: 110px;
+        right: 110px;
+        top: 140px;
+        bottom: -30px;
+        border-radius: 420px;
+        background: rgba(0, 0, 0, 0.55);
+        filter: blur(46px);
+        transform: translateZ(-30px);
+      }
+      #device-art {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1820px;
+        height: 880px;
+        overflow: visible;
+      }
+      #screen {
+        position: absolute;
+        left: 357px;
+        top: 149px;
+        width: 960px;
+        height: 544px;
+        transform: scale(1.1520833);
+        transform-origin: 0 0;
+        overflow: hidden;
+        background: #000;
+      }
+      #screen-gloss {
+        position: absolute;
+        left: 357px;
+        top: 149px;
+        width: 1106px;
+        height: 627px;
+        pointer-events: none;
+        background: linear-gradient(118deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.035) 27%, rgba(255, 255, 255, 0) 28%);
+      }
+      .scr {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 960px;
+        height: 544px;
+        opacity: 0;
+        overflow: hidden;
+      }
+      #scr-vn {
+        opacity: 1;
+      }
+
+      /* ------------------------------------------------------------ the game (promo-assets' src/stage.html) */
+      .vn-bg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 960px;
+        height: 544px;
+        object-fit: cover;
+        opacity: 0;
+      }
+      #bg-s1 {
+        opacity: 1;
+      }
+      #sprite {
+        position: absolute;
+        left: 300px;
+        top: 22px;
+        width: 360px;
+        height: 640px;
+        transform-origin: 50% 70%;
+      }
+      .spr {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 360px;
+        height: 640px;
+        opacity: 0;
+      }
+      #spr-surprised {
+        opacity: 1;
+      }
+      #petals,
+      #sparkles {
+        position: absolute;
+        inset: 0;
+      }
+      .petal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 14px;
+        height: 9px;
+        border-radius: 70% 30% 70% 30%;
+        background: radial-gradient(circle at 35% 40%, #ffe3ee 0%, #f6a6c1 60%, #e98aa9 100%);
+        box-shadow: 0 1px 2px rgba(120, 40, 60, 0.25);
+      }
+      .spark {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
+        background: radial-gradient(circle, #ffffff 0%, rgba(255, 255, 255, 0.9) 20%, rgba(190, 210, 255, 0) 70%);
+        opacity: 0;
+      }
+      .vn-box {
+        position: absolute;
+        left: 34px;
+        top: 384px;
+        width: 892px;
+        height: 148px;
+      }
+      .vn-panel {
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(22, 28, 58, 0.84) 0%, rgba(14, 18, 40, 0.9) 100%);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), inset 0 0 0 1.5px rgba(255, 255, 255, 0.28), inset 0 0 0 5px rgba(255, 255, 255, 0.05);
+      }
+      .vn-panel::after {
+        content: "";
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        top: 8px;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255, 214, 160, 0) 0%, rgba(255, 214, 160, 0.55) 30%, rgba(255, 214, 160, 0.55) 70%, rgba(255, 214, 160, 0) 100%);
+      }
+      .vn-name {
+        position: absolute;
+        left: 30px;
+        top: -24px;
+        height: 40px;
+        padding: 0 26px;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ffb48a 0%, #f2876f 100%);
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3), inset 0 0 0 1.5px rgba(255, 255, 255, 0.55);
+        font: 700 23px/40px "Promo Maru", sans-serif;
+        color: #fff;
+        letter-spacing: 3px;
+        text-shadow: 0 1px 2px rgba(120, 40, 30, 0.55);
+      }
+      .vn-text {
+        position: absolute;
+        left: 40px;
+        top: 30px;
+        width: 812px;
+        font: 500 26px/40px "Promo Maru", sans-serif;
+        color: #fff;
+        letter-spacing: 0.5px;
+        white-space: pre;
+        text-shadow: 0 0 2px rgba(10, 12, 30, 0.9), 0 2px 3px rgba(10, 12, 30, 0.75);
+      }
+      .vn-text .c {
+        opacity: 0;
+      }
+      .vn-text .indent {
+        margin-left: 26px;
+      }
+      .vn-next {
+        position: absolute;
+        right: 30px;
+        bottom: 16px;
+        width: 18px;
+        height: 14px;
+        background: #ffd9a8;
+        clip-path: polygon(0 0, 100% 0, 50% 100%);
+        opacity: 0;
+      }
+      .vn-menu {
+        position: absolute;
+        right: 62px;
+        top: 124px;
+        font: 500 11px/14px "Promo Maru", sans-serif;
+        color: rgba(225, 230, 255, 0.62);
+        letter-spacing: 1.5px;
+        white-space: nowrap;
+      }
+      .vn-menu span {
+        margin-left: 14px;
+      }
+      #shot-flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+      }
+
+      /* ------------------------------------------------------------ the overlay */
+      .ov-panel {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+      }
+      .ov-band {
+        position: absolute;
+        left: 0;
+        width: 960px;
+        background: rgb(8, 8, 10);
+      }
+      .ov-state {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      .ov-head {
+        position: absolute;
+        left: 20px;
+        top: 12px;
+        width: 920px;
+        overflow: hidden;
+        font-weight: 400;
+        font-size: 27px;
+        line-height: 38px;
+        color: #fff;
+        white-space: pre-wrap;
+      }
+      .ov-head .hl {
+        color: #ffd24a;
+      }
+      .ov-sep {
+        position: absolute;
+        left: 20px;
+        width: 920px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .ov-body {
+        position: absolute;
+        left: 20px;
+        width: 920px;
+        overflow: hidden;
+        font-weight: 400;
+        white-space: pre-wrap;
+        line-break: strict;
+        overflow-wrap: anywhere;
+      }
+      .ov-body .ja {
+        font-size: 27px;
+        line-height: 38px;
+      }
+      .ov-body .en {
+        font-size: 21px;
+        line-height: 30px;
+      }
+      .ov-hint {
+        position: absolute;
+        left: 20px;
+        top: 507px;
+        width: 920px;
+        height: 30px;
+        font-size: 22px;
+        line-height: 30px;
+        color: #8a94a6;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      /* ------------------------------------------------------------ home screen */
+      .home-wall {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(70% 90% at 18% 8%, #6a8de0 0%, rgba(106, 141, 224, 0) 60%),
+          radial-gradient(60% 80% at 92% 92%, #3bbfae 0%, rgba(59, 191, 174, 0) 60%), linear-gradient(160deg, #26346a 0%, #1b2248 55%, #141a3c 100%);
+      }
+      .home-status {
+        position: absolute;
+        right: 18px;
+        top: 6px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 19px;
+        color: #fff;
+      }
+      .home-batt {
+        position: relative;
+        width: 34px;
+        height: 16px;
+        border: 2px solid #fff;
+        border-radius: 4px;
+      }
+      .home-batt i {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        bottom: 2px;
+        width: 22px;
+        background: #fff;
+        border-radius: 1px;
+      }
+      .bubble {
+        position: absolute;
+        width: 128px;
+        text-align: center;
+      }
+      .bubble img {
+        display: block;
+        width: 128px;
+        height: 128px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.92), 0 8px 18px rgba(0, 0, 0, 0.4);
+        background: #fff;
+      }
+      .bubble span {
+        display: block;
+        margin: 12px -36px 0;
+        font-size: 18px;
+        color: #fff;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+        white-space: nowrap;
+      }
+      #bub-app {
+        opacity: 0;
+      }
+      .home-dots {
+        position: absolute;
+        right: 30px;
+        top: 200px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .home-dots i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.35);
+      }
+      .home-dots i.on {
+        background: #fff;
+      }
+
+      /* ------------------------------------------------------------ LiveArea pages */
+      .la {
+        background: linear-gradient(180deg, #1c2040, #11142a);
+      }
+      .la-frame {
+        position: absolute;
+        left: 60px;
+        top: 34px;
+        width: 840px;
+        height: 500px;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+      .la-frame img {
+        width: 840px;
+        height: 500px;
+        display: block;
+        object-fit: cover;
+      }
+      .la-title {
+        position: absolute;
+        left: 80px;
+        top: 52px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 18px 6px 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.85);
+        font-weight: 700;
+        font-size: 20px;
+        color: #3a2a40;
+      }
+      .la-title img {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+      }
+      .la-logo {
+        position: absolute;
+        left: 110px;
+        top: 150px;
+        font-family: "Promo Maru", sans-serif;
+        font-weight: 700;
+        font-size: 60px;
+        line-height: 1.1;
+        color: #fff;
+        text-shadow: 0 0 18px rgba(255, 150, 110, 0.85), 0 3px 0 rgba(120, 50, 40, 0.6);
+      }
+      .la-logo small {
+        display: block;
+        margin-top: 8px;
+        font-family: "Promo Sans", sans-serif;
+        font-weight: 600;
+        font-size: 22px;
+        letter-spacing: 4px;
+        color: #fff4ea;
+      }
+      .la-gate {
+        position: absolute;
+        left: 340px;
+        top: 214px;
+        width: 280px;
+        height: 158px;
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 0 0 4px #fff, 0 12px 28px rgba(0, 0, 0, 0.45);
+      }
+      .la-gate img {
+        width: 280px;
+        height: 158px;
+        display: block;
+      }
+      .gate-label {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 6px 0 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 24px;
+        color: #fff;
+        background: linear-gradient(180deg, rgba(20, 20, 40, 0), rgba(20, 20, 40, 0.65));
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+      }
+      .la-gate-game {
+        left: 120px;
+        top: 330px;
+        height: 110px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
+        font-weight: 700;
+        font-size: 30px;
+        color: #fff;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+      .la-gate-game span {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #gate-continue {
+        opacity: 0;
+      }
+
+      /* ------------------------------------------------------------ the Overlay app */
+      .app-shot {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 960px;
+        height: 544px;
+        opacity: 0;
+      }
+      .app-page {
+        position: absolute;
+        left: 0;
+        top: 0;
+        opacity: 0;
+      }
+      .app-page text,
+      .app-page .wrap {
+        font-family: "Promo Sans", sans-serif;
+        font-weight: 400;
+      }
+      .app-page .wrap {
+        overflow: hidden;
+      }
+
+      /* ------------------------------------------------------------ VitaShell (Default theme) */
+      #scr-shell {
+        background: #000;
+        font-size: 19px;
+        color: #fff;
+      }
+      .vs-title {
+        position: absolute;
+        left: 20px;
+        top: 18px;
+        line-height: 23px;
+        color: rgb(127, 0, 255);
+      }
+      .vs-status {
+        position: absolute;
+        right: 20px;
+        top: 18px;
+        line-height: 23px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .vs-batt {
+        position: relative;
+        width: 30px;
+        height: 14px;
+        border: 2px solid #fff;
+        border-radius: 3px;
+      }
+      .vs-batt b {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        bottom: 2px;
+        width: 18px;
+        background: rgb(0, 255, 0);
+      }
+      .vs-path {
+        position: absolute;
+        left: 20px;
+        top: 41px;
+        line-height: 23px;
+        color: rgb(191, 191, 191);
+      }
+      .vs-list {
+        position: absolute;
+        left: 0;
+        top: 87px;
+        width: 960px;
+        height: 391px;
+      }
+      #vs-list-0,
+      #vs-list-1 {
+        opacity: 0;
+      }
+      .vs-row {
+        position: absolute;
+        left: 0;
+        width: 960px;
+        height: 23px;
+        line-height: 23px;
+      }
+      .vs-row i {
+        position: absolute;
+        left: 20px;
+        top: 5px;
+        width: 18px;
+        height: 14px;
+        border-radius: 2px;
+      }
+      .vs-row i.fold {
+        background: rgb(240, 196, 70);
+      }
+      .vs-row i.file {
+        background: #e8e8e8;
+        width: 14px;
+        left: 22px;
+      }
+      .vs-name {
+        position: absolute;
+        left: 46px;
+      }
+      .vs-info {
+        position: absolute;
+        right: 280px;
+      }
+      .vs-date {
+        position: absolute;
+        right: 20px;
+      }
+      .vs-dlg {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* VitaShell's own dialogs (uncommon_dialog.c, Default theme): a DIALOG_BG_COLOR box
+         (0xFF2F2F2F), 20 px side and 18 px top margins, white text in rows of 23 px, a blank
+         row, then one centred button line; the progress box is 420 px wide with an 8 px bar
+         (PROGRESS_BAR_BG_COLOR grey, PROGRESS_BAR_COLOR chartreuse) and its percentage. */
+      .vs-box {
+        background: rgb(47, 47, 47);
+        padding: 18px 20px;
+        color: #fff;
+        font-size: 19px;
+        line-height: 23px;
+      }
+      .vs-box .ln {
+        height: 23px;
+        white-space: pre;
+      }
+      .vs-box .btn {
+        text-align: center;
+      }
+      .vs-in {
+        opacity: 0;
+      }
+      .vs-progbox {
+        width: 420px;
+      }
+      .vs-pbar {
+        position: relative;
+        top: 10px;
+        height: 8px;
+        background: rgb(127, 127, 127);
+        overflow: hidden;
+      }
+      .vs-pfill {
+        width: 100%;
+        height: 100%;
+        background: rgb(127, 255, 0);
+        transform: scaleX(0);
+        transform-origin: 0 50%;
+      }
+      .vs-pct {
+        position: relative;
+      }
+      .vs-pct span {
+        position: absolute;
+        left: 0;
+        right: 0;
+        opacity: 0;
+      }
+
+      #scr-black {
+        background: #000;
+      }
+      #ripple {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 70px;
+        height: 70px;
+        margin: -35px 0 0 -35px;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.95);
+        box-shadow: 0 0 18px rgba(255, 255, 255, 0.6);
+        opacity: 0;
+      }
+
+      /* ------------------------------------------------------------ hands */
+      #hands {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        transform-style: preserve-3d;
+      }
+      .finger {
+        position: absolute;
+        left: -100px;
+        top: -40px;
+        width: 200px;
+        height: 620px;
+        transform-origin: 100px 40px;
+        opacity: 0;
+      }
+      .finger svg {
+        display: block;
+        width: 200px;
+        height: 620px;
+        overflow: visible;
+      }
+
+      /* ------------------------------------------------------------ the card queue and the cards */
+      #deck {
+        position: absolute;
+        left: 1160px;
+        top: -240px;
+        width: 330px;
+        height: 520px;
+        opacity: 0;
+      }
+      .deck-card {
+        position: absolute;
+        left: 15px;
+        top: 0;
+        width: 300px;
+        height: 400px;
+        border-radius: 22px;
+        background: linear-gradient(180deg, #ffffff, #f2f4f8);
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+        opacity: 0;
+      }
+      #deck-c1 {
+        transform: rotate(-4deg);
+      }
+      #deck-c2 {
+        transform: rotate(3deg);
+      }
+      .deck-label {
+        position: absolute;
+        left: -40px;
+        right: -40px;
+        top: 440px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 50px;
+        color: #f4f7ff;
+        text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+        white-space: nowrap;
+      }
+      .deck-label b {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        color: var(--accent);
+      }
+      .deck-label b span {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -30px;
+        opacity: 0;
+      }
+      #dq-0 {
+        opacity: 1;
+      }
+      .fly-card {
+        position: absolute;
+        left: -150px;
+        top: -200px;
+        width: 300px;
+        height: 400px;
+        border-radius: 22px;
+        background: linear-gradient(180deg, #ffffff, #f2f4f8);
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        overflow: hidden;
+        text-align: center;
+        color: #20252f;
+        opacity: 0;
+      }
+      .fly-card img {
+        display: block;
+        width: 300px;
+        height: 170px;
+        object-fit: cover;
+      }
+      .fc-word {
+        margin-top: 36px;
+        font-family: "Promo Sans", sans-serif;
+        font-weight: 500;
+        font-size: 64px;
+        line-height: 1.1;
+      }
+      .fc-read {
+        margin-top: 14px;
+        font-size: 30px;
+        color: #5b6577;
+      }
+
+      /* ------------------------------------------------------------ Anki */
+      #anki {
+        position: absolute;
+        left: 2150px;
+        top: -520px;
+        width: 1600px;
+        height: 1040px;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #fffaef;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.2);
+        opacity: 0;
+      }
+      .aw-bar {
+        position: relative;
+        height: 40px;
+        background: #ece7da;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding-left: 18px;
+        font-weight: 600;
+        font-size: 20px;
+        color: #5f5a50;
+      }
+      .aw-bar i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #d1cbbd;
+      }
+      .aw-bar span {
+        margin-left: 10px;
+      }
+      .aw-body img {
+        display: block;
+        width: 1600px;
+        height: 1000px;
+      }
+      #pic-ring {
+        position: absolute;
+        left: 928px;
+        top: 109px;
+        width: 378px;
+        height: 220px;
+        border-radius: 12px;
+        border: 7px solid var(--accent);
+        box-shadow: 0 0 30px rgba(255, 210, 74, 0.7);
+        opacity: 0;
+      }
+
+      /* ------------------------------------------------------------ the computer */
+      #laptop {
+        position: absolute;
+        left: -3500px;
+        top: -560px;
+        width: 1720px;
+        height: 1080px;
+        border-radius: 18px;
+        overflow: hidden;
+        background: #0d1117;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(255, 255, 255, 0.12);
+        opacity: 0;
+      }
+      .lp-bar {
+        height: 64px;
+        background: #1f2430;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-left: 24px;
+      }
+      .lp-bar i {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #3a4152;
+      }
+      .lp-url {
+        margin-left: 30px;
+        padding: 0 26px;
+        height: 40px;
+        line-height: 40px;
+        border-radius: 20px;
+        background: #11151d;
+        font-size: 24px;
+        color: #c9d1d9;
+      }
+      .lp-page {
+        position: relative;
+        padding: 40px 70px;
+        color: #c9d1d9;
+      }
+      .gh-repo {
+        font-size: 34px;
+        color: #8b949e;
+      }
+      .gh-repo b {
+        color: #e6edf3;
+      }
+      .gh-tabs {
+        display: flex;
+        gap: 46px;
+        margin-top: 26px;
+        padding-bottom: 14px;
+        border-bottom: 2px solid #30363d;
+        font-size: 26px;
+        color: #8b949e;
+      }
+      .gh-tabs .on {
+        color: #e6edf3;
+        font-weight: 700;
+        border-bottom: 4px solid #f78166;
+        padding-bottom: 12px;
+        margin-bottom: -16px;
+      }
+      .gh-rel {
+        margin-top: 40px;
+        padding: 34px 40px;
+        border: 2px solid #30363d;
+        border-radius: 14px;
+      }
+      .gh-rel-head {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 46px;
+        color: #e6edf3;
+      }
+      .gh-latest {
+        padding: 4px 18px;
+        border: 2px solid #238636;
+        border-radius: 999px;
+        font-size: 24px;
+        font-weight: 600;
+        color: #3fb950;
+      }
+      .gh-notes {
+        margin-top: 18px;
+        font-size: 26px;
+        line-height: 1.45;
+        color: #c9d1d9;
+      }
+      .gh-notes b {
+        color: #e6edf3;
+      }
+      .gh-assets-title {
+        margin-top: 28px;
+        font-size: 30px;
+        font-weight: 700;
+        color: #e6edf3;
+      }
+      .gh-assets-title span {
+        margin-left: 8px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: #30363d;
+        font-size: 22px;
+      }
+      .gh-asset {
+        position: relative;
+        margin-top: 12px;
+        height: 58px;
+        padding: 0 22px;
+        border: 2px solid #30363d;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        font-size: 27px;
+      }
+      .gh-asset .gh-name {
+        color: #58a6ff;
+        font-weight: 600;
+      }
+      .gh-asset .gh-size {
+        margin-left: auto;
+        color: #8b949e;
+      }
+      #gh-vpk {
+        background: rgba(56, 139, 253, 0);
+      }
+      .pk {
+        width: 22px;
+        height: 26px;
+        border: 3px solid #8b949e;
+        border-radius: 4px;
+      }
+      .dl-chip {
+        position: absolute;
+        right: 60px;
+        top: 26px;
+        width: 520px;
+        height: 96px;
+        padding: 16px 22px;
+        border-radius: 14px;
+        background: #1f2937;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 2px #3b4757;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 24px;
+        color: #e6edf3;
+        opacity: 0;
+      }
+      .dl-bar {
+        position: absolute;
+        left: 70px;
+        right: 22px;
+        bottom: 14px;
+        height: 8px;
+        border-radius: 4px;
+        background: #374151;
+        overflow: hidden;
+      }
+      #dl-fill {
+        width: 100%;
+        height: 8px;
+        background: #3fb950;
+        transform: scaleX(0);
+        transform-origin: 0 50%;
+      }
+      #mouse {
+        position: absolute;
+        left: 0;
+        top: 0;
+        opacity: 0;
+      }
+      #fly-file {
+        position: absolute;
+        left: -60px;
+        top: -80px;
+        width: 120px;
+        height: 150px;
+        opacity: 0;
+      }
+      .ff-icon {
+        width: 120px;
+        height: 150px;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff, #e8edf5);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 24px;
+      }
+      .ff-icon span {
+        padding: 4px 12px;
+        border-radius: 6px;
+        background: var(--teal);
+        font-weight: 800;
+        font-size: 28px;
+        color: #0b1220;
+      }
+      .ff-label {
+        position: absolute;
+        left: -120px;
+        right: -120px;
+        top: 168px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 34px;
+        color: #eef4ff;
+        text-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+        white-space: nowrap;
+      }
+
+      /* ------------------------------------------------------------ captions */
+      #vignette {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        background: linear-gradient(180deg, rgba(5, 8, 20, 0.78) 0px, rgba(5, 8, 20, 0.4) 230px, rgba(5, 8, 20, 0) 340px),
+          radial-gradient(130% 100% at 50% 50%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.35) 100%);
+        pointer-events: none;
+      }
+      .layout-portrait #vignette {
+        background: linear-gradient(180deg, rgba(5, 8, 20, 0) 160px, rgba(5, 8, 20, 0.7) 300px, rgba(5, 8, 20, 0.7) 640px, rgba(5, 8, 20, 0) 780px),
+          radial-gradient(130% 100% at 50% 50%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.35) 100%);
+      }
+      #captions {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        z-index: 5;
+      }
+      .cap {
+        position: absolute;
+        left: 50%;
+        width: 1800px;
+        margin-left: -900px;
+        top: 34px;
+        text-align: center;
+        opacity: 0;
+      }
+      .cap h1 {
+        text-wrap: balance;
+        font-weight: 800;
+        font-size: 84px;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+        color: #f6f8ff;
+        text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.5);
+      }
+      .cap h1 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+      .cap .w {
+        display: inline-block;
+        white-space: pre;
+      }
+      .cap .sub {
+        margin-top: 12px;
+        font-weight: 600;
+        font-size: 50px;
+        line-height: 1.15;
+        color: #e1e8f6;
+        text-shadow: 0 3px 16px rgba(0, 0, 0, 0.6);
+        opacity: 0;
+      }
+      .steps {
+        display: flex;
+        justify-content: center;
+        gap: 22px;
+        margin-top: 18px;
+      }
+      .step {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 26px 10px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 2px solid rgba(255, 255, 255, 0.14);
+        font-weight: 600;
+        font-size: 36px;
+        color: #c9d4e6;
+        opacity: 0.45;
+        white-space: nowrap;
+      }
+      .step b {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.14);
+        text-align: center;
+        line-height: 50px;
+        font-size: 30px;
+        color: #fff;
+      }
+      .step span b {
+        width: auto;
+        height: auto;
+        background: none;
+        line-height: inherit;
+        font-size: inherit;
+        color: #fff;
+      }
+      .chip {
+        position: absolute;
+        z-index: 6;
+        padding: 12px 30px;
+        border-radius: 999px;
+        background: rgba(91, 220, 207, 0.16);
+        border: 2px solid rgba(91, 220, 207, 0.55);
+        font-weight: 700;
+        font-size: 36px;
+        color: #dffaf6;
+        opacity: 0;
+        white-space: nowrap;
+      }
+      #chip-app {
+        left: 50%;
+        top: 1000px;
+        transform: translateX(-50%);
+      }
+      #chip-done {
+        left: 50%;
+        top: 222px;
+        transform: translateX(-50%);
+        background: rgba(124, 217, 146, 0.2);
+        border-color: rgba(124, 217, 146, 0.7);
+        color: #e9ffef;
+        font-size: 44px;
+      }
+
+      /* portrait: captions below the platforms' top 220 px, the action under them */
+      .layout-portrait .cap {
+        width: 980px;
+        margin-left: -490px;
+        top: 250px;
+      }
+      .layout-portrait .cap h1 {
+        font-size: 76px;
+      }
+      .layout-portrait .cap .sub {
+        font-size: 48px;
+      }
+      .layout-portrait .steps {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .layout-portrait .step {
+        font-size: 34px;
+      }
+      .layout-portrait #chip-app {
+        top: 1480px;
+      }
+      .layout-portrait #chip-done {
+        top: 640px;
+      }
+
+      /* ------------------------------------------------------------ end card */
+      #endcard {
+        position: absolute;
+        inset: 0;
+        z-index: 7;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        opacity: 0;
+      }
+      #endcard img {
+        width: 210px;
+        height: 210px;
+        border-radius: 50%;
+        box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.9), 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      #endcard h2 {
+        margin-top: 40px;
+        font-weight: 800;
+        font-size: 96px;
+        color: #f6f8ff;
+      }
+      .ec-tag {
+        margin-top: 10px;
+        font-weight: 600;
+        font-size: 50px;
+        color: var(--accent);
+      }
+      .ec-url {
+        margin-top: 22px;
+        font-weight: 500;
+        font-size: 40px;
+        color: #c9d4e6;
+      }
+      .ec-fine {
+        position: absolute;
+        left: 120px;
+        right: 120px;
+        bottom: 40px;
+        font-size: 20px;
+        line-height: 1.4;
+        color: #8d9ab0;
+      }
+      .layout-portrait .ec-fine {
+        bottom: 420px;
+        left: 80px;
+        right: 80px;
+      }
+      .layout-portrait #endcard h2 {
+        font-size: 84px;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        z-index: 9;
+        background: #000;
+        pointer-events: none;
+      }
