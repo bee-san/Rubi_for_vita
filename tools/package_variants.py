@@ -92,7 +92,9 @@ def check_bases(normal, debug, version, sources=None):
         if got != want:
             problems.append(f"{path.name}: the {got} build, given as the {want} one")
         problems += [f"{path.name}: {p}" for p in checked]
-        if not release_of(app, version):
+        if app is None:  # a base from before the two builds (package_release.base_variant)
+            problems.append(f"{path.name}: the Overlay app names no version (a base from before the two builds)")
+        elif not release_of(app, version):
             problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version}: give v{app} or a "
                             f"test build of it, v{app}-test.N (or set VJO_VERSION in vita/CMakeLists.txt and "
                             "build again)")
