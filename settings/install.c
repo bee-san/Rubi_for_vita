@@ -1,5 +1,6 @@
 /* The Overlay app's install engine (settings/install.h; docs/one-vpk-install.md). */
 #include "install.h"
+#include "../include/vjo_build.h"
 #include "anki_page.h" /* vjo_log: log.txt */
 #include "preferences.h"
 #include "../core/app_stamp.h"
@@ -413,12 +414,8 @@ static int plan_config_ini(VjoInstallScan *s)
         keys[k] = s->payload.set[i].key; values[k++] = s->payload.set[i].value;
         log_set |= !strcmp(s->payload.set[i].key, "log_file");
     }
-#if VJO_DEBUG
     /* the debug build is the one asked for when a full log is needed (docs/release-variants.md) */
-    if (!log_set && k < 6) { keys[k] = "log_file"; values[k++] = "on"; }
-#else
-    (void)log_set;
-#endif
+    if (VJO_DEBUG && !log_set && k < 6) { keys[k] = "log_file"; values[k++] = "on"; }
     /* each key only when it adds no config warning (a value the overlay would turn off) */
     vjo_config_defaults(&cfg);
     vjo_config_parse(&cfg, ini_new, (size_t)ini_new_len);

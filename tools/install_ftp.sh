@@ -504,7 +504,7 @@ done
 # The record of the build installed (docs/one-vpk-install.md, "installed.txt"): the package's, the same
 # line the Overlay app writes; a source build's is "no record".
 if [ -n "$PACKAGE_DIR" ] && [ -f "$PACKAGE_DIR/payload-manifest.txt" ]; then
-  python3 tools/package_release.py --installed-record "$PACKAGE_DIR" > "$TMP/installed.txt"
+  python3 tools/package_vpk.py --installed-record "$PACKAGE_DIR" > "$TMP/installed.txt"
 else
   : > "$TMP/installed.txt"
 fi

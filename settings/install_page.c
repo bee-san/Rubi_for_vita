@@ -16,6 +16,13 @@
 #ifndef VJO_VERSION_STRING
 #define VJO_VERSION_STRING "dev"
 #endif
+/* The worker mode, in the app's own strings: tools/package_vpk.py reads it from the built eboot.bin and
+ * writes it into the payload manifest, which this app then requires (docs/one-vpk-install.md, C2). */
+#if VJO_KERNEL_LOADS_WORKER
+#define VJO_WORKER_MARK "vjoworker=kernel"
+#else
+#define VJO_WORKER_MARK "vjoworker=lines"
+#endif
 
 #define TITLE_Y 108
 #define TITLE_H 46
@@ -94,7 +101,7 @@ static void rescan(void)
     for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); i++)
         if (scan.actions & order[i]) actions[action_count++] = order[i];
     if (action_index >= action_count) action_index = 0;
-    vjo_log("install page: %s (state %d, actions 0x%x)", scan.title, scan.state, (unsigned)scan.actions);
+    vjo_log("install page: %s (state %d, actions 0x%x; " VJO_WORKER_MARK ")", scan.title, scan.state, (unsigned)scan.actions);
 }
 
 int vjo_install_page_start(void)

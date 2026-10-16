@@ -44,6 +44,11 @@ def fake_self(*payloads):
     return bytes(data) + b"".join(payloads)
 
 
+# A module-info block at a segment's start that names an empty import table (e_entry 0): the
+# packaged modules' fixtures carry it, so that tools/package_vpk.py's import scan reads them.
+MODULE_INFO = b"\0" * 64
+
+
 def module(part, build):
     """A module's segment bytes for one build: its markers among some code-like filler."""
     markers = variant.DEBUG_MARKERS.get(part, ()) if build == "debug" else variant.NORMAL_MARKERS.get(part, ())
@@ -53,7 +58,8 @@ def module(part, build):
 def app(build, version="0.8.0"):
     start = b"start: v" + version.encode() + (b" debug" if build == "debug" else b"") + b"; %s; heap %d B"
     frames = variant.DEBUG_MARKERS["app"] if build == "debug" else ()
-    return b"\0" + start + b"\0" + b"\0".join(frames) + b"\0"
+    # the worker mode the one-VPK install reads from the app (settings/install_page.c VJO_WORKER_MARK)
+    return b"\0" + start + b"\0" + b"\0".join(frames) + b"\0vjoworker=kernel\0"
 
 
 class CheckVariant(unittest.TestCase):
@@ -354,18 +360,18 @@ class PackageVariants(unittest.TestCase):
         SELF naming the version), the frozen dictionary, the docs."""
         worker = worker or build
         path = self.root / f"base-{build}-{version}-{hashlib.sha256(readme).hexdigest()[:6]}-{worker}.zip"
-        eboot = fake_self(app(build, version))
+        eboot = fake_self(MODULE_INFO + app(build, version))
         stamp = f"vjoapp1 api=22 build={hashlib.sha256(eboot).hexdigest()[:16]}\n"
         vpk = io.BytesIO()
-        with zipfile.ZipFile(vpk, "w") as z:
+        with zipfile.ZipFile(vpk, "w") as z:  # vita-pack-vpk's order: param.sfo, then eboot.bin
+            z.writestr("sce_sys/param.sfo", b"\0PSF fixture")
             z.writestr("eboot.bin", eboot)
             z.writestr("vjo_app.txt", stamp)
-            z.writestr("sce_sys/param.sfo", b"\0PSF fixture")
         with zipfile.ZipFile(path, "w") as z:
-            z.writestr("ur0/tai/VitaJPOverlay_Kernel.skprx", fake_self(module("kernel", build)))
-            z.writestr("ur0/tai/VitaJPOverlay_Shell.suprx", fake_self(module("shell", build)))
+            z.writestr("ur0/tai/VitaJPOverlay_Kernel.skprx", fake_self(MODULE_INFO + module("kernel", build)))
+            z.writestr("ur0/tai/VitaJPOverlay_Shell.suprx", fake_self(MODULE_INFO + module("shell", build)))
             z.writestr("ur0/tai/VitaJPOverlay_OCR.suprx",
-                       fake_self(b"\0worker\0" + (b"VjoGameVocrProbe\0" if worker == "debug" else b"")))
+                       fake_self(MODULE_INFO + b"\0worker\0" + (b"VjoGameVocrProbe\0" if worker == "debug" else b"")))
             z.writestr("ur0/data/VitaJPOverlay/vitajpoverlay.rco", b"RCOF fixture")
             z.writestr("JPOverlaySettings.vpk", vpk.getvalue())
             z.writestr(release.APP_RECORD, stamp)
@@ -386,10 +392,20 @@ class PackageVariants(unittest.TestCase):
                                 "--version", "0.8.0", "-o", out, "--source-revision", "a" * 40,
                                 "--set", "anki_mining=on")
         normal, debug = out / "VitaJPOverlay-0.8.0.zip", out / "VitaJPOverlay-0.8.0-debug.zip"
-        self.assertTrue(normal.is_file() and debug.is_file())
+        vpk, debug_vpk = out / "VitaJPOverlay-0.8.0.vpk", out / "VitaJPOverlay-0.8.0-debug.vpk"
+        self.assertTrue(normal.is_file() and debug.is_file() and vpk.is_file() and debug_vpk.is_file())
         sums = (out / "SHA256SUMS").read_text()
-        self.assertEqual(sums, f"{hashlib.sha256(normal.read_bytes()).hexdigest()}  {normal.name}\n"
-                               f"{hashlib.sha256(debug.read_bytes()).hexdigest()}  {debug.name}\n")
+        # the normal VPK first: the main download (docs/one-vpk-install.md, "What a release ships")
+        self.assertEqual(sums, "".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n"
+                                       for p in (vpk, debug_vpk, normal, debug)))
+        import package_vpk
+        for path, build in ((vpk, "normal"), (debug_vpk, "debug")):
+            self.assertEqual(package_vpk.verify(path), [], path.name)
+            text = zipfile.ZipFile(path).read("payload/manifest.txt").decode()
+            self.assertIn(f"\nvariant {build}\n", text)
+            self.assertIn("\nworker kernel\n", text)
+            self.assertIn("\nset anki_mining on\n", text)
+            self.assertEqual("\nset log_file on\n" in text, build == "debug")
         self.assertIn(normal.name, printed)
         mn = json.loads(zipfile.ZipFile(normal).read("package-manifest.json"))
         md = json.loads(zipfile.ZipFile(debug).read("package-manifest.json"))
