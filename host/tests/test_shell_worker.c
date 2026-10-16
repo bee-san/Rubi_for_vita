@@ -4659,6 +4659,39 @@ static void test_overlay_app_check_runs_after_the_game_is_active(void)
     mem_free();
 }
 
+/* A PSP game is checked as any game (#139): launched as shell/game.c
+ * identifies it (a bubble's own ID, Adrenaline's PSPEMUCFW, the shared
+ * NPXS10028 row), the stamps are read after the game is active, and a mismatch
+ * is said in its first overlay. */
+static void test_overlay_app_check_runs_for_psp_games(void)
+{
+    static const char *const keys[] = {"ULJS00378", "PSPEMU005", "PSPEMUCFW", "NPXS10028"};
+    for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        reset();
+        app_files(NOENT, "", 1, 37, STAMP_21); /* #101: the app from before the stamps */
+        memset(&identified, 0, sizeof(identified));
+        snprintf(identified.key, sizeof(identified.key), "%s", keys[i]);
+        identified.mode = VJO_GAME_STATIC_FB;
+        identified.psp = 1;
+        identify_rc = 0;
+        start_order[0] = 0;
+        state.game_pid = 77;
+        on_game_start();
+        classify_pending();
+        TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && !strcmp(title_id, keys[i]), "%s",
+                    keys[i]);
+        TEST_CHECK_(!strcmp(start_order, "CASS"), "%s: order %s", keys[i], start_order);
+        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, "overlay app MISMATCH: installed ''"), "%s: %s", keys[i],
+                    last_app_log);
+        open_overlay();
+        TEST_CHECK_(notice_is(overlay_draws(), VJO_APP_NOTICE), "%s", keys[i]);
+        close_overlay();
+        on_game_exit();
+        identify_rc = -1;
+        mem_free();
+    }
+}
+
 /* Nothing to compare, or nothing installed, is no mismatch: an older package
  * brings no record, the README lets the app be deleted, and a file the Shell
  * cannot read says nothing about the app. */
@@ -4701,6 +4734,7 @@ TEST_LIST = {
     {"overlay_app_mismatch_is_logged_and_said_once", test_overlay_app_mismatch_is_logged_and_said_once},
     {"overlay_app_unknown_is_never_said", test_overlay_app_unknown_is_never_said},
     {"overlay_app_check_runs_after_the_game_is_active", test_overlay_app_check_runs_after_the_game_is_active},
+    {"overlay_app_check_runs_for_psp_games", test_overlay_app_check_runs_for_psp_games},
 #if !VJO_DEBUG
     {"normal_build_logs_the_first_jobs_and_failures", test_normal_build_logs_the_first_jobs_and_failures},
     {"normal_build_logs_tier_misses_once_and_on_change", test_normal_build_logs_tier_misses_once_and_on_change},
