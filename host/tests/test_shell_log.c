@@ -165,26 +165,6 @@ SceUID sceKernelGetThreadId(void) { return (SceUID)thread; }
 static uint64_t clock_us;
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_us += 1000; }
 
-static char udp[1 << 20];
-static size_t udp_used;
-static unsigned datagrams;
-int sceNetSocket(const char *name, int domain, int type, int protocol)
-{
-    (void)name; (void)domain; (void)type; (void)protocol;
-    return 77;
-}
-int sceNetSocketClose(int fd) { (void)fd; return 0; }
-int sceNetSendto(int fd, const void *buf, unsigned len, int flags, const SceNetSockaddr *to, unsigned tolen)
-{
-    (void)fd; (void)flags; (void)to; (void)tolen;
-    memcpy(udp + udp_used, buf, len);
-    udp_used += len;
-    datagrams++;
-    return (int)len;
-}
-uint16_t sceNetHtons(uint16_t v) { return (uint16_t)(v << 8 | v >> 8); }
-int sceNetInetPton(int af, const char *src, void *dst) { (void)af; (void)src; memset(dst, 0, 4); return 1; }
-
 /* ---- the reference: shell/log_vita.c at 4a7ae4d, the file and status paths, verbatim ---- */
 
 static SceOff ref_file_size = -1;
@@ -223,24 +203,12 @@ static void ref_status_append(const char *line, int len)
     }
 }
 
-static void ref_log_raw(const char *line, int len, int configured)
-{
-    if (len <= 0)
-        return;
-    ref_status_append(line, len);
-    if (!configured)
-        return;
-    sceNetSendto(77, line, len, 0, NULL, 0);
-    if (ref_file_on)
-        ref_file_append(line, len);
-}
-
 /* ---- the scenario ---- */
 
 typedef struct {
-    char *log, *old, *status, *udp;
-    size_t log_n, old_n, status_n, udp_n;
-    unsigned log_opens, status_opens, datagrams;
+    char *log, *old, *status;
+    size_t log_n, old_n, status_n;
+    unsigned log_opens, status_opens;
 } Snapshot;
 
 static void lock_check(void);
@@ -255,7 +223,7 @@ static void fs_reset(void)
     memset(opens, 0, sizeof(opens));
     memset(mutexes, 0, sizeof(mutexes));
     mutex_errors = 0;
-    udp_used = datagrams = writes = renames = formats = log_path_opens = status_path_opens = status_writes = 0;
+    writes = renames = formats = log_path_opens = status_path_opens = status_writes = 0;
     fail_writes = fail_opens = 0;
     thread = 1;
 }
@@ -274,12 +242,8 @@ static void snap(Snapshot *s)
     s->log = copy(l, &s->log_n);
     s->old = copy(o, &s->old_n);
     s->status = copy(st, &s->status_n);
-    s->udp = malloc(udp_used ? udp_used : 1);
-    memcpy(s->udp, udp, udp_used);
-    s->udp_n = udp_used;
     s->log_opens = l ? opens[l - files] : 0;
     s->status_opens = st ? opens[st - files] : 0;
-    s->datagrams = datagrams;
 }
 
 static int same(const char *a, size_t an, const char *b, size_t bn)
@@ -289,7 +253,7 @@ static int same(const char *a, size_t an, const char *b, size_t bn)
 
 static void snap_free(Snapshot *s)
 {
-    free(s->log); free(s->old); free(s->status); free(s->udp);
+    free(s->log); free(s->old); free(s->status);
 }
 
 /* A log line of length len (2..255) with its index in it. */
@@ -313,8 +277,7 @@ static unsigned next(unsigned mod)
 
 /* The same lines through the reference line by line, and through the new
  * logger with random batches (and threads); prefill: bytes already in log.txt. */
-static void run(unsigned lines, size_t prefill, int file_on_, int udp_on, int threads, int bcap, Snapshot *ref,
-                Snapshot *got)
+static void run(unsigned lines, size_t prefill, int file_on_, int threads, int bcap, Snapshot *ref, Snapshot *got)
 {
     char line[256];
     char *fill = calloc(1, prefill + 1);
@@ -331,8 +294,8 @@ static void run(unsigned lines, size_t prefill, int file_on_, int udp_on, int th
     for (unsigned i = 0; i < lines; i++) {
         int n = make_line(line, i, 2 + next(254));
         (void)next(6); (void)next(3); /* keep the stream aligned with the batched run */
-        if (udp_on) ref_log_raw(line, n, 1);
-        else { ref_status_append(line, n); if (ref_file_on) ref_file_append(line, n); }
+        ref_status_append(line, n);
+        if (ref_file_on) ref_file_append(line, n);
     }
     snap(ref);
     /* the new logger */
@@ -345,8 +308,7 @@ static void run(unsigned lines, size_t prefill, int file_on_, int udp_on, int th
         VjoConfig cfg;
         memset(&cfg, 0, sizeof(cfg));
         cfg.log_file = file_on_;
-        if (udp_on) snprintf(cfg.log_host, sizeof(cfg.log_host), "192.168.1.2");
-        log_mutex = -1; udp_fd = -1; batch = NULL;
+        log_mutex = -1; batch = NULL;
         vjo_status_reset();
         vjo_log_configure(&cfg);
     }
@@ -371,12 +333,11 @@ static void run(unsigned lines, size_t prefill, int file_on_, int udp_on, int th
     lock_check();
 }
 
-static void check_same(const Snapshot *ref, const Snapshot *got, int udp_on)
+static void check_same(const Snapshot *ref, const Snapshot *got)
 {
     TEST_CHECK(same(ref->log, ref->log_n, got->log, got->log_n));
     TEST_CHECK(same(ref->old, ref->old_n, got->old, got->old_n));
     TEST_CHECK(same(ref->status, ref->status_n, got->status, got->status_n));
-    if (udp_on) TEST_CHECK(same(ref->udp, ref->udp_n, got->udp, got->udp_n) && ref->datagrams == got->datagrams);
     TEST_MSG("log %zu/%zu old %zu/%zu status %zu/%zu", ref->log_n, got->log_n, ref->old_n, got->old_n, ref->status_n,
              got->status_n);
 }
@@ -385,24 +346,24 @@ static void batches_write_the_same_bytes(void)
 {
     Snapshot ref, got;
     /* Across status.txt's 64 KiB cap (about 500 lines), with threads. */
-    run(1500, 0, 1, 0, 1, 4096, &ref, &got);
-    check_same(&ref, &got, 0);
+    run(1500, 0, 1, 1, 4096, &ref, &got);
+    check_same(&ref, &got);
     TEST_CHECK(ref.status_n <= STATUS_CAP && ref.status_n > STATUS_CAP - 256);
     TEST_CHECK(got.log_opens < ref.log_opens);
     TEST_MSG("log.txt opened %u times line by line, %u batched", ref.log_opens, got.log_opens);
     snap_free(&ref); snap_free(&got);
     /* log.txt rotates inside a batch: 300 lines into a file 20 KiB under its cap. */
-    run(300, LOG_FILE_CAP - 20000, 1, 0, 0, 4096, &ref, &got);
-    check_same(&ref, &got, 0);
+    run(300, LOG_FILE_CAP - 20000, 1, 0, 4096, &ref, &got);
+    check_same(&ref, &got);
     TEST_CHECK(ref.old_n > LOG_FILE_CAP - 20000 && ref.log_n > 0);
     snap_free(&ref); snap_free(&got);
-    /* A small buffer (lines often do not fit), UDP on: the same datagrams too. */
-    run(800, 0, 1, 1, 1, 300, &ref, &got);
-    check_same(&ref, &got, 1);
+    /* A small buffer (lines often do not fit). */
+    run(800, 0, 1, 1, 300, &ref, &got);
+    check_same(&ref, &got);
     snap_free(&ref); snap_free(&got);
     /* log_file = off: status.txt only. */
-    run(800, 0, 0, 0, 1, 4096, &ref, &got);
-    check_same(&ref, &got, 0);
+    run(800, 0, 0, 1, 4096, &ref, &got);
+    check_same(&ref, &got);
     TEST_CHECK(got.log_n == 0);
     snap_free(&ref); snap_free(&got);
     lock_check();
@@ -416,7 +377,7 @@ static void a_batch_is_one_open_per_file(void)
     fs_reset();
     memset(&cfg, 0, sizeof(cfg));
     cfg.log_file = 1;
-    log_mutex = -1; udp_fd = -1; batch = NULL;
+    log_mutex = -1; batch = NULL;
     vjo_status_reset();
     vjo_log_configure(&cfg);
     TEST_CHECK(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
@@ -449,7 +410,7 @@ static void appends_are_counted_with_their_time(void)
     fs_reset();
     memset(&cfg, 0, sizeof(cfg));
     cfg.log_file = 1;
-    log_mutex = -1; udp_fd = -1; batch = NULL;
+    log_mutex = -1; batch = NULL;
     vjo_status_reset();
     vjo_log_configure(&cfg);
     us0 = vjo_log_io(&n0);
@@ -480,12 +441,12 @@ static void before_configure_and_without_sinks(void)
     VjoLogBatch b;
     char buf[512];
     fs_reset();
-    log_mutex = -1; udp_fd = -1; batch = NULL; file_on = 0;
+    log_mutex = -1; batch = NULL; file_on = 0;
     vjo_status_reset();
     TEST_CHECK(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 0); /* no batches before configure */
     vjo_log("boot %d", 1);
     TEST_CHECK(lookup(VJO_STATUS_PATH, 0)->size == 7 && !lookup(VJO_LOG_PATH, 0));
-    /* status.txt full or closed, no file, no UDP: nothing is even formatted */
+    /* status.txt full or closed, no file: nothing is even formatted */
     vjo_status_close();
     formats = 0;
     vjo_log("not formatted %d", 2);
@@ -506,7 +467,7 @@ static void fresh_logger(size_t prefill)
     }
     memset(&cfg, 0, sizeof(cfg));
     cfg.log_file = 1;
-    log_mutex = -1; udp_fd = -1; batch = NULL;
+    log_mutex = -1; batch = NULL;
     vjo_status_reset();
     vjo_log_configure(&cfg);
 }
@@ -535,7 +496,7 @@ static void edge_run(const unsigned *lens, unsigned n, unsigned from, unsigned t
         if (i + 1 == to) vjo_log_batch_end(&b);
     }
     snap(&got);
-    check_same(&ref, &got, 0);
+    check_same(&ref, &got);
     snap_free(&ref); snap_free(&got);
     lock_check();
 }
@@ -708,7 +669,7 @@ static void failures_lose_lines_but_not_the_sizes(void)
     fs_reset();
     memset(&cfg, 0, sizeof(cfg));
     cfg.log_file = 1;
-    log_mutex = -1; udp_fd = -1; batch = NULL;
+    log_mutex = -1; batch = NULL;
     vjo_status_reset();
     vjo_log_configure(&cfg);
     rng = 11;
@@ -762,30 +723,24 @@ static void a_refused_begin_leaves_the_open_batch(void)
     lock_check();
 }
 
-/* Whether vjo_log formats a line: with log.txt on, or UDP on, it does even once status.txt is
- * full; with neither and status.txt full (or closed) it does not; with one byte of status.txt
- * left it still does (audit-overlay-perf-3: dropping file_on or udp_fd from the check silenced
- * log.txt and UDP once status.txt was full). */
+/* Whether vjo_log formats a line: with log.txt on it does even once status.txt is full; without
+ * it and status.txt full (or closed) it does not; with one byte of status.txt left it still does
+ * (audit-overlay-perf-3: dropping file_on from the check silenced log.txt once status.txt was
+ * full). */
 static void sinks_decide_whether_vjo_log_formats(void)
 {
     VjoConfig cfg;
-    fresh_logger(0); /* log_file on, no UDP */
+    fresh_logger(0); /* log_file on */
     status_size = STATUS_CAP; /* full */
     formats = 0;
     vjo_log("to log.txt %d", 1);
     TEST_CHECK(formats == 1 && lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 13);
     TEST_CHECK(lookup(VJO_STATUS_PATH, 0) && lookup(VJO_STATUS_PATH, 0)->size == 0);
-    memset(&cfg, 0, sizeof(cfg)); /* log_file off, UDP on */
-    snprintf(cfg.log_host, sizeof(cfg.log_host), "192.168.1.2");
+    memset(&cfg, 0, sizeof(cfg)); /* log_file off */
     vjo_log_configure(&cfg);
-    formats = 0; datagrams = 0;
-    vjo_log("to udp %d", 2);
-    TEST_CHECK(formats == 1 && datagrams == 1 && lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 13);
-    memset(&cfg, 0, sizeof(cfg)); /* neither */
-    vjo_log_configure(&cfg);
-    formats = 0; datagrams = 0;
+    formats = 0;
     vjo_log("nowhere %d", 3);
-    TEST_CHECK(formats == 0 && datagrams == 0);
+    TEST_CHECK(formats == 0 && lookup(VJO_LOG_PATH, 0)->size == 13);
     status_size = STATUS_CAP - 1; /* one byte left: a sink still */
     vjo_log("%s", "");
     TEST_CHECK(formats == 1 && lookup(VJO_STATUS_PATH, 0) && lookup(VJO_STATUS_PATH, 0)->size == 1);

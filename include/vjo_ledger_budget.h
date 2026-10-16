@@ -72,7 +72,10 @@
  * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. #140's
  * posting hints make it 101,024 text, the same pages, and #132's VjoNet stack paint and check
  * 101,488 + 70,076 [measured: the build log's module rows, main 32bfc6a and #132; the same on
- * 3aa08a6, #141]. */
+ * 3aa08a6, #141]. The network stack's last users (shell/platform_vita.c's sockets, resolver and
+ * cancellation, the UDP log, log_host) went next: @@DT@@ text + @@DD@@ data/bss, the same pages, and no
+ * SceNet or SceNetCtl import [measured: the build log's module rows, main 3aa08a6 with #132 and this
+ * change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -130,8 +133,14 @@
  * so a console run measures it. */
 #define VJO_STACK_SHELL_NET 16384u
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
-#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
-                                                    * of the queue on every overlay open, a save (Enter) */
+/* VjoAnki, while an Anki job runs: with anki_mining on, a count of the queue on every overlay open, a
+ * save (Enter). Lowered from 65,536 B (BearSSL's TLS, for AnkiConnect and an https audio source, both
+ * removed with #125): its deepest chain of the Shell's own code is 1,728 B, a save's queue ID (job_main
+ * 24, do_save 672, vjo_queue_save 416, vjo_queue_id 160, SHA-256 456), the file callbacks of its
+ * indirect calls included [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su of this
+ * build; the SDK's own code is not counted]. 16 KiB is VjoControl's stack, which runs the same kinds of
+ * SDK calls (sceIo, the log, Paf's heap) on every console. */
+#define VJO_STACK_SHELL_ANKI 16384u
 #define VJO_BUDGET_SHELL_NET_STACK (VJO_STACK_SHELL_NET + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_CTL_STACK (VJO_STACK_SHELL_CTL + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_ANKI_STACK (VJO_STACK_SHELL_ANKI + VJO_LEDGER_TLS)

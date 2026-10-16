@@ -32,7 +32,7 @@
 #include <time.h>
 #include "client.h"
 #include "local_dict.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "text_rows.h"
 #include "textnorm.h"
 #include "utf.h"

@@ -10,7 +10,7 @@
 #include <time.h>
 #include "client.h"
 #include "local_dict.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 
 typedef struct {
     VjoFile inner;

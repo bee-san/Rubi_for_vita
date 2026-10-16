@@ -650,7 +650,7 @@ stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
 With `anki_mining = on`, saving a card (Enter) takes one
 bounded Paf allocation through the same reserve guard (128 KiB: cards are
-text-only, no screenshot and no kernel capture) and a 64 KiB thread stack; both
+text-only, no screenshot and no kernel capture) and a 16 KiB thread stack; both
 are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
 and refused memory never touch the recognized text. Nothing in SceShell or

@@ -2,7 +2,7 @@
 #ifndef VJO_LOCAL_OCR_H
 #define VJO_LOCAL_OCR_H
 #include "arena.h"
-#include "net.h"
+#include "platform.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

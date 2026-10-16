@@ -10,7 +10,7 @@
 #include <string.h>
 #include "client.h"
 #include "local_dict.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "utf.h"
 
 int main(int argc, char **argv)

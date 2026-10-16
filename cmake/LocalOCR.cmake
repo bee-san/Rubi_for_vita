@@ -63,8 +63,8 @@ add_custom_command(OUTPUT "${VJO_OCR_ASSETS}/vjo_ppocr_data.h"
 add_library(vjo_ocr STATIC "${VJO_ROOT}/core/local_ocr.cpp" "${VJO_ROOT}/core/ocr_heap.c"
   "${VJO_OCR_ASSETS}/vjo_ppocr_data.h")
 target_include_directories(vjo_ocr PRIVATE "${VJO_OCR_ASSETS}" "${VJO_ROOT}/third_party/bearssl/inc")
-# core/net.h and ncnn/net.h have the same basename. Quoted local includes
-# resolve beside the source; angle includes must resolve to ncnn first.
+# Angle includes must resolve to ncnn first (core/local_ocr.cpp's <net.h> is
+# ncnn's: the core's own net.h, which once shared the name, was removed).
 target_include_directories(vjo_ocr BEFORE PRIVATE "${ncnn_SOURCE_DIR}/src" "${ncnn_BINARY_DIR}/src")
 target_link_libraries(vjo_ocr PUBLIC ncnn)
 target_compile_features(vjo_ocr PRIVATE cxx_std_11)

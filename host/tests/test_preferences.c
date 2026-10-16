@@ -311,14 +311,14 @@ static void test_anki_page_save(void)
 {
     static const char before[] =
         "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = off ; old\r\nocr_backend = vocr\n"
-        "LOG_FILE=on\nlog_host = 10.0.0.1;x\nanki_mining = on\nfont_size_ja = 22";
+        "LOG_FILE=on\nocr_model_dir = ux0:m;x\nanki_mining = on\nfont_size_ja = 22";
     static const char *const keys[] = {"anki_mining", "log_file"};
     const char *values[] = {"on", "off"};
     char out[512];
     VjoConfig cfg;
     int len = vjo_config_patch_keys(before, sizeof(before) - 1, keys, values, 2, out, sizeof(out));
     TEST_CHECK(len > 0 && !strcmp(out, "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = on\n"
-                                       "log_file = off\nlog_host = 10.0.0.1;x\nfont_size_ja = 22"));
+                                       "log_file = off\nocr_model_dir = ux0:m;x\nfont_size_ja = 22"));
     TEST_MSG("%s", out);
     /* a BOM right before the first line's key: kept, and that line replaced (no stale duplicate) */
     len = vjo_config_patch_keys("\xEF\xBB\xBF" "anki_mining = off\nx = 1\n", 27, keys, values, 2, out, sizeof(out));
@@ -854,7 +854,7 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
         int kind = vjo_config_removed_line(line, len, &replacement);
         if (!strncmp(line, "vocr_model = ", 13) || !strncmp(line, "vocr_fallback_model = ", 22)) {
             dropped++;
-        } else if (kind == VJO_LINE_DROP_SETTING) { /* the engine line */
+        } else if (kind == VJO_LINE_DROP_SETTING) { /* the engine line and the UDP log's empty log_host */
             dropped++;
             settings++;
         } else if (kind == VJO_LINE_DROP) {
@@ -867,8 +867,8 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
         line += len;
     }
     snprintf(expect + used, sizeof(expect) - used, "vocr_tier = normal\n");
-    TEST_CHECK(dropped >= 5 && settings == 1); /* the engine line, the two model lines and (since #117) the two
-                                                 * empty key lines at least */
+    TEST_CHECK(dropped >= 6 && settings == 2); /* the engine line, log_host, the two model lines and (since
+                                                 * #117) the two empty key lines at least */
     TEST_CHECK(!strcmp(out, expect));
     TEST_MSG("saved:\n%s", out);
     /* whatever the removed features, the user's own settings survive the save */
@@ -878,7 +878,7 @@ static void test_old_app_config_loads_as_vocr_and_a_save_repairs_it(void)
     for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
         TEST_CHECK_(strstr(out, kept[i]) != NULL, "kept: %s", kept[i] + 1);
     TEST_CHECK(!strstr(out, "\nocr_backend") && !strstr(out, "\nvocr_model =") && /* its comment lines stay */
-               !strstr(out, "\nvocr_fallback_model ="));
+               !strstr(out, "\nvocr_fallback_model =") && !strstr(out, "\nlog_host"));
     vjo_config_load(&cfg, &shell);
     TEST_CHECK(cfg.n_warnings == 0 && cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
 }

@@ -1,5 +1,4 @@
-/* Logging: UDP datagrams to log_host:9999 (tools/udp_log_listener.py) and,
- * if enabled (the default), ux0:data/VitaJPOverlay/log.txt capped at 1 MiB with
+/* Logging, if enabled (the default): ux0:data/VitaJPOverlay/log.txt capped at 1 MiB with
  * one rotation (log.old.txt), so at most 2 MiB of the memory card is ever used.
  * Every line is its own open/append/close, so a crash loses no written line,
  * except within a batch (vjo_log_batch_begin): the lines one thread logs in one
@@ -10,18 +9,14 @@
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/net/net.h>
 #include <stdarg.h>
 
 #include "shell.h"
 
-#define LOG_PORT 9999
 #define LOG_FILE_CAP (1024 * 1024)
 #define STATUS_CAP (64 * 1024)
 
 static SceUID log_mutex = -1;
-static int udp_fd = -1;
-static SceNetSockaddrIn udp_addr;
 static int file_on;
 static SceOff file_size = -1;
 /* The open batch, or NULL; under log_mutex (it lives on its thread's stack). */
@@ -58,18 +53,6 @@ void vjo_log_configure(const VjoConfig *cfg)
         log_mutex = sceKernelCreateMutex("VjoLog", 0, 0, NULL);
     sceKernelLockMutex(log_mutex, 1, NULL);
     batch_flush_locked(); /* lines logged before the change go out as they were */
-    if (udp_fd >= 0) {
-        sceNetSocketClose(udp_fd);
-        udp_fd = -1;
-    }
-    if (cfg->log_host[0]) {
-        sceClibMemset(&udp_addr, 0, sizeof(udp_addr));
-        udp_addr.sin_len = sizeof(udp_addr);
-        udp_addr.sin_family = SCE_NET_AF_INET;
-        udp_addr.sin_port = sceNetHtons(LOG_PORT);
-        if (sceNetInetPton(SCE_NET_AF_INET, cfg->log_host, &udp_addr.sin_addr) == 1)
-            udp_fd = sceNetSocket("VjoLogUdp", SCE_NET_AF_INET, SCE_NET_SOCK_DGRAM, 0);
-    }
     file_on = cfg->log_file;
     file_size = -1;
     sceKernelUnlockMutex(log_mutex, 1);
@@ -245,8 +228,6 @@ void vjo_log_raw(const char *line, int len)
         return;
     }
     sceKernelLockMutex(log_mutex, 1, NULL);
-    if (udp_fd >= 0)
-        sceNetSendto(udp_fd, line, len, 0, (SceNetSockaddr *)&udp_addr, sizeof(udp_addr));
     if (batch && batch->owner == sceKernelGetThreadId() && batch->n < VJO_LOG_BATCH_LINES &&
         batch->cap - batch->used >= len) {
         sceClibMemcpy(batch->buf + batch->used, line, len);
@@ -269,11 +250,11 @@ void vjo_log_raw(const char *line, int len)
     sceKernelUnlockMutex(log_mutex, 1);
 }
 
-/* Whether a line can go anywhere: with no file, no UDP host and status.txt
+/* Whether a line can go anywhere: with no file and status.txt
  * full (or never opened), vjo_log formats nothing. */
 static int log_has_sink(void)
 {
-    return file_on || udp_fd >= 0 || (status_size >= 0 && status_size < STATUS_CAP);
+    return file_on || (status_size >= 0 && status_size < STATUS_CAP);
 }
 
 void vjo_log(const char *fmt, ...)

@@ -154,6 +154,24 @@ class MigrateConfig(unittest.TestCase):
             self.assertEqual(report.count("config.ini: ocr_backend is no longer a setting, not set\n"), 1, report)
             self.assertEqual(report.count("config.ini: ocr_backend removed\n"), 1, report)
 
+    def test_the_udp_log_host_goes_with_its_reason(self):
+        # The UDP log went with the network (the overlay is offline): log_host's line goes, set or
+        # empty (the old template wrote it empty), said once with why; log_file stays.
+        for old in ("log_host = 192.168.1.5\n", "log_host =\n", "LOG_HOST = 10.0.0.1 ; pc\n"):
+            text, report = self.migrate(old + "log_file = off\nocr_mode = on_press\n")
+            self.assertNotIn("log_host", text.lower(), old)
+            self.assertIn("\nlog_file = off\n", text)
+            self.assertIn("\nocr_mode = on_press\n", text)
+            self.assertEqual(report.count("config.ini: log_host removed (the UDP log was removed: the overlay is "
+                                          "offline; log.txt stays)\n"), 1, report)
+        # an older installer's --set log_host=...: no longer a setting, said once, not written
+        text, report = self.migrate("ocr_mode = auto\n", "log_host=192.168.1.5")
+        self.assertNotIn("log_host", text)
+        self.assertEqual(report.count("config.ini: log_host is no longer a setting, not set\n"), 1, report)
+        template = (ROOT / "docs/config.example.ini").read_text(encoding="utf-8")
+        self.assertNotIn("log_host", template)
+        self.assertNotIn("udp_log_listener", template)
+
     def test_older_model_choices_become_their_model_size(self):
         # API 21: vocr_model and vocr_fallback_model became one model size, vocr_tier. Each older
         # model by its family: FL10 (v0.7.12's installer wrote FL10_w8.vocr, the VOCR2 trial was

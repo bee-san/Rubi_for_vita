@@ -87,7 +87,7 @@ class SaveRestartTests(Storage):
     def test_saves_in_fresh_processes(self):
         for action, count in (("save", 1), ("save-other", 2)):
             saved = self.run_step(SHELL, action)
-            self.assertEqual((saved["status"], saved["count"], saved["connects"]), ("Saved for Anki", count, 0))
+            self.assertEqual((saved["status"], saved["count"]), ("Saved for Anki", count))
         self.assertEqual(self.run_step(SHELL, "save")["status"], "Already queued")
         records = [json.loads((self.queue / f"{i}.json").read_text("utf-8")) for i in self.records(self.queue)]
         self.assertEqual({r["version"] for r in records}, {4})

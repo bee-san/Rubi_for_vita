@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "local_ocr.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #ifdef VJO_WITH_VOCR
 #include "vocr_ocr.h"
 #endif

@@ -148,7 +148,7 @@ OCR worker pages in SceShell             176,128       385,024   (0: registered 
 VjoNet thread                            196,608       364,544
 VjoControl thread (boot complete)        217,088       344,064
 game start: result memory (local)        217,088       344,064
-Anki card saved: job thread              286,720       274,432
+Anki card saved: job thread              237,568       323,584
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
@@ -158,7 +158,8 @@ Lens's to 176,128 B, 90,112 B less again; the packaged module went from 294,912 
 `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main `9824b55`; #116 and #111 kept those
 pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, to `6020c0b`, #124; still
 266,240 B declared) and then to 176,128 B [measured: the build log's module row]. VjoNet's stack, 65,536 B until
-#132, is 16,384 B: 49,152 B less from the VjoNet thread's step on.)
+#132, is 16,384 B: 49,152 B less from the VjoNet thread's step on. VjoAnki's
+stack, 65,536 B until the network went, is 16,384 B: 49,152 B less at the Anki step.)
 
 What this says, and what it does not:
 

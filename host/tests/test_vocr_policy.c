@@ -5,7 +5,7 @@
  * statistics. Each strip read is one frame of the game: the clock moves on by
  * 16,667 us (60 fps) per read, as the display hook's next frame would. */
 #include "acutest.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "vocr_ocr.h"
 #include "vocr.h"
 #include "vocr_lm.h"

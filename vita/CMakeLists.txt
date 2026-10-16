@@ -110,38 +110,37 @@ vita_create_self(VitaJPOverlay_Kernel.skprx VitaJPOverlay_Kernel
 vita_create_stubs(vjo_kernel_stubs VitaJPOverlay_Kernel ${ROOT}/kernel/exports.yml KERNEL)
 
 # ---------------- shell ----------------
-# BearSSL and the portable core, built for SceShell (no newlib: see
-# shell/libc_shim.c; no OS entropy/time sources: both are injected).
-file(GLOB_RECURSE BEARSSL_SRC ${ROOT}/third_party/bearssl/src/*.c)
-add_library(vjo_bearssl STATIC ${BEARSSL_SRC})
+# BearSSL's SHA-1 and SHA-224/256 (all that is kept of it: the overlay is offline) and the
+# portable core, built for SceShell (no newlib: see shell/libc_shim.c).
+add_library(vjo_bearssl STATIC
+  ${ROOT}/third_party/bearssl/src/hash/sha1.c ${ROOT}/third_party/bearssl/src/hash/sha2small.c
+  ${ROOT}/third_party/bearssl/src/codec/dec32be.c ${ROOT}/third_party/bearssl/src/codec/enc32be.c)
 target_include_directories(vjo_bearssl PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
-target_compile_definitions(vjo_bearssl PRIVATE BR_USE_URANDOM=0 BR_USE_GETENTROPY=0 BR_USE_UNIX_TIME=0
-  BR_USE_WIN32_RAND=0 BR_USE_WIN32_TIME=0 BR_RDRAND=0)
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/entries.c
-  ${ROOT}/core/config.c ${ROOT}/core/regions.c ${ROOT}/core/http.c ${ROOT}/core/tls.c
-  ${ROOT}/core/tls_roots.c ${ROOT}/core/client.c ${ROOT}/core/styled.c
-  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/net.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/config.c ${ROOT}/core/regions.c
+  ${ROOT}/core/client.c ${ROOT}/core/styled.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
   -ffunction-sections -fdata-sections)
-# Cold core paths (configuration, requests, parsers, queue files): built for
-# size, since every page of the Shell module is SceShell's. Lookup, OCR text
-# handling and TLS stay at -O2. The UTF-8 helpers (core/utf.c: a few
+# Cold core paths (configuration, parsers, queue files): built for
+# size, since every page of the Shell module is SceShell's. Lookup and OCR text
+# handling stay at -O2. The UTF-8 helpers (core/utf.c: a few
 # microseconds a text or a key) are built for size since the self-test's own job
 # and the first-scan timings (docs/first-ocr.md): 1,532 -> 1,136 B (the JPEG
 # encoder, built for size then too, went with Google Lens). The property is the directory's, so the
 # kernel's core/ledger.c and the game worker's core/ledger.c and core/games.c
 # are -Os too (their pages unchanged; the ARM lane runs the ledger suites).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
-  ${ROOT}/core/json.c ${ROOT}/core/http.c ${ROOT}/core/net.c
+  ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
   ${ROOT}/core/games.c ${ROOT}/core/sfo.c ${ROOT}/core/client.c
   ${ROOT}/core/utf.c
@@ -239,9 +238,8 @@ target_link_libraries(VitaJPOverlay_Shell
   SceIofilemgr_stub
   SceVshBridge_stub
   # Weak: SceShell loads these after *main plugins start; the imports are
-  # bound once the libraries load (as with ScePaf).
-  SceNet_stub_weak
-  SceNetCtl_stub_weak
+  # bound once the libraries load (as with ScePaf). No SceNet or SceNetCtl:
+  # the overlay is offline.
   SceRtc_stub_weak
   SceAppMgr_stub_weak
   # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it

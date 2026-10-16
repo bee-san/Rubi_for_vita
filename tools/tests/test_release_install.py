@@ -317,14 +317,14 @@ elif '-o' in a:
         (self.data / "config.ini").write_text("anki_mining = off\nvocr_model = FL10_w8.vocr\njiten_api_key = test-key\n")
         manifest_path = self.package / "package-manifest.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["install_settings"] = {"anki_mining": "on", "log_host": ""}
+        manifest["install_settings"] = {"anki_mining": "on", "log_file": "off"}
         manifest_path.write_text(json.dumps(manifest))
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("package settings: anki_mining=on log_host=\n", result.stdout)
+        self.assertIn("package settings: anki_mining=on log_file=off\n", result.stdout)
         config = (self.data / "config.ini").read_text()
         # the older model choice became its size (FL10: Small), which the installer keeps
-        for setting in ("anki_mining = on\n", "log_host =\n", "vocr_tier = small\n"):
+        for setting in ("anki_mining = on\n", "log_file = off\n", "vocr_tier = small\n"):
             self.assertIn(setting, config)
         self.assertNotIn("vocr_model", config)
         self.assertNotIn("test-key", result.stdout + config)

@@ -187,7 +187,6 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
 /* The job is for an earlier screen: its requests were aborted, its result
  * is dropped. */
 static volatile int job_cancelled;
-static VjoNetCancel net_cancel = {-1, -1, 0}; /* the network thread's requests */
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
@@ -1363,7 +1362,6 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     job_capture_scene = 0;
     job_capture_seq = 0;
     job_cancelled = 0;
-    vjo_net_cancel_clear(&net_cancel);
     if (view_job_text) { /* its arena may be the new job's (never with a refresh: the overlay shows a lookup) */
         view_job_text = 0;
         view_publish(1, NULL, "Recognizing…", 0);
@@ -1419,7 +1417,6 @@ static void start_cursor_job(void)
     job_captured = 1;
     job_capture_scene = local_text_scene;
     job_capture_seq = local_text_capture_seq;
-    vjo_net_cancel_clear(&net_cancel);
     local_header = (VjoEntryList){.header = local_text};
     view_publish(1, &local_header, "Looking up words…", 0);
     job_running = 1;
@@ -1453,10 +1450,8 @@ static void apply_config(void)
     if (!same_pipeline(&previous, &cfg)) {
         cache_ok = 0;
         retire_local_text(1);
-        if (job_running && !same_pipeline(&job_cfg, &cfg)) {
+        if (job_running && !same_pipeline(&job_cfg, &cfg))
             job_cancelled = 1;
-            vjo_net_cancel(&net_cancel);
-        }
     } else if (previous.local_dictionary_results != cfg.local_dictionary_results) {
         /* A presentation of the same recognized text: look the word up again
          * (from its best match) without recapturing or rerunning OCR. */
@@ -1513,7 +1508,6 @@ static int cancel_outdated_job(const VjoState *st)
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
     job_cancelled = 1;
-    vjo_net_cancel(&net_cancel);
     vjo_dlog("job cancelled: the screen changed since its capture");
     return 1;
 }
@@ -2215,8 +2209,6 @@ static void invalidate_game_work(void)
     screen_retry_until = 0;
     if (job_running)
         job_cancelled = 1;
-    if (net_busy())
-        vjo_net_cancel(&net_cancel);
 }
 
 static void on_game_exit(void)
@@ -2494,11 +2486,11 @@ int vjo_worker_start(void)
     view_lock = sceKernelCreateMutex("VjoView", 0, 0, NULL);
     cmd_lock = sceKernelCreateMutex("VjoCmd", 0, 0, NULL);
     net_evf = sceKernelCreateEventFlag("VjoNetEv", 0, 0, NULL);
-    if (view_lock < 0 || cmd_lock < 0 || net_evf < 0 || vjo_net_cancel_init(&net_cancel) < 0) {
+    if (view_lock < 0 || cmd_lock < 0 || net_evf < 0) {
         vjo_worker_stop();
         return -1;
     }
-    vjo_platform_vita(&plat, &net_cancel);
+    vjo_platform_vita(&plat);
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     vjo_arena_init(&results[0], NULL, 0);
     vjo_arena_init(&results[1], NULL, 0);
@@ -2538,8 +2530,6 @@ int vjo_worker_start(void)
 int vjo_worker_stop(void)
 {
     running = 0;
-    if (net_cancel.lock >= 0)
-        vjo_net_cancel(&net_cancel); /* a request in progress ends now */
     if (net_evf >= 0)
         sceKernelSetEventFlag(net_evf, NET_EV_QUIT);
     if (threads_started) {
@@ -2566,8 +2556,6 @@ int vjo_worker_stop(void)
         sceKernelDeleteMutex(cmd_lock);
     if (view_lock >= 0)
         sceKernelDeleteMutex(view_lock);
-    if (net_cancel.lock >= 0)
-        sceKernelDeleteMutex(net_cancel.lock);
-    net_evf = cmd_lock = view_lock = net_cancel.lock = -1;
+    net_evf = cmd_lock = view_lock = -1;
     return 0;
 }

@@ -189,8 +189,9 @@ def render_tiers(t, where):
 MEMSTEPS = {1: "find", 2: "block/address-space info", 3: "pointer outside the kernel range",
             4: "no kernel memory block", 5: "InfoCore"}
 
-# VJO_E_* of core/conn.h, as the game result reports them (read from the
-# source when it is at hand, so the two cannot drift).
+# VJO_E_* of core/errors.h, as the game result reports them (read from the
+# source when it is at hand, so the two cannot drift). The network's codes
+# (-100 to -102, -106) are kept for an older build's log.
 RC_NAMES = {0: "ok", -100: "connect", -101: "tls", -102: "http", -103: "out of memory", -104: "parse",
             -105: "too large", -106: "status", -107: "no key", -108: "source", -109: "anki", -110: "not found",
             -111: "anki duplicate", -112: "no host", -113: "local io", -114: "local format", -115: "ocr model",
@@ -204,8 +205,8 @@ NATIVE = {0xBFFFFFFF: "no game", 0xBFFFFFFE: "no memory", 0xBFFFFFFD: "busy", 0x
 
 
 def load_rc_names():
-    """The VJO_E_* values from core/conn.h, if the source is at hand."""
-    path = ROOT / "core/conn.h"
+    """The VJO_E_* values from core/errors.h, if the source is at hand."""
+    path = ROOT / "core/errors.h"
     if not path.is_file():
         return
     for m in re.finditer(r"VJO_E_([A-Z_]+)\s*=\s*(-\d+)", path.read_text(errors="replace")):

@@ -1,5 +1,8 @@
 Vendored sources:
-- bearssl  https://www.bearssl.org/git/BearSSL  7bea48e5e850ab4cafbe68d3765cdaba13a86d6f (MIT)
+- bearssl  https://www.bearssl.org/git/BearSSL  7bea48e5e850ab4cafbe68d3765cdaba13a86d6f (MIT):
+           only SHA-1 and SHA-224/256 are kept (src/hash/sha1.c, src/hash/sha2small.c, the
+           byte-order helpers src/codec/dec32be.c and enc32be.c, src/inner.h, src/config.h and
+           inc/, unchanged); the rest went with the network, as the overlay is offline
 - jsmn     https://github.com/zserge/jsmn       25647e692c7906b96ffd2b05ca54c097948e879c (MIT)
 - acutest  https://github.com/mity/acutest      31751b4089c93b46a9fd8a8183a695f772de66de (MIT)
 - lapis    https://github.com/donkuri/lapis       38238d0b1c072fe7d7cd121e1e4c838a959f8d6b, tag 1.7.0 (GPL-3.0):

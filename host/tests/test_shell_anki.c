@@ -104,7 +104,7 @@ void vjo_view_unlock(void) { sceKernelUnlockMutex(81, 1); }
 SceUID sceKernelCreateThread(const char *name, int (*entry)(SceSize, void *), int priority, unsigned int stack,
                              unsigned int attr, int affinity, void *opt)
 {
-    TEST_CHECK(!strcmp(name, "VjoAnki") && stack == 0x10000);
+    TEST_CHECK(!strcmp(name, "VjoAnki") && stack == 0x4000); /* VJO_STACK_SHELL_ANKI (checked below) */
     if (fail_create)
         return -1;
     thread_entry = entry;
@@ -362,18 +362,10 @@ static int dict_open(void *ud, const char *path, VjoFile *out)
     return -1;
 }
 
-/* The Shell's platform, for its file reads: no network here at all. */
-static int connects;
-static int no_connect(void *ud, const char *host, int port, int timeout_us, int io_timeout_us, VjoConn *out)
-{
-    connects++;
-    return VJO_E_NET;
-}
-void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel)
+/* The Shell's platform, for its file reads (it has nothing else: the overlay is offline). */
+void vjo_platform_vita(VjoPlatform *p)
 {
     memset(p, 0, sizeof(*p));
-    p->ud = cancel;
-    p->connect = no_connect;
     p->file_open = dict_open;
 }
 
@@ -491,7 +483,7 @@ static void reset(void)
     heap_live = heap_attempts = heap_allocs = heap_frees = fail_heap = 0;
     write_budget = -1;
     short_io = fail_rename = fail_sync = fail_close = fail_scan = fail_mount_sync = 0;
-    mount_sync_calls = dir_scans = connects = 0;
+    mount_sync_calls = dir_scans = 0;
     write_fd = -1;
     write_path[0] = last_rename[0] = '\0';
     rtc_unix_us = 1791158400007000ull;
@@ -517,7 +509,6 @@ static void finish(void)
     TEST_CHECK(!heap_live && heap_allocs == heap_frees);
     TEST_CHECK(threads_created == threads_deleted);
     TEST_CHECK(!held_box && !held_view);
-    TEST_CHECK(connects == 0);
 }
 
 /* Enter on entry of the shown list: the job runs to its end. */
@@ -575,7 +566,7 @@ static void test_enter_saves_offline(void)
     TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 0 && files_ending(".tmp") == 0);
     /* the text-only arena, which is the ledger's figure, freed after the job */
     TEST_CHECK(heap_allocs == 1 && heap_frees == 1 && !heap_live && heap_last == ANKI_TEXT_MEM);
-    TEST_CHECK(ANKI_STACK == VJO_STACK_SHELL_ANKI && ANKI_TEXT_MEM == VJO_BUDGET_PAF_ANKI);
+    TEST_CHECK(ANKI_STACK == VJO_STACK_SHELL_ANKI && VJO_STACK_SHELL_ANKI == 0x4000 && ANKI_TEXT_MEM == VJO_BUDGET_PAF_ANKI);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_PAF_ANKI) == VJO_BUDGET_PAF_ANKI);
     TEST_CHECK(vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_ANKI) == 0);
     TEST_CHECK(vjo_ledger_peak(&g_shell_ledger, VJO_SL_ANKI_STACK) == VJO_BUDGET_SHELL_ANKI_STACK);
@@ -980,7 +971,7 @@ static void test_enter_records_every_dictionary(void)
     reconfigure();
     /* the shown result: worker.c's lookup at 好き, its first page shown */
     vjo_arena_init(&a, mem, sizeof(mem));
-    vjo_platform_vita(&p, NULL);
+    vjo_platform_vita(&p);
     TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 3, &pages, &res, &err) == VJO_OK);
     TEST_ASSERT(pages.count == 3 && res.n_vocab == 1);
     entries[1].vocab = &res.vocab[0];
@@ -1074,7 +1065,7 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
             cfg.local_dictionary_results = 8;
             reconfigure();
             vjo_arena_init(&a, mem, sizeof(mem));
-            vjo_platform_vita(&p, NULL);
+            vjo_platform_vita(&p);
             TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 8, &pages, &res, &err) == VJO_OK);
             TEST_ASSERT(pages.count == 8 && res.n_vocab == 1);
             entries[1].vocab = &res.vocab[0];
@@ -1265,8 +1256,9 @@ static void test_a_refused_job_thread_is_logged(void)
     vjo_anki_reap();
     enter(0);
     fail_create = 0;
-    snprintf(expected, sizeof(expected), "thread VjoAnki refused 0xFFFFFFFF: 69632 B; SceShell free 28672 (0x00000000), "
-                                         "held %u\n", (unsigned)VJO_BUDGET_SHELL_MODULE_PAGES);
+    snprintf(expected, sizeof(expected), "thread VjoAnki refused 0xFFFFFFFF: %u B; SceShell free 28672 (0x00000000), "
+                                         "held %u\n", (unsigned)VJO_BUDGET_SHELL_ANKI_STACK,
+             (unsigned)VJO_BUDGET_SHELL_MODULE_PAGES);
     TEST_CHECK(times_logged(expected) == 2);
     TEST_CHECK(logged("anki: count not started 0xFFFFFFFF\n") && logged("anki: save not started 0xFFFFFFFF\n"));
     TEST_MSG("%s", all_logs);
@@ -1339,7 +1331,7 @@ static int restart_step(int argc, char **argv)
     vjo_anki_post_add(5, !strcmp(what, "save-other"));
     printf("{\"status\":");
     print_string(g_view.anki_status);
-    printf(",\"count\":%d,\"connects\":%d}\n", g_view.anki_pending, connects);
+    printf(",\"count\":%d}\n", g_view.anki_pending);
     return strncmp(g_view.anki_status, "Saved", 5) && strncmp(g_view.anki_status, "Already", 7);
 }
 

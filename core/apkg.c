@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "bearssl.h"
-#include "conn.h"
+#include "errors.h"
 #include "json.h"
 #include "lapis.h"
 #include "port.h"

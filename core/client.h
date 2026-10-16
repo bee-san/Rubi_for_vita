@@ -12,7 +12,7 @@
 #include "config.h"
 #include "entries.h"
 #include "dict.h"
-#include "net.h"
+#include "platform.h"
 
 
 /* Stages for VjoOverlayData.failed_stage */

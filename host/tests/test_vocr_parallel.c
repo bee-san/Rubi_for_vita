@@ -24,7 +24,7 @@
  * The cancellation, failed-job, capacity and failed-join cases follow
  * audit-ocr-speed-2's .refs/probe/test_audit_extra.c. */
 #include "acutest.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "vocr.h"
 #include "vocr_lm.h"
 #include "vocr_ocr.h"

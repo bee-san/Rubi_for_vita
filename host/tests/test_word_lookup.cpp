@@ -17,7 +17,7 @@
 extern "C" {
 #include "client.h"
 #include "local_dict.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "styled.h"
 #include "text_hit.h"
 #include "utf.h"

@@ -535,7 +535,7 @@ int vjo_anki_start(void)
     box_lock = sceKernelCreateMutex("VjoAnkiBox", 0, 0, NULL);
     if (box_lock < 0)
         return -1;
-    vjo_platform_vita(&plat, NULL); /* its file reads only: the other dictionaries' entries */
+    vjo_platform_vita(&plat); /* the other dictionaries' entries */
     vjo_view_lock();
     g_view.anki_pending = -2; /* not counted yet */
     vjo_view_unlock();

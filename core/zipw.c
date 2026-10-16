@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "conn.h"
+#include "errors.h"
 
 #define LOCAL_SIG 0x04034B50u
 #define CENTRAL_SIG 0x02014B50u
