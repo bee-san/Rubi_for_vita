@@ -453,11 +453,13 @@ no user loses working lines:
   and the zip's `package-manifest.json`), which `package_release.py` writes from that define and which
   `install-vita.sh` passes to the patcher.
 
-In **`lines` mode** (the define 0) both installers keep today's per-title rules: every game registered
-before keeps its worker line, the worker goes right after the first header of each named game's
-section (`install-vita.sh --title`) or of each PSP row turned ON (#124's Games page), never under
-`*ALL`, and misplaced worker lines are commented out. The in-app Install then adds no game of its own
-(a first install in that mode needs `install-vita.sh --title`, as today). The fixtures run both modes.
+In **`lines` mode** (the define 0) the editor and the patcher keep today's per-title rules: every game
+registered before keeps its worker line, the worker goes right after the first header of each named
+game's section (`install-vita.sh --title`), never under `*ALL`, and misplaced worker lines are
+commented out. The in-app Install then keeps the lines it finds and adds no game of its own (a first
+install in that mode needs `install-vita.sh --title`, as before #124). The app's Games page edits no
+configuration in either mode: #124's registration is removed with this PR, so a reverted loader would
+also need it back for PSP rows. The fixtures run both modes.
 
 ## Versions (#122)
 
