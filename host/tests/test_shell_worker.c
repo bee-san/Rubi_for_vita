@@ -4917,8 +4917,9 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
 }
 
 /* net_main itself, from its start to its stop: its wait is untimed while nothing is held, timed
- * (LOG_IDLE_US) once a job logged lines; the timeout writes them once the result is taken; the stop
- * writes what is still held before the batch's stack goes. */
+ * (LOG_IDLE_US) once a job logged lines; the timeout writes them once the result is taken; a job that
+ * comes before the timeout keeps them (no write at a job's wake); the stop writes what is still held
+ * before the batch's stack goes. */
 static unsigned net_main_mark;
 static int net_main_stop_early;
 static int script_first_job(int step)
@@ -4933,9 +4934,17 @@ static int script_first_job(int step)
     case 1: /* the job ran: 2 lines held, so this wait is timed; it times out before the result is taken */
         TEST_CHECK(last_wait_timeout == LOG_IDLE_US && held_lines() == 2 && appends_recorded == net_main_mark);
         return 1;
-    case 2: /* nothing written by that timeout (its job still ran); the result is taken now */
+    case 2: /* nothing written by that timeout (its job still ran); the result is taken, and a second
+             * (quiet) job starts before the next timeout */
         TEST_CHECK(last_wait_timeout == LOG_IDLE_US && appends_recorded == net_main_mark);
         control_tick(0);
+        TEST_CHECK(!job_running);
+        next_scene(70u + (unsigned)net_main_stop_early); stable_pending = 1; control_tick(0);
+        TEST_CHECK(job_running && (posted & NET_EV_JOB));
+        return 1;
+    case 3: /* the second job ran at that wake: the first job's lines still held (no write at a job's wake) */
+        TEST_CHECK(last_wait_timeout == LOG_IDLE_US && held_lines() == 2 && appends_recorded == net_main_mark);
+        control_tick(0); /* its result is taken */
         TEST_CHECK(!job_running);
         return !net_main_stop_early; /* stop: what is held goes out at the thread's end */
     default: /* the timeout wrote them; nothing held now: untimed */
@@ -4956,7 +4965,7 @@ static void test_normal_build_net_main_writes_held_lines(void)
         net_main(0, NULL); /* the network thread, from its start to its stop */
         test_thread = CTL_THREAD;
         wait_script = NULL;
-        TEST_CHECK(wait_step == (net_main_stop_early ? 3 : 4) && !open_batch); /* its batch went with it */
+        TEST_CHECK(wait_step == (net_main_stop_early ? 4 : 5) && !open_batch); /* its batch went with it */
         TEST_CHECK(net_appends_since(net_main_mark, &lines, NULL) == 1 && lines == 2);
         fake_clock_on = 0;
         running = 1;
