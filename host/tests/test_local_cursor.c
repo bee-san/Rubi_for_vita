@@ -536,9 +536,10 @@ static int pages_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 /* A word the game's own wrapping split over two lines is one word (owner,
  * 2026-10-16 item 4; core/textjoin.h): looked up whole from its first part,
  * highlighted over both parts, ranked by how it is written without the
- * break, and the card's sentence is the text the lines make. A break the
- * rule keeps (a name, a short line, a sentence's end) still ends the scan,
- * as raw_newline_and_supplementary_highlights checks for short lines. */
+ * break, and the card's Sentence is the text the lines make (the queue keeps
+ * the text as recognized). A break the rule keeps (a name, a short line, a
+ * sentence's end) still ends the scan, as raw_newline_and_supplementary_highlights
+ * checks for short lines. */
 static void joined_lines_are_one_text(void)
 {
     const Row rows[] = {
@@ -561,13 +562,21 @@ static void joined_lines_are_one_text(void)
         TEST_CHECK(out.list.entries[0].hl_end == (int)(strstr(text, "かな") - text));
         /* the header's highlight: 食べ, the break, る */
         TEST_CHECK(vjo_entry_header_range(&out.list, 0, &start, &units) && start == 10 && units == 4);
-        /* the card: the sentence the two lines make, the word in it */
+        /* the card: the text as recognized in its record, the sentence the two lines make in its Sentence */
         TEST_ASSERT(!vjo_anki_note_from_entry(&a, &out.list, 0, &note));
-        TEST_CHECK(!strcmp(note.sentence, "あいうえおかきくけこ食べるかな？"));
-        TEST_CHECK(note.hl_start == 30 && note.hl_end == 39 && note.sf_hl_start == 30 && note.sf_hl_end == 39);
+        TEST_CHECK(!strcmp(note.sentence, text) && note.hl_start == 30 && note.hl_end == 40);
         field = vjo_anki_field_value(&a, VJO_LAPIS_SENTENCE, &note);
         TEST_CHECK(field && !strcmp(field, "あいうえおかきくけこ<b>食べる</b>かな？"));
         TEST_MSG("%s", field ? field : "(null)");
+        /* and so after the queue's round trip, as the Overlay app exports it */
+        {
+            VjoAnkiNote back;
+            int picture;
+            char *json = vjo_queue_encode(&a, &note, 0);
+            TEST_ASSERT(json && vjo_queue_decode(&a, json, strlen(json), &back, &picture) == 4);
+            field = vjo_lapis_field_value(&a, VJO_LAPIS_SENTENCE, &back, NULL);
+            TEST_CHECK(field && !strcmp(field, "あいうえおかきくけこ<b>食べる</b>かな？"));
+        }
         /* "\r\n": two source units in the span, the header's one (it draws no CR) */
         text = "あいうえおかきくけこ食べ\r\nるかな？";
         out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
@@ -598,6 +607,41 @@ static void joined_lines_are_one_text(void)
         vjo_arena_reset(&a);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこ食べ\n「るかな」", 30, &r, &e) && r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "the first part only"));
+    }
+}
+
+/* At a phrase boundary the lines join too (the sentence goes on), yet the
+ * next line starts a word of its own: a longer match across the break that
+ * cuts that word is no word of the text ("…てきた / おばあさまの": きたお).
+ * It is taken only when no word starting the next line is longer than its
+ * part there; the next line's words are probed only once a span across the
+ * break matches. */
+static void joined_break_keeps_the_next_lines_first_word(void)
+{
+    const Row rows[] = {{"きた", "来た", "きた", "came", 0, 0}, {"きたお", "北尾", "きたお", "a surname", 0, 0},
+                        {"おばあさま", "お祖母様", "おばあさま", "grandmother", 0, 0},
+                        {"かず", "数", "かず", "number", 0, 0}, {"か", "か", "", "question particle", 0, 0},
+                        {"ずっと", "ずっと", "", "all along", 0, 0}};
+    /* line 1 the longest: they join */
+    const char *text = "あいうえおかきくけこてきた\nおばあさまの話";
+    size_t at = (size_t)(strstr(text, "てきた") - text) + 3;
+    for (int version = 1; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        TEST_CASE_("v%d", version);
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 6, version);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, text, at, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "came"), "got %s", r.vocab[0].meanings[0]);
+        TEST_CHECK(r.tokens[0].len16 == 2);
+        /* か / ずっと: the particle, not 数 */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこさしか\nずっと迷って", 36, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "question particle"), "got %s", r.vocab[0].meanings[0]);
+        /* without a word starting the next line, the match across the break is taken */
+        build(&fixtures[0], "main.vjdict", rows, 2, version);
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, text, at, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "a surname"), "got %s", r.vocab[0].meanings[0]);
+        TEST_CHECK(r.tokens[0].len16 == 4); /* き た, the break, お */
     }
 }
 
@@ -1588,6 +1632,7 @@ TEST_LIST = {
     {"raw_newline_and_supplementary_highlights", raw_newline_and_supplementary_highlights},
     {"joined_lines_are_one_text", joined_lines_are_one_text},
     {"joined_word_pages_span_both_lines", joined_word_pages_span_both_lines},
+    {"joined_break_keeps_the_next_lines_first_word", joined_break_keeps_the_next_lines_first_word},
     {"punctuation_and_read_counts_do_not_scan_remainder", punctuation_and_read_counts_do_not_scan_remainder},
     {"largest_entry_and_input_fit_64k", largest_entry_and_input_fit_64k},
     {"repeated_lookups_oom_and_io_recovery", repeated_lookups_oom_and_io_recovery},

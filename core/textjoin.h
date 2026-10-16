@@ -21,6 +21,7 @@
 
 #define VJO_JOIN_MIN_CHARS 8
 #define VJO_JOIN_SLACK 2
+#define VJO_JOIN_MAX_BREAKS 32 /* vjo_text_join decides the first 32 breaks; later ones stay */
 
 /* Whether the line break at byte `at` of text ('\n', or the '\r' of "\r\n")
  * joins the lines on either side of it. 0 for any other byte. */

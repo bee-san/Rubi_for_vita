@@ -5,103 +5,92 @@
 
 #include "utf.h"
 
-static int space(uint32_t c)
+/* A sentence's end or a closing bracket: 。．｡ . ! ? ！？ ) ] } ）］｝〟, and the
+ * U+3008..301B pairs 〉》」』】〕〗〙〛 (odd); the opening ones ( [ { （［｛〝
+ * and 〈《「『【〔〖〘〚 (even). 〒 and 〓 (3012, 3013) are no brackets. */
+static const uint16_t ends[] = {0x3002, 0xFF0E, 0xFF61, '.', '!', '?', 0xFF01, 0xFF1F,
+                                ')', ']', '}', 0xFF09, 0xFF3D, 0xFF5D, 0x301F};
+static const uint16_t starts[] = {'(', '[', '{', 0xFF08, 0xFF3B, 0xFF5B, 0x301D};
+
+static int mark(uint32_t c, const uint16_t *t, int n, uint32_t odd)
 {
-    return c == ' ' || c == '\t' || c == '\r' || c == 0x3000;
+    while (n--)
+        if (t[n] == c)
+            return 1;
+    return c >= 0x3008 && c <= 0x301B && (c & 1) == odd && (c >> 1) != (0x3012 >> 1);
 }
 
-/* U+3008..301B pairs its brackets: 〈《「『【〔〖〘〚 open at even code points
- * and close at the odd one after (〒 and 〓, 3012 and 3013, are no brackets). */
-static int closes(uint32_t c)
+/* The text's lines in one pass: the longest one's characters, and for the
+ * line ending at the '\n' at byte nl, its characters and last character, and
+ * the next line's first. Spaces at a line's ends are not counted. */
+static int joins(const char *s, size_t len, size_t nl)
 {
-    return c == 0x3002 || c == 0xFF0E || c == 0xFF61 || c == '.' || c == '!' || c == '?' || c == 0xFF01 ||
-           c == 0xFF1F || c == ')' || c == ']' || c == '}' || c == 0xFF09 || c == 0xFF3D || c == 0xFF5D ||
-           c == 0x301F || (c >= 0x3009 && c <= 0x301B && (c & 1) && c != 0x3013);
-}
-
-static int opens(uint32_t c)
-{
-    return c == '(' || c == '[' || c == '{' || c == 0xFF08 || c == 0xFF3B || c == 0xFF5B || c == 0x301D ||
-           (c >= 0x3008 && c <= 0x301A && !(c & 1) && c != 0x3012);
-}
-
-typedef struct {
-    size_t chars;         /* code points from the first character to the last, spaces between them included */
-    uint32_t first, last; /* 0: an empty line */
-} Line;
-
-/* The line starting at byte `from`, up to its '\n' or the text's end. */
-static void line_at(const char *s, size_t len, size_t from, Line *l)
-{
-    size_t gap = 0;
-    l->chars = 0;
-    l->first = l->last = 0;
-    while (from < len && s[from] != '\n') {
-        uint32_t c = vjo_utf8_next(s, len, &from);
-        if (space(c)) {
-            gap += l->chars != 0; /* counted only once a character follows */
+    size_t i = 0, chars = 0, gap = 0, max = 0, before = 0;
+    uint32_t last = 0, prev_last = 0, next_first = 0;
+    int line = 0; /* 0: up to the break, 1: the line after it, 2: later */
+    for (;;) {
+        uint32_t c = i < len ? vjo_utf8_next(s, len, &i) : '\n';
+        if (c == '\n') {
+            if (chars > max)
+                max = chars;
+            if (line == 0 && i == nl + 1) { /* the line before the break */
+                before = chars;
+                prev_last = last;
+                line = 1;
+            } else if (line == 1)
+                line = 2;
+            if (i >= len)
+                break;
+            chars = gap = 0;
             continue;
         }
-        l->chars += gap + 1;
+        if (c == ' ' || c == '\t' || c == '\r' || c == 0x3000) {
+            gap += chars != 0; /* counted only once a character follows */
+            continue;
+        }
+        if (line == 1 && !next_first)
+            next_first = c;
+        chars += gap + 1;
         gap = 0;
-        if (!l->first)
-            l->first = c;
-        l->last = c;
+        last = c;
     }
-}
-
-static size_t longest(const char *s, size_t len)
-{
-    size_t max = 0;
-    for (size_t i = 0;; i++) {
-        Line l;
-        line_at(s, len, i, &l);
-        if (l.chars > max)
-            max = l.chars;
-        while (i < len && s[i] != '\n')
-            i++;
-        if (i >= len)
-            return max;
-    }
-}
-
-/* nl: a '\n'; max: the longest line of the text as recognized */
-static int joins(const char *s, size_t len, size_t nl, size_t max)
-{
-    size_t start = nl;
-    Line a, b;
-    while (start && s[start - 1] != '\n')
-        start--;
-    line_at(s, nl, start, &a);
-    line_at(s, len, nl + 1, &b);
-    return a.chars >= VJO_JOIN_MIN_CHARS && a.chars + VJO_JOIN_SLACK >= max && !closes(a.last) && b.first &&
-           !opens(b.first);
+    return before >= VJO_JOIN_MIN_CHARS && before + VJO_JOIN_SLACK >= max && next_first &&
+           !mark(prev_last, ends, sizeof(ends) / sizeof(ends[0]), 1) &&
+           !mark(next_first, starts, sizeof(starts) / sizeof(starts[0]), 0);
 }
 
 int vjo_text_joins(const char *s, size_t len, size_t at)
 {
     if (at + 1 < len && s[at] == '\r')
         at++;
-    return at < len && s[at] == '\n' && joins(s, len, at, longest(s, len));
+    return at < len && s[at] == '\n' && joins(s, len, at);
 }
 
 size_t vjo_text_join(char *s, int *offs, int n)
 {
-    size_t len = strlen(s), max = longest(s, len), i = len;
-    /* From the end, so that a removed break moves only text after the ones still to decide;
-     * each decides on its own two lines, which no later removal changes, and the text's
-     * longest line as recognized. */
-    while (i-- > 0) {
+    size_t len = strlen(s), i = len, orig = len;
+    /* From the end, so that a removed break moves only text after the ones
+     * still to decide. Each break is decided on the text as recognized: the
+     * rule reads the text's longest line, so the breaks are found first. */
+    char keep[VJO_JOIN_MAX_BREAKS];
+    size_t at[VJO_JOIN_MAX_BREAKS];
+    int k = 0;
+    for (size_t j = 0; j < orig && k < VJO_JOIN_MAX_BREAKS; j++)
+        if (s[j] == '\n') {
+            at[k] = j;
+            keep[k++] = (char)!joins(s, orig, j);
+        }
+    while (k-- > 0) {
         size_t b;
-        if (s[i] != '\n' || !joins(s, len, i, max))
+        if (keep[k])
             continue;
+        i = at[k];
         b = i && s[i - 1] == '\r' ? i - 1 : i;
         memmove(s + b, s + i + 1, len - i); /* the NUL too */
         len -= i + 1 - b;
-        for (int k = 0; k < n; k++)
-            if (offs[k] > (int)b)
-                offs[k] = offs[k] > (int)i ? offs[k] - (int)(i + 1 - b) : (int)b;
-        i = b;
+        for (int m = 0; m < n; m++)
+            if (offs[m] > (int)b)
+                offs[m] = offs[m] > (int)i ? offs[m] - (int)(i + 1 - b) : (int)b;
     }
     return len;
 }

@@ -319,18 +319,6 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     if (!out->spelling || !out->reading || !out->sentence || !m || !p)
         return -1;
     sentence_furigana(l, entry, out);
-    /* The sentence the recognized lines make: a break the game's wrapping put
-     * inside it goes, the word's ranges follow (core/textjoin.h); a name's line
-     * and a new sentence's keep theirs. The copy is the card's own, and
-     * sentence_furigana is the same text. */
-    {
-        int o[4] = {out->hl_start, out->hl_end, out->sf_hl_start, out->sf_hl_end};
-        vjo_text_join((char *)out->sentence, o, 4);
-        out->hl_start = o[0];
-        out->hl_end = o[1];
-        out->sf_hl_start = o[2];
-        out->sf_hl_end = o[3];
-    }
     for (int i = 0; i < v->n_meanings; i++)
         if (!(m[i] = dup(a, v->meanings[i])))
             return -1;
@@ -343,6 +331,22 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     out->n_pos = v->n_pos;
     out->n_pitch = v->n_pitch;
     memcpy(out->pitch, v->pitch, sizeof(out->pitch));
+    return 0;
+}
+
+/* A card's Sentence into b (not yet written): the sentence the recognized
+ * lines make (core/textjoin.h: a break the game's wrapping put inside it
+ * goes, the word's range follows; a name's line and a new sentence's keep
+ * theirs), joined in a copy before b's block. The queue keeps the text as
+ * recognized, so a card queued before the join comes joined too. -1 on OOM. */
+static int joined_sentence(VjoBuf *b, VjoArena *a, const char *text, int hl_start, int hl_end)
+{
+    int o[2] = {hl_start, hl_end};
+    char *t = vjo_arena_strndup(a, text, strlen(text));
+    if (!t)
+        return -1;
+    vjo_text_join(t, o, 2);
+    vjo_anki_sentence(b, t, o[0], o[1]);
     return 0;
 }
 
@@ -388,7 +392,10 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
             gloss_item(&b, n->more[k].dictionary, n->more[k].meanings, n->more[k].n_meanings);
         vjo_buf_puts(&b, GLOSSARY_CLOSE);
         break;
-    case VJO_LAPIS_SENTENCE: vjo_anki_sentence(&b, n->sentence, n->hl_start, n->hl_end); break;
+    case VJO_LAPIS_SENTENCE:
+        if (joined_sentence(&b, a, n->sentence, n->hl_start, n->hl_end))
+            return NULL;
+        break;
     case VJO_LAPIS_FREQ_SORT:
         /* {frequency-harmonic-rank}: Yomitan writes 9999999 for a word with
          * no frequency (default-anki-field-templates.handlebars), so sorting
@@ -399,8 +406,9 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
         /* Lapis shows {{furigana:SentenceFurigana}}, else {{furigana:Sentence}}:
          * filled only when it has readings the sentence has not (Lapis's
          * README asks for it empty otherwise). */
-        if (n->sentence_furigana && strcmp(n->sentence_furigana, n->sentence))
-            vjo_anki_sentence(&b, n->sentence_furigana, n->sf_hl_start, n->sf_hl_end);
+        if (n->sentence_furigana && strcmp(n->sentence_furigana, n->sentence) &&
+            joined_sentence(&b, a, n->sentence_furigana, n->sf_hl_start, n->sf_hl_end))
+            return NULL;
         break;
     case VJO_LAPIS_PITCH_POSITION: vjo_anki_pitch_position(&b, n->pitch, n->n_pitch); break;
     case VJO_LAPIS_PITCH_CATEGORIES:

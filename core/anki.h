@@ -88,7 +88,7 @@ typedef struct {
     int rank; /* VJO_NO_RANK if unknown */
     const char **meanings;
     int n_meanings;
-    const char *sentence; /* VjoEntryList.header: the whole recognized text, its lines joined (core/textjoin.h) */
+    const char *sentence; /* VjoEntryList.header: the whole recognized text (the Sentence field joins its lines) */
     int hl_start, hl_end; /* the word in sentence, -1 if none */
     const char *sentence_furigana; /* the sentence with every word's furigana, NULL = none */
     int sf_hl_start, sf_hl_end;    /* the word in sentence_furigana, -1 if none */
