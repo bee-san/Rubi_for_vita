@@ -13,6 +13,8 @@
 #define MEV_ROWS 0x2u
 #define MEV_JOB 0x4u
 #define MEV_RESULT 0x8u
+/* loader.c: the kernel worker answered a starting process's games.ini question. */
+#define MEV_POLICY 0x10u
 void game_ocr_init(void);
 int game_ocr_capture_busy_locked(void);
 int game_ocr_shutdown_locked(void);

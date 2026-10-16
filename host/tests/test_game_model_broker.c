@@ -68,6 +68,7 @@ int vjoOcrModelClose(uint32_t seq)
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
+int ksceKernelGetThreadId(void) { return 0x7001; } /* the game worker's one thread */
 uint64_t ksceKernelGetSystemTimeWide(void) { return clock_us; }
 /* vjoOcrSubmit's MEV_JOB and vjoOcrComplete's MEV_RESULT (a waiting Take or Read returns at once). */
 static int job_bit, result_bit;

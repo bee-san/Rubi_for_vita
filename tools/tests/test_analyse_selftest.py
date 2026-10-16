@@ -1366,5 +1366,46 @@ def flat(text):
     return " ".join(text.split())
 
 
+
+class WorkerLoaderLines(unittest.TestCase):
+    """#138: kernel/loader.c logs one `worker for` line per game start it decided on; the collect
+    analysis says where the worker was loaded, where not and why, and counts refused second copies.
+    The lines are the loader's own formats (host/tests/test_kernel_loader.c checks them)."""
+    KERNEL = (
+        "Vita JP Overlay kernel 22 started (normal mode)\n"
+        "hooks: display 0, input 0, procevent 0, worker loader 0 (0 = ok)\n"
+        "worker for PCSG00940 (pid 0x72ED3): ON (no games.ini): ur0:tai/VitaJPOverlay_OCR.suprx 0x40010129, start 0\n"
+        "worker for PSPEMUCFW (PSP) (pid 0x11B2F15): ON in games.ini: ur0:tai/VitaJPOverlay_OCR.suprx 0x40010131, start 0\n"
+        "worker for PCSG00940 (pid 0x73001): ON in games.ini.bak: ux0:tai/VitaJPOverlay_OCR.suprx 0x40010133, start 0\n"
+        "worker for PCSF00001 (pid 0x73101): OFF in games.ini: not loaded\n"
+        "worker for PCSF00001 (pid 0x73201): OFF in games.ini: not loaded\n"
+        "worker for PCSG00415 (pid 0x73301): L held at its start: not loaded\n"
+        "worker for VITADBDLD (pid 0x73401): ON in games.ini: ur0:tai/VitaJPOverlay_OCR.suprx 0x80024302, start 0\n"
+        "worker for PCSG00415 (pid 0x73501): ON in games.ini: ur0:tai/VitaJPOverlay_OCR.suprx 0x40010141, start 1\n"
+        "ocr worker registered: game pid 0x72ED3 module 0x40010129\n"
+        "ocr worker: second worker thread 0x4001A001 in game pid 0x73501 refused (registered: 0x40019001)\n")
+
+    def test_the_loaders_decisions_are_summarised(self):
+        k = a.summarise_kernel(self.KERNEL, len(self.KERNEL))
+        self.assertEqual(k["loaded"], ["PCSG00940", "PSPEMUCFW", "PCSG00940"])
+        self.assertEqual(k["second"], 1)
+        self.assertEqual(k["registered"], 1)
+        self.assertEqual(a.loader_text(k),
+                         "worker loader: loaded into PCSG00940 x2, PSPEMUCFW; "
+                         "not loaded (OFF in games.ini): PCSF00001 x2; "
+                         "not loaded (L held at its start): PCSG00415; "
+                         "not loaded (its load failed: 0x80024302, start 0): VITADBDLD; "
+                         "not loaded (its load failed: 0x40010141, start 1): PCSG00415; "
+                         "1 second worker thread(s) refused")
+        # the refusal is the loader's, not a memory problem line
+        self.assertFalse(any("second worker thread" in x for x in k["alloc_fail"]))
+
+    def test_a_kernel_without_the_loader_says_nothing_of_it(self):
+        old = "Vita JP Overlay kernel 22 started (normal mode)\nhooks: display 0, input 0, procevent 0 (0 = ok)\n"
+        self.assertIsNone(a.loader_text(a.summarise_kernel(old, len(old))))
+        none = "worker for PCSF00001 (pid 0x73101): OFF in games.ini: not loaded\n"
+        self.assertEqual(a.loader_text(a.summarise_kernel(none, len(none))),
+                         "worker loader: loaded into no game; not loaded (OFF in games.ini): PCSF00001")
+
 if __name__ == "__main__":
     unittest.main()

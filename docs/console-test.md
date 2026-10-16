@@ -4,8 +4,10 @@ A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, neve
 single zip that has everything: the three plugins, the **Overlay** settings app, the OCR models
 (the three model sizes: VOCR3-FL10, VOCR3-H15 and VOCR4-W20), the frozen dictionary, the installer and
 the analyser. It needs no git, no `gh` and no packaging. Its install issue names the tag and gives
-the zip's SHA-256. The installer registers the OCR worker only for the games named with `--title`
-(here CLANNAD, `PCSG00415`), never under `*ALL`. "est." marks an estimate; nothing of a test build
+the zip's SHA-256. The installer still registers the OCR worker for the games named with `--title`
+(here CLANNAD, `PCSG00415`), never under `*ALL`; since #138 the kernel plugin loads the worker
+itself into every game that is ON in the Overlay app, so other games (AIR, Adrenaline) need no
+`--title`. "est." marks an estimate; nothing of a test build
 has run on a console before the owner's run. The install issue follows
 [test-build-issue.md](test-build-issue.md), whose first install step is the Overlay app.
 
@@ -55,13 +57,10 @@ Manual install without the install script (VitaShell's file manager, over USB or
 (the zip's replaces it), copy the zip's `ur0/` and `ux0/` folders onto the Vita's `ur0:` and `ux0:`,
 copy the zip's `JPOverlaySettings.vpk` (at its top level) to `ux0:data/` and install it with VitaShell,
 delete `ur0:data/VitaJPOverlay/boot.txt` if it exists (the installer resets it, so a safe mode left by
-an earlier build ends), then add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
-`ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` and, in a new section,
-```ini
-*PCSG00415
-ur0:tai/VitaJPOverlay_OCR.suprx
-```
-never under `*ALL` (and the same in `ux0:tai/config.txt` if that file exists). The self-test is armed
+an earlier build ends), then add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and
+`ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` (and the same in `ux0:tai/config.txt` if that
+file exists). The worker needs no line: the kernel plugin loads `ur0:tai/VitaJPOverlay_OCR.suprx`
+into each game that is ON; never list it under `*ALL`. The self-test is armed
 by an empty `ux0:data/VitaJPOverlay/selftest.txt` (what `--self-test` uploads); copy one there.
 
 ## 3. Run it (once)

@@ -72,8 +72,9 @@ thread VjoAnki refused 0x80024302: 69632 B; SceShell free 28672 (0x00000000), he
 anki: count not started 0x80024302
 """.replace("{SECRET2}", SECRET2)
 KERNEL = """Vita JP Overlay kernel 19 started (normal mode)
-hooks: display 0, input 0, procevent 0 (0 = ok)
+hooks: display 0, input 0, procevent 0, worker loader 0 (0 = ok)
 shell registered: pid 0x10000 (was 0x0)
+worker for PCSG00415 (pid 0x20000): ON in games.ini: ur0:tai/VitaJPOverlay_OCR.suprx 0x00030000, start 0
 game pid 0x20000 active
 ocr worker registered: game pid 0x20000 module 0x30000
 ocr job 1: 917x125 at 22,400 of 960x544, capture 1, flags 0x0, VOCR3_H15_w8.vocr / VOCR3_FL10_w8.vocr
@@ -226,6 +227,7 @@ class Collect(unittest.TestCase):
                      "ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], OCR worker under ['PCSG00415']",
                      "boot.txt: vjoboot1 seq=3 mode=0 stage=4",
                      "worker registrations 1, OCR jobs submitted 1",
+                     "    worker loader: loaded into PCSG00415",  # #138: the kernel's own load
                      "OCR jobs: 2; rc out of memory (rc -103) x1, rc ok (rc 0) x1",
                      "models VOCR3_H15_w8.vocr x1, VOCR3_FL10_w8.vocr (fallback) x1",
                      "times (ms): find 9-9, load 1,050-1,050 (1 read), recognize 820-820; per line 273-273",

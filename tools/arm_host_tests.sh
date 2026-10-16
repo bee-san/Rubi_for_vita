@@ -67,6 +67,10 @@ build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
 build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
 build touch_hold host/tests/test_touch_hold.c
 build kernel_game_ocr host/tests/test_kernel_game_ocr.c kernel/scene.c kernel/ledger.c core/ledger.c
+# #138: the worker loader's question to the kernel worker (a 32-bit seqlock and
+# tagged answer) and the Shell's games.ini rules, on the Vita's word size.
+build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c vita/games_storage.c core/games.c \
+  core/arena.c kernel/ledger.c core/ledger.c
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
@@ -86,7 +90,7 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows settings_layout shell_log apkg psp)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then

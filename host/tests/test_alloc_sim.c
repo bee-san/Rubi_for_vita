@@ -195,6 +195,7 @@ int vjoOcrModelClose(uint32_t seq) { return retail_return(test_kernel_model_clos
 int vjoMemInfo(VjoMemInfo *out) { (void)out; return VJO_ERR_PERM; }
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
+int ksceKernelGetThreadId(void) { return 0x7001; } /* the game worker's one thread */
 uint64_t ksceKernelGetSystemTimeWide(void) { return clock_us; }
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits) { (void)uid; (void)bits; return 0; }
 int ksceKernelClearEventFlag(SceUID uid, unsigned bits) { (void)uid; (void)bits; return 0; }

@@ -13,6 +13,11 @@
 static VjoGameOcrRequest request;
 static VjoGameOcrResult result, incoming; /* Never put a 4 KiB result on syscall stacks. */
 static SceUID worker_pid, worker_module, request_pid, request_shell;
+/* #138: the registered worker's thread. A game holds one worker (the kernel loads
+ * it, game_ocr/main.c keeps one copy per process); should a second copy still run
+ * (a per-title taiHEN line too), its thread is refused here, so it never takes a
+ * job or holds weights; refused_thread: the last one logged. */
+static SceUID worker_thread, refused_thread;
 static uint32_t worker_epoch, request_epoch, sequence;
 static int valid, pending, claimed, cancelled, completed, stopping;
 /* Threads inside vjoOcrTake's or vjoOcrRead's wait (under g.lock): module_stop
@@ -139,6 +144,7 @@ void game_ocr_init(void)
     memset(&result, 0, sizeof(result));
     memset(&incoming, 0, sizeof(incoming));
     worker_pid = worker_module = request_pid = request_shell = 0;
+    worker_thread = refused_thread = 0;
     worker_epoch = request_epoch = sequence = 0;
     valid = pending = claimed = cancelled = completed = stopping = 0;
     waiters = 0;
@@ -250,6 +256,7 @@ void game_ocr_process_gone(SceUID pid)
     }
     if (pid == worker_pid) {
         worker_pid = worker_module = 0;
+        worker_thread = refused_thread = 0;
         worker_epoch = 0;
     }
     VJO_UNLOCK();
@@ -259,7 +266,7 @@ int vjoOcrRegister(void)
 {
     uint32_t state;
     tai_module_info_t info;
-    SceUID pid = ksceKernelGetProcessId();
+    SceUID pid = ksceKernelGetProcessId(), thread = ksceKernelGetThreadId();
     int rc;
     ENTER_SYSCALL(state);
     memset(&info, 0, sizeof(info));
@@ -269,16 +276,25 @@ int vjoOcrRegister(void)
     VJO_LOCK();
     sync_locked();
     if (stopping || pid <= 0 || pid != g.game_pid || !g.game_active) rc = VJO_ERR_NO_GAME;
+    else if (pid == worker_pid && worker_thread != 0 && thread != worker_thread) {
+        /* Another copy's thread in the registered game (#138): it stays idle. */
+        if (thread != refused_thread)
+            klog("ocr worker: second worker thread 0x%X in game pid 0x%X refused (registered: 0x%X)", thread, pid,
+                 worker_thread);
+        refused_thread = thread;
+        rc = VJO_ERR_BUSY;
+    }
     else if (claimed && (pid != worker_pid || worker_module != info.modid ||
                         worker_epoch != __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE)))
         rc = VJO_ERR_BUSY;
     else {
         /* The worker asks every 100 ms: only a new registration is logged, so kernel.txt
-         * says which game process the worker loaded into (its *TITLEID section works). */
+         * says which game process the worker loaded into. */
         if (pid != worker_pid || worker_module != info.modid)
             klog("ocr worker registered: game pid 0x%X module 0x%X", pid, info.modid);
         worker_pid = pid;
         worker_module = info.modid;
+        worker_thread = thread;
         worker_epoch = __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE);
         rc = 0;
     }

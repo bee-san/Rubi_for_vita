@@ -39,8 +39,9 @@ A boot is **complete** when it reached stage `4` or was inert, with no fault.
    kernel log. The Shell plugin's `module_start` asks `vjoBootInfo`, writes the note below to
    `ux0:data/VitaJPOverlay/status.txt`, marks itself inert and returns
    `SCE_KERNEL_START_NO_RESIDENT`: its pages are freed at once and SceShell keeps everything
-   we would have held. The game worker (one `*TITLEID` section per game) does the same in every
-   process it is loaded into. If no Shell
+   we would have held. The game worker does the same in every process it is loaded into (a safe
+   boot installs no hook, so the kernel loads it into no game; a `*TITLEID` line an older
+   install left still can). If no Shell
    plugin reports in at all, the kernel completes the safe boot by itself after 60 s of
    uptime.
 

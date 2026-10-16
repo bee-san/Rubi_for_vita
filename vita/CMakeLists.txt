@@ -71,18 +71,25 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/lifecycle.c
   ${ROOT}/kernel/foreground.c
   ${ROOT}/kernel/scene.c
-  ${ROOT}/kernel/triggers.c)
+  ${ROOT}/kernel/triggers.c
+  ${ROOT}/kernel/loader.c
+  ${ROOT}/core/games.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)
+# core/port.h: the kernel's snprintf is SceSysclibForDriver's (core/games.c).
+target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # The OCR job and model-file broker is a cold path (a few syscalls per job, a
 # rows call a frame at most; the row copy itself is kernel/capture.c's): built
 # for size, since every page of the kernel module is the shared kernel pool's.
 # So are the process event hook and the foreground state machine (a few calls
 # per app switch) and the self-test's memory sample (kernel/meminfo.c, one
 # vjoMemInfo call per report). They pay for #104's release of the game's input
-# block in the hook (lifecycle.c, +464 B at -O2) within the module's pages.
+# block in the hook (lifecycle.c, +464 B at -O2) within the module's pages. The
+# worker loader (#138: one games.ini read per game start, kernel/loader.c) is
+# one too. (core/games.c, the Shell's own policy code it calls, keeps each
+# target's flags: source properties apply to every target of this directory.)
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
-  ${ROOT}/kernel/meminfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+  ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
 target_link_libraries(VitaJPOverlay_Kernel
@@ -277,7 +284,8 @@ if(VJO_WITH_VOCR)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
   target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
     SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak
-    SceIofilemgr_stub SceAppMgr_stub_weak SceDisplay_stub_weak ScePower_stub_weak taihen_stub_weak gcc)
+    SceIofilemgr_stub SceAppMgr_stub_weak SceDisplay_stub_weak ScePower_stub_weak taihen_stub_weak
+    SceKernelModulemgr_stub_weak gcc) # sceKernelGetModuleInfo: one copy per process (#138)
   set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
   set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
   vita_create_self(VitaJPOverlay_OCR.suprx VitaJPOverlay_OCR UNSAFE CONFIG ${ROOT}/game_ocr/exports.yml)

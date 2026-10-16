@@ -16,5 +16,6 @@ typedef struct {
     unsigned int st_private[6];
 } SceIoStat;
 int ksceIoGetstatByFd(SceUID fd, SceIoStat *stat);
+int ksceIoGetstat(const char *file, SceIoStat *stat);
 int ksceIoMkdir(const char *dir, unsigned mode);
 #endif

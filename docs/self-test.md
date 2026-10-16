@@ -35,8 +35,10 @@ normal build, the Shell says so once in `log.txt` and leaves the marker for a de
    found no text. OCR runs automatically while the test is armed, whatever `ocr_mode` says; the
    region is
    **yours** (draw it with Square first if you have not; with none, the full screen). The game
-   needs the OCR worker registered for it (installed with `--title TITLEID`, README 'Install');
-   otherwise the stages report `rc=-117` (`ocr unavailable`).
+   needs the OCR worker, which the kernel loads into it at its start when it is ON in the Overlay
+   app (since #138; before, a `--title` line); a game without it (turned ON while it ran, started
+   with L held) reports `rc=-117` (`ocr unavailable`) in every stage, and `kernel.txt`'s `worker
+   for` line says why.
 4. Back in VitaShell: `bash tools/install_ftp.sh --collect VITA_IP` fetches the report with every
    log and record into one zip ([below](#collecting-everything---collect)); `--status VITA_IP` fetches
    just `ux0:data/VitaJPOverlay/selftest-report.txt` (and `status.txt`, `kernel.txt`, `boot.txt`).
@@ -271,7 +273,7 @@ one the plugins came with (an app from before the stamps, v0.8.0-test.2 and olde
 eboot.bin without one), the configuration (with a note for any `ocr_backend` line, which is no setting
 any more since VOCR is the only engine: a removed engine's value, which an older app writes, or another,
 and that today's app or installer deletes the line), where taiHEN loads
-each plugin (the worker under `*TITLEID` only), the boot record, the kernel's start and hooks, every
+each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, the kernel's start and hooks, every
 OCR job (results, models and fallbacks, capture route, find/load/recognize times, per-line and
 per-frame times, free USER and headroom, failed worker steps), the ARM clock by game window (each
 window's clock before, during and after, and the time per CTC frame with `ocr_boost_clock` off against

@@ -387,9 +387,13 @@ static void fake_check(unsigned tier, unsigned top, int refused)
     s->bytes = 1000000u * tier; /* a made-up need: workspace and weights */
     s->sum = 4096u * tier;      /* own resident blocks it would release first */
 }
+/* #138: what the kernel answers when no worker is registered for the game (none
+ * was loaded at its start); 0: the fake worker takes the job. */
+static int fake_submit_rc;
 int vjoOcrSubmit(const VjoGameOcrRequest *r)
 {
     TEST_CHECK(!open_batch); /* no log batch is held across the game's exchange */
+    if (fake_submit_rc) return fake_submit_rc;
     fake_game_request = *r;
     TEST_CHECK(!vocr_live && !(r->flags & ~VJO_GAME_OCR_F_ALL));
     if (submits < 8) selftest_flags_seen[submits] = r->flags, selftest_speed_seen[submits] = r->speed;
@@ -1088,10 +1092,30 @@ static void test_vocr_empty_region(void)
     TEST_CHECK(vocr_allocs == 1 && vocr_frees == 1 && vocr_paf_allocs == 0);
 #else
     TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE && cache_data[0].failed_stage == VJO_STAGE_OCR);
-    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "game OCR worker is unavailable"));
+    TEST_CHECK(cache_data[0].err.detail && strstr(cache_data[0].err.detail, "OCR is not running in this game"));
     TEST_CHECK(vocr_allocs == 0);
 #endif
     mem_free();
+}
+
+/* #138: a game with no worker (it was turned ON while it ran, L was held as it
+ * started, or its load failed) shows one plain sentence, not an install step:
+ * the kernel loads the worker at the game's next start. */
+static void test_no_worker_says_restart_the_game(void)
+{
+#ifdef VJO_WITH_VOCR
+    reset();
+    fake_submit_rc = VJO_ERR_NO_GAME;
+    int rc = run_vocr_job();
+    fake_submit_rc = 0;
+    TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE && cache_data[0].failed_stage == VJO_STAGE_OCR);
+    TEST_CHECK(!job_captured && !vocr_allocs);
+    const char *text = vjo_err_text(&scratch, cache_data[0].failed_stage, &cache_data[0].err);
+    TEST_CHECK_(text && !strcmp(text, "OCR is not running in this game. Close the game and start it again."), "%s",
+                text ? text : "(none)");
+    TEST_CHECK(text && !strstr(text, "--title") && !strstr(text, "register"));
+    mem_free();
+#endif
 }
 
 /* A config.ini that still chooses a removed engine (Google Lens, the VOCR2
@@ -4554,6 +4578,7 @@ TEST_LIST = {
     {"local_ocr_and_dictionary_phases_repeat_and_recover", test_local_phases_and_recovery},
 #endif
     {"vocr_empty_region_reads_no_line_and_frees_the_workspace", test_vocr_empty_region},
+    {"a game without a worker says to start it again (#138)", test_no_worker_says_restart_the_game},
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},

@@ -149,10 +149,15 @@ void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
 
 /* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
-enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_OCR_STRIP, VJO_KL_COUNT };
+enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_OCR_STRIP, VJO_KL_POLICY, VJO_KL_COUNT };
 extern VjoLedger g_kernel_ledger;
 void kledger_init(void);
 void kledger_log(const char *when); /* the pool and its items, to kernel.txt */
+
+/* loader.c: the game OCR worker loaded into every game ON in games.ini at its start (#138) */
+int loader_hook_install(void);  /* 0, or why the loader is off (the per-title lines still work) */
+int loader_hook_release(void);  /* 0, or VJO_ERR_BUSY: a game start is still inside the hook */
+void loader_tick(void);         /* the kernel worker thread: answers a starting process's question */
 
 /* meminfo.c: the self-test's memory sample (vjoMemInfo), kernel context */
 void meminfo_fill(SceUID caller_pid, const void *caller_addr, VjoMemInfo *out);

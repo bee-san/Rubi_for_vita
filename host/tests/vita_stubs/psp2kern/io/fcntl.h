@@ -8,6 +8,7 @@
 #define SCE_O_TRUNC 0x400
 #define SCE_O_APPEND 0x100
 #define SCE_SEEK_END SEEK_END
+#define SCE_SEEK_SET SEEK_SET
 SceUID ksceIoOpen(const char *, int, unsigned);
 SceOff ksceIoLseek(SceUID, SceOff, int);
 int ksceIoPread(SceUID, void *, SceSize, SceOff);

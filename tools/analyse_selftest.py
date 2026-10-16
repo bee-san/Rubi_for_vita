@@ -1633,7 +1633,7 @@ def overlay_summary(lg):
 
 def summarise_kernel(text, size):
     s = {"bytes": size, "capped": size >= KERNEL_TXT_CAP - 512, "started": [], "hooks": [], "registered": 0,
-         "jobs": 0, "rows_fail": {}, "alloc_fail": [], "other": []}
+         "jobs": 0, "rows_fail": {}, "alloc_fail": [], "other": [], "loaded": [], "not_loaded": {}, "second": 0}
     for raw in text.splitlines():
         line = raw.strip()
         if line.startswith("Vita JP Overlay kernel"):
@@ -1644,6 +1644,20 @@ def summarise_kernel(text, size):
             s["hooks"].append(line)
         elif line.startswith("ocr worker registered"):
             s["registered"] += 1
+        elif line.startswith("ocr worker: second worker thread"):
+            s["second"] += 1
+        elif line.startswith("worker for "):
+            # #138 (kernel/loader.c): one line per game start the worker loader decided on
+            m = re.match(r"worker for (\S+)(?: \(PSP\))? \(pid 0x[0-9A-Fa-f]+\): (.*)$", line)
+            if m and m.group(2).endswith(": not loaded"):
+                s["not_loaded"].setdefault(m.group(2)[: -len(": not loaded")], []).append(m.group(1))
+            elif m:
+                done = re.search(r"\.suprx 0x([0-9A-Fa-f]{1,8}), start (-?\d+)$", m.group(2))
+                if done and int(done.group(1), 16) < 0x80000000 and done.group(2) == "0":
+                    s["loaded"].append(m.group(1))
+                else:
+                    why = f"its load failed: 0x{done.group(1)}, start {done.group(2)}" if done else m.group(2)
+                    s["not_loaded"].setdefault(why, []).append(m.group(1))
         elif re.match(r"^ocr job \d+: \d+x\d+", line):
             s["jobs"] += 1
         elif line.startswith("ocr rows ") and "->" in line:
@@ -1653,6 +1667,22 @@ def summarise_kernel(text, size):
             if len(s["alloc_fail"]) < 20:
                 s["alloc_fail"].append(line)
     return s
+
+
+def loader_text(k):
+    """The kernel's worker loader in kernel.txt (#138): where it loaded the game worker, where not and
+    why; None for a kernel without the loader."""
+    if not k.get("loaded") and not k.get("not_loaded"):
+        return None
+
+    def names(titles):
+        seen = list(dict.fromkeys(titles))
+        return ", ".join(f"{t} x{titles.count(t)}" if titles.count(t) > 1 else t for t in seen)
+    parts = [f"loaded into {names(k['loaded'])}" if k["loaded"] else "loaded into no game"]
+    parts += [f"not loaded ({why}): {names(titles)}" for why, titles in k["not_loaded"].items()]
+    if k["second"]:
+        parts.append(f"{k['second']} second worker thread(s) refused")
+    return "worker loader: " + "; ".join(parts)
 
 
 def short_log(s):
@@ -1973,6 +2003,8 @@ def render_collect(c):
                  + f"; worker registrations {k['registered']}, "
                  + ("OCR jobs: not logged by the normal build" if k.get("normal") else f"OCR jobs submitted {k['jobs']}")
                  + (f"; rows failures {k['rows_fail']}" if k["rows_fail"] else ""))
+        if loader_text(k):
+            L.append(f"    {loader_text(k)}")
         for a in k["alloc_fail"][:8]:
             L.append(f"    kernel: {a}")
     lg = c["log"]

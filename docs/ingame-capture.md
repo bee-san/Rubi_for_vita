@@ -24,7 +24,7 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
 ## How a job captures
 
 1. The Shell submits the job; the kernel crops the region (`capture_crop_of`, the same crop as
-   before) and the `*TITLEID` worker claims it.
+   before) and the game's worker claims it.
 2. The worker checks the game's free memory, then allocates its capture block: one strip of grey
    rows (at most 64 rows and 56 KiB) and a checksum and a bit per region row,
    `vjo_vocr_capture_bytes`: within 64 KiB at any region (65,480 B at 960×544, 61,388 B at

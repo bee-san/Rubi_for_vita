@@ -1137,8 +1137,12 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
     if (run_vocr(out) != VJO_OK) {
         if (!out->failed_stage)
             out->failed_stage = VJO_STAGE_OCR;
+        /* #138: the kernel loads the worker when a game that is ON starts
+         * (kernel/loader.c), so the cure is the game's next start: turned ON
+         * while it ran, L held as it started, the worker's load failed
+         * (kernel.txt says which). */
         if (out->err.rc == VJO_E_OCR_UNAVAILABLE)
-            out->err.detail = "The game OCR worker is unavailable. Register it for this game (install --title) and reboot.";
+            out->err.detail = "OCR is not running in this game. Close the game and start it again.";
         return out->err.rc;
     }
     if (job_selftest)

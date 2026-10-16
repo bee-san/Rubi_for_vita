@@ -227,8 +227,9 @@ that ran and each size that did not fit, with what it needed. Every pinned
 model is inside
 the console budget ceiling (weights ≤ 1,600,000 B, recognizer arena ≤
 262,144 B; bee-san/vita-vn-ocr `docs/vita-memory-budget.md`). Since v0.7.1 inference runs in
-`VitaJPOverlay_OCR.suprx`, now registered per game in its own `*TITLEID` section
-(the installer's `--title`; releases up to v0.7.12 used `*ALL`). The `*main` plugin handles
+`VitaJPOverlay_OCR.suprx`, which the kernel plugin loads into each game ON in `games.ini`
+since #138 ([worker-loading.md](worker-loading.md); before, one `*TITLEID` section per game,
+the installer's `--title`; releases up to v0.7.12 used `*ALL`). The `*main` plugin handles
 UI/dictionary results and has no vocr inference code. The game worker checks
 its process title and only accepts jobs for the foreground game after the
 Shell has confirmed its per-game policy.
@@ -978,8 +979,10 @@ copied, and the settings above. Close other apps first.
    A Shell UI memory error after successful recognition preserves text
    while dictionary results are unavailable; restart the Vita and retry. A
    smaller OCR region does not reclaim another Shell plugin's retained heap.
-   For an unavailable worker, check that the game has its own `*TITLEID` section with
-   the worker (install with `--title TITLEID`) and reboot. A model error with nonzero `io=` identifies game-process file access
+   For an unavailable worker (`OCR is not running in this game`), close the game and start it
+   again: the kernel loads the worker as a game that is ON starts, so a game turned ON while it
+   ran, or started with L held, has none until then; `kernel.txt`'s `worker for` line says what
+   its start decided. A model error with nonzero `io=` identifies game-process file access
    or a kernel read failure; check the installed model against the package manifest.
    Install all three API 15 plugins together and reboot before testing.
 6. **Speed.** With `rc=0`, repeat on five lines and note `load`, the

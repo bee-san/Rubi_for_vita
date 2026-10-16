@@ -477,6 +477,27 @@ static void model_callbacks_timeouts_errors_and_cleanup(void)
     TEST_CHECK(model && model_owned && model_seq == 12 && io_error == -789);
     close_failure = 0; TEST_CHECK(!vjo_game_ocr_worker_stop() && !model && !model_owned);
 }
+/* #138: which copy of the worker stays in a process. The oldest module by name
+ * (taiGetModuleInfo) is another copy only when none of its segments holds this
+ * copy's code; a report with no segment says nothing, so the only copy can never
+ * unload itself on a lookup that went wrong. */
+static void the_oldest_copy_stays(void)
+{
+    const uintptr_t text = 0x81000000u, data = 0x81020000u, other_text = 0x81100000u;
+    uintptr_t base[4] = {text, data, 0, 0};
+    uint32_t size[4] = {0x12000u, 0x4000u, 0, 0};
+    TEST_CHECK(!outside_segments(base, size, 4, text));          /* its first byte */
+    TEST_CHECK(!outside_segments(base, size, 4, text + 0x11FFFu)); /* its last */
+    TEST_CHECK(!outside_segments(base, size, 4, data + 0x10u));  /* a segment other than the first */
+    TEST_CHECK(outside_segments(base, size, 4, text + 0x12000u)); /* one past its end: another module */
+    TEST_CHECK(outside_segments(base, size, 4, text - 1u));
+    base[0] = other_text; base[1] = other_text + 0x20000u;       /* an older copy elsewhere */
+    TEST_CHECK(outside_segments(base, size, 4, text + 0x100u));
+    memset(size, 0, sizeof(size));                               /* nothing reported */
+    TEST_CHECK(!outside_segments(base, size, 4, text + 0x100u));
+    TEST_CHECK(!outside_segments(base, size, 0, text + 0x100u));
+}
+
 static void system_app_gate_and_failed_joins(void)
 {
     setup();
@@ -493,6 +514,15 @@ static void system_app_gate_and_failed_joins(void)
     strcpy(own_title, "PCSG00415");
     TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && boot_info_calls == 1 && !thread_creates && !allocations);
     safe_boot_mode = VJO_BOOT_NORMAL;
+    /* #138: the kernel loaded a copy into this game already (a per-title taiHEN
+     * line loads another right after): this one gives its pages back at once. */
+    vjo_test_another = 1; boot_info_calls = 0; vjo_test_another_calls = 0;
+    strcpy(own_title, "PCSG00415");
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !thread_creates && !allocations);
+    TEST_CHECK(vjo_test_another_calls == 1);
+    strcpy(own_title, "NPXS10015"); /* checked after the title: a system app never asks */
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !thread_creates && vjo_test_another_calls == 1);
+    vjo_test_another = 0;
     strcpy(own_title, "PCSG00415"); TEST_CHECK(!module_start(0, NULL) && thread_creates == 1);
     join_failure = 1;
     TEST_CHECK(module_stop(0, NULL) == SCE_KERNEL_STOP_FAIL && worker == 20 && worker_started);
@@ -2159,6 +2189,7 @@ TEST_LIST = {
     {"real model bounded short reads errors and cancellation", real_model_io_and_cancellation},
     {"model callbacks without weights timeouts errors and saved cleanup sequence", model_callbacks_timeouts_errors_and_cleanup},
     {"ALL system gate and retained thread joins", system_app_gate_and_failed_joins},
+    {"one worker per process: the oldest copy stays (#138)", the_oldest_copy_stays},
     {"capture memory ladder USER CDRAM PHYCONT each logged", capture_memory_ladder_is_logged},
     {"the kernel strip after a failed hook write; timeouts are not retried", hook_failure_falls_back_to_the_kernel_strip},
     {"BUSY rows calls: asked again before arming, the block kept after", busy_rows_calls},
