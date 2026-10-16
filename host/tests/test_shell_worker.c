@@ -4947,9 +4947,11 @@ static int script_first_job(int step)
         return 1;
     case 3: /* the second job ran at that wake: the first job's lines still held (no write at a job's wake) */
         TEST_CHECK(last_wait_timeout == LOG_IDLE_US && held_lines() == 2 && appends_recorded == net_main_mark);
+        if (net_main_stop_early) /* the worker stops before the control thread took this result: the wait */
+            return 0;            /* ends with a job running, so only net_main's end writes what is held */
         control_tick(0); /* its result is taken */
         TEST_CHECK(!job_running);
-        return !net_main_stop_early; /* stop: what is held goes out at the thread's end */
+        return 1;
     default: /* the timeout wrote them; nothing held now: untimed */
         TEST_CHECK(last_wait_timeout == 0 && appends_recorded == net_main_mark + 1 && net_log.n == 0);
         return 0;
@@ -4970,6 +4972,7 @@ static void test_normal_build_net_main_writes_held_lines(void)
         wait_script = NULL;
         TEST_CHECK(wait_step == (net_main_stop_early ? 4 : 5) && !open_batch); /* its batch went with it */
         TEST_CHECK(net_appends_since(net_main_mark, &lines, NULL) == 1 && lines == 2);
+        if (net_main_stop_early) { job_running = 0; job_done = 0; } /* the result never taken: drop it */
         fake_clock_on = 0;
         running = 1;
         reset();
