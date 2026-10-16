@@ -151,11 +151,6 @@ static int64_t job_started_us;
 /* network job */
 #define NET_EV_JOB  1u
 #define NET_EV_QUIT 2u
-#if VJO_DEBUG
-#define NET_EV_LOG  0u /* the debug build writes a job's lines as it goes */
-#else
-#define NET_EV_LOG  4u /* idle LOG_IDLE_US since a job's result was taken: its held lines may go out (net_main) */
-#endif
 static volatile int job_running;
 static volatile int job_done;
 static volatile int job_idx;
@@ -197,17 +192,24 @@ static volatile int job_cancelled;
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
 #if !VJO_DEBUG
-/* The normal build's lines of a job (its short log: the job's line, a model size that did not fit, the
- * clock, a refused memory check, an unusable model, a refused allocation, a failed lookup) never stand
- * between a recognition and its result (owner 2026-10-16, test.3; docs/release-variants.md). Every line
- * the network thread logs waits in a log batch on its stack (net_main: vjo_log_hold, which begins the
- * batch at the thread's first line, so a job that logs nothing takes no log lock), and goes out in one
- * append per file once the control thread has taken the job's result: while the game recognizes the
- * next OCR job (ocr_submit), or once the network thread has had nothing to do for LOG_IDLE_US
- * (NET_EV_LOG, net_log_taken). A lookup started meanwhile keeps them and adds its own: its whole run is
- * its result's path. Another thread's line, a change of log_file, or a line the batch cannot take (its
- * 25th, or past NET_LOG_BYTES) writes them at once, in their order (shell/log_vita.c). */
+/* The normal build's lines of a job (its short log) never stand between a recognition and its result
+ * (owner 2026-10-16, test.3; docs/release-variants.md): the network thread keeps a log batch open (its
+ * buffer on net_main's stack), which holds every line it logs, and writes it, one append per file, once
+ * its wait, timed while lines are held, ends after LOG_IDLE_US with no job and the control thread has
+ * taken the result (net_main). Jobs started meanwhile keep them. Another thread's line, a configure or a
+ * line the batch cannot take writes them at once, on that thread, in their order (shell/log_vita.c).
+ * Network thread only. */
 #define NET_LOG_BYTES 2048 /* VJO_LOG_BATCH_LINES (24) lines of 85 B; a job's own: none, or 1-5 of 40-170 B */
+#define LOG_IDLE_US 500000u
+static VjoLogBatch net_log;  /* the network thread's batch; its buffer is on net_main's stack */
+
+/* Writes what is held, one append per file, and opens the batch again (a begin refused because another
+ * thread's batch is open leaves it closed: the lines go out one by one until the next write). */
+static inline void net_log_rewrite(char *buf)
+{
+    vjo_log_batch_end(&net_log);
+    vjo_log_batch_begin(&net_log, buf, NET_LOG_BYTES);
+}
 #endif
 
 static volatile int pending_cmd;
@@ -648,20 +650,7 @@ static int vocr_cancelled(void *ud)
     __sync_synchronize();
     return !running || job_cancelled || (job_refresh && shot_request);
 }
-#if VJO_DEBUG
 static int ocr_submit(void *ud, const VjoGameOcrRequest *r) { (void)ud; return vjoOcrSubmit(r); }
-#else
-/* The normal build: once the game has the job, lines still held from an earlier one go out while it
- * recognizes, never before the submission (a refused one is its job's result) or after the result. */
-static int ocr_submit(void *ud, const VjoGameOcrRequest *r)
-{
-    int seq = vjoOcrSubmit(r);
-    (void)ud;
-    if (seq > 0)
-        vjo_log_release(0);
-    return seq;
-}
-#endif
 static int ocr_read(void *ud, uint32_t seq, VjoGameOcrResult *r) { (void)ud; return vjoOcrRead(seq, r); }
 static int ocr_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(seq); }
 static int64_t ocr_clock(void *ud) { (void)ud; return now_us(); }
@@ -818,39 +807,19 @@ static int vocr_poll_cancelled(void *ud)
  * that read its screen, its first job that found a line in the region (often a
  * later one: a title screen's job finds none), and the model sizes that did not
  * fit, as the bits of the refused tiers and the tier the job went on to; a job
- * logs a miss only when the activation has not logged that one (vocr_run_one,
- * log_tier_checks). The activation keeps its last SHORT_TIER_MISSES misses, so a
- * game whose free memory flaps between two of them logs each once, not every job
- * (audit-overlay-release-variants-b note B). With every size usable, a configured size
- * has at most three (Large: Large refused; Large and Normal; all three); sizes unusable
- * in the game, or a size changed in the app, make more, and a fifth evicts the oldest,
- * which then logs again: at most three tier lines a job, the debug build's own rate. */
-enum { SHORT_FIRST_JOB = 1u, SHORT_FIRST_TEXT = 2u };
-#define SHORT_TIER_MISSES 4u
-static uint32_t short_generation; /* the activation the fields below are for */
+ * logs them again only when they change (vocr_run_one, log_tier_checks). */
+enum { SHORT_FIRST_JOB = 1u, SHORT_FIRST_TEXT = 2u, SHORT_TIERS = 4u };
+static uint32_t short_generation; /* the activation the bits below are for */
 static unsigned short_logged;     /* SHORT_* */
-static uint32_t short_tiers[SHORT_TIER_MISSES]; /* the tier misses logged (0: none), oldest replaced first */
-static unsigned short_tier_next;
+static uint32_t short_tiers;      /* the last tier misses logged */
 
 static void short_activation(uint32_t generation)
 {
     if (short_generation != generation) {
         short_generation = generation;
         short_logged = 0;
-        sceClibMemset(short_tiers, 0, sizeof(short_tiers));
-        short_tier_next = 0;
+        short_tiers = 0;
     }
-}
-
-/* 1 when the activation logged this miss already; else it is kept as logged. */
-static int short_tier_logged(uint32_t sig)
-{
-    for (unsigned k = 0; k < SHORT_TIER_MISSES; k++)
-        if (short_tiers[k] == sig)
-            return 1;
-    short_tiers[short_tier_next] = sig;
-    short_tier_next = (short_tier_next + 1u) % SHORT_TIER_MISSES;
-    return 0;
 }
 #endif
 
@@ -866,12 +835,8 @@ static void log_vocr_steps(const char *who, const VjoGameOcrResult *r)
 #else
 /* The normal build's one line on the 444 MHz boost (ocr_boost_clock), from the
  * job's clock step: the ARM clock before, while and after it recognized, or what
- * stopped the boost. The game worker writes that step only for a job that began
- * recognizing a line not in its line cache, when that recognition ends, done or
- * failed (core/vocr_ocr.c's busy callback, game_ocr/main.c), and none with
- * ocr_boost_clock = off. Logged for the first such job of each activation of the
- * game (a start or a resume) and whenever it changes, so a session has a line or
- * two (docs/release-variants.md). */
+ * stopped the boost. Logged for the first job of each game and whenever it
+ * changes, so a session has a line or two (docs/release-variants.md). */
 static void log_vocr_clock(const VjoGameOcrResult *r)
 {
     static uint32_t logged_generation;
@@ -922,8 +887,8 @@ static void log_tier_checks(const VjoGameOcrResult *r)
     for (uint32_t i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS && n < VJO_VOCR_TIERS; i++)
         if (r->step[i].id == VJO_GSTEP_CHECK && VJO_GCHECK_TIER(r->step[i].kind)) check[n++] = &r->step[i];
 #if !VJO_DEBUG
-    {   /* the normal build: each miss once per activation (short_tier_logged): the refused
-         * tiers' bits | the tier the job went on to << 8 */
+    {   /* the normal build: once per activation, and again only when what did not fit, or the
+         * tier the job went on to, changes: the refused tiers' bits | the next tier << 8 */
         uint32_t sig = 0;
         for (unsigned k = 0; k < n; k++)
             if (check[k]->rc == 1)
@@ -933,8 +898,10 @@ static void log_tier_checks(const VjoGameOcrResult *r)
         if (!(sig & 0xFFu))
             return; /* every size it tried fitted: no line */
         short_activation(job_generation);
-        if (short_tier_logged(sig))
+        if ((short_logged & SHORT_TIERS) && short_tiers == sig)
             return;
+        short_logged |= SHORT_TIERS;
+        short_tiers = sig;
     }
 #endif
     for (unsigned i = 0; i < n; i++) {
@@ -1052,9 +1019,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * is often a title screen's, with none); then the sizes that did not fit and the clock,
      * each once per activation and when it changes, and a refused memory check
      * (docs/release-variants.md). A cancelled job, or one whose screen changed under it, is
-     * retried quietly as the overlay does: no job line (what its result says of the activation,
-     * a size that did not fit or the clock, is logged as from any job's). Every line is held until
-     * the job's result is the control thread's (vjo_log_hold): no append before the result. */
+     * retried quietly as the overlay does: no line. */
     {
         int failed = rc != VJO_OK && rc != VJO_E_CANCELLED && rc != VJO_E_SCREEN_CHANGED;
         unsigned want = rc != VJO_OK ? 0u : SHORT_FIRST_JOB | (result->lines ? SHORT_FIRST_TEXT : 0u);
@@ -1327,8 +1292,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 
 /* One job on the network thread, then its done line: with the time in exchanges with
  * the game worker and in the log's file appends meanwhile (every thread's); the rest is
- * the Shell's own and the lookup (docs/first-ocr.md; tools/analyse_timeline.py reads it).
- * The normal build has no done line: its job's lines are held (vjo_log_hold). */
+ * the Shell's own and the lookup (docs/first-ocr.md; tools/analyse_timeline.py reads it). */
 static void net_job(void)
 {
     int idx = job_idx;
@@ -1436,45 +1400,40 @@ static void net_stack_check(void)
     vjo_log("VjoNet stack: at least %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
 }
 
-#if !VJO_DEBUG
-static int net_busy(void);
-/* NET_EV_LOG: the network thread has had nothing to do for LOG_IDLE_US since the control thread took a
- * job's result (control_tick). The held lines go out unless a job runs meanwhile: an OCR job writes
- * them while the game recognizes it (ocr_submit), a lookup keeps them (its own NET_EV_LOG follows). */
-static void net_log_taken(void)
-{
-    if (!net_busy())
-        vjo_log_release(0);
-}
-#endif
-
 static int net_main(SceSize args, void *argp)
 {
 #if !VJO_DEBUG
-    VjoLogBatch held; /* the jobs' lines until their results are taken (vjo_log_hold) */
     char held_buf[NET_LOG_BYTES];
+    unsigned int bits = 0;
 #endif
     (void)args;
     (void)argp;
     net_stack_paint(); /* its line, if any, goes out at once: not a job's */
-#if !VJO_DEBUG
-    vjo_log_hold(&held, held_buf, NET_LOG_BYTES);
-#endif
     while (running) {
+#if VJO_DEBUG
         unsigned int bits = 0;
-        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT | NET_EV_LOG,
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
+#else
+        /* The held lines go out when a wait of LOG_IDLE_US ends with no job (bits stay 0) and the
+         * control thread has taken the result (its job no longer runs), and before the first wait;
+         * then the batch is open again for the next job's. The wait is timed only while the batch
+         * holds a line (its n: this thread's own lines raise it; a flush by another thread's line
+         * only zeroes it, shell/log_vita.c). */
+        unsigned int timeout = LOG_IDLE_US;
+        if (!bits && !job_running)
+            net_log_rewrite(held_buf);
+        bits = 0;
+        sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
+                               &bits, net_log.n ? &timeout : NULL);
+#endif
         if (bits & NET_EV_QUIT)
             break;
         if (bits & NET_EV_JOB)
             net_job();
-#if !VJO_DEBUG
-        else if (bits & NET_EV_LOG)
-            net_log_taken();
-#endif
     }
 #if !VJO_DEBUG
-    vjo_log_release(1); /* the worker stops: what is held goes out before the batch's stack does */
+    vjo_log_batch_end(&net_log); /* the worker stops: what is held goes out before its buffer does */
 #endif
     return 0;
 }
@@ -2560,14 +2519,6 @@ static void boot_guard_ok(void)
     }
 }
 
-#if !VJO_DEBUG
-/* The network thread's held lines (vjo_log_hold) go out once it has had nothing to do this long since
- * a job's result was taken (idle_since_us): a lookup or a press that follows a result at once finds it
- * free, not in an append (est. 12-46 ms a file, #81). */
-#define LOG_IDLE_US 500000LL
-static int log_after_idle; /* a job's result was taken since the last NET_EV_LOG */
-#endif
-
 /* One wakeup of the control thread with the kernel's event bits. The order of
  * the handlers within one wakeup is part of the policy (e.g. a trigger and a
  * game start in the same wakeup). */
@@ -2589,12 +2540,8 @@ static void control_tick(uint32_t bits)
         on_command();
     if (job_running && job_text_ready)
         on_job_text();
-    if (job_running && job_done) {
+    if (job_running && job_done)
         on_job_done();
-#if !VJO_DEBUG
-        log_after_idle = 1;
-#endif
-    }
     if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
         stable_pending = 1;
         if (ov == OV_OPEN)
@@ -2614,12 +2561,6 @@ static void control_tick(uint32_t bits)
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
-#if !VJO_DEBUG
-    if (log_after_idle && !job_running && now_us() - idle_since_us >= LOG_IDLE_US) {
-        log_after_idle = 0;
-        sceKernelSetEventFlag(net_evf, NET_EV_LOG); /* the held lines may go out (net_log_taken) */
-    }
-#endif
 }
 
 static int ctl_main(SceSize args, void *argp)

@@ -291,17 +291,6 @@ typedef struct {
 } VjoLogBatch;
 int vjo_log_batch_begin(VjoLogBatch *b, char *buf, int cap);
 void vjo_log_batch_end(VjoLogBatch *b);
-#if !VJO_DEBUG
-/* The normal build's held lines (docs/release-variants.md "No log append on the
- * result path"): every line the calling thread (the worker's network thread)
- * logs from now on waits in b, a batch on its stack, begun at its first line, so
- * a job that logs nothing takes no lock; vjo_log_release writes them, one append
- * per file, and takes no lock when nothing is held; stop: the thread holds no
- * more (its stack is going). Another thread's line, a change of log_file, or a
- * line b cannot take writes them at once, in their order, as for any batch. */
-void vjo_log_hold(VjoLogBatch *b, char *buf, int cap);
-void vjo_log_release(int stop);
-#endif
 /* The microseconds spent in log file appends since boot (every thread's), and
  * their count: the debug build's job lines (the normal build keeps no timing). */
 #if VJO_DEBUG
