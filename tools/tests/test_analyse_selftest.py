@@ -1298,7 +1298,7 @@ class ClockWindows(unittest.TestCase):
         cmp_ = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
         self.assertEqual((cmp_["left"]["before"], cmp_["left"]["lines"], cmp_["raised"]["lines"]), (500, 1, 1))
         self.assertIn("boost effective: unclear (ratio -, n=0): no window with the boost off in this log (step 6's "
-                      "optional boxes); yes at 1.25 or more, no at 1.08 or less", text)
+                      "optional boxes); yes at 1.25 to 1.42, no at 1.08 or less", text)
 
     def test_off_against_a_clock_left_at_500_or_read_by_another_model(self):
         # PSVshell's 500 MHz for the game: the boost never raises it, so the off window compares with the left jobs
@@ -1483,8 +1483,9 @@ class BoostLikeForLike(unittest.TestCase):
                      "jobs; a core's share 99%), raised 2,201 us (3 jobs; a core's share 99%): 1.32; left out: 3 jobs "
                      "of the self-test's stages, 1 job of a kind not on the other side",
                      "boost effective: yes (ratio 1.32, n=6): VOCR3_H15_w8.vocr like for like, 3 off and 3 raised jobs "
-                     "(all jobs: 1.34); yes at 1.25 or more, no at 1.08 or less, unclear between them or with under 2 "
-                     "jobs a side (444 / 333 = 1.33 if the time scales with the clock, 1.00 without a gain)"):
+                     "(all jobs: 1.34); yes at 1.25 to 1.42, no at 1.08 or less, unclear between them, above 1.42 or "
+                     "with under 2 jobs a side (444 / 333 = 1.33 if the time scales with the clock, 1.00 without a "
+                     "gain)"):
             self.assertIn(want, text)
         # v8b: textbox2 as fast as the parallel stages: 1.32 both ways
         lg = a.summarise_log(with_selftest_job(self.BASE, self.SELFTEST.replace(
@@ -1509,7 +1510,7 @@ class BoostLikeForLike(unittest.TestCase):
         text = self.text(lg)
         self.assertIn("off / raised = 1.27", text)
         self.assertIn("boost effective: unclear (ratio 1.22, n=6): VOCR3_H15_w8.vocr like for like, 3 off and 3 raised "
-                      "jobs (all jobs: 1.27); between the two thresholds; yes at 1.25 or more", text)
+                      "jobs (all jobs: 1.27); between the two thresholds; yes at 1.25 to 1.42", text)
         # the serial stage is its own kind (3 lines, no helper): it is never matched with Auto's jobs
         self.assertEqual(lg["clock_like"][self.H15]["left_out"], {"selftest": 3, "reason_unknown": 0,
                                                                   "helpers_unknown": 0, "unmatched": 0})
@@ -1637,6 +1638,8 @@ class BoostLikeForLike(unittest.TestCase):
             (v,) = a.summarise_log(log)["boost_verdicts"]
             return v["verdict"], round(v["ratio"], 2), v["n"]
         self.assertEqual(verdict(2700), ("yes", 1.35, 4))
+        self.assertEqual(verdict(2840), ("yes", 1.42, 4))       # 1.42: a quarter over the gain
+        self.assertEqual(verdict(2860), ("unclear", 1.43, 4))   # more than the clock explains
         self.assertEqual(verdict(2500), ("yes", 1.25, 4))       # 1.25: three quarters of 444 / 333's gain
         self.assertEqual(verdict(2480), ("unclear", 1.24, 4))
         self.assertEqual(verdict(2180), ("unclear", 1.09, 4))
@@ -1646,13 +1649,18 @@ class BoostLikeForLike(unittest.TestCase):
         lg = a.summarise_log(BOOT22 + START + auto_job([(100, 200.0)], RAISED) + auto_job([(100, 200.0)], RAISED)
                              + START + auto_job([(100, 270.0)]))
         self.assertIn("boost effective: unclear (ratio 1.35, n=3): VOCR3_H15_w8.vocr like for like, 1 off and 2 raised "
-                      "jobs (all jobs: 1.35); too few jobs to decide: at least 2 a side; yes at 1.25 or more, no at 1.08 "
+                      "jobs (all jobs: 1.35); too few jobs to decide: at least 2 a side; yes at 1.25 to 1.42, no at 1.08 "
                       "or less", self.text(lg))
+        lg = a.summarise_log(BOOT22 + START + "".join(auto_job([(100, 200.0)], RAISED) for _ in range(2))
+                             + START + "".join(auto_job([(100, 300.0)]) for _ in range(2)))
+        self.assertIn("boost effective: unclear (ratio 1.50, n=4): VOCR3_H15_w8.vocr like for like, 2 off and 2 raised "
+                      "jobs (all jobs: 1.50); more than the clock explains: the off side lost time to something else",
+                      self.text(lg))
         # another clock pair: the thresholds follow its gain (222 -> 444: 2.00; yes at 1.75, no at 1.24)
         v = a.boost_verdicts([], {self.H15: {"off": {"jobs": 2, "us": 1, "frames": 1}, "raised": {
             "jobs": 2, "us": 1, "frames": 1, "before": 222, "during": 444}}},
             {self.H15: {"pooled": None}})[0]
-        self.assertEqual((v["yes_at"], v["no_at"], v["gain"]), (1.75, 1.24, (222, 444)))
+        self.assertEqual((v["yes_at"], v["no_at"], v["over_at"], v["gain"]), (1.75, 1.24, 2.25, (222, 444)))
 
     def test_a_clock_the_boost_could_not_raise_gives_no_ratio(self):
         # a clock plugin holding 333 MHz (the set call returns 0, the clock stays) or a refused set call (rc < 0)
@@ -1733,8 +1741,8 @@ class BoostLikeForLike(unittest.TestCase):
         lg = a.summarise_log(self.BASE)
         out = json.loads(json.dumps(lg, default=list))
         (v,) = out["boost_verdicts"]
-        self.assertEqual((v["model"], v["verdict"], round(v["ratio"], 2), v["n"], v["yes_at"], v["no_at"], v["gain"]),
-                         (self.H15, "yes", 1.32, 6, 1.25, 1.08, [333, 444]))
+        self.assertEqual((v["model"], v["verdict"], round(v["ratio"], 2), v["n"], v["yes_at"], v["no_at"], v["over_at"],
+                          v["gain"]), (self.H15, "yes", 1.32, 6, 1.25, 1.08, 1.42, [333, 444]))
         self.assertEqual(out["clock_like"][self.H15]["pooled"]["strata"][0]["off"]["jobs"], 3)
 
     def test_the_premises_in_the_source(self):

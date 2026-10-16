@@ -1260,8 +1260,9 @@ def export_summary(a):
 # The boost's verdict (test.3's step 6; audit-overlay-analyser-fixes N1-N3): the like-for-like off / raised ratio
 # against the gain of a time that scales with the clock (during / before: 444 / 333 = 1.33). Effective at three
 # quarters of that gain or more (1.25 at 333 -> 444), not at a quarter or less (1.08), unclear between them, with
-# fewer than BOOST_MIN_JOBS jobs a side, or with no like-for-like pair.
-BOOST_YES, BOOST_NO, BOOST_MIN_JOBS = 0.75, 0.24, 2
+# fewer than BOOST_MIN_JOBS jobs a side, or with no like-for-like pair; unclear too above a quarter more than the
+# gain (1.42): a time cannot scale more than the clock, so the off side lost time to something else.
+BOOST_YES, BOOST_NO, BOOST_OVER, BOOST_MIN_JOBS = 0.75, 0.24, 1.25, 2
 BOOST_GAIN = (333, BOOST_MHZ)  # the thresholds stated when no job logged its clock pair: the Vita's 333 MHz raised
 # Plugins that set the ARM clock themselves (a PSVshell profile per game holds it whatever the game asks for): in
 # the collect's taiHEN configurations; nothing logs the clock they hold
@@ -1498,9 +1499,10 @@ def boost_verdicts(rows, groups, like):
             v["why"] = f"too few jobs to decide: at least {BOOST_MIN_JOBS} a side"
             continue
         r = round(p["ratio"], 2)
-        v["verdict"] = "yes" if r >= v["yes_at"] else "no" if r <= v["no_at"] else "unclear"
+        v["verdict"] = "yes" if v["yes_at"] <= r <= v["over_at"] else "no" if r <= v["no_at"] else "unclear"
         if v["verdict"] == "unclear":
-            v["why"] = "between the two thresholds"
+            v["why"] = ("more than the clock explains: the off side lost time to something else (its share of a core, "
+                        "the game's load; see each window's ratio)" if r > v["over_at"] else "between the two thresholds")
     if not out:
         mixed = [r["window"] for r in rows if r["state"] == "mixed"]
         off = any("off" in g for g in groups.values())
@@ -1521,12 +1523,12 @@ def boost_verdicts(rows, groups, like):
 
 
 def _thresholds(gain):
-    """The verdict's thresholds for a clock raised from before to during MHz: BOOST_YES and BOOST_NO of the gain a
-    time that scales with the clock shows (during / before), rounded as the ratio is printed."""
+    """The verdict's thresholds for a clock raised from before to during MHz: BOOST_YES, BOOST_NO and BOOST_OVER of
+    the gain a time that scales with the clock shows (during / before), rounded as the ratio is printed."""
     before, during = gain
     ideal = during / before
     return {"gain": (before, during), "yes_at": round(1 + BOOST_YES * (ideal - 1), 2),
-            "no_at": round(1 + BOOST_NO * (ideal - 1), 2)}
+            "no_at": round(1 + BOOST_NO * (ideal - 1), 2), "over_at": round(1 + BOOST_OVER * (ideal - 1), 2)}
 
 
 def _mhz(values):
@@ -1712,9 +1714,9 @@ def render_clock_windows(lg, tai=None):
         if v["why"]:
             t += f"; {v['why']}" if v["model"] else f": {v['why']}"
         before, during = v["gain"]
-        t += (f"; yes at {v['yes_at']:.2f} or more, no at {v['no_at']:.2f} or less, unclear between them or with "
-              f"under {BOOST_MIN_JOBS} jobs a side ({during} / {before} = {during / before:.2f} if the time scales "
-              "with the clock, 1.00 without a gain)")
+        t += (f"; yes at {v['yes_at']:.2f} to {v['over_at']:.2f}, no at {v['no_at']:.2f} or less, unclear between "
+              f"them, above {v['over_at']:.2f} or with under {BOOST_MIN_JOBS} jobs a side ({during} / {before} = "
+              f"{during / before:.2f} if the time scales with the clock, 1.00 without a gain)")
         L.append(t)
     return L
 
