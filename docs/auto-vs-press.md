@@ -137,8 +137,10 @@ draws it at its next frame. Two things can stretch it, neither seen in test.3's 
 
 A job whose `done` line comes before the press's `open:` line ended during the press's own handling and
 is not counted. A running job that failed or read no line, the self-test's job and a refresh are never a
-press's wait; a job that read text but whose lookup failed is counted with them, as no text, though the
-overlay showed its text. A press closed before its text came, or whose overlay could not open, is not
+press's wait. A job that read text but whose word's lookup failed (rc -113, -114, or -103 for the
+Shell's result memory, after its text) is counted on its own line with its rc: the overlay showed its
+text and why the word is missing. A press closed before its text came, or whose overlay could not open
+(no Paf memory for its text, or the page itself refused: `overlay page failed to open`), is not
 timed; one closed after its text but before its word is still timed, its word by its job's end,
 which the user did not wait for.
 

@@ -1899,7 +1899,8 @@ PRESS_OPEN = re.compile(r"^input block on rc=(-?\d+) ")
 PRESS_FOUND = re.compile(r"^open: (saved local word|background result|background job still running|no background result"
                          r"|screen changed since the background result)\b")
 PRESS_CLOSE = re.compile(r"^overlay close ")
-PRESS_NOT_OPENED = re.compile(r"^overlay not opened: ")
+# shell/overlay.cpp open_page: no Paf memory for the page's text, or the page itself not opened
+PRESS_NOT_OPENED = re.compile(r"^overlay (not opened: |page failed to open)")
 JOB_BEGIN = re.compile(r"^job start \((.*?)\)(, refresh|, OCR only)?$")
 JOB_TEXT = re.compile(r"^subtitle text ready in (\d+) ms")
 JOB_END = re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms")
@@ -1942,7 +1943,8 @@ def presses_and_rereads(text):
       PRESS_DONE_GAP_MS are added. It
       is an upper bound on when the Shell has the word (the overlay draws it at its next frame) when the job's done
       line comes after the press's `open:` line; one before it ended during the press's own handling and is not counted; A job that failed or
-      read no line gives the press no text. When its result was for an earlier screen, or a retry follows, a job of the
+      read no line gives the press no text, and one that read text and then failed its word's lookup gives it its text
+      and no word (counted apart, with its rc). When its result was for an earlier screen, or a retry follows, a job of the
       press's own starts (PRESS_REASONS). The self-test's job (open_overlay stops it) and a refresh are never a press's;
     - nothing to show (`open: no background result`, `open: screen changed since the background result`): a job
       starts on the press, its text `subtitle text ready` ms after its start, its word with its `done` line. The job
@@ -2035,8 +2037,8 @@ def presses_and_rereads(text):
         md = out["modes"].setdefault(w["ocr_mode"], {"presses": 0, "windows": 0, "at_once": 0, "waited": [],
                                                      "waited_ocr_only": 0, "read_text": [], "read_word": [],
                                                      "read_settle": [], "then_text": [], "then_word": [],
-                                                     "read_without_text": 0, "closed_before": 0, "not_opened": 0,
-                                                     "unclear": 0})
+                                                     "read_without_text": 0, "text_no_word": [], "closed_before": 0,
+                                                     "not_opened": 0, "unclear": 0})
         md["windows"] += 1 if w["presses"] else 0
         for p in w["presses"]:
             md["presses"] += 1
@@ -2053,6 +2055,8 @@ def presses_and_rereads(text):
             elif kind[0] == "later":
                 md["then_text"].append(kind[1])
                 md["then_word"].append(kind[2])
+            elif kind[0] == "text_no_word":
+                md["text_no_word"].append(kind[1])
             else:
                 md[kind[0]] += 1
         texts = []
@@ -2073,9 +2077,13 @@ def presses_and_rereads(text):
 
 def press_kind(p):
     """One press of presses_and_rereads: ("at_once",), ("waited", ms, 1 when the job was OCR only), ("on_press", job),
-    ("later", text ms, word ms), or ("read_without_text",), ("closed_before",), ("not_opened",), ("unclear",)."""
+    ("later", text ms, word ms), ("text_no_word", rc), or ("read_without_text",), ("closed_before",), ("not_opened",),
+    ("unclear",)."""
     def closed_before(line):  # the overlay closed before that line (the press's text or word, or its job's end)
         return p["close_line"] is not None and (line is None or line > p["close_line"])
+
+    def text_no_word(j, shown_line):  # its text read (logged), then its word's lookup failed: the text was shown
+        return ("closed_before",) if closed_before(shown_line) else ("text_no_word", j["rc"])
 
     if p["not_opened"]:
         return ("not_opened",)
@@ -2085,6 +2093,10 @@ def press_kind(p):
     if jobs:  # the press's own jobs (PRESS_REASONS), all begun after the press: its text is the first that read one
         text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None), None)
         if text_job is None:
+            # a job that read text and then failed its word's lookup (run_job; run_vocr's result memory: rc -103)
+            failed = next((j for j in jobs if j["rc"] not in (0, None) and j["raw"]), None)
+            if failed is not None:
+                return text_no_word(failed, failed["text_line"] or failed["done_line"])
             return ("closed_before",) if closed_before(jobs[0]["done_line"]) else ("read_without_text",)
         if closed_before(text_job["text_line"]):
             return ("closed_before",)
@@ -2099,6 +2111,9 @@ def press_kind(p):
         return ("closed_before",) if p["close_line"] is not None else ("unclear",)
     if p["found_line"] is not None and r["done_line"] < p["found_line"]:
         return ("unclear",)  # it ended during the press's own handling: the bound below does not hold
+    if r["rc"] != 0 and r["raw"]:  # its text, then its word's lookup failed: on_job_done shows the text and the error
+        shown = r["text_line"] if r["text_line"] and r["text_line"] > p["found_line"] else r["done_line"]
+        return text_no_word(r, shown)
     if r["rc"] != 0 or not r["raw"]:  # it failed or read no line: on_job_done shows that, nothing follows for the press
         return ("closed_before",) if closed_before(r["done_line"]) else ("read_without_text",)
     if r["kind"] == ", OCR only":  # the word: a cursor lookup after it (restart_old_job -> start_cursor_job)
@@ -2155,10 +2170,15 @@ def render_presses(lg):
         if m["read_without_text"]:
             L.append(f"    {m['read_without_text']} with no text from any job while the overlay was open (no line, "
                      "the screen changed under them, cancelled, or a failed job)")
+        if m["text_no_word"]:
+            rcs = ", ".join(f"{rc_text(rc)}: {m['text_no_word'].count(rc)}" for rc in sorted(set(m["text_no_word"])))
+            L.append(f"    {len(m['text_no_word'])} whose job read text but not its word (the lookup failed: {rcs}); the "
+                     "overlay showed the text and why the word is missing (not timed)")
         if m["closed_before"]:
             L.append(f"    {m['closed_before']} closed before their text or word came (not timed)")
         if m["not_opened"]:
-            L.append(f"    {m['not_opened']} whose overlay could not open (no Paf memory for its text; not timed)")
+            L.append(f"    {m['not_opened']} whose overlay could not open (no Paf memory for its text, or its page did not "
+                     "open; not timed)")
         if m["unclear"]:
             L.append(f"    {m['unclear']} not counted (a job the log does not show or end, one that ended during the "
                      "press's own handling, the self-test's job or a refresh running at the press, or an OCR-only job "
