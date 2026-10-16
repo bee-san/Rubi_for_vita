@@ -162,7 +162,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | capture buffer `VjoCapture`: region width × height × 4 B, rounded to 4 KiB; since API 19 only for the Lens JPEG, removed since, so nothing takes it (OCR and Anki take none: [ingame-capture.md](ingame-capture.md)); at most 960×544×4 = 2,088,960 B, which #74's 3.65 console refused five times with `0x80024302` | KD, `KERNEL_RW` | 458,752 B at 917×125 [measured] | [`kernel/buffers.c`]; [vita-vn-ocr `docs/vita-memory-budget.md` section 1] |
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
-| | | `VjoNet` stack 65,536 B + 4,096 B TLS; `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 90,112 B permanent [measured] | same |
+| | | `VjoNet` stack 16,384 B + 4,096 B TLS (65,536 B until #132); `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 40,960 B permanent, the ledger's (90,112 B until #132 [measured]) | same; [memory-ledger.md](memory-ledger.md) |
 | | | result arena 64 KiB (local dictionary) or 2 × 256 KiB + connection pool (network), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
 | | | Anki thread stack 64 KiB + TLS, only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | `*TITLEID`, one section per game (`*ALL` up to the installer's `--title`) | module pages in each registered game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
@@ -213,7 +213,8 @@ v0.7.4, the last build that ran beside a game [measured: `docs/memory-ledger.md`
 online dictionaries (jpdb.io, jiten.moe) brought it to 376,832 B (Shell module 286,720 B), and
 removing the Hachidori relay client to 372,736 B (Shell module 282,624 B), AnkiConnect to
 356,352 B (Shell module 266,240 B) and Google Lens, with the Shell's capture path and the worker's
-network pipeline, to 266,240 B (Shell module 176,128 B) [measured: the build log's module row]. The ledger
+network pipeline, to 266,240 B (Shell module 176,128 B) [measured: the build log's module row], and
+VjoNet's stack, 64 KiB until #132 (it was for TLS), is 16 KiB: 217,088 B [the ledger's sum]. The ledger
 ([memory-ledger.md](memory-ledger.md)) fails CI if any of these grow.
 
 ### 4.4 How other plugins stay inside the budgets

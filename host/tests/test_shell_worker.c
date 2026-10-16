@@ -8,7 +8,9 @@
 #define VJO_TEST_MEMORY_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
 #define VJO_TEST_MUTEX_STUBS 1
+#define VJO_TEST_THREAD_INFO_STUBS 1
 #include <psp2/host_stubs.h>
+#include <pthread.h>
 
 static VjoState state;
 static VjoConfig loaded;
@@ -32,6 +34,41 @@ static int view_invariant, view_invariant_checks;
 static uint32_t invariant_generation;
 static unsigned invariant_seq;
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
+/* The calling thread's stack as the kernel reports it (VjoNet's high-water mark):
+ * by default a 16 KiB buffer the host's frames are not in; the thread test reports
+ * its own thread's stack (thread_info_stack), or misreads it on purpose. */
+static uint8_t fake_stack[16384];
+static int thread_info_rc, thread_info_size = (int)sizeof(fake_stack);
+static uintptr_t thread_info_below_sp; /* nonzero: pStack is this far below the SP at the call */
+static void *thread_info_stack;
+/* The stack pointer where it is read. gcc inlines the stub below into net_stack_paint, so a local's
+ * address or __builtin_frame_address(0) here can lie above the caller's own frame
+ * (audit-overlay-shell-slim-2b B1); the register cannot. */
+static inline __attribute__((always_inline)) uintptr_t current_sp(void)
+{
+    uintptr_t sp;
+#if defined(__x86_64__)
+    __asm__ volatile("mov %%rsp, %0" : "=r"(sp));
+#elif defined(__i386__)
+    __asm__ volatile("mov %%esp, %0" : "=r"(sp));
+#elif defined(__aarch64__) || defined(__arm__)
+    __asm__ volatile("mov %0, sp" : "=r"(sp));
+#else
+    sp = (uintptr_t)__builtin_frame_address(0); /* weaker: may lie above the caller's frame */
+#endif
+    return sp;
+}
+SceUID sceKernelGetThreadId(void) { return 30; }
+int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info)
+{
+    if (thid != 30 || info->size != sizeof(*info) || thread_info_rc < 0) return thread_info_rc < 0 ? thread_info_rc : -1;
+    /* thread_info_below_sp: pStack read near "the thread's stack pointer" (VitaSDK's name for the
+     * field), that far below the SP at this call (the caller's frame lies a little above it) */
+    info->stack = thread_info_below_sp ? (void *)(current_sp() - thread_info_below_sp)
+                  : thread_info_stack ? thread_info_stack : fake_stack;
+    info->stackSize = thread_info_size;
+    return 0;
+}
 /* The log's clock (kernel.txt's): system time, here 3 s ahead of SceShell's process time. */
 uint64_t sceKernelGetSystemTimeWide(void) { return test_now + 3000000; }
 int sceKernelWaitThreadEnd(SceUID uid, int *status, void *timeout) { return fail_join ? -1 : 0; }
@@ -513,6 +550,12 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 
 static void reset(void)
 {
+    net_stack_lo = net_stack_painted = net_stack_top = NULL;
+    net_stack_logged = 0;
+    thread_info_rc = 0;
+    thread_info_size = (int)sizeof(fake_stack);
+    thread_info_stack = NULL;
+    thread_info_below_sp = 0;
     race_on_lock = 0;
     if (has_result_memory()) mem_free();
     memset(&g_view, 0, sizeof(g_view));
@@ -2820,6 +2863,181 @@ static void test_audit_cursor_posted_while_publishing(void)
 }
 #endif
 
+static unsigned times_logged_prefix(const char *prefix)
+{
+    unsigned n = 0;
+    for (unsigned i = log_count > 32 ? log_count - 32 : 0; i < log_count; i++)
+        if (!strncmp(log_lines[i % 32], prefix, strlen(prefix))) n++;
+    return n;
+}
+
+/* VjoNet's stack (16 KiB since Google Lens's removal) is measured on the console:
+ * a game exit logs the most the thread has used, once per growth. The arithmetic,
+ * on a buffer the test paints itself; the paint itself on a real thread: below. */
+static void test_net_stack_high_water_is_logged_once_per_growth(void)
+{
+    reset();
+    net_stack_check();
+    TEST_CHECK(!logged("VjoNet stack: at most")); /* nothing painted, nothing claimed */
+    /* painted below a frame at 12,000 B: nothing used below it yet */
+    memset(fake_stack, 0, sizeof(fake_stack));
+    stack_paint(fake_stack, 12000, fake_stack + sizeof(fake_stack));
+    int painted = 1;
+    for (unsigned i = 0; i < 12000; i++) painted &= fake_stack[i] == STACK_PAINT;
+    TEST_CHECK(painted && fake_stack[12000] == 0 && net_stack_painted == fake_stack + 12000);
+    TEST_CHECK(stack_high_water() == sizeof(fake_stack) - 12000);
+    /* a job's frames reached 6,000 B from the bottom: 10,384 B used; logged once */
+    memset(fake_stack + 6000, 0x11, 64);
+    TEST_CHECK(stack_high_water() == sizeof(fake_stack) - 6000);
+    log_count = 0;
+    on_game_exit();
+    TEST_CHECK(logged("VjoNet stack: at most 10384 of 16384 B used") != NULL);
+    on_game_exit();
+    TEST_CHECK(times_logged_prefix("VjoNet stack: at most") == 1); /* no growth, no line */
+    fake_stack[100] = 0; /* deeper, to 100 B from the bottom: logged again */
+    net_stack_check();
+    TEST_CHECK(logged("VjoNet stack: at most 16284 of 16384 B used") && times_logged_prefix("VjoNet stack: at most") == 2);
+    fake_stack[0] = 0; /* the whole stack */
+    TEST_CHECK(stack_high_water() == sizeof(fake_stack));
+    /* the budget the ledger counts is the stack this measures */
+    TEST_CHECK(VJO_STACK_SHELL_NET == 16384u && VJO_BUDGET_SHELL_NET_STACK == 16384u + VJO_LEDGER_TLS);
+}
+
+/* The paint on a real thread whose 16 KiB stack is a known buffer between two
+ * guard areas, as the kernel reports it (pStack its bottom, stackSize its size):
+ * the stack's lowest 64 B stay as they were (the PSP's thread manager keeps the
+ * thread's UID there, audit-overlay-shell-slim-2c B2), [pStack + 64, painted) is
+ * the pattern, the 64 B just above it and both guards are
+ * untouched, the painting frame is above the STACK_PAINT_GAP bytes, the thread
+ * runs on, and a deeper use written later is read back. The thread first clears
+ * its stack below its own frame: what ran there before the start routine (glibc
+ * 2.39 and later name the thread's stack with snprintf in start_thread) is left
+ * behind, and where the 64 B window falls in it depends on the compiler
+ * (audit-overlay-shell-slim-2c B1). Only the gap's bottom is checked: its top
+ * holds what the paint's own calls write there, return addresses and saved
+ * registers, and under PIE such an address can hold the pattern byte
+ * (audit-overlay-shell-slim-2b B2). Misreports paint nothing and log their own
+ * line, once (audit-overlay-shell-slim-2 B1, -2b B1). */
+#define PAINT_STACK 16384u
+#define PAINT_GUARD 8192u /* 4 KiB low is not enough: glibc puts the TCB at the top of a setstack stack */
+#define PAINT_GAP 512u /* STACK_PAINT_GAP as documented: not taken from the code it checks */
+#define PAINT_FLOOR 64u /* STACK_PAINT_FLOOR as documented: the stack's lowest bytes are never painted */
+static uint8_t paint_region[PAINT_GUARD + PAINT_STACK + PAINT_GUARD] __attribute__((aligned(4096)));
+static uint8_t paint_snap[PAINT_STACK];
+static uintptr_t paint_local_after, paint_deepest;
+static int paint_depth;
+static __attribute__((noinline)) void paint_deep(int n)
+{
+    volatile uint8_t buf[512];
+    for (unsigned i = 0; i < sizeof(buf); i++) buf[i] = (uint8_t)(i % 100 + 1); /* 1..100: never the pattern */
+    if ((uintptr_t)buf < paint_deepest) paint_deepest = (uintptr_t)buf;
+    if (n > 0) paint_deep(n - 1);
+    buf[0] ^= 1;
+}
+static void *paint_thread(void *arg)
+{
+    volatile int local_after = 1;
+    uint8_t *lo = paint_region + PAINT_GUARD;
+    (void)arg;
+    /* the background below this frame; the 256 B just under it stay for memset's own */
+    memset(lo, 0, (size_t)((uint8_t *)(current_sp() - 256) - lo));
+    net_stack_paint();
+    memcpy(paint_snap, paint_region + PAINT_GUARD, PAINT_STACK); /* right after the paint */
+    paint_local_after = (uintptr_t)&local_after;
+    if (paint_depth) paint_deep(paint_depth);
+    return NULL;
+}
+/* mode 0: as documented; 1: pStack = the top; 2: size 0; 3: pStack in the guard below, with a
+ * size that keeps the frame inside (only the size check refuses it); 4: no info; 5: pStack 416 B
+ * below the stack pointer at the call, the exact size: the frame lies above the unpainted floor and
+ * more than half the gap above it but within STACK_PAINT_GAP, so only the full gap term of the lower
+ * bound refuses it; 6: pStack 8 KiB low, the exact size (only the upper bound refuses it: the frame
+ * is above the reported top); 7: pStack 16,448 B below the SP, the exact size: the frame lies less
+ * than 1 KiB above the reported top, so only the upper bound, exactly, refuses it
+ * (audit-overlay-shell-slim-2c N14) */
+#define PAINT_MODES 7
+static const char *const paint_refusal[PAINT_MODES + 1] = {
+    NULL, "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (the kernel reports 0 B, not 16384)",
+    "VjoNet stack: not painted (the kernel reports 24576 B, not 16384)", "VjoNet stack: not painted (no thread info)",
+    "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x", "VjoNet stack: not painted (frame 0x"};
+static int paint_on_a_thread(int mode, int depth)
+{
+    uint8_t *lo = paint_region + PAINT_GUARD;
+    pthread_attr_t at;
+    pthread_t t;
+    reset();
+    memset(paint_region, 0x5A, sizeof(paint_region)); /* the guards */
+    memset(lo, 0, PAINT_STACK);
+    paint_depth = depth;
+    paint_deepest = UINTPTR_MAX;
+    thread_info_stack = mode == 1 ? lo + PAINT_STACK : mode == 3 ? lo - PAINT_GUARD : mode == 6 ? lo - 8192 : lo;
+    thread_info_size = mode == 2 ? 0 : mode == 3 ? (int)(PAINT_STACK + PAINT_GUARD) : (int)PAINT_STACK;
+    thread_info_rc = mode == 4 ? -1 : 0;
+    thread_info_below_sp = mode == 5 ? 416 : mode == 7 ? 16448 : 0;
+    log_count = 0;
+    TEST_ASSERT(pthread_attr_init(&at) == 0 && pthread_attr_setstack(&at, lo, PAINT_STACK) == 0);
+    TEST_ASSERT(pthread_create(&t, &at, paint_thread, NULL) == 0 && pthread_join(t, NULL) == 0);
+    pthread_attr_destroy(&at);
+    int guards = 1;
+    for (unsigned i = 0; i < PAINT_GUARD; i++)
+        guards &= paint_region[i] == 0x5A && paint_region[PAINT_GUARD + PAINT_STACK + i] == 0x5A;
+    TEST_CHECK_(guards, "mode %d: a guard area was written", mode);
+    if (mode) {
+        /* the stack's lower half, which the thread's own frames never reach, still as it was */
+        int touched = 0;
+        for (unsigned i = 0; i < PAINT_STACK / 2; i++) touched += paint_snap[i] != 0;
+        TEST_CHECK_(!__atomic_load_n(&net_stack_lo, __ATOMIC_ACQUIRE) && !touched,
+                    "mode %d (a misreport): %d bytes of the lower half written, lo %p", mode, touched, (void *)net_stack_lo);
+        /* its own refusal, and only that line */
+        const char *line = log_count ? log_lines[(log_count - 1) % 32] : "";
+        TEST_CHECK_(log_count == 1 && !strncmp(line, paint_refusal[mode], strlen(paint_refusal[mode])),
+                    "mode %d: %u line(s), the last '%s'", mode, log_count, line);
+        if (mode >= 5) { /* the frame the line names is where this mode puts it */
+            unsigned frame = 0, low = 0;
+            int size = 0;
+            TEST_ASSERT(sscanf(line, "VjoNet stack: not painted (frame 0x%X outside 0x%X + %d)", &frame, &low, &size) == 3);
+            uint32_t above = (uint32_t)(frame - low);
+            TEST_CHECK_(mode == 5   ? above > PAINT_FLOOR + PAINT_GAP / 2 && above <= PAINT_FLOOR + PAINT_GAP
+                        : mode == 7 ? above >= (uint32_t)size && above < (uint32_t)size + 1024
+                                    : above >= (uint32_t)size,
+                        "mode %d: the frame is %u B above the reported pStack (size %d)", mode, (unsigned)above, size);
+        }
+        TEST_CHECK(!stack_high_water());
+        return guards;
+    }
+    TEST_ASSERT_(net_stack_lo == lo + PAINT_FLOOR, "not painted: %s", log_count ? log_lines[(log_count - 1) % 32] : "(no line)");
+    size_t painted = (size_t)(net_stack_painted - lo), wrong = 0, gap = 0, floor_written = 0;
+    for (size_t i = 0; i < PAINT_FLOOR; i++) floor_written += paint_snap[i] != 0; /* as the test left it */
+    for (size_t i = PAINT_FLOOR; i < painted; i++) wrong += paint_snap[i] != STACK_PAINT;
+    TEST_CHECK_(!floor_written, "%zu of the stack's lowest %u B painted", floor_written, PAINT_FLOOR);
+
+    for (size_t i = painted; i < painted + 64 && i < PAINT_STACK; i++) gap += paint_snap[i] != 0; /* as the test left it */
+    uintptr_t gap_end = (uintptr_t)net_stack_painted + PAINT_GAP; /* the painting frame is above it */
+    TEST_CHECK_(painted > PAINT_STACK / 2 && !wrong && !gap,
+                "painted %zu B, %zu not the pattern, %zu of the 64 B above it written", painted, wrong, gap);
+    TEST_CHECK_(gap_end <= paint_local_after && gap_end < (uintptr_t)(lo + PAINT_STACK),
+                "the gap's end 0x%lx is not below the caller's frame 0x%lx", (unsigned long)gap_end,
+                (unsigned long)paint_local_after);
+    TEST_CHECK(net_stack_top == lo + PAINT_STACK);
+    uint32_t hw = stack_high_water();
+    if (depth) {
+        size_t truth = (size_t)(lo + PAINT_STACK - (uint8_t *)paint_deepest);
+        TEST_CHECK_(hw >= truth && hw <= truth + 256, "depth %d: high-water %u B, the deepest write %zu B below the top",
+                    depth, (unsigned)hw, truth);
+    } else {
+        TEST_CHECK(hw == (uint32_t)(net_stack_top - net_stack_painted)); /* nothing used below the paint */
+    }
+    return guards;
+}
+static void test_net_stack_paint_on_a_real_thread_stays_in_its_stack(void)
+{
+    TEST_CHECK(paint_on_a_thread(0, 0));
+    TEST_CHECK(paint_on_a_thread(0, 12)); /* 13 frames of 512 B and more: about 7 KiB deeper */
+    for (int mode = 1; mode <= PAINT_MODES; mode++)
+        TEST_CHECK_(paint_on_a_thread(mode, 0), "mode %d", mode);
+    reset();
+}
+
 /* The boot guard's "ok": the control thread alive for a minute, marked once;
  * a BUSY kernel (its own uptime shorter) is retried a bounded number of
  * times, five seconds apart. */
@@ -4300,6 +4518,9 @@ TEST_LIST = {
 #endif
     {"ledger_counts_result_memory_against_the_budget", test_ledger_counts_result_memory_against_the_budget},
     {"boot_guard_ok_after_a_stable_minute", test_boot_guard_ok_after_a_stable_minute},
+    {"vjonet_stack_high_water_is_logged_once_per_growth", test_net_stack_high_water_is_logged_once_per_growth},
+    {"vjonet_stack_paint_on_a_real_thread_stays_in_its_stack_and_misreports_paint_nothing",
+     test_net_stack_paint_on_a_real_thread_stays_in_its_stack},
 #ifdef VJO_WITH_VOCR
     {"game_exit_during_a_lookup_frees_its_arena_after_the_job", test_audit_exit_during_lookup_frees_the_arena_after_the_job},
     {"game_exit_during_a_cursor_job_frees_its_arena_after_the_job", test_audit_exit_during_cursor_job_frees_the_arena_after_the_job},

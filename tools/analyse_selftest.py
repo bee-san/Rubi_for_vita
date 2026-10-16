@@ -944,6 +944,10 @@ LOG = {
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
+    # shell/worker.c net_stack_check: VjoNet's painted stack, at a game exit when the figure grew
+    "net_stack": re.compile(r"^VjoNet stack: at most (\d+) of (\d+) B used"),
+    # shell/worker.c net_stack_paint: no paint this boot (no thread info, another size, the frame outside it)
+    "net_stack_off": re.compile(r"^VjoNet stack: not painted \((.+)\)"),
     # API 20, include/vjo_game_ocr.h: the stable-text wait (rc 1 held, 2 limit reached) and a skipped blank line
     "settle": re.compile(r"^gstep job settle kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "blank": re.compile(r"^gstep job blank kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
@@ -1312,7 +1316,8 @@ def summarise_log(text):
                     "modes": {}},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
-         "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0}}
+         "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
+         "net_stack": None, "net_stack_off": []}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
     api = None  # the API of the Shell build that logged the lines that follow (its "shell started" line)
     boot_run = 0  # config warnings in a row just seen: a boot logs its own before its "shell started" line
@@ -1497,13 +1502,19 @@ def summarise_log(text):
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
                     "psp", "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
-                    "gstep"):
+                    "gstep", "net_stack", "net_stack_off"):
             m = LOG[key].match(line)
             if not m:
                 continue
             if key == "capture":
                 k = f"{m.group(1)} into {m.group(2)}"
                 s["captures"][k] = s["captures"].get(k, 0) + 1
+            elif key == "net_stack":  # the largest figure of every boot in the log
+                used = (int(m.group(1)), int(m.group(2)))
+                if s["net_stack"] is None or used[0] > s["net_stack"][0]:
+                    s["net_stack"] = used
+            elif key == "net_stack_off":
+                s["net_stack_off"].append(m.group(1))
             elif key == "memory":
                 s["memory"].append({"free": int(m.group(1)), "release": int(m.group(2) or 0), "need":
                                     int(m.group(3)) + int(m.group(4)), "reserve": int(m.group(5)),
@@ -1876,6 +1887,25 @@ def summarise_collect(folder):
     return out
 
 
+def net_stack_line(used, size):
+    """shell/worker.c net_stack_check's figure: at most used of size B; a quarter or less left is a WARN."""
+    line = f"VjoNet stack: at most {used:,} of {size:,} B used ({used * 100 // size if size else 0}%)"
+    return line + (" WARN: under a quarter left" if used * 4 > size * 3 else "")
+
+
+def net_stack_lines(lg):
+    """The summary's VjoNet stack lines: the largest figure, and a WARN for each reason a boot did not paint."""
+    out = ["  " + net_stack_line(*lg["net_stack"])] if lg.get("net_stack") else []
+    off = lg.get("net_stack_off") or []
+    if off:
+        seen = {}
+        for why in off:
+            seen[why] = seen.get(why, 0) + 1
+        out.append(f"  VjoNet stack: not painted at {len(off)} boot(s) WARN: no figure from them ("
+                   + "; ".join(f"{why} x{n}" for why, n in seen.items()) + ")")
+    return out
+
+
 def backend_line(value):
     """config.ini's ocr_backend, which is no setting any more (VOCR is the only engine): the line to say, or None."""
     if value is None:
@@ -2070,6 +2100,7 @@ def render_collect(c):
                  + (f", {a['sent']} sent (AnkiConnect, an earlier build)" if a["sent"] else "")
                  + (", Picture off in this build" if a["picture_off"] else ""))
         L += export_summary(a)
+        L += net_stack_lines(lg)
         if lg["config_warnings"]:
             seen = {}
             for w in lg["config_warnings"]:
