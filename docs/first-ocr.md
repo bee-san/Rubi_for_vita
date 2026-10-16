@@ -10,8 +10,10 @@ two runs' logs unless it is marked est.; the logs are private (only numbers are 
 
 `--collect` (also written to `timeline.txt` in every collect zip) gives each game start's jobs,
 their reads of the weights, the LM and the cascade's model, the self-test's stage runs, and per job
-the game worker's stages, its frame pacing (API 22) and the Shell's time beside them. It reads
-numbers only, never recognized text.
+the game worker's stages, its frame pacing (API 22) and the Shell's time beside them, with the
+appends that stood between the recognition and the result (`result path:`, est. at the job's own
+cost per append; test.3's are in [release-variants.md](release-variants.md#no-log-append-on-the-result-path)).
+It reads numbers only, never recognized text.
 
 ## Reading a job's step log
 

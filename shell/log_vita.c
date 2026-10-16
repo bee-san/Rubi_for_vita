@@ -52,7 +52,15 @@ void vjo_log_configure(const VjoConfig *cfg)
     if (log_mutex < 0)
         log_mutex = sceKernelCreateMutex("VjoLog", 0, 0, NULL);
     sceKernelLockMutex(log_mutex, 1, NULL);
+#if VJO_DEBUG
     batch_flush_locked(); /* lines logged before the change go out as they were */
+#else
+    /* Lines logged before the change go out as they were; a batch goes to the same files when
+     * log_file stays as it is, so the network thread's held lines (worker.c net_log_hold) stay held:
+     * an overlay opened during a job's lookup does not write them before its result. */
+    if (file_on != cfg->log_file)
+        batch_flush_locked();
+#endif
     file_on = cfg->log_file;
     file_size = -1;
     sceKernelUnlockMutex(log_mutex, 1);

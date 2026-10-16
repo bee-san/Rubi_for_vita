@@ -280,6 +280,10 @@ void vjo_status_close(void);
  * meanwhile writes them out first). For a burst of lines formatted from data
  * at hand only, never across a wait, I/O or a call that may log at length: a
  * crash loses the batch's unwritten lines. begin and end in one function.
+ * One exception, the normal build's network thread (worker.c net_log_hold):
+ * it holds a job's few short-log lines from its game exchange until the
+ * control thread has taken the result, across the job's lookup, so that no
+ * append stands between a recognition and its result (docs/release-variants.md).
  * Returns 1 when the batch is open, 0 when another one is (lines then go out
  * one by one, as always). */
 #define VJO_LOG_BATCH_LINES 24

@@ -600,6 +600,77 @@ static void configure_inside_a_batch(void)
     lock_check();
 }
 
+/* t3-log-path: the normal build's network thread holds a job's lines in a batch until the control
+ * thread has taken the job's result (shell/worker.c net_log_hold), and the control thread re-reads
+ * config.ini at every overlay open (vjo_log_configure), which may come during a job's lookup. With
+ * log_file unchanged the batch stays held (no append on the control thread's way to the open overlay);
+ * a change of log_file writes it first, as line by line. Either way the files hold what line by line
+ * gives, a rotation of log.txt inside the batch included. The debug build writes the batch at every
+ * configure, as before. */
+static void configure_keeps_a_held_batch(void)
+{
+    static const unsigned lens[] = {40, 40, 40};
+    Snapshot ref, got;
+    VjoConfig cfg;
+    VjoLogBatch b;
+    char buf[1024], line[256];
+    for (int prefill = 0; prefill < 2; prefill++) {
+        size_t fill = prefill ? LOG_FILE_CAP - 50 : 0; /* the second line rotates log.txt */
+        /* line by line (the reference): every configure keeps log_file on */
+        fresh_logger(fill);
+        ref_file_size = -1; ref_file_on = 1; ref_status_size = 0;
+        for (unsigned i = 0; i < 3; i++) {
+            int k = make_line(line, i, lens[i]);
+            ref_status_append(line, k);
+            ref_file_append(line, k);
+        }
+        snap(&ref);
+        /* batched, a configure with log_file on (unchanged) after the second line */
+        fresh_logger(fill);
+        TEST_ASSERT(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+        vjo_log_raw(line, make_line(line, 0, lens[0]));
+        vjo_log_raw(line, make_line(line, 1, lens[1]));
+        memset(&cfg, 0, sizeof(cfg));
+        cfg.log_file = 1;
+        log_path_opens = status_path_opens = 0;
+        vjo_log_configure(&cfg);
+#if VJO_DEBUG
+        TEST_CHECK(log_path_opens >= 1 && status_path_opens == 1); /* written at the configure, as before */
+#else
+        TEST_CHECK(log_path_opens == 0 && status_path_opens == 0); /* still held */
+        TEST_MSG("log.txt opened %u times, status.txt %u", log_path_opens, status_path_opens);
+#endif
+        vjo_log_raw(line, make_line(line, 2, lens[2]));
+        vjo_log_batch_end(&b);
+        snap(&got);
+        check_same(&ref, &got, 0);
+#if !VJO_DEBUG
+        TEST_CHECK(status_path_opens == 1); /* the three lines in one append of status.txt */
+#endif
+        snap_free(&ref); snap_free(&got);
+    }
+    /* log_file turned off inside a held batch: the lines before go out under the old setting at once */
+    fresh_logger(0);
+    TEST_ASSERT(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+    vjo_log_raw(line, make_line(line, 0, 40));
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.log_file = 0;
+    vjo_log_configure(&cfg);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 40);
+    vjo_log_raw(line, make_line(line, 1, 40));
+    vjo_log_batch_end(&b);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 40 && lookup(VJO_STATUS_PATH, 0)->size == 80);
+    /* and turned on again: the line logged while it was off reaches status.txt only */
+    TEST_ASSERT(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+    vjo_log_raw(line, make_line(line, 2, 40));
+    cfg.log_file = 1;
+    vjo_log_configure(&cfg);
+    vjo_log_raw(line, make_line(line, 3, 40));
+    vjo_log_batch_end(&b);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 80 && lookup(VJO_STATUS_PATH, 0)->size == 160);
+    lock_check();
+}
+
 /* Another thread's line during a batch is written at once, after the batch's lines so far;
  * the batch goes on. */
 static void another_thread_is_not_held(void)
@@ -757,6 +828,7 @@ TEST_LIST = {
     {"failures_lose_lines_but_not_the_sizes", failures_lose_lines_but_not_the_sizes},
     {"lines_at_the_caps", lines_at_the_caps},
     {"configure_inside_a_batch", configure_inside_a_batch},
+    {"configure_keeps_a_held_batch", configure_keeps_a_held_batch},
     {"another_thread_is_not_held", another_thread_is_not_held},
     {"a_batch_stays_inside_its_memory", a_batch_stays_inside_its_memory},
     {"a_failed_run_at_the_cap", a_failed_run_at_the_cap},
