@@ -1448,6 +1448,7 @@ static int net_main(SceSize args, void *argp)
     }
 #if !VJO_DEBUG
     vjo_log_batch_end(&net_log); /* the worker stops: what is held goes out before its buffer does */
+    net_log.buf = NULL;
 #endif
     return 0;
 }
