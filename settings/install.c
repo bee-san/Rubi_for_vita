@@ -513,7 +513,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         }
         ini_new_len = w;
         ini_new[w] = '\0';
-        if (dropped && s->config_change_count < 6)
+        if (dropped && s->config_change_count < VJO_INSTALL_INI_CHANGES)
             snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]),
                      "%d removed setting%s dropped (no longer read)", dropped, dropped == 1 ? "" : "s");
     }
@@ -524,7 +524,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     keys[k] = "text_source"; values[k++] = "ocr";
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
     if (d > 0) { keys[k] = "local_dictionaries"; values[k++] = value; }
-    else if (d < 0 && s->config_change_count < 6)
+    else if (d < 0 && s->config_change_count < VJO_INSTALL_INI_CHANGES)
         snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]),
                  "local_dictionaries has 8 names: add plaintext.vjdict to it yourself");
     int log_set = 0;
@@ -545,7 +545,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         vjo_config_defaults(&cfg);
         vjo_config_parse(&cfg, ini_step, (size_t)m);
         if (cfg.n_warnings > warnings) {
-            if (s->config_change_count < 6)
+            if (s->config_change_count < VJO_INSTALL_INI_CHANGES)
                 snprintf(s->config_changes[s->config_change_count++], sizeof(s->config_changes[0]), "%s left as it is (the new value would be refused)",
                          keys[i]);
             continue;
@@ -555,7 +555,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     }
     if ((size_t)ini_new_len == bytes && !memcmp(ini_new, old, bytes)) return 0;
     /* the changed lines: those of the new text that the old one does not have (no API key: they only go) */
-    for (int pos = 0; pos < ini_new_len && s->config_change_count < 6;) {
+    for (int pos = 0; pos < ini_new_len && s->config_change_count < VJO_INSTALL_INI_CHANGES;) {
         int e = pos;
         while (e < ini_new_len && ini_new[e] != '\n') e++;
         int len = e - pos, found = 0;
@@ -569,7 +569,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         }
         if (!found && len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#')
         {
-            int keep = len > 90 ? 90 : len;
+            int keep = len > 110 ? 110 : len;
             memcpy(s->config_changes[s->config_change_count], ini_new + pos, (size_t)keep);
             s->config_changes[s->config_change_count++][keep] = '\0';
         }
@@ -1026,16 +1026,17 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
     }
     if (s->config_ini == 0)
         n = add(lines, n, max, "%d. config.ini: unchanged (your settings stay as they are).", k++);
+    else if (s->config_ini == 2)
+        n = add(lines, n, max, "%d. config.ini: %s.", k++, s->config_change_count ? s->config_changes[0] : "written");
     else {
-        char changes[200];
-        size_t used = 0;
-        changes[0] = '\0';
-        for (int i = 0; i < s->config_change_count && used < sizeof(changes); i++)
-            used += (size_t)snprintf(changes + used, sizeof(changes) - used, "%s%s", i ? "; " : "", s->config_changes[i]);
-        n = add(lines, n, max, "%d. config.ini: %s%s.", k++, changes,
-                s->config_ini == 1 ? " (every other setting stays; the old file is kept as config.ini.bak)" : "");
+        n = add(lines, n, max, "%d. config.ini: these lines change; every other setting stays, and the old file is kept "
+                "as config.ini.bak:", k++);
+        for (int i = 0; i < s->config_change_count; i++) n = add(lines, n, max, "   %s", s->config_changes[i]);
     }
     n = add(lines, n, max, "%d. Read everything back to check it.", k++);
+    if (s->state == VJO_INSTALL_UPDATE && backups)
+        n = add(lines, n, max, "A dated backup is the configuration from before this install: it does not undo the update "
+                "(the plugin files are replaced). To go back, install the older VPK and choose Install.");
     n = add(lines, n, max, "Then restart the Vita yourself: this app never restarts it.");
     n = add(lines, n, max, VJO_INSTALL_RECOVERY_BOOT);
     n = add(lines, n, max, VJO_INSTALL_RECOVERY_GAME);

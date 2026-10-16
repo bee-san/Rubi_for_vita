@@ -1061,7 +1061,8 @@ int main(void)
     /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
      * is another build's, is damaged or was interrupted, or cannot be installed yet. */
     int open_install = vjo_install_page_start();
-    vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload()); /* read once, at start */
+    vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload()); /* at start, and after a run */
+    int install_runs = vjo_install_page_runs();
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
@@ -1174,6 +1175,10 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
+        if (vjo_install_page_runs() != install_runs) { /* an install changed the card: the banner says what is there now */
+            install_runs = vjo_install_page_runs();
+            vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload());
+        }
         if (page == PAGE_INSTALL) {
             vjo_install_page_stick(stick);
             vita2d_start_drawing();

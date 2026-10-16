@@ -31,6 +31,7 @@ enum { VJO_TAI_NOW_OTHER = 0, VJO_TAI_NOW_STOCK = 1, VJO_TAI_NOW_OURS = 2 };
 
 #define VJO_INSTALL_LINES 40
 #define VJO_INSTALL_DIFF 8 /* exact config.txt lines a plan shows per file */
+#define VJO_INSTALL_INI_CHANGES 12 /* config.ini changes a plan lists */
 #define VJO_INSTALL_LINE 320
 
 /* What the app is (core/payload.h): the page passes its compiled values; the host tests vary them. */
@@ -78,7 +79,7 @@ typedef struct {
     int record_ok;             /* the plugins' record (vjo_app.txt) is this app's stamp */
     char own_stamp[64];
     int config_ini;            /* config.ini: 0 kept as it is, 1 patched (lines listed), 2 written from the template */
-    char config_changes[6][100];/* config.ini's changed lines, for the plan */
+    char config_changes[VJO_INSTALL_INI_CHANGES][120]; /* config.ini's changed lines, for the plan */
     int config_change_count;
     char stamp[20];            /* the backups' date: YYYYMMDD-HHMMSS (local time) */
     char before_overlay[2][128];/* each folder's newest backup without our kernel line ("" none) */

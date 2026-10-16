@@ -44,6 +44,7 @@ static int scanned, action_index, scroll, stick_move;
 static int actions[4], action_count;
 /* what the box shows: the plan, the progress, or what the last action did */
 enum { SHOW_PLAN, SHOW_RUNNING, SHOW_RESULT };
+static int runs; /* finished runs (vjo_install_page_runs) */
 static int showing;
 static char lines[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
 static int line_count;
@@ -206,8 +207,11 @@ static void reap(void)
     running = 0;
     rescan();
     showing = SHOW_RESULT;
+    runs++;
     set_lines();
 }
+
+int vjo_install_page_runs(void) { return runs; }
 
 void vjo_install_page_quit(void)
 {

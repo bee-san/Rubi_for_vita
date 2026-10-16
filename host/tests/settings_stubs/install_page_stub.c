@@ -15,3 +15,4 @@ void vjo_install_page_stick(int move) { (void)move; }
 int vjo_install_page_busy(void) { return 0; }
 void vjo_install_page_quit(void) {}
 int vjo_install_page_has_payload(void) { return 0; }
+int vjo_install_page_runs(void) { return 0; }

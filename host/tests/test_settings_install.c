@@ -498,7 +498,10 @@ static void update_over_a_test3_install(void)
         for (int i = 0; i < 4; i++) TEST_CHECK_(!strcmp(plan[at + 1 + i], want[i]), "%d: [%s]", i, plan[at + 1 + i]);
         TEST_CHECK(strncmp(plan[at + 5], "   ", 3) != 0);
     }
-    TEST_CHECK(has_line(plan, n, "config.ini: "));
+    TEST_CHECK(has_line(plan, n, "config.ini: these lines change; every other setting stays, and the old file is kept as config.ini.bak:"));
+    TEST_CHECK(has_line(plan, n, "   local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries"));
+    /* R1 on the page: a dated backup does not undo an update */
+    TEST_CHECK(has_line(plan, n, "A dated backup is the configuration from before this install: it does not undo the update"));
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(installed_files(1));

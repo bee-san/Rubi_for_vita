@@ -36,4 +36,7 @@ int vjo_install_page_busy(void);
 void vjo_install_page_quit(void);
 /* The app carries an overlay (its payload): the banner names this page instead of install-vita.sh. */
 int vjo_install_page_has_payload(void);
+/* How many runs have finished (Install, Uninstall, Put it back, Keep): main.c reads its banner
+ * (app_check.h) again when this changes, so that it says what is on the card now. */
+int vjo_install_page_runs(void);
 #endif
