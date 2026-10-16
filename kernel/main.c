@@ -169,10 +169,13 @@ static int worker(SceSize args, void *argp)
     while (worker_run) {
         unsigned int bits = 0;
         SceUInt timeout = POLL_US;
-        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_CAPTURED | IEV_ACTIVATE | IEV_MODEL | IEV_QUIT,
-                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
+        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_CAPTURED | IEV_ACTIVATE | IEV_MODEL | IEV_QUIT |
+                                IEV_POLICY, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
         if (bits & IEV_QUIT)
             break;
+        /* A starting game waits for this (loader.c): first. Every round, so a
+         * question is never left behind a lost wakeup. */
+        loader_tick();
         game_ocr_model_tick();
         if (bits & IEV_CAPTURED)
             finish_capture();
@@ -540,6 +543,7 @@ static void delete_sync_objects(void)
 
 static void release_hooks(void)
 {
+    loader_hook_release();
     lifecycle_hooks_release();
     input_hooks_release();
     display_hook_release();
@@ -578,7 +582,10 @@ int module_start(SceSize argc, const void *args)
         klog("hooks: none (safe mode)");
     } else {
         int d = display_hook_install(), i = input_hooks_install(), l = lifecycle_hooks_install();
-        klog("hooks: display %d, input %d, procevent %d (0 = ok)", d, i, l);
+        /* The worker loader (#138) is optional: without it a per-title taiHEN
+         * line still loads the worker. Not without the others (1: not tried). */
+        int w = d < 0 || i < 0 || l < 0 ? 1 : loader_hook_install();
+        klog("hooks: display %d, input %d, procevent %d, worker loader %d (0 = ok)", d, i, l, w);
         if (d < 0 || i < 0 || l < 0) {
             /* A half-hooked kernel would block input it cannot see or
              * capture frames nobody asked for: run with no hooks instead. */
@@ -613,6 +620,9 @@ int module_stop(SceSize argc, const void *args)
 {
     (void)argc;
     (void)args;
+    /* The worker loader first: a game start inside its hook waits for the kernel
+     * worker, which still answers now. One that stays fails the stop. */
+    if (loader_hook_release()) return SCE_KERNEL_STOP_FAIL;
     /* Refused while a job runs; a take or read waiting in the kernel is woken and
      * leaves the module's code first (kernel/game_ocr.c game_ocr_stop). */
     if (game_ocr_stop()) return SCE_KERNEL_STOP_FAIL;

@@ -22,6 +22,7 @@ extern unsigned syscall_depth;
 #define ENTER_SYSCALL(s) do { (s) = syscall_depth++; } while (0)
 #define EXIT_SYSCALL(s) do { syscall_depth = (s); } while (0)
 SceUID ksceKernelGetProcessId(void);
+int ksceKernelGetThreadId(void);
 uint64_t ksceKernelGetSystemTimeWide(void);
 SceUID ksceKernelCreateMutex(const char *, unsigned int, int, void *);
 int ksceKernelDeleteMutex(SceUID);

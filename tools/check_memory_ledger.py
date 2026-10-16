@@ -46,6 +46,7 @@ ALLOWED = {
     ("shell/ledger.c", "sceKernelCreateThread"): 1, # vjo_shell_thread_create
     ("shell/ledger.c", "sceKernelAllocMemBlock"): 1, # vjo_shell_memblock_alloc (host tests' USER_RW path)
     ("kernel/buffers.c", "ksceKernelAllocMemBlock"): 2, # buffers_alloc (Shell JPEG), buffers_kstrip_alloc (OCR ladder's last rung)
+    ("kernel/loader.c", "ksceKernelAllocMemBlock"): 1,  # policy_alloc (a starting game's games.ini read, #138)
     ("kernel/main.c", "ksceKernelCreateThread"): 1,  # the worker thread, counted right after
     ("game_ocr/main.c", "sceKernelAllocMemBlock"): 1, # game_memblock_alloc
     ("game_ocr/main.c", "sceKernelCreateThread"): 2, # vjo_game_ocr_worker_start and pool_run (a helper), each counted right after
@@ -72,7 +73,7 @@ ITEMS = {
     "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_ANKI", "VJO_BUDGET_PAF_UI"),
     # VJO_BUDGET_KERNEL_OCR_STRIP is never held with the capture (kernel/buffers.c): not in the sum
     "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_CAPTURE",
-               "VJO_BUDGET_KERNEL_OCR_STRIP"),
+               "VJO_BUDGET_KERNEL_OCR_STRIP", "VJO_BUDGET_KERNEL_POLICY"),
     "game": ("VJO_BUDGET_GAME_MODULE_PAGES", "VJO_BUDGET_GAME_STACK", "VJO_BUDGET_GAME_WEIGHTS", "VJO_BUDGET_GAME_WORKSPACE",
              "VJO_BUDGET_GAME_CAPTURE", "VJO_BUDGET_GAME_LINE", "VJO_BUDGET_GAME_LM", "VJO_BUDGET_GAME_CASCADE",
              "VJO_BUDGET_GAME_HELPERS"),

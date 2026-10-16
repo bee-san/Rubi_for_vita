@@ -14,6 +14,7 @@
 #define IEV_QUIT        0x08u
 #define IEV_ACTIVATE    0x10u /* shell marked game_pid as a game */
 #define IEV_MODEL       0x20u /* bounded OCR model operation queued for kernel context */
+#define IEV_POLICY      0x40u /* a starting process asks for its games.ini verdict (loader.c) */
 
 /* SceProcessmgr process events (the hooked handler's ev argument). */
 #define PROCEV_STARTUP 1

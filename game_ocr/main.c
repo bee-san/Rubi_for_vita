@@ -1567,14 +1567,59 @@ static int safe_boot(void)
  * bubble's is its own): its main module ScePspemu is loaded, as
  * AdrBubbleBooter's adrbubblebooter.suprx checks (src/vita/adrbubblebooter/
  * main.c:57-60). taiHEN loads plugins after a process's modules. */
+/* #138: the kernel loads the worker into an enabled game at its start
+ * (kernel/loader.c), and for one release the game's own *TITLEID line, which
+ * older installs wrote, loads it again right after (taiHEN runs a section's
+ * lines once the kernel's hook has returned). A process keeps one: the copy that
+ * starts when another is already loaded gives its pages back at once.
+ *
+ * A lookup by name finds the oldest module of that name: taiHEN walks the
+ * process's module list from its end, the main module, the first loaded
+ * (taiHEN module.c:253, taihen.h TAI_MAIN_MODULE; from the source, not seen on
+ * a console). This copy is another one's younger twin when none of that
+ * module's segments holds this copy's code. Nothing is compared across APIs,
+ * and a lookup that fails or reports no segment answers "no other copy": both
+ * copies then stay, and the kernel refuses the second one's thread
+ * (kernel/game_ocr.c vjoOcrRegister). So this can never unload the only copy. */
+static inline int outside_segments(const uintptr_t *base, const uint32_t *size, unsigned n, uintptr_t addr)
+{
+    int known = 0;
+    for (unsigned i = 0; i < n; i++) {
+        if (!size[i]) continue;
+        known = 1;
+        if (addr - base[i] < size[i]) return 0; /* the oldest copy is this one */
+    }
+    return known;
+}
+
 #ifdef VJO_HOST
 #define pspemu_process vjo_test_pspemu_process /* host/tests/game_stubs/psp2/kernel/modulemgr.h */
+#define another_copy vjo_test_another_copy
 #else
 static int pspemu_process(void)
 {
     tai_module_info_t info;
     info.size = sizeof(info);
     return IMPORT_READY(taiGetModuleInfo) && taiGetModuleInfo("ScePspemu", &info) >= 0;
+}
+
+static int another_copy(void)
+{
+    tai_module_info_t tai;
+    SceKernelModuleInfo mi;
+    uintptr_t base[4];
+    uint32_t size[4];
+    if (!IMPORT_READY(taiGetModuleInfo) || !IMPORT_READY(sceKernelGetModuleInfo)) return 0;
+    tai.size = sizeof(tai);
+    if (taiGetModuleInfo(VJO_GAME_OCR_MODULE, &tai) < 0) return 0;
+    sceClibMemset(&mi, 0, sizeof(mi));
+    mi.size = sizeof(mi);
+    if (sceKernelGetModuleInfo(tai.modid, &mi) < 0) return 0;
+    for (unsigned i = 0; i < 4; i++) {
+        base[i] = (uintptr_t)mi.segments[i].vaddr;
+        size[i] = mi.segments[i].memsz;
+    }
+    return outside_segments(base, size, 4, (uintptr_t)&another_copy & ~(uintptr_t)1);
 }
 #endif
 
@@ -1595,8 +1640,9 @@ int module_start(SceSize args, void *argp)
      * [SDK: Kernel-Overview]), instead of holding its pages in SceShell's
      * partition for code that never runs (#59). An unreadable title is
      * treated the same way: nothing is started, nothing stays. Candidate
-     * games keep an idle worker until the Shell confirms their games.ini policy. */
-    if (rc < 0 || !vjo_game_is_candidate(title)) return SCE_KERNEL_START_NO_RESIDENT;
+     * games keep an idle worker until the Shell confirms their games.ini
+     * policy; one per process (another_copy). */
+    if (rc < 0 || !vjo_game_is_candidate(title) || another_copy()) return SCE_KERNEL_START_NO_RESIDENT;
     psp_title = pspemu_process() || vjo_game_is_psp(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects

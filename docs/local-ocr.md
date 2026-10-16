@@ -2,8 +2,9 @@
 
 The overlay's only OCR engine is the
 [vita-vn-ocr](vita-vn-ocr.md) recognizer and polarity-agnostic line finder run
-inside each enabled game through the game OCR worker, registered for each game
-(`*TITLEID`, the installer's `--title`); the `*main` plugin owns
+inside each enabled game through the game OCR worker, which the kernel plugin
+loads into each game ON in `games.ini` as it starts ([worker-loading.md](worker-loading.md));
+the `*main` plugin owns
 the UI and dictionary lookup. The Overlay app's Model size chooses the
 recognizer: Small (VOCR3-FL10), Normal (VOCR3-H15, the default) or Large
 (VOCR4-W20); a job runs the next smaller size when the game has too little free

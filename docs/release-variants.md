@@ -100,7 +100,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | asserts | none at run time in the plugins or the app; the compile-time checks (`static_assert`, the negative-array typedefs) cost nothing in either |
 | test and mutation hooks (`VJO_HOST`, `VJO_GAME_CASCADE_CONF`, `VJO_GAME_OCR_NO_MODULE_ENTRY`, `VJO_SETTINGS_SMOKE`, `VJO_LOCAL_STATS`, `VJO_VOCR_MODEL_INFO_TEST`) | in neither release build: host tests and the Vita3K smokes only |
 | symbols | in neither zip: the SELFs carry no symbol table (exports by NID); the ELFs stay in the build directory |
-| the boot-safety guard, the memory ledger's checks, `*TITLEID` registration | keep: unchanged in both |
+| the boot-safety guard, the memory ledger's checks, the worker's loading (the kernel's loader since #138; `*TITLEID` lines before) | keep: unchanged in both |
 
 ## Measured
 
@@ -112,6 +112,7 @@ to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 |---|---:|---:|---:|---:|---:|
 | `VitaJPOverlay_Shell.suprx` (SceShell) | 100,792 + 70,060 | 176,128 B | 90,768 + 69,988 | **167,936 B** | **8,192 B (2 pages)** |
 | `VitaJPOverlay_Kernel.skprx` (the kernel pool) | 36,640 + 77,768 | 114,688 B | 32,332 + 76,080 | 110,592 B | 4,096 B (1 page) |
+| the same after #138's worker loader | 40,648 + 77,824 | 118,784 B | 36,444 + 76,136 | 114,688 B | 4,096 B (1 page) |
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,708 + 14,208 | 90,112 B | 0 (1,364 B of text) |
 | `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
 

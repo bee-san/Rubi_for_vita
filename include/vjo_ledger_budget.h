@@ -110,7 +110,9 @@
  * 14,200 B: the 6,160 B VjoVocrCache, eight lines each with its shown and greedy text, and the
  * 2,080 B line queue and slots, both on vita-vn-ocr a540027), and one text page for #85 (the build's
  * vocr.c object 15,288 -> 17,952 B of code; the worker's text 67,452 -> 70,124 B) [measured: main
- * 8f1ec8f against the API 22 build], in the same game partition. */
+ * 8f1ec8f against the API 22 build], in the same game partition. #138's one-copy check (game_ocr/main.c
+ * another_copy, outside_segments) adds 284 B of text in both builds, the same pages: 71,088 -> 71,372 B
+ * debug, 69,724 -> 70,008 B normal [measured: the build log's module rows, main c08db18 and #138]. */
 /* Both builds (docs/release-variants.md): the normal build compiles the self-test's capture probe
  * out, 1,348 B of text, in the same pages since #124 (the PSP bubbles' ID: +260 B): 69,724 + 14,208
  * against the debug build's 71,072 + 14,208 [measured: the build log's module rows, both builds on
@@ -118,9 +120,11 @@
  * worker's debug-only code is the step log, whose tier checks and clock step the normal Shell's
  * short log reads. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
-/* The installer registers the worker per game (*TITLEID), never under *ALL,
- * so taiHEN does not load it into SceShell. Were it loaded there (an older
- * install's *ALL line, a hand edit), its module_start returns
+/* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
+ * never SceShell, a system app, VitaShell or the Overlay app); a *TITLEID line an
+ * installer writes for it (until the one-VPK install removes them) loads it into that game
+ * only, and none writes *ALL, so taiHEN does not load it into SceShell. Were it loaded
+ * there (an older install's *ALL line, a hand edit), its module_start returns
  * SCE_KERNEL_START_NO_RESIDENT outside a candidate game, so the pages are
  * given back at once [SDK: Kernel-Overview, module_start]. */
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u
@@ -190,16 +194,24 @@
 #define VJO_LIMIT_SHELL_PAF (VJO_PAF_FREE_MEASURED - VJO_PAF_RESERVE)
 
 /* ---- the kernel's partition (ScePhyMemPartKD, 36 MiB shared by every driver; pool "kernel") ---- */
-/* VitaJPOverlay_Kernel.skprx: 36,864 text + 77,824 data/bss [measured; API 22's frame-pacing step
- * (kernel/game_ocr.c game_ocr_frame, VJO_GSTEP_PACE) takes 36,336 -> 36,608 B of text and
- * 77,720 -> 77,768 B of data/bss, the same pages: main 8f1ec8f against the API 22 build] */
+/* VitaJPOverlay_Kernel.skprx. API 22's frame-pacing step (kernel/game_ocr.c game_ocr_frame,
+ * VJO_GSTEP_PACE) took 36,336 -> 36,608 B of text and 77,720 -> 77,768 B of data/bss, the same
+ * pages [measured: main 8f1ec8f against the API 22 build]. Raised by one text page in both builds
+ * for the worker loader (#138: the kernel loads the game worker into every game ON in games.ini):
+ * kernel/loader.c 2,354 B of text and 48 B of bss, core/games.c 1,251 B (the Shell's own policy
+ * code, so that the kernel decides by the Shell's rules), the registration's one-thread check
+ * 150 B and 8 B, and five more SceSysclibForDriver stubs [measured: the build's objects]. The debug
+ * build: 36,640 -> 40,648 B of text and 77,768 -> 77,824 B of data/bss, the data/bss pages full
+ * (one more byte takes a page) [measured: the build log's module rows, main 3aa08a6 and #138; the same on
+ * main c08db18]. */
 #if VJO_DEBUG
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else
 /* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing, and the
- * per-screen, per-job and input traces compiled out: 32,332 + 76,080 against 36,640 + 77,768, one
- * text page fewer [measured: the build log's module rows, both builds]. */
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 110592u
+ * per-screen, per-job and input traces compiled out: 36,444 + 76,136 against the debug build's
+ * 40,648 + 77,824, one text page fewer; 32,332 + 76,080 before #138, which adds one text page
+ * [measured: the build log's module rows, both builds, main 3aa08a6 and #138]. */
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
@@ -213,8 +225,15 @@
  * write into the game's own block; never held together with the JPEG capture
  * (an OCR job and a capture exclude each other), so it adds nothing to the worst case. */
 #define VJO_BUDGET_KERNEL_OCR_STRIP (64u * 1024u)
+/* #138: a starting game's games.ini read (kernel/loader.c policy_alloc, KERNEL_RW,
+ * "VjoPolicy"): the parsed table (sizeof(VjoGames), 8,200 B) and the file's text
+ * (VJO_GAMES_TEXT_MAX, 12,288 B), page-rounded. The kernel worker takes it for one
+ * read of a game the Shell may enable and frees it before the game's start goes
+ * on; loader.c checks at compile time that both fit. It is not refused while the
+ * capture buffer is held, so the worst case counts both. */
+#define VJO_BUDGET_KERNEL_POLICY 24576u
 #define VJO_WORST_KERNEL_PERMANENT (VJO_BUDGET_KERNEL_MODULE_PAGES + VJO_BUDGET_KERNEL_STACK)
-#define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_CAPTURE)
+#define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_CAPTURE + VJO_BUDGET_KERNEL_POLICY)
 /* No cited safe size exists for this pool: its free space on a retail console
  * is unmeasured, and a 2,088,960 B capture has failed there once (#14) and
  * succeeded since. Until the self-test measures the partition, the limit is

@@ -8,7 +8,14 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#if defined(__vita__) && !defined(VJO_HOST) && !defined(VJO_STANDALONE)
+#if defined(VJO_KERNEL)
+/* The kernel plugin (core/games.c, for kernel/loader.c): SceSysclibForDriver's
+ * own (psp2kern/kernel/sysclib.h). */
+int snprintf(char *dst, unsigned int max, const char *fmt, ...);
+int vsnprintf(char *dst, unsigned int max, const char *fmt, va_list arg);
+#define vjo_vsnprintf vsnprintf
+#define vjo_snprintf snprintf
+#elif defined(__vita__) && !defined(VJO_HOST) && !defined(VJO_STANDALONE)
 int sceClibVsnprintf(char *dst, size_t dst_max_size, const char *fmt, va_list args);
 int sceClibSnprintf(char *dst, size_t dst_max_size, const char *fmt, ...);
 #define vjo_vsnprintf sceClibVsnprintf

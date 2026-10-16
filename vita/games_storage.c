@@ -2,7 +2,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <string.h>
-#define BACKUP VJO_GAMES_PATH ".bak"
+#define BACKUP VJO_GAMES_BACKUP
 #define TEMP VJO_GAMES_PATH ".tmp"
 
 static int exists(const char *path)

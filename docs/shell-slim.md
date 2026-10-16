@@ -195,4 +195,4 @@ changes the syscall table, so it raises `VJO_API_VERSION`.
 The measured Shell segment sizes and module pages before and after (the build log's module row),
 the linker map's groups for what changed, the ledger table with the budgets lowered
 (`include/vjo_ledger_budget.h`), host tests, CI, `tools/preflight.sh` GO, and an audit. Boot safety
-is unchanged: the guard, `*TITLEID` registration, and no heavy work in SceShell.
+is unchanged: the guard, the worker in the game's process only (`*TITLEID` registration then; the kernel's loader since #138), and no heavy work in SceShell.

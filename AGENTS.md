@@ -44,10 +44,17 @@ thread, static buffer or taiHEN registration.
    screenshots in SceShell. The Shell plugin is the UI and nothing else; its permanent footprint
    (module pages, stacks, TLS) may only shrink, and it makes no `sceKernelAllocMemBlock` after
    boot.
-2. **Heavy work runs in the game's process, under `*TITLEID`, never `*ALL`.** `*ALL` loads a
-   module into SceShell and every system app as well, where its pages are permanent. Register one
-   `*TITLEID` section per enabled game. Any module that can still be loaded elsewhere returns
-   `SCE_KERNEL_START_NO_RESIDENT` there.
+2. **Heavy work runs in the game's process, never in SceShell, never under `*ALL`.** The kernel
+   plugin loads the game OCR worker into each game that is ON in `games.ini` as the game starts
+   (owner's decision, 2026-10-16, #138; this replaces "register one `*TITLEID` section per enabled
+   game"): never into SceShell, a system app (the PSP emulator's `NPXS10028` and Adrenaline's
+   `PSPEMUCFW` are games), VitaShell or the Overlay app, and nothing while L is held at the start
+   ([docs/worker-loading.md](docs/worker-loading.md)). Installers are to write no worker line
+   (overlay-one-vpk-install; until then the `*TITLEID` lines installers write, and those older
+   installs left, are harmless). `*ALL` loads
+   a module into SceShell and every system app as well, where its pages are permanent: never use
+   it. Any module that can still be loaded elsewhere returns `SCE_KERNEL_START_NO_RESIDENT` there,
+   and a process keeps one copy of the worker.
 3. **Preflight, reserve, free.** In the game, check `sceKernelGetFreeMemorySize` (`sizeMain` for
    `USER_RW`), round to 4 KiB, keep a reserve, allocate per job and free when the job ends; a
    failed allocation after a passed check is normal and must degrade, never crash. Few games

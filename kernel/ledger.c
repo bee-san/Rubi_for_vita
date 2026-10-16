@@ -1,8 +1,9 @@
 /* The kernel plugin's memory ledger (core/ledger.h): what we hold in
  * ScePhyMemPartKD. The Shell's JPEG capture buffer and the OCR ladder's last
- * rung (a kernel strip) are the only blocks the kernel ever allocates
- * (buffers.c); the worker thread's stack and the module's pages are the
- * permanent part. Printed to kernel.txt on every change. */
+ * rung (a kernel strip, buffers.c) and a starting game's games.ini read
+ * (VjoPolicy, loader.c) are the only blocks the kernel ever allocates; the
+ * worker thread's stack and the module's pages are the permanent part.
+ * Printed to kernel.txt on every change. */
 #include "../core/ledger.h"
 #include "../include/vjo_ledger_budget.h"
 #include "vjo_kernel.h"
@@ -12,6 +13,7 @@ static const VjoLedgerItemDef defs[VJO_KL_COUNT] = {
     [VJO_KL_STACK] = {"VjoWorker stack", VJO_LEDGER_POOL_KERNEL},
     [VJO_KL_CAPTURE] = {"VjoCapture", VJO_LEDGER_POOL_KERNEL},
     [VJO_KL_OCR_STRIP] = {"VjoOcrStrip", VJO_LEDGER_POOL_KERNEL},
+    [VJO_KL_POLICY] = {"VjoPolicy", VJO_LEDGER_POOL_KERNEL},
 };
 
 VjoLedger g_kernel_ledger;

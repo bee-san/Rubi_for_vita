@@ -38,6 +38,16 @@
  * pacing, which the kernel appends). The request grows by that word. */
 #define VJO_API_VERSION 22
 
+/* #138: the kernel plugin loads the game OCR worker into every game that is ON
+ * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
+ * VJO_GAME_OCR_PATH_UR0, or VJO_GAME_OCR_PATH_UX0 when ur0:tai has none, so
+ * installers write no *TITLEID or *ALL line for it. 0 would mean they must again.
+ * A per-title line older installs left is harmless: the worker keeps one copy
+ * per process. */
+#define VJO_KERNEL_LOADS_WORKER 1
+#define VJO_GAME_OCR_PATH_UR0 "ur0:tai/VitaJPOverlay_OCR.suprx"
+#define VJO_GAME_OCR_PATH_UX0 "ux0:tai/VitaJPOverlay_OCR.suprx"
+
 /* Normalized rectangle, 0..65535 on both axes. w == 0 means full screen. */
 typedef struct {
     uint16_t x, y, w, h;

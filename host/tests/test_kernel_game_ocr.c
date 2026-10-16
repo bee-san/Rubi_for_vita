@@ -46,6 +46,9 @@ static const char *last_klog = "";
 static void (*before_lock)(void); /* another thread, just before a syscall's lock */
 void klog(const char *format, ...) { klogs++; last_klog = format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }
+/* The calling thread (#138: one registered worker thread per game process). */
+static int caller_thread = 0x7001;
+int ksceKernelGetThreadId(void) { return caller_thread; }
 uint64_t ksceKernelGetSystemTimeWide(void) { return model_clock; }
 /* MEV_JOB and MEV_RESULT as the event flag holds them, and what runs on another
  * thread while vjoOcrTake or vjoOcrRead waits for them (the Shell's submission, the
@@ -301,6 +304,44 @@ static VjoGameOcrRequest make_request(void)
     strcpy(r.model, "FL10_w8.vocr");
     strcpy(r.model_dir, "ux0:data/VitaJPOverlay/ocr");
     return r;
+}
+
+/* #138: a game holds one worker. Should a second copy still run in it (the
+ * kernel's and a per-title taiHEN line's), its thread is refused, logged once,
+ * and takes no job; the registered thread keeps working; the game's exit lets
+ * the next process's thread register. */
+static void second_worker_thread_is_refused(void)
+{
+    VjoGameOcrRequest r = make_request(), got = {0};
+    setup(); /* thread 0x7001 of process 7 registered */
+    caller = 7; caller_thread = 0x7002; klogs = 0;
+    TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY && klogs == 1);
+    TEST_CHECK(strstr(last_klog, "second worker thread") != NULL);
+    TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY && klogs == 1); /* it asks every 100 ms: one line */
+    caller_thread = 0x7001;
+    TEST_CHECK(vjoOcrRegister() == 0 && klogs == 1); /* the registered one, as before */
+    caller = 3;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0);
+    caller = 7; caller_thread = 0x7002;
+    TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY);
+    caller_thread = 0x7001;
+    got.size = sizeof(got);
+    TEST_CHECK(vjoOcrTake(&got) == 0 && got.seq == request.seq); /* the job goes to the registered thread */
+    message.size = sizeof(message); message.seq = got.seq;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* A Shell restart re-registers the same thread; the other stays out. */
+    game_ocr_shell_changed_locked();
+    TEST_CHECK(vjoOcrRegister() == 0);
+    caller_thread = 0x7002;
+    TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY);
+    /* The game exits; the next game's thread registers (it is a new process). */
+    game_ocr_process_gone(7);
+    g.game_pid = 8;
+    caller = 8; caller_thread = 0x8001;
+    TEST_CHECK(vjoOcrRegister() == 0 && game_ocr_worker_pid_locked() == 8);
+    caller_thread = 0x8002; /* and that process holds one too */
+    TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY);
+    caller_thread = 0x7001;
 }
 
 static uint32_t submit(void)
@@ -1477,6 +1518,7 @@ static void modification_times_pack_distinctly(void)
 }
 
 TEST_LIST = {
+    {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
     {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
     {"hand-off: a read waiting at a shutdown is counted and woken; every waited read gives its count back",

@@ -50,7 +50,9 @@ class MemoryLedgerCheck(unittest.TestCase):
         self.assertIn("memory ledger: pass", result.stdout)
         for pool in ("shell pages", "shell paf", "kernel", "game"):
             self.assertIn(pool, result.stdout)
-        self.assertIn("allocation sites: 9, all in ledger wrappers", result.stdout)
+        # 10 since #138's games.ini read for a starting game (kernel/loader.c policy_alloc)
+        self.assertIn("allocation sites: 10, all in ledger wrappers", result.stdout)
+        self.assertIn("kernel/loader.c:", result.stdout)
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")
         # one configuration since the network paths (Google Lens, the Hachidori relay) were removed:

@@ -98,7 +98,8 @@ log; both install the same way, and the settings carry over either way
 ([release-variants](docs/release-variants.md)).
 
 Close games, open VitaShell, press Select to start FTP, and run from the
-extracted folder, naming each game that should have OCR (here CLANNAD):
+extracted folder, naming one game (here CLANNAD); OCR then runs in every game
+that is ON in the Overlay app, not only the ones named:
 
 ```sh
 bash install-vita.sh --title PCSG00415 VITA_IP:1337
@@ -115,11 +116,17 @@ choices. Older experimental Text registrations, duplicate worker entries and an
 `*ALL` worker line are commented out. The backup is in `build/device/backup/`
 in the extracted folder.
 
-Repeat `--title` for more games. Games registered by an earlier install are
-kept, so later updates need no `--title`; with none given and none registered
-yet, as after an install that used `*ALL`, the installer changes nothing and
-says so. A game added later needs `--title` and a reboot. The Overlay app
-shows each game's title ID.
+The worker's lines are no longer needed for OCR: the kernel plugin loads the
+worker itself into each game that is ON in the Overlay app, as the game starts
+([how](docs/worker-loading.md)), and a game that a line names too keeps one
+worker. This installer still asks for one `--title` on a first install (with
+none given and none registered yet it changes nothing and says so) and keeps
+the games registered by an earlier install; other games, and games installed
+later, need no `--title` and no reboot. The kernel never loads the worker into
+SceShell, a system app, VitaShell or the Overlay app, nor into a game started
+while L is held. `kernel.txt` has a `worker for` line for each game start: the
+worker loaded, or why not (OFF in the app, L held, an unreadable `games.ini`, a
+missing file). The Overlay app shows each game's title ID.
 
 PSP games run in Sony's PSP emulator. That process most likely has the title ID
 of the app that started it, as Adrenaline's and AdrBubbleBooter's own plugins key
@@ -127,11 +134,12 @@ on it (from their sources; not yet seen on a console): `PSPEMUCFW` for Adrenalin
 itself, and the bubble's own ID for a game started from its own LiveArea bubble
 ([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
 bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
-`PSPEMU005` or `ULJS00378`. Register the worker for each one: `--title PSPEMUCFW`,
-`--title ULJS00378` (the [Overlay app](#per-game-settings) does this itself when you
-turn a bubble ON). `NPXS10028`, the emulator's own ID, likely matches no process
-(from Adrenaline's and taiHEN's sources; not checked on a console), so it is not
-needed. With `log_file = on` (the installer's default), `log.txt` has a `psp:`
+`PSPEMU005` or `ULJS00378`. The kernel plugin loads the worker into these processes
+like any game: by the ID's own row in the Overlay app, else the shared PSP row,
+else the default, so they need no `--title` (a `--title PSPEMUCFW` line an earlier
+install wrote, or the one the [Overlay app](#per-game-settings) adds when you turn
+a bubble ON, is harmless). `NPXS10028`, the emulator's own ID, is treated the same
+should the kernel see it. With `log_file = on` (the installer's default), `log.txt` has a `psp:`
 line for each PSP game as it starts, naming its IDs, its disc ID and the file it
 boots. The 0.7.12 archive's own `install-vita.sh` predates `--title`
 and registers the worker under `*ALL`; use the installer from `main` or a
@@ -165,26 +173,26 @@ The settings app itself is always excluded from the overlay.
 The Overlay app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
 need to close the game first. Games turned ON or OFF there take effect when the
-game next starts or resumes; preferences apply when the overlay next opens. A
+game next starts or resumes, except that a game turned ON while it runs gets
+OCR at its next start (the worker is loaded as a game starts; until then the
+overlay says `OCR is not running in this game. Close the game and start it
+again.`); preferences apply when the overlay next opens. A
 game that uses extended memory (`ATTRIBUTE2` in its `param.sfo`) may still have
 to close first, as for other system applications.
 
 For manual installation, copy `ur0/` and `ux0/` to their matching Vita partitions
 (`ux0/` includes the app's record, `ux0/data/VitaJPOverlay/vjo_app.txt`)
 and install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before
-copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`,
-`ur0:tai/VitaJPOverlay_Shell.suprx` under `*main`, and
-`ur0:tai/VitaJPOverlay_OCR.suprx` under a section for each game, such as
-`*PCSG00415` (for Adrenaline `*PSPEMUCFW`, and a bubble's own ID), never under `*ALL`, in the active
+copying the included one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL`
+and `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` in the active
 taiHEN config (`ux0:tai/config.txt` if it exists, else `ur0:tai/config.txt`).
+`ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it into
+each game that is ON (from `ux0:tai/` only when `ur0:tai/` has none, so leave no
+older copy there), and a `*TITLEID` line for it that an older install left is
+harmless. Never list it under `*ALL`.
 Disable old `VitaJPOverlay_Text.suprx` entries, an `*ALL` worker line and
 duplicate worker registrations, then reboot. Keep unrelated plugins and
-configuration intact. For CLANNAD the worker's part is:
-
-```ini
-*PCSG00415
-ur0:tai/VitaJPOverlay_OCR.suprx
-```
+configuration intact.
 
 ## Use in a game
 
@@ -325,8 +333,8 @@ cursor, the entry, its length, the dictionary, file reads and time
 Disable games such as Uncharted when you need their normal L+R controls.
 Disabled games have no overlay capture or input filtering. An unreadable or
 corrupt policy fails closed and reports the problem rather than enabling every
-game. Local OCR also needs the game to be registered for the OCR worker
-(`--title`, see [Install](#install)).
+game. A game turned ON gets OCR at its next start: the kernel plugin loads the
+OCR worker into it as it starts ([Install](#install)).
 
 PSP games have a `PSP` tag. Each Adrenaline bubble is listed under its game's
 title, which the app reads from the `PARAM.SFO` of the ISO, CSO, ZSO or EBOOT.PBP
@@ -334,8 +342,9 @@ it boots. Its icon is the bubble's, which Adrenaline Bubble Manager made from
 the game's. A bubble without its own choice follows the shared row
 **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and so do
 games started from inside Adrenaline (`PSPEMUCFW`, if it has no choice of its
-own); with none there, the default applies. Turning a bubble or Adrenaline ON
-also registers the OCR worker for it. The app appends a `*<its ID>` section with
+own); with none there, the default applies. The kernel plugin loads the OCR
+worker by the same rows. Turning a bubble or Adrenaline ON
+also registers the OCR worker for it, which is no longer needed and harmless. The app appends a `*<its ID>` section with
 the worker to `ur0:tai/config.txt`, and to `ux0:tai/config.txt` if there is one,
 after keeping a copy as `config.txt.vjo-app-bak`. It never touches anything else
 in the file, never uses `*ALL`, and refuses a configuration that taiHEN would stop
@@ -554,18 +563,22 @@ and memory.
 ## Memory and troubleshooting
 
 The game OCR worker runs the local OCR engine in the enabled game's process, allocating its
-region-sized workspace from that game's `USER_RW`. taiHEN loads it only into the
-games it is registered for (one `*TITLEID` section each), never into SceShell or
-the system apps. It still checks the title at startup and unloads itself at once
-(`SCE_KERNEL_START_NO_RESIDENT`) in SceShell, VitaShell, the settings app and
-other system titles, should a hand-edited configuration load it there.
+region-sized workspace from that game's `USER_RW`. The kernel plugin loads it into each game
+that is ON in `games.ini` as the game starts, at the point where taiHEN loads a game's own
+plugins, never into SceShell, a system app, VitaShell or the Overlay app, and a game keeps one
+copy ([worker loading](docs/worker-loading.md)). It still checks the title at startup and
+unloads itself at once (`SCE_KERNEL_START_NO_RESIDENT`) in SceShell, VitaShell, the settings
+app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
-policy; disabled games load no weights and allocate no OCR workspace.
+policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
+holds the worker's 90,112 B of module pages and its 36,864 B thread stack and TLS from its
+start, homebrew included (ON by the default): an app that fails to start with them turns OFF
+in the Overlay app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
 started from its own bubble runs in a PSP emulator process of its own, under the
-bubble's ID (inferred from AdrBubbleBooter's source). Its `*<bubble ID>` section
-also loads the worker into the bubble's own small starter app when that runs,
+bubble's ID (inferred from AdrBubbleBooter's source). The worker is also loaded
+into the bubble's own small starter app (an ordinary app under that ID) when that runs,
 where it stays idle until the app exits.
 
 The kernel transports bounded jobs and text. Game workers cannot

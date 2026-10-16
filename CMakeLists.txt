@@ -116,6 +116,15 @@ target_include_directories(vjo-kernel-lifecycle-tests PRIVATE third_party/acutes
 target_compile_definitions(vjo-kernel-lifecycle-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-lifecycle-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_lifecycle COMMAND vjo-kernel-lifecycle-tests)
+# #138: the kernel loads the game worker into every game ON in games.ini at its
+# start (kernel/loader.c), with the Shell's own policy code and, for the parity
+# check, the Shell's own games.ini reader on the same files.
+add_executable(vjo-kernel-loader-tests host/tests/test_kernel_loader.c host/tests/games_io_posix.c
+  vita/games_storage.c core/games.c core/arena.c kernel/ledger.c core/ledger.c)
+target_include_directories(vjo-kernel-loader-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-loader-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-loader-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_loader COMMAND vjo-kernel-loader-tests)
 # #104: the overlay page's hold on SceShell's front touch region (shell/touch_hold.h).
 add_executable(vjo-touch-hold-tests host/tests/test_touch_hold.c)
 target_include_directories(vjo-touch-hold-tests PRIVATE third_party/acutest/include)
