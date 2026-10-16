@@ -275,10 +275,11 @@ wrapper now runs the release's exit unchanged. A crash in Vita3K's shutdown stil
 run, and the failure says what ended Vita3K: the signal (its exit status less 128) and dynarmic's
 "Unhandled SIGSEGV at rip 0x…", which goes straight to stderr. Vita3K's own "[signal_handler]:
 Unhandled access to 0x…" is quoted when its logger got it out; in some crashed runs the SIGTRAP
-cut it off. The only critical line of a passing run was "[translate_path]: Unknown device with
+cut it off. The only critical line of a passing run is "[translate_path]: Unknown device with
 path gro0:app used" (the app lists `gro0:app`, `settings/catalog.c`), which the failure used to
-quote as the crash. Since #138 the app also reads `gro0:` itself when `gro0:app` does not open,
-which may add the same line for `gro0:`; that has not been run in Vita3K.
+quote as the crash. When `gro0:app` does not open, the app looks at `gro0:` itself (#138); in
+Vita3K that is an error line, not a critical one: "[stat_file]: Cannot find device for path:
+gro0:" (the preflight's run of `6be519f`).
 
 Vita3K does not fault on an access to unmapped guest memory either. It logs "Invalid write …",
 "Invalid read …" or "Invalid exclusive write …" with the guest's PC and goes on, a read giving 0
