@@ -421,12 +421,12 @@ class Collect(unittest.TestCase):
         folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
         a = (folder / "analysis.txt").read_text()
         self.assertIn("1 of its 1 boot(s) the normal build's (a short log", a)
-        self.assertIn("  OCR jobs in the normal build's short log (each game's first job that read its screen, and every "
-                      "failed one; not the others): 5; ", a)
+        self.assertIn("  OCR jobs in the normal build's short log (per activation of a game, a start or a resume: its first "
+                      "job that read its screen and its first that found a line; and every failed one; not the others): 5; ", a)
         self.assertRegex(a, r"rc -117\)? x2")
         self.assertRegex(a, r"rc -108\)? x1")
         self.assertIn("models VOCR3_H15_w8.vocr x4, VOCR3_FL10_w8.vocr x1; read: 2-3 lines in 900-2,100 ms in the game", a)
-        self.assertIn("  ARM clock (ocr_boost_clock), the normal build's lines (each game's first job and every change): 2; "
+        self.assertIn("  ARM clock (ocr_boost_clock), the normal build's lines (each activation's first job and every change): 2; "
                       "raised in 1, left at 444 or more in 0, refused in 1 (0x80010016", a)
         self.assertIn("MHz before 333-333, during 333-444, after 333-333", a)
         self.assertIn("self-test: armed, but the normal build has none (1 boot(s) said so)", a)
@@ -438,7 +438,8 @@ class Collect(unittest.TestCase):
         for line in ("ocr rc=-N VOCRN_HN_wN.vocr: N lines, N ms", "clock: N MHz refused", "Paf allocation refused",
                      "lookup cursor at N failed"):
             self.assertIn(line, problems)
-        self.assertIn("model sizes that did not fit (log only, never shown): large in PCSG00415 x1", a)
+        self.assertIn("model sizes that did not fit (log only, never shown; the normal build's boots log each once per "
+                      "activation and on change, so its counts are lines, not jobs): large in PCSG00415 x1", a)
         self.assertIn("  Anki: 2 save(s) (1 failed)", a)  # the normal build's save lines name no word
         record = json.loads((folder / "analysis.json").read_text())
         self.assertEqual(len(record["log"]["short"]["jobs"]), 5)

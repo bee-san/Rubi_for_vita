@@ -154,6 +154,7 @@ class Ledger(unittest.TestCase):
             rows, problems = ledger.check_modules(values, {"shell": shell}, exact=True)
             self.assertEqual(len(problems), 1)
             self.assertIn(f"lower it to {pages - 4096}u", problems[0])
+            self.assertIn("a budget both builds share is split into the two branches first", problems[0])
 
     def test_conditionals_pick_one_build(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,6 +202,24 @@ class DerivedStrings(unittest.TestCase):
             self.assertEqual(got, {"a debug-only line %d", "the debug branch of an if-not",
                                    "a vjo_dlog line, two literals", "after a comment, dlog"})
             self.assertEqual(variant.debug_only_strings(root, "kernel"), [])
+
+    def test_elif_branches_and_inc_files(self):
+        """audit-b note C: the #elif and #else of an #if VJO_DEBUG may be the normal build's (not debug-only); those of
+        an #if !VJO_DEBUG are reached only with VJO_DEBUG (debug-only); a literal of an .inc file is kept code's."""
+        text = ("#if VJO_DEBUG\na\n#elif X\nb\n#else\nc\n#endif\n#if !VJO_DEBUG\nd\n#elif Y\ne\n#else\nf\n#endif\n"
+                "#if Z\ng\n#elif W\nh\n#endif\n")
+        got = {line: flag for line, flag in zip(text.split("\n"), variant._debug_lines(text)) if line and line[0] != "#"}
+        self.assertEqual(got, {"a": True, "b": False, "c": False, "d": False, "e": True, "f": True, "g": False, "h": False})
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "shell").mkdir()
+            (root / "core").mkdir()
+            (root / "shell" / "a.c").write_text('#if VJO_DEBUG\nvjo_log("a table row as text");\n'
+                                                 'vjo_log("only the debug build has this");\n#elif OTHER\n'
+                                                 'vjo_log("an elif branch, maybe normal");\n#endif\n')
+            (root / "core" / "t.inc").write_text('{"a table row as text", 1},\n')
+            got = {x.decode() for x in variant.debug_only_strings(root, "shell")}
+            self.assertEqual(got, {"only the debug build has this"})
 
     def test_a_leak_is_a_whole_string_not_a_merged_tail(self):
         strings = [b"a debug-only line %d"]
@@ -366,6 +385,15 @@ class PackageVariants(unittest.TestCase):
         with self.assertRaises(ValueError), contextlib.redirect_stdout(io.StringIO()):
             release.package(self.base("debug"), output, self.models, version="0.8.0", variant="normal")
         self.assertFalse(output.exists())
+        # a base that is not a zip: a refusal too (audit-b note F), writing nothing
+        junk = self.root / "junk.zip"
+        junk.write_bytes(b"not a zip at all")
+        with self.assertRaises(SystemExit) as caught:
+            self.run_main("--normal", junk, "--debug", self.base("debug"), "--models", self.models, "--version", "0.8.0",
+                          "-o", self.root / "out3")
+        self.assertIn("the bases are not this release's two builds", str(caught.exception))
+        self.assertIn("junk.zip", str(caught.exception))
+        self.assertFalse((self.root / "out3").exists())
         # and package_variants says so as a refusal, not a traceback
         with self.assertRaises(SystemExit) as caught:
             self.run_main("--normal", mixed, "--debug", self.base("debug"), "--models", self.models, "--version", "0.8.0",

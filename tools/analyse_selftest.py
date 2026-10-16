@@ -997,8 +997,9 @@ def masked(settings):
 # Shell starts only with when it is its own); the normal build says its log is the short one
 SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)(, the normal build: a short log)?\)")
 # The normal build's short log (docs/release-variants.md; the debug build logs the job lines LOG parses instead):
-# shell/worker.c vocr_run_one's line for each game's first OCR job that read its screen and for every failed one,
-# log_vocr_clock's line on the 444 MHz boost for each game's first job and whenever it changes, shell/memory.cpp's
+# shell/worker.c vocr_run_one's line for each activation's (a start or a resume) first OCR job that read its screen,
+# its first that found a line, and every failed one; log_vocr_clock's line on the 444 MHz boost for each activation's
+# first job and whenever it changes (the tier lines too, log_tier_checks); shell/memory.cpp's
 # refused PAF request, and the Shell's note that a self-test was armed under it
 SHORT_JOB = re.compile(r"^ocr rc=(-?\d+) (\S+): (\d+) lines, (\d+) ms$")
 SHORT_CLOCK = (("set", re.compile(r"^clock: (\d+) -> (\d+) MHz while reading, (\d+) after$")),
@@ -1711,8 +1712,9 @@ def render_short_log(lg):
             rcs[j["rc"]] = rcs.get(j["rc"], 0) + 1
             models[j["model"]] = models.get(j["model"], 0) + 1
         ok = [j for j in jobs if j["rc"] == 0]
-        L.append(f"  OCR jobs in the normal build's short log (each game's first job that read its screen, and every "
-                 f"failed one; not the others): {len(jobs)}; "
+        L.append(f"  OCR jobs in the normal build's short log (per activation of a game, a start or a resume: its first "
+                 f"job that read its screen and its first that found a line; and every failed one; not the others): "
+                 f"{len(jobs)}; "
                  + ", ".join(f"rc {rc_text(r)} x{n}" for r, n in sorted(rcs.items()))
                  + "; models " + ", ".join(f"{m} x{n}" for m, n in models.items())
                  + (f"; read: {_span([j['lines'] for j in ok])} lines in {_span([j['ms'] for j in ok])} ms in the game"
@@ -1721,7 +1723,7 @@ def render_short_log(lg):
     if ck.get("lines"):
         refused = (f", refused in {ck['refused']} (" + ", ".join(f"{native(r)} x{n}" for r, n in sorted(ck["refusals"].items()))
                    + ")" if ck["refused"] else "")
-        L.append(f"  ARM clock (ocr_boost_clock), the normal build's lines (each game's first job and every change): "
+        L.append(f"  ARM clock (ocr_boost_clock), the normal build's lines (each activation's first job and every change): "
                  f"{ck['lines']}; raised in {ck['raised']}, left at 444 or more in {ck['left']}{refused}"
                  + (f", unreadable in {ck['unreadable']}" if ck["unreadable"] else "")
                  + f"; MHz before {_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
@@ -1978,7 +1980,12 @@ def render_collect(c):
                 b["need"] = max(b["need"], miss["need"])
                 nxt = miss["next"] or "none"
                 b["next"][nxt] = b["next"].get(nxt, 0) + 1
-            L.append("  model sizes that did not fit (log only, never shown): " + "; ".join(
+            # the debug build logs a size that did not fit for every job; the normal build once per activation and
+            # again when it changes (docs/release-variants.md), so its counts are of those lines, not of jobs
+            normal_tiers = (lg.get("short") or {}).get("boots", 0)
+            L.append("  model sizes that did not fit (log only, never shown"
+                     + ("; the normal build's boots log each once per activation and on change, so its counts are lines, "
+                        "not jobs" if normal_tiers else "") + "): " + "; ".join(
                 f"{tier} in {title} x{b['n']} (need {b['need']:,} B, free as low as {b['free']:,} B; then "
                 + ", ".join(f"{n} x{c}" for n, c in b["next"].items()) + ")" for (tier, title), b in by.items()))
         st = lg.get("settle") or {}

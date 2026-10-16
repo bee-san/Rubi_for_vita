@@ -140,7 +140,14 @@ cmake --build build/vita --target release         # VitaJPOverlay-<version>.zip,
 ```
 
 Every Vita build checks it is the build it says (`tools/check_variant.py`: the normal modules carry
-none of the debug build's own strings, the debug modules all of them, the app's version), and
+none of the debug build's own strings, the debug modules all of them, the app's version; with
+`--sources`, which the build passes, the normal modules also carry none of the literals their sources
+compile only into the debug build: `#if VJO_DEBUG` branches, `vjo_dlog()`/`klog_d()` calls,
+`shell/selftest.c`, `kernel/meminfo.c`). That catches a module built with the wrong `VJO_DEBUG`. It
+cannot catch a source change that moves a debug line into the normal build (the sources and the module
+then agree): that is the inventory's to review. Nor does it see a literal joined from macros (one of
+the Shell's 71 today), or a leaked string that follows non-string data with no separating byte (about
+1 of 676 literals, measured by audit-overlay-release-variants-b). The build also
 checks its pages against its own budget (`include/vjo_ledger_budget.h`'s `#if VJO_DEBUG` branches,
 `tools/check_memory_ledger.py --variant`). The host suites, the ARM lane, the Vita3K smokes and
 `tools/preflight.sh` take the same switch (`-DVJO_DEBUG=OFF`, or `VJO_DEBUG=0` in the environment);

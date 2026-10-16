@@ -111,7 +111,7 @@ def classify(blobs):
 PART_SOURCES = {"shell": ("shell",), "kernel": ("kernel",), "worker": ("game_ocr",), "app": ("settings",)}
 DEBUG_ONLY_FILES = {"shell": ("shell/selftest.c",), "kernel": ("kernel/meminfo.c",)}
 KEPT_SOURCES = ("shell", "kernel", "game_ocr", "settings", "core", "include", "vita")
-SUFFIXES = (".c", ".cpp", ".h")
+SUFFIXES = (".c", ".cpp", ".h", ".inc")  # .inc: tables a .c file includes (core/deinflect.inc, lapis_notetype.inc)
 DERIVED_MIN = 12  # shorter literals ("%s", "none") are too likely to be other strings too
 DLOG_CALL = re.compile(r"\b(?:vjo_dlog|klog_d)\s*\(\s*$")
 CONDITIONAL = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
@@ -121,7 +121,9 @@ ESCAPES = {"n": b"\n", "t": b"\t", "r": b"\r", "0": b"\0", "\\": b"\\", '"': b'"
 
 def _debug_lines(text):
     """Per line of C source (index 0 = line 1): whether it is in a branch only the debug build compiles: an
-    `#if VJO_DEBUG` branch, the `#else` of an `#if !VJO_DEBUG`. Other conditionals keep their parent's state."""
+    `#if VJO_DEBUG` branch; the `#elif` and `#else` branches of an `#if !VJO_DEBUG` (reached only with VJO_DEBUG).
+    The `#elif` and `#else` branches of an `#if VJO_DEBUG` may be the normal build's, so they are not. Other
+    conditionals keep their parent's state."""
     out, on, stack = [], False, []
     for line in text.split("\n"):
         m = CONDITIONAL.match(line)
@@ -131,6 +133,13 @@ def _debug_lines(text):
                 take = {"VJO_DEBUG": True, "!VJO_DEBUG": False}.get(arg) if kind == "if" else None
                 stack.append((on, take))
                 on = on or take is True
+            elif kind == "elif" and stack:
+                parent, take = stack[-1]
+                if take is True:  # after #if VJO_DEBUG: this and any later branch may be built without it
+                    on = parent
+                    stack[-1] = (parent, None)
+                elif take is False:  # after #if !VJO_DEBUG: reached only with VJO_DEBUG (a later #else as well)
+                    on = True
             elif kind == "else" and stack:
                 parent, take = stack[-1]
                 on = parent or take is False if take is not None else on
