@@ -1250,7 +1250,7 @@ class ClockWindows(unittest.TestCase):
         self.assertIn("step_add(VJO_GSTEP_CLOCK,", body)
         # a window's config: activate_game reads config.ini again, then logs "game TITLE started"
         shell = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        body = shell[shell.index("static void activate_game(SceUID pid, const char *tid, int mode)"):]
+        body = shell[re.search(r"\nstatic void activate_game\(", shell).start():]
         body = body[:body.index("\n}\n")]
         self.assertLess(body.index("apply_config();"), body.index('vjo_log("game %s started: '))
 
