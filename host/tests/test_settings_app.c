@@ -121,6 +121,7 @@ typedef struct {
     char mode[16];    /* its ocr_mode value */
     char boost[16];   /* its ocr_boost_clock value */
     char highlight[16]; /* its highlight_mode value */
+    char results[16];   /* its local_dictionary_results value */
     int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
 /* Each run is one process of the app, as on the console: settings/main.c keeps
@@ -211,6 +212,7 @@ int sceDisplayWaitVblankStart(void)
         saved_value("ocr_mode", shown[frame].mode);
         saved_value("ocr_boost_clock", shown[frame].boost);
         saved_value("highlight_mode", shown[frame].highlight);
+        saved_value("local_dictionary_results", shown[frame].results);
         shown[frame].model_line = has_model_line();
     }
     frame++;
@@ -971,6 +973,60 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
     for (int f = 0; f < frames; f++) check_room(f);
 }
 
+/* The lookup cards' choices once the page has scrolled (Speed boost first: Highlight at y 256, Dictionaries shown
+ * at 328; audit N8): drawn there, and touched there, at their badges' exact edges. A touch elsewhere on Highlight
+ * switches it, as before the page scrolled; on Dictionaries shown only a number chooses. */
+#define HL_Y 256
+#define DICT_Y 328
+static int rect_at(int f, int x, int y, int w, int h)
+{
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->x == x && r->y == y && r->w == w && r->h == h) return 1;
+    }
+    return 0;
+}
+static void test_scrolled_cards_keep_their_touch_targets(void)
+{
+    card("highlight_mode = word\nlocal_dictionaries = a.vjdict,b.vjdict,c.vjdict\nlocal_dictionary_results = 1\n");
+    static const struct { int x, y; const char *highlight, *results; } taps[] = {
+        {724, HL_Y + 6, "character", "1"},   /* Character, top-left pixel */
+        {707, HL_Y + 39, "word", "1"},       /* Whole word, bottom-right pixel */
+        {919, HL_Y + 39, "character", "1"},  /* Character, bottom-right pixel */
+        {532, HL_Y + 6, "word", "1"},        /* Whole word, top-left pixel */
+        {300, HL_Y + 30, "character", "1"},  /* the title: switches */
+        {715, HL_Y + 20, "word", "1"},       /* between the badges: switches */
+        {636, DICT_Y + 6, "word", "3"},      /* 3, top-left pixel */
+        {679, DICT_Y + 39, "word", "3"},     /* 3, bottom-right pixel */
+        {680, DICT_Y + 20, "word", "3"},     /* the gap after 3: focus only */
+        {684, DICT_Y + 20, "word", "4"},     /* 4, left edge */
+        {919, DICT_Y + 20, "word", "8"},     /* 8, right edge */
+        {920, DICT_Y + 20, "word", "8"},     /* right of 8: focus only */
+        {540, DICT_Y + 5, "word", "8"},      /* above the numbers: focus only */
+        {540, DICT_Y + 40, "word", "8"},     /* below them: focus only */
+        {540, DICT_Y + 6, "word", "1"},      /* 1, top-left pixel */
+    };
+    enum { N = sizeof(taps) / sizeof(taps[0]), KEYS = 10 };
+    static Input in[KEYS + 2 * N] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                                     PRESS(SCE_CTRL_DOWN)}; /* Highlight focused: Speed boost on top */
+    for (int i = 0; i < N; i++) in[KEYS + 2 * i] = (Input){0, 1, taps[i].x, taps[i].y};
+    TEST_ASSERT(run(in, KEYS + 2 * N) == KEYS + 2 * N);
+    TEST_CHECK_(card_top(9, 2) == OCR_Y && card_top(9, 4) == HL_Y && card_top(9, 5) == DICT_Y,
+                "frame 9: Speed boost at %d, Highlight at %d, Dictionaries at %d", card_top(9, 2), card_top(9, 4),
+                card_top(9, 5));
+    TEST_CHECK(rect_at(9, 532, HL_Y + 6, 176, 34) && rect_at(9, 724, HL_Y + 6, 196, 34)); /* the badges, there */
+    for (int k = 0; k < 8; k++) TEST_CHECK_(rect_at(9, 540 + k * 48, DICT_Y + 6, 44, 34), "number %d", k + 1);
+    for (int i = 0; i < N; i++) {
+        int f = KEYS + 2 * i;
+        TEST_CHECK_(!strcmp(shown[f].highlight, taps[i].highlight) && !strcmp(shown[f].results, taps[i].results),
+                    "tap %d at %d,%d: highlight '%s', results '%s'; want %s, %s", i, taps[i].x, taps[i].y,
+                    shown[f].highlight, shown[f].results, taps[i].highlight, taps[i].results);
+        TEST_CHECK_(focused_card(f) == (taps[i].y < DICT_Y ? 4 : 5) && card_top(f, 2) == OCR_Y,
+                    "tap %d: card %d focused, Speed boost at %d", i, focused_card(f), card_top(f, 2));
+        check_room(f);
+    }
+}
+
 /* The press choice names what opens the overlay (config.ini toggle_button). */
 static void test_read_text_names_the_buttons_that_open_the_overlay(void)
 {
@@ -1212,6 +1268,7 @@ TEST_LIST = {
      test_read_text_and_speed_boost_by_keys_and_touch},
     {"the_page_scrolls_a_card_at_a_time_and_never_draws_into_the_status_line", test_the_page_scrolls_a_card_at_a_time},
     {"read_text_names_the_buttons_that_open_the_overlay", test_read_text_names_the_buttons_that_open_the_overlay},
+    {"scrolled_highlight_and_dictionaries_cards_keep_their_touch_targets", test_scrolled_cards_keep_their_touch_targets},
     {"engine_card_and_size_lines", test_engine_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},

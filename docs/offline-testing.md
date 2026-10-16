@@ -240,7 +240,8 @@ and counted textures (`tools/vita3k_settings_smoke.c`, linked by `-Wl,--wrap`; t
 synthetic games (`tools/make_settings_smoke_games.py`: generated titles and icons, some
 missing, damaged, oversized or not PNG) and runs the script: the Games list scrolled down and
 back, paged with L/R pressed and held, letters with Left/Right, toggles, the filters, a Start
-rescan, the other pages, Cancel. Toggles and the exit use the enter and cancel buttons the app
+rescan, the OCR & lookup page scrolled to its last card and back (its cut card clipped by
+libvita2d's stencil), the other pages, Cancel. Toggles and the exit use the enter and cancel buttons the app
 reads from the console's setting (#106; Vita3K's registry has ○ enter, and the script's old
 × exited the app at its first toggle). It fails on a crash, a hang, an icon texture freed after a
 draw with no GPU wait in between, or one left alive. Given `RELEASE_VPK`, the release

@@ -75,8 +75,8 @@ job, of both modes. Nothing is recognized until every row of the region has read
   reads the region again until a whole pass that started at least 150 ms after the rows were first
   read the same has matched (`settle_verify`). Otherwise it waits first (`settle_wait`): passes without
   finding lines until a pass with no change starts 150 ms or more after the start of the last pass that
-  saw one. With passes of about 60 ms the rows have to hold still for three passes, 0.18-0.24 s (est.),
-  after the last change.
+  saw one. With test.3's passes of 56-73 ms the rows have to hold still for three passes, 0.17-0.29 s
+  (est.), after the last change.
 - A job waits at most `ocr_settle_max_ms` = 2000 ms in all; a job the open overlay waits for (a press;
   not Automatically's own job, a refresh or the self-test's) at most `ocr_settle_press_ms` = 1000 ms
   (`shell/worker.c` `vocr_run_one`). When that runs out the job reads the region anyway.
@@ -98,12 +98,14 @@ characters, 1.6 s), and with 12 of 25 characters shown, a pause of 8 frames (133
 (25 of 25) while a pause of 24 frames (400 ms) is read as settled (12 of 25).
 
 `tools/analyse_selftest.py --collect` now reports such reads: **read before finished** counts, in each
-game window, a job whose text the next job's began with and went on from, with both jobs' `log.txt`
-lines and lengths and the first job's wait, never the text. It needs the recognized text and the job
-lines in `log.txt`, which the debug build (the test builds') logs; the normal build's short log has
-neither ([release-variants.md](release-variants.md)), and for its boots the analysis says so instead.
-In test.3 (Automatically, CLANNAD) it found none: 0 of 18 pairs, and 2 jobs that read the same text
-again.
+game window, a job whose text the next job's began with and went on from, with both jobs' file and line
+(`log.old.txt:N` or `log.txt:N`) and lengths and the first job's wait, never the text. It can also flag a
+short line that begins the next screen's (an ellipsis before a line that starts with one), and it misses
+a difference past a line's 60th character, the most a line's log entry keeps. It needs the recognized
+text and the job lines in `log.txt`, which the debug build (the test builds') logs; the normal build's
+short log has neither ([release-variants.md](release-variants.md)), and for its boots the analysis says
+so instead. In test.3 (Automatically, CLANNAD) it found none: 0 of 18 pairs, and 2 jobs that read the
+same text again.
 
 ## From the press to the popup
 
@@ -112,22 +114,28 @@ Measured in test.3 (v0.8.0-test.3, `9cfa920`, CLANNAD `PCSG00415`; #138's collec
 change's `tools/analyse_selftest.py --collect`). Every press of that run was in Automatically; Only when
 I press was not run. Times are the Shell's own, from its log lines: a job's text comes with its
 `subtitle text ready in N ms` line and its first word with its `done` line, both counted from the job's
-start. A press that waited for a running job has no exact time: the log has no time for a job's start,
-so its job's whole time is an upper bound.
+start (the Shell shows a word within its 50 ms poll after the `done` line; not added). A press that
+waited for a running job has no exact time, as the log has no time for a job's start: the analysis gives
+that job's whole time and the poll, and for an OCR-only job (Highlight = Character, the subtitles) the
+lookup of the word after it and its poll, an upper bound on when the Shell has the word (the overlay
+draws it at its next frame). A running job that failed or read no line, the self-test's job and a
+refresh are never a press's wait, and a press closed before its text or word came, or whose overlay
+could not open, is not timed.
 
 | What L + R found (19 presses) | Presses | Text after the press | Word after the press |
 |---|---:|---|---|
 | the saved word (at once) | 1 | a frame (not timed) | a frame (not timed) |
-| a background job still running | 7 | - | at most 0.6-3.2 s, median at most 2.7 s |
-| nothing for this screen: a job on the press | 8 | 0.8-1.7 s, median 1.3 s | 1.0-1.7 s, median 1.4 s |
+| a background job still running | 7 | - | at most 0.7-3.2 s, median at most 2.7 s |
+| nothing for this screen: a job on the press | 7 | 1.0-1.7 s, median 1.3 s | 1.1-1.7 s, median 1.4 s |
 | a running job whose result was for an earlier screen, then a job | 1 | at least 1.4 s | at least 1.4 s |
 | a job on the press without text | 2 | - | - |
+| a job on the press, the overlay closed before its text (after 0.43 s) | 1 | not timed | not timed |
 
 The two presses without text were in PCSG00940, which had no OCR worker registered (`rc=-117`).
 
-In the eight presses that started a job, waiting for the rows to hold still took 0.4-1.0 s (median
-0.8 s; one reached the 1 s cap), with 16-29 row changes a pass: rows of the box were still changing at
-the press. The log does not say whether that was text typing out or an animation of the box (test.2's
+In the seven timed presses that started a job, waiting for the rows to hold still took 0.6-1.0 s
+(median 0.8 s; one reached the 1 s cap), with 17-29 row changes a pass: rows of the box were still
+changing at the press. The log does not say whether that was text typing out or an animation of the box (test.2's
 CLANNAD box animated for about a second after the kernel had called it settled:
 [first-ocr.md](first-ocr.md#each-cost-and-its-cause)). Finding and recognizing the lines and looking up
 the word took the rest.
@@ -143,8 +151,8 @@ background result. The log does not say what changed, or why there was no result
 
 | | Automatically | Only when I press |
 |---|---|---|
-| Press after the background word is ready, same screen | at once (1 of test.3's 19 presses) | first press: a job, 1.0-1.7 s; reopening: at once |
-| Press while the text is still settling | the rest of the background job, at most 0.6-3.2 s (7 of 19) | a job: 1.0-1.7 s to the word (measured on Automatically's press jobs, the same path) |
+| Press after the background word is ready, same screen | at once (1 of test.3's 19 presses) | first press: a job, est. at most 1.1-1.7 s (Automatically's press jobs, on screens still settling; a still screen's job waits less); reopening: at once |
+| Press while the text is still settling | the rest of the background job, at most 0.7-3.2 s (7 of 19) | a job: 1.1-1.7 s to the word (measured on Automatically's press jobs, the same path) |
 | First press of a game process | as above: jobs that found no line read the weights before | est. 0.3-0.8 s more: the job reads the model (125-295 ms in test.3), the LM (184 ms) and, for a doubtful line, the next size's model (185-331 ms) itself |
 | Work while you read | a job for every settled screen, at the lowest priority on the game's cores | none (subtitles off) |
 
@@ -154,10 +162,11 @@ before each job (measured; `game frames during OCR jobs` in the analysis, press 
 and CPU3 use are unmeasured (AGENTS.md rule 8).
 
 **The speed boost's share.** test.3 raised the clock in 22 jobs (333 → 444 → 333 MHz, measured); the
-optional run with the boost off was not made, so what it saves is unmeasured. In the 9 press jobs with
-text, recognition and the larger model's re-reads took 46-282 ms at 444 MHz (their `recognize` and
-`cascade` steps, measured); at 333 MHz they would take up to a third longer if they scale with the clock
-(444 / 333 = 1.33, est.): 0.02-0.1 s more a press (est.). The stable-text wait and the strip reads,
+optional run with the boost off was not made, so what it saves is unmeasured. Of the 9 press jobs with
+text, 6 recognized a line, and their recognition and the larger model's re-reads took 52-283 ms at
+444 MHz (their `recognize` and `cascade` steps and clock steps, measured); the other 3 took every line
+from the line cache, recognized nothing and raised no clock. At 333 MHz the 6 would take up to a third
+longer if they scale with the clock (444 / 333 = 1.33, est.): 0.02-0.1 s more a press (est.). The stable-text wait and the strip reads,
 most of a press's time, are frame-bound and do not change.
 
 ## What test.4 should measure
