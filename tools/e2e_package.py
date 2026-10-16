@@ -462,7 +462,7 @@ class E2E:
         worker_text = ("no OCR worker line (the kernel loads it)" if self.worker == "kernel"
                        else "OCR worker under ['PCSG00415']")
         install_text = ("one-VPK install (installed.txt): " if (self.pkg / "payload-manifest.txt").is_file()
-                        else "one-VPK install: no installed.txt")
+                        else "one-VPK install: no installed.txt (")
         for want_text in (worker_text, install_text, "PASS: every stage completed", "memory headroom per stage",
                           "recommendation:", "not decided here", "crash dumps: psp2core",
                           "model sizes that did not fit (log only, never shown): large in PCSG00415 x1",

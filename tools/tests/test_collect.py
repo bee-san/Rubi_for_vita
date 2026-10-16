@@ -878,8 +878,12 @@ class InstallRecord(unittest.TestCase):
         import analyse_selftest as a
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            self.assertEqual(a.render_install(a.summarise_install(folder, {})),
-                             ["  one-VPK install: no installed.txt (not installed by the Overlay app's Install page)"])
+            # a collect from before installed.txt was fetched says nothing of it; one that asked says it is absent
+            self.assertEqual(a.render_install(a.summarise_install(folder, {})), [])
+            self.assertEqual(a.render_install(a.summarise_install(
+                folder, {"missing": ["ux0:/data/VitaJPOverlay/installed.txt"]})),
+                ["  one-VPK install: no installed.txt (neither the Overlay app's Install page nor this install-vita.sh "
+                 "has installed this Vita's overlay: an older installer did, or none)"])
             (folder / "ux0/data/VitaJPOverlay").mkdir(parents=True)
             record = folder / "ux0/data/VitaJPOverlay/installed.txt"
             record.write_text("vjoinst1 version=0.8.1 variant=normal api=22 build=fedcba9876543210 manifest=" + "a" * 64 + "\n")

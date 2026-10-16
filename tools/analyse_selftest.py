@@ -1233,9 +1233,12 @@ TAI_LEFTOVER = re.compile(r"^config\.txt\.vjo-(new|old)$")
 def summarise_install(folder, record):
     """The Overlay app's install (docs/one-vpk-install.md): installed.txt against the package's payload
     manifest (its SHA-256, collect_vita.py), and the dated backups and leftovers beside each config.txt."""
-    out = {"record": None, "fields": None, "this_package": None, "backups": [], "leftovers": []}
+    out = {"record": None, "fields": None, "this_package": None, "backups": [], "leftovers": [],
+           # a collect from before installed.txt was fetched neither has it nor lists it as missing
+           "asked": "ux0:/data/VitaJPOverlay/installed.txt" in (record.get("missing") or [])}
     text = _read(Path(folder), "ux0/data/VitaJPOverlay/installed.txt")
     if text is not None:
+        out["asked"] = True
         out["record"] = (text.splitlines() or [""])[0].strip()
         m = INSTALLED_LINE.match(out["record"])
         if m:
@@ -1253,7 +1256,9 @@ def summarise_install(folder, record):
 def render_install(i):
     f, L = i["fields"], []
     if i["record"] is None:
-        L.append("  one-VPK install: no installed.txt (not installed by the Overlay app's Install page)")
+        if i["asked"]:
+            L.append("  one-VPK install: no installed.txt (neither the Overlay app's Install page nor this "
+                     "install-vita.sh has installed this Vita's overlay: an older installer did, or none)")
     elif f is None:
         L.append(f"  one-VPK install: installed.txt is not a record ({i['record'][:80]!r})")
     else:
