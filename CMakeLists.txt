@@ -453,6 +453,10 @@ target_link_libraries(vjo-local-bench vjo_host)
 # The overlay's lookup at many words' first characters (tools/frequency_eval.py).
 add_executable(vjo-word-forms host/word_forms.c)
 target_link_libraries(vjo-word-forms vjo_host)
+# Which line breaks of recognized texts join and the words the lookup finds across them
+# (core/textjoin.h; tools/cross_line_eval.py).
+add_executable(vjo-cross-lines host/cross_lines.c)
+target_link_libraries(vjo-cross-lines vjo_host)
 
 # The Shell's word lookups over real recognized lines, every read attributed
 # (tools/dict_lookup_bench.py): its own local_dict.c with the counters on.

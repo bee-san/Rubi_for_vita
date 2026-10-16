@@ -5,6 +5,7 @@
 #include "furigana.h"
 #include "pitch.h"
 #include "port.h"
+#include "textjoin.h"
 #include "utf.h"
 
 /* ---------------- field values ---------------- */
@@ -318,6 +319,18 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     if (!out->spelling || !out->reading || !out->sentence || !m || !p)
         return -1;
     sentence_furigana(l, entry, out);
+    /* The sentence the recognized lines make: a break the game's wrapping put
+     * inside it goes, the word's ranges follow (core/textjoin.h); a name's line
+     * and a new sentence's keep theirs. The copy is the card's own, and
+     * sentence_furigana is the same text. */
+    {
+        int o[4] = {out->hl_start, out->hl_end, out->sf_hl_start, out->sf_hl_end};
+        vjo_text_join((char *)out->sentence, o, 4);
+        out->hl_start = o[0];
+        out->hl_end = o[1];
+        out->sf_hl_start = o[2];
+        out->sf_hl_end = o[3];
+    }
     for (int i = 0; i < v->n_meanings; i++)
         if (!(m[i] = dup(a, v->meanings[i])))
             return -1;

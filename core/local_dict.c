@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include "port.h"
+#include "textjoin.h"
 #include "utf.h"
 
 #define HEADER_SIZE 64u
@@ -1060,11 +1061,12 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                            const char *text, size_t cursor_byte, int limit,
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err)
 {
-    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0;
-    size_t lengths[MAX_SCAN_CHARS + 1], ends[MAX_SCAN_CHARS + 1];
+    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0, raw_bytes = 0;
+    size_t lengths[MAX_SCAN_CHARS + 1];
+    uint8_t raws[MAX_SCAN_CHARS + 1];
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
     unsigned resolved = 0;
-    char key[VJO_LOCAL_MAX_KEY + 1];
+    char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4];
     Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
     Workspace *w;
@@ -1088,17 +1090,27 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     }
 
     /* Only inspect the prefix at the selected character. Source UTF-16
-     * lengths remain unchanged by kana/fullwidth search normalization. */
+     * lengths remain unchanged by kana/fullwidth search normalization. A line
+     * break the text's lines join at (core/textjoin.h: the game wrapped a word
+     * there) is crossed: the key and the text as written (raw) leave it out,
+     * the source span and its UTF-16 length keep it. */
     while (off < len && count < MAX_SCAN_CHARS) {
+        size_t at = off;
         uint32_t cp = vjo_utf8_next(text, len, &off);
         char enc[4];
         int n;
+        if ((cp == '\n' || cp == '\r') && vjo_text_joins(text, len, at)) {
+            off += cp == '\r'; /* its '\n' */
+            source_units += (int)(off - at);
+            continue;
+        }
         if (boundary(cp)) break;
         source_units += vjo_utf16_units(cp);
         n = vjo_utf8_encode(normalize(cp), enc);
         if (bytes + (size_t)n > VJO_LOCAL_MAX_KEY) break;
         memcpy(key + bytes, enc, (size_t)n); bytes += (size_t)n;
-        count++; lengths[count] = bytes; units[count] = source_units; ends[count] = off;
+        memcpy(raw + raw_bytes, text + at, off - at); raw_bytes += off - at;
+        count++; lengths[count] = bytes; units[count] = source_units; raws[count] = (uint8_t)raw_bytes;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
 
@@ -1145,7 +1157,7 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                 q.strict = 1;
                 q.fallback = &fallback[d];
                 q.fell_back = (fell_back >> d) & 1;
-                if ((rc = find_matches(w, d, c, text + cursor_byte, ends[k] - cursor_byte, &q, before + 1)))
+                if ((rc = find_matches(w, d, c, raw, raws[k], &q, before + 1)))
                     goto done;
                 fell_back |= (unsigned)q.fell_back << d;
                 if (w->n_matches == before) continue;

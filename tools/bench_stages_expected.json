@@ -1,6 +1,6 @@
 {
  "checks": {
-  "anki": "4f6542eaa069875d",
+  "anki": "05beb44a7cc87399",
   "capture_a1b5": "c409a398540f05ca",
   "capture_a2b10": "42a8e046f598658b",
   "capture_abgr": "42a8e046f598658b",
@@ -16,7 +16,7 @@
   "job_h15_lm": "dd6569dbcaa66395",
   "jpeg_shot": "4d9b86c69ad1f7a1",
   "log": "79474d3b904bae58",
-  "lookup_every": "d71a51d0234b4ee0",
+  "lookup_every": "e5e9acb25f722a13",
   "lookup_first": "a5a40dfe7385a858",
   "postproc": "03b3a86926a580ab",
   "recognize_fl10": "e4344aaecdc0dc39",
