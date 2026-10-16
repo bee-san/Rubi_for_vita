@@ -29,9 +29,11 @@ Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: i
 Scenario C, an older choice migrated: vocr_model = VOCR4_W20_w8.vocr becomes vocr_tier = large,
 dictionary = jpdb becomes local, and the registered game is kept without --title.
 Before them, the package itself: its manifest names the build its modules are (tools/check_variant.py's
-markers, read as tools/package_release.py reads a base) and the Overlay app's version, and its models and
-LMs are this tree's pinned files (tools/prepare_ocr.py): run the e2e from a checkout of the package's
-own commit.
+markers, read as tools/package_release.py reads a base, and all four modules, the worker too, checked as
+the Vita build checks them, against this tree's sources) and the Overlay app's version (a manifest without
+app_version fails: tools/package_release.py records it with the variant), its models and LMs are this
+tree's pinned files (tools/prepare_ocr.py), and ocr/ holds nothing else (the installer uploads every .vocr
+and .vlm there): run the e2e from a checkout of the package's own commit.
 
 CI runs it on both builds' packages (.github/workflows/release.yml, the `package` job). Prints a
 PASS or FAIL line per check and a JSON summary; exits 1 on any failure. After a pass the copies
@@ -53,6 +55,7 @@ sys.path.insert(0, str(ROOT / "tools/tests"))
 sys.path.insert(0, str(ROOT / "tools"))
 from ftp_mock import FtpMock  # noqa: E402
 import package_release as release  # noqa: E402  (the packager's own reading of a package's modules and pins)
+import package_variants  # noqa: E402  (module_problems: the four modules as the Vita build checks them)
 
 FIXTURE = ROOT / "tools/tests/fixtures/selftest-v2-diagnostics.txt"
 SECRET = "e2e-secret-jpdb-key"
@@ -219,30 +222,49 @@ class E2E:
                    f"{label}: install-vita.sh --check-app rc {r.returncode} (want {want_rc}), says {want_text!r}")
         return r
 
-    # ---------------- the package itself (audit-overlay-release-variants-d notes 1 and 4) ----------------
+    # ---------------- the package itself (audit-overlay-release-variants-d notes 1 and 4, -e notes 1-3) ----------------
     def package_checks(self):
-        """--verify checks the files against the manifest, not the manifest: here its variant and app version
-        against the modules, its models and LMs against this tree's pins (a re-hashed altered model fails)."""
+        """--verify checks the files against the manifest, not the manifest: here its variant against the four modules,
+        as tools/package_release.py reads a base and as the Vita build checks them (tools/check_variant.py with this
+        tree's sources, the worker too), its app version (required) against the app, its models and LMs against this
+        tree's pins (a re-hashed altered model fails), and that ocr/ holds nothing else (install_ftp.sh uploads every
+        .vocr and .vlm there)."""
         check, m = self.check, self.manifest
+        want = m.get("variant") or "debug"  # a package from before the two builds names none: all are the debug build
         try:
             with zipfile.ZipFile(self.package) as z:
                 got, app_version = release.base_variant(z)
         except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
             got, app_version = None, f"unreadable ({type(exc).__name__}: {exc})"
-        want = m.get("variant") or "debug"  # a package from before the two builds names none: all are the debug build
         check(got == want, f"the package's modules are the {want} build its manifest names (they read as {got})")
-        if "app_version" in m:
-            check(app_version == m["app_version"],
-                  f"the Overlay app is v{app_version}, as the manifest's app_version v{m['app_version']}")
-        for name, assets, tag, role in release.shipped_models():
+        try:  # the worker has no fixed marker: only its sources' debug-only strings tell its build (-e note 1)
+            with zipfile.ZipFile(self.package) as z:
+                problems = package_variants.module_problems(z, want, ROOT)
+        except (ValueError, KeyError, OSError, zipfile.BadZipFile) as exc:
+            problems = [f"unreadable ({type(exc).__name__}: {exc})"]
+        check(not problems, f"the four modules pass the {want} build's own check (tools/check_variant.py --sources with "
+              "this tree's sources, the worker too)" + (": " + "; ".join(problems) if problems else ""))
+        recorded = m.get("app_version")  # tools/package_release.py records it with the variant (-e note 3)
+        check(recorded is not None and app_version == recorded,
+              f"the Overlay app is v{app_version}, as the manifest's app_version v{recorded}" if recorded is not None
+              else f"the Overlay app is v{app_version}, but the manifest has no app_version (tools/package_release.py "
+              "records it)")
+        ocr = self.pkg / "ux0/data/VitaJPOverlay/ocr"
+        models = release.shipped_models()
+        for name, assets, tag, role in models:
             _, size, sha = assets[name]
-            path = self.pkg / "ux0/data/VitaJPOverlay/ocr" / name
+            path = ocr / name
             ok = path.is_file() and path.stat().st_size == size and sha256_file(path) == sha
             check(ok, f"{name} is the pinned file ({tag}, {role}; this tree's tools/prepare_ocr.py)")
         _, size, sha = release.VOCR_LM_ATTRIBUTION_PIN[release.VOCR_LM_ATTRIBUTION]
-        path = self.pkg / "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md"
+        path = ocr / "LM-ATTRIBUTION.md"
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
               "LM-ATTRIBUTION.md is the LMs' pinned attribution")
+        expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md"}
+        other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
+                                       if not p.is_dir()) if rel not in expected)
+        check(not other, "ocr/ has nothing but the shipped models and LM-ATTRIBUTION.md"
+              + (f" (other files: {', '.join(other)})" if other else ""))  # -e note 2: an extra model is uploaded too
 
     # ---------------- scenario A: over v0.8.0-test.2 with test.1's app (the owner's state, #101) ----------------
     def scenario_a(self):
@@ -321,13 +343,7 @@ class E2E:
                     check(cfg.get(k) == old_v, f"A config.ini: {k} kept (the template still has it)")
                 else:
                     check(k not in cfg, f"A config.ini: {k} dropped (not in the template any more)")
-            r = self.sh(run_pkg, "tools/install_ftp.sh", "--self-test", host)
-            check(r.returncode == 0 and (dev / "ux0/data/VitaJPOverlay/selftest.txt").read_bytes() == b"",
-                  "A --self-test armed the marker")
-            note = "Note: this package is the normal build, which has no self-test." in r.stdout
-            check(note == (self.variant == "normal"),
-                  f"A --self-test {'says' if self.variant == 'normal' else 'does not say'} that the normal build has no "
-                  f"self-test (the {self.variant or 'unnamed'} build)")
+            self.self_test(dev, run_pkg, host)
             self.session_a(dev)
             snapshot = {p: p.read_bytes() for p in dev.rglob("*") if p.is_file()}
             n = len(ftp.stored)
@@ -345,6 +361,17 @@ class E2E:
             data = dev / "ux0/data/VitaJPOverlay"
             check((data / "config.ini").is_file() and (data / "log.txt").is_file(),
                   "A --uninstall keeps the data (config.ini, logs)")
+
+    def self_test(self, dev, run_pkg, host):
+        """install_ftp.sh --self-test arms the marker in either build; from the normal build's package (its manifest's
+        variant) it also says that the normal build has no self-test, and from any other it does not."""
+        r = self.sh(run_pkg, "tools/install_ftp.sh", "--self-test", host)
+        self.check(r.returncode == 0 and (dev / "ux0/data/VitaJPOverlay/selftest.txt").read_bytes() == b"",
+                   "A --self-test armed the marker")
+        note = "Note: this package is the normal build, which has no self-test." in r.stdout
+        self.check(note == (self.variant == "normal"),
+                   f"A --self-test {'says' if self.variant == 'normal' else 'does not say'} that the normal build has no "
+                   f"self-test (the {self.variant or 'unnamed'} build)")
 
     def session_a(self, dev):
         """A console session, simulated with the tree's self-test fixture and the plugins' log formats."""
@@ -490,8 +517,9 @@ def main():
     if "package-manifest.json" not in names:
         sys.exit(f"e2e_package: {args.package.name} has no package-manifest.json: a base zip (the Vita build's own, "
                  "a CI artifact)? Package it with tools/package_release.py or tools/package_variants.py first.")
-    work = (args.work or ROOT / "build/e2e-package" / args.package.stem).resolve()
-    problem = prepare_work(work, args.package, default=args.work is None)
+    default = (ROOT / "build/e2e-package" / args.package.stem).resolve()
+    work = (args.work or default).resolve()
+    problem = prepare_work(work, args.package, default=work == default)  # -e note 9: --work may name it too
     if problem:
         sys.exit(f"e2e_package: {problem}")
     others = {p.name for p in work.iterdir()} - set(ENTRIES) - {MARKER}  # the caller's: never touched

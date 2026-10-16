@@ -11,10 +11,12 @@ literals of 12 bytes or more its sources compile only into the debug build (`#if
 vjo_dlog() and klog_d() calls, shell/selftest.c, kernel/meminfo.c) and kept code does not use too: none
 may be in the normal build as a string of its own, which catches a file or target built without
 VJO_DEBUG=0, and a debug module must carry at least one of them, which catches one built with
-VJO_DEBUG=0 (the worker has no fixed marker: this is its only check).
+VJO_DEBUG=0 (the worker has no fixed marker: this is its only check). A --sources that is not the tree's
+root (no shell/, kernel/, game_ocr/, settings/ in it), or a part whose sources give none of these literals,
+is a failure: the check would otherwise pass every module vacuously.
 Exits non-zero with every failure listed. tools/package_release.py's base_variant() names a base zip's
-build with classify(), tools/package_variants.py --sources runs check() on the bases, and
-vita/CMakeLists.txt runs this after every build of the four modules.
+build with classify(), tools/package_variants.py --sources runs check() on the bases, tools/e2e_package.py
+on a package's modules, and vita/CMakeLists.txt runs this after every build of the four modules.
 """
 import argparse
 import functools
@@ -281,24 +283,42 @@ def leaked(blob, strings):
     return found
 
 
+def sources_problem(root):
+    """Why root is not a checkout of the tree for --sources (None: it is one): a path that is not a directory, or one
+    without the parts' sources (PART_SOURCES: shell/, kernel/, game_ocr/, settings/). Their debug-only strings are
+    the check; with none, every module would pass it (audit-overlay-release-variants-e note 5: an empty directory,
+    no such path, a file, or tools/ of an extracted package)."""
+    root = Path(root)
+    if not root.is_dir():
+        return (f"--sources {root}: not a directory (a checkout of the tree: "
+                f"{', '.join(d + '/' for dirs in PART_SOURCES.values() for d in dirs)} at its root)")
+    missing = [d + "/" for dirs in PART_SOURCES.values() for d in dirs if not (root / d).is_dir()]
+    if missing:
+        return f"--sources {root}: not a checkout of the tree (no {', '.join(missing)} in it)"
+    return None
+
+
 def check(variant, blobs, version=None, sources=None):
     """Every failure of blobs ({part: bytes}) as the given variant; with sources (the tree's root), the normal
     build is also checked against every debug-only literal of its sources (debug_only_strings), and a debug
-    module must carry at least one of them (the worker has no fixed marker: this is its check)."""
+    module must carry at least one of them (the worker has no fixed marker: this is its check). A part whose
+    sources give no such literal fails: there is nothing to check it against (not the tree's root?)."""
     problems = []
     for part, blob in blobs.items():
-        if variant == "normal" and sources is not None:
-            gone = debug_only_strings(sources, part)
-            left = leaked(blob, gone)
+        strings = debug_only_strings(sources, part) if sources is not None else None
+        if strings is not None and not strings:
+            problems.append(f"{part}: no debug-only strings in its sources ({', '.join(PART_SOURCES.get(part, ()))} "
+                            f"under {sources}): nothing to check it against (not the tree's root?)")
+        if variant == "normal" and strings:
+            left = leaked(blob, strings)
             if left:
-                problems.append(f"{part}: the normal build carries {len(left)} of its sources' {len(gone)} debug-only "
+                problems.append(f"{part}: the normal build carries {len(left)} of its sources' {len(strings)} debug-only "
                                 f"strings (built without VJO_DEBUG=0?): " + "; ".join(repr(s.decode('utf-8', 'replace'))
                                                                                     for s in left[:6]))
-        if variant == "debug" and sources is not None:
-            want = debug_only_strings(sources, part)
+        if variant == "debug" and strings:
             # at least one, not all: a debug-only literal the compiler drops (unused code) is no sign of the build
-            if want and not any(s in blob for s in want):
-                problems.append(f"{part}: the debug build carries none of its sources' {len(want)} debug-only strings "
+            if not any(s in blob for s in strings):
+                problems.append(f"{part}: the debug build carries none of its sources' {len(strings)} debug-only strings "
                                 "(built with VJO_DEBUG=0?)")
         if part == "worker":
             continue  # no fixed markers of its own (its probe's strings are derived above)
@@ -333,6 +353,8 @@ def main():
     args = parser.parse_args()
     blobs = {part: segments(getattr(args, part)) for part in ("kernel", "shell", "worker", "app") if getattr(args, part)}
     problems = check(args.variant, blobs, args.version, args.sources)
+    if args.sources is not None and sources_problem(args.sources):
+        problems.insert(0, sources_problem(args.sources))
     derived = {part: len(debug_only_strings(args.sources, part)) for part in blobs} if args.sources else {}
     print(json.dumps({"variant": args.variant, "modules": sorted(blobs), "result": "fail" if problems else "pass",
                       "debug_only_strings": derived, "problems": problems}, indent=2))
