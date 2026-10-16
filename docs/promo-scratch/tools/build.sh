@@ -20,9 +20,7 @@ render_cut() {
   mkdir -p "out/$cut"
   for ((w = 0; w < WORKERS; w++)); do
     local from=$((w * n / WORKERS)) to=$(((w + 1) * n / WORKERS))
-    $RUN timeout 7200 bash -c '
-      cpus=""; if [ -n "${HEAVY_SLOT-}" ]; then cpus="taskset -c $(( (HEAVY_SLOT - 1) * 5 ))-$(( HEAVY_SLOT * 5 - 1 ))"; fi
-      exec $cpus node tools/render.mjs --cut "$0" --from "$1" --to "$2" --out "out/$0"' "$cut" "$from" "$to" \
+    $RUN timeout 7200 node tools/render.mjs --cut "$cut" --from "$from" --to "$to" --out "out/$cut" \
       > "out/render-$cut-$w.log" 2>&1 < /dev/null &
     pids+=($!)
   done
@@ -36,8 +34,7 @@ node tools/render.mjs --cut 16x9 --times 0 --meta --out out/meta > out/meta.log 
 N=$(grep -o '[0-9]* frames' out/meta.log | head -1 | cut -d' ' -f1)
 
 if [ "$skip" != --skip-render ]; then
-  for cut in $cuts; do render_cut "$cut" "$N" & done
-  wait
+  for cut in $cuts; do render_cut "$cut" "$N"; done # one cut after the other; WORKERS renders split a cut
 fi
 
 # soundtrack: bed + SFX, then loudness to -16 LUFS (two-pass loudnorm), true peak <= -1.5 dBTP
