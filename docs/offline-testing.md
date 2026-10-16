@@ -25,9 +25,9 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 59 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 58 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 58 and 57,
+failed joins, cancelled jobs and crashes between steps are injected there. 61 ctest suites with
+the release models (`VJO_VOCR_MODEL_DIR`), 60 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 60 and 59,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
@@ -131,11 +131,12 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | shell_log | 13 (12 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
 | apkg | 19 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure; the four packages it writes (`--write`) are byte-identical to the host build's |
 | psp | 11 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the worker's taiHEN registration (`core/taicfg.c`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
+| taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 230 cases of the
-debug build pass (222 of the normal build, which has no `kernel_meminfo` and fewer log cases),
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 235 cases of the
+debug build pass (227 of the normal build, which has no `kernel_meminfo` and fewer log cases),
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
