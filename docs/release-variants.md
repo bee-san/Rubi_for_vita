@@ -147,7 +147,7 @@ none of the debug build's own strings, the debug modules all of them, the app's 
 `--sources`, which the build passes, the normal modules also carry none of the literals of 12 bytes or
 more that their sources compile only into the debug build and kept code does not use too
 (`#if VJO_DEBUG` branches, `vjo_dlog()`/`klog_d()` calls, `shell/selftest.c`, `kernel/meminfo.c`:
-71 of the Shell's, 11 of the kernel's, 1 of the worker's and 1 of the app's at main `c08db18`), and
+71 of the Shell's, 11 of the kernel's, 1 of the worker's and 1 of the app's at main `dcb7b31`), and
 each debug module at least one of them, the worker's only check). That catches a module built with the
 wrong `VJO_DEBUG`. It cannot catch a source change that moves a debug line into the normal build (the
 sources and the module then agree): that is the inventory's to review. Nor does it see a literal
