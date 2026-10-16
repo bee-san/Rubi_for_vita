@@ -88,9 +88,10 @@ It reads everything the overlay wrote (logs, the self-test report, status/kernel
 `config.ini` with its API keys and audio source URL redacted, both taiHEN configurations, the Anki queue, crash dumps, the
 installed files' hashes) into one folder and zip under `build/device/collect/`, writes nothing on the
 Vita, and prints the analysis. Leave the Overlay app open in the background if it is: test.3's collect
-could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138)),
-so the collect now also reads its two files by their full paths, and the analysis's `Overlay app:` line
-says which way read them. Send the zip it names (`Send this one file: ...`) and one line per step
+could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138)).
+The collect now also reads its two files by their full paths, and the analysis's `Overlay app:` line
+says which way read them; whether VitaShell opens them that way is what this run shows (not yet seen on a
+console). Send the zip it names (`Send this one file: ...`) and one line per step
 saying what you saw ("overlay showed", "no OCR", "crash at step 3"...). Send it privately, not on a
 public issue: API keys are removed, but it holds your queued Anki cards' sentences (text of a
 copyrighted game), your taiHEN plugin list, your games' title

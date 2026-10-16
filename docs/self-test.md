@@ -277,8 +277,9 @@ the summary: whether the installed files match the package (a file it does not s
 removed engine's model, is listed as not in this package), whether the installed Overlay app is the
 one the plugins came with (an app from before the stamps, v0.8.0-test.2 and older, is recognised by its
 eboot.bin without one; "not installed" only when a listing shows the folder or its `eboot.bin` is not
-there; when the collect could not read the app, the Shell's own check at a game start of the log's last
-boot answers for it, with where in `log.txt`), the configuration (with a note for any `ocr_backend` line, which is no setting
+there, or the Shell's check found neither; when the collect could not read the app, the Shell's own check
+at a game start of the log's last boot answers for it, with where in `log.txt`, if it compared the app
+with the same record), the configuration (with a note for any `ocr_backend` line, which is no setting
 any more since VOCR is the only engine: a removed engine's value, which an older app writes, or another,
 and that today's app or installer deletes the line), where taiHEN loads
 each plugin (the worker under `*TITLEID` only, a line #138's kernel no longer needs), the boot record, the kernel's start and hooks, every

@@ -487,6 +487,36 @@ class Collect(unittest.TestCase):
                 shutil.rmtree(folder)
                 Path(str(folder) + ".zip").unlink()
 
+    def test_a_broken_transfer_is_an_error_for_both_tools_never_not_installed(self):
+        """The folder's CWD refused (curl 9), then the full path's SIZE answered by a closed connection (curl 56): an
+        error, never an absent file. --collect records it and says it could not read the app; --check-app cannot
+        tell (exit 2) and says which file it could not read."""
+        self.stamp_package()
+        self.device_app(self.EBOOT, self.STAMP)
+        with FtpMock(self.device, fail={"CWD": lambda arg: "VJOSET001" in arg},
+                     drop={"SIZE": lambda arg: "VJOSET001/" in arg}) as ftp:
+            result = self.collect(ftp)
+            check = self.check_app(ftp)
+            writes = list(ftp.stored)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(writes, [])
+        folder, record, analysis = self.latest()
+        for name in ("vjo_app.txt", "eboot.bin"):
+            r = record["app"]["reads"][name]
+            self.assertEqual((r["state"], r["method"], r["rc"][0], len(r["rc"])), ("error", "nocwd", 9, 2), r)
+            self.assertNotIn(r["rc"][1], (0, 9, 19, 78), r)
+        self.assertTrue(any(e.startswith("ux0:/app/VJOSET001/vjo_app.txt: curl exit ") for e in record["errors"]),
+                        record["errors"])
+        self.assertTrue(any(e.startswith("ux0:/app/VJOSET001/eboot.bin: not hashed, curl exit ") for e in record["errors"]),
+                        record["errors"])
+        line = next(l for l in analysis.splitlines() if l.startswith("  Overlay app:"))
+        self.assertTrue(line.startswith("  Overlay app: not checked: this collect could not read it over FTP (reading it "
+                                        "failed: vjo_app.txt, curl exit "), line)
+        self.assertIn("), and the Shell logged no check of it in this boot", line)
+        self.assertEqual(check.returncode, 2, check.stdout + check.stderr)
+        self.assertIn("Cannot read ux0:app/VJOSET001/vjo_app.txt from 127.0.0.1:", check.stdout)
+        self.assertNotIn("No Overlay app is installed", check.stdout)
+
     def test_read_app_tries_the_full_path_only_after_not_there(self):
         """collect_vita.py read_app, as install_ftp.sh's app_check: the second way (no CWD) only when the first is
         answered "not there" (curl 9, 19, 78); any other exit (no connection, a timeout, a broken transfer) is an

@@ -1028,13 +1028,16 @@ APP_CHECK = re.compile(r"^overlay app (ok|MISMATCH|unknown): installed '(.*?)' \
 REMOVED_ENGINES = ("lens", "vocr2", "meiki", "ncnn")
 
 
-def app_unread(app):
+def app_unread(app, record=None):
     """(why the collect read neither of the installed app's two files, what it found of the app's folder: "absent",
     "present" or None, nothing either way) from COLLECT.json's "app" (collect_vita.py collect_app; an older
-    collect_vita.py recorded only whether it could list the folder, "listed")."""
+    collect_vita.py recorded only whether it could list the folder, "listed", and the listing)."""
     reads = app.get("reads")
     if reads is None:  # before #138: the stamp by a CWD into the folder, eboot.bin only if the folder's LIST had it
         if app.get("listed"):
+            listed = ((record or {}).get("listings") or {}).get(APP_FOLDER) or []
+            if any(e.get("name") == "eboot.bin" and not e.get("dir") for e in listed):
+                return "its folder lists eboot.bin, but it could not be hashed", "present"
             return "no ux0:app/VJOSET001/eboot.bin", "absent"
         return "its folder could not be entered, and this older collect_vita.py read the app only through it", None
     errors = [f"{name}, curl exit {r['rc'][-1]} ({r.get('error') or 'no message'})" for name, r in reads.items()
@@ -1067,12 +1070,26 @@ def shell_app_check(log, old_lines=0):
     return c
 
 
+def shell_app_answer(check, want):
+    """What the Shell's check says of the installed app, for a collect that read none of it: "ok" or "MISMATCH"
+    (core/app_stamp.c vjo_app_state, its own answer), "none" (no vjo_app.txt and no eboot.bin), or None. Only a check
+    against the record the collect has (its plugins' stamp is want): one before an install compared another record,
+    and the app may have changed with it."""
+    if not check or check.get("installed_rc") is None or check.get("plugins") != want:
+        return None
+    if check["state"] in ("ok", "MISMATCH"):
+        return check["state"]
+    if check["installed_rc"].upper() == "0X80010002" and check["app"] == 0:  # SCE_ERROR_ERRNO_ENOENT, no eboot.bin
+        return "none"
+    return None  # the stamp could not be read: no answer
+
+
 def summarise_app(folder, record, log=None, old_lines=0):
     """The installed Overlay app against the one the plugins came with (core/app_stamp.h): its stamp
     (ux0/app/VJOSET001/vjo_app.txt), the plugins' record (ux0/data/VitaJPOverlay/vjo_app.txt), the package's
     (package-manifest.json "app") and the installed eboot.bin's hash, as collect_vita.py read them (the way
-    install_ftp.sh --check-app reads them; the eboot.bin never kept). When the collect read neither file, what it
-    found of the app's folder decides "not installed", and otherwise the Shell's own check in this boot (log, the
+    install_ftp.sh --check-app reads them; the eboot.bin never kept). When the collect could not read the stamp, what
+    it found of the app's folder decides "not installed", and otherwise the Shell's own check in this boot (log, the
     log summary; old_lines: log.old.txt's lines before log.txt's) answers for it: test.3's collect could not enter
     ux0:app/VJOSET001 while the Shell read the stamp in it (#138)."""
     def first(rel):
@@ -1095,16 +1112,18 @@ def summarise_app(folder, record, log=None, old_lines=0):
         out["state"] = "unknown"  # plugins and package from before the stamps
     elif installed is not None:
         out["state"] = "ok" if installed == want else "MISMATCH"
-    elif eboot:
+    elif eboot and (reads.get("vjo_app.txt") or {}).get("state") in (None, "absent"):
         out["state"] = "MISMATCH"  # an app without a stamp: from before the stamps (v0.8.0-test.2 or older)
-    else:
-        out["unread"], found = app_unread(app)
-        check = shell_app_check(log, old_lines)
-        seen = check if check and check["state"] in ("ok", "MISMATCH") else None
+    else:  # no stamp read (an eboot.bin beside a stamp that failed to read decides nothing)
+        out["unread"], found = app_unread(app, record)
+        out["shell"] = check = shell_app_check(log, old_lines)
+        answer = shell_app_answer(check, want)
         if found == "absent":
-            out["state"], out["shell"] = "not installed", seen  # a check that found one: a note
-        elif seen:
-            out["state"], out["source"], out["shell"] = seen["state"], "shell", seen
+            out["state"] = "not installed"
+        elif answer in ("ok", "MISMATCH"):
+            out["state"], out["source"] = answer, "shell"
+        elif answer == "none" and found is None:
+            out["state"], out["source"] = "not installed", "shell"
         else:
             out["state"] = "not read"
     return out
@@ -1113,10 +1132,10 @@ def summarise_app(folder, record, log=None, old_lines=0):
 def render_app(a):
     s = a.get("shell")
     installed, plugins, via = a["installed"], a["plugins"] or a["package"], ""
-    if a.get("source") == "shell":
+    unread = f"this collect could not read it over FTP: {a['unread']} (#138)"
+    if a.get("source") == "shell" and a["state"] in ("ok", "MISMATCH"):
         installed, plugins = s["installed"], s["plugins"]
-        via = (f", by the Shell's check at a game start of this boot ({s['where']}); this collect could not read it "
-               f"over FTP: {a['unread']} (#138)")
+        via = f", by the Shell's check at a game start of this boot ({s['where']}); {unread}"
     by_path = ("; read by its full path, no CWD, after the way through its folder was answered 'not there': "
                + ", ".join(f"{n} (curl exit {rc[0]})" for n, rc in sorted(a["by_path"].items()))) if a.get("by_path") else ""
     if a["state"] == "ok":
@@ -1130,15 +1149,29 @@ def render_app(a):
         return (f"  Overlay app: NOT the plugins' (installed: {have}; the plugins came with {plugins}){via}: what the "
                 "app showed and saved (its engine card, Anki page, config.ini values) was another build's; install "
                 "ux0:data/JPOverlaySettings.vpk in VitaShell" + by_path)
+    if a["state"] == "not installed" and a.get("source") == "shell":
+        return (f"  Overlay app: not installed: the Shell's check at a game start of this boot found neither its "
+                f"vjo_app.txt nor its eboot.bin ({s['where']}); {unread}")
     if a["state"] == "not installed":
         return (f"  Overlay app: not installed ({a['unread']})"
                 + (f"; the Shell's check at a game start of this boot found one ({s['installed'] or 'without a stamp'}, "
-                   f"{s['where']}): deleted since, or the listing left it out" if s else ""))
+                   f"{s['where']}): deleted since, or the listing left it out"
+                   if s and s["state"] in ("ok", "MISMATCH") else ""))
     if a["state"] == "not read":
-        return (f"  Overlay app: not checked: this collect could not read it over FTP ({a['unread']}), and the Shell "
-                "logged no check of it in this boot; if the Overlay app is open beside VitaShell, close it from its "
-                "LiveArea page and collect again (test.3's collect could not enter its folder, most likely while it "
-                "was open, #138)")
+        if s is None:
+            shell = "the Shell logged no check of it in this boot"
+        elif s.get("installed_rc") is None:
+            shell = f"the Shell's last check in this boot ({s['where']}) is not in the form shell/worker.c writes"
+        elif s.get("plugins") != (a["plugins"] or a["package"]):
+            shell = (f"the Shell's last check in this boot ({s['where']}) compared it with another record "
+                     f"({s.get('plugins') or 'none'})")
+        else:
+            stamp = ("not there" if s["installed_rc"].upper() == "0X80010002" else "unreadable") + f", {s['installed_rc']}"
+            shell = (f"the Shell's last check in this boot ({s['where']}) does not decide it either (its vjo_app.txt: "
+                     f"{stamp}; its eboot.bin: {'there' if s.get('app') == 1 else 'not there'})")
+        return (f"  Overlay app: not checked: this collect could not read it over FTP ({a['unread']}), and {shell}; if "
+                "the Overlay app is open beside VitaShell, close it from its LiveArea page and collect again (test.3's "
+                "collect could not enter its folder, most likely while it was open, #138)")
     return "  Overlay app: not checked (no version stamp to compare: the plugins or this collect predate them)"
 
 

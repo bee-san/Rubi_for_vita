@@ -54,7 +54,8 @@ FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt"
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
 # curl's exits for a file that is not there: 9, a CWD on the way refused (VitaShell's FTP enters a folder only if
-# it can open it); 19 or 78, its SIZE or RETR refused
+# it can open it); 19 or 78, its SIZE or RETR refused (VitaShell's FTP also answers RETR with 550 when it cannot
+# allocate its transfer buffer: rare, and read as not there too)
 NOT_THERE = (9, 19, 78)
 # The two ways read_app and install_ftp.sh's app_check read the app's files, in this order: curl's own, a CWD into
 # each folder on the way (ux0:, app, VJOSET001) before SIZE and RETR; then, when that is answered "not there", no
