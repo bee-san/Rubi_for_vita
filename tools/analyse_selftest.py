@@ -1118,7 +1118,7 @@ def clock_windows(windows):
     (at 444 MHz or more already) and "not_raised" (the set call refused, or the clock not moved) groups."""
     rows, older, groups = [], 0, {}
 
-    def add(model, kind, lines, window, clock=None):
+    def add(model, kind, lines, window, clock=None, share=None):
         g = groups.setdefault(model, {}).setdefault(kind, {"lines": 0, "frames": 0, "us": 0, "windows": []})
         for frames, us in lines:
             g["lines"] += 1
@@ -1128,14 +1128,17 @@ def clock_windows(windows):
             g["windows"].append(window)
         if clock is not None:
             g.setdefault("pairs", []).append(clock)
+        if share:
+            g.setdefault("shares", []).append(share)
 
     for number, w in enumerate(windows, 1):
         jobs = w["jobs"]
         if not jobs:
             continue
         clocked = [j for j in jobs if j["clock"]]
-        if not clocked and (w["api"] is None or w["api"] < BOOST_API):
-            older += 1  # a build before the boost, or one the log does not name: no clock to read
+        boost_build = (w["api"] or 0) >= BOOST_API if w["api"] is not None else any(j["api22"] for j in jobs)
+        if not clocked and not boost_build:
+            older += 1  # a build before the boost: it logs no clock
             continue
         rec = [j for j in jobs if j["frames"] > 0]
         bare = [j for j in rec if not j["clock"]]
@@ -1161,9 +1164,9 @@ def clock_windows(windows):
                         "left" if c["rc"] == 1 and c["before"] >= BOOST_MHZ else "not_raised")
                 row[kind] += 1
                 if lines:
-                    add(j["model"], kind, lines, number, (c["before"], c["during"]))
+                    add(j["model"], kind, lines, number, (c["before"], c["during"]), j["share"])
             elif state == "off" and lines:
-                add(j["model"], "off", lines, number)
+                add(j["model"], "off", lines, number, share=j["share"])
         rows.append(row)
     for model in groups.values():
         for g in model.values():
@@ -1172,6 +1175,9 @@ def clock_windows(windows):
                 g["before"], during = max(sorted(set(pairs)), key=pairs.count)
                 if during != g["before"]:
                     g["during"] = during
+            shares = g.pop("shares", None)
+            if shares:  # the jobs' recognizing threads' mean share of a core (the par step; percent)
+                g["share"] = (min(shares), max(shares))
     return rows, older, groups
 
 
@@ -1225,8 +1231,11 @@ def render_clock_windows(lg):
         return g["us"] / g["frames"]
 
     def us(g):
+        share = g.get("share")
         return f"{round(per(g)):,} us ({_n(g['lines'], 'line')}; {'window' if len(g['windows']) == 1 else 'windows'} " \
-               f"{', '.join(map(str, g['windows']))})"
+               f"{', '.join(map(str, g['windows']))}" \
+               + (f"; a core's share {share[0]}%" if share and share[0] == share[1] else
+                  f"; a core's share {share[0]}-{share[1]}%" if share else "") + ")"
     compared = []
     for m, g in groups.items():
         off = g.get("off")
@@ -1245,7 +1254,8 @@ def render_clock_windows(lg):
     read_on = any("raised" in g or "left" in g for g in groups.values())
     if compared:
         L.append("  boost off against on, us per CTC frame (each recognized line's time / its frames, frame-weighted; "
-                 "lines from the cache left out):")
+                 "lines from the cache left out; a core's share: the recognizing threads' run time / wall time, the "
+                 "jobs' means, under 100 when game threads had the core):")
         L += compared
     elif read_off and read_on:
         L.append("  boost off against on: no model was read both with the boost off and on, so nothing to compare")
@@ -1310,9 +1320,12 @@ def summarise_log(text):
             win, job = {"title": m.group(1), "line": n, "api": api, "jobs": []}, None
             windows.append(win)
         if job is not None and line.startswith("gstep job "):
+            step = line.split(None, 3)[2]
             # FIND and RECOGNIZE come after the clock's place in the step log (game_ocr/main.c adds them once the
             # recognition is over): a job with either had room for the clock's step
-            job["late"] |= line.split(None, 3)[2] in ("find", "recognize")
+            job["late"] |= step in ("find", "recognize")
+            # steps only API 22 on logs: a window whose build the log does not name (the start of a rotated log)
+            job["api22"] |= step in ("par", "clock", "pace")
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
             by = s.setdefault("config_warnings_by_api", {})
@@ -1415,6 +1428,8 @@ def summarise_log(text):
             if packed & 0xFF:
                 pa["share_min"].append((packed >> 8) & 0xFF)
                 pa["share_mean"].append(packed & 0xFF)
+                if job is not None:  # its recognized lines' mean share of a core (run time / wall time)
+                    job["share"] = packed & 0xFF
             continue
         m = LOG["clock"].match(line)
         if m:
@@ -1450,7 +1465,8 @@ def summarise_log(text):
             if win is None:  # jobs before the log's first game start (the oldest part of a rotated log)
                 win = {"title": None, "line": n, "api": api, "jobs": []}
                 windows.append(win)
-            job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False}
+            job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False,
+                   "api22": False, "share": None}
             win["jobs"].append(job)
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",

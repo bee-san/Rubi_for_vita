@@ -1162,7 +1162,8 @@ class ClockWindows(unittest.TestCase):
                      "clock); VOCR3_H15_w8.vocr 2,905 us (2 lines)",
                      "4 line 36 PCSG00415 1 1 1 333 / 444 / 333 (raised in 1); VOCR3_H15_w8.vocr 2,200 us (1 line)",
                      "boost off against on, us per CTC frame (each recognized line's time / its frames, "
-                     "frame-weighted; lines from the cache left out):",
+                     "frame-weighted; lines from the cache left out; a core's share: the recognizing threads' run "
+                     "time / wall time, the jobs' means, under 100 when game threads had the core):",
                      "VOCR3_H15_w8.vocr: off (the game's own clock, not logged) 2,905 us (2 lines; window 3), "
                      "raised 333 -> 444 MHz 2,200 us (2 lines; windows 1, 4): off / raised = 1.32 (a time that scales "
                      "with the clock: 444 / 333 = 1.33; no gain: 1.00)"):
@@ -1212,6 +1213,22 @@ class ClockWindows(unittest.TestCase):
                              + START + game_job([(80, 120.0)], model="VOCR3_FL10_w8.vocr"))
         self.assertIn("boost off against on: no model was read both with the boost off and on, so nothing to compare",
                       flat("\n".join(a.render_clock_windows(lg))))
+
+    PAR = "gstep job par kind=- arg=2 rc=0x00000001 bytes=533504 sum=0x0000{lo:02X}{mean:02X} main=0 cdram=0 phycont=0 us=1\n"
+
+    def test_a_rotated_logs_window_is_read_by_its_api_22_steps(self):
+        # log.old.txt's first window has no "shell started" line before it: its build is read from its steps
+        start = START + game_job([(80, 232.8)]) + self.PAR.format(lo=90, mean=95)
+        lg = a.summarise_log(start + START + game_job([(80, 176.0)], RAISED) + self.PAR.format(lo=97, mean=99))
+        self.assertEqual([(r["window"], r["state"], r["api"]) for r in lg["clock_windows"]], [(1, "off", None), (2, "on", None)])
+        g = lg["clock_compare"]["VOCR3_H15_w8.vocr"]
+        self.assertEqual((g["off"]["share"], g["raised"]["share"]), ((95, 95), (99, 99)))
+        self.assertIn("off (the game's own clock, not logged) 2,910 us (1 line; window 1; a core's share 95%), raised "
+                      "333 -> 444 MHz 2,200 us (1 line; window 2; a core's share 99%): off / raised = 1.32",
+                      flat("\n".join(a.render_clock_windows(lg))))
+        # without such a step (an older build's jobs), a window the log does not name is not listed
+        lg = a.summarise_log(START + game_job([(80, 400.0)]))
+        self.assertEqual((lg["clock_windows"], lg["clock_windows_older"]), ([], 1))
 
     def test_windows_of_builds_before_the_boost_are_not_listed(self):
         old = "Vita JP Overlay shell started (kernel API 21)\n" + START + game_job([(80, 400.0)])
