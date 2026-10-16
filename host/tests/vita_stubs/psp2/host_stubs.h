@@ -23,6 +23,20 @@ typedef unsigned int SceSize;
 uint64_t sceKernelGetProcessTimeWide(void);
 uint64_t sceKernelGetSystemTimeWide(void); /* the log's clock (kernel.txt's): defined by the test that uses it */
 int sceKernelDelayThread(unsigned us);
+/* psp2/kernel/threadmgr.h: the calling thread's stack (shell/worker.c, VjoNet's high-water mark);
+ * the SDK's field names, the ones the Shell reads first */
+typedef struct { SceSize size; SceUID processId; char name[32]; unsigned attr, status; void *entry, *stack;
+                 int stackSize, initPriority, currentPriority, initCpuAffinityMask, currentCpuAffinityMask,
+                 currentCpuId, lastExecutedCpuId; unsigned waitType; SceUID waitId; int exitStatus;
+                 uint64_t runClocks; unsigned intrPreemptCount, threadPreemptCount, threadReleaseCount;
+                 int changeCpuCount; int fNotifyCallback; int reserved; } SceKernelThreadInfo;
+#ifdef VJO_TEST_THREAD_INFO_STUBS
+int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info);
+SceUID sceKernelGetThreadId(void);
+#else
+static inline int sceKernelGetThreadInfo(SceUID thid, SceKernelThreadInfo *info) { return -1; }
+static inline SceUID sceKernelGetThreadId(void) { return 0; }
+#endif
 static inline int sceKernelPowerTick(int type) { return 0; }
 int sceKernelSetEventFlag(SceUID uid, unsigned int bits);
 #ifdef VJO_TEST_MUTEX_STUBS

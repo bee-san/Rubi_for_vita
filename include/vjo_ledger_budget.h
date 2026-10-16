@@ -113,7 +113,15 @@
  * SCE_KERNEL_START_NO_RESIDENT outside a candidate game, so the pages are
  * given back at once [SDK: Kernel-Overview, module_start]. */
 #define VJO_BUDGET_WORKER_IN_SHELL_PAGES 0u
-#define VJO_STACK_SHELL_NET 65536u                 /* VjoNet: BearSSL needs it for TLS */
+/* VjoNet: a job's OCR exchange with the game worker and the local dictionary's lookup. Lowered from
+ * 65,536 B ("BearSSL needs it for TLS") once Google Lens, the last of its jobs that made a TLS
+ * connection, was removed: nothing on the thread reaches BearSSL, the HTTP client or a TCP socket
+ * any more (the UDP log's send is the one network call left, PR-B's), and its deepest chain of the
+ * Shell's own code is @@CHAIN@@ B [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su of
+ * this build; the SDK's own code and the indirect-call sites are not counted]. The thread paints its
+ * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
+ * so a console run measures it. */
+#define VJO_STACK_SHELL_NET 16384u
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
 #define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
                                                     * of the queue on every overlay open, a save (Enter) */

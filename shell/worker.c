@@ -1228,10 +1228,86 @@ static void net_job(void)
     job_done = 1;
 }
 
+/* VjoNet's stack use, measured on the console: at its start the thread fills its
+ * stack below its own frame with a pattern (the stack is its own memory: nothing
+ * lives below the stack pointer), and the deepest byte no longer holding it is
+ * the most the thread has ever used. [SDK: Kernel-Reference, SceKernelThreadInfo:
+ * pStack is the stack's bottom, stackSize its size; the TLS is outside the stack,
+ * sceKernelCreateThread.] Logged at each game exit when it grew. */
+#define STACK_PAINT 0xA5u
+#define STACK_PAINT_GAP 512u /* left unpainted below the painting frame */
+static uint8_t *net_stack_lo;                    /* published last: the paint is done */
+static uint8_t *net_stack_painted, *net_stack_top; /* [lo, painted): the pattern; top: lo + the size */
+static uint32_t net_stack_logged;                /* the high-water mark last logged */
+
+/* Paints n bytes from lo (the thread's own stack, below its frame), then publishes
+ * the bounds: the pattern is visible to a thread that sees net_stack_lo. */
+static void stack_paint(uint8_t *lo, size_t n, uint8_t *top)
+{
+    volatile uint8_t *p = lo;
+    for (size_t i = 0; i < n; i++) /* a count, not a pointer bound */
+        p[i] = STACK_PAINT;
+    net_stack_painted = lo + n;
+    net_stack_top = top;
+    __atomic_store_n(&net_stack_lo, lo, __ATOMIC_RELEASE);
+}
+
+/* The most of the stack ever used: from its top down to the lowest byte that no
+ * longer holds the pattern (0: nothing painted). A live byte that happens to be
+ * the pattern can only make it read lower than the truth by that run of bytes. */
+static uint32_t stack_high_water(void)
+{
+    uint8_t *lo = __atomic_load_n(&net_stack_lo, __ATOMIC_ACQUIRE);
+    if (!lo)
+        return 0;
+    size_t n = (size_t)(net_stack_painted - lo), i = 0;
+    const volatile uint8_t *p = lo;
+    while (i < n && p[i] == STACK_PAINT)
+        i++;
+    return (uint32_t)(net_stack_top - (lo + i));
+}
+
+/* Not inlined: its thread info stays out of net_main's frame, under every job. */
+static __attribute__((noinline)) void net_stack_paint(void)
+{
+    SceKernelThreadInfo info;
+    uint8_t here;
+    sceClibMemset(&info, 0, sizeof(info));
+    info.size = sizeof(info);
+    if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) < 0 || !info.stack) {
+        vjo_log("VjoNet stack: not painted (no thread info)");
+        return;
+    }
+    if (info.stackSize != (int)VJO_STACK_SHELL_NET) { /* not the stack this thread was created with */
+        vjo_log("VjoNet stack: not painted (the kernel reports %d B, not %u)", info.stackSize,
+                (unsigned)VJO_STACK_SHELL_NET);
+        return;
+    }
+    /* As addresses: painted only when this frame is inside the reported stack, with room below it. */
+    uintptr_t lo = (uintptr_t)info.stack, top = lo + (uintptr_t)info.stackSize, frame = (uintptr_t)&here;
+    if (frame <= lo + STACK_PAINT_GAP || frame >= top) {
+        vjo_log("VjoNet stack: not painted (frame 0x%08X outside 0x%08X + %d)", (unsigned)frame, (unsigned)lo,
+                info.stackSize);
+        return;
+    }
+    stack_paint((uint8_t *)lo, (size_t)(frame - STACK_PAINT_GAP - lo), (uint8_t *)top);
+}
+
+/* At a game exit: the most VjoNet has used, when that grew since the last line. */
+static void net_stack_check(void)
+{
+    uint32_t used = stack_high_water();
+    if (!used || used <= net_stack_logged)
+        return;
+    net_stack_logged = used;
+    vjo_log("VjoNet stack: at most %u of %u B used", (unsigned)used, (unsigned)VJO_STACK_SHELL_NET);
+}
+
 static int net_main(SceSize args, void *argp)
 {
     (void)args;
     (void)argp;
+    net_stack_paint();
     while (running) {
         unsigned int bits = 0;
         sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
@@ -2157,6 +2233,7 @@ static void on_game_exit(void)
     title_id[0] = '\0';
     vjo_anki_set_game("", "", 0);
     vjo_ledger_shell_log("exit");
+    net_stack_check();
     vjo_selftest_step("exit");
 }
 

@@ -441,6 +441,17 @@ class AnalyseV2(unittest.TestCase):
                          {"jobs": 1, "modes": {"psp": 1}, "boxes": 9, "lines": 16, "split": 7, "capped": 2,
                           "rows": 410, "us": [1400]})
 
+    def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
+        # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest
+        lg = a.summarise_log("VjoNet stack: at most 5920 of 16384 B used\nVjoNet stack: at most 13000 of 16384 B used\n"
+                             "VjoNet stack: at most 9000 of 16384 B used\n")
+        self.assertEqual(lg["net_stack"], (13000, 16384))
+        self.assertIsNone(a.summarise_log("job 0 done rc=0 in 1 ms, arena peak 1\n")["net_stack"])
+        self.assertEqual(a.net_stack_line(6144, 16384), "VjoNet stack: at most 6,144 of 16,384 B used (37%)")
+        self.assertEqual(a.net_stack_line(12288, 16384), "VjoNet stack: at most 12,288 of 16,384 B used (75%)")
+        self.assertEqual(a.net_stack_line(12289, 16384),
+                         "VjoNet stack: at most 12,289 of 16,384 B used (75%) WARN: under a quarter left")
+
     def test_the_clock_step_counts_raised_and_left_alone(self):
         # game_ocr/main.c job_busy (ocr_boost_clock = on, the default): 333 raised to 444 and put back; a clock
         # already at 444 or more (PSVshell's 500) left as it is, rc 1, never lowered
