@@ -2479,6 +2479,12 @@ class PressesAndRereads(unittest.TestCase):
             # its word not, so a kind of its own, not "no text"
             ("rc -113 after its text", "", text + end(-113, 1800), "", ("text_no_word", -113)),
             ("rc -103 after its text", "", "game vocr text 0: あいうえお\n" + end(-103, 1800), "", ("text_no_word", -103)),
+            # audit N1: stale, so nothing shown (on_job_done): cancelled at the press (cancel_outdated_job), or its text
+            # passed over by on_job_text (no `subtitle text ready`) before its lookup failed
+            ("rc -113 after its text, cancelled at the press", "",
+             text + "job cancelled: the screen changed since its capture\n" + end(-113, 1800), "", ("read_without_text",)),
+            ("rc -114 after its text, never posted", "", "game vocr text 0: あいうえお\n" + end(-114, 1800), "",
+             ("read_without_text",)),
             ("OCR only, then its word's lookup", ", OCR only", text + end(0, 1520), cursor(400), ("waited", 2204, 1)),
             ("OCR only, its lookup failed", ", OCR only", text + end(0, 1520), cursor(400, rc=-110), ("unclear",)),
             # audit-b note C (MB1f): the word's lookup is the first done line after the running job's, not a later one
@@ -2589,7 +2595,8 @@ class PressesAndRereads(unittest.TestCase):
     def test_a_press_whose_job_read_text_but_not_its_word_has_its_own_line(self):
         """#159 item 2: a job of the press's own that read text and then failed to look the word up (rc -113, -114,
         -103 after its text: shell/worker.c run_job, run_vocr) gave the overlay its text: counted apart, with its rc,
-        never as "no text". One closed before that text came is not counted with them."""
+        never as "no text". One closed before that text came is not counted with them, and neither is a stale one,
+        which showed nothing (audit N1: cancelled while it ran, or its text passed over by on_job_text)."""
         log = (BOOT22 + START
                + press("no background result") + shell_job("overlay opened", 900, 1000, ["あ"], rc=-114) + CLOSE
                + press("no background result") + shell_job("overlay opened", None, 1300, ["い"], rc=-103) + CLOSE
@@ -2601,16 +2608,23 @@ class PressesAndRereads(unittest.TestCase):
                + "game vocr text 0: え\nsubtitle text ready in 787 ms\n"
                + "job 0 done rc=-113 in 979 ms, arena peak 53744, dictionary page 1/1, game 676 ms, log 30 ms in 3 appends\n"
                # no line at all: still no text
-               + press("no background result") + shell_job("overlay opened", None, 700) + CLOSE)
+               + press("no background result") + shell_job("overlay opened", None, 700) + CLOSE
+               # cancelled while it ran (the screen changed), then its lookup failed; its retry read no line
+               + press("no background result") + "job start (overlay opened)\ngame vocr text 0: か\n"
+               + "subtitle text ready in 700 ms\njob cancelled: the screen changed since its capture\n"
+               + "job 0 done rc=-113 in 900 ms, arena peak 53744, dictionary page 1/1, game 450 ms, log 30 ms in 3 appends\n"
+               + shell_job("the screen changed during the last one", None, 600) + CLOSE
+               # its text passed over by on_job_text (no `subtitle text ready`), then its lookup failed
+               + press("no background result") + shell_job("overlay opened", None, 800, ["き"], rc=-114) + CLOSE)
         mode = a.summarise_log(log)["presses"]["modes"]["auto"]
         self.assertEqual((mode["presses"], sorted(mode["text_no_word"]), mode["read_without_text"], mode["closed_before"],
-                          mode["read_text"]), (5, [-114, -113, -103], 1, 1, []))
+                          mode["read_text"]), (7, [-114, -113, -103], 3, 1, []))
         text = flat("\n".join(a.render_presses(a.summarise_log(log))))
         self.assertIn("3 whose job read text but not its word (the lookup failed: local format (rc -114): 1, local io "
                       "(rc -113): 1, out of memory (rc -103): 1); the overlay showed the text and why the word is missing "
                       "(not timed)", text)
-        self.assertIn("1 with no text from any job while the overlay was open", text)
-        for secret in ("あ", "い", "う", "え"):
+        self.assertIn("3 with no text from any job while the overlay was open", text)
+        for secret in ("あ", "い", "う", "え", "か", "き"):
             self.assertNotIn(secret, text)
 
     def test_a_rotated_log_names_each_jobs_own_file_and_line(self):

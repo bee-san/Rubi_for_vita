@@ -139,7 +139,10 @@ A job whose `done` line comes before the press's `open:` line ended during the p
 is not counted. A running job that failed or read no line, the self-test's job and a refresh are never a
 press's wait. A job that read text but whose word's lookup failed (rc -113, -114, or -103 for the
 Shell's result memory, after its text) is counted on its own line with its rc: the overlay showed its
-text and why the word is missing. A press closed before its text came, or whose overlay could not open
+text and why the word is missing. A stale one showed nothing and is counted as no text: cancelled
+while it ran (`job cancelled: the screen changed since its capture`), or its text passed over by
+`on_job_text` (cancelled, or another game's: no `subtitle text ready` line). A press closed before
+its text came, or whose overlay could not open
 (no Paf memory for its text, or the page itself refused: `overlay page failed to open`), is not
 timed; one closed after its text but before its word is still timed, its word by its job's end,
 which the user did not wait for.

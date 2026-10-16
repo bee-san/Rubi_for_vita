@@ -1903,6 +1903,8 @@ PRESS_CLOSE = re.compile(r"^overlay close ")
 PRESS_NOT_OPENED = re.compile(r"^overlay (not opened: |page failed to open)")
 JOB_BEGIN = re.compile(r"^job start \((.*?)\)(, refresh|, OCR only)?$")
 JOB_TEXT = re.compile(r"^subtitle text ready in (\d+) ms")
+# shell/worker.c cancel_outdated_job: the running job captured another screen; it ends stale and shows nothing
+JOB_CANCELLED = re.compile(r"^job cancelled: ")
 JOB_END = re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms")
 TEXT_LINE = re.compile(r"^game vocr text (\d+)( shown)?: (.*)$")
 # The jobs the open overlay starts for the press's own text (shell/worker.c start_job's reasons): on the press
@@ -1997,7 +1999,8 @@ def presses_and_rereads(text):
         m = JOB_BEGIN.match(line)
         if m:
             job = {"line": n, "why": m.group(1), "kind": m.group(2) or "", "text_ms": None, "text_line": None,
-                   "done_ms": None, "done_line": None, "rc": None, "raw": {}, "shown": {}, "settle": None}
+                   "done_ms": None, "done_line": None, "rc": None, "raw": {}, "shown": {}, "settle": None,
+                   "cancelled": False}
             if m.group(1) != "self-test":
                 win["jobs"].append(job)
                 if press is not None and m.group(1) in PRESS_REASONS:
@@ -2012,6 +2015,9 @@ def presses_and_rereads(text):
             last_end = cursor
             continue
         if job is None:
+            continue
+        if JOB_CANCELLED.match(line):  # the control thread's line, while this job runs (one job at a time)
+            job["cancelled"] = True
             continue
         m = JOB_TEXT.match(line)
         if m:
@@ -2085,6 +2091,15 @@ def press_kind(p):
     def text_no_word(j, shown_line):  # its text read (logged), then its word's lookup failed: the text was shown
         return ("closed_before",) if closed_before(shown_line) else ("text_no_word", j["rc"])
 
+    def showed_text(j):
+        """Its text read and shown, then its word's lookup failed (shell/worker.c run_job; run_vocr's result memory,
+        rc -103). A stale job shows nothing, its text included (on_job_done; audit N1): one cancelled while it ran
+        (cancel_outdated_job's line), or one whose lookup failed after on_job_text had passed over its text (cancelled
+        or another game's: no `subtitle text ready` line). run_vocr's -103 comes before the text is posted, so it has
+        no such line."""
+        return (j["rc"] not in (0, None) and bool(j["raw"]) and not j["cancelled"]
+                and (j["text_ms"] is not None or j["rc"] == -103))
+
     if p["not_opened"]:
         return ("not_opened",)
     found, jobs = p["found"], p["jobs"]
@@ -2093,8 +2108,8 @@ def press_kind(p):
     if jobs:  # the press's own jobs (PRESS_REASONS), all begun after the press: its text is the first that read one
         text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None), None)
         if text_job is None:
-            # a job that read text and then failed its word's lookup (run_job; run_vocr's result memory: rc -103)
-            failed = next((j for j in jobs if j["rc"] not in (0, None) and j["raw"]), None)
+            # a job that read text and then failed its word's lookup, and showed that text (showed_text)
+            failed = next((j for j in jobs if showed_text(j)), None)
             if failed is not None:
                 return text_no_word(failed, failed["text_line"] or failed["done_line"])
             return ("closed_before",) if closed_before(jobs[0]["done_line"]) else ("read_without_text",)
@@ -2111,7 +2126,7 @@ def press_kind(p):
         return ("closed_before",) if p["close_line"] is not None else ("unclear",)
     if p["found_line"] is not None and r["done_line"] < p["found_line"]:
         return ("unclear",)  # it ended during the press's own handling: the bound below does not hold
-    if r["rc"] != 0 and r["raw"]:  # its text, then its word's lookup failed: on_job_done shows the text and the error
+    if showed_text(r):  # its text, then its word's lookup failed: on_job_done shows the text and the error
         shown = r["text_line"] if r["text_line"] and r["text_line"] > p["found_line"] else r["done_line"]
         return text_no_word(r, shown)
     if r["rc"] != 0 or not r["raw"]:  # it failed or read no line: on_job_done shows that, nothing follows for the press
