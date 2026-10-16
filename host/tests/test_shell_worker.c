@@ -286,11 +286,13 @@ void vjo_log(const char *fmt, ...)
     batch_lines_held = 1; batch_bytes_held = n;
     open_batch->n = 1;
 }
-/* net_main's batch as the network thread keeps it, outside net_main (the harness's jobs): its stack
- * buffer's stand-in, and the write net_main makes when its timed wait ends (net_log_rewrite). */
+/* net_main's batch outside net_main (the harness's jobs): at a job's wake it opens it (its stack
+ * buffer's stand-in here), and when its wait, timed while a line is held, times out with no job running,
+ * it writes what is held (net_main). */
 #if !VJO_DEBUG
 static char net_log_test_buf[NET_LOG_BYTES];
-static void net_open_batch(void) { net_log_rewrite(net_log_test_buf); }
+static void net_job_begin(void) { vjo_log_batch_begin(&net_log, net_log_test_buf, NET_LOG_BYTES); }
+static void net_idle_write(void) { if (net_log.n && !job_running) vjo_log_batch_end(&net_log); }
 #endif
 /* net_main's waits, scripted: each wait runs the test's next control-thread step (wait_script) and returns
  * the bits it posted, cleared at the wake; with nothing posted, a timed wait times out (as the SDK's:
@@ -671,9 +673,6 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
 int vjoOcrCancel(uint32_t seq) { return 0; }
 #endif
 
-#if !VJO_DEBUG
-static void net_open_batch(void);
-#endif
 static void reset(void)
 {
     /* the logger stub: no batch open, no append recorded; the harness runs as the control thread */
@@ -685,11 +684,6 @@ static void reset(void)
     test_thread = CTL_THREAD;
     on_event_flag = NULL;
     fail_input_unblock = 0;
-#if !VJO_DEBUG
-    test_thread = NET_THREAD;
-    net_open_batch(); /* net_main's batch, open as the network thread keeps it */
-    test_thread = CTL_THREAD;
-#endif
     net_stack_lo = net_stack_painted = net_stack_top = NULL;
     net_stack_logged = 0;
     thread_info_rc = 0;
@@ -1140,12 +1134,15 @@ static int run_vocr_job(void)
     job_cancelled = 0;
     job_captured = 0;
     vjo_arena_reset(&results[0]);
-    test_thread = NET_THREAD; /* as net_job runs it */
+    test_thread = NET_THREAD; /* as net_main runs it */
     net_phase = NET_IDLE;
+#if !VJO_DEBUG
+    net_job_begin();
+#endif
     rc = run_job(&results[0], &cache_data[0]);
     net_phase = NET_IDLE;
 #if !VJO_DEBUG
-    net_open_batch(); /* its result is the test's now: what is held goes out (net_main's idle write) */
+    net_idle_write(); /* its result is the test's now: what is held goes out (net_main's timed wait) */
 #endif
     test_thread = CTL_THREAD;
     return rc;
@@ -2170,6 +2167,9 @@ static void finish_current_job(void)
     TEST_ASSERT(job_running);
     test_thread = NET_THREAD;
     net_phase = job_cursor_only ? NET_RESULT : NET_IDLE; /* a lookup's whole job is its result's path */
+#if !VJO_DEBUG
+    net_job_begin();
+#endif
     net_job(); /* as the network thread: job_idx's slot and arena, the done line, job_done */
     net_phase = NET_IDLE;
     test_thread = CTL_THREAD;
@@ -2178,7 +2178,7 @@ static void finish_current_job(void)
 #if !VJO_DEBUG
     /* the network thread's timed wait ends with no job, the result taken: what is held goes out */
     test_thread = NET_THREAD;
-    net_open_batch();
+    net_idle_write();
     test_thread = CTL_THREAD;
 #endif
 }
@@ -2192,12 +2192,15 @@ static __attribute__((unused)) void as_network_thread(void)
     test_thread = NET_THREAD;
     if (bits & NET_EV_JOB) {
         net_phase = job_cursor_only ? NET_RESULT : NET_IDLE;
+#if !VJO_DEBUG
+        net_job_begin();
+#endif
         net_job();
         net_phase = NET_IDLE;
     }
 #if !VJO_DEBUG
-    else if (!job_running) {
-        net_open_batch(); /* the wait timed out (LOG_IDLE_US): net_main's idle write */
+    else {
+        net_idle_write(); /* nothing posted: a timed wait (a line held) timed out */
     }
 #endif
     test_thread = CTL_THREAD;
@@ -4791,8 +4794,8 @@ static void test_normal_build_writes_a_jobs_lines_after_its_result(void)
     TEST_CHECK(!job_running && cache_ok && appends_recorded == mark);
     as_network_thread(); /* the wait times out, no job runs: the held lines go out */
     TEST_CHECK(net_appends_since(mark, &lines, &recognizing) == 1 && lines == 2 && !recognizing);
-    TEST_CHECK(appends_recorded == mark + 1 && !appends_seen[mark].job_running && open_batch == &net_log &&
-               net_log.n == 0); /* the batch open again, empty: the next wait is untimed */
+    TEST_CHECK(appends_recorded == mark + 1 && !appends_seen[mark].job_running && !open_batch &&
+               net_log.n == 0); /* written and closed (the next job opens it): the next wait is untimed */
 
     /* 2. Its next job: no line, no append. */
     mark = appends_recorded; count = log_count;
@@ -4926,7 +4929,7 @@ static int script_first_job(int step)
 {
     switch (step) {
     case 0: /* the thread's first wait: nothing held, untimed; the control thread starts a job */
-        TEST_CHECK(last_wait_timeout == 0 && open_batch == &net_log && batch_owner == NET_THREAD);
+        TEST_CHECK(last_wait_timeout == 0 && !open_batch); /* the first job opens the batch */
         net_main_mark = appends_recorded; /* after the thread's start: its stack paint may log a line */
         next_scene(60u + (unsigned)net_main_stop_early); stable_pending = 1; control_tick(0);
         TEST_CHECK(job_running && (posted & NET_EV_JOB));

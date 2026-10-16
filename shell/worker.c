@@ -203,13 +203,6 @@ static volatile int job_text_ready;
 #define LOG_IDLE_US 500000u
 static VjoLogBatch net_log;  /* the network thread's batch; its buffer is on net_main's stack */
 
-/* Writes what is held, one append per file, and opens the batch again (a begin refused because another
- * thread's batch is open leaves it closed: the lines go out one by one until the next write). */
-static inline void net_log_rewrite(char *buf)
-{
-    vjo_log_batch_end(&net_log);
-    vjo_log_batch_begin(&net_log, buf, NET_LOG_BYTES);
-}
 #endif
 
 static volatile int pending_cmd;
@@ -1416,13 +1409,12 @@ static int net_main(SceSize args, void *argp)
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
 #else
         /* The held lines go out when a wait of LOG_IDLE_US ends with no job (bits stay 0) and the
-         * control thread has taken the result (its job no longer runs), and before the first wait;
-         * then the batch is open again for the next job's. The wait is timed only while the batch
-         * holds a line (its n: this thread's own lines raise it; a flush by another thread's line
-         * only zeroes it, shell/log_vita.c). */
+         * control thread has taken the result (its job no longer runs); the next job opens the batch
+         * again. The wait is timed only while the batch holds a line (its n: this thread's own lines
+         * raise it; a flush by another thread's line only zeroes it, shell/log_vita.c). */
         unsigned int timeout = LOG_IDLE_US;
         if (!bits && !job_running)
-            net_log_rewrite(held_buf);
+            vjo_log_batch_end(&net_log);
         /* bits: the flag's value at the wake; at a timeout, its value then (SDK: Kernel-Reference,
          * sceKernelWaitEventFlag), 0, as only NET_EV_JOB and NET_EV_QUIT are ever set and either ends
          * the wait */
@@ -1431,8 +1423,15 @@ static int net_main(SceSize args, void *argp)
 #endif
         if (bits & NET_EV_QUIT)
             break;
-        if (bits & NET_EV_JOB)
+        if (bits & NET_EV_JOB) {
+#if !VJO_DEBUG
+            /* the job's lines are held: its batch opens (one still open, holding an earlier job's, stays;
+             * a begin refused because another thread's batch is open, the ledger table's for microseconds
+             * at a game start or exit, leaves this job's lines to go out one by one) */
+            vjo_log_batch_begin(&net_log, held_buf, NET_LOG_BYTES);
+#endif
             net_job();
+        }
     }
 #if !VJO_DEBUG
     vjo_log_batch_end(&net_log); /* the worker stops: what is held goes out before its buffer does */
