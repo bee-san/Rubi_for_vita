@@ -202,11 +202,12 @@ plugins and RCO are main's bytes, sha256).
   one without a line, took 115 ms). Made after the idle pause, a press that lands during it waits for
   its end before its job is submitted.
 - The VjoNet thread's deepest chain in the normal build goes from 2,712 to 4,832 B (`net_main`'s frame
-  88 → 2,208 B), under the debug build's unchanged 5,632 B, in its 16 KiB stack (#132) [measured:
-  `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources;
-  a lower bound, without the SDK's own frames]. No new allocation. The normal Shell's text grows
-  91,464 → 91,768 B and its data/bss 70,004 → 70,032 B: the same 167,936 B of pages, 2,440 B of
-  text left in its last page [measured: the Vita builds of main `2833509` and this branch].
+  88 → 2,208 B), under the debug build's unchanged 5,616 B, in its 16 KiB stack (#132) [measured:
+  `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources
+  with each object's flags from the Vita build; a lower bound, without the SDK's own frames]. No new
+  allocation. The normal Shell's text grows 89,196 → 89,484 B and its data/bss 69,700 → 69,728 B: the
+  same 163,840 B of pages, 628 → 340 B of text left in its last page [measured: the Vita builds of main
+  `dcb7b31` and this branch].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses and the clock)
