@@ -603,6 +603,13 @@ static void joined_lines_are_one_text(void)
         vjo_arena_reset(&a);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "けこ食べ\nるかな？", 6, &r, &e) && r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "the first part only") && r.tokens[0].len16 == 2);
+        /* the break itself is no character: nothing starts there, no file is opened */
+        {
+            int before = opened;
+            vjo_arena_reset(&a);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこ食べ\nるかな？", 36, &r, &e) && r.n_vocab == 0);
+            TEST_CHECK(opened == before && a.used == 0);
+        }
         /* and so does a line the next opens a quotation after */
         vjo_arena_reset(&a);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこ食べ\n「るかな」", 30, &r, &e) && r.n_vocab == 1);

@@ -194,10 +194,20 @@ static void stale_or_missing_layouts_are_waited_for(void)
         f++;
     }
     TEST_CHECK(!w.frames && f == VJO_WRAP_SETTLE + VJO_WRAP_TRIES);
-    /* no room, or VJO_WRAP_BREAKS put in already: nothing */
+    /* a text that needs a break: none without room, none once VJO_WRAP_BREAKS are in */
+    std::vector<uint16_t> v = u16("あいうえおかきくけこさしすせそ食べるかなと思った");
+    Model fresh;
+    fresh.set(v.data(), (uint32_t)v.size());
     vjo_wrap_arm(&w);
     w.frames = 1;
-    TEST_CHECK(vjo_wrap_step<Info>(&w, &m, u.data(), (uint32_t)u.size(), 0) == 0);
+    TEST_CHECK(vjo_wrap_step<Info>(&w, &fresh, v.data(), (uint32_t)v.size(), 0) == 0);
+    vjo_wrap_arm(&w);
+    w.frames = 1;
+    w.count = VJO_WRAP_BREAKS;
+    TEST_CHECK(vjo_wrap_step<Info>(&w, &fresh, v.data(), (uint32_t)v.size(), 64) == 0);
+    vjo_wrap_arm(&w);
+    w.frames = 1;
+    TEST_CHECK(vjo_wrap_step<Info>(&w, &fresh, v.data(), (uint32_t)v.size(), 64) == 15);
 }
 
 static void header_units_map_to_the_shown_ones(void)
@@ -215,6 +225,10 @@ static void header_units_map_to_the_shown_ones(void)
     TEST_CHECK(vjo_wrap_shown(brk, n, 10) == 12 && vjo_wrap_shown(brk, n, 17) == 19);
     TEST_CHECK(vjo_wrap_shown(brk, n, 18) == 21);
     TEST_CHECK(vjo_wrap_shown(brk, 0, 18) == 18);
+    /* one before the last break (shown 19 is text unit 17, before the break at 18) */
+    vjo_wrap_add(brk, &n, 19);
+    TEST_CHECK(n == 4 && brk[0] == 4 && brk[1] == 10 && brk[2] == 17 && brk[3] == 18);
+    TEST_CHECK(vjo_wrap_shown(brk, n, 16) == 18 && vjo_wrap_shown(brk, n, 17) == 20 && vjo_wrap_shown(brk, n, 18) == 22);
 }
 
 static void styled_insert_keeps_the_spans(void)

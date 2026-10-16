@@ -52,6 +52,8 @@ static void japanese_breaks_between_phrases(void)
     check("猫の|手も|借りたい");          /* の is a particle: 猫の|手 */
     check("あなた達がご飯を|食べた");     /* 達 stays with the word before, ご with 飯 */
     check("あなた達のおばあ様");          /* inside a kana run: nowhere */
+    check("すごいなぁ|先生だ");           /* ぁ goes with な: hiragana before the kanji */
+    check("いったっ|彼が");
     check("６年生の|教室");               /* digits stay with their kanji */
     check("ああ、|そうか。|分かった");
 }
@@ -135,11 +137,43 @@ static void last_break_in_utf16_and_utf8(void)
     }
 }
 
+/* The overlay asks whether a line may start at a unit with a look-back of a
+ * few units only (shell/wrap_fix.h): its answer is the full walk's from the
+ * hard line's start, at every unit, a look-back starting inside a surrogate
+ * pair included. */
+static void short_look_back_agrees_with_the_line(void)
+{
+    static const char *texts[] = {"あ𠮷𠮷𠮷𠮷は学校へ𠮷𠮷行った", "思い出せなかったので、お茶を飲んだ彼女は",
+                                  "あなた達がご飯を「食べた」と言った。ジュースは", "𠮷𠮷𠮷𠮷𠮷𠮷𠮷𠮷𠮷は𠮷"};
+    for (unsigned t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
+        uint16_t u[128];
+        uint8_t allowed[128] = {0};
+        size_t len = strlen(texts[t]), i = 0;
+        uint32_t n = 0;
+        VjoBreakState st = {0};
+        while (i < len) {
+            uint32_t c = vjo_utf8_next(texts[t], len, &i);
+            allowed[n] = (uint8_t)vjo_break_next(&st, c);
+            if (c >= 0x10000) {
+                u[n++] = (uint16_t)(0xD800 | ((c - 0x10000) >> 10));
+                u[n++] = (uint16_t)(0xDC00 | ((c - 0x10000) & 0x3FF));
+            } else
+                u[n++] = (uint16_t)c;
+        }
+        for (uint32_t at = 1; at < n; at++) {
+            if ((u[at] & 0xFC00) == 0xDC00)
+                continue;
+            TEST_CHECK_((vjo_break_last16(u, n, at - 1, at) == at) == (allowed[at] != 0), "text %u at %u", t, at);
+        }
+    }
+}
+
 TEST_LIST = {
     {"japanese_breaks_between_phrases", japanese_breaks_between_phrases},
     {"kinsoku", kinsoku},
     {"latin_breaks_at_spaces", latin_breaks_at_spaces},
     {"hard_breaks", hard_breaks},
     {"last_break_in_utf16_and_utf8", last_break_in_utf16_and_utf8},
+    {"short_look_back_agrees_with_the_line", short_look_back_agrees_with_the_line},
     {NULL, NULL},
 };

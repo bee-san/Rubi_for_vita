@@ -1102,8 +1102,7 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
         char enc[4];
         int n;
         if ((cp == '\n' || cp == '\r') && count && vjo_text_joins(text, len, at)) {
-            off += cp == '\r'; /* its '\n' */
-            source_units += (int)(off - at);
+            source_units++; /* '\r' and '\n' a unit each, as pos16 counts them */
             continue;
         }
         if (boundary(cp)) break;

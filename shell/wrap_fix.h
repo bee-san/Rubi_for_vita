@@ -59,9 +59,11 @@ uint32_t vjo_wrap_fix(Text *t, const uint16_t *u, uint32_t n)
         }
         if (lo <= start || lo >= n)
             return VJO_WRAP_WAIT;
-        /* a hard break or a space: no word is cut */
+        /* a hard break, a space or a place a line may start: no word is cut (the
+         * last test reads a few units before lo only); else the line before
+         * ends at its last such place */
         if (u[lo - 1] != '\n' && u[lo] != '\n' && u[lo] != ' ' && u[lo] != 0x3000 &&
-            (b = vjo_break_last16(u, n, start, lo)) != lo && b > start)
+            vjo_break_last16(u, n, lo - 1, lo) != lo && (b = vjo_break_last16(u, n, start, lo)) > start)
             return b;
         start = lo;
     }

@@ -104,6 +104,8 @@ uint32_t vjo_break_last16(const uint16_t *u, uint32_t n, uint32_t from, uint32_t
      * (none past a hard break) settle the walk's state. */
     for (int k = 0; k < 8 && i && u[i - 1] != '\n'; k++)
         i--;
+    if (i < from && (u[i] & 0xFC00) == 0xDC00) /* not inside a surrogate pair */
+        i++;
     while (i <= to) {
         uint32_t c = u[i], w = 1;
         if ((c & 0xFC00) == 0xD800 && i + 1 < n && (u[i + 1] & 0xFC00) == 0xDC00) {
