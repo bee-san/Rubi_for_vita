@@ -15,6 +15,7 @@
 #include "../core/app_stamp.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
+#include "../core/anki.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
 #include "../core/textnorm.h"
@@ -344,13 +345,15 @@ static void log_text(char *out, size_t cap, const char *s, size_t len, int chars
 /* One log.txt line per dictionary lookup: why (first word during OCR, on
  * open, cursor or tap, dictionary page), the cursor byte, the matched span
  * in characters, the dictionary file, the page, the file reads, rc and the
- * time; then the text at the cursor, the entry, the source named in its
- * definition and its frequency badge (" #1234", " unranked" or none). The
- * numbers come first and the texts are bounded (32 + 31 + 31 + 23 + 15
- * bytes, whole characters), so the line fits vjo_log's 254 bytes. */
+ * time; then the text at the cursor, the entry, its dictionary's name (the
+ * file's title, as Bee's Ultimate Dictionary has, else the "[name]" first
+ * line older conversions give a definition) and its frequency badge
+ * (" #1234", " unranked" or none). The numbers come first and the texts are
+ * bounded (32 + 31 + 31 + 31 + 15 bytes, whole characters), so the line
+ * fits vjo_log's 254 bytes. */
 static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t cursor, int rc, int64_t t0)
 {
-    char query[33], head[32], reading[32], source[24], dict[8], rank[VJO_RANK_BADGE_MAX];
+    char query[33], head[32], reading[32], source[32], dict[8], rank[VJO_RANK_BADGE_MAX];
     const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
     const char *text = out->sentence ? out->sentence : "";
     size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
@@ -365,12 +368,10 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
         log_text(head, sizeof(head), e->vocab->spelling, sceClibStrnlen(e->vocab->spelling, 256), 10);
         if (e->vocab->reading != e->vocab->spelling)
             log_text(reading, sizeof(reading), e->vocab->reading, sceClibStrnlen(e->vocab->reading, 256), 10);
-        if (e->vocab->n_meanings && e->vocab->meanings[0][0] == '[') { /* "[Daijirin4 Plain]\n..." */
-            const char *m = e->vocab->meanings[0] + 1;
-            size_t n = 0;
-            while (n + 1 < sizeof(source) && m[n] && m[n] != ']') n++;
-            if (m[n] == ']') { sceClibMemcpy(source, m, n); source[n] = 0; }
-        }
+        if (e->vocab->dictionary)
+            log_text(source, sizeof(source), e->vocab->dictionary, sceClibStrnlen(e->vocab->dictionary, 64), 31);
+        else if (e->vocab->n_meanings) /* a "[JMdict Plain]" first line, as the converter writes one */
+            vjo_anki_meaning_source(e->vocab->meanings[0], source, sizeof(source));
         vjo_rank_badge(rank, e->vocab->rank, out->list.source);
     }
     if (!e) sceClibSnprintf(dict, sizeof(dict), "-");

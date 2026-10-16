@@ -1027,6 +1027,219 @@ static void test_styled(void)
     TEST_CHECK(vjo_font_px(15) == 23 && vjo_font_px(8) == 12);
 }
 
+/* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",
+ * a kanji (by whole code point), '=' and the meanings. */
+static void test_kanji_block(void)
+{
+    static const struct { const char *text; int block; } cases[] = {
+        {"a tree\n木=tree, wood", 7},
+        {"Japanese\n日=day\n本=book\n語=word", 9},
+        {"木=tree, wood", 0},                     /* no definition: all lines */
+        {"Topic particle", -1},                   /* a kana word's: none */
+        {"木=tree\na tree", -1},                  /* not at the end */
+        {"a tree\n木=tree\n", -1},                /* a last empty line */
+        {"a tree\n木=", -1},                      /* no meaning */
+        {"a tree\n木:tree", -1},                  /* no '=' */
+        {"under a tree\nの=of\n下=below", 20},    /* の is not a kanji: 下 only */
+        {"a restaurant chain\n𠮷=lucky\n野=field\n家=house", 19}, /* beyond the BMP */
+        {"famous\n\xEF\xA9\x9F=author\n名=name", 7}, /* U+FA5F, a compatibility ideograph */
+        {"a word\n\xE3\x90\x80=x\n名=name", 7},   /* U+3400, CJK Extension A */
+        {"repeat\n々=again\n名=name", 17},        /* 々 is no ideograph: 名 only */
+        {"kana\nア=a", -1},                        /* nor kana */
+        {"tea\n\xE8=x\n茶=tea", 8},               /* a malformed byte is no kanji: 茶 only */
+        {"", -1},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        size_t want = cases[i].block < 0 ? strlen(cases[i].text) : (size_t)cases[i].block;
+        TEST_CHECK_(vjo_kanji_block(cases[i].text) == want, "case %zu: %zu, expected %zu", i,
+                    vjo_kanji_block(cases[i].text), want);
+    }
+}
+
+/* The UTF-16 text of st from unit `from`, as UTF-8 (BMP only), for comparisons. */
+static const char *styled_utf8(const VjoStyled *st, uint32_t from, char *out, size_t cap)
+{
+    size_t n = 0;
+    for (uint32_t i = from; i < st->len && n + 4 < cap; i++)
+        n += (size_t)vjo_utf8_encode(st->text[i], out + n);
+    out[n] = 0;
+    return out;
+}
+
+/* The popup's kanji lines and its fitting (core/styled.c entry_text). */
+static void test_styled_kanji_lines_and_fitting(void)
+{
+    VjoDictResult r;
+    VjoEntryList l;
+    VjoStyled st;
+    char buf[4096];
+    static char long_def[2048], summary[200], text[4096];
+    static const char *nihongo[] = {"Japanese\n日=day\n本=book\n語=word", NULL};
+    static const TestWord words[] = {{"日本語", "にほんご", 4372, {NULL}}};
+    static const TestToken tokens[] = {{0, 0, 3}};
+    TestWord w = words[0];
+    setup();
+    w.meanings[0] = nihongo[0];
+    test_result(&r, &w, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日本語", &r, &l) == 0);
+
+    /* a blank line after the definition, then the lines as written, each kanji
+     * at ja px in the text colour */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 256, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 1);
+    TEST_CHECK(!strcmp(styled_utf8(&st, 0, buf, sizeof(buf)),
+                       "日本語 (にほんご) #4372\nJapanese\n\n日=day\n本=book\n語=word"));
+    /* head 5; the newline, the definition and the blank line before the lines; 2 a line */
+    TEST_CHECK_(st.n_spans == 14, "%d spans", st.n_spans);
+    for (int k = 0; k < 3; k++) {
+        const VjoSpan *kanji = &st.spans[8 + 2 * k], *meaning = &st.spans[9 + 2 * k];
+        TEST_CHECK(kanji->len == 1 && kanji->px == 27 && kanji->rgb == VJO_RGB_TEXT);
+        TEST_CHECK(st.text[kanji->start] == (k == 0 ? 0x65E5 : k == 1 ? 0x672C : 0x8A9E));
+        TEST_CHECK(meaning->px == 21 && meaning->rgb == VJO_RGB_DIM && st.text[meaning->start] == '=');
+        /* each line's newline ends its meanings' span; the definition's ends its own */
+        TEST_CHECK(k == 2 || st.text[meaning->start + meaning->len - 1] == '\n');
+    }
+    TEST_CHECK(st.spans[7].px == 21 && st.spans[7].len == 2 && st.text[st.spans[7].start] == '\n' &&
+               st.text[st.spans[7].start + 1] == '\n');
+
+    /* too few spans left: the text stays whole (its last spans unstyled), marked truncated */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 256, 10) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 1);
+    TEST_CHECK(!strcmp(styled_utf8(&st, 0, buf, sizeof(buf)),
+                       "日本語 (にほんご) #4372\nJapanese\n\n日=day\n本=book\n語=word"));
+    TEST_CHECK(st.n_spans == 10 && st.truncated);
+    /* kanji lines without a definition */
+    {
+        static const char *only[] = {"日=day\n本=book", NULL};
+        TestWord ow = words[0];
+        ow.meanings[0] = only[0];
+        test_result(&r, &ow, 1, tokens, 1);
+        TEST_ASSERT(vjo_entries_build(&A, "日本語", &r, &l) == 0);
+        TEST_ASSERT(vjo_styled_init(&st, &A, 256, 32) == 0);
+        vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+        TEST_CHECK(!strcmp(styled_utf8(&st, 0, buf, sizeof(buf)), "日本語 (にほんご)\n日=day\n本=book"));
+        TEST_CHECK(st.n_spans == 4 + 1 + 4 && st.spans[5].px == 27 && st.spans[7].px == 27);
+    }
+
+    /* An entry longer than the room, as the bundle orders an appended grammar
+     * point: the summary, the article, a kanji line. The definition is clipped
+     * at its end and marked; the summary (its start) and the kanji line stay
+     * whole, and the room after the entry too. */
+    memset(long_def, 'd', 1500); long_def[1500] = 0;
+    memset(summary, 's', 150); summary[150] = 0;
+    snprintf(text, sizeof(text), "%s\n%s\n日=day", summary, long_def);
+    static const char *long_meanings[2];
+    long_meanings[0] = text;
+    static const TestWord long_word = {"日", "ひ", 0, {NULL}};
+    TestWord lw = long_word;
+    lw.meanings[0] = long_meanings[0];
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 600, 32) == 0);
+    st.cap -= 100; /* overlay.cpp: the room kept for what follows */
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    st.cap += 100;
+    /* within the room (600 - 100), ASCII using it to the unit: bytes = units */
+    TEST_CHECK_(!st.truncated && st.len == 500, "%u units", st.len);
+    styled_utf8(&st, 0, buf, sizeof(buf));
+    {
+        /* the mark is the definition's: dim, at en px */
+        int marks = 0;
+        for (int i = 0; i < st.n_spans; i++)
+            if (st.text[st.spans[i].start] == 0x2026) {
+                marks++;
+                TEST_CHECK(st.spans[i].len == 1 && st.spans[i].px == 21 && st.spans[i].rgb == VJO_RGB_DIM);
+            }
+        TEST_CHECK(marks == 1);
+    }
+    {
+        char want_head[256];
+        snprintf(want_head, sizeof(want_head), "日 (ひ)\n%s\nddd", summary);
+        TEST_CHECK(!strncmp(buf, want_head, strlen(want_head)));
+        TEST_CHECK(!strcmp(buf + strlen(buf) - strlen("d…\n\n日=day"), "d…\n\n日=day"));
+    }
+    /* a longer one: still the definition's start, then the mark */
+    snprintf(text, sizeof(text), "first line\n%s%s\n日=day", long_def, summary);
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 600, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    styled_utf8(&st, 0, buf, sizeof(buf));
+    TEST_CHECK_(!st.truncated && st.len == 600, "%u units", st.len);
+    TEST_CHECK(!strncmp(buf, "日 (ひ)\nfirst line\nddd", strlen("日 (ひ)\nfirst line\nddd")) &&
+               !strcmp(buf + strlen(buf) - strlen("d…\n\n日=day"), "d…\n\n日=day"));
+    /* an entry that fits is shown whole, unmarked: the cap is not reached */
+    snprintf(text, sizeof(text), "short\n%s\n日=day", summary);
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 600, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    styled_utf8(&st, 0, buf, sizeof(buf));
+    TEST_CHECK(!st.truncated && !strstr(buf, "…") && strstr(buf, summary) && strstr(buf, "\n\n日=day"));
+    /* a Japanese definition (3 bytes a character) is clipped at a character
+     * boundary: no partial character, every unit kept one of its own */
+    {
+        static char kana[3 * 400 + 32];
+        static const char *kana_meanings[1];
+        TestWord kw = long_word;
+        size_t o = 0;
+        for (int i = 0; i < 400; i++) { memcpy(kana + o, "あ", 3); o += 3; }
+        memcpy(kana + o, "\n日=day", sizeof("\n日=day"));
+        kana_meanings[0] = kana;
+        kw.meanings[0] = kana_meanings[0];
+        for (uint32_t cap = 120; cap <= 130; cap++) {
+            test_result(&r, &kw, 1, tokens, 1);
+            TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+            TEST_ASSERT(vjo_styled_init(&st, &A, cap, 32) == 0);
+            vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+            int bad = 0, kept = 0;
+            for (uint32_t i = 0; i < st.len; i++) {
+                bad += st.text[i] == 0xFFFD;
+                kept += st.text[i] == 0x3042;
+            }
+            styled_utf8(&st, 0, buf, sizeof(buf));
+            TEST_CHECK_(!bad && !st.truncated && kept > 0 &&
+                            !strcmp(buf + strlen(buf) - strlen("あ…\n\n日=day"), "あ…\n\n日=day"),
+                        "cap %u: %d replacement characters, %d kept: %s", cap, bad, kept, buf);
+        }
+    }
+    /* a text with an empty line of its own before the kanji lines: still one blank line */
+    snprintf(text, sizeof(text), "short\n\n日=day");
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 600, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    TEST_CHECK(!strcmp(styled_utf8(&st, 0, buf, sizeof(buf)), "日 (ひ)\nshort\n\n日=day"));
+    /* a text without kanji lines is shown as written, a last newline included */
+    snprintf(text, sizeof(text), "a tree\n");
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 600, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    TEST_CHECK(!strcmp(styled_utf8(&st, 0, buf, sizeof(buf)), "日 (ひ)\na tree\n"));
+    /* kanji lines longer than the whole body: the definition gets no room (none
+     * past the cap: the room is floored at 0), marked, then the lines to the cap */
+    {
+        size_t o = (size_t)snprintf(text, sizeof(text), "%.100s", long_def);
+        for (int i = 0; i < 40; i++)
+            o += (size_t)snprintf(text + o, sizeof(text) - o, "\n日=day");
+        test_result(&r, &lw, 1, tokens, 1);
+        TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+        TEST_ASSERT(vjo_styled_init(&st, &A, 64, 96) == 0);
+        vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+        styled_utf8(&st, 0, buf, sizeof(buf));
+        TEST_CHECK_(st.truncated && st.len <= 64 && !strncmp(buf, "日 (ひ)\n…\n\n日=day\n日=day", strlen("日 (ひ)\n…\n\n日=day\n日=day")),
+                    "%u units: %s", st.len, buf);
+    }
+    /* a body too small even for the kanji lines: cut at the cap, never past it
+     * (the list again from lw: kw's meanings went out of scope with its block) */
+    test_result(&r, &lw, 1, tokens, 1);
+    TEST_ASSERT(vjo_entries_build(&A, "日", &r, &l) == 0);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 12, 32) == 0);
+    vjo_styled_entry(&st, &l, 0, 27, 21, 0, 0);
+    TEST_CHECK(st.truncated && st.len <= 12);
+}
+
 /* kernel/triggers.c (pad masks as SCE_CTRL_*) */
 #define B_SELECT 0x1u
 #define B_L 0x100u
@@ -2004,5 +2217,7 @@ TEST_LIST = {
     {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},
     {"styled", test_styled},
+    {"kanji_block", test_kanji_block},
+    {"styled_kanji_lines_and_fitting", test_styled_kanji_lines_and_fitting},
     {NULL, NULL},
 };

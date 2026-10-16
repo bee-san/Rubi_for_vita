@@ -61,10 +61,14 @@ static size_t add_payload(Fixture *f, const Row *r, size_t off, int version)
     return off;
 }
 static const char *fixture_title = "Jiten"; /* v3 header's frequency list */
+/* v2/v3: the dictionary's own name at page 0 bytes 192..255 (NULL: none, all zero) */
+static const char *fixture_dict_title;
 /* The longest name a v3 header holds: with a maximum entry it still fits the
  * selected entry's budget (VJO_LOCAL_SELECTED_BUDGET). */
 static const char longest_title[] = "A frequency list with the longest name a v3 header holds: 63 B!";
 typedef char LongestTitleIs63[(sizeof(longest_title) == 64) ? 1 : -1];
+static const char longest_dict_title[] = "The longest dictionary title a page-0 field holds, 63 byte long";
+typedef char LongestDictTitleIs63[(sizeof(longest_dict_title) == 64) ? 1 : -1];
 /* Formats 1 (sorted index), 2 (hash pages) and 3 (2 with the frequency list's
  * name and a frequency word per payload; a posting's spare u16 is set, as a
  * later index may use it, and must be ignored). */
@@ -108,6 +112,7 @@ static void build(Fixture *f, const char *name, const Row *rows, int n, int vers
         put64(f->bytes + 24, 4096); put64(f->bytes + 32, off);
         put64(f->bytes + 48, 1); put64(f->bytes + 56, 1);
         if (version == 3) memcpy(f->bytes + 64, fixture_title, strlen(fixture_title));
+        if (fixture_dict_title) memcpy(f->bytes + 192, fixture_dict_title, strlen(fixture_dict_title));
         memcpy(f->bytes + 4096, "VJHP", 4);
         for (int i = 0; i < n;) {
             int end = i + 1;
@@ -260,6 +265,7 @@ static void setup(VjoArena *a, VjoPlatform *p, VjoConfig *cfg)
     opened = closed = reads = payload_reads = fail_read = 0;
     read_bytes = 0;
     fixture_title = "Jiten";
+    fixture_dict_title = NULL;
     vjo_arena_init(a, arena_mem, sizeof(arena_mem));
     memset(p, 0, sizeof(*p)); p->file_open = open_file;
     vjo_config_defaults(cfg); cfg->dictionary = VJO_DICT_LOCAL;
@@ -391,7 +397,8 @@ static void largest_entry_and_input_fit_64k(void)
         memset(meaning, 'M', meaning_len); meaning[meaning_len] = 0;
         const Row row = {"猫", "猫", "", meaning, 0, 1536};
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
-        setup(&a, &p, &cfg); fixture_title = longest_title; build(&fixtures[0], "main.vjdict", &row, 1, version);
+        setup(&a, &p, &cfg); fixture_title = longest_title; fixture_dict_title = longest_dict_title;
+        build(&fixtures[0], "main.vjdict", &row, 1, version);
         TEST_ASSERT(fixtures[0].payload_size[0] == VJO_LOCAL_MAX_ENTRY);
         out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
@@ -401,6 +408,10 @@ static void largest_entry_and_input_fit_64k(void)
         /* v3: the rank and its list's name fit the selected entry's budget too */
         TEST_CHECK(out.list.entries[0].vocab->rank == (version == 3 ? 1536 : VJO_NO_RANK));
         TEST_CHECK(version == 3 ? out.list.source && !strcmp(out.list.source, longest_title) : !out.list.source);
+        /* v2/v3: and the longest dictionary name, as its file's title */
+        TEST_CHECK(version >= 2 ? out.list.entries[0].vocab->dictionary &&
+                                      !strcmp(out.list.entries[0].vocab->dictionary, longest_dict_title)
+                                : !out.list.entries[0].vocab->dictionary);
         size_t static_peak = a.peak;
         vjo_arena_reset(&a); a.peak = 0; cfg.non_japanese_filter = 0;
         TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, text, &out));
@@ -1126,6 +1137,110 @@ static void whole_text_lookup_names_a_list_every_entry_has(void)
 /* A located page that is too short for any payload (v3: the frequency word and
  * three strings, 8 B; v2: 4 B) is refused before its payload is read: a page
  * locator is the caller's memory, and read_entry must never see such a length. */
+/* Page 0 bytes 192..255 of a v2 or v3 file: the dictionary's own name
+ * (bee-san/plaintext-dicts writes "Bee's Ultimate Dictionary"), read with the
+ * header in its one read and given to every entry of that file, copied into
+ * the result after it, and to a located page. A file without
+ * one names none; v1 has index records there; a malformed name refuses the
+ * file, as a malformed frequency list name does. */
+static void dictionary_title_names_its_entries(void)
+{
+    static const char title[] = "Bee's Ultimate Dictionary";
+    const Row rows[] = {{"木", "木", "き", "a tree\n木=tree, wood", 0, 1459},
+                        {"日本語", "日本語", "にほんご", "Japanese\n日=day\n本=book\n語=word", 0, 4372}};
+    for (int version = 2; version <= 3; version++) {
+        int plain_reads = 0;
+        for (int titled = 0; titled <= 1; titled++) {
+            VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+            setup(&a, &p, &cfg); fixture_dict_title = titled ? title : NULL;
+            build(&fixtures[0], "main.vjdict", rows, 2, version);
+            TEST_CASE_("v%d %s", version, titled ? "titled" : "untitled");
+            TEST_ASSERT(!lookup(&a, &p, &cfg, "木", 0, &r, &e) && r.n_vocab == 1);
+            if (!titled) {
+                TEST_CHECK(!r.vocab[0].dictionary);
+                plain_reads = reads;
+            } else {
+                TEST_ASSERT(r.vocab[0].dictionary && !strcmp(r.vocab[0].dictionary, title));
+                TEST_CHECK((const uint8_t *)r.vocab[0].dictionary >= a.base &&
+                           (const uint8_t *)r.vocab[0].dictionary < a.base + a.used); /* in the result */
+                TEST_CHECK(reads == plain_reads); /* the header's own read */
+            }
+            /* the whole-text lookup (its 64 KiB result budget and scratch):
+             * each entry names it */
+            static uint8_t big[VJO_LOCAL_RESULT_BUDGET + VJO_LOCAL_SCRATCH_BUDGET + 16384];
+            vjo_arena_init(&a, big, sizeof(big));
+            TEST_ASSERT_(!vjo_local_lookup(&a, &p, &cfg, "木と日本語", &r, &e) && r.n_vocab == 2, "rc %d", e.rc);
+            TEST_CHECK(titled ? r.vocab[0].dictionary && r.vocab[1].dictionary &&
+                                    !strcmp(r.vocab[0].dictionary, title) && !strcmp(r.vocab[1].dictionary, title)
+                              : !r.vocab[0].dictionary && !r.vocab[1].dictionary);
+            TEST_CHECK(opened == closed);
+        }
+    }
+    /* v1: 8 index records from byte 64 cover bytes 192..255; no name is read there */
+    {
+        static const char *const keys[] = {"あ", "い", "う", "え", "お", "か", "き", "く"};
+        Row many[8];
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        for (int i = 0; i < 8; i++) many[i] = (Row){keys[i], keys[i], "", "kana", 0, 0};
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", many, 8, 1);
+        TEST_ASSERT(fixtures[0].bytes[192] || fixtures[0].bytes[200]);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "く", 0, &r, &e) && r.n_vocab == 1 && !r.vocab[0].dictionary);
+    }
+    /* a located page names its own file's title, or none */
+    {
+        const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
+        const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 0}};
+        const Row d2[] = {{"猫", "猫", "ねこ", "d2 cat", 0, 5}};
+        const char *names[] = {"First", NULL, "Third"};
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r, one; VjoErr e; VjoLocalPages pages;
+        setup(&a, &p, &cfg); set_names(&cfg, 3);
+        fixture_dict_title = names[0]; build(&fixtures[0], page_names[0], d0, 1, 3);
+        fixture_dict_title = names[1]; build(&fixtures[1], page_names[1], d1, 1, 2);
+        fixture_dict_title = names[2]; build(&fixtures[2], page_names[2], d2, 1, 3);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 3, &pages, &r, &e) && pages.count == 3);
+        TEST_CHECK(r.vocab[0].dictionary && !strcmp(r.vocab[0].dictionary, "First"));
+        for (int page = 0; page < 3; page++) {
+            int d = pages.page[page].dict;
+            TEST_ASSERT(!vjo_local_read_page(&a, &p, &cfg, &pages, page, &one, &e));
+            TEST_CHECK_(names[d] ? one.vocab[0].dictionary && !strcmp(one.vocab[0].dictionary, names[d])
+                                 : !one.vocab[0].dictionary, "page %d (file %d)", page, d);
+        }
+    }
+    /* malformed: text after its NUL padding, a control character or DEL, no NUL at all */
+    static const struct { size_t off; uint8_t value; } bad[] = {
+        {192 + 5, 'x'}, {192 + 1, 0x1f}, {192 + 2, 0x7f}, {192 + 63, 'x'},
+    };
+    for (int version = 2; version <= 3; version++)
+        for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+            VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+            setup(&a, &p, &cfg); fixture_dict_title = "abc";
+            build(&fixtures[0], "main.vjdict", rows, 2, version);
+            if (i == 3) memset(fixtures[0].bytes + 192, 'x', 64);
+            else fixtures[0].bytes[bad[i].off] = bad[i].value;
+            TEST_CASE_("v%d bad title %zu", version, i);
+            TEST_CHECK(lookup(&a, &p, &cfg, "木", 0, &r, &e) == VJO_E_LOCAL_FORMAT && !r.n_vocab);
+            TEST_CHECK(opened == closed && a.used == 0);
+        }
+    /* vjo_local_title (the Overlay app's card): page 0 of 256 bytes or more, a v2/v3
+     * magic and its own version, else no name */
+    {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        char out[VJO_LOCAL_TITLE_SIZE];
+        setup(&a, &p, &cfg); fixture_dict_title = title;
+        build(&fixtures[0], "main.vjdict", rows, 2, 3);
+        uint8_t page0[256];
+        memcpy(page0, fixtures[0].bytes, sizeof(page0));
+        TEST_CHECK(vjo_local_title(page0, sizeof(page0), out) == 1 && !strcmp(out, title));
+        TEST_CHECK(vjo_local_title(page0, 255, out) == 0 && !out[0]); /* a short read */
+        TEST_CHECK(vjo_local_title(page0, 64, out) == 0 && !out[0]);
+        page0[8] = 2; /* VJDICT3 that says version 2 */
+        TEST_CHECK(vjo_local_title(page0, sizeof(page0), out) == 0 && !out[0]);
+        page0[8] = 3; page0[6] = '4'; /* an unknown version */
+        TEST_CHECK(vjo_local_title(page0, sizeof(page0), out) == 0 && !out[0]);
+        fixture_dict_title = NULL;
+    }
+}
+
 static void read_page_refuses_short_locators(void)
 {
     const Row row = {"猫", "猫", "ねこ", "cat", 0, 1536};
@@ -1360,6 +1475,7 @@ TEST_LIST = {
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
     {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},
     {"read_page_refuses_short_locators", read_page_refuses_short_locators},
+    {"dictionary_title_names_its_entries", dictionary_title_names_its_entries},
     {"whole_text_lookup_names_a_list_every_entry_has", whole_text_lookup_names_a_list_every_entry_has},
     {"v3_rank_reaches_the_anki_card", v3_rank_reaches_the_anki_card},
     {"v3_rank_and_source_come_with_the_entry", v3_rank_and_source_come_with_the_entry},

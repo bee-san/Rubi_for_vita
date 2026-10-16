@@ -303,6 +303,16 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     out->hl_end = e->hl_end;
     out->source = l->source;
     out->sf_hl_start = out->sf_hl_end = -1;
+    /* The entry's dictionary: its file's title (Bee's Ultimate Dictionary), else
+     * the name its definition's first line gives ("[JMdict Plain]"), else none. */
+    {
+        char name[96];
+        const char *d = v->dictionary;
+        if (!d)
+            d = (vjo_anki_meaning_source(v->n_meanings ? v->meanings[0] : "", name, sizeof(name)), name);
+        if (*d && !(out->dictionary = dup(a, d)))
+            return -1;
+    }
     m = (char **)vjo_arena_alloc(a, sizeof(char *) * (size_t)(v->n_meanings ? v->n_meanings : 1));
     p = (char **)vjo_arena_alloc(a, sizeof(char *) * (size_t)(v->n_pos ? v->n_pos : 1));
     if (!out->spelling || !out->reading || !out->sentence || !m || !p)

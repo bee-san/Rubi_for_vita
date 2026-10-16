@@ -1258,6 +1258,89 @@ static void test_banner_is_drawn_on_every_page(void)
     unlink(VJO_APP_STAMP_OWN); unlink(VJO_APP_STAMP_PACKAGE); unlink(VJO_APP_STATUS_PATH);
 }
 
+/* The Dictionaries shown card's help line: drawn 30 px below its title
+ * (settings/main.c: CARD_TITLE_Y 30, CARD_HELP_Y 60 within the card). */
+static const Text *results_help(int f)
+{
+    for (int i = 0; i < shown[f].texts; i++)
+        if (!strcmp(shown[f].text[i].text, "Dictionaries shown"))
+            return text_at(f, shown[f].text[i].y + 30, 0, 960);
+    return NULL;
+}
+#define DICT_DIR "ux0:data/VitaJPOverlay/dictionaries"
+/* A dictionary's page 0 as the bundle writes it: magic, version, the frequency
+ * list's name at 64 and, when given, the title at 192 (the rest of the file is
+ * not read by the app). */
+static void put_dictionary(const char *name, const char *magic, const char *title)
+{
+    char path[256];
+    unsigned char page0[4096] = {0};
+    memcpy(page0, magic, 8);
+    page0[8] = (unsigned char)(magic[6] - '0');
+    memcpy(page0 + 64, "Jiten", 5);
+    if (title) memcpy(page0 + 192, title, strlen(title));
+    snprintf(path, sizeof(path), DICT_DIR "/%s", name);
+    mkdir(DICT_DIR, 0777);
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT(f != NULL);
+    TEST_ASSERT(fwrite(page0, 1, sizeof(page0), f) == sizeof(page0));
+    TEST_ASSERT(fclose(f) == 0);
+}
+/* The card names the one enabled dictionary by its file's own title, as the
+ * bundled Bee's Ultimate Dictionary has one; without a readable title (none,
+ * a version 1 file whose index fills those bytes, a malformed one, no file)
+ * it counts the dictionaries as before. */
+static void test_dictionaries_card_names_the_bundled_dictionary(void)
+{
+    /* the page scrolled to the card (#146's cards above it): Highlight focused, Dictionaries shown
+     * drawn below it in the last frame */
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN), PRESS(SCE_CTRL_DOWN),
+                               PRESS(SCE_CTRL_DOWN)};
+    enum { FRAMES = (int)(sizeof(in) / sizeof(in[0])), LAST = FRAMES - 1 };
+    static const struct { const char *magic, *title, *line; } cases[] = {
+        {"VJDICT3\0", "Bee's Ultimate Dictionary", "Best match only: Bee's Ultimate Dictionary."},
+        {"VJDICT2\0", "Jitendex.org", "Best match only: Jitendex.org."},
+        {"VJDICT3\0", NULL, "Best match only. 1 dictionary enabled."},
+        {"VJDICT1\0", "index records", "Best match only. 1 dictionary enabled."},
+        {"VJDICT3\0", "bad\x01title", "Best match only. 1 dictionary enabled."},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        card(NULL);
+        put_dictionary("plaintext.vjdict", cases[i].magic, cases[i].title);
+        TEST_CASE_("case %u", i);
+        TEST_ASSERT(run(in, FRAMES) == FRAMES);
+        const Text *t = results_help(LAST);
+        TEST_CHECK_(t && !strcmp(t->text, cases[i].line), "'%s'", t ? t->text : "(none)");
+    }
+    /* no file: the count */
+    card(NULL);
+    unlink(DICT_DIR "/plaintext.vjdict");
+    TEST_ASSERT(run(in, FRAMES) == FRAMES);
+    const Text *t = results_help(LAST);
+    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
+    /* one file, paging on (2 shown): the paging line, which names none */
+    card("local_dictionary_results = 2\n");
+    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
+    TEST_ASSERT(run(in, FRAMES) == FRAMES);
+    t = results_help(LAST);
+    TEST_CHECK_(t && !strcmp(t->text, "Best match, then others with an L/R tap. 1 enabled."), "'%s'",
+                t ? t->text : "(none)");
+    /* a file shorter than page 0's 256 bytes (cut inside its title): the count */
+    card(NULL);
+    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
+    TEST_ASSERT(truncate(DICT_DIR "/plaintext.vjdict", 200) == 0);
+    TEST_ASSERT(run(in, FRAMES) == FRAMES);
+    t = results_help(LAST);
+    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
+    /* two enabled, the first titled: the count (the paging line names none) */
+    card("local_dictionaries = plaintext.vjdict,extra.vjdict\n");
+    put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
+    TEST_ASSERT(run(in, FRAMES) == FRAMES);
+    t = results_help(LAST);
+    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 2 dictionaries enabled."), "'%s'", t ? t->text : "(none)");
+    TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
+}
+
 TEST_LIST = {
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
     {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
@@ -1275,6 +1358,7 @@ TEST_LIST = {
     {"engine_card_and_size_lines", test_engine_card_and_size_lines},
     {"banner_text_says_which_side_is_older_and_what_to_do", test_banner_text_says_which_side_is_older},
     {"banner_is_drawn_over_the_title_on_every_page_or_not_at_all", test_banner_is_drawn_on_every_page},
+    {"dictionaries_card_names_the_bundled_dictionary_by_its_title", test_dictionaries_card_names_the_bundled_dictionary},
     {NULL, NULL}
 };
 #else

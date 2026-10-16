@@ -163,6 +163,34 @@ char *vjo_entries_body(VjoArena *a, const VjoEntryList *l)
     return vjo_buf_cstr(&b);
 }
 
+/* Is the line s[0..n) a kanji line: one CJK ideograph (unified with extension
+ * A, compatibility, or beyond the BMP: kanji_lines.py's kanji), '=' and its
+ * meanings? */
+static int kanji_line(const char *s, size_t n)
+{
+    size_t i = 0;
+    uint32_t cp = n ? vjo_utf8_next(s, n, &i) : 0;
+    return ((cp >= 0x3400 && cp <= 0x9FFF) || (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0x20000 && cp <= 0x3FFFF)) &&
+           i + 1 < n && s[i] == '=';
+}
+
+size_t vjo_kanji_block(const char *text)
+{
+    size_t end = strlen(text), block = end;
+    while (end > 0) {
+        size_t line = end;
+        while (line > 0 && text[line - 1] != '\n')
+            line--;
+        if (!kanji_line(text + line, end - line))
+            break;
+        block = line;
+        if (!line)
+            break;
+        end = line - 1; /* the newline before it */
+    }
+    return block;
+}
+
 /* The entries with text in the header, in text order: the next after entry
  * i (-1: the first), -1 after the last. */
 static int next_in_text(const VjoEntryList *l, int i)

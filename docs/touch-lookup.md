@@ -381,19 +381,21 @@ Every lookup writes one `log.txt` line, for the console run. The Shell worker
 test's lines (the host test's clock does not advance, hence 0 ms):
 
 ```
-lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, 7 reads 20837 B, rc=0, 0 ms; "伊佐那社" -> 伊佐 (いさ) [Daijirin4 Plain]
-lookup cursor at 6: 1 chars, dictionary 1/1, page 1/1, 6 reads 16564 B, rc=0, 0 ms; "那社" -> 那 (な) [Daijirin4 Plain]
-lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 23 reads 86633 B, rc=0, 0 ms; "会ってなかったか" -> 会う (あう) [Daijirin4 Plain]
+lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, 5 reads 16703 B, rc=0, 0 ms; "伊佐那社" -> 伊佐 (いさ) [Bee's Ultimate Dictionary] unranked
+lookup cursor at 6: 1 chars, dictionary 1/1, page 1/1, 5 reads 16496 B, rc=0, 0 ms; "那社" -> 那 (だ) [Bee's Ultimate Dictionary] #38948
+lookup cursor at 59: 7 chars, dictionary 1/1, page 1/1, 5 reads 16948 B, rc=0, 0 ms; "会ってなかったか" -> 会う (あう) [Bee's Ultimate Dictionary] #134
 ```
 
 That is why (`first word` during Auto OCR, `on open`, `cursor` for an arrow
 or a tap, `page` for an L or R tap), the cursor byte, the matched span in
 characters, the dictionary file (`?` among several with one shown), the page,
 the file reads and bytes, the result and the time; then up to 8 characters
-at the cursor, the entry and the source named in its definition. The numbers
-come first and the texts are bounded in whole characters, so a line is at
-most 228 bytes even with 4-byte characters in every field (a host test) and
-`vjo_log` never cuts it. On the host the lookup takes
+at the cursor, the entry, its dictionary's name (the file's title, as the bundled
+Bee's Ultimate Dictionary has, else the `[name]` first line a converted
+dictionary gives its definitions) and its frequency badge. The numbers come
+first and the texts are bounded in whole characters, so a line is at most 246
+bytes even with 4-byte characters in every field and a 63-byte title (a host
+test) and `vjo_log` never cuts it. On the host the lookup takes
 45 µs on average and at most 38 file reads
 ([measurements](benchmarks/word-lookup-20261014.json)); one A9 core at 444 MHz
 is **estimated** at about 3–15 ms on average and under 45 ms at worst, mostly

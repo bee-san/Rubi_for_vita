@@ -117,7 +117,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/plaintext-dicts
-          ref: 6f841cee43425053064c46d09fc627aa5d512e76
+          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
           ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/plaintext-dicts
@@ -204,7 +204,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/plaintext-dicts
-          ref: 6f841cee43425053064c46d09fc627aa5d512e76
+          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
           ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/plaintext-dicts
@@ -319,6 +319,6 @@ jobs:
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen
-# Daijirin4 -> Sankoku8 -> JMdict bundle: VitaJPOverlay-<version>.zip (normal) and -debug.zip, and each
+# bundled dictionary (Bee's Ultimate Dictionary): VitaJPOverlay-<version>.zip (normal) and -debug.zip, and each
 # build's one-VPK install, VitaJPOverlay-<version>.vpk and -debug.vpk (tools/package_vpk.py,
 # docs/one-vpk-install.md). CI never publishes an incomplete archive lacking local OCR/dictionary data.

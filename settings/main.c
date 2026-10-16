@@ -548,11 +548,42 @@ static void list_key(uint32_t keys)
     else if (keys & SCE_CTRL_RIGHT) letter_jump(1);
 }
 
+/* The first enabled dictionary's own name (page 0 bytes 192..255 of its
+ * file: Bee's Ultimate Dictionary names itself so, core/local_dict.h), for the
+ * Dictionaries shown card; "" when it has none or is missing. Read with the
+ * preferences: one 256-byte read, never per frame. */
+static char dictionary_title[VJO_LOCAL_TITLE_SIZE];
+
+static void read_dictionary_title(void)
+{
+    const char *names = preferences.local_dictionaries;
+    char path[256];
+    uint8_t page0[256];
+    size_t n = 0;
+    int fd, got;
+    dictionary_title[0] = '\0';
+    if (vjo_local_names_count(names) <= 0)
+        return;
+    while (*names == ' ' || *names == '\t')
+        names++;
+    while (names[n] && names[n] != ',' && names[n] != ' ' && names[n] != '\t')
+        n++;
+    got = snprintf(path, sizeof(path), "%s/%.*s", preferences.local_dictionary_dir, (int)n, names);
+    if (got < 0 || got >= (int)sizeof(path) || (fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0)
+        return;
+    got = sceIoRead(fd, page0, sizeof(page0));
+    sceIoClose(fd);
+    if (got > 0)
+        vjo_local_title(page0, (size_t)got, dictionary_title);
+}
+
 static void check_models(void)
 {
     /* The local engine's model sizes: which tiers' files are there (the card
-     * names the chosen size's model, or reports it missing). */
+     * names the chosen size's model, or reports it missing); the bundled
+     * dictionary's name. */
     vjo_engine_card(&preferences, &engine);
+    read_dictionary_title();
 }
 
 static void load_preferences(void)
@@ -822,6 +853,8 @@ static void draw_results_card(int y)
         snprintf(results_help, sizeof(results_help), "Cannot read the saved choice.");
     else if (!enabled)
         snprintf(results_help, sizeof(results_help), "Set local_dictionaries in config.ini first.");
+    else if (preferences.local_dictionary_results == 1 && enabled == 1 && dictionary_title[0])
+        snprintf(results_help, sizeof(results_help), "Best match only: %s.", dictionary_title);
     else if (preferences.local_dictionary_results == 1)
         snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
                  enabled, enabled == 1 ? "dictionary" : "dictionaries");

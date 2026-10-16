@@ -29,13 +29,14 @@ that its overlay is not the installed one, and its Install page offers **Update*
   (`plugin/kernel.c:60-73`); without them the app runs sandboxed and cannot write `ur0:tai`. The app
   detects it as VitaShell does (`sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)` returns `0x80010030`,
   VitaShell 81af709 `init.c:353-355`) and says how to turn it on.
-- About 220 MB free on ux0, the VPK counted: VitaShell's step needs the 54.0 MB VPK plus its 154.9 MB
+- About 240 MB free on ux0, the VPK counted: VitaShell's step needs the 60.1 MB VPK plus its 168.7 MB
   unpacked, and the app's Install 11.1 MB more while the VPK is still on the card (the models it
   copies and its 0.5 MiB margin, `settings/install.c`'s room check, which otherwise stops before
-  writing and says the `.vpk` can go) [estimate from the measured sizes: this PR's debug packages].
+  writing and says the `.vpk` can go) [estimate from the measured sizes: this PR's debug packages, and
+  #153's with Bee's Ultimate Dictionary, whose file is 13.9 MB larger].
   VitaShell's own check lets an install start with up to 40 MiB less (below), so the README asks for
   the room itself. After the install, and once the VPK is deleted,
-  the overlay takes about 165.5 MB: 154.2 MB of data, the 0.5 MB app and the 10.8 MB of plugins and
+  the overlay takes about 179.5 MB: 168.1 MB of data, the 0.5 MB app and the 10.8 MB of plugins and
   models the app keeps for Repair [estimate].
 
 `install-vita.sh` (the release zip) stays as the advanced and developer path.
@@ -69,12 +70,12 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ur0/tai/VitaJPOverlay_OCR.suprx` | `ur0:tai/` | 63,552 (debug 64,764) |
 | `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
 | `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 10,614,250 |
-| `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 143,425,536 |
+| `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 157,298,688 (Bee's Ultimate Dictionary, #153; 143,425,536 before) |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
 | `payload/manifest.txt` | read by the app | small |
 | `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |
 
-The dictionary is 93% of the 154,220,148 B the payload installs; the app itself is 0.5 MB.
+The dictionary is 94% of the 168,114,408 B the payload installs (the debug package, #153's); the app itself is 0.5 MB.
 
 `payload/manifest.txt` is written by `tools/package_vpk.py`, one item per line:
 
@@ -86,7 +87,7 @@ api 23
 worker kernel
 file ur0:tai/VitaJPOverlay_Kernel.skprx 31316 <sha256> copy
 ...
-file ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict 143425536 <sha256> move
+file ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict 157298688 <sha256> move
 template ux0:data/VitaJPOverlay/config.ini 3552 <sha256>
 set anki_mining on
 ```
@@ -127,7 +128,7 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
 - `checkMemoryCardFreeSpace` (`utils.c:91-125`) refuses only when the unpacked size is at least ux0's
   free space plus 40 MiB, so it lets an install start with up to 40 MiB less room than it needs; the
   extraction then fails on a full card and VitaShell deletes `ux0:data/pkg`
-  (`package_installer.c:538-539`). Hence the README's 220 MB.
+  (`package_installer.c:538-539`). Hence the README's 240 MB.
 - It extracts everything into `ux0:data/pkg`, writes `sce_sys/package/head.bin`, and calls
   `scePromoterUtilityPromotePkgWithRif`, which has SceShell move the files into `ux0:app/VJOSET001`
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
@@ -202,7 +203,7 @@ The page shows what the action will do before anything happens, with the exact l
 Update the overlay from v0.8.0 to v0.8.1
 1. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models
    (10.6 MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.
-   The dictionary is already installed: once it is checked, this app's copy is deleted (143 MB freed).
+   The dictionary is already installed: once it is checked, this app's copy is deleted (157 MB freed).
 2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak in each
    folder (kept).
 3. ux0:tai/config.txt (taiHEN reads this one at boot): remove the OCR worker's lines from *ALL,
@@ -667,7 +668,7 @@ Vita3K is not evidence for any of it (it has no taiHEN). The test build's consol
 
 ## Unmeasured until a console run
 
-- VitaShell's install time for the 53 MB VPK, and the app's Install time: about 155 MB read and
+- VitaShell's install time for the 60 MB VPK, and the app's Install time: about 169 MB read and
   hashed, 256 KiB per call on a thread on CPU3 (the app is a system application), whose CPU3 cost is
   unmeasured (AGENTS.md rule 8).
 - That a system application may unmount its `app0:`, that `sceIoRename` then moves the dictionary out

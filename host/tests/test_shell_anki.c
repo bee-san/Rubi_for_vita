@@ -298,6 +298,7 @@ const VjoLocalPages *vjo_view_pages(int *page)
  * platform's file_open as the Vita's local_open does. */
 typedef struct {
     const char *key, *spelling, *reading, *meaning;
+    const char *title; /* the file's own name (page 0 bytes 192..255); NULL: none */
 } DictRow;
 typedef struct {
     const char *name;
@@ -331,6 +332,7 @@ static void dict_build(DictFile *f, const char *name, const DictRow *r)
     put32(f->bytes + 16, 1); put32(f->bytes + 20, 24);
     put64(f->bytes + 24, 4096); put64(f->bytes + 32, off);
     put64(f->bytes + 48, 1); put64(f->bytes + 56, 1);
+    if (r->title) memcpy(f->bytes + 192, r->title, strlen(r->title));
     memcpy(f->bytes + 4096, "VJHP", 4);
     put64(f->bytes + 4112, key_hash(r->key)); put64(f->bytes + 4120, off);
     put32(f->bytes + 4128, 1); put16(f->bytes + 4132, (uint16_t)key_len);
@@ -1075,9 +1077,9 @@ static void test_cancellation(void)
 static void test_enter_records_every_dictionary(void)
 {
     static const DictRow rows[3] = {
-        {"好き", "好き", "すき", "[Daijirin4 Plain]\nliked; favourite"},
-        {"好き", "好き", "すき", "[JMdict Plain]\nliked"},
-        {"好き", "好き", "すき", "[Sankoku8 Plain]\nfond of"},
+        {"好き", "好き", "すき", "[Daijirin4 Plain]\nliked; favourite", NULL},
+        {"好き", "好き", "すき", "[JMdict Plain]\nliked", NULL},
+        {"好き", "好き", "すき", "[Sankoku8 Plain]\nfond of", NULL},
     };
     static uint8_t mem[96 * 1024], note_mem[64 * 1024];
     static VjoLocalPages pages;
@@ -1153,6 +1155,93 @@ static void test_enter_records_every_dictionary(void)
     finish();
 }
 
+/* Files with a title (Bee's Ultimate Dictionary's page 0) name their entries
+ * on the card by it: the shown entry's dictionary and each other page's, read
+ * from its own file; the definitions carry no label. A file without one still
+ * names its entries by their "[name]" first line, and one with neither by
+ * none. The export's Glossary pages by those names. */
+static void test_enter_names_titled_dictionaries(void)
+{
+    static const DictRow rows[3] = {
+        {"好き", "好き", "すき", "liked; favourite\n好=fond, pleasing, like", "Bee's Ultimate Dictionary"},
+        {"好き", "好き", "すき", "[JMdict Plain]\nliked", NULL},
+        {"好き", "好き", "すき", "fond of", "Other <&> Title"},
+    };
+    static uint8_t mem[96 * 1024], note_mem[64 * 1024];
+    static VjoLocalPages pages;
+    VjoArena a, na;
+    VjoPlatform p;
+    VjoDictResult res;
+    VjoErr err;
+    VjoAnkiNote n;
+    char id[VJO_QUEUE_ID_SIZE];
+    const char *json;
+    size_t len;
+    int picture;
+    reset();
+    dict_build(&dict_files[0], "main.vjdict", &rows[0]);
+    dict_build(&dict_files[1], "b.vjdict", &rows[1]);
+    dict_build(&dict_files[2], "c.vjdict", &rows[2]);
+    snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+    snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict,c.vjdict");
+    cfg.local_dictionary_results = 3;
+    reconfigure();
+    vjo_arena_init(&a, mem, sizeof(mem));
+    vjo_platform_vita(&p);
+    TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 3, &pages, &res, &err) == VJO_OK);
+    TEST_ASSERT(pages.count == 3 && res.n_vocab == 1);
+    TEST_CHECK(res.vocab[0].dictionary && !strcmp(res.vocab[0].dictionary, "Bee's Ultimate Dictionary"));
+    entries[1].vocab = &res.vocab[0];
+    view_pages = &pages;
+    view_page = 0;
+    dict_opens = 0;
+    enter(1);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && dict_opens == 2);
+    only_id(id);
+    json = queue_file(id, "json", &len);
+    TEST_ASSERT(json != NULL);
+    TEST_CHECK(strstr(json, "\"meanings\":[\"liked; favourite\\n好=fond, pleasing, like\"]") &&
+               strstr(json, "\"dictionary\":\"Bee's Ultimate Dictionary\",\"more\":[{\"dictionary\":\"JMdict Plain\",") &&
+               strstr(json, "{\"dictionary\":\"Other <&> Title\",\"spelling\":\"好き\",\"reading\":\"すき\","
+                            "\"meanings\":[\"fond of\"]}]"));
+    TEST_MSG("%s", json);
+    vjo_arena_init(&na, note_mem, sizeof(note_mem));
+    TEST_ASSERT(vjo_queue_decode(&na, json, len, &n, &picture) == 4);
+    TEST_CHECK(!strcmp(vjo_anki_field_value(&na, VJO_LAPIS_GLOSSARY, &n),
+                       "<div style=\"text-align: left;\" class=\"yomitan-glossary\"><ol>"
+                       "<li data-dictionary=\"Bee's Ultimate Dictionary\"><i>(Bee's Ultimate Dictionary)</i> <span>"
+                       "liked; favourite<br>好=fond, pleasing, like</span></li>"
+                       "<li data-dictionary=\"JMdict Plain\"><i>(JMdict Plain)</i> <span>liked</span></li>"
+                       "<li data-dictionary=\"Other &lt;&amp;&gt; Title\"><i>(Other &lt;&amp;&gt; Title)</i> <span>"
+                       "fond of</span></li></ol></div>"));
+    TEST_MSG("%s", vjo_anki_field_value(&na, VJO_LAPIS_GLOSSARY, &n));
+    finish();
+    /* the shown page from the untitled, unlabelled file: no name; the titled others keep theirs */
+    {
+        static const DictRow plain = {"好き", "好き", "すき", "liked", NULL};
+        reset();
+        dict_build(&dict_files[0], "main.vjdict", &plain);
+        dict_build(&dict_files[1], "b.vjdict", &rows[0]);
+        snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
+        snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "main.vjdict,b.vjdict");
+        cfg.local_dictionary_results = 2;
+        reconfigure();
+        vjo_arena_init(&a, mem, sizeof(mem));
+        TEST_ASSERT(vjo_local_lookup_pages(&a, &p, &cfg, list.header, 6, 2, &pages, &res, &err) == VJO_OK);
+        TEST_ASSERT(pages.count == 2 && !res.vocab[0].dictionary);
+        entries[1].vocab = &res.vocab[0];
+        view_pages = &pages;
+        view_page = 0;
+        enter(1);
+        only_id(id);
+        json = queue_file(id, "json", &len);
+        TEST_CHECK(json && !strstr(json, "\"dictionary\":\"\"") &&
+                   strstr(json, "\"more\":[{\"dictionary\":\"Bee's Ultimate Dictionary\""));
+        TEST_MSG("%s", json ? json : "");
+        finish();
+    }
+}
+
 /* Whatever the dictionaries: with 8 dictionaries' entries of any size (and
  * text that HTML and JSON escaping grow), enter keeps the other
  * dictionaries' entries while the card's record fits (32 KiB), so every card
@@ -1187,7 +1276,7 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
                 }
                 meaning[k][o] = '\0';
                 snprintf(names[k], sizeof(names[k]), "d%d.vjdict", k);
-                rows[k] = (DictRow){"好き", "好き", "すき", meaning[k]};
+                rows[k] = (DictRow){"好き", "好き", "すき", meaning[k], NULL};
                 dict_build(&dict_files[k], names[k], &rows[k]);
                 strcat(list_names, k ? "," : "");
                 strcat(list_names, names[k]);
@@ -1600,6 +1689,7 @@ TEST_LIST = {
     {"oom_keeps_recognized_text_and_queued_cards", test_oom_keeps_recognized_text_and_cards},
     {"stale_list_close_stop_and_busy_jobs_cancel_without_leaks", test_cancellation},
     {"enter_records_every_dictionary", test_enter_records_every_dictionary},
+    {"enter_names_titled_dictionaries", test_enter_names_titled_dictionaries},
     {"what_enter_saves_whatever_the_dictionaries", test_what_enter_saves_whatever_the_dictionaries},
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_release_memory_and_threads", test_fifty_cards_release_everything},
