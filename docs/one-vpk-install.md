@@ -69,7 +69,7 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 143,425,536 |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
 | `payload/manifest.txt` | read by the app | small |
-| `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,062 |
+| `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |
 
 The dictionary is 93% of the 154,220,148 B the payload installs; the app itself is 0.5 MB.
 
