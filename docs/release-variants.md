@@ -221,7 +221,7 @@ network thread's wait timing out at random) [measured: host suites]:
 | build | jobs (lookups) | lines | appends | the network thread's | in a job's result path | lines in one append, at most |
 |---|---:|---:|---:|---:|---:|---:|
 | debug | 376 (98) | 3,593 | 2,061 | 1,236 | 1,236 | 11 |
-| normal | 376 (98) | 147 | 98 | 63 | **0** | 5 |
+| normal | 376 (98) | 147 | 95 | 63 | **0** | 5 |
 
 `normal_build_writes_a_jobs_lines_after_its_result` walks each case: an activation's first job (held
 through its exchange, its lookup and a timeout before the result was taken; written by the next

@@ -1397,29 +1397,26 @@ static int net_main(SceSize args, void *argp)
 {
 #if !VJO_DEBUG
     char held_buf[NET_LOG_BYTES];
-    unsigned int bits = 0;
 #endif
     (void)args;
     (void)argp;
     net_stack_paint(); /* its line, if any, goes out at once: not a job's */
     while (running) {
-#if VJO_DEBUG
         unsigned int bits = 0;
+#if VJO_DEBUG
         sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT,
                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, NULL);
 #else
-        /* The held lines go out when a wait of LOG_IDLE_US ends with no job (bits stay 0) and the
-         * control thread has taken the result (its job no longer runs); the next job opens the batch
-         * again. The wait is timed only while the batch holds a line (its n: this thread's own lines
-         * raise it; a flush by another thread's line only zeroes it, shell/log_vita.c). */
+        /* The wait is timed (LOG_IDLE_US) only while the batch holds a line (its n: this thread's own
+         * lines raise it; a flush by another thread's line only zeroes it, shell/log_vita.c). When it
+         * ends with the control thread's result taken (no job runs), the held lines go out; the next
+         * job opens the batch again. A job's wake always finds job_running set (start_job_kind sets
+         * it before NET_EV_JOB), so it writes nothing: only a timeout, or the stop, does. */
         unsigned int timeout = LOG_IDLE_US;
-        if (!bits && !job_running)
-            vjo_log_batch_end(&net_log);
-        /* bits: the flag's value at the wake; at a timeout, its value then (SDK: Kernel-Reference,
-         * sceKernelWaitEventFlag), 0, as only NET_EV_JOB and NET_EV_QUIT are ever set and either ends
-         * the wait */
         sceKernelWaitEventFlag(net_evf, NET_EV_JOB | NET_EV_QUIT, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT,
                                &bits, net_log.n ? &timeout : NULL);
+        if (!job_running)
+            vjo_log_batch_end(&net_log);
 #endif
         if (bits & NET_EV_QUIT)
             break;

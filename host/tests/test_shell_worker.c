@@ -292,7 +292,7 @@ void vjo_log(const char *fmt, ...)
 #if !VJO_DEBUG
 static char net_log_test_buf[NET_LOG_BYTES];
 static void net_job_begin(void) { vjo_log_batch_begin(&net_log, net_log_test_buf, NET_LOG_BYTES); }
-static void net_idle_write(void) { if (net_log.n && !job_running) vjo_log_batch_end(&net_log); }
+static void net_idle_write(void) { if (!job_running) vjo_log_batch_end(&net_log); }
 #endif
 /* net_main's waits, scripted: each wait runs the test's next control-thread step (wait_script) and returns
  * the bits it posted, cleared at the wake; with nothing posted, a timed wait times out (as the SDK's:
